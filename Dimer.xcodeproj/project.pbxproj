@@ -1,0 +1,505 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 46;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		AE499DD01C82BB2B002D68AF /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE499DCF1C82BB2B002D68AF /* AppDelegate.swift */; };
+		AE499DD21C82BB2B002D68AF /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AE499DD11C82BB2B002D68AF /* Assets.xcassets */; };
+		AE499DD51C82BB2B002D68AF /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = AE499DD31C82BB2B002D68AF /* MainMenu.xib */; };
+		AE499DE01C82BB2B002D68AF /* DimerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE499DDF1C82BB2B002D68AF /* DimerTests.swift */; };
+		AE499DEB1C82BB2B002D68AF /* DimerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE499DEA1C82BB2B002D68AF /* DimerUITests.swift */; };
+		AE499DF91C82C835002D68AF /* CoreConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE499DF81C82C835002D68AF /* CoreConnection.swift */; };
+		AEBAAA651C83BB1A005637A3 /* python in Resources */ = {isa = PBXBuildFile; fileRef = AEBAAA601C83B503005637A3 /* python */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		AE499DDC1C82BB2B002D68AF /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AE499DC41C82BB2B002D68AF /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AE499DCB1C82BB2B002D68AF;
+			remoteInfo = Dimer;
+		};
+		AE499DE71C82BB2B002D68AF /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AE499DC41C82BB2B002D68AF /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AE499DCB1C82BB2B002D68AF;
+			remoteInfo = Dimer;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		AE499DCC1C82BB2B002D68AF /* Dimer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Dimer.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AE499DCF1C82BB2B002D68AF /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		AE499DD11C82BB2B002D68AF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		AE499DD41C82BB2B002D68AF /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/MainMenu.xib; sourceTree = "<group>"; };
+		AE499DD61C82BB2B002D68AF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		AE499DDB1C82BB2B002D68AF /* DimerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DimerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		AE499DDF1C82BB2B002D68AF /* DimerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DimerTests.swift; sourceTree = "<group>"; };
+		AE499DE11C82BB2B002D68AF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		AE499DE61C82BB2B002D68AF /* DimerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DimerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		AE499DEA1C82BB2B002D68AF /* DimerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DimerUITests.swift; sourceTree = "<group>"; };
+		AE499DEC1C82BB2B002D68AF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		AE499DF81C82C835002D68AF /* CoreConnection.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CoreConnection.swift; sourceTree = "<group>"; };
+		AEBAAA601C83B503005637A3 /* python */ = {isa = PBXFileReference; lastKnownFileType = folder; path = python; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		AE499DC91C82BB2B002D68AF /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AE499DD81C82BB2B002D68AF /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AE499DE31C82BB2B002D68AF /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		AE499DC31C82BB2B002D68AF = {
+			isa = PBXGroup;
+			children = (
+				AEBAAA601C83B503005637A3 /* python */,
+				AE499DCE1C82BB2B002D68AF /* Dimer */,
+				AE499DDE1C82BB2B002D68AF /* DimerTests */,
+				AE499DE91C82BB2B002D68AF /* DimerUITests */,
+				AE499DCD1C82BB2B002D68AF /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		AE499DCD1C82BB2B002D68AF /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				AE499DCC1C82BB2B002D68AF /* Dimer.app */,
+				AE499DDB1C82BB2B002D68AF /* DimerTests.xctest */,
+				AE499DE61C82BB2B002D68AF /* DimerUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		AE499DCE1C82BB2B002D68AF /* Dimer */ = {
+			isa = PBXGroup;
+			children = (
+				AE499DCF1C82BB2B002D68AF /* AppDelegate.swift */,
+				AE499DF81C82C835002D68AF /* CoreConnection.swift */,
+				AE499DD11C82BB2B002D68AF /* Assets.xcassets */,
+				AE499DD31C82BB2B002D68AF /* MainMenu.xib */,
+				AE499DD61C82BB2B002D68AF /* Info.plist */,
+			);
+			path = Dimer;
+			sourceTree = "<group>";
+		};
+		AE499DDE1C82BB2B002D68AF /* DimerTests */ = {
+			isa = PBXGroup;
+			children = (
+				AE499DDF1C82BB2B002D68AF /* DimerTests.swift */,
+				AE499DE11C82BB2B002D68AF /* Info.plist */,
+			);
+			path = DimerTests;
+			sourceTree = "<group>";
+		};
+		AE499DE91C82BB2B002D68AF /* DimerUITests */ = {
+			isa = PBXGroup;
+			children = (
+				AE499DEA1C82BB2B002D68AF /* DimerUITests.swift */,
+				AE499DEC1C82BB2B002D68AF /* Info.plist */,
+			);
+			path = DimerUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		AE499DCB1C82BB2B002D68AF /* Dimer */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AE499DEF1C82BB2B002D68AF /* Build configuration list for PBXNativeTarget "Dimer" */;
+			buildPhases = (
+				AE499DC81C82BB2B002D68AF /* Sources */,
+				AE499DC91C82BB2B002D68AF /* Frameworks */,
+				AE499DCA1C82BB2B002D68AF /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Dimer;
+			productName = Dimer;
+			productReference = AE499DCC1C82BB2B002D68AF /* Dimer.app */;
+			productType = "com.apple.product-type.application";
+		};
+		AE499DDA1C82BB2B002D68AF /* DimerTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AE499DF21C82BB2B002D68AF /* Build configuration list for PBXNativeTarget "DimerTests" */;
+			buildPhases = (
+				AE499DD71C82BB2B002D68AF /* Sources */,
+				AE499DD81C82BB2B002D68AF /* Frameworks */,
+				AE499DD91C82BB2B002D68AF /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AE499DDD1C82BB2B002D68AF /* PBXTargetDependency */,
+			);
+			name = DimerTests;
+			productName = DimerTests;
+			productReference = AE499DDB1C82BB2B002D68AF /* DimerTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		AE499DE51C82BB2B002D68AF /* DimerUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AE499DF51C82BB2B002D68AF /* Build configuration list for PBXNativeTarget "DimerUITests" */;
+			buildPhases = (
+				AE499DE21C82BB2B002D68AF /* Sources */,
+				AE499DE31C82BB2B002D68AF /* Frameworks */,
+				AE499DE41C82BB2B002D68AF /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AE499DE81C82BB2B002D68AF /* PBXTargetDependency */,
+			);
+			name = DimerUITests;
+			productName = DimerUITests;
+			productReference = AE499DE61C82BB2B002D68AF /* DimerUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		AE499DC41C82BB2B002D68AF /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastSwiftUpdateCheck = 0720;
+				LastUpgradeCheck = 0720;
+				ORGANIZATIONNAME = "Raph Levien";
+				TargetAttributes = {
+					AE499DCB1C82BB2B002D68AF = {
+						CreatedOnToolsVersion = 7.2;
+					};
+					AE499DDA1C82BB2B002D68AF = {
+						CreatedOnToolsVersion = 7.2;
+						TestTargetID = AE499DCB1C82BB2B002D68AF;
+					};
+					AE499DE51C82BB2B002D68AF = {
+						CreatedOnToolsVersion = 7.2;
+						TestTargetID = AE499DCB1C82BB2B002D68AF;
+					};
+				};
+			};
+			buildConfigurationList = AE499DC71C82BB2B002D68AF /* Build configuration list for PBXProject "Dimer" */;
+			compatibilityVersion = "Xcode 3.2";
+			developmentRegion = English;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = AE499DC31C82BB2B002D68AF;
+			productRefGroup = AE499DCD1C82BB2B002D68AF /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				AE499DCB1C82BB2B002D68AF /* Dimer */,
+				AE499DDA1C82BB2B002D68AF /* DimerTests */,
+				AE499DE51C82BB2B002D68AF /* DimerUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		AE499DCA1C82BB2B002D68AF /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AEBAAA651C83BB1A005637A3 /* python in Resources */,
+				AE499DD21C82BB2B002D68AF /* Assets.xcassets in Resources */,
+				AE499DD51C82BB2B002D68AF /* MainMenu.xib in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AE499DD91C82BB2B002D68AF /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AE499DE41C82BB2B002D68AF /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		AE499DC81C82BB2B002D68AF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AE499DF91C82C835002D68AF /* CoreConnection.swift in Sources */,
+				AE499DD01C82BB2B002D68AF /* AppDelegate.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AE499DD71C82BB2B002D68AF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AE499DE01C82BB2B002D68AF /* DimerTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AE499DE21C82BB2B002D68AF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AE499DEB1C82BB2B002D68AF /* DimerUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		AE499DDD1C82BB2B002D68AF /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AE499DCB1C82BB2B002D68AF /* Dimer */;
+			targetProxy = AE499DDC1C82BB2B002D68AF /* PBXContainerItemProxy */;
+		};
+		AE499DE81C82BB2B002D68AF /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AE499DCB1C82BB2B002D68AF /* Dimer */;
+			targetProxy = AE499DE71C82BB2B002D68AF /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin PBXVariantGroup section */
+		AE499DD31C82BB2B002D68AF /* MainMenu.xib */ = {
+			isa = PBXVariantGroup;
+			children = (
+				AE499DD41C82BB2B002D68AF /* Base */,
+			);
+			name = MainMenu.xib;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
+
+/* Begin XCBuildConfiguration section */
+		AE499DED1C82BB2B002D68AF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++0x";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "-";
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 10.11;
+				MTL_ENABLE_DEBUG_INFO = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		AE499DEE1C82BB2B002D68AF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++0x";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_IDENTITY = "-";
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 10.11;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		AE499DF01C82BB2B002D68AF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = Dimer/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = com.levien.Dimer;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		AE499DF11C82BB2B002D68AF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = Dimer/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = com.levien.Dimer;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
+		AE499DF31C82BB2B002D68AF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = DimerTests/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @loader_path/../Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = com.levien.DimerTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Dimer.app/Contents/MacOS/Dimer";
+			};
+			name = Debug;
+		};
+		AE499DF41C82BB2B002D68AF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = DimerTests/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @loader_path/../Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = com.levien.DimerTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Dimer.app/Contents/MacOS/Dimer";
+			};
+			name = Release;
+		};
+		AE499DF61C82BB2B002D68AF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = DimerUITests/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @loader_path/../Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = com.levien.DimerUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				TEST_TARGET_NAME = Dimer;
+				USES_XCTRUNNER = YES;
+			};
+			name = Debug;
+		};
+		AE499DF71C82BB2B002D68AF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = DimerUITests/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @loader_path/../Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = com.levien.DimerUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				TEST_TARGET_NAME = Dimer;
+				USES_XCTRUNNER = YES;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		AE499DC71C82BB2B002D68AF /* Build configuration list for PBXProject "Dimer" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AE499DED1C82BB2B002D68AF /* Debug */,
+				AE499DEE1C82BB2B002D68AF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AE499DEF1C82BB2B002D68AF /* Build configuration list for PBXNativeTarget "Dimer" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AE499DF01C82BB2B002D68AF /* Debug */,
+				AE499DF11C82BB2B002D68AF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AE499DF21C82BB2B002D68AF /* Build configuration list for PBXNativeTarget "DimerTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AE499DF31C82BB2B002D68AF /* Debug */,
+				AE499DF41C82BB2B002D68AF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AE499DF51C82BB2B002D68AF /* Build configuration list for PBXNativeTarget "DimerUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AE499DF61C82BB2B002D68AF /* Debug */,
+				AE499DF71C82BB2B002D68AF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = AE499DC41C82BB2B002D68AF /* Project object */;
+}
