@@ -17,16 +17,16 @@ import Cocoa
 @NSApplicationMain
 class AppDelegate: NSObject, NSApplicationDelegate {
 
-    @IBOutlet weak var window: NSWindow!
     var coreConnection: CoreConnection?
-
+    var appWindowController: AppWindowController?
 
     func applicationDidFinishLaunching(aNotification: NSNotification) {
-        // Insert code here to initialize your application
-        print(NSBundle.mainBundle().bundlePath)
+        // show main app window
+        appWindowController = AppWindowController.init(windowNibName: "AppWindowController")
+        appWindowController?.showWindow(self)
+        
         let corePath = NSBundle.mainBundle().pathForResource("python/dimercore", ofType: "py")
         if let corePath = corePath {
-            print(corePath)
             coreConnection = CoreConnection(path: corePath)
         }
     }
