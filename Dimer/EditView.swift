@@ -17,6 +17,8 @@ import Cocoa
 class EditView: NSView {
 
     var text: String?
+    
+    var eventCallback: (NSEvent -> ())?
 
     override func drawRect(dirtyRect: NSRect) {
         super.drawRect(dirtyRect)
@@ -25,7 +27,7 @@ class EditView: NSView {
         path.fill()
         let font = NSFont(name: "Helvetica", size: 14.0)
         let baselineAdjust = 1.0
-        let attrsDictionary = [NSFontAttributeName: font!, NSBaselineOffsetAttributeName: baselineAdjust] as [String : AnyObject]
+        let attrsDictionary = [NSFontAttributeName: font!, NSBaselineOffsetAttributeName: baselineAdjust]
         let str:NSString = text ?? "(none)"
         str.drawInRect(dirtyRect, withAttributes: attrsDictionary)
         NSLog("drawRect called %f %f %f %f", dirtyRect.origin.x, dirtyRect.origin.y, dirtyRect.width, dirtyRect.height)
@@ -37,22 +39,16 @@ class EditView: NSView {
     }
     
     override func keyDown(theEvent: NSEvent) {
-        text = text ?? ""
-        let characters = theEvent.characters ?? "(none)"
-        let keycode = theEvent.characters?.unicodeScalars.first?.value ?? 0;
-        if keycode == 0x7f {
-            if (!text!.isEmpty) {
-                text = text!.substringToIndex(text!.endIndex.predecessor())
-                needsDisplay = true
-            }
-        } else if (keycode & 0xf700) != 0xf700 {
-            text!.appendContentsOf(characters)
-            needsDisplay = true
-        }
-        NSLog("keyDown: %d %x %@", theEvent.keyCode, theEvent.modifierFlags.rawValue, characters)
-        for c in characters.unicodeScalars {
-            NSLog("char %x", c.value)
+        if let callback = eventCallback {
+            callback(theEvent)
+        } else {
+            super.keyDown(theEvent)
         }
     }
     
+    func mySetText(text: String) {
+        self.text = text
+        needsDisplay = true
+    }
+
 }

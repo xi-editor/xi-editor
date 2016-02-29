@@ -7,6 +7,7 @@
     <objects>
         <customObject id="-2" userLabel="File's Owner" customClass="AppWindowController" customModule="Dimer" customModuleProvider="target">
             <connections>
+                <outlet property="editView" destination="hxn-ZY-xOb" id="lo9-GC-nJN"/>
                 <outlet property="window" destination="F0z-JX-Cv5" id="gIp-Ho-8D9"/>
             </connections>
         </customObject>

@@ -14,20 +14,52 @@
 
 import Cocoa
 
+func eventToJson(event: NSEvent) -> AnyObject {
+    return ["key", ["keycode": Int(event.keyCode), "chars": event.characters!]]
+}
+
 @NSApplicationMain
 class AppDelegate: NSObject, NSApplicationDelegate {
 
     var coreConnection: CoreConnection?
     var appWindowController: AppWindowController?
 
+    
     func applicationDidFinishLaunching(aNotification: NSNotification) {
         // show main app window
         appWindowController = AppWindowController.init(windowNibName: "AppWindowController")
         appWindowController?.showWindow(self)
-        
+
         let corePath = NSBundle.mainBundle().pathForResource("python/dimercore", ofType: "py")
         if let corePath = corePath {
-            coreConnection = CoreConnection(path: corePath)
+            coreConnection = CoreConnection(path: corePath) { [weak self] data -> () in
+                self?.handleCoreCmd(data)
+            }
+        }
+        appWindowController?.eventCallback = { [weak self] event -> () in
+            self?.sendJson(eventToJson(event))
+        }
+    }
+    
+    func sendJson(json: AnyObject) {
+        do {
+            let data = try NSJSONSerialization.dataWithJSONObject(json, options: [])
+            self.coreConnection?.send(data)
+        } catch _ {
+        }
+    }
+    
+    func handleCoreCmd(data: NSData) {
+        do {
+            let json = try NSJSONSerialization.JSONObjectWithData(data, options: .AllowFragments)
+            print("got \(json)")
+            if let response = json as? [AnyObject] where response.count == 2, let cmd = response[0] as? NSString {
+                if cmd == "settext" {
+                    appWindowController?.editView.mySetText(response[1] as! String)
+                }
+            }
+        } catch _ {
+            print("json error")
         }
     }
 

@@ -14,15 +14,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import time
 import sys
 import struct
+import json
 
-def send(buf):
+def sendraw(buf):
 	sys.stdout.write(struct.pack("<q", len(buf)))
 	sys.stdout.write(buf)
 	sys.stdout.flush()
 
-for i in range(10):
-	send('["ping", %d]' % i)
-	time.sleep(1)
+def send(obj):
+    sendraw(json.dumps(obj))
+
+def mainloop():
+    text = ''
+    while True:
+        sizebuf = sys.stdin.read(8)
+        if len(sizebuf) == 0:
+            return
+        (size,) = struct.unpack("<q", sizebuf)
+        cmd, arg = json.loads(sys.stdin.read(size))
+        print >> sys.stderr, cmd, arg
+        if cmd == 'key':
+            chars = arg['chars']
+            if chars == u'\x7f':
+                if len(text):
+                    text = text[:-1]
+            else:
+                text += chars
+            send(['settext', text])
+
+mainloop()

@@ -19,18 +19,20 @@ class CoreConnection {
     var inHandle: NSFileHandle  // stdin of core process
     var sizeBuf: NSMutableData
     var recvBuf: NSMutableData
+    var callback: NSData -> ()
 
-    init(path: String) {
+    init(path: String, callback: NSData -> ()) {
         let task = NSTask()
         task.launchPath = path
         task.arguments = []
         let outPipe = NSPipe()
         task.standardOutput = outPipe
-        sizeBuf = NSMutableData(length: 4)!
+        sizeBuf = NSMutableData(length: 8)!
         let inPipe = NSPipe()
         task.standardInput = inPipe
         inHandle = inPipe.fileHandleForWriting
         recvBuf = NSMutableData(capacity: 65536)!
+        self.callback = callback
         outPipe.fileHandleForReading.readabilityHandler = { handle -> Void in
             let data = handle.availableData
             self.recvHandler(data)
@@ -56,11 +58,11 @@ class CoreConnection {
                 size += (Int(recvBufBytes[i + j]) as Int) << (j * 8)
             }
             let dataPacket = recvBuf.subdataWithRange(NSRange(location: i + 8, length: size))
-            print("got \(dataPacket)")
+            callback(dataPacket)
             i += 8 + size
         }
         if i < recvBufLen {
-            memmove(recvBufBytes, recvBufBytes - i, recvBufLen - i)
+            memmove(recvBufBytes, recvBufBytes + i, recvBufLen - i)
         }
         recvBuf.length = recvBufLen - i
     }

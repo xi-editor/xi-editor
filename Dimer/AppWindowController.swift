@@ -15,11 +15,15 @@
 import Cocoa
 
 class AppWindowController: NSWindowController {
+    @IBOutlet weak var editView: EditView!
+    var eventCallback: (NSEvent -> ())?
 
     override func windowDidLoad() {
         super.windowDidLoad()
-        Swift.print("window did load")
-        // Implement this method to handle any initialization after your window controller's window has been loaded from its nib file.
+        editView.mySetText("initial text")
+        editView.eventCallback = { [weak self] event -> () in
+            self?.eventCallback?(event)
+        }
     }
 
 }
