@@ -1,0 +1,9 @@
+[package]
+name = "rust-json-stuff"
+version = "0.0.0"
+license = "Apache-2.0"
+authors = ["Raph Levien <raph@google.com>"]
+
+[dependencies]
+serde = "*"
+serde_json = "*"
