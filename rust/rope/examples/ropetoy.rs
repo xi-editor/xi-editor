@@ -20,14 +20,13 @@ use dimer_rope::Rope;
 
 fn main() {
     let mut a = Rope::from_str("hello.");
-    a = a.replace_str(5, 6, "!");
-    for _ in 0..1000000 {
-        let l = a.size();
-        //a = a.replace_str(l, l, &(i.to_string() + "\n"));
-        a = a.replace_str(l, l, "aaaaaaa");
+    a = a.edit_str(5, 6, "!");
+    for i in 0..1000000 {
+        let l = a.len();
+        a = a.edit_str(l, l, &(i.to_string() + "\n"));
     }
-    let l = a.size();
-    a = a.replace_str(1000, l, "");
+    let l = a.len();
+    a = a.edit_str(1000, l, "");
     //a = a.subrange(0, 1000);
-    println!("{:?}", a);
+    println!("{:?}", a.into_string());
 }
