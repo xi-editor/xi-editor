@@ -31,6 +31,7 @@ fn is_char_boundary(s: &str, index: usize) -> bool {
 }
 
 // The main rope data structure.
+#[derive(Clone)]
 pub struct Rope {
     root: Node,
     start: usize,
@@ -116,7 +117,16 @@ impl Rope {
         b.build_rope()
     }
 
+    pub fn iter_chunks(&self) -> ChunkIter {
+        ChunkIter {
+            root: &self.root,
+            start: self.start,
+            end: self.start + self.len
+        }
+    }
+
     // return condition: result is_full
+    // TODO: maybe return a node, we always seem to use that?
     fn normalize(self) -> Rope {
         if self.is_full() {
             self
@@ -559,6 +569,47 @@ impl RopeBuilder {
 
     fn build_rope(self) -> Rope {
         Rope::from_node(self.build())
+    }
+}
+
+// chunk iterator
+
+pub struct ChunkIter<'a> {
+    root: &'a Node,
+    start: usize,  // advances
+    end: usize
+}
+
+impl<'a> Iterator for ChunkIter<'a> {
+    type Item = &'a str;
+
+    // This implementation drills down from the root every time.
+    fn next(&mut self) -> Option<&'a str> {
+        if self.start >= self.end {
+            return None;
+        }
+        let mut node = self.root;
+        let mut offset = 0;
+        while node.height() > 0 {
+            let children = node.get_children();
+            let mut i = 0;
+            loop {
+                let nextoff = offset + children[i].len();
+                if nextoff > self.start {
+                    break;
+                }
+                offset = nextoff;
+                i += 1;
+            }
+            node = &children[i];
+        }
+        if let &NodeVal::Leaf(ref s) = &node.0.val {
+            let result = &s[self.start - offset .. min(s.len(), self.end - offset)];
+            self.start = offset + s.len();
+            return Some(result);
+        } else {
+            panic!("height and node type inconsistent");
+        }
     }
 }
 

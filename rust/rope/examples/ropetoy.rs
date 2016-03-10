@@ -26,6 +26,9 @@ fn main() {
         a = a.edit_str(l, l, &(i.to_string() + "\n"));
     }
     let l = a.len();
+    for s in a.clone().slice(1000, 3000).iter_chunks() {
+        println!("chunk {:?}", s);
+    }
     a = a.edit_str(1000, l, "");
     //a = a.subrange(0, 1000);
     println!("{:?}", a.into_string());
