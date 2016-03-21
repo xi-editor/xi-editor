@@ -72,8 +72,19 @@ impl Rope {
     }
 
     pub fn into_string(self) -> String {
-        // TODO: normalize call can be wasteful
-        self.normalize().root.into_string()
+        if self.is_full() {
+            self.root.into_string()
+        } else {
+            let mut result = String::new();
+            self.push_to_string(&mut result);
+            result
+        }
+    }
+
+    pub fn push_to_string(&self, dst: &mut String) {
+        for chunk in self.iter_chunks() {
+            dst.push_str(chunk);
+        }
     }
 
     // Maybe take Range arguments as well (would need traits)
@@ -121,7 +132,9 @@ impl Rope {
         ChunkIter {
             root: &self.root,
             start: self.start,
-            end: self.start + self.len
+            end: self.start + self.len,
+            cache: [None; CHUNK_CACHE_SIZE],
+            first: true
         }
     }
 
@@ -574,20 +587,54 @@ impl RopeBuilder {
 
 // chunk iterator
 
+const CHUNK_CACHE_SIZE: usize = 4;
+
 pub struct ChunkIter<'a> {
     root: &'a Node,
     start: usize,  // advances
-    end: usize
+    end: usize,
+    cache: [Option<(&'a Node, usize)>; CHUNK_CACHE_SIZE],
+    first: bool
 }
 
 impl<'a> Iterator for ChunkIter<'a> {
     type Item = &'a str;
 
-    // This implementation drills down from the root every time.
     fn next(&mut self) -> Option<&'a str> {
-        if self.start >= self.end {
+        let start = self.start;
+        if start >= self.end {
             return None;
         }
+        if self.first {
+            self.first = false;
+            let (node, offset) = self.descend();
+            return self.finish_leaf(node, offset);
+        }
+        let (node, j) = self.cache[0].unwrap();
+        if j < node.get_children().len() {
+            return self.finish_leaf(&node.get_children()[j], start);
+        }
+        for i in 1..CHUNK_CACHE_SIZE {
+            let (node, j) = self.cache[i].unwrap();
+            if j + 1 < node.get_children().len() {
+                self.cache[i] = Some((node, j + 1));
+                let mut node_down = &node.get_children()[j + 1];
+                for k in (0..i).rev() {
+                    self.cache[k] = Some((node_down, 0));
+                    node_down = &node_down.get_children()[0];
+                }
+                return self.finish_leaf(node_down, start);
+            }
+        }
+        let (node, offset) = self.descend();
+        assert_eq!(offset, start);
+        self.finish_leaf(node, offset)
+    }
+}
+
+impl<'a> ChunkIter<'a> {
+    // descend from root, filling cache. Return is leaf node and its offset.
+    fn descend(&mut self) -> (&'a Node, usize) {
         let mut node = self.root;
         let mut offset = 0;
         while node.height() > 0 {
@@ -601,11 +648,23 @@ impl<'a> Iterator for ChunkIter<'a> {
                 offset = nextoff;
                 i += 1;
             }
+            let cache_ix = node.height() - 1;
+            if cache_ix < CHUNK_CACHE_SIZE {
+                self.cache[cache_ix] = Some((node, i));
+            }
             node = &children[i];
         }
+        (node, offset)
+    }
+
+    fn finish_leaf(&mut self, node: &'a Node, offset: usize) -> Option<&'a str> {
         if let &NodeVal::Leaf(ref s) = &node.0.val {
             let result = &s[self.start - offset .. min(s.len(), self.end - offset)];
-            self.start = offset + s.len();
+            self.start += result.len();
+            if self.start < self.end {
+                let (node, j) = self.cache[0].unwrap();
+                self.cache[0] = Some((node, j + 1));
+            }
             return Some(result);
         } else {
             panic!("height and node type inconsistent");
