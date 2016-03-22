@@ -15,6 +15,7 @@
 //! A rope data structure suitable for text editing
 
 use std::rc::Rc;
+use std::borrow::Cow;
 use std::cmp::{min,max};
 use std::ops::Add;
 //use std::fmt::{Debug, Formatter};
@@ -45,6 +46,7 @@ struct Node(Rc<NodeBody>);
 struct NodeBody {
     height: usize,
     len: usize,
+    newline_count: usize,
     val: NodeVal
 }
 
@@ -62,9 +64,14 @@ impl Debug for Rope {
 }
 */
 
+// TODO: explore ways to make this faster - SIMD would be a big win
+fn count_newlines(s: &str) -> usize {
+    s.as_bytes().iter().filter(|&&c| c == b'\n').count()
+}
+
 impl Rope {
-    pub fn from_str(s: &str) -> Rope {
-        Rope::from_node(Node::from_str(s))
+    pub fn from_str<T: AsRef<str>>(s: T) -> Rope {
+        Rope::from_node(Node::from_str(s.as_ref()))
     }
 
     pub fn len(&self) -> usize {
@@ -75,10 +82,14 @@ impl Rope {
         if self.is_full() {
             self.root.into_string()
         } else {
-            let mut result = String::new();
-            self.push_to_string(&mut result);
-            result
+            self.to_string()
         }
+    }
+
+    pub fn to_string(&self) -> String {
+        let mut result = String::new();
+        self.push_to_string(&mut result);
+        result    
     }
 
     pub fn push_to_string(&self, dst: &mut String) {
@@ -90,6 +101,8 @@ impl Rope {
     // Maybe take Range arguments as well (would need traits)
     pub fn slice(self, mut start: usize, mut end: usize) -> Rope {
         let mut root = self.root;
+        start += self.start;
+        end += self.start;
         while root.height() > 0 {
             if let Some((i, offset)) = Node::try_find_child(root.get_children(), start, end) {
                 root = root.get_children()[i].clone();
@@ -101,7 +114,7 @@ impl Rope {
         }
         Rope {
             root: root,
-            start: start + self.start,
+            start: start,
             len: end - start
         }
     }
@@ -135,6 +148,47 @@ impl Rope {
             end: self.start + self.len,
             cache: [None; CHUNK_CACHE_SIZE],
             first: true
+        }
+    }
+
+    // access to line structure
+
+    // equivalent to the newline count of the slice up to offset
+    pub fn line_of_offset(&self, offset: usize) -> usize {
+        if offset > self.len {
+            panic!("offset out of range");
+        }
+        self.root.line_of_offset(offset + self.start) - self.root.line_of_offset(self.start)
+    }
+
+    pub fn offset_of_line(&self, line: usize) -> usize {
+        let start_line = self.root.line_of_offset(self.start);
+        let result = self.root.offset_of_line(line + start_line) - self.start;
+        // TODO: better checking of line out of range
+        min(result, self.len)
+    }
+
+    /// An iterator over the raw lines. The lines, except the last, include the newline.
+    pub fn lines_raw(&self) -> LinesRaw {
+        LinesRaw {
+            inner: self.iter_chunks(),
+            fragment: ""
+        }
+    }
+
+    /// An iterator over the lines of a rope.
+    ///
+    /// Lines are ended with either Unix (`\n`) or MS-DOS (`\r\n`) style line endings.
+    /// The line ending is stripped from the resulting string. The final line ending
+    /// is optional.
+    ///
+    /// The return type is a `Cow<str>`, and in most cases the lines are slices borrowed
+    /// from the rope.
+    ///
+    /// The semantics are intended to match `str::lines()`.
+    pub fn lines(&self) -> Lines {
+        Lines {
+            inner: self.lines_raw()
         }
     }
 
@@ -205,11 +259,23 @@ impl Node {
         self.0.len
     }
 
+    fn newline_count(&self) -> usize {
+        self.0.newline_count
+    }
+
     fn get_children(&self) -> &[Node] {
         if let &NodeVal::Internal(ref v) = &self.0.val {
             v
         } else {
             panic!("get_children called on leaf node");
+        }
+    }
+
+    fn get_leaf(&self) -> &str {
+        if let &NodeVal::Leaf(ref s) = &self.0.val {
+            &s
+        } else {
+            panic!("get_leaf called on internal node");
         }
     }
 
@@ -225,6 +291,7 @@ impl Node {
         Node::new(NodeBody {
             height: 0,
             len: s.len(),
+            newline_count: count_newlines(&s),
             val: NodeVal::Leaf(s)
         })
     }
@@ -234,6 +301,7 @@ impl Node {
         Node::new(NodeBody {
             height: pieces[0].height() + 1,
             len: pieces.iter().fold(0, |sum, r| sum + r.len()),
+            newline_count: pieces.iter().fold(0, |sum, r| sum + r.newline_count()),
             val: NodeVal::Internal(pieces)
         })
     }
@@ -274,7 +342,7 @@ impl Node {
                     Node::from_string_piece(s)
                 } else {
                     let splitpoint = find_leaf_split_for_merge(&s);
-                    let right_str = s[splitpoint..].to_string();
+                    let right_str = s[splitpoint..].to_owned();
                     s.truncate(splitpoint);
                     // TODO: s probably has too much capacity, is wasteful
                     let left = Node::from_string_piece(s);
@@ -384,15 +452,12 @@ impl Node {
         }
         let newsize = size_plus_new - (end - start);
         *n = {
-            if let &NodeVal::Leaf(ref s) = &n.0.val {
-                let mut newstr = String::with_capacity(newsize);
-                newstr.push_str(&s[..start]);
-                newstr.push_str(new);
-                newstr.push_str(&s[end..]);
-                Node::from_string_piece(newstr)
-            } else {
-                panic!("height and node type inconsistent");
-            }
+            let s = n.get_leaf();
+            let mut newstr = String::with_capacity(newsize);
+            newstr.push_str(&s[..start]);
+            newstr.push_str(new);
+            newstr.push_str(&s[end..]);
+            Node::from_string_piece(newstr)
         };
         return true;
     }
@@ -427,10 +492,12 @@ impl Node {
             match node.val {
                 NodeVal::Internal(ref mut v) => {
                     if let Some((i, offset)) = Node::try_find_child(&v, start, end) {
+                        let old_nl_count = v[i].newline_count();
                         success = Node::try_replace_str(&mut v[i], start - offset, end - offset, new);
                         if success {
                             // update invariants
                             node.len = node.len - (end - start) + new.len();
+                            node.newline_count = node.newline_count - old_nl_count + v[i].newline_count();
                         }
                     }
                 },
@@ -490,6 +557,51 @@ impl Node {
         rope.push_to_string(&mut result);
         result
     }
+
+    // line access
+
+    fn line_of_offset(&self, mut offset: usize) -> usize {
+        if offset == 0 { return 0; }
+        if offset == self.len() { return self.newline_count(); }
+        let mut result = 0;
+        let mut node = self;
+        while node.height() > 0 {
+            for child in node.get_children() {
+                if child.len() > offset {
+                    node = child;
+                    break;
+                }
+                result += child.newline_count();
+                offset -= child.len();
+            }
+        }
+        result + count_newlines(&node.get_leaf()[..offset])
+    }
+
+    fn offset_of_line(&self, mut line: usize) -> usize {
+        if line == 0 { return 0; }
+        if line > self.newline_count() { return self.len(); }
+        let mut result = 0;
+        let mut node = self;
+        while node.height() > 0 {
+            for child in node.get_children() {
+                if child.newline_count() >= line {
+                    node = child;
+                    break;
+                }
+                result += child.len();
+                line -= child.newline_count();
+            }
+        }
+        let mut s = node.get_leaf();
+        while line > 0 {
+            let i = s.as_bytes().iter().position(|&c| c == b'\n').unwrap() + 1;
+            result += i;
+            line -= 1;
+            s = &s[i..];
+        }
+        result
+    }
 }
 
 fn find_leaf_split_for_bulk(s: &str) -> usize {
@@ -536,7 +648,7 @@ impl RopeBuilder {
 
     // precondition: s.len() <= MAX_LEAF
     fn push_str_short(&mut self, s: &str) {
-        self.push(Node::from_string_piece(s.to_string()));
+        self.push(Node::from_string_piece(s.to_owned()));
     }
 
     fn push_str(&mut self, mut s: &str) {
@@ -553,7 +665,7 @@ impl RopeBuilder {
             } else {
                 s.len()
             };
-            let mut new = Node::from_string_piece(s[..splitpoint].to_string());
+            let mut new = Node::from_string_piece(s[..splitpoint].to_owned());
             s = &s[splitpoint..];
             loop {
                 if stack.last().map_or(true, |r| r[0].height() != new.height()) {
@@ -658,44 +770,221 @@ impl<'a> ChunkIter<'a> {
     }
 
     fn finish_leaf(&mut self, node: &'a Node, offset: usize) -> Option<&'a str> {
-        if let &NodeVal::Leaf(ref s) = &node.0.val {
-            let result = &s[self.start - offset .. min(s.len(), self.end - offset)];
-            self.start += result.len();
-            if self.start < self.end {
-                let (node, j) = self.cache[0].unwrap();
-                self.cache[0] = Some((node, j + 1));
+        let s = node.get_leaf();
+        let result = &s[self.start - offset .. min(s.len(), self.end - offset)];
+        self.start += result.len();
+        if self.start < self.end {
+            let (node, j) = self.cache[0].unwrap();
+            self.cache[0] = Some((node, j + 1));
+        }
+        Some(result)
+    }
+}
+
+// line iterators
+
+pub struct LinesRaw<'a> {
+    inner: ChunkIter<'a>,
+    fragment: &'a str
+}
+
+fn cow_append<'a>(a: Cow<'a, str>, b: &'a str) -> Cow<'a, str> {
+    if a.is_empty() {
+        Cow::from(b)
+    } else {
+        Cow::from(a.into_owned() + b)
+    }
+}
+
+impl<'a> Iterator for LinesRaw<'a> {
+    type Item = Cow<'a, str>;
+
+    fn next(&mut self) -> Option<Cow<'a, str>> {
+        let mut result = Cow::from("");
+        loop {
+            if self.fragment.is_empty() {
+                match self.inner.next() {
+                    Some(chunk) => self.fragment = chunk,
+                    None => return if result.is_empty() { None } else { Some(result) }
+                }
+                if self.fragment.is_empty() {
+                    // can only happen on empty input
+                    return None;
+                }
             }
-            return Some(result);
-        } else {
-            panic!("height and node type inconsistent");
+            match self.fragment.as_bytes().iter().position(|&c| c == b'\n') {
+                Some(i) => {
+                    result = cow_append(result, &self.fragment[.. i + 1]);
+                    self.fragment = &self.fragment[i + 1 ..];
+                    return Some(result);
+                },
+                None => {
+                    result = cow_append(result, self.fragment);
+                    self.fragment = "";
+                }
+            }
         }
     }
 }
+
+pub struct Lines<'a> {
+    inner: LinesRaw<'a>
+}
+
+impl<'a> Iterator for Lines<'a> {
+    type Item = Cow<'a, str>;
+
+    fn next(&mut self) -> Option<Cow<'a, str>> {
+        match self.inner.next() {
+            Some(Cow::Borrowed(mut s)) => {
+                if s.ends_with('\n') {
+                    s = &s[..s.len() - 1];
+                    if s.ends_with('\r') {
+                        s = &s[..s.len() - 1];
+                    }
+                }
+                Some(Cow::from(s))
+            },
+            Some(Cow::Owned(mut s)) => {
+                if s.ends_with('\n') {
+                    let _ = s.pop();
+                    if s.ends_with('\r') {
+                        let _ = s.pop();
+                    }
+                }
+                Some(Cow::from(s))
+            }
+            None => None
+        }
+    }
+}
+
 
 #[test]
 fn concat_small() {
     let a = Rope::from_str("hello ");
     let b = Rope::from_str("world");
-    assert_eq!("hello world", (a + b).into_string());
+    assert_eq!("hello world", (a + b).to_string());
 }
 
 #[test]
 fn subrange_small() {
     let a = Rope::from_str("hello world");
-    assert_eq!("ello wor", a.slice(1, 9).into_string());
+    let b = a.slice(1, 9);
+    assert_eq!("ello wor", b.to_string());
+    let c = b.slice(1, 7);
+    assert_eq!("llo wo", c.to_string());
 }
 
 #[test]
 fn replace_small() {
     let a = Rope::from_str("hello world");
-    assert_eq!("herald", a.edit_str(1, 9, "era").into_string());
+    assert_eq!("herald", a.edit_str(1, 9, "era").to_string());
+}
+
+#[test]
+fn line_of_offset_small() {
+    let a = Rope::from_str("a\nb\nc");
+    assert_eq!(0, a.line_of_offset(0));
+    assert_eq!(0, a.line_of_offset(1));
+    assert_eq!(1, a.line_of_offset(2));
+    assert_eq!(1, a.line_of_offset(3));
+    assert_eq!(2, a.line_of_offset(4));
+    assert_eq!(2, a.line_of_offset(5));
+    let b = a.slice(2, 4);
+    assert_eq!(0, b.line_of_offset(0));
+    assert_eq!(0, b.line_of_offset(1));
+    assert_eq!(1, b.line_of_offset(2));
+}
+
+#[test]
+fn offset_of_line_small() {
+    let a = Rope::from_str("a\nb\nc");
+    assert_eq!(0, a.offset_of_line(0));
+    assert_eq!(2, a.offset_of_line(1));
+    assert_eq!(4, a.offset_of_line(2));
+    assert_eq!(5, a.offset_of_line(3));
+    let b = a.slice(2, 4);
+    assert_eq!(0, b.offset_of_line(0));
+    assert_eq!(2, b.offset_of_line(1));
+}
+
+#[test]
+fn lines_raw_small() {
+    let a = Rope::from_str("a\nb\nc");
+    assert_eq!(vec!["a\n", "b\n", "c"], a.lines_raw().collect::<Vec<_>>());
+
+    let a = Rope::from_str("a\nb\n");
+    assert_eq!(vec!["a\n", "b\n"], a.lines_raw().collect::<Vec<_>>());
+
+    let a = Rope::from_str("\n");
+    assert_eq!(vec!["\n"], a.lines_raw().collect::<Vec<_>>());
+
+    let a = Rope::from_str("");
+    assert_eq!(0, a.lines_raw().count());
+}
+
+#[test]
+fn lines_med() {
+    let mut a = String::new();
+    let mut b = String::new();
+    let line_len = MAX_LEAF + MIN_LEAF - 1;
+    for _ in 0..line_len {
+        a.push('a');
+        b.push('b');
+    }
+    a.push('\n');
+    b.push('\n');
+    let r = Rope::from_str(&a[..MAX_LEAF]);
+    let r = r + Rope::from_str(String::from(&a[MAX_LEAF..]) + &b[..MIN_LEAF]);
+    let r = r + Rope::from_str(&b[MIN_LEAF..]);
+    //println!("{:?}", r.iter_chunks().collect::<Vec<_>>());
+
+    assert_eq!(vec![&a[..line_len], &b[..line_len]], r.lines().collect::<Vec<_>>());
+    assert_eq!(vec![a, b], r.lines_raw().collect::<Vec<_>>());
+    assert_eq!(r.to_string().lines().collect::<Vec<_>>(), r.lines().collect::<Vec<_>>());
+
+    // additional tests for line indexing
+    assert_eq!(a.len(), r.offset_of_line(1));
+    assert_eq!(r.len(), r.offset_of_line(2));
+    assert_eq!(0, r.line_of_offset(a.len() - 1));
+    assert_eq!(1, r.line_of_offset(a.len()));
+    assert_eq!(1, r.line_of_offset(r.len() - 1));
+    assert_eq!(2, r.line_of_offset(r.len()));
+}
+
+#[test]
+fn lines_small() {
+    let a = Rope::from_str("a\nb\nc");
+    assert_eq!(vec!["a", "b", "c"], a.lines().collect::<Vec<_>>());
+    assert_eq!(a.to_string().lines().collect::<Vec<_>>(), a.lines().collect::<Vec<_>>());
+
+    let a = Rope::from_str("a\nb\n");
+    assert_eq!(vec!["a", "b"], a.lines().collect::<Vec<_>>());
+    assert_eq!(a.to_string().lines().collect::<Vec<_>>(), a.lines().collect::<Vec<_>>());
+
+    let a = Rope::from_str("\n");
+    assert_eq!(vec![""], a.lines().collect::<Vec<_>>());
+    assert_eq!(a.to_string().lines().collect::<Vec<_>>(), a.lines().collect::<Vec<_>>());
+
+    let a = Rope::from_str("");
+    assert_eq!(0, a.lines().count());
+    assert_eq!(a.to_string().lines().collect::<Vec<_>>(), a.lines().collect::<Vec<_>>());
+
+    let a = Rope::from_str("a\r\nb\r\nc");
+    assert_eq!(vec!["a", "b", "c"], a.lines().collect::<Vec<_>>());
+    assert_eq!(a.to_string().lines().collect::<Vec<_>>(), a.lines().collect::<Vec<_>>());
+
+    let a = Rope::from_str("a\rb\rc");
+    assert_eq!(vec!["a\rb\rc"], a.lines().collect::<Vec<_>>());
+    assert_eq!(a.to_string().lines().collect::<Vec<_>>(), a.lines().collect::<Vec<_>>());
 }
 
 #[test]
 fn append_large() {
     let mut a = Rope::from_str("");
     let mut b = String::new();
-    for i in 0..10_000 {
+    for i in 0..5_000 {
         let c = i.to_string() + "\n";
         b.push_str(&c);
         a = a + c;
