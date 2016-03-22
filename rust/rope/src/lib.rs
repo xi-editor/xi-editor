@@ -31,7 +31,24 @@ fn is_char_boundary(s: &str, index: usize) -> bool {
     index == s.len() || (s.as_bytes()[index] & 0xc0) != 0x80
 }
 
-// The main rope data structure.
+/// A rope data structure.
+///
+/// A [rope](https://en.wikipedia.org/wiki/Rope_(data_structure)) is a data structure
+/// for strings, specialized for incremental editing operations. Most operations
+/// (such as insert, delete, substring) are O(log n). This module provides an immutable
+/// (also known as [persistent](https://en.wikipedia.org/wiki/Persistent_data_structure))
+/// version of Ropes, and if there are many copies of similar strings, the common parts
+/// are shared.
+///
+/// Internally, the implementation uses reference counting (not thread safe, though
+/// it would be easy enough to modify to use `Arc` instead of `Rc` if that were
+/// required). Mutations are generally copy-on-write, though in-place edits are
+/// supported as an optimization when only one reference exists, making the
+/// implementation as efficient as a mutable version.
+///
+/// Also note: in addition to the `From` traits described below, this module
+/// implements `From<Rope> for String` and `From<&Rope> for String`, for easy
+/// conversions in both directions.
 #[derive(Clone)]
 pub struct Rope {
     root: Node,
@@ -70,35 +87,28 @@ fn count_newlines(s: &str) -> usize {
 }
 
 impl Rope {
-    pub fn from_str<T: AsRef<str>>(s: T) -> Rope {
-        Rope::from_node(Node::from_str(s.as_ref()))
-    }
-
+    /// Returns the length of `self`.
+    ///
+    /// The length is in bytes, the same as `str::len()`.
+    ///
+    /// Time complexity: O(1)
     pub fn len(&self) -> usize {
         self.len
     }
 
-    pub fn into_string(self) -> String {
-        if self.is_full() {
-            self.root.into_string()
-        } else {
-            self.to_string()
-        }
-    }
-
-    pub fn to_string(&self) -> String {
-        let mut result = String::new();
-        self.push_to_string(&mut result);
-        result    
-    }
-
+    /// Appends `self` to the destination string.
+    ///
+    /// Time complexity: effectively O(n)
     pub fn push_to_string(&self, dst: &mut String) {
         for chunk in self.iter_chunks() {
             dst.push_str(chunk);
         }
     }
 
+    /// Returns a slice of the string from the byte range [`start`..`end`).
     // Maybe take Range arguments as well (would need traits)
+    ///
+    /// Time complexity: O(log n)
     pub fn slice(self, mut start: usize, mut end: usize) -> Rope {
         let mut root = self.root;
         start += self.start;
@@ -119,6 +129,12 @@ impl Rope {
         }
     }
 
+    /// Return an edited version of the string with the byte range [`start`..`end`)
+    /// replaced by `new`.
+    ///
+    /// Note: `edit` and `edit_str` may be merged, using traits.
+    ///
+    /// Time complexity: O(log n)
     pub fn edit(self, start: usize, end: usize, new: Rope) -> Rope {
         if self.is_full() {
             return Rope::from_node(self.root.replace(start, end, new.normalize().root));
@@ -130,6 +146,12 @@ impl Rope {
         b.build_rope()
     }
 
+    /// Return an edited version of the string with the byte range [`start`..`end`)
+    /// replaced by `new`.
+    ///
+    /// Note: `edit` and `edit_str` may be merged, using traits.
+    ///
+    /// Time complexity: O(log n)
     pub fn edit_str(self, start: usize, end: usize, new: &str) -> Rope {
         if self.is_full() {
             return Rope::from_node(self.root.replace_str(start, end, new));
@@ -141,6 +163,17 @@ impl Rope {
         b.build_rope()
     }
 
+    /// Returns an iterator over chunks of the rope.
+    ///
+    /// Each chunk is a `&str` slice borrowed from the rope's storage. The size
+    /// of the chunks is indeterminate but for large strings will generally be
+    /// in the range of 511-1024 bytes.
+    ///
+    /// The empty string will yield a single empty slice. In all other cases, the
+    /// slices will be nonempty.
+    ///
+    /// Time complexity: technically O(n log n), but the constant factor is so
+    /// tiny it is effectively O(n). This iterator does not allocate.
     pub fn iter_chunks(&self) -> ChunkIter {
         ChunkIter {
             root: &self.root,
@@ -153,7 +186,12 @@ impl Rope {
 
     // access to line structure
 
-    // equivalent to the newline count of the slice up to offset
+    /// Return the line number corresponding to the byte index `offset`.
+    ///
+    /// The line number is 0-based, thus this is equivalent to the count of newlines
+    /// in the slice up to `offset`.
+    ///
+    /// Time complexity: O(log n)
     pub fn line_of_offset(&self, offset: usize) -> usize {
         if offset > self.len {
             panic!("offset out of range");
@@ -161,6 +199,11 @@ impl Rope {
         self.root.line_of_offset(offset + self.start) - self.root.line_of_offset(self.start)
     }
 
+    /// Return the byte offset corresponding to the line number `line`.
+    ///
+    /// The line number is 0-based.
+    ///
+    /// Time complexity: O(log n)
     pub fn offset_of_line(&self, line: usize) -> usize {
         let start_line = self.root.line_of_offset(self.start);
         let result = self.root.offset_of_line(line + start_line) - self.start;
@@ -168,7 +211,11 @@ impl Rope {
         min(result, self.len)
     }
 
-    /// An iterator over the raw lines. The lines, except the last, include the newline.
+    /// An iterator over the raw lines. The lines, except the last, include the
+    /// terminating newline.
+    ///
+    /// The return type is a `Cow<str>`, and in most cases the lines are slices borrowed
+    /// from the rope.
     pub fn lines_raw(&self) -> LinesRaw {
         LinesRaw {
             inner: self.iter_chunks(),
@@ -215,6 +262,30 @@ impl Rope {
             start: 0,
             len: len
         }
+    }
+}
+
+impl<T: AsRef<str>> From<T> for Rope {
+    fn from(s: T) -> Rope {
+        Rope::from_node(Node::from_str(s.as_ref()))
+    }
+}
+
+impl From<Rope> for String {
+    fn from(r: Rope) -> String {
+        if r.is_full() {
+            r.root.into_string()
+        } else {
+            String::from(&r)
+        }
+    }
+}
+
+impl<'a> From<&'a Rope> for String {
+    fn from(r: &Rope) -> String {
+        let mut result = String::new();
+        r.push_to_string(&mut result);
+        result
     }
 }
 
@@ -847,29 +918,29 @@ impl<'a> Iterator for Lines<'a> {
 
 #[test]
 fn concat_small() {
-    let a = Rope::from_str("hello ");
-    let b = Rope::from_str("world");
-    assert_eq!("hello world", (a + b).to_string());
+    let a = Rope::from("hello ");
+    let b = Rope::from("world");
+    assert_eq!("hello world", String::from(a + b));
 }
 
 #[test]
 fn subrange_small() {
-    let a = Rope::from_str("hello world");
+    let a = Rope::from("hello world");
     let b = a.slice(1, 9);
-    assert_eq!("ello wor", b.to_string());
+    assert_eq!("ello wor", String::from(&b));
     let c = b.slice(1, 7);
-    assert_eq!("llo wo", c.to_string());
+    assert_eq!("llo wo", String::from(c));
 }
 
 #[test]
 fn replace_small() {
-    let a = Rope::from_str("hello world");
-    assert_eq!("herald", a.edit_str(1, 9, "era").to_string());
+    let a = Rope::from("hello world");
+    assert_eq!("herald", String::from(a.edit_str(1, 9, "era")));
 }
 
 #[test]
 fn line_of_offset_small() {
-    let a = Rope::from_str("a\nb\nc");
+    let a = Rope::from("a\nb\nc");
     assert_eq!(0, a.line_of_offset(0));
     assert_eq!(0, a.line_of_offset(1));
     assert_eq!(1, a.line_of_offset(2));
@@ -884,7 +955,7 @@ fn line_of_offset_small() {
 
 #[test]
 fn offset_of_line_small() {
-    let a = Rope::from_str("a\nb\nc");
+    let a = Rope::from("a\nb\nc");
     assert_eq!(0, a.offset_of_line(0));
     assert_eq!(2, a.offset_of_line(1));
     assert_eq!(4, a.offset_of_line(2));
@@ -896,16 +967,16 @@ fn offset_of_line_small() {
 
 #[test]
 fn lines_raw_small() {
-    let a = Rope::from_str("a\nb\nc");
+    let a = Rope::from("a\nb\nc");
     assert_eq!(vec!["a\n", "b\n", "c"], a.lines_raw().collect::<Vec<_>>());
 
-    let a = Rope::from_str("a\nb\n");
+    let a = Rope::from("a\nb\n");
     assert_eq!(vec!["a\n", "b\n"], a.lines_raw().collect::<Vec<_>>());
 
-    let a = Rope::from_str("\n");
+    let a = Rope::from("\n");
     assert_eq!(vec!["\n"], a.lines_raw().collect::<Vec<_>>());
 
-    let a = Rope::from_str("");
+    let a = Rope::from("");
     assert_eq!(0, a.lines_raw().count());
 }
 
@@ -920,14 +991,14 @@ fn lines_med() {
     }
     a.push('\n');
     b.push('\n');
-    let r = Rope::from_str(&a[..MAX_LEAF]);
-    let r = r + Rope::from_str(String::from(&a[MAX_LEAF..]) + &b[..MIN_LEAF]);
-    let r = r + Rope::from_str(&b[MIN_LEAF..]);
+    let r = Rope::from(&a[..MAX_LEAF]);
+    let r = r + Rope::from(String::from(&a[MAX_LEAF..]) + &b[..MIN_LEAF]);
+    let r = r + Rope::from(&b[MIN_LEAF..]);
     //println!("{:?}", r.iter_chunks().collect::<Vec<_>>());
 
     assert_eq!(vec![a.as_str(), b.as_str()], r.lines_raw().collect::<Vec<_>>());
     assert_eq!(vec![&a[..line_len], &b[..line_len]], r.lines().collect::<Vec<_>>());
-    assert_eq!(r.to_string().lines().collect::<Vec<_>>(), r.lines().collect::<Vec<_>>());
+    assert_eq!(String::from(&r).lines().collect::<Vec<_>>(), r.lines().collect::<Vec<_>>());
 
     // additional tests for line indexing
     assert_eq!(a.len(), r.offset_of_line(1));
@@ -940,39 +1011,39 @@ fn lines_med() {
 
 #[test]
 fn lines_small() {
-    let a = Rope::from_str("a\nb\nc");
+    let a = Rope::from("a\nb\nc");
     assert_eq!(vec!["a", "b", "c"], a.lines().collect::<Vec<_>>());
-    assert_eq!(a.to_string().lines().collect::<Vec<_>>(), a.lines().collect::<Vec<_>>());
+    assert_eq!(String::from(&a).lines().collect::<Vec<_>>(), a.lines().collect::<Vec<_>>());
 
-    let a = Rope::from_str("a\nb\n");
+    let a = Rope::from("a\nb\n");
     assert_eq!(vec!["a", "b"], a.lines().collect::<Vec<_>>());
-    assert_eq!(a.to_string().lines().collect::<Vec<_>>(), a.lines().collect::<Vec<_>>());
+    assert_eq!(String::from(&a).lines().collect::<Vec<_>>(), a.lines().collect::<Vec<_>>());
 
-    let a = Rope::from_str("\n");
+    let a = Rope::from("\n");
     assert_eq!(vec![""], a.lines().collect::<Vec<_>>());
-    assert_eq!(a.to_string().lines().collect::<Vec<_>>(), a.lines().collect::<Vec<_>>());
+    assert_eq!(String::from(&a).lines().collect::<Vec<_>>(), a.lines().collect::<Vec<_>>());
 
-    let a = Rope::from_str("");
+    let a = Rope::from("");
     assert_eq!(0, a.lines().count());
-    assert_eq!(a.to_string().lines().collect::<Vec<_>>(), a.lines().collect::<Vec<_>>());
+    assert_eq!(String::from(&a).lines().collect::<Vec<_>>(), a.lines().collect::<Vec<_>>());
 
-    let a = Rope::from_str("a\r\nb\r\nc");
+    let a = Rope::from("a\r\nb\r\nc");
     assert_eq!(vec!["a", "b", "c"], a.lines().collect::<Vec<_>>());
-    assert_eq!(a.to_string().lines().collect::<Vec<_>>(), a.lines().collect::<Vec<_>>());
+    assert_eq!(String::from(&a).lines().collect::<Vec<_>>(), a.lines().collect::<Vec<_>>());
 
-    let a = Rope::from_str("a\rb\rc");
+    let a = Rope::from("a\rb\rc");
     assert_eq!(vec!["a\rb\rc"], a.lines().collect::<Vec<_>>());
-    assert_eq!(a.to_string().lines().collect::<Vec<_>>(), a.lines().collect::<Vec<_>>());
+    assert_eq!(String::from(&a).lines().collect::<Vec<_>>(), a.lines().collect::<Vec<_>>());
 }
 
 #[test]
 fn append_large() {
-    let mut a = Rope::from_str("");
+    let mut a = Rope::from("");
     let mut b = String::new();
     for i in 0..5_000 {
         let c = i.to_string() + "\n";
         b.push_str(&c);
         a = a + c;
     }
-    assert_eq!(b, a.into_string());
+    assert_eq!(b, String::from(a));
 }

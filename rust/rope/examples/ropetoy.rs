@@ -19,7 +19,7 @@ extern crate dimer_rope;
 use dimer_rope::Rope;
 
 fn main() {
-    let mut a = Rope::from_str("hello.");
+    let mut a = Rope::from("hello.");
     a = a.edit_str(5, 6, "!");
     for i in 0..1000000 {
         let l = a.len();
@@ -31,5 +31,5 @@ fn main() {
     }
     a = a.edit_str(1000, l, "");
     //a = a.subrange(0, 1000);
-    println!("{:?}", a.into_string());
+    println!("{:?}", String::from(a));
 }
