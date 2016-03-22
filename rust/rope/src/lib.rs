@@ -309,10 +309,7 @@ impl Node {
     fn merge_nodes(children1: &[Node], children2: &[Node]) -> Node {
         let n_children = children1.len() + children2.len();
         if n_children <= MAX_CHILDREN {
-            let mut v = Vec::with_capacity(n_children);
-            v.extend_from_slice(children1);
-            v.extend_from_slice(children2);
-            Node::from_pieces(v)
+            Node::from_pieces([children1, children2].concat())
         } else {
             // Note: this leans left. Splitting at midpoint is also an option
             let splitpoint = min(MAX_CHILDREN, n_children - MIN_CHILDREN);
@@ -332,13 +329,8 @@ impl Node {
         // TODO: try to reuse rope1 if uniquely owned
         match (&rope1.0.val, &rope2.0.val) {
             (&NodeVal::Leaf(ref s1), &NodeVal::Leaf(ref s2)) => {
-                let size = s1.len() + s2.len();
-                // There might be a more convenient idiom for this, but it
-                // guarantees the desired allocation behavior.
-                let mut s = String::with_capacity(size);
-                s.push_str(s1);
-                s.push_str(s2);
-                if size <= MAX_LEAF {
+                let mut s = [s1.as_str(), s2.as_str()].concat();
+                if s.len() <= MAX_LEAF {
                     Node::from_string_piece(s)
                 } else {
                     let splitpoint = find_leaf_split_for_merge(&s);
@@ -450,13 +442,9 @@ impl Node {
         if size_plus_new < MIN_LEAF + (end - start) || size_plus_new > MAX_LEAF + (end - start) {
             return false;
         }
-        let newsize = size_plus_new - (end - start);
         *n = {
             let s = n.get_leaf();
-            let mut newstr = String::with_capacity(newsize);
-            newstr.push_str(&s[..start]);
-            newstr.push_str(new);
-            newstr.push_str(&s[end..]);
+            let newstr = [&s[..start], new, &s[end..]].concat();
             Node::from_string_piece(newstr)
         };
         return true;
@@ -513,10 +501,7 @@ impl Node {
             if let Some((i, offset)) = Node::try_find_child(children, start, end) {
                 let mut child = children[i].clone();
                 if Node::try_replace_str(&mut child, start - offset, end - offset, new) {
-                    let mut v = Vec::with_capacity(children.len());
-                    v.extend_from_slice(&children[..i]);
-                    v.push(child);
-                    v.extend_from_slice(&children[i + 1 ..]);
+                    let v = [&children[..i], &[child][..], &children[i + 1 ..]].concat();
                     result = Some(Node::from_pieces(v));
                 }
             }
@@ -940,8 +925,8 @@ fn lines_med() {
     let r = r + Rope::from_str(&b[MIN_LEAF..]);
     //println!("{:?}", r.iter_chunks().collect::<Vec<_>>());
 
+    assert_eq!(vec![a.as_str(), b.as_str()], r.lines_raw().collect::<Vec<_>>());
     assert_eq!(vec![&a[..line_len], &b[..line_len]], r.lines().collect::<Vec<_>>());
-    assert_eq!(vec![a, b], r.lines_raw().collect::<Vec<_>>());
     assert_eq!(r.to_string().lines().collect::<Vec<_>>(), r.lines().collect::<Vec<_>>());
 
     // additional tests for line indexing
