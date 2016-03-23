@@ -17,6 +17,7 @@
 use std::rc::Rc;
 use std::borrow::Cow;
 use std::cmp::{min,max};
+use std::iter::once;
 use std::ops::Add;
 //use std::fmt::{Debug, Formatter};
 
@@ -529,7 +530,7 @@ impl Node {
         while i < children.len() {
             let nextoff = offset + children[i].len();
             if nextoff >= start {
-                if nextoff <= end {
+                if nextoff >= end {
                     return Some((i, offset));
                 } else {
                     return None;
@@ -915,12 +916,93 @@ impl<'a> Iterator for Lines<'a> {
     }
 }
 
+// Equality and related
+
+fn eq_chunks<'a, T: Iterator<Item=&'a str>, U: Iterator<Item=&'a str>>(mut a: T, mut b: U) -> bool {
+    let mut a_chunk = &b""[..];
+    let mut b_chunk = &b""[..];
+    loop {
+        if a_chunk.is_empty() {
+            if let Some(s) = a.next() { a_chunk = s.as_bytes(); }
+        }
+        if b_chunk.is_empty() {
+            if let Some(s) = b.next() { b_chunk = s.as_bytes(); }
+        }
+        let len = min(a_chunk.len(), b_chunk.len());
+        if len == 0 {
+            return a_chunk.is_empty() && b_chunk.is_empty();
+        }
+        if a_chunk[..len] != b_chunk[..len] {
+            return false;
+        }
+        a_chunk = &a_chunk[len..];
+        b_chunk = &b_chunk[len..];
+    }
+}
+
+impl PartialEq for Rope {
+    fn eq(&self, rhs: &Rope) -> bool {
+        self.len() == rhs.len() && eq_chunks(self.iter_chunks(), rhs.iter_chunks())
+    }
+}
+
+impl Eq for Rope {
+}
+
+impl PartialEq<str> for Rope {
+    fn eq(&self, rhs: &str) -> bool {
+        self.len() == rhs.len() && eq_chunks(self.iter_chunks(), once(rhs))
+    }
+}
+
+impl<'a> PartialEq<&'a str> for Rope {
+    fn eq(&self, rhs: &&str) -> bool {
+        self.len() == rhs.len() && eq_chunks(self.iter_chunks(), once(*rhs))
+    }
+}
+
+impl PartialEq<String> for Rope {
+    fn eq(&self, rhs: &String) -> bool {
+        self.len() == rhs.len() && eq_chunks(self.iter_chunks(), once(rhs.as_str()))
+    }
+}
+
+impl<'a> PartialEq<Cow<'a, str>> for Rope {
+    fn eq(&self, rhs: &Cow<'a, str>) -> bool {
+        self.len() == rhs.len() && eq_chunks(self.iter_chunks(), once(&**rhs))
+    }
+}
+
+impl PartialEq<Rope> for str {
+    fn eq(&self, rhs: &Rope) -> bool {
+        rhs == self
+    }
+}
+
+impl<'a> PartialEq<Rope> for &'a str {
+    fn eq(&self, rhs: &Rope) -> bool {
+        rhs == self
+    }
+}
+
+impl PartialEq<Rope> for String {
+    fn eq(&self, rhs: &Rope) -> bool {
+        rhs == self
+    }
+}
+
+impl<'a> PartialEq<Rope> for Cow<'a, str> {
+    fn eq(&self, rhs: &Rope) -> bool {
+        rhs == self
+    }
+}
 
 #[test]
 fn concat_small() {
     let a = Rope::from("hello ");
     let b = Rope::from("world");
-    assert_eq!("hello world", String::from(a + b));
+    assert_eq!("hello world", String::from(a.clone() + b.clone()));
+    assert!("hello world" == a + b);
 }
 
 #[test]
@@ -1046,4 +1128,41 @@ fn append_large() {
         a = a + c;
     }
     assert_eq!(b, String::from(a));
+}
+
+#[test]
+fn eq_small() {
+    let a = Rope::from("a");
+    let a2 = Rope::from("a");
+    let b = Rope::from("b");
+    let empty = Rope::from("");
+    assert!(a == a2);
+    assert!(a != b);
+    assert!(a != empty);
+    assert!(empty == empty);
+    assert!(a.slice(0, 0) == empty);
+}
+
+#[test]
+fn eq_med() {
+    let mut a = String::new();
+    let mut b = String::new();
+    let line_len = MAX_LEAF + MIN_LEAF - 1;
+    for _ in 0..line_len {
+        a.push('a');
+        b.push('b');
+    }
+    a.push('\n');
+    b.push('\n');
+    let r = Rope::from(&a[..MAX_LEAF]);
+    let r = r + Rope::from(String::from(&a[MAX_LEAF..]) + &b[..MIN_LEAF]);
+    let r = r + Rope::from(&b[MIN_LEAF..]);
+
+    let a_rope = Rope::from(&a);
+    let b_rope = Rope::from(&b);
+    assert!(r != a_rope);
+    assert!(r.clone().slice(0, a.len()) == a_rope);
+    assert!(r.clone().slice(a.len(), r.len()) == b_rope);
+    assert!(r == a_rope.clone() + b_rope.clone());
+    assert!(r != b_rope + a_rope);
 }
