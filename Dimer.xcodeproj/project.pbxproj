@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		AE228F5D1C897CE7000E9B0F /* rust-json-stuff in Resources */ = {isa = PBXBuildFile; fileRef = AE228F5C1C897CE7000E9B0F /* rust-json-stuff */; };
+		AE228F5D1C897CE7000E9B0F /* dimercore in Resources */ = {isa = PBXBuildFile; fileRef = AE228F5C1C897CE7000E9B0F /* dimercore */; };
 		AE499DD01C82BB2B002D68AF /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE499DCF1C82BB2B002D68AF /* AppDelegate.swift */; };
 		AE499DD21C82BB2B002D68AF /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AE499DD11C82BB2B002D68AF /* Assets.xcassets */; };
 		AE499DD51C82BB2B002D68AF /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = AE499DD31C82BB2B002D68AF /* MainMenu.xib */; };
@@ -38,7 +38,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		AE228F5C1C897CE7000E9B0F /* rust-json-stuff */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; name = "rust-json-stuff"; path = "rust/target/debug/rust-json-stuff"; sourceTree = "<group>"; };
+		AE228F5C1C897CE7000E9B0F /* dimercore */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; name = "dimercore"; path = "rust/target/debug/dimercore"; sourceTree = "<group>"; };
 		AE499DCC1C82BB2B002D68AF /* Dimer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Dimer.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AE499DCF1C82BB2B002D68AF /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		AE499DD11C82BB2B002D68AF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -85,7 +85,7 @@
 		AE499DC31C82BB2B002D68AF = {
 			isa = PBXGroup;
 			children = (
-				AE228F5C1C897CE7000E9B0F /* rust-json-stuff */,
+				AE228F5C1C897CE7000E9B0F /* dimercore */,
 				AEBAAA601C83B503005637A3 /* python */,
 				AE499DCE1C82BB2B002D68AF /* Dimer */,
 				AE499DDE1C82BB2B002D68AF /* DimerTests */,
@@ -242,7 +242,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				AE228F5D1C897CE7000E9B0F /* rust-json-stuff in Resources */,
+				AE228F5D1C897CE7000E9B0F /* dimercore in Resources */,
 				AEBAAA651C83BB1A005637A3 /* python in Resources */,
 				AED23F161C83C689002246CE /* AppWindowController.xib in Resources */,
 				AE499DD21C82BB2B002D68AF /* Assets.xcassets in Resources */,

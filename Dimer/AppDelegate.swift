@@ -30,7 +30,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         appWindowController = AppWindowController.init(windowNibName: "AppWindowController")
         appWindowController?.showWindow(self)
 
-        let corePath = NSBundle.mainBundle().pathForResource("python/dimercore", ofType: "py")
+        let corePath = NSBundle.mainBundle().pathForResource("dimercore", ofType: "")
         if let corePath = corePath {
             coreConnection = CoreConnection(path: corePath) { [weak self] data -> () in
                 self?.handleCoreCmd(data)
