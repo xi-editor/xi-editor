@@ -7,3 +7,6 @@ authors = ["Raph Levien <raph@google.com>"]
 [dependencies]
 serde = "*"
 serde_json = "*"
+
+[dependencies.dimer-rope]
+path = "rope"

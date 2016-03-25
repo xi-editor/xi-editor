@@ -107,9 +107,9 @@ impl Rope {
     }
 
     /// Returns a slice of the string from the byte range [`start`..`end`).
-    // Maybe take Range arguments as well (would need traits)
     ///
     /// Time complexity: O(log n)
+    // Maybe take Range arguments as well (would need traits)
     pub fn slice(self, mut start: usize, mut end: usize) -> Rope {
         let mut root = self.root;
         start += self.start;
@@ -128,6 +128,13 @@ impl Rope {
             start: start,
             len: end - start
         }
+    }
+
+    /// Append `s` to the string.
+    pub fn push_str(&mut self, s: &str) {
+        let len = self.len();
+        // TODO: change edit methods to `&mut self` instead of `self`, to allow in-place
+        *self = self.clone().edit_str(len, len, s);
     }
 
     /// Return an edited version of the string with the byte range [`start`..`end`)
@@ -238,6 +245,14 @@ impl Rope {
         Lines {
             inner: self.lines_raw()
         }
+    }
+
+    /// Return the offset of the codepoint before `offset`.
+    pub fn prev_codepoint_offset(&self, offset: usize) -> Option<usize> {
+        if offset == 0 || offset > self.len() {
+            return None
+        }
+        Some(self.root.prev_codepoint_offset(offset + self.start) - self.start)
     }
 
     // return condition: result is_full
@@ -658,6 +673,28 @@ impl Node {
             s = &s[i..];
         }
         result
+    }
+
+    // navigation
+
+    // precondition: offset > 0 and in range
+    fn prev_codepoint_offset(&self, offset: usize) -> usize {
+        let mut node = self;
+        let mut try_offset = offset;
+        while node.height() > 0 {
+            if let Some((i, offset)) = Node::try_find_child(node.get_children(), try_offset, try_offset) {
+                node = &node.get_children()[i];
+                try_offset -= offset;
+            } else {
+                panic!("offset out of range");
+            }
+        }
+        let s = node.get_leaf();
+        let mut len = 1;
+        while !is_char_boundary(s, try_offset - len) {
+            len += 1;
+        }
+        offset - len
     }
 }
 
@@ -1165,4 +1202,19 @@ fn eq_med() {
     assert!(r.clone().slice(a.len(), r.len()) == b_rope);
     assert!(r == a_rope.clone() + b_rope.clone());
     assert!(r != b_rope + a_rope);
+}
+
+#[test]
+fn prev_codepoint_offset_small() {
+    let a = Rope::from("a\u{00A1}\u{4E00}\u{1F4A9}");
+    assert_eq!(Some(6), a.prev_codepoint_offset(10));
+    assert_eq!(Some(3), a.prev_codepoint_offset(6));
+    assert_eq!(Some(1), a.prev_codepoint_offset(3));
+    assert_eq!(Some(0), a.prev_codepoint_offset(1));
+    assert_eq!(None, a.prev_codepoint_offset(0));
+    let b = a.slice(1, 10);
+    assert_eq!(Some(5), b.prev_codepoint_offset(9));
+    assert_eq!(Some(2), b.prev_codepoint_offset(5));
+    assert_eq!(Some(0), b.prev_codepoint_offset(2));
+    assert_eq!(None, b.prev_codepoint_offset(0));
 }

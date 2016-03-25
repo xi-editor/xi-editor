@@ -21,6 +21,8 @@ use serde_json::Value;
 mod editor;
 use editor::Editor;
 
+extern crate dimer_rope;
+
 macro_rules! print_err {
     ($($arg:tt)*) => (
         {

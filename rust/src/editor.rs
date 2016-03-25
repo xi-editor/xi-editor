@@ -15,10 +15,12 @@
 use serde_json::Value;
 use serde_json::builder::ArrayBuilder;
 
+use dimer_rope::Rope;
+
 use ::send;
 
 pub struct Editor {
-	text: String
+	text: Rope
 }
 
 fn settext(text: &str) {
@@ -32,7 +34,7 @@ fn settext(text: &str) {
 impl Editor {
 	pub fn new() -> Editor {
 		Editor {
-			text: String::new()
+			text: Rope::from("")
 		}
 	}
 
@@ -41,11 +43,16 @@ impl Editor {
            	if let Some(args) = args.as_object() {
 	            let chars = args.get("chars").unwrap().as_string().unwrap();
                 if chars == "\x7f" {
-                    let _ = self.text.pop();
+                    // TODO: implement complex emoji logic
+                    if let Some(bsp_pos) = self.text.prev_codepoint_offset(self.text.len()) {
+                        self.text = self.text.clone().slice(0, bsp_pos);
+                    } else {
+                        return;
+                    }
                 } else {
                     self.text.push_str(chars);
                 }
-                settext(&self.text);
+                settext(&String::from(&self.text));
             }
         }
 	}
