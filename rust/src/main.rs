@@ -19,6 +19,8 @@ use std::io::{Read, Write};
 use serde_json::Value;
 
 mod editor;
+mod view;
+
 use editor::Editor;
 
 extern crate dimer_rope;
@@ -40,6 +42,7 @@ macro_rules! print_err {
 pub fn send(v: &Value) {
     let mut s = serde_json::to_string(v).unwrap();
     s.push('\n');
+    print_err!("from core: {}", s);
     let size = s.len();
     let mut sizebuf = [0; 8];
     for i in 0..8 {
@@ -64,6 +67,7 @@ fn main() {
         let mut buf = vec![0; size as usize];
         if stdin_handle.read_exact(&mut buf).is_ok() {
             if let Ok(data) = serde_json::from_slice::<Value>(&buf) {
+                print_err!("to core: {:?}", data);
                 if let Some(array) = data.as_array() {
                     if let Some(cmd) = array[0].as_string() {
                         editor.do_cmd(cmd, &array[1]);

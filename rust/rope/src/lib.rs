@@ -133,42 +133,43 @@ impl Rope {
     /// Append `s` to the string.
     pub fn push_str(&mut self, s: &str) {
         let len = self.len();
-        // TODO: change edit methods to `&mut self` instead of `self`, to allow in-place
-        *self = self.clone().edit_str(len, len, s);
+        self.edit_str(len, len, s);
     }
 
-    /// Return an edited version of the string with the byte range [`start`..`end`)
-    /// replaced by `new`.
+    /// Edit the string, replacing the byte range [`start`..`end`] with `new`.
     ///
     /// Note: `edit` and `edit_str` may be merged, using traits.
     ///
     /// Time complexity: O(log n)
-    pub fn edit(self, start: usize, end: usize, new: Rope) -> Rope {
+    pub fn edit(&mut self, start: usize, end: usize, new: Rope) {
         if self.is_full() {
-            return Rope::from_node(self.root.replace(start, end, new.normalize().root));
+            self.root.replace(start, end, new.normalize().root);
+            self.len = self.root.len();
+        } else {
+            let mut b = RopeBuilder::new();
+            self.root.subsequence_rec(&mut b, self.start, self.start + start);
+            b.push_rope(new);
+            self.root.subsequence_rec(&mut b, self.start + end, self.start + self.len);
+            *self = b.build_rope()
         }
-        let mut b = RopeBuilder::new();
-        self.root.subsequence_rec(&mut b, self.start, self.start + start);
-        b.push_rope(new);
-        self.root.subsequence_rec(&mut b, self.start + end, self.start + self.len);
-        b.build_rope()
     }
 
-    /// Return an edited version of the string with the byte range [`start`..`end`)
-    /// replaced by `new`.
+    /// Edit the string, replacing the byte range [`start`..`end`] with `new`.
     ///
     /// Note: `edit` and `edit_str` may be merged, using traits.
     ///
     /// Time complexity: O(log n)
-    pub fn edit_str(self, start: usize, end: usize, new: &str) -> Rope {
+    pub fn edit_str(&mut self, start: usize, end: usize, new: &str) {
         if self.is_full() {
-            return Rope::from_node(self.root.replace_str(start, end, new));
+            self.root.replace_str(start, end, new);
+            self.len = self.root.len();
+        } else {
+            let mut b = RopeBuilder::new();
+            self.root.subsequence_rec(&mut b, self.start, self.start + start);
+            b.push_str(new);
+            self.root.subsequence_rec(&mut b, self.start + end, self.start + self.len);
+            *self = b.build_rope()
         }
-        let mut b = RopeBuilder::new();
-        self.root.subsequence_rec(&mut b, self.start, self.start + start);
-        b.push_str(new);
-        self.root.subsequence_rec(&mut b, self.start + end, self.start + self.len);
-        b.build_rope()
     }
 
     /// Returns an iterator over chunks of the rope.
@@ -255,6 +256,24 @@ impl Rope {
         Some(self.root.prev_codepoint_offset(offset + self.start) - self.start)
     }
 
+    /// Return the offset of the codepoint after `offset`.
+    pub fn next_codepoint_offset(&self, offset: usize) -> Option<usize> {
+        if offset >= self.len() {
+            return None
+        }
+        Some(self.root.next_codepoint_offset(offset + self.start) - self.start)
+    }
+
+    pub fn prev_grapheme_offset(&self, offset: usize) -> Option<usize> {
+        // TODO: actual grapheme analysis
+        self.prev_codepoint_offset(offset)
+    }
+
+    pub fn next_grapheme_offset(&self, offset: usize) -> Option<usize> {
+        // TODO: actual grapheme analysis
+        self.next_codepoint_offset(offset)
+    }
+
     // return condition: result is_full
     // TODO: maybe return a node, we always seem to use that?
     fn normalize(self) -> Rope {
@@ -320,9 +339,9 @@ impl Add<Rope> for Rope {
 impl<T: AsRef<str>> Add<T> for Rope {
     type Output = Rope;
     fn add(self, rhs: T) -> Rope {
-        let lhs = self.normalize();
-        let len = lhs.len();
-        Rope::from_node(lhs.root.replace_str(len, len, rhs.as_ref()))
+        let mut lhs = self.normalize();
+        lhs.push_str(rhs.as_ref());
+        lhs
     }
 }
 
@@ -493,31 +512,31 @@ impl Node {
         }
     }
 
-    fn replace(self, start: usize, end: usize, new: Node) -> Node {
+    fn replace(&mut self, start: usize, end: usize, new: Node) {
         if let &NodeVal::Leaf(ref s) = &new.0.val {
             if s.len() < MIN_LEAF {
-                return self.replace_str(start, end, s);
+                self.replace_str(start, end, s);
             }
         }
         let mut b = RopeBuilder::new();
         self.subsequence_rec(&mut b, 0, start);
         b.push(new);
         self.subsequence_rec(&mut b, end, self.len());
-        b.build()
+        *self = b.build()
     }
 
-    fn replace_str(mut self, start: usize, end: usize, new: &str) -> Node {
+    fn replace_str(&mut self, start: usize, end: usize, new: &str) {
         if new.len() < MIN_LEAF {
             // try to do replacement without changing tree structure
-            if Node::try_replace_str(&mut self, start, end, new) {
-                return self;
+            if Node::try_replace_str(self, start, end, new) {
+                return;
             }
         }
         let mut b = RopeBuilder::new();
         self.subsequence_rec(&mut b, 0, start);
         b.push_str(new);
         self.subsequence_rec(&mut b, end, self.len());
-        b.build()
+        *self = b.build()
     }
 
     // precondition: leaf
@@ -677,24 +696,41 @@ impl Node {
 
     // navigation
 
-    // precondition: offset > 0 and in range
-    fn prev_codepoint_offset(&self, offset: usize) -> usize {
+    // return is leaf and offset within leaf
+    fn leaf_at(&self, mut offset: usize) -> (&str, usize) {
         let mut node = self;
-        let mut try_offset = offset;
         while node.height() > 0 {
-            if let Some((i, offset)) = Node::try_find_child(node.get_children(), try_offset, try_offset) {
-                node = &node.get_children()[i];
-                try_offset -= offset;
-            } else {
-                panic!("offset out of range");
+            for child in node.get_children() {
+                if child.len() > offset {
+                    node = child;
+                    break;
+                }
+                offset -= child.len();
             }
         }
-        let s = node.get_leaf();
+        return (node.get_leaf(), offset);
+    }
+
+    // precondition: offset > 0 and in range
+    fn prev_codepoint_offset(&self, offset: usize) -> usize {
+        let (s, try_offset) = self.leaf_at(offset - 1);
         let mut len = 1;
-        while !is_char_boundary(s, try_offset - len) {
+        while !is_char_boundary(s, try_offset + 1 - len) {
             len += 1;
         }
         offset - len
+    }
+
+    // precondition offset < len
+    fn next_codepoint_offset(&self, offset: usize) -> usize {
+        let (s, try_offset) = self.leaf_at(offset);
+        let b = s.as_bytes()[try_offset];
+        offset + match b {
+            b if b < 0x80 => 1,
+            b if b < 0xe0 => 2,
+            b if b < 0xf0 => 3,
+            _ => 4
+        }
     }
 }
 
@@ -1053,8 +1089,9 @@ fn subrange_small() {
 
 #[test]
 fn replace_small() {
-    let a = Rope::from("hello world");
-    assert_eq!("herald", String::from(a.edit_str(1, 9, "era")));
+    let mut a = Rope::from("hello world");
+    a.edit_str(1, 9, "era");
+    assert_eq!("herald", String::from(a));
 }
 
 #[test]
@@ -1217,4 +1254,19 @@ fn prev_codepoint_offset_small() {
     assert_eq!(Some(2), b.prev_codepoint_offset(5));
     assert_eq!(Some(0), b.prev_codepoint_offset(2));
     assert_eq!(None, b.prev_codepoint_offset(0));
+}
+
+#[test]
+fn next_codepoint_offset_small() {
+    let a = Rope::from("a\u{00A1}\u{4E00}\u{1F4A9}");
+    assert_eq!(Some(10), a.next_codepoint_offset(6));
+    assert_eq!(Some(6), a.next_codepoint_offset(3));
+    assert_eq!(Some(3), a.next_codepoint_offset(1));
+    assert_eq!(Some(1), a.next_codepoint_offset(0));
+    assert_eq!(None, a.next_codepoint_offset(10));
+    let b = a.slice(1, 10);
+    assert_eq!(Some(9), b.next_codepoint_offset(5));
+    assert_eq!(Some(5), b.next_codepoint_offset(2));
+    assert_eq!(Some(2), b.next_codepoint_offset(0));
+    assert_eq!(None, b.next_codepoint_offset(9));
 }

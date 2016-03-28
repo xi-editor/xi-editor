@@ -20,16 +20,16 @@ use dimer_rope::Rope;
 
 fn main() {
     let mut a = Rope::from("hello.");
-    a = a.edit_str(5, 6, "!");
+    a.edit_str(5, 6, "!");
     for i in 0..1000000 {
         let l = a.len();
-        a = a.edit_str(l, l, &(i.to_string() + "\n"));
+        a.edit_str(l, l, &(i.to_string() + "\n"));
     }
     let l = a.len();
     for s in a.clone().slice(1000, 3000).iter_chunks() {
         println!("chunk {:?}", s);
     }
-    a = a.edit_str(1000, l, "");
+    a.edit_str(1000, l, "");
     //a = a.subrange(0, 1000);
     println!("{:?}", String::from(a));
 }

@@ -13,46 +13,77 @@
 // limitations under the License.
 
 use serde_json::Value;
-use serde_json::builder::ArrayBuilder;
 
 use dimer_rope::Rope;
+use view::View;
 
 use ::send;
 
 pub struct Editor {
-	text: Rope
-}
-
-fn settext(text: &str) {
-    let value = ArrayBuilder::new()
-        .push("settext")
-        .push(text)
-        .unwrap();
-    send(&value);
+	text: Rope,
+    view: View,
+    dirty: bool
 }
 
 impl Editor {
 	pub fn new() -> Editor {
 		Editor {
-			text: Rope::from("")
+			text: Rope::from(""),
+            view: View::new(),
+            dirty: false
 		}
 	}
+
+    fn insert(&mut self, s: &str) {
+        self.text.edit_str(self.view.sel_start, self.view.sel_end, s);
+        let new_cursor = self.view.sel_start + s.len();
+        self.set_cursor(new_cursor);
+    }
+
+    fn set_cursor(&mut self, offset: usize) {
+        self.view.sel_start = offset;
+        self.view.sel_end = offset;
+        self.dirty = true;
+    }
 
 	pub fn do_cmd(&mut self, cmd: &str, args: &Value) {
 		if cmd == "key" {
            	if let Some(args) = args.as_object() {
 	            let chars = args.get("chars").unwrap().as_string().unwrap();
-                if chars == "\x7f" {
-                    // TODO: implement complex emoji logic
-                    if let Some(bsp_pos) = self.text.prev_codepoint_offset(self.text.len()) {
-                        self.text = self.text.clone().slice(0, bsp_pos);
-                    } else {
-                        return;
-                    }
-                } else {
-                    self.text.push_str(chars);
+                match chars {
+                    "\r" => self.insert("\n"),
+                    "\x7f" => {
+                        let start = if self.view.sel_start < self.view.sel_end {
+                            self.view.sel_start
+                        } else {
+                            if let Some(bsp_pos) = self.text.prev_codepoint_offset(self.view.sel_end) {
+                            // TODO: implement complex emoji logic
+                                bsp_pos
+                           } else {
+                                self.view.sel_end
+                            }
+                        };
+                        if start < self.view.sel_end {
+                            self.text.edit_str(start, self.view.sel_end, "");
+                            self.set_cursor(start);
+                        }
+                    },
+                    "\u{F702}" => {  // left arrow
+                        if let Some(offset) = self.text.prev_grapheme_offset(self.view.sel_start) {
+                            self.set_cursor(offset);
+                        }
+                    },
+                    "\u{F703}" => {  // right arrow
+                        if let Some(offset) = self.text.next_grapheme_offset(self.view.sel_end) {
+                            self.set_cursor(offset);
+                        }
+                    },
+                    _ => self.insert(chars)
                 }
-                settext(&String::from(&self.text));
+                if self.dirty {
+                    send(&self.view.render(&self.text, 10));
+                    self.dirty = false;
+                }
             }
         }
 	}
