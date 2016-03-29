@@ -15,7 +15,10 @@
 import Cocoa
 
 func eventToJson(event: NSEvent) -> AnyObject {
-    return ["key", ["keycode": Int(event.keyCode), "chars": event.characters!]]
+    let flags = event.modifierFlags.rawValue >> 16;
+    return ["key", ["keycode": Int(event.keyCode),
+        "chars": event.characters!,
+        "flags": flags]]
 }
 
 @NSApplicationMain

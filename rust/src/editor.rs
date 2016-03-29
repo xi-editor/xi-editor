@@ -19,10 +19,13 @@ use view::View;
 
 use ::send;
 
+const MODIFIER_SHIFT: u64 = 2;
+
 pub struct Editor {
 	text: Rope,
     view: View,
-    dirty: bool
+    dirty: bool,
+    col: usize  // maybe this should live in view, it's similar to selection
 }
 
 impl Editor {
@@ -30,61 +33,105 @@ impl Editor {
 		Editor {
 			text: Rope::from(""),
             view: View::new(),
-            dirty: false
+            dirty: false,
+            col: 0
 		}
 	}
 
     fn insert(&mut self, s: &str) {
-        self.text.edit_str(self.view.sel_start, self.view.sel_end, s);
-        let new_cursor = self.view.sel_start + s.len();
-        self.set_cursor(new_cursor);
+        self.text.edit_str(self.view.sel_min(), self.view.sel_max(), s);
+        let new_cursor = self.view.sel_min() + s.len();
+        self.set_cursor(new_cursor, true);
     }
 
-    fn set_cursor(&mut self, offset: usize) {
-        self.view.sel_start = offset;
+    fn set_cursor_impl(&mut self, offset: usize, set_start: bool, hard: bool) {
+        if set_start {
+            self.view.sel_start = offset;
+        }
         self.view.sel_end = offset;
+        if hard {
+            self.col = self.view.offset_to_line_col(&self.text, offset).1;
+        }
         self.dirty = true;
+    }
+
+    fn set_cursor(&mut self, offset: usize, hard: bool) {
+        self.set_cursor_impl(offset, true, hard);
+    }
+
+    // set the cursor or update the selection, depending on the flags
+    fn set_cursor_or_sel(&mut self, offset: usize, flags: u64, hard: bool) {
+        self.set_cursor_impl(offset, flags & MODIFIER_SHIFT == 0, hard);
+    }
+
+    fn do_key(&mut self, args: &Value) {
+        if let Some(args) = args.as_object() {
+            let chars = args.get("chars").unwrap().as_string().unwrap();
+            let flags = args.get("flags").unwrap().as_u64().unwrap();
+            match chars {
+                "\r" => self.insert("\n"),
+                "\x7f" => {
+                    let start = if self.view.sel_start != self.view.sel_end {
+                        self.view.sel_min()
+                    } else {
+                        if let Some(bsp_pos) = self.text.prev_codepoint_offset(self.view.sel_end) {
+                        // TODO: implement complex emoji logic
+                            bsp_pos
+                       } else {
+                            self.view.sel_max()
+                        }
+                    };
+                    if start < self.view.sel_max() {
+                        self.text.edit_str(start, self.view.sel_max(), "");
+                        self.set_cursor(start, true);
+                    }
+                },
+                "\u{F700}" => {  // up arrow
+                    if self.view.sel_end == 0 { return; }
+                    let (line, _) = self.view.offset_to_line_col(&self.text, self.view.sel_end);
+                    let offset = if line == 0 { 0 } else {
+                        self.view.line_col_to_offset(&self.text, line - 1, self.col)
+                    };
+                    self.set_cursor_or_sel(offset, flags, false);
+                },
+                "\u{F701}" => {  // down arrow
+                    if self.view.sel_end == self.text.len() { return; }
+                    let (line, _) = self.view.offset_to_line_col(&self.text, self.view.sel_end);
+                    let offset = self.view.line_col_to_offset(&self.text, line + 1, self.col);
+                    self.set_cursor_or_sel(offset, flags, false);
+                },
+                "\u{F702}" => {  // left arrow
+                    if self.view.sel_start != self.view.sel_end && (flags & MODIFIER_SHIFT) == 0 {
+                        let offset = self.view.sel_min();
+                        self.set_cursor(offset, true);
+                    } else {
+                        if let Some(offset) = self.text.prev_grapheme_offset(self.view.sel_end) {
+                            self.set_cursor_or_sel(offset, flags, true);
+                        }
+                    }
+                },
+                "\u{F703}" => {  // right arrow
+                    if self.view.sel_start != self.view.sel_end && (flags & MODIFIER_SHIFT) == 0 {
+                        let offset = self.view.sel_max();
+                        self.set_cursor(offset, true);
+                    } else {
+                        if let Some(offset) = self.text.next_grapheme_offset(self.view.sel_end) {
+                            self.set_cursor_or_sel(offset, flags, true);
+                        }
+                    }
+                },
+                _ => self.insert(chars)
+            }
+            if self.dirty {
+                send(&self.view.render(&self.text, 10));
+                self.dirty = false;
+            }
+        }
     }
 
 	pub fn do_cmd(&mut self, cmd: &str, args: &Value) {
 		if cmd == "key" {
-           	if let Some(args) = args.as_object() {
-	            let chars = args.get("chars").unwrap().as_string().unwrap();
-                match chars {
-                    "\r" => self.insert("\n"),
-                    "\x7f" => {
-                        let start = if self.view.sel_start < self.view.sel_end {
-                            self.view.sel_start
-                        } else {
-                            if let Some(bsp_pos) = self.text.prev_codepoint_offset(self.view.sel_end) {
-                            // TODO: implement complex emoji logic
-                                bsp_pos
-                           } else {
-                                self.view.sel_end
-                            }
-                        };
-                        if start < self.view.sel_end {
-                            self.text.edit_str(start, self.view.sel_end, "");
-                            self.set_cursor(start);
-                        }
-                    },
-                    "\u{F702}" => {  // left arrow
-                        if let Some(offset) = self.text.prev_grapheme_offset(self.view.sel_start) {
-                            self.set_cursor(offset);
-                        }
-                    },
-                    "\u{F703}" => {  // right arrow
-                        if let Some(offset) = self.text.next_grapheme_offset(self.view.sel_end) {
-                            self.set_cursor(offset);
-                        }
-                    },
-                    _ => self.insert(chars)
-                }
-                if self.dirty {
-                    send(&self.view.render(&self.text, 10));
-                    self.dirty = false;
-                }
-            }
+            self.do_key(args);
         }
 	}
 }

@@ -274,6 +274,10 @@ impl Rope {
         self.next_codepoint_offset(offset)
     }
 
+    pub fn byte_at(&self, offset: usize) -> u8 {
+        self.root.byte_at(offset + self.start)
+    }
+
     // return condition: result is_full
     // TODO: maybe return a node, we always seem to use that?
     fn normalize(self) -> Rope {
@@ -731,6 +735,11 @@ impl Node {
             b if b < 0xf0 => 3,
             _ => 4
         }
+    }
+
+    fn byte_at(&self, offset: usize) -> u8 {
+        let (s, offset) = self.leaf_at(offset);
+        s.as_bytes()[offset]
     }
 }
 

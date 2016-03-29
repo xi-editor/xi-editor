@@ -30,7 +30,7 @@ class EditView: NSView {
         let attrsDictionary = [NSFontAttributeName: font!, NSBaselineOffsetAttributeName: baselineAdjust]
         let str:NSString = text ?? "(none)"
         str.drawInRect(dirtyRect, withAttributes: attrsDictionary)
-        NSLog("drawRect called %f %f %f %f", dirtyRect.origin.x, dirtyRect.origin.y, dirtyRect.width, dirtyRect.height)
+        NSLog("drawRect called %g %g %g %g", dirtyRect.origin.x, dirtyRect.origin.y, dirtyRect.width, dirtyRect.height)
         // Drawing code here.
     }
     
