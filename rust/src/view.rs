@@ -22,7 +22,8 @@ use dimer_rope::Rope;
 pub struct View {
     pub sel_start: usize,
     pub sel_end: usize,
-    first_line: usize  // vertical scroll position
+    first_line: usize,  // vertical scroll position
+    height: usize,  // height of visible portion
 }
 
 impl View {
@@ -30,7 +31,8 @@ impl View {
         View {
             sel_start: 0,
             sel_end: 0,
-            first_line: 0
+            first_line: 0,
+            height: 10
         }
     }
 
@@ -40,6 +42,15 @@ impl View {
 
     pub fn sel_max(&self) -> usize {
         max(self.sel_start, self.sel_end)
+    }
+
+    pub fn scroll_to_cursor(&mut self, text: &Rope) {
+        let (line, _) = self.offset_to_line_col(text, self.sel_end);
+        if line < self.first_line {
+            self.first_line = line;
+        } else if self.first_line + self.height <= line {
+            self.first_line = line - (self.height - 1);
+        }
     }
 
     pub fn render(&self, text: &Rope, nlines: usize) -> Value {
@@ -96,7 +107,7 @@ impl View {
     // * grapheme clusters
     // * Unicode width (so CJK counts as 2)
     // * Actual measurement in text layout
-    // * Code units in some uncoding
+    // * Code units in some encoding
     //
     // Of course, all these are identical for ASCII. For now we use UTF-8 code units
     // for simplicity.

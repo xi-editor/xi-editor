@@ -12,12 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::fs::File;
+use std::io::Read;
 use serde_json::Value;
 
 use dimer_rope::Rope;
 use view::View;
 
 use ::send;
+
+macro_rules! print_err {
+    ($($arg:tt)*) => (
+        {
+            use std::io::prelude::*;
+            if let Err(e) = write!(&mut ::std::io::stderr(), "{}\n", format_args!($($arg)*)) {
+                panic!("Failed to write to stderr.\
+                    \nOriginal error output: {}\
+                    \nSecondary error writing to stderr: {}", format!($($arg)*), e);
+            }
+        }
+    )
+}
 
 const MODIFIER_SHIFT: u64 = 2;
 
@@ -52,6 +67,7 @@ impl Editor {
         if hard {
             self.col = self.view.offset_to_line_col(&self.text, offset).1;
         }
+        self.view.scroll_to_cursor(&self.text);
         self.dirty = true;
     }
 
@@ -62,6 +78,14 @@ impl Editor {
     // set the cursor or update the selection, depending on the flags
     fn set_cursor_or_sel(&mut self, offset: usize, flags: u64, hard: bool) {
         self.set_cursor_impl(offset, flags & MODIFIER_SHIFT == 0, hard);
+    }
+
+    // render if needed, sending to ui
+    fn render(&mut self) {
+        if self.dirty {
+            send(&self.view.render(&self.text, 10));
+            self.dirty = false;
+        }
     }
 
     fn do_key(&mut self, args: &Value) {
@@ -122,16 +146,30 @@ impl Editor {
                 },
                 _ => self.insert(chars)
             }
-            if self.dirty {
-                send(&self.view.render(&self.text, 10));
-                self.dirty = false;
+        }
+    }
+
+    fn do_open(&mut self, args: &Value) {
+        if let Some(path) = args.as_string() {
+            match File::open(&path) {
+                Ok(mut f) => {
+                    let mut s = String::new();
+                    if f.read_to_string(&mut s).is_ok() {
+                        self.text = Rope::from(s);
+                        self.set_cursor(0, true);
+                    }
+                },
+                Err(e) => print_err!("error {}", e)
             }
         }
     }
 
 	pub fn do_cmd(&mut self, cmd: &str, args: &Value) {
-		if cmd == "key" {
-            self.do_key(args);
+        match cmd {
+		  "key" => self.do_key(args),
+          "open" => self.do_open(args),
+          _ => print_err!("unknown cmd {}", cmd)
         }
+        self.render();
 	}
 }

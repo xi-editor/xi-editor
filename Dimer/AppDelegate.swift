@@ -28,7 +28,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var appWindowController: AppWindowController?
 
     
-    func applicationDidFinishLaunching(aNotification: NSNotification) {
+    func applicationWillFinishLaunching(aNotification: NSNotification) {
         // show main app window
         appWindowController = AppWindowController.init(windowNibName: "AppWindowController")
         appWindowController?.showWindow(self)
@@ -66,10 +66,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func openDocument(sender: AnyObject) {
+        let fileDialog: NSOpenPanel = NSOpenPanel()
+        if fileDialog.runModal() == NSFileHandlingPanelOKButton {
+            if let path = fileDialog.URL?.path {
+                application(NSApp, openFile: path)
+            }
+        }
+    }
+
+    func application(sender: NSApplication, openFile filename: String) -> Bool {
+        sendJson(["open", filename])
+        return true
+    }
+
     func applicationWillTerminate(aNotification: NSNotification) {
         // Insert code here to tear down your application
     }
-
 
 }
 
