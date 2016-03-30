@@ -16,7 +16,14 @@ import Cocoa
 
 class AppWindowController: NSWindowController {
     @IBOutlet weak var editView: EditView!
+    @IBOutlet weak var scrollView: NSScrollView!
+
     var eventCallback: (NSEvent -> ())?
+
+    func visualConstraint(views: [String : NSView], _ format: String) {
+        let constraints = NSLayoutConstraint.constraintsWithVisualFormat(format, options: .AlignAllTop, metrics: nil, views: views)
+        NSLayoutConstraint.activateConstraints(constraints)
+    }
 
     override func windowDidLoad() {
         super.windowDidLoad()
@@ -24,6 +31,11 @@ class AppWindowController: NSWindowController {
         editView.eventCallback = { [weak self] event -> () in
             self?.eventCallback?(event)
         }
+
+        // set up autolayout constraints
+        let views = ["editView": editView, "clipView": scrollView.contentView]
+        visualConstraint(views, "H:[editView(>=clipView)]")
+        visualConstraint(views, "V:[editView(>=clipView)]")
     }
 
 }

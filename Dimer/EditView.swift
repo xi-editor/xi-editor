@@ -20,6 +20,9 @@ class EditView: NSView {
     
     var eventCallback: (NSEvent -> ())?
 
+    var widthConstraint: NSLayoutConstraint?
+    var heightConstraint: NSLayoutConstraint?
+
     var attributes: [String: AnyObject]
     var ascent: CGFloat
     var descent: CGFloat
@@ -40,6 +43,10 @@ class EditView: NSView {
         text = []
         selcolor = NSColor(colorLiteralRed: 0.7, green: 0.85, blue: 0.99, alpha: 1.0)
         super.init(frame: frameRect)
+        widthConstraint = NSLayoutConstraint(item: self, attribute: .Width, relatedBy: .GreaterThanOrEqual, toItem: nil, attribute: .Width, multiplier: 1, constant: 100)
+        widthConstraint!.active = true
+        heightConstraint = NSLayoutConstraint(item: self, attribute: .Height, relatedBy: .GreaterThanOrEqual, toItem: nil, attribute: .Height, multiplier: 1, constant: 100)
+        heightConstraint!.active = true
     }
 
     required init?(coder: NSCoder) {
@@ -53,10 +60,16 @@ class EditView: NSView {
 
     override func drawRect(dirtyRect: NSRect) {
         super.drawRect(dirtyRect)
+        let path = NSBezierPath(ovalInRect: frame)
+        NSColor(colorLiteralRed: 0, green: 0, blue: 1, alpha: 0.25).setFill()
+        path.fill()
+        let path2 = NSBezierPath(ovalInRect: dirtyRect)
+        NSColor(colorLiteralRed: 0, green: 0.5, blue: 0, alpha: 0.25).setFill()
+        path2.fill()
 
         let context = NSGraphicsContext.currentContext()!.CGContext
         let x0: CGFloat = 2;
-        var y = bounds.size.height - baseline;
+        var y = baseline;
         for line in text {
             let s = line[0] as! String
             let attrString = NSMutableAttributedString(string: s, attributes: self.attributes)
@@ -74,29 +87,42 @@ class EditView: NSView {
                     attrString.addAttribute(NSBackgroundColorAttributeName, value: selcolor, range: NSMakeRange(u16_start, u16_end - u16_start))
                 }
             }
-            attrString.drawAtPoint(NSPoint(x: x0, y: y - descent))
+            // TODO: I don't understand where the 13 comes from (it's what aligns with baseline. We
+            // probably want to move to using CTLineDraw instead of drawing the attributed string,
+            // but that means drawing the selection highlight ourselves (which has other benefits).
+            //attrString.drawAtPoint(NSPoint(x: x0, y: y - 13))
+            attrString.drawWithRect(NSRect(x: x0, y: y, width: dirtyRect.width - x0, height: 14), options: [])
             if let cursor = cursor {
                 let ctline = CTLineCreateWithAttributedString(attrString)
+                /*
+                CGContextSetTextMatrix(context, CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: x0, ty: y))
+                CTLineDraw(ctline, context)
+                */
                 let utf16_ix = utf8_offset_to_utf16(s, cursor)
                 Swift.print(utf16_ix)
                 let pos = CTLineGetOffsetForStringIndex(ctline, CFIndex(utf16_ix), nil)
-                CGContextMoveToPoint(context, x0 + pos, y - descent)
-                CGContextAddLineToPoint(context, x0 + pos, y + ascent)
+                CGContextMoveToPoint(context, x0 + pos, y + descent)
+                CGContextAddLineToPoint(context, x0 + pos, y - ascent)
                 CGContextStrokePath(context)
             }
-            y -= self.linespace
+            y += linespace
         }
     }
 
     override var acceptsFirstResponder: Bool {
         return true;
     }
-    
+
+    // we use a flipped coordinate system primarily to get better alignment when scrolling
+    override var flipped: Bool {
+        return true;
+    }
+
     override func resizeWithOldSuperviewSize(oldSize: NSSize) {
         super.resizeWithOldSuperviewSize(oldSize)
         Swift.print("resizing, oldsize =", oldSize, ", frame =", frame);
     }
-    
+
     override func keyDown(theEvent: NSEvent) {
         if let callback = eventCallback {
             callback(theEvent)
@@ -104,9 +130,10 @@ class EditView: NSView {
             super.keyDown(theEvent)
         }
     }
-    
+
     func mySetText(text: [[AnyObject]]) {
         self.text = text
+        //heightConstraint?.constant = 400
         needsDisplay = true
     }
 
