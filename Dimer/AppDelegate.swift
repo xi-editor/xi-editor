@@ -57,8 +57,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let json = try NSJSONSerialization.JSONObjectWithData(data, options: .AllowFragments)
             print("got \(json)")
             if let response = json as? [AnyObject] where response.count == 2, let cmd = response[0] as? NSString {
-                if cmd == "settext" {
-                    appWindowController?.editView.mySetText(response[1] as! [[AnyObject]])
+                dispatch_async(dispatch_get_main_queue()) {
+                    if cmd == "settext" {
+                        self.appWindowController?.editView.mySetText(response[1] as! [[AnyObject]])
+                    }
                 }
             }
         } catch _ {
