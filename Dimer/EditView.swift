@@ -16,26 +16,85 @@ import Cocoa
 
 class EditView: NSView {
 
-    var text: String?
+    var text: [[AnyObject]]
     
     var eventCallback: (NSEvent -> ())?
 
+    var attributes: [String: AnyObject]
+    var ascent: CGFloat
+    var descent: CGFloat
+    var leading: CGFloat
+    var baseline: CGFloat
+    var linespace: CGFloat
+
+    let selcolor: NSColor
+
+    override init(frame frameRect: NSRect) {
+        let font = CTFontCreateWithName("InconsolataGo", 14, nil)
+        ascent = CTFontGetAscent(font)
+        descent = CTFontGetDescent(font)
+        leading = CTFontGetLeading(font)
+        linespace = ceil(ascent + descent + leading)
+        baseline = ceil(ascent)
+        attributes = [String(kCTFontAttributeName): font]
+        text = []
+        selcolor = NSColor(colorLiteralRed: 0.7, green: 0.85, blue: 0.99, alpha: 1.0)
+        super.init(frame: frameRect)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("View doesn't support NSCoding")
+    }
+
+    func utf8_offset_to_utf16(s: String, _ ix: Int) -> Int {
+        // String(s.utf8.prefix(ix)).utf16.count
+        return s.utf8.startIndex.advancedBy(ix).samePositionIn(s.utf16)!._offset
+    }
+
     override func drawRect(dirtyRect: NSRect) {
         super.drawRect(dirtyRect)
-        let path = NSBezierPath(ovalInRect: dirtyRect)
-        NSColor.greenColor().setFill()
-        path.fill()
-        let font = NSFont(name: "Helvetica", size: 14.0)
-        let baselineAdjust = 1.0
-        let attrsDictionary = [NSFontAttributeName: font!, NSBaselineOffsetAttributeName: baselineAdjust]
-        let str:NSString = text ?? "(none)"
-        str.drawInRect(dirtyRect, withAttributes: attrsDictionary)
-        NSLog("drawRect called %g %g %g %g", dirtyRect.origin.x, dirtyRect.origin.y, dirtyRect.width, dirtyRect.height)
-        // Drawing code here.
+
+        let context = NSGraphicsContext.currentContext()!.CGContext
+        let x0: CGFloat = 2;
+        var y = bounds.size.height - baseline;
+        for line in text {
+            let s = line[0] as! String
+            let attrString = NSMutableAttributedString(string: s, attributes: self.attributes)
+            var cursor: Int? = nil;
+            for attr in line.dropFirst() {
+                let attr = attr as! [AnyObject]
+                let type = attr[0] as! String
+                if type == "cursor" {
+                    cursor = attr[1] as? Int
+                } else if type == "sel" {
+                    let start = attr[1] as! Int
+                    let u16_start = utf8_offset_to_utf16(s, start)
+                    let end = attr[2] as! Int
+                    let u16_end = utf8_offset_to_utf16(s, end)
+                    attrString.addAttribute(NSBackgroundColorAttributeName, value: selcolor, range: NSMakeRange(u16_start, u16_end - u16_start))
+                }
+            }
+            attrString.drawAtPoint(NSPoint(x: x0, y: y - descent))
+            if let cursor = cursor {
+                let ctline = CTLineCreateWithAttributedString(attrString)
+                let utf16_ix = utf8_offset_to_utf16(s, cursor)
+                Swift.print(utf16_ix)
+                let pos = CTLineGetOffsetForStringIndex(ctline, CFIndex(utf16_ix), nil)
+                CGContextMoveToPoint(context, x0 + pos, y - descent)
+                CGContextAddLineToPoint(context, x0 + pos, y + ascent)
+                CGContextStrokePath(context)
+            }
+            y -= self.linespace
+        }
     }
-    
+
     override var acceptsFirstResponder: Bool {
         return true;
+    }
+    
+    override func resizeWithOldSuperviewSize(oldSize: NSSize) {
+        super.resizeWithOldSuperviewSize(oldSize)
+        Swift.print("resizing, oldsize =", oldSize, ", frame =", frame);
     }
     
     override func keyDown(theEvent: NSEvent) {
@@ -46,7 +105,7 @@ class EditView: NSView {
         }
     }
     
-    func mySetText(text: String) {
+    func mySetText(text: [[AnyObject]]) {
         self.text = text
         needsDisplay = true
     }

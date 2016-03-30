@@ -58,7 +58,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             print("got \(json)")
             if let response = json as? [AnyObject] where response.count == 2, let cmd = response[0] as? NSString {
                 if cmd == "settext" {
-                    appWindowController?.editView.mySetText(response[1] as! String)
+                    appWindowController?.editView.mySetText(response[1] as! [[AnyObject]])
                 }
             }
         } catch _ {

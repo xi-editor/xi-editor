@@ -20,7 +20,7 @@ class AppWindowController: NSWindowController {
 
     override func windowDidLoad() {
         super.windowDidLoad()
-        editView.mySetText("initial text")
+        window?.backgroundColor = NSColor.whiteColor()
         editView.eventCallback = { [weak self] event -> () in
             self?.eventCallback?(event)
         }

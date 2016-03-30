@@ -57,6 +57,9 @@ class CoreConnection {
             for var j = 0; j < 8; j++ {
                 size += (Int(recvBufBytes[i + j]) as Int) << (j * 8)
             }
+            if recvBufLen < i + 8 + size {
+                break
+            }
             let dataPacket = recvBuf.subdataWithRange(NSRange(location: i + 8, length: size))
             callback(dataPacket)
             i += 8 + size

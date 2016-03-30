@@ -54,15 +54,49 @@ impl View {
     }
 
     pub fn render(&self, text: &Rope, nlines: usize) -> Value {
-        let sel_start_line = text.line_of_offset(self.sel_min());
-        let sel_end_line = if self.sel_start == self.sel_end {
-            sel_start_line
+        let mut builder = ArrayBuilder::new();
+        let sel_cursor_line = text.line_of_offset(self.sel_end);
+        let sel_min_line = if self.sel_start == self.sel_end {
+            sel_cursor_line
+        } else {
+            text.line_of_offset(self.sel_min())
+        };
+        let sel_max_line = if self.sel_start == self.sel_end {
+            sel_cursor_line
         } else {
             text.line_of_offset(self.sel_max())
         };
-        let mut result = String::new();
         let mut line_num = self.first_line;
         for l in text.clone().slice(text.offset_of_line(self.first_line), text.len()).lines() {
+            let mut line_builder = ArrayBuilder::new();
+            let l_len = l.len();
+            line_builder = line_builder.push(l);
+            if line_num >= sel_min_line && line_num <= sel_max_line && self.sel_start != self.sel_end {
+                let sel_start_ix = if line_num == sel_min_line {
+                    self.sel_min() - text.offset_of_line(line_num)
+                } else {
+                    0
+                };
+                let sel_end_ix = if line_num == sel_max_line {
+                    self.sel_max() - text.offset_of_line(line_num)
+                } else {
+                    l_len
+                };
+                line_builder = line_builder.push_array(|builder|
+                    builder.push("sel")
+                        .push(sel_start_ix)
+                        .push(sel_end_ix)
+                );                
+            }
+            if line_num == sel_cursor_line {
+                let sel_end_ix = self.sel_end - text.offset_of_line(line_num);
+                line_builder = line_builder.push_array(|builder|
+                    builder.push("cursor")
+                        .push(sel_end_ix)
+                );
+            }
+            builder = builder.push(line_builder.unwrap());
+            /*
             if line_num == sel_start_line {
                 let sel_start_ix = self.sel_min() - text.offset_of_line(line_num);
                 result.push_str(&l[..sel_start_ix]);
@@ -88,17 +122,21 @@ impl View {
                 result.push_str(&l);
             }
             result.push('\n');
+            */
             line_num += 1;
             if line_num == self.first_line + nlines {
                 break;
             }
         }
-        if line_num == sel_end_line {
-            result.push('|');
+        if line_num == sel_cursor_line {
+            builder = builder.push_array(|builder|
+                builder.push("")
+                    .push_array(|builder|
+                        builder.push("cursor").push(0)));
         }
         ArrayBuilder::new()
             .push("settext")
-            .push(&result)
+            .push(builder.unwrap())
             .unwrap()
     }
 
