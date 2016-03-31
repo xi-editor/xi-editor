@@ -58,6 +58,10 @@ class EditView: NSView {
     var firstLine: Int = 0
     var lastLine: Int = 0
 
+    // magic for accepting updates from other threads
+    var updateQueue: dispatch_queue_t
+    var pendingUpdate: [String: AnyObject]? = nil
+
     override init(frame frameRect: NSRect) {
         let font = CTFontCreateWithName("InconsolataGo", 14, nil)
         ascent = CTFontGetAscent(font)
@@ -68,6 +72,7 @@ class EditView: NSView {
         attributes = [String(kCTFontAttributeName): font]
         fontWidth = getFontWidth(font)
         selcolor = NSColor(colorLiteralRed: 0.7, green: 0.85, blue: 0.99, alpha: 1.0)
+        updateQueue = dispatch_queue_create("com.levien.dimer.update", DISPATCH_QUEUE_SERIAL)
         super.init(frame: frameRect)
         widthConstraint = NSLayoutConstraint(item: self, attribute: .Width, relatedBy: .GreaterThanOrEqual, toItem: nil, attribute: .Width, multiplier: 1, constant: 400)
         widthConstraint!.active = true
@@ -99,9 +104,10 @@ class EditView: NSView {
         let x0: CGFloat = 2;
         let first = Int(floor(dirtyRect.origin.y / linespace))
         let last = Int(ceil((dirtyRect.origin.y + dirtyRect.size.height) / linespace))
-        
+
         for lineIx in first..<last {
             if lineIx < linesStart || lineIx >= linesStart + lines.count {
+                // TODO: might want to detect underrun and wait a few ms for an update
                 continue
             }
             let line = lines[lineIx - linesStart]
@@ -173,7 +179,7 @@ class EditView: NSView {
         }
     }
 
-    func mySetText(text: [String: AnyObject]) {
+    func updateText(text: [String: AnyObject]) {
         self.lines = text["lines"]! as! [[AnyObject]]
         self.linesStart = text["first_line"] as! Int
         heightConstraint?.constant = (text["height"] as! CGFloat) * linespace + 2 * descent
@@ -190,6 +196,26 @@ class EditView: NSView {
         }
         // TODO: don't set needsDisplay if we're just scrolling - needs finer grained dirty state in core
         needsDisplay = true
+    }
+
+    func tryUpdate() {
+        var pendingUpdate: [String: AnyObject]?
+        dispatch_sync(updateQueue) {
+            pendingUpdate = self.pendingUpdate
+            self.pendingUpdate = nil
+        }
+        if let text = pendingUpdate {
+            updateText(text)
+        }
+    }
+
+    func updateSafe(text: [String: AnyObject]) {
+        dispatch_sync(updateQueue) {
+            self.pendingUpdate = text
+        }
+        dispatch_async(dispatch_get_main_queue()) {
+            self.tryUpdate()
+        }
     }
 
     func updateScroll(bounds: NSRect) {
