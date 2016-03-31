@@ -98,7 +98,7 @@ class EditView: NSView {
         let context = NSGraphicsContext.currentContext()!.CGContext
         let x0: CGFloat = 2;
         let first = Int(floor(dirtyRect.origin.y / linespace))
-        let last = Int(ceil((dirtyRect.origin.y + bounds.size.height) / linespace))
+        let last = Int(ceil((dirtyRect.origin.y + dirtyRect.size.height) / linespace))
         
         for lineIx in first..<last {
             if lineIx < linesStart || lineIx >= linesStart + lines.count {
