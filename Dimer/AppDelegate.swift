@@ -14,13 +14,6 @@
 
 import Cocoa
 
-func eventToJson(event: NSEvent) -> AnyObject {
-    let flags = event.modifierFlags.rawValue >> 16;
-    return ["key", ["keycode": Int(event.keyCode),
-        "chars": event.characters!,
-        "flags": flags]]
-}
-
 @NSApplicationMain
 class AppDelegate: NSObject, NSApplicationDelegate {
 
@@ -31,7 +24,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillFinishLaunching(aNotification: NSNotification) {
         // show main app window
         appWindowController = AppWindowController.init(windowNibName: "AppWindowController")
-        appWindowController?.showWindow(self)
 
         let corePath = NSBundle.mainBundle().pathForResource("dimercore", ofType: "")
         if let corePath = corePath {
@@ -39,9 +31,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.handleCoreCmd(data)
             }
         }
-        appWindowController?.eventCallback = { [weak self] event -> () in
-            self?.sendJson(eventToJson(event))
+        appWindowController?.sendCallback = { [weak self] json -> () in
+            self?.sendJson(json)
         }
+
+        appWindowController?.showWindow(self)
     }
     
     func sendJson(json: AnyObject) {
@@ -55,11 +49,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func handleCoreCmd(data: NSData) {
         do {
             let json = try NSJSONSerialization.JSONObjectWithData(data, options: .AllowFragments)
-            print("got \(json)")
+            //print("got \(json)")
             if let response = json as? [AnyObject] where response.count == 2, let cmd = response[0] as? NSString {
                 dispatch_async(dispatch_get_main_queue()) {
                     if cmd == "settext" {
-                        self.appWindowController?.editView.mySetText(response[1] as! [[AnyObject]])
+                        self.appWindowController?.editView.mySetText(response[1] as! [String: AnyObject])
                     }
                 }
             }

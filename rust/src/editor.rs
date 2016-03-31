@@ -40,6 +40,7 @@ pub struct Editor {
 	text: Rope,
     view: View,
     dirty: bool,
+    scroll_to_cursor: bool,
     col: usize  // maybe this should live in view, it's similar to selection
 }
 
@@ -49,6 +50,7 @@ impl Editor {
 			text: Rope::from(""),
             view: View::new(),
             dirty: false,
+            scroll_to_cursor: true,
             col: 0
 		}
 	}
@@ -66,6 +68,7 @@ impl Editor {
         self.view.sel_end = offset;
         if hard {
             self.col = self.view.offset_to_line_col(&self.text, offset).1;
+            self.scroll_to_cursor = true;
         }
         self.view.scroll_to_cursor(&self.text);
         self.dirty = true;
@@ -83,8 +86,9 @@ impl Editor {
     // render if needed, sending to ui
     fn render(&mut self) {
         if self.dirty {
-            send(&self.view.render(&self.text, 10));
+            send(&self.view.render(&self.text, self.scroll_to_cursor));
             self.dirty = false;
+            self.scroll_to_cursor = false;
         }
     }
 
@@ -117,12 +121,14 @@ impl Editor {
                         self.view.line_col_to_offset(&self.text, line - 1, self.col)
                     };
                     self.set_cursor_or_sel(offset, flags, false);
+                    self.scroll_to_cursor = true;
                 },
                 "\u{F701}" => {  // down arrow
                     if self.view.sel_end == self.text.len() { return; }
                     let (line, _) = self.view.offset_to_line_col(&self.text, self.view.sel_end);
                     let offset = self.view.line_col_to_offset(&self.text, line + 1, self.col);
                     self.set_cursor_or_sel(offset, flags, false);
+                    self.scroll_to_cursor = true;
                 },
                 "\u{F702}" => {  // left arrow
                     if self.view.sel_start != self.view.sel_end && (flags & MODIFIER_SHIFT) == 0 {
@@ -131,6 +137,10 @@ impl Editor {
                     } else {
                         if let Some(offset) = self.text.prev_grapheme_offset(self.view.sel_end) {
                             self.set_cursor_or_sel(offset, flags, true);
+                        } else {
+                            self.col = 0;
+                            // TODO: should set scroll_to_cursor in this case too,
+                            // but it won't get sent; probably it needs to be a separate cmd
                         }
                     }
                 },
@@ -141,6 +151,9 @@ impl Editor {
                     } else {
                         if let Some(offset) = self.text.next_grapheme_offset(self.view.sel_end) {
                             self.set_cursor_or_sel(offset, flags, true);
+                        } else {
+                            self.col = self.view.offset_to_line_col(&self.text, self.view.sel_end).1;
+                            // see above
                         }
                     }
                 },
@@ -164,12 +177,23 @@ impl Editor {
         }
     }
 
+    fn do_scroll(&mut self, args: &Value) {
+        if let Some(array) = args.as_array() {
+            if let (Some(first), Some(last)) = (array[0].as_u64(), array[1].as_u64()) {
+                self.view.set_scroll(first as usize, last as usize);
+                self.dirty = true;
+            }
+        }
+    }
+
 	pub fn do_cmd(&mut self, cmd: &str, args: &Value) {
         match cmd {
 		  "key" => self.do_key(args),
           "open" => self.do_open(args),
+          "scroll" => self.do_scroll(args),
           _ => print_err!("unknown cmd {}", cmd)
         }
+        // TODO: should probably defer this until input quiesces
         self.render();
 	}
 }

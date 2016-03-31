@@ -18,7 +18,7 @@ class AppWindowController: NSWindowController {
     @IBOutlet weak var editView: EditView!
     @IBOutlet weak var scrollView: NSScrollView!
 
-    var eventCallback: (NSEvent -> ())?
+    var sendCallback: (AnyObject -> ())?
 
     func visualConstraint(views: [String : NSView], _ format: String) {
         let constraints = NSLayoutConstraint.constraintsWithVisualFormat(format, options: .AlignAllTop, metrics: nil, views: views)
@@ -27,15 +27,30 @@ class AppWindowController: NSWindowController {
 
     override func windowDidLoad() {
         super.windowDidLoad()
-        window?.backgroundColor = NSColor.whiteColor()
-        editView.eventCallback = { [weak self] event -> () in
-            self?.eventCallback?(event)
+        //window?.backgroundColor = NSColor.whiteColor()
+        editView.sendCallback = { [weak self] event -> () in
+            self?.sendCallback?(event)
         }
 
         // set up autolayout constraints
         let views = ["editView": editView, "clipView": scrollView.contentView]
         visualConstraint(views, "H:[editView(>=clipView)]")
         visualConstraint(views, "V:[editView(>=clipView)]")
+
+        NSNotificationCenter.defaultCenter().addObserver(self, selector: "boundsDidChangeNotification:", name: NSViewBoundsDidChangeNotification, object: scrollView.contentView)
+        NSNotificationCenter.defaultCenter().addObserver(self, selector: "frameDidChangeNotification:", name: NSViewFrameDidChangeNotification, object: scrollView)
+        updateEditViewScroll()
     }
 
+    func boundsDidChangeNotification(notification: NSNotification) {
+        updateEditViewScroll()
+    }
+
+    func frameDidChangeNotification(notification: NSNotification) {
+        updateEditViewScroll()
+    }
+
+    func updateEditViewScroll() {
+        editView?.updateScroll(scrollView.contentView.bounds)
+    }
 }

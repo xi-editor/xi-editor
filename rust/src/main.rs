@@ -42,7 +42,7 @@ macro_rules! print_err {
 pub fn send(v: &Value) {
     let mut s = serde_json::to_string(v).unwrap();
     s.push('\n');
-    print_err!("from core: {}", s);
+    //print_err!("from core: {}", s);
     let size = s.len();
     let mut sizebuf = [0; 8];
     for i in 0..8 {

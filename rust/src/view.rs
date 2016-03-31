@@ -36,6 +36,11 @@ impl View {
         }
     }
 
+    pub fn set_scroll(&mut self, first: usize, last: usize) {
+        self.first_line = first;
+        self.height = last - first;
+    }
+
     pub fn sel_min(&self) -> usize {
         min(self.sel_start, self.sel_end)
     }
@@ -53,16 +58,16 @@ impl View {
         }
     }
 
-    pub fn render(&self, text: &Rope, nlines: usize) -> Value {
+    pub fn render(&self, text: &Rope, scroll_to_cursor: bool) -> Value {
         let mut builder = ArrayBuilder::new();
-        let sel_cursor_line = text.line_of_offset(self.sel_end);
+        let (cursor_line, cursor_col) = self.offset_to_line_col(text, self.sel_end);
         let sel_min_line = if self.sel_start == self.sel_end {
-            sel_cursor_line
+            cursor_line
         } else {
             text.line_of_offset(self.sel_min())
         };
         let sel_max_line = if self.sel_start == self.sel_end {
-            sel_cursor_line
+            cursor_line
         } else {
             text.line_of_offset(self.sel_max())
         };
@@ -88,55 +93,39 @@ impl View {
                         .push(sel_end_ix)
                 );                
             }
-            if line_num == sel_cursor_line {
-                let sel_end_ix = self.sel_end - text.offset_of_line(line_num);
+            if line_num == cursor_line {
                 line_builder = line_builder.push_array(|builder|
                     builder.push("cursor")
-                        .push(sel_end_ix)
+                        .push(cursor_col)
                 );
             }
             builder = builder.push(line_builder.unwrap());
-            /*
-            if line_num == sel_start_line {
-                let sel_start_ix = self.sel_min() - text.offset_of_line(line_num);
-                result.push_str(&l[..sel_start_ix]);
-                if self.sel_start == self.sel_end {
-                    result.push('|');
-                    result.push_str(&l[sel_start_ix..]);
-                } else if sel_start_line == sel_end_line {
-                    let sel_end_ix = self.sel_max() - text.offset_of_line(line_num);
-                    result.push('[');
-                    result.push_str(&l[sel_start_ix..sel_end_ix]);
-                    result.push(']');
-                    result.push_str(&l[sel_end_ix..]);
-                } else {
-                    result.push('[');
-                    result.push_str(&l[sel_start_ix..]);
-                }
-            } else if line_num == sel_end_line {
-                let sel_end_ix = self.sel_max() - text.offset_of_line(line_num);
-                result.push_str(&l[..sel_end_ix]);
-                result.push(']');
-                result.push_str(&l[sel_end_ix..]);
-            } else {
-                result.push_str(&l);
-            }
-            result.push('\n');
-            */
             line_num += 1;
-            if line_num == self.first_line + nlines {
+            if line_num == self.first_line + self.height {
                 break;
             }
         }
-        if line_num == sel_cursor_line {
+        if line_num == cursor_line {
             builder = builder.push_array(|builder|
                 builder.push("")
                     .push_array(|builder|
                         builder.push("cursor").push(0)));
         }
+        let lines = builder.unwrap();
+        let height = self.offset_to_line_col(text, text.len()).0 + 1;
         ArrayBuilder::new()
             .push("settext")
-            .push(builder.unwrap())
+            .push_object(|builder| {
+                let mut builder = builder
+                    .insert("lines", lines)
+                    .insert("first_line", self.first_line)
+                    .insert("height", height);
+                if scroll_to_cursor {
+                    builder = builder.insert_array("cursor", |builder|
+                        builder.push(cursor_line).push(cursor_col));
+                }
+                builder
+            })
             .unwrap()
     }
 

@@ -14,11 +14,32 @@
 
 import Cocoa
 
+func eventToJson(event: NSEvent) -> AnyObject {
+    let flags = event.modifierFlags.rawValue >> 16;
+    return ["key", ["keycode": Int(event.keyCode),
+        "chars": event.characters!,
+        "flags": flags]]
+}
+
+// compute the width if monospaced, 0 otherwise
+func getFontWidth(font: CTFont) -> CGFloat {
+    if (font as NSFont).fixedPitch {
+        let characters = [UniChar(0x20)]
+        var glyphs = [CGGlyph(0)]
+        if CTFontGetGlyphsForCharacters(font, characters, &glyphs, 1) {
+            let advance = CTFontGetAdvancesForGlyphs(font, .Horizontal, glyphs, nil, 1)
+            return CGFloat(advance)
+        }
+    }
+    return 0
+}
+
 class EditView: NSView {
 
-    var text: [[AnyObject]]
-    
-    var eventCallback: (NSEvent -> ())?
+    var lines: [[AnyObject]] = []
+    var linesStart: Int = 0
+
+    var sendCallback: (AnyObject -> ())?
 
     var widthConstraint: NSLayoutConstraint?
     var heightConstraint: NSLayoutConstraint?
@@ -29,8 +50,13 @@ class EditView: NSView {
     var leading: CGFloat
     var baseline: CGFloat
     var linespace: CGFloat
+    var fontWidth: CGFloat
 
     let selcolor: NSColor
+
+    // visible scroll region, exclusive of lastLine
+    var firstLine: Int = 0
+    var lastLine: Int = 0
 
     override init(frame frameRect: NSRect) {
         let font = CTFontCreateWithName("InconsolataGo", 14, nil)
@@ -40,10 +66,10 @@ class EditView: NSView {
         linespace = ceil(ascent + descent + leading)
         baseline = ceil(ascent)
         attributes = [String(kCTFontAttributeName): font]
-        text = []
+        fontWidth = getFontWidth(font)
         selcolor = NSColor(colorLiteralRed: 0.7, green: 0.85, blue: 0.99, alpha: 1.0)
         super.init(frame: frameRect)
-        widthConstraint = NSLayoutConstraint(item: self, attribute: .Width, relatedBy: .GreaterThanOrEqual, toItem: nil, attribute: .Width, multiplier: 1, constant: 100)
+        widthConstraint = NSLayoutConstraint(item: self, attribute: .Width, relatedBy: .GreaterThanOrEqual, toItem: nil, attribute: .Width, multiplier: 1, constant: 400)
         widthConstraint!.active = true
         heightConstraint = NSLayoutConstraint(item: self, attribute: .Height, relatedBy: .GreaterThanOrEqual, toItem: nil, attribute: .Height, multiplier: 1, constant: 100)
         heightConstraint!.active = true
@@ -60,17 +86,20 @@ class EditView: NSView {
 
     override func drawRect(dirtyRect: NSRect) {
         super.drawRect(dirtyRect)
+        /*
         let path = NSBezierPath(ovalInRect: frame)
         NSColor(colorLiteralRed: 0, green: 0, blue: 1, alpha: 0.25).setFill()
         path.fill()
         let path2 = NSBezierPath(ovalInRect: dirtyRect)
         NSColor(colorLiteralRed: 0, green: 0.5, blue: 0, alpha: 0.25).setFill()
         path2.fill()
+        */
 
         let context = NSGraphicsContext.currentContext()!.CGContext
         let x0: CGFloat = 2;
-        var y = baseline;
-        for line in text {
+        var y = linespace * CGFloat(linesStart + 1);
+        // TODO: just draw lines intersecting with dirtyRect
+        for line in lines {
             let s = line[0] as! String
             let attrString = NSMutableAttributedString(string: s, attributes: self.attributes)
             var cursor: Int? = nil;
@@ -98,9 +127,12 @@ class EditView: NSView {
                 CGContextSetTextMatrix(context, CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: x0, ty: y))
                 CTLineDraw(ctline, context)
                 */
-                let utf16_ix = utf8_offset_to_utf16(s, cursor)
-                Swift.print(utf16_ix)
-                let pos = CTLineGetOffsetForStringIndex(ctline, CFIndex(utf16_ix), nil)
+                var pos = CGFloat(0)
+                // special case because measurement is so expensive; might have to rethink in rtl
+                if cursor != 0 {
+                    let utf16_ix = utf8_offset_to_utf16(s, cursor)
+                    pos = CTLineGetOffsetForStringIndex(ctline, CFIndex(utf16_ix), nil)
+                }
                 CGContextMoveToPoint(context, x0 + pos, y + descent)
                 CGContextAddLineToPoint(context, x0 + pos, y - ascent)
                 CGContextStrokePath(context)
@@ -118,23 +150,46 @@ class EditView: NSView {
         return true;
     }
 
+    // TODO: probably get rid of this, we get scroll notifications elsewhere
     override func resizeWithOldSuperviewSize(oldSize: NSSize) {
         super.resizeWithOldSuperviewSize(oldSize)
-        Swift.print("resizing, oldsize =", oldSize, ", frame =", frame);
+        //Swift.print("resizing, oldsize =", oldSize, ", frame =", frame);
     }
 
     override func keyDown(theEvent: NSEvent) {
-        if let callback = eventCallback {
-            callback(theEvent)
+        if let callback = sendCallback {
+            callback(eventToJson(theEvent))
         } else {
             super.keyDown(theEvent)
         }
     }
 
-    func mySetText(text: [[AnyObject]]) {
-        self.text = text
-        //heightConstraint?.constant = 400
+    func mySetText(text: [String: AnyObject]) {
+        self.lines = text["lines"]! as! [[AnyObject]]
+        self.linesStart = text["first_line"] as! Int
+        heightConstraint?.constant = (text["height"] as! CGFloat) * linespace + 2 * descent
+        if let cursor = text["cursor"] as? [Int] {
+            let line = cursor[0]
+            let col = cursor[1]
+            let x = CGFloat(col) * fontWidth  // TODO: deal with non-ASCII, non-monospaced case
+            let y = CGFloat(line) * linespace + baseline
+            let scrollRect = NSRect(x: x, y: y - ascent, width: 4, height: linespace + descent)
+            dispatch_async(dispatch_get_main_queue()) {
+                // defer until resize has had a chance to happen
+                self.scrollRectToVisible(scrollRect)
+            }
+        }
+        // TODO: don't set needsDisplay if we're just scrolling - needs finer grained dirty state in core
         needsDisplay = true
     }
 
+    func updateScroll(bounds: NSRect) {
+        let first = Int(floor(bounds.origin.y / linespace))
+        let last = Int(ceil((bounds.origin.y + bounds.size.height) / linespace))
+        if first != firstLine || last != lastLine {
+            firstLine = first
+            lastLine = last
+            sendCallback?(["scroll", [firstLine, lastLine]])
+        }
+    }
 }
