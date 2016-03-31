@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::cmp::max;
 use std::fs::File;
 use std::io::Read;
 use serde_json::Value;
@@ -179,8 +180,8 @@ impl Editor {
 
     fn do_scroll(&mut self, args: &Value) {
         if let Some(array) = args.as_array() {
-            if let (Some(first), Some(last)) = (array[0].as_u64(), array[1].as_u64()) {
-                self.view.set_scroll(first as usize, last as usize);
+            if let (Some(first), Some(last)) = (array[0].as_i64(), array[1].as_i64()) {
+                self.view.set_scroll(max(first, 0) as usize, last as usize);
                 self.dirty = true;
             }
         }

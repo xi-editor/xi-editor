@@ -97,11 +97,20 @@ class EditView: NSView {
 
         let context = NSGraphicsContext.currentContext()!.CGContext
         let x0: CGFloat = 2;
-        var y = linespace * CGFloat(linesStart + 1);
-        // TODO: just draw lines intersecting with dirtyRect
-        for line in lines {
+        let first = Int(floor(dirtyRect.origin.y / linespace))
+        let last = Int(ceil((dirtyRect.origin.y + bounds.size.height) / linespace))
+        
+        for lineIx in first..<last {
+            if lineIx < linesStart || lineIx >= linesStart + lines.count {
+                continue
+            }
+            let line = lines[lineIx - linesStart]
             let s = line[0] as! String
             let attrString = NSMutableAttributedString(string: s, attributes: self.attributes)
+            /*
+            let randcolor = NSColor(colorLiteralRed: Float(drand48()), green: Float(drand48()), blue: Float(drand48()), alpha: 1.0)
+            attrString.addAttribute(NSForegroundColorAttributeName, value: randcolor, range: NSMakeRange(0, s.utf16.count))
+            */
             var cursor: Int? = nil;
             for attr in line.dropFirst() {
                 let attr = attr as! [AnyObject]
@@ -120,6 +129,7 @@ class EditView: NSView {
             // probably want to move to using CTLineDraw instead of drawing the attributed string,
             // but that means drawing the selection highlight ourselves (which has other benefits).
             //attrString.drawAtPoint(NSPoint(x: x0, y: y - 13))
+            let y = linespace * CGFloat(lineIx + 1);
             attrString.drawWithRect(NSRect(x: x0, y: y, width: dirtyRect.width - x0, height: 14), options: [])
             if let cursor = cursor {
                 let ctline = CTLineCreateWithAttributedString(attrString)
@@ -137,7 +147,6 @@ class EditView: NSView {
                 CGContextAddLineToPoint(context, x0 + pos, y - ascent)
                 CGContextStrokePath(context)
             }
-            y += linespace
         }
     }
 

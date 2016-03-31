@@ -19,6 +19,8 @@ use serde_json::builder::ArrayBuilder;
 
 use dimer_rope::Rope;
 
+const SCROLL_SLOP: usize = 20;
+
 pub struct View {
     pub sel_start: usize,
     pub sel_end: usize,
@@ -71,8 +73,9 @@ impl View {
         } else {
             text.line_of_offset(self.sel_max())
         };
-        let mut line_num = self.first_line;
-        for l in text.clone().slice(text.offset_of_line(self.first_line), text.len()).lines() {
+        let first_line = max(self.first_line, SCROLL_SLOP) - SCROLL_SLOP;
+        let mut line_num = first_line;
+        for l in text.clone().slice(text.offset_of_line(first_line), text.len()).lines() {
             let mut line_builder = ArrayBuilder::new();
             let l_len = l.len();
             line_builder = line_builder.push(l);
@@ -101,7 +104,7 @@ impl View {
             }
             builder = builder.push(line_builder.unwrap());
             line_num += 1;
-            if line_num == self.first_line + self.height {
+            if line_num == self.first_line + self.height + SCROLL_SLOP {
                 break;
             }
         }
@@ -118,7 +121,7 @@ impl View {
             .push_object(|builder| {
                 let mut builder = builder
                     .insert("lines", lines)
-                    .insert("first_line", self.first_line)
+                    .insert("first_line", first_line)
                     .insert("height", height);
                 if scroll_to_cursor {
                     builder = builder.insert_array("cursor", |builder|
