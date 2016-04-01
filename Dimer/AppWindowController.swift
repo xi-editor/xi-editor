@@ -18,7 +18,7 @@ class AppWindowController: NSWindowController {
     @IBOutlet weak var editView: EditView!
     @IBOutlet weak var scrollView: NSScrollView!
 
-    var sendCallback: (AnyObject -> ())?
+    var coreConnection: CoreConnection?
 
     func visualConstraint(views: [String : NSView], _ format: String) {
         let constraints = NSLayoutConstraint.constraintsWithVisualFormat(format, options: .AlignAllTop, metrics: nil, views: views)
@@ -28,9 +28,7 @@ class AppWindowController: NSWindowController {
     override func windowDidLoad() {
         super.windowDidLoad()
         //window?.backgroundColor = NSColor.whiteColor()
-        editView.sendCallback = { [weak self] event -> () in
-            self?.sendCallback?(event)
-        }
+        editView.coreConnection = coreConnection
 
         // set up autolayout constraints
         let views = ["editView": editView, "clipView": scrollView.contentView]

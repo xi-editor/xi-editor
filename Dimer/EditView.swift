@@ -39,7 +39,7 @@ class EditView: NSView {
     var lines: [[AnyObject]] = []
     var linesStart: Int = 0
 
-    var sendCallback: (AnyObject -> ())?
+    var coreConnection: CoreConnection?
 
     var widthConstraint: NSLayoutConstraint?
     var heightConstraint: NSLayoutConstraint?
@@ -104,21 +104,42 @@ class EditView: NSView {
         let x0: CGFloat = 2;
         let first = Int(floor(dirtyRect.origin.y / linespace))
         let last = Int(ceil((dirtyRect.origin.y + dirtyRect.size.height) / linespace))
+        var myLines = [[AnyObject]]?()
+        // TODO: either (a) make this smarter, so it doesn't RPC when lines contains EOF,
+        // or (b) always do the RPC, which is simpler.
+        if first < linesStart || last > linesStart + lines.count {
+            let start = NSDate()
+            if let result = coreConnection?.sendRpc(["render_lines", ["first_line": first, "last_line": last]]) as? [[AnyObject]] {
+                let interval = NSDate().timeIntervalSinceDate(start)
+                Swift.print(String(format: "RPC latency = %3.2fms", interval as Double * 1e3))
+                myLines = result
+            } else {
+                Swift.print("rpc error")
+            }
+        } else {
+            Swift.print("hit, [\(first):\(last)] <= [\(linesStart):\(linesStart + lines.count)]")
+        }
 
         for lineIx in first..<last {
-            if lineIx < linesStart || lineIx >= linesStart + lines.count {
-                // TODO: might want to detect underrun and wait a few ms for an update
+            var line = [AnyObject]?()
+            if let myLines = myLines {
+                if lineIx < first + myLines.count {
+                    line = myLines[lineIx - first]
+                }
+            } else if lineIx >= linesStart && lineIx < linesStart + lines.count {
+                line = lines[lineIx - linesStart]
+            }
+            if line == nil {
                 continue
             }
-            let line = lines[lineIx - linesStart]
-            let s = line[0] as! String
+            let s = line![0] as! String
             let attrString = NSMutableAttributedString(string: s, attributes: self.attributes)
             /*
             let randcolor = NSColor(colorLiteralRed: Float(drand48()), green: Float(drand48()), blue: Float(drand48()), alpha: 1.0)
             attrString.addAttribute(NSForegroundColorAttributeName, value: randcolor, range: NSMakeRange(0, s.utf16.count))
             */
             var cursor: Int? = nil;
-            for attr in line.dropFirst() {
+            for attr in line!.dropFirst() {
                 let attr = attr as! [AnyObject]
                 let type = attr[0] as! String
                 if type == "cursor" {
@@ -172,8 +193,8 @@ class EditView: NSView {
     }
 
     override func keyDown(theEvent: NSEvent) {
-        if let callback = sendCallback {
-            callback(eventToJson(theEvent))
+        if let coreConnection = coreConnection {
+            coreConnection.sendJson(eventToJson(theEvent))
         } else {
             super.keyDown(theEvent)
         }
@@ -194,7 +215,6 @@ class EditView: NSView {
                 self.scrollRectToVisible(scrollRect)
             }
         }
-        // TODO: don't set needsDisplay if we're just scrolling - needs finer grained dirty state in core
         needsDisplay = true
     }
 
@@ -224,7 +244,7 @@ class EditView: NSView {
         if first != firstLine || last != lastLine {
             firstLine = first
             lastLine = last
-            sendCallback?(["scroll", [firstLine, lastLine]])
+            coreConnection?.sendJson(["scroll", [firstLine, lastLine]])
         }
     }
 }

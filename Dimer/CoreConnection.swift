@@ -19,9 +19,14 @@ class CoreConnection {
     var inHandle: NSFileHandle  // stdin of core process
     var sizeBuf: NSMutableData
     var recvBuf: NSMutableData
-    var callback: NSData -> ()
+    var callback: AnyObject -> ()
 
-    init(path: String, callback: NSData -> ()) {
+    // RPC state
+    var queue = dispatch_queue_create("com.levien.dimer.CoreConnection", DISPATCH_QUEUE_SERIAL)
+    var rpcIndex = 0
+    var pending = Dictionary<Int, AnyObject? -> ()>()
+
+    init(path: String, callback: AnyObject -> ()) {
         let task = NSTask()
         task.launchPath = path
         task.arguments = []
@@ -33,7 +38,7 @@ class CoreConnection {
         inHandle = inPipe.fileHandleForWriting
         recvBuf = NSMutableData(capacity: 65536)!
         self.callback = callback
-        outPipe.fileHandleForReading.readabilityHandler = { handle -> Void in
+        outPipe.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
             self.recvHandler(data)
         }
@@ -61,7 +66,7 @@ class CoreConnection {
                 break
             }
             let dataPacket = recvBuf.subdataWithRange(NSRange(location: i + 8, length: size))
-            callback(dataPacket)
+            handleRaw(dataPacket)
             i += 8 + size
         }
         if i < recvBufLen {
@@ -80,4 +85,61 @@ class CoreConnection {
         inHandle.writeData(data)
     }
 
+    func sendJson(json: AnyObject) {
+        do {
+            let data = try NSJSONSerialization.dataWithJSONObject(json, options: [])
+            send(data)
+        } catch _ {
+            print("error serializing to json")
+        }
+    }
+
+    func handleRaw(data: NSData) {
+        do {
+            let json = try NSJSONSerialization.JSONObjectWithData(data, options: .AllowFragments)
+            //print("got \(json)")
+            if let response = json as? [AnyObject] where response.count == 2, let cmd = response[0] as? NSString {
+                if cmd == "rpc_response" {
+                    handleRpcResponse(response[1])
+                    return
+                }
+            }
+            callback(json)
+        } catch _ {
+            print("json error")
+        }
+    }
+
+    func sendRpcAsync(request: AnyObject, callback: AnyObject? -> ()) {
+        var index = Int()
+        dispatch_sync(queue) {
+            index = self.rpcIndex
+            self.rpcIndex += 1
+            self.pending[index] = callback
+        }
+        sendJson(["rpc", ["index": index, "request": request]])
+    }
+
+    // send RPC synchronously, blocking until return
+    func sendRpc(request: AnyObject) -> AnyObject? {
+        let semaphore = dispatch_semaphore_create(0)
+        var result: AnyObject? = nil
+        sendRpcAsync(request) { r in
+            result = r
+            dispatch_semaphore_signal(semaphore)
+        }
+        dispatch_semaphore_wait(semaphore, DISPATCH_TIME_FOREVER)
+        return result
+    }
+
+    func handleRpcResponse(response: AnyObject) {
+        if let resp = response as? [String: AnyObject], let index = resp["index"] as? Int {
+            var callback: (AnyObject? -> ())? = nil
+            let result = resp["result"]
+            dispatch_sync(queue) {
+                callback = self.pending.removeValueForKey(index)
+            }
+            callback?(result)
+        }
+    }
 }

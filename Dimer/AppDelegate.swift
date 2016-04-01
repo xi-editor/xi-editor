@@ -31,32 +31,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.handleCoreCmd(data)
             }
         }
-        appWindowController?.sendCallback = { [weak self] json -> () in
-            self?.sendJson(json)
-        }
+        appWindowController?.coreConnection = coreConnection
 
         appWindowController?.showWindow(self)
     }
     
-    func sendJson(json: AnyObject) {
-        do {
-            let data = try NSJSONSerialization.dataWithJSONObject(json, options: [])
-            self.coreConnection?.send(data)
-        } catch _ {
-        }
-    }
-    
-    func handleCoreCmd(data: NSData) {
-        do {
-            let json = try NSJSONSerialization.JSONObjectWithData(data, options: .AllowFragments)
-            //print("got \(json)")
-            if let response = json as? [AnyObject] where response.count == 2, let cmd = response[0] as? NSString {
-                if cmd == "settext" {
-                    self.appWindowController?.editView.updateSafe(response[1] as! [String: AnyObject])
-                }
+    func handleCoreCmd(json: AnyObject) {
+        if let response = json as? [AnyObject] where response.count == 2, let cmd = response[0] as? NSString {
+            if cmd == "settext" {
+                self.appWindowController?.editView.updateSafe(response[1] as! [String: AnyObject])
             }
-        } catch _ {
-            print("json error")
         }
     }
 
@@ -70,7 +54,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func application(sender: NSApplication, openFile filename: String) -> Bool {
-        sendJson(["open", filename])
+        coreConnection?.sendJson(["open", filename])
         return true
     }
 

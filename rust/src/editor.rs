@@ -16,6 +16,7 @@ use std::cmp::max;
 use std::fs::File;
 use std::io::Read;
 use serde_json::Value;
+use serde_json::builder::ArrayBuilder;
 
 use dimer_rope::Rope;
 use view::View;
@@ -182,19 +183,57 @@ impl Editor {
         if let Some(array) = args.as_array() {
             if let (Some(first), Some(last)) = (array[0].as_i64(), array[1].as_i64()) {
                 self.view.set_scroll(max(first, 0) as usize, last as usize);
-                self.dirty = true;
+            }
+        }
+    }
+
+    fn do_render_lines(&mut self, args: &Value) -> Value {
+        if let Some(dict) = args.as_object() {
+            let first_line = dict.get("first_line").unwrap().as_u64().unwrap();
+            let last_line = dict.get("last_line").unwrap().as_u64().unwrap();
+            self.view.render_lines(&self.text, first_line as usize, last_line as usize)
+        } else {
+            Value::Null
+        }
+    }
+
+    fn dispatch_rpc(&mut self, cmd: &str, args: &Value) -> Value {
+        match cmd {
+            "render_lines" => self.do_render_lines(args),
+            _ => Value::Null
+        }
+    }
+
+    fn do_rpc(&mut self, args: &Value) {
+        if let Some(dict) = args.as_object() {
+            let index = dict.get("index").unwrap();
+            let request = dict.get("request").unwrap();
+            if let Some(array) = request.as_array() {
+                if let Some(cmd) = array[0].as_string() {
+                    let result = self.dispatch_rpc(cmd, &array[1]);
+                    send(&ArrayBuilder::new()
+                        .push("rpc_response")
+                        .push_object(|builder|
+                            builder
+                                .insert("index", index)
+                                .insert("result", result)
+                        )
+                        .unwrap()
+                    );
+                }
             }
         }
     }
 
 	pub fn do_cmd(&mut self, cmd: &str, args: &Value) {
         match cmd {
-		  "key" => self.do_key(args),
-          "open" => self.do_open(args),
-          "scroll" => self.do_scroll(args),
-          _ => print_err!("unknown cmd {}", cmd)
+            "rpc" => self.do_rpc(args),
+            "key" => self.do_key(args),
+            "open" => self.do_open(args),
+            "scroll" => self.do_scroll(args),
+            _ => print_err!("unknown cmd {}", cmd)
         }
-        // TODO: should probably defer this until input quiesces
+        // TODO: could defer this until input quiesces - will this help?
         self.render();
 	}
 }

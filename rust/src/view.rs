@@ -19,7 +19,7 @@ use serde_json::builder::ArrayBuilder;
 
 use dimer_rope::Rope;
 
-const SCROLL_SLOP: usize = 20;
+const SCROLL_SLOP: usize = 2;
 
 pub struct View {
     pub sel_start: usize,
@@ -60,7 +60,7 @@ impl View {
         }
     }
 
-    pub fn render(&self, text: &Rope, scroll_to_cursor: bool) -> Value {
+    pub fn render_lines(&self, text: &Rope, first_line: usize, last_line: usize) -> Value {
         let mut builder = ArrayBuilder::new();
         let (cursor_line, cursor_col) = self.offset_to_line_col(text, self.sel_end);
         let sel_min_line = if self.sel_start == self.sel_end {
@@ -73,7 +73,6 @@ impl View {
         } else {
             text.line_of_offset(self.sel_max())
         };
-        let first_line = max(self.first_line, SCROLL_SLOP) - SCROLL_SLOP;
         let mut line_num = first_line;
         for l in text.clone().slice(text.offset_of_line(first_line), text.len()).lines() {
             let mut line_builder = ArrayBuilder::new();
@@ -104,7 +103,7 @@ impl View {
             }
             builder = builder.push(line_builder.unwrap());
             line_num += 1;
-            if line_num == self.first_line + self.height + SCROLL_SLOP {
+            if line_num == last_line {
                 break;
             }
         }
@@ -114,7 +113,13 @@ impl View {
                     .push_array(|builder|
                         builder.push("cursor").push(0)));
         }
-        let lines = builder.unwrap();
+        builder.unwrap()
+    }
+
+    pub fn render(&self, text: &Rope, scroll_to_cursor: bool) -> Value {
+        let first_line = max(self.first_line, SCROLL_SLOP) - SCROLL_SLOP;
+        let last_line = self.first_line + self.height + SCROLL_SLOP;
+        let lines = self.render_lines(text, first_line, last_line);
         let height = self.offset_to_line_col(text, text.len()).0 + 1;
         ArrayBuilder::new()
             .push("settext")
@@ -124,6 +129,7 @@ impl View {
                     .insert("first_line", first_line)
                     .insert("height", height);
                 if scroll_to_cursor {
+                    let (cursor_line, cursor_col) = self.offset_to_line_col(text, self.sel_end);
                     builder = builder.insert_array("cursor", |builder|
                         builder.push(cursor_line).push(cursor_col));
                 }
