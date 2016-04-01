@@ -43,9 +43,16 @@
                             <autoresizingMask key="autoresizingMask"/>
                         </scroller>
                     </scrollView>
+                    <customView misplaced="YES" translatesAutoresizingMaskIntoConstraints="NO" id="5Jy-03-fcM" customClass="ShadowView" customModule="Dimer" customModuleProvider="target">
+                        <rect key="frame" x="0.0" y="0.0" width="480" height="265"/>
+                    </customView>
                 </subviews>
                 <constraints>
+                    <constraint firstItem="5Jy-03-fcM" firstAttribute="leading" secondItem="se5-gp-TjO" secondAttribute="leading" id="01B-bm-BVC"/>
+                    <constraint firstItem="5Jy-03-fcM" firstAttribute="top" secondItem="se5-gp-TjO" secondAttribute="top" id="IaS-11-5Rm"/>
                     <constraint firstItem="ddX-9c-KvF" firstAttribute="leading" secondItem="se5-gp-TjO" secondAttribute="leading" constant="-1" id="OnY-Wh-FKZ"/>
+                    <constraint firstAttribute="bottom" secondItem="5Jy-03-fcM" secondAttribute="bottom" id="fqc-9p-zzU"/>
+                    <constraint firstAttribute="trailing" secondItem="5Jy-03-fcM" secondAttribute="trailing" id="jKQ-F7-zpq"/>
                     <constraint firstAttribute="bottom" secondItem="ddX-9c-KvF" secondAttribute="bottom" constant="-1" id="jTN-pf-V3q"/>
                     <constraint firstAttribute="trailing" secondItem="ddX-9c-KvF" secondAttribute="trailing" constant="-1" id="jq0-r7-cMs"/>
                     <constraint firstItem="ddX-9c-KvF" firstAttribute="top" secondItem="se5-gp-TjO" secondAttribute="top" constant="-1" id="ldj-hJ-3OL"/>

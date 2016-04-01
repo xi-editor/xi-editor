@@ -14,6 +14,7 @@
 		AE499DE01C82BB2B002D68AF /* DimerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE499DDF1C82BB2B002D68AF /* DimerTests.swift */; };
 		AE499DEB1C82BB2B002D68AF /* DimerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE499DEA1C82BB2B002D68AF /* DimerUITests.swift */; };
 		AE499DF91C82C835002D68AF /* CoreConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE499DF81C82C835002D68AF /* CoreConnection.swift */; };
+		AEB66A791CAEFC8F002F686A /* ShadowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEB66A781CAEFC8F002F686A /* ShadowView.swift */; };
 		AEBAAA651C83BB1A005637A3 /* python in Resources */ = {isa = PBXBuildFile; fileRef = AEBAAA601C83B503005637A3 /* python */; };
 		AED23F151C83C689002246CE /* AppWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AED23F131C83C689002246CE /* AppWindowController.swift */; };
 		AED23F161C83C689002246CE /* AppWindowController.xib in Resources */ = {isa = PBXBuildFile; fileRef = AED23F141C83C689002246CE /* AppWindowController.xib */; };
@@ -38,7 +39,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		AE228F5C1C897CE7000E9B0F /* dimercore */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; name = "dimercore"; path = "rust/target/debug/dimercore"; sourceTree = "<group>"; };
+		AE228F5C1C897CE7000E9B0F /* dimercore */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; name = dimercore; path = rust/target/debug/dimercore; sourceTree = "<group>"; };
 		AE499DCC1C82BB2B002D68AF /* Dimer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Dimer.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AE499DCF1C82BB2B002D68AF /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		AE499DD11C82BB2B002D68AF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -51,6 +52,7 @@
 		AE499DEA1C82BB2B002D68AF /* DimerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DimerUITests.swift; sourceTree = "<group>"; };
 		AE499DEC1C82BB2B002D68AF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AE499DF81C82C835002D68AF /* CoreConnection.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CoreConnection.swift; sourceTree = "<group>"; };
+		AEB66A781CAEFC8F002F686A /* ShadowView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ShadowView.swift; sourceTree = "<group>"; };
 		AEBAAA601C83B503005637A3 /* python */ = {isa = PBXFileReference; lastKnownFileType = folder; path = python; sourceTree = "<group>"; };
 		AED23F131C83C689002246CE /* AppWindowController.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AppWindowController.swift; sourceTree = "<group>"; };
 		AED23F141C83C689002246CE /* AppWindowController.xib */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.xib; path = AppWindowController.xib; sourceTree = "<group>"; };
@@ -109,6 +111,7 @@
 			children = (
 				AE499DCF1C82BB2B002D68AF /* AppDelegate.swift */,
 				AED23F171C83CBEC002246CE /* EditView.swift */,
+				AEB66A781CAEFC8F002F686A /* ShadowView.swift */,
 				AE499DF81C82C835002D68AF /* CoreConnection.swift */,
 				AE499DD11C82BB2B002D68AF /* Assets.xcassets */,
 				AE499DD31C82BB2B002D68AF /* MainMenu.xib */,
@@ -292,6 +295,7 @@
 				AED23F151C83C689002246CE /* AppWindowController.swift in Sources */,
 				AED23F181C83CBED002246CE /* EditView.swift in Sources */,
 				AE499DD01C82BB2B002D68AF /* AppDelegate.swift in Sources */,
+				AEB66A791CAEFC8F002F686A /* ShadowView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
