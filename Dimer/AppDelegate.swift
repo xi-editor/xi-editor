@@ -19,7 +19,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     var coreConnection: CoreConnection?
     var appWindowController: AppWindowController?
-
     
     func applicationWillFinishLaunching(aNotification: NSNotification) {
         // show main app window
@@ -45,7 +44,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func openDocument(sender: AnyObject) {
-        let fileDialog: NSOpenPanel = NSOpenPanel()
+        let fileDialog = NSOpenPanel()
         if fileDialog.runModal() == NSFileHandlingPanelOKButton {
             if let path = fileDialog.URL?.path {
                 application(NSApp, openFile: path)
@@ -54,8 +53,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func application(sender: NSApplication, openFile filename: String) -> Bool {
+        appWindowController?.filename = filename
         coreConnection?.sendJson(["open", filename])
-        return true
+        return true  // TODO: should be RPC instead of async, plumb errors
     }
 
     func applicationWillTerminate(aNotification: NSNotification) {

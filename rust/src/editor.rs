@@ -14,7 +14,7 @@
 
 use std::cmp::max;
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read,Write};
 use serde_json::Value;
 use serde_json::builder::ArrayBuilder;
 
@@ -179,6 +179,25 @@ impl Editor {
         }
     }
 
+    fn do_save(&mut self, args: &Value) {
+        if let Some(path) = args.as_string() {
+            match File::create(&path) {
+                Ok(mut f) => {
+                    for chunk in self.text.iter_chunks() {
+                        match f.write_all(chunk.as_bytes()) {
+                            Err(e) => {
+                                print_err!("write error {}", e);
+                                break;
+                            },
+                            _ => ()
+                        }
+                    }
+                },
+                Err(e) => print_err!("create error {}", e)
+            }
+        }
+    }
+
     fn do_scroll(&mut self, args: &Value) {
         if let Some(array) = args.as_array() {
             if let (Some(first), Some(last)) = (array[0].as_i64(), array[1].as_i64()) {
@@ -230,6 +249,7 @@ impl Editor {
             "rpc" => self.do_rpc(args),
             "key" => self.do_key(args),
             "open" => self.do_open(args),
+            "save" => self.do_save(args),
             "scroll" => self.do_scroll(args),
             _ => print_err!("unknown cmd {}", cmd)
         }

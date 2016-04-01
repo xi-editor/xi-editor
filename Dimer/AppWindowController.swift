@@ -19,6 +19,8 @@ class AppWindowController: NSWindowController {
     @IBOutlet weak var scrollView: NSScrollView!
 
     var coreConnection: CoreConnection?
+    
+    var filename: String?
 
     func visualConstraint(views: [String : NSView], _ format: String) {
         let constraints = NSLayoutConstraint.constraintsWithVisualFormat(format, options: .AlignAllTop, metrics: nil, views: views)
@@ -50,5 +52,23 @@ class AppWindowController: NSWindowController {
 
     func updateEditViewScroll() {
         editView?.updateScroll(scrollView.contentView.bounds)
+    }
+
+    func saveDocument(sender: AnyObject) {
+        if filename == nil {
+            saveDocumentAs(sender)
+        } else {
+            coreConnection?.sendJson(["save", filename!])
+        }
+    }
+    
+    func saveDocumentAs(sender: AnyObject) {
+        let fileDialog = NSSavePanel()
+        if fileDialog.runModal() == NSFileHandlingPanelOKButton {
+            if let path = fileDialog.URL?.path {
+                filename = path
+                saveDocument(sender)
+            }
+        }
     }
 }
