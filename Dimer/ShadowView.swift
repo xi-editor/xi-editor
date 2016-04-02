@@ -15,17 +15,42 @@
 import Cocoa
 
 class ShadowView: NSView {
+    var topShadow = false;
+    var leadingShadow = false;
+    var trailingShadow = false;
 
     override func drawRect(dirtyRect: NSRect) {
-        let context = NSGraphicsContext.currentContext()!.CGContext
-        let colors = [CGColorCreateGenericRGB(0, 0, 0, 0.4), CGColorCreateGenericRGB(0, 0, 0, 0.0)]
-        let colorLocations: [CGFloat] = [0, 1]
-        let gradient = CGGradientCreateWithColors(CGColorSpaceCreateDeviceRGB(), colors, colorLocations)
-        CGContextDrawLinearGradient(context, gradient, NSPoint(x: 0, y: 0), NSPoint(x: 0, y: 3), [])
+        if topShadow || leadingShadow || trailingShadow {
+            let context = NSGraphicsContext.currentContext()!.CGContext
+            let colors = [CGColorCreateGenericRGB(0, 0, 0, 0.4), CGColorCreateGenericRGB(0, 0, 0, 0.0)]
+            let colorLocations: [CGFloat] = [0, 1]
+            let gradient = CGGradientCreateWithColors(CGColorSpaceCreateDeviceRGB(), colors, colorLocations)
+            if topShadow {
+                CGContextDrawLinearGradient(context, gradient, NSPoint(x: 0, y: 0), NSPoint(x: 0, y: 3), [])
+            }
+            if leadingShadow {
+                CGContextDrawLinearGradient(context, gradient, NSPoint(x: 0, y: 0), NSPoint(x: 3, y: 0), [])
+            }
+            if trailingShadow {
+                let x = bounds.size.width
+                CGContextDrawLinearGradient(context, gradient, NSPoint(x: x - 1, y: 0), NSPoint(x: x - 4, y: 0), [])
+            }
+        }
     }
 
     override var flipped: Bool {
         return true;
     }
-    
+
+    func updateScroll(contentBounds: NSRect, _ docBounds: NSRect) {
+        let newTop = contentBounds.origin.y != 0
+        let newLead = contentBounds.origin.x != 0
+        let newTrail = contentBounds.origin.x + contentBounds.width != docBounds.origin.x + docBounds.width
+        if newTop != topShadow || newLead != leadingShadow || newTrail != trailingShadow {
+            needsDisplay = true
+            topShadow = newTop
+            leadingShadow = newLead
+            trailingShadow = newTrail
+        }
+    }
 }

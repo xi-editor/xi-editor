@@ -157,7 +157,7 @@ class EditView: NSView {
             // but that means drawing the selection highlight ourselves (which has other benefits).
             //attrString.drawAtPoint(NSPoint(x: x0, y: y - 13))
             let y = linespace * CGFloat(lineIx + 1);
-            attrString.drawWithRect(NSRect(x: x0, y: y, width: dirtyRect.width - x0, height: 14), options: [])
+            attrString.drawWithRect(NSRect(x: x0, y: y, width: dirtyRect.origin.x + dirtyRect.width - x0, height: 14), options: [])
             if let cursor = cursor {
                 let ctline = CTLineCreateWithAttributedString(attrString)
                 /*
@@ -209,7 +209,7 @@ class EditView: NSView {
             let col = cursor[1]
             let x = CGFloat(col) * fontWidth  // TODO: deal with non-ASCII, non-monospaced case
             let y = CGFloat(line) * linespace + baseline
-            let scrollRect = NSRect(x: x, y: y - ascent, width: 4, height: linespace + descent)
+            let scrollRect = NSRect(x: x, y: y - baseline, width: 4, height: linespace + descent)
             dispatch_async(dispatch_get_main_queue()) {
                 // defer until resize has had a chance to happen
                 self.scrollRectToVisible(scrollRect)

@@ -17,6 +17,7 @@ import Cocoa
 class AppWindowController: NSWindowController {
     @IBOutlet weak var editView: EditView!
     @IBOutlet weak var scrollView: NSScrollView!
+    @IBOutlet weak var shadowView: ShadowView!
 
     var coreConnection: CoreConnection?
     
@@ -52,6 +53,7 @@ class AppWindowController: NSWindowController {
 
     func updateEditViewScroll() {
         editView?.updateScroll(scrollView.contentView.bounds)
+        shadowView?.updateScroll(scrollView.contentView.bounds, scrollView.documentView!.bounds)
     }
 
     func saveDocument(sender: AnyObject) {
