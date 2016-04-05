@@ -130,7 +130,7 @@ impl View {
                     .insert("height", height);
                 if scroll_to_cursor {
                     let (cursor_line, cursor_col) = self.offset_to_line_col(text, self.sel_end);
-                    builder = builder.insert_array("cursor", |builder|
+                    builder = builder.insert_array("scrollto", |builder|
                         builder.push(cursor_line).push(cursor_col));
                 }
                 builder

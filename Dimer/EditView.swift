@@ -204,7 +204,7 @@ class EditView: NSView {
         self.lines = text["lines"]! as! [[AnyObject]]
         self.linesStart = text["first_line"] as! Int
         heightConstraint?.constant = (text["height"] as! CGFloat) * linespace + 2 * descent
-        if let cursor = text["cursor"] as? [Int] {
+        if let cursor = text["scrollto"] as? [Int] {
             let line = cursor[0]
             let col = cursor[1]
             let x = CGFloat(col) * fontWidth  // TODO: deal with non-ASCII, non-monospaced case
