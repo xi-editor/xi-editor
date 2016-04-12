@@ -42,7 +42,7 @@ pub struct Editor {
 	text: Rope,
     view: View,
     dirty: bool,
-    scroll_to_cursor: bool,
+    scroll_to: Option<usize>,
     col: usize  // maybe this should live in view, it's similar to selection
 }
 
@@ -52,7 +52,7 @@ impl Editor {
 			text: Rope::from(""),
             view: View::new(),
             dirty: false,
-            scroll_to_cursor: true,
+            scroll_to: Some(0),
             col: 0
 		}
 	}
@@ -70,7 +70,7 @@ impl Editor {
         self.view.sel_end = offset;
         if hard {
             self.col = self.view.offset_to_line_col(&self.text, offset).1;
-            self.scroll_to_cursor = true;
+            self.scroll_to = Some(offset);
         }
         self.view.scroll_to_cursor(&self.text);
         self.dirty = true;
@@ -88,9 +88,9 @@ impl Editor {
     // render if needed, sending to ui
     fn render(&mut self) {
         if self.dirty {
-            send(&self.view.render(&self.text, self.scroll_to_cursor));
+            send(&self.view.render(&self.text, self.scroll_to));
             self.dirty = false;
-            self.scroll_to_cursor = false;
+            self.scroll_to = None;
         }
     }
 
@@ -115,23 +115,19 @@ impl Editor {
                         self.text.edit_str(start, self.view.sel_max(), "");
                         self.set_cursor(start, true);
                     }
-                },
+                }
                 "\u{F700}" => {  // up arrow
-                    if self.view.sel_end == 0 { return; }
-                    let (line, _) = self.view.offset_to_line_col(&self.text, self.view.sel_end);
-                    let offset = if line == 0 { 0 } else {
-                        self.view.line_col_to_offset(&self.text, line - 1, self.col)
-                    };
-                    self.set_cursor_or_sel(offset, flags, false);
-                    self.scroll_to_cursor = true;
-                },
+                    let old_offset = self.view.sel_end;
+                    let offset = self.view.vertical_motion(&self.text, -1, self.col);
+                    self.set_cursor_or_sel(offset, flags, old_offset == offset);
+                    self.scroll_to = Some(offset);
+                }
                 "\u{F701}" => {  // down arrow
-                    if self.view.sel_end == self.text.len() { return; }
-                    let (line, _) = self.view.offset_to_line_col(&self.text, self.view.sel_end);
-                    let offset = self.view.line_col_to_offset(&self.text, line + 1, self.col);
-                    self.set_cursor_or_sel(offset, flags, false);
-                    self.scroll_to_cursor = true;
-                },
+                    let old_offset = self.view.sel_end;
+                    let offset = self.view.vertical_motion(&self.text, 1, self.col);
+                    self.set_cursor_or_sel(offset, flags, old_offset == offset);
+                    self.scroll_to = Some(offset);
+                }
                 "\u{F702}" => {  // left arrow
                     if self.view.sel_start != self.view.sel_end && (flags & MODIFIER_SHIFT) == 0 {
                         let offset = self.view.sel_min();
@@ -145,7 +141,7 @@ impl Editor {
                             // but it won't get sent; probably it needs to be a separate cmd
                         }
                     }
-                },
+                }
                 "\u{F703}" => {  // right arrow
                     if self.view.sel_start != self.view.sel_end && (flags & MODIFIER_SHIFT) == 0 {
                         let offset = self.view.sel_max();
@@ -158,7 +154,23 @@ impl Editor {
                             // see above
                         }
                     }
-                },
+                }
+                "\u{F72C}" => {  // page up
+                    let scroll = -max(self.view.scroll_height() as isize - 2, 1);
+                    let old_offset = self.view.sel_end;
+                    let offset = self.view.vertical_motion(&self.text, scroll, self.col);
+                    self.set_cursor_or_sel(offset, flags, old_offset == offset);
+                    let scroll_offset = self.view.vertical_motion(&self.text, scroll, self.col);
+                    self.scroll_to = Some(scroll_offset);
+                }
+                "\u{F72D}" => {  // page down
+                    let scroll = max(self.view.scroll_height() as isize - 2, 1);
+                    let old_offset = self.view.sel_end;
+                    let offset = self.view.vertical_motion(&self.text, scroll, self.col);
+                    self.set_cursor_or_sel(offset, flags, old_offset == offset);
+                    let scroll_offset = self.view.vertical_motion(&self.text, scroll, self.col);
+                    self.scroll_to = Some(scroll_offset);
+                }
                 _ => self.insert(chars)
             }
         }

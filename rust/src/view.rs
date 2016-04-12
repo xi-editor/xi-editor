@@ -43,6 +43,10 @@ impl View {
         self.height = last - first;
     }
 
+    pub fn scroll_height(&self) -> usize {
+        self.height
+    }
+
     pub fn sel_min(&self) -> usize {
         min(self.sel_start, self.sel_end)
     }
@@ -116,7 +120,7 @@ impl View {
         builder.unwrap()
     }
 
-    pub fn render(&self, text: &Rope, scroll_to_cursor: bool) -> Value {
+    pub fn render(&self, text: &Rope, scroll_to: Option<usize>) -> Value {
         let first_line = max(self.first_line, SCROLL_SLOP) - SCROLL_SLOP;
         let last_line = self.first_line + self.height + SCROLL_SLOP;
         let lines = self.render_lines(text, first_line, last_line);
@@ -128,10 +132,10 @@ impl View {
                     .insert("lines", lines)
                     .insert("first_line", first_line)
                     .insert("height", height);
-                if scroll_to_cursor {
-                    let (cursor_line, cursor_col) = self.offset_to_line_col(text, self.sel_end);
+                if let Some(scrollto) = scroll_to {
+                    let (line, col) = self.offset_to_line_col(text, scrollto);
                     builder = builder.insert_array("scrollto", |builder|
-                        builder.push(cursor_line).push(cursor_col));
+                        builder.push(line).push(col));
                 }
                 builder
             })
@@ -154,7 +158,7 @@ impl View {
     }
 
     pub fn line_col_to_offset(&self, text: &Rope, line: usize, col: usize) -> usize {
-        let mut offset = text.offset_of_line(line) + col;
+        let mut offset = text.offset_of_line(line).saturating_add(col);
         if offset >= text.len() {
             offset = text.len();
             if text.line_of_offset(offset) == line {
@@ -171,11 +175,33 @@ impl View {
             offset = next_line_offset;
             if text.byte_at(offset - 1) == b'\n' {
                 offset -= 1;
-                if text.byte_at(offset - 1) == b'\r' {
-                    offset -= 1;
-                }
             }
         }
+        if offset > 0 && text.byte_at(offset - 1) == b'\r' {
+            offset -= 1;
+        }
         offset
+    }
+
+    // Move up or down by `line_delta` lines and return offset where the
+    // cursor lands. The `col` argument should probably move into the View
+    // struct.
+    pub fn vertical_motion(&self, text: &Rope, line_delta: isize, col: usize) -> usize {
+        // This code is quite careful to avoid integer overflow.
+        // TODO: write tests to verify
+        let line = text.line_of_offset(self.sel_end);
+        if line_delta < 0 && (-line_delta as usize) > line {
+            return 0;
+        }
+        let line = if line_delta < 0 {
+            line - (-line_delta as usize)
+        } else {
+            line.saturating_add(line_delta as usize)
+        };
+        let n_lines = text.line_of_offset(text.len());
+        if line > n_lines {
+            return text.len();
+        }
+        self.line_col_to_offset(text, line, col)
     }
 }

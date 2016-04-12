@@ -1,6 +1,6 @@
 # xi editor
 
-The xi editor is an attempt to build a high quality text editor,
+The xi editor project is an attempt to build a high quality text editor,
 using modern software engineering techniques. It is initially built for
 Mac OS X, using Cocoa for the user interface, but other targets are planned.
 
@@ -19,7 +19,21 @@ Goals include:
 * Developer friendliness. It should be easy to customize xi editor, whether
   by adding plug-ins or hacking on the core.
 
-== Design decisions
+## Getting started
+
+You need Xcode 7 and [Rust](https://www.rust-lang.org/). You should have
+`cargo` in your path.
+
+```
+> git clone <this repo>
+> cd xi-editor
+> xcodebuild
+> open build/Release/XiEditor.app
+```
+
+Or `open XiEditor.xcodeproj` and hit the Run button.
+
+## Design decisions
 
 Here are some of the design decisions, and motivation why they should
 contribute to the above goals:

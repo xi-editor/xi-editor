@@ -240,7 +240,8 @@ class EditView: NSView {
 
     func updateScroll(bounds: NSRect) {
         let first = Int(floor(bounds.origin.y / linespace))
-        let last = Int(ceil((bounds.origin.y + bounds.size.height) / linespace))
+        let height = Int(ceil((bounds.size.height) / linespace))
+        let last = first + height
         if first != firstLine || last != lastLine {
             firstLine = first
             lastLine = last
