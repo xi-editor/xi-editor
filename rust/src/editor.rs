@@ -18,7 +18,7 @@ use std::io::{Read,Write};
 use serde_json::Value;
 use serde_json::builder::ArrayBuilder;
 
-use dimer_rope::Rope;
+use xi_rope::Rope;
 use view::View;
 
 use ::send;

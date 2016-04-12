@@ -23,7 +23,7 @@ mod view;
 
 use editor::Editor;
 
-extern crate dimer_rope;
+extern crate xi_rope;
 
 macro_rules! print_err {
     ($($arg:tt)*) => (

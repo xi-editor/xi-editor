@@ -14,9 +14,9 @@
 
 //! Toy app for experimenting with ropes
 
-extern crate dimer_rope;
+extern crate xi_rope;
 
-use dimer_rope::Rope;
+use xi_rope::Rope;
 
 fn main() {
     let mut a = Rope::from("hello.");

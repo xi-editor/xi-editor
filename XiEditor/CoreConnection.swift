@@ -22,7 +22,7 @@ class CoreConnection {
     var callback: AnyObject -> ()
 
     // RPC state
-    var queue = dispatch_queue_create("com.levien.dimer.CoreConnection", DISPATCH_QUEUE_SERIAL)
+    var queue = dispatch_queue_create("com.levien.xi.CoreConnection", DISPATCH_QUEUE_SERIAL)
     var rpcIndex = 0
     var pending = Dictionary<Int, AnyObject? -> ()>()
 

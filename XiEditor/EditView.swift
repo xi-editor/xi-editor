@@ -72,7 +72,7 @@ class EditView: NSView {
         attributes = [String(kCTFontAttributeName): font]
         fontWidth = getFontWidth(font)
         selcolor = NSColor(colorLiteralRed: 0.7, green: 0.85, blue: 0.99, alpha: 1.0)
-        updateQueue = dispatch_queue_create("com.levien.dimer.update", DISPATCH_QUEUE_SERIAL)
+        updateQueue = dispatch_queue_create("com.levien.xi.update", DISPATCH_QUEUE_SERIAL)
         super.init(frame: frameRect)
         widthConstraint = NSLayoutConstraint(item: self, attribute: .Width, relatedBy: .GreaterThanOrEqual, toItem: nil, attribute: .Width, multiplier: 1, constant: 400)
         widthConstraint!.active = true

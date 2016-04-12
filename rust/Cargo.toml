@@ -1,5 +1,5 @@
 [package]
-name = "dimercore"
+name = "xicore"
 version = "0.0.0"
 license = "Apache-2.0"
 authors = ["Raph Levien <raph@google.com>"]
@@ -8,5 +8,5 @@ authors = ["Raph Levien <raph@google.com>"]
 serde = "*"
 serde_json = "*"
 
-[dependencies.dimer-rope]
+[dependencies.xi-rope]
 path = "rope"

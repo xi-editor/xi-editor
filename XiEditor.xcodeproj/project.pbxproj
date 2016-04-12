@@ -7,12 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		AE228F5D1C897CE7000E9B0F /* dimercore in Resources */ = {isa = PBXBuildFile; fileRef = AE228F5C1C897CE7000E9B0F /* dimercore */; };
+		AE228F5D1C897CE7000E9B0F /* xicore in Resources */ = {isa = PBXBuildFile; fileRef = AE228F5C1C897CE7000E9B0F /* xicore */; };
 		AE499DD01C82BB2B002D68AF /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE499DCF1C82BB2B002D68AF /* AppDelegate.swift */; };
 		AE499DD21C82BB2B002D68AF /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AE499DD11C82BB2B002D68AF /* Assets.xcassets */; };
 		AE499DD51C82BB2B002D68AF /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = AE499DD31C82BB2B002D68AF /* MainMenu.xib */; };
-		AE499DE01C82BB2B002D68AF /* DimerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE499DDF1C82BB2B002D68AF /* DimerTests.swift */; };
-		AE499DEB1C82BB2B002D68AF /* DimerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE499DEA1C82BB2B002D68AF /* DimerUITests.swift */; };
+		AE499DE01C82BB2B002D68AF /* XiEditorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE499DDF1C82BB2B002D68AF /* XiEditorTests.swift */; };
+		AE499DEB1C82BB2B002D68AF /* XiEditorUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE499DEA1C82BB2B002D68AF /* XiEditorUITests.swift */; };
 		AE499DF91C82C835002D68AF /* CoreConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE499DF81C82C835002D68AF /* CoreConnection.swift */; };
 		AEB66A791CAEFC8F002F686A /* ShadowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEB66A781CAEFC8F002F686A /* ShadowView.swift */; };
 		AEBAAA651C83BB1A005637A3 /* python in Resources */ = {isa = PBXBuildFile; fileRef = AEBAAA601C83B503005637A3 /* python */; };
@@ -27,29 +27,29 @@
 			containerPortal = AE499DC41C82BB2B002D68AF /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = AE499DCB1C82BB2B002D68AF;
-			remoteInfo = Dimer;
+			remoteInfo = XiEditor;
 		};
 		AE499DE71C82BB2B002D68AF /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = AE499DC41C82BB2B002D68AF /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = AE499DCB1C82BB2B002D68AF;
-			remoteInfo = Dimer;
+			remoteInfo = XiEditor;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		AE228F5C1C897CE7000E9B0F /* dimercore */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; name = dimercore; path = rust/target/debug/dimercore; sourceTree = "<group>"; };
-		AE499DCC1C82BB2B002D68AF /* Dimer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Dimer.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AE228F5C1C897CE7000E9B0F /* xicore */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; name = xicore; path = rust/target/debug/xicore; sourceTree = "<group>"; };
+		AE499DCC1C82BB2B002D68AF /* XiEditor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = XiEditor.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AE499DCF1C82BB2B002D68AF /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		AE499DD11C82BB2B002D68AF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AE499DD41C82BB2B002D68AF /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/MainMenu.xib; sourceTree = "<group>"; };
 		AE499DD61C82BB2B002D68AF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		AE499DDB1C82BB2B002D68AF /* DimerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DimerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		AE499DDF1C82BB2B002D68AF /* DimerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DimerTests.swift; sourceTree = "<group>"; };
+		AE499DDB1C82BB2B002D68AF /* XiEditorTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = XiEditorTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		AE499DDF1C82BB2B002D68AF /* XiEditorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XiEditorTests.swift; sourceTree = "<group>"; };
 		AE499DE11C82BB2B002D68AF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		AE499DE61C82BB2B002D68AF /* DimerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DimerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		AE499DEA1C82BB2B002D68AF /* DimerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DimerUITests.swift; sourceTree = "<group>"; };
+		AE499DE61C82BB2B002D68AF /* XiEditorUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = XiEditorUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		AE499DEA1C82BB2B002D68AF /* XiEditorUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XiEditorUITests.swift; sourceTree = "<group>"; };
 		AE499DEC1C82BB2B002D68AF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AE499DF81C82C835002D68AF /* CoreConnection.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CoreConnection.swift; sourceTree = "<group>"; };
 		AEB66A781CAEFC8F002F686A /* ShadowView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ShadowView.swift; sourceTree = "<group>"; };
@@ -87,11 +87,11 @@
 		AE499DC31C82BB2B002D68AF = {
 			isa = PBXGroup;
 			children = (
-				AE228F5C1C897CE7000E9B0F /* dimercore */,
+				AE228F5C1C897CE7000E9B0F /* xicore */,
 				AEBAAA601C83B503005637A3 /* python */,
-				AE499DCE1C82BB2B002D68AF /* Dimer */,
-				AE499DDE1C82BB2B002D68AF /* DimerTests */,
-				AE499DE91C82BB2B002D68AF /* DimerUITests */,
+				AE499DCE1C82BB2B002D68AF /* XiEditor */,
+				AE499DDE1C82BB2B002D68AF /* XiEditorTests */,
+				AE499DE91C82BB2B002D68AF /* XiEditorUITests */,
 				AE499DCD1C82BB2B002D68AF /* Products */,
 			);
 			sourceTree = "<group>";
@@ -99,14 +99,14 @@
 		AE499DCD1C82BB2B002D68AF /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				AE499DCC1C82BB2B002D68AF /* Dimer.app */,
-				AE499DDB1C82BB2B002D68AF /* DimerTests.xctest */,
-				AE499DE61C82BB2B002D68AF /* DimerUITests.xctest */,
+				AE499DCC1C82BB2B002D68AF /* XiEditor.app */,
+				AE499DDB1C82BB2B002D68AF /* XiEditorTests.xctest */,
+				AE499DE61C82BB2B002D68AF /* XiEditorUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
-		AE499DCE1C82BB2B002D68AF /* Dimer */ = {
+		AE499DCE1C82BB2B002D68AF /* XiEditor */ = {
 			isa = PBXGroup;
 			children = (
 				AE499DCF1C82BB2B002D68AF /* AppDelegate.swift */,
@@ -119,33 +119,33 @@
 				AED23F141C83C689002246CE /* AppWindowController.xib */,
 				AE499DD61C82BB2B002D68AF /* Info.plist */,
 			);
-			path = Dimer;
+			path = XiEditor;
 			sourceTree = "<group>";
 		};
-		AE499DDE1C82BB2B002D68AF /* DimerTests */ = {
+		AE499DDE1C82BB2B002D68AF /* XiEditorTests */ = {
 			isa = PBXGroup;
 			children = (
-				AE499DDF1C82BB2B002D68AF /* DimerTests.swift */,
+				AE499DDF1C82BB2B002D68AF /* XiEditorTests.swift */,
 				AE499DE11C82BB2B002D68AF /* Info.plist */,
 			);
-			path = DimerTests;
+			path = XiEditorTests;
 			sourceTree = "<group>";
 		};
-		AE499DE91C82BB2B002D68AF /* DimerUITests */ = {
+		AE499DE91C82BB2B002D68AF /* XiEditorUITests */ = {
 			isa = PBXGroup;
 			children = (
-				AE499DEA1C82BB2B002D68AF /* DimerUITests.swift */,
+				AE499DEA1C82BB2B002D68AF /* XiEditorUITests.swift */,
 				AE499DEC1C82BB2B002D68AF /* Info.plist */,
 			);
-			path = DimerUITests;
+			path = XiEditorUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		AE499DCB1C82BB2B002D68AF /* Dimer */ = {
+		AE499DCB1C82BB2B002D68AF /* XiEditor */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = AE499DEF1C82BB2B002D68AF /* Build configuration list for PBXNativeTarget "Dimer" */;
+			buildConfigurationList = AE499DEF1C82BB2B002D68AF /* Build configuration list for PBXNativeTarget "XiEditor" */;
 			buildPhases = (
 				AE499DC81C82BB2B002D68AF /* Sources */,
 				AE499DC91C82BB2B002D68AF /* Frameworks */,
@@ -156,14 +156,14 @@
 			);
 			dependencies = (
 			);
-			name = Dimer;
-			productName = Dimer;
-			productReference = AE499DCC1C82BB2B002D68AF /* Dimer.app */;
+			name = XiEditor;
+			productName = XiEditor;
+			productReference = AE499DCC1C82BB2B002D68AF /* XiEditor.app */;
 			productType = "com.apple.product-type.application";
 		};
-		AE499DDA1C82BB2B002D68AF /* DimerTests */ = {
+		AE499DDA1C82BB2B002D68AF /* XiEditorTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = AE499DF21C82BB2B002D68AF /* Build configuration list for PBXNativeTarget "DimerTests" */;
+			buildConfigurationList = AE499DF21C82BB2B002D68AF /* Build configuration list for PBXNativeTarget "XiEditorTests" */;
 			buildPhases = (
 				AE499DD71C82BB2B002D68AF /* Sources */,
 				AE499DD81C82BB2B002D68AF /* Frameworks */,
@@ -174,14 +174,14 @@
 			dependencies = (
 				AE499DDD1C82BB2B002D68AF /* PBXTargetDependency */,
 			);
-			name = DimerTests;
-			productName = DimerTests;
-			productReference = AE499DDB1C82BB2B002D68AF /* DimerTests.xctest */;
+			name = XiEditorTests;
+			productName = XiEditorTests;
+			productReference = AE499DDB1C82BB2B002D68AF /* XiEditorTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		AE499DE51C82BB2B002D68AF /* DimerUITests */ = {
+		AE499DE51C82BB2B002D68AF /* XiEditorUITests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = AE499DF51C82BB2B002D68AF /* Build configuration list for PBXNativeTarget "DimerUITests" */;
+			buildConfigurationList = AE499DF51C82BB2B002D68AF /* Build configuration list for PBXNativeTarget "XiEditorUITests" */;
 			buildPhases = (
 				AE499DE21C82BB2B002D68AF /* Sources */,
 				AE499DE31C82BB2B002D68AF /* Frameworks */,
@@ -192,9 +192,9 @@
 			dependencies = (
 				AE499DE81C82BB2B002D68AF /* PBXTargetDependency */,
 			);
-			name = DimerUITests;
-			productName = DimerUITests;
-			productReference = AE499DE61C82BB2B002D68AF /* DimerUITests.xctest */;
+			name = XiEditorUITests;
+			productName = XiEditorUITests;
+			productReference = AE499DE61C82BB2B002D68AF /* XiEditorUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
@@ -220,7 +220,7 @@
 					};
 				};
 			};
-			buildConfigurationList = AE499DC71C82BB2B002D68AF /* Build configuration list for PBXProject "Dimer" */;
+			buildConfigurationList = AE499DC71C82BB2B002D68AF /* Build configuration list for PBXProject "XiEditor" */;
 			compatibilityVersion = "Xcode 3.2";
 			developmentRegion = English;
 			hasScannedForEncodings = 0;
@@ -233,9 +233,9 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				AE499DCB1C82BB2B002D68AF /* Dimer */,
-				AE499DDA1C82BB2B002D68AF /* DimerTests */,
-				AE499DE51C82BB2B002D68AF /* DimerUITests */,
+				AE499DCB1C82BB2B002D68AF /* XiEditor */,
+				AE499DDA1C82BB2B002D68AF /* XiEditorTests */,
+				AE499DE51C82BB2B002D68AF /* XiEditorUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -245,7 +245,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				AE228F5D1C897CE7000E9B0F /* dimercore in Resources */,
+				AE228F5D1C897CE7000E9B0F /* xicore in Resources */,
 				AEBAAA651C83BB1A005637A3 /* python in Resources */,
 				AED23F161C83C689002246CE /* AppWindowController.xib in Resources */,
 				AE499DD21C82BB2B002D68AF /* Assets.xcassets in Resources */,
@@ -303,7 +303,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				AE499DE01C82BB2B002D68AF /* DimerTests.swift in Sources */,
+				AE499DE01C82BB2B002D68AF /* XiEditorTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -311,7 +311,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				AE499DEB1C82BB2B002D68AF /* DimerUITests.swift in Sources */,
+				AE499DEB1C82BB2B002D68AF /* XiEditorUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -320,12 +320,12 @@
 /* Begin PBXTargetDependency section */
 		AE499DDD1C82BB2B002D68AF /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = AE499DCB1C82BB2B002D68AF /* Dimer */;
+			target = AE499DCB1C82BB2B002D68AF /* XiEditor */;
 			targetProxy = AE499DDC1C82BB2B002D68AF /* PBXContainerItemProxy */;
 		};
 		AE499DE81C82BB2B002D68AF /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = AE499DCB1C82BB2B002D68AF /* Dimer */;
+			target = AE499DCB1C82BB2B002D68AF /* XiEditor */;
 			targetProxy = AE499DE71C82BB2B002D68AF /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -427,9 +427,9 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				COMBINE_HIDPI_IMAGES = YES;
-				INFOPLIST_FILE = Dimer/Info.plist;
+				INFOPLIST_FILE = XiEditor/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
-				PRODUCT_BUNDLE_IDENTIFIER = com.levien.Dimer;
+				PRODUCT_BUNDLE_IDENTIFIER = com.levien.XiEditor;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Debug;
@@ -439,9 +439,9 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				COMBINE_HIDPI_IMAGES = YES;
-				INFOPLIST_FILE = Dimer/Info.plist;
+				INFOPLIST_FILE = XiEditor/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
-				PRODUCT_BUNDLE_IDENTIFIER = com.levien.Dimer;
+				PRODUCT_BUNDLE_IDENTIFIER = com.levien.XiEditor;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Release;
@@ -451,11 +451,11 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				COMBINE_HIDPI_IMAGES = YES;
-				INFOPLIST_FILE = DimerTests/Info.plist;
+				INFOPLIST_FILE = XiEditorTests/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @loader_path/../Frameworks";
-				PRODUCT_BUNDLE_IDENTIFIER = com.levien.DimerTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.levien.XiEditorTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Dimer.app/Contents/MacOS/Dimer";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/XiEditor.app/Contents/MacOS/XiEditor";
 			};
 			name = Debug;
 		};
@@ -464,11 +464,11 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				COMBINE_HIDPI_IMAGES = YES;
-				INFOPLIST_FILE = DimerTests/Info.plist;
+				INFOPLIST_FILE = XiEditorTests/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @loader_path/../Frameworks";
-				PRODUCT_BUNDLE_IDENTIFIER = com.levien.DimerTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.levien.XiEditorTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Dimer.app/Contents/MacOS/Dimer";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/XiEditor.app/Contents/MacOS/XiEditor";
 			};
 			name = Release;
 		};
@@ -476,11 +476,11 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				COMBINE_HIDPI_IMAGES = YES;
-				INFOPLIST_FILE = DimerUITests/Info.plist;
+				INFOPLIST_FILE = XiEditorUITests/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @loader_path/../Frameworks";
-				PRODUCT_BUNDLE_IDENTIFIER = com.levien.DimerUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.levien.XiEditorUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				TEST_TARGET_NAME = Dimer;
+				TEST_TARGET_NAME = XiEditor;
 				USES_XCTRUNNER = YES;
 			};
 			name = Debug;
@@ -489,11 +489,11 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				COMBINE_HIDPI_IMAGES = YES;
-				INFOPLIST_FILE = DimerUITests/Info.plist;
+				INFOPLIST_FILE = XiEditorUITests/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @loader_path/../Frameworks";
-				PRODUCT_BUNDLE_IDENTIFIER = com.levien.DimerUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.levien.XiEditorUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				TEST_TARGET_NAME = Dimer;
+				TEST_TARGET_NAME = XiEditor;
 				USES_XCTRUNNER = YES;
 			};
 			name = Release;
@@ -501,7 +501,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		AE499DC71C82BB2B002D68AF /* Build configuration list for PBXProject "Dimer" */ = {
+		AE499DC71C82BB2B002D68AF /* Build configuration list for PBXProject "XiEditor" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				AE499DED1C82BB2B002D68AF /* Debug */,
@@ -510,7 +510,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		AE499DEF1C82BB2B002D68AF /* Build configuration list for PBXNativeTarget "Dimer" */ = {
+		AE499DEF1C82BB2B002D68AF /* Build configuration list for PBXNativeTarget "XiEditor" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				AE499DF01C82BB2B002D68AF /* Debug */,
@@ -519,7 +519,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		AE499DF21C82BB2B002D68AF /* Build configuration list for PBXNativeTarget "DimerTests" */ = {
+		AE499DF21C82BB2B002D68AF /* Build configuration list for PBXNativeTarget "XiEditorTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				AE499DF31C82BB2B002D68AF /* Debug */,
@@ -528,7 +528,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		AE499DF51C82BB2B002D68AF /* Build configuration list for PBXNativeTarget "DimerUITests" */ = {
+		AE499DF51C82BB2B002D68AF /* Build configuration list for PBXNativeTarget "XiEditorUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				AE499DF61C82BB2B002D68AF /* Debug */,

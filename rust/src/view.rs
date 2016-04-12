@@ -17,7 +17,7 @@ use std::cmp::{min,max};
 use serde_json::Value;
 use serde_json::builder::ArrayBuilder;
 
-use dimer_rope::Rope;
+use xi_rope::Rope;
 
 const SCROLL_SLOP: usize = 2;
 

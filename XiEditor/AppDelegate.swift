@@ -24,7 +24,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // show main app window
         appWindowController = AppWindowController.init(windowNibName: "AppWindowController")
 
-        let corePath = NSBundle.mainBundle().pathForResource("dimercore", ofType: "")
+        let corePath = NSBundle.mainBundle().pathForResource("xicore", ofType: "")
         if let corePath = corePath {
             coreConnection = CoreConnection(path: corePath) { [weak self] data -> () in
                 self?.handleCoreCmd(data)

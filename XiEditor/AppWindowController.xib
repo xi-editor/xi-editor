@@ -5,7 +5,7 @@
         <plugIn identifier="com.apple.InterfaceBuilder.CocoaPlugin" version="9532"/>
     </dependencies>
     <objects>
-        <customObject id="-2" userLabel="File's Owner" customClass="AppWindowController" customModule="Dimer" customModuleProvider="target">
+        <customObject id="-2" userLabel="File's Owner" customClass="AppWindowController" customModule="XiEditor" customModuleProvider="target">
             <connections>
                 <outlet property="editView" destination="hxn-ZY-xOb" id="lo9-GC-nJN"/>
                 <outlet property="scrollView" destination="ddX-9c-KvF" id="Ogv-mH-WSU"/>
@@ -30,7 +30,7 @@
                             <rect key="frame" x="1" y="1" width="480" height="270"/>
                             <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                             <subviews>
-                                <customView fixedFrame="YES" translatesAutoresizingMaskIntoConstraints="NO" id="hxn-ZY-xOb" customClass="EditView" customModule="Dimer" customModuleProvider="target">
+                                <customView fixedFrame="YES" translatesAutoresizingMaskIntoConstraints="NO" id="hxn-ZY-xOb" customClass="EditView" customModule="XiEditor" customModuleProvider="target">
                                     <rect key="frame" x="0.0" y="0.0" width="480" height="270"/>
                                 </customView>
                             </subviews>
@@ -44,7 +44,7 @@
                             <autoresizingMask key="autoresizingMask"/>
                         </scroller>
                     </scrollView>
-                    <customView misplaced="YES" translatesAutoresizingMaskIntoConstraints="NO" id="5Jy-03-fcM" customClass="ShadowView" customModule="Dimer" customModuleProvider="target">
+                    <customView misplaced="YES" translatesAutoresizingMaskIntoConstraints="NO" id="5Jy-03-fcM" customClass="ShadowView" customModule="XiEditor" customModuleProvider="target">
                         <rect key="frame" x="0.0" y="0.0" width="480" height="265"/>
                     </customView>
                 </subviews>
