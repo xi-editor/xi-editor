@@ -14,6 +14,8 @@
 
 //! A rope data structure suitable for text editing
 
+pub mod tree; // experimental for now
+
 use std::rc::Rc;
 use std::borrow::Cow;
 use std::cmp::{min,max};
@@ -383,16 +385,16 @@ impl Node {
 
     fn get_leaf(&self) -> &str {
         if let &NodeVal::Leaf(ref s) = &self.0.val {
-            &s
+            s
         } else {
             panic!("get_leaf called on internal node");
         }
     }
 
     fn is_ok_child(&self) -> bool {
-        match &self.0.val {
-            &NodeVal::Leaf(_) => (self.len() >= MIN_LEAF),
-            &NodeVal::Internal(ref pieces) => (pieces.len() >= MIN_CHILDREN)
+        match self.0.val {
+            NodeVal::Leaf(_) => (self.len() >= MIN_LEAF),
+            NodeVal::Internal(ref pieces) => (pieces.len() >= MIN_CHILDREN)
         }
     }
 
@@ -498,9 +500,9 @@ impl Node {
             b.push(self.clone());
             return
         }
-        match &self.0.val {
-            &NodeVal::Leaf(ref s) => b.push_str_short(&s[start..end]),
-            &NodeVal::Internal(ref v) => {
+        match self.0.val {
+            NodeVal::Leaf(ref s) => b.push_str_short(&s[start..end]),
+            NodeVal::Internal(ref v) => {
                 let mut offset = 0;
                 for child in v {
                     if end <= offset {
@@ -508,7 +510,7 @@ impl Node {
                     }
                     if offset + child.len() > start {
                         //println!("start={}, end={}, offset={}, child.size={}", start, end, offset, child.size());
-                        child.subsequence_rec(b, max(offset, start) - offset, min(child.len(), end - offset))
+                        child.subsequence_rec(b, max(offset, start) - offset, min(child.len(), end - offset));
                     }
                     offset += child.len()
                 }
