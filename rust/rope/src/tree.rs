@@ -18,6 +18,8 @@ use std::sync::Arc;
 use std::ops::{Index, RangeFull};
 use std::cmp::{min,max};
 
+use interval::Interval;
+
 const MIN_CHILDREN: usize = 4;
 const MAX_CHILDREN: usize = 8;
 
@@ -39,28 +41,21 @@ pub trait Leaf: Sized + Clone + Default {
     // generally a minimum size requirement for leaves
     fn is_ok_child(&self) -> bool;
 
-    // This business with len + 1 and "can_fragment" is not very
-    // satisfying. A much more systematic approach would be to use
-    // open and closed ranges.
-
-    // start and end are in "base units"
-    // if end == len + 1, then include trailing fragment
-    // (note: some leaf types don't have fragments, but still have to
-    // deal with len + 1)
+    // Interval is in "base units"
     // generally implements a maximum size
     // Invariant: if one or the other input is empty, then no split
 
-    // Invariant: if either input satisfies is_ok_child, then
+    // Invariant: if either input satisfies is_ok_child, then on return self
     // satisfies this, as does the optional split.
 
-    fn push_maybe_split(&mut self, other: &Self, start: usize, end: usize) -> Option<Self>;
+    fn push_maybe_split(&mut self, other: &Self, iv: Interval) -> Option<Self>;
 
     // same meaning as push_maybe_split starting from an empty
     // leaf, but maybe can be implemented more efficiently?
     // TODO: remove if it doesn't pull its weight
-    fn subseq(&self, start: usize, end: usize) -> Self {
+    fn subseq(&self, iv: Interval) -> Self {
         let mut result = Self::default();
-        if result.push_maybe_split(self, start, end).is_some() {
+        if result.push_maybe_split(self, iv).is_some() {
             panic!("unexpected split");
         }
         result
@@ -98,7 +93,7 @@ pub trait Metric<N: NodeInfo> {
 
     // These methods must indicate a boundary at the end of a leaf,
     // if present. A boundary at the beginning of a leaf is optional
-    // (the previous leaf will be queried)
+    // (the previous leaf will be queried).
 
     fn is_boundary(l: &N::L, offset: usize) -> bool;
 
@@ -107,6 +102,9 @@ pub trait Metric<N: NodeInfo> {
 
     fn next(l: &N::L, offset: usize) -> Option<usize>;
 
+    // When can_fragment is false, the ends of leaves are always
+    // considered to be boundaries. More formally:
+    // !can_fragment -> to_base_units(measure) = leaf.len
     fn can_fragment() -> bool;
 }
 
@@ -195,9 +193,9 @@ impl<N: NodeInfo> Node<N> {
         match {
             let mut node1 = Arc::make_mut(&mut rope1.0);
             let leaf2 = rope2.get_leaf();
-            let len2 = leaf2.len();
             if let NodeVal::Leaf(ref mut leaf1) = node1.val {
-                let new = leaf1.push_maybe_split(leaf2, 0, len2 + 1);
+                let leaf2_iv = Interval::new_closed_closed(0, leaf2.len());
+                let new = leaf1.push_maybe_split(leaf2, leaf2_iv);
                 node1.len = leaf1.len();
                 node1.info = N::compute_info(leaf1);
                 new
@@ -258,33 +256,49 @@ impl<N: NodeInfo> Node<N> {
         M::measure(&self.0.info)
     }
 
-    fn fudge<M: Metric<N>>(&self) -> usize {
-        if M::can_fragment() { 1 } else { 0 }
+    fn measure_as_interval<M: Metric<N>>(&self) -> Interval {
+        Interval::new_closed_closed(0, self.measure::<M>())
+    }
+
+    fn interval_to_base_units<M: Metric<N>>(&self, l: &N::L, iv: Interval) -> Interval {
+        let start = M::to_base_units(l, iv.start());
+        let end = if iv.is_end_closed() && iv.end() == self.measure::<M>() {
+            l.len()
+        } else {
+            M::to_base_units(l, iv.end())
+        };
+        // is this always appropriate?
+        Interval::new_closed_closed(start, end)
     }
 
     // calls the given function with leaves forming the sequence
-    fn visit_subseq<M: Metric<N>, F>(&self, start: usize, end: usize,
+    fn visit_subseq<M: Metric<N>, F>(&self, iv: Interval,
             f: &mut F) where F: FnMut(&N::L) -> () {
+        if iv.is_empty() {
+            return;
+        }
         match self.0.val {
             NodeVal::Leaf(ref l) => {
-                if start == 0 && end >= self.measure::<M>() + self.fudge::<M>() {
-                    f(&l);
+                // could also accept iv (closed, open) if M can't fragment
+                if iv == self.measure_as_interval::<M>() {
+                    f(l);
                 } else {
-                    f(&l.clone().subseq(start, end));
+                    let leaf_iv = self.interval_to_base_units::<M>(l, iv);
+                    f(&l.clone().subseq(leaf_iv));
                 }
             }
             NodeVal::Internal(ref v) => {
                 let mut offset = 0;
                 for child in v {
-                    if end <= offset {
+                    if iv.is_before(offset) {
                         break;
                     }
-                    let child_measure = child.measure::<M>();
-                    if offset + child_measure > start {
-                        child.visit_subseq::<M, F>(max(offset, start) - offset,
-                            min(child_measure + child.fudge::<M>(), end - offset), f);
-                    }
-                    offset += child_measure;
+                    let child_iv = child.measure_as_interval::<M>();
+                    // easier just to use signed ints?
+                    let rec_iv = iv.intersect(child_iv.translate(offset))
+                        .translate_neg(offset);
+                    child.visit_subseq::<M, F>(rec_iv, f);
+                    offset += child_iv.size();
                 }
                 return;
             }
@@ -292,64 +306,69 @@ impl<N: NodeInfo> Node<N> {
     }
 
     fn push_subseq<M: Metric<N>>(&self,
-            b: &mut RopeBuilder<N>, start: usize, end: usize) {
-        if start == 0 && self.measure::<M>() >= end + self.fudge::<M>() {
+            b: &mut RopeBuilder<N>, iv: Interval) {
+        if iv.is_empty() {
+            return;
+        }
+        // could also accept iv (closed, open) if M can't fragment
+        if iv == self.measure_as_interval::<M>() {
             b.push(self.clone());
             return;
         }
         match self.0.val {
             NodeVal::Leaf(ref l) => {
-                let base_start = M::to_base_units(l, start);
-                let base_end = M::to_base_units(l, end);
-                if base_start <= l.len() {
-                    b.push_leaf_slice(l, base_start, base_end);
+                let leaf_iv = self.interval_to_base_units::<M>(l, iv);
+                if !leaf_iv.is_empty() {
+                    b.push_leaf_slice(l, leaf_iv);
                 }
             }
             NodeVal::Internal(ref v) => {
                 let mut offset = 0;
                 for child in v {
-                    if end <= offset {
+                    if iv.is_before(offset) {
                         break;
                     }
-                    let child_measure = child.measure::<M>();
-                    let child_fudged = child_measure + child.fudge::<M>();
-                    if offset + child_fudged > start {
-                        child.push_subseq::<M>(b,
-                            max(offset, start) - offset,
-                            min(child_fudged, end - offset));
-                    }
-                    offset += child_measure;
+                    let child_iv = child.measure_as_interval::<M>();
+                    // easier just to use signed ints?
+                    let rec_iv = iv.intersect(child_iv.translate(offset))
+                        .translate_neg(offset);
+                    child.push_subseq::<M>(b, rec_iv);
+                    offset += child_iv.size();
                 }
                 return;
             }
         }
     }
 
-    pub fn subseq<M: Metric<N>>(&self, start: usize, end: usize) -> Node<N> {
+    pub fn subseq<M: Metric<N>>(&self, iv: Interval) -> Node<N> {
         let mut b = RopeBuilder::new();
-        self.push_subseq::<M>(&mut b, start, end);
+        self.push_subseq::<M>(&mut b, iv);
         b.build()
     }
 
-    pub fn edit<M: Metric<N>>(&mut self, start: usize, end: usize, new: Node<N>) {
+    pub fn edit<M: Metric<N>>(&mut self, iv: Interval, new: Node<N>) {
         let mut b = RopeBuilder::new();
-        self.push_subseq::<M>(&mut b, 0, start);
+        let self_iv = self.measure_as_interval::<M>();
+        self.push_subseq::<M>(&mut b, self_iv.prefix(iv));
         b.push(new);
-        self.push_subseq::<M>(&mut b, end, self.measure::<M>() + self.fudge::<M>());
+        self.push_subseq::<M>(&mut b, self_iv.suffix(iv));
         *self = b.build();
     }
 
+    // doesn't deal with endpoint, handle that specially if you need it
     fn convert_metrics<M1: Metric<N>, M2: Metric<N>>(&self, mut m1: usize) -> usize {
         if m1 == 0 { return 0; }
-        if m1 >= self.measure::<M1>() + self.fudge::<M1>() {
-            return self.measure::<M2>() + self.fudge::<M2>();
-        }
+        // If M1 can fragment, then we must land on the leaf containing
+        // the m1 boundary. Otherwise, we can land on the beginning of
+        // the leaf immediately following the M1 boundary, which may be
+        // efficient.
+        let m1_fudge = if M1::can_fragment() { 1 } else { 0 };
         let mut m2 = 0;
         let mut node = self;
         while node.height() > 0 {
             for child in node.get_children() {
                 let child_m1 = child.measure::<M1>();
-                if m1 < child_m1 + child.fudge::<M1>() {
+                if m1 < child_m1 + m1_fudge {
                     node = child;
                     break;
                 }
@@ -387,8 +406,8 @@ impl<N: NodeInfo> RopeBuilder<N> {
         self.push(Node::from_leaf(l))
     }
 
-    fn push_leaf_slice(&mut self, l: &N::L, start: usize, end: usize) {
-        self.push(Node::from_leaf(l.subseq(start, end)))
+    fn push_leaf_slice(&mut self, l: &N::L, iv: Interval) {
+        self.push(Node::from_leaf(l.subseq(iv)))
     }
 
     fn build(self) -> Node<N> {
@@ -423,7 +442,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
     }
 
     // return value is leaf (if cursor is valid) and offset within leaf
-    // postcondition: offset is at end of leaf iff end of rope
+    // invariant: offset is at end of leaf iff end of rope
     pub fn get_leaf(&self) -> Option<(&'a N::L, usize)> {
         self.leaf.map(|l| (l, self.position - self.offset_of_leaf))
     }
@@ -457,50 +476,53 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
     } 
 
     pub fn prev<M: Metric<N>>(&mut self) -> Option<(usize)> {
-        // TODO: walk up tree to skip measure-0 nodes
-        if self.position == 0 {
+        if self.position == 0 || self.leaf.is_none() {
             self.leaf = None;
             return None;
         }
+        let mut offset_in_leaf = self.position - self.offset_of_leaf;
+        if let Some(l) = self.leaf {
+            if offset_in_leaf > 0 {
+                if let Some(offset_in_leaf) = M::prev(l, offset_in_leaf) {
+                    self.position = self.offset_of_leaf + offset_in_leaf;
+                    return Some(self.position);
+                }
+            }
+        } else {
+            panic!("inconsistent, shouldn't get here");
+        }
+        // not in same leaf, need to scan backwards
+        // TODO: walk up tree to skip measure-0 nodes
         loop {
-            let mut offset_in_leaf = self.position - self.offset_of_leaf;
-            let mut fudge = 0;
-            if let Some(l) = self.leaf {
-                if offset_in_leaf > 0 {
-                    if let Some(offset_in_leaf) = M::prev(l, offset_in_leaf + fudge) {
-                        if offset_in_leaf == l.len() {
-                            let _ = self.next_leaf();
-                            return Some(self.position);
-                        }
-                        self.position = self.offset_of_leaf + offset_in_leaf;
-                        return Some(self.position);
-                    }
-                    if self.offset_of_leaf == 0 {
-                        self.position = 0;
-                        return Some(self.position);
-                    }
-                    fudge = if M::can_fragment() { 1 } else { 0 };
-                } else {
-                    fudge = 0;
+            if self.offset_of_leaf == 0 {
+                self.position = 0;
+                return Some(self.position);
+            }
+            if let Some((l, _)) = self.prev_leaf() {
+                // TODO: node already has this, no need to recompute. But, we
+                // should be looking at nodes anyway at this point, as we need
+                // to walk up the tree.
+                let node_info = N::compute_info(l);
+                if M::measure(&node_info) == 0 {
+                    // leaf doesn't contain boundary, keep scanning
+                    continue;
                 }
-                // needs more refinement
-                if let Some((l, _)) = self.prev_leaf() {
-                    offset_in_leaf = l.len();
+                if let Some(offset_of_leaf) = M::prev(l, l.len()) {
+                    self.position = self.offset_of_leaf + offset_in_leaf;
+                    return Some(self.position);                    
                 } else {
-                    panic!("inconsistent, shouldn't get here");
+                    panic!("metric is inconsistent, metric > 0 but no boundary");
                 }
-            } else {
-                panic!("inconsistent, shouldn't get here either");
             }
         }
     }
 
     pub fn next<M: Metric<N>>(&mut self) -> Option<(usize)> {
-        // TODO: walk up tree to skip measure-0 nodes
-        if self.position >= self.root.len() {
+        if self.position >= self.root.len() || self.leaf.is_none() {
             self.leaf = None;
             return None;
         }
+        // TODO: walk up tree to skip measure-0 nodes
         loop {
             if let Some(l) = self.leaf {
                 let offset_in_leaf = self.position - self.offset_of_leaf;
@@ -508,16 +530,16 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
                     if offset_in_leaf == l.len() &&
                             self.offset_of_leaf + offset_in_leaf != self.root.len() {
                         let _ = self.next_leaf();
-                        return Some(self.position);
+                    } else {
+                        self.position = self.offset_of_leaf + offset_in_leaf;
                     }
-                    self.position = self.offset_of_leaf + offset_in_leaf;
                     return Some(self.position);
                 }
                 if self.offset_of_leaf + l.len() == self.root.len() {
                     self.position = self.root.len();
                     return Some(self.position);
                 }
-                let _ = Some(self.position);
+                let _ = self.next_leaf();
             } else {
                 panic!("inconsistent, shouldn't get here");
             }
@@ -642,7 +664,8 @@ impl Leaf for Vec<u8> {
         self.len() >= 512
     }
 
-    fn push_maybe_split(&mut self, other: &Vec<u8>, start: usize, end: usize) -> Option<Vec<u8>> {
+    fn push_maybe_split(&mut self, other: &Vec<u8>, iv: Interval) -> Option<Vec<u8>> {
+        let (start, end) = iv.start_end();
         self.extend_from_slice(&other[start..end]);
         if self.len() <= 1024 {
             None

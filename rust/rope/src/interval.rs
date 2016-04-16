@@ -17,6 +17,10 @@
 use std::cmp::{min, max};
 use std::fmt;
 
+// Invariant: end >= start
+// (attempting to construct an interval of negative size gives an
+// empty interval beginning at start)
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Interval {
 	start: u64,  // 2 * the actual value + 1 if open
@@ -48,9 +52,11 @@ impl fmt::Debug for Interval {
 
 impl Interval {
 	pub fn new(start: usize, start_closed : bool, end: usize, end_closed: bool) -> Interval {
+		let start = (start as u64) * 2 + if start_closed { 0 } else { 1 };
+		let end = (end as u64) * 2 + if end_closed { 1 } else { 0 };
 		Interval {
-			start: (start as u64) * 2 + if start_closed { 0 } else { 1 },
-			end: (end as u64) * 2 + if end_closed { 1 } else { 0 },
+			start: start,
+			end: max(start, end),
 		}
 	}
 
@@ -90,9 +96,25 @@ impl Interval {
 		(self.end & 1) != 0
 	}
 
+	// The following 3 methods define a trisection, exactly one is true.
+	// (similar to std::cmp::Ordering, but "Equal" is not the same as "contains")
+
+	// the interval is before the point (the point is after the interval)
+	pub fn is_before(&self, val: usize) -> bool {
+		let val2 = (val as u64) * 2;
+		self.end <= val2
+	}
+
+	// the point is inside the interval
 	pub fn contains(&self, val: usize) -> bool {
 		let val2 = (val as u64) * 2;
 		self.start <= val2 && val2 < self.end
+	}
+
+	// the interval is after the point (the point is before the interval)
+	pub fn is_after(&self, val: usize) -> bool {
+		let val2 = (val as u64) * 2;
+		self.start > val2
 	}
 
 	pub fn is_empty(&self) -> bool {
@@ -101,16 +123,18 @@ impl Interval {
 
 	// impl BitAnd would be completely valid for this
 	pub fn intersect(&self, other: Interval) -> Interval {
+		let start = max(self.start, other.start);
+		let end = min(self.end, other.end);
 		Interval {
-			start: max(self.start, other.start),
-			end: min(self.end, other.end),
+			start: start,
+			end: max(start, end),
 		}
 	}
 
 	// the first half of self - other
 	pub fn prefix(&self, other: Interval) -> Interval {
 		Interval {
-			start: self.start,
+			start: min(self.start, other.start),
 			end: min(self.end, other.start),
 		}
 	}
@@ -119,7 +143,7 @@ impl Interval {
 	pub fn suffix(&self, other: Interval) -> Interval {
 		Interval {
 			start: max(self.start, other.end),
-			end: self.end,
+			end: max(self.end, other.end),
 		}
 	}
 
@@ -139,6 +163,11 @@ impl Interval {
 			start: self.start - amount2,
 			end: self.end - amount2,
 		}
+	}
+
+	// insensitive to open or closed ends, just the size of the interior
+	pub fn size(&self) -> usize {
+		self.end() - self.start()
 	}
 }
 
@@ -208,6 +237,44 @@ mod tests {
 	}
 
 	#[test]
+	fn before() {
+		let i = Interval::new_open_open(2, 42);
+		assert!(!i.is_before(1));
+		assert!(!i.is_before(2));
+		assert!(!i.is_before(3));
+		assert!(!i.is_before(41));
+		assert!(i.is_before(42));
+		assert!(i.is_before(43));
+
+		let i = Interval::new_closed_closed(2, 42);
+		assert!(!i.is_before(1));
+		assert!(!i.is_before(2));
+		assert!(!i.is_before(3));
+		assert!(!i.is_before(41));
+		assert!(!i.is_before(42));
+		assert!(i.is_before(43));
+	}
+
+	#[test]
+	fn after() {
+		let i = Interval::new_open_open(2, 42);
+		assert!(i.is_after(1));
+		assert!(i.is_after(2));
+		assert!(!i.is_after(3));
+		assert!(!i.is_after(41));
+		assert!(!i.is_after(42));
+		assert!(!i.is_after(43));
+
+		let i = Interval::new_closed_closed(2, 42);
+		assert!(i.is_after(1));
+		assert!(!i.is_after(2));
+		assert!(!i.is_after(3));
+		assert!(!i.is_after(41));
+		assert!(!i.is_after(42));
+		assert!(!i.is_after(43));
+	}
+
+	#[test]
 	fn translate() {
 		let i = Interval::new_open_open(2, 42);
 		assert_eq!(Interval::new_open_open(5, 45), i.translate(3));
@@ -245,5 +312,11 @@ mod tests {
 		assert_eq!(Interval::new_open_open(3, 4),
 			Interval::new_open_open(1, 4).suffix(
 				Interval::new_closed_closed(2, 3)));
+	}
+
+	#[test]
+	fn size() {
+		assert_eq!(40, Interval::new_closed_open(2, 42).size());
+		assert_eq!(0, Interval::new_closed_open(1, 0).size());
 	}
 }
