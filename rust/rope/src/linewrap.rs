@@ -14,6 +14,7 @@
 
 //! A module for representing the result of line breaking.
 
+use std::cmp::min;
 use tree::{Node, Leaf, NodeInfo, Metric};
 
 // Another more interesting example - Points represents a (multi-) set
@@ -46,6 +47,8 @@ impl Leaf for PointsLeaf {
                 self.data.push(v - start + self.len);
             }
         }
+        self.len += min(end, other.len()) - start;
+
         if self.data.len() <= 64 {
             None
         } else {
@@ -199,5 +202,23 @@ mod tests {
 		assert!(c.is_boundary::<PointsMetric>());
 		assert_eq!(0, c.prev::<PointsMetric>().unwrap());
 		assert!(c.prev::<PointsMetric>().is_none());
+	}
+
+	#[test]
+	fn concat() {
+		let left = gen(1);
+		let right = gen(1);
+		let node = Node::concat(left.clone(), right);
+		assert_eq!(node.len(), 20);
+		let mut c = Cursor::new(&node, 0);
+		assert_eq!(10, c.next::<PointsMetric>().unwrap());
+		assert_eq!(20, c.next::<PointsMetric>().unwrap());
+		assert!(c.next::<PointsMetric>().is_none());
+	}
+
+	#[test]
+	fn larger() {
+		let node = gen(100);
+		assert_eq!(node.len(), 1000);
 	}
 }

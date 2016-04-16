@@ -39,6 +39,10 @@ pub trait Leaf: Sized + Clone + Default {
     // generally a minimum size requirement for leaves
     fn is_ok_child(&self) -> bool;
 
+    // This business with len + 1 and "can_fragment" is not very
+    // satisfying. A much more systematic approach would be to use
+    // open and closed ranges.
+
     // start and end are in "base units"
     // if end == len + 1, then include trailing fragment
     // (note: some leaf types don't have fragments, but still have to
@@ -193,7 +197,10 @@ impl<N: NodeInfo> Node<N> {
             let leaf2 = rope2.get_leaf();
             let len2 = leaf2.len();
             if let NodeVal::Leaf(ref mut leaf1) = node1.val {
-                leaf1.push_maybe_split(leaf2, 0, len2 + 1)
+                let new = leaf1.push_maybe_split(leaf2, 0, len2 + 1);
+                node1.len = leaf1.len();
+                node1.info = N::compute_info(leaf1);
+                new
             } else {
                 panic!("merge_leaves called on non-leaf");
             }
@@ -204,11 +211,13 @@ impl<N: NodeInfo> Node<N> {
                     Node::from_leaf(new),
                 ])
             }
-            None => rope1
+            None => {
+                rope1
+            }
         }
     }
 
-    fn concat(rope1: Node<N>, rope2: Node<N>) -> Node<N> {
+    pub fn concat(rope1: Node<N>, rope2: Node<N>) -> Node<N> {
         let h1 = rope1.height();
         let h2 = rope2.height();
         if h1 == h2 {
@@ -286,13 +295,15 @@ impl<N: NodeInfo> Node<N> {
             b: &mut RopeBuilder<N>, start: usize, end: usize) {
         if start == 0 && self.measure::<M>() >= end + self.fudge::<M>() {
             b.push(self.clone());
-            return
+            return;
         }
         match self.0.val {
             NodeVal::Leaf(ref l) => {
                 let base_start = M::to_base_units(l, start);
                 let base_end = M::to_base_units(l, end);
-                b.push_leaf_slice(l, base_start, base_end)
+                if base_start <= l.len() {
+                    b.push_leaf_slice(l, base_start, base_end);
+                }
             }
             NodeVal::Internal(ref v) => {
                 let mut offset = 0;

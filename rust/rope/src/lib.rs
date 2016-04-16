@@ -16,6 +16,7 @@
 
 pub mod tree; // experimental for now
 pub mod linewrap;
+pub mod interval;
 
 use std::rc::Rc;
 use std::borrow::Cow;
