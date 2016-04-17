@@ -18,7 +18,7 @@ use std::io::{Read,Write};
 use serde_json::Value;
 use serde_json::builder::ArrayBuilder;
 
-use xi_rope::Rope;
+use xi_rope::rope::Rope;
 use view::View;
 
 use ::send;
@@ -195,7 +195,7 @@ impl Editor {
         if let Some(path) = args.as_string() {
             match File::create(&path) {
                 Ok(mut f) => {
-                    for chunk in self.text.iter_chunks() {
+                    for chunk in self.text.iter_chunks(0, self.text.len()) {
                         match f.write_all(chunk.as_bytes()) {
                             Err(e) => {
                                 print_err!("write error {}", e);

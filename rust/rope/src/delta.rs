@@ -21,37 +21,37 @@ use tree::{Node, NodeInfo, Metric};
 use std;
 
 pub struct Delta<N: NodeInfo> {
-	items: Vec<DeltaItem<N>>,
+    items: Vec<DeltaItem<N>>,
 }
 
 pub struct DeltaItem<N: NodeInfo> {
-	pub interval: Interval,
-	pub rope: Node<N>,
+    pub interval: Interval,
+    pub rope: Node<N>,
 }
 
 pub type Iter<'a, N> = std::slice::Iter<'a, DeltaItem<N>>;
 
 impl<N: NodeInfo> Delta<N> {
-	pub fn new() -> Delta<N> {
-		Delta {
-			items: Vec::new(),
-		}
-	}
+    pub fn new() -> Delta<N> {
+        Delta {
+            items: Vec::new(),
+        }
+    }
 
-	pub fn add(&mut self, interval: Interval, rope: Node<N>) {
-		self.items.push(DeltaItem {
-			interval: interval,
-			rope: rope,
-		})
-	}
+    pub fn add(&mut self, interval: Interval, rope: Node<N>) {
+        self.items.push(DeltaItem {
+            interval: interval,
+            rope: rope,
+        })
+    }
 
-	pub fn iter(&self) -> Iter<N> {
-		self.items.iter()
-	}
+    pub fn iter(&self) -> Iter<N> {
+        self.items.iter()
+    }
 
-	pub fn apply(&self, base: &mut Node<N>) {
-		for item in self.iter() {
-			base.edit::<N::BaseMetric>(item.interval, item.rope.clone());
-		}
-	}
+    pub fn apply(&self, base: &mut Node<N>) {
+        for item in self.iter() {
+            base.edit(item.interval, item.rope.clone());
+        }
+    }
 }

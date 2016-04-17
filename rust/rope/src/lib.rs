@@ -14,11 +14,16 @@
 
 //! A rope data structure suitable for text editing
 
-pub mod tree; // experimental for now
+pub mod tree;
 pub mod breaks;
 pub mod interval;
 pub mod delta;
 pub mod rope;
+
+// TODO: "pub use" the types we want to export publicly
+
+// What follows below is slated for deletion, but not all of it has
+// been transferred to the new implementation in mod tree.
 
 use std::rc::Rc;
 use std::borrow::Cow;

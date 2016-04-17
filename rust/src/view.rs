@@ -17,7 +17,7 @@ use std::cmp::{min,max};
 use serde_json::Value;
 use serde_json::builder::ArrayBuilder;
 
-use xi_rope::Rope;
+use xi_rope::rope::Rope;
 
 const SCROLL_SLOP: usize = 2;
 
@@ -78,7 +78,7 @@ impl View {
             text.line_of_offset(self.sel_max())
         };
         let mut line_num = first_line;
-        for l in text.clone().slice(text.offset_of_line(first_line), text.len()).lines() {
+        for l in text.lines(text.offset_of_line(first_line), text.len()) {
             let mut line_builder = ArrayBuilder::new();
             let l_len = l.len();
             line_builder = line_builder.push(l);

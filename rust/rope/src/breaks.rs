@@ -202,7 +202,7 @@ mod tests {
 		for _ in 0..n {
 			let len = node.len();
 			let empty_interval_at_end = Interval::new_open_closed(len, len);
-			node.edit::<BaseMetric>(empty_interval_at_end, testnode.clone());
+			node.edit(empty_interval_at_end, testnode.clone());
 		}
 		node
 	}
