@@ -24,13 +24,33 @@ const MIN_CHILDREN: usize = 4;
 const MAX_CHILDREN: usize = 8;
 
 pub trait NodeInfo: Clone {
+    /// The type of the leaf.
+    ///
+    /// A given NodeInfo is for exactly one type of leaf. That is why
+    /// the leaf type is an associated type rather than a type parameter.
     type L : Leaf;
+
+    type BaseMetric: Metric<Self>;
+
+    /// An operator that combines info from two subtrees. It is intended
+    /// (but not strictly enforced) that this operator be associative and
+    /// obey an identity property. In mathematical terms, the accumulate
+    /// method is the sum operator of a monoid.
     fn accumulate(&mut self, other: &Self);
 
-    // return info
+    /// A mapping from a leaf into the info type. It is intended (but
+    /// not strictly enforced) that applying the accumulate method to
+    /// the info derived from two leaves gives the same result as
+    /// deriving the info from the concatenation of the two leaves. In
+    /// mathematical terms, the compute_info method is a monoid
+    /// homomorphism.
     fn compute_info(&Self::L) -> Self;
 
-    // default?
+    /// The identity of the monoid. Need not be implemented because it
+    /// can be computed from the leaf default.
+    fn identity() -> Self {
+        Self::compute_info(&Self::L::default())
+    }
 }
 
 pub trait Leaf: Sized + Clone + Default {
@@ -62,6 +82,18 @@ pub trait Leaf: Sized + Clone + Default {
     }
 }
 
+/// A b-tree node storing leaves at the bottom, and with info
+/// retained at each node. It is implemented with atomic reference counting
+/// and copy-on-write semantics, so an immutable clone is a very cheap
+/// operation, and nodes can be shared across threads. Even so, it is
+/// designed to be updated in place, with efficiency similar to a mutable
+/// data structure, using uniqueness of reference count to detect when
+/// this operation is safe.
+///
+/// When the leaf is a string, this is a rope data structure (a persistent
+/// rope in functional programming jargon). However, it is not restricted
+/// to strings, and it is expected to be the basis for a number of data
+/// structures useful for text processing.
 #[derive(Clone)]
 pub struct Node<N: NodeInfo>(Arc<NodeBody<N>>);
 
@@ -82,14 +114,14 @@ enum NodeVal<N: NodeInfo> {
 // also consider making Metric a newtype for usize, so type system can
 // help separate metrics
 pub trait Metric<N: NodeInfo> {
-    // probably want len also
-    fn measure(&N) -> usize;
+    // probably want to pass len as an argument as well
+    fn measure(&N, usize) -> usize;
 
     fn to_base_units(l: &N::L, in_measured_units: usize) -> usize;
 
     fn from_base_units(l: &N::L, in_base_units: usize) -> usize;
 
-    // the next three methods work in base units
+    // The next three methods work in base units.
 
     // These methods must indicate a boundary at the end of a leaf,
     // if present. A boundary at the beginning of a leaf is optional
@@ -253,7 +285,7 @@ impl<N: NodeInfo> Node<N> {
     }
 
     fn measure<M: Metric<N>>(&self) -> usize {
-        M::measure(&self.0.info)
+        M::measure(&self.0.info, self.0.len)
     }
 
     fn measure_as_interval<M: Metric<N>>(&self) -> Interval {
@@ -395,6 +427,8 @@ impl<N: NodeInfo> RopeBuilder<N> {
         RopeBuilder(None)
     }
 
+    // TODO: more sophisticated implementation, so pushing a sequence
+    // is amortized O(n), rather than O(n log n) as now.
     fn push(&mut self, n: Node<N>) {
         match self.0.take() {
             None => self.0 = Some(n),
@@ -503,7 +537,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
                 // should be looking at nodes anyway at this point, as we need
                 // to walk up the tree.
                 let node_info = N::compute_info(l);
-                if M::measure(&node_info) == 0 {
+                if M::measure(&node_info, l.len()) == 0 {
                     // leaf doesn't contain boundary, keep scanning
                     continue;
                 }
@@ -680,6 +714,7 @@ impl Leaf for Vec<u8> {
 
 impl NodeInfo for BytesInfo {
     type L = Vec<u8>;
+    type BaseMetric = BytesMetric;
     fn accumulate(&mut self, other: &Self) {
         self.0 += other.0;
     }
@@ -692,8 +727,8 @@ impl NodeInfo for BytesInfo {
 struct BytesMetric(());
 
 impl Metric<BytesInfo> for BytesMetric {
-    fn measure(info: &BytesInfo) -> usize {
-        info.0
+    fn measure(_: &BytesInfo, len: usize) -> usize {
+        len
     }
 
     fn to_base_units(_: &Vec<u8>, in_measured_units: usize) -> usize {

@@ -15,8 +15,9 @@
 //! A rope data structure suitable for text editing
 
 pub mod tree; // experimental for now
-pub mod linewrap;
+pub mod breaks;
 pub mod interval;
+pub mod delta;
 
 use std::rc::Rc;
 use std::borrow::Cow;

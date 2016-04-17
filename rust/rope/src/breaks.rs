@@ -12,17 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A module for representing the result of line breaking.
+//! A module for representing a set of breaks, typically used for
+//! storing the result of line breaking.
 
 use std::cmp::min;
 use tree::{Node, Leaf, NodeInfo, Metric};
 use interval::Interval;
 
-// Another more interesting example - Breaks represents a (multi-) set
-// of indexes. A motivating use is storing line breaks.
+// Breaks represents a set of indexes. A motivating use is storing line breaks.
 
-// Here the base units are the underlying indices, ie it should track
-// the buffer being broken
+// Here the base units are arbitrary, but most commonly match the base units
+// of the rope storing the underlying string.
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct BreaksLeaf {
@@ -43,7 +43,7 @@ impl Leaf for BreaksLeaf {
     }
 
     fn push_maybe_split(&mut self, other: &BreaksLeaf, iv: Interval) -> Option<BreaksLeaf> {
-    	let (start, end) = iv.start_end();
+        let (start, end) = iv.start_end();
         for &v in other.data.iter() {
             if start <= v && v < end {
                 self.data.push(v - start + self.len);
@@ -73,6 +73,8 @@ impl Leaf for BreaksLeaf {
 
 impl NodeInfo for BreaksInfo {
 	type L = BreaksLeaf;
+    type BaseMetric = BaseMetric;
+
     fn accumulate(&mut self, other: &Self) {
         self.0 += other.0;
     }
@@ -85,7 +87,7 @@ impl NodeInfo for BreaksInfo {
 struct BreaksMetric(());
 
 impl Metric<BreaksInfo> for BreaksMetric {
-    fn measure(info: &BreaksInfo) -> usize {
+    fn measure(info: &BreaksInfo, _: usize) -> usize {
         info.0
     }
 
@@ -151,9 +153,39 @@ impl Metric<BreaksInfo> for BreaksMetric {
     fn can_fragment() -> bool { true }
 }
 
+struct BaseMetric(());
+
+impl Metric<BreaksInfo> for BaseMetric {
+    fn measure(info: &BreaksInfo, _: usize) -> usize {
+        info.0
+    }
+
+    fn to_base_units(l: &BreaksLeaf, in_measured_units: usize) -> usize {
+        in_measured_units
+    }
+
+    fn from_base_units(l: &BreaksLeaf, in_base_units: usize) -> usize {
+        in_base_units
+    }
+
+    fn is_boundary(l: &BreaksLeaf, offset: usize) -> bool {
+        BreaksMetric::is_boundary(l, offset)
+    }
+
+    fn prev(l: &BreaksLeaf, offset: usize) -> Option<usize> {
+        BreaksMetric::prev(l, offset)
+    }
+
+    fn next(l: &BreaksLeaf, offset: usize) -> Option<usize> {
+        BreaksMetric::next(l, offset)
+    }
+
+    fn can_fragment() -> bool { true }
+}
+
 #[cfg(test)]
 mod tests {
-	use linewrap::{BreaksLeaf, BreaksInfo, BreaksMetric};
+	use breaks::{BreaksLeaf, BreaksInfo, BreaksMetric, BaseMetric};
 	use tree::{Node, Cursor};
 	use interval::Interval;
 
@@ -170,7 +202,7 @@ mod tests {
 		for _ in 0..n {
 			let len = node.len();
 			let empty_interval_at_end = Interval::new_open_closed(len, len);
-			node.edit::<BreaksMetric>(empty_interval_at_end, testnode.clone());
+			node.edit::<BaseMetric>(empty_interval_at_end, testnode.clone());
 		}
 		node
 	}
