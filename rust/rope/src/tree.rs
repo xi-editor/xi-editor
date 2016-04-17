@@ -303,6 +303,10 @@ impl<N: NodeInfo> Node<N> {
         Interval::new_closed_closed(start, end)
     }
 
+    // It's not obvious to me that these methods (traversal, substring,
+    // edit) need a metric. I think doing measurement in base units is
+    // enough, and clients can convert metrics themselves if needed.
+
     // calls the given function with leaves forming the sequence
     fn visit_subseq<M: Metric<N>, F>(&self, iv: Interval,
             f: &mut F) where F: FnMut(&N::L) -> () {
@@ -393,7 +397,7 @@ impl<N: NodeInfo> Node<N> {
         // If M1 can fragment, then we must land on the leaf containing
         // the m1 boundary. Otherwise, we can land on the beginning of
         // the leaf immediately following the M1 boundary, which may be
-        // efficient.
+        // more efficient.
         let m1_fudge = if M1::can_fragment() { 1 } else { 0 };
         let mut m2 = 0;
         let mut node = self;
@@ -410,7 +414,7 @@ impl<N: NodeInfo> Node<N> {
         }
         let l = node.get_leaf();
         let base = M1::to_base_units(l, m1);
-        m2 + M2::from_base_units(l, m2)
+        m2 + M2::from_base_units(l, base)
     }
 }
 
@@ -514,7 +518,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
             self.leaf = None;
             return None;
         }
-        let mut offset_in_leaf = self.position - self.offset_of_leaf;
+        let offset_in_leaf = self.position - self.offset_of_leaf;
         if let Some(l) = self.leaf {
             if offset_in_leaf > 0 {
                 if let Some(offset_in_leaf) = M::prev(l, offset_in_leaf) {
@@ -540,6 +544,10 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
                 if M::measure(&node_info, l.len()) == 0 {
                     // leaf doesn't contain boundary, keep scanning
                     continue;
+                }
+                if M::is_boundary(l, l.len()) {
+                    let _ = self.next_leaf();
+                    return Some(self.position);
                 }
                 if let Some(offset_of_leaf) = M::prev(l, l.len()) {
                     self.position = self.offset_of_leaf + offset_in_leaf;
@@ -739,7 +747,7 @@ impl Metric<BytesInfo> for BytesMetric {
         in_base_units
     }
 
-    fn is_boundary(_: &Vec<u8>, offset: usize) -> bool { true }
+    fn is_boundary(_: &Vec<u8>, _: usize) -> bool { true }
 
     fn prev(_: &Vec<u8>, offset: usize) -> Option<usize> {
         if offset > 0 { Some(offset - 1) } else { None }

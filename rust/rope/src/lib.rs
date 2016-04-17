@@ -18,6 +18,7 @@ pub mod tree; // experimental for now
 pub mod breaks;
 pub mod interval;
 pub mod delta;
+pub mod rope;
 
 use std::rc::Rc;
 use std::borrow::Cow;
