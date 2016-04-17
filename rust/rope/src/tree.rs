@@ -15,8 +15,7 @@
 //! A general b-tree structure suitable for ropes and the like.
 
 use std::sync::Arc;
-use std::ops::{Index, RangeFull};
-use std::cmp::{min,max};
+use std::cmp::min;
 
 use interval::Interval;
 
@@ -288,21 +287,9 @@ impl<N: NodeInfo> Node<N> {
         M::measure(&self.0.info, self.0.len)
     }
 
-    fn measure_as_interval<M: Metric<N>>(&self) -> Interval {
-        Interval::new_closed_closed(0, self.measure::<M>())
-    }
-
-    fn interval_to_base_units<M: Metric<N>>(&self, l: &N::L, iv: Interval) -> Interval {
-        let start = M::to_base_units(l, iv.start());
-        let end = if iv.is_end_closed() && iv.end() == self.measure::<M>() {
-            l.len()
-        } else {
-            M::to_base_units(l, iv.end())
-        };
-        // is this always appropriate?
-        Interval::new_closed_closed(start, end)
-    }
-
+    /*
+    // TODO: not sure if this belongs in the public interface, cursor
+    // might subsume all real use cases.
     // calls the given function with leaves forming the sequence
     fn visit_subseq<F>(&self, iv: Interval, f: &mut F)
             where F: FnMut(&N::L) -> () {
@@ -334,6 +321,7 @@ impl<N: NodeInfo> Node<N> {
             }
         }
     }
+    */
 
     pub fn push_subseq(&self, b: &mut TreeBuilder<N>, iv: Interval) {
         if iv.is_empty() {
@@ -542,7 +530,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
                     let _ = self.next_leaf();
                     return Some(self.position);
                 }
-                if let Some(offset_of_leaf) = M::prev(l, l.len()) {
+                if let Some(offset_in_leaf) = M::prev(l, l.len()) {
                     self.position = self.offset_of_leaf + offset_in_leaf;
                     return Some(self.position);                    
                 } else {
@@ -679,7 +667,9 @@ fn slice<'a, L: Leaf + Index<RangeFull>>(l: &'a L) -> &'a L::Output {
 }
 */
 
-// some concrete instantiations of the traits
+/*
+// TODO: the following is an example, written during development but
+// not actually used. Either make it real or delete it.
 
 #[derive(Clone, Default)]
 struct BytesLeaf(Vec<u8>);
@@ -750,3 +740,5 @@ impl Metric<BytesInfo> for BytesMetric {
 
     fn can_fragment() -> bool { false }
 }
+
+*/

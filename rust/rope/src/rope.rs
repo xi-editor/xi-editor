@@ -294,7 +294,6 @@ impl Rope {
     /// tiny it is effectively O(n). This iterator does not allocate.
     pub fn iter_chunks(&self, start: usize, end: usize) -> ChunkIter {
         ChunkIter {
-            root: self,
             cursor: Cursor::new(self, start),
             end: end,
         }
@@ -337,7 +336,6 @@ impl Rope {
 
 // should make this generic, but most leaf types aren't going to be sliceable
 pub struct ChunkIter<'a> {
-    root: &'a Rope,
     cursor: Cursor<'a, RopeInfo>,
     end: usize,
 }

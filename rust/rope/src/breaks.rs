@@ -20,18 +20,19 @@ use tree::{Node, Leaf, NodeInfo, Metric};
 use interval::Interval;
 
 // Breaks represents a set of indexes. A motivating use is storing line breaks.
+pub type Breaks = Node<BreaksInfo>;
 
 // Here the base units are arbitrary, but most commonly match the base units
 // of the rope storing the underlying string.
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-struct BreaksLeaf {
+pub struct BreaksLeaf {
     len: usize,  // measured in base units
     data: Vec<usize>,  // each is a delta relative to start of leaf; sorted
 }
 
 #[derive(Clone)]
-struct BreaksInfo(usize);  // number of breaks
+pub struct BreaksInfo(usize);  // number of breaks
 
 impl Leaf for BreaksLeaf {
     fn len(&self) -> usize {
@@ -72,7 +73,7 @@ impl Leaf for BreaksLeaf {
 }
 
 impl NodeInfo for BreaksInfo {
-	type L = BreaksLeaf;
+    type L = BreaksLeaf;
     type BaseMetric = BaseMetric;
 
     fn accumulate(&mut self, other: &Self) {
@@ -84,7 +85,7 @@ impl NodeInfo for BreaksInfo {
     }
 }
 
-struct BreaksMetric(());
+pub struct BreaksMetric(());
 
 impl Metric<BreaksInfo> for BreaksMetric {
     fn measure(info: &BreaksInfo, _: usize) -> usize {
@@ -153,18 +154,18 @@ impl Metric<BreaksInfo> for BreaksMetric {
     fn can_fragment() -> bool { true }
 }
 
-struct BaseMetric(());
+pub struct BaseMetric(());
 
 impl Metric<BreaksInfo> for BaseMetric {
     fn measure(info: &BreaksInfo, _: usize) -> usize {
         info.0
     }
 
-    fn to_base_units(l: &BreaksLeaf, in_measured_units: usize) -> usize {
+    fn to_base_units(_: &BreaksLeaf, in_measured_units: usize) -> usize {
         in_measured_units
     }
 
-    fn from_base_units(l: &BreaksLeaf, in_base_units: usize) -> usize {
+    fn from_base_units(_: &BreaksLeaf, in_base_units: usize) -> usize {
         in_base_units
     }
 
@@ -185,76 +186,77 @@ impl Metric<BreaksInfo> for BaseMetric {
 
 #[cfg(test)]
 mod tests {
-	use breaks::{BreaksLeaf, BreaksInfo, BreaksMetric, BaseMetric};
-	use tree::{Node, Cursor};
-	use interval::Interval;
+    use breaks::{BreaksLeaf, BreaksInfo, BreaksMetric};
+    use tree::{Node, Cursor};
+    use interval::Interval;
 
-	fn gen(n: usize) -> Node<BreaksInfo> {
-		let mut node = Node::default();
-		let testleaf = BreaksLeaf {
-			len: 10,
-			data: vec![10],
-		};
-		let testnode = Node::<BreaksInfo>::from_leaf(testleaf);
-		if n == 1 {
-			return testnode;
-		}
-		for _ in 0..n {
-			let len = node.len();
-			let empty_interval_at_end = Interval::new_open_closed(len, len);
-			node.edit(empty_interval_at_end, testnode.clone());
-		}
-		node
-	}
+    fn gen(n: usize) -> Node<BreaksInfo> {
+        let mut node = Node::default();
+        let testleaf = BreaksLeaf {
+            len: 10,
+            data: vec![10],
+        };
+        let testnode = Node::<BreaksInfo>::from_leaf(testleaf);
+        if n == 1 {
+            return testnode;
+        }
+        for _ in 0..n {
+            let len = node.len();
+            let empty_interval_at_end = Interval::new_open_closed(len, len);
+            node.edit(empty_interval_at_end, testnode.clone());
+        }
+        node
+    }
 
-	#[test]
-	fn empty() {
-		let n = gen(0);
-		assert_eq!(0, n.len());
-	}
+    #[test]
+    fn empty() {
+        let n = gen(0);
+        assert_eq!(0, n.len());
+    }
 
-	fn fromleaf() {
-		let testnode = gen(1);
-		assert_eq!(10, testnode.len());
-	}
+    #[test]
+    fn fromleaf() {
+        let testnode = gen(1);
+        assert_eq!(10, testnode.len());
+    }
 
-	#[test]
-	fn one() {
-		let testleaf = BreaksLeaf {
-			len: 10,
-			data: vec![10],
-		};
-		let testnode = Node::<BreaksInfo>::from_leaf(testleaf.clone());
-		assert_eq!(10, testnode.len());
-		let mut c = Cursor::new(&testnode, 0);
-		assert_eq!(c.get_leaf().unwrap().0, &testleaf);
-		assert_eq!(10, c.next::<BreaksMetric>().unwrap());
-		assert!(c.next::<BreaksMetric>().is_none());
-		c.set(0);
-		assert!(c.is_boundary::<BreaksMetric>());
-		c.set(1);
-		assert!(!c.is_boundary::<BreaksMetric>());
-		c.set(10);
-		assert!(c.is_boundary::<BreaksMetric>());
-		assert_eq!(0, c.prev::<BreaksMetric>().unwrap());
-		assert!(c.prev::<BreaksMetric>().is_none());
-	}
+    #[test]
+    fn one() {
+        let testleaf = BreaksLeaf {
+            len: 10,
+            data: vec![10],
+        };
+        let testnode = Node::<BreaksInfo>::from_leaf(testleaf.clone());
+        assert_eq!(10, testnode.len());
+        let mut c = Cursor::new(&testnode, 0);
+        assert_eq!(c.get_leaf().unwrap().0, &testleaf);
+        assert_eq!(10, c.next::<BreaksMetric>().unwrap());
+        assert!(c.next::<BreaksMetric>().is_none());
+        c.set(0);
+        assert!(c.is_boundary::<BreaksMetric>());
+        c.set(1);
+        assert!(!c.is_boundary::<BreaksMetric>());
+        c.set(10);
+        assert!(c.is_boundary::<BreaksMetric>());
+        assert_eq!(0, c.prev::<BreaksMetric>().unwrap());
+        assert!(c.prev::<BreaksMetric>().is_none());
+    }
 
-	#[test]
-	fn concat() {
-		let left = gen(1);
-		let right = gen(1);
-		let node = Node::concat(left.clone(), right);
-		assert_eq!(node.len(), 20);
-		let mut c = Cursor::new(&node, 0);
-		assert_eq!(10, c.next::<BreaksMetric>().unwrap());
-		assert_eq!(20, c.next::<BreaksMetric>().unwrap());
-		assert!(c.next::<BreaksMetric>().is_none());
-	}
+    #[test]
+    fn concat() {
+        let left = gen(1);
+        let right = gen(1);
+        let node = Node::concat(left.clone(), right);
+        assert_eq!(node.len(), 20);
+        let mut c = Cursor::new(&node, 0);
+        assert_eq!(10, c.next::<BreaksMetric>().unwrap());
+        assert_eq!(20, c.next::<BreaksMetric>().unwrap());
+        assert!(c.next::<BreaksMetric>().is_none());
+    }
 
-	#[test]
-	fn larger() {
-		let node = gen(100);
-		assert_eq!(node.len(), 1000);
-	}
+    #[test]
+    fn larger() {
+        let node = gen(100);
+        assert_eq!(node.len(), 1000);
+    }
 }

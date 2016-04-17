@@ -17,7 +17,7 @@
 //! shared across multiple subsystems.
 
 use interval::Interval;
-use tree::{Node, NodeInfo, Metric};
+use tree::{Node, NodeInfo};
 use std;
 
 pub struct Delta<N: NodeInfo> {
