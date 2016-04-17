@@ -16,7 +16,7 @@
 //! storing the result of line breaking.
 
 use std::cmp::min;
-use tree::{Node, Leaf, NodeInfo, Metric};
+use tree::{Node, Leaf, NodeInfo, Metric, TreeBuilder};
 use interval::Interval;
 
 // Breaks represents a set of indexes. A motivating use is storing line breaks.
@@ -44,9 +44,10 @@ impl Leaf for BreaksLeaf {
     }
 
     fn push_maybe_split(&mut self, other: &BreaksLeaf, iv: Interval) -> Option<BreaksLeaf> {
+        //print_err!("push_maybe_split {:?} {:?} {}", self, other, iv);
         let (start, end) = iv.start_end();
         for &v in other.data.iter() {
-            if start <= v && v < end {
+            if start <= v && v <= end {
                 self.data.push(v - start + self.len);
             }
         }
@@ -74,14 +75,14 @@ impl Leaf for BreaksLeaf {
 
 impl NodeInfo for BreaksInfo {
     type L = BreaksLeaf;
-    type BaseMetric = BaseMetric;
+    type BaseMetric = BreaksBaseMetric;
 
     fn accumulate(&mut self, other: &Self) {
         self.0 += other.0;
     }
 
     fn compute_info(l: &BreaksLeaf) -> BreaksInfo {
-        BreaksInfo(l.len)
+        BreaksInfo(l.data.len())
     }
 }
 
@@ -106,14 +107,10 @@ impl Metric<BreaksInfo> for BreaksMetric {
         // TODO: binary search, data is sorted
         for i in 0..l.data.len() {
             if in_base_units < l.data[i] {
-                if i == 0 {
-                    return 0;  // not satisfying, should be option?
-                } else {
-                    return l.data[i - 1];
-                }
+                return i;
             }
         }
-        *l.data.last().unwrap_or(&0)
+        l.data.len()
     }
 
     fn is_boundary(l: &BreaksLeaf, offset: usize) -> bool {
@@ -154,11 +151,11 @@ impl Metric<BreaksInfo> for BreaksMetric {
     fn can_fragment() -> bool { true }
 }
 
-pub struct BaseMetric(());
+pub struct BreaksBaseMetric(());
 
-impl Metric<BreaksInfo> for BaseMetric {
-    fn measure(info: &BreaksInfo, _: usize) -> usize {
-        info.0
+impl Metric<BreaksInfo> for BreaksBaseMetric {
+    fn measure(_: &BreaksInfo, len: usize) -> usize {
+        len
     }
 
     fn to_base_units(_: &BreaksLeaf, in_measured_units: usize) -> usize {
@@ -184,19 +181,58 @@ impl Metric<BreaksInfo> for BaseMetric {
     fn can_fragment() -> bool { true }
 }
 
+// Additional functions specific to breaks
+
+impl Breaks {
+    // a length with a break at the end
+    fn new_break(len: usize) -> Breaks {
+        let leaf = BreaksLeaf {
+            len: len,
+            data: vec![len],
+        };
+        Node::from_leaf(leaf)
+    }
+
+    // a length with no break
+    fn new_no_break(len: usize) -> Breaks {
+        let leaf = BreaksLeaf {
+            len: len,
+            data: vec![],
+        };
+        Node::from_leaf(leaf)
+    }
+}
+
+pub struct BreakBuilder(TreeBuilder<BreaksInfo>);
+
+// TODO: should accumulate directly into leaves
+impl BreakBuilder {
+    pub fn new() -> BreakBuilder {
+        BreakBuilder(TreeBuilder::new())
+    }
+
+    pub fn add_break(&mut self, len: usize) {
+        self.0.push(Breaks::new_break(len));
+    }
+
+    pub fn add_no_break(&mut self, len: usize) {
+        self.0.push(Breaks::new_no_break(len));
+    }
+
+    pub fn build(self) -> Breaks {
+        self.0.build()
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use breaks::{BreaksLeaf, BreaksInfo, BreaksMetric};
+    use breaks::{Breaks, BreaksLeaf, BreaksInfo, BreaksMetric};
     use tree::{Node, Cursor};
     use interval::Interval;
 
     fn gen(n: usize) -> Node<BreaksInfo> {
         let mut node = Node::default();
-        let testleaf = BreaksLeaf {
-            len: 10,
-            data: vec![10],
-        };
-        let testnode = Node::<BreaksInfo>::from_leaf(testleaf);
+        let testnode = Breaks::new_break(10);
         if n == 1 {
             return testnode;
         }

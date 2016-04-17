@@ -12,12 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// TODO: figure out how not to duplcate this
+macro_rules! print_err {
+    ($($arg:tt)*) => (
+        {
+            use std::io::prelude::*;
+            if let Err(e) = write!(&mut ::std::io::stderr(), "{}\n", format_args!($($arg)*)) {
+                panic!("Failed to write to stderr.\
+                    \nOriginal error output: {}\
+                    \nSecondary error writing to stderr: {}", format!($($arg)*), e);
+            }
+        }
+    )
+}
+
 use std::cmp::{min,max};
 
 use serde_json::Value;
 use serde_json::builder::ArrayBuilder;
 
-use xi_rope::rope::Rope;
+use xi_rope::rope::{Rope, LinesMetric};
+use xi_rope::tree::Cursor;
+use xi_rope::breaks::{Breaks, BreaksMetric, BreaksBaseMetric};
+
+use linewrap;
 
 const SCROLL_SLOP: usize = 2;
 
@@ -26,6 +44,7 @@ pub struct View {
     pub sel_end: usize,
     first_line: usize,  // vertical scroll position
     height: usize,  // height of visible portion
+    breaks: Option<Breaks>,
 }
 
 impl View {
@@ -34,7 +53,8 @@ impl View {
             sel_start: 0,
             sel_end: 0,
             first_line: 0,
-            height: 10
+            height: 10,
+            breaks: None,
         }
     }
 
@@ -70,26 +90,56 @@ impl View {
         let sel_min_line = if self.sel_start == self.sel_end {
             cursor_line
         } else {
-            text.line_of_offset(self.sel_min())
+            self.line_of_offset(text, self.sel_min())
         };
         let sel_max_line = if self.sel_start == self.sel_end {
             cursor_line
         } else {
-            text.line_of_offset(self.sel_max())
+            self.line_of_offset(text, self.sel_max())
         };
+        let first_line_offset = self.offset_of_line(text, first_line);
+        let mut cursor = Cursor::new(text, first_line_offset);
+        let mut breaks_cursor = self.breaks.as_ref().map(|breaks|
+            Cursor::new(breaks, first_line_offset)
+        );
         let mut line_num = first_line;
-        for l in text.lines(text.offset_of_line(first_line), text.len()) {
+        loop {
             let mut line_builder = ArrayBuilder::new();
+            let start_pos = cursor.pos();
+            let pos = match breaks_cursor {
+                Some(ref mut bc) => {
+                    let pos = bc.next::<BreaksMetric>();
+                    if let Some(pos) = pos {
+                        cursor.set(pos);
+                    }
+                    pos
+                }
+                None => cursor.next::<LinesMetric>()
+            };
+            let mut is_last_line = false;
+            let pos = match pos {
+                Some(pos) => pos,
+                None => {
+                    if start_pos == text.len() {
+                        break;
+                    }
+                    is_last_line = true;
+                    text.len()
+                }
+            };
+            let l_str = text.slice_to_string(start_pos, pos);
+            let l = &l_str;
+            // TODO: strip trailing line end
             let l_len = l.len();
             line_builder = line_builder.push(l);
             if line_num >= sel_min_line && line_num <= sel_max_line && self.sel_start != self.sel_end {
                 let sel_start_ix = if line_num == sel_min_line {
-                    self.sel_min() - text.offset_of_line(line_num)
+                    self.sel_min() - self.offset_of_line(text, line_num)
                 } else {
                     0
                 };
                 let sel_end_ix = if line_num == sel_max_line {
-                    self.sel_max() - text.offset_of_line(line_num)
+                    self.sel_max() - self.offset_of_line(text, line_num)
                 } else {
                     l_len
                 };
@@ -107,7 +157,7 @@ impl View {
             }
             builder = builder.push(line_builder.unwrap());
             line_num += 1;
-            if line_num == last_line {
+            if is_last_line || line_num == last_line {
                 break;
             }
         }
@@ -153,15 +203,15 @@ impl View {
     // for simplicity.
 
     pub fn offset_to_line_col(&self, text: &Rope, offset: usize) -> (usize, usize) {
-        let line = text.line_of_offset(offset);
-        (line, offset - text.offset_of_line(line))
+        let line = self.line_of_offset(text, offset);
+        (line, offset - self.offset_of_line(text, line))
     }
 
     pub fn line_col_to_offset(&self, text: &Rope, line: usize, col: usize) -> usize {
-        let mut offset = text.offset_of_line(line).saturating_add(col);
+        let mut offset = self.offset_of_line(text, line).saturating_add(col);
         if offset >= text.len() {
             offset = text.len();
-            if text.line_of_offset(offset) == line {
+            if self.line_of_offset(text, offset) == line {
                 return offset;
             }
         } else {
@@ -170,9 +220,10 @@ impl View {
         }
 
         // clamp to end of line
-        let next_line_offset = text.offset_of_line(line + 1);
+        let next_line_offset = self.offset_of_line(text, line + 1);
         if offset >= next_line_offset {
             offset = next_line_offset;
+            // TODO: replace with cursor
             if text.byte_at(offset - 1) == b'\n' {
                 offset -= 1;
             }
@@ -189,7 +240,7 @@ impl View {
     pub fn vertical_motion(&self, text: &Rope, line_delta: isize, col: usize) -> usize {
         // This code is quite careful to avoid integer overflow.
         // TODO: write tests to verify
-        let line = text.line_of_offset(self.sel_end);
+        let line = self.line_of_offset(text, self.sel_end);
         if line_delta < 0 && (-line_delta as usize) > line {
             return 0;
         }
@@ -198,10 +249,36 @@ impl View {
         } else {
             line.saturating_add(line_delta as usize)
         };
-        let n_lines = text.line_of_offset(text.len());
+        let n_lines = self.line_of_offset(text, text.len());
         if line > n_lines {
             return text.len();
         }
         self.line_col_to_offset(text, line, col)
+    }
+
+    // use own breaks if present, or text if not (no line wrapping)
+
+    fn line_of_offset(&self, text: &Rope, offset: usize) -> usize {
+        match self.breaks {
+            Some(ref breaks) => {
+                let line = breaks.convert_metrics::<BreaksBaseMetric, BreaksMetric>(offset);
+                print_err!("line_of_offset({}) = {}", offset, line);
+                line
+            }
+            None => text.line_of_offset(offset)
+        }
+    }
+
+    fn offset_of_line(&self, text: &Rope, offset: usize) -> usize {
+        match self.breaks {
+            Some(ref breaks) => {
+                breaks.convert_metrics::<BreaksMetric, BreaksBaseMetric>(offset)
+            }
+            None => text.offset_of_line(offset)
+        }
+    }
+
+    pub fn rewrap(&mut self, text: &Rope, cols: usize) {
+        self.breaks = Some(linewrap::linewrap(text, cols));
     }
 }

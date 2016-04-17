@@ -45,6 +45,10 @@ impl<N: NodeInfo> Delta<N> {
         })
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
     pub fn iter(&self) -> Iter<N> {
         self.items.iter()
     }

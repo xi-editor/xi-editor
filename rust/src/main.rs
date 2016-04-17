@@ -20,6 +20,7 @@ use serde_json::Value;
 
 mod editor;
 mod view;
+mod linewrap;
 
 use editor::Editor;
 

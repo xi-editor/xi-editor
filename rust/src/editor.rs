@@ -171,6 +171,10 @@ impl Editor {
                     let scroll_offset = self.view.vertical_motion(&self.text, scroll, self.col);
                     self.scroll_to = Some(scroll_offset);
                 }
+                "\u{F704}" => {  // F1, but using for debugging
+                    self.view.rewrap(&self.text, 72);
+                    self.dirty = true;
+                }
                 _ => self.insert(chars)
             }
         }

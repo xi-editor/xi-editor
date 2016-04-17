@@ -283,7 +283,7 @@ impl<N: NodeInfo> Node<N> {
         }
     }
 
-    fn measure<M: Metric<N>>(&self) -> usize {
+    pub fn measure<M: Metric<N>>(&self) -> usize {
         M::measure(&self.0.info, self.0.len)
     }
 
@@ -464,7 +464,13 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
 
     pub fn set(&mut self, position: usize) {
         self.position = position;
-        // TODO: reuse cache if position is nearby
+        if let Some(l) = self.leaf {
+            if self.position >= self.offset_of_leaf &&
+                    self.position < self.offset_of_leaf + l.len() {
+                return;
+            }
+        }
+        // TODO: walk up tree to find leaf if nearby
         self.descend();
     }
 

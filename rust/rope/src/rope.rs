@@ -136,7 +136,7 @@ impl Metric<RopeInfo> for BaseMetric {
     }
 }
 
-struct LinesMetric(usize);  // number of lines
+pub struct LinesMetric(usize);  // number of lines
 
 impl Metric<RopeInfo> for LinesMetric {
     fn measure(info: &RopeInfo, _: usize) -> usize {
@@ -332,6 +332,16 @@ impl Rope {
         let (leaf, pos) = cursor.get_leaf().unwrap();
         leaf.as_bytes()[pos]
     }
+
+    // TODO: this should be a Cow
+    // TODO: a case can be made to hang this on Cursor instead
+    pub fn slice_to_string(&self, start: usize, end: usize) -> String {
+        let mut result = String::new();
+        for chunk in self.iter_chunks(start, end) {
+            result.push_str(chunk);
+        }
+        result
+    }
 }
 
 // should make this generic, but most leaf types aren't going to be sliceable
@@ -389,11 +399,20 @@ impl From<Rope> for String {
 
 impl<'a> From<&'a Rope> for String {
     fn from(r: &Rope) -> String {
-        let mut result = String::new();
-        for chunk in r.iter_chunks(0, r.len()) {
-            result.push_str(chunk);
+        r.slice_to_string(0, r.len())
+    }
+}
+
+// additional cursor features
+
+impl<'a> Cursor<'a, RopeInfo> {
+    pub fn next_codepoint(&mut self) -> Option<char> {
+        if let Some((l, offset)) = self.get_leaf() {
+            self.next::<BaseMetric>();
+            l[offset..].chars().next()
+        } else {
+            None
         }
-        result
     }
 }
 
