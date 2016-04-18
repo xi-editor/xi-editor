@@ -16,6 +16,7 @@
 //! storing the result of line breaking.
 
 use std::cmp::min;
+use std::mem;
 use tree::{Node, Leaf, NodeInfo, Metric, TreeBuilder};
 use interval::Interval;
 
@@ -184,17 +185,9 @@ impl Metric<BreaksInfo> for BreaksBaseMetric {
 // Additional functions specific to breaks
 
 impl Breaks {
-    // a length with a break at the end
-    fn new_break(len: usize) -> Breaks {
-        let leaf = BreaksLeaf {
-            len: len,
-            data: vec![len],
-        };
-        Node::from_leaf(leaf)
-    }
-
-    // a length with no break
-    fn new_no_break(len: usize) -> Breaks {
+    // a length with no break, useful in edit operations; for
+    // other use cases, use the builder.
+    pub fn new_no_break(len: usize) -> Breaks {
         let leaf = BreaksLeaf {
             len: len,
             data: vec![],
@@ -203,24 +196,35 @@ impl Breaks {
     }
 }
 
-pub struct BreakBuilder(TreeBuilder<BreaksInfo>);
+pub struct BreakBuilder {
+    b: TreeBuilder<BreaksInfo>,
+    leaf: BreaksLeaf,
+}
 
-// TODO: should accumulate directly into leaves
 impl BreakBuilder {
     pub fn new() -> BreakBuilder {
-        BreakBuilder(TreeBuilder::new())
+        BreakBuilder {
+            b: TreeBuilder::new(),
+            leaf: BreaksLeaf::default(),
+        }
     }
 
     pub fn add_break(&mut self, len: usize) {
-        self.0.push(Breaks::new_break(len));
+        if self.leaf.data.len() == 64 {
+            let leaf = mem::replace(&mut self.leaf, BreaksLeaf::default());
+            self.b.push(Node::from_leaf(leaf));
+        }
+        self.leaf.len += len;
+        self.leaf.data.push(self.leaf.len);
     }
 
     pub fn add_no_break(&mut self, len: usize) {
-        self.0.push(Breaks::new_no_break(len));
+        self.leaf.len += len;
     }
 
-    pub fn build(self) -> Breaks {
-        self.0.build()
+    pub fn build(mut self) -> Breaks {
+        self.b.push(Node::from_leaf(self.leaf));
+        self.b.build()
     }
 }
 

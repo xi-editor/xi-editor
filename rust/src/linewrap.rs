@@ -73,14 +73,14 @@ pub fn linewrap(text: &Rope, cols: usize) -> Breaks {
             let word_width = pos - last_pos;
             if width > 0 && width + word_width > cols {
                 builder.add_break(width);
-                print_err!("soft break {}", width);
+                //print_err!("soft break {}", width);
                 last_break_pos += width;
                 width = 0;
             }
             width += word_width;
             if hard {
                 builder.add_break(width);
-                print_err!("hard break {}", width);
+                //print_err!("hard break {}", width);
                 last_break_pos += width;
                 width = 0;
             }
