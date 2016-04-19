@@ -379,28 +379,43 @@ mod tests {
 
     #[test]
     fn lb_iter_simple() {
-        assert_eq!(vec![(2, false), (3, true)],
-            LineBreakIterator::new("a-b").collect::<Vec<_>>());
+        assert_eq!(vec![(6, false), (11, true)],
+            LineBreakIterator::new("hello world").collect::<Vec<_>>());
 
+        // LB7, LB18
         assert_eq!(vec![(3, false), (4, true)],
             LineBreakIterator::new("a  b").collect::<Vec<_>>());
 
+        // LB5
         assert_eq!(vec![(2, true), (3, true)],
             LineBreakIterator::new("a\nb").collect::<Vec<_>>());
-
-        assert_eq!(vec![(6, false), (11, true)],
-            LineBreakIterator::new("hello world").collect::<Vec<_>>());
+        assert_eq!(vec![(2, true), (4, true)],
+            LineBreakIterator::new("\r\n\r\n").collect::<Vec<_>>());
 
         // LB10 combining mark after space
         assert_eq!(vec![(2, false), (4, true)],
             LineBreakIterator::new("a \u{301}").collect::<Vec<_>>());
 
-        // LB21
-        assert_eq!(vec![(2, true), (3, true)],
-            LineBreakIterator::new("a\nb").collect::<Vec<_>>());
+        // LB15
+        assert_eq!(vec![(3, true)],
+            LineBreakIterator::new("\" [").collect::<Vec<_>>());
 
-        // LB14
+        // LB17
+        assert_eq!(vec![(2, false), (10, false), (11, true)],
+            LineBreakIterator::new("a \u{2014} \u{2014} c").collect::<Vec<_>>());
+
+        // LB18
+        assert_eq!(vec![(2, false), (6, false), (7, true)],
+            LineBreakIterator::new("a \"b\" c").collect::<Vec<_>>());
+
+        // LB21
+        assert_eq!(vec![(2, false), (3, true)],
+            LineBreakIterator::new("a-b").collect::<Vec<_>>());
+
+        // LB21a
         assert_eq!(vec![(5, true)],
             LineBreakIterator::new("\u{05D0}-\u{05D0}").collect::<Vec<_>>());
+
+
     }
 }

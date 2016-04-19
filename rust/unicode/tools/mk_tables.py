@@ -30,8 +30,7 @@ linebreak_assignments = ['XX', 'AI', 'AL', 'B2', 'BA', 'BB', 'BK', 'CB', 'CL',
 
 inv_lb_assigments = dict((val, i) for (i, val) in enumerate(linebreak_assignments))
 
-def gen_table(name, t, data, width=80):
-    print 'pub const %s: [%s; %d] = [' % (name, t, len(data))
+def gen_data(data, width=80):
     line = ''
     for val in data:
         new = '%d,' % val
@@ -41,6 +40,10 @@ def gen_table(name, t, data, width=80):
         prefix = ' ' if line else '    '
         line += prefix + new
     print line
+
+def gen_table(name, t, data, width=80):
+    print 'pub const %s: [%s; %d] = [' % (name, t, len(data))
+    gen_data(data)
     print '];'
 
 def compute_trie(rawdata, chunksize):
@@ -172,11 +175,11 @@ def mk_lb_rules():
     update(t, 'NL', Any, '!')
 
     # LB6
-    update(t, Any, ['BK', 'CR', 'LF', 'NL'], 'x')
+    update_both(t, ts, Any, ['BK', 'CR', 'LF', 'NL'], 'x')
 
     # LB7
     update_both(t, ts, Any, ['SP'], 'x')
-    update(t, Any, ['ZW'], 'x')
+    update_both(t, ts, Any, ['ZW'], 'x')
 
     # LB8
     update_both(t, ts, 'ZW', Any, '_')
@@ -186,7 +189,7 @@ def mk_lb_rules():
     update(ts, Any, 'CM', '_')
 
     # LB11:
-    update(t, Any, 'WJ', 'x')
+    update_both(t, ts, Any, 'WJ', 'x')
     update(t, 'WJ', Any, 'x')
 
     # LB12:
@@ -197,11 +200,11 @@ def mk_lb_rules():
     update(t, excl, 'GL', 'x')
 
     # LB13:
-    update(t, Any, 'CL', 'x')
-    update(t, Any, 'CP', 'x')
-    update(t, Any, 'EX', 'x')
-    update(t, Any, 'IS', 'x')
-    update(t, Any, 'SY', 'x')
+    update_both(t, ts, Any, 'CL', 'x')
+    update_both(t, ts, Any, 'CP', 'x')
+    update_both(t, ts, Any, 'EX', 'x')
+    update_both(t, ts, Any, 'IS', 'x')
+    update_both(t, ts, Any, 'SY', 'x')
 
     # LB14
     update_both(t, ts, 'OP', Any, 'x')
@@ -220,17 +223,17 @@ def mk_lb_rules():
     update(ts, Any, Any, '_')  # note deviation from literal transcription
 
     # LB19
-    update(t, Any, 'QU', 'x')
+    update_both(t, ts, Any, 'QU', 'x')
     update(t, 'QU', Any, 'x')
 
     # LB20
-    update(t, Any, 'CB', '_')
+    update_both(t, ts, Any, 'CB', '_')
     update(t, 'CB', Any, '_')
 
     # LB21
-    update(t, Any, 'BA', 'x')
-    update(t, Any, 'HY', 'x')
-    update(t, Any, 'NS', 'x')
+    update_both(t, ts, Any, 'BA', 'x')
+    update_both(t, ts, Any, 'HY', 'x')
+    update_both(t, ts, Any, 'NS', 'x')
     update(t, 'BB', Any, 'x')
 
     # LB21a: special states reached in state machine
@@ -298,7 +301,7 @@ def mk_lb_rules():
     update(t, 'RI', 'RI', 'x')
 
     # LB31:
-    update(t, Any, Any, '_')
+    update_both(t, ts, Any, Any, '_')
 
     # state machine construction
     # states [0..40) correspond to LB class of previous ch
@@ -332,7 +335,7 @@ def mk_lb_rules():
             elif flags == 0 and L == 'HL' and R == 'BA':
                 # special state for LB21a
                 state = n + 1
-            elif R == 'CM':
+            elif R == 'CM' and L not in ['BK', 'CR', 'LF', 'NL', 'CP', 'ZW']:
                 # handling for LB9
                 state = left
             else:
@@ -345,12 +348,19 @@ def mk_lb_rules():
                 bk = ts[L + '|' + R]
                 flags = bk_to_flags[bk]
                 sm[left + n + nspecial][right] = flags + right
-    nstates = len(set(str(line) for line in sm))
-    print '//', nstates, 'unique states', sm[41][38]
-    # TODO: dedup
-    flattened = [state for row in sm for state in row]
+    nunique = len(set(str(line) for line in sm))
+    print '//', nunique, 'unique states'
     print 'pub const N_LINEBREAK_CATEGORIES: usize = %d;' % n
-    gen_table('LINEBREAK_STATE_MACHINE', 'u8', flattened)
+    print 'pub const LINEBREAK_STATE_MACHINE: [u8; %d] = [' % (nstates * n)
+    # TODO: dedup
+    for state in range(nstates):
+        if state < n + nspecial:
+            statename = Any[state]
+        else:
+            statename = 'SP+ ' + Any[state - (n + nspecial)]
+        print '    // state %d: %s' % (state, statename)
+        gen_data(sm[state])
+    print '];'
 
 def main():
     datadir = sys.argv[1]
