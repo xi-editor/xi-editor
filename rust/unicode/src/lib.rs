@@ -77,7 +77,7 @@ impl<'a> Iterator for LineBreakIterator<'a> {
             let (lb, len) = linebreak_property_str(self.s, self.ix);
             let i = (self.state as usize) * N_LINEBREAK_CATEGORIES + (lb as usize);
             let new = LINEBREAK_STATE_MACHINE[i];
-            //println!("\"{}\"[{}], state {} + lb {} -> {}", self.s, self.ix, self.state, lb, new);
+            //println!("\"{}\"[{}], state {} + lb {} -> {}", &self.s[self.ix..], self.ix, self.state, lb, new);
             let result = self.ix;
             self.ix += len;
             if (new as i8) < 0 {

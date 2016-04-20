@@ -52,22 +52,22 @@ mod bench {
 
     #[bench]
     fn linebreak_lo(b: &mut Bencher) {
-        b.iter(|| linebreak_property('\u{0042}'));
+        b.iter(|| linebreak_property(black_box('\u{0042}')));
     }
 
     #[bench]
     fn linebreak_lo2(b: &mut Bencher) {
-        b.iter(|| linebreak_property('\u{0644}'));
+        b.iter(|| linebreak_property(black_box('\u{0644}')));
     }
 
     #[bench]
     fn linebreak_med(b: &mut Bencher) {
-        b.iter(|| linebreak_property('\u{200D}'));
+        b.iter(|| linebreak_property(black_box('\u{200D}')));
     }
 
     #[bench]
     fn linebreak_hi(b: &mut Bencher) {
-        b.iter(|| linebreak_property('\u{1F680}'));
+        b.iter(|| linebreak_property(black_box('\u{1F680}')));
     }
 
     #[bench]

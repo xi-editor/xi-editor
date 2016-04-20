@@ -155,6 +155,18 @@ def update_both(table1, table2, left, right, new):
     update(table1, left, right, new)
     update(table2, left, right, new)
 
+def resolve_ambig(orig):
+    # LB1
+    if orig in ('AI', 'SG', 'XX'):
+        return 'AL'
+    elif orig in 'SA':
+        # TODO: need to incorporate this into property lookup
+        return 'AL'
+    elif orig == 'CJ':
+        return 'NS'
+    else:
+        return orig
+
 def mk_lb_rules():
     # Rules derived from UAX #14
 
@@ -162,6 +174,7 @@ def mk_lb_rules():
     ts = {}  # transitions for when there is one or more SP
     Any = linebreak_assignments + ['HL+HY', 'HL+BA']
     # LB1: todo (affects South East Asian scripts)
+
     # LB2: handled in code
     # LB3: handled in code
 
@@ -186,7 +199,6 @@ def mk_lb_rules():
 
     # LB9: handled in state machine construction
     # LB10: handled in state machine construction
-    update(ts, Any, 'CM', '_')
 
     # LB11:
     update_both(t, ts, Any, 'WJ', 'x')
@@ -272,6 +284,7 @@ def mk_lb_rules():
     update(t, 'PO', 'OP', 'x')
     update(t, 'PO', 'NU', 'x')
     update(t, 'PR', 'OP', 'x')
+    update(t, 'PR', 'NU', 'x')
     update(t, 'HY', 'NU', 'x')
     update(t, 'IS', 'NU', 'x')
     update(t, 'NU', 'NU', 'x')
@@ -319,27 +332,36 @@ def mk_lb_rules():
     bk_to_flags = {'x': 0, '_': 0x80, '!': 0xc0}
     for left in range(n + nspecial):
         L = Any[left]
+        if L == 'CM':
+            L = 'AL'  # handling for LB10
+        L = resolve_ambig(L)
         for right in range(n):
             R = linebreak_assignments[right]
-            if R == 'CM' and L in ['BK', 'CR', 'LF', 'NL', 'CP', 'ZW']:
+            R = resolve_ambig(R)
+            r_with_cm = right
+            if R == 'CM' and L in ['BK', 'CR', 'LF', 'NL', 'SP', 'ZW']:
                 # handling for LB10
+                r_with_cm = 2  # AL
                 bk = t[L + '|' + 'AL']
             else:
                 bk = t[L + '|' + R]
             flags = bk_to_flags[bk]
             if flags == 0 and R == 'SP':
-                state = left + n + nspecial
+                if left < n:
+                    state = left + n + nspecial
+                else:
+                    state = left
             elif flags == 0 and L == 'HL' and R == 'HY':
                 # special state for LB21a
                 state = n
             elif flags == 0 and L == 'HL' and R == 'BA':
                 # special state for LB21a
                 state = n + 1
-            elif R == 'CM' and L not in ['BK', 'CR', 'LF', 'NL', 'CP', 'ZW']:
+            elif R == 'CM' and L not in ['BK', 'CR', 'LF', 'NL', 'SP', 'ZW']:
                 # handling for LB9
                 state = left
             else:
-                state = flags + right
+                state = flags + r_with_cm
             #print '//', L, R, bk, state
             sm[left][right] = state
 
@@ -347,7 +369,7 @@ def mk_lb_rules():
                 # SP+ states
                 bk = ts[L + '|' + R]
                 flags = bk_to_flags[bk]
-                sm[left + n + nspecial][right] = flags + right
+                sm[left + n + nspecial][right] = flags + r_with_cm
     nunique = len(set(str(line) for line in sm))
     print '//', nunique, 'unique states'
     print 'pub const N_LINEBREAK_CATEGORIES: usize = %d;' % n
