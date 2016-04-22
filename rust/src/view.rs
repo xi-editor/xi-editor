@@ -46,6 +46,7 @@ pub struct View {
     first_line: usize,  // vertical scroll position
     height: usize,  // height of visible portion
     breaks: Option<Breaks>,
+    cols: usize,
 }
 
 impl View {
@@ -56,6 +57,7 @@ impl View {
             first_line: 0,
             height: 10,
             breaks: None,
+            cols: 0,
         }
     }
 
@@ -281,15 +283,22 @@ impl View {
 
     pub fn rewrap(&mut self, text: &Rope, cols: usize) {
         self.breaks = Some(linewrap::linewrap(text, cols));
+        self.cols = cols;
     }
 
     pub fn before_edit(&mut self, _text: &Rope, _delta: &Delta<RopeInfo>) {
 
     }
 
-    pub fn after_edit(&mut self, text: &Rope, _delta: &Delta<RopeInfo>) {
+    pub fn after_edit(&mut self, text: &Rope, delta: &Delta<RopeInfo>) {
+        let cols = self.cols;
         if self.breaks.is_some() {
-            self.rewrap(text, 72);
+            if delta.len() == 1 {
+                let item = delta.iter().next().unwrap();
+                linewrap::rewrap(self.breaks.as_mut().unwrap(), text, item.interval, item.rope.len(), cols);
+            } else {
+                self.rewrap(text, cols);
+            }
         }
     }
 

@@ -47,8 +47,9 @@ impl Leaf for BreaksLeaf {
     fn push_maybe_split(&mut self, other: &BreaksLeaf, iv: Interval) -> Option<BreaksLeaf> {
         //print_err!("push_maybe_split {:?} {:?} {}", self, other, iv);
         let (start, end) = iv.start_end();
+        let start_test = if iv.is_start_closed() { start } else { start + 1 };
         for &v in other.data.iter() {
-            if start <= v && v <= end {
+            if start_test <= v && v <= end {
                 self.data.push(v - start + self.len);
             }
         }
