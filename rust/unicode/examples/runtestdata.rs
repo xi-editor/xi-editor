@@ -20,7 +20,7 @@
 
 extern crate xi_unicode;
 
-use xi_unicode::LineBreakIterator;
+use xi_unicode::{LineBreakIterator, LineBreakLeafIter};
 
 use std::io::prelude::*;
 use std::io::BufReader;
@@ -53,7 +53,27 @@ fn check_breaks(s: &str, breaks: &[usize]) -> bool {
     true
 }
 
-fn run_test(filename: &str) -> std::io::Result<()> {
+// Verify that starting iteration at a break is insensitive to look-behind.
+fn check_lb(s: &str) -> bool {
+    let breaks = LineBreakIterator::new(s).collect::<Vec<_>>();
+    for i in 0..breaks.len() - 1 {
+        let mut cursor = LineBreakLeafIter::new(s, breaks[i].0);
+        for &bk in &breaks[i + 1..] {
+            let mut next = cursor.next(s);
+            if next.0 == s.len() {
+                next = (s.len(), true);
+            }
+            if next != bk {
+                println!("failed case: \"{}\"", quote_str(s));
+                println!("expected {:?} actual {:?}", bk, next);
+                return false;
+            }
+        }
+    }
+    true
+}
+
+fn run_test(filename: &str, lb: bool) -> std::io::Result<()> {
     let f = try!(File::open(filename));
     let mut reader = BufReader::new(f);
     let mut pass = 0;
@@ -74,7 +94,11 @@ fn run_test(filename: &str) -> std::io::Result<()> {
             }
         }
         total += 1;
-        if check_breaks(&s, &breaks) { pass += 1; }
+        if lb {
+            if check_lb(&s) { pass += 1; }
+        } else {
+            if check_breaks(&s, &breaks) { pass += 1; }
+        }
     }
     println!("{}/{} pass", pass, total);
     Ok(())
@@ -83,5 +107,16 @@ fn run_test(filename: &str) -> std::io::Result<()> {
 fn main() {
     let mut args = std::env::args();
     let _ = args.next();
-    let _ = run_test(&args.next().unwrap());
+    let filename = args.next().unwrap();
+    match args.next() {
+        None => {
+            let _ = run_test(&filename, false);
+        }
+        Some(ref s) if s == "--lookbehind" => {
+            let _ = run_test(&filename, true);
+        }
+        _ => {
+            println!("unknown argument");
+        }
+    }
 }

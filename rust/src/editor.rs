@@ -18,7 +18,9 @@ use std::io::{Read,Write};
 use serde_json::Value;
 use serde_json::builder::ArrayBuilder;
 
-use xi_rope::rope::Rope;
+use xi_rope::rope::{Rope,RopeInfo};
+use xi_rope::interval::Interval;
+use xi_rope::delta::Delta;
 use view::View;
 
 use ::send;
@@ -41,6 +43,12 @@ const MODIFIER_SHIFT: u64 = 2;
 pub struct Editor {
 	text: Rope,
     view: View,
+    delta: Delta<RopeInfo>,
+
+    // update to cursor, to be committed atomically with delta
+    // TODO: use for all cursor motion?
+    new_cursor: Option<usize>,
+
     dirty: bool,
     scroll_to: Option<usize>,
     col: usize  // maybe this should live in view, it's similar to selection
@@ -52,15 +60,17 @@ impl Editor {
 			text: Rope::from(""),
             view: View::new(),
             dirty: false,
+            delta: Delta::new(),
+            new_cursor: None,
             scroll_to: Some(0),
             col: 0
 		}
 	}
 
     fn insert(&mut self, s: &str) {
-        self.text.edit_str(self.view.sel_min(), self.view.sel_max(), s);
+        let sel_interval = Interval::new_closed_open(self.view.sel_min(), self.view.sel_max());
         let new_cursor = self.view.sel_min() + s.len();
-        self.set_cursor(new_cursor, true);
+        self.add_delta(sel_interval, Rope::from(s), new_cursor);
     }
 
     fn set_cursor_impl(&mut self, offset: usize, set_start: bool, hard: bool) {
@@ -83,6 +93,26 @@ impl Editor {
     // set the cursor or update the selection, depending on the flags
     fn set_cursor_or_sel(&mut self, offset: usize, flags: u64, hard: bool) {
         self.set_cursor_impl(offset, flags & MODIFIER_SHIFT == 0, hard);
+    }
+
+    fn add_delta(&mut self, iv: Interval, new: Rope, new_cursor: usize) {
+        self.delta.add(iv, new);
+        self.new_cursor = Some(new_cursor);
+    }
+
+    // commit the current delta, updating views and other invariants as needed
+    fn commit_delta(&mut self) {
+        if !self.delta.is_empty() {
+            self.view.before_edit(&self.text, &self.delta);
+            self.delta.apply(&mut self.text);
+            self.view.after_edit(&self.text, &self.delta);
+            if let Some(c) = self.new_cursor {
+                self.set_cursor(c, true);
+                self.new_cursor = None;
+            }
+            self.dirty = true;
+            self.delta = Delta::new();
+        }
     }
 
     // render if needed, sending to ui
@@ -112,8 +142,8 @@ impl Editor {
                         }
                     };
                     if start < self.view.sel_max() {
-                        self.text.edit_str(start, self.view.sel_max(), "");
-                        self.set_cursor(start, true);
+                        let del_interval = Interval::new_closed_open(start, self.view.sel_max());
+                        self.add_delta(del_interval, Rope::from(""), start);
                     }
                 }
                 "\u{F700}" => {  // up arrow
@@ -187,6 +217,7 @@ impl Editor {
                     let mut s = String::new();
                     if f.read_to_string(&mut s).is_ok() {
                         self.text = Rope::from(s);
+                        self.view.reset_breaks();
                         self.set_cursor(0, true);
                     }
                 },
@@ -270,6 +301,7 @@ impl Editor {
             _ => print_err!("unknown cmd {}", cmd)
         }
         // TODO: could defer this until input quiesces - will this help?
+        self.commit_delta();
         self.render();
 	}
 }

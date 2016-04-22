@@ -31,7 +31,8 @@ use std::cmp::{min,max};
 use serde_json::Value;
 use serde_json::builder::ArrayBuilder;
 
-use xi_rope::rope::{Rope, LinesMetric};
+use xi_rope::rope::{Rope, LinesMetric, RopeInfo};
+use xi_rope::delta::{Delta};
 use xi_rope::tree::Cursor;
 use xi_rope::breaks::{Breaks, BreaksMetric, BreaksBaseMetric};
 
@@ -262,7 +263,7 @@ impl View {
         match self.breaks {
             Some(ref breaks) => {
                 let line = breaks.convert_metrics::<BreaksBaseMetric, BreaksMetric>(offset);
-                print_err!("line_of_offset({}) = {}", offset, line);
+                //print_err!("line_of_offset({}) = {}", offset, line);
                 line
             }
             None => text.line_of_offset(offset)
@@ -280,5 +281,19 @@ impl View {
 
     pub fn rewrap(&mut self, text: &Rope, cols: usize) {
         self.breaks = Some(linewrap::linewrap(text, cols));
+    }
+
+    pub fn before_edit(&mut self, _text: &Rope, _delta: &Delta<RopeInfo>) {
+
+    }
+
+    pub fn after_edit(&mut self, text: &Rope, _delta: &Delta<RopeInfo>) {
+        if self.breaks.is_some() {
+            self.rewrap(text, 72);
+        }
+    }
+
+    pub fn reset_breaks(&mut self) {
+        self.breaks = None;
     }
 }

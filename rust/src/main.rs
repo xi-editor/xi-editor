@@ -13,6 +13,7 @@
 // limitations under the License.
 
 extern crate serde_json;
+extern crate time;
 
 use std::io;
 use std::io::{Read, Write};
@@ -25,6 +26,7 @@ mod linewrap;
 use editor::Editor;
 
 extern crate xi_rope;
+extern crate xi_unicode;
 
 macro_rules! print_err {
     ($($arg:tt)*) => (

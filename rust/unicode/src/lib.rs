@@ -16,6 +16,12 @@ mod tables;
 
 use tables::*;
 
+// similar to Rust lib (not stable), but will panic if `s >= s.len()`
+fn is_char_boundary(s: &str, index: usize) -> bool {
+    // fancy bit magic for ranges 0..0x80 | 0xc0..
+    index == s.len() || (s.as_bytes()[index] as i8) >= -0x40
+}
+
 pub fn linebreak_property(cp: char) -> u8 {
     let cp = cp as usize;
     if cp < 0x800 {
@@ -72,7 +78,7 @@ impl<'a> Iterator for LineBreakIterator<'a> {
             } else if self.ix == self.s.len() {
                 // LB3, break at EOT
                 self.ix += 1;
-                return Some((self.s.len(), true))
+                return Some((self.s.len(), true));
             }
             let (lb, len) = linebreak_property_str(self.s, self.ix);
             let i = (self.state as usize) * N_LINEBREAK_CATEGORIES + (lb as usize);
@@ -105,6 +111,72 @@ impl<'a> LineBreakIterator<'a> {
                 s: s,
                 ix: len,
                 state: lb,
+            }
+        }
+    }
+}
+
+/// A class (TODO, not right word) useful for computing line breaks in a rope or
+/// other non-contiguous string representation. This is a trickier problem than
+/// iterating in a string for a few reasons, the trickiest of which is that in
+/// the general case, line breaks require an indeterminate amount of look-behind.
+///
+/// This is something of an "expert-level" interface, and should only be used if
+/// the caller is prepared to respect all the invariants. Otherwise, you might
+/// get inconsistent breaks depending on start positiona and leaf boundaries.
+pub struct LineBreakLeafIter {
+    ix: usize,
+    state: u8,
+}
+
+impl LineBreakLeafIter {
+    /// Create a new line break iterator suitable for leaves in a rope.
+    /// Precondition: ix references a codepoint in s (implies s is not empty).
+    pub fn new(s: &str, ix: usize) -> LineBreakLeafIter {
+        let (lb, len) = linebreak_property_str(s, ix);
+        LineBreakLeafIter {
+            ix: ix + len,
+            state: lb,
+        }
+    }
+
+    // A default value. No guarantees on what happens when next() is called
+    // on this. Intended to be useful for empty ropes.
+    pub fn default() -> LineBreakLeafIter {
+        LineBreakLeafIter {
+            ix: 0,
+            state: 0,
+        }
+    }
+
+    /// Return break pos and whether it's a hard break. Note: hard break
+    /// indication may go away, this may not be useful in actual application.
+    /// If end of leaf is found, return leaf's len. This does not indicate
+    /// a break, as that requires at least one more codepoint of context.
+    /// If it is a break, then subsequent next call will return an offset of
+    /// 0. EOT is always a break, so in the EOT case it's up to the caller
+    /// to figure that out.
+    ///
+    /// For consistent results, always supply same `s` until end of leaf is
+    /// reached (and initially this should be the same as in the `new` call).
+    pub fn next(&mut self, s: &str) -> (usize, bool) {
+        loop {
+            if self.ix == s.len() {
+                self.ix = 0;  // in preparation for next leaf
+                return (s.len(), false);
+            }
+            let (lb, len) = linebreak_property_str(s, self.ix);
+            let i = (self.state as usize) * N_LINEBREAK_CATEGORIES + (lb as usize);
+            let new = LINEBREAK_STATE_MACHINE[i];
+            //println!("\"{}\"[{}], state {} + lb {} -> {}", &s[self.ix..], self.ix, self.state, lb, new);
+            let result = self.ix;
+            self.ix += len;
+            if (new as i8) < 0 {
+                // break found
+                self.state = new & 0x3f;
+                return (result, new >= 0xc0);
+            } else {
+                self.state = new;
             }
         }
     }

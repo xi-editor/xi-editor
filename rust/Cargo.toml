@@ -7,6 +7,10 @@ authors = ["Raph Levien <raph@google.com>"]
 [dependencies]
 serde = "*"
 serde_json = "*"
+time = "0.1"
 
 [dependencies.xi-rope]
 path = "rope"
+
+[dependencies.xi-unicode]
+path = "unicode"

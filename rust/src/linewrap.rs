@@ -14,6 +14,8 @@
 
 //! Compute line wrapping breaks for text.
 
+use time;
+
 // TODO: figure out how not to duplcate this
 macro_rules! print_err {
     ($($arg:tt)*) => (
@@ -31,39 +33,48 @@ macro_rules! print_err {
 use xi_rope::rope::{Rope, RopeInfo};
 use xi_rope::tree::Cursor;
 use xi_rope::breaks::{Breaks, BreakBuilder};
+use xi_unicode::LineBreakLeafIter;
 
-struct WordBreakCursor<'a> {
+struct LineBreakCursor<'a> {
     inner: Cursor<'a, RopeInfo>,
+    lb_iter: LineBreakLeafIter,
 }
 
-impl<'a> WordBreakCursor<'a> {
-    fn new(text: &'a Rope, pos: usize) -> WordBreakCursor<'a> {
-        WordBreakCursor {
-            inner: Cursor::new(text, pos)
+impl<'a> LineBreakCursor<'a> {
+    fn new(text: &'a Rope, pos: usize) -> LineBreakCursor<'a> {
+        let inner = Cursor::new(text, pos);
+        let lb_iter = match inner.get_leaf() {
+            Some((s, offset)) if !s.is_empty() =>
+                LineBreakLeafIter::new(s.as_str(), offset),
+            _ => LineBreakLeafIter::default()
+        };
+        LineBreakCursor {
+            inner: inner,
+            lb_iter: lb_iter,
         }
     }
 
     // position and whether break is hard
     fn next(&mut self) -> Option<(usize, bool)> {
-        let mut last_was_space = false;
+        let mut leaf = self.inner.get_leaf();
         loop {
-            let pos = self.inner.pos();
-            if let Some(c) = self.inner.next_codepoint() {
-                match c {
-                    '\n' => return Some((self.inner.pos(), true)),
-                    ' ' => last_was_space = true,
-                    _ if last_was_space => return Some((pos, false)),
-                    _ => ()
+            match leaf {
+                Some((s, offset)) => {
+                    let (next, hard) = self.lb_iter.next(s.as_str());
+                    if next < s.len() {
+                        return Some((self.inner.pos() - offset + next, hard));
+                    }
+                    leaf = self.inner.next_leaf();
                 }
-            } else {
-                return None;
+                None => return None
             }
         }
     }
 }
 
 pub fn linewrap(text: &Rope, cols: usize) -> Breaks {
-    let mut wb_cursor = WordBreakCursor::new(text, 0);
+    let start_time = time::now();
+    let mut wb_cursor = LineBreakCursor::new(text, 0);
     let mut builder = BreakBuilder::new();
     let mut last_pos = 0;
     let mut last_break_pos = 0;
@@ -96,5 +107,7 @@ pub fn linewrap(text: &Rope, cols: usize) -> Breaks {
         let c = Cursor::new(&result, 0);
         print_err!("{:?}", c.get_leaf());
     }
+    let time_ms = (time::now() - start_time).num_nanoseconds().unwrap() as f64 * 1e-6;
+    print_err!("time to wrap {} bytes: {:.1}ms", text.len(), time_ms);
     result
 }
