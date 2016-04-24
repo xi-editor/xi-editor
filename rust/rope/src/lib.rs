@@ -19,6 +19,7 @@ pub mod breaks;
 pub mod interval;
 pub mod delta;
 pub mod rope;
+pub mod spans;
 
 // TODO: "pub use" the types we want to export publicly
 

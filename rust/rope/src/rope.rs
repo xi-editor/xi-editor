@@ -62,8 +62,6 @@ pub struct RopeInfo {
 impl NodeInfo for RopeInfo {
     type L = String;
 
-    type BaseMetric = BaseMetric;
-
     fn accumulate(&mut self, other: &Self) {
         self.lines += other.lines;
     }

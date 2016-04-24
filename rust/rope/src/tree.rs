@@ -29,8 +29,6 @@ pub trait NodeInfo: Clone {
     /// the leaf type is an associated type rather than a type parameter.
     type L : Leaf;
 
-    type BaseMetric: Metric<Self>;
-
     /// An operator that combines info from two subtrees. It is intended
     /// (but not strictly enforced) that this operator be associative and
     /// obey an identity property. In mathematical terms, the accumulate
@@ -49,6 +47,12 @@ pub trait NodeInfo: Clone {
     /// can be computed from the leaf default.
     fn identity() -> Self {
         Self::compute_info(&Self::L::default())
+    }
+
+    /// The interval covered by this node. Will generally be implemented
+    /// in interval trees; the default impl is sufficient for other types.
+    fn interval(&self, len: usize) -> Interval {
+        Interval::new_closed_closed(0, len)
     }
 }
 
@@ -113,7 +117,6 @@ enum NodeVal<N: NodeInfo> {
 // also consider making Metric a newtype for usize, so type system can
 // help separate metrics
 pub trait Metric<N: NodeInfo> {
-    // probably want to pass len as an argument as well
     fn measure(&N, usize) -> usize;
 
     fn to_base_units(l: &N::L, in_measured_units: usize) -> usize;
@@ -175,6 +178,10 @@ impl<N: NodeInfo> Node<N> {
 
     fn height(&self) -> usize {
         self.0.height
+    }
+
+    fn interval(&self) -> Interval {
+        self.0.info.interval(self.0.len)
     }
 
     fn get_children(&self) -> &[Node<N>] {
@@ -327,7 +334,7 @@ impl<N: NodeInfo> Node<N> {
         if iv.is_empty() {
             return;
         }
-        if iv == Interval::new_closed_closed(0, self.len()) {
+        if iv == self.interval() {
             b.push(self.clone());
             return;
         }
@@ -341,12 +348,12 @@ impl<N: NodeInfo> Node<N> {
                     if iv.is_before(offset) {
                         break;
                     }
-                    let child_iv = Interval::new_closed_closed(0, child.len());
+                    let child_iv = child.interval();
                     // easier just to use signed ints?
                     let rec_iv = iv.intersect(child_iv.translate(offset))
                         .translate_neg(offset);
                     child.push_subseq(b, rec_iv);
-                    offset += child_iv.size();
+                    offset += child.len();
                 }
                 return;
             }

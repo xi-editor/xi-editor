@@ -131,6 +131,19 @@ impl Interval {
         }
     }
 
+    // smallest interval that encloses both inputs; if the inputs are
+    // disjoint, then it fills in the hole. 
+    pub fn union(&self, other: Interval) -> Interval {
+        if self.is_empty() { return other; }
+        if other.is_empty() { return *self; }
+        let start = min(self.start, other.start);
+        let end = max(self.end, other.end);
+        Interval {
+            start: start,
+            end: end,
+        }
+    }
+
     // the first half of self - other
     pub fn prefix(&self, other: Interval) -> Interval {
         Interval {

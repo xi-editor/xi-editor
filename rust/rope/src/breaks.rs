@@ -53,6 +53,7 @@ impl Leaf for BreaksLeaf {
                 self.data.push(v - start + self.len);
             }
         }
+        // the min with other.len() shouldn't be needed
         self.len += min(end, other.len()) - start;
 
         if self.data.len() <= 64 {
@@ -60,6 +61,7 @@ impl Leaf for BreaksLeaf {
         } else {
             let splitpoint = self.data.len() / 2;  // number of breaks
             let splitpoint_units = self.data[splitpoint - 1];
+            // TODO: use Vec::split_off(), it's nicer
             let mut new = Vec::with_capacity(self.data.len() - splitpoint);
             for i in splitpoint..self.data.len() {
                 new.push(self.data[i] - splitpoint_units);
@@ -77,7 +79,6 @@ impl Leaf for BreaksLeaf {
 
 impl NodeInfo for BreaksInfo {
     type L = BreaksLeaf;
-    type BaseMetric = BreaksBaseMetric;
 
     fn accumulate(&mut self, other: &Self) {
         self.0 += other.0;
@@ -231,13 +232,15 @@ impl BreakBuilder {
 
 #[cfg(test)]
 mod tests {
-    use breaks::{Breaks, BreaksLeaf, BreaksInfo, BreaksMetric};
+    use breaks::{BreaksLeaf, BreaksInfo, BreaksMetric, BreakBuilder};
     use tree::{Node, Cursor};
     use interval::Interval;
 
     fn gen(n: usize) -> Node<BreaksInfo> {
         let mut node = Node::default();
-        let testnode = Breaks::new_break(10);
+        let mut b = BreakBuilder::new();
+        b.add_break(10);
+        let testnode = b.build();
         if n == 1 {
             return testnode;
         }
