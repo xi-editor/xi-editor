@@ -19,6 +19,10 @@ Goals include:
 * Developer friendliness. It should be easy to customize xi editor, whether
   by adding plug-ins or hacking on the core.
 
+Screenshot (will need to be updated as syntax coloring and UI polish is added):
+
+![xi screenshot](/doc/img/xi-mac-screenshot.png?raw=true)
+
 ## Getting started
 
 You need Xcode 7 and [Rust](https://www.rust-lang.org/). You should have
