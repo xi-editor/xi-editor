@@ -39,6 +39,7 @@ if [[ ${ACTION:-build} = "build" ]]; then
         EXECUTABLES+=("target/${RUST_ARCH}-apple-${RUST_TARGET_OS}/${RUST_CONFIGURATION}/xicore")
     done
 
+    mkdir -p "${BUILT_PRODUCTS_DIR}"
     xcrun --sdk $PLATFORM_NAME lipo -create "${EXECUTABLES[@]}" -output "${BUILT_PRODUCTS_DIR}/xicore"
 elif [[ $ACTION = "clean" ]]; then
     cargo clean

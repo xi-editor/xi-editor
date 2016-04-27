@@ -16,12 +16,6 @@ mod tables;
 
 use tables::*;
 
-// similar to Rust lib (not stable), but will panic if `s >= s.len()`
-fn is_char_boundary(s: &str, index: usize) -> bool {
-    // fancy bit magic for ranges 0..0x80 | 0xc0..
-    index == s.len() || (s.as_bytes()[index] as i8) >= -0x40
-}
-
 pub fn linebreak_property(cp: char) -> u8 {
     let cp = cp as usize;
     if cp < 0x800 {

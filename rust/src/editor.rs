@@ -41,7 +41,7 @@ macro_rules! print_err {
 const MODIFIER_SHIFT: u64 = 2;
 
 pub struct Editor {
-	text: Rope,
+    text: Rope,
     view: View,
     delta: Delta<RopeInfo>,
 
@@ -55,17 +55,17 @@ pub struct Editor {
 }
 
 impl Editor {
-	pub fn new() -> Editor {
-		Editor {
-			text: Rope::from(""),
+    pub fn new() -> Editor {
+        Editor {
+            text: Rope::from(""),
             view: View::new(),
             dirty: false,
             delta: Delta::new(),
             new_cursor: None,
             scroll_to: Some(0),
             col: 0
-		}
-	}
+        }
+    }
 
     fn insert(&mut self, s: &str) {
         let sel_interval = Interval::new_closed_open(self.view.sel_min(), self.view.sel_max());
@@ -291,7 +291,7 @@ impl Editor {
         }
     }
 
-	pub fn do_cmd(&mut self, cmd: &str, args: &Value) {
+    pub fn do_cmd(&mut self, cmd: &str, args: &Value) {
         match cmd {
             "rpc" => self.do_rpc(args),
             "key" => self.do_key(args),
@@ -303,5 +303,5 @@ impl Editor {
         // TODO: could defer this until input quiesces - will this help?
         self.commit_delta();
         self.render();
-	}
+    }
 }
