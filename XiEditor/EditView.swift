@@ -21,6 +21,10 @@ func eventToJson(event: NSEvent) -> AnyObject {
         "flags": flags]]
 }
 
+func insertedStringToJson(stringToInsert: NSString) -> AnyObject {
+    return ["insert", ["chars": stringToInsert]];
+}
+
 // compute the width if monospaced, 0 otherwise
 func getFontWidth(font: CTFont) -> CGFloat {
     if (font as NSFont).fixedPitch {
@@ -209,11 +213,23 @@ class EditView: NSView {
     }
 
     override func keyDown(theEvent: NSEvent) {
+        self.interpretKeyEvents([theEvent]);
+    }
+
+    override func insertText(insertString: AnyObject) {
         if let coreConnection = coreConnection {
-            coreConnection.sendJson(eventToJson(theEvent))
-        } else {
-            super.keyDown(theEvent)
+            coreConnection.sendJson(insertedStringToJson(insertString as! NSString))
         }
+    }
+
+    override func deleteBackward(sender: AnyObject?) {
+        if let coreConnection = coreConnection {
+            coreConnection.sendJson(["delete_backward", []]);
+        }
+    }
+
+    override func deleteToBeginningOfLine(sender: AnyObject?) {
+        Swift.print("deleteToBeginningOfLine");
     }
 
     func updateText(text: [String: AnyObject]) {

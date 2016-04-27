@@ -119,6 +119,23 @@ impl Editor {
         }
     }
 
+    fn delete_backward(&mut self) {
+        let start = if self.view.sel_start != self.view.sel_end {
+            self.view.sel_min()
+        } else {
+            if let Some(bsp_pos) = self.text.prev_codepoint_offset(self.view.sel_end) {
+            // TODO: implement complex emoji logic
+                bsp_pos
+           } else {
+                self.view.sel_max()
+            }
+        };
+        if start < self.view.sel_max() {
+            let del_interval = Interval::new_closed_open(start, self.view.sel_max());
+            self.add_delta(del_interval, Rope::from(""), start);
+        }
+    }
+
     fn do_key(&mut self, args: &Value) {
         if let Some(args) = args.as_object() {
             let chars = args.get("chars").unwrap().as_string().unwrap();
@@ -126,20 +143,7 @@ impl Editor {
             match chars {
                 "\r" => self.insert("\n"),
                 "\x7f" => {
-                    let start = if self.view.sel_start != self.view.sel_end {
-                        self.view.sel_min()
-                    } else {
-                        if let Some(bsp_pos) = self.text.prev_codepoint_offset(self.view.sel_end) {
-                        // TODO: implement complex emoji logic
-                            bsp_pos
-                       } else {
-                            self.view.sel_max()
-                        }
-                    };
-                    if start < self.view.sel_max() {
-                        let del_interval = Interval::new_closed_open(start, self.view.sel_max());
-                        self.add_delta(del_interval, Rope::from(""), start);
-                    }
+                    self.delete_backward();
                 }
                 "\u{F700}" => {  // up arrow
                     let old_offset = self.view.sel_end;
@@ -208,6 +212,17 @@ impl Editor {
                 _ => self.insert(chars)
             }
         }
+    }
+
+    fn do_insert(&mut self, args: &Value) {
+        if let Some(args) = args.as_object() {
+            let chars = args.get("chars").unwrap().as_string().unwrap();
+            self.insert(chars);
+        }
+    }
+
+    fn do_delete_backward(&mut self) {
+        self.delete_backward();
     }
 
     fn do_open(&mut self, args: &Value) {
@@ -294,6 +309,8 @@ impl Editor {
         match cmd {
             "rpc" => self.do_rpc(args),
             "key" => self.do_key(args),
+            "insert" => self.do_insert(args),
+            "delete_backward" => self.do_delete_backward(),
             "open" => self.do_open(args),
             "save" => self.do_save(args),
             "scroll" => self.do_scroll(args),
