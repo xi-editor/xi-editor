@@ -7,6 +7,11 @@ fi
 set -e
 
 if [[ ${ACTION:-build} = "build" ]]; then
+    if [[ $PLATFORM_NAME = "" ]]; then
+        # default for building with xcodebuild
+        PLATFORM_NAME="macosx"
+    fi
+
     if [[ $PLATFORM_NAME = "macosx" ]]; then
         RUST_TARGET_OS="darwin"
     else
