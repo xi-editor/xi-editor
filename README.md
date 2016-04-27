@@ -29,7 +29,7 @@ You need Xcode 7 and [Rust](https://www.rust-lang.org/). You should have
 `cargo` in your path.
 
 ```
-> git clone <this repo>
+> git clone https://github.com/google/xi-editor
 > cd xi-editor
 > xcodebuild
 > open build/Release/XiEditor.app
