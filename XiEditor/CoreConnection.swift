@@ -59,7 +59,7 @@ class CoreConnection {
                 break
             }
             var size = 0
-            for var j = 0; j < 8; j++ {
+            for j in 0 ..< 8 {
                 size += (Int(recvBufBytes[i + j]) as Int) << (j * 8)
             }
             if recvBufLen < i + 8 + size {
@@ -78,7 +78,7 @@ class CoreConnection {
     func send(data: NSData) {
         let length = data.length
         let sizeBytes = UnsafeMutablePointer<UInt8>(sizeBuf.mutableBytes)
-        for var i = 0; i < 8; i++ {
+        for i in 0 ..< 8 {
             sizeBytes[i] = UInt8((length >> (i * 8)) & 0xff)
         }
         inHandle.writeData(sizeBuf)
