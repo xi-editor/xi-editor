@@ -19,6 +19,9 @@ use std::io;
 use std::io::{Read, Write};
 use serde_json::Value;
 
+#[macro_use]
+mod macros;
+
 mod editor;
 mod view;
 mod linewrap;
@@ -27,19 +30,6 @@ use editor::Editor;
 
 extern crate xi_rope;
 extern crate xi_unicode;
-
-macro_rules! print_err {
-    ($($arg:tt)*) => (
-        {
-            use std::io::prelude::*;
-            if let Err(e) = write!(&mut ::std::io::stderr(), "{}\n", format_args!($($arg)*)) {
-                panic!("Failed to write to stderr.\
-                    \nOriginal error output: {}\
-                    \nSecondary error writing to stderr: {}", format!($($arg)*), e);
-            }
-        }
-    )
-}
 
 // TODO: should provide result
 pub fn send(v: &Value) {
