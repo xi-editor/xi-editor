@@ -36,10 +36,17 @@
 			remoteGlobalIDString = AE499DCB1C82BB2B002D68AF;
 			remoteInfo = XiEditor;
 		};
+		D023DA041CD072400087EC0A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AE499DC41C82BB2B002D68AF /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D023D9FE1CD0715E0087EC0A;
+			remoteInfo = xicore;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		AE228F5C1C897CE7000E9B0F /* xicore */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; name = xicore; path = rust/target/debug/xicore; sourceTree = "<group>"; };
+		AE228F5C1C897CE7000E9B0F /* xicore */ = {isa = PBXFileReference; lastKnownFileType = text; path = xicore; sourceTree = BUILT_PRODUCTS_DIR; };
 		AE499DCC1C82BB2B002D68AF /* XiEditor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = XiEditor.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AE499DCF1C82BB2B002D68AF /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		AE499DD11C82BB2B002D68AF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -57,6 +64,7 @@
 		AED23F131C83C689002246CE /* AppWindowController.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AppWindowController.swift; sourceTree = "<group>"; };
 		AED23F141C83C689002246CE /* AppWindowController.xib */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.xib; path = AppWindowController.xib; sourceTree = "<group>"; };
 		AED23F171C83CBEC002246CE /* EditView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = EditView.swift; sourceTree = "<group>"; };
+		D023DA031CD071C10087EC0A /* xicore.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = xicore.sh; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -87,8 +95,8 @@
 		AE499DC31C82BB2B002D68AF = {
 			isa = PBXGroup;
 			children = (
-				AE228F5C1C897CE7000E9B0F /* xicore */,
 				AEBAAA601C83B503005637A3 /* python */,
+				D023DA021CD071B40087EC0A /* xicore */,
 				AE499DCE1C82BB2B002D68AF /* XiEditor */,
 				AE499DDE1C82BB2B002D68AF /* XiEditorTests */,
 				AE499DE91C82BB2B002D68AF /* XiEditorUITests */,
@@ -140,7 +148,33 @@
 			path = XiEditorUITests;
 			sourceTree = "<group>";
 		};
+		D023DA021CD071B40087EC0A /* xicore */ = {
+			isa = PBXGroup;
+			children = (
+				D023DA031CD071C10087EC0A /* xicore.sh */,
+				AE228F5C1C897CE7000E9B0F /* xicore */,
+			);
+			name = xicore;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
+
+/* Begin PBXLegacyTarget section */
+		D023D9FE1CD0715E0087EC0A /* xicore */ = {
+			isa = PBXLegacyTarget;
+			buildArgumentsString = "\"$(SRCROOT)/xicore.sh\"";
+			buildConfigurationList = D023DA011CD0715E0087EC0A /* Build configuration list for PBXLegacyTarget "xicore" */;
+			buildPhases = (
+			);
+			buildToolPath = /bin/bash;
+			buildWorkingDirectory = rust;
+			dependencies = (
+			);
+			name = xicore;
+			passBuildSettingsInEnvironment = 1;
+			productName = xicore;
+		};
+/* End PBXLegacyTarget section */
 
 /* Begin PBXNativeTarget section */
 		AE499DCB1C82BB2B002D68AF /* XiEditor */ = {
@@ -149,12 +183,12 @@
 			buildPhases = (
 				AE499DC81C82BB2B002D68AF /* Sources */,
 				AE499DC91C82BB2B002D68AF /* Frameworks */,
-				AE2E11311C896DC000C4211B /* Run Script */,
 				AE499DCA1C82BB2B002D68AF /* Resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				D023DA051CD072400087EC0A /* PBXTargetDependency */,
 			);
 			name = XiEditor;
 			productName = XiEditor;
@@ -218,6 +252,9 @@
 						CreatedOnToolsVersion = 7.2;
 						TestTargetID = AE499DCB1C82BB2B002D68AF;
 					};
+					D023D9FE1CD0715E0087EC0A = {
+						CreatedOnToolsVersion = 7.3;
+					};
 				};
 			};
 			buildConfigurationList = AE499DC71C82BB2B002D68AF /* Build configuration list for PBXProject "XiEditor" */;
@@ -234,6 +271,7 @@
 			projectRoot = "";
 			targets = (
 				AE499DCB1C82BB2B002D68AF /* XiEditor */,
+				D023D9FE1CD0715E0087EC0A /* xicore */,
 				AE499DDA1C82BB2B002D68AF /* XiEditorTests */,
 				AE499DE51C82BB2B002D68AF /* XiEditorUITests */,
 			);
@@ -268,23 +306,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
-
-/* Begin PBXShellScriptBuildPhase section */
-		AE2E11311C896DC000C4211B /* Run Script */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-			);
-			name = "Run Script";
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "cd rust\ncargo build";
-		};
-/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		AE499DC81C82BB2B002D68AF /* Sources */ = {
@@ -327,6 +348,11 @@
 			isa = PBXTargetDependency;
 			target = AE499DCB1C82BB2B002D68AF /* XiEditor */;
 			targetProxy = AE499DE71C82BB2B002D68AF /* PBXContainerItemProxy */;
+		};
+		D023DA051CD072400087EC0A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D023D9FE1CD0715E0087EC0A /* xicore */;
+			targetProxy = D023DA041CD072400087EC0A /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -498,6 +524,20 @@
 			};
 			name = Release;
 		};
+		D023D9FF1CD0715E0087EC0A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		D023DA001CD0715E0087EC0A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -536,6 +576,14 @@
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
+		};
+		D023DA011CD0715E0087EC0A /* Build configuration list for PBXLegacyTarget "xicore" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D023D9FF1CD0715E0087EC0A /* Debug */,
+				D023DA001CD0715E0087EC0A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
 		};
 /* End XCConfigurationList section */
 	};
