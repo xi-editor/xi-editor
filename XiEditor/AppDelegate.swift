@@ -22,7 +22,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationWillFinishLaunching(aNotification: NSNotification) {
         // show main app window
-        appWindowController = AppWindowController.init(windowNibName: "AppWindowController")
+        appWindowController = AppWindowController(windowNibName: "AppWindowController")
 
         let corePath = NSBundle.mainBundle().pathForResource("xicore", ofType: "")
         if let corePath = corePath {
