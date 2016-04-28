@@ -1,5 +1,7 @@
 # xi editor
 
+![Xi Editor](icons/xi-editor.png)
+
 The xi editor project is an attempt to build a high quality text editor,
 using modern software engineering techniques. It is initially built for
 Mac OS X, using Cocoa for the user interface, but other targets are planned.
