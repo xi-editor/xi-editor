@@ -55,6 +55,7 @@ pub fn linebreak_property_str(s: &str, ix: usize) -> (u8, usize) {
     }
 }
 
+#[derive(Copy, Clone)]
 pub struct LineBreakIterator<'a> {
     s: &'a str,
     ix: usize,
@@ -118,9 +119,21 @@ impl<'a> LineBreakIterator<'a> {
 /// This is something of an "expert-level" interface, and should only be used if
 /// the caller is prepared to respect all the invariants. Otherwise, you might
 /// get inconsistent breaks depending on start positiona and leaf boundaries.
+#[derive(Copy, Clone)]
 pub struct LineBreakLeafIter {
     ix: usize,
     state: u8,
+}
+
+impl Default for LineBreakLeafIter {
+    // A default value. No guarantees on what happens when next() is called
+    // on this. Intended to be useful for empty ropes.
+    fn default() -> LineBreakLeafIter {
+        LineBreakLeafIter {
+            ix: 0,
+            state: 0,
+        }
+    }
 }
 
 impl LineBreakLeafIter {
@@ -131,15 +144,6 @@ impl LineBreakLeafIter {
         LineBreakLeafIter {
             ix: ix + len,
             state: lb,
-        }
-    }
-
-    // A default value. No guarantees on what happens when next() is called
-    // on this. Intended to be useful for empty ropes.
-    pub fn default() -> LineBreakLeafIter {
-        LineBreakLeafIter {
-            ix: 0,
-            state: 0,
         }
     }
 

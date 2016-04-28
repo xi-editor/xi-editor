@@ -38,8 +38,8 @@ pub struct View {
     cols: usize,
 }
 
-impl View {
-    pub fn new() -> View {
+impl Default for View {
+    fn default() -> View {
         View {
             sel_start: 0,
             sel_end: 0,
@@ -49,6 +49,12 @@ impl View {
             fg_spans: Spans::default(),
             cols: 0,
         }
+    }
+}
+
+impl View {
+    pub fn new() -> View {
+        View::default()
     }
 
     pub fn set_scroll(&mut self, first: usize, last: usize) {
