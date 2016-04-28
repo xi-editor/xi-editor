@@ -48,8 +48,8 @@ If you’re not on a Mac, you can build just the core:
 > cargo build
 ```
 
-See the [https://github.com/potocpav/xi_glium] project for an experimental
-front-end in Rust.
+See the [xi_glium](https://github.com/potocpav/xi_glium) project for an
+experimental front-end in Rust.
 
 ## Design decisions
 
@@ -113,8 +113,8 @@ The main author is Raph Levien.
 ## Contributions
 
 We gladly accept contributions via GitHub pull requests, as long as the author
-has signed the Google Contributor License. Please see [CONTRIBUTING.md] for
-more details.
+has signed the Google Contributor License. Please see
+[CONTRIBUTING.md](CONTRIBUTING.md) for more details.
 
 ### Disclaimer
 
