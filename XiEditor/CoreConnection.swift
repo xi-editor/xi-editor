@@ -14,17 +14,17 @@
 
 import Foundation
 
-class CoreConnection {
+final class CoreConnection {
 
-    var inHandle: NSFileHandle  // stdin of core process
-    var sizeBuf: NSMutableData
-    var recvBuf: NSMutableData
-    var callback: AnyObject -> ()
+    private var inHandle: NSFileHandle  // stdin of core process
+    private var sizeBuf: NSMutableData
+    private var recvBuf: NSMutableData
+    private var callback: AnyObject -> ()
 
     // RPC state
-    var queue = dispatch_queue_create("com.levien.xi.CoreConnection", DISPATCH_QUEUE_SERIAL)
-    var rpcIndex = 0
-    var pending = Dictionary<Int, AnyObject? -> ()>()
+    private var queue = dispatch_queue_create("com.levien.xi.CoreConnection", DISPATCH_QUEUE_SERIAL)
+    private var rpcIndex = 0
+    private var pending = Dictionary<Int, AnyObject? -> ()>()
 
     init(path: String, callback: AnyObject -> ()) {
         let task = NSTask()
