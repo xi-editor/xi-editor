@@ -69,6 +69,23 @@ func colorFromArgb(argb: UInt32) -> NSColor {
         alpha: CGFloat((argb >> 24) & 0xff) * 1.0/255)
 }
 
+func camelCaseToUnderscored(name: NSString) -> NSString {
+    let underscored = NSMutableString();
+    let scanner = NSScanner(string: name as String);
+    let notUpperCase = NSCharacterSet.uppercaseLetterCharacterSet().invertedSet;
+    var notUpperCaseFragment: NSString?
+    while (scanner.scanUpToCharactersFromSet(NSCharacterSet.uppercaseLetterCharacterSet(), intoString: &notUpperCaseFragment)) {
+        underscored.appendString(notUpperCaseFragment! as String);
+        var upperCaseFragement: NSString?
+        if (scanner.scanUpToCharactersFromSet(notUpperCase, intoString: &upperCaseFragement)) {
+            underscored.appendString("_");
+            let downcasedFragment = upperCaseFragement!.lowercaseString;
+            underscored.appendString(downcasedFragment);
+        }
+    }
+    return underscored;
+}
+
 class EditView: NSView {
 
     var lines: [[AnyObject]] = []
