@@ -591,6 +591,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
         }
         for i in 0..CURSOR_CACHE_SIZE {
             if self.cache[i].is_none() {
+                self.leaf = None;
                 return None;
             }
             let (node, j) = self.cache[i].unwrap();
@@ -617,6 +618,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
         }
         for i in 0..CURSOR_CACHE_SIZE {
             if self.cache[i].is_none() {
+                self.leaf = None;
                 return None;
             }
             let (node, j) = self.cache[i].unwrap();

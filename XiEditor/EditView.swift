@@ -34,6 +34,13 @@ func getFontWidth(font: CTFont) -> CGFloat {
     return 0
 }
 
+func colorFromArgb(argb: UInt32) -> NSColor {
+    return NSColor(red: CGFloat((argb >> 16) & 0xff) * 1.0/255,
+        green: CGFloat((argb >> 8) & 0xff) * 1.0/255,
+        blue: CGFloat(argb & 0xff) * 1.0/255,
+        alpha: CGFloat((argb >> 24) & 0xff) * 1.0/255)
+}
+
 class EditView: NSView {
 
     var lines: [[AnyObject]] = []
@@ -150,6 +157,14 @@ class EditView: NSView {
                     let end = attr[2] as! Int
                     let u16_end = utf8_offset_to_utf16(s, end)
                     attrString.addAttribute(NSBackgroundColorAttributeName, value: selcolor, range: NSMakeRange(u16_start, u16_end - u16_start))
+                } else if type == "fg" {
+                    let start = attr[1] as! Int
+                    let u16_start = utf8_offset_to_utf16(s, start)
+                    let end = attr[2] as! Int
+                    let u16_end = utf8_offset_to_utf16(s, end)
+                    let fgcolor = colorFromArgb(UInt32(attr[3] as! Int))
+                    //let fgcolor = colorFromArgb(0xff800000)
+                    attrString.addAttribute(NSForegroundColorAttributeName, value: fgcolor, range: NSMakeRange(u16_start, u16_end - u16_start))
                 }
             }
             // TODO: I don't understand where the 13 comes from (it's what aligns with baseline. We
@@ -170,6 +185,7 @@ class EditView: NSView {
                     let utf16_ix = utf8_offset_to_utf16(s, cursor)
                     pos = CTLineGetOffsetForStringIndex(ctline, CFIndex(utf16_ix), nil)
                 }
+                CGContextSetStrokeColorWithColor(context, CGColorCreateGenericGray(0, 1))
                 CGContextMoveToPoint(context, x0 + pos, y + descent)
                 CGContextAddLineToPoint(context, x0 + pos, y - ascent)
                 CGContextStrokePath(context)

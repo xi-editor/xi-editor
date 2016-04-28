@@ -192,6 +192,11 @@ impl Editor {
                     self.view.rewrap(&self.text, 72);
                     self.dirty = true;
                 }
+                "\u{F705}" => {  // F2, but using for debugging
+                    print_err!("setting fg spans");
+                    self.view.set_test_fg_spans();
+                    self.dirty = true;
+                }
                 _ => self.insert(chars)
             }
         }
