@@ -1,6 +1,6 @@
 # xi editor
 
-![Xi Editor](icons/xi-editor.png)
+<img src="icons/xi-editor.png" alt="Xi Editor" width="256" height="256"/>
 
 The xi editor project is an attempt to build a high quality text editor,
 using modern software engineering techniques. It is initially built for
