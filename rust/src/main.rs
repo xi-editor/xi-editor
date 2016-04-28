@@ -38,8 +38,8 @@ pub fn send(v: &Value) {
     //print_err!("from core: {}", s);
     let size = s.len();
     let mut sizebuf = [0; 8];
-    for i in 0..8 {
-        sizebuf[i] = (((size as u64) >> (i * 8)) & 0xff) as u8;
+    for (i, item) in sizebuf.iter_mut().enumerate() {
+        *item = (((size as u64) >> (i * 8)) & 0xff) as u8;
     }
     let stdout = io::stdout();
     let mut stdout_handle = stdout.lock();

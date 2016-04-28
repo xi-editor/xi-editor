@@ -218,12 +218,9 @@ impl Editor {
             match File::create(&path) {
                 Ok(mut f) => {
                     for chunk in self.text.iter_chunks(0, self.text.len()) {
-                        match f.write_all(chunk.as_bytes()) {
-                            Err(e) => {
-                                print_err!("write error {}", e);
-                                break;
-                            },
-                            _ => ()
+                        if let Err(e) = f.write_all(chunk.as_bytes()) {
+                            print_err!("write error {}", e);
+                            break;
                         }
                     }
                 },

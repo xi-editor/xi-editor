@@ -804,13 +804,13 @@ impl RopeBuilder {
 
     fn push_str(&mut self, mut s: &str) {
         if s.len() <= MAX_LEAF {
-            if s.len() > 0 {
+            if !s.is_empty() {
                 self.push_str_short(s);
             }
             return;
         }
         let mut stack: Vec<Vec<Node>> = Vec::new();
-        while s.len() > 0 {
+        while !s.is_empty() {
             let splitpoint = if s.len() > MAX_LEAF {
                 find_leaf_split_for_bulk(s)
             } else {
