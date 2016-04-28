@@ -101,7 +101,7 @@ The main author is Raph Levien.
 ## Contributions
 
 We gladly accept contributions via GitHub pull requests, as long as the author
-has signed the Google Contributor License. Please see CONTRIBUTIONS.md for
+has signed the Google Contributor License. Please see CONTRIBUTING.md for
 more details.
 
 ### Disclaimer
