@@ -62,6 +62,13 @@ func camelCaseToUnderscored(name: NSString) -> NSString {
     return underscored;
 }
 
+func colorFromArgb(argb: UInt32) -> NSColor {
+    return NSColor(red: CGFloat((argb >> 16) & 0xff) * 1.0/255,
+        green: CGFloat((argb >> 8) & 0xff) * 1.0/255,
+        blue: CGFloat(argb & 0xff) * 1.0/255,
+        alpha: CGFloat((argb >> 24) & 0xff) * 1.0/255)
+}
+
 class EditView: NSView {
 
     var lines: [[AnyObject]] = []
