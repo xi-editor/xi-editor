@@ -650,9 +650,8 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
             let children = node.get_children();
             let mut i = 0;
             loop {
-                if i == children.len() {
-                    self.leaf = None;
-                    return;
+                if i + 1 == children.len() {
+                    break;
                 }
                 let nextoff = offset + children[i].len();
                 if nextoff > self.position {

@@ -275,8 +275,11 @@ impl Rope {
     /// The line number is 0-based.
     ///
     /// Time complexity: O(log n)
-    pub fn offset_of_line(&self, offset: usize) -> usize {
-        self.convert_metrics::<LinesMetric, BaseMetric>(offset)
+    pub fn offset_of_line(&self, line: usize) -> usize {
+        if line > self.measure::<LinesMetric>() {
+            return self.len();
+        }
+        self.convert_metrics::<LinesMetric, BaseMetric>(line)
     }
 
     /// Returns an iterator over chunks of the rope.
