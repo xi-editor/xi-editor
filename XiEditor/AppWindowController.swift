@@ -38,8 +38,8 @@ class AppWindowController: NSWindowController {
         visualConstraint(views, "H:[editView(>=clipView)]")
         visualConstraint(views, "V:[editView(>=clipView)]")
 
-        NSNotificationCenter.defaultCenter().addObserver(self, selector: "boundsDidChangeNotification:", name: NSViewBoundsDidChangeNotification, object: scrollView.contentView)
-        NSNotificationCenter.defaultCenter().addObserver(self, selector: "frameDidChangeNotification:", name: NSViewFrameDidChangeNotification, object: scrollView)
+        NSNotificationCenter.defaultCenter().addObserver(self, selector: #selector(AppWindowController.boundsDidChangeNotification(_:)), name: NSViewBoundsDidChangeNotification, object: scrollView.contentView)
+        NSNotificationCenter.defaultCenter().addObserver(self, selector: #selector(AppWindowController.frameDidChangeNotification(_:)), name: NSViewFrameDidChangeNotification, object: scrollView)
         updateEditViewScroll()
     }
 
