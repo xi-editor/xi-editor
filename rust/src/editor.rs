@@ -136,69 +136,97 @@ impl Editor {
         }
     }
 
+    fn insert_newline(&mut self) {
+        self.insert("\n");
+    }
+    
+    fn move_up(&mut self, flags: u64) {
+        let old_offset = self.view.sel_end;
+        let offset = self.view.vertical_motion(&self.text, -1, self.col);
+        self.set_cursor_or_sel(offset, flags, old_offset == offset);
+        self.scroll_to = Some(offset);
+    }
+
+    fn move_down(&mut self, flags: u64) {
+        let old_offset = self.view.sel_end;
+        let offset = self.view.vertical_motion(&self.text, 1, self.col);
+        self.set_cursor_or_sel(offset, flags, old_offset == offset);
+        self.scroll_to = Some(offset);
+    }
+
+    fn move_left(&mut self, flags: u64) {
+        if self.view.sel_start != self.view.sel_end && (flags & MODIFIER_SHIFT) == 0 {
+            let offset = self.view.sel_min();
+            self.set_cursor(offset, true);
+        } else {
+            if let Some(offset) = self.text.prev_grapheme_offset(self.view.sel_end) {
+                self.set_cursor_or_sel(offset, flags, true);
+            } else {
+                self.col = 0;
+                // TODO: should set scroll_to_cursor in this case too,
+                // but it won't get sent; probably it needs to be a separate cmd
+            }
+        }
+    }
+
+    fn move_right(&mut self, flags: u64) {
+        if self.view.sel_start != self.view.sel_end && (flags & MODIFIER_SHIFT) == 0 {
+            let offset = self.view.sel_max();
+            self.set_cursor(offset, true);
+        } else {
+            if let Some(offset) = self.text.next_grapheme_offset(self.view.sel_end) {
+                self.set_cursor_or_sel(offset, flags, true);
+            } else {
+                self.col = self.view.offset_to_line_col(&self.text, self.view.sel_end).1;
+                // see above
+            }
+        }
+    }
+
+    fn scroll_page_up(&mut self, flags: u64) {
+        let scroll = -max(self.view.scroll_height() as isize - 2, 1);
+        let old_offset = self.view.sel_end;
+        let offset = self.view.vertical_motion(&self.text, scroll, self.col);
+        self.set_cursor_or_sel(offset, flags, old_offset == offset);
+        let scroll_offset = self.view.vertical_motion(&self.text, scroll, self.col);
+        self.scroll_to = Some(scroll_offset);
+    }
+
+    fn scroll_page_down(&mut self, flags: u64) {
+        let scroll = max(self.view.scroll_height() as isize - 2, 1);
+        let old_offset = self.view.sel_end;
+        let offset = self.view.vertical_motion(&self.text, scroll, self.col);
+        self.set_cursor_or_sel(offset, flags, old_offset == offset);
+        let scroll_offset = self.view.vertical_motion(&self.text, scroll, self.col);
+        self.scroll_to = Some(scroll_offset);
+    }
+
     fn do_key(&mut self, args: &Value) {
         if let Some(args) = args.as_object() {
             let chars = args.get("chars").unwrap().as_string().unwrap();
             let flags = args.get("flags").unwrap().as_u64().unwrap();
             match chars {
-                "\r" => self.insert("\n"),
+                "\r" => self.insert_newline(),
                 "\x7f" => {
                     self.delete_backward();
                 }
                 "\u{F700}" => {  // up arrow
-                    let old_offset = self.view.sel_end;
-                    let offset = self.view.vertical_motion(&self.text, -1, self.col);
-                    self.set_cursor_or_sel(offset, flags, old_offset == offset);
-                    self.scroll_to = Some(offset);
+                    self.move_up(flags);
                 }
                 "\u{F701}" => {  // down arrow
-                    let old_offset = self.view.sel_end;
-                    let offset = self.view.vertical_motion(&self.text, 1, self.col);
-                    self.set_cursor_or_sel(offset, flags, old_offset == offset);
-                    self.scroll_to = Some(offset);
+                    self.move_down(flags);
                 }
                 "\u{F702}" => {  // left arrow
-                    if self.view.sel_start != self.view.sel_end && (flags & MODIFIER_SHIFT) == 0 {
-                        let offset = self.view.sel_min();
-                        self.set_cursor(offset, true);
-                    } else {
-                        if let Some(offset) = self.text.prev_grapheme_offset(self.view.sel_end) {
-                            self.set_cursor_or_sel(offset, flags, true);
-                        } else {
-                            self.col = 0;
-                            // TODO: should set scroll_to_cursor in this case too,
-                            // but it won't get sent; probably it needs to be a separate cmd
-                        }
-                    }
+                    self.move_left(flags);
                 }
                 "\u{F703}" => {  // right arrow
-                    if self.view.sel_start != self.view.sel_end && (flags & MODIFIER_SHIFT) == 0 {
-                        let offset = self.view.sel_max();
-                        self.set_cursor(offset, true);
-                    } else {
-                        if let Some(offset) = self.text.next_grapheme_offset(self.view.sel_end) {
-                            self.set_cursor_or_sel(offset, flags, true);
-                        } else {
-                            self.col = self.view.offset_to_line_col(&self.text, self.view.sel_end).1;
-                            // see above
-                        }
-                    }
+                    self.move_right(flags);
                 }
                 "\u{F72C}" => {  // page up
-                    let scroll = -max(self.view.scroll_height() as isize - 2, 1);
-                    let old_offset = self.view.sel_end;
-                    let offset = self.view.vertical_motion(&self.text, scroll, self.col);
-                    self.set_cursor_or_sel(offset, flags, old_offset == offset);
-                    let scroll_offset = self.view.vertical_motion(&self.text, scroll, self.col);
-                    self.scroll_to = Some(scroll_offset);
+                    self.scroll_page_up(flags);
                 }
                 "\u{F72D}" => {  // page down
-                    let scroll = max(self.view.scroll_height() as isize - 2, 1);
-                    let old_offset = self.view.sel_end;
-                    let offset = self.view.vertical_motion(&self.text, scroll, self.col);
-                    self.set_cursor_or_sel(offset, flags, old_offset == offset);
-                    let scroll_offset = self.view.vertical_motion(&self.text, scroll, self.col);
-                    self.scroll_to = Some(scroll_offset);
+                    self.scroll_page_down(flags);
                 }
                 "\u{F704}" => {  // F1, but using for debugging
                     self.view.rewrap(&self.text, 72);
@@ -219,10 +247,6 @@ impl Editor {
             let chars = args.get("chars").unwrap().as_string().unwrap();
             self.insert(chars);
         }
-    }
-
-    fn do_delete_backward(&mut self) {
-        self.delete_backward();
     }
 
     fn do_open(&mut self, args: &Value) {
@@ -310,7 +334,18 @@ impl Editor {
             "rpc" => self.do_rpc(args),
             "key" => self.do_key(args),
             "insert" => self.do_insert(args),
-            "delete_backward" => self.do_delete_backward(),
+            "delete_backward" => self.delete_backward(),
+            "insert_newline" => self.insert_newline(),
+            "move_up" => self.move_up(0),
+            "move_up_and_modify_selection" => self.move_up(MODIFIER_SHIFT),
+            "move_down" => self.move_down(0),
+            "move_down_and_modify_selection" => self.move_down(MODIFIER_SHIFT),
+            "move_left" => self.move_left(0),
+            "move_left_and_modify_selection" => self.move_left(MODIFIER_SHIFT),
+            "move_right" => self.move_right(0),
+            "move_right_and_modify_selection" => self.move_right(MODIFIER_SHIFT),
+            "scroll_page_up" => self.scroll_page_up(0),
+            "scroll_page_down" => self.scroll_page_down(0),
             "open" => self.do_open(args),
             "save" => self.do_save(args),
             "scroll" => self.do_scroll(args),

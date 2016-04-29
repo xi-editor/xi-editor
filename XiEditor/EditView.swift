@@ -90,6 +90,8 @@ class EditView: NSView {
     var updateQueue: dispatch_queue_t
     var pendingUpdate: [String: AnyObject]? = nil
 
+    var currentEvent: NSEvent?
+
     override init(frame frameRect: NSRect) {
         let font = CTFontCreateWithName("InconsolataGo", 14, nil)
         ascent = CTFontGetAscent(font)
@@ -230,7 +232,11 @@ class EditView: NSView {
     }
 
     override func keyDown(theEvent: NSEvent) {
+        // store current event so that it can be sent to the core
+        // if the selector for the event is "noop:".
+        currentEvent = theEvent;
         self.interpretKeyEvents([theEvent]);
+        currentEvent = nil;
     }
 
     override func insertText(insertString: AnyObject) {
@@ -244,7 +250,11 @@ class EditView: NSView {
             super.doCommandBySelector(aSelector);
         } else if let coreConnection = coreConnection {
             let commandName = camelCaseToUnderscored(aSelector.description).stringByReplacingOccurrencesOfString(":", withString: "");
-            coreConnection.sendJson([commandName, []]);
+            if (commandName == "noop") {
+                coreConnection.sendJson(eventToJson(currentEvent!));
+            } else {
+                coreConnection.sendJson([commandName, []]);
+            }
         }
     }
 
