@@ -14,17 +14,17 @@ Mac OS X, using Cocoa for the user interface, but other targets are planned.
 
 Goals include:
 
-* Insanely high performance. All editing operations should commit and paint
+* ***Insanely high performance***. All editing operations should commit and paint
   in under 16ms. The editor should never make you wait for anything.
 
-* Beauty. The editor should fit well on a modern desktop, and not look like a
+* ***Beauty***. The editor should fit well on a modern desktop, and not look like a
   throwback from the ’80s or ’90s. Text drawing should be done with the best
   technology available (Core Text on Mac, DirectWrite on Windows, etc.), and
   support Unicode fully.
 
-* Reliability. Crashing, hanging, or losing work should never happen.
+* ***Reliability***. Crashing, hanging, or losing work should never happen.
 
-* Developer friendliness. It should be easy to customize xi editor, whether
+* ***Developer friendliness***. It should be easy to customize xi editor, whether
   by adding plug-ins or hacking on the core.
 
 Screenshot (will need to be updated as syntax coloring and UI polish is added):
