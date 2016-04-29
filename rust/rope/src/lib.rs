@@ -31,6 +31,8 @@ use std::borrow::Cow;
 use std::cmp::{min,max};
 use std::iter::once;
 use std::ops::Add;
+use std::str::FromStr;
+use std::string::ParseError;
 //use std::fmt::{Debug, Formatter};
 
 const MIN_LEAF: usize = 511;
@@ -318,7 +320,7 @@ impl Rope {
 
 impl<T: AsRef<str>> From<T> for Rope {
     fn from(s: T) -> Rope {
-        Rope::from_node(Node::from_str(s.as_ref()))
+        Rope::from_node(Node::from_str(s.as_ref()).unwrap())
     }
 }
 
@@ -361,13 +363,16 @@ impl<T: AsRef<str>> Add<T> for Rope {
     }
 }
 
-impl Node {
-    fn from_str(s: &str) -> Node {
+impl FromStr for Node {
+    type Err = ParseError;
+    fn from_str(s: &str) -> Result<Node, Self::Err> {
         let mut b = RopeBuilder::new();
         b.push_str(s);
-        b.build()
+        Ok(b.build())
     }
+}
 
+impl Node {
     fn new(n: NodeBody) -> Node {
         Node(Rc::new(n))
     }
@@ -386,7 +391,7 @@ impl Node {
     }
 
     fn get_children(&self) -> &[Node] {
-        if let &NodeVal::Internal(ref v) = &self.0.val {
+        if let NodeVal::Internal(ref v) = self.0.val {
             v
         } else {
             panic!("get_children called on leaf node");
@@ -394,7 +399,7 @@ impl Node {
     }
 
     fn get_leaf(&self) -> &str {
-        if let &NodeVal::Leaf(ref s) = &self.0.val {
+        if let NodeVal::Leaf(ref s) = self.0.val {
             s
         } else {
             panic!("get_leaf called on internal node");
@@ -478,7 +483,7 @@ impl Node {
             if h1 == 0 {
                 return Node::merge_leaves(rope1, rope2);
             }
-            return Node::merge_nodes(rope1.get_children(), rope2.get_children());
+            Node::merge_nodes(rope1.get_children(), rope2.get_children())
         } else if h1 < h2 {
             let children2 = rope2.get_children();
             if h1 == h2 - 1 && rope1.is_ok_child() {
@@ -486,9 +491,9 @@ impl Node {
             }
             let newrope = Node::concat(rope1, children2[0].clone());
             if newrope.height() == h2 - 1 {
-                return Node::merge_nodes(&[newrope], &children2[1..]);
+                Node::merge_nodes(&[newrope], &children2[1..])
             } else {
-                return Node::merge_nodes(newrope.get_children(), &children2[1..]);
+                Node::merge_nodes(newrope.get_children(), &children2[1..])
             }
         } else {  // h1 > h2
             let children1 = rope1.get_children();
@@ -498,9 +503,9 @@ impl Node {
             let lastix = children1.len() - 1;
             let newrope = Node::concat(children1[lastix].clone(), rope2);
             if newrope.height() == h1 - 1 {
-                return Node::merge_nodes(&children1[..lastix], &[newrope]);
+                Node::merge_nodes(&children1[..lastix], &[newrope])
             } else {
-                return Node::merge_nodes(&children1[..lastix], newrope.get_children());
+                Node::merge_nodes(&children1[..lastix], newrope.get_children())
             }
         }
     }
@@ -529,7 +534,7 @@ impl Node {
     }
 
     fn replace(&mut self, start: usize, end: usize, new: Node) {
-        if let &NodeVal::Leaf(ref s) = &new.0.val {
+        if let NodeVal::Leaf(ref s) = new.0.val {
             if s.len() < MIN_LEAF {
                 self.replace_str(start, end, s);
             }
@@ -542,11 +547,9 @@ impl Node {
     }
 
     fn replace_str(&mut self, start: usize, end: usize, new: &str) {
-        if new.len() < MIN_LEAF {
-            // try to do replacement without changing tree structure
-            if Node::try_replace_str(self, start, end, new) {
-                return;
-            }
+        // try to do replacement without changing tree structure
+        if new.len() < MIN_LEAF && Node::try_replace_str(self, start, end, new) {
+            return;
         }
         let mut b = RopeBuilder::new();
         self.subsequence_rec(&mut b, 0, start);
@@ -569,7 +572,7 @@ impl Node {
             let newstr = [&s[..start], new, &s[end..]].concat();
             Node::from_string_piece(newstr)
         };
-        return true;
+        true
     }
 
     // return child index and offset on success
@@ -636,9 +639,9 @@ impl Node {
     }
 
     fn push_to_string(&self, dst: &mut String) {
-        match &self.0.val {
-            &NodeVal::Leaf(ref s) => dst.push_str(&s),
-            &NodeVal::Internal(ref v) => {
+        match self.0.val {
+            NodeVal::Leaf(ref s) => dst.push_str(&s),
+            NodeVal::Internal(ref v) => {
                 for child in v {
                     child.push_to_string(dst);
                 }
@@ -724,7 +727,7 @@ impl Node {
                 offset -= child.len();
             }
         }
-        return (node.get_leaf(), offset);
+        (node.get_leaf(), offset)
     }
 
     // precondition: offset > 0 and in range
@@ -781,9 +784,15 @@ fn find_leaf_split(s: &str, minsplit: usize) -> usize {
 // good case to make this public
 struct RopeBuilder(Option<Node>);
 
+impl Default for RopeBuilder {
+    fn default() -> RopeBuilder {
+        RopeBuilder(None)
+    }
+}
+
 impl RopeBuilder {
     fn new() -> RopeBuilder {
-        RopeBuilder(None)
+        RopeBuilder::default()
     }
 
     fn push_rope(&mut self, rope: Rope) {

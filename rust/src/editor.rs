@@ -41,8 +41,8 @@ pub struct Editor {
     col: usize  // maybe this should live in view, it's similar to selection
 }
 
-impl Editor {
-    pub fn new() -> Editor {
+impl Default for Editor {
+    fn default() -> Editor {
         Editor {
             text: Rope::from(""),
             view: View::new(),
@@ -52,6 +52,12 @@ impl Editor {
             scroll_to: Some(0),
             col: 0
         }
+    }
+}
+
+impl Editor {
+    pub fn new() -> Editor {
+        Editor::default()
     }
 
     fn insert(&mut self, s: &str) {
@@ -105,7 +111,9 @@ impl Editor {
     // render if needed, sending to ui
     fn render(&mut self) {
         if self.dirty {
-            send(&self.view.render(&self.text, self.scroll_to));
+            if let Err(e) = send(&self.view.render(&self.text, self.scroll_to)) {
+                print_err!("send error in render method: {}", e);
+            }
             self.dirty = false;
             self.scroll_to = None;
         }
@@ -266,7 +274,7 @@ impl Editor {
             if let Some(array) = request.as_array() {
                 if let Some(cmd) = array[0].as_string() {
                     let result = self.dispatch_rpc(cmd, &array[1]);
-                    send(&ArrayBuilder::new()
+                    if let Err(e) = send(&ArrayBuilder::new()
                         .push("rpc_response")
                         .push_object(|builder|
                             builder
@@ -274,7 +282,9 @@ impl Editor {
                                 .insert("result", result)
                         )
                         .unwrap()
-                    );
+                    ) {
+                        print_err!("send error in do_rpc method: {}", e);
+                    }
                 }
             }
         }

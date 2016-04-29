@@ -27,12 +27,12 @@ mod view;
 mod linewrap;
 
 use editor::Editor;
+use std::io::Error;
 
 extern crate xi_rope;
 extern crate xi_unicode;
 
-// TODO: should provide result
-pub fn send(v: &Value) {
+pub fn send(v: &Value) -> Result<(), Error> {
     let mut s = serde_json::to_string(v).unwrap();
     s.push('\n');
     //print_err!("from core: {}", s);
@@ -43,8 +43,10 @@ pub fn send(v: &Value) {
     }
     let stdout = io::stdout();
     let mut stdout_handle = stdout.lock();
-    let _ = stdout_handle.write_all(&sizebuf);
-    let _ = stdout_handle.write_all(s.as_bytes());
+    if let Err(e) = stdout_handle.write_all(&sizebuf) {
+        return Err(e);
+    }
+    stdout_handle.write_all(s.as_bytes())
     // flush is not needed because of the LineWriter on stdout
     //let _ = stdout_handle.flush();
 }

@@ -17,6 +17,8 @@
 
 use std::cmp::{min,max};
 use std::borrow::Cow;
+use std::str::FromStr;
+use std::string::ParseError;
 
 use tree::{Leaf, Node, NodeInfo, Metric, TreeBuilder, Cursor};
 use interval::Interval;
@@ -54,7 +56,7 @@ impl Leaf for String {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct RopeInfo {
     lines: usize,
 }
@@ -79,6 +81,7 @@ impl NodeInfo for RopeInfo {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct BaseMetric(());
 
 impl Metric<RopeInfo> for BaseMetric {
@@ -134,6 +137,7 @@ impl Metric<RopeInfo> for BaseMetric {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct LinesMetric(usize);  // number of lines
 
 impl Metric<RopeInfo> for LinesMetric {
@@ -217,13 +221,16 @@ fn find_leaf_split(s: &str, minsplit: usize) -> usize {
 
 // Additional APIs custom to strings
 
-impl Rope {
-    pub fn from_str(s: &str) -> Rope {
+impl FromStr for Rope {
+    type Err = ParseError;
+    fn from_str(s: &str) -> Result<Rope, Self::Err> {
         let mut b = TreeBuilder::new();
         b.push_str(s);
-        b.build()
+        Ok(b.build())
     }
+}
 
+impl Rope {
     pub fn edit_str(&mut self, start: usize, end: usize, new: &str) {
         let mut b = TreeBuilder::new();
         // TODO: may make this method take the iv directly
@@ -387,7 +394,7 @@ impl TreeBuilder<RopeInfo> {
 
 impl<T: AsRef<str>> From<T> for Rope {
     fn from(s: T) -> Rope {
-        Rope::from_str(s.as_ref())
+        Rope::from_str(s.as_ref()).unwrap()
     }
 }
 

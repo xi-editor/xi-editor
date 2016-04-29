@@ -185,7 +185,7 @@ impl<N: NodeInfo> Node<N> {
     }
 
     fn get_children(&self) -> &[Node<N>] {
-        if let &NodeVal::Internal(ref v) = &self.0.val {
+        if let NodeVal::Internal(ref v) = self.0.val {
             v
         } else {
             panic!("get_children called on leaf node");
@@ -193,7 +193,7 @@ impl<N: NodeInfo> Node<N> {
     }
 
     fn get_leaf(&self) -> &N::L {
-        if let &NodeVal::Leaf(ref l) = &self.0.val {
+        if let NodeVal::Leaf(ref l) = self.0.val {
             l
         } else {
             panic!("get_leaf called on internal node");
@@ -263,7 +263,7 @@ impl<N: NodeInfo> Node<N> {
             if h1 == 0 {
                 return Node::merge_leaves(rope1, rope2);
             }
-            return Node::merge_nodes(rope1.get_children(), rope2.get_children());
+            Node::merge_nodes(rope1.get_children(), rope2.get_children())
         } else if h1 < h2 {
             let children2 = rope2.get_children();
             if h1 == h2 - 1 && rope1.is_ok_child() {
@@ -271,9 +271,9 @@ impl<N: NodeInfo> Node<N> {
             }
             let newrope = Node::concat(rope1, children2[0].clone());
             if newrope.height() == h2 - 1 {
-                return Node::merge_nodes(&[newrope], &children2[1..]);
+                Node::merge_nodes(&[newrope], &children2[1..])
             } else {
-                return Node::merge_nodes(newrope.get_children(), &children2[1..]);
+                Node::merge_nodes(newrope.get_children(), &children2[1..])
             }
         } else {  // h1 > h2
             let children1 = rope1.get_children();
@@ -283,9 +283,9 @@ impl<N: NodeInfo> Node<N> {
             let lastix = children1.len() - 1;
             let newrope = Node::concat(children1[lastix].clone(), rope2);
             if newrope.height() == h1 - 1 {
-                return Node::merge_nodes(&children1[..lastix], &[newrope]);
+                Node::merge_nodes(&children1[..lastix], &[newrope])
             } else {
-                return Node::merge_nodes(&children1[..lastix], newrope.get_children());
+                Node::merge_nodes(&children1[..lastix], newrope.get_children())
             }
         }
     }
@@ -499,8 +499,8 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
                 self.position - self.offset_of_leaf);
         }
         // tricky case, at beginning of leaf, need to query end of previous
-        // leaf; would be nice if we could do it another way that didn't make
-        // the method &self mut.
+        // leaf; TODO: would be nice if we could do it another way that didn't
+        // make the method &self mut.
         let l = self.prev_leaf().unwrap().0;
         let result = M::is_boundary(l, l.len());
         let _ = self.next_leaf();
