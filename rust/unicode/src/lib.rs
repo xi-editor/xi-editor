@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Unicode utilities useful for text editing, including a line breaking iterator.
+
 mod tables;
 
 use tables::*;
@@ -55,6 +57,9 @@ pub fn linebreak_property_str(s: &str, ix: usize) -> (u8, usize) {
     }
 }
 
+/// An iterator which produces line breaks according to the UAX 14 line
+/// breaking algorithm. For each break, return a tuple consisting of the offset
+/// within the source string and a bool indicating whether it's a hard break.
 #[derive(Copy, Clone)]
 pub struct LineBreakIterator<'a> {
     s: &'a str,
@@ -93,6 +98,7 @@ impl<'a> Iterator for LineBreakIterator<'a> {
 }
 
 impl<'a> LineBreakIterator<'a> {
+    /// Create a new iterator for the given string slice.
     pub fn new(s: &str) -> LineBreakIterator {
         if s.is_empty() {
             LineBreakIterator {
