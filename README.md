@@ -54,7 +54,9 @@ If you’re not on a Mac, you can build just the core like so:
 ```
 
 See the [xi_glium](https://github.com/potocpav/xi_glium) project for an
-experimental front-end in Rust.
+experimental front-end in Rust. There are notes (I wouldn’t call it
+documentation at this point) on the protocol at
+[frontend.md](doc/frontend.md).
 
 ## Design decisions
 
