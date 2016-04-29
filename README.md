@@ -2,7 +2,7 @@
   <br>
   <a href="https://github.com/google/xi-editor"><img src="icons/xi-editor.png" alt="Xi Editor" width="256" height="256"/></a>
   <br>
-  <a href="https://github.com/butterproject/butter-desktop">Xi Editor</a>
+  <a href="https://github.com/google/xi-editor">Xi Editor</a>
   <br>
 </h1>
 
