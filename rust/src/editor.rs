@@ -246,6 +246,7 @@ impl Editor {
         if let Some(array) = args.as_array() {
             if let (Some(first), Some(last)) = (array[0].as_i64(), array[1].as_i64()) {
                 self.view.set_scroll(max(first, 0) as usize, last as usize);
+                self.dirty = true;
             }
         }
     }
