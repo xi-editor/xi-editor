@@ -21,6 +21,10 @@ func eventToJson(event: NSEvent) -> AnyObject {
         "flags": flags]]
 }
 
+func insertedStringToJson(stringToInsert: NSString) -> AnyObject {
+    return ["insert", ["chars": stringToInsert]];
+}
+
 // compute the width if monospaced, 0 otherwise
 func getFontWidth(font: CTFont) -> CGFloat {
     if (font as NSFont).fixedPitch {
@@ -39,6 +43,23 @@ func colorFromArgb(argb: UInt32) -> NSColor {
         green: CGFloat((argb >> 8) & 0xff) * 1.0/255,
         blue: CGFloat(argb & 0xff) * 1.0/255,
         alpha: CGFloat((argb >> 24) & 0xff) * 1.0/255)
+}
+
+func camelCaseToUnderscored(name: NSString) -> NSString {
+    let underscored = NSMutableString();
+    let scanner = NSScanner(string: name as String);
+    let notUpperCase = NSCharacterSet.uppercaseLetterCharacterSet().invertedSet;
+    var notUpperCaseFragment: NSString?
+    while (scanner.scanUpToCharactersFromSet(NSCharacterSet.uppercaseLetterCharacterSet(), intoString: &notUpperCaseFragment)) {
+        underscored.appendString(notUpperCaseFragment! as String);
+        var upperCaseFragement: NSString?
+        if (scanner.scanUpToCharactersFromSet(notUpperCase, intoString: &upperCaseFragement)) {
+            underscored.appendString("_");
+            let downcasedFragment = upperCaseFragement!.lowercaseString;
+            underscored.appendString(downcasedFragment);
+        }
+    }
+    return underscored;
 }
 
 class EditView: NSView {
@@ -209,10 +230,21 @@ class EditView: NSView {
     }
 
     override func keyDown(theEvent: NSEvent) {
+        self.interpretKeyEvents([theEvent]);
+    }
+
+    override func insertText(insertString: AnyObject) {
         if let coreConnection = coreConnection {
-            coreConnection.sendJson(eventToJson(theEvent))
-        } else {
-            super.keyDown(theEvent)
+            coreConnection.sendJson(insertedStringToJson(insertString as! NSString))
+        }
+    }
+
+    override func doCommandBySelector(aSelector: Selector) {
+        if (self.respondsToSelector(aSelector)) {
+            super.doCommandBySelector(aSelector);
+        } else if let coreConnection = coreConnection {
+            let commandName = camelCaseToUnderscored(aSelector.description).stringByReplacingOccurrencesOfString(":", withString: "");
+            coreConnection.sendJson([commandName, []]);
         }
     }
 
