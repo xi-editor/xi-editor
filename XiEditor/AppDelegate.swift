@@ -48,6 +48,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if fileDialog.runModal() == NSFileHandlingPanelOKButton {
             if let path = fileDialog.URL?.path {
                 application(NSApp, openFile: path)
+                NSDocumentController.sharedDocumentController().noteNewRecentDocumentURL(fileDialog.URL!);
             }
         }
     }
