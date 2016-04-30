@@ -73,4 +73,13 @@ class AppWindowController: NSWindowController {
             }
         }
     }
+
+    // the ShadowView sometimes steals drag events, so forward them back to the edit view
+    func handleMouseDragged(theEvent: NSEvent) {
+        editView.mouseDragged(theEvent)
+    }
+
+    func handleMouseUp(theEvent: NSEvent) {
+        editView.mouseUp(theEvent)
+    }
 }

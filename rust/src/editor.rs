@@ -250,6 +250,26 @@ impl Editor {
         }
     }
 
+    fn do_click(&mut self, args: &Value) {
+        if let Some(array) = args.as_array() {
+            if let (Some(line), Some(col), Some(flags), Some(_click_count)) =
+                    (array[0].as_u64(), array[1].as_u64(), array[2].as_u64(), array[3].as_u64()) {
+                let offset = self.view.line_col_to_offset(&self.text, line as usize, col as usize);
+                self.set_cursor_or_sel(offset, flags, true);
+            }
+        }
+    }
+
+    fn do_drag(&mut self, args: &Value) {
+        if let Some(array) = args.as_array() {
+            if let (Some(line), Some(col), Some(_flags)) =
+                    (array[0].as_u64(), array[1].as_u64(), array[2].as_u64()) {
+                let offset = self.view.line_col_to_offset(&self.text, line as usize, col as usize);
+                self.set_cursor_or_sel(offset, MODIFIER_SHIFT, true);
+            }
+        }
+    }
+
     fn do_render_lines(&mut self, args: &Value) -> Value {
         if let Some(dict) = args.as_object() {
             let first_line = dict.get("first_line").unwrap().as_u64().unwrap();
@@ -297,6 +317,8 @@ impl Editor {
             "open" => self.do_open(args),
             "save" => self.do_save(args),
             "scroll" => self.do_scroll(args),
+            "click" => self.do_click(args),
+            "drag" => self.do_drag(args),
             _ => print_err!("unknown cmd {}", cmd)
         }
         // TODO: could defer this until input quiesces - will this help?

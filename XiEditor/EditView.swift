@@ -65,6 +65,10 @@ class EditView: NSView {
     // visible scroll region, exclusive of lastLine
     var firstLine: Int = 0
     var lastLine: Int = 0
+    
+    var lastDragLineCol: (Int, Int)?
+    var timer: NSTimer?
+    var timerEvent: NSEvent?
 
     // magic for accepting updates from other threads
     var updateQueue: dispatch_queue_t
@@ -97,6 +101,12 @@ class EditView: NSView {
         return s.utf8.startIndex.advancedBy(ix).samePositionIn(s.utf16)!._offset
     }
 
+    func utf16_offset_to_utf8(s: String, _ ix: Int) -> Int {
+        return String(s.utf16.prefix(ix)).utf8.count
+    }
+
+    let x0: CGFloat = 2;
+
     override func drawRect(dirtyRect: NSRect) {
         super.drawRect(dirtyRect)
         /*
@@ -109,7 +119,6 @@ class EditView: NSView {
         */
 
         let context = NSGraphicsContext.currentContext()!.CGContext
-        let x0: CGFloat = 2;
         let first = Int(floor(dirtyRect.origin.y / linespace))
         let last = Int(ceil((dirtyRect.origin.y + dirtyRect.size.height) / linespace))
 
@@ -193,6 +202,64 @@ class EditView: NSView {
         } else {
             super.keyDown(theEvent)
         }
+    }
+    
+    override func mouseDown(theEvent: NSEvent) {
+        let (line, col) = pointToLineCol(convertPoint(theEvent.locationInWindow, fromView: nil))
+        lastDragLineCol = (line, col)
+        let flags = theEvent.modifierFlags.rawValue >> 16
+        let clickCount = theEvent.clickCount
+        coreConnection?.sendJson(["click", [line, col, flags, clickCount]])
+        timer = NSTimer.scheduledTimerWithTimeInterval(NSTimeInterval(1.0/60), target: self, selector: #selector(autoscrollTimer), userInfo: nil, repeats: true)
+        timerEvent = theEvent
+    }
+    
+    override func mouseDragged(theEvent: NSEvent) {
+        autoscroll(theEvent)
+        let (line, col) = pointToLineCol(convertPoint(theEvent.locationInWindow, fromView: nil))
+        if let last = lastDragLineCol where last != (line, col) {
+            lastDragLineCol = (line, col)
+            let flags = theEvent.modifierFlags.rawValue >> 16
+            coreConnection?.sendJson(["drag", [line, col, flags]])
+        }
+        timerEvent = theEvent
+    }
+
+    override func mouseUp(theEvent: NSEvent) {
+        timer?.invalidate()
+        timer = nil
+        timerEvent = nil
+    }
+
+    func autoscrollTimer() {
+        if let event = timerEvent {
+            mouseDragged(event)
+        }
+    }
+
+    // TODO: more functions should call this, just dividing by linespace doesn't account for descent
+    func yToLine(y: CGFloat) -> Int {
+        return Int(floor(max(y - descent, 0) / linespace))
+    }
+
+    func lineIxToBaseline(lineIx: Int) -> CGFloat {
+        return CGFloat(lineIx + 1) * linespace
+    }
+
+    func pointToLineCol(loc: NSPoint) -> (Int, Int) {
+        let lineIx = yToLine(loc.y)
+        var col = 0
+        if let line = getLine(lineIx) {
+            let s = line[0] as! String
+            let attrString = NSAttributedString(string: s, attributes: self.attributes)
+            let ctline = CTLineCreateWithAttributedString(attrString)
+            let relPos = NSPoint(x: loc.x - x0, y: lineIxToBaseline(lineIx) - loc.y)
+            let utf16_ix = CTLineGetStringIndexForPosition(ctline, relPos)
+            if utf16_ix != kCFNotFound {
+                col = utf16_offset_to_utf8(s, utf16_ix)
+            }
+        }
+        return (lineIx, col)
     }
 
     func updateText(text: [String: AnyObject]) {
