@@ -33,7 +33,7 @@ You need [Xcode 7](https://developer.apple.com/xcode/) (only on Mac) and [Rust](
 recommended and supported). You should have `cargo` in your path.
 
 ```
-> git clone https://github.com/google/xi-editor
+> git clone https://github.com/google/xi-editor --depth=1
 > cd xi-editor
 > xcodebuild
 > open build/Release/XiEditor.app
