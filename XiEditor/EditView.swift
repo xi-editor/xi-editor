@@ -43,8 +43,9 @@ func colorFromArgb(argb: UInt32) -> NSColor {
 
 class EditView: NSView {
 
-    var lines: [[AnyObject]] = []
-    var linesStart: Int = 0
+    // basically a cache of lines, indexed by line number
+    var lineMap: [Int: [AnyObject]] = [:]
+    var height: Int = 0
 
     var coreConnection: CoreConnection?
 
@@ -111,31 +112,9 @@ class EditView: NSView {
         let x0: CGFloat = 2;
         let first = Int(floor(dirtyRect.origin.y / linespace))
         let last = Int(ceil((dirtyRect.origin.y + dirtyRect.size.height) / linespace))
-        var myLines = [[AnyObject]]?()
-        // TODO: either (a) make this smarter, so it doesn't RPC when lines contains EOF,
-        // or (b) always do the RPC, which is simpler.
-        if first < linesStart || last > linesStart + lines.count {
-            let start = NSDate()
-            if let result = coreConnection?.sendRpc(["render_lines", ["first_line": first, "last_line": last]]) as? [[AnyObject]] {
-                let interval = NSDate().timeIntervalSinceDate(start)
-                Swift.print(String(format: "RPC latency = %3.2fms", interval as Double * 1e3))
-                myLines = result
-            } else {
-                Swift.print("rpc error")
-            }
-        } else {
-            Swift.print("hit, [\(first):\(last)] <= [\(linesStart):\(linesStart + lines.count)]")
-        }
 
         for lineIx in first..<last {
-            var line = [AnyObject]?()
-            if let myLines = myLines {
-                if lineIx < first + myLines.count {
-                    line = myLines[lineIx - first]
-                }
-            } else if lineIx >= linesStart && lineIx < linesStart + lines.count {
-                line = lines[lineIx - linesStart]
-            }
+            let line = getLine(lineIx)
             if line == nil {
                 continue
             }
@@ -217,9 +196,14 @@ class EditView: NSView {
     }
 
     func updateText(text: [String: AnyObject]) {
-        self.lines = text["lines"]! as! [[AnyObject]]
-        self.linesStart = text["first_line"] as! Int
-        heightConstraint?.constant = (text["height"] as! CGFloat) * linespace + 2 * descent
+        self.lineMap = [:]
+        let firstLine = text["first_line"] as! Int
+        self.height = text["height"] as! Int
+        let lines = text["lines"]! as! [[AnyObject]]
+        for lineNum in firstLine..<(firstLine + lines.count) {
+            self.lineMap[lineNum] = lines[lineNum - firstLine]
+        }
+        heightConstraint?.constant = CGFloat(self.height) * linespace + 2 * descent
         if let cursor = text["scrollto"] as? [Int] {
             let line = cursor[0]
             let col = cursor[1]
@@ -262,6 +246,55 @@ class EditView: NSView {
             firstLine = first
             lastLine = last
             coreConnection?.sendJson(["scroll", [firstLine, lastLine]])
+        }
+    }
+
+    let MAX_CACHE_LINES = 1000
+    let CACHE_FETCH_CHUNK = 100
+
+    // get a line, trying to hit the cache
+    func getLine(lineNum: Int) -> [AnyObject]? {
+        // TODO: maybe core should take care to set height >= 1
+        if lineNum < 0 || lineNum >= max(1, self.height) {
+            return nil
+        }
+        if let line = self.lineMap[lineNum] {
+            return line
+        }
+        // speculatively prefetch a bigger chunk from RPC, but don't get anything we already have
+        var first = lineNum
+        while first > max(0, lineNum - CACHE_FETCH_CHUNK) && lineMap.indexForKey(first - 1) == nil {
+            first -= 1
+        }
+        var last = lineNum + 1
+        while last < min(lineNum, height) + CACHE_FETCH_CHUNK && lineMap.indexForKey(last + 1) == nil {
+            last += 1
+        }
+        if lineMap.count + (last - first) > MAX_CACHE_LINES {
+            // a more sophisticated approach would be LRU replacement, but simple is probably good enough
+            lineMap = [:]
+        }
+        if let lines = fetchLineRange(first, last) {
+            for lineNum in first..<last {
+                if lineNum - first < lines.count {
+                    lineMap[lineNum] = lines[lineNum - first]
+                } else {
+                    lineMap[lineNum] = [""]  // TODO: maybe core should always supply
+                }
+            }
+        }
+        return lineMap[lineNum]
+    }
+    
+    func fetchLineRange(first: Int, _ last: Int) -> [[AnyObject]]? {
+        let start = NSDate()
+        if let result = coreConnection?.sendRpc(["render_lines", ["first_line": first, "last_line": last]]) as? [[AnyObject]] {
+            let interval = NSDate().timeIntervalSinceDate(start)
+            Swift.print(String(format: "RPC latency = %3.2fms", interval as Double * 1e3))
+            return result
+        } else {
+            Swift.print("rpc error")
+            return nil
         }
     }
 }
