@@ -91,6 +91,21 @@ region is used to compute movement distance for page up and page down
 commands, and also controls the size of the fragment sent in the
 `settext` message.
 
+#### click
+
+`["click",[42,31,0,1]]`
+
+Implements a mouse click. The array arguments are: line and column
+(0-based, utf-8 code units), modifiers (again, 2 is shift), and
+click count.
+
+#### drag
+
+`["drag",[42,32,0]]`
+
+Implements dragging (extending a selection). Arguments are line,
+column, and flag as in `click`.
+
 #### rpc
 
 `["rpc",{"index":42,"request":...request body...}]`
