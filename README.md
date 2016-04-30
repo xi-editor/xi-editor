@@ -29,7 +29,7 @@ Screenshot (will need to be updated as syntax coloring and UI polish is added):
 ![xi screenshot](/doc/img/xi-mac-screenshot.png?raw=true)
 
 ## Getting started
-You need [Xcode 7](https://developer.apple.com/xcode/) (only on Mac) and [Rust](https://www.rust-lang.org/) (version 1.8+ is
+You need [Xcode 7.3](https://developer.apple.com/xcode/) (only on Mac) and [Rust](https://www.rust-lang.org/) (version 1.8+ is
 recommended and supported). You should have `cargo` in your path.
 
 ```
@@ -40,6 +40,10 @@ recommended and supported). You should have `cargo` in your path.
 ```
 
 Or `open XiEditor.xcodeproj` and hit the Run button.
+
+It will look better if you have [InconsolataGo](http://levien.com/type/myfonts/inconsolata.html)
+installed, a customized version Inconsolata tuned for code editing. To choose other
+fonts, edit the `CTFontCreateWithName()` call in EditView.swift.
 
 ### Building the core
 

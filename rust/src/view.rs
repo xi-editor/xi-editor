@@ -223,25 +223,20 @@ impl View {
         let mut offset = self.offset_of_line(text, line).saturating_add(col);
         if offset >= text.len() {
             offset = text.len();
-            if self.line_of_offset(text, offset) == line {
+            if self.line_of_offset(text, offset) <= line {
                 return offset;
             }
         } else {
-            // Snap to codepoint boundary
-            offset = text.prev_codepoint_offset(offset + 1).unwrap();
+            // Snap to grapheme cluster boundary
+            offset = text.prev_grapheme_offset(offset + 1).unwrap();
         }
 
         // clamp to end of line
         let next_line_offset = self.offset_of_line(text, line + 1);
         if offset >= next_line_offset {
-            offset = next_line_offset;
-            // TODO: replace with cursor
-            if text.byte_at(offset - 1) == b'\n' {
-                offset -= 1;
+            if let Some(prev) = text.prev_grapheme_offset(next_line_offset) {
+                offset = prev;
             }
-        }
-        if offset > 0 && text.byte_at(offset - 1) == b'\r' {
-            offset -= 1;
         }
         offset
     }
