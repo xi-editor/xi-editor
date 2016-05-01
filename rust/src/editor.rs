@@ -229,13 +229,10 @@ impl Editor {
                     self.scroll_page_down(flags);
                 }
                 "\u{F704}" => {  // F1, but using for debugging
-                    self.view.rewrap(&self.text, 72);
-                    self.dirty = true;
+                    self.debug_rewrap();
                 }
                 "\u{F705}" => {  // F2, but using for debugging
-                    print_err!("setting fg spans");
-                    self.view.set_test_fg_spans();
-                    self.dirty = true;
+                    self.debug_test_fg_spans();
                 }
                 _ => self.insert(chars)
             }
@@ -319,6 +316,17 @@ impl Editor {
         }
     }
 
+    fn debug_rewrap(&mut self) {
+        self.view.rewrap(&self.text, 72);
+        self.dirty = true;
+    }
+
+    fn debug_test_fg_spans(&mut self) {
+        print_err!("setting fg spans");
+        self.view.set_test_fg_spans();
+        self.dirty = true;
+    }
+
     fn dispatch_rpc(&mut self, cmd: &str, args: &Value) -> Value {
         match cmd {
             "render_lines" => self.do_render_lines(args),
@@ -375,6 +383,8 @@ impl Editor {
             "scroll" => self.do_scroll(args),
             "click" => self.do_click(args),
             "drag" => self.do_drag(args),
+            "debug_rewrap" => self.debug_rewrap(),
+            "debug_test_fg_spans" => self.debug_test_fg_spans(),
             _ => print_err!("unknown cmd {}", cmd)
         }
         // TODO: could defer this until input quiesces - will this help?
