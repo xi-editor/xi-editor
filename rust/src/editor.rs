@@ -125,7 +125,11 @@ impl Editor {
         } else {
             if let Some(bsp_pos) = self.text.prev_codepoint_offset(self.view.sel_end) {
             // TODO: implement complex emoji logic
-                bsp_pos
+                if bsp_pos == self.view.sel_max() {
+                    bsp_pos - 1
+                }else {
+                    bsp_pos
+                }
            } else {
                 self.view.sel_max()
             }
