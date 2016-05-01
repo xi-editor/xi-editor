@@ -406,4 +406,18 @@ class EditView: NSView {
             return nil
         }
     }
+
+    // MARK: - Debug Methods
+
+    @IBAction func debugRewrap(sender: AnyObject) {
+        if let coreConnection = coreConnection {
+            coreConnection.sendJson(["debug_rewrap", []]);
+        }
+    }
+
+    @IBAction func debugTestFGSpans(sender: AnyObject) {
+        if let coreConnection = coreConnection {
+            coreConnection.sendJson(["debug_test_fg_spans", []]);
+        }
+    }
 }
