@@ -16,13 +16,13 @@ import Cocoa
 
 func eventToJson(event: NSEvent) -> AnyObject {
     let flags = event.modifierFlags.rawValue >> 16;
-    return ["key", ["keycode": Int(event.keyCode),
+    return ["keycode": Int(event.keyCode),
         "chars": event.characters!,
-        "flags": flags]]
+        "flags": flags]
 }
 
 func insertedStringToJson(stringToInsert: NSString) -> AnyObject {
-    return ["insert", ["chars": stringToInsert]];
+    return ["chars": stringToInsert]
 }
 
 // compute the width if monospaced, 0 otherwise
@@ -63,12 +63,12 @@ func camelCaseToUnderscored(name: NSString) -> NSString {
 }
 
 class EditView: NSView {
+    var tabName: String?
+    var coreConnection: CoreConnection?
 
     // basically a cache of lines, indexed by line number
     var lineMap: [Int: [AnyObject]] = [:]
     var height: Int = 0
-
-    var coreConnection: CoreConnection?
 
     var widthConstraint: NSLayoutConstraint?
     var heightConstraint: NSLayoutConstraint?
@@ -117,6 +117,16 @@ class EditView: NSView {
 
     required init?(coder: NSCoder) {
         fatalError("View doesn't support NSCoding")
+    }
+
+    func sendRpcAsync(method: String, params: AnyObject) {
+        let inner = ["method": method, "params": params, "tab": tabName!] as [String : AnyObject]
+        coreConnection?.sendRpcAsync("edit", params: inner)
+    }
+
+    func sendRpc(method: String, params: AnyObject) -> AnyObject? {
+        let inner = ["method": method, "params": params, "tab": tabName!] as [String : AnyObject]
+        return coreConnection?.sendRpc("edit", params: inner)
     }
 
     func utf8_offset_to_utf16(s: String, _ ix: Int) -> Int {
@@ -228,20 +238,18 @@ class EditView: NSView {
     }
 
     override func insertText(insertString: AnyObject) {
-        if let coreConnection = coreConnection {
-            coreConnection.sendJson(insertedStringToJson(insertString as! NSString))
-        }
+        sendRpcAsync("insert", params: insertedStringToJson(insertString as! NSString))
     }
 
     override func doCommandBySelector(aSelector: Selector) {
         if (self.respondsToSelector(aSelector)) {
             super.doCommandBySelector(aSelector);
-        } else if let coreConnection = coreConnection {
+        } else {
             let commandName = camelCaseToUnderscored(aSelector.description).stringByReplacingOccurrencesOfString(":", withString: "");
             if (commandName == "noop") {
-                coreConnection.sendJson(eventToJson(currentEvent!));
+                sendRpcAsync("key", params: eventToJson(currentEvent!));
             } else {
-                coreConnection.sendJson([commandName, []]);
+                sendRpcAsync(commandName, params: []);
             }
         }
     }
@@ -251,7 +259,7 @@ class EditView: NSView {
         lastDragLineCol = (line, col)
         let flags = theEvent.modifierFlags.rawValue >> 16
         let clickCount = theEvent.clickCount
-        coreConnection?.sendJson(["click", [line, col, flags, clickCount]])
+        sendRpcAsync("click", params: [line, col, flags, clickCount])
         timer = NSTimer.scheduledTimerWithTimeInterval(NSTimeInterval(1.0/60), target: self, selector: #selector(autoscrollTimer), userInfo: nil, repeats: true)
         timerEvent = theEvent
     }
@@ -262,7 +270,7 @@ class EditView: NSView {
         if let last = lastDragLineCol where last != (line, col) {
             lastDragLineCol = (line, col)
             let flags = theEvent.modifierFlags.rawValue >> 16
-            coreConnection?.sendJson(["drag", [line, col, flags]])
+            sendRpcAsync("drag", params: [line, col, flags])
         }
         timerEvent = theEvent
     }
@@ -354,7 +362,7 @@ class EditView: NSView {
         if first != firstLine || last != lastLine {
             firstLine = first
             lastLine = last
-            coreConnection?.sendJson(["scroll", [firstLine, lastLine]])
+            sendRpcAsync("scroll", params: [firstLine, lastLine])
         }
     }
 
@@ -397,7 +405,7 @@ class EditView: NSView {
     
     func fetchLineRange(first: Int, _ last: Int) -> [[AnyObject]]? {
         let start = NSDate()
-        if let result = coreConnection?.sendRpc(["render_lines", ["first_line": first, "last_line": last]]) as? [[AnyObject]] {
+        if let result = sendRpc("render_lines", params: ["first_line": first, "last_line": last]) as? [[AnyObject]] {
             let interval = NSDate().timeIntervalSinceDate(start)
             Swift.print(String(format: "RPC latency = %3.2fms", interval as Double * 1e3))
             return result
@@ -410,14 +418,10 @@ class EditView: NSView {
     // MARK: - Debug Methods
 
     @IBAction func debugRewrap(sender: AnyObject) {
-        if let coreConnection = coreConnection {
-            coreConnection.sendJson(["debug_rewrap", []]);
-        }
+        sendRpcAsync("debug_rewrap", params: []);
     }
 
     @IBAction func debugTestFGSpans(sender: AnyObject) {
-        if let coreConnection = coreConnection {
-            coreConnection.sendJson(["debug_test_fg_spans", []]);
-        }
+        sendRpcAsync("debug_test_fg_spans", params: []);
     }
 }

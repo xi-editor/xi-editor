@@ -50,24 +50,18 @@ class CoreConnection {
             print("eof")
             return
         }
+        let scanStart = recvBuf.length
         recvBuf.appendData(data)
         let recvBufLen = recvBuf.length
         let recvBufBytes = UnsafeMutablePointer<UInt8>(recvBuf.mutableBytes)
         var i = 0
-        while true {
-            if recvBufLen < i + 8 {
-                break
+        for j in scanStart..<recvBufLen {
+            // TODO: using memchr would probably be faster
+            if recvBufBytes[j] == UInt8(ascii:"\n") {
+                let dataPacket = recvBuf.subdataWithRange(NSRange(location: i, length: j + 1 - i))
+                handleRaw(dataPacket)
+                i = j + 1
             }
-            var size = 0
-            for j in 0 ..< 8 {
-                size += (Int(recvBufBytes[i + j]) as Int) << (j * 8)
-            }
-            if recvBufLen < i + 8 + size {
-                break
-            }
-            let dataPacket = recvBuf.subdataWithRange(NSRange(location: i + 8, length: size))
-            handleRaw(dataPacket)
-            i += 8 + size
         }
         if i < recvBufLen {
             memmove(recvBufBytes, recvBufBytes + i, recvBufLen - i)
@@ -75,20 +69,14 @@ class CoreConnection {
         recvBuf.length = recvBufLen - i
     }
 
-    func send(data: NSData) {
-        let length = data.length
-        let sizeBytes = UnsafeMutablePointer<UInt8>(sizeBuf.mutableBytes)
-        for i in 0 ..< 8 {
-            sizeBytes[i] = UInt8((length >> (i * 8)) & 0xff)
-        }
-        inHandle.writeData(sizeBuf)
-        inHandle.writeData(data)
-    }
-
     func sendJson(json: AnyObject) {
         do {
             let data = try NSJSONSerialization.dataWithJSONObject(json, options: [])
-            send(data)
+            let mutdata = NSMutableData()
+            mutdata.appendData(data)
+            let nl = [0x0a as UInt8]
+            mutdata.appendBytes(nl, length: 1)
+            inHandle.writeData(mutdata)
         } catch _ {
             print("error serializing to json")
         }
@@ -98,33 +86,33 @@ class CoreConnection {
         do {
             let json = try NSJSONSerialization.JSONObjectWithData(data, options: .AllowFragments)
             //print("got \(json)")
-            if let response = json as? [AnyObject] where response.count == 2, let cmd = response[0] as? NSString {
-                if cmd == "rpc_response" {
-                    handleRpcResponse(response[1])
-                    return
-                }
+            if !handleRpcResponse(json) {
+                callback(json)
             }
-            callback(json)
         } catch _ {
             print("json error")
         }
     }
 
-    func sendRpcAsync(request: AnyObject, callback: AnyObject? -> ()) {
+    func sendRpcAsync(method: String, params: AnyObject, callback: (AnyObject? -> ())? = nil) {
         var index = Int()
-        dispatch_sync(queue) {
-            index = self.rpcIndex
-            self.rpcIndex += 1
-            self.pending[index] = callback
+        var req = ["method": method, "params": params]
+        if let callback = callback {
+            dispatch_sync(queue) {
+                req["id"] = self.rpcIndex
+                index = self.rpcIndex
+                self.rpcIndex += 1
+                self.pending[index] = callback
+            }
         }
-        sendJson(["rpc", ["index": index, "request": request]])
+        sendJson(req)
     }
 
     // send RPC synchronously, blocking until return
-    func sendRpc(request: AnyObject) -> AnyObject? {
+    func sendRpc(method: String, params: AnyObject) -> AnyObject? {
         let semaphore = dispatch_semaphore_create(0)
         var result: AnyObject? = nil
-        sendRpcAsync(request) { r in
+        sendRpcAsync(method, params: params) { r in
             result = r
             dispatch_semaphore_signal(semaphore)
         }
@@ -132,14 +120,17 @@ class CoreConnection {
         return result
     }
 
-    func handleRpcResponse(response: AnyObject) {
-        if let resp = response as? [String: AnyObject], let index = resp["index"] as? Int {
+    func handleRpcResponse(response: AnyObject) -> Bool {
+        if let resp = response as? [String: AnyObject], let index = resp["id"] as? Int {
             var callback: (AnyObject? -> ())? = nil
             let result = resp["result"]
             dispatch_sync(queue) {
                 callback = self.pending.removeValueForKey(index)
             }
             callback?(result)
+            return true;
+        } else {
+            return false;
         }
     }
 }

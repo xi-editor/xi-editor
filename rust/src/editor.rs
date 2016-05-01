@@ -16,18 +16,19 @@ use std::cmp::max;
 use std::fs::File;
 use std::io::{Read,Write};
 use serde_json::Value;
-use serde_json::builder::ArrayBuilder;
 
 use xi_rope::rope::{Rope,RopeInfo};
 use xi_rope::interval::Interval;
 use xi_rope::delta::Delta;
 use view::View;
 
-use ::send;
+use tabs::update_tab;
 
 const MODIFIER_SHIFT: u64 = 2;
 
 pub struct Editor {
+    tabname: String,  // used for sending updates back to front-end
+
     text: Rope,
     view: View,
     delta: Delta<RopeInfo>,
@@ -41,9 +42,10 @@ pub struct Editor {
     col: usize  // maybe this should live in view, it's similar to selection
 }
 
-impl Default for Editor {
-    fn default() -> Editor {
+impl Editor {
+    pub fn new(tabname: &str) -> Editor {
         Editor {
+            tabname: tabname.to_string(),
             text: Rope::from(""),
             view: View::new(),
             dirty: false,
@@ -52,12 +54,6 @@ impl Default for Editor {
             scroll_to: Some(0),
             col: 0
         }
-    }
-}
-
-impl Editor {
-    pub fn new() -> Editor {
-        Editor::default()
     }
 
     fn insert(&mut self, s: &str) {
@@ -111,9 +107,7 @@ impl Editor {
     // render if needed, sending to ui
     fn render(&mut self) {
         if self.dirty {
-            if let Err(e) = send(&self.view.render(&self.text, self.scroll_to)) {
-                print_err!("send error in render method: {}", e);
-            }
+            update_tab(&self.view.render(&self.text, self.scroll_to), &self.tabname);
             self.dirty = false;
             self.scroll_to = None;
         }
@@ -247,7 +241,8 @@ impl Editor {
     }
 
     fn do_open(&mut self, args: &Value) {
-        if let Some(path) = args.as_string() {
+        if let Some(path) = args.as_object()
+                .and_then(|v| v.get("filename")).and_then(|v| v.as_string()) {
             match File::open(&path) {
                 Ok(mut f) => {
                     let mut s = String::new();
@@ -263,7 +258,8 @@ impl Editor {
     }
 
     fn do_save(&mut self, args: &Value) {
-        if let Some(path) = args.as_string() {
+        if let Some(path) = args.as_object()
+                .and_then(|v| v.get("filename")).and_then(|v| v.as_string()) {
             match File::create(&path) {
                 Ok(mut f) => {
                     for chunk in self.text.iter_chunks(0, self.text.len()) {
@@ -327,68 +323,44 @@ impl Editor {
         self.dirty = true;
     }
 
-    fn dispatch_rpc(&mut self, cmd: &str, args: &Value) -> Value {
-        match cmd {
-            "render_lines" => self.do_render_lines(args),
-            _ => Value::Null
-        }
-    }
-
-    fn do_rpc(&mut self, args: &Value) {
-        if let Some(dict) = args.as_object() {
-            let index = dict.get("index").unwrap();
-            let request = dict.get("request").unwrap();
-            if let Some(array) = request.as_array() {
-                if let Some(cmd) = array[0].as_string() {
-                    let result = self.dispatch_rpc(cmd, &array[1]);
-                    if let Err(e) = send(&ArrayBuilder::new()
-                        .push("rpc_response")
-                        .push_object(|builder|
-                            builder
-                                .insert("index", index)
-                                .insert("result", result)
-                        )
-                        .unwrap()
-                    ) {
-                        print_err!("send error in do_rpc method: {}", e);
-                    }
-                }
-            }
-        }
-    }
-
-    pub fn do_cmd(&mut self, cmd: &str, args: &Value) {
-        match cmd {
-            "rpc" => self.do_rpc(args),
-            "key" => self.do_key(args),
-            "insert" => self.do_insert(args),
-            "delete_backward" => self.delete_backward(),
-            "insert_newline" => self.insert_newline(),
-            "move_up" => self.move_up(0),
-            "move_up_and_modify_selection" => self.move_up(MODIFIER_SHIFT),
-            "move_down" => self.move_down(0),
-            "move_down_and_modify_selection" => self.move_down(MODIFIER_SHIFT),
-            "move_left" => self.move_left(0),
-            "move_left_and_modify_selection" => self.move_left(MODIFIER_SHIFT),
-            "move_right" => self.move_right(0),
-            "move_right_and_modify_selection" => self.move_right(MODIFIER_SHIFT),
-            "scroll_page_up" => self.scroll_page_up(0),
-            "page_up" => self.scroll_page_up(0),
-            "page_up_and_modify_selection" => self.scroll_page_up(MODIFIER_SHIFT),
-            "scroll_page_down" => self.scroll_page_down(0),
-            "page_down" => self.scroll_page_down(0),
-            "page_down_and_modify_selection" => self.scroll_page_down(MODIFIER_SHIFT),
-            "open" => self.do_open(args),
-            "save" => self.do_save(args),
-            "scroll" => self.do_scroll(args),
-            "click" => self.do_click(args),
-            "drag" => self.do_drag(args),
-            "debug_rewrap" => self.debug_rewrap(),
-            "debug_test_fg_spans" => self.debug_test_fg_spans(),
-            _ => print_err!("unknown cmd {}", cmd)
-        }
+    pub fn do_rpc(&mut self, method: &str, params: &Value) -> Option<Value> {
+        let result = match method {
+            "render_lines" => Some(self.do_render_lines(params)),
+            "key" => async(self.do_key(params)),
+            "insert" => async(self.do_insert(params)),
+            "delete_backward" => async(self.delete_backward()),
+            "insert_newline" => async(self.insert_newline()),
+            "move_up" => async(self.move_up(0)),
+            "move_up_and_modify_selection" => async(self.move_up(MODIFIER_SHIFT)),
+            "move_down" => async(self.move_down(0)),
+            "move_down_and_modify_selection" => async(self.move_down(MODIFIER_SHIFT)),
+            "move_left" => async(self.move_left(0)),
+            "move_left_and_modify_selection" => async(self.move_left(MODIFIER_SHIFT)),
+            "move_right" => async(self.move_right(0)),
+            "move_right_and_modify_selection" => async(self.move_right(MODIFIER_SHIFT)),
+            "scroll_page_up" => async(self.scroll_page_up(0)),
+            "page_up" => async(self.scroll_page_up(0)),
+            "page_up_and_modify_selection" => async(self.scroll_page_up(MODIFIER_SHIFT)),
+            "scroll_page_down" => async(self.scroll_page_down(0)),
+            "page_down" => async(self.scroll_page_down(0)),
+            "page_down_and_modify_selection" => async(self.scroll_page_down(MODIFIER_SHIFT)),
+            "open" => async(self.do_open(params)),
+            "save" => async(self.do_save(params)),
+            "scroll" => async(self.do_scroll(params)),
+            "click" => async(self.do_click(params)),
+            "drag" => async(self.do_drag(params)),
+            "debug_rewrap" => async(self.debug_rewrap()),
+            "debug_test_fg_spans" => async(self.debug_test_fg_spans()),
+            _ => async(print_err!("unknown method {}", method))
+        };
         // TODO: could defer this until input quiesces - will this help?
         self.commit_delta();
         self.render();
+        result
     }
+}
+
+// wrapper so async methods don't have to return None themselves
+fn async(_: ()) -> Option<Value> {
+    None
 }
