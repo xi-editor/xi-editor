@@ -26,19 +26,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let corePath = NSBundle.mainBundle().pathForResource("xicore", ofType: "")
         if let corePath = corePath {
-            coreConnection = CoreConnection(path: corePath) { [weak self] data -> () in
-                self?.handleCoreCmd(data)
+            coreConnection = CoreConnection(path: corePath) { [weak self] json -> () in
+                self?.handleCoreCmd(json)
             }
         }
         appWindowController?.coreConnection = coreConnection
 
         appWindowController?.showWindow(self)
     }
-    
+
     func handleCoreCmd(json: AnyObject) {
-        if let response = json as? [AnyObject] where response.count == 2, let cmd = response[0] as? NSString {
-            if cmd == "settext" {
-                self.appWindowController?.editView.updateSafe(response[1] as! [String: AnyObject])
+        if let obj = json as? [String : AnyObject], let method = obj["method"] as? String, let params = obj["params"] {
+            handleRpc(method, params: params)
+        } else {
+            print("unknown json from core:", json)
+        }
+    }
+
+    func handleRpc(method: String, params: AnyObject) {
+        if method == "update" {
+            if let obj = params as? [String : AnyObject], let update = obj["update"] as? [String : AnyObject] {
+                // TODO: dispatch to appropriate editView based on obj["tab"]
+                self.appWindowController?.editView.updateSafe(update)
             }
         }
     }
@@ -55,7 +64,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func application(sender: NSApplication, openFile filename: String) -> Bool {
         appWindowController?.filename = filename
-        coreConnection?.sendJson(["open", filename])
+        appWindowController?.editView.sendRpcAsync("open", params: ["filename": filename])
         return true  // TODO: should be RPC instead of async, plumb errors
     }
 

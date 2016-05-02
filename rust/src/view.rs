@@ -15,7 +15,7 @@
 use std::cmp::{min,max};
 
 use serde_json::Value;
-use serde_json::builder::ArrayBuilder;
+use serde_json::builder::{ArrayBuilder,ObjectBuilder};
 
 use xi_rope::rope::{Rope, LinesMetric, RopeInfo};
 use xi_rope::delta::{Delta};
@@ -187,21 +187,16 @@ impl View {
         let last_line = self.first_line + self.height + SCROLL_SLOP;
         let lines = self.render_lines(text, first_line, last_line);
         let height = self.offset_to_line_col(text, text.len()).0 + 1;
-        ArrayBuilder::new()
-            .push("settext")
-            .push_object(|builder| {
-                let mut builder = builder
-                    .insert("lines", lines)
-                    .insert("first_line", first_line)
-                    .insert("height", height);
-                if let Some(scrollto) = scroll_to {
-                    let (line, col) = self.offset_to_line_col(text, scrollto);
-                    builder = builder.insert_array("scrollto", |builder|
-                        builder.push(line).push(col));
-                }
-                builder
-            })
-            .unwrap()
+        let mut builder = ObjectBuilder::new()
+            .insert("lines", lines)
+            .insert("first_line", first_line)
+            .insert("height", height);
+        if let Some(scrollto) = scroll_to {
+            let (line, col) = self.offset_to_line_col(text, scrollto);
+            builder = builder.insert_array("scrollto", |builder|
+                builder.push(line).push(col));
+        }
+        builder.unwrap()
     }
 
     // How should we count "column"? Valid choices include:
