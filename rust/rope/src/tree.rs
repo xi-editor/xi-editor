@@ -512,7 +512,8 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
             self.leaf = None;
             return None;
         }
-        let offset_in_leaf = self.position - self.offset_of_leaf;
+        let orig_pos = self.position;
+        let offset_in_leaf = orig_pos - self.offset_of_leaf;
         if let Some(l) = self.leaf {
             if offset_in_leaf > 0 {
                 if let Some(offset_in_leaf) = M::prev(l, offset_in_leaf) {
@@ -539,7 +540,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
                     // leaf doesn't contain boundary, keep scanning
                     continue;
                 }
-                if M::is_boundary(l, l.len()) {
+                if self.offset_of_leaf + l.len() < orig_pos && M::is_boundary(l, l.len()) {
                     let _ = self.next_leaf();
                     return Some(self.position);
                 }
