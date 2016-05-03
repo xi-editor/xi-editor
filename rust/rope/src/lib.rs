@@ -64,6 +64,38 @@ fn is_char_boundary(s: &str, index: usize) -> bool {
 /// Also note: in addition to the `From` traits described below, this module
 /// implements `From<Rope> for String` and `From<&Rope> for String`, for easy
 /// conversions in both directions.
+///
+/// # Examples
+///
+/// Create a `Rope` from a `String`:
+///
+/// ```rust
+/// # use xi_rope::Rope;
+/// let a = Rope::from("hello ");
+/// let b = Rope::from("world");
+/// assert_eq!("hello world", String::from(a.clone() + b.clone()));
+/// assert!("hello world" == a + b);
+/// ```
+///
+/// Get a slice of a `Rope`:
+///
+/// ```rust
+/// # use xi_rope::Rope;
+/// let a = Rope::from("hello world");
+/// let b = a.slice(1, 9);
+/// assert_eq!("ello wor", String::from(&b));
+/// let c = b.slice(1, 7);
+/// assert_eq!("llo wo", String::from(c));
+/// ```
+///
+/// Replace part of a `Rope`:
+///
+/// ```rust
+/// # use xi_rope::Rope;
+/// let mut a = Rope::from("hello world");
+/// a.edit_str(1, 9, "era");
+/// assert_eq!("herald", String::from(a));
+/// ```
 #[derive(Clone)]
 pub struct Rope {
     root: Node,
@@ -1119,37 +1151,6 @@ impl<'a> PartialEq<Rope> for Cow<'a, str> {
     fn eq(&self, rhs: &Rope) -> bool {
         rhs == self
     }
-}
-
-#[test]
-fn concat_small() {
-    let a = Rope::from("hello ");
-    let b = Rope::from("world");
-    assert_eq!("hello world", String::from(a.clone() + b.clone()));
-    assert!("hello world" == a + b);
-}
-
-#[test]
-fn subrange_small() {
-    let a = Rope::from("hello world");
-    let b = a.slice(1, 9);
-    assert_eq!("ello wor", String::from(&b));
-    let c = b.slice(1, 7);
-    assert_eq!("llo wo", String::from(c));
-}
-
-#[test]
-fn replace_small() {
-    let mut a = Rope::from("hello world");
-    a.edit_str(1, 9, "era");
-    assert_eq!("herald", String::from(a));
-}
-
-#[test]
-fn replace_rope_small() {
-    let mut a = Rope::from("hello world");
-    a.edit(1, 9, Rope::from("era"));
-    assert_eq!("herald", String::from(a));
 }
 
 #[test]
