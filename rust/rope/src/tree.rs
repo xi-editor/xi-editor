@@ -592,6 +592,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
         }
         for i in 0..CURSOR_CACHE_SIZE {
             if self.cache[i].is_none() {
+                // this probably can't happen
                 self.leaf = None;
                 return None;
             }
@@ -607,6 +608,10 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
                 self.offset_of_leaf = self.position;
                 return self.get_leaf();
             }
+        }
+        if self.offset_of_leaf + self.leaf.unwrap().len() == self.root.len() {
+            self.leaf = None;
+            return None;
         }
         self.descend();
         self.get_leaf()
