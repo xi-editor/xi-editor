@@ -119,9 +119,6 @@ impl View {
             let pos = match pos {
                 Some(pos) => pos,
                 None => {
-                    if start_pos == text.len() {
-                        break;
-                    }
                     is_last_line = true;
                     text.len()
                 }
@@ -154,18 +151,11 @@ impl View {
                     builder.push("cursor")
                         .push(cursor_col)
                 );
-            }
-            builder = builder.push(line_builder.unwrap());
+            }            builder = builder.push(line_builder.unwrap());
             line_num += 1;
             if is_last_line || line_num == last_line {
                 break;
             }
-        }
-        if line_num == cursor_line {
-            builder = builder.push_array(|builder|
-                builder.push("")
-                    .push_array(|builder|
-                        builder.push("cursor").push(0)));
         }
         builder.unwrap()
     }
