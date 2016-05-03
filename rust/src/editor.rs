@@ -323,6 +323,27 @@ impl Editor {
         self.dirty = true;
     }
 
+    fn do_cut(&mut self) -> Value {
+        let min = self.view.sel_min();
+        if min != self.view.sel_max() {
+            let del_interval = Interval::new_closed_open(min, self.view.sel_max());
+            self.add_delta(del_interval, Rope::from(""), min);
+            let val = self.text.slice_to_string(min, self.view.sel_max());
+            Value::String(val)
+        } else {
+            Value::Null
+        }
+    }
+
+    fn do_copy(&mut self) -> Value {
+        if self.view.sel_start != self.view.sel_end {
+            let val = self.text.slice_to_string(self.view.sel_min(), self.view.sel_max());
+            Value::String(val)
+        } else {
+            Value::Null
+        }
+    }
+
     pub fn do_rpc(&mut self, method: &str, params: &Value) -> Option<Value> {
         let result = match method {
             "render_lines" => Some(self.do_render_lines(params)),
@@ -349,6 +370,8 @@ impl Editor {
             "scroll" => async(self.do_scroll(params)),
             "click" => async(self.do_click(params)),
             "drag" => async(self.do_drag(params)),
+            "cut" => Some(self.do_cut()),
+            "copy" => Some(self.do_copy()),
             "debug_rewrap" => async(self.debug_rewrap()),
             "debug_test_fg_spans" => async(self.debug_test_fg_spans()),
             _ => async(print_err!("unknown method {}", method))

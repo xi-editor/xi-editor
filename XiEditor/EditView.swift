@@ -253,7 +253,36 @@ class EditView: NSView {
             }
         }
     }
-    
+
+    func cutCopy(method: String) {
+        let text = sendRpc(method, params: [])
+        if let text = text as? String {
+            let pasteboard = NSPasteboard.generalPasteboard()
+            pasteboard.clearContents()
+            pasteboard.writeObjects([text])
+        }
+    }
+
+    func cut(sender: AnyObject?) {
+        cutCopy("cut")
+    }
+
+    func copy(sender: AnyObject?) {
+        cutCopy("copy")
+    }
+
+    func paste(sender: AnyObject?) {
+        let pasteboard = NSPasteboard.generalPasteboard()
+        if let items = pasteboard.pasteboardItems {
+            for element in items {
+                if let str = element.stringForType("public.utf8-plain-text") {
+                    insertText(str)
+                    break
+                }
+            }
+        }
+    }
+
     override func mouseDown(theEvent: NSEvent) {
         let (line, col) = pointToLineCol(convertPoint(theEvent.locationInWindow, fromView: nil))
         lastDragLineCol = (line, col)

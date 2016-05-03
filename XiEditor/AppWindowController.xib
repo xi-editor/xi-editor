@@ -19,7 +19,7 @@
             <windowStyleMask key="styleMask" titled="YES" closable="YES" miniaturizable="YES" resizable="YES"/>
             <windowPositionMask key="initialPositionMask" leftStrut="YES" rightStrut="YES" topStrut="YES" bottomStrut="YES"/>
             <rect key="contentRect" x="196" y="240" width="480" height="270"/>
-            <rect key="screenRect" x="0.0" y="0.0" width="2560" height="1417"/>
+            <rect key="screenRect" x="0.0" y="0.0" width="1440" height="877"/>
             <view key="contentView" id="se5-gp-TjO">
                 <rect key="frame" x="0.0" y="0.0" width="480" height="270"/>
                 <autoresizingMask key="autoresizingMask"/>
@@ -44,8 +44,8 @@
                             <autoresizingMask key="autoresizingMask"/>
                         </scroller>
                     </scrollView>
-                    <customView misplaced="YES" translatesAutoresizingMaskIntoConstraints="NO" id="5Jy-03-fcM" customClass="ShadowView" customModule="XiEditor" customModuleProvider="target">
-                        <rect key="frame" x="0.0" y="0.0" width="480" height="265"/>
+                    <customView translatesAutoresizingMaskIntoConstraints="NO" id="5Jy-03-fcM" customClass="ShadowView" customModule="XiEditor" customModuleProvider="target">
+                        <rect key="frame" x="0.0" y="0.0" width="481" height="270"/>
                     </customView>
                 </subviews>
                 <constraints>
