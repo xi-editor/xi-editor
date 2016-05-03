@@ -133,7 +133,7 @@ impl Editor {
     fn insert_newline(&mut self) {
         self.insert("\n");
     }
-    
+
     fn move_up(&mut self, flags: u64) {
         let old_offset = self.view.sel_end;
         let offset = self.view.vertical_motion(&self.text, -1, self.col);
@@ -182,8 +182,7 @@ impl Editor {
         let old_offset = self.view.sel_end;
         let offset = self.view.vertical_motion(&self.text, scroll, self.col);
         self.set_cursor_or_sel(offset, flags, old_offset == offset);
-        let scroll_offset = self.view.vertical_motion(&self.text, scroll, self.col);
-        self.scroll_to = Some(scroll_offset);
+        self.scroll_to = Some(offset);
     }
 
     fn scroll_page_down(&mut self, flags: u64) {
@@ -191,8 +190,7 @@ impl Editor {
         let old_offset = self.view.sel_end;
         let offset = self.view.vertical_motion(&self.text, scroll, self.col);
         self.set_cursor_or_sel(offset, flags, old_offset == offset);
-        let scroll_offset = self.view.vertical_motion(&self.text, scroll, self.col);
-        self.scroll_to = Some(scroll_offset);
+        self.scroll_to = Some(offset);
     }
 
     fn do_key(&mut self, args: &Value) {
