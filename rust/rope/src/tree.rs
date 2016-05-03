@@ -179,6 +179,14 @@ impl<N: NodeInfo> Node<N> {
     fn height(&self) -> usize {
         self.0.height
     }
+    
+    fn is_leaf(&self) -> bool {
+        if let NodeVal::Leaf(_) = self.0.val {
+            true
+        } else {
+            false
+        }
+    }
 
     fn interval(&self) -> Interval {
         self.0.info.interval(self.0.len)
@@ -222,8 +230,9 @@ impl<N: NodeInfo> Node<N> {
         }
     }
 
-    // precondition: both ropes are leaves
     fn merge_leaves(mut rope1: Node<N>, rope2: Node<N>) -> Node<N> {
+        debug_assert!(rope1.is_leaf() && rope2.is_leaf());
+
         let both_ok = rope1.get_leaf().is_ok_child() && rope2.get_leaf().is_ok_child();
         if both_ok {
             return Node::from_nodes(vec![rope1, rope2]);

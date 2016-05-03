@@ -380,8 +380,15 @@ impl Node {
     fn height(&self) -> usize {
         self.0.height
     }
+    
+    fn is_leaf(&self) -> bool {
+        if let NodeVal::Leaf(_) = self.0.val {
+            true
+        } else {
+            false
+        }
+    }
 
-    // rename to len, to be consistent with Rust?
     pub fn len(&self) -> usize {
         self.0.len
     }
@@ -412,9 +419,10 @@ impl Node {
             NodeVal::Internal(ref pieces) => (pieces.len() >= MIN_CHILDREN)
         }
     }
-
-    // precondition: s.len() <= MAX_LEAF
+ 
     fn from_string_piece(s: String) -> Node {
+        debug_assert!(s.len() <= MAX_LEAF);
+
         Node::new(NodeBody {
             height: 0,
             len: s.len(),
@@ -423,8 +431,9 @@ impl Node {
         })
     }
 
-    // precondition 2 <= pieces.len() <= MAX_CHILDREN
     fn from_pieces(pieces: Vec<Node>) -> Node {
+        debug_assert!(2 <= pieces.len() && pieces.len() <= MAX_CHILDREN);
+
         Node::new(NodeBody {
             height: pieces[0].height() + 1,
             len: pieces.iter().fold(0, |sum, r| sum + r.len()),
@@ -448,8 +457,9 @@ impl Node {
         }
     }
 
-    // precondition: both ropes are leaves
     fn merge_leaves(rope1: Node, rope2: Node) -> Node {
+        debug_assert!(rope1.is_leaf() && rope2.is_leaf());
+
         if rope1.len() >= MIN_LEAF && rope2.len() >= MIN_LEAF {
             return Node::from_pieces(vec![rope1, rope2]);
         }
@@ -559,8 +569,8 @@ impl Node {
         *self = b.build()
     }
 
-    // precondition: leaf
     fn try_replace_leaf_str(n: &mut Node, start: usize, end: usize, new: &str) -> bool {
+        debug_assert!(n.is_leaf());
         // TODO: maybe try to mutate in place, using either unsafe or
         // special-case single-char insert and remove (plus trunc, append)
 
@@ -731,8 +741,9 @@ impl Node {
         (node.get_leaf(), offset)
     }
 
-    // precondition: offset > 0 and in range
     fn prev_codepoint_offset(&self, offset: usize) -> usize {
+        debug_assert!(offset > 0 && offset <= self.len());
+
         let (s, try_offset) = self.leaf_at(offset - 1);
         let mut len = 1;
         while !is_char_boundary(s, try_offset + 1 - len) {
@@ -741,8 +752,9 @@ impl Node {
         offset - len
     }
 
-    // precondition offset < len
     fn next_codepoint_offset(&self, offset: usize) -> usize {
+        debug_assert!(offset < self.len());
+
         let (s, try_offset) = self.leaf_at(offset);
         let b = s.as_bytes()[try_offset];
         offset + match b {
@@ -807,8 +819,9 @@ impl RopeBuilder {
         }
     }
 
-    // precondition: s.len() <= MAX_LEAF
     fn push_str_short(&mut self, s: &str) {
+        debug_assert!(s.len() <= MAX_LEAF);
+
         self.push(Node::from_string_piece(s.to_owned()));
     }
 
