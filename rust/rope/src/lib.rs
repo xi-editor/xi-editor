@@ -537,6 +537,7 @@ impl Node {
         if let NodeVal::Leaf(ref s) = new.0.val {
             if s.len() < MIN_LEAF {
                 self.replace_str(start, end, s);
+                return;
             }
         }
         let mut b = RopeBuilder::new();
@@ -1121,6 +1122,13 @@ fn subrange_small() {
 fn replace_small() {
     let mut a = Rope::from("hello world");
     a.edit_str(1, 9, "era");
+    assert_eq!("herald", String::from(a));
+}
+
+#[test]
+fn replace_rope_small() {
+    let mut a = Rope::from("hello world");
+    a.edit(1, 9, Rope::from("era"));
     assert_eq!("herald", String::from(a));
 }
 
