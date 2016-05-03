@@ -84,7 +84,7 @@ contribute to the above goals:
 
 * ***Asynchronous operations***. The editor should never, ever block and prevent the
   user from getting their work done. For example, autosave will spawn a
-  thread with a snapshot of the current editor buffer (the peristent rope
+  thread with a snapshot of the current editor buffer (the persistent rope
   data structure is copy-on-write so this operation is nearly free), which can
   then proceed to write out to disk at its leisure, while the buffer is still
   fully editable.
