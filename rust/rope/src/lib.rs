@@ -484,38 +484,45 @@ impl Node {
     }
 
     fn concat(rope1: Node, rope2: Node) -> Node {
+        use std::cmp::Ordering;
+
         let h1 = rope1.height();
         let h2 = rope2.height();
-        if h1 == h2 {
-            if rope1.is_ok_child() && rope2.is_ok_child() {
-                return Node::from_pieces(vec![rope1, rope2]);
-            }
-            if h1 == 0 {
-                return Node::merge_leaves(rope1, rope2);
-            }
-            Node::merge_nodes(rope1.get_children(), rope2.get_children())
-        } else if h1 < h2 {
-            let children2 = rope2.get_children();
-            if h1 == h2 - 1 && rope1.is_ok_child() {
-                return Node::merge_nodes(&[rope1], children2);
-            }
-            let newrope = Node::concat(rope1, children2[0].clone());
-            if newrope.height() == h2 - 1 {
-                Node::merge_nodes(&[newrope], &children2[1..])
-            } else {
-                Node::merge_nodes(newrope.get_children(), &children2[1..])
-            }
-        } else {  // h1 > h2
-            let children1 = rope1.get_children();
-            if h2 == h1 - 1 && rope2.is_ok_child() {
-                return Node::merge_nodes(children1, &[rope2]);
-            }
-            let lastix = children1.len() - 1;
-            let newrope = Node::concat(children1[lastix].clone(), rope2);
-            if newrope.height() == h1 - 1 {
-                Node::merge_nodes(&children1[..lastix], &[newrope])
-            } else {
-                Node::merge_nodes(&children1[..lastix], newrope.get_children())
+
+        match h1.cmp(&h2) {
+            Ordering::Less => {
+                let children2 = rope2.get_children();
+                if h1 == h2 - 1 && rope1.is_ok_child() {
+                    return Node::merge_nodes(&[rope1], children2);
+                }
+                let newrope = Node::concat(rope1, children2[0].clone());
+                if newrope.height() == h2 - 1 {
+                    Node::merge_nodes(&[newrope], &children2[1..])
+                } else {
+                    Node::merge_nodes(newrope.get_children(), &children2[1..])
+                }
+            },
+            Ordering::Equal => {
+                if rope1.is_ok_child() && rope2.is_ok_child() {
+                    return Node::from_pieces(vec![rope1, rope2]);
+                }
+                if h1 == 0 {
+                    return Node::merge_leaves(rope1, rope2);
+                }
+                Node::merge_nodes(rope1.get_children(), rope2.get_children())
+            },
+            Ordering::Greater => {
+                let children1 = rope1.get_children();
+                if h2 == h1 - 1 && rope2.is_ok_child() {
+                    return Node::merge_nodes(children1, &[rope2]);
+                }
+                let lastix = children1.len() - 1;
+                let newrope = Node::concat(children1[lastix].clone(), rope2);
+                if newrope.height() == h1 - 1 {
+                    Node::merge_nodes(&children1[..lastix], &[newrope])
+                } else {
+                    Node::merge_nodes(&children1[..lastix], newrope.get_children())
+                }
             }
         }
     }
