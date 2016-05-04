@@ -64,6 +64,38 @@ fn is_char_boundary(s: &str, index: usize) -> bool {
 /// Also note: in addition to the `From` traits described below, this module
 /// implements `From<Rope> for String` and `From<&Rope> for String`, for easy
 /// conversions in both directions.
+///
+/// # Examples
+///
+/// Create a `Rope` from a `String`:
+///
+/// ```rust
+/// # use xi_rope::Rope;
+/// let a = Rope::from("hello ");
+/// let b = Rope::from("world");
+/// assert_eq!("hello world", String::from(a.clone() + b.clone()));
+/// assert!("hello world" == a + b);
+/// ```
+///
+/// Get a slice of a `Rope`:
+///
+/// ```rust
+/// # use xi_rope::Rope;
+/// let a = Rope::from("hello world");
+/// let b = a.slice(1, 9);
+/// assert_eq!("ello wor", String::from(&b));
+/// let c = b.slice(1, 7);
+/// assert_eq!("llo wo", String::from(c));
+/// ```
+///
+/// Replace part of a `Rope`:
+///
+/// ```rust
+/// # use xi_rope::Rope;
+/// let mut a = Rope::from("hello world");
+/// a.edit_str(1, 9, "era");
+/// assert_eq!("herald", String::from(a));
+/// ```
 #[derive(Clone)]
 pub struct Rope {
     root: Node,
@@ -380,8 +412,11 @@ impl Node {
     fn height(&self) -> usize {
         self.0.height
     }
+    
+    fn is_leaf(&self) -> bool {
+        self.0.height == 0
+    }
 
-    // rename to len, to be consistent with Rust?
     pub fn len(&self) -> usize {
         self.0.len
     }
@@ -412,9 +447,10 @@ impl Node {
             NodeVal::Internal(ref pieces) => (pieces.len() >= MIN_CHILDREN)
         }
     }
-
-    // precondition: s.len() <= MAX_LEAF
+ 
     fn from_string_piece(s: String) -> Node {
+        debug_assert!(s.len() <= MAX_LEAF);
+
         Node::new(NodeBody {
             height: 0,
             len: s.len(),
@@ -423,8 +459,9 @@ impl Node {
         })
     }
 
-    // precondition 2 <= pieces.len() <= MAX_CHILDREN
     fn from_pieces(pieces: Vec<Node>) -> Node {
+        debug_assert!(2 <= pieces.len() && pieces.len() <= MAX_CHILDREN);
+
         Node::new(NodeBody {
             height: pieces[0].height() + 1,
             len: pieces.iter().fold(0, |sum, r| sum + r.len()),
@@ -448,8 +485,9 @@ impl Node {
         }
     }
 
-    // precondition: both ropes are leaves
     fn merge_leaves(rope1: Node, rope2: Node) -> Node {
+        debug_assert!(rope1.is_leaf() && rope2.is_leaf());
+
         if rope1.len() >= MIN_LEAF && rope2.len() >= MIN_LEAF {
             return Node::from_pieces(vec![rope1, rope2]);
         }
@@ -474,38 +512,45 @@ impl Node {
     }
 
     fn concat(rope1: Node, rope2: Node) -> Node {
+        use std::cmp::Ordering;
+
         let h1 = rope1.height();
         let h2 = rope2.height();
-        if h1 == h2 {
-            if rope1.is_ok_child() && rope2.is_ok_child() {
-                return Node::from_pieces(vec![rope1, rope2]);
-            }
-            if h1 == 0 {
-                return Node::merge_leaves(rope1, rope2);
-            }
-            Node::merge_nodes(rope1.get_children(), rope2.get_children())
-        } else if h1 < h2 {
-            let children2 = rope2.get_children();
-            if h1 == h2 - 1 && rope1.is_ok_child() {
-                return Node::merge_nodes(&[rope1], children2);
-            }
-            let newrope = Node::concat(rope1, children2[0].clone());
-            if newrope.height() == h2 - 1 {
-                Node::merge_nodes(&[newrope], &children2[1..])
-            } else {
-                Node::merge_nodes(newrope.get_children(), &children2[1..])
-            }
-        } else {  // h1 > h2
-            let children1 = rope1.get_children();
-            if h2 == h1 - 1 && rope2.is_ok_child() {
-                return Node::merge_nodes(children1, &[rope2]);
-            }
-            let lastix = children1.len() - 1;
-            let newrope = Node::concat(children1[lastix].clone(), rope2);
-            if newrope.height() == h1 - 1 {
-                Node::merge_nodes(&children1[..lastix], &[newrope])
-            } else {
-                Node::merge_nodes(&children1[..lastix], newrope.get_children())
+
+        match h1.cmp(&h2) {
+            Ordering::Less => {
+                let children2 = rope2.get_children();
+                if h1 == h2 - 1 && rope1.is_ok_child() {
+                    return Node::merge_nodes(&[rope1], children2);
+                }
+                let newrope = Node::concat(rope1, children2[0].clone());
+                if newrope.height() == h2 - 1 {
+                    Node::merge_nodes(&[newrope], &children2[1..])
+                } else {
+                    Node::merge_nodes(newrope.get_children(), &children2[1..])
+                }
+            },
+            Ordering::Equal => {
+                if rope1.is_ok_child() && rope2.is_ok_child() {
+                    return Node::from_pieces(vec![rope1, rope2]);
+                }
+                if h1 == 0 {
+                    return Node::merge_leaves(rope1, rope2);
+                }
+                Node::merge_nodes(rope1.get_children(), rope2.get_children())
+            },
+            Ordering::Greater => {
+                let children1 = rope1.get_children();
+                if h2 == h1 - 1 && rope2.is_ok_child() {
+                    return Node::merge_nodes(children1, &[rope2]);
+                }
+                let lastix = children1.len() - 1;
+                let newrope = Node::concat(children1[lastix].clone(), rope2);
+                if newrope.height() == h1 - 1 {
+                    Node::merge_nodes(&children1[..lastix], &[newrope])
+                } else {
+                    Node::merge_nodes(&children1[..lastix], newrope.get_children())
+                }
             }
         }
     }
@@ -559,8 +604,8 @@ impl Node {
         *self = b.build()
     }
 
-    // precondition: leaf
     fn try_replace_leaf_str(n: &mut Node, start: usize, end: usize, new: &str) -> bool {
+        debug_assert!(n.is_leaf());
         // TODO: maybe try to mutate in place, using either unsafe or
         // special-case single-char insert and remove (plus trunc, append)
 
@@ -731,8 +776,9 @@ impl Node {
         (node.get_leaf(), offset)
     }
 
-    // precondition: offset > 0 and in range
     fn prev_codepoint_offset(&self, offset: usize) -> usize {
+        debug_assert!(offset > 0 && offset <= self.len());
+
         let (s, try_offset) = self.leaf_at(offset - 1);
         let mut len = 1;
         while !is_char_boundary(s, try_offset + 1 - len) {
@@ -741,8 +787,9 @@ impl Node {
         offset - len
     }
 
-    // precondition offset < len
     fn next_codepoint_offset(&self, offset: usize) -> usize {
+        debug_assert!(offset < self.len());
+
         let (s, try_offset) = self.leaf_at(offset);
         let b = s.as_bytes()[try_offset];
         offset + match b {
@@ -807,8 +854,9 @@ impl RopeBuilder {
         }
     }
 
-    // precondition: s.len() <= MAX_LEAF
     fn push_str_short(&mut self, s: &str) {
+        debug_assert!(s.len() <= MAX_LEAF);
+
         self.push(Node::from_string_piece(s.to_owned()));
     }
 
@@ -1099,37 +1147,6 @@ impl<'a> PartialEq<Rope> for Cow<'a, str> {
     fn eq(&self, rhs: &Rope) -> bool {
         rhs == self
     }
-}
-
-#[test]
-fn concat_small() {
-    let a = Rope::from("hello ");
-    let b = Rope::from("world");
-    assert_eq!("hello world", String::from(a.clone() + b.clone()));
-    assert!("hello world" == a + b);
-}
-
-#[test]
-fn subrange_small() {
-    let a = Rope::from("hello world");
-    let b = a.slice(1, 9);
-    assert_eq!("ello wor", String::from(&b));
-    let c = b.slice(1, 7);
-    assert_eq!("llo wo", String::from(c));
-}
-
-#[test]
-fn replace_small() {
-    let mut a = Rope::from("hello world");
-    a.edit_str(1, 9, "era");
-    assert_eq!("herald", String::from(a));
-}
-
-#[test]
-fn replace_rope_small() {
-    let mut a = Rope::from("hello world");
-    a.edit(1, 9, Rope::from("era"));
-    assert_eq!("herald", String::from(a));
 }
 
 #[test]
