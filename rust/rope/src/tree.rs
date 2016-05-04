@@ -181,11 +181,7 @@ impl<N: NodeInfo> Node<N> {
     }
     
     fn is_leaf(&self) -> bool {
-        if let NodeVal::Leaf(_) = self.0.val {
-            true
-        } else {
-            false
-        }
+        self.0.height == 0
     }
 
     fn interval(&self) -> Interval {

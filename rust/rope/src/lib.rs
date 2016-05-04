@@ -414,11 +414,7 @@ impl Node {
     }
     
     fn is_leaf(&self) -> bool {
-        if let NodeVal::Leaf(_) = self.0.val {
-            true
-        } else {
-            false
-        }
+        self.0.height == 0
     }
 
     pub fn len(&self) -> usize {
