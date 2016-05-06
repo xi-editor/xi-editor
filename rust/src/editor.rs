@@ -17,9 +17,10 @@ use std::fs::File;
 use std::io::{Read,Write};
 use serde_json::Value;
 
-use xi_rope::rope::{Rope,RopeInfo};
+use xi_rope::rope::{LinesMetric,Rope,RopeInfo};
 use xi_rope::interval::Interval;
 use xi_rope::delta::Delta;
+use xi_rope::tree::Cursor;
 use view::View;
 
 use tabs::update_tab;
@@ -173,6 +174,29 @@ impl Editor {
             } else {
                 self.col = self.view.offset_to_line_col(&self.text, self.view.sel_end).1;
                 // see above
+            }
+        }
+    }
+
+    fn cursor_start(&mut self) {
+        let start = self.view.sel_min() - self.col;
+        self.set_cursor(start, true);
+    }
+
+    fn cursor_end(&mut self) {
+        let current = self.view.sel_max();
+        let rope = self.text.clone();
+        let mut cursor = Cursor::new(&rope, current);
+        match cursor.next::<LinesMetric>() {
+            None => { self.set_cursor(current, true); },
+            Some(offset) => {
+                if cursor.is_boundary::<LinesMetric>() {
+                    if let Some(new) = rope.prev_grapheme_offset(offset) {
+                        self.set_cursor(new, true);
+                    }
+                } else {
+                    self.set_cursor(offset, true);
+                }
             }
         }
     }
@@ -356,9 +380,13 @@ impl Editor {
             "move_down" => async(self.move_down(0)),
             "move_down_and_modify_selection" => async(self.move_down(MODIFIER_SHIFT)),
             "move_left" => async(self.move_left(0)),
+            "move_backward" => async(self.move_left(0)),
             "move_left_and_modify_selection" => async(self.move_left(MODIFIER_SHIFT)),
             "move_right" => async(self.move_right(0)),
+            "move_forward" => async(self.move_right(0)),
             "move_right_and_modify_selection" => async(self.move_right(MODIFIER_SHIFT)),
+            "move_to_beginning_of_paragraph" => async(self.cursor_start()),
+            "move_to_end_of_paragraph" => async(self.cursor_end()),
             "scroll_page_up" => async(self.scroll_page_up(0)),
             "page_up" => async(self.scroll_page_up(0)),
             "page_up_and_modify_selection" => async(self.scroll_page_up(MODIFIER_SHIFT)),
