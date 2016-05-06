@@ -502,7 +502,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
             // not at a valid position
             return false;
         }
-        if self.position == 0 || self.position == self.root.len() ||
+        if self.position == 0 ||
                 (self.position == self.offset_of_leaf && !M::can_fragment()) {
             return true;
         }
