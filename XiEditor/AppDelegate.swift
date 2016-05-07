@@ -19,12 +19,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     var coreConnection: CoreConnection?
     var appWindowController: AppWindowController?
-    
+
     func applicationWillFinishLaunching(aNotification: NSNotification) {
         // show main app window
         appWindowController = AppWindowController(windowNibName: "AppWindowController")
 
-        let corePath = NSBundle.mainBundle().pathForResource("xicore", ofType: "")
+        let corePath = NSBundle.mainBundle().pathForResource("xi-core", ofType: "")
         if let corePath = corePath {
             coreConnection = CoreConnection(path: corePath) { [weak self] json -> () in
                 self?.handleCoreCmd(json)
@@ -73,4 +73,3 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
 }
-
