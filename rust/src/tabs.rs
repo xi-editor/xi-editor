@@ -87,8 +87,6 @@ impl Tabs {
             };
             if let Some(response) = response {
                 self.respond(response, id);
-            } else if let Some(id) = id {
-                print_err!("rpc with id={:?} not responded", id);
             }
         }
     }
