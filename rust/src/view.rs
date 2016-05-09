@@ -253,9 +253,7 @@ impl View {
     fn line_of_offset(&self, text: &Rope, offset: usize) -> usize {
         match self.breaks {
             Some(ref breaks) => {
-                let line = breaks.convert_metrics::<BreaksBaseMetric, BreaksMetric>(offset);
-                //print_err!("line_of_offset({}) = {}", offset, line);
-                line
+                breaks.convert_metrics::<BreaksBaseMetric, BreaksMetric>(offset)
             }
             None => text.line_of_offset(offset)
         }
