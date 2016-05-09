@@ -19,9 +19,9 @@ import struct
 import json
 
 def sendraw(buf):
-	sys.stdout.write(struct.pack("<q", len(buf)))
-	sys.stdout.write(buf)
-	sys.stdout.flush()
+    sys.stdout.write(struct.pack("<q", len(buf)))
+    sys.stdout.write(buf)
+    sys.stdout.flush()
 
 def send(obj):
     sendraw(json.dumps(obj))
