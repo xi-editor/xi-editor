@@ -379,18 +379,18 @@ impl Editor {
             "move_up_and_modify_selection" => async(self.move_up(MODIFIER_SHIFT)),
             "move_down" => async(self.move_down(0)),
             "move_down_and_modify_selection" => async(self.move_down(MODIFIER_SHIFT)),
-            "move_left" => async(self.move_left(0)),
+            "move_left" |
             "move_backward" => async(self.move_left(0)),
             "move_left_and_modify_selection" => async(self.move_left(MODIFIER_SHIFT)),
-            "move_right" => async(self.move_right(0)),
+            "move_right" |
             "move_forward" => async(self.move_right(0)),
             "move_right_and_modify_selection" => async(self.move_right(MODIFIER_SHIFT)),
             "move_to_beginning_of_paragraph" => async(self.cursor_start()),
             "move_to_end_of_paragraph" => async(self.cursor_end()),
-            "scroll_page_up" => async(self.scroll_page_up(0)),
+            "scroll_page_up" |
             "page_up" => async(self.scroll_page_up(0)),
             "page_up_and_modify_selection" => async(self.scroll_page_up(MODIFIER_SHIFT)),
-            "scroll_page_down" => async(self.scroll_page_down(0)),
+            "scroll_page_down" |
             "page_down" => async(self.scroll_page_down(0)),
             "page_down_and_modify_selection" => async(self.scroll_page_down(MODIFIER_SHIFT)),
             "open" => async(self.do_open(params)),

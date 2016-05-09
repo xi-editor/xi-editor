@@ -15,6 +15,7 @@
 //! A container for all the tabs being edited. Also functions as main dispatch for RPC.
 
 use std::collections::BTreeMap;
+use std::default::Default;
 use serde_json::Value;
 use serde_json::builder::ObjectBuilder;
 use serde::ser::Serialize;
@@ -22,6 +23,7 @@ use serde::ser::Serialize;
 use editor::Editor;
 use ::send;
 
+#[derive(Default)]
 pub struct Tabs {
     tabs: BTreeMap<String, Editor>,
     id_counter: usize,
@@ -29,10 +31,7 @@ pub struct Tabs {
 
 impl Tabs {
     pub fn new() -> Tabs {
-        Tabs {
-            tabs: BTreeMap::new(),
-            id_counter: 0,
-        }
+        Default::default()
     }
 
     // TODO: refactor response in here, rather than explicitly calling "respond"
