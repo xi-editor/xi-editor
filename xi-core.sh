@@ -20,8 +20,8 @@ if [[ ${ACTION:-build} = "build" ]]; then
 
     for ARCH in $ARCHS
     do
-        if [[ $(lipo -info "${BUILT_PRODUCTS_DIR}/xicore" 2>&1) != *"${ARCH}"* ]]; then
-            rm -f "${BUILT_PRODUCTS_DIR}/xicore"
+        if [[ $(lipo -info "${BUILT_PRODUCTS_DIR}/xi-core" 2>&1) != *"${ARCH}"* ]]; then
+            rm -f "${BUILT_PRODUCTS_DIR}/xi-core"
         fi
     done
 
@@ -41,12 +41,12 @@ if [[ ${ACTION:-build} = "build" ]]; then
             RUST_ARCH="aarch64"
         fi
         cargo build $RUST_CONFIGURATION_FLAG --target "${RUST_ARCH}-apple-${RUST_TARGET_OS}"
-        EXECUTABLES+=("target/${RUST_ARCH}-apple-${RUST_TARGET_OS}/${RUST_CONFIGURATION}/xicore")
+        EXECUTABLES+=("target/${RUST_ARCH}-apple-${RUST_TARGET_OS}/${RUST_CONFIGURATION}/xi-core")
     done
 
     mkdir -p "${BUILT_PRODUCTS_DIR}"
-    xcrun --sdk $PLATFORM_NAME lipo -create "${EXECUTABLES[@]}" -output "${BUILT_PRODUCTS_DIR}/xicore"
+    xcrun --sdk $PLATFORM_NAME lipo -create "${EXECUTABLES[@]}" -output "${BUILT_PRODUCTS_DIR}/xi-core"
 elif [[ $ACTION = "clean" ]]; then
     cargo clean
-    rm -f "${BUILT_PRODUCTS_DIR}/xicore"
+    rm -f "${BUILT_PRODUCTS_DIR}/xi-core"
 fi

@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		AE228F5D1C897CE7000E9B0F /* xicore in Resources */ = {isa = PBXBuildFile; fileRef = AE228F5C1C897CE7000E9B0F /* xicore */; };
+		AE228F5D1C897CE7000E9B0F /* xi-core in Resources */ = {isa = PBXBuildFile; fileRef = AE228F5C1C897CE7000E9B0F /* xi-core */; };
 		AE499DD01C82BB2B002D68AF /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE499DCF1C82BB2B002D68AF /* AppDelegate.swift */; };
 		AE499DD21C82BB2B002D68AF /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AE499DD11C82BB2B002D68AF /* Assets.xcassets */; };
 		AE499DD51C82BB2B002D68AF /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = AE499DD31C82BB2B002D68AF /* MainMenu.xib */; };
@@ -19,6 +19,7 @@
 		AED23F151C83C689002246CE /* AppWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AED23F131C83C689002246CE /* AppWindowController.swift */; };
 		AED23F161C83C689002246CE /* AppWindowController.xib in Resources */ = {isa = PBXBuildFile; fileRef = AED23F141C83C689002246CE /* AppWindowController.xib */; };
 		AED23F181C83CBED002246CE /* EditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AED23F171C83CBEC002246CE /* EditView.swift */; };
+		DBB50DF11CDE819000B4BBBE /* xi-core.sh in Resources */ = {isa = PBXBuildFile; fileRef = DBB50DF01CDE819000B4BBBE /* xi-core.sh */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -46,7 +47,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		AE228F5C1C897CE7000E9B0F /* xicore */ = {isa = PBXFileReference; lastKnownFileType = text; path = xicore; sourceTree = BUILT_PRODUCTS_DIR; };
+		AE228F5C1C897CE7000E9B0F /* xi-core */ = {isa = PBXFileReference; lastKnownFileType = text; path = "xi-core"; sourceTree = BUILT_PRODUCTS_DIR; };
 		AE499DCC1C82BB2B002D68AF /* XiEditor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = XiEditor.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AE499DCF1C82BB2B002D68AF /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		AE499DD11C82BB2B002D68AF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -64,7 +65,7 @@
 		AED23F131C83C689002246CE /* AppWindowController.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AppWindowController.swift; sourceTree = "<group>"; };
 		AED23F141C83C689002246CE /* AppWindowController.xib */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.xib; path = AppWindowController.xib; sourceTree = "<group>"; };
 		AED23F171C83CBEC002246CE /* EditView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = EditView.swift; sourceTree = "<group>"; };
-		D023DA031CD071C10087EC0A /* xicore.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = xicore.sh; sourceTree = "<group>"; };
+		DBB50DF01CDE819000B4BBBE /* xi-core.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "xi-core.sh"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -151,8 +152,8 @@
 		D023DA021CD071B40087EC0A /* xicore */ = {
 			isa = PBXGroup;
 			children = (
-				D023DA031CD071C10087EC0A /* xicore.sh */,
-				AE228F5C1C897CE7000E9B0F /* xicore */,
+				DBB50DF01CDE819000B4BBBE /* xi-core.sh */,
+				AE228F5C1C897CE7000E9B0F /* xi-core */,
 			);
 			name = xicore;
 			sourceTree = "<group>";
@@ -162,7 +163,7 @@
 /* Begin PBXLegacyTarget section */
 		D023D9FE1CD0715E0087EC0A /* xicore */ = {
 			isa = PBXLegacyTarget;
-			buildArgumentsString = "\"$(SRCROOT)/xicore.sh\"";
+			buildArgumentsString = "\"$(SRCROOT)/xi-core.sh\"";
 			buildConfigurationList = D023DA011CD0715E0087EC0A /* Build configuration list for PBXLegacyTarget "xicore" */;
 			buildPhases = (
 			);
@@ -283,7 +284,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				AE228F5D1C897CE7000E9B0F /* xicore in Resources */,
+				AE228F5D1C897CE7000E9B0F /* xi-core in Resources */,
 				AEBAAA651C83BB1A005637A3 /* python in Resources */,
 				AED23F161C83C689002246CE /* AppWindowController.xib in Resources */,
 				AE499DD21C82BB2B002D68AF /* Assets.xcassets in Resources */,
