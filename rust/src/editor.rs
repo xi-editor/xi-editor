@@ -15,6 +15,7 @@
 use std::cmp::max;
 use std::fs::File;
 use std::io::{Read,Write};
+use std::sync::Mutex;
 use serde_json::Value;
 
 use xi_rope::rope::{LinesMetric,Rope,RopeInfo};
@@ -184,18 +185,25 @@ impl Editor {
     }
 
     fn cursor_end(&mut self) {
+        let offset = self.cursor_end_offset();
+        self.set_cursor(offset, true);
+    }
+
+    fn cursor_end_offset(&mut self) -> usize {
         let current = self.view.sel_max();
         let rope = self.text.clone();
         let mut cursor = Cursor::new(&rope, current);
         match cursor.next::<LinesMetric>() {
-            None => { self.set_cursor(current, true); },
+            None => current,
             Some(offset) => {
                 if cursor.is_boundary::<LinesMetric>() {
                     if let Some(new) = rope.prev_grapheme_offset(offset) {
-                        self.set_cursor(new, true);
+                        new
+                    } else {
+                        offset
                     }
                 } else {
-                    self.set_cursor(offset, true);
+                    offset
                 }
             }
         }
@@ -368,12 +376,39 @@ impl Editor {
         }
     }
 
-    pub fn do_rpc(&mut self, method: &str, params: &Value) -> Option<Value> {
+    fn delete_to_end_of_paragraph(&mut self, kill_ring: &Mutex<Rope>) {
+        let current = self.view.sel_max();
+        let offset = self.cursor_end_offset();
+        let mut val = String::from("");
+
+        if current != offset {
+            val = self.text.slice_to_string(current, offset);
+            let del_interval = Interval::new_closed_open(current, offset);
+            self.add_delta(del_interval, Rope::from(""), current);
+        } else {
+            if let Some(grapheme_offset) = self.text.next_grapheme_offset(self.view.sel_end) {
+                val = self.text.slice_to_string(current, grapheme_offset);
+                let del_interval = Interval::new_closed_open(current, grapheme_offset);
+                self.add_delta(del_interval, Rope::from(""), current)
+            }
+        }
+
+        let mut kill_ring = kill_ring.lock().unwrap();
+        *kill_ring = Rope::from(val);
+    }
+
+    fn yank(&mut self, kill_ring: &Mutex<Rope>) {
+        let data = kill_ring.lock().unwrap();
+        self.insert(&*String::from(data.clone()));
+    }
+
+    pub fn do_rpc(&mut self, method: &str, params: &Value, kill_ring: &Mutex<Rope>) -> Option<Value> {
         let result = match method {
             "render_lines" => Some(self.do_render_lines(params)),
             "key" => async(self.do_key(params)),
             "insert" => async(self.do_insert(params)),
             "delete_backward" => async(self.delete_backward()),
+            "delete_to_end_of_paragraph" => async(self.delete_to_end_of_paragraph(kill_ring)),
             "insert_newline" => async(self.insert_newline()),
             "move_up" => async(self.move_up(0)),
             "move_up_and_modify_selection" => async(self.move_up(MODIFIER_SHIFT)),
@@ -396,6 +431,7 @@ impl Editor {
             "open" => async(self.do_open(params)),
             "save" => async(self.do_save(params)),
             "scroll" => async(self.do_scroll(params)),
+            "yank" => async(self.yank(kill_ring)),
             "click" => async(self.do_click(params)),
             "drag" => async(self.do_drag(params)),
             "cut" => Some(self.do_cut()),
