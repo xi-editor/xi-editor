@@ -15,23 +15,28 @@
 //! A container for all the tabs being edited. Also functions as main dispatch for RPC.
 
 use std::collections::BTreeMap;
-use std::default::Default;
+use std::sync::Mutex;
 use serde_json::Value;
 use serde_json::builder::ObjectBuilder;
 use serde::ser::Serialize;
 
+use xi_rope::rope::Rope;
 use editor::Editor;
 use ::send;
 
-#[derive(Default)]
 pub struct Tabs {
     tabs: BTreeMap<String, Editor>,
     id_counter: usize,
+    kill_ring: Mutex<Rope>,
 }
 
 impl Tabs {
     pub fn new() -> Tabs {
-        Default::default()
+        Tabs {
+            tabs: BTreeMap::new(),
+            id_counter: 0,
+            kill_ring: Mutex::new(Rope::from("")),
+        }
     }
 
     // TODO: refactor response in here, rather than explicitly calling "respond"
@@ -78,7 +83,7 @@ impl Tabs {
                 if let Some(editor) = self.tabs.get_mut(tab) {
                     let method = params.get("method").unwrap().as_string().unwrap();
                     let params = params.get("params").unwrap();
-                    editor.do_rpc(method, params)
+                    editor.do_rpc(method, params, &self.kill_ring)
                 } else {
                     print_err!("tab not found: {}", tab);
                     None
