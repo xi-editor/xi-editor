@@ -18,7 +18,7 @@ use serde_json::Value;
 use serde_json::builder::{ArrayBuilder,ObjectBuilder};
 
 use xi_rope::rope::{Rope, LinesMetric, RopeInfo};
-use xi_rope::delta::{Delta};
+use xi_rope::delta::{OldDelta};
 use xi_rope::tree::Cursor;
 use xi_rope::breaks::{Breaks, BreaksMetric, BreaksBaseMetric};
 use xi_rope::interval::Interval;
@@ -273,11 +273,11 @@ impl View {
         self.cols = cols;
     }
 
-    pub fn before_edit(&mut self, _text: &Rope, _delta: &Delta<RopeInfo>) {
+    pub fn before_edit(&mut self, _text: &Rope, _delta: &OldDelta<RopeInfo>) {
 
     }
 
-    pub fn after_edit(&mut self, text: &Rope, delta: &Delta<RopeInfo>) {
+    pub fn after_edit(&mut self, text: &Rope, delta: &OldDelta<RopeInfo>) {
         let cols = self.cols;
         if self.breaks.is_some() {
             if delta.len() == 1 {

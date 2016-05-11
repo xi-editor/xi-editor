@@ -20,7 +20,7 @@ use serde_json::Value;
 
 use xi_rope::rope::{LinesMetric,Rope,RopeInfo};
 use xi_rope::interval::Interval;
-use xi_rope::delta::Delta;
+use xi_rope::delta::OldDelta;
 use xi_rope::tree::Cursor;
 use view::View;
 
@@ -33,7 +33,7 @@ pub struct Editor {
 
     text: Rope,
     view: View,
-    delta: Delta<RopeInfo>,
+    delta: OldDelta<RopeInfo>,
 
     // update to cursor, to be committed atomically with delta
     // TODO: use for all cursor motion?
@@ -51,7 +51,7 @@ impl Editor {
             text: Rope::from(""),
             view: View::new(),
             dirty: false,
-            delta: Delta::new(),
+            delta: OldDelta::new(),
             new_cursor: None,
             scroll_to: Some(0),
             col: 0
@@ -102,7 +102,7 @@ impl Editor {
                 self.new_cursor = None;
             }
             self.dirty = true;
-            self.delta = Delta::new();
+            self.delta = OldDelta::new();
         }
     }
 

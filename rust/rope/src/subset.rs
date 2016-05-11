@@ -66,6 +66,14 @@ impl Subset {
         result
     }
 
+    #[doc(hidden)]
+    // Access to internal state, shouldn't really be part of public API
+    // Perhaps exposing an iterator over deleted regions would be more suitable,
+    // but it's more of a hassle.
+    pub fn _deletions(&self) -> &[(usize, usize)] {
+        &self.0
+    }
+
     /// Compute the intersection of two subsets. In other words, an element exists in the
     /// resulting subset iff it exists in both inputs.
     pub fn intersect(&self, other: &Subset) -> Subset {
@@ -149,36 +157,36 @@ impl Subset {
     ///
     /// C = A.transform_expand(B)
     ///
-    /// B.transform_shrink(C).apply_to_string(C.apply_to_string(s)) =
+    /// C.transform_shrink(B).apply_to_string(C.apply_to_string(s)) =
     ///   A.apply_to_string(B.apply_to_string(s))
     pub fn transform_shrink(&self, other: &Subset) -> Subset {
         let mut sb = SubsetBuilder::new();
         let mut last = 0;
         let mut i = 0;
         let mut y = 0;
-        for &(b, e) in &other.0 {
-            if i < self.0.len() && self.0[i].0 < last && self.0[i].1 < b {
-                sb.add_deletion(y, self.0[i].1 + y - last);
+        for &(b, e) in &self.0 {
+            if i < other.0.len() && other.0[i].0 < last && other.0[i].1 < b {
+                sb.add_deletion(y, other.0[i].1 + y - last);
                 i += 1;
             }
-            while i < self.0.len() && self.0[i].1 < b {
-                sb.add_deletion(self.0[i].0 + y - last, self.0[i].1 + y - last);
+            while i < other.0.len() && other.0[i].1 < b {
+                sb.add_deletion(other.0[i].0 + y - last, other.0[i].1 + y - last);
                 i += 1;
             }
-            if i < self.0.len() && self.0[i].0 < b {
-                sb.add_deletion(max(last, self.0[i].0) + y - last, b + y - last);
+            if i < other.0.len() && other.0[i].0 < b {
+                sb.add_deletion(max(last, other.0[i].0) + y - last, b + y - last);
             }
-            while i < self.0.len() && self.0[i].1 < e {
+            while i < other.0.len() && other.0[i].1 < e {
                 i += 1;
             }
             y += b - last;
             last = e;
         }
-        if i < self.0.len() && self.0[i].0 < last {
-            sb.add_deletion(y, self.0[i].1 + y - last);
+        if i < other.0.len() && other.0[i].0 < last {
+            sb.add_deletion(y, other.0[i].1 + y - last);
             i += 1;
         }
-        for &(b, e) in &self.0[i..] {
+        for &(b, e) in &other.0[i..] {
             sb.add_deletion(b + y - last, e + y - last);
         }
         sb.build()
@@ -235,7 +243,7 @@ mod tests {
         let s3 = s2.transform_expand(&s1);
         let str3 = s3.apply_to_string(TEST_STR);
         assert_eq!(result, str3);
-        assert_eq!(str2, s1.transform_shrink(&s3).apply_to_string(&str3));
+        assert_eq!(str2, s3.transform_shrink(&s1).apply_to_string(&str3));
     }
 
     #[test]
