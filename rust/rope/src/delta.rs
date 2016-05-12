@@ -19,6 +19,7 @@
 use interval::Interval;
 use tree::{Node, NodeInfo, TreeBuilder};
 use subset::{Subset, SubsetBuilder};
+use std::cmp::min;
 use std;
 
 pub enum DeltaElement<N: NodeInfo> {
@@ -26,9 +27,10 @@ pub enum DeltaElement<N: NodeInfo> {
     Insert(Node<N>),
 }
 
-// A case can be made this should also include the length; then it could be a debug
-// assert to apply to a rope of the correct length.
-pub struct Delta<N: NodeInfo>(Vec<DeltaElement<N>>);
+pub struct Delta<N: NodeInfo> {
+    els: Vec<DeltaElement<N>>,
+    base_len: usize,
+}
 
 impl<N: NodeInfo> Delta<N> {
     pub fn simple_edit(interval: Interval, rope: Node<N>, base_len: usize) -> Delta<N> {
@@ -43,14 +45,15 @@ impl<N: NodeInfo> Delta<N> {
         if end < base_len {
             result.push(DeltaElement::Copy(end, base_len));
         }
-        Delta(result)
+        Delta { els: result, base_len: base_len }
     }
 
     /// Apply the delta to the given rope. May not work well if the length of the rope
     /// is not compatible with the construction of the delta.
-    pub fn apply(&self, base: & Node<N>) -> Node<N> {
+    pub fn apply(&self, base: &Node<N>) -> Node<N> {
+        debug_assert_eq!(base.len(), self.base_len);
         let mut b = TreeBuilder::new();
-        for elem in &self.0 {
+        for elem in &self.els {
             match *elem {
                 DeltaElement::Copy(beg, end) => {
                     base.push_subseq(&mut b, Interval::new_closed_open(beg, end))
@@ -67,13 +70,13 @@ impl<N: NodeInfo> Delta<N> {
     /// `let (d1, ss) = d.factor();`
     ///
     /// `ss.apply_to_string(d1.apply_to_string(s)) == d.apply_to_string(s)`
-    pub fn factor(self, len: usize) -> (Delta<N>, Subset) {
+    pub fn factor(self) -> (Delta<N>, Subset) {
         let mut ins = Vec::new();
         let mut sb = SubsetBuilder::new();
         let mut b1 = 0;
         let mut e1 = 0;
         let mut delta = 0;
-        for elem in self.0 {
+        for elem in self.els {
             match elem {
                 DeltaElement::Copy(b, e) => {
                     sb.add_deletion(e1 + delta, b + delta);
@@ -89,11 +92,123 @@ impl<N: NodeInfo> Delta<N> {
                 }
             }
         }
-        if b1 < len {
-            ins.push(DeltaElement::Copy(b1, len));
+        if b1 < self.base_len {
+            ins.push(DeltaElement::Copy(b1, self.base_len));
         }
-        sb.add_deletion(e1 + delta, len + delta);
-        (Delta(ins), sb.build())
+        sb.add_deletion(e1 + delta, self.base_len + delta);
+        (Delta { els: ins, base_len: self.base_len }, sb.build())
+    }
+
+    /// Synthesize a delta from a "union string" and two subsets, one representing
+    /// insertions and the other representing deletions. This is basically the inverse
+    /// of `factor`.
+    pub fn synthesize(s: &Node<N>, ins: &Subset, del: &Subset) -> Delta<N> {
+        let base_len = ins.len(s.len());
+        let mut els = Vec::new();
+        let mut x = 0;
+        let mut ins_ranges = ins.range_iter(s.len());
+        let mut last_ins = ins_ranges.next();
+        for (b, e) in del.range_iter(s.len()) {
+            let mut beg = b;
+            while beg < e {
+                while let Some((ib, ie)) = last_ins {
+                    if ie > beg {
+                        break;
+                    }
+                    x += ie - ib;
+                    last_ins = ins_ranges.next();
+                }
+                if last_ins.is_some() && last_ins.unwrap().0 <= beg {
+                    let (ib, ie) = last_ins.unwrap();
+                    let end = min(e, ie);
+                    let xbeg = beg + x - ib;  // "beg - ib + x" better for overflow?
+                    let xend = end + x - ib;  // ditto
+                    let merged = if let Some(&mut DeltaElement::Copy(_, ref mut le)) = els.last_mut() {
+                        if *le == xbeg {
+                            *le = xend;
+                            true
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
+                    if !merged {
+                        els.push(DeltaElement::Copy(xbeg, xend));
+                    }
+                    beg = end;
+                } else {
+                    let mut end = e;
+                    if let Some((ib, _)) = last_ins {
+                        end = min(end, ib)
+                    }
+                    // Note: could try to aggregate insertions, but not sure of the win.
+                    els.push(DeltaElement::Insert(s.subseq(Interval::new_closed_open(beg, end))));
+                    beg = end;
+                }
+            }
+        }
+        Delta { els: els, base_len: base_len }
+    }
+
+    /// Do a coordinate transformation on an insert-only delta. The `after` parameter
+    /// controls whether the insertions in `self` come after those specific in the
+    /// coordinate transform.
+    //
+    // TODO: write accurate equations
+    // TODO: can we infer l from the other inputs?
+    pub fn transform_expand(&self, xform: &Subset, l: usize, after: bool) -> Delta<N> {
+        let mut els = Vec::new();
+        let mut x = 0;  // coordinate within self
+        let mut y = 0;  // coordinate within xform
+        let mut i = 0;  // index into self.els
+        let mut b1 = 0;
+        let mut xform_ranges = xform.range_iter(l);
+        let mut last_xform = xform_ranges.next();
+        while y < l || i < self.els.len() {
+            let next_iv_beg = if let Some((xb, _)) = last_xform { xb } else { l };
+            if after && y < next_iv_beg {
+                y = next_iv_beg;
+            }
+            while i < self.els.len() {
+                match self.els[i] {
+                    DeltaElement::Insert(ref n) => {
+                        if y > b1 {
+                            els.push(DeltaElement::Copy(b1, y));
+                        }
+                        b1 = y;
+                        els.push(DeltaElement::Insert(n.clone()));
+                        i += 1;
+                    }
+                    DeltaElement::Copy(_b, e) => {
+                        if y >= next_iv_beg {
+                            let mut next_y = e + y - x;
+                            if let Some((_, xe)) = last_xform {
+                                next_y = min(next_y, xe);
+                            }
+                            x += next_y - y;
+                            y = next_y;
+                            if x == e {
+                                i += 1;
+                            }
+                            if let Some((_, xe)) = last_xform {
+                                if y == xe {
+                                    last_xform = xform_ranges.next();
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+            if !after && y < next_iv_beg {
+                y = next_iv_beg;
+            }
+        }
+        if y > b1 {
+            els.push(DeltaElement::Copy(b1, y));
+        }
+        Delta { els: els, base_len: l }
     }
 
     /// Return a subset that inverts the insert-only delta:
@@ -102,7 +217,7 @@ impl<N: NodeInfo> Delta<N> {
     pub fn invert_insert(&self) -> Subset {
         let mut sb = SubsetBuilder::new();
         let mut x = 0;
-        for elem in &self.0 {
+        for elem in &self.els {
             match *elem {
                 DeltaElement::Copy(b, e) => {
                     x += e - b;
@@ -169,6 +284,23 @@ mod tests {
     use rope::{Rope, RopeInfo};
     use delta::{Delta};
     use interval::Interval;
+    use subset::{Subset, SubsetBuilder};
+
+    const TEST_STR: &'static str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+    // TODO: a clean way of avoiding code duplication without making too much public?
+    fn mk_subset(substr: &str, s: &str) -> Subset {
+        let mut sb = SubsetBuilder::new();
+        let mut j = 0;
+        for i in 0..s.len() {
+            if j < substr.len() && substr.as_bytes()[j] == s.as_bytes()[i] {
+                j += 1;
+            } else {
+                sb.add_deletion(i, i + 1);
+            }
+        }
+        sb.build()
+    }
 
     impl Delta<RopeInfo> {
         fn apply_to_string(&self, s: &str) -> String {
@@ -185,15 +317,41 @@ mod tests {
     #[test]
     fn factor() {
         let d = Delta::simple_edit(Interval::new_closed_open(1, 9), Rope::from("era"), 11);
-        let (d1, ss) = d.factor(11);
+        let (d1, ss) = d.factor();
         assert_eq!("heraello world", d1.apply_to_string("hello world"));
         assert_eq!("herald", ss.apply_to_string("heraello world"));
     }
 
     #[test]
+    fn synthesize() {
+        let d = Delta::simple_edit(Interval::new_closed_open(1, 9), Rope::from("era"), 11);
+        let (d1, del) = d.factor();
+        let ins = d1.invert_insert();
+        let union_str = d1.apply_to_string("hello world");
+        let new_d = Delta::synthesize(&Rope::from(&union_str), &ins, &del);
+        assert_eq!("herald", new_d.apply_to_string("hello world"));
+        let inv_d = Delta::synthesize(&Rope::from(&union_str), &del, &ins);
+        assert_eq!("hello world", inv_d.apply_to_string("herald"));
+    }
+
+    #[test]
     fn invert_insert() {
         let d = Delta::simple_edit(Interval::new_closed_open(1, 9), Rope::from("era"), 11);
-        let (d1, _ss) = d.factor(11);
+        let (d1, _ss) = d.factor();
         assert_eq!("hello world", d1.invert_insert().apply_to_string("heraello world"));
+    }
+
+    #[test]
+    fn transform_expand() {
+        let str1 = "01259DGJKNQTUVWXYcdefghkmopqrstvwxy";
+        let s1 = mk_subset(str1, TEST_STR);
+        let d = Delta::simple_edit(Interval::new_closed_open(10, 12), Rope::from("+"), str1.len());
+        assert_eq!("01259DGJKN+UVWXYcdefghkmopqrstvwxy", d.apply_to_string(str1));
+        let (d2, _ss) = d.factor();
+        assert_eq!("01259DGJKN+QTUVWXYcdefghkmopqrstvwxy", d2.apply_to_string(str1));
+        let d3 = d2.transform_expand(&s1, TEST_STR.len(), false);
+        assert_eq!("0123456789ABCDEFGHIJKLMN+OPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", d3.apply_to_string(TEST_STR));
+        let d4 = d2.transform_expand(&s1, TEST_STR.len(), true);
+        assert_eq!("0123456789ABCDEFGHIJKLMNOP+QRSTUVWXYZabcdefghijklmnopqrstuvwxyz", d4.apply_to_string(TEST_STR));
     }
 }
