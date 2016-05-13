@@ -21,6 +21,7 @@ use tree::{Node, NodeInfo, TreeBuilder};
 use interval::Interval;
 
 // Internally, a sorted list of (begin, end) ranges.
+#[derive(Clone)]
 pub struct Subset(Vec<(usize, usize)>);
 
 #[derive(Default)]

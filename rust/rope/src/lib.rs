@@ -21,6 +21,7 @@ pub mod delta;
 pub mod rope;
 pub mod spans;
 pub mod subset;
+pub mod engine;
 
 // TODO: "pub use" the types we want to export publicly
 
