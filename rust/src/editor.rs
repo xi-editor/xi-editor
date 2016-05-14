@@ -43,6 +43,9 @@ pub struct Editor {
     cur_undo: usize,  // index to live_undos, ones after this are undone
     undos: BTreeSet<usize>,  // undo groups that are undone
 
+    this_edit_type: EditType,
+    last_edit_type: EditType,
+
     // update to cursor, to be committed atomically with delta
     // TODO: use for all cursor motion?
     new_cursor: Option<usize>,
@@ -51,6 +54,14 @@ pub struct Editor {
     scroll_to: Option<usize>,
     col: usize  // maybe this should live in view, it's similar to selection
 }
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+enum EditType {
+    Other,
+    InsertChars,
+    Delete,
+}
+
 
 impl Editor {
     pub fn new(tabname: &str) -> Editor {
@@ -65,6 +76,8 @@ impl Editor {
             live_undos: Vec::new(),
             cur_undo: 0,
             undos: BTreeSet::new(),
+            last_edit_type: EditType::Other,
+            this_edit_type: EditType::Other,
             new_cursor: None,
             scroll_to: Some(0),
             col: 0
@@ -116,11 +129,16 @@ impl Editor {
     fn commit_delta(&mut self) {
         if let Some(delta) = self.delta.take() {
             let head_rev_id = self.engine.get_head_rev_id();
-            let undo_group = self.undo_group_id;
-            self.live_undos.truncate(self.cur_undo);
-            self.live_undos.push(undo_group);
-            self.cur_undo += 1;
-            self.undo_group_id += 1;
+            let undo_group;
+            if self.this_edit_type == self.last_edit_type && !self.live_undos.is_empty() {
+                undo_group = *self.live_undos.last().unwrap();
+            } else {
+                undo_group = self.undo_group_id;
+                self.live_undos.truncate(self.cur_undo);
+                self.live_undos.push(undo_group);
+                self.cur_undo += 1;
+                self.undo_group_id += 1;
+            }
             let priority = 0x10000;
             self.engine.edit_rev(priority, undo_group, head_rev_id, delta);
             self.update_after_revision();
@@ -173,12 +191,14 @@ impl Editor {
             }
         };
         if start < self.view.sel_max() {
+            self.this_edit_type = EditType::Delete;
             let del_interval = Interval::new_closed_open(start, self.view.sel_max());
             self.add_delta(del_interval, Rope::from(""), start);
         }
     }
 
     fn insert_newline(&mut self) {
+        self.this_edit_type = EditType::InsertChars;
         self.insert("\n");
     }
     
@@ -311,9 +331,12 @@ impl Editor {
         }
     }
 
+    // TODO: insert from keyboard or input method shouldn't break undo group,
+    // but paste should.
     fn do_insert(&mut self, args: &Value) {
         if let Some(args) = args.as_object() {
             let chars = args.get("chars").unwrap().as_string().unwrap();
+            self.this_edit_type = EditType::InsertChars;
             self.insert(chars);
         }
     }
@@ -351,6 +374,7 @@ impl Editor {
     }
 
     fn do_scroll(&mut self, args: &Value) {
+        self.this_edit_type = self.last_edit_type;  // doesn't break undo group
         if let Some(array) = args.as_array() {
             if let (Some(first), Some(last)) = (array[0].as_i64(), array[1].as_i64()) {
                 self.view.set_scroll(max(first, 0) as usize, last as usize);
@@ -379,6 +403,7 @@ impl Editor {
     }
 
     fn do_render_lines(&mut self, args: &Value) -> Value {
+        self.this_edit_type = self.last_edit_type;  // doesn't break undo group
         if let Some(dict) = args.as_object() {
             let first_line = dict.get("first_line").unwrap().as_u64().unwrap();
             let last_line = dict.get("last_line").unwrap().as_u64().unwrap();
@@ -463,6 +488,7 @@ impl Editor {
     }
 
     pub fn do_rpc(&mut self, method: &str, params: &Value, kill_ring: &Mutex<Rope>) -> Option<Value> {
+        self.this_edit_type = EditType::Other;
         let result = match method {
             "render_lines" => Some(self.do_render_lines(params)),
             "key" => async(self.do_key(params)),
@@ -505,6 +531,7 @@ impl Editor {
         // TODO: could defer this until input quiesces - will this help?
         self.commit_delta();
         self.render();
+        self.last_edit_type = self.this_edit_type;
         result
     }
 }
