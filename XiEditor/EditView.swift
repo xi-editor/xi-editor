@@ -62,7 +62,7 @@ func camelCaseToUnderscored(name: NSString) -> NSString {
     return underscored;
 }
 
-class EditView: NSView {
+class EditView: NSView, NSTextInputClient {
     var tabName: String?
     var coreConnection: CoreConnection?
 
@@ -96,6 +96,9 @@ class EditView: NSView {
     var pendingUpdate: [String: AnyObject]? = nil
 
     var currentEvent: NSEvent?
+    
+    var _selectedRange: NSRange
+    var _markedRange: NSRange
 
     override init(frame frameRect: NSRect) {
         let font = CTFontCreateWithName("InconsolataGo", 14, nil)
@@ -108,6 +111,8 @@ class EditView: NSView {
         fontWidth = getFontWidth(font)
         selcolor = NSColor(colorLiteralRed: 0.7, green: 0.85, blue: 0.99, alpha: 1.0)
         updateQueue = dispatch_queue_create("com.levien.xi.update", DISPATCH_QUEUE_SERIAL)
+        _selectedRange = NSMakeRange(NSNotFound, 0)
+        _markedRange = NSMakeRange(NSNotFound, 0)
         super.init(frame: frameRect)
         widthConstraint = NSLayoutConstraint(item: self, attribute: .Width, relatedBy: .GreaterThanOrEqual, toItem: nil, attribute: .Width, multiplier: 1, constant: 400)
         widthConstraint!.active = true
@@ -233,14 +238,57 @@ class EditView: NSView {
         // store current event so that it can be sent to the core
         // if the selector for the event is "noop:".
         currentEvent = theEvent;
-        self.interpretKeyEvents([theEvent]);
+        self.inputContext?.handleEvent(theEvent);
         currentEvent = nil;
     }
-
+    
+    // NSTextInputClient protocol
+    func insertText(aString: AnyObject, replacementRange: NSRange) {
+       sendRpcAsync("insert", params: insertedStringToJson(aString as! NSString))
+    }
+    
+    func setMarkedText(aString: AnyObject, selectedRange: NSRange, replacementRange: NSRange) {
+        self._selectedRange = selectedRange
+    }
+    
+    func unmarkText() {
+        self._markedRange = NSMakeRange(NSNotFound, 0)
+    }
+    
+    func selectedRange() -> NSRange {
+        return _selectedRange
+    }
+    
+    func markedRange() -> NSRange {
+        return _markedRange
+    }
+    
+    func hasMarkedText() -> Bool {
+        return _markedRange.location != NSNotFound
+    }
+    
+    func attributedSubstringForProposedRange(aRange: NSRange, actualRange: NSRangePointer) -> NSAttributedString? {
+        return NSAttributedString()
+    }
+    
+    func validAttributesForMarkedText() -> [String] {
+        return [NSForegroundColorAttributeName, NSBackgroundColorAttributeName]
+    }
+    
+    func firstRectForCharacterRange(aRange: NSRange, actualRange: NSRangePointer) -> NSRect {
+        return NSRect(x: 0, y: 0, width: 0, height: 0)
+    }
+    
+    func characterIndexForPoint(aPoint: NSPoint) -> Int {
+        return 0
+    }
+    
+    /*
     override func insertText(insertString: AnyObject) {
         sendRpcAsync("insert", params: insertedStringToJson(insertString as! NSString))
     }
-
+ */
+    
     override func doCommandBySelector(aSelector: Selector) {
         if (self.respondsToSelector(aSelector)) {
             super.doCommandBySelector(aSelector);
