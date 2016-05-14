@@ -52,6 +52,20 @@ enum Contents {
 }
 
 impl Engine {
+    pub fn new(initial_contents: Rope) -> Engine {
+        let rev = Revision {
+            rev_id: 0,
+            from_union: Subset::default(),
+            union_str_len: initial_contents.len(),
+            edit: Undo { groups: BTreeSet::default() },
+        };
+        Engine {
+            rev_id_counter: 1,
+            union_str: initial_contents,
+            revs: vec![rev],
+        }
+    }
+
     fn get_current_undo(&self) -> Option<&BTreeSet<usize>> {
         for rev in self.revs.iter().rev() {
             if let Undo { ref groups } = rev.edit {
@@ -82,6 +96,12 @@ impl Engine {
         from_union.apply(&self.union_str)
     }
 
+    /// Get revision id of head revision.
+    pub fn get_head_rev_id(&self) -> usize {
+        self.revs.last().unwrap().rev_id
+    }
+
+    /// Get text of head revision.
     pub fn get_head(&self) -> Rope {
         self.get_rev(self.revs.len() - 1)
     }

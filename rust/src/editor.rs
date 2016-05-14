@@ -20,8 +20,9 @@ use serde_json::Value;
 
 use xi_rope::rope::{LinesMetric,Rope,RopeInfo};
 use xi_rope::interval::Interval;
-use xi_rope::delta::OldDelta;
+use xi_rope::delta::Delta;
 use xi_rope::tree::Cursor;
+use xi_rope::engine::Engine;
 use view::View;
 
 use tabs::update_tab;
@@ -33,7 +34,9 @@ pub struct Editor {
 
     text: Rope,
     view: View,
-    delta: OldDelta<RopeInfo>,
+    delta: Option<Delta<RopeInfo>>,
+
+    engine: Engine,
 
     // update to cursor, to be committed atomically with delta
     // TODO: use for all cursor motion?
@@ -51,7 +54,8 @@ impl Editor {
             text: Rope::from(""),
             view: View::new(),
             dirty: false,
-            delta: OldDelta::new(),
+            delta: None,
+            engine: Engine::new(Rope::from("")),
             new_cursor: None,
             scroll_to: Some(0),
             col: 0
@@ -87,23 +91,43 @@ impl Editor {
     }
 
     fn add_delta(&mut self, iv: Interval, new: Rope, new_cursor: usize) {
-        self.delta.add(iv, new);
+        if self.delta.is_some() {
+            print_err!("not supporting multiple deltas, dropping change");
+            return;
+        }
+        self.delta = Some(Delta::simple_edit(iv, new, self.text.len()));
         self.new_cursor = Some(new_cursor);
     }
 
     // commit the current delta, updating views and other invariants as needed
     fn commit_delta(&mut self) {
-        if !self.delta.is_empty() {
-            self.view.before_edit(&self.text, &self.delta);
-            self.delta.apply(&mut self.text);
-            self.view.after_edit(&self.text, &self.delta);
-            if let Some(c) = self.new_cursor {
+        if let Some(delta) = self.delta.take() {
+            let head_rev_id = self.engine.get_head_rev_id();
+            let undo_group = 1;  // TODO
+            let priority = 0x10000;
+            self.engine.edit_rev(priority, undo_group, head_rev_id, delta);
+            self.update_after_revision();
+            if let Some(c) = self.new_cursor.take() {
                 self.set_cursor(c, true);
-                self.new_cursor = None;
             }
-            self.dirty = true;
-            self.delta = OldDelta::new();
         }
+    }
+
+    fn update_after_revision(&mut self) {
+        // TODO: update view
+        let delta = self.engine.delta_head();
+        self.view.before_edit(&self.text, &delta);
+        self.text = self.engine.get_head();
+        self.view.after_edit(&self.text, &delta);
+        self.dirty = true;
+    }
+
+    fn reset_contents(&mut self, new_contents: Rope) {
+        self.engine = Engine::new(new_contents);
+        self.text = self.engine.get_head();
+        self.dirty = true;
+        self.view.reset_breaks();
+        self.set_cursor(0, true);
     }
 
     // render if needed, sending to ui
@@ -279,9 +303,7 @@ impl Editor {
                 Ok(mut f) => {
                     let mut s = String::new();
                     if f.read_to_string(&mut s).is_ok() {
-                        self.text = Rope::from(s);
-                        self.view.reset_breaks();
-                        self.set_cursor(0, true);
+                        self.reset_contents(Rope::from(s));
                     }
                 },
                 Err(e) => print_err!("error {}", e)

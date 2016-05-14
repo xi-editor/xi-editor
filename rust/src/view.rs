@@ -18,7 +18,7 @@ use serde_json::Value;
 use serde_json::builder::{ArrayBuilder,ObjectBuilder};
 
 use xi_rope::rope::{Rope, LinesMetric, RopeInfo};
-use xi_rope::delta::{OldDelta};
+use xi_rope::delta::{Delta};
 use xi_rope::tree::Cursor;
 use xi_rope::breaks::{Breaks, BreaksMetric, BreaksBaseMetric};
 use xi_rope::interval::Interval;
@@ -273,19 +273,15 @@ impl View {
         self.cols = cols;
     }
 
-    pub fn before_edit(&mut self, _text: &Rope, _delta: &OldDelta<RopeInfo>) {
-
+    pub fn before_edit(&mut self, _text: &Rope, _delta: &Delta<RopeInfo>) {
+        // not sure we even need this
     }
 
-    pub fn after_edit(&mut self, text: &Rope, delta: &OldDelta<RopeInfo>) {
+    pub fn after_edit(&mut self, text: &Rope, delta: &Delta<RopeInfo>) {
         let cols = self.cols;
         if self.breaks.is_some() {
-            if delta.len() == 1 {
-                let item = delta.iter().next().unwrap();
-                linewrap::rewrap(self.breaks.as_mut().unwrap(), text, item.interval, item.rope.len(), cols);
-            } else {
-                self.rewrap(text, cols);
-            }
+            let (iv, new_len) = delta.summary();
+            linewrap::rewrap(self.breaks.as_mut().unwrap(), text, iv, new_len, cols);
         }
     }
 
