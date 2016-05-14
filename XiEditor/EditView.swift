@@ -283,6 +283,14 @@ class EditView: NSView {
         }
     }
 
+    func undo(sender: AnyObject?) {
+        sendRpcAsync("undo", params: [])
+    }
+
+    func redo(sender: AnyObject?) {
+        sendRpcAsync("redo", params: [])
+    }
+
     override func mouseDown(theEvent: NSEvent) {
         let (line, col) = pointToLineCol(convertPoint(theEvent.locationInWindow, fromView: nil))
         lastDragLineCol = (line, col)

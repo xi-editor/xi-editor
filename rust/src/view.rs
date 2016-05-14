@@ -278,10 +278,22 @@ impl View {
     }
 
     pub fn after_edit(&mut self, text: &Rope, delta: &Delta<RopeInfo>) {
-        let cols = self.cols;
+        let (iv, new_len) = delta.summary();
+        // Note: this logic almost replaces setting the cursor in Editor::commit_delta,
+        // but doesn't set col or scroll to the cursor. It could be extended to subsume
+        // that entirely.
+        // Also note: for committing plugin edits, we probably want to know the priority
+        // of the delta so we can set the cursor before or after the edit, as needed.
+        if self.sel_end >= iv.start() {
+            if self.sel_end >= iv.end() {
+                self.sel_end = self.sel_end - iv.size() + new_len;
+            } else {
+                self.sel_end = iv.start() + new_len;
+            }
+            self.sel_start = self.sel_end;
+        }
         if self.breaks.is_some() {
-            let (iv, new_len) = delta.summary();
-            linewrap::rewrap(self.breaks.as_mut().unwrap(), text, iv, new_len, cols);
+            linewrap::rewrap(self.breaks.as_mut().unwrap(), text, iv, new_len, self.cols);
         }
     }
 

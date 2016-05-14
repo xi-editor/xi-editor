@@ -16,6 +16,7 @@ use std::cmp::max;
 use std::fs::File;
 use std::io::{Read,Write};
 use std::sync::Mutex;
+use std::collections::BTreeSet;
 use serde_json::Value;
 
 use xi_rope::rope::{LinesMetric,Rope,RopeInfo};
@@ -37,6 +38,10 @@ pub struct Editor {
     delta: Option<Delta<RopeInfo>>,
 
     engine: Engine,
+    undo_group_id: usize,
+    live_undos: Vec<usize>,  // undo groups that may still be toggled
+    cur_undo: usize,  // index to live_undos, ones after this are undone
+    undos: BTreeSet<usize>,  // undo groups that are undone
 
     // update to cursor, to be committed atomically with delta
     // TODO: use for all cursor motion?
@@ -56,6 +61,10 @@ impl Editor {
             dirty: false,
             delta: None,
             engine: Engine::new(Rope::from("")),
+            undo_group_id: 0,
+            live_undos: Vec::new(),
+            cur_undo: 0,
+            undos: BTreeSet::new(),
             new_cursor: None,
             scroll_to: Some(0),
             col: 0
@@ -90,6 +99,10 @@ impl Editor {
         self.set_cursor_impl(offset, flags & MODIFIER_SHIFT == 0, hard);
     }
 
+    // May change this around so this fn adds the delta to the engine immediately,
+    // and commit_delta propagates the delta from the previous revision (not just
+    // the one immediately before the head revision, as now). In any case, this
+    // will need more information, for example to decide whether to merge undos.
     fn add_delta(&mut self, iv: Interval, new: Rope, new_cursor: usize) {
         if self.delta.is_some() {
             print_err!("not supporting multiple deltas, dropping change");
@@ -103,7 +116,11 @@ impl Editor {
     fn commit_delta(&mut self) {
         if let Some(delta) = self.delta.take() {
             let head_rev_id = self.engine.get_head_rev_id();
-            let undo_group = 1;  // TODO
+            let undo_group = self.undo_group_id;
+            self.live_undos.truncate(self.cur_undo);
+            self.live_undos.push(undo_group);
+            self.cur_undo += 1;
+            self.undo_group_id += 1;
             let priority = 0x10000;
             self.engine.edit_rev(priority, undo_group, head_rev_id, delta);
             self.update_after_revision();
@@ -111,6 +128,11 @@ impl Editor {
                 self.set_cursor(c, true);
             }
         }
+    }
+
+    fn update_undos(&mut self) {
+        self.engine.undo(self.undos.clone());
+        self.update_after_revision();
     }
 
     fn update_after_revision(&mut self) {
@@ -398,6 +420,22 @@ impl Editor {
         }
     }
 
+    fn do_undo(&mut self) {
+        if self.cur_undo > 0 {
+            self.cur_undo -= 1;
+            debug_assert!(self.undos.insert(self.live_undos[self.cur_undo]));
+            self.update_undos();
+        }
+    }
+
+    fn do_redo(&mut self) {
+        if self.cur_undo < self.live_undos.len() {
+            debug_assert!(self.undos.remove(&self.live_undos[self.cur_undo]));
+            self.cur_undo += 1;
+            self.update_undos();
+        }
+    }
+
     fn delete_to_end_of_paragraph(&mut self, kill_ring: &Mutex<Rope>) {
         let current = self.view.sel_max();
         let offset = self.cursor_end_offset();
@@ -456,6 +494,8 @@ impl Editor {
             "yank" => async(self.yank(kill_ring)),
             "click" => async(self.do_click(params)),
             "drag" => async(self.do_drag(params)),
+            "undo" => async(self.do_undo()),
+            "redo" => async(self.do_redo()),
             "cut" => Some(self.do_cut()),
             "copy" => Some(self.do_copy()),
             "debug_rewrap" => async(self.debug_rewrap()),
