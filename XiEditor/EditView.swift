@@ -244,11 +244,73 @@ class EditView: NSView, NSTextInputClient {
     
     // NSTextInputClient protocol
     func insertText(aString: AnyObject, replacementRange: NSRange) {
-       sendRpcAsync("insert", params: insertedStringToJson(aString as! NSString))
+        self.removeMarkedText()
+        self.replaceCharactersInRange(replacementRange, withText: aString)
+//       sendRpcAsync("insert", params: insertedStringToJson(aString as! NSString))
+    }
+    
+    func replacementMarkedRange(replacementRange: NSRange) -> NSRange {
+        var markedRange = _markedRange
+        
+        if (markedRange.location == NSNotFound) {
+            markedRange = _selectedRange
+        }
+        if (replacementRange.location != NSNotFound) {
+            var newRange: NSRange = markedRange
+            newRange.location += replacementRange.location
+            newRange.length += replacementRange.length
+            if (NSMaxRange(newRange) <= NSMaxRange(markedRange)) {
+                markedRange = newRange
+            }
+        }
+        
+        return markedRange
+    }
+    
+    func replaceCharactersInRange(aRange: NSRange, withText aString: AnyObject) -> NSRange {
+        var replacementRange = aRange
+        var len = 0
+        if let attrStr = aString as? NSAttributedString {
+            len = attrStr.string.characters.count
+        } else if let str = aString as? NSString {
+            len = str.length
+        }
+        if (replacementRange.location == NSNotFound) {
+            replacementRange.location = 1
+            replacementRange.length = 0
+        }
+        for var i in 0..<aRange.length {
+            sendRpcAsync("delete_backward", params: [])
+        }
+        if let attrStr = aString as? NSAttributedString {
+            sendRpcAsync("insert", params: insertedStringToJson(attrStr.string))
+        } else if let str = aString as? NSString {
+            sendRpcAsync("insert", params: insertedStringToJson(str))
+        }
+        return NSMakeRange(replacementRange.location, len)
     }
     
     func setMarkedText(aString: AnyObject, selectedRange: NSRange, replacementRange: NSRange) {
-        self._selectedRange = selectedRange
+        var mutSelectedRange = selectedRange
+        var effectiveRange = self.replaceCharactersInRange(self.replacementMarkedRange(replacementRange), withText: aString)
+        if (selectedRange.location != NSNotFound) {
+            mutSelectedRange.location += effectiveRange.location
+        }
+        _selectedRange = mutSelectedRange
+        _markedRange = effectiveRange
+        if (effectiveRange.length == 0) {
+            self.removeMarkedText()
+        }
+    }
+    
+    func removeMarkedText() {
+        if (_markedRange.location != NSNotFound) {
+            for var i in 0..<_markedRange.length {
+                sendRpcAsync("delete_backward", params: [])
+            }
+        }
+        _markedRange = NSMakeRange(NSNotFound, 0)
+        _selectedRange = NSMakeRange(NSNotFound, 0)
     }
     
     func unmarkText() {
@@ -332,6 +394,8 @@ class EditView: NSView, NSTextInputClient {
     }
 
     override func mouseDown(theEvent: NSEvent) {
+        removeMarkedText()
+        self.inputContext?.discardMarkedText()
         let (line, col) = pointToLineCol(convertPoint(theEvent.locationInWindow, fromView: nil))
         lastDragLineCol = (line, col)
         let flags = theEvent.modifierFlags.rawValue >> 16
