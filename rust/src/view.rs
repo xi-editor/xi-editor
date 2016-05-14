@@ -12,29 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// TODO: figure out how not to duplcate this
-macro_rules! print_err {
-    ($($arg:tt)*) => (
-        {
-            use std::io::prelude::*;
-            if let Err(e) = write!(&mut ::std::io::stderr(), "{}\n", format_args!($($arg)*)) {
-                panic!("Failed to write to stderr.\
-                    \nOriginal error output: {}\
-                    \nSecondary error writing to stderr: {}", format!($($arg)*), e);
-            }
-        }
-    )
-}
-
 use std::cmp::{min,max};
 
 use serde_json::Value;
-use serde_json::builder::ArrayBuilder;
+use serde_json::builder::{ArrayBuilder,ObjectBuilder};
 
 use xi_rope::rope::{Rope, LinesMetric, RopeInfo};
-use xi_rope::delta::{Delta};
+use xi_rope::delta::{OldDelta};
 use xi_rope::tree::Cursor;
 use xi_rope::breaks::{Breaks, BreaksMetric, BreaksBaseMetric};
+use xi_rope::interval::Interval;
+use xi_rope::spans::{Spans, SpansBuilder};
 
 use linewrap;
 
@@ -46,19 +34,27 @@ pub struct View {
     first_line: usize,  // vertical scroll position
     height: usize,  // height of visible portion
     breaks: Option<Breaks>,
+    fg_spans: Spans<u32>,
     cols: usize,
 }
 
-impl View {
-    pub fn new() -> View {
+impl Default for View {
+    fn default() -> View {
         View {
             sel_start: 0,
             sel_end: 0,
             first_line: 0,
             height: 10,
             breaks: None,
+            fg_spans: Spans::default(),
             cols: 0,
         }
+    }
+}
+
+impl View {
+    pub fn new() -> View {
+        View::default()
     }
 
     pub fn set_scroll(&mut self, first: usize, last: usize) {
@@ -123,9 +119,6 @@ impl View {
             let pos = match pos {
                 Some(pos) => pos,
                 None => {
-                    if start_pos == text.len() {
-                        break;
-                    }
                     is_last_line = true;
                     text.len()
                 }
@@ -135,6 +128,7 @@ impl View {
             // TODO: strip trailing line end
             let l_len = l.len();
             line_builder = line_builder.push(l);
+            line_builder = self.render_spans(line_builder, start_pos, pos);
             if line_num >= sel_min_line && line_num <= sel_max_line && self.sel_start != self.sel_end {
                 let sel_start_ix = if line_num == sel_min_line {
                     self.sel_min() - self.offset_of_line(text, line_num)
@@ -157,20 +151,25 @@ impl View {
                     builder.push("cursor")
                         .push(cursor_col)
                 );
-            }
-            builder = builder.push(line_builder.unwrap());
+            }            builder = builder.push(line_builder.unwrap());
             line_num += 1;
             if is_last_line || line_num == last_line {
                 break;
             }
         }
-        if line_num == cursor_line {
-            builder = builder.push_array(|builder|
-                builder.push("")
-                    .push_array(|builder|
-                        builder.push("cursor").push(0)));
-        }
         builder.unwrap()
+    }
+
+    pub fn render_spans(&self, mut builder: ArrayBuilder, start: usize, end: usize) -> ArrayBuilder {
+        let fg_spans = self.fg_spans.subseq(Interval::new_closed_open(start, end));
+        for (iv, fg) in fg_spans.iter() {
+            builder = builder.push_array(|builder|
+                builder.push("fg")
+                    .push(iv.start())
+                    .push(iv.end())
+                    .push(fg));
+        }
+        builder
     }
 
     pub fn render(&self, text: &Rope, scroll_to: Option<usize>) -> Value {
@@ -178,21 +177,16 @@ impl View {
         let last_line = self.first_line + self.height + SCROLL_SLOP;
         let lines = self.render_lines(text, first_line, last_line);
         let height = self.offset_to_line_col(text, text.len()).0 + 1;
-        ArrayBuilder::new()
-            .push("settext")
-            .push_object(|builder| {
-                let mut builder = builder
-                    .insert("lines", lines)
-                    .insert("first_line", first_line)
-                    .insert("height", height);
-                if let Some(scrollto) = scroll_to {
-                    let (line, col) = self.offset_to_line_col(text, scrollto);
-                    builder = builder.insert_array("scrollto", |builder|
-                        builder.push(line).push(col));
-                }
-                builder
-            })
-            .unwrap()
+        let mut builder = ObjectBuilder::new()
+            .insert("lines", lines)
+            .insert("first_line", first_line)
+            .insert("height", height);
+        if let Some(scrollto) = scroll_to {
+            let (line, col) = self.offset_to_line_col(text, scrollto);
+            builder = builder.insert_array("scrollto", |builder|
+                builder.push(line).push(col));
+        }
+        builder.unwrap()
     }
 
     // How should we count "column"? Valid choices include:
@@ -214,25 +208,20 @@ impl View {
         let mut offset = self.offset_of_line(text, line).saturating_add(col);
         if offset >= text.len() {
             offset = text.len();
-            if self.line_of_offset(text, offset) == line {
+            if self.line_of_offset(text, offset) <= line {
                 return offset;
             }
         } else {
-            // Snap to codepoint boundary
-            offset = text.prev_codepoint_offset(offset + 1).unwrap();
+            // Snap to grapheme cluster boundary
+            offset = text.prev_grapheme_offset(offset + 1).unwrap();
         }
 
         // clamp to end of line
         let next_line_offset = self.offset_of_line(text, line + 1);
         if offset >= next_line_offset {
-            offset = next_line_offset;
-            // TODO: replace with cursor
-            if text.byte_at(offset - 1) == b'\n' {
-                offset -= 1;
+            if let Some(prev) = text.prev_grapheme_offset(next_line_offset) {
+                offset = prev;
             }
-        }
-        if offset > 0 && text.byte_at(offset - 1) == b'\r' {
-            offset -= 1;
         }
         offset
     }
@@ -264,9 +253,7 @@ impl View {
     fn line_of_offset(&self, text: &Rope, offset: usize) -> usize {
         match self.breaks {
             Some(ref breaks) => {
-                let line = breaks.convert_metrics::<BreaksBaseMetric, BreaksMetric>(offset);
-                //print_err!("line_of_offset({}) = {}", offset, line);
-                line
+                breaks.convert_metrics::<BreaksBaseMetric, BreaksMetric>(offset)
             }
             None => text.line_of_offset(offset)
         }
@@ -286,11 +273,11 @@ impl View {
         self.cols = cols;
     }
 
-    pub fn before_edit(&mut self, _text: &Rope, _delta: &Delta<RopeInfo>) {
+    pub fn before_edit(&mut self, _text: &Rope, _delta: &OldDelta<RopeInfo>) {
 
     }
 
-    pub fn after_edit(&mut self, text: &Rope, delta: &Delta<RopeInfo>) {
+    pub fn after_edit(&mut self, text: &Rope, delta: &OldDelta<RopeInfo>) {
         let cols = self.cols;
         if self.breaks.is_some() {
             if delta.len() == 1 {
@@ -304,5 +291,11 @@ impl View {
 
     pub fn reset_breaks(&mut self) {
         self.breaks = None;
+    }
+
+    pub fn set_test_fg_spans(&mut self) {
+        let mut sb = SpansBuilder::new(15);
+        sb.add_span(Interval::new_closed_open(5, 10), 0xffc00000);
+        self.fg_spans = sb.build();
     }
 }

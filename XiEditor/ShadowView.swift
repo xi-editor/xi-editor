@@ -53,4 +53,15 @@ class ShadowView: NSView {
             trailingShadow = newTrail
         }
     }
+
+    override func mouseDragged(theEvent: NSEvent) {
+        let wc = window?.windowController as! AppWindowController
+        wc.handleMouseDragged(theEvent)
+    }
+
+    override func mouseUp(theEvent: NSEvent) {
+        let wc = window?.windowController as! AppWindowController
+        wc.handleMouseUp(theEvent)
+    }
+
 }

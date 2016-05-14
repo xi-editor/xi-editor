@@ -89,6 +89,7 @@ impl NodeInfo for BreaksInfo {
     }
 }
 
+#[derive(Copy, Clone)]
 pub struct BreaksMetric(());
 
 impl Metric<BreaksInfo> for BreaksMetric {
@@ -138,7 +139,7 @@ impl Metric<BreaksInfo> for BreaksMetric {
                 }
             }
         }
-        l.data.last().map(|&offset| offset)
+        l.data.last().cloned()
     }
 
     fn next(l: &BreaksLeaf, offset: usize) -> Option<usize> {
@@ -154,6 +155,7 @@ impl Metric<BreaksInfo> for BreaksMetric {
     fn can_fragment() -> bool { true }
 }
 
+#[derive(Copy, Clone)]
 pub struct BreaksBaseMetric(());
 
 impl Metric<BreaksInfo> for BreaksBaseMetric {
@@ -203,12 +205,18 @@ pub struct BreakBuilder {
     leaf: BreaksLeaf,
 }
 
-impl BreakBuilder {
-    pub fn new() -> BreakBuilder {
+impl Default for BreakBuilder {
+    fn default() -> BreakBuilder {
         BreakBuilder {
             b: TreeBuilder::new(),
             leaf: BreaksLeaf::default(),
         }
+    }
+}
+
+impl BreakBuilder {
+    pub fn new() -> BreakBuilder {
+        BreakBuilder::default()
     }
 
     pub fn add_break(&mut self, len: usize) {

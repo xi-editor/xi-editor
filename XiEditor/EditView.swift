@@ -16,9 +16,13 @@ import Cocoa
 
 func eventToJson(event: NSEvent) -> AnyObject {
     let flags = event.modifierFlags.rawValue >> 16;
-    return ["key", ["keycode": Int(event.keyCode),
+    return ["keycode": Int(event.keyCode),
         "chars": event.characters!,
-        "flags": flags]]
+        "flags": flags]
+}
+
+func insertedStringToJson(stringToInsert: NSString) -> AnyObject {
+    return ["chars": stringToInsert]
 }
 
 // compute the width if monospaced, 0 otherwise
@@ -34,12 +38,37 @@ func getFontWidth(font: CTFont) -> CGFloat {
     return 0
 }
 
+func colorFromArgb(argb: UInt32) -> NSColor {
+    return NSColor(red: CGFloat((argb >> 16) & 0xff) * 1.0/255,
+        green: CGFloat((argb >> 8) & 0xff) * 1.0/255,
+        blue: CGFloat(argb & 0xff) * 1.0/255,
+        alpha: CGFloat((argb >> 24) & 0xff) * 1.0/255)
+}
+
+func camelCaseToUnderscored(name: NSString) -> NSString {
+    let underscored = NSMutableString();
+    let scanner = NSScanner(string: name as String);
+    let notUpperCase = NSCharacterSet.uppercaseLetterCharacterSet().invertedSet;
+    var notUpperCaseFragment: NSString?
+    while (scanner.scanUpToCharactersFromSet(NSCharacterSet.uppercaseLetterCharacterSet(), intoString: &notUpperCaseFragment)) {
+        underscored.appendString(notUpperCaseFragment! as String);
+        var upperCaseFragement: NSString?
+        if (scanner.scanUpToCharactersFromSet(notUpperCase, intoString: &upperCaseFragement)) {
+            underscored.appendString("_");
+            let downcasedFragment = upperCaseFragement!.lowercaseString;
+            underscored.appendString(downcasedFragment);
+        }
+    }
+    return underscored;
+}
+
 class EditView: NSView {
-
-    var lines: [[AnyObject]] = []
-    var linesStart: Int = 0
-
+    var tabName: String?
     var coreConnection: CoreConnection?
+
+    // basically a cache of lines, indexed by line number
+    var lineMap: [Int: [AnyObject]] = [:]
+    var height: Int = 0
 
     var widthConstraint: NSLayoutConstraint?
     var heightConstraint: NSLayoutConstraint?
@@ -57,10 +86,16 @@ class EditView: NSView {
     // visible scroll region, exclusive of lastLine
     var firstLine: Int = 0
     var lastLine: Int = 0
+    
+    var lastDragLineCol: (Int, Int)?
+    var timer: NSTimer?
+    var timerEvent: NSEvent?
 
     // magic for accepting updates from other threads
     var updateQueue: dispatch_queue_t
     var pendingUpdate: [String: AnyObject]? = nil
+
+    var currentEvent: NSEvent?
 
     override init(frame frameRect: NSRect) {
         let font = CTFontCreateWithName("InconsolataGo", 14, nil)
@@ -84,10 +119,26 @@ class EditView: NSView {
         fatalError("View doesn't support NSCoding")
     }
 
+    func sendRpcAsync(method: String, params: AnyObject) {
+        let inner = ["method": method, "params": params, "tab": tabName!] as [String : AnyObject]
+        coreConnection?.sendRpcAsync("edit", params: inner)
+    }
+
+    func sendRpc(method: String, params: AnyObject) -> AnyObject? {
+        let inner = ["method": method, "params": params, "tab": tabName!] as [String : AnyObject]
+        return coreConnection?.sendRpc("edit", params: inner)
+    }
+
     func utf8_offset_to_utf16(s: String, _ ix: Int) -> Int {
         // String(s.utf8.prefix(ix)).utf16.count
         return s.utf8.startIndex.advancedBy(ix).samePositionIn(s.utf16)!._offset
     }
+
+    func utf16_offset_to_utf8(s: String, _ ix: Int) -> Int {
+        return String(s.utf16.prefix(ix)).utf8.count
+    }
+
+    let x0: CGFloat = 2;
 
     override func drawRect(dirtyRect: NSRect) {
         super.drawRect(dirtyRect)
@@ -101,34 +152,11 @@ class EditView: NSView {
         */
 
         let context = NSGraphicsContext.currentContext()!.CGContext
-        let x0: CGFloat = 2;
         let first = Int(floor(dirtyRect.origin.y / linespace))
         let last = Int(ceil((dirtyRect.origin.y + dirtyRect.size.height) / linespace))
-        var myLines = [[AnyObject]]?()
-        // TODO: either (a) make this smarter, so it doesn't RPC when lines contains EOF,
-        // or (b) always do the RPC, which is simpler.
-        if first < linesStart || last > linesStart + lines.count {
-            let start = NSDate()
-            if let result = coreConnection?.sendRpc(["render_lines", ["first_line": first, "last_line": last]]) as? [[AnyObject]] {
-                let interval = NSDate().timeIntervalSinceDate(start)
-                Swift.print(String(format: "RPC latency = %3.2fms", interval as Double * 1e3))
-                myLines = result
-            } else {
-                Swift.print("rpc error")
-            }
-        } else {
-            Swift.print("hit, [\(first):\(last)] <= [\(linesStart):\(linesStart + lines.count)]")
-        }
 
         for lineIx in first..<last {
-            var line = [AnyObject]?()
-            if let myLines = myLines {
-                if lineIx < first + myLines.count {
-                    line = myLines[lineIx - first]
-                }
-            } else if lineIx >= linesStart && lineIx < linesStart + lines.count {
-                line = lines[lineIx - linesStart]
-            }
+            let line = getLine(lineIx)
             if line == nil {
                 continue
             }
@@ -150,6 +178,14 @@ class EditView: NSView {
                     let end = attr[2] as! Int
                     let u16_end = utf8_offset_to_utf16(s, end)
                     attrString.addAttribute(NSBackgroundColorAttributeName, value: selcolor, range: NSMakeRange(u16_start, u16_end - u16_start))
+                } else if type == "fg" {
+                    let start = attr[1] as! Int
+                    let u16_start = utf8_offset_to_utf16(s, start)
+                    let end = attr[2] as! Int
+                    let u16_end = utf8_offset_to_utf16(s, end)
+                    let fgcolor = colorFromArgb(UInt32(attr[3] as! Int))
+                    //let fgcolor = colorFromArgb(0xff800000)
+                    attrString.addAttribute(NSForegroundColorAttributeName, value: fgcolor, range: NSMakeRange(u16_start, u16_end - u16_start))
                 }
             }
             // TODO: I don't understand where the 13 comes from (it's what aligns with baseline. We
@@ -170,6 +206,7 @@ class EditView: NSView {
                     let utf16_ix = utf8_offset_to_utf16(s, cursor)
                     pos = CTLineGetOffsetForStringIndex(ctline, CFIndex(utf16_ix), nil)
                 }
+                CGContextSetStrokeColorWithColor(context, CGColorCreateGenericGray(0, 1))
                 CGContextMoveToPoint(context, x0 + pos, y + descent)
                 CGContextAddLineToPoint(context, x0 + pos, y - ascent)
                 CGContextStrokePath(context)
@@ -193,17 +230,126 @@ class EditView: NSView {
     }
 
     override func keyDown(theEvent: NSEvent) {
-        if let coreConnection = coreConnection {
-            coreConnection.sendJson(eventToJson(theEvent))
+        // store current event so that it can be sent to the core
+        // if the selector for the event is "noop:".
+        currentEvent = theEvent;
+        self.interpretKeyEvents([theEvent]);
+        currentEvent = nil;
+    }
+
+    override func insertText(insertString: AnyObject) {
+        sendRpcAsync("insert", params: insertedStringToJson(insertString as! NSString))
+    }
+
+    override func doCommandBySelector(aSelector: Selector) {
+        if (self.respondsToSelector(aSelector)) {
+            super.doCommandBySelector(aSelector);
         } else {
-            super.keyDown(theEvent)
+            let commandName = camelCaseToUnderscored(aSelector.description).stringByReplacingOccurrencesOfString(":", withString: "");
+            if (commandName == "noop") {
+                sendRpcAsync("key", params: eventToJson(currentEvent!));
+            } else {
+                sendRpcAsync(commandName, params: []);
+            }
         }
     }
 
+    func cutCopy(method: String) {
+        let text = sendRpc(method, params: [])
+        if let text = text as? String {
+            let pasteboard = NSPasteboard.generalPasteboard()
+            pasteboard.clearContents()
+            pasteboard.writeObjects([text])
+        }
+    }
+
+    func cut(sender: AnyObject?) {
+        cutCopy("cut")
+    }
+
+    func copy(sender: AnyObject?) {
+        cutCopy("copy")
+    }
+
+    func paste(sender: AnyObject?) {
+        let pasteboard = NSPasteboard.generalPasteboard()
+        if let items = pasteboard.pasteboardItems {
+            for element in items {
+                if let str = element.stringForType("public.utf8-plain-text") {
+                    insertText(str)
+                    break
+                }
+            }
+        }
+    }
+
+    override func mouseDown(theEvent: NSEvent) {
+        let (line, col) = pointToLineCol(convertPoint(theEvent.locationInWindow, fromView: nil))
+        lastDragLineCol = (line, col)
+        let flags = theEvent.modifierFlags.rawValue >> 16
+        let clickCount = theEvent.clickCount
+        sendRpcAsync("click", params: [line, col, flags, clickCount])
+        timer = NSTimer.scheduledTimerWithTimeInterval(NSTimeInterval(1.0/60), target: self, selector: #selector(autoscrollTimer), userInfo: nil, repeats: true)
+        timerEvent = theEvent
+    }
+    
+    override func mouseDragged(theEvent: NSEvent) {
+        autoscroll(theEvent)
+        let (line, col) = pointToLineCol(convertPoint(theEvent.locationInWindow, fromView: nil))
+        if let last = lastDragLineCol where last != (line, col) {
+            lastDragLineCol = (line, col)
+            let flags = theEvent.modifierFlags.rawValue >> 16
+            sendRpcAsync("drag", params: [line, col, flags])
+        }
+        timerEvent = theEvent
+    }
+
+    override func mouseUp(theEvent: NSEvent) {
+        timer?.invalidate()
+        timer = nil
+        timerEvent = nil
+    }
+
+    func autoscrollTimer() {
+        if let event = timerEvent {
+            mouseDragged(event)
+        }
+    }
+
+    // TODO: more functions should call this, just dividing by linespace doesn't account for descent
+    func yToLine(y: CGFloat) -> Int {
+        return Int(floor(max(y - descent, 0) / linespace))
+    }
+
+    func lineIxToBaseline(lineIx: Int) -> CGFloat {
+        return CGFloat(lineIx + 1) * linespace
+    }
+
+    func pointToLineCol(loc: NSPoint) -> (Int, Int) {
+        let lineIx = yToLine(loc.y)
+        var col = 0
+        if let line = getLine(lineIx) {
+            let s = line[0] as! String
+            let attrString = NSAttributedString(string: s, attributes: self.attributes)
+            let ctline = CTLineCreateWithAttributedString(attrString)
+            let relPos = NSPoint(x: loc.x - x0, y: lineIxToBaseline(lineIx) - loc.y)
+            let utf16_ix = CTLineGetStringIndexForPosition(ctline, relPos)
+            if utf16_ix != kCFNotFound {
+                col = utf16_offset_to_utf8(s, utf16_ix)
+            }
+        }
+        return (lineIx, col)
+    }
+
     func updateText(text: [String: AnyObject]) {
-        self.lines = text["lines"]! as! [[AnyObject]]
-        self.linesStart = text["first_line"] as! Int
-        heightConstraint?.constant = (text["height"] as! CGFloat) * linespace + 2 * descent
+        self.lineMap = [:]
+        let firstLine = text["first_line"] as! Int
+        self.height = text["height"] as! Int
+        let lines = text["lines"]! as! [[AnyObject]]
+        for lineNum in firstLine..<(firstLine + lines.count) {
+            self.lineMap[lineNum] = lines[lineNum - firstLine]
+        }
+        heightConstraint?.constant = CGFloat(self.height) * linespace + 2 * descent
         if let cursor = text["scrollto"] as? [Int] {
             let line = cursor[0]
             let col = cursor[1]
@@ -245,7 +391,66 @@ class EditView: NSView {
         if first != firstLine || last != lastLine {
             firstLine = first
             lastLine = last
-            coreConnection?.sendJson(["scroll", [firstLine, lastLine]])
+            sendRpcAsync("scroll", params: [firstLine, lastLine])
         }
+    }
+
+    let MAX_CACHE_LINES = 1000
+    let CACHE_FETCH_CHUNK = 100
+
+    // get a line, trying to hit the cache
+    func getLine(lineNum: Int) -> [AnyObject]? {
+        // TODO: maybe core should take care to set height >= 1
+        if lineNum < 0 || lineNum >= max(1, self.height) {
+            return nil
+        }
+        if let line = self.lineMap[lineNum] {
+            return line
+        }
+        // speculatively prefetch a bigger chunk from RPC, but don't get anything we already have
+        var first = lineNum
+        while first > max(0, lineNum - CACHE_FETCH_CHUNK) && lineMap.indexForKey(first - 1) == nil {
+            first -= 1
+        }
+        var last = lineNum + 1
+        while last < min(lineNum, height) + CACHE_FETCH_CHUNK && lineMap.indexForKey(last + 1) == nil {
+            last += 1
+        }
+        if lineMap.count + (last - first) > MAX_CACHE_LINES {
+            // a more sophisticated approach would be LRU replacement, but simple is probably good enough
+            lineMap = [:]
+        }
+        if let lines = fetchLineRange(first, last) {
+            for lineNum in first..<last {
+                if lineNum - first < lines.count {
+                    lineMap[lineNum] = lines[lineNum - first]
+                } else {
+                    lineMap[lineNum] = [""]  // TODO: maybe core should always supply
+                }
+            }
+        }
+        return lineMap[lineNum]
+    }
+    
+    func fetchLineRange(first: Int, _ last: Int) -> [[AnyObject]]? {
+        let start = NSDate()
+        if let result = sendRpc("render_lines", params: ["first_line": first, "last_line": last]) as? [[AnyObject]] {
+            let interval = NSDate().timeIntervalSinceDate(start)
+            Swift.print(String(format: "RPC latency = %3.2fms", interval as Double * 1e3))
+            return result
+        } else {
+            Swift.print("rpc error")
+            return nil
+        }
+    }
+
+    // MARK: - Debug Methods
+
+    @IBAction func debugRewrap(sender: AnyObject) {
+        sendRpcAsync("debug_rewrap", params: []);
+    }
+
+    @IBAction func debugTestFGSpans(sender: AnyObject) {
+        sendRpcAsync("debug_test_fg_spans", params: []);
     }
 }

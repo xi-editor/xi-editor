@@ -31,16 +31,22 @@ class AppWindowController: NSWindowController {
     override func windowDidLoad() {
         super.windowDidLoad()
         //window?.backgroundColor = NSColor.whiteColor()
+        let tabName = coreConnection?.sendRpc("new_tab", params: []) as! String
         editView.coreConnection = coreConnection
+        editView.tabName = tabName
 
         // set up autolayout constraints
         let views = ["editView": editView, "clipView": scrollView.contentView]
         visualConstraint(views, "H:[editView(>=clipView)]")
         visualConstraint(views, "V:[editView(>=clipView)]")
 
-        NSNotificationCenter.defaultCenter().addObserver(self, selector: "boundsDidChangeNotification:", name: NSViewBoundsDidChangeNotification, object: scrollView.contentView)
-        NSNotificationCenter.defaultCenter().addObserver(self, selector: "frameDidChangeNotification:", name: NSViewFrameDidChangeNotification, object: scrollView)
+        NSNotificationCenter.defaultCenter().addObserver(self, selector: #selector(AppWindowController.boundsDidChangeNotification(_:)), name: NSViewBoundsDidChangeNotification, object: scrollView.contentView)
+        NSNotificationCenter.defaultCenter().addObserver(self, selector: #selector(AppWindowController.frameDidChangeNotification(_:)), name: NSViewFrameDidChangeNotification, object: scrollView)
         updateEditViewScroll()
+    }
+
+    func windowWillClose(_: NSNotification) {
+        editView.coreConnection?.sendRpcAsync("delete_tab", params: ["tab": editView.tabName!] as [String : AnyObject])
     }
 
     func boundsDidChangeNotification(notification: NSNotification) {
@@ -60,7 +66,7 @@ class AppWindowController: NSWindowController {
         if filename == nil {
             saveDocumentAs(sender)
         } else {
-            coreConnection?.sendJson(["save", filename!])
+            editView.sendRpcAsync("save", params: ["filename": filename!])
         }
     }
     
@@ -72,5 +78,14 @@ class AppWindowController: NSWindowController {
                 saveDocument(sender)
             }
         }
+    }
+
+    // the ShadowView sometimes steals drag events, so forward them back to the edit view
+    func handleMouseDragged(theEvent: NSEvent) {
+        editView.mouseDragged(theEvent)
+    }
+
+    func handleMouseUp(theEvent: NSEvent) {
+        editView.mouseUp(theEvent)
     }
 }

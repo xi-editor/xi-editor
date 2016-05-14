@@ -12,15 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Unicode utilities useful for text editing, including a line breaking iterator.
+
 mod tables;
 
 use tables::*;
-
-// similar to Rust lib (not stable), but will panic if `s >= s.len()`
-fn is_char_boundary(s: &str, index: usize) -> bool {
-    // fancy bit magic for ranges 0..0x80 | 0xc0..
-    index == s.len() || (s.as_bytes()[index] as i8) >= -0x40
-}
 
 pub fn linebreak_property(cp: char) -> u8 {
     let cp = cp as usize;
@@ -61,6 +57,10 @@ pub fn linebreak_property_str(s: &str, ix: usize) -> (u8, usize) {
     }
 }
 
+/// An iterator which produces line breaks according to the UAX 14 line
+/// breaking algorithm. For each break, return a tuple consisting of the offset
+/// within the source string and a bool indicating whether it's a hard break.
+#[derive(Copy, Clone)]
 pub struct LineBreakIterator<'a> {
     s: &'a str,
     ix: usize,
@@ -98,6 +98,7 @@ impl<'a> Iterator for LineBreakIterator<'a> {
 }
 
 impl<'a> LineBreakIterator<'a> {
+    /// Create a new iterator for the given string slice.
     pub fn new(s: &str) -> LineBreakIterator {
         if s.is_empty() {
             LineBreakIterator {
@@ -124,9 +125,21 @@ impl<'a> LineBreakIterator<'a> {
 /// This is something of an "expert-level" interface, and should only be used if
 /// the caller is prepared to respect all the invariants. Otherwise, you might
 /// get inconsistent breaks depending on start positiona and leaf boundaries.
+#[derive(Copy, Clone)]
 pub struct LineBreakLeafIter {
     ix: usize,
     state: u8,
+}
+
+impl Default for LineBreakLeafIter {
+    // A default value. No guarantees on what happens when next() is called
+    // on this. Intended to be useful for empty ropes.
+    fn default() -> LineBreakLeafIter {
+        LineBreakLeafIter {
+            ix: 0,
+            state: 0,
+        }
+    }
 }
 
 impl LineBreakLeafIter {
@@ -137,15 +150,6 @@ impl LineBreakLeafIter {
         LineBreakLeafIter {
             ix: ix + len,
             state: lb,
-        }
-    }
-
-    // A default value. No guarantees on what happens when next() is called
-    // on this. Intended to be useful for empty ropes.
-    pub fn default() -> LineBreakLeafIter {
-        LineBreakLeafIter {
-            ix: 0,
-            state: 0,
         }
     }
 

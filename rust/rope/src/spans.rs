@@ -103,7 +103,7 @@ impl<T: Clone + Default> NodeInfo for SpansInfo<T> {
         SpansInfo {
             n_spans: l.spans.len(),
             iv: iv,
-            phantom: PhantomData::default(),
+            phantom: PhantomData,
         }
     }
 }
