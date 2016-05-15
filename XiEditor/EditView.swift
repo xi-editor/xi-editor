@@ -97,8 +97,10 @@ class EditView: NSView, NSTextInputClient {
 
     var currentEvent: NSEvent?
     
+    var cursorPos: (Int, Int)?
     var _selectedRange: NSRange
     var _markedRange: NSRange
+    var translateRange: (Int, NSRange)
 
     override init(frame frameRect: NSRect) {
         let font = CTFontCreateWithName("InconsolataGo", 14, nil)
@@ -113,6 +115,7 @@ class EditView: NSView, NSTextInputClient {
         updateQueue = dispatch_queue_create("com.levien.xi.update", DISPATCH_QUEUE_SERIAL)
         _selectedRange = NSMakeRange(NSNotFound, 0)
         _markedRange = NSMakeRange(NSNotFound, 0)
+        translateRange = (NSNotFound, NSMakeRange(NSNotFound, 0))
         super.init(frame: frameRect)
         widthConstraint = NSLayoutConstraint(item: self, attribute: .Width, relatedBy: .GreaterThanOrEqual, toItem: nil, attribute: .Width, multiplier: 1, constant: 400)
         widthConstraint!.active = true
@@ -177,6 +180,7 @@ class EditView: NSView, NSTextInputClient {
                 let type = attr[0] as! String
                 if type == "cursor" {
                     cursor = attr[1] as? Int
+                    self.cursorPos = (lineIx, utf8_offset_to_utf16(s, cursor!))
                 } else if type == "sel" {
                     let start = attr[1] as! Int
                     let u16_start = utf8_offset_to_utf16(s, start)
@@ -193,6 +197,36 @@ class EditView: NSView, NSTextInputClient {
                     attrString.addAttribute(NSForegroundColorAttributeName, value: fgcolor, range: NSMakeRange(u16_start, u16_end - u16_start))
                 }
             }
+            if let c = cursor {
+                let cix = utf8_offset_to_utf16(s, c)
+                if (markedRange().location != NSNotFound) {
+                    var markRangeStart = cix - markedRange().length
+                    if (markRangeStart >= 0) {
+                        attrString.addAttribute(NSUnderlineStyleAttributeName,
+                                                value: NSUnderlineStyle.StyleSingle.rawValue,
+                                                range: NSMakeRange(markRangeStart, markedRange().length))
+                    }
+                }
+                if (selectedRange().location != NSNotFound) {
+                    var selectedRangeStart = cix - markedRange().length + selectedRange().location
+                    if (selectedRangeStart >= 0) {
+                        attrString.addAttribute(NSUnderlineStyleAttributeName,
+                                                value: NSUnderlineStyle.StyleThick.rawValue,
+                                                range: NSMakeRange(selectedRangeStart, selectedRange().length))
+                    }
+                }
+            }
+            /*
+            if self.translateRange.0 != NSNotFound {
+                if translateRange.0 == lineIx {
+                    var range = self.translateRange.1
+                    if range.length < (attrString.length - range.location) {
+                        range.length = attrString.length
+                    }
+                    
+                    attrString.addAttribute(NSUnderlineStyleAttributeName, value: NSUnderlineStyle.StyleSingle.rawValue, range: self.translateRange.1)
+                }
+            }*/
             // TODO: I don't understand where the 13 comes from (it's what aligns with baseline. We
             // probably want to move to using CTLineDraw instead of drawing the attributed string,
             // but that means drawing the selection highlight ourselves (which has other benefits).
@@ -252,6 +286,7 @@ class EditView: NSView, NSTextInputClient {
     func replacementMarkedRange(replacementRange: NSRange) -> NSRange {
         var markedRange = _markedRange
         
+        
         if (markedRange.location == NSNotFound) {
             markedRange = _selectedRange
         }
@@ -276,7 +311,7 @@ class EditView: NSView, NSTextInputClient {
             len = str.length
         }
         if (replacementRange.location == NSNotFound) {
-            replacementRange.location = 1
+            replacementRange.location = 0
             replacementRange.length = 0
         }
         for var i in 0..<aRange.length {
@@ -298,6 +333,9 @@ class EditView: NSView, NSTextInputClient {
         }
         _selectedRange = mutSelectedRange
         _markedRange = effectiveRange
+        if let (lineIx, _) = self.cursorPos {
+            translateRange = (lineIx, effectiveRange)
+        }
         if (effectiveRange.length == 0) {
             self.removeMarkedText()
         }
@@ -310,11 +348,13 @@ class EditView: NSView, NSTextInputClient {
             }
         }
         _markedRange = NSMakeRange(NSNotFound, 0)
+        translateRange = (NSNotFound, NSMakeRange(NSNotFound, 0))
         _selectedRange = NSMakeRange(NSNotFound, 0)
     }
     
     func unmarkText() {
         self._markedRange = NSMakeRange(NSNotFound, 0)
+        self.translateRange = (NSNotFound, NSMakeRange(NSNotFound, 0))
     }
     
     func selectedRange() -> NSRange {
@@ -338,7 +378,19 @@ class EditView: NSView, NSTextInputClient {
     }
     
     func firstRectForCharacterRange(aRange: NSRange, actualRange: NSRangePointer) -> NSRect {
-        return NSRect(x: 0, y: 0, width: 0, height: 0)
+        if let viewWinFrame = self.window?.convertRectToScreen(self.frame),
+            let (lineIx, pos) = self.cursorPos,
+            let line = getLine(lineIx) {
+            let str = line[0] as! String
+            let ctLine = CTLineCreateWithAttributedString(NSMutableAttributedString(string: str, attributes: self.attributes))
+            let rangeWidth = CTLineGetOffsetForStringIndex(ctLine, pos, nil) - CTLineGetOffsetForStringIndex(ctLine, pos - aRange.length, nil)
+            return NSRect(x: viewWinFrame.origin.x + CTLineGetOffsetForStringIndex(ctLine, pos, nil),
+                          y: viewWinFrame.origin.y + viewWinFrame.size.height - linespace * CGFloat(lineIx + 1) - 5,
+                          width: rangeWidth,
+                          height: linespace)
+        } else {
+            return NSRect(x: 0, y: 0, width: 0, height: 0)
+        }
     }
     
     func characterIndexForPoint(aPoint: NSPoint) -> Int {
