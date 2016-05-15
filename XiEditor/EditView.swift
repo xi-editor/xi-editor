@@ -13,6 +13,47 @@
 // limitations under the License.
 
 import Cocoa
+import Carbon
+
+func getKeyboardData() -> NSData {
+    let currentKeyboard = TISCopyCurrentKeyboardLayoutInputSource().takeRetainedValue()
+    let propPtr = TISGetInputSourceProperty(currentKeyboard, kTISPropertyUnicodeKeyLayoutData)
+    let layoutData = Unmanaged<NSData>.fromOpaque(COpaquePointer(propPtr)).takeUnretainedValue()
+    
+    // do we need a copy?, idk
+    return NSData(bytes:layoutData.bytes, length:layoutData.length)
+}
+
+func translateKeyPress(event: NSEvent, keyboardLayoutData: NSData, inout deadKeyState:UInt32) -> NSString? {
+    // Translate the key ourselves, inputs are the current event and the past deadKeyState,
+    // the user can type <option-u> <u> for u-umlaut, 
+    // the first key press dose not produce a char it is a 'dead' key that establishes the *deadKeyState*
+    // for the keypress that follows.
+  
+    var chars : [UniChar] = [0,0,0,0]
+    var realLength : Int = 0
+    
+    let modifierKeyState = UInt32((event.modifierFlags.rawValue >> 16) & 0xFF)
+    
+    let err = UCKeyTranslate(UnsafePointer<UCKeyboardLayout>(keyboardLayoutData.bytes),
+                             event.keyCode,
+                             UInt16(kUCKeyActionDown),
+                             modifierKeyState,
+                             UInt32(LMGetKbdType()),
+                             0,
+                             &deadKeyState,
+                             chars.count,
+                             &realLength,
+                             &chars);
+    
+    if err == noErr && realLength>0 {
+        return  NSString(characters: chars, length:realLength)
+    }
+    else {
+        return nil
+    }
+}
+
 
 func eventToJson(event: NSEvent) -> AnyObject {
     let flags = event.modifierFlags.rawValue >> 16;
@@ -96,6 +137,10 @@ class EditView: NSView {
     var pendingUpdate: [String: AnyObject]? = nil
 
     var currentEvent: NSEvent?
+    
+    // dead key events not yet applied
+    var deadKeyState : UInt32 = 0
+    var keyboardData : NSData
 
     override init(frame frameRect: NSRect) {
         let font = CTFontCreateWithName("InconsolataGo", 14, nil)
@@ -108,17 +153,31 @@ class EditView: NSView {
         fontWidth = getFontWidth(font)
         selcolor = NSColor(colorLiteralRed: 0.7, green: 0.85, blue: 0.99, alpha: 1.0)
         updateQueue = dispatch_queue_create("com.levien.xi.update", DISPATCH_QUEUE_SERIAL)
+        keyboardData = getKeyboardData();
         super.init(frame: frameRect)
         widthConstraint = NSLayoutConstraint(item: self, attribute: .Width, relatedBy: .GreaterThanOrEqual, toItem: nil, attribute: .Width, multiplier: 1, constant: 400)
         widthConstraint!.active = true
         heightConstraint = NSLayoutConstraint(item: self, attribute: .Height, relatedBy: .GreaterThanOrEqual, toItem: nil, attribute: .Height, multiplier: 1, constant: 100)
         heightConstraint!.active = true
+        
+        // When the user switches keyboards, relaod keyboard layout data
+        let mainQueue = NSOperationQueue.mainQueue()
+        let center = NSDistributedNotificationCenter.defaultCenter()
+        
+        center.addObserverForName(kTISNotifySelectedKeyboardInputSourceChanged as NSString as String, object: nil, queue: mainQueue) { _ in
+                self.keyboardData = getKeyboardData()
+            
+        }
     }
 
     required init?(coder: NSCoder) {
         fatalError("View doesn't support NSCoding")
     }
 
+    deinit {
+        NSNotificationCenter.defaultCenter().removeObserver(self)
+    }
+    
     func sendRpcAsync(method: String, params: AnyObject) {
         let inner = ["method": method, "params": params, "tab": tabName!] as [String : AnyObject]
         coreConnection?.sendRpcAsync("edit", params: inner)
@@ -238,7 +297,19 @@ class EditView: NSView {
     }
 
     override func insertText(insertString: AnyObject) {
-        sendRpcAsync("insert", params: insertedStringToJson(insertString as! NSString))
+        guard let insertString:NSString = insertString as? NSString,
+              let theEvent = self.currentEvent else { return }
+        
+        if insertString.length == 0  || self.deadKeyState != 0 {
+            //we got a dead key, this time or last time
+            // Translate the key ourselves, using the current event and the past deadKeyState.
+            if let typedText = translateKeyPress(theEvent, keyboardLayoutData:keyboardData, deadKeyState:&deadKeyState) {
+                sendRpcAsync("insert", params: insertedStringToJson(typedText))
+            }
+        }
+        else {
+            sendRpcAsync("insert", params: insertedStringToJson(insertString))
+        }
     }
 
     override func doCommandBySelector(aSelector: Selector) {
