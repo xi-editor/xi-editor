@@ -30,6 +30,8 @@ use tabs::update_tab;
 
 const MODIFIER_SHIFT: u64 = 2;
 
+const MAX_UNDOS: usize = 20;
+
 pub struct Editor {
     tabname: String,  // used for sending updates back to front-end
 
@@ -42,6 +44,7 @@ pub struct Editor {
     live_undos: Vec<usize>,  // undo groups that may still be toggled
     cur_undo: usize,  // index to live_undos, ones after this are undone
     undos: BTreeSet<usize>,  // undo groups that are undone
+    gc_undos: BTreeSet<usize>,  // undo groups that are no longer live and should be gc'ed
 
     this_edit_type: EditType,
     last_edit_type: EditType,
@@ -76,6 +79,7 @@ impl Editor {
             live_undos: Vec::new(),
             cur_undo: 0,
             undos: BTreeSet::new(),
+            gc_undos: BTreeSet::new(),
             last_edit_type: EditType::Other,
             this_edit_type: EditType::Other,
             new_cursor: None,
@@ -134,9 +138,14 @@ impl Editor {
                 undo_group = *self.live_undos.last().unwrap();
             } else {
                 undo_group = self.undo_group_id;
+                self.gc_undos.extend(&self.live_undos[self.cur_undo..]);
                 self.live_undos.truncate(self.cur_undo);
                 self.live_undos.push(undo_group);
-                self.cur_undo += 1;
+                if self.live_undos.len() <= MAX_UNDOS {
+                    self.cur_undo += 1;
+                } else {
+                    self.gc_undos.insert(self.live_undos.remove(0));
+                }
                 self.undo_group_id += 1;
             }
             let priority = 0x10000;
@@ -160,6 +169,14 @@ impl Editor {
         self.text = self.engine.get_head();
         self.view.after_edit(&self.text, &delta);
         self.dirty = true;
+    }
+
+    fn gc_undos(&mut self) {
+        if !self.gc_undos.is_empty() {
+            self.engine.gc(&self.gc_undos);
+            self.undos = &self.undos - &self.gc_undos;
+            self.gc_undos.clear();
+        }
     }
 
     fn reset_contents(&mut self, new_contents: Rope) {
@@ -532,6 +549,7 @@ impl Editor {
         self.commit_delta();
         self.render();
         self.last_edit_type = self.this_edit_type;
+        self.gc_undos();
         result
     }
 }
