@@ -100,7 +100,6 @@ class EditView: NSView, NSTextInputClient {
     var cursorPos: (Int, Int)?
     var _selectedRange: NSRange
     var _markedRange: NSRange
-    var translateRange: (Int, NSRange)
 
     override init(frame frameRect: NSRect) {
         let font = CTFontCreateWithName("InconsolataGo", 14, nil)
@@ -115,7 +114,6 @@ class EditView: NSView, NSTextInputClient {
         updateQueue = dispatch_queue_create("com.levien.xi.update", DISPATCH_QUEUE_SERIAL)
         _selectedRange = NSMakeRange(NSNotFound, 0)
         _markedRange = NSMakeRange(NSNotFound, 0)
-        translateRange = (NSNotFound, NSMakeRange(NSNotFound, 0))
         super.init(frame: frameRect)
         widthConstraint = NSLayoutConstraint(item: self, attribute: .Width, relatedBy: .GreaterThanOrEqual, toItem: nil, attribute: .Width, multiplier: 1, constant: 400)
         widthConstraint!.active = true
@@ -216,17 +214,7 @@ class EditView: NSView, NSTextInputClient {
                     }
                 }
             }
-            /*
-            if self.translateRange.0 != NSNotFound {
-                if translateRange.0 == lineIx {
-                    var range = self.translateRange.1
-                    if range.length < (attrString.length - range.location) {
-                        range.length = attrString.length
-                    }
-                    
-                    attrString.addAttribute(NSUnderlineStyleAttributeName, value: NSUnderlineStyle.StyleSingle.rawValue, range: self.translateRange.1)
-                }
-            }*/
+            
             // TODO: I don't understand where the 13 comes from (it's what aligns with baseline. We
             // probably want to move to using CTLineDraw instead of drawing the attributed string,
             // but that means drawing the selection highlight ourselves (which has other benefits).
@@ -333,9 +321,6 @@ class EditView: NSView, NSTextInputClient {
         }
         _selectedRange = mutSelectedRange
         _markedRange = effectiveRange
-        if let (lineIx, _) = self.cursorPos {
-            translateRange = (lineIx, effectiveRange)
-        }
         if (effectiveRange.length == 0) {
             self.removeMarkedText()
         }
@@ -348,13 +333,11 @@ class EditView: NSView, NSTextInputClient {
             }
         }
         _markedRange = NSMakeRange(NSNotFound, 0)
-        translateRange = (NSNotFound, NSMakeRange(NSNotFound, 0))
         _selectedRange = NSMakeRange(NSNotFound, 0)
     }
     
     func unmarkText() {
         self._markedRange = NSMakeRange(NSNotFound, 0)
-        self.translateRange = (NSNotFound, NSMakeRange(NSNotFound, 0))
     }
     
     func selectedRange() -> NSRange {
@@ -396,12 +379,6 @@ class EditView: NSView, NSTextInputClient {
     func characterIndexForPoint(aPoint: NSPoint) -> Int {
         return 0
     }
-    
-    /*
-    override func insertText(insertString: AnyObject) {
-        sendRpcAsync("insert", params: insertedStringToJson(insertString as! NSString))
-    }
- */
     
     override func doCommandBySelector(aSelector: Selector) {
         if (self.respondsToSelector(aSelector)) {
