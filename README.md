@@ -99,7 +99,7 @@ contribute to the above goals:
 * ***JSON***. The protocol for front-end / back-end communication, as well as
   between the back-end and plug-ins, is based on simple JSON messages. I
   considered binary formats, but the actual improvement in performance would
-  be completely in the noise. Using JSON considerably lowers friction for
+  be completely lost in the noise. Using JSON considerably lowers friction for
   developing plug-ins, as it’s available out of the box for most modern
   languages, and there are plenty of the libraries available for the other
   ones.
