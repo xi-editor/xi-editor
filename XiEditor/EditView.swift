@@ -15,46 +15,6 @@
 import Cocoa
 import Carbon
 
-func getKeyboardData() -> NSData {
-    let currentKeyboard = TISCopyCurrentKeyboardLayoutInputSource().takeRetainedValue()
-    let propPtr = TISGetInputSourceProperty(currentKeyboard, kTISPropertyUnicodeKeyLayoutData)
-    let layoutData = Unmanaged<NSData>.fromOpaque(COpaquePointer(propPtr)).takeUnretainedValue()
-    
-    // do we need a copy?, idk
-    return NSData(bytes:layoutData.bytes, length:layoutData.length)
-}
-
-func translateKeyPress(event: NSEvent, keyboardLayoutData: NSData, inout deadKeyState:UInt32) -> NSString? {
-    // Translate the key ourselves, inputs are the current event and the past deadKeyState,
-    // the user can type <option-u> <u> for u-umlaut, 
-    // the first key press dose not produce a char it is a 'dead' key that establishes the *deadKeyState*
-    // for the keypress that follows.
-  
-    var chars : [UniChar] = [0,0,0,0]
-    var realLength : Int = 0
-    
-    let modifierKeyState = UInt32((event.modifierFlags.rawValue >> 16) & 0xFF)
-    
-    let err = UCKeyTranslate(UnsafePointer<UCKeyboardLayout>(keyboardLayoutData.bytes),
-                             event.keyCode,
-                             UInt16(kUCKeyActionDown),
-                             modifierKeyState,
-                             UInt32(LMGetKbdType()),
-                             0,
-                             &deadKeyState,
-                             chars.count,
-                             &realLength,
-                             &chars);
-    
-    if err == noErr && realLength>0 {
-        return  NSString(characters: chars, length:realLength)
-    }
-    else {
-        return nil
-    }
-}
-
-
 func eventToJson(event: NSEvent) -> AnyObject {
     let flags = event.modifierFlags.rawValue >> 16;
     return ["keycode": Int(event.keyCode),
@@ -103,6 +63,51 @@ func camelCaseToUnderscored(name: NSString) -> NSString {
     return underscored;
 }
 
+func getKeyboardData() -> NSData {
+    let currentKeyboard = TISCopyCurrentKeyboardLayoutInputSource().takeRetainedValue()
+    let propPtr = TISGetInputSourceProperty(currentKeyboard, kTISPropertyUnicodeKeyLayoutData)
+    let layoutData = Unmanaged<NSData>.fromOpaque(COpaquePointer(propPtr)).takeUnretainedValue()
+    
+    // do we need a copy?, idk.
+    return NSData(bytes:layoutData.bytes, length:layoutData.length)
+}
+
+func translateKeyPress(event: NSEvent, keyboardLayoutData: NSData, inout deadKeyState:UInt32) -> NSString? {
+    // Translate the key ourselves, inputs are: the current event, the current keyboard layout, the past deadKeyState,
+    
+    // *deadKey*: The user can type <option-u> <u> for u-umlaut.
+    // The first key press, <option-u> in this example, dose not produce a char.
+    // Rather it is a 'dead' key that says to put an umlaut on the the next char.
+    // The deadKeyState is the info that the next char gets an umlaut.
+    //
+    //  If the 2nd keypress is not an umlautable char,
+    //  2 chars will be returned when translate the 2nd keypress:
+    //  1st a floating umlaut above nothing; and then the 2nd char w/o umlaut.
+    
+    var chars : [UniChar] = [0,0,0,0]
+    var realLength : Int = 0
+    
+    let modifierKeyState = UInt32((event.modifierFlags.rawValue >> 16) & 0xFF)
+    
+    let err = UCKeyTranslate(UnsafePointer<UCKeyboardLayout>(keyboardLayoutData.bytes),
+                             event.keyCode,
+                             UInt16(kUCKeyActionDown),
+                             modifierKeyState,
+                             UInt32(LMGetKbdType()),
+                             0,
+                             &deadKeyState,
+                             chars.count,
+                             &realLength,
+                             &chars);
+    
+    if err == noErr && realLength>0 {
+        return  NSString(characters: chars, length:realLength)
+    }
+    else {
+        return nil
+    }
+}
+
 class EditView: NSView {
     var tabName: String?
     var coreConnection: CoreConnection?
@@ -138,7 +143,7 @@ class EditView: NSView {
 
     var currentEvent: NSEvent?
     
-    // dead key events not yet applied
+    // for 'dead key' events
     var deadKeyState : UInt32 = 0
     var keyboardData : NSData
 
@@ -160,7 +165,7 @@ class EditView: NSView {
         heightConstraint = NSLayoutConstraint(item: self, attribute: .Height, relatedBy: .GreaterThanOrEqual, toItem: nil, attribute: .Height, multiplier: 1, constant: 100)
         heightConstraint!.active = true
         
-        // When the user switches keyboards, relaod keyboard layout data
+        // When the user switches keyboards, reload the keyboard layout data.
         let mainQueue = NSOperationQueue.mainQueue()
         let center = NSDistributedNotificationCenter.defaultCenter()
         
@@ -515,6 +520,8 @@ class EditView: NSView {
         }
     }
 
+    
+   
     // MARK: - Debug Methods
 
     @IBAction func debugRewrap(sender: AnyObject) {
