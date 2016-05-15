@@ -171,26 +171,26 @@ impl Engine {
     // recompute the prefix up to where the history diverges, but it's not clear that's
     // even worth the code complexity.
     fn compute_undo(&self, groups: BTreeSet<usize>) -> Revision {
-        let mut from_union = Cow::Borrowed(&self.revs[0].from_union);
-        for rev in &self.revs[1..] {
+        let mut from_union = Subset::default();
+        for rev in &self.revs {
             if let Edit { ref undo_group, ref inserts, ref deletes, .. } = rev.edit {
                 if groups.contains(undo_group) {
                     if !inserts.is_trivial() {
-                        from_union = Cow::Owned(from_union.transform_intersect(inserts));
+                        from_union = from_union.transform_intersect(inserts);
                     }
                 } else {
                     if !inserts.is_trivial() {
-                        from_union = Cow::Owned(from_union.transform_expand(inserts));
+                        from_union = from_union.transform_expand(inserts);
                     }
                     if !deletes.is_trivial() {
-                        from_union = Cow::Owned(from_union.intersect(deletes));
+                        from_union = from_union.intersect(deletes);
                     }
                 }
             }
         }
         Revision {
             rev_id: self.rev_id_counter,
-            from_union: from_union.into_owned(),
+            from_union: from_union,
             union_str_len: self.union_str.len(),
             edit: Undo {
                 groups: groups
