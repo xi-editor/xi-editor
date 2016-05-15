@@ -16,24 +16,38 @@ use std::cmp::max;
 use std::fs::File;
 use std::io::{Read,Write};
 use std::sync::Mutex;
+use std::collections::BTreeSet;
 use serde_json::Value;
 
 use xi_rope::rope::{LinesMetric,Rope,RopeInfo};
 use xi_rope::interval::Interval;
-use xi_rope::delta::OldDelta;
+use xi_rope::delta::Delta;
 use xi_rope::tree::Cursor;
+use xi_rope::engine::Engine;
 use view::View;
 
 use tabs::update_tab;
 
 const MODIFIER_SHIFT: u64 = 2;
 
+const MAX_UNDOS: usize = 20;
+
 pub struct Editor {
     tabname: String,  // used for sending updates back to front-end
 
     text: Rope,
     view: View,
-    delta: OldDelta<RopeInfo>,
+    delta: Option<Delta<RopeInfo>>,
+
+    engine: Engine,
+    undo_group_id: usize,
+    live_undos: Vec<usize>,  // undo groups that may still be toggled
+    cur_undo: usize,  // index to live_undos, ones after this are undone
+    undos: BTreeSet<usize>,  // undo groups that are undone
+    gc_undos: BTreeSet<usize>,  // undo groups that are no longer live and should be gc'ed
+
+    this_edit_type: EditType,
+    last_edit_type: EditType,
 
     // update to cursor, to be committed atomically with delta
     // TODO: use for all cursor motion?
@@ -44,6 +58,14 @@ pub struct Editor {
     col: usize  // maybe this should live in view, it's similar to selection
 }
 
+#[derive(PartialEq, Eq, Clone, Copy)]
+enum EditType {
+    Other,
+    InsertChars,
+    Delete,
+}
+
+
 impl Editor {
     pub fn new(tabname: &str) -> Editor {
         Editor {
@@ -51,7 +73,15 @@ impl Editor {
             text: Rope::from(""),
             view: View::new(),
             dirty: false,
-            delta: OldDelta::new(),
+            delta: None,
+            engine: Engine::new(Rope::from("")),
+            undo_group_id: 0,
+            live_undos: Vec::new(),
+            cur_undo: 0,
+            undos: BTreeSet::new(),
+            gc_undos: BTreeSet::new(),
+            last_edit_type: EditType::Other,
+            this_edit_type: EditType::Other,
             new_cursor: None,
             scroll_to: Some(0),
             col: 0
@@ -86,24 +116,75 @@ impl Editor {
         self.set_cursor_impl(offset, flags & MODIFIER_SHIFT == 0, hard);
     }
 
+    // May change this around so this fn adds the delta to the engine immediately,
+    // and commit_delta propagates the delta from the previous revision (not just
+    // the one immediately before the head revision, as now). In any case, this
+    // will need more information, for example to decide whether to merge undos.
     fn add_delta(&mut self, iv: Interval, new: Rope, new_cursor: usize) {
-        self.delta.add(iv, new);
+        if self.delta.is_some() {
+            print_err!("not supporting multiple deltas, dropping change");
+            return;
+        }
+        self.delta = Some(Delta::simple_edit(iv, new, self.text.len()));
         self.new_cursor = Some(new_cursor);
     }
 
     // commit the current delta, updating views and other invariants as needed
     fn commit_delta(&mut self) {
-        if !self.delta.is_empty() {
-            self.view.before_edit(&self.text, &self.delta);
-            self.delta.apply(&mut self.text);
-            self.view.after_edit(&self.text, &self.delta);
-            if let Some(c) = self.new_cursor {
-                self.set_cursor(c, true);
-                self.new_cursor = None;
+        if let Some(delta) = self.delta.take() {
+            let head_rev_id = self.engine.get_head_rev_id();
+            let undo_group;
+            if self.this_edit_type == self.last_edit_type && !self.live_undos.is_empty() {
+                undo_group = *self.live_undos.last().unwrap();
+            } else {
+                undo_group = self.undo_group_id;
+                self.gc_undos.extend(&self.live_undos[self.cur_undo..]);
+                self.live_undos.truncate(self.cur_undo);
+                self.live_undos.push(undo_group);
+                if self.live_undos.len() <= MAX_UNDOS {
+                    self.cur_undo += 1;
+                } else {
+                    self.gc_undos.insert(self.live_undos.remove(0));
+                }
+                self.undo_group_id += 1;
             }
-            self.dirty = true;
-            self.delta = OldDelta::new();
+            let priority = 0x10000;
+            self.engine.edit_rev(priority, undo_group, head_rev_id, delta);
+            self.update_after_revision();
+            if let Some(c) = self.new_cursor.take() {
+                self.set_cursor(c, true);
+            }
         }
+    }
+
+    fn update_undos(&mut self) {
+        self.engine.undo(self.undos.clone());
+        self.update_after_revision();
+    }
+
+    fn update_after_revision(&mut self) {
+        // TODO: update view
+        let delta = self.engine.delta_head();
+        self.view.before_edit(&self.text, &delta);
+        self.text = self.engine.get_head();
+        self.view.after_edit(&self.text, &delta);
+        self.dirty = true;
+    }
+
+    fn gc_undos(&mut self) {
+        if !self.gc_undos.is_empty() {
+            self.engine.gc(&self.gc_undos);
+            self.undos = &self.undos - &self.gc_undos;
+            self.gc_undos.clear();
+        }
+    }
+
+    fn reset_contents(&mut self, new_contents: Rope) {
+        self.engine = Engine::new(new_contents);
+        self.text = self.engine.get_head();
+        self.dirty = true;
+        self.view.reset_breaks();
+        self.set_cursor(0, true);
     }
 
     // render if needed, sending to ui
@@ -127,12 +208,14 @@ impl Editor {
             }
         };
         if start < self.view.sel_max() {
+            self.this_edit_type = EditType::Delete;
             let del_interval = Interval::new_closed_open(start, self.view.sel_max());
             self.add_delta(del_interval, Rope::from(""), start);
         }
     }
 
     fn insert_newline(&mut self) {
+        self.this_edit_type = EditType::InsertChars;
         self.insert("\n");
     }
     
@@ -265,9 +348,12 @@ impl Editor {
         }
     }
 
+    // TODO: insert from keyboard or input method shouldn't break undo group,
+    // but paste should.
     fn do_insert(&mut self, args: &Value) {
         if let Some(args) = args.as_object() {
             let chars = args.get("chars").unwrap().as_string().unwrap();
+            self.this_edit_type = EditType::InsertChars;
             self.insert(chars);
         }
     }
@@ -279,9 +365,7 @@ impl Editor {
                 Ok(mut f) => {
                     let mut s = String::new();
                     if f.read_to_string(&mut s).is_ok() {
-                        self.text = Rope::from(s);
-                        self.view.reset_breaks();
-                        self.set_cursor(0, true);
+                        self.reset_contents(Rope::from(s));
                     }
                 },
                 Err(e) => print_err!("error {}", e)
@@ -307,6 +391,7 @@ impl Editor {
     }
 
     fn do_scroll(&mut self, args: &Value) {
+        self.this_edit_type = self.last_edit_type;  // doesn't break undo group
         if let Some(array) = args.as_array() {
             if let (Some(first), Some(last)) = (array[0].as_i64(), array[1].as_i64()) {
                 self.view.set_scroll(max(first, 0) as usize, last as usize);
@@ -335,6 +420,7 @@ impl Editor {
     }
 
     fn do_render_lines(&mut self, args: &Value) -> Value {
+        self.this_edit_type = self.last_edit_type;  // doesn't break undo group
         if let Some(dict) = args.as_object() {
             let first_line = dict.get("first_line").unwrap().as_u64().unwrap();
             let last_line = dict.get("last_line").unwrap().as_u64().unwrap();
@@ -376,6 +462,22 @@ impl Editor {
         }
     }
 
+    fn do_undo(&mut self) {
+        if self.cur_undo > 0 {
+            self.cur_undo -= 1;
+            debug_assert!(self.undos.insert(self.live_undos[self.cur_undo]));
+            self.update_undos();
+        }
+    }
+
+    fn do_redo(&mut self) {
+        if self.cur_undo < self.live_undos.len() {
+            debug_assert!(self.undos.remove(&self.live_undos[self.cur_undo]));
+            self.cur_undo += 1;
+            self.update_undos();
+        }
+    }
+
     fn delete_to_end_of_paragraph(&mut self, kill_ring: &Mutex<Rope>) {
         let current = self.view.sel_max();
         let offset = self.cursor_end_offset();
@@ -403,6 +505,7 @@ impl Editor {
     }
 
     pub fn do_rpc(&mut self, method: &str, params: &Value, kill_ring: &Mutex<Rope>) -> Option<Value> {
+        self.this_edit_type = EditType::Other;
         let result = match method {
             "render_lines" => Some(self.do_render_lines(params)),
             "key" => async(self.do_key(params)),
@@ -434,6 +537,8 @@ impl Editor {
             "yank" => async(self.yank(kill_ring)),
             "click" => async(self.do_click(params)),
             "drag" => async(self.do_drag(params)),
+            "undo" => async(self.do_undo()),
+            "redo" => async(self.do_redo()),
             "cut" => Some(self.do_cut()),
             "copy" => Some(self.do_copy()),
             "debug_rewrap" => async(self.debug_rewrap()),
@@ -443,6 +548,8 @@ impl Editor {
         // TODO: could defer this until input quiesces - will this help?
         self.commit_delta();
         self.render();
+        self.last_edit_type = self.this_edit_type;
+        self.gc_undos();
         result
     }
 }

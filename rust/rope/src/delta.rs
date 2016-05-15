@@ -20,7 +20,6 @@ use interval::Interval;
 use tree::{Node, NodeInfo, TreeBuilder};
 use subset::{Subset, SubsetBuilder};
 use std::cmp::min;
-use std;
 
 pub enum DeltaElement<N: NodeInfo> {
     Copy(usize, usize),  // note: for now, we lose open/closed info at interval endpoints
@@ -230,52 +229,37 @@ impl<N: NodeInfo> Delta<N> {
         }
         sb.build()
     }
-}
 
-// This version of the Delta data structure will be replaced by the new one,
-// as it's not as suitable for async updates and undo. We keep it until the
-// new one is ready to use.
-pub struct OldDelta<N: NodeInfo> {
-    items: Vec<DeltaItem<N>>,
-}
-
-pub struct DeltaItem<N: NodeInfo> {
-    pub interval: Interval,
-    pub rope: Node<N>,
-}
-
-pub type Iter<'a, N> = std::slice::Iter<'a, DeltaItem<N>>;
-
-impl<N: NodeInfo> OldDelta<N> {
-    pub fn new() -> OldDelta<N> {
-        OldDelta {
-            items: Vec::new(),
+    /// Produce a summary of the delta. Everything outside the returned interval
+    /// is unchanged, and the old contents of the interval are replaced by new
+    /// contents of the returned length. Equations:
+    ///
+    /// `(iv, new_len) = self.summary()`
+    ///
+    /// `new_s = self.apply(s)`
+    ///
+    /// `new_s = simple_edit(iv, new_s.subseq(iv.start(), iv.start() + new_len), s.len()).apply(s)`
+    pub fn summary(&self) -> (Interval, usize) {
+        let mut els = self.els.as_slice();
+        let mut iv_start = 0;
+        if let Some((&DeltaElement::Copy(0, end), rest)) = els.split_first() {
+            iv_start = end;
+            els = rest;
         }
-    }
-
-    pub fn add(&mut self, interval: Interval, rope: Node<N>) {
-        self.items.push(DeltaItem {
-            interval: interval,
-            rope: rope,
-        })
-    }
-
-    pub fn len(&self) -> usize {
-        self.items.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.items.is_empty()
-    }
-
-    pub fn iter(&self) -> Iter<N> {
-        self.items.iter()
-    }
-
-    pub fn apply(&self, base: &mut Node<N>) {
-        for item in self.iter() {
-            base.edit(item.interval, item.rope.clone());
+        let mut iv_end = self.base_len;
+        if let Some((&DeltaElement::Copy(beg, end), init)) = els.split_last() {
+            if end == iv_end {
+                iv_end = beg;
+                els = init;
+            }
         }
+        let new_len = els.iter().fold(0, |sum, el|
+            sum + match *el {
+                DeltaElement::Copy(beg, end) => end - beg,
+                DeltaElement::Insert(ref n) => n.len()
+            }
+        );
+        (Interval::new_closed_open(iv_start, iv_end), new_len)
     }
 }
 

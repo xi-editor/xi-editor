@@ -18,7 +18,7 @@ use serde_json::Value;
 use serde_json::builder::{ArrayBuilder,ObjectBuilder};
 
 use xi_rope::rope::{Rope, LinesMetric, RopeInfo};
-use xi_rope::delta::{OldDelta};
+use xi_rope::delta::{Delta};
 use xi_rope::tree::Cursor;
 use xi_rope::breaks::{Breaks, BreaksMetric, BreaksBaseMetric};
 use xi_rope::interval::Interval;
@@ -273,19 +273,27 @@ impl View {
         self.cols = cols;
     }
 
-    pub fn before_edit(&mut self, _text: &Rope, _delta: &OldDelta<RopeInfo>) {
-
+    pub fn before_edit(&mut self, _text: &Rope, _delta: &Delta<RopeInfo>) {
+        // not sure we even need this
     }
 
-    pub fn after_edit(&mut self, text: &Rope, delta: &OldDelta<RopeInfo>) {
-        let cols = self.cols;
-        if self.breaks.is_some() {
-            if delta.len() == 1 {
-                let item = delta.iter().next().unwrap();
-                linewrap::rewrap(self.breaks.as_mut().unwrap(), text, item.interval, item.rope.len(), cols);
+    pub fn after_edit(&mut self, text: &Rope, delta: &Delta<RopeInfo>) {
+        let (iv, new_len) = delta.summary();
+        // Note: this logic almost replaces setting the cursor in Editor::commit_delta,
+        // but doesn't set col or scroll to the cursor. It could be extended to subsume
+        // that entirely.
+        // Also note: for committing plugin edits, we probably want to know the priority
+        // of the delta so we can set the cursor before or after the edit, as needed.
+        if self.sel_end >= iv.start() {
+            if self.sel_end >= iv.end() {
+                self.sel_end = self.sel_end - iv.size() + new_len;
             } else {
-                self.rewrap(text, cols);
+                self.sel_end = iv.start() + new_len;
             }
+            self.sel_start = self.sel_end;
+        }
+        if self.breaks.is_some() {
+            linewrap::rewrap(self.breaks.as_mut().unwrap(), text, iv, new_len, self.cols);
         }
     }
 

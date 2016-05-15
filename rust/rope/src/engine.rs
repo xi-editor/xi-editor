@@ -19,6 +19,7 @@
 
 use std::borrow::Cow;
 use std::collections::BTreeSet;
+use std;
 
 use rope::{Rope, RopeInfo};
 use subset::Subset;
@@ -52,6 +53,20 @@ enum Contents {
 }
 
 impl Engine {
+    pub fn new(initial_contents: Rope) -> Engine {
+        let rev = Revision {
+            rev_id: 0,
+            from_union: Subset::default(),
+            union_str_len: initial_contents.len(),
+            edit: Undo { groups: BTreeSet::default() },
+        };
+        Engine {
+            rev_id_counter: 1,
+            union_str: initial_contents,
+            revs: vec![rev],
+        }
+    }
+
     fn get_current_undo(&self) -> Option<&BTreeSet<usize>> {
         for rev in self.revs.iter().rev() {
             if let Undo { ref groups } = rev.edit {
@@ -82,6 +97,12 @@ impl Engine {
         from_union.apply(&self.union_str)
     }
 
+    /// Get revision id of head revision.
+    pub fn get_head_rev_id(&self) -> usize {
+        self.revs.last().unwrap().rev_id
+    }
+
+    /// Get text of head revision.
     pub fn get_head(&self) -> Rope {
         self.get_rev(self.revs.len() - 1)
     }
@@ -181,5 +202,107 @@ impl Engine {
         let new_rev = self.compute_undo(groups);
         self.revs.push(new_rev);
         self.rev_id_counter += 1;
+    }
+
+    // Note: this function would need some work to handle retaining arbitrary revisions,
+    // partly because the reachability calculation would become more complicated (a
+    // revision might hold content from an undo group that would otherwise be gc'ed),
+    // and partly because you need to retain more undo history, to supply input to the
+    // reachability calculation.
+    //
+    // Thus, it's easiest to defer gc to when all plugins quiesce, but it's certainly
+    // possible to fix it so that's not necessary.
+    pub fn gc(&mut self, gc_groups: &BTreeSet<usize>) {
+        let mut gc_dels = Subset::default();
+        // TODO: want to let caller retain more rev_id's.
+        let mut retain_revs = BTreeSet::new();
+        if let Some(last) = self.revs.last() {
+            retain_revs.insert(last.rev_id);
+        }
+        {
+            let cur_undo = self.get_current_undo();
+            for rev in &self.revs {
+                if let Edit { ref undo_group, ref inserts, ref deletes, .. } = rev.edit {
+                    if !retain_revs.contains(&rev.rev_id) && gc_groups.contains(undo_group) {
+                        if cur_undo.map_or(false, |undos| undos.contains(undo_group)) {
+                            if !inserts.is_trivial() {
+                                gc_dels = gc_dels.transform_intersect(inserts);
+                            }
+                        } else {
+                            if !inserts.is_trivial() {
+                                gc_dels = gc_dels.transform_expand(inserts);
+                            }
+                            if !deletes.is_trivial() {
+                                gc_dels = gc_dels.intersect(deletes);
+                            }
+                        }
+                    } else {
+                        if !inserts.is_trivial() {
+                            gc_dels = gc_dels.transform_expand(inserts);
+                        }
+                    }
+                }
+            }
+        }
+        if !gc_dels.is_trivial() {
+            self.union_str = gc_dels.apply(&self.union_str);
+        }
+        let old_revs = std::mem::replace(&mut self.revs, Vec::new());
+        for rev in old_revs.into_iter().rev() {
+            match rev.edit {
+                Edit { priority, undo_group, inserts, deletes } => {
+                    let new_gc_dels = if inserts.is_trivial() {
+                        None
+                    } else {
+                        Some(inserts.transform_shrink(&gc_dels))
+                    };
+                    if retain_revs.contains(&rev.rev_id) || !gc_groups.contains(&undo_group) {
+                        let (inserts, deletes, from_union, len) = if gc_dels.is_trivial() {
+                            (inserts, deletes, rev.from_union, rev.union_str_len)
+                        } else {
+                            (gc_dels.transform_shrink(&inserts),
+                                gc_dels.transform_shrink(&deletes),
+                                gc_dels.transform_shrink(&rev.from_union),
+                                gc_dels.len(rev.union_str_len))
+                        };
+                        self.revs.push(Revision {
+                            rev_id: rev.rev_id,
+                            from_union: from_union,
+                            union_str_len: len,
+                            edit: Edit {
+                                priority: priority,
+                                undo_group: undo_group,
+                                inserts: inserts,
+                                deletes: deletes,
+                            }
+                        });
+                    }
+                    if let Some(new_gc_dels) = new_gc_dels {
+                        gc_dels = new_gc_dels;
+                    }
+                }
+                Undo { groups } => {
+                    // We're super-aggressive about dropping these; after gc, the history
+                    // of which undos were used to compute from_union in edits may be lost.
+                    if retain_revs.contains(&rev.rev_id) {
+                        let (from_union, len) = if gc_dels.is_trivial() {
+                            (rev.from_union, rev.union_str_len)
+                        } else {
+                            (gc_dels.transform_shrink(&rev.from_union),
+                                gc_dels.len(rev.union_str_len))
+                        };
+                        self.revs.push(Revision {
+                            rev_id: rev.rev_id,
+                            from_union: from_union,
+                            union_str_len: len,
+                            edit: Undo {
+                                groups: &groups - gc_groups,
+                            }
+                        })
+                    }
+                }
+            }
+        }
+        self.revs.reverse();
     }
 }
