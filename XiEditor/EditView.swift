@@ -263,12 +263,16 @@ class EditView: NSView, NSTextInputClient {
         self.inputContext?.handleEvent(theEvent);
         currentEvent = nil;
     }
-    
+
+    // NSResponder (used mostly for paste)
+    override func insertText(insertString: AnyObject) {
+        sendRpcAsync("insert", params: insertedStringToJson(insertString as! NSString))
+    }
+
     // NSTextInputClient protocol
     func insertText(aString: AnyObject, replacementRange: NSRange) {
         self.removeMarkedText()
         self.replaceCharactersInRange(replacementRange, withText: aString)
-//       sendRpcAsync("insert", params: insertedStringToJson(aString as! NSString))
     }
     
     func replacementMarkedRange(replacementRange: NSRange) -> NSRange {
