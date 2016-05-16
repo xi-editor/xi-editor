@@ -198,7 +198,7 @@ class EditView: NSView, NSTextInputClient {
             if let c = cursor {
                 let cix = utf8_offset_to_utf16(s, c)
                 if (markedRange().location != NSNotFound) {
-                    var markRangeStart = cix - markedRange().length
+                    let markRangeStart = cix - markedRange().length
                     if (markRangeStart >= 0) {
                         attrString.addAttribute(NSUnderlineStyleAttributeName,
                                                 value: NSUnderlineStyle.StyleSingle.rawValue,
@@ -206,7 +206,7 @@ class EditView: NSView, NSTextInputClient {
                     }
                 }
                 if (selectedRange().location != NSNotFound) {
-                    var selectedRangeStart = cix - markedRange().length + selectedRange().location
+                    let selectedRangeStart = cix - markedRange().length + selectedRange().location
                     if (selectedRangeStart >= 0) {
                         attrString.addAttribute(NSUnderlineStyleAttributeName,
                                                 value: NSUnderlineStyle.StyleThick.rawValue,
@@ -302,7 +302,7 @@ class EditView: NSView, NSTextInputClient {
             replacementRange.location = 0
             replacementRange.length = 0
         }
-        for var i in 0..<aRange.length {
+        for _ in 0..<aRange.length {
             sendRpcAsync("delete_backward", params: [])
         }
         if let attrStr = aString as? NSAttributedString {
@@ -315,7 +315,7 @@ class EditView: NSView, NSTextInputClient {
     
     func setMarkedText(aString: AnyObject, selectedRange: NSRange, replacementRange: NSRange) {
         var mutSelectedRange = selectedRange
-        var effectiveRange = self.replaceCharactersInRange(self.replacementMarkedRange(replacementRange), withText: aString)
+        let effectiveRange = self.replaceCharactersInRange(self.replacementMarkedRange(replacementRange), withText: aString)
         if (selectedRange.location != NSNotFound) {
             mutSelectedRange.location += effectiveRange.location
         }
@@ -328,7 +328,7 @@ class EditView: NSView, NSTextInputClient {
     
     func removeMarkedText() {
         if (_markedRange.location != NSNotFound) {
-            for var i in 0..<_markedRange.length {
+            for _ in 0..<_markedRange.length {
                 sendRpcAsync("delete_backward", params: [])
             }
         }
