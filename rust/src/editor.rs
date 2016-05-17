@@ -134,7 +134,9 @@ impl Editor {
         if let Some(delta) = self.delta.take() {
             let head_rev_id = self.engine.get_head_rev_id();
             let undo_group;
-            if self.this_edit_type == self.last_edit_type && !self.live_undos.is_empty() {
+            if self.this_edit_type == self.last_edit_type &&
+                    self.this_edit_type != EditType::Other &&
+                    !self.live_undos.is_empty() {
                 undo_group = *self.live_undos.last().unwrap();
             } else {
                 undo_group = self.undo_group_id;
