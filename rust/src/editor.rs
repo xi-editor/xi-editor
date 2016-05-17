@@ -218,7 +218,7 @@ impl Editor {
         self.this_edit_type = EditType::InsertChars;
         self.insert("\n");
     }
-    
+
     fn move_up(&mut self, flags: u64) {
         let old_offset = self.view.sel_end;
         let offset = self.view.vertical_motion(&self.text, -1, self.col);
@@ -478,6 +478,24 @@ impl Editor {
         }
     }
 
+    fn do_transpose(&mut self) {
+        let end_opt = self.text.next_grapheme_offset(self.view.sel_end);
+        let start_opt = self.text.prev_grapheme_offset(self.view.sel_end);
+
+        let end = end_opt.unwrap_or(self.view.sel_end);
+        let (start, middle) = if end_opt.is_none() && start_opt.is_some() { // if at the very end, swap previous TWO characters (instead of ONE)
+            let middle = start_opt.unwrap();
+            let start = self.text.prev_grapheme_offset(middle).unwrap_or(middle);
+            (start, middle)
+        } else {
+            (start_opt.unwrap_or(self.view.sel_end), self.view.sel_end)
+        };
+
+        let interval = Interval::new_closed_open(start,end);
+        let swapped = self.text.slice_to_string(middle, end) + &self.text.slice_to_string(start, middle);
+        self.add_delta(interval, Rope::from(swapped), end);
+    }
+
     fn delete_to_end_of_paragraph(&mut self, kill_ring: &Mutex<Rope>) {
         let current = self.view.sel_max();
         let offset = self.cursor_end_offset();
@@ -535,6 +553,7 @@ impl Editor {
             "save" => async(self.do_save(params)),
             "scroll" => async(self.do_scroll(params)),
             "yank" => async(self.yank(kill_ring)),
+            "transpose" => async(self.do_transpose()),
             "click" => async(self.do_click(params)),
             "drag" => async(self.do_drag(params)),
             "undo" => async(self.do_undo()),
