@@ -479,23 +479,21 @@ impl Editor {
     }
 
     fn do_transpose(&mut self) {
-        let end_opt = self.text.next_codepoint_offset(self.view.sel_end);
-        let start_opt = self.text.prev_codepoint_offset(self.view.sel_end);
+        let end_opt = self.text.next_grapheme_offset(self.view.sel_end);
+        let start_opt = self.text.prev_grapheme_offset(self.view.sel_end);
 
         let end = end_opt.unwrap_or(self.view.sel_end);
-        let start = if end_opt.is_none() && start_opt.is_some() { // if at the very end, swap previous TWO characters (instead of ONE)
-            self.text.prev_codepoint_offset(start_opt.unwrap()).unwrap_or(self.view.sel_end)
+        let (start, middle) = if end_opt.is_none() && start_opt.is_some() { // if at the very end, swap previous TWO characters (instead of ONE)
+            let middle_temp = start_opt.unwrap();
+            let start_temp = self.text.prev_grapheme_offset(middle_temp).unwrap_or(middle_temp);
+            (start_temp, middle_temp)
         } else {
-            start_opt.unwrap_or(self.view.sel_end)
+            (start_opt.unwrap_or(self.view.sel_end), self.view.sel_end)
         };
 
         let interval = Interval::new_closed_open(start,end);
-        let val = self.text.slice_to_string(start, end);
-
-        if val.chars().count() == 2 {
-            let swapped: String = val.chars().rev().collect();
-            self.add_delta(interval, Rope::from(swapped), end);
-        }
+        let swapped = self.text.slice_to_string(middle, end) + &self.text.slice_to_string(start, middle);
+        self.add_delta(interval, Rope::from(swapped), end);
     }
 
     fn delete_to_end_of_paragraph(&mut self, kill_ring: &Mutex<Rope>) {
