@@ -218,7 +218,7 @@ impl Editor {
         self.this_edit_type = EditType::InsertChars;
         self.insert("\n");
     }
-    
+
     fn move_up(&mut self, flags: u64) {
         let old_offset = self.view.sel_end;
         let offset = self.view.vertical_motion(&self.text, -1, self.col);
@@ -478,6 +478,19 @@ impl Editor {
         }
     }
 
+    fn do_transpose(&mut self) {
+        let start = self.text.prev_codepoint_offset(self.view.sel_end).unwrap_or(self.view.sel_end);
+        let end = self.text.next_codepoint_offset(self.view.sel_end).unwrap_or(self.view.sel_end);
+
+        let interval = Interval::new_closed_open(start,end);
+        let val = self.text.slice_to_string(start, end);
+        
+        if val.chars().count() == 2 {
+            let swapped: String = val.chars().rev().collect();
+            self.add_delta(interval, Rope::from(swapped), end);
+        }
+    }
+
     fn delete_to_end_of_paragraph(&mut self, kill_ring: &Mutex<Rope>) {
         let current = self.view.sel_max();
         let offset = self.cursor_end_offset();
@@ -535,6 +548,7 @@ impl Editor {
             "save" => async(self.do_save(params)),
             "scroll" => async(self.do_scroll(params)),
             "yank" => async(self.yank(kill_ring)),
+            "transpose" => async(self.do_transpose()),
             "click" => async(self.do_click(params)),
             "drag" => async(self.do_drag(params)),
             "undo" => async(self.do_undo()),
