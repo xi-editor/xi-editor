@@ -137,13 +137,22 @@ impl Engine {
             }
         }
         let new_inserts = union_ins_delta.invert_insert();
+        if !new_inserts.is_trivial() {
+            new_deletes = new_deletes.transform_expand(&new_inserts);
+        }
         let new_union_str = union_ins_delta.apply(&self.union_str);
         let undone = self.get_current_undo().map_or(false, |undos| undos.contains(&undo_group));
-        let mut new_from_union = Cow::Borrowed(&rev.from_union);
-        {
-            let edit = if undone { &new_inserts } else { &new_deletes };
-            if !edit.is_trivial() {
-                new_from_union = Cow::Owned(new_from_union.intersect(edit));
+        let mut new_from_union = Cow::Borrowed(&self.revs.last().unwrap().from_union);
+        if undone {
+            if !new_inserts.is_trivial() {
+                new_from_union = Cow::Owned(new_from_union.transform_intersect(&new_inserts));
+            }
+        } else {
+            if !new_inserts.is_trivial() {
+                new_from_union = Cow::Owned(new_from_union.transform_expand(&new_inserts));
+            }
+            if !new_deletes.is_trivial() {
+                new_from_union = Cow::Owned(new_from_union.intersect(&new_deletes));
             }
         }
         (Revision {

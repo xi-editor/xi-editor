@@ -68,17 +68,18 @@ impl<N: NodeInfo> Delta<N> {
     ///
     /// `let (d1, ss) = d.factor();`
     ///
-    /// `ss.apply_to_string(d1.apply_to_string(s)) == d.apply_to_string(s)`
+    /// ss2 = ss.transform_expand(&d1.reverse_insert())
+    ///
+    /// `ss2.apply_to_string(d1.apply_to_string(s)) == d.apply_to_string(s)`
     pub fn factor(self) -> (Delta<N>, Subset) {
         let mut ins = Vec::new();
         let mut sb = SubsetBuilder::new();
         let mut b1 = 0;
         let mut e1 = 0;
-        let mut delta = 0;
         for elem in self.els {
             match elem {
                 DeltaElement::Copy(b, e) => {
-                    sb.add_deletion(e1 + delta, b + delta);
+                    sb.add_deletion(e1, b);
                     e1 = e;
                 }
                 DeltaElement::Insert(n) => {
@@ -86,7 +87,6 @@ impl<N: NodeInfo> Delta<N> {
                         ins.push(DeltaElement::Copy(b1, e1));
                     }
                     b1 = e1;
-                    delta += n.len();
                     ins.push(DeltaElement::Insert(n));
                 }
             }
@@ -94,7 +94,7 @@ impl<N: NodeInfo> Delta<N> {
         if b1 < self.base_len {
             ins.push(DeltaElement::Copy(b1, self.base_len));
         }
-        sb.add_deletion(e1 + delta, self.base_len + delta);
+        sb.add_deletion(e1, self.base_len);
         (Delta { els: ins, base_len: self.base_len }, sb.build())
     }
 
@@ -303,7 +303,7 @@ mod tests {
         let d = Delta::simple_edit(Interval::new_closed_open(1, 9), Rope::from("era"), 11);
         let (d1, ss) = d.factor();
         assert_eq!("heraello world", d1.apply_to_string("hello world"));
-        assert_eq!("herald", ss.apply_to_string("heraello world"));
+        assert_eq!("hld", ss.apply_to_string("hello world"));
     }
 
     #[test]
@@ -311,6 +311,7 @@ mod tests {
         let d = Delta::simple_edit(Interval::new_closed_open(1, 9), Rope::from("era"), 11);
         let (d1, del) = d.factor();
         let ins = d1.invert_insert();
+        let del = del.transform_expand(&ins);
         let union_str = d1.apply_to_string("hello world");
         let new_d = Delta::synthesize(&Rope::from(&union_str), &ins, &del);
         assert_eq!("herald", new_d.apply_to_string("hello world"));
