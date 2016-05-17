@@ -484,9 +484,9 @@ impl Editor {
 
         let end = end_opt.unwrap_or(self.view.sel_end);
         let (start, middle) = if end_opt.is_none() && start_opt.is_some() { // if at the very end, swap previous TWO characters (instead of ONE)
-            let middle_temp = start_opt.unwrap();
-            let start_temp = self.text.prev_grapheme_offset(middle_temp).unwrap_or(middle_temp);
-            (start_temp, middle_temp)
+            let middle = start_opt.unwrap();
+            let start = self.text.prev_grapheme_offset(middle).unwrap_or(middle);
+            (start, middle)
         } else {
             (start_opt.unwrap_or(self.view.sel_end), self.view.sel_end)
         };
