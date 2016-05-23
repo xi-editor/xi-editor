@@ -199,7 +199,25 @@ impl Editor {
         }
     }
 
+    fn delete_forward(&mut self) {
+        if self.view.sel_start == self.view.sel_end {
+            self.move_right(0);
+        }
+
+        self.delete();
+    }
+
     fn delete_backward(&mut self) {
+        self.delete();
+    }
+
+    fn delete_to_beginning_of_line(&mut self) {
+        self.move_left(MODIFIER_SHIFT | MODIFIER_COMMAND);
+
+        self.delete();
+    }
+
+    fn delete(&mut self) {
         let start = if self.view.sel_start != self.view.sel_end {
             self.view.sel_min()
         } else {
@@ -210,6 +228,7 @@ impl Editor {
                 self.view.sel_max()
             }
         };
+
         if start < self.view.sel_max() {
             self.this_edit_type = EditType::Delete;
             let del_interval = Interval::new_closed_open(start, self.view.sel_max());
@@ -429,7 +448,7 @@ impl Editor {
         }
     }
 
-    fn do_scroll(&mut self, args: &Value) {
+    fn do_scroll(&mut self, args: &Value) {    
         self.this_edit_type = self.last_edit_type;  // doesn't break undo group
         if let Some(array) = args.as_array() {
             if let (Some(first), Some(last)) = (array[0].as_i64(), array[1].as_i64()) {
@@ -567,7 +586,9 @@ impl Editor {
             "render_lines" => Some(self.do_render_lines(params)),
             "key" => async(self.do_key(params)),
             "insert" => async(self.do_insert(params)),
+            "delete_forward" => async(self.delete_forward()),
             "delete_backward" => async(self.delete_backward()),
+            "delete_to_beginning_of_line" => async(self.delete_to_beginning_of_line()),
             "delete_to_end_of_paragraph" => async(self.delete_to_end_of_paragraph(kill_ring)),
             "insert_newline" => async(self.insert_newline()),
             "move_up" => async(self.move_up(0)),
