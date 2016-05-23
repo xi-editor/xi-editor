@@ -29,6 +29,7 @@ use view::View;
 use tabs::update_tab;
 
 const MODIFIER_SHIFT: u64 = 2;
+const MODIFIER_COMMAND: u64 = 4;
 
 const MAX_UNDOS: usize = 20;
 
@@ -236,31 +237,67 @@ impl Editor {
     }
 
     fn move_left(&mut self, flags: u64) {
+        // Selecting cancel
         if self.view.sel_start != self.view.sel_end && (flags & MODIFIER_SHIFT) == 0 {
             let offset = self.view.sel_min();
             self.set_cursor(offset, true);
+
+            return;
+        }
+
+        // Move to end of line
+        if flags & MODIFIER_COMMAND != 0 {
+            let line_col = self.view.offset_to_line_col(&self.text, self.view.sel_end);
+            let offset = self.view.line_col_to_offset(&self.text, line_col.0, 0);
+
+            self.set_cursor_or_sel(offset, flags, true);
+
+            return;
+        }
+ 
+        // Normal move
+        if let Some(offset) = self.text.prev_grapheme_offset(self.view.sel_end) {
+            self.set_cursor_or_sel(offset, flags, true);
         } else {
-            if let Some(offset) = self.text.prev_grapheme_offset(self.view.sel_end) {
-                self.set_cursor_or_sel(offset, flags, true);
-            } else {
                 self.col = 0;
-                // TODO: should set scroll_to_cursor in this case too,
-                // but it won't get sent; probably it needs to be a separate cmd
-            }
+            // TODO: should set scroll_to_cursor in this case too,
+            // but it won't get sent; probably it needs to be a separate cmd
         }
     }
 
     fn move_right(&mut self, flags: u64) {
+        // Selecting cancel
         if self.view.sel_start != self.view.sel_end && (flags & MODIFIER_SHIFT) == 0 {
             let offset = self.view.sel_max();
             self.set_cursor(offset, true);
-        } else {
-            if let Some(offset) = self.text.next_grapheme_offset(self.view.sel_end) {
-                self.set_cursor_or_sel(offset, flags, true);
-            } else {
-                self.col = self.view.offset_to_line_col(&self.text, self.view.sel_end).1;
-                // see above
+
+            return;
+        }
+
+        // Move to end of line
+        if flags & MODIFIER_COMMAND != 0 {
+            let line_col = self.view.offset_to_line_col(&self.text, self.view.sel_end);
+            let mut offset = self.text.len();
+
+            // calculate end of line
+            let next_line_offset = self.view.line_col_to_offset(&self.text, line_col.0 + 1, 0);
+            if offset > next_line_offset {
+                if let Some(prev) = self.text.prev_grapheme_offset(next_line_offset) {
+                    offset = prev;
+                }
             }
+
+            self.set_cursor_or_sel(offset, flags, true);
+
+            return;
+        }
+
+        // Normal move
+        if let Some(offset) = self.text.next_grapheme_offset(self.view.sel_end) {
+            self.set_cursor_or_sel(offset, flags, true);
+        } else {
+            self.col = self.view.offset_to_line_col(&self.text, self.view.sel_end).1;
+            // see above
         }
     }
 
@@ -540,9 +577,13 @@ impl Editor {
             "move_left" |
             "move_backward" => async(self.move_left(0)),
             "move_left_and_modify_selection" => async(self.move_left(MODIFIER_SHIFT)),
+            "move_to_left_end_of_line" => async(self.move_left(MODIFIER_COMMAND)),
+            "move_to_left_end_of_line_and_modify_selection" => async(self.move_left(MODIFIER_COMMAND | MODIFIER_SHIFT)),
             "move_right" |
             "move_forward" => async(self.move_right(0)),
             "move_right_and_modify_selection" => async(self.move_right(MODIFIER_SHIFT)),
+            "move_to_right_end_of_line" => async(self.move_right(MODIFIER_COMMAND)),
+            "move_to_right_end_of_line_and_modify_selection" => async(self.move_right(MODIFIER_COMMAND | MODIFIER_SHIFT)),
             "move_to_beginning_of_paragraph" => async(self.cursor_start()),
             "move_to_end_of_paragraph" => async(self.cursor_end()),
             "scroll_page_up" |
