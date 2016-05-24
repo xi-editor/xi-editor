@@ -28,8 +28,7 @@ use view::View;
 
 use tabs::update_tab;
 
-const MODIFIER_SHIFT: u64 = 2;
-const MODIFIER_COMMAND: u64 = 4;
+const FLAG_SHIFT: u64 = 2;
 
 const MAX_UNDOS: usize = 20;
 
@@ -62,6 +61,7 @@ pub struct Editor {
 #[derive(PartialEq, Eq, Clone, Copy)]
 enum EditType {
     Other,
+    Select,
     InsertChars,
     Delete,
 }
@@ -95,8 +95,8 @@ impl Editor {
         self.add_delta(sel_interval, Rope::from(s), new_cursor);
     }
 
-    fn set_cursor_impl(&mut self, offset: usize, set_start: bool, hard: bool) {
-        if set_start {
+    fn set_cursor(&mut self, offset: usize, hard: bool) {
+        if self.this_edit_type != EditType::Select {
             self.view.sel_start = offset;
         }
         self.view.sel_end = offset;
@@ -106,15 +106,6 @@ impl Editor {
         }
         self.view.scroll_to_cursor(&self.text);
         self.dirty = true;
-    }
-
-    fn set_cursor(&mut self, offset: usize, hard: bool) {
-        self.set_cursor_impl(offset, true, hard);
-    }
-
-    // set the cursor or update the selection, depending on the flags
-    fn set_cursor_or_sel(&mut self, offset: usize, flags: u64, hard: bool) {
-        self.set_cursor_impl(offset, flags & MODIFIER_SHIFT == 0, hard);
     }
 
     // May change this around so this fn adds the delta to the engine immediately,
@@ -137,6 +128,7 @@ impl Editor {
             let undo_group;
             if self.this_edit_type == self.last_edit_type &&
                     self.this_edit_type != EditType::Other &&
+                    self.this_edit_type != EditType::Select &&
                     !self.live_undos.is_empty() {
                 undo_group = *self.live_undos.last().unwrap();
             } else {
@@ -201,7 +193,7 @@ impl Editor {
 
     fn delete_forward(&mut self) {
         if self.view.sel_start == self.view.sel_end {
-            self.move_right(0);
+            self.move_right();
         }
 
         self.delete();
@@ -212,7 +204,8 @@ impl Editor {
     }
 
     fn delete_to_beginning_of_line(&mut self) {
-        self.move_left(MODIFIER_SHIFT | MODIFIER_COMMAND);
+        self.modify_selection();
+        self.move_to_left_end_of_line();
 
         self.delete();
     }
@@ -241,42 +234,36 @@ impl Editor {
         self.insert("\n");
     }
 
-    fn move_up(&mut self, flags: u64) {
+    fn modify_selection(&mut self) {
+        self.this_edit_type = EditType::Select;
+    }
+
+    fn move_up(&mut self) {
         let old_offset = self.view.sel_end;
         let offset = self.view.vertical_motion(&self.text, -1, self.col);
-        self.set_cursor_or_sel(offset, flags, old_offset == offset);
+        self.set_cursor(offset, old_offset == offset);
         self.scroll_to = Some(offset);
     }
 
-    fn move_down(&mut self, flags: u64) {
+    fn move_down(&mut self) {
         let old_offset = self.view.sel_end;
         let offset = self.view.vertical_motion(&self.text, 1, self.col);
-        self.set_cursor_or_sel(offset, flags, old_offset == offset);
+        self.set_cursor(offset, old_offset == offset);
         self.scroll_to = Some(offset);
     }
 
-    fn move_left(&mut self, flags: u64) {
+    fn move_left(&mut self) {
         // Selecting cancel
-        if self.view.sel_start != self.view.sel_end && (flags & MODIFIER_SHIFT) == 0 {
+        if self.view.sel_start != self.view.sel_end && self.this_edit_type != EditType::Select {
             let offset = self.view.sel_min();
             self.set_cursor(offset, true);
 
             return;
         }
 
-        // Move to end of line
-        if flags & MODIFIER_COMMAND != 0 {
-            let line_col = self.view.offset_to_line_col(&self.text, self.view.sel_end);
-            let offset = self.view.line_col_to_offset(&self.text, line_col.0, 0);
-
-            self.set_cursor_or_sel(offset, flags, true);
-
-            return;
-        }
- 
         // Normal move
         if let Some(offset) = self.text.prev_grapheme_offset(self.view.sel_end) {
-            self.set_cursor_or_sel(offset, flags, true);
+            self.set_cursor(offset, true);
         } else {
                 self.col = 0;
             // TODO: should set scroll_to_cursor in this case too,
@@ -284,40 +271,48 @@ impl Editor {
         }
     }
 
-    fn move_right(&mut self, flags: u64) {
+    fn move_to_left_end_of_line(&mut self) {
+        let line_col = self.view.offset_to_line_col(&self.text, self.view.sel_end);
+        let offset = self.view.line_col_to_offset(&self.text, line_col.0, 0);
+
+        self.set_cursor(offset, true);
+
+        return;
+    }
+
+    fn move_right(&mut self) {
         // Selecting cancel
-        if self.view.sel_start != self.view.sel_end && (flags & MODIFIER_SHIFT) == 0 {
+        if self.view.sel_start != self.view.sel_end && self.this_edit_type != EditType::Select {
             let offset = self.view.sel_max();
             self.set_cursor(offset, true);
 
             return;
         }
 
-        // Move to end of line
-        if flags & MODIFIER_COMMAND != 0 {
-            let line_col = self.view.offset_to_line_col(&self.text, self.view.sel_end);
-            let mut offset = self.text.len();
-
-            // calculate end of line
-            let next_line_offset = self.view.line_col_to_offset(&self.text, line_col.0 + 1, 0);
-            if offset > next_line_offset {
-                if let Some(prev) = self.text.prev_grapheme_offset(next_line_offset) {
-                    offset = prev;
-                }
-            }
-
-            self.set_cursor_or_sel(offset, flags, true);
-
-            return;
-        }
-
         // Normal move
         if let Some(offset) = self.text.next_grapheme_offset(self.view.sel_end) {
-            self.set_cursor_or_sel(offset, flags, true);
+            self.set_cursor(offset, true);
         } else {
             self.col = self.view.offset_to_line_col(&self.text, self.view.sel_end).1;
             // see above
         }
+    }
+
+    fn move_to_right_end_of_line(&mut self) {
+        let line_col = self.view.offset_to_line_col(&self.text, self.view.sel_end);
+        let mut offset = self.text.len();
+
+        // calculate end of line
+        let next_line_offset = self.view.line_col_to_offset(&self.text, line_col.0 + 1, 0);
+        if offset > next_line_offset {
+            if let Some(prev) = self.text.prev_grapheme_offset(next_line_offset) {
+                offset = prev;
+            }
+        }
+
+        self.set_cursor(offset, true);
+
+        return;
     }
 
     fn cursor_start(&mut self) {
@@ -350,20 +345,20 @@ impl Editor {
         }
     }
 
-    fn scroll_page_up(&mut self, flags: u64) {
+    fn scroll_page_up(&mut self) {
         let scroll = -max(self.view.scroll_height() as isize - 2, 1);
         let old_offset = self.view.sel_end;
         let offset = self.view.vertical_motion(&self.text, scroll, self.col);
-        self.set_cursor_or_sel(offset, flags, old_offset == offset);
+        self.set_cursor(offset, old_offset == offset);
         let scroll_offset = self.view.vertical_motion(&self.text, scroll, self.col);
         self.scroll_to = Some(scroll_offset);
     }
 
-    fn scroll_page_down(&mut self, flags: u64) {
+    fn scroll_page_down(&mut self) {
         let scroll = max(self.view.scroll_height() as isize - 2, 1);
         let old_offset = self.view.sel_end;
         let offset = self.view.vertical_motion(&self.text, scroll, self.col);
-        self.set_cursor_or_sel(offset, flags, old_offset == offset);
+        self.set_cursor(offset, old_offset == offset);
         let scroll_offset = self.view.vertical_motion(&self.text, scroll, self.col);
         self.scroll_to = Some(scroll_offset);
     }
@@ -378,22 +373,22 @@ impl Editor {
                     self.delete_backward();
                 }
                 "\u{F700}" => {  // up arrow
-                    self.move_up(flags);
+                    self.move_up();
                 }
                 "\u{F701}" => {  // down arrow
-                    self.move_down(flags);
+                    self.   move_down();
                 }
                 "\u{F702}" => {  // left arrow
-                    self.move_left(flags);
+                    self.move_left();
                 }
                 "\u{F703}" => {  // right arrow
-                    self.move_right(flags);
+                    self.move_right();
                 }
                 "\u{F72C}" => {  // page up
-                    self.scroll_page_up(flags);
+                    self.scroll_page_up();
                 }
                 "\u{F72D}" => {  // page down
-                    self.scroll_page_down(flags);
+                    self.scroll_page_down();
                 }
                 "\u{F704}" => {  // F1, but using for debugging
                     self.debug_rewrap();
@@ -448,7 +443,7 @@ impl Editor {
         }
     }
 
-    fn do_scroll(&mut self, args: &Value) {    
+    fn do_scroll(&mut self, args: &Value) {
         self.this_edit_type = self.last_edit_type;  // doesn't break undo group
         if let Some(array) = args.as_array() {
             if let (Some(first), Some(last)) = (array[0].as_i64(), array[1].as_i64()) {
@@ -462,7 +457,10 @@ impl Editor {
             if let (Some(line), Some(col), Some(flags), Some(_click_count)) =
                     (array[0].as_u64(), array[1].as_u64(), array[2].as_u64(), array[3].as_u64()) {
                 let offset = self.view.line_col_to_offset(&self.text, line as usize, col as usize);
-                self.set_cursor_or_sel(offset, flags, true);
+                if flags & FLAG_SHIFT != 0 {
+                    self.modify_selection();
+                }
+                self.set_cursor(offset, true);
             }
         }
     }
@@ -472,7 +470,8 @@ impl Editor {
             if let (Some(line), Some(col), Some(_flags)) =
                     (array[0].as_u64(), array[1].as_u64(), array[2].as_u64()) {
                 let offset = self.view.line_col_to_offset(&self.text, line as usize, col as usize);
-                self.set_cursor_or_sel(offset, MODIFIER_SHIFT, true);
+                self.modify_selection();
+                self.set_cursor(offset, true);
             }
         }
     }
@@ -591,28 +590,28 @@ impl Editor {
             "delete_to_beginning_of_line" => async(self.delete_to_beginning_of_line()),
             "delete_to_end_of_paragraph" => async(self.delete_to_end_of_paragraph(kill_ring)),
             "insert_newline" => async(self.insert_newline()),
-            "move_up" => async(self.move_up(0)),
-            "move_up_and_modify_selection" => async(self.move_up(MODIFIER_SHIFT)),
-            "move_down" => async(self.move_down(0)),
-            "move_down_and_modify_selection" => async(self.move_down(MODIFIER_SHIFT)),
+            "move_up" => async(self.move_up()),
+            "move_up_and_modify_selection" => async({ self.modify_selection(); self.move_up() }),
+            "move_down" => async(self.move_down()),
+            "move_down_and_modify_selection" => async({ self.modify_selection(); self.move_down() }),
             "move_left" |
-            "move_backward" => async(self.move_left(0)),
-            "move_left_and_modify_selection" => async(self.move_left(MODIFIER_SHIFT)),
-            "move_to_left_end_of_line" => async(self.move_left(MODIFIER_COMMAND)),
-            "move_to_left_end_of_line_and_modify_selection" => async(self.move_left(MODIFIER_COMMAND | MODIFIER_SHIFT)),
+            "move_backward" => async(self.move_left()),
+            "move_left_and_modify_selection" => async({ self.modify_selection(); self.move_left() }),
+            "move_to_left_end_of_line" => async(self.move_to_left_end_of_line()),
+            "move_to_left_end_of_line_and_modify_selection" => async({ self.modify_selection(); self.move_to_left_end_of_line() }),
             "move_right" |
-            "move_forward" => async(self.move_right(0)),
-            "move_right_and_modify_selection" => async(self.move_right(MODIFIER_SHIFT)),
-            "move_to_right_end_of_line" => async(self.move_right(MODIFIER_COMMAND)),
-            "move_to_right_end_of_line_and_modify_selection" => async(self.move_right(MODIFIER_COMMAND | MODIFIER_SHIFT)),
+            "move_forward" => async(self.move_right()),
+            "move_right_and_modify_selection" => async({ self.modify_selection(); self.move_right() }),
+            "move_to_right_end_of_line" => async(self.move_to_right_end_of_line()),
+            "move_to_right_end_of_line_and_modify_selection" => async({ self.modify_selection(); self.move_to_right_end_of_line() }),
             "move_to_beginning_of_paragraph" => async(self.cursor_start()),
             "move_to_end_of_paragraph" => async(self.cursor_end()),
             "scroll_page_up" |
-            "page_up" => async(self.scroll_page_up(0)),
-            "page_up_and_modify_selection" => async(self.scroll_page_up(MODIFIER_SHIFT)),
+            "page_up" => async(self.scroll_page_up()),
+            "page_up_and_modify_selection" => async({ self.modify_selection(); self.scroll_page_up() }),
             "scroll_page_down" |
-            "page_down" => async(self.scroll_page_down(0)),
-            "page_down_and_modify_selection" => async(self.scroll_page_down(MODIFIER_SHIFT)),
+            "page_down" => async(self.scroll_page_down()),
+            "page_down_and_modify_selection" => async({ self.modify_selection(); self.scroll_page_down() }),
             "open" => async(self.do_open(params)),
             "save" => async(self.do_save(params)),
             "scroll" => async(self.do_scroll(params)),
