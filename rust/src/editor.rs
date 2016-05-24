@@ -345,6 +345,18 @@ impl Editor {
         }
     }
 
+    fn move_to_beginning_of_document(&mut self) {
+        let offset = 0;
+
+        self.set_cursor(offset, true);
+    }
+
+    fn move_to_end_of_document(&mut self) {
+        let offset = self.text.len();
+
+        self.set_cursor(offset, true);
+    }
+
     fn scroll_page_up(&mut self) {
         let scroll = -max(self.view.scroll_height() as isize - 2, 1);
         let old_offset = self.view.sel_end;
@@ -376,7 +388,7 @@ impl Editor {
                     self.move_up();
                 }
                 "\u{F701}" => {  // down arrow
-                    self.   move_down();
+                    self.move_down();
                 }
                 "\u{F702}" => {  // left arrow
                     self.move_left();
@@ -606,6 +618,10 @@ impl Editor {
             "move_to_right_end_of_line_and_modify_selection" => async({ self.modify_selection(); self.move_to_right_end_of_line() }),
             "move_to_beginning_of_paragraph" => async(self.cursor_start()),
             "move_to_end_of_paragraph" => async(self.cursor_end()),
+            "move_to_beginning_of_document" => async(self.move_to_beginning_of_document()),
+            "move_to_beginning_of_document_and_modify_selection" => async({ self.modify_selection(); self.move_to_beginning_of_document() }),
+            "move_to_end_of_document" => async(self.move_to_end_of_document()),
+            "move_to_end_of_document_and_modify_selection" => async({ self.modify_selection(); self.move_to_end_of_document() }),
             "scroll_page_up" |
             "page_up" => async(self.scroll_page_up()),
             "page_up_and_modify_selection" => async({ self.modify_selection(); self.scroll_page_up() }),
