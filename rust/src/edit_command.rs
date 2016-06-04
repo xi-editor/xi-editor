@@ -143,14 +143,14 @@ impl EditCommand {
             "transpose" => Ok(Transpose),
             "click" => params.as_array().and_then(|arr| {
                 if let (Some(line), Some(col), Some(flags), Some(click_count)) =
-                    (arr_get_u64(arr, 0), arr_get_u64(arr, 0), arr_get_u64(arr, 0), arr_get_u64(arr, 0)) {
+                    (arr_get_u64(arr, 0), arr_get_u64(arr, 1), arr_get_u64(arr, 2), arr_get_u64(arr, 3)) {
 
                         Some(Click(line, col, flags, click_count))
                     } else { None }
             }).ok_or(MalformedParams),
             "drag" => params.as_array().and_then(|arr| {
                 if let (Some(line), Some(col), Some(flags)) =
-                    (arr_get_u64(arr, 0), arr_get_u64(arr, 0), arr_get_u64(arr, 0)) {
+                    (arr_get_u64(arr, 0), arr_get_u64(arr, 1), arr_get_u64(arr, 2)) {
 
                         Some(Drag(line, col, flags))
                     } else { None }

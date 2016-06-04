@@ -514,6 +514,7 @@ impl Editor {
 
         self.this_edit_type = EditType::Other;
 
+        // TODO: Better error message here based on result of `from_json`
         let result = EditCommand::from_json(method, params).ok().and_then(|cmd| {
             match cmd {
                 RenderLines(first_line, last_line) => {
