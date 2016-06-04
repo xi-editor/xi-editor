@@ -357,9 +357,6 @@ impl Editor {
 
     // TODO: insert from keyboard or input method shouldn't break undo group,
     // but paste should.
-    // fn do_insert(&mut self, args: &Value) {
-    //     if let Some(args) = args.as_object() {
-    // let chars = args.get("chars").unwrap().as_string().unwrap();
     fn do_insert(&mut self, chars: String) {
         self.this_edit_type = EditType::InsertChars;
         self.insert(chars.as_str());
