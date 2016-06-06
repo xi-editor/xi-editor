@@ -27,7 +27,7 @@ use xi_rope::engine::Engine;
 use view::View;
 
 use tabs::update_tab;
-use edit_command::EditCommand;
+use rpc::EditCommand;
 
 const MODIFIER_SHIFT: u64 = 2;
 
@@ -507,7 +507,7 @@ impl Editor {
                   kill_ring: &Mutex<Rope>)
                   -> Option<Value> {
 
-        use edit_command::EditCommand::*;
+        use rpc::EditCommand::*;
 
         self.this_edit_type = EditType::Other;
 

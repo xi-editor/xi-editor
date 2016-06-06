@@ -27,7 +27,7 @@ mod tabs;
 mod editor;
 mod view;
 mod linewrap;
-mod edit_command;
+mod rpc;
 
 use tabs::Tabs;
 use std::io::Error;
