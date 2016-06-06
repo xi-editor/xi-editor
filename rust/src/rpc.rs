@@ -50,23 +50,27 @@ pub enum EditCommand<'a> {
 }
 
 /// An error that occurred while parsing an edit command.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub enum Error {
-    UnknownTabMethod,
-    MalformedTabParams,
-    UnknownEditMethod,
-    MalformedEditParams,
+    UnknownTabMethod(String), // method name
+    MalformedTabParams(String, Value), // method name, malformed params
+    UnknownEditMethod(String), // method name
+    MalformedEditParams(String, Value), // method name, malformed params
 }
 
 impl fmt::Display for Error {
+    // TODO: Provide information about the parameter format expected when
+    // displaying malformed parameter errors
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::Error::*;
 
         match *self {
-            UnknownTabMethod => write!(f, "Error: Unknown tab method"),
-            MalformedTabParams => write!(f, "Error: Malformed tab parameters"),
-            UnknownEditMethod => write!(f, "Error: Unknown edit method"),
-            MalformedEditParams => write!(f, "Error: Malformed edit parameters"),
+            UnknownTabMethod(ref method) => write!(f, "Error: Unknown tab method '{}'", method),
+            MalformedTabParams(ref method, ref params) =>
+                write!(f, "Error: Malformed tab parameters with method '{}', parameters: {:?}", method, params),
+            UnknownEditMethod(ref method) => write!(f, "Error: Unknown edit method '{}'", method),
+            MalformedEditParams(ref method, ref params) =>
+                write!(f, "Error: Malformed edit parameters with method '{}', parameters: {:?}", method, params),
         }
     }
 }
@@ -76,10 +80,10 @@ impl error::Error for Error {
         use self::Error::*;
 
         match *self {
-            UnknownTabMethod => "Unknown tab method",
-            MalformedTabParams => "Malformed tab parameters",
-            UnknownEditMethod => "Unknown edit method",
-            MalformedEditParams => "Malformed edit parameters"
+            UnknownTabMethod(_) => "Unknown tab method",
+            MalformedTabParams(_, _) => "Malformed tab parameters",
+            UnknownEditMethod(_) => "Unknown edit method",
+            MalformedEditParams(_, _) => "Malformed edit parameters"
         }
     }
 }
@@ -91,16 +95,22 @@ impl<'a> TabCommand<'a> {
 
         match method {
             "new_tab" => Ok(NewTab),
+
             "delete_tab" => params.as_object().and_then(|dict| {
                 dict_get_string(dict, "tab").map(|tab| DeleteTab(tab))
-            }).ok_or(MalformedTabParams),
-            "edit" => params.as_object().ok_or(MalformedTabParams).and_then(|dict| {
-                if let (Some(tab), Some(method), Some(edit_params)) =
-                    (dict_get_string(dict, "tab"), dict_get_string(dict, "method"), dict.get("params")) {
-                        EditCommand::from_json(method, edit_params).map(|cmd| Edit(tab, cmd))
-                    } else { Err(MalformedTabParams) }
+            }).ok_or(MalformedTabParams(method.to_string(), params.clone())),
+
+            "edit" =>
+                params
+                .as_object()
+                .ok_or(MalformedTabParams(method.to_string(), params.clone()))
+                .and_then(|dict| {
+                    if let (Some(tab), Some(method), Some(edit_params)) =
+                        (dict_get_string(dict, "tab"), dict_get_string(dict, "method"), dict.get("params")) {
+                            EditCommand::from_json(method, edit_params).map(|cmd| Edit(tab, cmd))
+                        } else { Err(MalformedTabParams(method.to_string(), params.clone())) }
             }),
-            _ => Err(UnknownTabMethod)
+            _ => Err(UnknownTabMethod(method.to_string()))
         }
     }
 }
@@ -119,18 +129,19 @@ impl<'a> EditCommand<'a> {
                             RenderLines(first_line as usize, last_line as usize)
                         })
                     })
-                }).ok_or(MalformedEditParams)
+                }).ok_or(MalformedEditParams(method.to_string(), params.clone()))
             },
+
             "key" => params.as_object().and_then(|dict| {
                 dict_get_string(dict, "chars").and_then(|chars| {
                     dict_get_u64(dict, "flags").map(|flags| {
                         Key(chars, flags)
                     })
                 })
-            }).ok_or(MalformedEditParams),
+            }).ok_or(MalformedEditParams(method.to_string(), params.clone())),
             "insert" => params.as_object().and_then(|dict| {
                 dict_get_string(dict, "chars").map(|chars| Insert(chars))
-            }).ok_or(MalformedEditParams),
+            }).ok_or(MalformedEditParams(method.to_string(), params.clone())),
             "delete_backward" => Ok(DeleteBackward),
             "delete_to_end_of_paragraph" => Ok(DeleteToEndOfParagraph),
             "insert_newline" => Ok(InsertNewline),
@@ -151,17 +162,17 @@ impl<'a> EditCommand<'a> {
             "page_down_and_modify_selection" => Ok(PageDownAndModifySelection),
             "open" => params.as_object().and_then(|dict| {
                 dict_get_string(dict, "filename").map(|path| Open(path))
-            }).ok_or(MalformedEditParams),
+            }).ok_or(MalformedEditParams(method.to_string(), params.clone())),
             "save" => params.as_object().and_then(|dict| {
                 dict_get_string(dict, "filename").map(|path| Save(path))
-            }).ok_or(MalformedEditParams),
+            }).ok_or(MalformedEditParams(method.to_string(), params.clone())),
             "scroll" => params.as_array().and_then(|arr| {
                 if let (Some(first), Some(last)) =
                     (arr_get_i64(arr, 0), arr_get_i64(arr, 1)) {
 
                     Some(Scroll(first, last))
                 } else { None }
-            }).ok_or(MalformedEditParams),
+            }).ok_or(MalformedEditParams(method.to_string(), params.clone())),
             "yank" => Ok(Yank),
             "transpose" => Ok(Transpose),
             "click" => params.as_array().and_then(|arr| {
@@ -170,21 +181,21 @@ impl<'a> EditCommand<'a> {
 
                         Some(Click(line, col, flags, click_count))
                     } else { None }
-            }).ok_or(MalformedEditParams),
+            }).ok_or(MalformedEditParams(method.to_string(), params.clone())),
             "drag" => params.as_array().and_then(|arr| {
                 if let (Some(line), Some(col), Some(flags)) =
                     (arr_get_u64(arr, 0), arr_get_u64(arr, 1), arr_get_u64(arr, 2)) {
 
                         Some(Drag(line, col, flags))
                     } else { None }
-            }).ok_or(MalformedEditParams),
+            }).ok_or(MalformedEditParams(method.to_string(), params.clone())),
             "undo" => Ok(Undo),
             "redo" => Ok(Redo),
             "cut" => Ok(Cut),
             "copy" => Ok(Copy),
             "debug_rewrap" => Ok(DebugRewrap),
             "debug_test_fg_spans" => Ok(DebugTestFgSpans),
-            _ => Err(UnknownEditMethod),
+            _ => Err(UnknownEditMethod(method.to_string())),
         }
     }
 }

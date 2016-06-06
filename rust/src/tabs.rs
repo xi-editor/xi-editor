@@ -41,23 +41,28 @@ impl Tabs {
     }
 
     pub fn handle_rpc(&mut self, method: &str, params: &Value, id: Option<&Value>) {
-        if let Ok(cmd) = TabCommand::from_json(method, params) {
-            use rpc::TabCommand::*;
 
-            // TODO: Better error message here based on result of `from_json`
-            match cmd {
-                NewTab => {
-                    let response = self.do_new_tab();
-                    self.respond(response, id)
-                },
-                DeleteTab(tab) => {
-                    let response = self.do_delete_tab(tab);
-                    self.respond(response, id)
-                },
-                Edit(tab, edit_cmd) => {
-                    let response = self.do_edit(tab, edit_cmd);
-                    self.try_respond(response, id)
+        match TabCommand::from_json(method, params) {
+            Ok(cmd) => {
+                use rpc::TabCommand::*;
+
+                match cmd {
+                    NewTab => {
+                        let response = self.do_new_tab();
+                        self.respond(response, id)
+                    },
+                    DeleteTab(tab) => {
+                        let response = self.do_delete_tab(tab);
+                        self.respond(response, id)
+                    },
+                    Edit(tab, edit_cmd) => {
+                        let response = self.do_edit(tab, edit_cmd);
+                        self.try_respond(response, id)
+                    }
                 }
+            },
+            Err(err) => {
+                print_err!("RPC error with id={:?}: {}", id, err)
             }
         }
     }
