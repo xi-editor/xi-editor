@@ -22,6 +22,7 @@ use serde::ser::Serialize;
 
 use xi_rope::rope::Rope;
 use editor::Editor;
+use rpc::{TabCommand, EditCommand};
 use ::send;
 
 pub struct Tabs {
@@ -39,24 +40,36 @@ impl Tabs {
         }
     }
 
-    // TODO: refactor response in here, rather than explicitly calling "respond"
     pub fn handle_rpc(&mut self, method: &str, params: &Value, id: Option<&Value>) {
-        match method {
-            "new_tab" => self.do_new_tab(id),
-            "delete_tab" => self.do_delete_tab(params),
-            "edit" => self.do_edit(params, id),
-            _ => print_err!("unknown method {}", method),
+        if let Ok(cmd) = TabCommand::from_json(method, params) {
+            use rpc::TabCommand::*;
+
+            // TODO: Better error message here based on result of `from_json`
+            match cmd {
+                NewTab => {
+                    let response = self.do_new_tab();
+                    self.respond(response, id)
+                },
+                DeleteTab(tab) => {
+                    let response = self.do_delete_tab(tab);
+                    self.respond(response, id)
+                },
+                Edit(tab, edit_cmd) => {
+                    let response = self.do_edit(tab, edit_cmd);
+                    self.try_respond(response, id)
+                }
+            }
         }
     }
 
     pub fn respond<V>(&self, result: V, id: Option<&Value>)
-            where V: Serialize {
+        where V: Serialize
+    {
         if let Some(id) = id {
             if let Err(e) = send(&ObjectBuilder::new()
                 .insert("id", id)
                 .insert("result", result)
-                .unwrap()
-            ) {
+                .unwrap()) {
                 print_err!("error {} sending response to RPC {:?}", e, id);
             }
         } else {
@@ -64,36 +77,30 @@ impl Tabs {
         }
     }
 
-    fn do_new_tab(&mut self, id: Option<&Value>) {
-        let tabname = self.new_tab();
-        self.respond(&tabname, id);
-    }
-
-    fn do_delete_tab(&mut self, params: &Value) {
-        if let Some(params) = params.as_object() {
-            let tab = params.get("tab").unwrap().as_string().unwrap();
-            self.delete_tab(tab);
+    pub fn try_respond<V>(&self, result: Option<V>, id: Option<&Value>)
+        where V: Serialize
+    {
+        if let Some(result) = result {
+            self.respond(result, id);
+        } else if let Some(id) = id {
+            print_err!("rpc with id={:?} not responded", id);
         }
     }
 
-    fn do_edit(&mut self, params: &Value, id: Option<&Value>) {
-        if let Some(params) = params.as_object() {
-            let tab = params.get("tab").unwrap().as_string().unwrap();
-            let response = {
-                if let Some(editor) = self.tabs.get_mut(tab) {
-                    let method = params.get("method").unwrap().as_string().unwrap();
-                    let params = params.get("params").unwrap();
-                    editor.do_rpc(method, params, &self.kill_ring)
-                } else {
-                    print_err!("tab not found: {}", tab);
-                    None
-                }
-            };
-            if let Some(response) = response {
-                self.respond(response, id);
-            } else if let Some(id) = id {
-                print_err!("rpc with id={:?} not responded", id);
-            }
+    fn do_new_tab(&mut self) -> String {
+        self.new_tab()
+    }
+
+    fn do_delete_tab(&mut self, tab: &str) {
+        self.delete_tab(tab);
+    }
+
+    fn do_edit(&mut self, tab: &str, cmd: EditCommand) -> Option<Value> {
+        if let Some(editor) = self.tabs.get_mut(tab) {
+            editor.do_rpc(cmd, &self.kill_ring)
+        } else {
+            print_err!("tab not found: {}", tab);
+            None
         }
     }
 
@@ -114,11 +121,11 @@ impl Tabs {
 pub fn update_tab(update: &Value, tab: &str) {
     if let Err(e) = send(&ObjectBuilder::new()
         .insert("method", "update")
-        .insert_object("params", |builder|
+        .insert_object("params", |builder| {
             builder.insert("tab", tab)
-                .insert("update", update))
-        .unwrap()
-    ) {
+                .insert("update", update)
+        })
+        .unwrap()) {
         print_err!("send error on update_tab: {}", e);
     }
 }

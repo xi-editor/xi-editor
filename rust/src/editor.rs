@@ -313,8 +313,8 @@ impl Editor {
         self.scroll_to = Some(scroll_offset);
     }
 
-    fn do_key(&mut self, chars: String, flags: u64) {
-        match chars.as_str() {
+    fn do_key(&mut self, chars: &str, flags: u64) {
+        match chars {
             "\r" => self.insert_newline(),
             "\x7f" => {
                 self.delete_backward();
@@ -351,18 +351,18 @@ impl Editor {
                 // F2, but using for debugging
                 self.debug_test_fg_spans();
             }
-            _ => self.insert(chars.as_str()),
+            _ => self.insert(chars),
         }
     }
 
     // TODO: insert from keyboard or input method shouldn't break undo group,
     // but paste should.
-    fn do_insert(&mut self, chars: String) {
+    fn do_insert(&mut self, chars: &str) {
         self.this_edit_type = EditType::InsertChars;
-        self.insert(chars.as_str());
+        self.insert(chars);
     }
 
-    fn do_open(&mut self, path: String) {
+    fn do_open(&mut self, path: &str) {
         match File::open(path) {
             Ok(mut f) => {
                 let mut s = String::new();
@@ -374,7 +374,7 @@ impl Editor {
         }
     }
 
-    fn do_save(&mut self, path: String) {
+    fn do_save(&mut self, path: &str) {
         match File::create(path) {
             Ok(mut f) => {
                 for chunk in self.text.iter_chunks(0, self.text.len()) {
@@ -502,8 +502,7 @@ impl Editor {
     }
 
     pub fn do_rpc(&mut self,
-                  method: &str,
-                  params: &Value,
+                  cmd: EditCommand,
                   kill_ring: &Mutex<Rope>)
                   -> Option<Value> {
 
@@ -511,52 +510,50 @@ impl Editor {
 
         self.this_edit_type = EditType::Other;
 
-        // TODO: Better error message here based on result of `from_json`
-        let result = EditCommand::from_json(method, params).ok().and_then(|cmd| {
-            match cmd {
-                RenderLines(first_line, last_line) => {
-                    Some(self.do_render_lines(first_line, last_line))
-                }
-                Key(chars, flags) => async(self.do_key(chars, flags)),
-                Insert(chars) => async(self.do_insert(chars)),
-                DeleteBackward => async(self.delete_backward()),
-                DeleteToEndOfParagraph => {
-                    async(self.delete_to_end_of_paragraph(kill_ring))
-                }
-                InsertNewline => async(self.insert_newline()),
-                MoveUp => async(self.move_up(0)),
-                MoveUpAndModifySelection => async(self.move_up(MODIFIER_SHIFT)),
-                MoveDown => async(self.move_down(0)),
-                MoveDownAndModifySelection => async(self.move_down(MODIFIER_SHIFT)),
-                MoveLeft => async(self.move_left(0)),
-                MoveLeftAndModifySelection => async(self.move_left(MODIFIER_SHIFT)),
-                MoveRight => async(self.move_right(0)),
-                MoveRightAndModifySelection => async(self.move_right(MODIFIER_SHIFT)),
-                MoveToBeginningOfParagraph => async(self.cursor_start()),
-                MoveToEndOfParagraph => async(self.cursor_end()),
-                ScrollPageUp => async(self.scroll_page_up(0)),
-                PageUpAndModifySelection => async(self.scroll_page_up(MODIFIER_SHIFT)),
-                ScrollPageDown => async(self.scroll_page_down(0)),
-                PageDownAndModifySelection => {
-                    async(self.scroll_page_down(MODIFIER_SHIFT))
-                }
-                Open(path) => async(self.do_open(path)),
-                Save(path) => async(self.do_save(path)),
-                Scroll(first, last) => async(self.do_scroll(first, last)),
-                Yank => async(self.yank(kill_ring)),
-                Transpose => async(self.do_transpose()),
-                Click(line, col, flags, click_count) => {
-                    async(self.do_click(line, col, flags, click_count))
-                }
-                Drag(line, col, flags) => async(self.do_drag(line, col, flags)),
-                Undo => async(self.do_undo()),
-                Redo => async(self.do_redo()),
-                Cut => Some(self.do_cut()),
-                Copy => Some(self.do_copy()),
-                DebugRewrap => async(self.debug_rewrap()),
-                DebugTestFgSpans => async(self.debug_test_fg_spans()),
+        let result = match cmd {
+            RenderLines(first_line, last_line) => {
+                Some(self.do_render_lines(first_line, last_line))
             }
-        });
+            Key(chars, flags) => async(self.do_key(chars, flags)),
+            Insert(chars) => async(self.do_insert(chars)),
+            DeleteBackward => async(self.delete_backward()),
+            DeleteToEndOfParagraph => {
+                async(self.delete_to_end_of_paragraph(kill_ring))
+            }
+            InsertNewline => async(self.insert_newline()),
+            MoveUp => async(self.move_up(0)),
+            MoveUpAndModifySelection => async(self.move_up(MODIFIER_SHIFT)),
+            MoveDown => async(self.move_down(0)),
+            MoveDownAndModifySelection => async(self.move_down(MODIFIER_SHIFT)),
+            MoveLeft => async(self.move_left(0)),
+            MoveLeftAndModifySelection => async(self.move_left(MODIFIER_SHIFT)),
+            MoveRight => async(self.move_right(0)),
+            MoveRightAndModifySelection => async(self.move_right(MODIFIER_SHIFT)),
+            MoveToBeginningOfParagraph => async(self.cursor_start()),
+            MoveToEndOfParagraph => async(self.cursor_end()),
+            ScrollPageUp => async(self.scroll_page_up(0)),
+            PageUpAndModifySelection => async(self.scroll_page_up(MODIFIER_SHIFT)),
+            ScrollPageDown => async(self.scroll_page_down(0)),
+            PageDownAndModifySelection => {
+                async(self.scroll_page_down(MODIFIER_SHIFT))
+            }
+            Open(path) => async(self.do_open(path)),
+            Save(path) => async(self.do_save(path)),
+            Scroll(first, last) => async(self.do_scroll(first, last)),
+            Yank => async(self.yank(kill_ring)),
+            Transpose => async(self.do_transpose()),
+            Click(line, col, flags, click_count) => {
+                async(self.do_click(line, col, flags, click_count))
+            }
+            Drag(line, col, flags) => async(self.do_drag(line, col, flags)),
+            Undo => async(self.do_undo()),
+            Redo => async(self.do_redo()),
+            Cut => Some(self.do_cut()),
+            Copy => Some(self.do_copy()),
+            DebugRewrap => async(self.debug_rewrap()),
+            DebugTestFgSpans => async(self.debug_test_fg_spans()),
+        };
+
         // TODO: could defer this until input quiesces - will this help?
         self.commit_delta();
         self.render();
