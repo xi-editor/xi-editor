@@ -28,7 +28,7 @@ use view::View;
 
 use tabs::update_tab;
 
-const FLAG_SHIFT: u64 = 2;
+const FLAG_SELECT: u64 = 2;
 
 const MAX_UNDOS: usize = 20;
 
@@ -93,6 +93,19 @@ impl Editor {
         let sel_interval = Interval::new_closed_open(self.view.sel_min(), self.view.sel_max());
         let new_cursor = self.view.sel_min() + s.len();
         self.add_delta(sel_interval, Rope::from(s), new_cursor);
+    }
+
+    fn set_cursor_impl(&mut self, offset: usize, set_start: bool, hard: bool) {
+        if set_start {
+            self.view.sel_start = offset;
+        }
+        self.view.sel_end = offset;
+        if hard {
+            self.col = self.view.offset_to_line_col(&self.text, offset).1;
+            self.scroll_to = Some(offset);
+        }
+        self.view.scroll_to_cursor(&self.text);
+        self.dirty = true;
     }
 
     fn set_cursor(&mut self, offset: usize, hard: bool) {
@@ -193,7 +206,14 @@ impl Editor {
 
     fn delete_forward(&mut self) {
         if self.view.sel_start == self.view.sel_end {
-            self.move_right();
+            let offset = 
+                if let Some(pos) = self.text.next_grapheme_offset(self.view.sel_end) {
+                    pos
+                } else {
+                    return;
+                };
+
+            self.set_cursor(offset, true);
         }
 
         self.delete();
@@ -204,8 +224,7 @@ impl Editor {
     }
 
     fn delete_to_beginning_of_line(&mut self) {
-        self.modify_selection();
-        self.move_to_left_end_of_line();
+        self.move_to_left_end_of_line(FLAG_SELECT);
 
         self.delete();
     }
@@ -238,21 +257,33 @@ impl Editor {
         self.this_edit_type = EditType::Select;
     }
 
-    fn move_up(&mut self) {
+    fn move_up(&mut self, flags: u64) {
+        if (flags & FLAG_SELECT) != 0 {
+            self.modify_selection();
+        }
+
         let old_offset = self.view.sel_end;
         let offset = self.view.vertical_motion(&self.text, -1, self.col);
         self.set_cursor(offset, old_offset == offset);
         self.scroll_to = Some(offset);
     }
 
-    fn move_down(&mut self) {
+    fn move_down(&mut self, flags: u64) {
+        if (flags & FLAG_SELECT) != 0 {
+            self.modify_selection();
+        }
+
         let old_offset = self.view.sel_end;
         let offset = self.view.vertical_motion(&self.text, 1, self.col);
         self.set_cursor(offset, old_offset == offset);
         self.scroll_to = Some(offset);
     }
 
-    fn move_left(&mut self) {
+    fn move_left(&mut self, flags: u64) {
+        if (flags & FLAG_SELECT) != 0 {
+            self.modify_selection();
+        }
+
         // Selecting cancel
         if self.view.sel_start != self.view.sel_end && self.this_edit_type != EditType::Select {
             let offset = self.view.sel_min();
@@ -271,7 +302,11 @@ impl Editor {
         }
     }
 
-    fn move_to_left_end_of_line(&mut self) {
+    fn move_to_left_end_of_line(&mut self, flags: u64) {
+        if (flags & FLAG_SELECT) != 0 {
+            self.modify_selection();
+        }
+
         let line_col = self.view.offset_to_line_col(&self.text, self.view.sel_end);
         let offset = self.view.line_col_to_offset(&self.text, line_col.0, 0);
 
@@ -280,7 +315,11 @@ impl Editor {
         return;
     }
 
-    fn move_right(&mut self) {
+    fn move_right(&mut self, flags: u64) {
+        if (flags & FLAG_SELECT) != 0 {
+            self.modify_selection();
+        }
+
         // Selecting cancel
         if self.view.sel_start != self.view.sel_end && self.this_edit_type != EditType::Select {
             let offset = self.view.sel_max();
@@ -298,7 +337,11 @@ impl Editor {
         }
     }
 
-    fn move_to_right_end_of_line(&mut self) {
+    fn move_to_right_end_of_line(&mut self, flags: u64) {
+        if (flags & FLAG_SELECT) != 0 {
+            self.modify_selection();
+        }
+
         let line_col = self.view.offset_to_line_col(&self.text, self.view.sel_end);
         let mut offset = self.text.len();
 
@@ -345,19 +388,31 @@ impl Editor {
         }
     }
 
-    fn move_to_beginning_of_document(&mut self) {
+    fn move_to_beginning_of_document(&mut self, flags: u64) {
+        if (flags & FLAG_SELECT) != 0 {
+            self.modify_selection();
+        }
+
         let offset = 0;
 
         self.set_cursor(offset, true);
     }
 
-    fn move_to_end_of_document(&mut self) {
+    fn move_to_end_of_document(&mut self, flags: u64) {
+        if (flags & FLAG_SELECT) != 0 {
+            self.modify_selection();
+        }
+
         let offset = self.text.len();
 
         self.set_cursor(offset, true);
     }
 
-    fn scroll_page_up(&mut self) {
+    fn scroll_page_up(&mut self, flags: u64) {
+        if (flags & FLAG_SELECT) != 0 {
+            self.modify_selection();
+        }
+
         let scroll = -max(self.view.scroll_height() as isize - 2, 1);
         let old_offset = self.view.sel_end;
         let offset = self.view.vertical_motion(&self.text, scroll, self.col);
@@ -366,7 +421,11 @@ impl Editor {
         self.scroll_to = Some(scroll_offset);
     }
 
-    fn scroll_page_down(&mut self) {
+    fn scroll_page_down(&mut self, flags: u64) {
+        if (flags & FLAG_SELECT) != 0 {
+            self.modify_selection();
+        }
+
         let scroll = max(self.view.scroll_height() as isize - 2, 1);
         let old_offset = self.view.sel_end;
         let offset = self.view.vertical_motion(&self.text, scroll, self.col);
@@ -385,22 +444,22 @@ impl Editor {
                     self.delete_backward();
                 }
                 "\u{F700}" => {  // up arrow
-                    self.move_up();
+                    self.move_up(flags);
                 }
                 "\u{F701}" => {  // down arrow
-                    self.move_down();
+                    self.move_down(flags);
                 }
                 "\u{F702}" => {  // left arrow
-                    self.move_left();
+                    self.move_left(flags);
                 }
                 "\u{F703}" => {  // right arrow
-                    self.move_right();
+                    self.move_right(flags);
                 }
                 "\u{F72C}" => {  // page up
-                    self.scroll_page_up();
+                    self.scroll_page_up(flags);
                 }
                 "\u{F72D}" => {  // page down
-                    self.scroll_page_down();
+                    self.scroll_page_down(flags);
                 }
                 "\u{F704}" => {  // F1, but using for debugging
                     self.debug_rewrap();
@@ -469,7 +528,7 @@ impl Editor {
             if let (Some(line), Some(col), Some(flags), Some(_click_count)) =
                     (array[0].as_u64(), array[1].as_u64(), array[2].as_u64(), array[3].as_u64()) {
                 let offset = self.view.line_col_to_offset(&self.text, line as usize, col as usize);
-                if flags & FLAG_SHIFT != 0 {
+                if (flags & FLAG_SELECT) != 0 {
                     self.modify_selection();
                 }
                 self.set_cursor(offset, true);
@@ -602,32 +661,32 @@ impl Editor {
             "delete_to_beginning_of_line" => async(self.delete_to_beginning_of_line()),
             "delete_to_end_of_paragraph" => async(self.delete_to_end_of_paragraph(kill_ring)),
             "insert_newline" => async(self.insert_newline()),
-            "move_up" => async(self.move_up()),
-            "move_up_and_modify_selection" => async({ self.modify_selection(); self.move_up() }),
-            "move_down" => async(self.move_down()),
-            "move_down_and_modify_selection" => async({ self.modify_selection(); self.move_down() }),
+            "move_up" => async(self.move_up(0)),
+            "move_up_and_modify_selection" => async(self.move_up(FLAG_SELECT)),
+            "move_down" => async(self.move_down(0)),
+            "move_down_and_modify_selection" => async(self.move_down(FLAG_SELECT)),
             "move_left" |
-            "move_backward" => async(self.move_left()),
-            "move_left_and_modify_selection" => async({ self.modify_selection(); self.move_left() }),
-            "move_to_left_end_of_line" => async(self.move_to_left_end_of_line()),
-            "move_to_left_end_of_line_and_modify_selection" => async({ self.modify_selection(); self.move_to_left_end_of_line() }),
+            "move_backward" => async(self.move_left(0)),
+            "move_left_and_modify_selection" => async(self.move_left(FLAG_SELECT)),
+            "move_to_left_end_of_line" => async(self.move_to_left_end_of_line(0)),
+            "move_to_left_end_of_line_and_modify_selection" => async(self.move_to_left_end_of_line(FLAG_SELECT)),
             "move_right" |
-            "move_forward" => async(self.move_right()),
-            "move_right_and_modify_selection" => async({ self.modify_selection(); self.move_right() }),
-            "move_to_right_end_of_line" => async(self.move_to_right_end_of_line()),
-            "move_to_right_end_of_line_and_modify_selection" => async({ self.modify_selection(); self.move_to_right_end_of_line() }),
+            "move_forward" => async(self.move_right(0)),
+            "move_right_and_modify_selection" => async(self.move_right(FLAG_SELECT)),
+            "move_to_right_end_of_line" => async(self.move_to_right_end_of_line(0)),
+            "move_to_right_end_of_line_and_modify_selection" => async(self.move_to_right_end_of_line(FLAG_SELECT)),
             "move_to_beginning_of_paragraph" => async(self.cursor_start()),
             "move_to_end_of_paragraph" => async(self.cursor_end()),
-            "move_to_beginning_of_document" => async(self.move_to_beginning_of_document()),
-            "move_to_beginning_of_document_and_modify_selection" => async({ self.modify_selection(); self.move_to_beginning_of_document() }),
-            "move_to_end_of_document" => async(self.move_to_end_of_document()),
-            "move_to_end_of_document_and_modify_selection" => async({ self.modify_selection(); self.move_to_end_of_document() }),
+            "move_to_beginning_of_document" => async(self.move_to_beginning_of_document(0)),
+            "move_to_beginning_of_document_and_modify_selection" => async(self.move_to_beginning_of_document(FLAG_SELECT)),
+            "move_to_end_of_document" => async(self.move_to_end_of_document(0)),
+            "move_to_end_of_document_and_modify_selection" => async(self.move_to_end_of_document(FLAG_SELECT)),
             "scroll_page_up" |
-            "page_up" => async(self.scroll_page_up()),
-            "page_up_and_modify_selection" => async({ self.modify_selection(); self.scroll_page_up() }),
+            "page_up" => async(self.scroll_page_up(0)),
+            "page_up_and_modify_selection" => async(self.scroll_page_up(FLAG_SELECT)),
             "scroll_page_down" |
-            "page_down" => async(self.scroll_page_down()),
-            "page_down_and_modify_selection" => async({ self.modify_selection(); self.scroll_page_down() }),
+            "page_down" => async(self.scroll_page_down(0)),
+            "page_down_and_modify_selection" => async(self.scroll_page_down(FLAG_SELECT)),
             "open" => async(self.do_open(params)),
             "save" => async(self.do_save(params)),
             "scroll" => async(self.do_scroll(params)),
