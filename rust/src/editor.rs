@@ -206,7 +206,7 @@ impl Editor {
 
     fn delete_forward(&mut self) {
         if self.view.sel_start == self.view.sel_end {
-            let offset = 
+            let offset =
                 if let Some(pos) = self.text.next_grapheme_offset(self.view.sel_end) {
                     pos
                 } else {
