@@ -18,12 +18,10 @@ use std::collections::BTreeMap;
 use std::sync::Mutex;
 use serde_json::Value;
 use serde_json::builder::ObjectBuilder;
-use serde::ser::Serialize;
 
 use xi_rope::rope::Rope;
 use editor::Editor;
-use rpc::{TabCommand, EditCommand};
-use ::send;
+use rpc::{send, TabCommand, EditCommand};
 
 pub struct Tabs {
     tabs: BTreeMap<String, Editor>,
@@ -40,55 +38,18 @@ impl Tabs {
         }
     }
 
-    pub fn handle_rpc(&mut self, method: &str, params: &Value, id: Option<&Value>) {
+    pub fn do_rpc(&mut self, cmd: TabCommand) -> Option<Value> {
+        use rpc::TabCommand::*;
 
-        match TabCommand::from_json(method, params) {
-            Ok(cmd) => {
-                use rpc::TabCommand::*;
+        match cmd {
+            NewTab => Some(Value::String(self.do_new_tab())),
 
-                match cmd {
-                    NewTab => {
-                        let response = self.do_new_tab();
-                        self.respond(response, id)
-                    },
-                    DeleteTab(tab) => {
-                        let response = self.do_delete_tab(tab);
-                        self.respond(response, id)
-                    },
-                    Edit(tab, edit_cmd) => {
-                        let response = self.do_edit(tab, edit_cmd);
-                        self.try_respond(response, id)
-                    }
-                }
+            DeleteTab(tab) => {
+                self.do_delete_tab(tab);
+                None
             },
-            Err(err) => {
-                print_err!("RPC error with id={:?}: {}", id, err)
-            }
-        }
-    }
 
-    pub fn respond<V>(&self, result: V, id: Option<&Value>)
-        where V: Serialize
-    {
-        if let Some(id) = id {
-            if let Err(e) = send(&ObjectBuilder::new()
-                .insert("id", id)
-                .insert("result", result)
-                .unwrap()) {
-                print_err!("error {} sending response to RPC {:?}", e, id);
-            }
-        } else {
-            print_err!("tried to respond with no id");
-        }
-    }
-
-    pub fn try_respond<V>(&self, result: Option<V>, id: Option<&Value>)
-        where V: Serialize
-    {
-        if let Some(result) = result {
-            self.respond(result, id);
-        } else if let Some(id) = id {
-            print_err!("rpc with id={:?} not responded", id);
+            Edit(tab, edit_cmd) => self.do_edit(tab, edit_cmd),
         }
     }
 

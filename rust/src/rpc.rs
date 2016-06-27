@@ -1,7 +1,61 @@
-use serde_json::Value;
+use std::io;
 use std::collections::BTreeMap;
+use std::io::Write;
 use std::error;
 use std::fmt;
+use serde_json;
+use serde_json::builder::ObjectBuilder;
+use serde_json::Value;
+
+// =============================================================================
+//  Request handling
+// =============================================================================
+
+pub fn send(v: &Value) -> Result<(), io::Error> {
+    let mut s = serde_json::to_string(v).unwrap();
+    s.push('\n');
+    //print_err!("from core: {}", s);
+    io::stdout().write_all(s.as_bytes())
+}
+
+pub fn respond(result: &Value, id: Option<&Value>)
+{
+    if let Some(id) = id {
+        if let Err(e) = send(&ObjectBuilder::new()
+                             .insert("id", id)
+                             .insert("result", result)
+                             .unwrap()) {
+            print_err!("error {} sending response to RPC {:?}", e, id);
+        }
+    } else {
+        print_err!("tried to respond with no id");
+    }
+}
+
+impl<'a> Request<'a> {
+    pub fn from_json(val: &'a Value) -> Result<Self, Error> {
+        use self::Error::*;
+
+        val.as_object().ok_or(InvalidRequest).and_then(|req| {
+            if let (Some(method), Some(params)) =
+                (dict_get_string(req, "method"), req.get("params")) {
+
+                    let id = req.get("id");
+                    TabCommand::from_json(method, params).map(|cmd| Request::TabCommand(id, cmd))
+                }
+            else { Err(InvalidRequest) }
+        })
+    }
+}
+
+// =============================================================================
+//  Command types
+// =============================================================================
+
+#[derive(Debug, PartialEq)]
+pub enum Request<'a> {
+    TabCommand(Option<&'a Value>, TabCommand<'a>) // id, tab command
+}
 
 /// An enum representing a tab command, parsed from JSON.
 #[derive(Debug, PartialEq, Eq)]
@@ -49,45 +103,6 @@ pub enum EditCommand<'a> {
     DebugTestFgSpans,
 }
 
-/// An error that occurred while parsing an edit command.
-#[derive(Debug, PartialEq)]
-pub enum Error {
-    UnknownTabMethod(String), // method name
-    MalformedTabParams(String, Value), // method name, malformed params
-    UnknownEditMethod(String), // method name
-    MalformedEditParams(String, Value), // method name, malformed params
-}
-
-impl fmt::Display for Error {
-    // TODO: Provide information about the parameter format expected when
-    // displaying malformed parameter errors
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use self::Error::*;
-
-        match *self {
-            UnknownTabMethod(ref method) => write!(f, "Error: Unknown tab method '{}'", method),
-            MalformedTabParams(ref method, ref params) =>
-                write!(f, "Error: Malformed tab parameters with method '{}', parameters: {:?}", method, params),
-            UnknownEditMethod(ref method) => write!(f, "Error: Unknown edit method '{}'", method),
-            MalformedEditParams(ref method, ref params) =>
-                write!(f, "Error: Malformed edit parameters with method '{}', parameters: {:?}", method, params),
-        }
-    }
-}
-
-impl error::Error for Error {
-    fn description(&self) -> &str {
-        use self::Error::*;
-
-        match *self {
-            UnknownTabMethod(_) => "Unknown tab method",
-            MalformedTabParams(_, _) => "Malformed tab parameters",
-            UnknownEditMethod(_) => "Unknown edit method",
-            MalformedEditParams(_, _) => "Malformed edit parameters"
-        }
-    }
-}
-
 impl<'a> TabCommand<'a> {
     pub fn from_json(method: &str, params: &'a Value) -> Result<Self, Error> {
         use self::TabCommand::*;
@@ -97,7 +112,7 @@ impl<'a> TabCommand<'a> {
             "new_tab" => Ok(NewTab),
 
             "delete_tab" => params.as_object().and_then(|dict| {
-                dict_get_string(dict, "tab").map(|tab| DeleteTab(tab))
+                dict_get_string(dict, "tab").map(DeleteTab)
             }).ok_or(MalformedTabParams(method.to_string(), params.clone())),
 
             "edit" =>
@@ -110,6 +125,7 @@ impl<'a> TabCommand<'a> {
                             EditCommand::from_json(method, edit_params).map(|cmd| Edit(tab, cmd))
                         } else { Err(MalformedTabParams(method.to_string(), params.clone())) }
             }),
+
             _ => Err(UnknownTabMethod(method.to_string()))
         }
     }
@@ -124,11 +140,10 @@ impl<'a> EditCommand<'a> {
         match method {
             "render_lines" => {
                 params.as_object().and_then(|dict| {
-                    dict_get_u64(dict, "first_line").and_then(|first_line| {
-                        dict_get_u64(dict, "last_line").map(|last_line| {
-                            RenderLines(first_line as usize, last_line as usize)
-                        })
-                    })
+                    if let (Some(first_line), Some(last_line)) =
+                        (dict_get_u64(dict, "first_line"), dict_get_u64(dict, "last_line")) {
+                            Some(RenderLines(first_line as usize, last_line as usize))
+                        } else { None }
                 }).ok_or(MalformedEditParams(method.to_string(), params.clone()))
             },
 
@@ -139,9 +154,11 @@ impl<'a> EditCommand<'a> {
                     })
                 })
             }).ok_or(MalformedEditParams(method.to_string(), params.clone())),
+
             "insert" => params.as_object().and_then(|dict| {
                 dict_get_string(dict, "chars").map(|chars| Insert(chars))
             }).ok_or(MalformedEditParams(method.to_string(), params.clone())),
+
             "delete_backward" => Ok(DeleteBackward),
             "delete_to_end_of_paragraph" => Ok(DeleteToEndOfParagraph),
             "insert_newline" => Ok(InsertNewline),
@@ -160,12 +177,15 @@ impl<'a> EditCommand<'a> {
             "scroll_page_down" |
             "page_down" => Ok(ScrollPageDown),
             "page_down_and_modify_selection" => Ok(PageDownAndModifySelection),
+
             "open" => params.as_object().and_then(|dict| {
                 dict_get_string(dict, "filename").map(|path| Open(path))
             }).ok_or(MalformedEditParams(method.to_string(), params.clone())),
+
             "save" => params.as_object().and_then(|dict| {
                 dict_get_string(dict, "filename").map(|path| Save(path))
             }).ok_or(MalformedEditParams(method.to_string(), params.clone())),
+
             "scroll" => params.as_array().and_then(|arr| {
                 if let (Some(first), Some(last)) =
                     (arr_get_i64(arr, 0), arr_get_i64(arr, 1)) {
@@ -173,8 +193,10 @@ impl<'a> EditCommand<'a> {
                     Some(Scroll(first, last))
                 } else { None }
             }).ok_or(MalformedEditParams(method.to_string(), params.clone())),
+
             "yank" => Ok(Yank),
             "transpose" => Ok(Transpose),
+
             "click" => params.as_array().and_then(|arr| {
                 if let (Some(line), Some(col), Some(flags), Some(click_count)) =
                     (arr_get_u64(arr, 0), arr_get_u64(arr, 1), arr_get_u64(arr, 2), arr_get_u64(arr, 3)) {
@@ -182,6 +204,7 @@ impl<'a> EditCommand<'a> {
                         Some(Click(line, col, flags, click_count))
                     } else { None }
             }).ok_or(MalformedEditParams(method.to_string(), params.clone())),
+
             "drag" => params.as_array().and_then(|arr| {
                 if let (Some(line), Some(col), Some(flags)) =
                     (arr_get_u64(arr, 0), arr_get_u64(arr, 1), arr_get_u64(arr, 2)) {
@@ -189,13 +212,61 @@ impl<'a> EditCommand<'a> {
                         Some(Drag(line, col, flags))
                     } else { None }
             }).ok_or(MalformedEditParams(method.to_string(), params.clone())),
+
             "undo" => Ok(Undo),
             "redo" => Ok(Redo),
             "cut" => Ok(Cut),
             "copy" => Ok(Copy),
             "debug_rewrap" => Ok(DebugRewrap),
             "debug_test_fg_spans" => Ok(DebugTestFgSpans),
+
             _ => Err(UnknownEditMethod(method.to_string())),
+        }
+    }
+}
+
+// =============================================================================
+//  Error types
+// =============================================================================
+
+/// An error that occurred while parsing an edit command.
+#[derive(Debug, PartialEq)]
+pub enum Error {
+    InvalidRequest,
+    UnknownTabMethod(String), // method name
+    MalformedTabParams(String, Value), // method name, malformed params
+    UnknownEditMethod(String), // method name
+    MalformedEditParams(String, Value), // method name, malformed params
+}
+
+impl fmt::Display for Error {
+    // TODO: Provide information about the parameter format expected when
+    // displaying malformed parameter errors
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use self::Error::*;
+
+        match *self {
+            InvalidRequest => write!(f, "Error: invalid request"),
+            UnknownTabMethod(ref method) => write!(f, "Error: Unknown tab method '{}'", method),
+            MalformedTabParams(ref method, ref params) =>
+                write!(f, "Error: Malformed tab parameters with method '{}', parameters: {:?}", method, params),
+            UnknownEditMethod(ref method) => write!(f, "Error: Unknown edit method '{}'", method),
+            MalformedEditParams(ref method, ref params) =>
+                write!(f, "Error: Malformed edit parameters with method '{}', parameters: {:?}", method, params),
+        }
+    }
+}
+
+impl error::Error for Error {
+    fn description(&self) -> &str {
+        use self::Error::*;
+
+        match *self {
+            InvalidRequest => "Invalid request",
+            UnknownTabMethod(_) => "Unknown tab method",
+            MalformedTabParams(_, _) => "Malformed tab parameters",
+            UnknownEditMethod(_) => "Unknown edit method",
+            MalformedEditParams(_, _) => "Malformed edit parameters"
         }
     }
 }
