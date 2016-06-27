@@ -144,7 +144,7 @@ impl View {
                     builder.push("sel")
                         .push(sel_start_ix)
                         .push(sel_end_ix)
-                );                
+                );
             }
             if line_num == cursor_line {
                 line_builder = line_builder.push_array(|builder|

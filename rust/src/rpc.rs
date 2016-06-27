@@ -71,8 +71,10 @@ pub enum EditCommand<'a> {
     RenderLines(usize, usize), // first line, last line
     Key(&'a str, u64), // chars, flags
     Insert(&'a str), // chars
+    DeleteForward,
     DeleteBackward,
     DeleteToEndOfParagraph,
+    DeleteToBeginningOfLine,
     InsertNewline,
     MoveUp,
     MoveUpAndModifySelection,
@@ -84,6 +86,14 @@ pub enum EditCommand<'a> {
     MoveRightAndModifySelection,
     MoveToBeginningOfParagraph,
     MoveToEndOfParagraph,
+    MoveToLeftEndOfLine,
+    MoveToLeftEndOfLineAndModifySelection,
+    MoveToRightEndOfLine,
+    MoveToRightEndOfLineAndModifySelection,
+    MoveToBeginningOfDocument,
+    MoveToBeginningOfDocumentAndModifySelection,
+    MoveToEndOfDocument,
+    MoveToEndOfDocumentAndModifySelection,
     ScrollPageUp,
     PageUpAndModifySelection,
     ScrollPageDown,
@@ -159,8 +169,10 @@ impl<'a> EditCommand<'a> {
                 dict_get_string(dict, "chars").map(|chars| Insert(chars))
             }).ok_or(MalformedEditParams(method.to_string(), params.clone())),
 
+            "delete_forward" => Ok(DeleteForward),
             "delete_backward" => Ok(DeleteBackward),
             "delete_to_end_of_paragraph" => Ok(DeleteToEndOfParagraph),
+            "delete_to_beginning_of_line" => Ok(DeleteToBeginningOfLine),
             "insert_newline" => Ok(InsertNewline),
             "move_up" => Ok(MoveUp),
             "move_up_and_modify_selection" => Ok(MoveUpAndModifySelection),
@@ -172,6 +184,14 @@ impl<'a> EditCommand<'a> {
             "move_right_and_modify_selection" => Ok(MoveRightAndModifySelection),
             "move_to_beginning_of_paragraph" => Ok(MoveToBeginningOfParagraph),
             "move_to_end_of_paragraph" => Ok(MoveToEndOfParagraph),
+            "move_to_left_end_of_line" => Ok(MoveToLeftEndOfLine),
+            "move_to_left_end_of_line_and_modify_selection" => Ok(MoveToLeftEndOfLineAndModifySelection),
+            "move_to_right_end_of_line" => Ok(MoveToRightEndOfLine),
+            "move_to_right_end_of_line_and_modify_selection" => Ok(MoveToRightEndOfLineAndModifySelection),
+            "move_to_beginning_of_document" => Ok(MoveToBeginningOfDocument),
+            "move_to_beginning_of_document_and_modify_selection" => Ok(MoveToBeginningOfDocumentAndModifySelection),
+            "move_to_end_of_document" => Ok(MoveToEndOfDocument),
+            "move_to_end_of_document_and_modify_selection" => Ok(MoveToEndOfDocumentAndModifySelection),
             "scroll_page_up" | "page_up" => Ok(ScrollPageUp),
             "page_up_and_modify_selection" => Ok(PageUpAndModifySelection),
             "scroll_page_down" |
