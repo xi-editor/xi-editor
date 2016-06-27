@@ -639,11 +639,11 @@ impl Editor {
         self.this_edit_type = EditType::Other;
 
         let result = match cmd {
-            RenderLines(first_line, last_line) => {
+            RenderLines { first_line, last_line } => {
                 Some(self.do_render_lines(first_line, last_line))
             }
-            Key(chars, flags) => async(self.do_key(chars, flags)),
-            Insert(chars) => async(self.do_insert(chars)),
+            Key { chars, flags } => async(self.do_key(chars, flags)),
+            Insert { chars } => async(self.do_insert(chars)),
             DeleteForward => async(self.delete_forward()),
             DeleteBackward => async(self.delete_backward()),
             DeleteToEndOfParagraph => {
@@ -675,15 +675,15 @@ impl Editor {
             PageDownAndModifySelection => {
                 async(self.scroll_page_down(FLAG_SELECT))
             }
-            Open(path) => async(self.do_open(path)),
-            Save(path) => async(self.do_save(path)),
-            Scroll(first, last) => async(self.do_scroll(first, last)),
+            Open { file_path } => async(self.do_open(file_path)),
+            Save { file_path } => async(self.do_save(file_path)),
+            Scroll { first, last } => async(self.do_scroll(first, last)),
             Yank => async(self.yank(kill_ring)),
             Transpose => async(self.do_transpose()),
-            Click(line, col, flags, click_count) => {
-                async(self.do_click(line, col, flags, click_count))
+            Click { line, column, flags, click_count } => {
+                async(self.do_click(line, column, flags, click_count))
             }
-            Drag(line, col, flags) => async(self.do_drag(line, col, flags)),
+            Drag { line, column, flags } => async(self.do_drag(line, column, flags)),
             Undo => async(self.do_undo()),
             Redo => async(self.do_redo()),
             Cut => Some(self.do_cut()),

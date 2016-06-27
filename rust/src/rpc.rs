@@ -41,7 +41,7 @@ impl<'a> Request<'a> {
                 (dict_get_string(req, "method"), req.get("params")) {
 
                     let id = req.get("id");
-                    TabCommand::from_json(method, params).map(|cmd| Request::TabCommand(id, cmd))
+                    TabCommand::from_json(method, params).map(|cmd| Request::TabCommand { id: id, tab_command: cmd})
                 }
             else { Err(InvalidRequest) }
         })
@@ -54,23 +54,23 @@ impl<'a> Request<'a> {
 
 #[derive(Debug, PartialEq)]
 pub enum Request<'a> {
-    TabCommand(Option<&'a Value>, TabCommand<'a>) // id, tab command
+    TabCommand { id: Option<&'a Value>, tab_command: TabCommand<'a> }
 }
 
 /// An enum representing a tab command, parsed from JSON.
 #[derive(Debug, PartialEq, Eq)]
 pub enum TabCommand<'a> {
-    Edit(&'a str, EditCommand<'a>), // tab name, edit command
+    Edit { tab_name: &'a str, edit_command: EditCommand<'a> },
     NewTab,
-    DeleteTab(&'a str), // tab name
+    DeleteTab { tab_name: &'a str },
 }
 
 /// An enum representing an edit command, parsed from JSON.
 #[derive(Debug, PartialEq, Eq)]
 pub enum EditCommand<'a> {
-    RenderLines(usize, usize), // first line, last line
-    Key(&'a str, u64), // chars, flags
-    Insert(&'a str), // chars
+    RenderLines { first_line: usize, last_line: usize },
+    Key { chars: &'a str, flags: u64 },
+    Insert { chars: &'a str },
     DeleteForward,
     DeleteBackward,
     DeleteToEndOfParagraph,
@@ -98,13 +98,13 @@ pub enum EditCommand<'a> {
     PageUpAndModifySelection,
     ScrollPageDown,
     PageDownAndModifySelection,
-    Open(&'a str), // file path
-    Save(&'a str), // file path
-    Scroll(i64, i64), // first, last
+    Open { file_path: &'a str },
+    Save { file_path: &'a str },
+    Scroll { first: i64, last: i64 },
     Yank,
     Transpose,
-    Click(u64, u64, u64, u64), // line, column, flags, click count
-    Drag(u64, u64, u64), // line, col, flags
+    Click { line: u64, column: u64, flags: u64, click_count: u64 },
+    Drag { line: u64, column: u64, flags: u64 },
     Undo,
     Redo,
     Cut,
@@ -122,7 +122,7 @@ impl<'a> TabCommand<'a> {
             "new_tab" => Ok(NewTab),
 
             "delete_tab" => params.as_object().and_then(|dict| {
-                dict_get_string(dict, "tab").map(DeleteTab)
+                dict_get_string(dict, "tab").map(|tab_name| DeleteTab { tab_name: tab_name })
             }).ok_or(MalformedTabParams(method.to_string(), params.clone())),
 
             "edit" =>
@@ -132,7 +132,8 @@ impl<'a> TabCommand<'a> {
                 .and_then(|dict| {
                     if let (Some(tab), Some(method), Some(edit_params)) =
                         (dict_get_string(dict, "tab"), dict_get_string(dict, "method"), dict.get("params")) {
-                            EditCommand::from_json(method, edit_params).map(|cmd| Edit(tab, cmd))
+                            EditCommand::from_json(method, edit_params)
+                                .map(|cmd| Edit { tab_name: tab, edit_command: cmd })
                         } else { Err(MalformedTabParams(method.to_string(), params.clone())) }
             }),
 
@@ -152,7 +153,10 @@ impl<'a> EditCommand<'a> {
                 params.as_object().and_then(|dict| {
                     if let (Some(first_line), Some(last_line)) =
                         (dict_get_u64(dict, "first_line"), dict_get_u64(dict, "last_line")) {
-                            Some(RenderLines(first_line as usize, last_line as usize))
+                            Some(RenderLines {
+                                first_line: first_line as usize,
+                                last_line: last_line as usize
+                            })
                         } else { None }
                 }).ok_or(MalformedEditParams(method.to_string(), params.clone()))
             },
@@ -160,13 +164,13 @@ impl<'a> EditCommand<'a> {
             "key" => params.as_object().and_then(|dict| {
                 dict_get_string(dict, "chars").and_then(|chars| {
                     dict_get_u64(dict, "flags").map(|flags| {
-                        Key(chars, flags)
+                        Key { chars: chars, flags: flags }
                     })
                 })
             }).ok_or(MalformedEditParams(method.to_string(), params.clone())),
 
             "insert" => params.as_object().and_then(|dict| {
-                dict_get_string(dict, "chars").map(|chars| Insert(chars))
+                dict_get_string(dict, "chars").map(|chars| Insert { chars: chars })
             }).ok_or(MalformedEditParams(method.to_string(), params.clone())),
 
             "delete_forward" => Ok(DeleteForward),
@@ -199,18 +203,18 @@ impl<'a> EditCommand<'a> {
             "page_down_and_modify_selection" => Ok(PageDownAndModifySelection),
 
             "open" => params.as_object().and_then(|dict| {
-                dict_get_string(dict, "filename").map(|path| Open(path))
+                dict_get_string(dict, "filename").map(|path| Open { file_path: path })
             }).ok_or(MalformedEditParams(method.to_string(), params.clone())),
 
             "save" => params.as_object().and_then(|dict| {
-                dict_get_string(dict, "filename").map(|path| Save(path))
+                dict_get_string(dict, "filename").map(|path| Save { file_path: path })
             }).ok_or(MalformedEditParams(method.to_string(), params.clone())),
 
             "scroll" => params.as_array().and_then(|arr| {
                 if let (Some(first), Some(last)) =
                     (arr_get_i64(arr, 0), arr_get_i64(arr, 1)) {
 
-                    Some(Scroll(first, last))
+                    Some(Scroll { first: first, last: last })
                 } else { None }
             }).ok_or(MalformedEditParams(method.to_string(), params.clone())),
 
@@ -218,18 +222,18 @@ impl<'a> EditCommand<'a> {
             "transpose" => Ok(Transpose),
 
             "click" => params.as_array().and_then(|arr| {
-                if let (Some(line), Some(col), Some(flags), Some(click_count)) =
+                if let (Some(line), Some(column), Some(flags), Some(click_count)) =
                     (arr_get_u64(arr, 0), arr_get_u64(arr, 1), arr_get_u64(arr, 2), arr_get_u64(arr, 3)) {
 
-                        Some(Click(line, col, flags, click_count))
+                        Some(Click { line: line, column: column, flags: flags, click_count: click_count })
                     } else { None }
             }).ok_or(MalformedEditParams(method.to_string(), params.clone())),
 
             "drag" => params.as_array().and_then(|arr| {
-                if let (Some(line), Some(col), Some(flags)) =
+                if let (Some(line), Some(column), Some(flags)) =
                     (arr_get_u64(arr, 0), arr_get_u64(arr, 1), arr_get_u64(arr, 2)) {
 
-                        Some(Drag(line, col, flags))
+                        Some(Drag { line: line, column: column, flags: flags })
                     } else { None }
             }).ok_or(MalformedEditParams(method.to_string(), params.clone())),
 

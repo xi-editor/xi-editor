@@ -44,12 +44,12 @@ impl Tabs {
         match cmd {
             NewTab => Some(Value::String(self.do_new_tab())),
 
-            DeleteTab(tab) => {
-                self.do_delete_tab(tab);
+            DeleteTab { tab_name } => {
+                self.do_delete_tab(tab_name);
                 None
             },
 
-            Edit(tab, edit_cmd) => self.do_edit(tab, edit_cmd),
+            Edit { tab_name, edit_command } => self.do_edit(tab_name, edit_command),
         }
     }
 

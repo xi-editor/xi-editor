@@ -37,8 +37,8 @@ extern crate xi_unicode;
 
 pub fn handle_req(request: Request, tabs: &mut Tabs) {
     match request {
-        Request::TabCommand(id, cmd) => {
-            if let Some(result) = tabs.do_rpc(cmd) {
+        Request::TabCommand { id, tab_command } => {
+            if let Some(result) = tabs.do_rpc(tab_command) {
                 rpc::respond(&result, id);
             } else if let Some(id) = id {
                 print_err!("RPC with id={:?} not responded", id);
