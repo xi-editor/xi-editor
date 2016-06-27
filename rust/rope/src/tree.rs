@@ -179,7 +179,7 @@ impl<N: NodeInfo> Node<N> {
     fn height(&self) -> usize {
         self.0.height
     }
-    
+
     fn is_leaf(&self) -> bool {
         self.0.height == 0
     }
@@ -260,10 +260,10 @@ impl<N: NodeInfo> Node<N> {
 
     pub fn concat(rope1: Node<N>, rope2: Node<N>) -> Node<N> {
         use std::cmp::Ordering;
-        
+
         let h1 = rope1.height();
         let h2 = rope2.height();
-        
+
         match h1.cmp(&h2) {
             Ordering::Less => {
                 let children2 = rope2.get_children();
@@ -517,7 +517,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
         let result = M::is_boundary(l, l.len());
         let _ = self.next_leaf();
         result
-    } 
+    }
 
     pub fn prev<M: Metric<N>>(&mut self) -> Option<(usize)> {
         if self.position == 0 || self.leaf.is_none() {
@@ -558,7 +558,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
                 }
                 if let Some(offset_in_leaf) = M::prev(l, l.len()) {
                     self.position = self.offset_of_leaf + offset_in_leaf;
-                    return Some(self.position);                    
+                    return Some(self.position);
                 } else {
                     panic!("metric is inconsistent, metric > 0 but no boundary");
                 }

@@ -8,7 +8,7 @@ This problem is fundamentally similar to collaborative editing, and there is a l
 
 In addition, should xi ever be extended to collaborative editing, having the model be based on the CRDT abstraction will make implementation much easier, leaving only the small matter of efficient distributed CRDTs themselves.
 
-This document is structured into two main sections. The first presents the model at a conceptual level, and effectively functions as a spec for how out-of-order edits should be merged, as well as the desired semantics for undo. The second details a simple and efficient centralized implementation, which faithfully implements the model but bypasses the complexity of a true distributed environment. 
+This document is structured into two main sections. The first presents the model at a conceptual level, and effectively functions as a spec for how out-of-order edits should be merged, as well as the desired semantics for undo. The second details a simple and efficient centralized implementation, which faithfully implements the model but bypasses the complexity of a true distributed environment.
 
 ## CRDT model
 
