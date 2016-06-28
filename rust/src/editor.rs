@@ -14,12 +14,12 @@
 
 use std::cmp::max;
 use std::fs::File;
-use std::io::{Read,Write};
+use std::io::{Read, Write};
 use std::sync::Mutex;
 use std::collections::BTreeSet;
 use serde_json::Value;
 
-use xi_rope::rope::{LinesMetric,Rope,RopeInfo};
+use xi_rope::rope::{LinesMetric, Rope, RopeInfo};
 use xi_rope::interval::Interval;
 use xi_rope::delta::Delta;
 use xi_rope::tree::Cursor;
@@ -27,13 +27,14 @@ use xi_rope::engine::Engine;
 use view::View;
 
 use tabs::update_tab;
+use rpc::EditCommand;
 
 const FLAG_SELECT: u64 = 2;
 
 const MAX_UNDOS: usize = 20;
 
 pub struct Editor {
-    tabname: String,  // used for sending updates back to front-end
+    tabname: String, // used for sending updates back to front-end
 
     text: Rope,
     view: View,
@@ -41,10 +42,10 @@ pub struct Editor {
 
     engine: Engine,
     undo_group_id: usize,
-    live_undos: Vec<usize>,  // undo groups that may still be toggled
-    cur_undo: usize,  // index to live_undos, ones after this are undone
-    undos: BTreeSet<usize>,  // undo groups that are undone
-    gc_undos: BTreeSet<usize>,  // undo groups that are no longer live and should be gc'ed
+    live_undos: Vec<usize>, //  undo groups that may still be toggled
+    cur_undo: usize, // index to live_undos, ones after this are undone
+    undos: BTreeSet<usize>, // undo groups that are undone
+    gc_undos: BTreeSet<usize>, // undo groups that are no longer live and should be gc'ed
 
     this_edit_type: EditType,
     last_edit_type: EditType,
@@ -55,7 +56,7 @@ pub struct Editor {
 
     dirty: bool,
     scroll_to: Option<usize>,
-    col: usize  // maybe this should live in view, it's similar to selection
+    col: usize, // maybe this should live in view, it's similar to selection
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
@@ -85,7 +86,7 @@ impl Editor {
             this_edit_type: EditType::Other,
             new_cursor: None,
             scroll_to: Some(0),
-            col: 0
+            col: 0,
         }
     }
 
@@ -139,10 +140,12 @@ impl Editor {
         if let Some(delta) = self.delta.take() {
             let head_rev_id = self.engine.get_head_rev_id();
             let undo_group;
+
             if self.this_edit_type == self.last_edit_type &&
-                    self.this_edit_type != EditType::Other &&
-                    self.this_edit_type != EditType::Select &&
-                    !self.live_undos.is_empty() {
+                self.this_edit_type != EditType::Other &&
+                self.this_edit_type != EditType::Select &&
+                !self.live_undos.is_empty() {
+
                 undo_group = *self.live_undos.last().unwrap();
             } else {
                 undo_group = self.undo_group_id;
@@ -234,9 +237,9 @@ impl Editor {
             self.view.sel_min()
         } else {
             if let Some(bsp_pos) = self.text.prev_codepoint_offset(self.view.sel_end) {
-            // TODO: implement complex emoji logic
+                // TODO: implement complex emoji logic
                 bsp_pos
-           } else {
+            } else {
                 self.view.sel_max()
             }
         };
@@ -434,128 +437,102 @@ impl Editor {
         self.scroll_to = Some(scroll_offset);
     }
 
-    fn do_key(&mut self, args: &Value) {
-        if let Some(args) = args.as_object() {
-            let chars = args.get("chars").unwrap().as_string().unwrap();
-            let flags = args.get("flags").unwrap().as_u64().unwrap();
-            match chars {
-                "\r" => self.insert_newline(),
-                "\x7f" => {
-                    self.delete_backward();
-                }
-                "\u{F700}" => {  // up arrow
-                    self.move_up(flags);
-                }
-                "\u{F701}" => {  // down arrow
-                    self.move_down(flags);
-                }
-                "\u{F702}" => {  // left arrow
-                    self.move_left(flags);
-                }
-                "\u{F703}" => {  // right arrow
-                    self.move_right(flags);
-                }
-                "\u{F72C}" => {  // page up
-                    self.scroll_page_up(flags);
-                }
-                "\u{F72D}" => {  // page down
-                    self.scroll_page_down(flags);
-                }
-                "\u{F704}" => {  // F1, but using for debugging
-                    self.debug_rewrap();
-                }
-                "\u{F705}" => {  // F2, but using for debugging
-                    self.debug_test_fg_spans();
-                }
-                _ => self.insert(chars)
+    fn do_key(&mut self, chars: &str, flags: u64) {
+        match chars {
+            "\r" => self.insert_newline(),
+            "\x7f" => {
+                self.delete_backward();
             }
+            "\u{F700}" => {
+                // up arrow
+                self.move_up(flags);
+            }
+            "\u{F701}" => {
+                // down arrow
+                self.move_down(flags);
+            }
+            "\u{F702}" => {
+                // left arrow
+                self.move_left(flags);
+            }
+            "\u{F703}" => {
+                // right arrow
+                self.move_right(flags);
+            }
+            "\u{F72C}" => {
+                // page up
+                self.scroll_page_up(flags);
+            }
+            "\u{F72D}" => {
+                // page down
+                self.scroll_page_down(flags);
+            }
+            "\u{F704}" => {
+                // F1, but using for debugging
+                self.debug_rewrap();
+            }
+            "\u{F705}" => {
+                // F2, but using for debugging
+                self.debug_test_fg_spans();
+            }
+            _ => self.insert(chars),
         }
     }
 
     // TODO: insert from keyboard or input method shouldn't break undo group,
     // but paste should.
-    fn do_insert(&mut self, args: &Value) {
-        if let Some(args) = args.as_object() {
-            let chars = args.get("chars").unwrap().as_string().unwrap();
-            self.this_edit_type = EditType::InsertChars;
-            self.insert(chars);
-        }
+    fn do_insert(&mut self, chars: &str) {
+        self.this_edit_type = EditType::InsertChars;
+        self.insert(chars);
     }
 
-    fn do_open(&mut self, args: &Value) {
-        if let Some(path) = args.as_object()
-                .and_then(|v| v.get("filename")).and_then(|v| v.as_string()) {
-            match File::open(&path) {
-                Ok(mut f) => {
-                    let mut s = String::new();
-                    if f.read_to_string(&mut s).is_ok() {
-                        self.reset_contents(Rope::from(s));
-                    }
-                },
-                Err(e) => print_err!("error {}", e)
-            }
-        }
-    }
-
-    fn do_save(&mut self, args: &Value) {
-        if let Some(path) = args.as_object()
-                .and_then(|v| v.get("filename")).and_then(|v| v.as_string()) {
-            match File::create(&path) {
-                Ok(mut f) => {
-                    for chunk in self.text.iter_chunks(0, self.text.len()) {
-                        if let Err(e) = f.write_all(chunk.as_bytes()) {
-                            print_err!("write error {}", e);
-                            break;
-                        }
-                    }
-                },
-                Err(e) => print_err!("create error {}", e)
-            }
-        }
-    }
-
-    fn do_scroll(&mut self, args: &Value) {
-        self.this_edit_type = self.last_edit_type;  // doesn't break undo group
-        if let Some(array) = args.as_array() {
-            if let (Some(first), Some(last)) = (array[0].as_i64(), array[1].as_i64()) {
-                self.view.set_scroll(max(first, 0) as usize, last as usize);
-            }
-        }
-    }
-
-    fn do_click(&mut self, args: &Value) {
-        if let Some(array) = args.as_array() {
-            if let (Some(line), Some(col), Some(flags), Some(_click_count)) =
-                    (array[0].as_u64(), array[1].as_u64(), array[2].as_u64(), array[3].as_u64()) {
-                let offset = self.view.line_col_to_offset(&self.text, line as usize, col as usize);
-                if (flags & FLAG_SELECT) != 0 {
-                    self.modify_selection();
+    fn do_open(&mut self, path: &str) {
+        match File::open(path) {
+            Ok(mut f) => {
+                let mut s = String::new();
+                if f.read_to_string(&mut s).is_ok() {
+                    self.reset_contents(Rope::from(s));
                 }
-                self.set_cursor(offset, true);
             }
+            Err(e) => print_err!("error {}", e),
         }
     }
 
-    fn do_drag(&mut self, args: &Value) {
-        if let Some(array) = args.as_array() {
-            if let (Some(line), Some(col), Some(_flags)) =
-                    (array[0].as_u64(), array[1].as_u64(), array[2].as_u64()) {
-                let offset = self.view.line_col_to_offset(&self.text, line as usize, col as usize);
-                self.modify_selection();
-                self.set_cursor(offset, true);
+    fn do_save(&mut self, path: &str) {
+        match File::create(path) {
+            Ok(mut f) => {
+                for chunk in self.text.iter_chunks(0, self.text.len()) {
+                    if let Err(e) = f.write_all(chunk.as_bytes()) {
+                        print_err!("write error {}", e);
+                        break;
+                    }
+                }
             }
+            Err(e) => print_err!("create error {}", e),
         }
     }
 
-    fn do_render_lines(&mut self, args: &Value) -> Value {
+    fn do_scroll(&mut self, first: i64, last: i64) {
+        self.view.set_scroll(max(first, 0) as usize, last as usize);
+    }
+
+    fn do_click(&mut self, line: u64, col: u64, flags: u64, _click_count: u64) {
+        let offset = self.view.line_col_to_offset(&self.text, line as usize, col as usize);
+        if (flags & FLAG_SELECT) != 0 {
+            self.modify_selection();
+        }
+        self.set_cursor(offset, true);
+    }
+
+    fn do_drag(&mut self, line: u64, col: u64, _flags: u64) {
+        let offset = self.view.line_col_to_offset(&self.text, line as usize, col as usize);
+        self.modify_selection();
+        self.set_cursor(offset, true);
+    }
+
+    fn do_render_lines(&mut self, first_line: usize, last_line: usize) -> Value {
         self.this_edit_type = self.last_edit_type;  // doesn't break undo group
-        if let Some(dict) = args.as_object() {
-            let first_line = dict.get("first_line").unwrap().as_u64().unwrap();
-            let last_line = dict.get("last_line").unwrap().as_u64().unwrap();
-            self.view.render_lines(&self.text, first_line as usize, last_line as usize)
-        } else {
-            Value::Null
-        }
+        self.view.render_lines(&self.text, first_line as usize, last_line as usize)
     }
 
     fn debug_rewrap(&mut self) {
@@ -611,7 +588,8 @@ impl Editor {
         let start_opt = self.text.prev_grapheme_offset(self.view.sel_end);
 
         let end = end_opt.unwrap_or(self.view.sel_end);
-        let (start, middle) = if end_opt.is_none() && start_opt.is_some() { // if at the very end, swap previous TWO characters (instead of ONE)
+        let (start, middle) = if end_opt.is_none() && start_opt.is_some() {
+            // if at the very end, swap previous TWO characters (instead of ONE)
             let middle = start_opt.unwrap();
             let start = self.text.prev_grapheme_offset(middle).unwrap_or(middle);
             (start, middle)
@@ -619,8 +597,9 @@ impl Editor {
             (start_opt.unwrap_or(self.view.sel_end), self.view.sel_end)
         };
 
-        let interval = Interval::new_closed_open(start,end);
-        let swapped = self.text.slice_to_string(middle, end) + &self.text.slice_to_string(start, middle);
+        let interval = Interval::new_closed_open(start, end);
+        let swapped = self.text.slice_to_string(middle, end) +
+                      &self.text.slice_to_string(start, middle);
         self.add_delta(interval, Rope::from(swapped), end);
     }
 
@@ -650,58 +629,69 @@ impl Editor {
         self.insert(&*String::from(data.clone()));
     }
 
-    pub fn do_rpc(&mut self, method: &str, params: &Value, kill_ring: &Mutex<Rope>) -> Option<Value> {
+    pub fn do_rpc(&mut self,
+                  cmd: EditCommand,
+                  kill_ring: &Mutex<Rope>)
+                  -> Option<Value> {
+
+        use rpc::EditCommand::*;
+
         self.this_edit_type = EditType::Other;
-        let result = match method {
-            "render_lines" => Some(self.do_render_lines(params)),
-            "key" => async(self.do_key(params)),
-            "insert" => async(self.do_insert(params)),
-            "delete_forward" => async(self.delete_forward()),
-            "delete_backward" => async(self.delete_backward()),
-            "delete_to_beginning_of_line" => async(self.delete_to_beginning_of_line()),
-            "delete_to_end_of_paragraph" => async(self.delete_to_end_of_paragraph(kill_ring)),
-            "insert_newline" => async(self.insert_newline()),
-            "move_up" => async(self.move_up(0)),
-            "move_up_and_modify_selection" => async(self.move_up(FLAG_SELECT)),
-            "move_down" => async(self.move_down(0)),
-            "move_down_and_modify_selection" => async(self.move_down(FLAG_SELECT)),
-            "move_left" |
-            "move_backward" => async(self.move_left(0)),
-            "move_left_and_modify_selection" => async(self.move_left(FLAG_SELECT)),
-            "move_to_left_end_of_line" => async(self.move_to_left_end_of_line(0)),
-            "move_to_left_end_of_line_and_modify_selection" => async(self.move_to_left_end_of_line(FLAG_SELECT)),
-            "move_right" |
-            "move_forward" => async(self.move_right(0)),
-            "move_right_and_modify_selection" => async(self.move_right(FLAG_SELECT)),
-            "move_to_right_end_of_line" => async(self.move_to_right_end_of_line(0)),
-            "move_to_right_end_of_line_and_modify_selection" => async(self.move_to_right_end_of_line(FLAG_SELECT)),
-            "move_to_beginning_of_paragraph" => async(self.cursor_start()),
-            "move_to_end_of_paragraph" => async(self.cursor_end()),
-            "move_to_beginning_of_document" => async(self.move_to_beginning_of_document(0)),
-            "move_to_beginning_of_document_and_modify_selection" => async(self.move_to_beginning_of_document(FLAG_SELECT)),
-            "move_to_end_of_document" => async(self.move_to_end_of_document(0)),
-            "move_to_end_of_document_and_modify_selection" => async(self.move_to_end_of_document(FLAG_SELECT)),
-            "scroll_page_up" |
-            "page_up" => async(self.scroll_page_up(0)),
-            "page_up_and_modify_selection" => async(self.scroll_page_up(FLAG_SELECT)),
-            "scroll_page_down" |
-            "page_down" => async(self.scroll_page_down(0)),
-            "page_down_and_modify_selection" => async(self.scroll_page_down(FLAG_SELECT)),
-            "open" => async(self.do_open(params)),
-            "save" => async(self.do_save(params)),
-            "scroll" => async(self.do_scroll(params)),
-            "yank" => async(self.yank(kill_ring)),
-            "transpose" => async(self.do_transpose()),
-            "click" => async(self.do_click(params)),
-            "drag" => async(self.do_drag(params)),
-            "undo" => async(self.do_undo()),
-            "redo" => async(self.do_redo()),
-            "cut" => Some(self.do_cut()),
-            "copy" => Some(self.do_copy()),
-            "debug_rewrap" => async(self.debug_rewrap()),
-            "debug_test_fg_spans" => async(self.debug_test_fg_spans()),
-            _ => async(print_err!("unknown method {}", method))
+
+        let result = match cmd {
+            RenderLines { first_line, last_line } => {
+                Some(self.do_render_lines(first_line, last_line))
+            }
+            Key { chars, flags } => async(self.do_key(chars, flags)),
+            Insert { chars } => async(self.do_insert(chars)),
+            DeleteForward => async(self.delete_forward()),
+            DeleteBackward => async(self.delete_backward()),
+            DeleteToEndOfParagraph => {
+                async(self.delete_to_end_of_paragraph(kill_ring))
+            }
+            DeleteToBeginningOfLine => async(self.delete_to_beginning_of_line()),
+            InsertNewline => async(self.insert_newline()),
+            MoveUp => async(self.move_up(0)),
+            MoveUpAndModifySelection => async(self.move_up(FLAG_SELECT)),
+            MoveDown => async(self.move_down(0)),
+            MoveDownAndModifySelection => async(self.move_down(FLAG_SELECT)),
+            MoveLeft => async(self.move_left(0)),
+            MoveLeftAndModifySelection => async(self.move_left(FLAG_SELECT)),
+            MoveRight => async(self.move_right(0)),
+            MoveRightAndModifySelection => async(self.move_right(FLAG_SELECT)),
+            MoveToBeginningOfParagraph => async(self.cursor_start()),
+            MoveToEndOfParagraph => async(self.cursor_end()),
+            MoveToLeftEndOfLine => async(self.move_to_left_end_of_line(0)),
+            MoveToLeftEndOfLineAndModifySelection => async(self.move_to_left_end_of_line(FLAG_SELECT)),
+            MoveToRightEndOfLine => async(self.move_to_right_end_of_line(0)),
+            MoveToRightEndOfLineAndModifySelection => async(self.move_to_right_end_of_line(FLAG_SELECT)),
+            MoveToBeginningOfDocument => async(self.move_to_beginning_of_document(0)),
+            MoveToBeginningOfDocumentAndModifySelection => async(self.move_to_beginning_of_document(FLAG_SELECT)),
+            MoveToEndOfDocument => async(self.move_to_end_of_document(0)),
+            MoveToEndOfDocumentAndModifySelection => async(self.move_to_end_of_document(FLAG_SELECT)),
+            ScrollPageUp => async(self.scroll_page_up(0)),
+            PageUpAndModifySelection => async(self.scroll_page_up(FLAG_SELECT)),
+            ScrollPageDown => async(self.scroll_page_down(0)),
+            PageDownAndModifySelection => {
+                async(self.scroll_page_down(FLAG_SELECT))
+            }
+            Open { file_path } => async(self.do_open(file_path)),
+            Save { file_path } => async(self.do_save(file_path)),
+            Scroll { first, last } => async(self.do_scroll(first, last)),
+            Yank => async(self.yank(kill_ring)),
+            Transpose => async(self.do_transpose()),
+            Click { line, column, flags, click_count } => {
+                async(self.do_click(line, column, flags, click_count))
+            }
+            Drag { line, column, flags } => async(self.do_drag(line, column, flags)),
+            Undo => async(self.do_undo()),
+            Redo => async(self.do_redo()),
+            Cut => Some(self.do_cut()),
+            Copy => Some(self.do_copy()),
+            DebugRewrap => async(self.debug_rewrap()),
+            DebugTestFgSpans => async(self.debug_test_fg_spans()),
         };
+
         // TODO: could defer this until input quiesces - will this help?
         self.commit_delta();
         self.render();
