@@ -96,19 +96,6 @@ impl Editor {
         self.add_delta(sel_interval, Rope::from(s), new_cursor);
     }
 
-    fn set_cursor_impl(&mut self, offset: usize, set_start: bool, hard: bool) {
-        if set_start {
-            self.view.sel_start = offset;
-        }
-        self.view.sel_end = offset;
-        if hard {
-            self.col = self.view.offset_to_line_col(&self.text, offset).1;
-            self.scroll_to = Some(offset);
-        }
-        self.view.scroll_to_cursor(&self.text);
-        self.dirty = true;
-    }
-
     fn set_cursor(&mut self, offset: usize, hard: bool) {
         if self.this_edit_type != EditType::Select {
             self.view.sel_start = offset;
