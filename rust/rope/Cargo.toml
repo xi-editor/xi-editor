@@ -1,5 +1,7 @@
 [package]
 name = "xi-rope"
-version = "0.0.0"
+version = "0.1.0"
 license = "Apache-2.0"
 authors = ["Raph Levien <raph@google.com>"]
+repository = "https://github.com/google/xi-editor"
+description = "A generic rope data structure built on top of B-Trees."
