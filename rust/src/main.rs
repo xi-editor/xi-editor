@@ -17,7 +17,7 @@ extern crate serde_json;
 extern crate time;
 
 use std::io;
-use std::io::{BufRead, Write};
+use std::io::BufRead;
 use serde_json::Value;
 
 #[macro_use]
@@ -27,39 +27,46 @@ mod tabs;
 mod editor;
 mod view;
 mod linewrap;
+mod rpc;
 
 use tabs::Tabs;
-use std::io::Error;
+use rpc::Request;
 
 extern crate xi_rope;
 extern crate xi_unicode;
 
-pub fn send(v: &Value) -> Result<(), Error> {
-    let mut s = serde_json::to_string(v).unwrap();
-    s.push('\n');
-    //print_err!("from core: {}", s);
-    io::stdout().write_all(s.as_bytes())
+pub fn handle_req(request: Request, tabs: &mut Tabs) {
+    match request {
+        Request::TabCommand { id, tab_command } => {
+            if let Some(result) = tabs.do_rpc(tab_command) {
+                rpc::respond(&result, id);
+            } else if let Some(id) = id {
+                print_err!("RPC with id={:?} not responded", id);
+            }
+        }
+    }
 }
+
 
 fn main() {
     let stdin = io::stdin();
     let mut stdin_handle = stdin.lock();
     let mut buf = String::new();
     let mut tabs = Tabs::new();
+
     while stdin_handle.read_line(&mut buf).is_ok() {
         if buf.is_empty() {
             break;
         }
+
         if let Ok(data) = serde_json::from_slice::<Value>(buf.as_bytes()) {
             print_err!("to core: {:?}", data);
-            if let Some(req) = data.as_object() {
-                if let (Some(method), Some(params)) =
-                        (req.get("method").and_then(|v| v.as_string()), req.get("params")) {
-                    let id = req.get("id");
-                    tabs.handle_rpc(method, params, id);
-                }
+            match Request::from_json(&data) {
+                Ok(req) => handle_req(req, &mut tabs),
+                Err(e) => print_err!("RPC error with id={:?}: {}", data.as_object().and_then(|o| o.get("id")), e)
             }
         }
+
         buf.clear();
     }
 }
