@@ -28,6 +28,7 @@ mod editor;
 mod view;
 mod linewrap;
 mod rpc;
+mod run_plugin;
 
 use tabs::Tabs;
 use rpc::Request;

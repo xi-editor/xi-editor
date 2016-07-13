@@ -600,10 +600,14 @@ class EditView: NSView, NSTextInputClient {
     // MARK: - Debug Methods
 
     @IBAction func debugRewrap(sender: AnyObject) {
-        sendRpcAsync("debug_rewrap", params: []);
+        sendRpcAsync("debug_rewrap", params: [])
     }
 
     @IBAction func debugTestFGSpans(sender: AnyObject) {
-        sendRpcAsync("debug_test_fg_spans", params: []);
+        sendRpcAsync("debug_test_fg_spans", params: [])
+    }
+
+    @IBAction func debugRunPlugin(sender: AnyObject) {
+        sendRpcAsync("debug_run_plugin", params: [])
     }
 }

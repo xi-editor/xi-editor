@@ -111,6 +111,7 @@ pub enum EditCommand<'a> {
     Copy,
     DebugRewrap,
     DebugTestFgSpans,
+    DebugRunPlugin,
 }
 
 impl<'a> TabCommand<'a> {
@@ -243,6 +244,7 @@ impl<'a> EditCommand<'a> {
             "copy" => Ok(Copy),
             "debug_rewrap" => Ok(DebugRewrap),
             "debug_test_fg_spans" => Ok(DebugTestFgSpans),
+            "debug_run_plugin" => Ok(DebugRunPlugin),
 
             _ => Err(UnknownEditMethod(method.to_string())),
         }

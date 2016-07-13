@@ -28,6 +28,7 @@ use view::View;
 
 use tabs::update_tab;
 use rpc::EditCommand;
+use run_plugin::start_plugin;
 
 const FLAG_SELECT: u64 = 2;
 
@@ -533,6 +534,11 @@ impl Editor {
         self.dirty = true;
     }
 
+    fn debug_run_plugin(&mut self) {
+        print_err!("running plugin");
+        start_plugin();
+    }
+
     fn do_cut(&mut self) -> Value {
         let min = self.view.sel_min();
         if min != self.view.sel_max() {
@@ -677,6 +683,7 @@ impl Editor {
             Copy => Some(self.do_copy()),
             DebugRewrap => async(self.debug_rewrap()),
             DebugTestFgSpans => async(self.debug_test_fg_spans()),
+            DebugRunPlugin => async(self.debug_run_plugin()),
         };
 
         // TODO: could defer this until input quiesces - will this help?
