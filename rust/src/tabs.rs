@@ -21,12 +21,19 @@ use serde_json::builder::ObjectBuilder;
 
 use xi_rope::rope::Rope;
 use editor::Editor;
-use rpc::{send, TabCommand, EditCommand};
+use rpc::{TabCommand, EditCommand};
+use MainPeer;
 
 pub struct Tabs {
     tabs: BTreeMap<String, Editor>,
     id_counter: usize,
     kill_ring: Mutex<Rope>,
+}
+
+pub struct TabCtx<'a> {
+    tab: &'a str,
+    kill_ring: &'a Mutex<Rope>,
+    rpc_peer: &'a MainPeer<'a>,
 }
 
 impl Tabs {
@@ -38,7 +45,7 @@ impl Tabs {
         }
     }
 
-    pub fn do_rpc(&mut self, cmd: TabCommand) -> Option<Value> {
+    pub fn do_rpc(&mut self, cmd: TabCommand, rpc_peer: &MainPeer) -> Option<Value> {
         use rpc::TabCommand::*;
 
         match cmd {
@@ -49,7 +56,7 @@ impl Tabs {
                 None
             },
 
-            Edit { tab_name, edit_command } => self.do_edit(tab_name, edit_command),
+            Edit { tab_name, edit_command } => self.do_edit(tab_name, edit_command, rpc_peer),
         }
     }
 
@@ -61,9 +68,15 @@ impl Tabs {
         self.delete_tab(tab);
     }
 
-    fn do_edit(&mut self, tab: &str, cmd: EditCommand) -> Option<Value> {
+    fn do_edit(&mut self, tab: &str, cmd: EditCommand, rpc_peer: &MainPeer)
+            -> Option<Value> {
         if let Some(editor) = self.tabs.get_mut(tab) {
-            editor.do_rpc(cmd, &self.kill_ring)
+            let tab_ctx = TabCtx {
+                tab: tab,
+                kill_ring: &self.kill_ring,
+                rpc_peer: rpc_peer,
+            };
+            editor.do_rpc(cmd, tab_ctx)
         } else {
             print_err!("tab not found: {}", tab);
             None
@@ -73,7 +86,7 @@ impl Tabs {
     fn new_tab(&mut self) -> String {
         let tabname = self.id_counter.to_string();
         self.id_counter += 1;
-        let editor = Editor::new(&tabname);
+        let editor = Editor::new();
         self.tabs.insert(tabname.clone(), editor);
         tabname
     }
@@ -83,15 +96,25 @@ impl Tabs {
     }
 }
 
-// arguably this should be a method on a newtype for tab. but keep things simple for now
-pub fn update_tab(update: &Value, tab: &str) {
-    if let Err(e) = send(&ObjectBuilder::new()
-        .insert("method", "update")
-        .insert_object("params", |builder| {
-            builder.insert("tab", tab)
-                .insert("update", update)
-        })
-        .unwrap()) {
-        print_err!("send error on update_tab: {}", e);
+impl<'a> TabCtx<'a> {
+    pub fn update_tab(&self, update: &Value) {
+        if let Err(e) = self.rpc_peer.send(&ObjectBuilder::new()
+            .insert("method", "update")
+            .insert_object("params", |builder| {
+                builder.insert("tab", self.tab)
+                    .insert("update", update)
+            })
+            .unwrap()) {
+            print_err!("send error on update_tab: {}", e);
+        }
+    }
+
+    pub fn get_kill_ring(&self) -> Rope {
+        self.kill_ring.lock().unwrap().clone()
+    }
+
+    pub fn set_kill_ring(&self, val: Rope) {
+        let mut kill_ring = self.kill_ring.lock().unwrap();
+        *kill_ring = val;
     }
 }

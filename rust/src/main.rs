@@ -17,7 +17,7 @@ extern crate serde_json;
 extern crate time;
 
 use std::io;
-use std::io::BufRead;
+use std::io::{BufRead, Write};
 use serde_json::Value;
 
 #[macro_use]
@@ -28,19 +28,23 @@ mod editor;
 mod view;
 mod linewrap;
 mod rpc;
+mod rpc_peer;
 mod run_plugin;
 
 use tabs::Tabs;
 use rpc::Request;
+use rpc_peer::RpcPeer;
 
 extern crate xi_rope;
 extern crate xi_unicode;
 
-pub fn handle_req(request: Request, tabs: &mut Tabs) {
+pub type MainPeer<'a> = RpcPeer<io::StdinLock<'a>, io::Stdout>;
+
+fn handle_req<'a>(request: Request, tabs: &mut Tabs, rpc_peer: &MainPeer<'a>) {
     match request {
         Request::TabCommand { id, tab_command } => {
-            if let Some(result) = tabs.do_rpc(tab_command) {
-                rpc::respond(&result, id);
+            if let Some(result) = tabs.do_rpc(tab_command, rpc_peer) {
+                rpc_peer.respond(&result, id);
             } else if let Some(id) = id {
                 print_err!("RPC with id={:?} not responded", id);
             }
@@ -48,14 +52,14 @@ pub fn handle_req(request: Request, tabs: &mut Tabs) {
     }
 }
 
-
 fn main() {
-    let stdin = io::stdin();
-    let mut stdin_handle = stdin.lock();
     let mut buf = String::new();
     let mut tabs = Tabs::new();
+    let stdin = io::stdin();
+    let stdout = io::stdout();
+    let mut rpc_peer = RpcPeer::new(stdin.lock(), stdout);
 
-    while stdin_handle.read_line(&mut buf).is_ok() {
+    while rpc_peer.read_line(&mut buf).is_ok() {
         if buf.is_empty() {
             break;
         }
@@ -63,7 +67,7 @@ fn main() {
         if let Ok(data) = serde_json::from_slice::<Value>(buf.as_bytes()) {
             print_err!("to core: {:?}", data);
             match Request::from_json(&data) {
-                Ok(req) => handle_req(req, &mut tabs),
+                Ok(req) => handle_req(req, &mut tabs, &rpc_peer),
                 Err(e) => print_err!("RPC error with id={:?}: {}", data.as_object().and_then(|o| o.get("id")), e)
             }
         }

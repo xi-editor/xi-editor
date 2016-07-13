@@ -15,7 +15,6 @@
 use std::cmp::max;
 use std::fs::File;
 use std::io::{Read, Write};
-use std::sync::Mutex;
 use std::collections::BTreeSet;
 use serde_json::Value;
 
@@ -26,7 +25,7 @@ use xi_rope::tree::Cursor;
 use xi_rope::engine::Engine;
 use view::View;
 
-use tabs::update_tab;
+use tabs::TabCtx;
 use rpc::EditCommand;
 use run_plugin::start_plugin;
 
@@ -35,8 +34,6 @@ const FLAG_SELECT: u64 = 2;
 const MAX_UNDOS: usize = 20;
 
 pub struct Editor {
-    tabname: String, // used for sending updates back to front-end
-
     text: Rope,
     view: View,
     delta: Option<Delta<RopeInfo>>,
@@ -70,9 +67,8 @@ enum EditType {
 
 
 impl Editor {
-    pub fn new(tabname: &str) -> Editor {
+    pub fn new() -> Editor {
         Editor {
-            tabname: tabname.to_string(),
             text: Rope::from(""),
             view: View::new(),
             dirty: false,
@@ -187,9 +183,9 @@ impl Editor {
     }
 
     // render if needed, sending to ui
-    fn render(&mut self) {
+    fn render(&mut self, tab_ctx: &TabCtx) {
         if self.dirty {
-            update_tab(&self.view.render(&self.text, self.scroll_to), &self.tabname);
+            tab_ctx.update_tab(&self.view.render(&self.text, self.scroll_to));
             self.dirty = false;
             self.scroll_to = None;
         }
@@ -596,7 +592,7 @@ impl Editor {
         self.add_delta(interval, Rope::from(swapped), end);
     }
 
-    fn delete_to_end_of_paragraph(&mut self, kill_ring: &Mutex<Rope>) {
+    fn delete_to_end_of_paragraph(&mut self, tab_ctx: &TabCtx) {
         let current = self.view.sel_max();
         let offset = self.cursor_end_offset();
         let mut val = String::from("");
@@ -613,18 +609,16 @@ impl Editor {
             }
         }
 
-        let mut kill_ring = kill_ring.lock().unwrap();
-        *kill_ring = Rope::from(val);
+        tab_ctx.set_kill_ring(Rope::from(val));
     }
 
-    fn yank(&mut self, kill_ring: &Mutex<Rope>) {
-        let data = kill_ring.lock().unwrap();
-        self.insert(&*String::from(data.clone()));
+    fn yank(&mut self, tab_ctx: &TabCtx) {
+        self.insert(&*String::from(tab_ctx.get_kill_ring()));
     }
 
     pub fn do_rpc(&mut self,
                   cmd: EditCommand,
-                  kill_ring: &Mutex<Rope>)
+                  tab_ctx: TabCtx)
                   -> Option<Value> {
 
         use rpc::EditCommand::*;
@@ -640,7 +634,7 @@ impl Editor {
             DeleteForward => async(self.delete_forward()),
             DeleteBackward => async(self.delete_backward()),
             DeleteToEndOfParagraph => {
-                async(self.delete_to_end_of_paragraph(kill_ring))
+                async(self.delete_to_end_of_paragraph(&tab_ctx))
             }
             DeleteToBeginningOfLine => async(self.delete_to_beginning_of_line()),
             InsertNewline => async(self.insert_newline()),
@@ -671,7 +665,7 @@ impl Editor {
             Open { file_path } => async(self.do_open(file_path)),
             Save { file_path } => async(self.do_save(file_path)),
             Scroll { first, last } => async(self.do_scroll(first, last)),
-            Yank => async(self.yank(kill_ring)),
+            Yank => async(self.yank(&tab_ctx)),
             Transpose => async(self.do_transpose()),
             Click { line, column, flags, click_count } => {
                 async(self.do_click(line, column, flags, click_count))
@@ -688,7 +682,7 @@ impl Editor {
 
         // TODO: could defer this until input quiesces - will this help?
         self.commit_delta();
-        self.render();
+        self.render(&tab_ctx);
         self.last_edit_type = self.this_edit_type;
         self.gc_undos();
         result

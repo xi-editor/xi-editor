@@ -1,36 +1,28 @@
-use std::io;
+// Copyright 2016 Google Inc. All rights reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! RPC handling for communications with front-end.
+
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::error;
 use std::fmt;
-use serde_json;
-use serde_json::builder::ObjectBuilder;
 use serde_json::Value;
 
 // =============================================================================
 //  Request handling
 // =============================================================================
-
-pub fn send(v: &Value) -> Result<(), io::Error> {
-    let mut s = serde_json::to_string(v).unwrap();
-    s.push('\n');
-    //print_err!("from core: {}", s);
-    io::stdout().write_all(s.as_bytes())
-}
-
-pub fn respond(result: &Value, id: Option<&Value>)
-{
-    if let Some(id) = id {
-        if let Err(e) = send(&ObjectBuilder::new()
-                             .insert("id", id)
-                             .insert("result", result)
-                             .unwrap()) {
-            print_err!("error {} sending response to RPC {:?}", e, id);
-        }
-    } else {
-        print_err!("tried to respond with no id");
-    }
-}
 
 impl<'a> Request<'a> {
     pub fn from_json(val: &'a Value) -> Result<Self, Error> {
@@ -302,11 +294,11 @@ impl error::Error for Error {
 // =============================================================================
 
 fn dict_get_u64(dict: &BTreeMap<String, Value>, key: &str) -> Option<u64> {
-    dict.get(key).and_then(|v| v.as_u64())
+    dict.get(key).and_then(Value::as_u64)
 }
 
 fn dict_get_string<'a>(dict: &'a BTreeMap<String, Value>, key: &str) -> Option<&'a str> {
-    dict.get(key).and_then(|v| v.as_string())
+    dict.get(key).and_then(Value::as_string)
 }
 
 fn arr_get_u64(arr: &[Value], idx: usize) -> Option<u64> {
