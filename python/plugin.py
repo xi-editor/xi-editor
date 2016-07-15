@@ -17,7 +17,20 @@
 import sys
 import json
 
+#while True:
+#    sys.stderr.write('[' + sys.stdin.read(1) + ']\n')
+
 def mainloop():
     sys.stderr.write("plugin start\n")
+    while True:
+        line = sys.stdin.readline()
+        sys.stderr.write('got line, size=%d\n' % len(line))
+        if len(line) == 0:
+            break
+        data = json.loads(line)
+        method = data['method']
+        params = data['params']
+        sys.stderr.write(method + ": " + json.dumps(params) + "\n")
+    sys.stderr.write("exit main loop\n")
 
 mainloop()

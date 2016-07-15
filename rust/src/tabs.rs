@@ -15,7 +15,7 @@
 //! A container for all the tabs being edited. Also functions as main dispatch for RPC.
 
 use std::collections::BTreeMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use serde_json::Value;
 use serde_json::builder::ObjectBuilder;
 
@@ -25,7 +25,7 @@ use rpc::{TabCommand, EditCommand};
 use MainPeer;
 
 pub struct Tabs {
-    tabs: BTreeMap<String, Editor>,
+    tabs: BTreeMap<String, Arc<Mutex<Editor>>>,
     id_counter: usize,
     kill_ring: Mutex<Rope>,
 }
@@ -34,6 +34,7 @@ pub struct TabCtx<'a> {
     tab: &'a str,
     kill_ring: &'a Mutex<Rope>,
     rpc_peer: &'a MainPeer<'a>,
+    self_ref: Arc<Mutex<Editor>>,
 }
 
 impl Tabs {
@@ -75,8 +76,9 @@ impl Tabs {
                 tab: tab,
                 kill_ring: &self.kill_ring,
                 rpc_peer: rpc_peer,
+                self_ref: editor.clone(),
             };
-            editor.do_rpc(cmd, tab_ctx)
+            editor.lock().unwrap().do_rpc(cmd, tab_ctx)
         } else {
             print_err!("tab not found: {}", tab);
             None
@@ -87,7 +89,7 @@ impl Tabs {
         let tabname = self.id_counter.to_string();
         self.id_counter += 1;
         let editor = Editor::new();
-        self.tabs.insert(tabname.clone(), editor);
+        self.tabs.insert(tabname.clone(), Arc::new(Mutex::new(editor)));
         tabname
     }
 
@@ -112,5 +114,9 @@ impl<'a> TabCtx<'a> {
     pub fn set_kill_ring(&self, val: Rope) {
         let mut kill_ring = self.kill_ring.lock().unwrap();
         *kill_ring = val;
+    }
+
+    pub fn get_self_ref(&self) -> Arc<Mutex<Editor>> {
+        self.self_ref.clone()
     }
 }

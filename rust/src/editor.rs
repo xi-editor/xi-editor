@@ -530,9 +530,14 @@ impl Editor {
         self.dirty = true;
     }
 
-    fn debug_run_plugin(&mut self) {
+    fn debug_run_plugin(&mut self, tab_ctx: &TabCtx) {
         print_err!("running plugin");
-        start_plugin();
+        let self_ref = tab_ctx.get_self_ref();
+        start_plugin(move |plugin_ref| {
+            print_err!("editor got plugin start notification");
+            let buf_size = self_ref.lock().unwrap().text.len();
+            plugin_ref.send_rpc_async("ping_from_editor", &Value::U64(buf_size as u64));
+        });
     }
 
     fn do_cut(&mut self) -> Value {
@@ -677,7 +682,7 @@ impl Editor {
             Copy => Some(self.do_copy()),
             DebugRewrap => async(self.debug_rewrap()),
             DebugTestFgSpans => async(self.debug_test_fg_spans()),
-            DebugRunPlugin => async(self.debug_run_plugin()),
+            DebugRunPlugin => async(self.debug_run_plugin(&tab_ctx)),
         };
 
         // TODO: could defer this until input quiesces - will this help?
