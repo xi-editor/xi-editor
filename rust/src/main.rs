@@ -17,8 +17,7 @@ extern crate serde_json;
 extern crate time;
 
 use std::io;
-use std::io::{BufRead, Write};
-use serde_json::Value;
+use std::io::Write;
 
 #[macro_use]
 mod macros;
@@ -53,25 +52,21 @@ fn handle_req<'a>(request: Request, tabs: &mut Tabs, rpc_peer: &MainPeer<'a>) {
 }
 
 fn main() {
-    let mut buf = String::new();
     let mut tabs = Tabs::new();
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut rpc_peer = RpcPeer::new(stdin.lock(), stdout);
 
-    while rpc_peer.read_line(&mut buf).is_ok() {
-        if buf.is_empty() {
-            break;
+    while let Some(json_result) = rpc_peer.read_json() {
+        match json_result {
+            Ok(json) => {
+                print_err!("to core: {:?}", json);
+                match Request::from_json(&json) {
+                    Ok(req) => handle_req(req, &mut tabs, &rpc_peer),
+                    Err(e) => print_err!("RPC error with id={:?}: {}", json.as_object().and_then(|o| o.get("id")), e)
+                }
+            },
+            Err(err) => print_err!("Error decoding json: {:?}", err)
         }
-
-        if let Ok(data) = serde_json::from_slice::<Value>(buf.as_bytes()) {
-            print_err!("to core: {:?}", data);
-            match Request::from_json(&data) {
-                Ok(req) => handle_req(req, &mut tabs, &rpc_peer),
-                Err(e) => print_err!("RPC error with id={:?}: {}", data.as_object().and_then(|o| o.get("id")), e)
-            }
-        }
-
-        buf.clear();
     }
 }

@@ -98,15 +98,11 @@ impl Tabs {
 
 impl<'a> TabCtx<'a> {
     pub fn update_tab(&self, update: &Value) {
-        if let Err(e) = self.rpc_peer.send(&ObjectBuilder::new()
-            .insert("method", "update")
-            .insert_object("params", |builder| {
-                builder.insert("tab", self.tab)
-                    .insert("update", update)
-            })
-            .unwrap()) {
-            print_err!("send error on update_tab: {}", e);
-        }
+        self.rpc_peer.send_rpc_async("update",
+            &ObjectBuilder::new()
+                .insert("tab", self.tab)
+                .insert("update", update)
+                .unwrap());
     }
 
     pub fn get_kill_ring(&self) -> Rope {

@@ -24,23 +24,32 @@ use serde_json::Value;
 
 pub struct RpcPeer<R: BufRead, W: Write> {
     reader: R,
+    buf: String,
     writer: RefCell<W>,
 }
 
 impl<R: BufRead, W:Write> RpcPeer<R, W> {
     pub fn new(reader: R, writer: W) -> Self {
-        RpcPeer { reader: reader, writer: RefCell::new(writer) }
+        RpcPeer { reader: reader, buf: String::new(), writer: RefCell::new(writer) }
     }
 
-    pub fn read_line(&mut self, buf: &mut String) -> io::Result<usize> {
-        self.reader.read_line(buf)
+    pub fn read_json(&mut self) -> Option<serde_json::error::Result<Value>> {
+        self.buf.clear();
+        if self.reader.read_line(&mut self.buf).is_ok() {
+            if self.buf.is_empty() {
+                return None;
+            }
+            return Some(serde_json::from_str::<Value>(&self.buf));
+        }
+        None
     }
 
-    pub fn send(&self, v: &Value) -> Result<(), io::Error> {
+    fn send(&self, v: &Value) -> Result<(), io::Error> {
         let mut s = serde_json::to_string(v).unwrap();
         s.push('\n');
         //print_err!("from core: {}", s);
         self.writer.borrow_mut().write_all(s.as_bytes())
+        // Technically, maybe we should flush here, but doesn't seem to be reqiured.
     }
 
     pub fn respond(&self, result: &Value, id: Option<&Value>) {
@@ -56,4 +65,12 @@ impl<R: BufRead, W:Write> RpcPeer<R, W> {
         }
     }
 
+    pub fn send_rpc_async(&self, method: &str, params: &Value) {
+        if let Err(e) = self.send(&ObjectBuilder::new()
+            .insert("method", method)
+            .insert("params", params)
+            .unwrap()) {
+            print_err!("send error on send_rpc_async method {}: {}", method, e);
+        }
+    }
 }
