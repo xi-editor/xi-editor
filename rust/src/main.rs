@@ -19,6 +19,8 @@ extern crate time;
 use std::io;
 use std::io::Write;
 
+use serde_json::Value;
+
 #[macro_use]
 mod macros;
 
@@ -32,22 +34,16 @@ mod run_plugin;
 
 use tabs::Tabs;
 use rpc::Request;
-use rpc_peer::RpcPeer;
+use rpc_peer::{RpcPeer, RpcWriter};
 
 extern crate xi_rope;
 extern crate xi_unicode;
 
-pub type MainPeer<'a> = RpcPeer<io::StdinLock<'a>, io::Stdout>;
+pub type MainPeer<'a> = RpcWriter<io::Stdout>;
 
-fn handle_req<'a>(request: Request, tabs: &mut Tabs, rpc_peer: &MainPeer<'a>) {
+fn handle_req<'a>(request: Request, tabs: &mut Tabs, rpc_peer: &MainPeer<'a>) -> Option<Value> {
     match request {
-        Request::TabCommand { id, tab_command } => {
-            if let Some(result) = tabs.do_rpc(tab_command, rpc_peer) {
-                rpc_peer.respond(&result, id);
-            } else if let Some(id) = id {
-                print_err!("RPC with id={:?} not responded", id);
-            }
-        }
+        Request::TabCommand { tab_command } => tabs.do_rpc(tab_command, rpc_peer)
     }
 }
 
@@ -56,17 +52,15 @@ fn main() {
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut rpc_peer = RpcPeer::new(stdin.lock(), stdout);
+    let rpc_writer = rpc_peer.get_writer();
 
-    while let Some(json_result) = rpc_peer.read_json() {
-        match json_result {
-            Ok(json) => {
-                print_err!("to core: {:?}", json);
-                match Request::from_json(&json) {
-                    Ok(req) => handle_req(req, &mut tabs, &rpc_peer),
-                    Err(e) => print_err!("RPC error with id={:?}: {}", json.as_object().and_then(|o| o.get("id")), e)
-                }
-            },
-            Err(err) => print_err!("Error decoding json: {:?}", err)
+    rpc_peer.mainloop(|method, params| {
+        match Request::from_json(method, params) {
+            Ok(req) => handle_req(req, &mut tabs, &rpc_writer),
+            Err(e) => {
+                print_err!("Error {} decoding RPC request {}", e, method);
+                None
+            }
         }
-    }
+    });
 }

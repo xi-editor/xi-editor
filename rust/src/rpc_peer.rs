@@ -14,23 +14,42 @@
 
 //! Generic RPC handling (used for both front end and plugin communication).
 
-use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::io;
 use std::io::{BufRead, Write};
+use std::sync::{Arc, Mutex};
 
 use serde_json;
 use serde_json::builder::ObjectBuilder;
 use serde_json::Value;
 
+pub struct RpcWriter<W: Write>(Arc<Mutex<W>>);
+
 pub struct RpcPeer<R: BufRead, W: Write> {
     reader: R,
     buf: String,
-    writer: RefCell<W>,
+    writer: RpcWriter<W>,
+}
+
+fn parse_rpc_request(json: &Value) -> Option<(Option<&Value>, &str, &Value)> {
+    json.as_object().and_then(|req| {
+        if let (Some(method), Some(params)) =
+            (dict_get_string(req, "method"), req.get("params")) {
+                let id = req.get("id");
+                Some((id, method, params))
+            }
+        else { None }
+    })
 }
 
 impl<R: BufRead, W:Write> RpcPeer<R, W> {
     pub fn new(reader: R, writer: W) -> Self {
-        RpcPeer { reader: reader, buf: String::new(), writer: RefCell::new(writer) }
+        let rpc_writer = RpcWriter(Arc::new(Mutex::new(writer)));
+        RpcPeer { reader: reader, buf: String::new(), writer: rpc_writer }
+    }
+
+    pub fn get_writer(&self) -> RpcWriter<W> {
+        RpcWriter(self.writer.0.clone())
     }
 
     pub fn read_json(&mut self) -> Option<serde_json::error::Result<Value>> {
@@ -44,11 +63,34 @@ impl<R: BufRead, W:Write> RpcPeer<R, W> {
         None
     }
 
+    pub fn mainloop<F: FnMut(&str, &Value) -> Option<Value>>(&mut self, mut f: F) {
+        while let Some(json_result) = self.read_json() {
+            match json_result {
+                Ok(json) => {
+                    print_err!("to core: {:?}", json);
+                    match parse_rpc_request(&json) {
+                        Some((id, method, params)) => {
+                            if let Some(result) = f(method, params) {
+                                self.writer.respond(&result, id);
+                            } else if let Some(id) = id {
+                                print_err!("RPC with id={:?} not responded", id);
+                            }
+                        }
+                        None => print_err!("invalid RPC request")
+                    }
+                },
+                Err(err) => print_err!("Error decoding json: {:?}", err)
+            }
+        }
+    }
+}
+
+impl<W:Write> RpcWriter<W> {
     fn send(&self, v: &Value) -> Result<(), io::Error> {
         let mut s = serde_json::to_string(v).unwrap();
         s.push('\n');
         //print_err!("from core: {}", s);
-        self.writer.borrow_mut().write_all(s.as_bytes())
+        self.0.lock().unwrap().write_all(s.as_bytes())
         // Technically, maybe we should flush here, but doesn't seem to be reqiured.
     }
 
@@ -73,4 +115,8 @@ impl<R: BufRead, W:Write> RpcPeer<R, W> {
             print_err!("send error on send_rpc_async method {}: {}", method, e);
         }
     }
+}
+
+fn dict_get_string<'a>(dict: &'a BTreeMap<String, Value>, key: &str) -> Option<&'a str> {
+    dict.get(key).and_then(Value::as_string)
 }

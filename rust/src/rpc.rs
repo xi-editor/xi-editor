@@ -25,18 +25,9 @@ use serde_json::Value;
 // =============================================================================
 
 impl<'a> Request<'a> {
-    pub fn from_json(val: &'a Value) -> Result<Self, Error> {
-        use self::Error::*;
-
-        val.as_object().ok_or(InvalidRequest).and_then(|req| {
-            if let (Some(method), Some(params)) =
-                (dict_get_string(req, "method"), req.get("params")) {
-
-                    let id = req.get("id");
-                    TabCommand::from_json(method, params).map(|cmd| Request::TabCommand { id: id, tab_command: cmd})
-                }
-            else { Err(InvalidRequest) }
-        })
+    pub fn from_json(method: &'a str, params: &'a Value) -> Result<Self, Error> {
+        TabCommand::from_json(method, params).map(|cmd|
+            Request::TabCommand { tab_command: cmd})
     }
 }
 
@@ -46,7 +37,7 @@ impl<'a> Request<'a> {
 
 #[derive(Debug, PartialEq)]
 pub enum Request<'a> {
-    TabCommand { id: Option<&'a Value>, tab_command: TabCommand<'a> }
+    TabCommand { tab_command: TabCommand<'a> }
 }
 
 /// An enum representing a tab command, parsed from JSON.
@@ -250,7 +241,6 @@ impl<'a> EditCommand<'a> {
 /// An error that occurred while parsing an edit command.
 #[derive(Debug, PartialEq)]
 pub enum Error {
-    InvalidRequest,
     UnknownTabMethod(String), // method name
     MalformedTabParams(String, Value), // method name, malformed params
     UnknownEditMethod(String), // method name
@@ -264,7 +254,6 @@ impl fmt::Display for Error {
         use self::Error::*;
 
         match *self {
-            InvalidRequest => write!(f, "Error: invalid request"),
             UnknownTabMethod(ref method) => write!(f, "Error: Unknown tab method '{}'", method),
             MalformedTabParams(ref method, ref params) =>
                 write!(f, "Error: Malformed tab parameters with method '{}', parameters: {:?}", method, params),
@@ -280,7 +269,6 @@ impl error::Error for Error {
         use self::Error::*;
 
         match *self {
-            InvalidRequest => "Invalid request",
             UnknownTabMethod(_) => "Unknown tab method",
             MalformedTabParams(_, _) => "Malformed tab parameters",
             UnknownEditMethod(_) => "Unknown edit method",
