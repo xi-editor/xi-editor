@@ -23,11 +23,12 @@ use xi_rope::interval::Interval;
 use xi_rope::delta::Delta;
 use xi_rope::tree::Cursor;
 use xi_rope::engine::Engine;
+use xi_rope::spans::SpansBuilder;
 use view::View;
 
 use tabs::TabCtx;
 use rpc::EditCommand;
-use run_plugin::start_plugin;
+use run_plugin::{start_plugin, PluginPeer};
 
 const FLAG_SELECT: u64 = 2;
 
@@ -532,12 +533,7 @@ impl Editor {
 
     fn debug_run_plugin(&mut self, tab_ctx: &TabCtx) {
         print_err!("running plugin");
-        let self_ref = tab_ctx.get_self_ref();
-        start_plugin(move |plugin_ref| {
-            print_err!("editor got plugin start notification");
-            let buf_size = self_ref.lock().unwrap().text.len();
-            plugin_ref.send_rpc_async("ping_from_editor", &Value::U64(buf_size as u64));
-        });
+        start_plugin(tab_ctx.get_self_ref());
     }
 
     fn do_cut(&mut self) -> Value {
@@ -691,6 +687,41 @@ impl Editor {
         self.last_edit_type = self.this_edit_type;
         self.gc_undos();
         result
+    }
+
+    // Support for plugins
+
+    pub fn on_plugin_connect(&mut self, peer: &PluginPeer) {
+        let buf_size = self.text.len();
+        peer.send_rpc_async("ping_from_editor", &Value::U64(buf_size as u64));
+    }
+
+    // Note: the following are placeholders for prototyping, and are not intended to
+    // deal with asynchrony or be efficient.
+
+    pub fn plugin_n_lines(&self) -> usize {
+        self.text.measure::<LinesMetric>() + 1
+    }
+
+    pub fn plugin_get_line(&self, line_num: usize) -> String {
+        let start_offset = self.text.offset_of_line(line_num);
+        let end_offset = self.text.offset_of_line(line_num + 1);
+        self.text.slice_to_string(start_offset, end_offset)
+    }
+
+    pub fn plugin_set_line_fg_spans(&mut self, line_num: usize, spans: &Value) {
+        let start_offset = self.text.offset_of_line(line_num);
+        let end_offset = self.text.offset_of_line(line_num + 1);
+        let mut sb = SpansBuilder::new(end_offset - start_offset);
+        for span in spans.as_array().unwrap() {
+            let span_dict = span.as_object().unwrap();
+            let start = span_dict.get("start").and_then(Value::as_u64).unwrap() as usize;
+            let end = span_dict.get("end").and_then(Value::as_u64).unwrap() as usize;
+            let fg = span_dict.get("fg").and_then(Value::as_u64).unwrap() as u32;
+            sb.add_span(Interval::new_open_open(start, end), fg);
+        }
+        self.view.set_fg_spans(start_offset, end_offset, sb.build());
+        // TODO: set dirty, propagate update
     }
 }
 

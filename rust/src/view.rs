@@ -306,4 +306,8 @@ impl View {
         sb.add_span(Interval::new_closed_open(5, 10), 0xffc00000);
         self.fg_spans = sb.build();
     }
+
+    pub fn set_fg_spans(&mut self, start: usize, end: usize, spans: Spans<u32>) {
+        self.fg_spans.edit(Interval::new_closed_closed(start, end), spans);
+    }
 }

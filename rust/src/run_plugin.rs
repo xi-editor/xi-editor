@@ -18,14 +18,16 @@ use std::io::BufReader;
 use std::env;
 use std::path::PathBuf;
 use std::process::{Command,Stdio,ChildStdin};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use serde_json::Value;
 
 use rpc_peer::{RpcPeer,RpcWriter};
+use editor::Editor;
 
 pub type PluginPeer = RpcWriter<ChildStdin>;
 
-pub fn start_plugin<F: 'static + Send + FnOnce(PluginPeer) -> ()>(f: F) {
+pub fn start_plugin(editor: Arc<Mutex<Editor>>) {
     thread::spawn(move || {
         let mut pathbuf: PathBuf = match env::current_exe() {
             Ok(pathbuf) => pathbuf,
@@ -48,9 +50,34 @@ pub fn start_plugin<F: 'static + Send + FnOnce(PluginPeer) -> ()>(f: F) {
         let mut peer = RpcPeer::new(BufReader::new(child_stdout), child_stdin);
         let peer_w = peer.get_writer();
         peer_w.send_rpc_async("ping", &Value::Null);
-        f(peer_w);
-        peer.mainloop(|_method, _params| None);
+        editor.lock().unwrap().on_plugin_connect(&peer_w);
+        peer.mainloop(|method, params| rpc_handler(&editor, method, params));
         let status = child.wait();
         print_err!("child exit = {:?}", status);
     });
+}
+
+fn rpc_handler(editor: &Arc<Mutex<Editor>>, method: &str, params: &Value) -> Option<Value> {
+    let mut editor = editor.lock().unwrap();
+    match method {
+        // TODO: parse json into enum first, just like front-end RPC
+        // (this will also improve error handling, no panic on malformed request from plugin)
+        "n_lines" => Some(Value::U64(editor.plugin_n_lines() as u64)),
+        "get_line" => {
+            let line = params.as_object().and_then(|dict| dict.get("line").and_then(Value::as_u64)).unwrap();
+            let result = editor.plugin_get_line(line as usize);
+            Some(Value::String(result))
+        }
+        "set_line_fg_spans" => {
+            let dict = params.as_object().unwrap();
+            let line_num = dict.get("line").and_then(Value::as_u64).unwrap() as usize;
+            let spans = dict.get("spans").unwrap();
+            editor.plugin_set_line_fg_spans(line_num, spans);
+            None
+        }
+        _ => {
+            print_err!("unknown plugin callback method: {}", method);
+            None
+        }
+    }
 }
