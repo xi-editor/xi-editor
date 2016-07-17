@@ -27,14 +27,13 @@ pub type PluginPeer = RpcWriter<ChildStdin>;
 
 pub fn start_plugin<F: 'static + Send + FnOnce(PluginPeer) -> ()>(f: F) {
     thread::spawn(move || {
-        let path = match env::args_os().next() {
-            Some(path) => path,
-            _ => {
-                print_err!("empty args, that's strange");
+        let mut pathbuf: PathBuf = match env::current_exe() {
+            Ok(pathbuf) => pathbuf,
+            Err(e) => {
+                print_err!("Could not get current path: {}", e);
                 return;
             }
         };
-        let mut pathbuf = PathBuf::from(&path);
         pathbuf.pop();
         pathbuf.push("python");
         pathbuf.push("plugin.py");
