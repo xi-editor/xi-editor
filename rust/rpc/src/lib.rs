@@ -109,7 +109,7 @@ impl<R: BufRead, W:Write + Send> RpcLoop<R, W> {
                             }
                         }
                         None => print_err!("invalid RPC request")
-                    }                
+                    }
                 }
             });
             while let Some(json_result) = self.read_json() {
@@ -154,6 +154,7 @@ impl<W:Write> RpcPeer<W> {
 
     pub fn send_rpc_async(&self, method: &str, params: &Value) {
         if let Err(e) = self.send(&ObjectBuilder::new()
+            .insert("id", Value::Null)
             .insert("method", method)
             .insert("params", params)
             .unwrap()) {
@@ -173,7 +174,7 @@ impl<W:Write> RpcPeer<W> {
             .insert("method", method)
             .insert("params", params)
             .unwrap()) {
-            print_err!("send error on send_rpc_async method {}: {}", method, e);
+            print_err!("send error on send_rpc_sync method {}: {}", method, e);
             panic!("TODO: better error handling");
         }
         rx.recv().unwrap()
