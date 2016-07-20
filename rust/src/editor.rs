@@ -693,7 +693,7 @@ impl Editor {
 
     pub fn on_plugin_connect(&mut self, peer: &PluginPeer) {
         let buf_size = self.text.len();
-        peer.send_rpc_async("ping_from_editor", &Value::U64(buf_size as u64));
+        peer.send_rpc_async("ping_from_editor", &Value::Array(vec![Value::U64(buf_size as u64)]));
     }
 
     // Note: the following are placeholders for prototyping, and are not intended to
