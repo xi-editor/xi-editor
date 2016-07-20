@@ -1,0 +1,12 @@
+[package]
+name = "xi-rpc"
+version = "0.0.0"
+license = "Apache-2.0"
+authors = ["Raph Levien <raph@google.com>"]
+repository = "https://github.com/google/xi-editor"
+description = "Utilities for building peers (both client and server side) for xi's JSON RPC variant."
+
+[dependencies]
+serde = "0.7.14"
+serde_json = "0.7.4"
+crossbeam = "0.2.9"

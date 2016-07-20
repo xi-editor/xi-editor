@@ -22,10 +22,10 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use serde_json::Value;
 
-use rpc_peer::{RpcPeer,RpcWriter};
+use xi_rpc::{RpcLoop,RpcPeer};
 use editor::Editor;
 
-pub type PluginPeer = RpcWriter<ChildStdin>;
+pub type PluginPeer = RpcPeer<ChildStdin>;
 
 pub fn start_plugin(editor: Arc<Mutex<Editor>>) {
     thread::spawn(move || {
@@ -47,11 +47,11 @@ pub fn start_plugin(editor: Arc<Mutex<Editor>>) {
             .expect("plugin failed to start");
         let child_stdin = child.stdin.take().unwrap();
         let child_stdout = child.stdout.take().unwrap();
-        let mut peer = RpcPeer::new(BufReader::new(child_stdout), child_stdin);
-        let peer_w = peer.get_writer();
-        peer_w.send_rpc_async("ping", &Value::Null);
-        editor.lock().unwrap().on_plugin_connect(&peer_w);
-        peer.mainloop(|method, params| rpc_handler(&editor, method, params));
+        let mut looper = RpcLoop::new(BufReader::new(child_stdout), child_stdin);
+        let peer = looper.get_peer();
+        peer.send_rpc_async("ping", &Value::Null);
+        editor.lock().unwrap().on_plugin_connect(&peer);
+        looper.mainloop(|method, params| rpc_handler(&editor, method, params));
         let status = child.wait();
         print_err!("child exit = {:?}", status);
     });

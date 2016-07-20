@@ -14,3 +14,6 @@ path = "rope"
 
 [dependencies.xi-unicode]
 path = "unicode"
+
+[dependencies.xi-rpc]
+path = "rpc"

@@ -29,17 +29,18 @@ mod editor;
 mod view;
 mod linewrap;
 mod rpc;
-mod rpc_peer;
 mod run_plugin;
 
 use tabs::Tabs;
 use rpc::Request;
-use rpc_peer::{RpcPeer, RpcWriter};
 
 extern crate xi_rope;
 extern crate xi_unicode;
+extern crate xi_rpc;
 
-pub type MainPeer<'a> = RpcWriter<io::Stdout>;
+use xi_rpc::{RpcLoop, RpcPeer};
+
+pub type MainPeer<'a> = RpcPeer<io::Stdout>;
 
 fn handle_req<'a>(request: Request, tabs: &mut Tabs, rpc_peer: &MainPeer<'a>) -> Option<Value> {
     match request {
@@ -51,12 +52,12 @@ fn main() {
     let mut tabs = Tabs::new();
     let stdin = io::stdin();
     let stdout = io::stdout();
-    let mut rpc_peer = RpcPeer::new(stdin.lock(), stdout);
-    let rpc_writer = rpc_peer.get_writer();
+    let mut rpc_looper = RpcLoop::new(stdin.lock(), stdout);
+    let peer = rpc_looper.get_peer();
 
-    rpc_peer.mainloop(|method, params| {
+    rpc_looper.mainloop(|method, params| {
         match Request::from_json(method, params) {
-            Ok(req) => handle_req(req, &mut tabs, &rpc_writer),
+            Ok(req) => handle_req(req, &mut tabs, &peer),
             Err(e) => {
                 print_err!("Error {} decoding RPC request {}", e, method);
                 None
