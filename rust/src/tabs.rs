@@ -33,7 +33,7 @@ pub struct Tabs {
 pub struct TabCtx<'a> {
     tab: &'a str,
     kill_ring: &'a Mutex<Rope>,
-    rpc_peer: &'a MainPeer<'a>,
+    rpc_peer: &'a MainPeer,
     self_ref: Arc<Mutex<Editor>>,
 }
 

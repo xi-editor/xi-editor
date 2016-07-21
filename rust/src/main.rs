@@ -40,9 +40,9 @@ extern crate xi_rpc;
 
 use xi_rpc::{RpcLoop, RpcPeer};
 
-pub type MainPeer<'a> = RpcPeer<io::Stdout>;
+pub type MainPeer = RpcPeer<io::Stdout>;
 
-fn handle_req<'a>(request: Request, tabs: &mut Tabs, rpc_peer: &MainPeer<'a>) -> Option<Value> {
+fn handle_req(request: Request, tabs: &mut Tabs, rpc_peer: &MainPeer) -> Option<Value> {
     match request {
         Request::TabCommand { tab_command } => tabs.do_rpc(tab_command, rpc_peer)
     }
