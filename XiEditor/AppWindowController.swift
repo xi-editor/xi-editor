@@ -67,11 +67,12 @@ class AppWindowController: NSWindowController {
     }
 
     func saveDocument(sender: AnyObject) {
-        if filename == nil {
+        guard filename != nil else {
             saveDocumentAs(sender)
-        } else {
-            editView.sendRpcAsync("save", params: ["filename": filename!])
+            return
         }
+
+        editView.sendRpcAsync("save", params: ["filename": filename!])
     }
     
     func saveDocumentAs(sender: AnyObject) {
