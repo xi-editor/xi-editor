@@ -17,20 +17,23 @@ import Cocoa
 @NSApplicationMain
 class AppDelegate: NSObject, NSApplicationDelegate {
 
-    var coreConnection: CoreConnection?
     var appWindowController: AppWindowController?
+    var dispatcher: Dispatcher?
 
     func applicationWillFinishLaunching(aNotification: NSNotification) {
         // show main app window
         appWindowController = AppWindowController(windowNibName: "AppWindowController")
 
-        let corePath = NSBundle.mainBundle().pathForResource("xi-core", ofType: "")
-        if let corePath = corePath {
-            coreConnection = CoreConnection(path: corePath) { [weak self] json -> () in
-                self?.handleCoreCmd(json)
-            }
+        guard let corePath = NSBundle.mainBundle().pathForResource("xi-core", ofType: "")
+            else { fatalError("XI Core not found") }
+
+        let coreConnection = CoreConnection(path: corePath) { [weak self] (json: AnyObject) -> Void in
+            self?.handleCoreCmd(json)
         }
-        appWindowController?.coreConnection = coreConnection
+        let dispatcher = Dispatcher(coreConnection: coreConnection)
+
+        self.dispatcher = dispatcher
+        appWindowController?.dispatcher = dispatcher
 
         appWindowController?.showWindow(self)
     }
