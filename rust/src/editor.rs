@@ -16,6 +16,7 @@ use std::cmp::max;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::collections::BTreeSet;
+use std::sync::Weak;
 use serde_json::Value;
 
 use xi_rope::rope::{LinesMetric, Rope, RopeInfo};
@@ -29,12 +30,14 @@ use view::View;
 use tabs::TabCtx;
 use rpc::EditCommand;
 use run_plugin::{start_plugin, PluginPeer};
+use MainPeer;
 
 const FLAG_SELECT: u64 = 2;
 
 const MAX_UNDOS: usize = 20;
 
 pub struct Editor {
+    rpc_peer: Weak<MainPeer>,
     text: Rope,
     view: View,
     delta: Option<Delta<RopeInfo>>,
@@ -68,8 +71,9 @@ enum EditType {
 
 
 impl Editor {
-    pub fn new() -> Editor {
+    pub fn new(rpc_peer: Weak<MainPeer>) -> Editor {
         Editor {
+            rpc_peer: rpc_peer,
             text: Rope::from(""),
             view: View::new(),
             dirty: false,

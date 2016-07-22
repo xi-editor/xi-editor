@@ -33,7 +33,7 @@ pub struct Tabs {
 pub struct TabCtx<'a> {
     tab: &'a str,
     kill_ring: &'a Mutex<Rope>,
-    rpc_peer: &'a MainPeer,
+    rpc_peer: &'a Arc<MainPeer>,
     self_ref: Arc<Mutex<Editor>>,
 }
 
@@ -46,11 +46,11 @@ impl Tabs {
         }
     }
 
-    pub fn do_rpc(&mut self, cmd: TabCommand, rpc_peer: &MainPeer) -> Option<Value> {
+    pub fn do_rpc(&mut self, cmd: TabCommand, rpc_peer: &Arc<MainPeer>) -> Option<Value> {
         use rpc::TabCommand::*;
 
         match cmd {
-            NewTab => Some(Value::String(self.do_new_tab())),
+            NewTab => Some(Value::String(self.do_new_tab(rpc_peer))),
 
             DeleteTab { tab_name } => {
                 self.do_delete_tab(tab_name);
@@ -61,15 +61,15 @@ impl Tabs {
         }
     }
 
-    fn do_new_tab(&mut self) -> String {
-        self.new_tab()
+    fn do_new_tab(&mut self, rpc_peer: &Arc<MainPeer>) -> String {
+        self.new_tab(rpc_peer)
     }
 
     fn do_delete_tab(&mut self, tab: &str) {
         self.delete_tab(tab);
     }
 
-    fn do_edit(&mut self, tab: &str, cmd: EditCommand, rpc_peer: &MainPeer)
+    fn do_edit(&mut self, tab: &str, cmd: EditCommand, rpc_peer: &Arc<MainPeer>)
             -> Option<Value> {
         if let Some(editor) = self.tabs.get_mut(tab) {
             let tab_ctx = TabCtx {
@@ -85,10 +85,10 @@ impl Tabs {
         }
     }
 
-    fn new_tab(&mut self) -> String {
+    fn new_tab(&mut self, rpc_peer: &Arc<MainPeer>) -> String {
         let tabname = self.id_counter.to_string();
         self.id_counter += 1;
-        let editor = Editor::new();
+        let editor = Editor::new(Arc::downgrade(rpc_peer));
         self.tabs.insert(tabname.clone(), Arc::new(Mutex::new(editor)));
         tabname
     }
