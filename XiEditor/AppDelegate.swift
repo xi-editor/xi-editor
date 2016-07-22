@@ -21,29 +21,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var dispatcher: Dispatcher?
 
     func applicationWillFinishLaunching(aNotification: NSNotification) {
-        // show main app window
-        appWindowController = AppWindowController(windowNibName: "AppWindowController")
 
         guard let corePath = NSBundle.mainBundle().pathForResource("xi-core", ofType: "")
             else { fatalError("XI Core not found") }
 
-        let coreConnection = CoreConnection(path: corePath) { [weak self] (json: AnyObject) -> Void in
-            self?.handleCoreCmd(json)
-        }
-        let dispatcher = Dispatcher(coreConnection: coreConnection)
+        let dispatcher: Dispatcher = {
+            let coreConnection = CoreConnection(path: corePath) { [weak self] (json: AnyObject) -> Void in
+                self?.handleCoreCmd(json)
+            }
+
+            return Dispatcher(coreConnection: coreConnection)
+        }()
 
         self.dispatcher = dispatcher
-        appWindowController?.dispatcher = dispatcher
 
+        appWindowController = AppWindowController()
+        appWindowController?.dispatcher = dispatcher
         appWindowController?.showWindow(self)
     }
 
     func handleCoreCmd(json: AnyObject) {
-        if let obj = json as? [String : AnyObject], let method = obj["method"] as? String, let params = obj["params"] {
-            handleRpc(method, params: params)
-        } else {
-            print("unknown json from core:", json)
-        }
+        guard let obj = json as? [String : AnyObject],
+            method = obj["method"] as? String,
+            params = obj["params"]
+            else { print("unknown json from core:", json); return }
+
+        handleRpc(method, params: params)
     }
 
     func handleRpc(method: String, params: AnyObject) {

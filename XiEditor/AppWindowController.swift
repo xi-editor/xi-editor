@@ -15,6 +15,11 @@
 import Cocoa
 
 class AppWindowController: NSWindowController {
+
+    convenience init() {
+        self.init(windowNibName: "AppWindowController")
+    }
+
     @IBOutlet weak var editView: EditView!
     @IBOutlet weak var scrollView: NSScrollView!
     @IBOutlet weak var shadowView: ShadowView!
