@@ -75,6 +75,11 @@ fn rpc_handler(editor: &Arc<Mutex<Editor>>, method: &str, params: &Value) -> Opt
             editor.plugin_set_line_fg_spans(line_num, spans);
             None
         }
+        "alert" => {
+            let msg = params.as_object().and_then(|dict| dict.get("msg").and_then(Value::as_string)).unwrap();
+            editor.plugin_alert(msg);
+            None
+        }
         _ => {
             print_err!("unknown plugin callback method: {}", method);
             None
