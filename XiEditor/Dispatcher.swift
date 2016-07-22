@@ -21,13 +21,23 @@ class Dispatcher {
         self.coreConnection = coreConnection
     }
 
-    func dispatch<E: Event, O>(event: E) -> O {
+    func dispatchSync<E: Event, O>(event: E) -> O {
         let rpc = event.rpcRepresentation
         return coreConnection.sendRpc(rpc.method, params: rpc.params) as! O
+    }
+
+    func dispatchAsync<E: Event, O>(event: E) -> O {
+        let rpc = event.rpcRepresentation
+        return coreConnection.sendRpcAsync(rpc.method, params: rpc.params) as! O
     }
 }
 
 typealias RpcRepresentation = (method: String, params: AnyObject)
+
+enum EventDispatchMethod {
+    case sync
+    case async
+}
 
 protocol Event {
     associatedtype Output
@@ -35,6 +45,7 @@ protocol Event {
     var method: String { get }
     var params: AnyObject? { get }
     var rpcRepresentation: RpcRepresentation { get }
+    var dispatchMethod: EventDispatchMethod { get }
 
     func dispatch(dispatcher: Dispatcher) -> Output
 }
@@ -45,7 +56,10 @@ extension Event {
     }
 
     func dispatch(dispatcher: Dispatcher) -> Output {
-        return dispatcher.dispatch(self)
+        switch dispatchMethod {
+        case .sync: return dispatcher.dispatchSync(self)
+        case .async: return dispatcher.dispatchAsync(self)
+        }
     }
 }
 
@@ -57,6 +71,7 @@ enum Events { // namespace
 
         let method = "new_tab"
         let params: AnyObject? = nil
+        let dispatchMethod = EventDispatchMethod.sync
     }
 
     struct DeleteTab: Event {
@@ -66,6 +81,6 @@ enum Events { // namespace
 
         let method = "delete_tab"
         var params: AnyObject? { return ["tab": tabId] }
+        let dispatchMethod = EventDispatchMethod.async
     }
 }
-
