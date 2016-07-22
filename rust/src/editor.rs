@@ -18,6 +18,7 @@ use std::io::{Read, Write};
 use std::collections::BTreeSet;
 use std::sync::Weak;
 use serde_json::Value;
+use serde_json::builder::ObjectBuilder;
 
 use xi_rope::rope::{LinesMetric, Rope, RopeInfo};
 use xi_rope::interval::Interval;
@@ -726,6 +727,16 @@ impl Editor {
         }
         self.view.set_fg_spans(start_offset, end_offset, sb.build());
         // TODO: set dirty, propagate update
+    }
+
+    pub fn plugin_alert(&self, msg: &str) {
+        match self.rpc_peer.upgrade() {
+            Some(rpc_peer) => rpc_peer.send_rpc_async("alert",
+                &ObjectBuilder::new()
+                    .insert("msg", msg)
+                    .unwrap()),
+            None => print_err!("rpc_peer reference is gone")
+        }
     }
 }
 

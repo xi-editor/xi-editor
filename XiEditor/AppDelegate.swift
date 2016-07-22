@@ -44,11 +44,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func handleRpc(method: String, params: AnyObject) {
-        if method == "update" {
+        switch method {
+        case "update":
             if let obj = params as? [String : AnyObject], let update = obj["update"] as? [String : AnyObject] {
                 // TODO: dispatch to appropriate editView based on obj["tab"]
                 self.appWindowController?.editView.updateSafe(update)
             }
+        case "alert":
+            if let obj = params as? [String : AnyObject], let msg = obj["msg"] as? String {
+                dispatch_async(dispatch_get_main_queue(), {
+                    let alert =  NSAlert.init()
+                    alert.alertStyle = .InformationalAlertStyle
+                    alert.messageText = msg
+                    alert.runModal()
+                });
+            }
+        default:
+            print("unknown method from core:", method)
         }
     }
 
