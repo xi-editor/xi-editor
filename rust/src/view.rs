@@ -28,13 +28,19 @@ use linewrap;
 
 const SCROLL_SLOP: usize = 2;
 
+#[derive(Default, Clone)]
+pub struct Style {
+    pub fg: u32,
+    pub font_style: u8,  // same as syntect, 1 = bold, 2 = underline, 4 = italic
+}
+
 pub struct View {
     pub sel_start: usize,
     pub sel_end: usize,
     first_line: usize,  // vertical scroll position
     height: usize,  // height of visible portion
     breaks: Option<Breaks>,
-    fg_spans: Spans<u32>,
+    style_spans: Spans<Style>,
     cols: usize,
 }
 
@@ -46,7 +52,7 @@ impl Default for View {
             first_line: 0,
             height: 10,
             breaks: None,
-            fg_spans: Spans::default(),
+            style_spans: Spans::default(),
             cols: 0,
         }
     }
@@ -161,13 +167,14 @@ impl View {
     }
 
     pub fn render_spans(&self, mut builder: ArrayBuilder, start: usize, end: usize) -> ArrayBuilder {
-        let fg_spans = self.fg_spans.subseq(Interval::new_closed_open(start, end));
-        for (iv, fg) in fg_spans.iter() {
+        let style_spans = self.style_spans.subseq(Interval::new_closed_open(start, end));
+        for (iv, style) in style_spans.iter() {
             builder = builder.push_array(|builder|
                 builder.push("fg")
                     .push(iv.start())
                     .push(iv.end())
-                    .push(fg));
+                    .push(style.fg)
+                    .push(style.font_style));
         }
         builder
     }
@@ -303,11 +310,12 @@ impl View {
 
     pub fn set_test_fg_spans(&mut self) {
         let mut sb = SpansBuilder::new(15);
-        sb.add_span(Interval::new_closed_open(5, 10), 0xffc00000);
-        self.fg_spans = sb.build();
+        let style = Style { fg: 0xffc00000, font_style: 0 };
+        sb.add_span(Interval::new_closed_open(5, 10), style);
+        self.style_spans = sb.build();
     }
 
-    pub fn set_fg_spans(&mut self, start: usize, end: usize, spans: Spans<u32>) {
-        self.fg_spans.edit(Interval::new_closed_closed(start, end), spans);
+    pub fn set_fg_spans(&mut self, start: usize, end: usize, spans: Spans<Style>) {
+        self.style_spans.edit(Interval::new_closed_closed(start, end), spans);
     }
 }

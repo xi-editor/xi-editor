@@ -26,7 +26,7 @@ use xi_rope::delta::Delta;
 use xi_rope::tree::Cursor;
 use xi_rope::engine::Engine;
 use xi_rope::spans::SpansBuilder;
-use view::View;
+use view::{Style, View};
 
 use tabs::TabCtx;
 use rpc::EditCommand;
@@ -723,7 +723,9 @@ impl Editor {
             let start = span_dict.get("start").and_then(Value::as_u64).unwrap() as usize;
             let end = span_dict.get("end").and_then(Value::as_u64).unwrap() as usize;
             let fg = span_dict.get("fg").and_then(Value::as_u64).unwrap() as u32;
-            sb.add_span(Interval::new_open_open(start, end), fg);
+            let font_style = span_dict.get("font").and_then(Value::as_u64).unwrap_or(0) as u8;
+            let style = Style { fg: fg, font_style: font_style };
+            sb.add_span(Interval::new_open_open(start, end), style);
         }
         self.view.set_fg_spans(start_offset, end_offset, sb.build());
         // TODO: set dirty, propagate update

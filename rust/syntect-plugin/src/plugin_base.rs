@@ -45,11 +45,12 @@ impl SpansBuilder {
         SpansBuilder(Vec::new())
     }
 
-    pub fn add_fg_span(&mut self, start: usize, end: usize, fg: u32) {
+    pub fn add_style_span(&mut self, start: usize, end: usize, fg: u32, font_style: u8) {
         self.0.push(ObjectBuilder::new()
             .insert("start", start as u64)
             .insert("end", end as u64)
             .insert("fg", fg as u64)
+            .insert("font", font_style as u64)
             .unwrap());
     }
 

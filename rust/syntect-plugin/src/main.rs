@@ -23,7 +23,8 @@ mod plugin_base;
 use plugin_base::{PluginRequest, PluginPeer, SpansBuilder};
 
 use syntect::parsing::{ParseState, ScopeStack, SyntaxSet};
-use syntect::highlighting::{Color, Highlighter, HighlightIterator, HighlightState, Style, ThemeSet};
+use syntect::highlighting::{Color, FontStyle, Highlighter, HighlightIterator, HighlightState,
+    Style, ThemeSet};
 
 // TODO: avoid duplicating this in every crate
 macro_rules! print_err {
@@ -43,8 +44,13 @@ fn color_to_rgba(color: Color) -> u32 {
     ((color.a as u32) << 24) | ((color.r as u32) << 16) | ((color.g as u32) << 8) | (color.r as u32)
 }
 
+fn font_style_to_u8(fs: FontStyle) -> u8 {
+    fs.bits()
+}
+
 fn add_style_span(builder: &mut SpansBuilder, style: Style, start: usize, end: usize) {
-    builder.add_fg_span(start, end, color_to_rgba(style.foreground));
+    builder.add_style_span(start, end,
+        color_to_rgba(style.foreground), font_style_to_u8(style.font_style));
 }
 
 struct PluginState {

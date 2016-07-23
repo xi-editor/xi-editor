@@ -129,7 +129,7 @@ impl<W:Write + Send> RpcLoop<W> {
                         }
                     }
                     None => print_err!("invalid RPC request")
-                }                
+                }
             }
         });
     }

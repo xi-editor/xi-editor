@@ -146,6 +146,10 @@ class EditView: NSView, NSTextInputClient {
 
     let x0: CGFloat = 2;
 
+    let font_style_bold: Int = 1;
+    let font_style_underline: Int = 2;
+    let font_style_italic: Int = 4;
+
     override func drawRect(dirtyRect: NSRect) {
         super.drawRect(dirtyRect)
         /*
@@ -191,8 +195,35 @@ class EditView: NSView, NSTextInputClient {
                     let end = attr[2] as! Int
                     let u16_end = utf8_offset_to_utf16(s, end)
                     let fgcolor = colorFromArgb(UInt32(attr[3] as! Int))
+                    let font_style = attr[4] as! Int
                     //let fgcolor = colorFromArgb(0xff800000)
                     attrString.addAttribute(NSForegroundColorAttributeName, value: fgcolor, range: NSMakeRange(u16_start, u16_end - u16_start))
+                    if (font_style & font_style_underline) != 0 {
+                        attrString.addAttribute(NSUnderlineStyleAttributeName,
+                                                value: NSUnderlineStyle.StyleSingle.rawValue,
+                                                range: NSMakeRange(u16_start, u16_end - u16_start))
+                    }
+                    let fake_italic = false  // TODO: figure this out based on font support
+                    if fake_italic  && (font_style & font_style_italic) != 0 {
+                        attrString.addAttribute(NSObliquenessAttributeName,
+                                                value: 0.2,
+                                                range: NSMakeRange(u16_start, u16_end - u16_start))
+                    }
+                    let trait_mask = font_style_bold | (fake_italic ? 0 : font_style_italic)
+                    if (font_style & trait_mask) != 0 {
+                        var traits: NSFontTraitMask
+                        switch font_style & trait_mask {
+                        case font_style_bold:
+                            traits = NSFontTraitMask.BoldFontMask
+                        case font_style_italic:
+                            traits = NSFontTraitMask.ItalicFontMask
+                        case (font_style_bold | font_style_italic):
+                            traits = [NSFontTraitMask.BoldFontMask, NSFontTraitMask.ItalicFontMask]
+                        default:
+                            traits = []
+                        }
+                        attrString.applyFontTraits(traits, range: NSMakeRange(u16_start, u16_end - u16_start))
+                    }
                 }
             }
             if let c = cursor {
