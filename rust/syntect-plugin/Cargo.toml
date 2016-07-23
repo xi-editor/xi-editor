@@ -1,0 +1,14 @@
+[package]
+name = "xi-syntect-plugin"
+version = "0.0.0"
+license = "Apache-2.0"
+authors = ["Raph Levien <raph@google.com>"]
+repository = "https://github.com/google/xi-editor"
+description = "A syntax highlighting plugin based on syntect."
+
+[dependencies]
+syntect = "1.0"
+serde_json = "0.7"
+
+[dependencies.xi-rpc]
+path = "../rpc"

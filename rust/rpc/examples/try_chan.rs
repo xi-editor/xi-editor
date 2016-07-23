@@ -12,11 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! A simple test program for evaluating the speed of cross-thread communications.
+
 extern crate xi_rpc;
 
 use std::thread;
 use std::sync::mpsc;
 
+/*
 use xi_rpc::chan::Chan;
 
 pub fn test_chan() {
@@ -39,6 +42,7 @@ pub fn test_chan() {
     let _ = thread1.join();
     let _ = thread2.join();
 }
+*/
 
 pub fn test_mpsc() {
     let n_iter = 1000000;
@@ -60,5 +64,5 @@ pub fn test_mpsc() {
 }
 
 pub fn main() {
-    test_chan()
+    test_mpsc()
 }

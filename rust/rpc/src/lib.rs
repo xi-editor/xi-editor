@@ -76,7 +76,7 @@ impl<R: BufRead, W:Write + Send> RpcLoop<R, W> {
     }
 
     pub fn get_peer(&self) -> RpcPeer<W> {
-        RpcPeer(self.peer.0.clone())
+        self.peer.clone()
     }
 
     pub fn read_json(&mut self) -> Option<serde_json::error::Result<Value>> {
@@ -90,6 +90,8 @@ impl<R: BufRead, W:Write + Send> RpcLoop<R, W> {
         None
     }
 
+    // TODO: if we spawn the IO thread instead of the handler thread, F doesn't
+    // need to be `Send`.
     pub fn mainloop<F: FnMut(&str, &Value) -> Option<Value> + Send>(&mut self, mut f: F) {
         crossbeam::scope(|scope| {
             let peer = self.get_peer();
@@ -173,7 +175,7 @@ impl<W:Write> RpcPeer<W> {
             .insert("method", method)
             .insert("params", params)
             .unwrap()) {
-            print_err!("send error on send_rpc_async method {}: {}", method, e);
+            print_err!("send error on send_rpc_sync method {}: {}", method, e);
             panic!("TODO: better error handling");
         }
         rx.recv().unwrap()
@@ -209,6 +211,13 @@ impl<W:Write> RpcPeer<W> {
     pub fn request_is_pending(&self) -> bool {
         let queue = self.0.rx_queue.lock().unwrap();
         !queue.is_empty()
+    }
+
+}
+
+impl<W:Write> Clone for RpcPeer<W> {
+    fn clone(&self) -> Self {
+        RpcPeer(self.0.clone())
     }
 }
 
