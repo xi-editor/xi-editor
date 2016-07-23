@@ -100,6 +100,8 @@ class EditView: NSView, NSTextInputClient {
     var cursorPos: (Int, Int)?
     var _selectedRange: NSRange
     var _markedRange: NSRange
+    
+    var frameRect: NSRect
 
     override init(frame frameRect: NSRect) {
         let font = CTFontCreateWithName("InconsolataGo", 14, nil)
@@ -114,11 +116,17 @@ class EditView: NSView, NSTextInputClient {
         updateQueue = dispatch_queue_create("com.levien.xi.update", DISPATCH_QUEUE_SERIAL)
         _selectedRange = NSMakeRange(NSNotFound, 0)
         _markedRange = NSMakeRange(NSNotFound, 0)
+        self.frameRect = frameRect
         super.init(frame: frameRect)
         widthConstraint = NSLayoutConstraint(item: self, attribute: .Width, relatedBy: .GreaterThanOrEqual, toItem: nil, attribute: .Width, multiplier: 1, constant: 400)
         widthConstraint!.active = true
         heightConstraint = NSLayoutConstraint(item: self, attribute: .Height, relatedBy: .GreaterThanOrEqual, toItem: nil, attribute: .Height, multiplier: 1, constant: 100)
         heightConstraint!.active = true
+    }
+    
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(frameRect, cursor: NSCursor.IBeamCursor())
     }
 
     required init?(coder: NSCoder) {
