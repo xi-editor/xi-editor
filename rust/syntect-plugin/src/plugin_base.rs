@@ -117,13 +117,14 @@ fn parse_plugin_request(method: &str, _params: &Value) -> Result<PluginRequest, 
     }
 }
 
-pub fn mainloop<F: FnMut(&PluginRequest, &PluginPeer) -> Option<Value> + Send>(mut f: F) {
+pub fn mainloop<F: FnMut(&PluginRequest, &PluginPeer) -> Option<Value>>(mut f: F) {
     let stdin = io::stdin();
     let stdout = io::stdout();
-    let mut rpc_looper = RpcLoop::new(stdin.lock(), stdout);
+    let mut rpc_looper = RpcLoop::new(stdout);
     let peer = PluginPeer(rpc_looper.get_peer());
 
-    rpc_looper.mainloop(|method, params|
+    rpc_looper.mainloop(|| stdin.lock(),
+        |method, params|
         match parse_plugin_request(method, params) {
             Ok(req) => f(&req, &peer),
             Err(err) => {

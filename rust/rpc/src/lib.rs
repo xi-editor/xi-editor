@@ -42,8 +42,7 @@ struct RpcState<W: Write> {
     pending: Mutex<BTreeMap<usize, mpsc::Sender<Value>>>,
 }
 
-pub struct RpcLoop<R: BufRead, W: Write> {
-    reader: R,
+pub struct RpcLoop<W: Write> {
     buf: String,
     peer: RpcPeer<W>,
 }
@@ -59,17 +58,16 @@ fn parse_rpc_request(json: &Value) -> Option<(Option<&Value>, &str, &Value)> {
     })
 }
 
-impl<R: BufRead, W:Write + Send> RpcLoop<R, W> {
-    pub fn new(reader: R, peer: W) -> Self {
+impl<W:Write + Send> RpcLoop<W> {
+    pub fn new(writer: W) -> Self {
         let rpc_peer = RpcPeer(Arc::new(RpcState {
             rx_queue: Mutex::new(VecDeque::new()),
             rx_cvar: Condvar::new(),
-            writer: Mutex::new(peer),
+            writer: Mutex::new(writer),
             id: AtomicUsize::new(0),
             pending: Mutex::new(BTreeMap::new()),
         }));
         RpcLoop {
-            reader: reader,
             buf: String::new(),
             peer: rpc_peer,
         }
@@ -79,9 +77,10 @@ impl<R: BufRead, W:Write + Send> RpcLoop<R, W> {
         self.peer.clone()
     }
 
-    pub fn read_json(&mut self) -> Option<serde_json::error::Result<Value>> {
+    pub fn read_json<R: BufRead>(&mut self, reader: &mut R)
+            -> Option<serde_json::error::Result<Value>> {
         self.buf.clear();
-        if self.reader.read_line(&mut self.buf).is_ok() {
+        if reader.read_line(&mut self.buf).is_ok() {
             if self.buf.is_empty() {
                 return None;
             }
@@ -90,44 +89,48 @@ impl<R: BufRead, W:Write + Send> RpcLoop<R, W> {
         None
     }
 
-    // TODO: if we spawn the IO thread instead of the handler thread, F doesn't
-    // need to be `Send`.
-    pub fn mainloop<F: FnMut(&str, &Value) -> Option<Value> + Send>(&mut self, mut f: F) {
+    pub fn mainloop<R: BufRead,
+        RF: Send + FnOnce() -> R,
+        F: FnMut(&str, &Value) -> Option<Value>>(&mut self,
+            rf: RF,
+            mut f: F) {
         crossbeam::scope(|scope| {
             let peer = self.get_peer();
             scope.spawn(move|| {
-                loop {
-                    let json = peer.get_rx();
-                    if json == Value::Null {
-                        break;
-                    }
-                    print_err!("to core: {:?}", json);
-                    match parse_rpc_request(&json) {
-                        Some((id, method, params)) => {
-                            if let Some(result) = f(method, params) {
-                                peer.respond(&result, id);
-                            } else if let Some(id) = id {
-                                print_err!("RPC with id={:?} not responded", id);
+                let mut reader = rf();
+                while let Some(json_result) = self.read_json(&mut reader) {
+                    match json_result {
+                        Ok(json) => {
+                            let is_method = json.as_object().map_or(false, |dict|
+                                dict.contains_key("method"));
+                            if is_method {
+                                self.peer.put_rx(json)
+                            } else {
+                                self.peer.handle_response(json)
                             }
                         }
-                        None => print_err!("invalid RPC request")
-                    }                
+                        Err(err) => print_err!("Error decoding json: {:?}", err)
+                    }
                 }
+                self.peer.put_rx(Value::Null);
             });
-            while let Some(json_result) = self.read_json() {
-                match json_result {
-                    Ok(json) => {
-                        let is_method = json.as_object().map_or(false, |dict| dict.contains_key("method"));
-                        if is_method {
-                            self.peer.put_rx(json)
-                        } else {
-                            self.peer.handle_response(json)
+            loop {
+                let json = peer.get_rx();
+                if json == Value::Null {
+                    break;
+                }
+                print_err!("to core: {:?}", json);
+                match parse_rpc_request(&json) {
+                    Some((id, method, params)) => {
+                        if let Some(result) = f(method, params) {
+                            peer.respond(&result, id);
+                        } else if let Some(id) = id {
+                            print_err!("RPC with id={:?} not responded", id);
                         }
                     }
-                    Err(err) => print_err!("Error decoding json: {:?}", err)
-                }
+                    None => print_err!("invalid RPC request")
+                }                
             }
-            self.peer.put_rx(Value::Null);
         });
     }
 }

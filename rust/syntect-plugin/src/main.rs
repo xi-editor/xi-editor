@@ -47,13 +47,25 @@ fn add_style_span(builder: &mut SpansBuilder, style: Style, start: usize, end: u
     builder.add_fg_span(start, end, color_to_rgba(style.foreground));
 }
 
-fn do_highlighting(peer: &PluginPeer) {
-    let ss = SyntaxSet::load_defaults_newlines();  // TODO: move loading to mainloop?
-    let ts = ThemeSet::load_defaults();
-    let syntax = ss.find_syntax_by_extension("rs")
-        .unwrap_or_else(|| ss.find_syntax_plain_text());
+struct PluginState {
+    ss: SyntaxSet,
+    ts: ThemeSet,
+}
+
+impl PluginState {
+    pub fn new() -> Self {
+        PluginState {
+            ss: SyntaxSet::load_defaults_newlines(),
+            ts: ThemeSet::load_defaults(),
+        }
+    }
+}
+
+fn do_highlighting(peer: &PluginPeer, state: &PluginState) {
+    let syntax = state.ss.find_syntax_by_extension("rs")
+        .unwrap_or_else(|| state.ss.find_syntax_plain_text());
     let mut parse_state = ParseState::new(syntax);
-    let theme = &ts.themes["InspiredGitHub"];
+    let theme = &state.ts.themes["InspiredGitHub"];
     let highlighter = Highlighter::new(theme);
     let mut hstate = HighlightState::new(&highlighter, ScopeStack::new());
 
@@ -75,6 +87,8 @@ fn do_highlighting(peer: &PluginPeer) {
 }
 
 fn main() {
+    let state = PluginState::new();
+
     plugin_base::mainloop(|req, peer| {
         match *req {
             PluginRequest::Ping => {
@@ -83,7 +97,7 @@ fn main() {
             }
             PluginRequest::PingFromEditor => {
                 print_err!("got ping from editor");
-                do_highlighting(peer);
+                do_highlighting(peer, &state);
                 None
             }
         }
