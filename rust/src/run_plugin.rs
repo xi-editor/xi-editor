@@ -16,7 +16,7 @@
 
 use std::io::BufReader;
 use std::env;
-use std::path::Path;
+use std::path::PathBuf;
 use std::process::{Command,Stdio,ChildStdin};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -29,8 +29,6 @@ pub type PluginPeer = RpcPeer<ChildStdin>;
 
 pub fn start_plugin(editor: Arc<Mutex<Editor>>) {
     thread::spawn(move || {
-        let pathbuf = Path::new("/Users/raph/Documents/xcode/xi-editor/rust/syntect-plugin/target/debug/xi-syntect-plugin");
-        /*
         let mut pathbuf: PathBuf = match env::current_exe() {
             Ok(pathbuf) => pathbuf,
             Err(e) => {
@@ -39,10 +37,8 @@ pub fn start_plugin(editor: Arc<Mutex<Editor>>) {
             }
         };
         pathbuf.pop();
-        pathbuf.push("python");
-        pathbuf.push("plugin.py");
+        pathbuf.push("xi-syntect-plugin");
         //print_err!("path = {:?}", pathbuf);
-        */
         let mut child = Command::new(&pathbuf)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
