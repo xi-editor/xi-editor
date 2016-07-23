@@ -15,11 +15,16 @@
 import Cocoa
 
 class AppWindowController: NSWindowController {
+
+    convenience init() {
+        self.init(windowNibName: "AppWindowController")
+    }
+
     @IBOutlet weak var editView: EditView!
     @IBOutlet weak var scrollView: NSScrollView!
     @IBOutlet weak var shadowView: ShadowView!
 
-    var coreConnection: CoreConnection?
+    var dispatcher: Dispatcher!
     
     var filename: String?
 
@@ -31,8 +36,9 @@ class AppWindowController: NSWindowController {
     override func windowDidLoad() {
         super.windowDidLoad()
         //window?.backgroundColor = NSColor.whiteColor()
-        let tabName = coreConnection?.sendRpc("new_tab", params: []) as! String
-        editView.coreConnection = coreConnection
+
+        let tabName = Events.NewTab().dispatch(dispatcher)
+        editView.coreConnection = dispatcher.coreConnection
         editView.tabName = tabName
 
         // set up autolayout constraints
@@ -46,7 +52,10 @@ class AppWindowController: NSWindowController {
     }
 
     func windowWillClose(_: NSNotification) {
-        editView.coreConnection?.sendRpcAsync("delete_tab", params: ["tab": editView.tabName!] as [String : AnyObject])
+        guard let tabName = editView.tabName
+            else { return }
+
+        Events.DeleteTab(tabId: tabName).dispatch(dispatcher)
     }
 
     func boundsDidChangeNotification(notification: NSNotification) {
@@ -63,11 +72,12 @@ class AppWindowController: NSWindowController {
     }
 
     func saveDocument(sender: AnyObject) {
-        if filename == nil {
+        guard filename != nil else {
             saveDocumentAs(sender)
-        } else {
-            editView.sendRpcAsync("save", params: ["filename": filename!])
+            return
         }
+
+        editView.sendRpcAsync("save", params: ["filename": filename!])
     }
     
     func saveDocumentAs(sender: AnyObject) {

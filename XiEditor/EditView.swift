@@ -346,7 +346,7 @@ class EditView: NSView, NSTextInputClient {
             replacementRange.length = 0
         }
         for _ in 0..<aRange.length {
-            sendRpcAsync("delete_backward", params: [])
+            sendRpcAsync("delete_backward", params  : [])
         }
         if let attrStr = aString as? NSAttributedString {
             sendRpcAsync("insert", params: insertedStringToJson(attrStr.string))
