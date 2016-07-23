@@ -21,6 +21,7 @@ use std::fmt;
 use serde_json::Value;
 use serde_json::builder::ObjectBuilder;
 
+use xi_rpc;
 use xi_rpc::{RpcLoop, RpcPeer};
 
 // TODO: avoid duplicating this in every crate
@@ -36,6 +37,12 @@ macro_rules! print_err {
         }
     )
 }
+
+#[derive(Debug)]
+pub enum Error {
+    RpcError(xi_rpc::Error),
+    WrongReturnType,
+} 
 
 pub struct SpansBuilder(Vec<Value>);
 pub type Spans = Value;
@@ -62,17 +69,21 @@ impl SpansBuilder {
 pub struct PluginPeer(RpcPeer<io::Stdout>);
 
 impl PluginPeer {
-    pub fn n_lines(&self) -> usize {
+    pub fn n_lines(&self) -> Result<usize, Error> {
         let result = self.send_rpc_request("n_lines", &Value::Array(vec![]));
-        result.as_u64().unwrap() as usize
+        match result {
+            Ok(value) => value.as_u64().map(|value| value as usize).ok_or(Error::WrongReturnType),
+            Err(err) => Err(Error::RpcError(err)),
+        }
     }
 
-    pub fn get_line(&self, line_num: usize) -> String {
+    pub fn get_line(&self, line_num: usize) -> Result<String, Error> {
         let params = ObjectBuilder::new().insert("line", Value::U64(line_num as u64)).unwrap();
         let result = self.send_rpc_request("get_line", &params);
         match result {
-            Value::String(s) => s,
-            _ => panic!("wrong return type of get_line")
+            Ok(Value::String(s)) => Ok(s),
+            Ok(_) => Err(Error::WrongReturnType),
+            Err(err) => Err(Error::RpcError(err)),
         }
     }
 
@@ -85,11 +96,11 @@ impl PluginPeer {
     }
 
     fn send_rpc_notification(&self, method: &str, params: &Value) {
-        self.0.send_rpc_async(method, params)
+        self.0.send_rpc_notification(method, params)
     }
 
-    fn send_rpc_request(&self, method: &str, params: &Value) -> Value {
-        self.0.send_rpc_sync(method, params)
+    fn send_rpc_request(&self, method: &str, params: &Value) -> Result<Value, xi_rpc::Error> {
+        self.0.send_rpc_request(method, params)
     }
 }
 
@@ -98,23 +109,23 @@ pub enum PluginRequest {
     PingFromEditor,
 }
 
-enum Error {
+enum InternalError {
     UnknownMethod(String),
 }
 
-impl fmt::Display for Error {
+impl fmt::Display for InternalError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Error::UnknownMethod(ref method) => write!(f, "Unknown method {}", method),
+            InternalError::UnknownMethod(ref method) => write!(f, "Unknown method {}", method),
         }
     }
 }
 
-fn parse_plugin_request(method: &str, _params: &Value) -> Result<PluginRequest, Error> {
+fn parse_plugin_request(method: &str, _params: &Value) -> Result<PluginRequest, InternalError> {
     match method {
         "ping" => Ok(PluginRequest::Ping),
         "ping_from_editor" => Ok(PluginRequest::PingFromEditor),
-        _ => Err(Error::UnknownMethod(method.to_string()))
+        _ => Err(InternalError::UnknownMethod(method.to_string()))
     }
 }
 

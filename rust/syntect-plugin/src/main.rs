@@ -76,8 +76,20 @@ fn do_highlighting(peer: &PluginPeer, state: &PluginState) {
     let mut hstate = HighlightState::new(&highlighter, ScopeStack::new());
 
     let n_lines = peer.n_lines();
+    if let Err(err) = n_lines {
+        // TODO: maybe try to report the error back to the peer
+        print_err!("Error: {:?}", err);
+        return;
+    }
+    let n_lines = n_lines.unwrap();
     for i in 0..n_lines {
         let line = peer.get_line(i);
+        if let Err(err) = line {
+            // TODO: as above
+            print_err!("Error: {:?}", err);
+            return;
+        }
+        let line = line.unwrap();
         let ops = parse_state.parse_line(&line);
         let mut builder = SpansBuilder::new();
         let iter = HighlightIterator::new(&mut hstate, &ops, &line, &highlighter);

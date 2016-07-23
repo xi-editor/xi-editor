@@ -48,7 +48,7 @@ pub fn start_plugin(editor: Arc<Mutex<Editor>>) {
         let child_stdout = child.stdout.take().unwrap();
         let mut looper = RpcLoop::new(child_stdin);
         let peer = looper.get_peer();
-        peer.send_rpc_async("ping", &Value::Array(Vec::new()));
+        peer.send_rpc_notification("ping", &Value::Array(Vec::new()));
         editor.lock().unwrap().on_plugin_connect(&peer);
         looper.mainloop(|| BufReader::new(child_stdout),
             |method, params| rpc_handler(&editor, method, params));

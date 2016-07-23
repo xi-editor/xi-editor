@@ -698,7 +698,7 @@ impl Editor {
 
     pub fn on_plugin_connect(&mut self, peer: &PluginPeer) {
         let buf_size = self.text.len();
-        peer.send_rpc_async("ping_from_editor", &Value::Array(vec![Value::U64(buf_size as u64)]));
+        peer.send_rpc_notification("ping_from_editor", &Value::Array(vec![Value::U64(buf_size as u64)]));
     }
 
     // Note: the following are placeholders for prototyping, and are not intended to
@@ -733,7 +733,7 @@ impl Editor {
 
     pub fn plugin_alert(&self, msg: &str) {
         match self.rpc_peer.upgrade() {
-            Some(rpc_peer) => rpc_peer.send_rpc_async("alert",
+            Some(rpc_peer) => rpc_peer.send_rpc_notification("alert",
                 &ObjectBuilder::new()
                     .insert("msg", msg)
                     .unwrap()),

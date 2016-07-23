@@ -100,7 +100,7 @@ impl Tabs {
 
 impl<'a> TabCtx<'a> {
     pub fn update_tab(&self, update: &Value) {
-        self.rpc_peer.send_rpc_async("update",
+        self.rpc_peer.send_rpc_notification("update",
             &ObjectBuilder::new()
                 .insert("tab", self.tab)
                 .insert("update", update)
