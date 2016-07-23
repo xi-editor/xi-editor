@@ -501,7 +501,7 @@ class EditView: NSView, NSTextInputClient {
         timer = nil
         timerEvent = nil
     }
-    
+
     func autoscrollTimer() {
         if let event = timerEvent {
             mouseDragged(event)
