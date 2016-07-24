@@ -24,9 +24,21 @@ class AppWindowController: NSWindowController {
     @IBOutlet weak var scrollView: NSScrollView!
     @IBOutlet weak var shadowView: ShadowView!
 
+    // TODO: do we need to wire this explicitly, or is it ok to get delegate from shared NSApplication?
+    weak var appDelegate: AppDelegate!
+
     var dispatcher: Dispatcher!
     
-    var filename: String?
+    var filename: String? {
+        didSet {
+            if let filename = filename {
+                let url = NSURL(fileURLWithPath: filename)
+                if let lastComponent = url.lastPathComponent {
+                    window?.title = lastComponent
+                }
+            }
+        }
+    }
 
     func visualConstraint(views: [String : NSView], _ format: String) {
         let constraints = NSLayoutConstraint.constraintsWithVisualFormat(format, options: .AlignAllTop, metrics: nil, views: views)
@@ -40,6 +52,7 @@ class AppWindowController: NSWindowController {
         let tabName = Events.NewTab().dispatch(dispatcher)
         editView.coreConnection = dispatcher.coreConnection
         editView.tabName = tabName
+        appDelegate.registerTab(tabName, controller: self)
 
         // set up autolayout constraints
         let views = ["editView": editView, "clipView": scrollView.contentView]
@@ -56,6 +69,7 @@ class AppWindowController: NSWindowController {
             else { return }
 
         Events.DeleteTab(tabId: tabName).dispatch(dispatcher)
+        appDelegate.unregisterTab(tabName)
     }
 
     func boundsDidChangeNotification(notification: NSNotification) {

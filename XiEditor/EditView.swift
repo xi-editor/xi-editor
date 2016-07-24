@@ -211,7 +211,7 @@ class EditView: NSView, NSTextInputClient {
                                                 value: NSUnderlineStyle.StyleSingle.rawValue,
                                                 range: NSMakeRange(u16_start, u16_end - u16_start))
                     }
-                    let fake_italic = false  // TODO: figure this out based on font support
+                    let fake_italic = true  // TODO: figure this out based on font support
                     if fake_italic  && (font_style & font_style_italic) != 0 {
                         attrString.addAttribute(NSObliquenessAttributeName,
                                                 value: 0.2,
@@ -633,6 +633,16 @@ class EditView: NSView, NSTextInputClient {
         } else {
             Swift.print("rpc error")
             return nil
+        }
+    }
+    
+    var isEmpty: Bool {
+        if height == 0 { return true }
+        if height > 1 { return false }
+        if let line = getLine(0) {
+            return line[0] as? String == ""
+        } else {
+            return true
         }
     }
 
