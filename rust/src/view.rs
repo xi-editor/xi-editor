@@ -302,6 +302,12 @@ impl View {
         if self.breaks.is_some() {
             linewrap::rewrap(self.breaks.as_mut().unwrap(), text, iv, new_len, self.cols);
         }
+        // TODO: maybe more precise editing based on actual delta rather than summary.
+        // TODO: perhaps use different semantics for spans that enclose the edited region.
+        // Currently it breaks any such span in half and applies no spans to the inserted
+        // text. That's ok for syntax highlighting but not ideal for rich text.
+        let empty_spans = SpansBuilder::new(new_len).build();
+        self.style_spans.edit(iv, empty_spans);
     }
 
     pub fn reset_breaks(&mut self) {
