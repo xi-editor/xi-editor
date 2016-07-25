@@ -185,7 +185,7 @@ impl Editor {
     }
 
     // render if needed, sending to ui
-    fn render(&mut self, tab_ctx: &TabCtx) {
+    pub fn render(&mut self, tab_ctx: &TabCtx) {
         if self.dirty {
             tab_ctx.update_tab(&self.view.render(&self.text, self.scroll_to));
             self.dirty = false;
@@ -752,7 +752,7 @@ impl Editor {
             sb.add_span(Interval::new_open_open(start, end), style);
         }
         self.view.set_fg_spans(start_offset, end_offset, sb.build());
-        // TODO: set dirty, propagate update
+        self.dirty = true;
     }
 }
 

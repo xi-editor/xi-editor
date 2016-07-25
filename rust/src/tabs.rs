@@ -150,7 +150,9 @@ impl PluginCtx {
     }
 
     pub fn set_line_fg_spans(&self, line_num: usize, spans: &Value) {
-        self.tab_ctx.self_ref.lock().unwrap().plugin_set_line_fg_spans(line_num, spans);
+        let mut editor = self.tab_ctx.self_ref.lock().unwrap();
+        editor.plugin_set_line_fg_spans(line_num, spans);
+        editor.render(&self.tab_ctx);
     }
 
     pub fn alert(&self, msg: &str) {
