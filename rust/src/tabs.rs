@@ -28,20 +28,20 @@ use MainPeer;
 pub struct Tabs {
     tabs: BTreeMap<String, Arc<Mutex<Editor>>>,
     id_counter: usize,
-    kill_ring: Mutex<Rope>,
+    kill_ring: Arc<Mutex<Rope>>,
 }
 
-pub struct TabCtx<'a> {
-    tab: &'a str,
-    kill_ring: &'a Mutex<Rope>,
-    rpc_peer: &'a MainPeer,
+#[derive(Clone)]
+pub struct TabCtx {
+    tab: String,
+    kill_ring: Arc<Mutex<Rope>>,
+    rpc_peer: MainPeer,
     self_ref: Arc<Mutex<Editor>>,
 }
 
 pub struct PluginCtx {
-    main_peer: MainPeer,
-    plugin_peer: Option<PluginPeer>,
-    editor: Arc<Mutex<Editor>>,
+    tab_ctx: TabCtx,
+    rpc_peer: Option<PluginPeer>,
 }
 
 impl Tabs {
@@ -49,7 +49,7 @@ impl Tabs {
         Tabs {
             tabs: BTreeMap::new(),
             id_counter: 0,
-            kill_ring: Mutex::new(Rope::from("")),
+            kill_ring: Arc::new(Mutex::new(Rope::from(""))),
         }
     }
 
@@ -64,7 +64,7 @@ impl Tabs {
                 None
             },
 
-            Edit { tab_name, edit_command } => self.do_edit(tab_name, edit_command, &rpc_peer),
+            Edit { tab_name, edit_command } => self.do_edit(tab_name, edit_command, rpc_peer),
         }
     }
 
@@ -76,12 +76,12 @@ impl Tabs {
         self.delete_tab(tab);
     }
 
-    fn do_edit(&mut self, tab: &str, cmd: EditCommand, rpc_peer: &MainPeer)
+    fn do_edit(&mut self, tab: &str, cmd: EditCommand, rpc_peer: MainPeer)
             -> Option<Value> {
         if let Some(editor) = self.tabs.get(tab) {
             let tab_ctx = TabCtx {
-                tab: tab,
-                kill_ring: &self.kill_ring,
+                tab: tab.to_string(),
+                kill_ring: self.kill_ring.clone(),
                 rpc_peer: rpc_peer,
                 self_ref: editor.clone(),
             };
@@ -105,11 +105,11 @@ impl Tabs {
     }
 }
 
-impl<'a> TabCtx<'a> {
+impl TabCtx {
     pub fn update_tab(&self, update: &Value) {
         self.rpc_peer.send_rpc_notification("update",
             &ObjectBuilder::new()
-                .insert("tab", self.tab)
+                .insert("tab", &self.tab)
                 .insert("update", update)
                 .unwrap());
     }
@@ -123,43 +123,38 @@ impl<'a> TabCtx<'a> {
         *kill_ring = val;
     }
 
-    pub fn get_self_ref(&self) -> Arc<Mutex<Editor>> {
-        self.self_ref.clone()
-    }
-
     pub fn to_plugin_ctx(&self) -> PluginCtx {
         PluginCtx {
-            main_peer: self.rpc_peer.clone(),
-            plugin_peer: None,
-            editor: self.get_self_ref(),
+            tab_ctx: self.clone(),
+            rpc_peer: None,
         }
     }
 }
 
 impl PluginCtx {
     pub fn on_plugin_connect(&mut self, peer: PluginPeer) {
-        let buf_size = self.editor.lock().unwrap().plugin_buf_size();
+        let buf_size = self.tab_ctx.self_ref.lock().unwrap().plugin_buf_size();
         peer.send_rpc_notification("ping_from_editor", &Value::Array(vec![Value::U64(buf_size as u64)]));
-        self.plugin_peer = Some(peer);
+        self.rpc_peer = Some(peer);
     }
 
     // Note: the following are placeholders for prototyping, and are not intended to
     // deal with asynchrony or be efficient.
 
     pub fn n_lines(&self) -> usize {
-        self.editor.lock().unwrap().plugin_n_lines()
+        self.tab_ctx.self_ref.lock().unwrap().plugin_n_lines()
     }
 
     pub fn get_line(&self, line_num: usize) -> String {
-        self.editor.lock().unwrap().plugin_get_line(line_num)
+        self.tab_ctx.self_ref.lock().unwrap().plugin_get_line(line_num)
     }
 
     pub fn set_line_fg_spans(&self, line_num: usize, spans: &Value) {
-        self.editor.lock().unwrap().plugin_set_line_fg_spans(line_num, spans);
+        self.tab_ctx.self_ref.lock().unwrap().plugin_set_line_fg_spans(line_num, spans);
     }
 
     pub fn alert(&self, msg: &str) {
-        self.main_peer.send_rpc_notification("alert",
+        self.tab_ctx.rpc_peer.send_rpc_notification("alert",
             &ObjectBuilder::new()
                 .insert("msg", msg)
                 .unwrap());
