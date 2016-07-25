@@ -71,7 +71,7 @@ impl Tabs {
 
     fn do_edit(&mut self, tab: &str, cmd: EditCommand, rpc_peer: &Arc<MainPeer>)
             -> Option<Value> {
-        if let Some(editor) = self.tabs.get_mut(tab) {
+        if let Some(editor) = self.tabs.get(tab) {
             let tab_ctx = TabCtx {
                 tab: tab,
                 kill_ring: &self.kill_ring,

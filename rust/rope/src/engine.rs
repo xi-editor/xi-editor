@@ -109,15 +109,19 @@ impl Engine {
 
     /// A delta that, when applied to previous head, results in the current head. Panics
     /// if there is not at least one edit.
-    pub fn delta_head(&self) -> Delta<RopeInfo> {
-        let mut prev_from_union = Cow::Borrowed(&self.revs[self.revs.len() - 2].from_union);
-        let rev = &self.revs.last().unwrap();
-        if let Edit { ref inserts, .. } = rev.edit {
-            if !inserts.is_trivial() {
-                prev_from_union = Cow::Owned(prev_from_union.transform_intersect(inserts));
+    pub fn delta_rev_head(&self, base_rev: usize) -> Delta<RopeInfo> {
+        let ix = self.find_rev(base_rev).expect("base revision not found");
+        let rev = &self.revs[ix];
+        let mut prev_from_union = Cow::Borrowed(&rev.from_union);
+        for r in &self.revs[ix + 1..] {
+            if let Edit { ref inserts, .. } = r.edit {
+                if !inserts.is_trivial() {
+                    prev_from_union = Cow::Owned(prev_from_union.transform_intersect(inserts));
+                }
             }
         }
-        Delta::synthesize(&self.union_str, &prev_from_union, &rev.from_union)
+        let head_rev = &self.revs.last().unwrap();
+        Delta::synthesize(&self.union_str, &prev_from_union, &head_rev.from_union)
     }
 
     fn mk_new_rev(&self, new_priority: usize, undo_group: usize,
@@ -128,7 +132,7 @@ impl Engine {
         let mut union_ins_delta = ins_delta.transform_expand(&rev.from_union, rev.union_str_len, true);
         let mut new_deletes = deletes.transform_expand(&rev.from_union);
         for r in &self.revs[ix + 1..] {
-            if let Edit { priority, ref inserts, .. } = rev.edit {
+            if let Edit { priority, ref inserts, .. } = r.edit {
                 if !inserts.is_trivial() {
                     let after = new_priority >= priority;  // should never be ==
                     union_ins_delta = union_ins_delta.transform_expand(&inserts, r.union_str_len, after);

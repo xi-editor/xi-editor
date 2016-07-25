@@ -280,10 +280,6 @@ impl View {
         self.cols = cols;
     }
 
-    pub fn before_edit(&mut self, _text: &Rope, _delta: &Delta<RopeInfo>) {
-        // not sure we even need this
-    }
-
     pub fn after_edit(&mut self, text: &Rope, delta: &Delta<RopeInfo>) {
         let (iv, new_len) = delta.summary();
         // Note: this logic almost replaces setting the cursor in Editor::commit_delta,
