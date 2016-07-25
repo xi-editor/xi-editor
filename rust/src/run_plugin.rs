@@ -18,16 +18,15 @@ use std::io::BufReader;
 use std::env;
 use std::path::PathBuf;
 use std::process::{Command,Stdio,ChildStdin};
-use std::sync::{Arc, Mutex};
 use std::thread;
 use serde_json::Value;
 
 use xi_rpc::{RpcLoop,RpcPeer};
-use editor::Editor;
+use tabs::PluginCtx;
 
 pub type PluginPeer = RpcPeer<ChildStdin>;
 
-pub fn start_plugin(editor: Arc<Mutex<Editor>>) {
+pub fn start_plugin(mut plugin_ctx: PluginCtx) {
     thread::spawn(move || {
         let mut pathbuf: PathBuf = match env::current_exe() {
             Ok(pathbuf) => pathbuf,
@@ -49,35 +48,34 @@ pub fn start_plugin(editor: Arc<Mutex<Editor>>) {
         let mut looper = RpcLoop::new(child_stdin);
         let peer = looper.get_peer();
         peer.send_rpc_notification("ping", &Value::Array(Vec::new()));
-        editor.lock().unwrap().on_plugin_connect(&peer);
+        plugin_ctx.on_plugin_connect(peer);
         looper.mainloop(|| BufReader::new(child_stdout),
-            |method, params| rpc_handler(&editor, method, params));
+            |method, params| rpc_handler(&plugin_ctx, method, params));
         let status = child.wait();
         print_err!("child exit = {:?}", status);
     });
 }
 
-fn rpc_handler(editor: &Arc<Mutex<Editor>>, method: &str, params: &Value) -> Option<Value> {
-    let mut editor = editor.lock().unwrap();
+fn rpc_handler(plugin_ctx: &PluginCtx, method: &str, params: &Value) -> Option<Value> {
     match method {
         // TODO: parse json into enum first, just like front-end RPC
         // (this will also improve error handling, no panic on malformed request from plugin)
-        "n_lines" => Some(Value::U64(editor.plugin_n_lines() as u64)),
+        "n_lines" => Some(Value::U64(plugin_ctx.n_lines() as u64)),
         "get_line" => {
             let line = params.as_object().and_then(|dict| dict.get("line").and_then(Value::as_u64)).unwrap();
-            let result = editor.plugin_get_line(line as usize);
+            let result = plugin_ctx.get_line(line as usize);
             Some(Value::String(result))
         }
         "set_line_fg_spans" => {
             let dict = params.as_object().unwrap();
             let line_num = dict.get("line").and_then(Value::as_u64).unwrap() as usize;
             let spans = dict.get("spans").unwrap();
-            editor.plugin_set_line_fg_spans(line_num, spans);
+            plugin_ctx.set_line_fg_spans(line_num, spans);
             None
         }
         "alert" => {
             let msg = params.as_object().and_then(|dict| dict.get("msg").and_then(Value::as_string)).unwrap();
-            editor.plugin_alert(msg);
+            plugin_ctx.alert(msg);
             None
         }
         _ => {

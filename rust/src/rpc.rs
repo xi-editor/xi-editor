@@ -15,7 +15,6 @@
 //! RPC handling for communications with front-end.
 
 use std::collections::BTreeMap;
-use std::io::Write;
 use std::error;
 use std::fmt;
 use serde_json::Value;

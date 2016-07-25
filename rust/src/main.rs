@@ -17,8 +17,6 @@ extern crate serde_json;
 extern crate time;
 
 use std::io;
-use std::io::Write;
-use std::sync::Arc;
 
 use serde_json::Value;
 
@@ -43,9 +41,9 @@ use xi_rpc::{RpcLoop, RpcPeer};
 
 pub type MainPeer = RpcPeer<io::Stdout>;
 
-fn handle_req(request: Request, tabs: &mut Tabs, rpc_peer: Arc<MainPeer>) -> Option<Value> {
+fn handle_req(request: Request, tabs: &mut Tabs, rpc_peer: MainPeer) -> Option<Value> {
     match request {
-        Request::TabCommand { tab_command } => tabs.do_rpc(tab_command, &rpc_peer)
+        Request::TabCommand { tab_command } => tabs.do_rpc(tab_command, rpc_peer)
     }
 }
 
@@ -54,7 +52,7 @@ fn main() {
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut rpc_looper = RpcLoop::new(stdout);
-    let peer = Arc::new(rpc_looper.get_peer());
+    let peer = rpc_looper.get_peer();
 
     rpc_looper.mainloop(|| stdin.lock(),
         |method, params| {
