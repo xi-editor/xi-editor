@@ -16,9 +16,7 @@ use std::cmp::max;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::collections::BTreeSet;
-use std::sync::Weak;
 use serde_json::Value;
-use serde_json::builder::ObjectBuilder;
 
 use xi_rope::rope::{LinesMetric, Rope};
 use xi_rope::interval::Interval;
@@ -30,8 +28,7 @@ use view::{Style, View};
 
 use tabs::TabCtx;
 use rpc::EditCommand;
-use run_plugin::{start_plugin, PluginPeer};
-use MainPeer;
+use run_plugin::start_plugin;
 
 const FLAG_SELECT: u64 = 2;
 
@@ -40,7 +37,6 @@ const MAX_UNDOS: usize = 20;
 const TAB_SIZE: usize = 4;
 
 pub struct Editor {
-    rpc_peer: Weak<MainPeer>,
     text: Rope,
     view: View,
 
@@ -72,13 +68,11 @@ enum EditType {
     Delete,
 }
 
-
 impl Editor {
-    pub fn new(rpc_peer: Weak<MainPeer>) -> Editor {
+    pub fn new() -> Editor {
         let engine = Engine::new(Rope::from(""));
         let last_rev_id = engine.get_head_rev_id();
         Editor {
-            rpc_peer: rpc_peer,
             text: Rope::from(""),
             view: View::new(),
             dirty: false,
@@ -191,7 +185,7 @@ impl Editor {
     }
 
     // render if needed, sending to ui
-    fn render(&mut self, tab_ctx: &TabCtx) {
+    pub fn render(&mut self, tab_ctx: &TabCtx) {
         if self.dirty {
             tab_ctx.update_tab(&self.view.render(&self.text, self.scroll_to));
             self.dirty = false;
@@ -268,7 +262,7 @@ impl Editor {
                 (self.view.sel_start + TAB_SIZE, self.view.sel_end + added)
             } else {
                 (self.view.sel_start + added, self.view.sel_end + TAB_SIZE)
-            };            
+            };
             for line in first_line..last_line {
                 let offset = self.view.line_col_to_offset(&self.text, line, 0);
                 let iv = Interval::new_closed_open(offset, offset);
@@ -569,7 +563,8 @@ impl Editor {
 
     fn debug_run_plugin(&mut self, tab_ctx: &TabCtx) {
         print_err!("running plugin");
-        start_plugin(tab_ctx.get_self_ref());
+        let plugin_ctx = tab_ctx.to_plugin_ctx();
+        start_plugin(plugin_ctx);
     }
 
     fn do_cut(&mut self) -> Value {
@@ -726,15 +721,12 @@ impl Editor {
         result
     }
 
-    // Support for plugins
-
-    pub fn on_plugin_connect(&mut self, peer: &PluginPeer) {
-        let buf_size = self.text.len();
-        peer.send_rpc_notification("ping_from_editor", &Value::Array(vec![Value::U64(buf_size as u64)]));
-    }
-
     // Note: the following are placeholders for prototyping, and are not intended to
     // deal with asynchrony or be efficient.
+
+    pub fn plugin_buf_size(&self) -> usize {
+        self.text.len()
+    }
 
     pub fn plugin_n_lines(&self) -> usize {
         self.text.measure::<LinesMetric>() + 1
@@ -760,17 +752,7 @@ impl Editor {
             sb.add_span(Interval::new_open_open(start, end), style);
         }
         self.view.set_fg_spans(start_offset, end_offset, sb.build());
-        // TODO: set dirty, propagate update
-    }
-
-    pub fn plugin_alert(&self, msg: &str) {
-        match self.rpc_peer.upgrade() {
-            Some(rpc_peer) => rpc_peer.send_rpc_notification("alert",
-                &ObjectBuilder::new()
-                    .insert("msg", msg)
-                    .unwrap()),
-            None => print_err!("rpc_peer reference is gone")
-        }
+        self.dirty = true;
     }
 }
 

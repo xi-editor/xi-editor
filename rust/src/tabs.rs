@@ -22,19 +22,26 @@ use serde_json::builder::ObjectBuilder;
 use xi_rope::rope::Rope;
 use editor::Editor;
 use rpc::{TabCommand, EditCommand};
+use run_plugin::PluginPeer;
 use MainPeer;
 
 pub struct Tabs {
     tabs: BTreeMap<String, Arc<Mutex<Editor>>>,
     id_counter: usize,
-    kill_ring: Mutex<Rope>,
+    kill_ring: Arc<Mutex<Rope>>,
 }
 
-pub struct TabCtx<'a> {
-    tab: &'a str,
-    kill_ring: &'a Mutex<Rope>,
-    rpc_peer: &'a Arc<MainPeer>,
+#[derive(Clone)]
+pub struct TabCtx {
+    tab: String,
+    kill_ring: Arc<Mutex<Rope>>,
+    rpc_peer: MainPeer,
     self_ref: Arc<Mutex<Editor>>,
+}
+
+pub struct PluginCtx {
+    tab_ctx: TabCtx,
+    rpc_peer: Option<PluginPeer>,
 }
 
 impl Tabs {
@@ -42,15 +49,15 @@ impl Tabs {
         Tabs {
             tabs: BTreeMap::new(),
             id_counter: 0,
-            kill_ring: Mutex::new(Rope::from("")),
+            kill_ring: Arc::new(Mutex::new(Rope::from(""))),
         }
     }
 
-    pub fn do_rpc(&mut self, cmd: TabCommand, rpc_peer: &Arc<MainPeer>) -> Option<Value> {
+    pub fn do_rpc(&mut self, cmd: TabCommand, rpc_peer: MainPeer) -> Option<Value> {
         use rpc::TabCommand::*;
 
         match cmd {
-            NewTab => Some(Value::String(self.do_new_tab(rpc_peer))),
+            NewTab => Some(Value::String(self.do_new_tab())),
 
             DeleteTab { tab_name } => {
                 self.do_delete_tab(tab_name);
@@ -61,20 +68,20 @@ impl Tabs {
         }
     }
 
-    fn do_new_tab(&mut self, rpc_peer: &Arc<MainPeer>) -> String {
-        self.new_tab(rpc_peer)
+    fn do_new_tab(&mut self) -> String {
+        self.new_tab()
     }
 
     fn do_delete_tab(&mut self, tab: &str) {
         self.delete_tab(tab);
     }
 
-    fn do_edit(&mut self, tab: &str, cmd: EditCommand, rpc_peer: &Arc<MainPeer>)
+    fn do_edit(&mut self, tab: &str, cmd: EditCommand, rpc_peer: MainPeer)
             -> Option<Value> {
         if let Some(editor) = self.tabs.get(tab) {
             let tab_ctx = TabCtx {
-                tab: tab,
-                kill_ring: &self.kill_ring,
+                tab: tab.to_string(),
+                kill_ring: self.kill_ring.clone(),
                 rpc_peer: rpc_peer,
                 self_ref: editor.clone(),
             };
@@ -85,10 +92,10 @@ impl Tabs {
         }
     }
 
-    fn new_tab(&mut self, rpc_peer: &Arc<MainPeer>) -> String {
+    fn new_tab(&mut self) -> String {
         let tabname = self.id_counter.to_string();
         self.id_counter += 1;
-        let editor = Editor::new(Arc::downgrade(rpc_peer));
+        let editor = Editor::new();
         self.tabs.insert(tabname.clone(), Arc::new(Mutex::new(editor)));
         tabname
     }
@@ -98,11 +105,11 @@ impl Tabs {
     }
 }
 
-impl<'a> TabCtx<'a> {
+impl TabCtx {
     pub fn update_tab(&self, update: &Value) {
         self.rpc_peer.send_rpc_notification("update",
             &ObjectBuilder::new()
-                .insert("tab", self.tab)
+                .insert("tab", &self.tab)
                 .insert("update", update)
                 .unwrap());
     }
@@ -116,7 +123,42 @@ impl<'a> TabCtx<'a> {
         *kill_ring = val;
     }
 
-    pub fn get_self_ref(&self) -> Arc<Mutex<Editor>> {
-        self.self_ref.clone()
+    pub fn to_plugin_ctx(&self) -> PluginCtx {
+        PluginCtx {
+            tab_ctx: self.clone(),
+            rpc_peer: None,
+        }
+    }
+}
+
+impl PluginCtx {
+    pub fn on_plugin_connect(&mut self, peer: PluginPeer) {
+        let buf_size = self.tab_ctx.self_ref.lock().unwrap().plugin_buf_size();
+        peer.send_rpc_notification("ping_from_editor", &Value::Array(vec![Value::U64(buf_size as u64)]));
+        self.rpc_peer = Some(peer);
+    }
+
+    // Note: the following are placeholders for prototyping, and are not intended to
+    // deal with asynchrony or be efficient.
+
+    pub fn n_lines(&self) -> usize {
+        self.tab_ctx.self_ref.lock().unwrap().plugin_n_lines()
+    }
+
+    pub fn get_line(&self, line_num: usize) -> String {
+        self.tab_ctx.self_ref.lock().unwrap().plugin_get_line(line_num)
+    }
+
+    pub fn set_line_fg_spans(&self, line_num: usize, spans: &Value) {
+        let mut editor = self.tab_ctx.self_ref.lock().unwrap();
+        editor.plugin_set_line_fg_spans(line_num, spans);
+        editor.render(&self.tab_ctx);
+    }
+
+    pub fn alert(&self, msg: &str) {
+        self.tab_ctx.rpc_peer.send_rpc_notification("alert",
+            &ObjectBuilder::new()
+                .insert("msg", msg)
+                .unwrap());
     }
 }
