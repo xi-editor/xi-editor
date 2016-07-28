@@ -111,7 +111,7 @@ impl TabCtx {
             &ObjectBuilder::new()
                 .insert("tab", &self.tab)
                 .insert("update", update)
-                .unwrap());
+                .build());
     }
 
     pub fn get_kill_ring(&self) -> Rope {
@@ -159,6 +159,6 @@ impl PluginCtx {
         self.tab_ctx.rpc_peer.send_rpc_notification("alert",
             &ObjectBuilder::new()
                 .insert("msg", msg)
-                .unwrap());
+                .build());
     }
 }

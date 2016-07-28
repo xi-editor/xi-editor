@@ -42,7 +42,7 @@ macro_rules! print_err {
 pub enum Error {
     RpcError(xi_rpc::Error),
     WrongReturnType,
-} 
+}
 
 pub struct SpansBuilder(Vec<Value>);
 pub type Spans = Value;
@@ -58,7 +58,7 @@ impl SpansBuilder {
             .insert("end", end as u64)
             .insert("fg", fg as u64)
             .insert("font", font_style as u64)
-            .unwrap());
+            .build());
     }
 
     pub fn build(self) -> Spans {
@@ -78,7 +78,7 @@ impl PluginPeer {
     }
 
     pub fn get_line(&self, line_num: usize) -> Result<String, Error> {
-        let params = ObjectBuilder::new().insert("line", Value::U64(line_num as u64)).unwrap();
+        let params = ObjectBuilder::new().insert("line", Value::U64(line_num as u64)).build();
         let result = self.send_rpc_request("get_line", &params);
         match result {
             Ok(Value::String(s)) => Ok(s),
@@ -91,7 +91,7 @@ impl PluginPeer {
         let params = ObjectBuilder::new()
             .insert("line", Value::U64(line_num as u64))
             .insert("spans", spans)
-            .unwrap();
+            .build();
         self.send_rpc_notification("set_line_fg_spans", &params);
     }
 

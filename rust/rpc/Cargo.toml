@@ -7,6 +7,6 @@ repository = "https://github.com/google/xi-editor"
 description = "Utilities for building peers (both client and server side) for xi's JSON RPC variant."
 
 [dependencies]
-serde = "0.7.14"
-serde_json = "0.7.4"
+serde = "0.8"
+serde_json = "0.8"
 crossbeam = "0.2.9"

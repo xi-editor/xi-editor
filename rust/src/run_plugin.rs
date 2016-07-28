@@ -74,7 +74,7 @@ fn rpc_handler(plugin_ctx: &PluginCtx, method: &str, params: &Value) -> Option<V
             None
         }
         "alert" => {
-            let msg = params.as_object().and_then(|dict| dict.get("msg").and_then(Value::as_string)).unwrap();
+            let msg = params.as_object().and_then(|dict| dict.get("msg").and_then(Value::as_str)).unwrap();
             plugin_ctx.alert(msg);
             None
         }

@@ -287,7 +287,7 @@ fn dict_get_u64(dict: &BTreeMap<String, Value>, key: &str) -> Option<u64> {
 }
 
 fn dict_get_string<'a>(dict: &'a BTreeMap<String, Value>, key: &str) -> Option<&'a str> {
-    dict.get(key).and_then(Value::as_string)
+    dict.get(key).and_then(Value::as_str)
 }
 
 fn arr_get_u64(arr: &[Value], idx: usize) -> Option<u64> {

@@ -5,8 +5,8 @@ license = "Apache-2.0"
 authors = ["Raph Levien <raph@google.com>"]
 
 [dependencies]
-serde = "*"
-serde_json = "*"
+serde = "0.8"
+serde_json = "0.8"
 time = "0.1"
 
 [dependencies.xi-rope]
