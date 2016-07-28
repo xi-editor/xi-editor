@@ -194,7 +194,7 @@ impl<W:Write> RpcPeer<W> {
             if let Err(e) = self.send(&ObjectBuilder::new()
                                  .insert("id", id)
                                  .insert("result", result)
-                                 .unwrap()) {
+                                 .build()) {
                 print_err!("error {} sending response to RPC {:?}", e, id);
             }
         } else {
@@ -207,7 +207,7 @@ impl<W:Write> RpcPeer<W> {
         if let Err(e) = self.send(&ObjectBuilder::new()
             .insert("method", method)
             .insert("params", params)
-            .unwrap()) {
+            .build()) {
             print_err!("send error on send_rpc_notification method {}: {}", method, e);
         }
     }
@@ -224,7 +224,7 @@ impl<W:Write> RpcPeer<W> {
             .insert("id", Value::U64(id as u64))
             .insert("method", method)
             .insert("params", params)
-            .unwrap()) {
+            .build()) {
             print_err!("send error on send_rpc_request method {}: {}", method, e);
             panic!("TODO: better error handling");
         }
@@ -288,5 +288,5 @@ impl<W:Write> Clone for RpcPeer<W> {
 }
 
 fn dict_get_string<'a>(dict: &'a BTreeMap<String, Value>, key: &str) -> Option<&'a str> {
-    dict.get(key).and_then(Value::as_string)
+    dict.get(key).and_then(Value::as_str)
 }

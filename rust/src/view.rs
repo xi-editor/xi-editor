@@ -157,13 +157,13 @@ impl View {
                     builder.push("cursor")
                         .push(cursor_col)
                 );
-            }            builder = builder.push(line_builder.unwrap());
+            }            builder = builder.push(line_builder.build());
             line_num += 1;
             if is_last_line || line_num == last_line {
                 break;
             }
         }
-        builder.unwrap()
+        builder.build()
     }
 
     pub fn render_spans(&self, mut builder: ArrayBuilder, start: usize, end: usize) -> ArrayBuilder {
@@ -193,7 +193,7 @@ impl View {
             builder = builder.insert_array("scrollto", |builder|
                 builder.push(line).push(col));
         }
-        builder.unwrap()
+        builder.build()
     }
 
     // How should we count "column"? Valid choices include:
