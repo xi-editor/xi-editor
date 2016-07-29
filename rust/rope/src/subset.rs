@@ -111,16 +111,14 @@ impl Subset {
                     j += 1;
                     del
                 }
+            } else if j == other.0.len() || self.0[i].0 < other.0[j].0 {
+                let del = self.0[i];
+                i += 1;
+                del
             } else {
-                if j == other.0.len() || self.0[i].0 < other.0[j].0 {
-                    let del = self.0[i];
-                    i += 1;
-                    del
-                } else {
-                    let del = other.0[j];
-                    j += 1;
-                    del
-                }
+                let del = other.0[j];
+                j += 1;
+                del
             };
             loop {
                 if i < self.0.len() && self.0[i].0 <= next_end {
