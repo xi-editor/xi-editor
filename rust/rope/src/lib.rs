@@ -652,7 +652,7 @@ impl Node {
             let mut success = false;
             match node.val {
                 NodeVal::Internal(ref mut v) => {
-                    if let Some((i, offset)) = Node::try_find_child(&v, start, end) {
+                    if let Some((i, offset)) = Node::try_find_child(v, start, end) {
                         let old_nl_count = v[i].newline_count();
                         success = Node::try_replace_str(&mut v[i], start - offset, end - offset, new);
                         if success {
@@ -688,7 +688,7 @@ impl Node {
 
     fn push_to_string(&self, dst: &mut String) {
         match self.0.val {
-            NodeVal::Leaf(ref s) => dst.push_str(&s),
+            NodeVal::Leaf(ref s) => dst.push_str(s),
             NodeVal::Internal(ref v) => {
                 for child in v {
                     child.push_to_string(dst);

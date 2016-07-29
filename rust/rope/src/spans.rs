@@ -57,7 +57,7 @@ impl<T: Clone + Default> Leaf for SpansLeaf<T> {
 
     fn push_maybe_split(&mut self, other: &Self, iv: Interval) -> Option<Self> {
         let iv_start = iv.start();
-        for span in other.spans.iter() {
+        for span in &other.spans {
             let span_iv = span.iv.intersect(iv).translate_neg(iv_start).translate(self.len);
             if !span_iv.is_empty() {
                 self.spans.push(Span {
@@ -74,7 +74,7 @@ impl<T: Clone + Default> Leaf for SpansLeaf<T> {
             let splitpoint = self.spans.len() / 2;  // number of spans
             let splitpoint_units = self.spans[splitpoint].iv.start();
             let mut new = self.spans.split_off(splitpoint);
-            for span in new.iter_mut() {
+            for span in &mut new {
                 span.iv = span.iv.translate_neg(splitpoint_units);
             }
             let new_len = self.len - splitpoint_units;
@@ -97,7 +97,7 @@ impl<T: Clone + Default> NodeInfo for SpansInfo<T> {
 
     fn compute_info(l: &SpansLeaf<T>) -> Self {
         let mut iv = Interval::new_closed_open(0, 0);  // should be Interval::default?
-        for span in l.spans.iter() {
+        for span in &l.spans {
             iv = iv.union(span.iv);
         }
         SpansInfo {

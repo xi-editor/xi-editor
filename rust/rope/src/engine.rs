@@ -70,7 +70,7 @@ impl Engine {
     fn get_current_undo(&self) -> Option<&BTreeSet<usize>> {
         for rev in self.revs.iter().rev() {
             if let Undo { ref groups } = rev.edit {
-                return Some(&groups);
+                return Some(groups);
             }
         }
         None
@@ -135,8 +135,8 @@ impl Engine {
             if let Edit { priority, ref inserts, .. } = r.edit {
                 if !inserts.is_trivial() {
                     let after = new_priority >= priority;  // should never be ==
-                    union_ins_delta = union_ins_delta.transform_expand(&inserts, r.union_str_len, after);
-                    new_deletes = new_deletes.transform_expand(&inserts);
+                    union_ins_delta = union_ins_delta.transform_expand(inserts, r.union_str_len, after);
+                    new_deletes = new_deletes.transform_expand(inserts);
                 }
             }
         }
@@ -249,10 +249,8 @@ impl Engine {
                                 gc_dels = gc_dels.intersect(deletes);
                             }
                         }
-                    } else {
-                        if !inserts.is_trivial() {
-                            gc_dels = gc_dels.transform_expand(inserts);
-                        }
+                    } else if !inserts.is_trivial() {
+                        gc_dels = gc_dels.transform_expand(inserts);
                     }
                 }
             }
