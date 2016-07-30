@@ -107,6 +107,7 @@ impl PluginPeer {
 pub enum PluginRequest {
     Ping,
     PingFromEditor,
+    Update,
 }
 
 enum InternalError {
@@ -125,6 +126,7 @@ fn parse_plugin_request(method: &str, _params: &Value) -> Result<PluginRequest, 
     match method {
         "ping" => Ok(PluginRequest::Ping),
         "ping_from_editor" => Ok(PluginRequest::PingFromEditor),
+        "update" => Ok(PluginRequest::Update),
         _ => Err(InternalError::UnknownMethod(method.to_string()))
     }
 }

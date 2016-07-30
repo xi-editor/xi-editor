@@ -113,6 +113,12 @@ impl PluginRef {
         let params = Value::Array(vec![Value::U64(buf_size as u64)]);
         plugin.peer.send_rpc_notification("ping_from_editor", &params);
     }
+
+    pub fn update(&self) {
+        let plugin = self.0.lock().unwrap();
+        let params = Value::Array(vec![]);
+        plugin.peer.send_rpc_notification("update", &params);
+    }
 }
 
 impl Clone for PluginRef {

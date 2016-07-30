@@ -56,7 +56,8 @@ pub struct Editor {
     // TODO: use for all cursor motion?
     new_cursor: Option<(usize, usize)>,
 
-    dirty: bool,
+    view_dirty: bool,
+    text_dirty: bool,
     scroll_to: Option<usize>,
     col: usize, // maybe this should live in view, it's similar to selection
 
@@ -79,7 +80,8 @@ impl Editor {
         Editor {
             text: Rope::from(""),
             view: View::new(),
-            dirty: false,
+            text_dirty: false,
+            view_dirty: false,
             engine: engine,
             last_rev_id: last_rev_id,
             undo_group_id: 0,
@@ -113,7 +115,7 @@ impl Editor {
             self.scroll_to = Some(offset);
         }
         self.view.scroll_to_cursor(&self.text);
-        self.dirty = true;
+        self.view_dirty = true;
     }
 
     // May change this around so this fn adds the delta to the engine immediately,
@@ -171,7 +173,7 @@ impl Editor {
         let delta = self.engine.delta_rev_head(self.last_rev_id);
         self.view.after_edit(&self.text, &delta);
         self.last_rev_id = self.engine.get_head_rev_id();
-        self.dirty = true;
+        self.text_dirty = true;
     }
 
     fn gc_undos(&mut self) {
@@ -185,18 +187,24 @@ impl Editor {
     fn reset_contents(&mut self, new_contents: Rope) {
         self.engine = Engine::new(new_contents);
         self.text = self.engine.get_head();
-        self.dirty = true;
+        self.text_dirty = true;
         self.view.reset_breaks();
         self.set_cursor(0, true);
     }
 
     // render if needed, sending to ui
     pub fn render(&mut self) {
-        if self.dirty {
+        if self.text_dirty || self.view_dirty {
             let tab_ctx = self.tab_ref.lock().unwrap();
             tab_ctx.update_tab(&self.view.render(&self.text, self.scroll_to));
-            self.dirty = false;
             self.scroll_to = None;
+            if self.text_dirty {
+                for plugin in &self.plugins {
+                    plugin.update();
+                }
+            }
+            self.text_dirty = false;
+            self.view_dirty = false;
         }
     }
 
@@ -559,13 +567,13 @@ impl Editor {
 
     fn debug_rewrap(&mut self) {
         self.view.rewrap(&self.text, 72);
-        self.dirty = true;
+        self.view_dirty = true;
     }
 
     fn debug_test_fg_spans(&mut self) {
         print_err!("setting fg spans");
         self.view.set_test_fg_spans();
-        self.dirty = true;
+        self.view_dirty = true;
     }
 
     fn debug_run_plugin(&mut self) {
@@ -763,7 +771,7 @@ impl Editor {
             sb.add_span(Interval::new_open_open(start, end), style);
         }
         self.view.set_fg_spans(start_offset, end_offset, sb.build());
-        self.dirty = true;
+        self.view_dirty = true;
         self.render();
     }
 
