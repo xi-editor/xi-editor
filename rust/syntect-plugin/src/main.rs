@@ -118,6 +118,11 @@ fn main() {
                 do_highlighting(peer, &state);
                 None
             }
+            PluginRequest::Update => {
+                print_err!("got update notification");
+                do_highlighting(peer, &state);
+                None
+            }
         }
     });
 }

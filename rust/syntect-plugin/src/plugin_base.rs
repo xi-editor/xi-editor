@@ -15,7 +15,6 @@
 //! A base for xi plugins. Will be split out into its own crate once it's a bit more stable.
 
 use std::io;
-use std::io::Write;
 use std::fmt;
 
 use serde_json::Value;
@@ -107,6 +106,7 @@ impl PluginPeer {
 pub enum PluginRequest {
     Ping,
     PingFromEditor,
+    Update,
 }
 
 enum InternalError {
@@ -125,6 +125,7 @@ fn parse_plugin_request(method: &str, _params: &Value) -> Result<PluginRequest, 
     match method {
         "ping" => Ok(PluginRequest::Ping),
         "ping_from_editor" => Ok(PluginRequest::PingFromEditor),
+        "update" => Ok(PluginRequest::Update),
         _ => Err(InternalError::UnknownMethod(method.to_string()))
     }
 }
