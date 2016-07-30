@@ -15,7 +15,7 @@
 //! A container for all the tabs being edited. Also functions as main dispatch for RPC.
 
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex};
 use serde_json::Value;
 use serde_json::builder::ObjectBuilder;
 
@@ -35,7 +35,6 @@ pub struct TabCtx {
     tab: String,
     kill_ring: Arc<Mutex<Rope>>,
     rpc_peer: MainPeer,
-    editor_ref: Weak<Mutex<Editor>>,
 }
 
 impl Tabs {
@@ -87,13 +86,9 @@ impl Tabs {
             tab: tabname.clone(),
             kill_ring: self.kill_ring.clone(),
             rpc_peer: rpc_peer,
-            editor_ref: Weak::new(),
         };
-        let tab_ref = Arc::new(Mutex::new(tab_ctx));
-        let editor = Editor::new(tab_ref.clone());
-        let editor_ref = Arc::new(Mutex::new(editor));
-        tab_ref.lock().unwrap().editor_ref = Arc::downgrade(&editor_ref);
-        self.tabs.insert(tabname.clone(), editor_ref);
+        let editor = Editor::new(tab_ctx);
+        self.tabs.insert(tabname.clone(), editor);
         tabname
     }
 
@@ -118,10 +113,6 @@ impl TabCtx {
     pub fn set_kill_ring(&self, val: Rope) {
         let mut kill_ring = self.kill_ring.lock().unwrap();
         *kill_ring = val;
-    }
-
-    pub fn get_editor_ref(&self) -> Arc<Mutex<Editor>> {
-        self.editor_ref.upgrade().unwrap()
     }
 
     pub fn alert(&self, msg: &str) {

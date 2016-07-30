@@ -15,7 +15,6 @@
 //! A base for xi plugins. Will be split out into its own crate once it's a bit more stable.
 
 use std::io;
-use std::io::Write;
 use std::fmt;
 
 use serde_json::Value;

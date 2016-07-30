@@ -16,7 +16,7 @@ use std::cmp::max;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::collections::BTreeSet;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use serde_json::Value;
 
 use xi_rope::rope::{LinesMetric, Rope};
@@ -61,7 +61,8 @@ pub struct Editor {
     scroll_to: Option<usize>,
     col: usize, // maybe this should live in view, it's similar to selection
 
-    tab_ref: Arc<Mutex<TabCtx>>,
+    tab_ctx: TabCtx,
+    self_ref: Weak<Mutex<Editor>>,
     plugins: Vec<PluginRef>,
 }
 
@@ -74,10 +75,10 @@ enum EditType {
 }
 
 impl Editor {
-    pub fn new(tab_ref: Arc<Mutex<TabCtx>>) -> Editor {
+    pub fn new(tab_ctx: TabCtx) -> Arc<Mutex<Editor>> {
         let engine = Engine::new(Rope::from(""));
         let last_rev_id = engine.get_head_rev_id();
-        Editor {
+        let editor = Editor {
             text: Rope::from(""),
             view: View::new(),
             text_dirty: false,
@@ -94,9 +95,13 @@ impl Editor {
             new_cursor: None,
             scroll_to: Some(0),
             col: 0,
-            tab_ref: tab_ref,
+            self_ref: Weak::new(),
+            tab_ctx: tab_ctx,
             plugins: Vec::new(),
-        }
+        };
+        let editor_ref = Arc::new(Mutex::new(editor));
+        editor_ref.lock().unwrap().self_ref = Arc::downgrade(&editor_ref);
+        editor_ref
     }
 
     fn insert(&mut self, s: &str) {
@@ -195,8 +200,7 @@ impl Editor {
     // render if needed, sending to ui
     pub fn render(&mut self) {
         if self.text_dirty || self.view_dirty {
-            let tab_ctx = self.tab_ref.lock().unwrap();
-            tab_ctx.update_tab(&self.view.render(&self.text, self.scroll_to));
+            self.tab_ctx.update_tab(&self.view.render(&self.text, self.scroll_to));
             self.scroll_to = None;
             if self.text_dirty {
                 for plugin in &self.plugins {
@@ -578,8 +582,7 @@ impl Editor {
 
     fn debug_run_plugin(&mut self) {
         print_err!("running plugin");
-        let tab_ctx = self.tab_ref.lock().unwrap();
-        start_plugin(tab_ctx.get_editor_ref());
+        start_plugin(self.self_ref.upgrade().unwrap());
     }
 
     pub fn on_plugin_connect(&mut self, plugin_ref: PluginRef) {
@@ -661,12 +664,11 @@ impl Editor {
             }
         }
 
-        let tab_ctx = self.tab_ref.lock().unwrap();
-        tab_ctx.set_kill_ring(Rope::from(val));
+        self.tab_ctx.set_kill_ring(Rope::from(val));
     }
 
     fn yank(&mut self) {
-        let kill_ring_string = self.tab_ref.lock().unwrap().get_kill_ring();
+        let kill_ring_string = self.tab_ctx.get_kill_ring();
         self.insert(&*String::from(kill_ring_string));
     }
 
@@ -778,8 +780,7 @@ impl Editor {
     // Note: currently we route up through Editor to TabCtx, but perhaps the plugin
     // should have its own reference.
     pub fn plugin_alert(&self, msg: &str) {
-        let tab_ctx = self.tab_ref.lock().unwrap();
-        tab_ctx.alert(msg);
+        self.tab_ctx.alert(msg);
     }
 }
 
