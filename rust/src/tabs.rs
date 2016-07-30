@@ -72,7 +72,7 @@ impl Tabs {
     fn do_edit(&mut self, tab: &str, cmd: EditCommand)
             -> Option<Value> {
         if let Some(editor) = self.tabs.get(tab) {
-            editor.lock().unwrap().do_rpc(cmd)
+            Editor::do_rpc(editor, cmd)
         } else {
             print_err!("tab not found: {}", tab);
             None

@@ -16,7 +16,7 @@ use std::cmp::max;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::collections::BTreeSet;
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex};
 use serde_json::Value;
 
 use xi_rope::rope::{LinesMetric, Rope};
@@ -62,7 +62,6 @@ pub struct Editor {
     col: usize, // maybe this should live in view, it's similar to selection
 
     tab_ctx: TabCtx,
-    self_ref: Weak<Mutex<Editor>>,
     plugins: Vec<PluginRef>,
 }
 
@@ -95,13 +94,10 @@ impl Editor {
             new_cursor: None,
             scroll_to: Some(0),
             col: 0,
-            self_ref: Weak::new(),
             tab_ctx: tab_ctx,
             plugins: Vec::new(),
         };
-        let editor_ref = Arc::new(Mutex::new(editor));
-        editor_ref.lock().unwrap().self_ref = Arc::downgrade(&editor_ref);
-        editor_ref
+        Arc::new(Mutex::new(editor))
     }
 
     fn insert(&mut self, s: &str) {
@@ -580,9 +576,9 @@ impl Editor {
         self.view_dirty = true;
     }
 
-    fn debug_run_plugin(&mut self) {
+    fn debug_run_plugin(&mut self, self_ref: &Arc<Mutex<Editor>>) {
         print_err!("running plugin");
-        start_plugin(self.self_ref.upgrade().unwrap());
+        start_plugin(self_ref.clone());
     }
 
     pub fn on_plugin_connect(&mut self, plugin_ref: PluginRef) {
@@ -672,8 +668,13 @@ impl Editor {
         self.insert(&*String::from(kill_ring_string));
     }
 
-    pub fn do_rpc(&mut self,
-                  cmd: EditCommand)
+    pub fn do_rpc(self_ref: &Arc<Mutex<Editor>>, cmd: EditCommand) -> Option<Value> {
+        self_ref.lock().unwrap().do_rpc_with_self_ref(cmd, self_ref)
+    }
+
+    fn do_rpc_with_self_ref(&mut self,
+                  cmd: EditCommand,
+                  self_ref: &Arc<Mutex<Editor>>)
                   -> Option<Value> {
 
         use rpc::EditCommand::*;
@@ -731,7 +732,7 @@ impl Editor {
             Copy => Some(self.do_copy()),
             DebugRewrap => async(self.debug_rewrap()),
             DebugTestFgSpans => async(self.debug_test_fg_spans()),
-            DebugRunPlugin => async(self.debug_run_plugin()),
+            DebugRunPlugin => async(self.debug_run_plugin(self_ref)),
         };
 
         // TODO: could defer this until input quiesces - will this help?
