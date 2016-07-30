@@ -16,6 +16,7 @@ use std::cmp::max;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::collections::BTreeSet;
+use std::sync::{Arc, Mutex};
 use serde_json::Value;
 
 use xi_rope::rope::{LinesMetric, Rope};
@@ -28,7 +29,7 @@ use view::{Style, View};
 
 use tabs::TabCtx;
 use rpc::EditCommand;
-use run_plugin::start_plugin;
+use run_plugin::{start_plugin, PluginRef};
 
 const FLAG_SELECT: u64 = 2;
 
@@ -58,6 +59,9 @@ pub struct Editor {
     dirty: bool,
     scroll_to: Option<usize>,
     col: usize, // maybe this should live in view, it's similar to selection
+
+    tab_ref: Arc<Mutex<TabCtx>>,
+    plugins: Vec<PluginRef>,
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
@@ -69,7 +73,7 @@ enum EditType {
 }
 
 impl Editor {
-    pub fn new() -> Editor {
+    pub fn new(tab_ref: Arc<Mutex<TabCtx>>) -> Editor {
         let engine = Engine::new(Rope::from(""));
         let last_rev_id = engine.get_head_rev_id();
         Editor {
@@ -88,6 +92,8 @@ impl Editor {
             new_cursor: None,
             scroll_to: Some(0),
             col: 0,
+            tab_ref: tab_ref,
+            plugins: Vec::new(),
         }
     }
 
@@ -185,8 +191,9 @@ impl Editor {
     }
 
     // render if needed, sending to ui
-    pub fn render(&mut self, tab_ctx: &TabCtx) {
+    pub fn render(&mut self) {
         if self.dirty {
+            let tab_ctx = self.tab_ref.lock().unwrap();
             tab_ctx.update_tab(&self.view.render(&self.text, self.scroll_to));
             self.dirty = false;
             self.scroll_to = None;
@@ -561,10 +568,15 @@ impl Editor {
         self.dirty = true;
     }
 
-    fn debug_run_plugin(&mut self, tab_ctx: &TabCtx) {
+    fn debug_run_plugin(&mut self) {
         print_err!("running plugin");
-        let plugin_ctx = tab_ctx.to_plugin_ctx();
-        start_plugin(plugin_ctx);
+        let tab_ctx = self.tab_ref.lock().unwrap();
+        start_plugin(tab_ctx.get_editor_ref());
+    }
+
+    pub fn on_plugin_connect(&mut self, plugin_ref: PluginRef) {
+        plugin_ref.ping_from_editor(self.plugin_buf_size());
+        self.plugins.push(plugin_ref);
     }
 
     fn do_cut(&mut self) -> Value {
@@ -624,7 +636,7 @@ impl Editor {
         self.add_delta(interval, Rope::from(swapped), end, end);
     }
 
-    fn delete_to_end_of_paragraph(&mut self, tab_ctx: &TabCtx) {
+    fn delete_to_end_of_paragraph(&mut self) {
         let current = self.view.sel_max();
         let offset = self.cursor_end_offset();
         let mut val = String::from("");
@@ -641,16 +653,17 @@ impl Editor {
             }
         }
 
+        let tab_ctx = self.tab_ref.lock().unwrap();
         tab_ctx.set_kill_ring(Rope::from(val));
     }
 
-    fn yank(&mut self, tab_ctx: &TabCtx) {
-        self.insert(&*String::from(tab_ctx.get_kill_ring()));
+    fn yank(&mut self) {
+        let kill_ring_string = self.tab_ref.lock().unwrap().get_kill_ring();
+        self.insert(&*String::from(kill_ring_string));
     }
 
     pub fn do_rpc(&mut self,
-                  cmd: EditCommand,
-                  tab_ctx: TabCtx)
+                  cmd: EditCommand)
                   -> Option<Value> {
 
         use rpc::EditCommand::*;
@@ -665,9 +678,7 @@ impl Editor {
             Insert { chars } => async(self.do_insert(chars)),
             DeleteForward => async(self.delete_forward()),
             DeleteBackward => async(self.delete_backward()),
-            DeleteToEndOfParagraph => {
-                async(self.delete_to_end_of_paragraph(&tab_ctx))
-            }
+            DeleteToEndOfParagraph => async(self.delete_to_end_of_paragraph()),
             DeleteToBeginningOfLine => async(self.delete_to_beginning_of_line()),
             InsertNewline => async(self.insert_newline()),
             InsertTab => async(self.insert_tab()),
@@ -698,7 +709,7 @@ impl Editor {
             Open { file_path } => async(self.do_open(file_path)),
             Save { file_path } => async(self.do_save(file_path)),
             Scroll { first, last } => async(self.do_scroll(first, last)),
-            Yank => async(self.yank(&tab_ctx)),
+            Yank => async(self.yank()),
             Transpose => async(self.do_transpose()),
             Click { line, column, flags, click_count } => {
                 async(self.do_click(line, column, flags, click_count))
@@ -710,12 +721,12 @@ impl Editor {
             Copy => Some(self.do_copy()),
             DebugRewrap => async(self.debug_rewrap()),
             DebugTestFgSpans => async(self.debug_test_fg_spans()),
-            DebugRunPlugin => async(self.debug_run_plugin(&tab_ctx)),
+            DebugRunPlugin => async(self.debug_run_plugin()),
         };
 
         // TODO: could defer this until input quiesces - will this help?
         self.commit_delta();
-        self.render(&tab_ctx);
+        self.render();
         self.last_edit_type = self.this_edit_type;
         self.gc_undos();
         result
@@ -753,6 +764,14 @@ impl Editor {
         }
         self.view.set_fg_spans(start_offset, end_offset, sb.build());
         self.dirty = true;
+        self.render();
+    }
+
+    // Note: currently we route up through Editor to TabCtx, but perhaps the plugin
+    // should have its own reference.
+    pub fn plugin_alert(&self, msg: &str) {
+        let tab_ctx = self.tab_ref.lock().unwrap();
+        tab_ctx.alert(msg);
     }
 }
 

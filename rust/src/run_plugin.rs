@@ -18,15 +18,23 @@ use std::io::BufReader;
 use std::env;
 use std::path::PathBuf;
 use std::process::{Command,Stdio,ChildStdin};
+use std::sync::{Arc, Mutex, Weak};
 use std::thread;
 use serde_json::Value;
 
 use xi_rpc::{RpcLoop,RpcPeer};
-use tabs::PluginCtx;
+use editor::Editor;
 
 pub type PluginPeer = RpcPeer<ChildStdin>;
 
-pub fn start_plugin(mut plugin_ctx: PluginCtx) {
+pub struct PluginRef(Arc<Mutex<Plugin>>);
+
+pub struct Plugin {
+    editor: Weak<Mutex<Editor>>,
+    peer: PluginPeer,
+}
+
+pub fn start_plugin(editor: Arc<Mutex<Editor>>) {
     thread::spawn(move || {
         let mut pathbuf: PathBuf = match env::current_exe() {
             Ok(pathbuf) => pathbuf,
@@ -48,39 +56,67 @@ pub fn start_plugin(mut plugin_ctx: PluginCtx) {
         let mut looper = RpcLoop::new(child_stdin);
         let peer = looper.get_peer();
         peer.send_rpc_notification("ping", &Value::Array(Vec::new()));
-        plugin_ctx.on_plugin_connect(peer);
+        let plugin = Plugin {
+            editor: Arc::downgrade(&editor),
+            peer: peer,
+        };
+        let plugin_ref = PluginRef(Arc::new(Mutex::new(plugin)));
+        editor.lock().unwrap().on_plugin_connect(plugin_ref.clone());
         looper.mainloop(|| BufReader::new(child_stdout),
-            |method, params| rpc_handler(&plugin_ctx, method, params));
+            |method, params| plugin_ref.rpc_handler(method, params));
         let status = child.wait();
         print_err!("child exit = {:?}", status);
     });
 }
 
-fn rpc_handler(plugin_ctx: &PluginCtx, method: &str, params: &Value) -> Option<Value> {
-    match method {
-        // TODO: parse json into enum first, just like front-end RPC
-        // (this will also improve error handling, no panic on malformed request from plugin)
-        "n_lines" => Some(Value::U64(plugin_ctx.n_lines() as u64)),
-        "get_line" => {
-            let line = params.as_object().and_then(|dict| dict.get("line").and_then(Value::as_u64)).unwrap();
-            let result = plugin_ctx.get_line(line as usize);
-            Some(Value::String(result))
+impl PluginRef {
+    fn rpc_handler(&self, method: &str, params: &Value) -> Option<Value> {
+        let editor = {
+            self.0.lock().unwrap().editor.upgrade()
+        };
+        if let Some(editor) = editor {
+            let mut editor = editor.lock().unwrap();
+            match method {
+                // TODO: parse json into enum first, just like front-end RPC
+                // (this will also improve error handling, no panic on malformed request from plugin)
+                "n_lines" => Some(Value::U64(editor.plugin_n_lines() as u64)),
+                "get_line" => {
+                    let line = params.as_object().and_then(|dict| dict.get("line").and_then(Value::as_u64)).unwrap();
+                    let result = editor.plugin_get_line(line as usize);
+                    Some(Value::String(result))
+                }
+                "set_line_fg_spans" => {
+                    let dict = params.as_object().unwrap();
+                    let line_num = dict.get("line").and_then(Value::as_u64).unwrap() as usize;
+                    let spans = dict.get("spans").unwrap();
+                    editor.plugin_set_line_fg_spans(line_num, spans);
+                    None
+                }
+                "alert" => {
+                    let msg = params.as_object().and_then(|dict| dict.get("msg").and_then(Value::as_str)).unwrap();
+                    editor.plugin_alert(msg);
+                    None
+                }
+                _ => {
+                    print_err!("unknown plugin callback method: {}", method);
+                    None
+                }
+            }
+        } else {
+            // connection to editor lost
+            None  // TODO: return error value
         }
-        "set_line_fg_spans" => {
-            let dict = params.as_object().unwrap();
-            let line_num = dict.get("line").and_then(Value::as_u64).unwrap() as usize;
-            let spans = dict.get("spans").unwrap();
-            plugin_ctx.set_line_fg_spans(line_num, spans);
-            None
-        }
-        "alert" => {
-            let msg = params.as_object().and_then(|dict| dict.get("msg").and_then(Value::as_str)).unwrap();
-            plugin_ctx.alert(msg);
-            None
-        }
-        _ => {
-            print_err!("unknown plugin callback method: {}", method);
-            None
-        }
+    }
+
+    pub fn ping_from_editor(&self, buf_size: usize) {
+        let plugin = self.0.lock().unwrap();
+        let params = Value::Array(vec![Value::U64(buf_size as u64)]);
+        plugin.peer.send_rpc_notification("ping_from_editor", &params);
+    }
+}
+
+impl Clone for PluginRef {
+    fn clone(&self) -> Self {
+        PluginRef(self.0.clone())
     }
 }

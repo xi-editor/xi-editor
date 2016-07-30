@@ -15,14 +15,13 @@
 //! A container for all the tabs being edited. Also functions as main dispatch for RPC.
 
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use serde_json::Value;
 use serde_json::builder::ObjectBuilder;
 
 use xi_rope::rope::Rope;
 use editor::Editor;
 use rpc::{TabCommand, EditCommand};
-use run_plugin::PluginPeer;
 use MainPeer;
 
 pub struct Tabs {
@@ -36,12 +35,7 @@ pub struct TabCtx {
     tab: String,
     kill_ring: Arc<Mutex<Rope>>,
     rpc_peer: MainPeer,
-    self_ref: Arc<Mutex<Editor>>,
-}
-
-pub struct PluginCtx {
-    tab_ctx: TabCtx,
-    rpc_peer: Option<PluginPeer>,
+    editor_ref: Weak<Mutex<Editor>>,
 }
 
 impl Tabs {
@@ -57,46 +51,49 @@ impl Tabs {
         use rpc::TabCommand::*;
 
         match cmd {
-            NewTab => Some(Value::String(self.do_new_tab())),
+            NewTab => Some(Value::String(self.do_new_tab(rpc_peer))),
 
             DeleteTab { tab_name } => {
                 self.do_delete_tab(tab_name);
                 None
             },
 
-            Edit { tab_name, edit_command } => self.do_edit(tab_name, edit_command, rpc_peer),
+            Edit { tab_name, edit_command } => self.do_edit(tab_name, edit_command),
         }
     }
 
-    fn do_new_tab(&mut self) -> String {
-        self.new_tab()
+    fn do_new_tab(&mut self, rpc_peer: MainPeer) -> String {
+        self.new_tab(rpc_peer)
     }
 
     fn do_delete_tab(&mut self, tab: &str) {
         self.delete_tab(tab);
     }
 
-    fn do_edit(&mut self, tab: &str, cmd: EditCommand, rpc_peer: MainPeer)
+    fn do_edit(&mut self, tab: &str, cmd: EditCommand)
             -> Option<Value> {
         if let Some(editor) = self.tabs.get(tab) {
-            let tab_ctx = TabCtx {
-                tab: tab.to_string(),
-                kill_ring: self.kill_ring.clone(),
-                rpc_peer: rpc_peer,
-                self_ref: editor.clone(),
-            };
-            editor.lock().unwrap().do_rpc(cmd, tab_ctx)
+            editor.lock().unwrap().do_rpc(cmd)
         } else {
             print_err!("tab not found: {}", tab);
             None
         }
     }
 
-    fn new_tab(&mut self) -> String {
+    fn new_tab(&mut self, rpc_peer: MainPeer) -> String {
         let tabname = self.id_counter.to_string();
         self.id_counter += 1;
-        let editor = Editor::new();
-        self.tabs.insert(tabname.clone(), Arc::new(Mutex::new(editor)));
+        let tab_ctx = TabCtx {
+            tab: tabname.clone(),
+            kill_ring: self.kill_ring.clone(),
+            rpc_peer: rpc_peer,
+            editor_ref: Weak::new(),
+        };
+        let tab_ref = Arc::new(Mutex::new(tab_ctx));
+        let editor = Editor::new(tab_ref.clone());
+        let editor_ref = Arc::new(Mutex::new(editor));
+        tab_ref.lock().unwrap().editor_ref = Arc::downgrade(&editor_ref);
+        self.tabs.insert(tabname.clone(), editor_ref);
         tabname
     }
 
@@ -123,42 +120,15 @@ impl TabCtx {
         *kill_ring = val;
     }
 
-    pub fn to_plugin_ctx(&self) -> PluginCtx {
-        PluginCtx {
-            tab_ctx: self.clone(),
-            rpc_peer: None,
-        }
-    }
-}
-
-impl PluginCtx {
-    pub fn on_plugin_connect(&mut self, peer: PluginPeer) {
-        let buf_size = self.tab_ctx.self_ref.lock().unwrap().plugin_buf_size();
-        peer.send_rpc_notification("ping_from_editor", &Value::Array(vec![Value::U64(buf_size as u64)]));
-        self.rpc_peer = Some(peer);
-    }
-
-    // Note: the following are placeholders for prototyping, and are not intended to
-    // deal with asynchrony or be efficient.
-
-    pub fn n_lines(&self) -> usize {
-        self.tab_ctx.self_ref.lock().unwrap().plugin_n_lines()
-    }
-
-    pub fn get_line(&self, line_num: usize) -> String {
-        self.tab_ctx.self_ref.lock().unwrap().plugin_get_line(line_num)
-    }
-
-    pub fn set_line_fg_spans(&self, line_num: usize, spans: &Value) {
-        let mut editor = self.tab_ctx.self_ref.lock().unwrap();
-        editor.plugin_set_line_fg_spans(line_num, spans);
-        editor.render(&self.tab_ctx);
+    pub fn get_editor_ref(&self) -> Arc<Mutex<Editor>> {
+        self.editor_ref.upgrade().unwrap()
     }
 
     pub fn alert(&self, msg: &str) {
-        self.tab_ctx.rpc_peer.send_rpc_notification("alert",
+        self.rpc_peer.send_rpc_notification("alert",
             &ObjectBuilder::new()
                 .insert("msg", msg)
                 .build());
     }
 }
+
