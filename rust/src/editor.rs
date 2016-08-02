@@ -221,13 +221,11 @@ impl Editor {
     fn delete(&mut self) {
         let start = if self.view.sel_start != self.view.sel_end {
             self.view.sel_min()
+        } else if let Some(bsp_pos) = self.text.prev_codepoint_offset(self.view.sel_end) {
+            // TODO: implement complex emoji logic
+            bsp_pos
         } else {
-            if let Some(bsp_pos) = self.text.prev_codepoint_offset(self.view.sel_end) {
-                // TODO: implement complex emoji logic
-                bsp_pos
-            } else {
-                self.view.sel_max()
-            }
+            self.view.sel_max()
         };
 
         if start < self.view.sel_max() {
@@ -633,12 +631,10 @@ impl Editor {
             val = self.text.slice_to_string(current, offset);
             let del_interval = Interval::new_closed_open(current, offset);
             self.add_delta(del_interval, Rope::from(""), current, current);
-        } else {
-            if let Some(grapheme_offset) = self.text.next_grapheme_offset(self.view.sel_end) {
-                val = self.text.slice_to_string(current, grapheme_offset);
-                let del_interval = Interval::new_closed_open(current, grapheme_offset);
-                self.add_delta(del_interval, Rope::from(""), current, current)
-            }
+        } else if let Some(grapheme_offset) = self.text.next_grapheme_offset(self.view.sel_end) {
+            val = self.text.slice_to_string(current, grapheme_offset);
+            let del_interval = Interval::new_closed_open(current, grapheme_offset);
+            self.add_delta(del_interval, Rope::from(""), current, current)
         }
 
         tab_ctx.set_kill_ring(Rope::from(val));
