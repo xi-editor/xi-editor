@@ -41,9 +41,11 @@ recommended and supported). You should have `cargo` in your path.
 
 Or `open XiEditor.xcodeproj` and hit the Run button.
 
-It will look better if you have [InconsolataGo](http://levien.com/type/myfonts/inconsolata.html)
-installed, a customized version of Inconsolata tuned for code editing. To choose other
-fonts, edit the `CTFontCreateWithName()` call in EditView.swift.
+It will look better if you have
+[InconsolataGo](http://levien.com/type/myfonts/inconsolata.html) installed, a
+customized version of Inconsolata tuned for code editing. You can change fonts
+per window in the Font menu or with `Cmd-T`. To choose another default font,
+edit the `CTFontCreateWithName()` call in EditView.swift.
 
 ### Building the core
 
