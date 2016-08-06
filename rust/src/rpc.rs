@@ -107,12 +107,12 @@ impl<'a> TabCommand<'a> {
 
             "delete_tab" => params.as_object().and_then(|dict| {
                 dict_get_string(dict, "tab").map(|tab_name| DeleteTab { tab_name: tab_name })
-            }).ok_or(MalformedTabParams(method.to_string(), params.clone())),
+            }).ok_or_else(|| MalformedTabParams(method.to_string(), params.clone())),
 
             "edit" =>
                 params
                 .as_object()
-                .ok_or(MalformedTabParams(method.to_string(), params.clone()))
+                .ok_or_else(|| MalformedTabParams(method.to_string(), params.clone()))
                 .and_then(|dict| {
                     if let (Some(tab), Some(method), Some(edit_params)) =
                         (dict_get_string(dict, "tab"), dict_get_string(dict, "method"), dict.get("params")) {
@@ -142,7 +142,7 @@ impl<'a> EditCommand<'a> {
                                 last_line: last_line as usize
                             })
                         } else { None }
-                }).ok_or(MalformedEditParams(method.to_string(), params.clone()))
+                }).ok_or_else(|| MalformedEditParams(method.to_string(), params.clone()))
             },
 
             "key" => params.as_object().and_then(|dict| {
@@ -151,11 +151,11 @@ impl<'a> EditCommand<'a> {
                         Key { chars: chars, flags: flags }
                     })
                 })
-            }).ok_or(MalformedEditParams(method.to_string(), params.clone())),
+            }).ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
 
             "insert" => params.as_object().and_then(|dict| {
                 dict_get_string(dict, "chars").map(|chars| Insert { chars: chars })
-            }).ok_or(MalformedEditParams(method.to_string(), params.clone())),
+            }).ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
 
             "delete_forward" => Ok(DeleteForward),
             "delete_backward" => Ok(DeleteBackward),
@@ -189,11 +189,11 @@ impl<'a> EditCommand<'a> {
 
             "open" => params.as_object().and_then(|dict| {
                 dict_get_string(dict, "filename").map(|path| Open { file_path: path })
-            }).ok_or(MalformedEditParams(method.to_string(), params.clone())),
+            }).ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
 
             "save" => params.as_object().and_then(|dict| {
                 dict_get_string(dict, "filename").map(|path| Save { file_path: path })
-            }).ok_or(MalformedEditParams(method.to_string(), params.clone())),
+            }).ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
 
             "scroll" => params.as_array().and_then(|arr| {
                 if let (Some(first), Some(last)) =
@@ -201,7 +201,7 @@ impl<'a> EditCommand<'a> {
 
                     Some(Scroll { first: first, last: last })
                 } else { None }
-            }).ok_or(MalformedEditParams(method.to_string(), params.clone())),
+            }).ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
 
             "yank" => Ok(Yank),
             "transpose" => Ok(Transpose),
@@ -212,7 +212,7 @@ impl<'a> EditCommand<'a> {
 
                         Some(Click { line: line, column: column, flags: flags, click_count: click_count })
                     } else { None }
-            }).ok_or(MalformedEditParams(method.to_string(), params.clone())),
+            }).ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
 
             "drag" => params.as_array().and_then(|arr| {
                 if let (Some(line), Some(column), Some(flags)) =
@@ -220,7 +220,7 @@ impl<'a> EditCommand<'a> {
 
                         Some(Drag { line: line, column: column, flags: flags })
                     } else { None }
-            }).ok_or(MalformedEditParams(method.to_string(), params.clone())),
+            }).ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
 
             "undo" => Ok(Undo),
             "redo" => Ok(Redo),
