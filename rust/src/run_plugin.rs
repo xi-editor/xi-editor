@@ -23,18 +23,18 @@ use std::thread;
 use serde_json::Value;
 
 use xi_rpc::{RpcLoop,RpcPeer};
-use editor::Editor;
+use editor::{Editor, EditorState};
 
 pub type PluginPeer = RpcPeer<ChildStdin>;
 
 pub struct PluginRef(Arc<Mutex<Plugin>>);
 
 pub struct Plugin {
-    editor: Weak<Mutex<Editor>>,
+    editor: Weak<Mutex<EditorState>>,
     peer: PluginPeer,
 }
 
-pub fn start_plugin(editor: Arc<Mutex<Editor>>) {
+pub fn start_plugin(editor: Editor) {
     thread::spawn(move || {
         let mut pathbuf: PathBuf = match env::current_exe() {
             Ok(pathbuf) => pathbuf,
@@ -57,11 +57,11 @@ pub fn start_plugin(editor: Arc<Mutex<Editor>>) {
         let peer = looper.get_peer();
         peer.send_rpc_notification("ping", &Value::Array(Vec::new()));
         let plugin = Plugin {
-            editor: Arc::downgrade(&editor),
+            editor: editor.downgrade(),
             peer: peer,
         };
         let plugin_ref = PluginRef(Arc::new(Mutex::new(plugin)));
-        editor.lock().unwrap().on_plugin_connect(plugin_ref.clone());
+        editor.on_plugin_connect(plugin_ref.clone());
         looper.mainloop(|| BufReader::new(child_stdout),
             |method, params| plugin_ref.rpc_handler(method, params));
         let status = child.wait();

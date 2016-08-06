@@ -25,7 +25,7 @@ use rpc::{TabCommand, EditCommand};
 use MainPeer;
 
 pub struct Tabs {
-    tabs: BTreeMap<String, Arc<Mutex<Editor>>>,
+    tabs: BTreeMap<String, Editor>,
     id_counter: usize,
     kill_ring: Arc<Mutex<Rope>>,
 }
@@ -72,7 +72,7 @@ impl Tabs {
     fn do_edit(&mut self, tab: &str, cmd: EditCommand)
             -> Option<Value> {
         if let Some(editor) = self.tabs.get(tab) {
-            Editor::do_rpc(editor, cmd)
+            editor.do_rpc(cmd)
         } else {
             print_err!("tab not found: {}", tab);
             None

@@ -16,7 +16,7 @@ use std::cmp::max;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::collections::BTreeSet;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use serde_json::Value;
 
 use xi_rope::rope::{LinesMetric, Rope};
@@ -37,7 +37,9 @@ const MAX_UNDOS: usize = 20;
 
 const TAB_SIZE: usize = 4;
 
-pub struct Editor {
+pub struct Editor(Arc<Mutex<EditorState>>);
+
+pub struct EditorState {
     text: Rope,
     view: View,
 
@@ -74,10 +76,10 @@ enum EditType {
 }
 
 impl Editor {
-    pub fn new(tab_ctx: TabCtx) -> Arc<Mutex<Editor>> {
+    pub fn new(tab_ctx: TabCtx) -> Editor {
         let engine = Engine::new(Rope::from(""));
         let last_rev_id = engine.get_head_rev_id();
-        let editor = Editor {
+        let state = EditorState {
             text: Rope::from(""),
             view: View::new(),
             text_dirty: false,
@@ -97,9 +99,100 @@ impl Editor {
             tab_ctx: tab_ctx,
             plugins: Vec::new(),
         };
-        Arc::new(Mutex::new(editor))
+        Editor(Arc::new(Mutex::new(state)))
     }
 
+    pub fn do_rpc(&self, cmd: EditCommand) -> Option<Value> {
+        use rpc::EditCommand::*;
+
+        let mut state = self.0.lock().unwrap();
+        state.this_edit_type = EditType::Other;
+
+        let result = match cmd {
+            RenderLines { first_line, last_line } => {
+                Some(state.do_render_lines(first_line, last_line))
+            }
+            Key { chars, flags } => async(state.do_key(chars, flags)),
+            Insert { chars } => async(state.do_insert(chars)),
+            DeleteForward => async(state.delete_forward()),
+            DeleteBackward => async(state.delete_backward()),
+            DeleteToEndOfParagraph => async(state.delete_to_end_of_paragraph()),
+            DeleteToBeginningOfLine => async(state.delete_to_beginning_of_line()),
+            InsertNewline => async(state.insert_newline()),
+            InsertTab => async(state.insert_tab()),
+            MoveUp => async(state.move_up(0)),
+            MoveUpAndModifySelection => async(state.move_up(FLAG_SELECT)),
+            MoveDown => async(state.move_down(0)),
+            MoveDownAndModifySelection => async(state.move_down(FLAG_SELECT)),
+            MoveLeft => async(state.move_left(0)),
+            MoveLeftAndModifySelection => async(state.move_left(FLAG_SELECT)),
+            MoveRight => async(state.move_right(0)),
+            MoveRightAndModifySelection => async(state.move_right(FLAG_SELECT)),
+            MoveToBeginningOfParagraph => async(state.cursor_start()),
+            MoveToEndOfParagraph => async(state.cursor_end()),
+            MoveToLeftEndOfLine => async(state.move_to_left_end_of_line(0)),
+            MoveToLeftEndOfLineAndModifySelection => async(state.move_to_left_end_of_line(FLAG_SELECT)),
+            MoveToRightEndOfLine => async(state.move_to_right_end_of_line(0)),
+            MoveToRightEndOfLineAndModifySelection => async(state.move_to_right_end_of_line(FLAG_SELECT)),
+            MoveToBeginningOfDocument => async(state.move_to_beginning_of_document(0)),
+            MoveToBeginningOfDocumentAndModifySelection => async(state.move_to_beginning_of_document(FLAG_SELECT)),
+            MoveToEndOfDocument => async(state.move_to_end_of_document(0)),
+            MoveToEndOfDocumentAndModifySelection => async(state.move_to_end_of_document(FLAG_SELECT)),
+            ScrollPageUp => async(state.scroll_page_up(0)),
+            PageUpAndModifySelection => async(state.scroll_page_up(FLAG_SELECT)),
+            ScrollPageDown => async(state.scroll_page_down(0)),
+            PageDownAndModifySelection => {
+                async(state.scroll_page_down(FLAG_SELECT))
+            }
+            Open { file_path } => async(state.do_open(file_path)),
+            Save { file_path } => async(state.do_save(file_path)),
+            Scroll { first, last } => async(state.do_scroll(first, last)),
+            Yank => async(state.yank()),
+            Transpose => async(state.do_transpose()),
+            Click { line, column, flags, click_count } => {
+                async(state.do_click(line, column, flags, click_count))
+            }
+            Drag { line, column, flags } => async(state.do_drag(line, column, flags)),
+            Undo => async(state.do_undo()),
+            Redo => async(state.do_redo()),
+            Cut => Some(state.do_cut()),
+            Copy => Some(state.do_copy()),
+            DebugRewrap => async(state.debug_rewrap()),
+            DebugTestFgSpans => async(state.debug_test_fg_spans()),
+            DebugRunPlugin => async(self.debug_run_plugin()),
+        };
+
+        // TODO: could defer this until input quiesces - will this help?
+        state.commit_delta();
+        state.render();
+        state.last_edit_type = state.this_edit_type;
+        state.gc_undos();
+        result
+    }
+
+    fn debug_run_plugin(&self) {
+        print_err!("running plugin");
+        start_plugin(self.clone());
+    }
+
+    pub fn on_plugin_connect(&self, plugin_ref: PluginRef) {
+        let mut state = self.0.lock().unwrap();
+        plugin_ref.ping_from_editor(state.plugin_buf_size());
+        state.plugins.push(plugin_ref);
+    }
+
+    pub fn downgrade(&self) -> Weak<Mutex<EditorState>> {
+        Arc::downgrade(&self.0)
+    }
+}
+
+impl Clone for Editor {
+    fn clone(&self) -> Self {
+        Editor(self.0.clone())
+    }
+}
+
+impl EditorState {
     fn insert(&mut self, s: &str) {
         let sel_interval = Interval::new_closed_open(self.view.sel_min(), self.view.sel_max());
         let new_cursor = self.view.sel_min() + s.len();
@@ -574,16 +667,6 @@ impl Editor {
         self.view_dirty = true;
     }
 
-    fn debug_run_plugin(&mut self, self_ref: &Arc<Mutex<Editor>>) {
-        print_err!("running plugin");
-        start_plugin(self_ref.clone());
-    }
-
-    pub fn on_plugin_connect(&mut self, plugin_ref: PluginRef) {
-        plugin_ref.ping_from_editor(self.plugin_buf_size());
-        self.plugins.push(plugin_ref);
-    }
-
     fn do_cut(&mut self) -> Value {
         let min = self.view.sel_min();
         if min != self.view.sel_max() {
@@ -662,81 +745,6 @@ impl Editor {
     fn yank(&mut self) {
         let kill_ring_string = self.tab_ctx.get_kill_ring();
         self.insert(&*String::from(kill_ring_string));
-    }
-
-    pub fn do_rpc(self_ref: &Arc<Mutex<Editor>>, cmd: EditCommand) -> Option<Value> {
-        self_ref.lock().unwrap().do_rpc_with_self_ref(cmd, self_ref)
-    }
-
-    fn do_rpc_with_self_ref(&mut self,
-                  cmd: EditCommand,
-                  self_ref: &Arc<Mutex<Editor>>)
-                  -> Option<Value> {
-
-        use rpc::EditCommand::*;
-
-        self.this_edit_type = EditType::Other;
-
-        let result = match cmd {
-            RenderLines { first_line, last_line } => {
-                Some(self.do_render_lines(first_line, last_line))
-            }
-            Key { chars, flags } => async(self.do_key(chars, flags)),
-            Insert { chars } => async(self.do_insert(chars)),
-            DeleteForward => async(self.delete_forward()),
-            DeleteBackward => async(self.delete_backward()),
-            DeleteToEndOfParagraph => async(self.delete_to_end_of_paragraph()),
-            DeleteToBeginningOfLine => async(self.delete_to_beginning_of_line()),
-            InsertNewline => async(self.insert_newline()),
-            InsertTab => async(self.insert_tab()),
-            MoveUp => async(self.move_up(0)),
-            MoveUpAndModifySelection => async(self.move_up(FLAG_SELECT)),
-            MoveDown => async(self.move_down(0)),
-            MoveDownAndModifySelection => async(self.move_down(FLAG_SELECT)),
-            MoveLeft => async(self.move_left(0)),
-            MoveLeftAndModifySelection => async(self.move_left(FLAG_SELECT)),
-            MoveRight => async(self.move_right(0)),
-            MoveRightAndModifySelection => async(self.move_right(FLAG_SELECT)),
-            MoveToBeginningOfParagraph => async(self.cursor_start()),
-            MoveToEndOfParagraph => async(self.cursor_end()),
-            MoveToLeftEndOfLine => async(self.move_to_left_end_of_line(0)),
-            MoveToLeftEndOfLineAndModifySelection => async(self.move_to_left_end_of_line(FLAG_SELECT)),
-            MoveToRightEndOfLine => async(self.move_to_right_end_of_line(0)),
-            MoveToRightEndOfLineAndModifySelection => async(self.move_to_right_end_of_line(FLAG_SELECT)),
-            MoveToBeginningOfDocument => async(self.move_to_beginning_of_document(0)),
-            MoveToBeginningOfDocumentAndModifySelection => async(self.move_to_beginning_of_document(FLAG_SELECT)),
-            MoveToEndOfDocument => async(self.move_to_end_of_document(0)),
-            MoveToEndOfDocumentAndModifySelection => async(self.move_to_end_of_document(FLAG_SELECT)),
-            ScrollPageUp => async(self.scroll_page_up(0)),
-            PageUpAndModifySelection => async(self.scroll_page_up(FLAG_SELECT)),
-            ScrollPageDown => async(self.scroll_page_down(0)),
-            PageDownAndModifySelection => {
-                async(self.scroll_page_down(FLAG_SELECT))
-            }
-            Open { file_path } => async(self.do_open(file_path)),
-            Save { file_path } => async(self.do_save(file_path)),
-            Scroll { first, last } => async(self.do_scroll(first, last)),
-            Yank => async(self.yank()),
-            Transpose => async(self.do_transpose()),
-            Click { line, column, flags, click_count } => {
-                async(self.do_click(line, column, flags, click_count))
-            }
-            Drag { line, column, flags } => async(self.do_drag(line, column, flags)),
-            Undo => async(self.do_undo()),
-            Redo => async(self.do_redo()),
-            Cut => Some(self.do_cut()),
-            Copy => Some(self.do_copy()),
-            DebugRewrap => async(self.debug_rewrap()),
-            DebugTestFgSpans => async(self.debug_test_fg_spans()),
-            DebugRunPlugin => async(self.debug_run_plugin(self_ref)),
-        };
-
-        // TODO: could defer this until input quiesces - will this help?
-        self.commit_delta();
-        self.render();
-        self.last_edit_type = self.this_edit_type;
-        self.gc_undos();
-        result
     }
 
     // Note: the following are placeholders for prototyping, and are not intended to
