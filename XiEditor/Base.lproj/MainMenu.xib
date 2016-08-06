@@ -353,7 +353,7 @@
                                     <items>
                                         <menuItem title="Show Fonts" keyEquivalent="t" id="Q5e-8K-NDq">
                                             <connections>
-                                                <action selector="orderFrontFontPanel:" target="YLy-65-1bz" id="WHr-nq-2xA"/>
+                                                <action selector="orderFrontFontPanel:" target="-1" id="afu-NV-5cp"/>
                                             </connections>
                                         </menuItem>
                                         <menuItem title="Bold" tag="2" keyEquivalent="b" id="GB9-OM-e27">

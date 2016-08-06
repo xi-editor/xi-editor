@@ -124,6 +124,19 @@ class EditView: NSView, NSTextInputClient {
         heightConstraint!.active = true
     }
     
+    override func changeFont(sender: AnyObject?) {
+        let oldFont = attributes[String(kCTFontAttributeName)] as! CTFontRef
+        guard let font = sender?.convertFont(oldFont) else { return }
+        ascent = CTFontGetAscent(font)
+        descent = CTFontGetDescent(font)
+        leading = CTFontGetLeading(font)
+        linespace = ceil(ascent + descent + leading)
+        baseline = ceil(ascent)
+        attributes[String(kCTFontAttributeName)] = font
+        fontWidth = getFontWidth(font)
+        needsDisplay = true
+    }
+
     override func resetCursorRects() {
         super.resetCursorRects()
         addCursorRect(frameRect, cursor: NSCursor.IBeamCursor())
