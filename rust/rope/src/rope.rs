@@ -157,7 +157,7 @@ impl Metric<RopeInfo> for LinesMetric {
     fn to_base_units(s: &String, in_measured_units: usize) -> usize {
         let mut offset = 0;
         for _ in 0..in_measured_units {
-            match s[offset..].as_bytes().iter().position(|&c| c == b'\n') {
+            match memchr(b'\n', &s.as_bytes()[offset..]) {
                 Some(pos) => offset += pos + 1,
                 _ => panic!("to_base_units called with arg too large")
             }
@@ -175,7 +175,7 @@ impl Metric<RopeInfo> for LinesMetric {
     }
 
     fn next(s: &String, offset: usize) -> Option<usize> {
-        s.as_bytes()[offset..].iter().position(|&c| c == b'\n')
+        memchr(b'\n', &s.as_bytes()[offset..])
             .map(|pos| offset + pos + 1)
     }
 
@@ -183,6 +183,11 @@ impl Metric<RopeInfo> for LinesMetric {
 }
 
 // Low level functions
+
+// TODO: use burntsushi memchr
+pub fn memchr(needle: u8, haystack: &[u8]) -> Option<usize> {
+    haystack.iter().position(|&b| b == needle)
+}
 
 // TODO: explore ways to make this faster - SIMD would be a big win
 // memchr is probably best for now
@@ -243,6 +248,12 @@ impl Rope {
     }
 
     // encourage callers to use Cursor instead?
+
+    /// Determine whether `offset` lies on a codepoint boundary.
+    pub fn is_codepoint_boundary(&self, offset: usize) -> bool {
+        let mut cursor = Cursor::new(self, offset);
+        cursor.is_boundary::<BaseMetric>()
+    }
 
     /// Return the offset of the codepoint before `offset`.
     pub fn prev_codepoint_offset(&self, offset: usize) -> Option<usize> {
@@ -455,7 +466,7 @@ impl<'a> Iterator for LinesRaw<'a> {
                     return None;
                 }
             }
-            match self.fragment.as_bytes().iter().position(|&c| c == b'\n') {
+            match memchr(b'\n', self.fragment.as_bytes()) {
                 Some(i) => {
                     result = cow_append(result, &self.fragment[.. i + 1]);
                     self.fragment = &self.fragment[i + 1 ..];

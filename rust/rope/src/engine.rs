@@ -85,7 +85,7 @@ impl Engine {
         None
     }
 
-    fn get_rev(&self, rev_index: usize) -> Rope {
+    fn get_rev_from_index(&self, rev_index: usize) -> Rope {
         let mut from_union = Cow::Borrowed(&self.revs[rev_index].from_union);
         for rev in &self.revs[rev_index + 1..] {
             if let Edit { ref inserts, .. } = rev.edit {
@@ -104,7 +104,12 @@ impl Engine {
 
     /// Get text of head revision.
     pub fn get_head(&self) -> Rope {
-        self.get_rev(self.revs.len() - 1)
+        self.get_rev_from_index(self.revs.len() - 1)
+    }
+
+    /// Get text of a given revision, if it can be found.
+    pub fn get_rev(&self, rev: usize) -> Option<Rope> {
+        self.find_rev(rev).map(|rev_index| self.get_rev_from_index(rev_index))
     }
 
     /// A delta that, when applied to previous head, results in the current head. Panics

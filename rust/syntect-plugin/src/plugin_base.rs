@@ -21,7 +21,7 @@ use serde_json::Value;
 use serde_json::builder::ObjectBuilder;
 
 use xi_rpc;
-use xi_rpc::{RpcLoop, RpcPeer};
+use xi_rpc::{RpcLoop, RpcPeer, dict_get_u64};
 
 // TODO: avoid duplicating this in every crate
 macro_rules! print_err {
@@ -68,6 +68,8 @@ impl SpansBuilder {
 pub struct PluginPeer(RpcPeer<io::Stdout>);
 
 impl PluginPeer {
+    /*
+    // Not used.
     pub fn n_lines(&self) -> Result<usize, Error> {
         let result = self.send_rpc_request("n_lines", &Value::Array(vec![]));
         match result {
@@ -75,7 +77,10 @@ impl PluginPeer {
             Err(err) => Err(Error::RpcError(err)),
         }
     }
+    */
 
+    /*
+    // Obsolete, superseded by get_data.
     pub fn get_line(&self, line_num: usize) -> Result<String, Error> {
         let params = ObjectBuilder::new().insert("line", Value::U64(line_num as u64)).build();
         let result = self.send_rpc_request("get_line", &params);
@@ -85,10 +90,25 @@ impl PluginPeer {
             Err(err) => Err(Error::RpcError(err)),
         }
     }
+    */
+
+    pub fn get_data(&self, offset: usize, max_size: usize, rev: usize) -> Result<String, Error> {
+        let params = ObjectBuilder::new()
+            .insert("offset", offset)
+            .insert("max_size", max_size)
+            .insert("rev", rev)
+            .build();
+        let result = self.send_rpc_request("get_data", &params);
+        match result {
+            Ok(Value::String(s)) => Ok(s),
+            Ok(_) => Err(Error::WrongReturnType),
+            Err(err) => Err(Error::RpcError(err)),
+        }
+    }
 
     pub fn set_line_fg_spans(&self, line_num: usize, spans: Spans) {
         let params = ObjectBuilder::new()
-            .insert("line", Value::U64(line_num as u64))
+            .insert("line", line_num)
             .insert("spans", spans)
             .build();
         self.send_rpc_notification("set_line_fg_spans", &params);
@@ -105,11 +125,18 @@ impl PluginPeer {
 
 pub enum PluginRequest {
     Ping,
-    PingFromEditor,
-    Update,
+    InitBuf {
+        buf_size: usize,
+        rev: usize,
+    },
+    Update {
+        buf_size: usize,
+        rev: usize,
+    },
 }
 
 enum InternalError {
+    InvalidParams,
     UnknownMethod(String),
 }
 
@@ -117,15 +144,36 @@ impl fmt::Display for InternalError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             InternalError::UnknownMethod(ref method) => write!(f, "Unknown method {}", method),
+            InternalError::InvalidParams => write!(f, "Invalid params"),
         }
     }
 }
 
-fn parse_plugin_request(method: &str, _params: &Value) -> Result<PluginRequest, InternalError> {
+fn parse_plugin_request(method: &str, params: &Value) -> Result<PluginRequest, InternalError> {
     match method {
         "ping" => Ok(PluginRequest::Ping),
-        "ping_from_editor" => Ok(PluginRequest::PingFromEditor),
-        "update" => Ok(PluginRequest::Update),
+        "init_buf" => {
+            params.as_object().and_then(|dict|
+                if let (Some(buf_size), Some(rev)) = 
+                    (dict_get_u64(dict, "buf_size"), dict_get_u64(dict, "rev")) {
+                        Some(PluginRequest::InitBuf {
+                            buf_size: buf_size as usize,
+                            rev: rev as usize,
+                        })
+                } else { None }
+            ).ok_or_else(|| InternalError::InvalidParams)
+        }
+        "update" => {
+            params.as_object().and_then(|dict|
+                if let (Some(buf_size), Some(rev)) =
+                    (dict_get_u64(dict, "buf_size"), dict_get_u64(dict, "rev")) {
+                        Some(PluginRequest::Update {
+                            buf_size: buf_size as usize,
+                            rev: rev as usize,
+                        })
+                } else { None }
+            ).ok_or_else(|| InternalError::InvalidParams)
+        }
         _ => Err(InternalError::UnknownMethod(method.to_string()))
     }
 }

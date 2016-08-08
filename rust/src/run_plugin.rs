@@ -21,8 +21,9 @@ use std::process::{Command,Stdio,ChildStdin};
 use std::sync::{Arc, Mutex, Weak};
 use std::thread;
 use serde_json::Value;
+use serde_json::builder::ObjectBuilder;
 
-use xi_rpc::{RpcLoop,RpcPeer};
+use xi_rpc::{RpcLoop, RpcPeer, dict_get_u64};
 use editor::Editor;
 
 pub type PluginPeer = RpcPeer<ChildStdin>;
@@ -85,6 +86,19 @@ impl PluginRef {
                     let result = editor.plugin_get_line(line as usize);
                     Some(Value::String(result))
                 }
+                "get_data" => {
+                    params.as_object().and_then(|dict|
+                        dict_get_u64(dict, "offset").and_then(|offset|
+                            dict_get_u64(dict, "max_size").and_then(|max_size|
+                                dict_get_u64(dict, "rev").and_then(|rev| {
+                                    let result = editor.plugin_get_data(offset as usize,
+                                            max_size as usize, rev as usize);
+                                    result.map(|s| Value::String(s))
+                                })
+                            )
+                        )
+                    )
+                }
                 "set_line_fg_spans" => {
                     let dict = params.as_object().unwrap();
                     let line_num = dict.get("line").and_then(Value::as_u64).unwrap() as usize;
@@ -108,15 +122,24 @@ impl PluginRef {
         }
     }
 
-    pub fn ping_from_editor(&self, buf_size: usize) {
+    pub fn init_buf(&self, buf_size: usize, rev: usize) {
         let plugin = self.0.lock().unwrap();
-        let params = Value::Array(vec![Value::U64(buf_size as u64)]);
-        plugin.peer.send_rpc_notification("ping_from_editor", &params);
+        let params = ObjectBuilder::new()
+            .insert("buf_size", buf_size as u64)
+            .insert("rev", rev as u64)
+            .build();
+        plugin.peer.send_rpc_notification("init_buf", &params);
     }
 
-    pub fn update(&self) {
+    // TODO: send finer grain delta
+    // TODO: make this a synchronous request (but with a callback to not block),
+    // so editor can defer gc until request returns
+    pub fn update(&self, buf_size: usize, rev: usize) {
         let plugin = self.0.lock().unwrap();
-        let params = Value::Array(vec![]);
+        let params = ObjectBuilder::new()
+            .insert("buf_size", buf_size as u64)
+            .insert("rev", rev as u64)
+            .build();
         plugin.peer.send_rpc_notification("update", &params);
     }
 }

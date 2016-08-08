@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::cmp::max;
+use std::borrow::Cow;
+use std::cmp::{min, max};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::collections::BTreeSet;
@@ -36,6 +37,9 @@ const FLAG_SELECT: u64 = 2;
 const MAX_UNDOS: usize = 20;
 
 const TAB_SIZE: usize = 4;
+
+// Maximum returned result from plugin get_data RPC.
+const MAX_SIZE_LIMIT: usize = 1024 * 1024;
 
 pub struct Editor {
     text: Rope,
@@ -200,7 +204,7 @@ impl Editor {
             self.scroll_to = None;
             if self.text_dirty {
                 for plugin in &self.plugins {
-                    plugin.update();
+                    plugin.update(self.text.len(), self.engine.get_head_rev_id());
                 }
             }
             self.text_dirty = false;
@@ -580,7 +584,7 @@ impl Editor {
     }
 
     pub fn on_plugin_connect(&mut self, plugin_ref: PluginRef) {
-        plugin_ref.ping_from_editor(self.plugin_buf_size());
+        plugin_ref.init_buf(self.plugin_buf_size(), self.engine.get_head_rev_id());
         self.plugins.push(plugin_ref);
     }
 
@@ -772,6 +776,29 @@ impl Editor {
         self.view.set_fg_spans(start_offset, end_offset, sb.build());
         self.view_dirty = true;
         self.render();
+    }
+
+    pub fn plugin_get_data(&self, offset: usize, max_size: usize, rev: usize) -> Option<String> {
+        let text_cow = if rev == self.engine.get_head_rev_id() {
+            Cow::Borrowed(&self.text)
+        } else {
+            match self.engine.get_rev(rev) {
+                None => return None,
+                Some(text) => Cow::Owned(text)
+            }
+        };
+        let text = &text_cow;
+        // Enforce start is on codepoint boundary.
+        if !text.is_codepoint_boundary(offset) { return None; }
+        let max_size = min(max_size, MAX_SIZE_LIMIT);
+        let mut end_off = offset.saturating_add(max_size);
+        if end_off >= text.len() {
+            end_off = text.len();
+        } else {
+            // Snap end to codepoint boundary.
+            end_off = text.prev_codepoint_offset(end_off + 1).unwrap();
+        }
+        Some(text.slice_to_string(offset, end_off))
     }
 
     // Note: currently we route up through Editor to TabCtx, but perhaps the plugin

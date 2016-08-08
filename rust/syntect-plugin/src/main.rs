@@ -18,27 +18,17 @@ extern crate syntect;
 extern crate xi_rpc;
 extern crate serde_json;
 
-mod plugin_base;
+#[macro_use]
+mod macros;
 
-use plugin_base::{PluginRequest, PluginPeer, SpansBuilder};
+mod plugin_base;
+mod caching_plugin;
+
+use caching_plugin::{PluginCtx, SpansBuilder};
 
 use syntect::parsing::{ParseState, ScopeStack, SyntaxSet};
 use syntect::highlighting::{Color, FontStyle, Highlighter, HighlightIterator, HighlightState,
     Style, ThemeSet};
-
-// TODO: avoid duplicating this in every crate
-macro_rules! print_err {
-    ($($arg:tt)*) => (
-        {
-            use std::io::prelude::*;
-            if let Err(e) = write!(&mut ::std::io::stderr(), "{}\n", format_args!($($arg)*)) {
-                panic!("Failed to write to stderr.\
-                    \nOriginal error output: {}\
-                    \nSecondary error writing to stderr: {}", format!($($arg)*), e);
-            }
-        }
-    )
-}
 
 fn color_to_rgba(color: Color) -> u32 {
     ((color.a as u32) << 24) | ((color.r as u32) << 16) | ((color.g as u32) << 8) | (color.r as u32)
@@ -65,64 +55,56 @@ impl PluginState {
             ts: ThemeSet::load_defaults(),
         }
     }
+
+    fn do_highlighting(&self, mut ctx: PluginCtx) {
+        let syntax = self.ss.find_syntax_by_extension("rs")
+            .unwrap_or_else(|| self.ss.find_syntax_plain_text());
+        let mut parse_state = ParseState::new(syntax);
+        let theme = &self.ts.themes["InspiredGitHub"];
+        let highlighter = Highlighter::new(theme);
+        let mut hstate = HighlightState::new(&highlighter, ScopeStack::new());
+
+        let mut i = 0;
+        loop {
+            let line = ctx.get_line(i);
+            if let Err(err) = line {
+                // TODO: as above
+                print_err!("Error: {:?}", err);
+                return;
+            }
+            let line = line.unwrap();
+            if line.is_none() {
+                break;
+            }
+            let line = line.unwrap();
+            let ops = parse_state.parse_line(&line);
+            let mut builder = SpansBuilder::new();
+            let iter = HighlightIterator::new(&mut hstate, &ops, &line, &highlighter);
+            let mut ix = 0;
+            for (style, str_slice) in iter {
+                let start = ix;
+                let end = ix + str_slice.len();
+                add_style_span(&mut builder, style, start, end);
+                ix = end;
+            }
+            ctx.set_line_fg_spans(i, builder.build());
+            i += 1;
+        }
+    }
 }
 
-fn do_highlighting(peer: &PluginPeer, state: &PluginState) {
-    let syntax = state.ss.find_syntax_by_extension("rs")
-        .unwrap_or_else(|| state.ss.find_syntax_plain_text());
-    let mut parse_state = ParseState::new(syntax);
-    let theme = &state.ts.themes["InspiredGitHub"];
-    let highlighter = Highlighter::new(theme);
-    let mut hstate = HighlightState::new(&highlighter, ScopeStack::new());
-
-    let n_lines = peer.n_lines();
-    if let Err(err) = n_lines {
-        // TODO: maybe try to report the error back to the peer
-        print_err!("Error: {:?}", err);
-        return;
+impl caching_plugin::Handler for PluginState {
+    fn init_buf(&mut self, ctx: PluginCtx, _buf_size: usize) {
+        self.do_highlighting(ctx);
     }
-    let n_lines = n_lines.unwrap();
-    for i in 0..n_lines {
-        let line = peer.get_line(i);
-        if let Err(err) = line {
-            // TODO: as above
-            print_err!("Error: {:?}", err);
-            return;
-        }
-        let line = line.unwrap();
-        let ops = parse_state.parse_line(&line);
-        let mut builder = SpansBuilder::new();
-        let iter = HighlightIterator::new(&mut hstate, &ops, &line, &highlighter);
-        let mut ix = 0;
-        for (style, str_slice) in iter {
-            let start = ix;
-            let end = ix + str_slice.len();
-            add_style_span(&mut builder, style, start, end);
-            ix = end;
-        }
-        peer.set_line_fg_spans(i, builder.build());
+
+    fn update(&mut self, ctx: PluginCtx) {
+        self.do_highlighting(ctx);
     }
 }
 
 fn main() {
-    let state = PluginState::new();
+    let mut state = PluginState::new();
 
-    plugin_base::mainloop(|req, peer| {
-        match *req {
-            PluginRequest::Ping => {
-                print_err!("got ping");
-                None
-            }
-            PluginRequest::PingFromEditor => {
-                print_err!("got ping from editor");
-                do_highlighting(peer, &state);
-                None
-            }
-            PluginRequest::Update => {
-                print_err!("got update notification");
-                do_highlighting(peer, &state);
-                None
-            }
-        }
-    });
+    caching_plugin::mainloop(&mut state);
 }

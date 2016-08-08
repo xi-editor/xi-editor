@@ -14,10 +14,10 @@
 
 //! RPC handling for communications with front-end.
 
-use std::collections::BTreeMap;
 use std::error;
 use std::fmt;
 use serde_json::Value;
+use xi_rpc::{dict_get_u64, dict_get_string, arr_get_u64, arr_get_i64};
 
 // =============================================================================
 //  Request handling
@@ -276,24 +276,4 @@ impl error::Error for Error {
             MalformedEditParams(_, _) => "Malformed edit parameters"
         }
     }
-}
-
-// =============================================================================
-//  Helper functions for value access
-// =============================================================================
-
-fn dict_get_u64(dict: &BTreeMap<String, Value>, key: &str) -> Option<u64> {
-    dict.get(key).and_then(Value::as_u64)
-}
-
-fn dict_get_string<'a>(dict: &'a BTreeMap<String, Value>, key: &str) -> Option<&'a str> {
-    dict.get(key).and_then(Value::as_str)
-}
-
-fn arr_get_u64(arr: &[Value], idx: usize) -> Option<u64> {
-    arr.get(idx).and_then(Value::as_u64)
-}
-
-fn arr_get_i64(arr: &[Value], idx: usize) -> Option<i64> {
-    arr.get(idx).and_then(Value::as_i64)
 }
