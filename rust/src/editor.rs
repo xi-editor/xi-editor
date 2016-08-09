@@ -60,6 +60,7 @@ pub struct Editor {
     // TODO: use for all cursor motion?
     new_cursor: Option<(usize, usize)>,
 
+    // TODO: may not need separate view/text dirty flags
     view_dirty: bool,
     text_dirty: bool,
     scroll_to: Option<usize>,
@@ -67,6 +68,7 @@ pub struct Editor {
 
     tab_ctx: TabCtx,
     plugins: Vec<PluginRef>,
+    revs_in_flight: usize,
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
@@ -75,6 +77,20 @@ enum EditType {
     Select,
     InsertChars,
     Delete,
+    Undo,
+    Redo,
+}
+
+impl EditType {
+    pub fn json_string(&self) -> &'static str {
+        match *self {
+            EditType::InsertChars => "insert",
+            EditType::Delete => "delete",
+            EditType::Undo => "undo",
+            EditType::Redo => "redo",
+            _ => "other",
+        }
+    }
 }
 
 impl Editor {
@@ -100,6 +116,7 @@ impl Editor {
             col: 0,
             tab_ctx: tab_ctx,
             plugins: Vec::new(),
+            revs_in_flight: 0,
         };
         Arc::new(Mutex::new(editor))
     }
@@ -123,10 +140,12 @@ impl Editor {
         self.view_dirty = true;
     }
 
-    // May change this around so this fn adds the delta to the engine immediately,
-    // and commit_delta propagates the delta from the previous revision (not just
-    // the one immediately before the head revision, as now). In any case, this
-    // will need more information, for example to decide whether to merge undos.
+    // Apply the delta to the buffer, and store the new cursor so that it gets
+    // set when commit_delta is called.
+    //
+    // Records the delta into the CRDT engine so that it can be undone. Also contains
+    // the logic for merging edits into the same undo group. At call time,
+    // self.this_edit_type should be set appropriately.
     fn add_delta(&mut self, iv: Interval, new: Rope, new_start: usize, new_end: usize) {
         let delta = Delta::simple_edit(iv, new, self.text.len());
         let head_rev_id = self.engine.get_head_rev_id();
@@ -157,10 +176,10 @@ impl Editor {
         self.new_cursor = Some((new_start, new_end));
     }
 
-    // commit the current delta, updating views and other invariants as needed
-    fn commit_delta(&mut self) {
+    // commit the current delta, updating views, plugins, and other invariants as needed
+    fn commit_delta(&mut self, self_ref: &Arc<Mutex<Editor>>) {
         if self.engine.get_head_rev_id() != self.last_rev_id {
-            self.update_after_revision();
+            self.update_after_revision(self_ref);
             if let Some((start, end)) = self.new_cursor.take() {
                 self.set_cursor(end, true);
                 self.view.sel_start = start;
@@ -168,21 +187,42 @@ impl Editor {
         }
     }
 
-    fn update_undos(&mut self) {
+    fn update_undos(&mut self, self_ref: &Arc<Mutex<Editor>>) {
         self.engine.undo(self.undos.clone());
         self.text = self.engine.get_head();
-        self.update_after_revision();
+        self.update_after_revision(self_ref);
     }
 
-    fn update_after_revision(&mut self) {
+    fn update_after_revision(&mut self, self_ref: &Arc<Mutex<Editor>>) {
         let delta = self.engine.delta_rev_head(self.last_rev_id);
         self.view.after_edit(&self.text, &delta);
+        let (iv, new_len) = delta.summary();
+        //print_err!("delta {}:{} +{} {}", iv.start(), iv.end(), new_len, self.this_edit_type.json_string());
+        for plugin in &self.plugins {
+            self.revs_in_flight += 1;
+            let editor = Arc::downgrade(self_ref);
+            plugin.update(iv.start(), iv.end(), new_len, self.engine.get_head_rev_id(),
+                self.this_edit_type.json_string(), Box::new(move |_| {
+                    if let Some(editor) = editor.upgrade() {
+                        editor.lock().unwrap().dec_revs_in_flight();
+                    }
+                    //print_err!("plugin update responded");
+                })
+            );
+        }
         self.last_rev_id = self.engine.get_head_rev_id();
         self.text_dirty = true;
     }
 
+    // GC of CRDT engine is deferred until all plugins have acknowledged the new rev,
+    // so when the ack comes back, potentially trigger GC.
+    fn dec_revs_in_flight(&mut self) {
+        self.revs_in_flight -= 1;
+        self.gc_undos();
+    }
+
     fn gc_undos(&mut self) {
-        if !self.gc_undos.is_empty() {
+        if self.revs_in_flight == 0 && !self.gc_undos.is_empty() {
             self.engine.gc(&self.gc_undos);
             self.undos = &self.undos - &self.gc_undos;
             self.gc_undos.clear();
@@ -198,15 +238,10 @@ impl Editor {
     }
 
     // render if needed, sending to ui
-    pub fn render(&mut self) {
+    fn render(&mut self) {
         if self.text_dirty || self.view_dirty {
             self.tab_ctx.update_tab(&self.view.render(&self.text, self.scroll_to));
             self.scroll_to = None;
-            if self.text_dirty {
-                for plugin in &self.plugins {
-                    plugin.update(self.text.len(), self.engine.get_head_rev_id());
-                }
-            }
             self.text_dirty = false;
             self.view_dirty = false;
         }
@@ -591,9 +626,9 @@ impl Editor {
     fn do_cut(&mut self) -> Value {
         let min = self.view.sel_min();
         if min != self.view.sel_max() {
+            let val = self.text.slice_to_string(min, self.view.sel_max());
             let del_interval = Interval::new_closed_open(min, self.view.sel_max());
             self.add_delta(del_interval, Rope::from(""), min, min);
-            let val = self.text.slice_to_string(min, self.view.sel_max());
             Value::String(val)
         } else {
             Value::Null
@@ -609,19 +644,21 @@ impl Editor {
         }
     }
 
-    fn do_undo(&mut self) {
+    fn do_undo(&mut self, self_ref: &Arc<Mutex<Editor>>) {
         if self.cur_undo > 0 {
             self.cur_undo -= 1;
             debug_assert!(self.undos.insert(self.live_undos[self.cur_undo]));
-            self.update_undos();
+            self.this_edit_type = EditType::Undo;
+            self.update_undos(self_ref);
         }
     }
 
-    fn do_redo(&mut self) {
+    fn do_redo(&mut self, self_ref: &Arc<Mutex<Editor>>) {
         if self.cur_undo < self.live_undos.len() {
             debug_assert!(self.undos.remove(&self.live_undos[self.cur_undo]));
             self.cur_undo += 1;
-            self.update_undos();
+            self.this_edit_type = EditType::Redo;
+            self.update_undos(self_ref);
         }
     }
 
@@ -726,8 +763,8 @@ impl Editor {
                 async(self.do_click(line, column, flags, click_count))
             }
             Drag { line, column, flags } => async(self.do_drag(line, column, flags)),
-            Undo => async(self.do_undo()),
-            Redo => async(self.do_redo()),
+            Undo => async(self.do_undo(self_ref)),
+            Redo => async(self.do_redo(self_ref)),
             Cut => Some(self.do_cut()),
             Copy => Some(self.do_copy()),
             DebugRewrap => async(self.debug_rewrap()),
@@ -736,7 +773,7 @@ impl Editor {
         };
 
         // TODO: could defer this until input quiesces - will this help?
-        self.commit_delta();
+        self.commit_delta(self_ref);
         self.render();
         self.last_edit_type = self.this_edit_type;
         self.gc_undos();

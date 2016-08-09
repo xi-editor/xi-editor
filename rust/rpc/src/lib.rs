@@ -61,12 +61,33 @@ pub enum Error {
 /// not need to take the writer type as a parameter.
 pub struct RpcPeer<W: Write>(Arc<RpcState<W>>);
 
+// TODO: should be FnOnce, but running into https://github.com/rust-lang/rust/issues/28796
+pub trait Callback: FnMut(Result<Value, Error>) + Send {}
+
+impl<F:Send + FnMut(Result<Value, Error>)> Callback for F {}
+
+enum ResponseHandler {
+    Chan(mpsc::Sender<Result<Value, Error>>),
+    Callback(Box<Callback<Output=()>>),
+}
+
+impl ResponseHandler {
+    fn invoke(self, result: Result<Value, Error>) {
+        match self {
+            ResponseHandler::Chan(tx) => {
+                let _ = tx.send(result);
+            },
+            ResponseHandler::Callback(mut f) => f(result)
+        }
+    }
+}
+
 struct RpcState<W: Write> {
     rx_queue: Mutex<VecDeque<Value>>,
     rx_cvar: Condvar,
     writer: Mutex<W>,
     id: AtomicUsize,
-    pending: Mutex<BTreeMap<usize, mpsc::Sender<Result<Value, Error>>>>,
+    pending: Mutex<BTreeMap<usize, ResponseHandler>>,
 }
 
 /// A structure holding the state of a main loop for handing RPC's.
@@ -158,6 +179,7 @@ impl<W:Write + Send> RpcLoop<W> {
                     }
                 }
                 self.peer.put_rx(Value::Null);
+                // TODO: send disconnect error to all pending
             });
             loop {
                 let json = peer.get_rx();
@@ -212,22 +234,35 @@ impl<W:Write> RpcPeer<W> {
         }
     }
 
-    /// Sends a request (synchronous rpc) to the peer, and waits for the result.
-    pub fn send_rpc_request(&self, method: &str, params: &Value) -> Result<Value, Error> {
+    fn send_rpc_request_common(&self, method: &str, params: &Value, rh: ResponseHandler) {
         let id = self.0.id.fetch_add(1, Ordering::Relaxed);
-        let (tx, rx) = mpsc::channel();
         {
             let mut pending = self.0.pending.lock().unwrap();
-            pending.insert(id, tx);
+            pending.insert(id, rh);
         }
         if let Err(e) = self.send(&ObjectBuilder::new()
-            .insert("id", Value::U64(id as u64))
-            .insert("method", method)
-            .insert("params", params)
-            .build()) {
-            print_err!("send error on send_rpc_request method {}: {}", method, e);
-            panic!("TODO: better error handling");
+                .insert("id", id)
+                .insert("method", method)
+                .insert("params", params)
+                .build()) {
+            let mut pending = self.0.pending.lock().unwrap();
+            if let Some(rh) = pending.remove(&id) {
+                rh.invoke(Err(Error::IoError(e)));
+            }
         }
+    }
+
+    /// Sends a request asynchronously, and the supplied callback will be called when
+    /// the response arrives.
+    pub fn send_rpc_request_async(&self, method: &str, params: &Value,
+            f: Box<Callback<Output=()>>) {
+        self.send_rpc_request_common(method, params, ResponseHandler::Callback(f));
+    }
+
+    /// Sends a request (synchronous rpc) to the peer, and waits for the result.
+    pub fn send_rpc_request(&self, method: &str, params: &Value) -> Result<Value, Error> {
+        let (tx, rx) = mpsc::channel();
+        self.send_rpc_request_common(method, params, ResponseHandler::Chan(tx));
         rx.recv().unwrap_or(Err(Error::PeerDisconnect))
     }
 
@@ -248,9 +283,7 @@ impl<W:Write> RpcPeer<W> {
         };
         let mut pending = self.0.pending.lock().unwrap();
         match pending.remove(&id) {
-            Some(tx) => {
-                let _  = tx.send(result);
-            }
+            Some(responsehandler) => responsehandler.invoke(result),
             None => print_err!("id {} not found in pending", id)
         }
     }

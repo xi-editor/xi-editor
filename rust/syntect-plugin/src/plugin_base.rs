@@ -21,7 +21,7 @@ use serde_json::Value;
 use serde_json::builder::ObjectBuilder;
 
 use xi_rpc;
-use xi_rpc::{RpcLoop, RpcPeer, dict_get_u64};
+use xi_rpc::{RpcLoop, RpcPeer, dict_get_u64, dict_get_string};
 
 // TODO: avoid duplicating this in every crate
 macro_rules! print_err {
@@ -123,6 +123,27 @@ impl PluginPeer {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum EditType {
+    Insert,
+    Delete,
+    Undo,
+    Redo,
+    Other,
+}
+
+impl EditType {
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "insert" => EditType::Insert,
+            "delete" => EditType::Delete,
+            "undo" => EditType::Undo,
+            "redo" => EditType::Redo,
+            _ => EditType::Other,
+        }
+    }
+}
+
 pub enum PluginRequest {
     Ping,
     InitBuf {
@@ -130,8 +151,11 @@ pub enum PluginRequest {
         rev: usize,
     },
     Update {
-        buf_size: usize,
+        start: usize,
+        end: usize,
+        new_len: usize,
         rev: usize,
+        edit_type: EditType,
     },
 }
 
@@ -165,11 +189,16 @@ fn parse_plugin_request(method: &str, params: &Value) -> Result<PluginRequest, I
         }
         "update" => {
             params.as_object().and_then(|dict|
-                if let (Some(buf_size), Some(rev)) =
-                    (dict_get_u64(dict, "buf_size"), dict_get_u64(dict, "rev")) {
+                if let (Some(start), Some(end), Some(new_len), Some(rev), Some(edit_type)) =
+                    (dict_get_u64(dict, "start"), dict_get_u64(dict, "end"),
+                        dict_get_u64(dict, "new_len"), dict_get_u64(dict, "rev"),
+                        dict_get_string(dict, "edit_type")) {
                         Some(PluginRequest::Update {
-                            buf_size: buf_size as usize,
+                            start: start as usize,
+                            end: end as usize,
+                            new_len: new_len as usize,
                             rev: rev as usize,
+                            edit_type: EditType::from_str(edit_type),
                         })
                 } else { None }
             ).ok_or_else(|| InternalError::InvalidParams)

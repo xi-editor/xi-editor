@@ -14,6 +14,8 @@
 
 //! A caching layer for xi plugins. Will be split out into its own crate once it's a bit more stable.
 
+use serde_json::Value;
+
 use plugin_base;
 use plugin_base::{PluginRequest, PluginPeer};
 
@@ -64,9 +66,9 @@ pub fn mainloop<H: Handler>(handler: &mut H) {
                 handler.init_buf(ctx, buf_size);
                 None
             }
-            PluginRequest::Update { buf_size, rev } => {
-                print_err!("got update notification");
-                ctx.state.buf_size = buf_size;
+            PluginRequest::Update { start, end, new_len, rev, edit_type } => {
+                print_err!("got update notification {:?}", edit_type);
+                ctx.state.buf_size = ctx.state.buf_size - (end - start) + new_len;
                 ctx.state.rev = rev;
                 // For now, invalidate everything.
                 // TODO: use request params to actually update cache.
@@ -74,7 +76,7 @@ pub fn mainloop<H: Handler>(handler: &mut H) {
                 ctx.state.line_num = 0;
                 ctx.state.offset_of_line = 0;
                 handler.update(ctx);
-                None
+                Some(Value::Null)
             }
         }
     });
@@ -123,7 +125,7 @@ impl<'a> PluginCtx<'a> {
                     let result = String::from(&cache[offset_in_cache .. offset_in_cache + pos + 1]);
                     self.state.offset_of_line += pos + 1;
                     self.state.line_num += 1;
-                    return Ok(Some(result))
+                    return Ok(Some(result));
                 }
             }
         }
