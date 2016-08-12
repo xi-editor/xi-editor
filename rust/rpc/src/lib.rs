@@ -61,14 +61,29 @@ pub enum Error {
 /// not need to take the writer type as a parameter.
 pub struct RpcPeer<W: Write>(Arc<RpcState<W>>);
 
-// TODO: should be FnOnce, but running into https://github.com/rust-lang/rust/issues/28796
-pub trait Callback: FnMut(Result<Value, Error>) + Send {}
+trait Callback: Send {
+    fn call(self: Box<Self>, result: Result<Value, Error>);
+}
 
-impl<F:Send + FnMut(Result<Value, Error>)> Callback for F {}
+impl<F:Send + FnOnce(Result<Value, Error>)> Callback for F {
+    fn call(self: Box<F>, result: Result<Value, Error>) {
+        (*self)(result)
+    }
+}
+
+trait IdleProc: Send {
+    fn call(self: Box<Self>);
+}
+
+impl<F:Send + FnOnce()> IdleProc for F {
+    fn call(self: Box<F>) {
+        (*self)()
+    }
+}
 
 enum ResponseHandler {
     Chan(mpsc::Sender<Result<Value, Error>>),
-    Callback(Box<Callback<Output=()>>),
+    Callback(Box<Callback>),
 }
 
 impl ResponseHandler {
@@ -77,7 +92,7 @@ impl ResponseHandler {
             ResponseHandler::Chan(tx) => {
                 let _ = tx.send(result);
             },
-            ResponseHandler::Callback(mut f) => f(result)
+            ResponseHandler::Callback(f) => f.call(result)
         }
     }
 }
@@ -88,6 +103,7 @@ struct RpcState<W: Write> {
     writer: Mutex<W>,
     id: AtomicUsize,
     pending: Mutex<BTreeMap<usize, ResponseHandler>>,
+    idle: Mutex<VecDeque<Box<IdleProc>>>,
 }
 
 /// A structure holding the state of a main loop for handing RPC's.
@@ -117,6 +133,7 @@ impl<W:Write + Send> RpcLoop<W> {
             writer: Mutex::new(writer),
             id: AtomicUsize::new(0),
             pending: Mutex::new(BTreeMap::new()),
+            idle: Mutex::new(VecDeque::new()),
         }));
         RpcLoop {
             buf: String::new(),
@@ -182,7 +199,16 @@ impl<W:Write + Send> RpcLoop<W> {
                 // TODO: send disconnect error to all pending
             });
             loop {
-                let json = peer.get_rx();
+                let json = if peer.has_idle() {
+                    if let Some(json) = peer.try_get_rx() {
+                        json
+                    } else {
+                        peer.run_one_idle();
+                        continue;
+                    }
+                } else {
+                    peer.get_rx()
+                };
                 if json == Value::Null {
                     break;
                 }
@@ -254,9 +280,9 @@ impl<W:Write> RpcPeer<W> {
 
     /// Sends a request asynchronously, and the supplied callback will be called when
     /// the response arrives.
-    pub fn send_rpc_request_async(&self, method: &str, params: &Value,
-            f: Box<Callback<Output=()>>) {
-        self.send_rpc_request_common(method, params, ResponseHandler::Callback(f));
+    pub fn send_rpc_request_async<F>(&self, method: &str, params: &Value, f: F)
+        where F: FnOnce(Result<Value, Error>) + Send + 'static {
+        self.send_rpc_request_common(method, params, ResponseHandler::Callback(Box::new(f)));
     }
 
     /// Sends a request (synchronous rpc) to the peer, and waits for the result.
@@ -288,6 +314,13 @@ impl<W:Write> RpcPeer<W> {
         }
     }
 
+    // Get a message from the recieve queue if available.
+    fn try_get_rx(&self) -> Option<Value> {
+        let mut queue = self.0.rx_queue.lock().unwrap();
+        queue.pop_front()
+    }
+
+    // Get a message from the receive queue, blocking until available.
     fn get_rx(&self) -> Value {
         let mut queue = self.0.rx_queue.lock().unwrap();
         while queue.is_empty() {
@@ -312,6 +345,26 @@ impl<W:Write> RpcPeer<W> {
         !queue.is_empty()
     }
 
+    fn has_idle(&self) -> bool {
+        !self.0.idle.lock().unwrap().is_empty()
+    }
+
+    fn run_one_idle(&self) {
+        let idle = {
+            self.0.idle.lock().unwrap().pop_front()
+        };
+        if let Some(idle) = idle {
+            idle.call();
+        }
+    }
+
+    /// Schedule an "idle proc" to be run when there are no requests pending.
+
+    // Question: do own boxing, as suggested for send_rpc_request_async above?
+    pub fn schedule_idle<F>(&self, idle: F)
+        where F: FnOnce() + Send + 'static {
+        self.0.idle.lock().unwrap().push_back(Box::new(idle));
+    }
 }
 
 impl<W:Write> Clone for RpcPeer<W> {

@@ -23,7 +23,7 @@ use std::thread;
 use serde_json::Value;
 use serde_json::builder::ObjectBuilder;
 
-use xi_rpc::{RpcLoop, RpcPeer, Callback, dict_get_u64};
+use xi_rpc::{RpcLoop, RpcPeer, Error, dict_get_u64};
 use editor::Editor;
 
 pub type PluginPeer = RpcPeer<ChildStdin>;
@@ -134,8 +134,8 @@ impl PluginRef {
     // TODO: send finer grain delta
     // TODO: make this a synchronous request (but with a callback to not block),
     // so editor can defer gc until request returns
-    pub fn update(&self, start: usize, end: usize, new_len: usize, rev: usize, edit_type: &str,
-            callback: Box<Callback<Output=()>>) {
+    pub fn update<F>(&self, start: usize, end: usize, new_len: usize, rev: usize, edit_type: &str,
+            callback: F) where F: FnOnce(Result<Value, Error>) + Send + 'static {
         let plugin = self.0.lock().unwrap();
         let params = ObjectBuilder::new()
             .insert("start", start)

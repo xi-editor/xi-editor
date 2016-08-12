@@ -202,12 +202,12 @@ impl Editor {
             self.revs_in_flight += 1;
             let editor = Arc::downgrade(self_ref);
             plugin.update(iv.start(), iv.end(), new_len, self.engine.get_head_rev_id(),
-                self.this_edit_type.json_string(), Box::new(move |_| {
+                self.this_edit_type.json_string(), move |_| {
                     if let Some(editor) = editor.upgrade() {
                         editor.lock().unwrap().dec_revs_in_flight();
                     }
                     //print_err!("plugin update responded");
-                })
+                }
             );
         }
         self.last_rev_id = self.engine.get_head_rev_id();
