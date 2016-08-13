@@ -23,7 +23,7 @@ use std::thread;
 use serde_json::Value;
 use serde_json::builder::ObjectBuilder;
 
-use xi_rpc::{RpcLoop, RpcPeer, Error, dict_get_u64};
+use xi_rpc::{RpcLoop, RpcPeer, RpcCtx, Handler, Error, dict_get_u64};
 use editor::Editor;
 
 pub type PluginPeer = RpcPeer<ChildStdin>;
@@ -61,13 +61,25 @@ pub fn start_plugin(editor: Arc<Mutex<Editor>>) {
             editor: Arc::downgrade(&editor),
             peer: peer,
         };
-        let plugin_ref = PluginRef(Arc::new(Mutex::new(plugin)));
+        let mut plugin_ref = PluginRef(Arc::new(Mutex::new(plugin)));
         editor.lock().unwrap().on_plugin_connect(plugin_ref.clone());
-        looper.mainloop(|| BufReader::new(child_stdout),
-            |method, params| plugin_ref.rpc_handler(method, params));
+        looper.mainloop(|| BufReader::new(child_stdout), &mut plugin_ref);
         let status = child.wait();
         print_err!("child exit = {:?}", status);
     });
+}
+
+impl Handler<ChildStdin> for PluginRef {
+    fn handle_notification(&mut self, _ctx: RpcCtx<ChildStdin>, method: &str, params: &Value) {
+        let _ = self.rpc_handler(method, params);
+        // TODO: should check None
+    }
+
+    fn handle_request(&mut self, _ctx: RpcCtx<ChildStdin>, method: &str, params: &Value) ->
+        Result<Value, Value> {
+        let result = self.rpc_handler(method, params);
+        result.ok_or_else(|| Value::String("missing return value".to_string()))
+    }
 }
 
 impl PluginRef {

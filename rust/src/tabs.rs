@@ -46,7 +46,7 @@ impl Tabs {
         }
     }
 
-    pub fn do_rpc(&mut self, cmd: TabCommand, rpc_peer: MainPeer) -> Option<Value> {
+    pub fn do_rpc(&mut self, cmd: TabCommand, rpc_peer: &MainPeer) -> Option<Value> {
         use rpc::TabCommand::*;
 
         match cmd {
@@ -61,7 +61,7 @@ impl Tabs {
         }
     }
 
-    fn do_new_tab(&mut self, rpc_peer: MainPeer) -> String {
+    fn do_new_tab(&mut self, rpc_peer: &MainPeer) -> String {
         self.new_tab(rpc_peer)
     }
 
@@ -79,13 +79,13 @@ impl Tabs {
         }
     }
 
-    fn new_tab(&mut self, rpc_peer: MainPeer) -> String {
+    fn new_tab(&mut self, rpc_peer: &MainPeer) -> String {
         let tabname = self.id_counter.to_string();
         self.id_counter += 1;
         let tab_ctx = TabCtx {
             tab: tabname.clone(),
             kill_ring: self.kill_ring.clone(),
-            rpc_peer: rpc_peer,
+            rpc_peer: rpc_peer.clone(),
         };
         let editor = Editor::new(tab_ctx);
         self.tabs.insert(tabname.clone(), editor);

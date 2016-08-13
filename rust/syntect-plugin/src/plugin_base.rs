@@ -21,7 +21,7 @@ use serde_json::Value;
 use serde_json::builder::ObjectBuilder;
 
 use xi_rpc;
-use xi_rpc::{RpcLoop, RpcPeer, dict_get_u64, dict_get_string};
+use xi_rpc::{RpcLoop, RpcCtx, dict_get_u64, dict_get_string};
 
 // TODO: avoid duplicating this in every crate
 macro_rules! print_err {
@@ -41,6 +41,13 @@ macro_rules! print_err {
 pub enum Error {
     RpcError(xi_rpc::Error),
     WrongReturnType,
+}
+
+// TODO: make more similar to xi_rpc::Handler
+pub trait Handler {
+    fn call(&mut self, &PluginRequest, PluginCtx) -> Option<Value>;
+    #[allow(unused_variables)]
+    fn idle(&mut self, ctx: PluginCtx, token: usize) {}
 }
 
 pub struct SpansBuilder(Vec<Value>);
@@ -65,9 +72,9 @@ impl SpansBuilder {
     }
 }
 
-pub struct PluginPeer(RpcPeer<io::Stdout>);
+pub struct PluginCtx<'a>(RpcCtx<'a, io::Stdout>);
 
-impl PluginPeer {
+impl<'a> PluginCtx<'a> {
     /*
     // Not used.
     pub fn n_lines(&self) -> Result<usize, Error> {
@@ -115,11 +122,22 @@ impl PluginPeer {
     }
 
     fn send_rpc_notification(&self, method: &str, params: &Value) {
-        self.0.send_rpc_notification(method, params)
+        self.0.get_peer().send_rpc_notification(method, params)
     }
 
     fn send_rpc_request(&self, method: &str, params: &Value) -> Result<Value, xi_rpc::Error> {
-        self.0.send_rpc_request(method, params)
+        self.0.get_peer().send_rpc_request(method, params)
+    }
+
+    /// Determines whether an incoming request (or notification) is pending. This
+    /// is intended to reduce latency for bulk operations done in the background.
+    pub fn request_is_pending(&self) -> bool {
+        self.0.get_peer().request_is_pending()
+    }
+
+    /// Schedule the idle handler to be run when there are no requests pending.
+    pub fn schedule_idle(&mut self, token: usize) {
+        self.0.schedule_idle(token);
     }
 }
 
@@ -207,20 +225,43 @@ fn parse_plugin_request(method: &str, params: &Value) -> Result<PluginRequest, I
     }
 }
 
-pub fn mainloop<F: FnMut(&PluginRequest, &PluginPeer) -> Option<Value>>(mut f: F) {
+struct MyHandler<'a, H: 'a>(&'a mut H);
+
+impl<'a, H: Handler> xi_rpc::Handler<io::Stdout> for MyHandler<'a, H> {
+    fn handle_notification(&mut self, ctx: RpcCtx<io::Stdout>, method: &str, params: &Value) {
+        match parse_plugin_request(method, params) {
+            Ok(req) => {
+                let _ = self.0.call(&req, PluginCtx(ctx));
+                // TODO: should check None
+            }
+            Err(err) => print_err!("error: {}", err)
+        }
+    }
+
+    fn handle_request(&mut self, ctx: RpcCtx<io::Stdout>, method: &str, params: &Value) ->
+        Result<Value, Value> {
+        match parse_plugin_request(method, params) {
+            Ok(req) => {
+                let result = self.0.call(&req, PluginCtx(ctx));
+                result.ok_or_else(|| Value::String("return value missing".to_string()))
+            }
+            Err(err) => {
+                print_err!("Error {} decoding RPC request {}", err, method);
+                Err(Value::String("error decoding request".to_string()))
+            }
+        }
+    }
+
+    fn idle(&mut self, ctx: RpcCtx<io::Stdout>, token: usize) {
+        self.0.idle(PluginCtx(ctx), token);
+    }
+}
+
+pub fn mainloop<H: Handler>(handler: &mut H) {
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut rpc_looper = RpcLoop::new(stdout);
-    let peer = PluginPeer(rpc_looper.get_peer());
+    let mut my_handler = MyHandler(handler);
 
-    rpc_looper.mainloop(|| stdin.lock(),
-        |method, params|
-        match parse_plugin_request(method, params) {
-            Ok(req) => f(&req, &peer),
-            Err(err) => {
-                print_err!("error: {}", err);
-                None
-            }
-        }
-    );
+    rpc_looper.mainloop(|| stdin.lock(), &mut my_handler);
 }

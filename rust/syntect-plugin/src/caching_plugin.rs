@@ -17,7 +17,7 @@
 use serde_json::Value;
 
 use plugin_base;
-use plugin_base::{PluginRequest, PluginPeer};
+use plugin_base::PluginRequest;
 
 pub use plugin_base::{Error, Spans, SpansBuilder};
 
@@ -27,6 +27,8 @@ const CHUNK_SIZE: usize = 1024 * 1024;
 pub trait Handler {
     fn init_buf(&mut self, ctx: PluginCtx, buf_size: usize);
     fn update(&mut self, ctx: PluginCtx);
+    #[allow(unused_variables)]
+    fn idle(&mut self, ctx: PluginCtx, token: usize) {}
 }
 
 /// The caching state
@@ -44,14 +46,18 @@ struct State {
 
 pub struct PluginCtx<'a> {
     state: &'a mut State,
-    peer: &'a PluginPeer,
+    peer: plugin_base::PluginCtx<'a>,
 }
 
-pub fn mainloop<H: Handler>(handler: &mut H) {
-    let mut state = State::default();
-    plugin_base::mainloop(|req, peer| {
+struct MyHandler<'a, H: 'a> {
+    handler: &'a mut H,
+    state: State,
+}
+
+impl<'a, H: Handler> plugin_base::Handler for MyHandler<'a, H> {
+    fn call(&mut self, req: &PluginRequest, peer: plugin_base::PluginCtx) -> Option<Value> {
         let ctx = PluginCtx {
-            state: &mut state,
+            state: &mut self.state,
             peer: peer,
         };
         match *req {
@@ -63,7 +69,7 @@ pub fn mainloop<H: Handler>(handler: &mut H) {
                 print_err!("got init_buf buf_size = {}, rev = {}", buf_size, rev);
                 ctx.state.buf_size = buf_size;
                 ctx.state.rev = rev;
-                handler.init_buf(ctx, buf_size);
+                self.handler.init_buf(ctx, buf_size);
                 None
             }
             PluginRequest::Update { start, end, new_len, rev, edit_type } => {
@@ -75,11 +81,27 @@ pub fn mainloop<H: Handler>(handler: &mut H) {
                 ctx.state.cache = None;
                 ctx.state.line_num = 0;
                 ctx.state.offset_of_line = 0;
-                handler.update(ctx);
+                self.handler.update(ctx);
                 Some(Value::Null)
             }
         }
-    });
+    }
+
+    fn idle(&mut self, peer: plugin_base::PluginCtx, token: usize) {
+        let ctx = PluginCtx {
+            state: &mut self.state,
+            peer: peer,
+        };
+        self.handler.idle(ctx, token);
+    }
+}
+
+pub fn mainloop<H: Handler>(handler: &mut H) {
+    let mut my_handler = MyHandler {
+        handler: handler,
+        state: State::default(),
+    };
+    plugin_base::mainloop(&mut my_handler);
 }
 
 impl<'a> PluginCtx<'a> {
@@ -133,6 +155,17 @@ impl<'a> PluginCtx<'a> {
 
     pub fn set_line_fg_spans(&self, line_num: usize, spans: Spans) {
         self.peer.set_line_fg_spans(line_num, spans)
+    }
+
+    /// Determines whether an incoming request (or notification) is pending. This
+    /// is intended to reduce latency for bulk operations done in the background.
+    pub fn request_is_pending(&self) -> bool {
+        self.peer.request_is_pending()
+    }
+
+    /// Schedule the idle handler to be run when there are no requests pending.
+    pub fn schedule_idle(&mut self, token: usize) {
+        self.peer.schedule_idle(token);
     }
 }
 

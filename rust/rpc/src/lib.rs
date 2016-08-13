@@ -61,6 +61,19 @@ pub enum Error {
 /// not need to take the writer type as a parameter.
 pub struct RpcPeer<W: Write>(Arc<RpcState<W>>);
 
+pub struct RpcCtx<'a, W: 'a + Write> {
+    peer: &'a RpcPeer<W>,
+    idle: &'a mut VecDeque<usize>,
+}
+
+pub trait Handler<W: Write> {
+    fn handle_notification(&mut self, ctx: RpcCtx<W>, method: &str, params: &Value);
+    fn handle_request(&mut self, ctx: RpcCtx<W>, method: &str, params: &Value) ->
+        Result<Value, Value>;
+    #[allow(unused_variables)]
+    fn idle(&mut self, ctx: RpcCtx<W>, token: usize) {}
+}
+
 trait Callback: Send {
     fn call(self: Box<Self>, result: Result<Value, Error>);
 }
@@ -72,12 +85,12 @@ impl<F:Send + FnOnce(Result<Value, Error>)> Callback for F {
 }
 
 trait IdleProc: Send {
-    fn call(self: Box<Self>);
+    fn call(self: Box<Self>, token: usize);
 }
 
-impl<F:Send + FnOnce()> IdleProc for F {
-    fn call(self: Box<F>) {
-        (*self)()
+impl<F:Send + FnOnce(usize)> IdleProc for F {
+    fn call(self: Box<F>, token: usize) {
+        (*self)(token)
     }
 }
 
@@ -103,7 +116,6 @@ struct RpcState<W: Write> {
     writer: Mutex<W>,
     id: AtomicUsize,
     pending: Mutex<BTreeMap<usize, ResponseHandler>>,
-    idle: Mutex<VecDeque<Box<IdleProc>>>,
 }
 
 /// A structure holding the state of a main loop for handing RPC's.
@@ -133,7 +145,6 @@ impl<W:Write + Send> RpcLoop<W> {
             writer: Mutex::new(writer),
             id: AtomicUsize::new(0),
             pending: Mutex::new(BTreeMap::new()),
-            idle: Mutex::new(VecDeque::new()),
         }));
         RpcLoop {
             buf: String::new(),
@@ -172,11 +183,9 @@ impl<W:Write + Send> RpcLoop<W> {
     /// incoming request to be outstanding.
     ///
     /// This method returns when the input channel is closed.
-    pub fn mainloop<R: BufRead,
-        RF: Send + FnOnce() -> R,
-        F: FnMut(&str, &Value) -> Option<Value>>(&mut self,
+    pub fn mainloop<R: BufRead, RF: Send + FnOnce() -> R>(&mut self,
             rf: RF,
-            mut f: F) {
+            handler: &mut Handler<W>) {
         crossbeam::scope(|scope| {
             let peer = self.get_peer();
             scope.spawn(move|| {
@@ -187,9 +196,9 @@ impl<W:Write + Send> RpcLoop<W> {
                             let is_method = json.as_object().map_or(false, |dict|
                                 dict.contains_key("method"));
                             if is_method {
-                                self.peer.put_rx(json)
+                                self.peer.put_rx(json);
                             } else {
-                                self.peer.handle_response(json)
+                                self.peer.handle_response(json);
                             }
                         }
                         Err(err) => print_err!("Error decoding json: {:?}", err)
@@ -198,12 +207,18 @@ impl<W:Write + Send> RpcLoop<W> {
                 self.peer.put_rx(Value::Null);
                 // TODO: send disconnect error to all pending
             });
+            let mut idle = VecDeque::<usize>::new();
             loop {
-                let json = if peer.has_idle() {
+                let json = if !idle.is_empty() {
                     if let Some(json) = peer.try_get_rx() {
                         json
                     } else {
-                        peer.run_one_idle();
+                        let token = idle.pop_front().unwrap();
+                        let ctx = RpcCtx {
+                            peer: &peer,
+                            idle: &mut idle,
+                        };
+                        handler.idle(ctx, token);
                         continue;
                     }
                 } else {
@@ -212,13 +227,18 @@ impl<W:Write + Send> RpcLoop<W> {
                 if json == Value::Null {
                     break;
                 }
-                print_err!("to core: {:?}", json);
+                //print_err!("to core: {:?}", json);
                 match parse_rpc_request(&json) {
                     Some((id, method, params)) => {
-                        if let Some(result) = f(method, params) {
-                            peer.respond(&result, id);
-                        } else if let Some(id) = id {
-                            print_err!("RPC with id={:?} not responded", id);
+                        let ctx = RpcCtx {
+                            peer: &peer,
+                            idle: &mut idle,
+                        };
+                        if let Some(id) = id {
+                            let result = handler.handle_request(ctx, method, params);
+                            peer.respond(result, id);
+                        } else {
+                            handler.handle_notification(ctx, method, params);
                         }
                     }
                     None => print_err!("invalid RPC request")
@@ -228,25 +248,35 @@ impl<W:Write + Send> RpcLoop<W> {
     }
 }
 
+impl<'a, W: Write> RpcCtx<'a, W> {
+    pub fn get_peer(&self) -> &RpcPeer<W> {
+        self.peer
+    }
+
+    /// Schedule the idle handler to be run when there are no requests pending.
+    pub fn schedule_idle(&mut self, token: usize) {
+        self.idle.push_back(token);
+    }
+}
+
 impl<W:Write> RpcPeer<W> {
     fn send(&self, v: &Value) -> Result<(), io::Error> {
         let mut s = serde_json::to_string(v).unwrap();
         s.push('\n');
         //print_err!("from core: {}", s);
         self.0.writer.lock().unwrap().write_all(s.as_bytes())
-        // Technically, maybe we should flush here, but doesn't seem to be reqiured.
+        // Technically, maybe we should flush here, but doesn't seem to be required.
     }
 
-    fn respond(&self, result: &Value, id: Option<&Value>) {
-        if let Some(id) = id {
-            if let Err(e) = self.send(&ObjectBuilder::new()
-                                 .insert("id", id)
-                                 .insert("result", result)
-                                 .build()) {
-                print_err!("error {} sending response to RPC {:?}", e, id);
-            }
-        } else {
-            print_err!("tried to respond with no id");
+    fn respond(&self, result: Result<Value, Value>, id: &Value) {
+        let mut builder = ObjectBuilder::new()
+            .insert("id", id);
+        match result {
+            Ok(result) => builder = builder.insert("result", result),
+            Err(error) => builder = builder.insert("error", error),
+        }
+        if let Err(e) = self.send(&builder.build()) {
+            print_err!("error {} sending response to RPC {:?}", e, id);
         }
     }
 
@@ -338,32 +368,9 @@ impl<W:Write> RpcPeer<W> {
     /// Determines whether an incoming request (or notification) is pending. This
     /// is intended to reduce latency for bulk operations done in the background;
     /// the handler can do this work, periodically check
-    ///
-    /// TODO: some way to schedule an "idle task" when no requests are pending.
     pub fn request_is_pending(&self) -> bool {
         let queue = self.0.rx_queue.lock().unwrap();
         !queue.is_empty()
-    }
-
-    fn has_idle(&self) -> bool {
-        !self.0.idle.lock().unwrap().is_empty()
-    }
-
-    fn run_one_idle(&self) {
-        let idle = {
-            self.0.idle.lock().unwrap().pop_front()
-        };
-        if let Some(idle) = idle {
-            idle.call();
-        }
-    }
-
-    /// Schedule an "idle proc" to be run when there are no requests pending.
-
-    // Question: do own boxing, as suggested for send_rpc_request_async above?
-    pub fn schedule_idle<F>(&self, idle: F)
-        where F: FnOnce() + Send + 'static {
-        self.0.idle.lock().unwrap().push_back(Box::new(idle));
     }
 }
 
