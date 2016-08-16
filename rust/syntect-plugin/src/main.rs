@@ -51,9 +51,12 @@ struct Sets {
 struct PluginState<'a> {
     sets: &'a Sets,
     line_num: usize,
+    offset: usize,
     parse_state: Option<ParseState>,
     highlighter: Option<Highlighter<'a>>,
     hstate: Option<HighlightState>,
+    spans_start: usize,
+    builder: Option<SpansBuilder>,
 }
 
 impl<'a> PluginState<'a> {
@@ -61,9 +64,12 @@ impl<'a> PluginState<'a> {
         PluginState {
             sets: sets,
             line_num: 0,
+            offset: 0,
             parse_state: None,
             highlighter: None,
             hstate: None,
+            spans_start: 0,
+            builder: None,
         }
     }
 
@@ -80,19 +86,28 @@ impl<'a> PluginState<'a> {
         }
         let line = line.unwrap();
         let ops = self.parse_state.as_mut().unwrap().parse_line(&line);
-        let mut builder = SpansBuilder::new();
+        if self.builder.is_none() {
+            self.spans_start = self.offset;
+            self.builder = Some(SpansBuilder::new());
+        }
         let iter = HighlightIterator::new(self.hstate.as_mut().unwrap(), &ops, &line,
             self.highlighter.as_ref().unwrap());
         let mut ix = 0;
         for (style, str_slice) in iter {
-            let start = ix;
-            let end = ix + str_slice.len();
-            add_style_span(&mut builder, style, start, end);
-            ix = end;
+            let start = self.offset - self.spans_start + ix;
+            let end = start + str_slice.len();
+            add_style_span(self.builder.as_mut().unwrap(), style, start, end);
+            ix += str_slice.len();
         }
-        ctx.set_line_fg_spans(self.line_num, builder.build());
         self.line_num += 1;
+        self.offset += line.len();
         true
+    }
+
+    fn flush_spans(&mut self, ctx: &mut PluginCtx) {
+        if let Some(builder) = self.builder.take() {
+            ctx.set_fg_spans(self.spans_start, self.offset - self.spans_start, builder.build());
+        }
     }
 
     fn do_highlighting(&mut self, mut ctx: PluginCtx) {
@@ -104,6 +119,7 @@ impl<'a> PluginState<'a> {
         self.hstate = Some(HighlightState::new(self.highlighter.as_ref().unwrap(),
             ScopeStack::new()));
         self.line_num = 0;
+        self.offset = 0;
         ctx.schedule_idle(0);
     }
 }
@@ -120,9 +136,10 @@ impl<'a> caching_plugin::Handler for PluginState<'a> {
     }
 
     fn idle(&mut self, mut ctx: PluginCtx, _token: usize) {
-        print_err!("idling at line {}", self.line_num);
+        print_err!("idle task at line {}", self.line_num);
         for _ in 0..LINES_PER_RPC {
             if !self.highlight_one_line(&mut ctx) {
+                self.flush_spans(&mut ctx);
                 return;
             }
             if ctx.request_is_pending() {
@@ -130,6 +147,7 @@ impl<'a> caching_plugin::Handler for PluginState<'a> {
                 break;
             }
         }
+        self.flush_spans(&mut ctx);
         ctx.schedule_idle(0);
     }
 }

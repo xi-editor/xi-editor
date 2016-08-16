@@ -123,16 +123,19 @@ impl<'a> PluginCtx<'a> {
             print_err!("can't handle non-sequential line numbers yet");
             return Ok(None);
         }
-        if self.state.offset_of_line == self.state.buf_size {
+        let offset_of_line = self.state.offset_of_line;
+        if offset_of_line == self.state.buf_size {
             return Ok(None);
         }
-        if self.state.cache.is_none() {
-            self.state.cache = Some(try!(self.peer.get_data(self.state.offset_of_line, CHUNK_SIZE,
+        if self.state.cache.is_none() || offset_of_line < self.state.cache_offset ||
+                offset_of_line >= self.state.cache_offset +
+                    self.state.cache.as_ref().unwrap().len() {
+            self.state.cache = Some(try!(self.peer.get_data(offset_of_line, CHUNK_SIZE,
                 self.state.rev)));
-            self.state.cache_offset = self.state.offset_of_line;
+            self.state.cache_offset = offset_of_line;
         }
         loop {
-            let offset_in_cache = self.state.offset_of_line - self.state.cache_offset;
+            let offset_in_cache = offset_of_line - self.state.cache_offset;
             match memchr(b'\n', &self.state.cache.as_ref().unwrap().as_bytes()[offset_in_cache..]) {
                 None => {
                     let cache_len = self.state.cache.as_ref().unwrap().len();
@@ -148,7 +151,7 @@ impl<'a> PluginCtx<'a> {
                     let next_offset = self.state.cache_offset + cache_len;
                     let next_chunk = try!(self.peer.get_data(next_offset, CHUNK_SIZE,
                             self.state.rev));
-                    self.state.cache_offset = self.state.offset_of_line;
+                    self.state.cache_offset = offset_of_line;
                     let mut new_cache = String::with_capacity(cache_len - offset_in_cache +
                             next_chunk.len());
                     new_cache.push_str(&self.state.cache.as_ref().unwrap()[offset_in_cache..]);
@@ -166,8 +169,10 @@ impl<'a> PluginCtx<'a> {
         }
     }
 
-    pub fn set_line_fg_spans(&self, line_num: usize, spans: Spans) {
-        self.peer.set_line_fg_spans(line_num, spans)
+    /// Send style spans to the core. Note: these are based on the revision as of the
+    /// current state of the cache (the revision is sent to the core).
+    pub fn set_fg_spans(&self, start: usize, len: usize, spans: Spans) {
+        self.peer.set_fg_spans(start, len, spans, self.state.rev);
     }
 
     /// Determines whether an incoming request (or notification) is pending. This

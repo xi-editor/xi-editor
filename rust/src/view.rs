@@ -293,8 +293,8 @@ impl View {
             } else {
                 self.sel_end = iv.start() + new_len;
             }
-            self.sel_start = self.sel_end;
         }
+        self.sel_start = self.sel_end;
         if self.breaks.is_some() {
             linewrap::rewrap(self.breaks.as_mut().unwrap(), text, iv, new_len, self.cols);
         }

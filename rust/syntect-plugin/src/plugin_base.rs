@@ -113,12 +113,14 @@ impl<'a> PluginCtx<'a> {
         }
     }
 
-    pub fn set_line_fg_spans(&self, line_num: usize, spans: Spans) {
+    pub fn set_fg_spans(&self, start: usize, len: usize, spans: Spans, rev: usize) {
         let params = ObjectBuilder::new()
-            .insert("line", line_num)
+            .insert("start", start)
+            .insert("len", len)
             .insert("spans", spans)
+            .insert("rev", rev)
             .build();
-        self.send_rpc_notification("set_line_fg_spans", &params);
+        self.send_rpc_notification("set_fg_spans", &params);
     }
 
     fn send_rpc_notification(&self, method: &str, params: &Value) {

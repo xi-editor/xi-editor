@@ -803,10 +803,10 @@ impl Editor {
         self.text.slice_to_string(start_offset, end_offset)
     }
 
-    pub fn plugin_set_line_fg_spans(&mut self, line_num: usize, spans: &Value) {
-        let start_offset = self.text.offset_of_line(line_num);
-        let end_offset = self.text.offset_of_line(line_num + 1);
-        let mut sb = SpansBuilder::new(end_offset - start_offset);
+    pub fn plugin_set_fg_spans(&mut self, start: usize, len: usize, spans: &Value, _rev: usize) {
+        // TODO: more protection against invalid input
+        let end_offset = start + len;
+        let mut sb = SpansBuilder::new(len);
         for span in spans.as_array().unwrap() {
             let span_dict = span.as_object().unwrap();
             let start = span_dict.get("start").and_then(Value::as_u64).unwrap() as usize;
@@ -816,7 +816,8 @@ impl Editor {
             let style = Style { fg: fg, font_style: font_style };
             sb.add_span(Interval::new_open_open(start, end), style);
         }
-        self.view.set_fg_spans(start_offset, end_offset, sb.build());
+        // TODO: operational transformation from given rev to head
+        self.view.set_fg_spans(start, end_offset, sb.build());
         self.view_dirty = true;
         self.render();
     }

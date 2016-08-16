@@ -111,11 +111,15 @@ impl PluginRef {
                         )
                     )
                 }
-                "set_line_fg_spans" => {
-                    let dict = params.as_object().unwrap();
-                    let line_num = dict.get("line").and_then(Value::as_u64).unwrap() as usize;
-                    let spans = dict.get("spans").unwrap();
-                    editor.plugin_set_line_fg_spans(line_num, spans);
+                "set_fg_spans" => {
+                    if let Some(dict) = params.as_object() {
+                        if let (Some(start), Some(len), Some(spans), Some(rev)) =
+                            (dict_get_u64(dict, "start"), dict_get_u64(dict, "len"),
+                                dict.get("spans"), dict_get_u64(dict, "rev")) {
+                            editor.plugin_set_fg_spans(start as usize, len as usize, spans,
+                                rev as usize);
+                        }
+                    }
                     None
                 }
                 "alert" => {
