@@ -72,13 +72,26 @@ impl<'a, H: Handler> plugin_base::Handler for MyHandler<'a, H> {
                 self.handler.init_buf(ctx, buf_size);
                 None
             }
-            PluginRequest::Update { start, end, new_len, rev, edit_type } => {
+            PluginRequest::Update { start, end, new_len, rev, edit_type, text } => {
                 print_err!("got update notification {:?}", edit_type);
                 ctx.state.buf_size = ctx.state.buf_size - (end - start) + new_len;
                 ctx.state.rev = rev;
-                // For now, invalidate everything.
-                // TODO: use request params to actually update cache.
-                ctx.state.cache = None;
+                if let (Some(text), Some(mut cache)) = (text, ctx.state.cache.take()) {
+                    let off = ctx.state.cache_offset;
+                    if start >= off && start <= off + cache.len() {
+                        let tail = if end < off + cache.len() {
+                            Some(cache[end - off ..].to_string())
+                        } else {
+                            None
+                        };
+                        cache.truncate(start - off);
+                        cache.push_str(text);
+                        if let Some(tail) = tail {
+                            cache.push_str(&tail);
+                        }
+                        ctx.state.cache = Some(cache);
+                    }
+                }
                 ctx.state.line_num = 0;
                 ctx.state.offset_of_line = 0;
                 self.handler.update(ctx);

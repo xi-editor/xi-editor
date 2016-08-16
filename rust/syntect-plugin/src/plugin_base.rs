@@ -162,7 +162,7 @@ impl EditType {
     }
 }
 
-pub enum PluginRequest {
+pub enum PluginRequest<'a> {
     Ping,
     InitBuf {
         buf_size: usize,
@@ -174,6 +174,7 @@ pub enum PluginRequest {
         new_len: usize,
         rev: usize,
         edit_type: EditType,
+        text: Option<&'a str>,
     },
 }
 
@@ -191,7 +192,8 @@ impl fmt::Display for InternalError {
     }
 }
 
-fn parse_plugin_request(method: &str, params: &Value) -> Result<PluginRequest, InternalError> {
+fn parse_plugin_request<'a>(method: &str, params: &'a Value) ->
+        Result<PluginRequest<'a>, InternalError> {
     match method {
         "ping" => Ok(PluginRequest::Ping),
         "init_buf" => {
@@ -217,6 +219,7 @@ fn parse_plugin_request(method: &str, params: &Value) -> Result<PluginRequest, I
                             new_len: new_len as usize,
                             rev: rev as usize,
                             edit_type: EditType::from_str(edit_type),
+                            text: dict_get_string(dict, "text"),
                         })
                 } else { None }
             ).ok_or_else(|| InternalError::InvalidParams)

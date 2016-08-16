@@ -146,16 +146,20 @@ impl PluginRef {
     // TODO: send finer grain delta
     // TODO: make this a synchronous request (but with a callback to not block),
     // so editor can defer gc until request returns
-    pub fn update<F>(&self, start: usize, end: usize, new_len: usize, rev: usize, edit_type: &str,
-            callback: F) where F: FnOnce(Result<Value, Error>) + Send + 'static {
+    pub fn update<F>(&self, start: usize, end: usize, new_len: usize, text: Option<&str>,
+            rev: usize, edit_type: &str, callback: F)
+            where F: FnOnce(Result<Value, Error>) + Send + 'static {
         let plugin = self.0.lock().unwrap();
-        let params = ObjectBuilder::new()
+        let mut builder = ObjectBuilder::new()
             .insert("start", start)
             .insert("end", end)
             .insert("new_len", new_len)
             .insert("rev", rev)
-            .insert("edit_type", edit_type)
-            .build();
+            .insert("edit_type", edit_type);
+        if let Some(text) = text {
+            builder = builder.insert("text", text);
+        }
+        let params = builder.build();
         plugin.peer.send_rpc_request_async("update", &params, callback);
     }
 }

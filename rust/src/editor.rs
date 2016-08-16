@@ -201,8 +201,14 @@ impl Editor {
         for plugin in &self.plugins {
             self.revs_in_flight += 1;
             let editor = Arc::downgrade(self_ref);
-            plugin.update(iv.start(), iv.end(), new_len, self.engine.get_head_rev_id(),
-                self.this_edit_type.json_string(), move |_| {
+            let text = if new_len < MAX_SIZE_LIMIT {
+                Some(self.text.slice_to_string(iv.start(), iv.start() + new_len))
+            } else {
+                None
+            };
+            plugin.update(iv.start(), iv.end(), new_len, text.as_ref().map(|s| s.as_str()),
+                self.engine.get_head_rev_id(), self.this_edit_type.json_string(),
+                move |_| {
                     if let Some(editor) = editor.upgrade() {
                         editor.lock().unwrap().dec_revs_in_flight();
                     }
