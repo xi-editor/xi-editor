@@ -227,7 +227,7 @@ impl<W:Write + Send> RpcLoop<W> {
                 if json == Value::Null {
                     break;
                 }
-                print_err!("to core: {:?}", json);
+                //print_err!("to core: {:?}", json);
                 match parse_rpc_request(&json) {
                     Some((id, method, params)) => {
                         let ctx = RpcCtx {

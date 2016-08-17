@@ -22,7 +22,7 @@ use serde_json::Value;
 
 use xi_rope::rope::{LinesMetric, Rope};
 use xi_rope::interval::Interval;
-use xi_rope::delta::Delta;
+use xi_rope::delta::{Delta, Transformer};
 use xi_rope::tree::Cursor;
 use xi_rope::engine::Engine;
 use xi_rope::spans::SpansBuilder;
@@ -803,9 +803,10 @@ impl Editor {
         self.text.slice_to_string(start_offset, end_offset)
     }
 
-    pub fn plugin_set_fg_spans(&mut self, start: usize, len: usize, spans: &Value, _rev: usize) {
+    pub fn plugin_set_fg_spans(&mut self, start: usize, len: usize, spans: &Value, rev: usize) {
         // TODO: more protection against invalid input
-        let end_offset = start + len;
+        let mut start = start;
+        let mut end_offset = start + len;
         let mut sb = SpansBuilder::new(len);
         for span in spans.as_array().unwrap() {
             let span_dict = span.as_object().unwrap();
@@ -816,8 +817,18 @@ impl Editor {
             let style = Style { fg: fg, font_style: font_style };
             sb.add_span(Interval::new_open_open(start, end), style);
         }
-        // TODO: operational transformation from given rev to head
-        self.view.set_fg_spans(start, end_offset, sb.build());
+        let mut spans = sb.build();
+        if rev != self.engine.get_head_rev_id() {
+            let delta = self.engine.delta_rev_head(rev);
+            let mut transformer = Transformer::new(&delta);
+            let new_start = transformer.transform(start, false);
+            if !transformer.interval_untouched(Interval::new_closed_closed(start, end_offset)) {
+                spans = spans.transform(start, end_offset, &mut transformer);
+            }
+            start = new_start;
+            end_offset = transformer.transform(end_offset, true);
+        }
+        self.view.set_fg_spans(start, end_offset, spans);
         self.view_dirty = true;
         self.render();
     }

@@ -20,6 +20,7 @@ use std::marker::PhantomData;
 use std::mem;
 
 use tree::{Leaf, Node, NodeInfo, TreeBuilder, Cursor};
+use delta::Transformer;
 use interval::Interval;
 
 const MIN_LEAF: usize = 32;
@@ -155,6 +156,31 @@ pub struct SpanIter<'a, T: 'a + Clone + Default> {
 }
 
 impl<T: Clone + Default> Spans<T> {
+    /// Perform operational transformation on a spans object intended to be edited into
+    /// a sequence at the given offset.
+
+    // Note: this implementation is not efficient for very large Spans objects, as it
+    // traverses all spans linearly. A more sophisticated approach would be to traverse
+    // the tree, and only delve into subtrees that are transformed.
+    pub fn transform<N: NodeInfo>(&self, base_start: usize, base_end: usize,
+            xform: &mut Transformer<N>) -> Self {
+        // TODO: maybe should take base as an Interval and figure out "after" from that
+        let new_start = xform.transform(base_start, false);
+        let new_end = xform.transform(base_end, true);
+        let mut builder = SpansBuilder::new(new_end - new_start);
+        for (iv, data) in self.iter() {
+            let (start_closed, end_closed) = (iv.is_start_closed(), iv.is_end_closed());
+            let start = xform.transform(iv.start() + base_start, !start_closed) - new_start;
+            let end = xform.transform(iv.end() + base_start, end_closed) - new_start;
+            if start < end || (start_closed && end_closed) {
+                let iv = Interval::new(start, start_closed, end, end_closed);
+                // TODO: could imagine using a move iterator and avoiding clone, but it's not easy.
+                builder.add_span(iv, data.clone());
+            }
+        }
+        builder.build()
+    }
+
     // possible future: an iterator that takes an interval, so results are the same as
     // taking a subseq on the spans object. Would require specialized Cursor.
     pub fn iter(&self) -> SpanIter<T> {

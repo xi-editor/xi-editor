@@ -253,13 +253,91 @@ impl<N: NodeInfo> Delta<N> {
                 els = init;
             }
         }
-        let new_len = els.iter().fold(0, |sum, el|
+        (Interval::new_closed_open(iv_start, iv_end), Delta::els_len(els))
+    }
+
+    fn els_len(els: &[DeltaElement<N>]) -> usize {
+        els.iter().fold(0, |sum, el|
             sum + match *el {
                 DeltaElement::Copy(beg, end) => end - beg,
                 DeltaElement::Insert(ref n) => n.len()
             }
-        );
-        (Interval::new_closed_open(iv_start, iv_end), new_len)
+        )
+    }
+}
+
+/// A mapping from coordinates in the source sequence to coordinates in the sequence after
+/// the delta is applied.
+
+// TODO: this doesn't need the new strings, so it should either be based on a new structure
+// like Delta but missing the strings, or perhaps the two subsets it's synthesized from.
+pub struct Transformer<'a, N: NodeInfo + 'a> {
+    delta: &'a Delta<N>,
+}
+
+impl<'a, N: NodeInfo + 'a> Transformer<'a, N> {
+    /// Create a new transformer from a delta.
+    pub fn new(delta: &'a Delta<N>) -> Self {
+        Transformer {
+            delta: delta,
+        }
+    }
+
+    /// Transform a single coordinate. The `after` parameter indicates whether it
+    /// it should land before or after an inserted region.
+
+    // TODO: implement a cursor so we're not scanning from the beginning every time.
+    pub fn transform(&mut self, ix: usize, after: bool) -> usize {
+        if ix == 0 && !after {
+            return 0;
+        }
+        let mut result = 0;
+        for el in &self.delta.els {
+            match *el {
+                DeltaElement::Copy(beg, end) => {
+                    if ix <= beg {
+                        return result;
+                    }
+                    if ix < end || (ix == end && !after) {
+                        return result + ix - beg;
+                    }
+                    result += end - beg;
+                }
+                DeltaElement::Insert(ref n) => {
+                    result += n.len();
+                }
+            }
+        }
+        return result;
+    }
+
+    /// Determine whether a given interval is untouched by the transformation.
+    pub fn interval_untouched(&mut self, iv: Interval) -> bool {
+        let mut last_was_ins = true;
+        for el in &self.delta.els {
+            match *el {
+                DeltaElement::Copy(beg, end) => {
+                    if iv.is_before(end) {
+                        if last_was_ins {
+                            if iv.is_after(beg) {
+                                return true;
+                            }
+                        } else {
+                            if !iv.is_before(beg) {
+                                return true;
+                            }
+                        }
+                    } else {
+                        return false;
+                    }
+                    last_was_ins = false;
+                }
+                _ => {
+                    last_was_ins = true;
+                }
+            }
+        }
+        false
     }
 }
 
