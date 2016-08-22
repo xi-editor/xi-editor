@@ -337,8 +337,11 @@ impl<W:Write> RpcPeer<W> {
             (None, Some(err)) => Err(Error::RemoteError(err)),
             _ => Err(Error::MalformedResponse)
         };
-        let mut pending = self.0.pending.lock().unwrap();
-        match pending.remove(&id) {
+        let handler = {
+            let mut pending = self.0.pending.lock().unwrap();
+            pending.remove(&id)
+        };
+        match handler {
             Some(responsehandler) => responsehandler.invoke(result),
             None => print_err!("id {} not found in pending", id)
         }
