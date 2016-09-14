@@ -261,6 +261,7 @@ mod tests {
         assert_eq!(19, linebreak_property('\u{1091}'));
         assert_eq!(19, linebreak_property('\u{1B53}'));
         assert_eq!( 2, linebreak_property('\u{1EEA}'));
+        assert_eq!(40, linebreak_property('\u{200D}'));
         assert_eq!(14, linebreak_property('\u{30C7}'));
         assert_eq!(14, linebreak_property('\u{318B}'));
         assert_eq!(14, linebreak_property('\u{3488}'));
@@ -388,6 +389,7 @@ mod tests {
         assert_eq!((9, 2), linebreak_property_str(&"\u{07A6}", 0));
         assert_eq!((0, 2), linebreak_property_str(&"\u{07B9}", 0));
         assert_eq!((2, 3), linebreak_property_str(&"\u{131F}", 0));
+        assert_eq!((40, 3), linebreak_property_str(&"\u{200D}", 0));
         assert_eq!((2, 3), linebreak_property_str(&"\u{25DA}", 0));
         assert_eq!((2, 3), linebreak_property_str(&"\u{2C01}", 0));
         assert_eq!((14, 3), linebreak_property_str(&"\u{2EE5}", 0));
@@ -421,6 +423,8 @@ mod tests {
         assert_eq!((2, 3), linebreak_property_str(&"\u{FEC3}", 0));
         assert_eq!((0, 4), linebreak_property_str(&"\u{13CC5}", 0));
         assert_eq!((2, 4), linebreak_property_str(&"\u{1D945}", 0));
+        assert_eq!((41, 4), linebreak_property_str(&"\u{1F3C3}", 0));
+        assert_eq!((42, 4), linebreak_property_str(&"\u{1F3FB}", 0));
         assert_eq!((14, 4), linebreak_property_str(&"\u{2BDCD}", 0));
         assert_eq!((14, 4), linebreak_property_str(&"\u{3898E}", 0));
         assert_eq!((0, 4), linebreak_property_str(&"\u{45C35}", 0));
@@ -468,6 +472,10 @@ mod tests {
         assert_eq!(vec![(2, true), (4, true)],
             LineBreakIterator::new("\r\n\r\n").collect::<Vec<_>>());
 
+        // LB8a
+        assert_eq!(vec![(7, true)],
+            LineBreakIterator::new("\u{200D}\u{1F3FB}").collect::<Vec<_>>());
+
         // LB10 combining mark after space
         assert_eq!(vec![(2, false), (4, true)],
             LineBreakIterator::new("a \u{301}").collect::<Vec<_>>());
@@ -492,6 +500,16 @@ mod tests {
         assert_eq!(vec![(5, true)],
             LineBreakIterator::new("\u{05D0}-\u{05D0}").collect::<Vec<_>>());
 
+        // LB23a
+        assert_eq!(vec![(6, true)],
+            LineBreakIterator::new("$\u{1F3FB}%").collect::<Vec<_>>());
 
+        // LB30b
+        assert_eq!(vec![(8, true)],
+            LineBreakIterator::new("\u{1F466}\u{1F3FB}").collect::<Vec<_>>());
+
+        // LB31
+        assert_eq!(vec![(8, false), (16, true)],
+            LineBreakIterator::new("\u{1F1E6}\u{1F1E6}\u{1F1E6}\u{1F1E6}").collect::<Vec<_>>());
     }
 }
