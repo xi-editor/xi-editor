@@ -130,9 +130,49 @@ impl Debug for Rope {
 }
 */
 
-// TODO: explore ways to make this faster - SIMD would be a big win
+#[cfg(target_pointer_width = "16")] const USIZE_BYTES: usize = 2;
+#[cfg(target_pointer_width = "32")] const USIZE_BYTES: usize = 4;
+#[cfg(target_pointer_width = "64")] const USIZE_BYTES: usize = 8;
+const LO : usize = ::std::usize::MAX / 255;
+const HI : usize = LO * 128;
+const REP_NEWLINE : usize = b'\n' as usize * LO;
+
+fn count_zero_bytes(x: usize) -> usize {
+    ((x.wrapping_sub(LO)) & !x & HI) / 128 % 255
+}
+
 fn count_newlines(s: &str) -> usize {
-    s.as_bytes().iter().filter(|&&c| c == b'\n').count()
+    let text = s.as_bytes();
+    let (ptr, len) = (text.as_ptr(), text.len());
+
+    // search up to an aligned boundary
+    let align = (ptr as usize) & (USIZE_BYTES - 1);
+    let mut offset;
+    let mut count;
+    if align > 0 {
+        offset = min(USIZE_BYTES - align, len);
+        count = text[..offset].iter().filter(|b| **b == b'\n').count();
+    } else {
+        offset = 0;
+        count = 0;
+    }
+
+    // search the body of the text
+    if len >= 2 * USIZE_BYTES {
+        while offset <= len - 2 * USIZE_BYTES {
+            unsafe {
+                let u = *(ptr.offset(offset as isize) as *const usize);
+                let v = *(ptr.offset((offset + USIZE_BYTES) as isize) as *const usize);
+
+                // break if there is a matching byte
+                count += count_zero_bytes(u ^ REP_NEWLINE);
+                count += count_zero_bytes(v ^ REP_NEWLINE);
+            }
+            offset += USIZE_BYTES * 2;
+        }
+    }
+    // search the rest
+    count + text[offset..].iter().filter(|b| **b == b'\n').count()
 }
 
 impl Rope {
@@ -414,7 +454,7 @@ impl Node {
     fn height(&self) -> usize {
         self.0.height
     }
-    
+
     fn is_leaf(&self) -> bool {
         self.0.height == 0
     }
@@ -449,7 +489,7 @@ impl Node {
             NodeVal::Internal(ref pieces) => (pieces.len() >= MIN_CHILDREN)
         }
     }
- 
+
     fn from_string_piece(s: String) -> Node {
         debug_assert!(s.len() <= MAX_LEAF);
 
