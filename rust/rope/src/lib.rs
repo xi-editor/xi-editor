@@ -137,41 +137,74 @@ const LO : usize = ::std::usize::MAX / 255;
 const HI : usize = LO * 128;
 const REP_NEWLINE : usize = b'\n' as usize * LO;
 
-fn count_zero_bytes(x: usize) -> usize {
-    ((x.wrapping_sub(LO)) & !x & HI) / 128 % 255
-}
-
 fn count_newlines(s: &str) -> usize {
+    fn mask_zero_bytes(x: usize) -> usize { ((x.wrapping_sub(LO)) & !x & HI) }
     let text = s.as_bytes();
     let (ptr, len) = (text.as_ptr(), text.len());
 
-    // search up to an aligned boundary
     let align = (ptr as usize) & (USIZE_BYTES - 1);
     let mut offset;
     let mut count;
     if align > 0 {
-        offset = min(USIZE_BYTES - align, len);
+        offset = cmp::min(USIZE_BYTES - align, len);
         count = text[..offset].iter().filter(|b| **b == b'\n').count();
     } else {
         offset = 0;
         count = 0;
     }
+    while offset + 8 * USIZE_BYTES <= len {
+        unsafe {
+            let x0 = *(ptr.offset(offset as isize) as *const usize);
+            let x1 = *(ptr.offset((offset + USIZE_BYTES) as isize) as *const usize);
+            let x2 = *(ptr.offset((offset + USIZE_BYTES * 2) as isize) as *const usize);
+            let x3 = *(ptr.offset((offset + USIZE_BYTES * 3) as isize) as *const usize);
+            let x4 = *(ptr.offset((offset + USIZE_BYTES * 4) as isize) as *const usize);
+            let x5 = *(ptr.offset((offset + USIZE_BYTES * 5) as isize) as *const usize);
+            let x6 = *(ptr.offset((offset + USIZE_BYTES * 6) as isize) as *const usize);
+            let x7 = *(ptr.offset((offset + USIZE_BYTES * 7) as isize) as *const usize);
 
-    // search the body of the text
-    if len >= 2 * USIZE_BYTES {
-        while offset <= len - 2 * USIZE_BYTES {
-            unsafe {
-                let u = *(ptr.offset(offset as isize) as *const usize);
-                let v = *(ptr.offset((offset + USIZE_BYTES) as isize) as *const usize);
-
-                // break if there is a matching byte
-                count += count_zero_bytes(u ^ REP_NEWLINE);
-                count += count_zero_bytes(v ^ REP_NEWLINE);
-            }
-            offset += USIZE_BYTES * 2;
+            count += (mask_zero_bytes(x0 ^ REP_NEWLINE)
+                | mask_zero_bytes(x1 ^ REP_NEWLINE) >> 1
+                | mask_zero_bytes(x2 ^ REP_NEWLINE) >> 2
+                | mask_zero_bytes(x3 ^ REP_NEWLINE) >> 3
+                | mask_zero_bytes(x4 ^ REP_NEWLINE) >> 4
+                | mask_zero_bytes(x5 ^ REP_NEWLINE) >> 5
+                | mask_zero_bytes(x6 ^ REP_NEWLINE) >> 6
+                | mask_zero_bytes(x7 ^ REP_NEWLINE) >> 7
+                ).count_ones() as usize;
         }
+        offset += USIZE_BYTES * 8;
     }
-    // search the rest
+    while offset + 4 * USIZE_BYTES <= len {
+        unsafe {
+            let x0 = *(ptr.offset(offset as isize) as *const usize);
+            let x1 = *(ptr.offset((offset + USIZE_BYTES) as isize) as *const usize);
+            let x2 = *(ptr.offset((offset + USIZE_BYTES * 2) as isize) as *const usize);
+            let x3 = *(ptr.offset((offset + USIZE_BYTES * 3) as isize) as *const usize);
+
+            count += (mask_zero_bytes(x0 ^ REP_NEWLINE)
+                | mask_zero_bytes(x1 ^ REP_NEWLINE) >> 1
+                | mask_zero_bytes(x2 ^ REP_NEWLINE) >> 2
+                | mask_zero_bytes(x3 ^ REP_NEWLINE) >> 3
+                ).count_ones() as usize;
+        }
+        offset += USIZE_BYTES * 4;
+    }
+    while offset + 2 * USIZE_BYTES <= len {
+        unsafe {
+            let x0 = *(ptr.offset(offset as isize) as *const usize);
+            let x1 = *(ptr.offset((offset + USIZE_BYTES) as isize) as *const usize);
+
+            count += (mask_zero_bytes(x0 ^ REP_NEWLINE) |
+                mask_zero_bytes(x1 ^ REP_NEWLINE) >> 1).count_ones() as usize;
+        }
+        offset += USIZE_BYTES * 2;
+    }
+    while offset + USIZE_BYTES <= len {
+        let x0 = unsafe { *(ptr.offset(offset as isize) as *const usize) };
+        count += mask_zero_bytes(x0 ^ REP_NEWLINE).count_ones() as usize;
+        offset += USIZE_BYTES;
+    }
     count + text[offset..].iter().filter(|b| **b == b'\n').count()
 }
 
