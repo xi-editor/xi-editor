@@ -138,20 +138,17 @@ const HI : usize = LO * 128;
 const REP_NEWLINE : usize = b'\n' as usize * LO;
 
 fn count_newlines(s: &str) -> usize {
-    fn mask_zero_bytes(x: usize) -> usize { ((x.wrapping_sub(LO)) & !x & HI) }
+    fn mask_zero(x: usize) -> usize { ((x.wrapping_sub(LO)) & !x & HI) >> 7 }
     let text = s.as_bytes();
     let (ptr, len) = (text.as_ptr(), text.len());
 
     let align = (ptr as usize) & (USIZE_BYTES - 1);
-    let mut offset;
-    let mut count;
-    if align > 0 {
-        offset = cmp::min(USIZE_BYTES - align, len);
-        count = text[..offset].iter().filter(|b| **b == b'\n').count();
+    let (mut offset, mut count) = if align > 0 {
+        (cmp::min(USIZE_BYTES - align, len),
+         text[..offset].iter().filter(|b| **b == b'\n').count())
     } else {
-        offset = 0;
-        count = 0;
-    }
+        (0, 0)
+    };
     while offset + 8 * USIZE_BYTES <= len {
         unsafe {
             let x0 = *(ptr.offset(offset as isize) as *const usize);
@@ -163,15 +160,11 @@ fn count_newlines(s: &str) -> usize {
             let x6 = *(ptr.offset((offset + USIZE_BYTES * 6) as isize) as *const usize);
             let x7 = *(ptr.offset((offset + USIZE_BYTES * 7) as isize) as *const usize);
 
-            count += (mask_zero_bytes(x0 ^ REP_NEWLINE)
-                | mask_zero_bytes(x1 ^ REP_NEWLINE) >> 1
-                | mask_zero_bytes(x2 ^ REP_NEWLINE) >> 2
-                | mask_zero_bytes(x3 ^ REP_NEWLINE) >> 3
-                | mask_zero_bytes(x4 ^ REP_NEWLINE) >> 4
-                | mask_zero_bytes(x5 ^ REP_NEWLINE) >> 5
-                | mask_zero_bytes(x6 ^ REP_NEWLINE) >> 6
-                | mask_zero_bytes(x7 ^ REP_NEWLINE) >> 7
-                ).count_ones() as usize;
+            count += ((mask_zero(x0 ^ REP_NEWLINE) + mask_zero(x1 ^ REP_NEWLINE)
+                     + mask_zero(x2 ^ REP_NEWLINE) + mask_zero(x3 ^ REP_NEWLINE))
+                    + (mask_zero(x4 ^ REP_NEWLINE) + mask_zero(x5 ^ REP_NEWLINE)
+                     + mask_zero(x6 ^ REP_NEWLINE) + mask_zero(x7 ^ REP_NEWLINE))
+                ).wrapping_mul(LO) >> ((USIZE_BYTES - 1) * 8);
         }
         offset += USIZE_BYTES * 8;
     }
@@ -182,11 +175,9 @@ fn count_newlines(s: &str) -> usize {
             let x2 = *(ptr.offset((offset + USIZE_BYTES * 2) as isize) as *const usize);
             let x3 = *(ptr.offset((offset + USIZE_BYTES * 3) as isize) as *const usize);
 
-            count += (mask_zero_bytes(x0 ^ REP_NEWLINE)
-                | mask_zero_bytes(x1 ^ REP_NEWLINE) >> 1
-                | mask_zero_bytes(x2 ^ REP_NEWLINE) >> 2
-                | mask_zero_bytes(x3 ^ REP_NEWLINE) >> 3
-                ).count_ones() as usize;
+            count += (mask_zero(x0 ^ REP_NEWLINE) + mask_zero(x1 ^ REP_NEWLINE)
+                    + mask_zero(x2 ^ REP_NEWLINE) + mask_zero(x3 ^ REP_NEWLINE)
+                ).wrapping_mul(LO) >> ((USIZE_BYTES - 1) * 8)
         }
         offset += USIZE_BYTES * 4;
     }
@@ -195,14 +186,14 @@ fn count_newlines(s: &str) -> usize {
             let x0 = *(ptr.offset(offset as isize) as *const usize);
             let x1 = *(ptr.offset((offset + USIZE_BYTES) as isize) as *const usize);
 
-            count += (mask_zero_bytes(x0 ^ REP_NEWLINE) |
-                mask_zero_bytes(x1 ^ REP_NEWLINE) >> 1).count_ones() as usize;
+            count += (mask_zero(x0 ^ REP_NEWLINE) + mask_zero(x1 ^ REP_NEWLINE)
+                ).wrapping_mul(LO) >> ((USIZE_BYTES - 1) * 8)
         }
         offset += USIZE_BYTES * 2;
     }
     while offset + USIZE_BYTES <= len {
         let x0 = unsafe { *(ptr.offset(offset as isize) as *const usize) };
-        count += mask_zero_bytes(x0 ^ REP_NEWLINE).count_ones() as usize;
+        count += mask_zero(x0 ^ REP_NEWLINE).wrapping_mul(LO) >> ((USIZE_BYTES - 1) * 8);
         offset += USIZE_BYTES;
     }
     count + text[offset..].iter().filter(|b| **b == b'\n').count()
