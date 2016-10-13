@@ -11,7 +11,7 @@ Mac OS X, using Cocoa for the user interface, but other targets are planned.
 
 Goals include:
 
-* ***Insanely high performance***. All editing operations should commit and paint
+* ***Incredibly high performance***. All editing operations should commit and paint
   in under 16ms. The editor should never make you wait for anything.
 
 * ***Beauty***. The editor should fit well on a modern desktop, and not look like a
