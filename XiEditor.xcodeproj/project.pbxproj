@@ -7,9 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		AE041B981D4323460069AB8B /* build-rust-xcode.sh in Resources */ = {isa = PBXBuildFile; fileRef = AE041B971D4323460069AB8B /* build-rust-xcode.sh */; };
-		AE041BA61D4327EB0069AB8B /* xi-syntect-plugin in Resources */ = {isa = PBXBuildFile; fileRef = AE041BA51D4327EB0069AB8B /* xi-syntect-plugin */; };
 		50370A2B1D4209F300EA1B18 /* Dispatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50370A2A1D4209F300EA1B18 /* Dispatcher.swift */; };
+		AE041BA61D4327EB0069AB8B /* xi-syntect-plugin in Resources */ = {isa = PBXBuildFile; fileRef = AE041BA51D4327EB0069AB8B /* xi-syntect-plugin */; };
 		AE228F5D1C897CE7000E9B0F /* xi-core in Resources */ = {isa = PBXBuildFile; fileRef = AE228F5C1C897CE7000E9B0F /* xi-core */; };
 		AE499DD01C82BB2B002D68AF /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE499DCF1C82BB2B002D68AF /* AppDelegate.swift */; };
 		AE499DD21C82BB2B002D68AF /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AE499DD11C82BB2B002D68AF /* Assets.xcassets */; };
@@ -49,9 +48,9 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		AE041B971D4323460069AB8B /* build-rust-xcode.sh */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.sh; path = "build-rust-xcode.sh"; sourceTree = "<group>"; };
-		AE041BA51D4327EB0069AB8B /* xi-syntect-plugin */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; name = "xi-syntect-plugin"; path = "xi-syntect-plugin"; sourceTree = BUILT_PRODUCTS_DIR; };
 		50370A2A1D4209F300EA1B18 /* Dispatcher.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Dispatcher.swift; sourceTree = "<group>"; };
+		AE041B971D4323460069AB8B /* build-rust-xcode.sh */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.sh; path = "build-rust-xcode.sh"; sourceTree = "<group>"; };
+		AE041BA51D4327EB0069AB8B /* xi-syntect-plugin */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; path = "xi-syntect-plugin"; sourceTree = BUILT_PRODUCTS_DIR; };
 		AE228F5C1C897CE7000E9B0F /* xi-core */ = {isa = PBXFileReference; lastKnownFileType = text; path = "xi-core"; sourceTree = BUILT_PRODUCTS_DIR; };
 		AE499DCC1C82BB2B002D68AF /* XiEditor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = XiEditor.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AE499DCF1C82BB2B002D68AF /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -245,18 +244,21 @@
 			isa = PBXProject;
 			attributes = {
 				LastSwiftUpdateCheck = 0720;
-				LastUpgradeCheck = 0720;
+				LastUpgradeCheck = 0800;
 				ORGANIZATIONNAME = "Raph Levien";
 				TargetAttributes = {
 					AE499DCB1C82BB2B002D68AF = {
 						CreatedOnToolsVersion = 7.2;
+						LastSwiftMigration = 0800;
 					};
 					AE499DDA1C82BB2B002D68AF = {
 						CreatedOnToolsVersion = 7.2;
+						LastSwiftMigration = 0800;
 						TestTargetID = AE499DCB1C82BB2B002D68AF;
 					};
 					AE499DE51C82BB2B002D68AF = {
 						CreatedOnToolsVersion = 7.2;
+						LastSwiftMigration = 0800;
 						TestTargetID = AE499DCB1C82BB2B002D68AF;
 					};
 					D023D9FE1CD0715E0087EC0A = {
@@ -390,8 +392,10 @@
 				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
 				CLANG_WARN_EMPTY_BODY = YES;
 				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
 				CLANG_WARN_INT_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_IDENTITY = "-";
@@ -434,8 +438,10 @@
 				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
 				CLANG_WARN_EMPTY_BODY = YES;
 				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
 				CLANG_WARN_INT_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_IDENTITY = "-";
@@ -454,6 +460,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 10.11;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = macosx;
+				SWIFT_OPTIMIZATION_LEVEL = "-Owholemodule";
 			};
 			name = Release;
 		};
@@ -466,6 +473,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = com.levien.XiEditor;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 2.3;
 			};
 			name = Debug;
 		};
@@ -478,6 +486,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = com.levien.XiEditor;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 2.3;
 			};
 			name = Release;
 		};
@@ -490,6 +499,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @loader_path/../Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = com.levien.XiEditorTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 2.3;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/XiEditor.app/Contents/MacOS/XiEditor";
 			};
 			name = Debug;
@@ -503,6 +513,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @loader_path/../Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = com.levien.XiEditorTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 2.3;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/XiEditor.app/Contents/MacOS/XiEditor";
 			};
 			name = Release;
@@ -515,6 +526,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @loader_path/../Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = com.levien.XiEditorUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 2.3;
 				TEST_TARGET_NAME = XiEditor;
 				USES_XCTRUNNER = YES;
 			};
@@ -528,6 +540,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @loader_path/../Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = com.levien.XiEditorUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 2.3;
 				TEST_TARGET_NAME = XiEditor;
 				USES_XCTRUNNER = YES;
 			};

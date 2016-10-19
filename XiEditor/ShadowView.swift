@@ -24,7 +24,7 @@ class ShadowView: NSView {
             let context = NSGraphicsContext.currentContext()!.CGContext
             let colors = [CGColorCreateGenericRGB(0, 0, 0, 0.4), CGColorCreateGenericRGB(0, 0, 0, 0.0)]
             let colorLocations: [CGFloat] = [0, 1]
-            let gradient = CGGradientCreateWithColors(CGColorSpaceCreateDeviceRGB(), colors, colorLocations)
+            let gradient = CGGradientCreateWithColors(CGColorSpaceCreateDeviceRGB(), colors, colorLocations)!
             if topShadow {
                 CGContextDrawLinearGradient(context, gradient, NSPoint(x: 0, y: 0), NSPoint(x: 0, y: 3), [])
             }
