@@ -79,7 +79,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if let obj = params as? [String : AnyObject], let msg = obj["msg"] as? String {
                 dispatch_async(dispatch_get_main_queue(), {
                     let alert =  NSAlert.init()
-                    alert.alertStyle = .Informational
+                    #if swift(>=2.3)
+                        alert.alertStyle = .Informational
+                    #else
+                        alert.alertStyle = .InformationalAlertStyle
+                    #endif
                     alert.messageText = msg
                     alert.runModal()
                 });
