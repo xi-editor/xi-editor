@@ -15,9 +15,12 @@
 import Cocoa
 
 class ShadowView: NSView {
-    var topShadow = false;
-    var leadingShadow = false;
-    var trailingShadow = false;
+    var topShadow = false
+    var leadingShadow = false
+    var trailingShadow = false
+    
+    var mouseUpHandler: ((NSEvent) -> Void)?
+    var mouseDraggedHandler: ((NSEvent) -> Void)?
 
     override func drawRect(dirtyRect: NSRect) {
         if topShadow || leadingShadow || trailingShadow {
@@ -55,13 +58,11 @@ class ShadowView: NSView {
     }
 
     override func mouseDragged(theEvent: NSEvent) {
-        let wc = window?.windowController as! AppWindowController
-        wc.handleMouseDragged(theEvent)
+        mouseDraggedHandler?(theEvent)
     }
 
     override func mouseUp(theEvent: NSEvent) {
-        let wc = window?.windowController as! AppWindowController
-        wc.handleMouseUp(theEvent)
+        mouseUpHandler?(theEvent)
     }
 
 }
