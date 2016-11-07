@@ -81,7 +81,8 @@ class EditView: NSView, NSTextInputClient {
     var linespace: CGFloat
     var fontWidth: CGFloat
 
-    let selcolor: NSColor
+    let fgSelcolor: NSColor
+    let bgSelcolor: NSColor
 
     // visible scroll region, exclusive of lastLine
     var firstLine: Int = 0
@@ -102,6 +103,11 @@ class EditView: NSView, NSTextInputClient {
     var _markedRange: NSRange
     
     var frameRect: NSRect
+    
+    var isFrontmost: Bool // Are we frontmost, the view that gets keyboard input?
+    
+    var cursorFlashOn: Bool
+    var blinkTimer : NSTimer?
 
     override init(frame frameRect: NSRect) {
         let font = CTFontCreateWithName("InconsolataGo", 14, nil)
@@ -112,11 +118,14 @@ class EditView: NSView, NSTextInputClient {
         baseline = ceil(ascent)
         attributes = [String(kCTFontAttributeName): font]
         fontWidth = getFontWidth(font)
-        selcolor = NSColor(colorLiteralRed: 0.7, green: 0.85, blue: 0.99, alpha: 1.0)
+        fgSelcolor =  NSColor.selectedTextBackgroundColor()
+        bgSelcolor = NSColor(colorLiteralRed: 0.8, green: 0.8, blue: 0.8, alpha: 1.0) //Gray for the selected text background when not 'key'
         updateQueue = dispatch_queue_create("com.levien.xi.update", DISPATCH_QUEUE_SERIAL)
         _selectedRange = NSMakeRange(NSNotFound, 0)
         _markedRange = NSMakeRange(NSNotFound, 0)
         self.frameRect = frameRect
+        isFrontmost = false
+        cursorFlashOn = true
         super.init(frame: frameRect)
         widthConstraint = NSLayoutConstraint(item: self, attribute: .Width, relatedBy: .GreaterThanOrEqual, toItem: nil, attribute: .Width, multiplier: 1, constant: 400)
         widthConstraint!.active = true
@@ -209,7 +218,7 @@ class EditView: NSView, NSTextInputClient {
                     let u16_start = utf8_offset_to_utf16(s, start)
                     let end = attr[2] as! Int
                     let u16_end = utf8_offset_to_utf16(s, end)
-                    attrString.addAttribute(NSBackgroundColorAttributeName, value: selcolor, range: NSMakeRange(u16_start, u16_end - u16_start))
+                    attrString.addAttribute(NSBackgroundColorAttributeName, value: selcolor(), range: NSMakeRange(u16_start, u16_end - u16_start))
                 } else if type == "fg" {
                     let start = attr[1] as! Int
                     let u16_start = utf8_offset_to_utf16(s, start)
@@ -273,7 +282,7 @@ class EditView: NSView, NSTextInputClient {
             //attrString.drawAtPoint(NSPoint(x: x0, y: y - 13))
             let y = linespace * CGFloat(lineIx + 1);
             attrString.drawWithRect(NSRect(x: x0, y: y, width: dirtyRect.origin.x + dirtyRect.width - x0, height: 14), options: [])
-            if let cursor = cursor {
+            if isFrontmost, let cursor = cursor {
                 let ctline = CTLineCreateWithAttributedString(attrString)
                 /*
                 CGContextSetTextMatrix(context, CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: x0, ty: y))
@@ -285,14 +294,14 @@ class EditView: NSView, NSTextInputClient {
                     let utf16_ix = utf8_offset_to_utf16(s, cursor)
                     pos = CTLineGetOffsetForStringIndex(ctline, CFIndex(utf16_ix), nil)
                 }
-                CGContextSetStrokeColorWithColor(context, CGColorCreateGenericGray(0, 1))
+                CGContextSetStrokeColorWithColor(context, cursorColor())
                 CGContextMoveToPoint(context, x0 + pos, y + descent)
                 CGContextAddLineToPoint(context, x0 + pos, y - ascent)
                 CGContextStrokePath(context)
             }
         }
     }
-
+    
     override var acceptsFirstResponder: Bool {
         return true;
     }
@@ -566,8 +575,57 @@ class EditView: NSView, NSTextInputClient {
                 self.scrollRectToVisible(scrollRect)
             }
         }
+        if self.isFrontmost {
+            setInsertionBlink(true)
+        }
         needsDisplay = true
     }
+    
+    /*  Insertion point blinking.
+        Only the frontmost ('key') window should have a blinking insertion point.
+        A new 'on' cycle starts every time the window is comes to the front, or the text changes, or the ins. point moves.
+        Type fast enough and the ins. point stays on.
+     */
+    
+    /// Turns the ins. point visible, and set it flashing. Dose nothing if window is not key.
+    func setInsertionBlink(on: Bool) {
+        // caller must set NeedsDisplay
+        cursorFlashOn = on
+        blinkTimer?.invalidate()
+        if on {
+            blinkTimer = NSTimer.scheduledTimerWithTimeInterval(NSTimeInterval(1.0), target: self, selector: #selector(blinkInsertionPoint), userInfo: nil, repeats: true)
+        }
+        else {
+            blinkTimer = nil
+        }
+    }
+    
+    // Just performs the actual blinking.
+    func blinkInsertionPoint() {
+        cursorFlashOn = !self.cursorFlashOn
+        needsDisplay = true
+    }
+    
+    // Current color for the ins. point. Implements flashing.
+    func cursorColor() -> CGColor {
+        if cursorFlashOn {
+            return CGColorCreateGenericGray(0, 1) // Black
+        }
+        else {
+            return CGColorCreateGenericGray(1, 1) // should match background.
+        }
+    }
+    
+    // Background color for selected text. Only the first responder of the key window should have a non-gray selection.
+    func selcolor() -> NSColor {
+        if isFrontmost {
+            return fgSelcolor
+        }
+        else {
+            return bgSelcolor
+        }
+    }
+
 
     func tryUpdate() {
         var pendingUpdate: [String: AnyObject]?
@@ -658,7 +716,13 @@ class EditView: NSView, NSTextInputClient {
             return true
         }
     }
-
+    
+    func updateIsFrontmost(frontmost : Bool) {
+        isFrontmost = frontmost
+        setInsertionBlink(isFrontmost)
+        needsDisplay = true
+    }
+    
     // MARK: - Debug Methods
 
     @IBAction func debugRewrap(sender: AnyObject) {

@@ -113,3 +113,14 @@ class AppWindowController: NSWindowController {
         editView.mouseUp(theEvent)
     }
 }
+
+// AppWindowController.xib makes us the window's delegate (as nib owner), as well as its controler.
+extension AppWindowController: NSWindowDelegate {
+    func windowDidBecomeKey(notification: NSNotification) {
+        editView.updateIsFrontmost(true)
+    }
+    func windowDidResignKey(notification: NSNotification) {
+        editView.updateIsFrontmost(false);
+        
+    }
+}
