@@ -442,7 +442,7 @@ class EditView: NSView, NSTextInputClient {
         } else {
             let commandName = camelCaseToUnderscored(aSelector.description).stringByReplacingOccurrencesOfString(":", withString: "");
             if (commandName == "noop") {
-                sendRpcAsync("key", params: eventToJson(currentEvent!));
+                NSBeep()
             } else {
                 sendRpcAsync(commandName, params: []);
             }
