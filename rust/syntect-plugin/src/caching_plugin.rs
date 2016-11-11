@@ -130,8 +130,8 @@ impl<'a> PluginCtx<'a> {
         if self.state.cache.is_none() || offset_of_line < self.state.cache_offset ||
                 offset_of_line >= self.state.cache_offset +
                     self.state.cache.as_ref().unwrap().len() {
-            self.state.cache = Some(try!(self.peer.get_data(offset_of_line, CHUNK_SIZE,
-                self.state.rev)));
+            self.state.cache = Some(self.peer.get_data(offset_of_line, CHUNK_SIZE,
+                self.state.rev)?);
             self.state.cache_offset = offset_of_line;
         }
         loop {
@@ -149,8 +149,8 @@ impl<'a> PluginCtx<'a> {
                     }
                     // fetch next chunk
                     let next_offset = self.state.cache_offset + cache_len;
-                    let next_chunk = try!(self.peer.get_data(next_offset, CHUNK_SIZE,
-                            self.state.rev));
+                    let next_chunk = self.peer.get_data(next_offset, CHUNK_SIZE,
+                            self.state.rev)?;
                     self.state.cache_offset = offset_of_line;
                     let mut new_cache = String::with_capacity(cache_len - offset_in_cache +
                             next_chunk.len());
