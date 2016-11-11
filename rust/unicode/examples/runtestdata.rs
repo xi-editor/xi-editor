@@ -80,7 +80,7 @@ fn run_test(filename: &str, lb: bool) -> std::io::Result<()> {
     let mut total = 0;
     loop {
         let mut line = String::new();
-        if treader.read_line(&mut line)? == 0 { break };
+        if reader.read_line(&mut line)? == 0 { break };
         let mut s = String::new();
         let mut breaks = Vec::new();
         for token in line.split_whitespace() {
