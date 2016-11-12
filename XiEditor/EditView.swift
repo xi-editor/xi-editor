@@ -14,15 +14,9 @@
 
 import Cocoa
 
-func eventToJson(event: NSEvent) -> AnyObject {
+func eventToComponents(event: NSEvent) -> (Int, String, UInt) {
     let flags = event.modifierFlags.rawValue >> 16;
-    return ["keycode": Int(event.keyCode),
-        "chars": event.characters!,
-        "flags": flags]
-}
-
-func insertedStringToJson(stringToInsert: NSString) -> AnyObject {
-    return ["chars": stringToInsert]
+    return (Int(event.keyCode), event.characters!, flags)
 }
 
 // compute the width if monospaced, 0 otherwise
@@ -63,15 +57,14 @@ func camelCaseToUnderscored(name: NSString) -> NSString {
 }
 
 class EditView: NSView, NSTextInputClient {
-    var tabName: String?
-    var coreConnection: CoreConnection?
+    var document: Document!
 
     // basically a cache of lines, indexed by line number
     var lineMap: [Int: [AnyObject]] = [:]
     var height: Int = 0
 
     var widthConstraint: NSLayoutConstraint?
-    var heightConstraint: NSLayoutConstraint?
+    @IBOutlet var heightConstraint: NSLayoutConstraint?
 
     var attributes: [String: AnyObject]
     var ascent: CGFloat
@@ -101,8 +94,6 @@ class EditView: NSView, NSTextInputClient {
     var _selectedRange: NSRange
     var _markedRange: NSRange
     
-    var frameRect: NSRect
-
     override init(frame frameRect: NSRect) {
         let font = CTFontCreateWithName("InconsolataGo", 14, nil)
         ascent = CTFontGetAscent(font)
@@ -116,7 +107,6 @@ class EditView: NSView, NSTextInputClient {
         updateQueue = dispatch_queue_create("com.levien.xi.update", DISPATCH_QUEUE_SERIAL)
         _selectedRange = NSMakeRange(NSNotFound, 0)
         _markedRange = NSMakeRange(NSNotFound, 0)
-        self.frameRect = frameRect
         super.init(frame: frameRect)
         widthConstraint = NSLayoutConstraint(item: self, attribute: .Width, relatedBy: .GreaterThanOrEqual, toItem: nil, attribute: .Width, multiplier: 1, constant: 400)
         widthConstraint!.active = true
@@ -139,21 +129,23 @@ class EditView: NSView, NSTextInputClient {
 
     override func resetCursorRects() {
         super.resetCursorRects()
-        addCursorRect(frameRect, cursor: NSCursor.IBeamCursor())
+        addCursorRect(frame, cursor: NSCursor.IBeamCursor())
     }
 
     required init?(coder: NSCoder) {
-        fatalError("View doesn't support NSCoding")
-    }
-
-    func sendRpcAsync(method: String, params: AnyObject) {
-        let inner = ["method": method, "params": params, "tab": tabName!] as [String : AnyObject]
-        coreConnection?.sendRpcAsync("edit", params: inner)
-    }
-
-    func sendRpc(method: String, params: AnyObject) -> AnyObject? {
-        let inner = ["method": method, "params": params, "tab": tabName!] as [String : AnyObject]
-        return coreConnection?.sendRpc("edit", params: inner)
+        let font = CTFontCreateWithName("InconsolataGo", 14, nil)
+        ascent = CTFontGetAscent(font)
+        descent = CTFontGetDescent(font)
+        leading = CTFontGetLeading(font)
+        linespace = ceil(ascent + descent + leading)
+        baseline = ceil(ascent)
+        attributes = [String(kCTFontAttributeName): font]
+        fontWidth = getFontWidth(font)
+        selcolor = NSColor(colorLiteralRed: 0.7, green: 0.85, blue: 0.99, alpha: 1.0)
+        updateQueue = dispatch_queue_create("com.levien.xi.update", DISPATCH_QUEUE_SERIAL)
+        _selectedRange = NSMakeRange(NSNotFound, 0)
+        _markedRange = NSMakeRange(NSNotFound, 0)
+        super.init(coder: coder)
     }
 
     func utf8_offset_to_utf16(s: String, _ ix: Int) -> Int {
@@ -318,7 +310,7 @@ class EditView: NSView, NSTextInputClient {
 
     // NSResponder (used mostly for paste)
     override func insertText(insertString: AnyObject) {
-        sendRpcAsync("insert", params: insertedStringToJson(insertString as! NSString))
+        document.sendRPCActionAsync(.Insert(insertString as! NSString))
     }
 
     // NSTextInputClient protocol
@@ -359,12 +351,12 @@ class EditView: NSView, NSTextInputClient {
             replacementRange.length = 0
         }
         for _ in 0..<aRange.length {
-            sendRpcAsync("delete_backward", params  : [])
+            document.sendRPCActionAsync(.DeleteBackward)
         }
         if let attrStr = aString as? NSAttributedString {
-            sendRpcAsync("insert", params: insertedStringToJson(attrStr.string))
+            document.sendRPCActionAsync(.Insert(attrStr.string))
         } else if let str = aString as? NSString {
-            sendRpcAsync("insert", params: insertedStringToJson(str))
+            document.sendRPCActionAsync(.Insert(str))
         }
         return NSMakeRange(replacementRange.location, len)
     }
@@ -385,7 +377,7 @@ class EditView: NSView, NSTextInputClient {
     func removeMarkedText() {
         if (_markedRange.location != NSNotFound) {
             for _ in 0..<_markedRange.length {
-                sendRpcAsync("delete_backward", params: [])
+                document.sendRPCActionAsync(.DeleteBackward)
             }
         }
         _markedRange = NSMakeRange(NSNotFound, 0)
@@ -440,17 +432,21 @@ class EditView: NSView, NSTextInputClient {
         if (self.respondsToSelector(aSelector)) {
             super.doCommandBySelector(aSelector);
         } else {
-            let commandName = camelCaseToUnderscored(aSelector.description).stringByReplacingOccurrencesOfString(":", withString: "");
+            let commandName = camelCaseToUnderscored(aSelector.description).stringByReplacingOccurrencesOfString(":", withString: "")
             if (commandName == "noop") {
-                sendRpcAsync("key", params: eventToJson(currentEvent!));
+                let components = eventToComponents(currentEvent!)
+                document.sendRPCActionAsync(.Key(components.0, components.1, components.2))
+            }
+            else if (commandName == "delete_backward") {
+                document.sendRPCActionAsync(.DeleteBackward)
             } else {
-                sendRpcAsync(commandName, params: []);
+                document.sendRPCActionAsync(.Unknown(commandName))
             }
         }
     }
 
-    func cutCopy(method: String) {
-        let text = sendRpc(method, params: [])
+    func cutCopy(action: Action) {
+        let text = document.sendRPCAction(action)
         if let text = text as? String {
             let pasteboard = NSPasteboard.generalPasteboard()
             pasteboard.clearContents()
@@ -459,11 +455,11 @@ class EditView: NSView, NSTextInputClient {
     }
 
     func cut(sender: AnyObject?) {
-        cutCopy("cut")
+        cutCopy(.Cut)
     }
 
     func copy(sender: AnyObject?) {
-        cutCopy("copy")
+        cutCopy(.Copy)
     }
 
     func paste(sender: AnyObject?) {
@@ -479,11 +475,11 @@ class EditView: NSView, NSTextInputClient {
     }
 
     func undo(sender: AnyObject?) {
-        sendRpcAsync("undo", params: [])
+        document.sendRPCActionAsync(.Undo)
     }
 
     func redo(sender: AnyObject?) {
-        sendRpcAsync("redo", params: [])
+        document.sendRPCActionAsync(.Redo)
     }
 
     override func mouseDown(theEvent: NSEvent) {
@@ -493,7 +489,7 @@ class EditView: NSView, NSTextInputClient {
         lastDragLineCol = (line, col)
         let flags = theEvent.modifierFlags.rawValue >> 16
         let clickCount = theEvent.clickCount
-        sendRpcAsync("click", params: [line, col, flags, clickCount])
+        document.sendRPCActionAsync(.Click(line, col, flags, clickCount))
         timer = NSTimer.scheduledTimerWithTimeInterval(NSTimeInterval(1.0/60), target: self, selector: #selector(autoscrollTimer), userInfo: nil, repeats: true)
         timerEvent = theEvent
     }
@@ -504,7 +500,7 @@ class EditView: NSView, NSTextInputClient {
         if let last = lastDragLineCol where last != (line, col) {
             lastDragLineCol = (line, col)
             let flags = theEvent.modifierFlags.rawValue >> 16
-            sendRpcAsync("drag", params: [line, col, flags])
+            document.sendRPCActionAsync(.Drag(line, col, flags))
         }
         timerEvent = theEvent
     }
@@ -596,7 +592,7 @@ class EditView: NSView, NSTextInputClient {
         if first != firstLine || last != lastLine {
             firstLine = first
             lastLine = last
-            sendRpcAsync("scroll", params: [firstLine, lastLine])
+            document.sendRPCActionAsync(.Scroll(firstLine, lastLine))
         }
     }
 
@@ -639,7 +635,7 @@ class EditView: NSView, NSTextInputClient {
     
     func fetchLineRange(first: Int, _ last: Int) -> [[AnyObject]]? {
         let start = NSDate()
-        if let result = sendRpc("render_lines", params: ["first_line": first, "last_line": last]) as? [[AnyObject]] {
+        if let result = document.sendRPCAction(.RenderLines(first, last)) as? [[AnyObject]] {
             let interval = NSDate().timeIntervalSinceDate(start)
             Swift.print(String(format: "RPC latency = %3.2fms", interval as Double * 1e3))
             return result
@@ -662,14 +658,14 @@ class EditView: NSView, NSTextInputClient {
     // MARK: - Debug Methods
 
     @IBAction func debugRewrap(sender: AnyObject) {
-        sendRpcAsync("debug_rewrap", params: [])
+        document.sendRPCActionAsync(.DebugRewrap)
     }
 
     @IBAction func debugTestFGSpans(sender: AnyObject) {
-        sendRpcAsync("debug_test_fg_spans", params: [])
+        document.sendRPCActionAsync(.DebugTestFGSpans)
     }
 
     @IBAction func debugRunPlugin(sender: AnyObject) {
-        sendRpcAsync("debug_run_plugin", params: [])
+        document.sendRPCActionAsync(.DebugRunPlugin)
     }
 }

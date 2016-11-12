@@ -17,7 +17,6 @@ import Cocoa
 @NSApplicationMain
 class AppDelegate: NSObject, NSApplicationDelegate {
 
-    var appWindowControllers: [String: AppWindowController] = [:]
     var dispatcher: Dispatcher?
 
     func applicationWillFinishLaunching(aNotification: NSNotification) {
@@ -34,28 +33,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }()
 
         self.dispatcher = dispatcher
-
-        newWindow()
     }
     
-    func newWindow() -> AppWindowController {
-        let appWindowController = AppWindowController()
-        appWindowController.dispatcher = dispatcher
-        appWindowController.appDelegate = self
-        appWindowController.showWindow(self)
-        return appWindowController
-    }
-
-    // called by AppWindowController when window is created
-    func registerTab(tab: String, controller: AppWindowController) {
-        appWindowControllers[tab] = controller
-    }
-
-    // called by AppWindowController when window is closed
-    func unregisterTab(tab: String) {
-        appWindowControllers.removeValueForKey(tab)
-    }
-
     func handleCoreCmd(json: AnyObject) {
         guard let obj = json as? [String : AnyObject],
             method = obj["method"] as? String,
@@ -71,9 +50,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if let obj = params as? [String : AnyObject], let update = obj["update"] as? [String : AnyObject] {
                 guard let tab = obj["tab"] as? String
                     else { print("tab missing from update event"); return }
-                guard let appWindowController = appWindowControllers[tab]
-                    else { print("tab " + tab + " not registered"); return }
-                appWindowController.editView.updateSafe(update)
+                
+                for document in NSApplication.sharedApplication().orderedDocuments {
+                    let doc = document as? Document
+                    if doc?.tabName == tab {
+                        doc?.update(update)
+                    }
+                }
             }
         case "alert":
             if let obj = params as? [String : AnyObject], let msg = obj["msg"] as? String {
@@ -91,30 +74,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         default:
             print("unknown method from core:", method)
         }
-    }
-
-    func openDocument(sender: AnyObject) {
-        let fileDialog = NSOpenPanel()
-        if fileDialog.runModal() == NSFileHandlingPanelOKButton {
-            if let path = fileDialog.URL?.path {
-                application(NSApp, openFile: path)
-                NSDocumentController.sharedDocumentController().noteNewRecentDocumentURL(fileDialog.URL!);
-            }
-        }
-    }
-
-    func newDocument(sender: AnyObject) {
-        newWindow()
-    }
-
-    func application(sender: NSApplication, openFile filename: String) -> Bool {
-        var appWindowController = NSApplication.sharedApplication().mainWindow?.delegate as? AppWindowController
-        if !(appWindowController?.editView.isEmpty ?? false) {
-            appWindowController = newWindow()
-        }
-        appWindowController!.filename = filename
-        appWindowController!.editView.sendRpcAsync("open", params: ["filename": filename])
-        return true  // TODO: should be RPC instead of async, plumb errors
     }
 
     func applicationWillTerminate(aNotification: NSNotification) {
