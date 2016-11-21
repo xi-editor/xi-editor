@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<document type="com.apple.InterfaceBuilder3.Cocoa.XIB" version="3.0" toolsVersion="11542" systemVersion="15G1108" targetRuntime="MacOSX.Cocoa" propertyAccessControl="none" useAutolayout="YES" customObjectInstantitationMethod="direct">
+    <dependencies>
+        <deployment identifier="macosx"/>
+        <plugIn identifier="com.apple.InterfaceBuilder.CocoaPlugin" version="11542"/>
+        <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
+        <capability name="stacking Non-gravity area distributions on NSStackView" minToolsVersion="7.0" minSystemVersion="10.11"/>
+    </dependencies>
+    <objects>
+        <customObject id="-2" userLabel="File's Owner" customClass="SearchController" customModule="XiEditor" customModuleProvider="target">
+            <connections>
+                <outlet property="caseCheck" destination="myL-1b-OBi" id="Odz-N2-wBW"/>
+                <outlet property="regExpCheck" destination="gL3-NU-8nB" id="wOD-DZ-Xlb"/>
+                <outlet property="textField" destination="7Ea-qz-Wiq" id="YA6-oq-xdl"/>
+                <outlet property="wholeWordCheck" destination="EfA-8T-MKm" id="uht-9Q-pAp"/>
+                <outlet property="window" destination="QvC-M9-y7g" id="1Ap-BK-ppa"/>
+            </connections>
+        </customObject>
+        <customObject id="-1" userLabel="First Responder" customClass="FirstResponder"/>
+        <customObject id="-3" userLabel="Application" customClass="NSObject"/>
+        <window title="Find" allowsToolTipsWhenApplicationIsInactive="NO" autorecalculatesKeyViewLoop="NO" oneShot="NO" releasedWhenClosed="NO" animationBehavior="default" id="QvC-M9-y7g">
+            <windowStyleMask key="styleMask" titled="YES" closable="YES" miniaturizable="YES" resizable="YES"/>
+            <windowPositionMask key="initialPositionMask" leftStrut="YES" rightStrut="YES" topStrut="YES" bottomStrut="YES"/>
+            <rect key="contentRect" x="196" y="240" width="660" height="148"/>
+            <rect key="screenRect" x="0.0" y="0.0" width="1920" height="1177"/>
+            <view key="contentView" wantsLayer="YES" id="EiT-Mj-1SZ">
+                <rect key="frame" x="0.0" y="0.0" width="660" height="148"/>
+                <autoresizingMask key="autoresizingMask"/>
+                <subviews>
+                    <stackView distribution="fill" orientation="horizontal" alignment="top" horizontalStackHuggingPriority="249.99998474121094" verticalStackHuggingPriority="249.99998474121094" detachesHiddenViews="YES" translatesAutoresizingMaskIntoConstraints="NO" id="FRO-mO-zhn">
+                        <rect key="frame" x="20" y="20" width="620" height="108"/>
+                        <subviews>
+                            <stackView distribution="fill" orientation="vertical" alignment="leading" horizontalStackHuggingPriority="249.99998474121094" verticalStackHuggingPriority="249.99998474121094" horizontalCompressionResistancePriority="1000" verticalCompressionResistancePriority="1000" detachesHiddenViews="YES" translatesAutoresizingMaskIntoConstraints="NO" id="lEz-Sf-vW5">
+                                <rect key="frame" x="0.0" y="50" width="99" height="58"/>
+                                <subviews>
+                                    <button horizontalCompressionResistancePriority="1000" verticalCompressionResistancePriority="1000" translatesAutoresizingMaskIntoConstraints="NO" id="gL3-NU-8nB">
+                                        <rect key="frame" x="-2" y="42" width="68" height="18"/>
+                                        <buttonCell key="cell" type="check" title="RegExp" bezelStyle="regularSquare" imagePosition="left" enabled="NO" inset="2" id="kvq-CQ-l1g">
+                                            <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
+                                            <font key="font" metaFont="system"/>
+                                        </buttonCell>
+                                        <connections>
+                                            <binding destination="-2" name="value" keyPath="self.searchData.regExp" id="Elc-xP-b1P"/>
+                                        </connections>
+                                    </button>
+                                    <button horizontalCompressionResistancePriority="1000" verticalCompressionResistancePriority="1000" translatesAutoresizingMaskIntoConstraints="NO" id="myL-1b-OBi">
+                                        <rect key="frame" x="-2" y="20" width="94" height="18"/>
+                                        <buttonCell key="cell" type="check" title="Match Case" bezelStyle="regularSquare" imagePosition="left" enabled="NO" inset="2" id="SgK-Xf-8AY">
+                                            <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
+                                            <font key="font" metaFont="system"/>
+                                        </buttonCell>
+                                        <connections>
+                                            <binding destination="-2" name="value" keyPath="self.searchData.matchCase" id="tg6-O2-g3E"/>
+                                        </connections>
+                                    </button>
+                                    <button verticalCompressionResistancePriority="1000" translatesAutoresizingMaskIntoConstraints="NO" id="EfA-8T-MKm">
+                                        <rect key="frame" x="-2" y="-2" width="103" height="18"/>
+                                        <buttonCell key="cell" type="check" title="Whole Words" bezelStyle="regularSquare" imagePosition="left" enabled="NO" inset="2" id="Huw-hc-yB5">
+                                            <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
+                                            <font key="font" metaFont="system"/>
+                                        </buttonCell>
+                                        <connections>
+                                            <binding destination="-2" name="value" keyPath="self.searchData.wholeWord" id="nUm-0E-keT"/>
+                                        </connections>
+                                    </button>
+                                </subviews>
+                                <constraints>
+                                    <constraint firstItem="myL-1b-OBi" firstAttribute="top" secondItem="gL3-NU-8nB" secondAttribute="bottom" constant="8" id="49R-dT-6hl"/>
+                                    <constraint firstAttribute="width" constant="99" id="7dl-fl-36j"/>
+                                    <constraint firstAttribute="height" constant="58" id="ox0-dc-xbC"/>
+                                </constraints>
+                                <visibilityPriorities>
+                                    <integer value="1000"/>
+                                    <integer value="1000"/>
+                                    <integer value="1000"/>
+                                </visibilityPriorities>
+                                <customSpacing>
+                                    <real value="3.4028234663852886e+38"/>
+                                    <real value="3.4028234663852886e+38"/>
+                                    <real value="3.4028234663852886e+38"/>
+                                </customSpacing>
+                            </stackView>
+                            <textField horizontalCompressionResistancePriority="250" verticalCompressionResistancePriority="250" translatesAutoresizingMaskIntoConstraints="NO" id="7Ea-qz-Wiq">
+                                <rect key="frame" x="107" y="0.0" width="448" height="108"/>
+                                <textFieldCell key="cell" scrollable="YES" lineBreakMode="clipping" selectable="YES" editable="YES" continuous="YES" sendsActionOnEndEditing="YES" state="on" borderStyle="bezel" drawsBackground="YES" id="Yg8-cw-uhy">
+                                    <font key="font" metaFont="system"/>
+                                    <color key="textColor" name="textColor" catalog="System" colorSpace="catalog"/>
+                                    <color key="backgroundColor" name="textBackgroundColor" catalog="System" colorSpace="catalog"/>
+                                </textFieldCell>
+                                <connections>
+                                    <binding destination="-2" name="value" keyPath="self.searchData.text" id="I5H-4W-OIO">
+                                        <dictionary key="options">
+                                            <bool key="NSContinuouslyUpdatesValue" value="YES"/>
+                                        </dictionary>
+                                    </binding>
+                                </connections>
+                            </textField>
+                            <button verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="TYA-23-7jS">
+                                <rect key="frame" x="557" y="80" width="69" height="32"/>
+                                <buttonCell key="cell" type="push" title="Next" bezelStyle="rounded" alignment="center" borderStyle="border" imageScaling="proportionallyDown" inset="2" id="QtD-2z-86q">
+                                    <behavior key="behavior" pushIn="YES" lightByBackground="YES" lightByGray="YES"/>
+                                    <font key="font" metaFont="system"/>
+                                </buttonCell>
+                                <connections>
+                                    <action selector="findNext:" target="-2" id="Imo-9R-yTt"/>
+                                </connections>
+                            </button>
+                        </subviews>
+                        <constraints>
+                            <constraint firstAttribute="bottom" secondItem="7Ea-qz-Wiq" secondAttribute="bottom" id="FBA-Sv-8bp"/>
+                            <constraint firstItem="TYA-23-7jS" firstAttribute="leading" secondItem="7Ea-qz-Wiq" secondAttribute="trailing" constant="8" id="GfO-MW-RAd"/>
+                            <constraint firstItem="7Ea-qz-Wiq" firstAttribute="leading" secondItem="lEz-Sf-vW5" secondAttribute="trailing" constant="8" id="MRX-kW-zQo"/>
+                            <constraint firstItem="TYA-23-7jS" firstAttribute="leading" secondItem="7Ea-qz-Wiq" secondAttribute="trailing" constant="8" id="Ras-iS-y22"/>
+                        </constraints>
+                        <visibilityPriorities>
+                            <integer value="1000"/>
+                            <integer value="1000"/>
+                            <integer value="1000"/>
+                        </visibilityPriorities>
+                        <customSpacing>
+                            <real value="3.4028234663852886e+38"/>
+                            <real value="3.4028234663852886e+38"/>
+                            <real value="3.4028234663852886e+38"/>
+                        </customSpacing>
+                    </stackView>
+                </subviews>
+                <constraints>
+                    <constraint firstItem="FRO-mO-zhn" firstAttribute="top" secondItem="EiT-Mj-1SZ" secondAttribute="top" constant="20" symbolic="YES" id="06u-la-RoO"/>
+                    <constraint firstAttribute="trailing" secondItem="FRO-mO-zhn" secondAttribute="trailing" constant="20" symbolic="YES" id="BK5-X0-68J"/>
+                    <constraint firstItem="FRO-mO-zhn" firstAttribute="leading" secondItem="EiT-Mj-1SZ" secondAttribute="leading" constant="20" symbolic="YES" id="LBu-UL-vAV"/>
+                    <constraint firstAttribute="bottom" secondItem="FRO-mO-zhn" secondAttribute="bottom" constant="20" symbolic="YES" id="hst-xR-jOW"/>
+                </constraints>
+            </view>
+            <connections>
+                <outlet property="delegate" destination="-2" id="h5j-22-ZWQ"/>
+            </connections>
+            <point key="canvasLocation" x="195" y="303"/>
+        </window>
+        <userDefaultsController representsSharedInstance="YES" id="3K6-OS-BqI"/>
+    </objects>
+</document>
