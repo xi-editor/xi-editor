@@ -442,7 +442,14 @@ class EditView: NSView, NSTextInputClient {
         } else {
             let commandName = camelCaseToUnderscored(aSelector.description).stringByReplacingOccurrencesOfString(":", withString: "");
             if (commandName == "noop") {
-                sendRpcAsync("key", params: eventToJson(currentEvent!));
+                
+                // Obviously this seems wrong. I don't know where we should be heading this off.
+                if currentEvent?.characters == "f" {
+                    NSBeep()
+                }
+                else {
+                    sendRpcAsync("key", params: eventToJson(currentEvent!));
+                }
             } else {
                 sendRpcAsync(commandName, params: []);
             }
@@ -514,7 +521,43 @@ class EditView: NSView, NSTextInputClient {
         timer = nil
         timerEvent = nil
     }
-
+    
+    @objc func performFindPanelAction(sender: AnyObject?) {
+        guard let rawTag = sender?.tag else {
+            return
+        }
+        guard let appDelegate = NSApplication.sharedApplication().delegate as? AppDelegate else {
+            return
+        }
+        guard let tag = NSTextFinderAction(rawValue: rawTag) else{
+            return
+        }
+        switch tag {
+        case NSTextFinderAction.ShowFindInterface:
+            appDelegate.showSearch()
+        case NSTextFinderAction.SetSearchString:
+            let text = sendRpc("copy", params: [])
+            if let text = text as? String {
+                appDelegate.setSearchString(text)
+            }
+        case NSTextFinderAction.NextMatch:
+            let text = appDelegate.getSearchString()
+            if text != "" {
+                findNext(text)
+            }
+        default: ()
+        }
+    }
+    
+    func findNext(findString: String) {
+        sendRpcAsync("search", params: ["text": findString, "flags":0])
+    }
+    
+    //Newer version of above, not the message that is sent by the menus now.
+    @objc override func performTextFinderAction(sender: AnyObject?){
+        performFindPanelAction(sender)
+    }
+    
     func autoscrollTimer() {
         if let event = timerEvent {
             mouseDragged(event)

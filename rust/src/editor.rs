@@ -38,6 +38,8 @@ const MAX_UNDOS: usize = 20;
 
 const TAB_SIZE: usize = 4;
 
+const FLAG_FIND_REV: u64 = 1;
+
 // Maximum returned result from plugin get_data RPC.
 const MAX_SIZE_LIMIT: usize = 1024 * 1024;
 
@@ -688,6 +690,35 @@ impl Editor {
         self.add_delta(interval, Rope::from(swapped), end, end);
     }
 
+    /// Move the selection to the next occurance of <findStr>.
+    fn do_search(&mut self, find_str: &str, flags: u64) {
+        // Only basic, forward search actualy works.
+        let (start, end) =  if (flags & FLAG_FIND_REV) == 0 {
+            (self.view.sel_end,self.text.len())
+        }
+        else {
+            (0, self.view.sel_start)
+        };
+        let mut new_sel = None;
+        let mut curr_loc = start;
+        for line in self.text.lines(start, end) {
+            match line.find(find_str)  {
+                Some(match_start) => {
+                    new_sel = Some(curr_loc+match_start);
+                    break
+                },
+                None => {
+                    curr_loc += line.len()+1
+                }
+            }
+        }
+        if let Some(new_sel) = new_sel {
+            self.set_cursor(new_sel, true);
+            self.modify_selection();
+            self.set_cursor(new_sel+find_str.len(), true);
+        }
+    }
+
     fn delete_to_end_of_paragraph(&mut self) {
         let current = self.view.sel_max();
         let offset = self.cursor_end_offset();
@@ -776,6 +807,7 @@ impl Editor {
             DebugRewrap => async(self.debug_rewrap()),
             DebugTestFgSpans => async(self.debug_test_fg_spans()),
             DebugRunPlugin => async(self.debug_run_plugin(self_ref)),
+            Search { text } => async(self.do_search(text, 0)),
         };
 
         // TODO: could defer this until input quiesces - will this help?

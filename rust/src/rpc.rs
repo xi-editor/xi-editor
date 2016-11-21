@@ -95,6 +95,7 @@ pub enum EditCommand<'a> {
     DebugRewrap,
     DebugTestFgSpans,
     DebugRunPlugin,
+    Search { text: &'a str }
 }
 
 impl<'a> TabCommand<'a> {
@@ -229,6 +230,11 @@ impl<'a> EditCommand<'a> {
             "debug_rewrap" => Ok(DebugRewrap),
             "debug_test_fg_spans" => Ok(DebugTestFgSpans),
             "debug_run_plugin" => Ok(DebugRunPlugin),
+
+            "search" => params.as_object().and_then(|dict| {
+                dict_get_string(dict, "text").map(|text| Search { text: text })
+            }).ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
+
 
             _ => Err(UnknownEditMethod(method.to_string())),
         }

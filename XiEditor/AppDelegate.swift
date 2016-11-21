@@ -121,4 +121,62 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Insert code here to tear down your application
     }
 
+    // Find/Replace 
+    
+    var findString : String = ""
+    var searchWindowController : SearchController? = nil
+    
+    // Show the search panel. As for cmd-f
+    func showSearch()  {
+        if searchWindowController==nil {
+            self.searchWindowController = SearchController()
+            self.searchWindowController!.appDelegate = self
+        }
+        if let searchWindowController = self.searchWindowController {
+            searchWindowController.setSearchString(self.findString)
+            searchWindowController.showWindow(self)
+            searchWindowController.window?.makeKeyAndOrderFront(self)
+        }
+    }
+    
+    // Set the search string as cmd-e dose with the current selection
+    // This update is not comming from the search dlg, which calls updateSearch.
+    // This update goes to the search dlg.
+    func setSearchString(newSearchString: String) {
+        self.findString=newSearchString
+        self.searchWindowController?.setSearchString(self.findString)
+    }
+    
+    func getSearchString() -> String {
+        return self.findString
+    }
+    
+    /// Receives live notifications of changes in the search panel.
+    func updateSearch(text :String, regExp:Bool, matchCase:Bool,  wholeWord:Bool ) {
+        // At the moment, we don't really do any thing with the live date.
+        // We wait for the user to hit search.
+        self.findString = text
+        //Swift.print("searching for \(text)")
+    }
+
+    // Select the next occurrence of the search string after the selection.
+    func searchNext() {
+        guard findString != "" else {
+            return
+        }
+        // The document that we are searching could be the 2nd window, if the find window is first.
+        // This wouldn't be an issue if we hasn't let the find 'panel' become 'main' as well as 'key'.
+        for window in NSApp.orderedWindows {
+            if let appWindowController = window.windowController as? AppWindowController {
+                appWindowController.editView.findNext(self.findString)
+                break
+            }
+        }
+     }
+}
+
+
+extension AppDelegate{
+
+
 }

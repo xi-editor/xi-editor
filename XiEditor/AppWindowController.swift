@@ -63,6 +63,7 @@ class AppWindowController: NSWindowController {
         NSNotificationCenter.defaultCenter().addObserver(self, selector: #selector(AppWindowController.frameDidChangeNotification(_:)), name: NSViewFrameDidChangeNotification, object: scrollView)
         updateEditViewScroll()
     }
+    
 
     func windowWillClose(_: NSNotification) {
         guard let tabName = editView.tabName
