@@ -2,7 +2,7 @@
 
 These notes are provisional, as the protocol between front-end and
 back-end (aka "core") is expected to evolve. Even so, it might be
-interesting to experiment with new front-ends other than the offical
+interesting to experiment with new front-ends other than the official
 Cocoa one. This document captures the protocol as it exists (and
 should be updated as it changes).
 
