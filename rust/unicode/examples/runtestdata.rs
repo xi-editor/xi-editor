@@ -74,13 +74,13 @@ fn check_lb(s: &str) -> bool {
 }
 
 fn run_test(filename: &str, lb: bool) -> std::io::Result<()> {
-    let f = try!(File::open(filename));
+    let f = File::open(filename)?;
     let mut reader = BufReader::new(f);
     let mut pass = 0;
     let mut total = 0;
     loop {
         let mut line = String::new();
-        if try!(reader.read_line(&mut line)) == 0 { break };
+        if reader.read_line(&mut line)? == 0 { break };
         let mut s = String::new();
         let mut breaks = Vec::new();
         for token in line.split_whitespace() {

@@ -30,15 +30,15 @@ pub struct Interval {
 impl fmt::Display for Interval {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.is_start_closed() {
-            try!(write!(f, "["));
+            write!(f, "[")?;
         } else {
-            try!(write!(f, "("));
+            write!(f, "(")?;
         }
-        try!(write!(f, "{}, {}", self.start(), self.end()));
+        write!(f, "{}, {}", self.start(), self.end())?;
         if self.is_end_closed() {
-            try!(write!(f, "]"));
+            write!(f, "]")?;
         } else {
-            try!(write!(f, ")"));
+            write!(f, ")")?;
         }
         Ok(())
     }
@@ -132,7 +132,7 @@ impl Interval {
     }
 
     // smallest interval that encloses both inputs; if the inputs are
-    // disjoint, then it fills in the hole. 
+    // disjoint, then it fills in the hole.
     pub fn union(&self, other: Interval) -> Interval {
         if self.is_empty() { return other; }
         if other.is_empty() { return *self; }
