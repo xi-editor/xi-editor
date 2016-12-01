@@ -15,6 +15,7 @@
 //! A container for all the tabs being edited. Also functions as main dispatch for RPC.
 
 use std::collections::BTreeMap;
+use std::io::Write;
 use std::sync::{Arc, Mutex};
 use serde_json::Value;
 use serde_json::builder::ObjectBuilder;
@@ -24,21 +25,21 @@ use editor::Editor;
 use rpc::{TabCommand, EditCommand};
 use MainPeer;
 
-pub struct Tabs {
-    tabs: BTreeMap<String, Arc<Mutex<Editor>>>,
+pub struct Tabs<W: Write> {
+    tabs: BTreeMap<String, Arc<Mutex<Editor<W>>>>,
     id_counter: usize,
     kill_ring: Arc<Mutex<Rope>>,
 }
 
 #[derive(Clone)]
-pub struct TabCtx {
+pub struct TabCtx<W: Write> {
     tab: String,
     kill_ring: Arc<Mutex<Rope>>,
-    rpc_peer: MainPeer,
+    rpc_peer: MainPeer<W>,
 }
 
-impl Tabs {
-    pub fn new() -> Tabs {
+impl<W: Write + Send + 'static> Tabs<W> {
+    pub fn new() -> Tabs<W> {
         Tabs {
             tabs: BTreeMap::new(),
             id_counter: 0,
@@ -46,7 +47,7 @@ impl Tabs {
         }
     }
 
-    pub fn do_rpc(&mut self, cmd: TabCommand, rpc_peer: &MainPeer) -> Option<Value> {
+    pub fn do_rpc(&mut self, cmd: TabCommand, rpc_peer: &MainPeer<W>) -> Option<Value> {
         use rpc::TabCommand::*;
 
         match cmd {
@@ -61,7 +62,7 @@ impl Tabs {
         }
     }
 
-    fn do_new_tab(&mut self, rpc_peer: &MainPeer) -> String {
+    fn do_new_tab(&mut self, rpc_peer: &MainPeer<W>) -> String {
         self.new_tab(rpc_peer)
     }
 
@@ -79,7 +80,7 @@ impl Tabs {
         }
     }
 
-    fn new_tab(&mut self, rpc_peer: &MainPeer) -> String {
+    fn new_tab(&mut self, rpc_peer: &MainPeer<W>) -> String {
         let tabname = self.id_counter.to_string();
         self.id_counter += 1;
         let tab_ctx = TabCtx {
@@ -97,7 +98,7 @@ impl Tabs {
     }
 }
 
-impl TabCtx {
+impl<W: Write> TabCtx<W> {
     pub fn update_tab(&self, update: &Value) {
         self.rpc_peer.send_rpc_notification("update",
             &ObjectBuilder::new()
