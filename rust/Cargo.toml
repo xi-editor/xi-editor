@@ -17,3 +17,10 @@ path = "unicode"
 
 [dependencies.xi-rpc]
 path = "rpc"
+
+[target.'cfg(target_os = "fuchsia")'.dependencies]
+magenta = { path = "../../../rust/magenta-rs" }
+mxruntime = { path = "../../../rust/mxruntime" }
+fidl = { path = "../../../lib/fidl/rust/fidl" }
+apps_xi-editor_rust_interfaces = { path = "../../../out/debug-x86-64/gen/apps/xi-editor/rust/interfaces" }
+apps_modular_services_application_service_provider = { path = "../../../out/debug-x86-64/gen/apps/modular/services/application/service_provider" }
