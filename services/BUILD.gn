@@ -1,0 +1,7 @@
+import("//lib/fidl/fidl.gni")
+
+fidl("services") {
+  sources = [
+    "xi.fidl",
+  ]
+}

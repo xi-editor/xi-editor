@@ -1,0 +1,10 @@
+group("xi") {
+  deps = [
+    "//apps/xi/dart",
+    "//apps/xi/rust",
+    "//apps/xi/services",
+  ]
+}
+
+
+# import 'package:apps.xi.services/core.fidl.dart';

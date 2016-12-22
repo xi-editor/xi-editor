@@ -18,9 +18,9 @@ extern crate magenta;
 extern crate mxruntime;
 
 extern crate apps_modular_services_application_service_provider;
-extern crate apps_xi_editor_rust_interfaces;
+extern crate apps_xi_services;
 use self::apps_modular_services_application_service_provider::{ServiceProvider, ServiceProvider_Stub};
-use self::apps_xi_editor_rust_interfaces::{Json, Json_Stub};
+use self::apps_xi_services::{Json, Json_Stub};
 
 use std::thread;
 use std::io;

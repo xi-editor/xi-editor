@@ -22,5 +22,5 @@ path = "rpc"
 magenta = { path = "../../../rust/magenta-rs" }
 mxruntime = { path = "../../../rust/mxruntime" }
 fidl = { path = "../../../lib/fidl/rust/fidl" }
-apps_xi-editor_rust_interfaces = { path = "../../../out/debug-x86-64/gen/apps/xi-editor/rust/interfaces" }
+apps_xi_services = { path = "../../../out/debug-x86-64/gen/apps/xi/services/services" }
 apps_modular_services_application_service_provider = { path = "../../../out/debug-x86-64/gen/apps/modular/services/application/service_provider" }
