@@ -181,6 +181,7 @@ class EditView: NSView, NSTextInputClient {
     let font_style_italic: Int = 4;
 
     override func drawRect(dirtyRect: NSRect) {
+        if tabName == nil { return }
         super.drawRect(dirtyRect)
         /*
         let path = NSBezierPath(ovalInRect: frame)
