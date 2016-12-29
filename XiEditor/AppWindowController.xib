@@ -32,6 +32,9 @@
                             <subviews>
                                 <customView fixedFrame="YES" translatesAutoresizingMaskIntoConstraints="NO" id="hxn-ZY-xOb" customClass="EditView" customModule="XiEditor" customModuleProvider="target">
                                     <rect key="frame" x="0.0" y="0.0" width="480" height="270"/>
+                                    <userDefinedRuntimeAttributes>
+                                        <userDefinedRuntimeAttribute type="boolean" keyPath="translatesAutoresizingMaskIntoConstraints" value="NO"/>
+                                    </userDefinedRuntimeAttributes>
                                 </customView>
                             </subviews>
                         </clipView>
