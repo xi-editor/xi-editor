@@ -19,30 +19,30 @@ class ShadowView: NSView {
     var leadingShadow = false;
     var trailingShadow = false;
 
-    override func drawRect(dirtyRect: NSRect) {
+    override func draw(_ dirtyRect: NSRect) {
         if topShadow || leadingShadow || trailingShadow {
-            let context = NSGraphicsContext.currentContext()!.CGContext
-            let colors = [CGColorCreateGenericRGB(0, 0, 0, 0.4), CGColorCreateGenericRGB(0, 0, 0, 0.0)]
+            let context = NSGraphicsContext.current()!.cgContext
+            let colors = [CGColor(red: 0, green: 0, blue: 0, alpha: 0.4), CGColor(red: 0, green: 0, blue: 0, alpha: 0.0)]
             let colorLocations: [CGFloat] = [0, 1]
-            let gradient = CGGradientCreateWithColors(CGColorSpaceCreateDeviceRGB(), colors, colorLocations)!
+            let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors as CFArray, locations: colorLocations)!
             if topShadow {
-                CGContextDrawLinearGradient(context, gradient, NSPoint(x: 0, y: 0), NSPoint(x: 0, y: 3), [])
+                context.drawLinearGradient(gradient, start: NSPoint(x: 0, y: 0), end: NSPoint(x: 0, y: 3), options: [])
             }
             if leadingShadow {
-                CGContextDrawLinearGradient(context, gradient, NSPoint(x: 0, y: 0), NSPoint(x: 3, y: 0), [])
+                context.drawLinearGradient(gradient, start: NSPoint(x: 0, y: 0), end: NSPoint(x: 3, y: 0), options: [])
             }
             if trailingShadow {
                 let x = bounds.size.width
-                CGContextDrawLinearGradient(context, gradient, NSPoint(x: x - 1, y: 0), NSPoint(x: x - 4, y: 0), [])
+                context.drawLinearGradient(gradient, start: NSPoint(x: x - 1, y: 0), end: NSPoint(x: x - 4, y: 0), options: [])
             }
         }
     }
 
-    override var flipped: Bool {
+    override var isFlipped: Bool {
         return true;
     }
 
-    func updateScroll(contentBounds: NSRect, _ docBounds: NSRect) {
+    func updateScroll(_ contentBounds: NSRect, _ docBounds: NSRect) {
         let newTop = contentBounds.origin.y != 0
         let newLead = contentBounds.origin.x != 0
         let newTrail = contentBounds.origin.x + contentBounds.width != docBounds.origin.x + docBounds.width
@@ -54,12 +54,12 @@ class ShadowView: NSView {
         }
     }
 
-    override func mouseDragged(theEvent: NSEvent) {
+    override func mouseDragged(with theEvent: NSEvent) {
         let wc = window?.windowController as! AppWindowController
         wc.handleMouseDragged(theEvent)
     }
 
-    override func mouseUp(theEvent: NSEvent) {
+    override func mouseUp(with theEvent: NSEvent) {
         let wc = window?.windowController as! AppWindowController
         wc.handleMouseUp(theEvent)
     }

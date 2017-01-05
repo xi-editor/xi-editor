@@ -32,17 +32,16 @@ class AppWindowController: NSWindowController {
     var filename: String? {
         didSet {
             if let filename = filename {
-                let url = NSURL(fileURLWithPath: filename)
-                if let lastComponent = url.lastPathComponent {
-                    window?.title = lastComponent
-                }
+                let url = URL(fileURLWithPath: filename)
+                let lastComponent = url.lastPathComponent;
+                window?.title = lastComponent
             }
         }
     }
 
-    func visualConstraint(views: [String : NSView], _ format: String) {
-        let constraints = NSLayoutConstraint.constraintsWithVisualFormat(format, options: .AlignAllTop, metrics: nil, views: views)
-        NSLayoutConstraint.activateConstraints(constraints)
+    func visualConstraint(_ views: [String : NSView], _ format: String) {
+        let constraints = NSLayoutConstraint.constraints(withVisualFormat: format, options: .alignAllTop, metrics: nil, views: views)
+        NSLayoutConstraint.activate(constraints)
     }
 
     override func windowDidLoad() {
@@ -54,19 +53,19 @@ class AppWindowController: NSWindowController {
         editView.tabName = tabName
         appDelegate.registerTab(tabName, controller: self)
         
-        scrollView.contentView.documentCursor = NSCursor.IBeamCursor();
+        scrollView.contentView.documentCursor = NSCursor.iBeam();
 
         // set up autolayout constraints
-        let views = ["editView": editView, "clipView": scrollView.contentView]
-        visualConstraint(views, "H:[editView(>=clipView)]")
-        visualConstraint(views, "V:[editView(>=clipView)]")
+        let views = ["editView": editView, "clipView": scrollView.contentView] as [String : Any]
+        visualConstraint(views as! [String : NSView], "H:[editView(>=clipView)]")
+        visualConstraint(views as! [String : NSView], "V:[editView(>=clipView)]")
 
-        NSNotificationCenter.defaultCenter().addObserver(self, selector: #selector(AppWindowController.boundsDidChangeNotification(_:)), name: NSViewBoundsDidChangeNotification, object: scrollView.contentView)
-        NSNotificationCenter.defaultCenter().addObserver(self, selector: #selector(AppWindowController.frameDidChangeNotification(_:)), name: NSViewFrameDidChangeNotification, object: scrollView)
+        NotificationCenter.default.addObserver(self, selector: #selector(AppWindowController.boundsDidChangeNotification(_:)), name: NSNotification.Name.NSViewBoundsDidChange, object: scrollView.contentView)
+        NotificationCenter.default.addObserver(self, selector: #selector(AppWindowController.frameDidChangeNotification(_:)), name: NSNotification.Name.NSViewFrameDidChange, object: scrollView)
         updateEditViewScroll()
     }
 
-    func windowWillClose(_: NSNotification) {
+    func windowWillClose(_: Notification) {
         guard let tabName = editView.tabName
             else { return }
 
@@ -74,11 +73,11 @@ class AppWindowController: NSWindowController {
         appDelegate.unregisterTab(tabName)
     }
 
-    func boundsDidChangeNotification(notification: NSNotification) {
+    func boundsDidChangeNotification(_ notification: Notification) {
         updateEditViewScroll()
     }
 
-    func frameDidChangeNotification(notification: NSNotification) {
+    func frameDidChangeNotification(_ notification: Notification) {
         updateEditViewScroll()
     }
 
@@ -87,19 +86,19 @@ class AppWindowController: NSWindowController {
         shadowView?.updateScroll(scrollView.contentView.bounds, scrollView.documentView!.bounds)
     }
 
-    func saveDocument(sender: AnyObject) {
+    func saveDocument(_ sender: AnyObject) {
         guard filename != nil else {
             saveDocumentAs(sender)
             return
         }
 
-        editView.sendRpcAsync("save", params: ["filename": filename!])
+        editView.sendRpcAsync("save", params: ["filename": filename!] as AnyObject)
     }
     
-    func saveDocumentAs(sender: AnyObject) {
+    func saveDocumentAs(_ sender: AnyObject) {
         let fileDialog = NSSavePanel()
         if fileDialog.runModal() == NSFileHandlingPanelOKButton {
-            if let path = fileDialog.URL?.path {
+            if let path = fileDialog.url?.path {
                 filename = path
                 saveDocument(sender)
             }
@@ -107,21 +106,21 @@ class AppWindowController: NSWindowController {
     }
 
     // the ShadowView sometimes steals drag events, so forward them back to the edit view
-    func handleMouseDragged(theEvent: NSEvent) {
-        editView.mouseDragged(theEvent)
+    func handleMouseDragged(_ theEvent: NSEvent) {
+        editView.mouseDragged(with: theEvent)
     }
 
-    func handleMouseUp(theEvent: NSEvent) {
-        editView.mouseUp(theEvent)
+    func handleMouseUp(_ theEvent: NSEvent) {
+        editView.mouseUp(with: theEvent)
     }
 }
 
 // AppWindowController.xib makes us the window's delegate (as nib owner), as well as its controler.
 extension AppWindowController: NSWindowDelegate {
-    func windowDidBecomeKey(notification: NSNotification) {
+    func windowDidBecomeKey(_ notification: Notification) {
         editView.updateIsFrontmost(true)
     }
-    func windowDidResignKey(notification: NSNotification) {
+    func windowDidResignKey(_ notification: Notification) {
         editView.updateIsFrontmost(false);
         
     }

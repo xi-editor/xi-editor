@@ -20,13 +20,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var appWindowControllers: [String: AppWindowController] = [:]
     var dispatcher: Dispatcher?
 
-    func applicationWillFinishLaunching(aNotification: NSNotification) {
+    func applicationWillFinishLaunching(_ aNotification: Notification) {
 
-        guard let corePath = NSBundle.mainBundle().pathForResource("xi-core", ofType: "")
+        guard let corePath = Bundle.main.path(forResource: "xi-core", ofType: "")
             else { fatalError("XI Core not found") }
 
         let dispatcher: Dispatcher = {
-            let coreConnection = CoreConnection(path: corePath) { [weak self] (json: AnyObject) -> Void in
+            let coreConnection = CoreConnection(path: corePath) { [weak self] (json: Any) -> Void in
                 self?.handleCoreCmd(json)
             }
 
@@ -47,25 +47,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // called by AppWindowController when window is created
-    func registerTab(tab: String, controller: AppWindowController) {
+    func registerTab(_ tab: String, controller: AppWindowController) {
         appWindowControllers[tab] = controller
     }
 
     // called by AppWindowController when window is closed
-    func unregisterTab(tab: String) {
-        appWindowControllers.removeValueForKey(tab)
+    func unregisterTab(_ tab: String) {
+        appWindowControllers.removeValue(forKey: tab)
     }
 
-    func handleCoreCmd(json: AnyObject) {
-        guard let obj = json as? [String : AnyObject],
-            method = obj["method"] as? String,
-            params = obj["params"]
+    func handleCoreCmd(_ json: Any) {
+        guard let obj = json as? [String : Any],
+            let method = obj["method"] as? String,
+            let params = obj["params"]
             else { print("unknown json from core:", json); return }
 
         handleRpc(method, params: params)
     }
 
-    func handleRpc(method: String, params: AnyObject) {
+    func handleRpc(_ method: String, params: Any) {
         switch method {
         case "update":
             if let obj = params as? [String : AnyObject], let update = obj["update"] as? [String : AnyObject] {
@@ -77,10 +77,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         case "alert":
             if let obj = params as? [String : AnyObject], let msg = obj["msg"] as? String {
-                dispatch_async(dispatch_get_main_queue(), {
+                DispatchQueue.main.async(execute: {
                     let alert =  NSAlert.init()
                     #if swift(>=2.3)
-                        alert.alertStyle = .Informational
+                        alert.alertStyle = .informational
                     #else
                         alert.alertStyle = .InformationalAlertStyle
                     #endif
@@ -93,31 +93,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func openDocument(sender: AnyObject) {
+    func openDocument(_ sender: AnyObject) {
         let fileDialog = NSOpenPanel()
         if fileDialog.runModal() == NSFileHandlingPanelOKButton {
-            if let path = fileDialog.URL?.path {
+            if let path = fileDialog.url?.path {
                 application(NSApp, openFile: path)
-                NSDocumentController.sharedDocumentController().noteNewRecentDocumentURL(fileDialog.URL!);
+                NSDocumentController.shared().noteNewRecentDocumentURL(fileDialog.url!);
             }
         }
     }
 
-    func newDocument(sender: AnyObject) {
+    func newDocument(_ sender: AnyObject) {
         newWindow()
     }
 
-    func application(sender: NSApplication, openFile filename: String) -> Bool {
-        var appWindowController = NSApplication.sharedApplication().mainWindow?.delegate as? AppWindowController
+    func application(_ sender: NSApplication, openFile filename: String) -> Bool {
+        var appWindowController = NSApplication.shared().mainWindow?.delegate as? AppWindowController
         if !(appWindowController?.editView.isEmpty ?? false) {
             appWindowController = newWindow()
         }
         appWindowController!.filename = filename
-        appWindowController!.editView.sendRpcAsync("open", params: ["filename": filename])
+        appWindowController!.editView.sendRpcAsync("open", params: ["filename": filename] as AnyObject)
         return true  // TODO: should be RPC instead of async, plumb errors
     }
 
-    func applicationWillTerminate(aNotification: NSNotification) {
+    func applicationWillTerminate(_ aNotification: Notification) {
         // Insert code here to tear down your application
     }
 
