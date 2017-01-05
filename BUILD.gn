@@ -5,6 +5,3 @@ group("xi") {
     "//apps/xi/services",
   ]
 }
-
-
-# import 'package:apps.xi.services/core.fidl.dart';
