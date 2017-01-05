@@ -1,0 +1,7 @@
+group("xi") {
+  deps = [
+    "//apps/xi/dart",
+    "//apps/xi/rust",
+    "//apps/xi/services",
+  ]
+}

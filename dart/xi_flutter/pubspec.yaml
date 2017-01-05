@@ -1,0 +1,7 @@
+name: xi_flutter
+description: Vanilla Flutter Xi UI
+dependencies:
+  flutter:
+    sdk: flutter
+  widgets:
+    path: ../packages/widgets

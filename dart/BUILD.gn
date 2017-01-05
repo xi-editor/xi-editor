@@ -1,0 +1,13 @@
+group("dart") {
+  deps = [
+    "packages/widgets",
+    "xi_flutter",
+    "modules/xi_app",
+  ]
+}
+
+# femail(){
+# (fenv && netruncmd : "@ /system/apps/bootstrap /system/apps/device_runner --user-shell=file:///system/apps/email_user_shell")
+# }
+
+# netruncmd : "@ bootstrap device_runner --user-shell=dev_user_shell --user-shell-args=--root-module=xi_app"

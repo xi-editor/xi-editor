@@ -1,3 +1,6 @@
 xcuserdata/
 .DS_Store
 build/
+# Ignore .packages files created by the Fuchsia build system (added in
+# directories containing a BUILD.gn file).
+.packages

@@ -1,0 +1,9 @@
+name: widgets
+description: Flutter UI Widgets for Xi
+dependencies:
+  flutter:
+    sdk: flutter
+dev_dependencies:
+  test: any
+  flutter_test:
+    sdk: flutter

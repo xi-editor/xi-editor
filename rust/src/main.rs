@@ -16,12 +16,18 @@ extern crate serde;
 extern crate serde_json;
 extern crate time;
 
+#[macro_use]
+mod macros;
+
+#[cfg(target_os = "fuchsia")]
+#[macro_use]
+extern crate fidl;
+#[cfg(target_os = "fuchsia")]
+mod fidl_main;
+
 use std::io;
 
 use serde_json::Value;
-
-#[macro_use]
-mod macros;
 
 mod tabs;
 mod editor;
@@ -39,10 +45,13 @@ extern crate xi_rpc;
 
 use xi_rpc::{RpcLoop, RpcPeer, RpcCtx, Handler};
 
+#[cfg(target_os = "fuchsia")]
+type W = fidl_main::MySocket;
+#[cfg(not(target_os = "fuchsia"))]
 type W = io::Stdout;
-pub type MainPeer = RpcPeer<io::Stdout>;
+pub type MainPeer = RpcPeer<W>;
 
-struct MainState {
+pub struct MainState {
     tabs: Tabs,
 }
 
@@ -89,6 +98,7 @@ impl MainState {
     }
 }
 
+#[cfg(not(target_os = "fuchsia"))]
 fn main() {
     let mut state = MainState::new();
     let stdin = io::stdin();
@@ -96,4 +106,9 @@ fn main() {
     let mut rpc_looper = RpcLoop::new(stdout);
 
     rpc_looper.mainloop(|| stdin.lock(), &mut state);
+}
+
+#[cfg(target_os = "fuchsia")]
+fn main() {
+    fidl_main::fidl_main();
 }

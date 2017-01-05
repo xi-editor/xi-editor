@@ -1,0 +1,20 @@
+import("//flutter/build/flutter_app.gni")
+
+flutter_app("xi_app") {
+  main_dart = "lib/main.dart"
+
+  source_dir = "lib"
+
+  deps = [
+    "//apps/modular/lib/app/dart",
+    "//apps/modular/services/story:story_dart",
+    "//apps/mozart/lib/flutter",
+    "//apps/mozart/services/views:views_dart",
+    "//lib/fidl/dart",
+    "//lib/flutter/packages/flutter",
+    "//apps/xi/services:services_dart",
+    "//apps/xi/dart/packages/widgets",
+  ]
+
+  analysis_options = "//apps/xi/dart/.analysis_options"
+}

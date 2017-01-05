@@ -1,0 +1,15 @@
+import("//build/dart/dart_package.gni")
+import("//flutter/build/flutter_app.gni")
+
+dart_package("xi_flutter") {
+  package_name = "xi_flutter"
+
+  source_dir = "lib"
+
+  deps = [
+    "//apps/xi/dart/packages/widgets",
+    "//lib/flutter/packages/flutter",
+  ]
+
+  analysis_options = "//apps/xi/dart/.analysis_options"
+}

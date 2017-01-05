@@ -1,0 +1,8 @@
+group("rust") {
+  deps = []
+}
+
+copy("xi-core") {
+  sources = [ "target/x86_64-unknown-fuchsia/debug/xi-core" ]
+  outputs = [ "$root_out_dir/xi-core" ]
+}
