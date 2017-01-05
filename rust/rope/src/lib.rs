@@ -14,6 +14,8 @@
 
 //! A rope data structure suitable for text editing
 
+extern crate bytecount;
+
 pub mod tree;
 pub mod breaks;
 pub mod interval;
@@ -130,9 +132,8 @@ impl Debug for Rope {
 }
 */
 
-// TODO: explore ways to make this faster - SIMD would be a big win
 fn count_newlines(s: &str) -> usize {
-    s.as_bytes().iter().filter(|&&c| c == b'\n').count()
+    bytecount::count(s.as_bytes(), b'\n')
 }
 
 impl Rope {
@@ -414,7 +415,7 @@ impl Node {
     fn height(&self) -> usize {
         self.0.height
     }
-    
+
     fn is_leaf(&self) -> bool {
         self.0.height == 0
     }
@@ -449,7 +450,7 @@ impl Node {
             NodeVal::Internal(ref pieces) => (pieces.len() >= MIN_CHILDREN)
         }
     }
- 
+
     fn from_string_piece(s: String) -> Node {
         debug_assert!(s.len() <= MAX_LEAF);
 
