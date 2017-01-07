@@ -17,3 +17,7 @@ path = "../unicode"
 
 [dependencies.xi-rpc]
 path = "../rpc"
+
+[features]
+avx-accel = ["xi-rope/avx-accel"]
+simd-accel = ["xi-rope/simd-accel"]
