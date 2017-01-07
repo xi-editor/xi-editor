@@ -3,17 +3,14 @@ name = "xi-core"
 version = "0.0.0"
 license = "Apache-2.0"
 authors = ["Raph Levien <raph@google.com>"]
+description = "Main process for xi-core, based on json-rpc"
 
 [dependencies]
 serde = "0.8"
 serde_json = "0.8"
-time = "0.1"
 
-[dependencies.xi-rope]
-path = "rope"
-
-[dependencies.xi-unicode]
-path = "unicode"
+[dependencies.xi-core-lib]
+path = "core-lib"
 
 [dependencies.xi-rpc]
 path = "rpc"

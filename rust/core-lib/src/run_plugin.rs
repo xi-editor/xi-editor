@@ -14,7 +14,7 @@
 
 //! Module to run a plugin.
 
-use std::io::BufReader;
+use std::io::{BufReader, Write};
 use std::env;
 use std::path::PathBuf;
 use std::process::{Command,Stdio,ChildStdin};
@@ -28,14 +28,14 @@ use editor::Editor;
 
 pub type PluginPeer = RpcPeer<ChildStdin>;
 
-pub struct PluginRef(Arc<Mutex<Plugin>>);
+pub struct PluginRef<W: Write>(Arc<Mutex<Plugin<W>>>);
 
-pub struct Plugin {
-    editor: Weak<Mutex<Editor>>,
+pub struct Plugin<W: Write> {
+    editor: Weak<Mutex<Editor<W>>>,
     peer: PluginPeer,
 }
 
-pub fn start_plugin(editor: Arc<Mutex<Editor>>) {
+pub fn start_plugin<W: Write + Send + 'static>(editor: Arc<Mutex<Editor<W>>>) {
     thread::spawn(move || {
         let mut pathbuf: PathBuf = match env::current_exe() {
             Ok(pathbuf) => pathbuf,
@@ -69,7 +69,7 @@ pub fn start_plugin(editor: Arc<Mutex<Editor>>) {
     });
 }
 
-impl Handler<ChildStdin> for PluginRef {
+impl<W: Write + Send + 'static> Handler<ChildStdin> for PluginRef<W> {
     fn handle_notification(&mut self, _ctx: RpcCtx<ChildStdin>, method: &str, params: &Value) {
         let _ = self.rpc_handler(method, params);
         // TODO: should check None
@@ -82,7 +82,7 @@ impl Handler<ChildStdin> for PluginRef {
     }
 }
 
-impl PluginRef {
+impl<W: Write + Send + 'static> PluginRef<W> {
     fn rpc_handler(&self, method: &str, params: &Value) -> Option<Value> {
         let editor = {
             self.0.lock().unwrap().editor.upgrade()
@@ -168,7 +168,7 @@ impl PluginRef {
     }
 }
 
-impl Clone for PluginRef {
+impl<W: Write> Clone for PluginRef<W> {
     fn clone(&self) -> Self {
         PluginRef(self.0.clone())
     }

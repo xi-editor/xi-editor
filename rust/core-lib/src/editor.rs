@@ -41,7 +41,7 @@ const TAB_SIZE: usize = 4;
 // Maximum returned result from plugin get_data RPC.
 const MAX_SIZE_LIMIT: usize = 1024 * 1024;
 
-pub struct Editor {
+pub struct Editor<W: Write> {
     text: Rope,
     view: View,
 
@@ -66,8 +66,8 @@ pub struct Editor {
     scroll_to: Option<usize>,
     col: usize, // maybe this should live in view, it's similar to selection
 
-    tab_ctx: TabCtx,
-    plugins: Vec<PluginRef>,
+    tab_ctx: TabCtx<W>,
+    plugins: Vec<PluginRef<W>>,
     revs_in_flight: usize,
 }
 
@@ -93,8 +93,8 @@ impl EditType {
     }
 }
 
-impl Editor {
-    pub fn new(tab_ctx: TabCtx) -> Arc<Mutex<Editor>> {
+impl<W: Write + Send + 'static> Editor<W> {
+    pub fn new(tab_ctx: TabCtx<W>) -> Arc<Mutex<Editor<W>>> {
         let engine = Engine::new(Rope::from(""));
         let last_rev_id = engine.get_head_rev_id();
         let editor = Editor {
@@ -177,7 +177,7 @@ impl Editor {
     }
 
     // commit the current delta, updating views, plugins, and other invariants as needed
-    fn commit_delta(&mut self, self_ref: &Arc<Mutex<Editor>>) {
+    fn commit_delta(&mut self, self_ref: &Arc<Mutex<Editor<W>>>) {
         if self.engine.get_head_rev_id() != self.last_rev_id {
             self.update_after_revision(self_ref);
             if let Some((start, end)) = self.new_cursor.take() {
@@ -187,13 +187,13 @@ impl Editor {
         }
     }
 
-    fn update_undos(&mut self, self_ref: &Arc<Mutex<Editor>>) {
+    fn update_undos(&mut self, self_ref: &Arc<Mutex<Editor<W>>>) {
         self.engine.undo(self.undos.clone());
         self.text = self.engine.get_head();
         self.update_after_revision(self_ref);
     }
 
-    fn update_after_revision(&mut self, self_ref: &Arc<Mutex<Editor>>) {
+    fn update_after_revision(&mut self, self_ref: &Arc<Mutex<Editor<W>>>) {
         let delta = self.engine.delta_rev_head(self.last_rev_id);
         self.view.after_edit(&self.text, &delta);
         let (iv, new_len) = delta.summary();
@@ -619,12 +619,12 @@ impl Editor {
         self.view_dirty = true;
     }
 
-    fn debug_run_plugin(&mut self, self_ref: &Arc<Mutex<Editor>>) {
+    fn debug_run_plugin(&mut self, self_ref: &Arc<Mutex<Editor<W>>>) {
         print_err!("running plugin");
         start_plugin(self_ref.clone());
     }
 
-    pub fn on_plugin_connect(&mut self, plugin_ref: PluginRef) {
+    pub fn on_plugin_connect(&mut self, plugin_ref: PluginRef<W>) {
         plugin_ref.init_buf(self.plugin_buf_size(), self.engine.get_head_rev_id());
         self.plugins.push(plugin_ref);
     }
@@ -650,7 +650,7 @@ impl Editor {
         }
     }
 
-    fn do_undo(&mut self, self_ref: &Arc<Mutex<Editor>>) {
+    fn do_undo(&mut self, self_ref: &Arc<Mutex<Editor<W>>>) {
         if self.cur_undo > 0 {
             self.cur_undo -= 1;
             debug_assert!(self.undos.insert(self.live_undos[self.cur_undo]));
@@ -659,7 +659,7 @@ impl Editor {
         }
     }
 
-    fn do_redo(&mut self, self_ref: &Arc<Mutex<Editor>>) {
+    fn do_redo(&mut self, self_ref: &Arc<Mutex<Editor<W>>>) {
         if self.cur_undo < self.live_undos.len() {
             debug_assert!(self.undos.remove(&self.live_undos[self.cur_undo]));
             self.cur_undo += 1;
@@ -711,13 +711,13 @@ impl Editor {
         self.insert(&*String::from(kill_ring_string));
     }
 
-    pub fn do_rpc(self_ref: &Arc<Mutex<Editor>>, cmd: EditCommand) -> Option<Value> {
+    pub fn do_rpc(self_ref: &Arc<Mutex<Editor<W>>>, cmd: EditCommand) -> Option<Value> {
         self_ref.lock().unwrap().do_rpc_with_self_ref(cmd, self_ref)
     }
 
     fn do_rpc_with_self_ref(&mut self,
                   cmd: EditCommand,
-                  self_ref: &Arc<Mutex<Editor>>)
+                  self_ref: &Arc<Mutex<Editor<W>>>)
                   -> Option<Value> {
 
         use rpc::EditCommand::*;
