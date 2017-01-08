@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<document type="com.apple.InterfaceBuilder3.Cocoa.XIB" version="3.0" toolsVersion="10117" systemVersion="15G31" targetRuntime="MacOSX.Cocoa" propertyAccessControl="none" useAutolayout="YES">
+<document type="com.apple.InterfaceBuilder3.Cocoa.XIB" version="3.0" toolsVersion="10117" systemVersion="15G1212" targetRuntime="MacOSX.Cocoa" propertyAccessControl="none" useAutolayout="YES">
     <dependencies>
         <deployment identifier="macosx"/>
         <plugIn identifier="com.apple.InterfaceBuilder.CocoaPlugin" version="10117"/>
@@ -19,24 +19,32 @@
             <windowStyleMask key="styleMask" titled="YES" closable="YES" miniaturizable="YES" resizable="YES"/>
             <windowPositionMask key="initialPositionMask" leftStrut="YES" rightStrut="YES" topStrut="YES" bottomStrut="YES"/>
             <rect key="contentRect" x="196" y="240" width="480" height="270"/>
-            <rect key="screenRect" x="0.0" y="0.0" width="1440" height="877"/>
+            <rect key="screenRect" x="0.0" y="0.0" width="1920" height="1177"/>
             <view key="contentView" id="se5-gp-TjO">
                 <rect key="frame" x="0.0" y="0.0" width="480" height="270"/>
                 <autoresizingMask key="autoresizingMask"/>
                 <subviews>
                     <scrollView autohidesScrollers="YES" horizontalLineScroll="10" horizontalPageScroll="10" verticalLineScroll="10" verticalPageScroll="10" usesPredominantAxisScrolling="NO" horizontalScrollElasticity="none" verticalScrollElasticity="none" translatesAutoresizingMaskIntoConstraints="NO" id="ddX-9c-KvF">
                         <rect key="frame" x="-1" y="-1" width="482" height="272"/>
-                        <clipView key="contentView" id="a8v-dQ-hkH">
+                        <clipView key="contentView" autoresizesSubviews="NO" id="a8v-dQ-hkH">
                             <rect key="frame" x="1" y="1" width="480" height="270"/>
                             <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                             <subviews>
-                                <customView fixedFrame="YES" translatesAutoresizingMaskIntoConstraints="NO" id="hxn-ZY-xOb" customClass="EditView" customModule="XiEditor" customModuleProvider="target">
+                                <customView autoresizesSubviews="NO" translatesAutoresizingMaskIntoConstraints="NO" id="hxn-ZY-xOb" customClass="EditView" customModule="XiEditor" customModuleProvider="target">
                                     <rect key="frame" x="0.0" y="0.0" width="480" height="270"/>
+                                    <constraints>
+                                        <constraint firstAttribute="height" priority="250" constant="270" id="wII-cy-CLz"/>
+                                    </constraints>
                                     <userDefinedRuntimeAttributes>
                                         <userDefinedRuntimeAttribute type="boolean" keyPath="translatesAutoresizingMaskIntoConstraints" value="NO"/>
                                     </userDefinedRuntimeAttributes>
                                 </customView>
                             </subviews>
+                            <constraints>
+                                <constraint firstAttribute="trailing" secondItem="hxn-ZY-xOb" secondAttribute="trailing" id="7fU-a1-cVW"/>
+                                <constraint firstItem="hxn-ZY-xOb" firstAttribute="leading" secondItem="a8v-dQ-hkH" secondAttribute="leading" id="tNr-RX-rd3"/>
+                                <constraint firstItem="hxn-ZY-xOb" firstAttribute="top" secondItem="a8v-dQ-hkH" secondAttribute="top" id="ydU-YO-zaR"/>
+                            </constraints>
                         </clipView>
                         <scroller key="horizontalScroller" hidden="YES" verticalHuggingPriority="750" horizontal="YES" id="1jY-MJ-Otq">
                             <rect key="frame" x="1" y="255" width="465" height="15"/>
