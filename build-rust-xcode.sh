@@ -57,3 +57,6 @@ function build_target () {
 
 build_target xi-core rust
 build_target xi-syntect-plugin rust/syntect-plugin
+
+# workaround for https://github.com/travis-ci/travis-ci/issues/6522
+set +e
