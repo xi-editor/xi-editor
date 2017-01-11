@@ -1,0 +1,24 @@
+language: rust
+
+rust:
+  - stable
+  - nightly
+
+os:
+  - linux
+  - osx
+
+matrix:
+  allow_failures:
+    - rust: nightly
+
+cache:
+  directories:
+    - $HOME/.cargo
+
+script:
+  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then xcodebuild; fi
+  - cd rust
+  - export CARGO_TARGET_DIR=/tmp/target
+  - if [[ "$TRAVIS_OS_NAME" != "osx" ]]; then cargo build && cargo build --manifest-path syntect-plugin/Cargo.toml; fi
+  - for MANIFEST in Cargo.toml */Cargo.toml; do cargo test --manifest-path $MANIFEST; done
