@@ -29,7 +29,7 @@ Screenshot (will need to be updated as syntax coloring and UI polish is added):
 ![xi screenshot](/doc/img/xi-mac-screenshot.png?raw=true)
 
 ## Getting started
-You need [Xcode 7.3](https://developer.apple.com/xcode/) (only on Mac) and [Rust](https://www.rust-lang.org/) (version 1.10+ is
+You need [Xcode 7.3](https://developer.apple.com/xcode/) (only on Mac) and [Rust](https://www.rust-lang.org/) (version 1.13+ is
 recommended and supported). You should have `cargo` in your path.
 
 ```
@@ -56,10 +56,24 @@ If you’re not on a Mac, you can build just the core like so:
 > cargo build
 ```
 
-See the [xi_glium](https://github.com/potocpav/xi_glium) project for an
-experimental front-end in Rust. There are notes (I wouldn’t call it
+Here are some other front-ends in various stages of development:
+
+* [fuchsia/xi](https://fuchsia.googlesource.com/xi), a front-end in Flutter for Fuchsia,
+and might work on other Flutter targets.
+
+* [xi_glium](https://github.com/potocpav/xi_glium), an
+experimental GL-based front-end in Rust.
+
+* [xi-gtk](https://github.com/eyelash/xi-gtk), a GTK+ front-end.
+
+* [xi-tui](https://github.com/little-dude/xi-tui), a text UI.
+
+* [XiEditorVS2015](https://github.com/Sineaggi/XiEditorVS2015), C#.
+
+There are notes (I wouldn’t call it
 documentation at this point) on the protocol at
-[frontend.md](doc/frontend.md).
+[frontend.md](doc/frontend.md). If you're working on a front-end, feel free to
+send a PR to add it to the above list.
 
 ## Design decisions
 

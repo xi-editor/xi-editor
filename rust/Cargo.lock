@@ -92,7 +92,7 @@ dependencies = [
  "time 0.1.35 (registry+https://github.com/rust-lang/crates.io-index)",
  "xi-rope 0.1.1",
  "xi-rpc 0.1.0",
- "xi-unicode 0.0.1",
+ "xi-unicode 0.1.0",
 ]
 
 [[package]]
@@ -113,7 +113,7 @@ dependencies = [
 
 [[package]]
 name = "xi-unicode"
-version = "0.0.1"
+version = "0.1.0"
 
 [metadata]
 "checksum bytecount 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)" = "289e7bdb4fb98f273dd0628a8be7ffe76aa9b944464f074b9c4f82000a580aed"
