@@ -53,6 +53,8 @@ class AppWindowController: NSWindowController {
         editView.coreConnection = dispatcher.coreConnection
         editView.tabName = tabName
         appDelegate.registerTab(tabName, controller: self)
+        
+        scrollView.contentView.documentCursor = NSCursor.IBeamCursor();
 
         // set up autolayout constraints
         let views = ["editView": editView, "clipView": scrollView.contentView]

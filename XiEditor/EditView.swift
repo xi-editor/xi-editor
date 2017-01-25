@@ -146,11 +146,6 @@ class EditView: NSView, NSTextInputClient {
         needsDisplay = true
     }
 
-    override func resetCursorRects() {
-        super.resetCursorRects()
-        addCursorRect(frameRect, cursor: NSCursor.IBeamCursor())
-    }
-
     required init?(coder: NSCoder) {
         fatalError("View doesn't support NSCoding")
     }
