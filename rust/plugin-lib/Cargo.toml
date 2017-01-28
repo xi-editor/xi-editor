@@ -1,0 +1,13 @@
+[package]
+name = "xi-plugin-lib"
+version = "0.1.0"
+license = "Apache-2.0"
+authors = ["Raph Levien <raph@google.com>"]
+repository = "https://github.com/google/xi-editor"
+description = "The library base for implementing xi-editor plugins."
+
+[dependencies]
+serde_json = "0.8"
+
+[dependencies.xi-rpc]
+path = "../rpc"

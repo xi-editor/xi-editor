@@ -15,16 +15,12 @@
 //! A syntax highlighting plugin based on syntect.
 
 extern crate syntect;
-extern crate xi_rpc;
-extern crate serde_json;
-
 #[macro_use]
-mod macros;
+extern crate xi_plugin_lib;
 
-mod plugin_base;
-mod caching_plugin;
+use xi_plugin_lib::caching_plugin;
 
-use caching_plugin::{PluginCtx, SpansBuilder};
+use xi_plugin_lib::caching_plugin::{PluginCtx, SpansBuilder};
 
 use syntect::parsing::{ParseState, ScopeStack, SyntaxSet};
 use syntect::highlighting::{Color, FontStyle, Highlighter, HighlightIterator, HighlightState,

@@ -8,7 +8,6 @@ description = "A syntax highlighting plugin based on syntect."
 
 [dependencies]
 syntect = "1.0"
-serde_json = "0.8"
 
-[dependencies.xi-rpc]
-path = "../rpc"
+[dependencies.xi-plugin-lib]
+path = "../plugin-lib"
