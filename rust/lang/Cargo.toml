@@ -1,0 +1,10 @@
+[package]
+name = "xi-lang"
+version = "0.1.0"
+license = "Apache-2.0"
+authors = ["Raph Levien <raph@google.com>"]
+repository = "https://github.com/google/xi-editor"
+description = "A language syntax coloring and indentation plugin for xi-editor."
+
+[dependencies.xi-plugin-lib]
+path = "../plugin-lib"

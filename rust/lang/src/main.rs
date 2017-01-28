@@ -1,4 +1,4 @@
-// Copyright 2016 Google Inc. All rights reserved.
+// Copyright 2017 Google Inc. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,56 +12,45 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A syntax highlighting plugin based on syntect.
+//! A language syntax coloring and indentation plugin for xi-editor.
 
-extern crate syntect;
 #[macro_use]
 extern crate xi_plugin_lib;
 
 use xi_plugin_lib::caching_plugin::{self, PluginCtx, SpansBuilder};
 
-use syntect::parsing::{ParseState, ScopeStack, SyntaxSet};
-use syntect::highlighting::{Color, FontStyle, Highlighter, HighlightIterator, HighlightState,
-    Style, ThemeSet};
+use std::env;
 
-fn color_to_rgba(color: Color) -> u32 {
-    ((color.a as u32) << 24) | ((color.r as u32) << 16) | ((color.g as u32) << 8) | (color.r as u32)
-}
+mod rust;
+mod colorize;
+mod statestack;
+mod peg;
 
-fn font_style_to_u8(fs: FontStyle) -> u8 {
-    fs.bits()
-}
+use rust::RustColorize;
+use statestack::State;
+use colorize::{Style, StyleNewState, Colorize};
 
-fn add_style_span(builder: &mut SpansBuilder, style: Style, start: usize, end: usize) {
+fn add_style_span(builder: &mut SpansBuilder, style: &Style, start: usize, end: usize) {
     builder.add_style_span(start, end,
-        color_to_rgba(style.foreground), font_style_to_u8(style.font_style));
+        style.fg_color, style.font);
 }
 
-struct Sets {
-    ss: SyntaxSet,
-    ts: ThemeSet,
-}
-
-struct PluginState<'a> {
-    sets: &'a Sets,
+struct PluginState {
+    colorize: RustColorize<StyleNewState<fn(&mut Style, &rust::StateEl)>>,
     line_num: usize,
     offset: usize,
-    parse_state: Option<ParseState>,
-    highlighter: Option<Highlighter<'a>>,
-    hstate: Option<HighlightState>,
+    state: State,
     spans_start: usize,
     builder: Option<SpansBuilder>,
 }
 
-impl<'a> PluginState<'a> {
-    pub fn new(sets: &'a Sets) -> Self {
+impl PluginState {
+    fn new() -> PluginState {
         PluginState {
-            sets: sets,
+            colorize: RustColorize::new(StyleNewState::new(rust::to_style)),
             line_num: 0,
             offset: 0,
-            parse_state: None,
-            highlighter: None,
-            hstate: None,
+            state: State::default(),
             spans_start: 0,
             builder: None,
         }
@@ -78,20 +67,22 @@ impl<'a> PluginState<'a> {
         if line.is_none() {
             return false;
         }
+
         let line = line.unwrap();
-        let ops = self.parse_state.as_mut().unwrap().parse_line(&line);
         if self.builder.is_none() {
             self.spans_start = self.offset;
             self.builder = Some(SpansBuilder::new());
         }
-        let iter = HighlightIterator::new(self.hstate.as_mut().unwrap(), &ops, &line,
-            self.highlighter.as_ref().unwrap());
-        let mut ix = 0;
-        for (style, str_slice) in iter {
-            let start = self.offset - self.spans_start + ix;
-            let end = start + str_slice.len();
+
+        let mut i = 0;
+        while i < line.len() {
+            let (s0, len, s1) = self.colorize.colorize(&line[i..], self.state);
+            let style = self.colorize.get_new_state().get_style(s0);
+            let start = self.offset - self.spans_start + i;
+            let end = start + len;
             add_style_span(self.builder.as_mut().unwrap(), style, start, end);
-            ix += str_slice.len();
+            i += len;
+            self.state = s1;
         }
         self.line_num += 1;
         self.offset += line.len();
@@ -105,22 +96,16 @@ impl<'a> PluginState<'a> {
     }
 
     fn do_highlighting(&mut self, mut ctx: PluginCtx) {
-        let syntax = self.sets.ss.find_syntax_by_extension("rs")
-            .unwrap_or_else(|| self.sets.ss.find_syntax_plain_text());
-        self.parse_state = Some(ParseState::new(syntax));
-        let theme = &self.sets.ts.themes["InspiredGitHub"];
-        self.highlighter = Some(Highlighter::new(theme));
-        self.hstate = Some(HighlightState::new(self.highlighter.as_ref().unwrap(),
-            ScopeStack::new()));
         self.line_num = 0;
         self.offset = 0;
+        self.state = State::default();
         ctx.schedule_idle(0);
     }
 }
 
 const LINES_PER_RPC: usize = 50;
 
-impl<'a> caching_plugin::Handler for PluginState<'a> {
+impl caching_plugin::Handler for PluginState {
     fn init_buf(&mut self, ctx: PluginCtx, _buf_size: usize) {
         self.do_highlighting(ctx);
     }
@@ -146,12 +131,17 @@ impl<'a> caching_plugin::Handler for PluginState<'a> {
     }
 }
 
-fn main() {
-    let sets = Sets {
-        ss: SyntaxSet::load_defaults_newlines(),
-        ts: ThemeSet::load_defaults(),
-    };
-    let mut state = PluginState::new(&sets);
-
+fn xi_plugin_main() {
+    let mut state = PluginState::new();
     caching_plugin::mainloop(&mut state);
+}
+
+fn main() {
+    if let Some(ref s) = env::args().skip(1).next() {
+        if s == "test" {
+            rust::test();
+            return;
+        }
+    }
+    xi_plugin_main();
 }
