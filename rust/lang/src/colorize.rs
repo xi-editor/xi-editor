@@ -19,10 +19,16 @@ use std::fmt::Debug;
 use statestack::{State, NewState};
 
 pub trait Colorize {
-    // first state is for the highlighted span; size of highlighted span; next state
-    // invariants: text is not empty; text contains at most one line
-    // (TODO: send empty string to represent EOF?)
-    fn colorize(&mut self, text: &str, state: State) -> (State, usize, State);
+    /// first state is for the highlighted span; size of highlighted span; next state
+    /// invariants: text is not empty; text contains at most one line
+    /// (TODO: send empty string to represent EOF?)
+    ///
+    /// Return value:
+    ///   number of bytes matched at previous state
+    ///   state of this match
+    ///   number of bytes in this match
+    ///   next state
+    fn colorize(&mut self, text: &str, state: State) -> (usize, State, usize, State);
 }
 
 pub fn run_debug<C: Colorize>(c: &mut C, s: &str) {
@@ -30,7 +36,11 @@ pub fn run_debug<C: Colorize>(c: &mut C, s: &str) {
     for line in s.lines() {
         let mut i = 0;
         while i < line.len() {
-            let (s0, len, s1) = c.colorize(&line[i..], state);
+            let (prevlen, s0, len, s1) = c.colorize(&line[i..], state);
+            if prevlen > 0 {
+               println!("{}: {:?}", &line[i..i + prevlen], state);
+               i += prevlen;
+            }
             println!("{}: {:?}", &line[i..i + len], s0);
             i += len;
             state = s1;

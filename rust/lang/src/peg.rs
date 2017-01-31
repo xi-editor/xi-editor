@@ -15,6 +15,7 @@
 //! Simple parser expression generator
 
 use std::char::from_u32;
+use std::ops;
 
 pub trait Peg {
     fn p(&self, s: &[u8]) -> Option<usize>;
@@ -91,12 +92,19 @@ impl<F: Fn(char) -> bool> Peg for OneChar<F> {
     }
 }
 
+// split out into a separate function to help inlining heuristics; even so,
+// prefer to use bytes even though they're not quite as ergonomic
+fn char_helper(s: &[u8], c: char) -> Option<usize> {
+    OneChar(|x| x == c).p(s)
+}
+
 impl Peg for char {
     fn p(&self, s: &[u8]) -> Option<usize> {
-        if *self <= '\x7f' {
-            (*self as u8).p(s)
+        let c = *self;
+        if c <= '\x7f' {
+            (c as u8).p(s)
         } else {
-            OneChar(|c| c == *self).p(s)
+            char_helper(s, c)
         }
     }
 }
@@ -189,14 +197,14 @@ impl<'a, P: Peg> Peg for OneOf<'a, P> {
 }
 
 /// Repetition with a minimum and maximum (inclusive) bound
-pub struct Repeat<P>(pub P, pub usize, pub usize);
+pub struct Repeat<P, R>(pub P, pub R);
 
-impl<P: Peg> Peg for Repeat<P> {
+impl<P: Peg> Peg for Repeat<P, usize> {
     fn p(&self, s: &[u8]) -> Option<usize> {
-        let Repeat(ref p, lo, hi) = *self;
+        let Repeat(ref p, reps) = *self;
         let mut i = 0;
         let mut count = 0;
-        while count < hi {
+        while count < reps {
             if let Some(len) = p.p(&s[i..]) {
                 i += len;
                 count += 1;
@@ -204,11 +212,58 @@ impl<P: Peg> Peg for Repeat<P> {
                 break;
             }
         }
-        if count >= lo {
+        Some(i)
+    }
+}
+
+impl<P: Peg> Peg for Repeat<P, ops::Range<usize>> {
+    fn p(&self, s: &[u8]) -> Option<usize> {
+        let Repeat(ref p, ops::Range { start, end }) = *self;
+        let mut i = 0;
+        let mut count = 0;
+        while count + 1 < end {
+            if let Some(len) = p.p(&s[i..]) {
+                i += len;
+                count += 1;
+            } else {
+                break;
+            }
+        }
+        if count >= start {
             Some(i)
         } else {
             None
         }
+    }
+}
+
+impl<P: Peg> Peg for Repeat<P, ops::RangeFrom<usize>> {
+    fn p(&self, s: &[u8]) -> Option<usize> {
+        let Repeat(ref p, ops::RangeFrom { start }) = *self;
+        let mut i = 0;
+        let mut count = 0;
+        while let Some(len) = p.p(&s[i..]) {
+            i += len;
+            count += 1;
+        }
+        if count >= start {
+            Some(i)
+        } else {
+            None
+        }
+    }
+}
+
+impl<P: Peg> Peg for Repeat<P, ops::RangeFull> {
+    fn p(&self, s: &[u8]) -> Option<usize> {
+        ZeroOrMore(Ref(&self.0)).p(s)
+    }
+}
+
+impl<P: Peg> Peg for Repeat<P, ops::RangeTo<usize>> {
+    fn p(&self, s: &[u8]) -> Option<usize> {
+        let Repeat(ref p, ops::RangeTo { end }) = *self;
+        Repeat(Ref(p), 0..end).p(s)
     }
 }
 
@@ -246,6 +301,18 @@ impl<P: Peg> Peg for ZeroOrMore<P> {
             i += len;
         }
         Some(i)
+    }
+}
+
+/// Fail to match if the arg matches, otherwise match empty.
+pub struct FailIf<P>(pub P);
+
+impl<P: Peg> Peg for FailIf<P> {
+    fn p(&self, s: &[u8]) -> Option<usize> {
+        match self.0.p(s) {
+            Some(_) => None,
+            None => Some(0)
+        }
     }
 }
 

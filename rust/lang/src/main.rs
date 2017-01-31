@@ -76,7 +76,15 @@ impl PluginState {
 
         let mut i = 0;
         while i < line.len() {
-            let (s0, len, s1) = self.colorize.colorize(&line[i..], self.state);
+            let (prevlen, s0, len, s1) = self.colorize.colorize(&line[i..], self.state);
+            if prevlen > 0 {
+                // TODO: maybe make an iterator to avoid this duplication
+                let style = self.colorize.get_new_state().get_style(self.state);
+                let start = self.offset - self.spans_start + i;
+                let end = start + prevlen;
+                add_style_span(self.builder.as_mut().unwrap(), style, start, end);
+                i += prevlen;
+            }
             let style = self.colorize.get_new_state().get_style(s0);
             let start = self.offset - self.spans_start + i;
             let end = start + len;

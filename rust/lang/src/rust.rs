@@ -36,11 +36,11 @@ pub enum StateEl {
 pub fn to_style(style: &mut Style, el: &StateEl) {
     match *el {
         StateEl::Comment => style.fg_color = 0xFF75715E,
-        StateEl::StrQuote => style.fg_color = 0xFFE6DB74,
-        StateEl::CharQuote => style.fg_color = 0xFFE6DB74,
+        StateEl::StrQuote => style.fg_color = 0xFF998844,
+        StateEl::CharQuote => style.fg_color = 0xFF998844,
         StateEl::Invalid => style.fg_color = 0xFFFF0000,
-        StateEl::NumericLiteral => style.fg_color = 0xFFAE81FF,
-        StateEl::CharConst => style.fg_color = 0xFFAE81FF,
+        StateEl::NumericLiteral => style.fg_color = 0xFF8866EE,
+        StateEl::CharConst => style.fg_color = 0xFF8866EE,
     }
 }
 
@@ -59,28 +59,22 @@ impl<N: NewState<StateEl>> RustColorize<N> {
         self.ctx.get_new_state()
     }
 
-    fn quoted_str(&mut self, t: &[u8], state: State) -> (State, usize, State) {
+    fn quoted_str(&mut self, t: &[u8], state: State) -> (usize, State, usize, State) {
         let mut i = 0;
         while i < t.len() {
             let b = t[i];
             if b == b'"' {
-                return (state, i + 1, self.ctx.pop(state).unwrap());
+                return (0, state, i + 1, self.ctx.pop(state).unwrap());
             } else if b == b'\\' {
                 if let Some(len) = escape.p(&t[i..]) {
-                    if i > 0 {
-                        return (state, i, state);
-                    }
-                    return (self.ctx.push(state, StateEl::CharConst), len, state);
+                    return (i, self.ctx.push(state, StateEl::CharConst), len, state);
                 } else if !is_eol(&t[i + 1 ..]) {
-                    if i > 0 {
-                        return (state, i, state);
-                    }
-                    return (self.ctx.push(state, StateEl::Invalid), 1, state);
+                    return (i, self.ctx.push(state, StateEl::Invalid), 1, state);
                 }
             }
             i += 1;
         }
-        (state, i, state)
+        (0, state, i, state)
     }
 }
 
@@ -94,6 +88,11 @@ fn is_octal_digit(c: u8) -> bool {
 
 fn is_hex_digit(c: u8) -> bool {
     (c >= b'0' && c <= b'9') || (c >= b'a' && c <= b'f') || (c >= b'A' && c <= b'F')
+}
+
+// Note: will have to rework this if we want to support non-ASCII identifiers
+fn is_ident_start(c: u8) -> bool {
+    (c >= b'A' && c <= b'Z') || (c >= b'a' && c <= b'z') || c == b'_'
 }
 
 // sequence of decimal digits with optional separator
@@ -133,7 +132,7 @@ fn positive_decimal(s: &[u8]) -> Option<usize> {
         raw_numeric,
         Alt(int_suffix,
             (
-                Optional(('.', Optional(raw_numeric))),
+                Optional(('.', FailIf(OneByte(is_ident_start)), Optional(raw_numeric))),
                 Optional((Alt('e', 'E'), Optional(Alt('+', '-')), raw_numeric)),
                 Optional(Alt("f32", "f64"))
             )
@@ -150,8 +149,8 @@ fn escape(s: &[u8]) -> Option<usize> {
         '\\',
         Alt3(
             OneOf(b"\\\'\"0nrt"),
-            ("x", Repeat(OneByte(is_hex_digit), 2, 2)),
-            ("u{", Repeat(OneByte(is_hex_digit), 1, 6), "}")
+            ("x", Repeat(OneByte(is_hex_digit), 2)),
+            ("u{", Repeat(OneByte(is_hex_digit), 1..7), "}")
         )
     ).p(s)
 }
@@ -174,57 +173,39 @@ fn is_eol(s: &[u8]) -> bool {
 }
 
 impl<N: NewState<StateEl>> Colorize for RustColorize<N> {
-    fn colorize(&mut self, text: &str, mut state: State) -> (State, usize, State) {
+    fn colorize(&mut self, text: &str, mut state: State) -> (usize, State, usize, State) {
         let t = text.as_bytes();
         match self.ctx.tos(state) {
             Some(StateEl::Comment) => {
                 for i in 0..t.len() {
                     if let Some(len) = "/*".p(&t[i..]) {
-                        if i > 0 {
-                            return (state, i, state);
-                        }
                         state = self.ctx.push(state, StateEl::Comment);
-                        return (state, len, state);
+                        return (i, state, len, state);
                     } else if let Some(len) = "*/".p(&t[i..]) {
-                        return (state, i + len, self.ctx.pop(state).unwrap());
+                        return (0, state, i + len, self.ctx.pop(state).unwrap());
                     }
                 }
-                return (state, t.len(), state);
+                return (0, state, t.len(), state);
             }
             Some(StateEl::StrQuote) => return self.quoted_str(t, state),
             _ => ()
         }
         for (i, &b) in t.iter().enumerate() {
             if let Some(len) = "/*".p(&t[i..]) {
-                if i > 0 {
-                    return (state, i, state);
-                }
                 state = self.ctx.push(state, StateEl::Comment);
-                return (state, len, state);
+                return (i, state, len, state);
             } else if let Some(_) = "//".p(&t[i..]) {
-                if i > 0 {
-                    return (state, i, state);
-                }
-                return (self.ctx.push(state, StateEl::Comment), t.len(), state)
+                return (i, self.ctx.push(state, StateEl::Comment), t.len(), state)
             } else if let Some(len) = numeric_literal.p(&t[i..]) {
-                if i > 0 {
-                    return (state, i, state);
-                }
-                return (self.ctx.push(state, StateEl::NumericLiteral), len, state)
+                return (i, self.ctx.push(state, StateEl::NumericLiteral), len, state)
             } else if b == b'"' {
-                if i > 0 {
-                    return (state, i, state);
-                }
                 state = self.ctx.push(state, StateEl::StrQuote);
-                return (state, 1, state)
+                return (i, state, 1, state)
             } else if let Some(len) = char_literal.p(&t[i..]) {
-                if i > 0 {
-                    return (state, i, state);
-                }
-                return (self.ctx.push(state, StateEl::CharQuote), len, state)
+                return (i, self.ctx.push(state, StateEl::CharQuote), len, state)
             }
         }
-        (state, t.len(), state)
+        (0, state, t.len(), state)
     }
 }
 
@@ -234,4 +215,23 @@ pub fn test() {
     let _ = stdin().read_to_string(&mut buf).unwrap();
     let mut c = RustColorize::new(DebugNewState::new());
     colorize::run_debug(&mut c, &buf);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::numeric_literal;
+
+    #[test]
+    fn numeric_literals() {
+        assert_eq!(Some(1), numeric_literal(b"2.f64"));
+        assert_eq!(Some(6), numeric_literal(b"2.0f64"));
+        assert_eq!(Some(1), numeric_literal(b"2._f64"));
+        assert_eq!(Some(1), numeric_literal(b"2._0f64"));
+        assert_eq!(Some(5), numeric_literal(b"1_2__"));
+        assert_eq!(Some(7), numeric_literal(b"1_2__u8"));
+        assert_eq!(Some(9), numeric_literal(b"1_2__u128"));
+        assert_eq!(None, numeric_literal(b"_1_"));
+        assert_eq!(Some(4), numeric_literal(b"0xff"));
+        assert_eq!(Some(4), numeric_literal(b"0o6789"));
+    }
 }
