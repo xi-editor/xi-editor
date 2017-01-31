@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Rust language syntax analysis and highlighting.
+
 use std::io::{stdin, Read};
 
 use statestack::{State, Context, NewState};
@@ -26,6 +28,9 @@ pub enum StateEl {
     CharConst,
     NumericLiteral,
     Invalid,
+    Keyword,
+    Operator,
+    PrimType,
     //RawStrHash,  // One for each hash in a raw string
     //Block,    // One for each {
     //Bracket,  // One for each [
@@ -39,10 +44,37 @@ pub fn to_style(style: &mut Style, el: &StateEl) {
         StateEl::StrQuote => style.fg_color = 0xFF998844,
         StateEl::CharQuote => style.fg_color = 0xFF998844,
         StateEl::Invalid => style.fg_color = 0xFFFF0000,
-        StateEl::NumericLiteral => style.fg_color = 0xFF8866EE,
+        StateEl::NumericLiteral => style.fg_color = 0xFF6644EE,
         StateEl::CharConst => style.fg_color = 0xFF8866EE,
+        StateEl::Keyword => style.font = 1,
+        StateEl::Operator => style.fg_color = 0xFFAA2244,
+        StateEl::PrimType => style.fg_color = 0xFF44AAAA,
     }
 }
+
+// sorted for easy binary searching
+const RUST_KEYWORDS: &'static [&'static [u8]] = &[
+    b"Self", b"abstract", b"alignof", b"as", b"become", b"box", b"break",
+    b"const", b"continue", b"crate", b"default", b"do", b"else", b"enum",
+    b"extern", b"false", b"final", b"fn", b"for", b"if", b"impl", b"in", b"let",
+    b"loop", b"macro", b"match", b"mod", b"move", b"mut", b"offsetof",
+    b"override", b"priv", b"proc", b"pub", b"pure", b"ref", b"return", b"self",
+    b"sizeof", b"static", b"struct", b"super", b"trait", b"true", b"type",
+    b"typeof", b"union", b"unsafe", b"unsized", b"use", b"virtual", b"where",
+    b"while", b"yield"
+];
+
+// sorted for easy binary searching
+const RUST_PRIM_TYPES: &'static [&'static [u8]] = &[
+    b"bool", b"char", b"f32", b"f64", b"i128", b"i16", b"i32", b"i64", b"i8",
+    b"isize", b"str", b"u128", b"u16", b"u32", b"u64", b"u8", b"usize"
+];
+
+const RUST_OPERATORS: &'static [&'static [u8]] = &[
+    b"!", b"%=", b"%", b"&=", b"&&", b"&", b"*=", b"*", b"+=", b"+", b"-=", b"-",
+    b"/=", b"/", b"<<=", b"<<", b">>=", b">>", b"^=", b"^", b"|=", b"||", b"|",
+    b"==", b"=", b"..", b"=>", b"<=", b"<", b">=", b">"
+];
 
 pub struct RustColorize<N> {
     ctx: Context<StateEl, N>,
@@ -68,8 +100,9 @@ impl<N: NewState<StateEl>> RustColorize<N> {
             } else if b == b'\\' {
                 if let Some(len) = escape.p(&t[i..]) {
                     return (i, self.ctx.push(state, StateEl::CharConst), len, state);
-                } else if !is_eol(&t[i + 1 ..]) {
-                    return (i, self.ctx.push(state, StateEl::Invalid), 1, state);
+                } else if let Some(len) = 
+                        (FailIf(OneOf(b"\r\nbu")), OneChar(|_| true)).p(&t[i+1..]) {
+                    return (i + 1, self.ctx.push(state, StateEl::Invalid), len, state);
                 }
             }
             i += 1;
@@ -82,10 +115,6 @@ fn is_digit(c: u8) -> bool {
     c >= b'0' && c <= b'9'
 }
 
-fn is_octal_digit(c: u8) -> bool {
-    c >= b'0' && c <= b'7'
-}
-
 fn is_hex_digit(c: u8) -> bool {
     (c >= b'0' && c <= b'9') || (c >= b'a' && c <= b'f') || (c >= b'A' && c <= b'F')
 }
@@ -95,13 +124,21 @@ fn is_ident_start(c: u8) -> bool {
     (c >= b'A' && c <= b'Z') || (c >= b'a' && c <= b'z') || c == b'_'
 }
 
+fn is_ident_continue(c: u8) -> bool {
+    is_ident_start(c) || is_digit(c)
+}
+
+fn ident(s: &[u8]) -> Option<usize> {
+    (OneByte(is_ident_start), ZeroOrMore(OneByte(is_ident_continue))).p(s)
+}
+
 // sequence of decimal digits with optional separator
 fn raw_numeric(s: &[u8]) -> Option<usize> {
-    (OneByte(is_digit), ZeroOrMore(Alt('_', OneByte(is_digit)))).p(s)
+    (OneByte(is_digit), ZeroOrMore(Alt(b'_', OneByte(is_digit)))).p(s)
 }
 
 fn int_suffix(s: &[u8]) -> Option<usize> {
-    (Alt('u', 'i'), OneOf(&["8", "16", "32", "64", "128", "size"])).p(s)
+    (Alt(b'u', b'i'), OneOf(&["8", "16", "32", "64", "128", "size"])).p(s)
 }
 
 // At least one P with any number of SEP mixed in. Note: this is also an example
@@ -117,11 +154,11 @@ impl<P: Peg, SEP: Peg> Peg for OneOrMoreWithSep<P, SEP> {
 
 fn positive_nondecimal(s: &[u8]) -> Option<usize> {
     (
-        '0',
+        b'0',
         Alt3(
-            ('x', OneOrMoreWithSep(OneByte(is_hex_digit), '_')),
-            ('o', OneOrMoreWithSep(OneByte(is_octal_digit), '_')),
-            ('b', OneOrMoreWithSep(Alt('0', '1'), '_')),
+            (b'x', OneOrMoreWithSep(OneByte(is_hex_digit), b'_')),
+            (b'o', OneOrMoreWithSep(Inclusive(b'0'..b'7'), b'_')),
+            (b'b', OneOrMoreWithSep(Alt(b'0', b'1'), b'_')),
         ),
         Optional(int_suffix)
     ).p(s)
@@ -132,8 +169,8 @@ fn positive_decimal(s: &[u8]) -> Option<usize> {
         raw_numeric,
         Alt(int_suffix,
             (
-                Optional(('.', FailIf(OneByte(is_ident_start)), Optional(raw_numeric))),
-                Optional((Alt('e', 'E'), Optional(Alt('+', '-')), raw_numeric)),
+                Optional((b'.', FailIf(OneByte(is_ident_start)), Optional(raw_numeric))),
+                Optional((Alt(b'e', b'E'), Optional(Alt(b'+', b'-')), raw_numeric)),
                 Optional(Alt("f32", "f64"))
             )
         )
@@ -141,35 +178,26 @@ fn positive_decimal(s: &[u8]) -> Option<usize> {
 }
 
 fn numeric_literal(s: &[u8]) -> Option<usize> {
-    (Optional('-'), Alt(positive_nondecimal, positive_decimal)).p(s)
+    (Optional(b'-'), Alt(positive_nondecimal, positive_decimal)).p(s)
 }
 
 fn escape(s: &[u8]) -> Option<usize> {
     (
-        '\\',
+        b'\\',
         Alt3(
             OneOf(b"\\\'\"0nrt"),
-            ("x", Repeat(OneByte(is_hex_digit), 2)),
-            ("u{", Repeat(OneByte(is_hex_digit), 1..7), "}")
+            (b'x', Repeat(OneByte(is_hex_digit), 2)),
+            ("u{", Repeat(OneByte(is_hex_digit), 1..7), b'}')
         )
     ).p(s)
 }
 
 fn char_literal(s: &[u8]) -> Option<usize> {
     (
-        '\'',
+        b'\'',
         Alt(OneChar(|c| c != '\\' && c != '\''), escape),
-        '\''
+        b'\''
     ).p(s)
-}
-
-fn is_eol(s: &[u8]) -> bool {
-    if s.is_empty() {
-        true
-    } else {
-        let b = s[0];
-        b == b'\r' || b == b'\n'
-    }
 }
 
 impl<N: NewState<StateEl>> Colorize for RustColorize<N> {
@@ -190,20 +218,34 @@ impl<N: NewState<StateEl>> Colorize for RustColorize<N> {
             Some(StateEl::StrQuote) => return self.quoted_str(t, state),
             _ => ()
         }
-        for (i, &b) in t.iter().enumerate() {
+        let mut i = 0;
+        while i < t.len() {
+            let b = t[i];
             if let Some(len) = "/*".p(&t[i..]) {
                 state = self.ctx.push(state, StateEl::Comment);
                 return (i, state, len, state);
             } else if let Some(_) = "//".p(&t[i..]) {
-                return (i, self.ctx.push(state, StateEl::Comment), t.len(), state)
+                return (i, self.ctx.push(state, StateEl::Comment), t.len(), state);
             } else if let Some(len) = numeric_literal.p(&t[i..]) {
-                return (i, self.ctx.push(state, StateEl::NumericLiteral), len, state)
+                return (i, self.ctx.push(state, StateEl::NumericLiteral), len, state);
             } else if b == b'"' {
                 state = self.ctx.push(state, StateEl::StrQuote);
-                return (i, state, 1, state)
+                return (i, state, 1, state);
             } else if let Some(len) = char_literal.p(&t[i..]) {
-                return (i, self.ctx.push(state, StateEl::CharQuote), len, state)
+                return (i, self.ctx.push(state, StateEl::CharQuote), len, state);
+            } else if let Some(len) = OneOf(RUST_OPERATORS).p(&t[i..]) {
+                return (i, self.ctx.push(state, StateEl::Operator), len, state);
+            } else if let Some(len) = ident.p(&t[i..]) {
+                if RUST_KEYWORDS.binary_search(&&t[i..i + len]).is_ok() {
+                    return (i, self.ctx.push(state, StateEl::Keyword), len, state);
+                } else if RUST_PRIM_TYPES.binary_search(&&t[i..i + len]).is_ok() {
+                    return (i, self.ctx.push(state, StateEl::PrimType), len, state);
+                } else {
+                    i += len;
+                    continue;
+                }
             }
+            i += 1;
         }
         (0, state, t.len(), state)
     }
