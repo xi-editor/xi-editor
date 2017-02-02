@@ -38,6 +38,9 @@ extern crate regex;
 #[macro_use]
 extern crate nom;
 
+#[cfg(feature = "combine")]
+extern crate combine;
+
 const TEST_STR: &'static str = "1.2345e56";
 
 #[cfg(all(test, feature = "pom"))]
@@ -106,6 +109,31 @@ mod nom_benches {
     #[bench]
     fn bench_nom(b: &mut Bencher) {
         b.iter(|| nom_num(test::black_box(TEST_STR.as_bytes())))
+    }
+}
+
+#[cfg(all(test, feature = "combine"))]
+mod combine_benches {
+    use combine::*;
+    use combine::range::take_while1;
+    use test::Bencher;
+    use super::{test, TEST_STR, is_digit};
+
+    fn my_number(s: &[u8]) -> ParseResult<(), &[u8]> {
+        (
+            token(b'-').map(Some).or(value(None)),
+            token(b'0').map(|_| &b"0"[..]).or(take_while1(is_digit)),
+            optional((token(b'.'), take_while1(is_digit))),
+            optional((token(b'e').or(token(b'E')), token(b'-').map(Some).or(token(b'+').map(Some)).or(value(None)), take_while1(is_digit))),
+        ).map(|_| ()).parse_stream(s)
+    }
+
+    #[bench]
+    fn bench_combine(b: &mut Bencher) {
+        assert_eq!(parser(my_number).parse(TEST_STR.as_bytes()), Ok(((), &b""[..])));
+        b.iter(|| {
+            parser(my_number).parse(test::black_box(TEST_STR.as_bytes()))
+        })
     }
 }
 

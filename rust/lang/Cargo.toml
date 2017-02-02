@@ -10,6 +10,7 @@ description = "A language syntax coloring and indentation plugin for xi-editor."
 pom = { version = "0.8", optional = true }
 regex = { version = "0.2", optional = true }
 nom = { version = "2.1", optional = true }
+combine = { version = "2.2.2", optional = true }
 
 [dependencies.xi-plugin-lib]
 path = "../plugin-lib"
