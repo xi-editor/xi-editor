@@ -19,6 +19,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     var appWindowControllers: [String: AppWindowController] = [:]
     var dispatcher: Dispatcher?
+    var styleMap: StyleMap = StyleMap()
 
     func applicationWillFinishLaunching(_ aNotification: Notification) {
 
@@ -37,7 +38,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         newWindow()
     }
-    
+
     func newWindow() -> AppWindowController {
         let appWindowController = AppWindowController()
         appWindowController.dispatcher = dispatcher
@@ -73,7 +74,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     else { print("tab missing from update event"); return }
                 guard let appWindowController = appWindowControllers[tab]
                     else { print("tab " + tab + " not registered"); return }
-                appWindowController.editView.updateSafe(update)
+                appWindowController.editView.updateSafe(update: update)
+            }
+        case "scroll_to":
+            if let obj = params as? [String : AnyObject], let line = obj["line"] as? Int, let col = obj["col"] as? Int {
+                guard let tab = obj["tab"] as? String
+                    else { print("tab missing from update event"); return }
+                guard let appWindowController = appWindowControllers[tab]
+                    else { print("tab " + tab + " not registered"); return }
+                appWindowController.editView.scrollTo(line, col)
+            }
+        case "def_style":
+            if let obj = params as? [String : AnyObject] {
+                styleMap.defStyle(json: obj)
             }
         case "alert":
             if let obj = params as? [String : AnyObject], let msg = obj["msg"] as? String {

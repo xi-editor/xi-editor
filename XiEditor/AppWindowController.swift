@@ -28,7 +28,7 @@ class AppWindowController: NSWindowController {
     weak var appDelegate: AppDelegate!
 
     var dispatcher: Dispatcher!
-    
+
     var filename: String? {
         didSet {
             if let filename = filename {
@@ -50,9 +50,10 @@ class AppWindowController: NSWindowController {
 
         let tabName = Events.NewTab().dispatch(dispatcher)
         editView.coreConnection = dispatcher.coreConnection
+        editView.styleMap = appDelegate.styleMap
         editView.tabName = tabName
         appDelegate.registerTab(tabName, controller: self)
-        
+
         scrollView.contentView.documentCursor = NSCursor.iBeam();
 
         // set up autolayout constraints
@@ -94,7 +95,7 @@ class AppWindowController: NSWindowController {
 
         editView.sendRpcAsync("save", params: ["filename": filename!] as AnyObject)
     }
-    
+
     func saveDocumentAs(_ sender: AnyObject) {
         let fileDialog = NSSavePanel()
         if fileDialog.runModal() == NSFileHandlingPanelOKButton {
@@ -122,6 +123,6 @@ extension AppWindowController: NSWindowDelegate {
     }
     func windowDidResignKey(_ notification: Notification) {
         editView.updateIsFrontmost(false);
-        
+
     }
 }
