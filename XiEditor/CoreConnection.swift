@@ -42,7 +42,7 @@ class CoreConnection {
         }
         task.launch()
     }
-    
+
     func recvHandler(_ data: Data) {
         if data.count == 0 {
             print("eof")

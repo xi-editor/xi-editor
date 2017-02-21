@@ -138,6 +138,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
         self.view.scroll_to_cursor(&self.text);
         self.view_dirty = true;
+        self.view.set_dirty();
     }
 
     // Apply the delta to the buffer, and store the new cursor so that it gets
@@ -245,11 +246,11 @@ impl<W: Write + Send + 'static> Editor<W> {
 
     // render if needed, sending to ui
     fn render(&mut self) {
-        if self.text_dirty || self.view_dirty {
-            self.tab_ctx.update_tab(&self.view.render(&self.text, self.scroll_to));
+        self.view.render_if_dirty(&self.text, &self.tab_ctx);
+        if let Some(scrollto) = self.scroll_to {
+            let (line, col) = self.view.offset_to_line_col(&self.text, scrollto);
+            self.tab_ctx.scroll_to(line, col);
             self.scroll_to = None;
-            self.text_dirty = false;
-            self.view_dirty = false;
         }
     }
 
@@ -589,6 +590,10 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.view.set_scroll(max(first, 0) as usize, last as usize);
     }
 
+    fn do_request_lines(&mut self, first: i64, last: i64) {
+        self.view.send_update(&self.text, &self.tab_ctx, first as usize, last as usize);
+    }
+
     fn do_click(&mut self, line: u64, col: u64, flags: u64, _click_count: u64) {
         let offset = self.view.line_col_to_offset(&self.text, line as usize, col as usize);
         if (flags & FLAG_SELECT) != 0 {
@@ -610,12 +615,14 @@ impl<W: Write + Send + 'static> Editor<W> {
 
     fn debug_rewrap(&mut self) {
         self.view.rewrap(&self.text, 72);
+        self.view.set_dirty();
         self.view_dirty = true;
     }
 
     fn debug_test_fg_spans(&mut self) {
         print_err!("setting fg spans");
         self.view.set_test_fg_spans();
+        self.view.set_dirty();
         self.view_dirty = true;
     }
 
@@ -763,6 +770,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             Open { file_path } => async(self.do_open(file_path)),
             Save { file_path } => async(self.do_save(file_path)),
             Scroll { first, last } => async(self.do_scroll(first, last)),
+            RequestLines { first, last } => async(self.do_request_lines(first, last)),
             Yank => async(self.yank()),
             Transpose => async(self.do_transpose()),
             Click { line, column, flags, click_count } => {
@@ -830,6 +838,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
         self.view.set_fg_spans(start, end_offset, spans);
         self.view_dirty = true;
+        self.view.set_dirty();
         self.render();
     }
 
