@@ -30,7 +30,10 @@ Screenshot (will need to be updated as syntax coloring and UI polish is added):
 
 ## Getting started
 You need [Xcode 8.2](https://developer.apple.com/xcode/) (only on Mac) and [Rust](https://www.rust-lang.org/) (version 1.13+ is
-recommended and supported). You should have `cargo` in your path.
+recommended and supported). You should have `cargo` in your path. You'll also need
+cmake installed, to run the syntax highlighter. If you have homebrew,
+easiest to run `brew install cmake`. It is possible to build without cmake,
+but requires some editing of build scripts.
 
 ```
 > git clone https://github.com/google/xi-editor
