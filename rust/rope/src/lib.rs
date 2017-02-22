@@ -44,12 +44,6 @@ const MAX_LEAF: usize = 1024;
 const MIN_CHILDREN: usize = 4;
 const MAX_CHILDREN: usize = 8;
 
-// TODO: probably will be stabilized in Rust std lib
-// Note, this isn't exactly the same, it panics when index > s.len()
-fn is_char_boundary(s: &str, index: usize) -> bool {
-    index == s.len() || (s.as_bytes()[index] & 0xc0) != 0x80
-}
-
 /// A rope data structure.
 ///
 /// A [rope](https://en.wikipedia.org/wiki/Rope_(data_structure)) is a data structure
@@ -784,7 +778,7 @@ impl Node {
 
         let (s, try_offset) = self.leaf_at(offset - 1);
         let mut len = 1;
-        while !is_char_boundary(s, try_offset + 1 - len) {
+        while !s.is_char_boundary(try_offset + 1 - len) {
             len += 1;
         }
         offset - len
@@ -823,7 +817,7 @@ fn find_leaf_split(s: &str, minsplit: usize) -> usize {
     match s.as_bytes()[minsplit - 1..splitpoint].iter().rposition(|&c| c == b'\n') {
         Some(pos) => minsplit + pos,
         None => {
-            while !is_char_boundary(s, splitpoint) {
+            while !s.is_char_boundary(splitpoint) {
                 splitpoint -= 1;
             }
             splitpoint
