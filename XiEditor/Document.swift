@@ -127,8 +127,10 @@ class Document: NSDocument {
         let storyboard = NSStoryboard(name: "Main", bundle: nil)
         let windowController = storyboard.instantiateControllerWithIdentifier("Document Window Controller") as! NSWindowController
         tabName = Events.NewTab().dispatch(dispatcher!)
-        (windowController.contentViewController as? EditViewController)?.editView.document = self
-        
+        let editViewController = windowController.contentViewController as? EditViewController
+        editViewController?.editView.document = self
+        windowController.window?.delegate = editViewController
+
         if let filename = filename {
             open(filename)
         }

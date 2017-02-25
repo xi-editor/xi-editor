@@ -39,3 +39,15 @@ class EditViewController: NSViewController {
         shadowView?.updateScroll(scrollView.contentView.bounds, scrollView.documentView!.bounds)
     }
 }
+
+// we set this in Document.swift when we load a new window or tab.
+//TODO: will have to think about whether this will work with splits
+extension EditViewController: NSWindowDelegate {
+    func windowDidBecomeKey(notification: NSNotification) {
+        editView.updateIsFrontmost(true)
+    }
+
+    func windowDidResignKey(notification: NSNotification) {
+        editView.updateIsFrontmost(false);
+    }
+}
