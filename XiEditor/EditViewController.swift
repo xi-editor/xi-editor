@@ -18,23 +18,23 @@ class EditViewController: NSViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        self.shadowView.mouseUpHandler = editView.mouseUp
-        self.shadowView.mouseDraggedHandler = editView.mouseDragged
-        scrollView.contentView.documentCursor = NSCursor.IBeamCursor();
+        self.shadowView.mouseUpHandler = editView.mouseUp(with:)
+        self.shadowView.mouseDraggedHandler = editView.mouseDragged(with:)
+        scrollView.contentView.documentCursor = NSCursor.iBeam();
         
-        NSNotificationCenter.defaultCenter().addObserver(self, selector: #selector(EditViewController.boundsDidChangeNotification(_:)), name: NSViewBoundsDidChangeNotification, object: scrollView.contentView)
-        NSNotificationCenter.defaultCenter().addObserver(self, selector: #selector(EditViewController.frameDidChangeNotification(_:)), name: NSViewFrameDidChangeNotification, object: scrollView)
+        NotificationCenter.default.addObserver(self, selector: #selector(EditViewController.boundsDidChangeNotification(_:)), name: NSNotification.Name.NSViewBoundsDidChange, object: scrollView.contentView)
+        NotificationCenter.default.addObserver(self, selector: #selector(EditViewController.frameDidChangeNotification(_:)), name: NSNotification.Name.NSViewFrameDidChange, object: scrollView)
     }
     
-    func boundsDidChangeNotification(notification: NSNotification) {
+    func boundsDidChangeNotification(_ notification: Notification) {
         updateEditViewScroll()
     }
     
-    func frameDidChangeNotification(notification: NSNotification) {
+    func frameDidChangeNotification(_ notification: Notification) {
         updateEditViewScroll()
     }
     
-    private func updateEditViewScroll() {
+    fileprivate func updateEditViewScroll() {
         editView?.updateScroll(scrollView.contentView.bounds)
         shadowView?.updateScroll(scrollView.contentView.bounds, scrollView.documentView!.bounds)
     }
@@ -43,11 +43,11 @@ class EditViewController: NSViewController {
 // we set this in Document.swift when we load a new window or tab.
 //TODO: will have to think about whether this will work with splits
 extension EditViewController: NSWindowDelegate {
-    func windowDidBecomeKey(notification: NSNotification) {
+    func windowDidBecomeKey(_ notification: Notification) {
         editView.updateIsFrontmost(true)
     }
 
-    func windowDidResignKey(notification: NSNotification) {
+    func windowDidResignKey(_ notification: Notification) {
         editView.updateIsFrontmost(false);
     }
 }

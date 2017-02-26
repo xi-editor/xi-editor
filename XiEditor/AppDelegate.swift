@@ -19,13 +19,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     var dispatcher: Dispatcher?
 
-    func applicationWillFinishLaunching(aNotification: NSNotification) {
+    func applicationWillFinishLaunching(_ aNotification: Notification) {
 
-        guard let corePath = NSBundle.mainBundle().pathForResource("xi-core", ofType: "")
+        guard let corePath = Bundle.main.path(forResource: "xi-core", ofType: "")
             else { fatalError("XI Core not found") }
 
         let dispatcher: Dispatcher = {
-            let coreConnection = CoreConnection(path: corePath) { [weak self] (json: AnyObject) -> Void in
+            let coreConnection = CoreConnection(path: corePath) { [weak self] (json: Any) -> Void in
                 self?.handleCoreCmd(json)
             }
 
@@ -35,23 +35,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         self.dispatcher = dispatcher
     }
     
-    func handleCoreCmd(json: AnyObject) {
-        guard let obj = json as? [String : AnyObject],
-            method = obj["method"] as? String,
-            params = obj["params"]
+    func handleCoreCmd(_ json: Any) {
+        guard let obj = json as? [String : Any],
+            let method = obj["method"] as? String,
+            let params = obj["params"]
             else { print("unknown json from core:", json); return }
 
         handleRpc(method, params: params)
     }
 
-    func handleRpc(method: String, params: AnyObject) {
+    func handleRpc(_ method: String, params: Any) {
         switch method {
         case "update":
             if let obj = params as? [String : AnyObject], let update = obj["update"] as? [String : AnyObject] {
                 guard let tab = obj["tab"] as? String
                     else { print("tab missing from update event"); return }
                 
-                for document in NSApplication.sharedApplication().orderedDocuments {
+                for document in NSApplication.shared().orderedDocuments {
                     let doc = document as? Document
                     if doc?.tabName == tab {
                         doc?.update(update)
@@ -60,10 +60,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         case "alert":
             if let obj = params as? [String : AnyObject], let msg = obj["msg"] as? String {
-                dispatch_async(dispatch_get_main_queue(), {
+                DispatchQueue.main.async(execute: {
                     let alert =  NSAlert.init()
                     #if swift(>=2.3)
-                        alert.alertStyle = .Informational
+                        alert.alertStyle = .informational
                     #else
                         alert.alertStyle = .InformationalAlertStyle
                     #endif
@@ -76,7 +76,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func applicationWillTerminate(aNotification: NSNotification) {
+    func applicationWillTerminate(_ aNotification: Notification) {
         // Insert code here to tear down your application
     }
 
