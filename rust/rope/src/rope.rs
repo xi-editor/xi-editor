@@ -98,7 +98,7 @@ impl Metric<RopeInfo> for BaseMetric {
     }
 
     fn is_boundary(s: &String, offset: usize) -> bool {
-        is_char_boundary(s, offset)
+        s.is_char_boundary(offset)
     }
 
     fn prev(s: &String, offset: usize) -> Option<usize> {
@@ -108,7 +108,7 @@ impl Metric<RopeInfo> for BaseMetric {
             None
         } else {
             let mut len = 1;
-            while !is_char_boundary(s, offset - len) {
+            while !s.is_char_boundary(offset - len) {
                 len += 1;
             }
             Some(offset - len)
@@ -195,13 +195,6 @@ fn count_newlines(s: &str) -> usize {
     s.as_bytes().iter().filter(|&&c| c == b'\n').count()
 }
 
-// TODO: probably will be stabilized in Rust std lib
-// Note, this isn't exactly the same, it panics when index > s.len()
-fn is_char_boundary(s: &str, index: usize) -> bool {
-    // fancy bit magic for ranges 0..0x80 | 0xc0..
-    index == s.len() || (s.as_bytes()[index] as i8) >= -0x40
-}
-
 fn find_leaf_split_for_bulk(s: &str) -> usize {
     find_leaf_split(s, MIN_LEAF)
 }
@@ -216,7 +209,7 @@ fn find_leaf_split(s: &str, minsplit: usize) -> usize {
     match s.as_bytes()[minsplit - 1..splitpoint].iter().rposition(|&c| c == b'\n') {
         Some(pos) => minsplit + pos,
         None => {
-            while !is_char_boundary(s, splitpoint) {
+            while !s.is_char_boundary(splitpoint) {
                 splitpoint -= 1;
             }
             splitpoint

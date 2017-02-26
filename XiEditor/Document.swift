@@ -21,6 +21,7 @@ class Document: NSDocument {
     
     var dispatcher: Dispatcher?
     var tabName: String?
+    var editView: EditView?
     
     var filename: String?
     
@@ -37,6 +38,7 @@ class Document: NSDocument {
         tabName = Events.NewTab().dispatch(dispatcher!)
         let editViewController = windowController.contentViewController as? EditViewController
         editViewController?.editView.document = self
+        self.editView = editViewController?.editView
         windowController.window?.delegate = editViewController
 
         if let filename = filename {
@@ -95,7 +97,7 @@ class Document: NSDocument {
     
     func update(_ content: [String: AnyObject]) {
         for windowController in windowControllers {
-            (windowController.contentViewController as? EditViewController)?.editView.updateSafe(content)
+            (windowController.contentViewController as? EditViewController)?.editView.updateSafe(update: content)
         }
     }
 

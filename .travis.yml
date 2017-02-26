@@ -1,4 +1,5 @@
 language: rust
+osx_image: xcode8.2
 
 rust:
   - stable

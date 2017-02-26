@@ -8,7 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		50370A2B1D4209F300EA1B18 /* Dispatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50370A2A1D4209F300EA1B18 /* Dispatcher.swift */; };
+		AE0243F61E4BDF8A00641BDA /* StyleMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE0243F51E4BDF8A00641BDA /* StyleMap.swift */; };
 		AE041BA61D4327EB0069AB8B /* xi-syntect-plugin in Resources */ = {isa = PBXBuildFile; fileRef = AE041BA51D4327EB0069AB8B /* xi-syntect-plugin */; };
+		AE168C5C1E4AD87B008249AE /* LineCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE168C5B1E4AD87B008249AE /* LineCache.swift */; };
 		AE228F5D1C897CE7000E9B0F /* xi-core in Resources */ = {isa = PBXBuildFile; fileRef = AE228F5C1C897CE7000E9B0F /* xi-core */; };
 		AE499DD01C82BB2B002D68AF /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE499DCF1C82BB2B002D68AF /* AppDelegate.swift */; };
 		AE499DD21C82BB2B002D68AF /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AE499DD11C82BB2B002D68AF /* Assets.xcassets */; };
@@ -49,8 +51,10 @@
 
 /* Begin PBXFileReference section */
 		50370A2A1D4209F300EA1B18 /* Dispatcher.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Dispatcher.swift; sourceTree = "<group>"; };
+		AE0243F51E4BDF8A00641BDA /* StyleMap.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = StyleMap.swift; sourceTree = "<group>"; };
 		AE041B971D4323460069AB8B /* build-rust-xcode.sh */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.script.sh; path = "build-rust-xcode.sh"; sourceTree = "<group>"; };
 		AE041BA51D4327EB0069AB8B /* xi-syntect-plugin */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; path = "xi-syntect-plugin"; sourceTree = BUILT_PRODUCTS_DIR; };
+		AE168C5B1E4AD87B008249AE /* LineCache.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = LineCache.swift; sourceTree = "<group>"; };
 		AE228F5C1C897CE7000E9B0F /* xi-core */ = {isa = PBXFileReference; lastKnownFileType = text; path = "xi-core"; sourceTree = BUILT_PRODUCTS_DIR; };
 		AE499DCC1C82BB2B002D68AF /* XiEditor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = XiEditor.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AE499DCF1C82BB2B002D68AF /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -131,6 +135,8 @@
 				AE499DD61C82BB2B002D68AF /* Info.plist */,
 				F5BDBF361DCA9D2C0042430B /* Document.swift */,
 				F53EA2AC1DCAA8110071ACFD /* Main.storyboard */,
+				AE168C5B1E4AD87B008249AE /* LineCache.swift */,
+				AE0243F51E4BDF8A00641BDA /* StyleMap.swift */,
 			);
 			path = XiEditor;
 			sourceTree = "<group>";
@@ -322,6 +328,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				F53EA2AF1DCAAA170071ACFD /* EditViewController.swift in Sources */,
+				AE0243F61E4BDF8A00641BDA /* StyleMap.swift in Sources */,
+				AE168C5C1E4AD87B008249AE /* LineCache.swift in Sources */,
 				AE499DF91C82C835002D68AF /* CoreConnection.swift in Sources */,
 				50370A2B1D4209F300EA1B18 /* Dispatcher.swift in Sources */,
 				AED23F181C83CBED002246CE /* EditView.swift in Sources */,

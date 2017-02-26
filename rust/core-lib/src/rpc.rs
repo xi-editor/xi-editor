@@ -84,6 +84,7 @@ pub enum EditCommand<'a> {
     Open { file_path: &'a str },
     Save { file_path: &'a str },
     Scroll { first: i64, last: i64 },
+    RequestLines { first: i64, last: i64 },
     Yank,
     Transpose,
     Click { line: u64, column: u64, flags: u64, click_count: u64 },
@@ -200,6 +201,13 @@ impl<'a> EditCommand<'a> {
                     (arr_get_i64(arr, 0), arr_get_i64(arr, 1)) {
 
                     Some(Scroll { first: first, last: last })
+                } else { None }
+            }).ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
+            "request_lines" => params.as_array().and_then(|arr| {
+                if let (Some(first), Some(last)) =
+                    (arr_get_i64(arr, 0), arr_get_i64(arr, 1)) {
+
+                    Some(RequestLines { first: first, last: last })
                 } else { None }
             }).ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
 

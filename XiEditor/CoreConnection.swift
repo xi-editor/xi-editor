@@ -17,7 +17,6 @@ import Foundation
 class CoreConnection {
 
     var inHandle: FileHandle  // stdin of core process
-    var sizeBuf: NSMutableData
     var recvBuf: Data
     var callback: (AnyObject) -> ()
 
@@ -32,7 +31,6 @@ class CoreConnection {
         task.arguments = []
         let outPipe = Pipe()
         task.standardOutput = outPipe
-        sizeBuf = NSMutableData(length: 8)!
         let inPipe = Pipe()
         task.standardInput = inPipe
         inHandle = inPipe.fileHandleForWriting
@@ -44,7 +42,7 @@ class CoreConnection {
         }
         task.launch()
     }
-    
+
     func recvHandler(_ data: Data) {
         if data.count == 0 {
             print("eof")

@@ -18,6 +18,7 @@ import Cocoa
 class AppDelegate: NSObject, NSApplicationDelegate {
 
     var dispatcher: Dispatcher?
+    var styleMap: StyleMap = StyleMap()
 
     func applicationWillFinishLaunching(_ aNotification: Notification) {
 
@@ -57,6 +58,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         doc?.update(update)
                     }
                 }
+            }
+//FIXME: convert to new document model
+        case "scroll_to":
+            if let obj = params as? [String : AnyObject], let line = obj["line"] as? Int, let col = obj["col"] as? Int {
+                guard let tab = obj["tab"] as? String
+                    else { print("tab missing from update event"); return }
+                
+                for document in NSApplication.shared().orderedDocuments {
+                    let doc = document as? Document
+                    if doc?.tabName == tab {
+                        doc?.editView?.scrollTo(line, col)
+                        break
+                    }
+                }
+//                guard let document = appWindowControllers[tab]
+//                    else { print("tab " + tab + " not registered"); return }
+//                appWindowController.editView.scrollTo(line, col)
+            }
+        case "def_style":
+            if let obj = params as? [String : AnyObject] {
+                styleMap.defStyle(json: obj)
             }
         case "alert":
             if let obj = params as? [String : AnyObject], let msg = obj["msg"] as? String {

@@ -23,12 +23,14 @@ use serde_json::builder::ObjectBuilder;
 use xi_rope::rope::Rope;
 use editor::Editor;
 use rpc::{TabCommand, EditCommand};
+use styles::{Style, StyleMap};
 use MainPeer;
 
 pub struct Tabs<W: Write> {
     tabs: BTreeMap<String, Arc<Mutex<Editor<W>>>>,
     id_counter: usize,
     kill_ring: Arc<Mutex<Rope>>,
+    style_map: Arc<Mutex<StyleMap>>,
 }
 
 #[derive(Clone)]
@@ -36,6 +38,7 @@ pub struct TabCtx<W: Write> {
     tab: String,
     kill_ring: Arc<Mutex<Rope>>,
     rpc_peer: MainPeer<W>,
+    style_map: Arc<Mutex<StyleMap>>,
 }
 
 impl<W: Write + Send + 'static> Tabs<W> {
@@ -44,6 +47,7 @@ impl<W: Write + Send + 'static> Tabs<W> {
             tabs: BTreeMap::new(),
             id_counter: 0,
             kill_ring: Arc::new(Mutex::new(Rope::from(""))),
+            style_map: Arc::new(Mutex::new(StyleMap::new())),
         }
     }
 
@@ -87,6 +91,7 @@ impl<W: Write + Send + 'static> Tabs<W> {
             tab: tabname.clone(),
             kill_ring: self.kill_ring.clone(),
             rpc_peer: rpc_peer.clone(),
+            style_map: self.style_map.clone(),
         };
         let editor = Editor::new(tab_ctx);
         self.tabs.insert(tabname.clone(), editor);
@@ -107,6 +112,15 @@ impl<W: Write> TabCtx<W> {
                 .build());
     }
 
+    pub fn scroll_to(&self, line: usize, col: usize) {
+        self.rpc_peer.send_rpc_notification("scroll_to",
+            &ObjectBuilder::new()
+                .insert("tab", &self.tab)
+                .insert("line", line)
+                .insert("col", col)
+                .build());
+    }
+
     pub fn get_kill_ring(&self) -> Rope {
         self.kill_ring.lock().unwrap().clone()
     }
@@ -122,5 +136,18 @@ impl<W: Write> TabCtx<W> {
                 .insert("msg", msg)
                 .build());
     }
-}
 
+    // Get the index for a given style. If the style is not in the existing
+    // style map, then issues a def_style request to the front end. Intended
+    // to be reasonably efficient, but ideally callers would do their own
+    // indexing.
+    pub fn get_style_id(&self, style: &Style) -> usize {
+        let mut style_map = self.style_map.lock().unwrap();
+        if let Some(ix) = style_map.lookup(style) {
+            return ix;
+        }
+        let ix = style_map.add(style);
+        self.rpc_peer.send_rpc_notification("def_style", &style.to_json(ix));
+        ix
+    }
+}
