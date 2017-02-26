@@ -67,7 +67,7 @@ class EditView: NSView, NSTextInputClient {
 
     var lines: LineCache
 
-    var widthConstraint: NSLayoutConstraint?
+//    var widthConstraint: NSLayoutConstraint?
     @IBOutlet var heightConstraint: NSLayoutConstraint?
 
     var attributes: [String: AnyObject]
@@ -95,37 +95,12 @@ class EditView: NSView, NSTextInputClient {
     var _selectedRange: NSRange
     var _markedRange: NSRange
     
-//    var frameRect: NSRect
-    
     var isFrontmost: Bool // Are we frontmost, the view that gets keyboard input?
 
     var cursorFlashOn: Bool
     var blinkTimer : Timer?
 
     var styleMap: StyleMap?
-
-    override init(frame frameRect: NSRect) {
-        let font = CTFontCreateWithName("InconsolataGo" as CFString?, 14, nil)
-        ascent = CTFontGetAscent(font)
-        descent = CTFontGetDescent(font)
-        leading = CTFontGetLeading(font)
-        linespace = ceil(ascent + descent + leading)
-        baseline = ceil(ascent)
-        attributes = [String(kCTFontAttributeName): font]
-        fontWidth = getFontWidth(font)
-        fgSelcolor =  NSColor.selectedTextBackgroundColor
-        bgSelcolor = NSColor(colorLiteralRed: 0.8, green: 0.8, blue: 0.8, alpha: 1.0) //Gray for the selected text background when not 'key'
-        _selectedRange = NSMakeRange(NSNotFound, 0)
-        _markedRange = NSMakeRange(NSNotFound, 0)
-        isFrontmost = false
-        cursorFlashOn = true
-        lines = LineCache()
-        super.init(frame: frameRect)
-        widthConstraint = NSLayoutConstraint(item: self, attribute: .width, relatedBy: .greaterThanOrEqual, toItem: nil, attribute: .width, multiplier: 1, constant: 400)
-        widthConstraint!.isActive = true
-        heightConstraint = NSLayoutConstraint(item: self, attribute: .height, relatedBy: .greaterThanOrEqual, toItem: nil, attribute: .height, multiplier: 1, constant: 100)
-        heightConstraint!.isActive = true
-    }
 
     override func changeFont(_ sender: Any?) {
         let oldFont = attributes[String(kCTFontAttributeName)] as! CTFont
@@ -139,11 +114,6 @@ class EditView: NSView, NSTextInputClient {
         fontWidth = getFontWidth(font)
         needsDisplay = true
     }
-
-//    override func resetCursorRects() {
-//        super.resetCursorRects()
-//        addCursorRect(frame, cursor: NSCursor.IBeamCursor())
-//    }
 
     required init?(coder: NSCoder) {
         let font = CTFontCreateWithName("InconsolataGo" as CFString?, 14, nil)
@@ -161,6 +131,7 @@ class EditView: NSView, NSTextInputClient {
         isFrontmost = false
         cursorFlashOn = true
         lines = LineCache()
+        styleMap = (NSApplication.shared().delegate as? AppDelegate)?.styleMap
         super.init(coder: coder)
     }
 
@@ -470,7 +441,6 @@ class EditView: NSView, NSTextInputClient {
     func cutCopy(_ method: String) {
         let text = document?.sendRpc(method, params: [])
         if let text = text as? String {
-			//FIXME: this will fail on an AttributedString?
             let pasteboard = NSPasteboard.general()
             pasteboard.clearContents()
             pasteboard.writeObjects([text as NSPasteboardWriting])

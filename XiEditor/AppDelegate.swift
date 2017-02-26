@@ -52,6 +52,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let tab = obj["tab"] as? String
                     else { print("tab missing from update event"); return }
                 
+                //FIXME: a better way to get a document
                 for document in NSApplication.shared().orderedDocuments {
                     let doc = document as? Document
                     if doc?.tabName == tab {
@@ -59,7 +60,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 }
             }
-//FIXME: convert to new document model
+
         case "scroll_to":
             if let obj = params as? [String : AnyObject], let line = obj["line"] as? Int, let col = obj["col"] as? Int {
                 guard let tab = obj["tab"] as? String
@@ -72,9 +73,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         break
                     }
                 }
-//                guard let document = appWindowControllers[tab]
-//                    else { print("tab " + tab + " not registered"); return }
-//                appWindowController.editView.scrollTo(line, col)
             }
         case "def_style":
             if let obj = params as? [String : AnyObject] {

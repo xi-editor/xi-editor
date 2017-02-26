@@ -130,13 +130,13 @@
 				AED23F171C83CBEC002246CE /* EditView.swift */,
 				AEB66A781CAEFC8F002F686A /* ShadowView.swift */,
 				AE499DF81C82C835002D68AF /* CoreConnection.swift */,
-				AE499DD11C82BB2B002D68AF /* Assets.xcassets */,
 				50370A2A1D4209F300EA1B18 /* Dispatcher.swift */,
-				AE499DD61C82BB2B002D68AF /* Info.plist */,
 				F5BDBF361DCA9D2C0042430B /* Document.swift */,
-				F53EA2AC1DCAA8110071ACFD /* Main.storyboard */,
 				AE168C5B1E4AD87B008249AE /* LineCache.swift */,
 				AE0243F51E4BDF8A00641BDA /* StyleMap.swift */,
+				AE499DD61C82BB2B002D68AF /* Info.plist */,
+				F53EA2AC1DCAA8110071ACFD /* Main.storyboard */,
+				AE499DD11C82BB2B002D68AF /* Assets.xcassets */,
 			);
 			path = XiEditor;
 			sourceTree = "<group>";
