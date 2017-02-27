@@ -23,7 +23,17 @@ class Document: NSDocument {
     var tabName: String?
     var editView: EditView?
     
-    var filename: String?
+    var filename: String? {
+        didSet {
+            if let filename = filename {
+                let url = URL(fileURLWithPath: filename)
+                let lastComponent = url.lastPathComponent;
+                for controller in windowControllers {
+                    controller.window?.title = lastComponent
+                }
+            }
+        }
+    }
     
     override init() {
         super.init()
@@ -58,6 +68,7 @@ class Document: NSDocument {
     }
     
     override func save(to url: URL, ofType typeName: String, for saveOperation: NSSaveOperationType, completionHandler: @escaping (Error?) -> Void) {
+        self.filename = url.path
         save(url.path)
         
         // An RPC Call received to indicate Save can be used to call this completion
