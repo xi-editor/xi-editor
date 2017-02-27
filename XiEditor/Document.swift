@@ -40,6 +40,11 @@ class Document: NSDocument {
         editViewController?.editView.document = self
         self.editView = editViewController?.editView
         windowController.window?.delegate = editViewController
+        //FIXME: some saner way of positioning new windows. maybe based on current window size, with some checks to not completely obscure an existing window?
+        // also awareness of multiple screens (prefer to open on currently active screen)
+        let screenHeight = windowController.window?.screen?.frame.height ?? 800
+        let windowHeight: CGFloat = 800
+        windowController.window?.setFrame(NSRect(x: 200, y: screenHeight - windowHeight - 200, width: 700, height: 800), display: true)
 
         if let filename = filename {
             open(filename)
