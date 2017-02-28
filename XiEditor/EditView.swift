@@ -193,6 +193,22 @@ class EditView: NSView, NSTextInputClient {
             sendRpcAsync("request_lines", params: [f, l])
         }
 
+        // first pass, for drawing background selections
+        for lineIx in first..<last {
+            guard let line = getLine(lineIx), line.containsSelection == true else { continue }
+            let selections = line.styles.filter { $0.style == 0 }
+            let attrString = NSMutableAttributedString(string: line.text, attributes: self.attributes)
+            let ctline = CTLineCreateWithAttributedString(attrString)
+            let y = linespace * CGFloat(lineIx + 1)
+            context.setFillColor(selcolor().cgColor)
+            for selection in selections {
+                let selStart = CTLineGetOffsetForStringIndex(ctline, utf8_offset_to_utf16(line.text, selection.range.location), nil)
+                let selEnd = CTLineGetOffsetForStringIndex(ctline, utf8_offset_to_utf16(line.text, selection.range.location + selection.range.length), nil)
+                context.fill(CGRect.init(x: x0 + selStart, y: y - ascent, width: selEnd - selStart + x0, height: linespace))
+            }
+            
+        }
+        // second pass, for actually rendering text.
         for lineIx in first..<last {
             // TODO: could block for ~1ms waiting for missing lines to arrive
             guard let line = getLine(lineIx) else { continue }
@@ -201,57 +217,6 @@ class EditView: NSView, NSTextInputClient {
             /*
             let randcolor = NSColor(colorLiteralRed: Float(drand48()), green: Float(drand48()), blue: Float(drand48()), alpha: 1.0)
             attrString.addAttribute(NSForegroundColorAttributeName, value: randcolor, range: NSMakeRange(0, s.utf16.count))
-            */
-            /*
-            for attr in line!.dropFirst() {
-                let attr = attr as! [AnyObject]
-                let type = attr[0] as! String
-                if type == "cursor" {
-                    cursor = attr[1] as? Int
-                    self.cursorPos = (lineIx, utf8_offset_to_utf16(s, cursor!))
-                } else if type == "sel" {
-                    let start = attr[1] as! Int
-                    let u16_start = utf8_offset_to_utf16(s, start)
-                    let end = attr[2] as! Int
-                    let u16_end = utf8_offset_to_utf16(s, end)
-                    attrString.addAttribute(NSBackgroundColorAttributeName, value: selcolor(), range: NSMakeRange(u16_start, u16_end - u16_start))
-                } else if type == "fg" {
-                    let start = attr[1] as! Int
-                    let u16_start = utf8_offset_to_utf16(s, start)
-                    let end = attr[2] as! Int
-                    let u16_end = utf8_offset_to_utf16(s, end)
-                    let fgcolor = colorFromArgb(UInt32(attr[3] as! Int))
-                    let font_style = attr[4] as! Int
-                    //let fgcolor = colorFromArgb(0xff800000)
-                    attrString.addAttribute(NSForegroundColorAttributeName, value: fgcolor, range: NSMakeRange(u16_start, u16_end - u16_start))
-                    if (font_style & font_style_underline) != 0 {
-                        attrString.addAttribute(NSUnderlineStyleAttributeName,
-                                                value: NSUnderlineStyle.styleSingle.rawValue,
-                                                range: NSMakeRange(u16_start, u16_end - u16_start))
-                    }
-                    let fake_italic = true  // TODO: figure this out based on font support
-                    if fake_italic  && (font_style & font_style_italic) != 0 {
-                        attrString.addAttribute(NSObliquenessAttributeName,
-                                                value: 0.2,
-                                                range: NSMakeRange(u16_start, u16_end - u16_start))
-                    }
-                    let trait_mask = font_style_bold | (fake_italic ? 0 : font_style_italic)
-                    if (font_style & trait_mask) != 0 {
-                        var traits: NSFontTraitMask
-                        switch font_style & trait_mask {
-                        case font_style_bold:
-                            traits = NSFontTraitMask.boldFontMask
-                        case font_style_italic:
-                            traits = NSFontTraitMask.italicFontMask
-                        case (font_style_bold | font_style_italic):
-                            traits = [NSFontTraitMask.boldFontMask, NSFontTraitMask.italicFontMask]
-                        default:
-                            traits = []
-                        }
-                        attrString.applyFontTraits(traits, range: NSMakeRange(u16_start, u16_end - u16_start))
-                    }
-                }
-            }
             */
             styleMap?.applyStyles(text: s, string: attrString, styles: line.styles, selColor: selcolor())
             for c in line.cursor {

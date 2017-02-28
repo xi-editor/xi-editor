@@ -130,7 +130,8 @@ class StyleMap {
         queue.sync {
             for styleSpan in styles {
                 if styleSpan.style == 0 {
-                    string.addAttribute(NSBackgroundColorAttributeName, value: selColor, range: styleSpan.range)
+                    // we handle selection drawing in EditView.drawRect
+                    continue
                 } else {
                     applyStyle(string: string, id: styleSpan.style, range: styleSpan.range)
                 }
