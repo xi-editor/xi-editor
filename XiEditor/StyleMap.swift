@@ -12,10 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// A store of text styles, indexable by id.
-
 import Cocoa
 
+/// A represents a given text style.
 struct Style {
     var fgColor: NSColor;
     var bgColor: NSColor;
@@ -24,12 +23,42 @@ struct Style {
     var italic: Bool;
 }
 
+typealias StyleIdentifier = Int
+
+/// A basic type representing a range of text and and a style identifier.
+struct StyleSpan {
+    let range: NSRange
+    let style: StyleIdentifier
+
+    /// given a line of text and an array of style values, generate an array of StyleSpans.
+    /// see https://github.com/google/xi-editor/blob/protocol_doc/doc/update.md
+    static func styles(fromRaw raw: [Int], text: String) -> [StyleSpan] {
+        var out: [StyleSpan] = [];
+        var ix = 0;
+        for i in stride(from: 0, to: raw.count, by: 3) {
+            let start = ix + raw[i]
+            let end = start + raw[i + 1]
+            let style = raw[i + 2]
+            let startIx = utf8_offset_to_utf16(text, start)
+            let endIx = utf8_offset_to_utf16(text, end)
+            if startIx < 0 || endIx < startIx {
+                //FIXME: how should we be doing error handling?
+                print("malformed style array for line:", text, raw)
+            } else {
+                out.append(StyleSpan.init(range: NSMakeRange(startIx, endIx - startIx), style: style))
+            }
+            ix = end
+        }
+        return out
+    }
+}
+
 func utf8_offset_to_utf16(_ s: String, _ ix: Int) -> Int {
-    // String(s.utf8.prefix(ix)).utf16.count
     return s.utf8.index(s.utf8.startIndex, offsetBy: ix).samePosition(in: s.utf16)!._offset
 }
 
-// Note: all public methods of this class are designed to be thread-safe
+/// A store of text styles, indexable by id.
+/// - Note: all public methods of this class are designed to be thread-safe.
 class StyleMap {
     private let queue = DispatchQueue(label: "com.levien.xi.StyleMap")
     private var map: [Style?] = []
@@ -94,25 +123,17 @@ class StyleMap {
         }
     }
 
-    // Apply styles (given in the array-triple format as defined in the protocol doc) to the given string.
+    // Apply styles to the given string.
     // The selection color (for which style 0 is reserverd) is passed in, as it might be different for
     // different windows (while the StyleMap object is shared).
-    func applyStyles(text: String, string: NSMutableAttributedString, styles: [Int], selColor: NSColor) {
+    func applyStyles(text: String, string: NSMutableAttributedString, styles: [StyleSpan], selColor: NSColor) {
         queue.sync {
-            var ix = 0;
-            for i in stride(from: 0, to: styles.count, by: 3) {
-                let start = ix + styles[i]
-                let end = start + styles[i + 1]
-                let style = styles[i + 2]
-                let startIx = utf8_offset_to_utf16(text, start)
-                let endIx = utf8_offset_to_utf16(text, end)
-                let range = NSMakeRange(startIx, endIx - startIx)
-                if style == 0 {
-                    string.addAttribute(NSBackgroundColorAttributeName, value: selColor, range: range)
+            for styleSpan in styles {
+                if styleSpan.style == 0 {
+                    string.addAttribute(NSBackgroundColorAttributeName, value: selColor, range: styleSpan.range)
                 } else {
-                    applyStyle(string: string, id: style, range: range)
+                    applyStyle(string: string, id: styleSpan.style, range: styleSpan.range)
                 }
-                ix = end
             }
         }
     }
