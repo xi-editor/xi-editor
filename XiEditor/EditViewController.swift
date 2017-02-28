@@ -39,7 +39,15 @@ class EditViewController: NSViewController {
     func frameDidChangeNotification(_ notification: Notification) {
         updateEditViewScroll()
     }
-    
+
+    func update(_ content: [String: AnyObject]) {
+        editView.updateSafe(update: content)
+    }
+
+    func scrollTo(_ line: Int, _ col: Int) {
+        editView.scrollTo(line, col)
+    }
+
     fileprivate func updateEditViewScroll() {
         editView?.updateScroll(scrollView.contentView.bounds)
         shadowView?.updateScroll(scrollView.contentView.bounds, scrollView.documentView!.bounds)
