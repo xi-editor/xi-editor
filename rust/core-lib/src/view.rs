@@ -61,7 +61,7 @@ impl Default for View {
             breaks: None,
             style_spans: Spans::default(),
             cols: 0,
-            dirty: false,
+            dirty: true,
         }
     }
 }

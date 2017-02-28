@@ -67,11 +67,14 @@ impl<W: Write + Send + 'static> Handler<W> for MainState<W> {
         }
     }
 
-    fn handle_request(&mut self, ctx: RpcCtx<W>, method: &str, params: &Value) ->
+    fn handle_request(&mut self, mut ctx: RpcCtx<W>, method: &str, params: &Value) ->
         Result<Value, Value> {
         match Request::from_json(method, params) {
             Ok(req) => {
                 let result = self.handle_req(req, ctx.get_peer());
+                // Schedule the idle handler to send the render the cursor for new
+                // empty buffers. TODO: move this into the new_tab logic.
+                ctx.schedule_idle(0);
                 result.ok_or_else(|| Value::String("return value missing".to_string()))
             }
             Err(e) => {
@@ -79,6 +82,10 @@ impl<W: Write + Send + 'static> Handler<W> for MainState<W> {
                 Err(Value::String("error decoding request".to_string()))
             }
         }
+    }
+
+    fn idle(&mut self, _ctx: RpcCtx<W>, _token: usize) {
+        self.tabs.handle_idle();
     }
 }
 

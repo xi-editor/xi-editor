@@ -101,6 +101,12 @@ impl<W: Write + Send + 'static> Tabs<W> {
     fn delete_tab(&mut self, tabname: &str) {
         self.tabs.remove(tabname);
     }
+
+    pub fn handle_idle(&self) {
+        for editor in self.tabs.values() {
+            editor.lock().unwrap().render();
+        }
+    }
 }
 
 impl<W: Write> TabCtx<W> {
