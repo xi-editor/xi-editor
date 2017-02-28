@@ -17,7 +17,6 @@ import Cocoa
 @NSApplicationMain
 class AppDelegate: NSObject, NSApplicationDelegate {
 
-    var appWindowControllers: [String: AppWindowController] = [:]
     var dispatcher: Dispatcher?
     var styleMap: StyleMap = StyleMap()
 
@@ -35,28 +34,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }()
 
         self.dispatcher = dispatcher
-
-        newWindow()
     }
-
-    func newWindow() -> AppWindowController {
-        let appWindowController = AppWindowController()
-        appWindowController.dispatcher = dispatcher
-        appWindowController.appDelegate = self
-        appWindowController.showWindow(self)
-        return appWindowController
+    
+    /// returns the NSDocument corresponding to the given tabName
+    private func documentForTabName(tabName: String) -> Document? {
+        for doc in NSApplication.shared().orderedDocuments {
+            guard let doc = doc as? Document else { continue }
+            if doc.tabName == tabName {
+                return doc
+            }
+        }
+        return nil
     }
-
-    // called by AppWindowController when window is created
-    func registerTab(_ tab: String, controller: AppWindowController) {
-        appWindowControllers[tab] = controller
-    }
-
-    // called by AppWindowController when window is closed
-    func unregisterTab(_ tab: String) {
-        appWindowControllers.removeValue(forKey: tab)
-    }
-
+    
     func handleCoreCmd(_ json: Any) {
         guard let obj = json as? [String : Any],
             let method = obj["method"] as? String,
@@ -70,19 +60,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         switch method {
         case "update":
             if let obj = params as? [String : AnyObject], let update = obj["update"] as? [String : AnyObject] {
-                guard let tab = obj["tab"] as? String
-                    else { print("tab missing from update event"); return }
-                guard let appWindowController = appWindowControllers[tab]
-                    else { print("tab " + tab + " not registered"); return }
-                appWindowController.editView.updateSafe(update: update)
+                guard
+                    let tab = obj["tab"] as? String, let document = documentForTabName(tabName: tab)
+                    else { print("tab or document missing for update event: ", obj); return }
+                    document.update(update)
             }
+
         case "scroll_to":
             if let obj = params as? [String : AnyObject], let line = obj["line"] as? Int, let col = obj["col"] as? Int {
-                guard let tab = obj["tab"] as? String
-                    else { print("tab missing from update event"); return }
-                guard let appWindowController = appWindowControllers[tab]
-                    else { print("tab " + tab + " not registered"); return }
-                appWindowController.editView.scrollTo(line, col)
+                guard let tab = obj["tab"] as? String, let document = documentForTabName(tabName: tab)
+                    else { print("tab or document missing for update event: ", obj); return }
+                    document.editView?.scrollTo(line, col)
             }
         case "def_style":
             if let obj = params as? [String : AnyObject] {
@@ -104,30 +92,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         default:
             print("unknown method from core:", method)
         }
-    }
-
-    func openDocument(_ sender: AnyObject) {
-        let fileDialog = NSOpenPanel()
-        if fileDialog.runModal() == NSFileHandlingPanelOKButton {
-            if let path = fileDialog.url?.path {
-                application(NSApp, openFile: path)
-                NSDocumentController.shared().noteNewRecentDocumentURL(fileDialog.url!);
-            }
-        }
-    }
-
-    func newDocument(_ sender: AnyObject) {
-        newWindow()
-    }
-
-    func application(_ sender: NSApplication, openFile filename: String) -> Bool {
-        var appWindowController = NSApplication.shared().mainWindow?.delegate as? AppWindowController
-        if !(appWindowController?.editView.isEmpty ?? false) {
-            appWindowController = newWindow()
-        }
-        appWindowController!.filename = filename
-        appWindowController!.editView.sendRpcAsync("open", params: ["filename": filename] as AnyObject)
-        return true  // TODO: should be RPC instead of async, plumb errors
     }
 
     func applicationWillTerminate(_ aNotification: Notification) {

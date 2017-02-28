@@ -14,15 +14,15 @@
 		AE228F5D1C897CE7000E9B0F /* xi-core in Resources */ = {isa = PBXBuildFile; fileRef = AE228F5C1C897CE7000E9B0F /* xi-core */; };
 		AE499DD01C82BB2B002D68AF /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE499DCF1C82BB2B002D68AF /* AppDelegate.swift */; };
 		AE499DD21C82BB2B002D68AF /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AE499DD11C82BB2B002D68AF /* Assets.xcassets */; };
-		AE499DD51C82BB2B002D68AF /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = AE499DD31C82BB2B002D68AF /* MainMenu.xib */; };
 		AE499DE01C82BB2B002D68AF /* XiEditorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE499DDF1C82BB2B002D68AF /* XiEditorTests.swift */; };
 		AE499DEB1C82BB2B002D68AF /* XiEditorUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE499DEA1C82BB2B002D68AF /* XiEditorUITests.swift */; };
 		AE499DF91C82C835002D68AF /* CoreConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE499DF81C82C835002D68AF /* CoreConnection.swift */; };
 		AEB66A791CAEFC8F002F686A /* ShadowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEB66A781CAEFC8F002F686A /* ShadowView.swift */; };
 		AEBAAA651C83BB1A005637A3 /* python in Resources */ = {isa = PBXBuildFile; fileRef = AEBAAA601C83B503005637A3 /* python */; };
-		AED23F151C83C689002246CE /* AppWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AED23F131C83C689002246CE /* AppWindowController.swift */; };
-		AED23F161C83C689002246CE /* AppWindowController.xib in Resources */ = {isa = PBXBuildFile; fileRef = AED23F141C83C689002246CE /* AppWindowController.xib */; };
 		AED23F181C83CBED002246CE /* EditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AED23F171C83CBEC002246CE /* EditView.swift */; };
+		F53EA2AD1DCAA8110071ACFD /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = F53EA2AC1DCAA8110071ACFD /* Main.storyboard */; };
+		F53EA2AF1DCAAA170071ACFD /* EditViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F53EA2AE1DCAAA170071ACFD /* EditViewController.swift */; };
+		F5BDBF371DCA9D2C0042430B /* Document.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5BDBF361DCA9D2C0042430B /* Document.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -59,7 +59,6 @@
 		AE499DCC1C82BB2B002D68AF /* XiEditor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = XiEditor.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AE499DCF1C82BB2B002D68AF /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		AE499DD11C82BB2B002D68AF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		AE499DD41C82BB2B002D68AF /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/MainMenu.xib; sourceTree = "<group>"; };
 		AE499DD61C82BB2B002D68AF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AE499DDB1C82BB2B002D68AF /* XiEditorTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = XiEditorTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		AE499DDF1C82BB2B002D68AF /* XiEditorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XiEditorTests.swift; sourceTree = "<group>"; };
@@ -70,9 +69,10 @@
 		AE499DF81C82C835002D68AF /* CoreConnection.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CoreConnection.swift; sourceTree = "<group>"; };
 		AEB66A781CAEFC8F002F686A /* ShadowView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ShadowView.swift; sourceTree = "<group>"; };
 		AEBAAA601C83B503005637A3 /* python */ = {isa = PBXFileReference; lastKnownFileType = folder; path = python; sourceTree = "<group>"; };
-		AED23F131C83C689002246CE /* AppWindowController.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AppWindowController.swift; sourceTree = "<group>"; };
-		AED23F141C83C689002246CE /* AppWindowController.xib */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.xib; path = AppWindowController.xib; sourceTree = "<group>"; };
 		AED23F171C83CBEC002246CE /* EditView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = EditView.swift; sourceTree = "<group>"; };
+		F53EA2AC1DCAA8110071ACFD /* Main.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; path = Main.storyboard; sourceTree = "<group>"; };
+		F53EA2AE1DCAAA170071ACFD /* EditViewController.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = EditViewController.swift; sourceTree = "<group>"; };
+		F5BDBF361DCA9D2C0042430B /* Document.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Document.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -125,18 +125,18 @@
 		AE499DCE1C82BB2B002D68AF /* XiEditor */ = {
 			isa = PBXGroup;
 			children = (
+				F53EA2AE1DCAAA170071ACFD /* EditViewController.swift */,
 				AE499DCF1C82BB2B002D68AF /* AppDelegate.swift */,
 				AED23F171C83CBEC002246CE /* EditView.swift */,
 				AEB66A781CAEFC8F002F686A /* ShadowView.swift */,
 				AE499DF81C82C835002D68AF /* CoreConnection.swift */,
-				AE499DD11C82BB2B002D68AF /* Assets.xcassets */,
-				AE499DD31C82BB2B002D68AF /* MainMenu.xib */,
-				AED23F131C83C689002246CE /* AppWindowController.swift */,
 				50370A2A1D4209F300EA1B18 /* Dispatcher.swift */,
-				AED23F141C83C689002246CE /* AppWindowController.xib */,
-				AE499DD61C82BB2B002D68AF /* Info.plist */,
+				F5BDBF361DCA9D2C0042430B /* Document.swift */,
 				AE168C5B1E4AD87B008249AE /* LineCache.swift */,
 				AE0243F51E4BDF8A00641BDA /* StyleMap.swift */,
+				AE499DD61C82BB2B002D68AF /* Info.plist */,
+				F53EA2AC1DCAA8110071ACFD /* Main.storyboard */,
+				AE499DD11C82BB2B002D68AF /* Assets.xcassets */,
 			);
 			path = XiEditor;
 			sourceTree = "<group>";
@@ -298,12 +298,11 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F53EA2AD1DCAA8110071ACFD /* Main.storyboard in Resources */,
 				AE228F5D1C897CE7000E9B0F /* xi-core in Resources */,
 				AEBAAA651C83BB1A005637A3 /* python in Resources */,
-				AED23F161C83C689002246CE /* AppWindowController.xib in Resources */,
 				AE041BA61D4327EB0069AB8B /* xi-syntect-plugin in Resources */,
 				AE499DD21C82BB2B002D68AF /* Assets.xcassets in Resources */,
-				AE499DD51C82BB2B002D68AF /* MainMenu.xib in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -328,13 +327,14 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F53EA2AF1DCAAA170071ACFD /* EditViewController.swift in Sources */,
 				AE0243F61E4BDF8A00641BDA /* StyleMap.swift in Sources */,
 				AE168C5C1E4AD87B008249AE /* LineCache.swift in Sources */,
 				AE499DF91C82C835002D68AF /* CoreConnection.swift in Sources */,
-				AED23F151C83C689002246CE /* AppWindowController.swift in Sources */,
 				50370A2B1D4209F300EA1B18 /* Dispatcher.swift in Sources */,
 				AED23F181C83CBED002246CE /* EditView.swift in Sources */,
 				AE499DD01C82BB2B002D68AF /* AppDelegate.swift in Sources */,
+				F5BDBF371DCA9D2C0042430B /* Document.swift in Sources */,
 				AEB66A791CAEFC8F002F686A /* ShadowView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -374,17 +374,6 @@
 			targetProxy = D023DA041CD072400087EC0A /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
-
-/* Begin PBXVariantGroup section */
-		AE499DD31C82BB2B002D68AF /* MainMenu.xib */ = {
-			isa = PBXVariantGroup;
-			children = (
-				AE499DD41C82BB2B002D68AF /* Base */,
-			);
-			name = MainMenu.xib;
-			sourceTree = "<group>";
-		};
-/* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
 		AE499DED1C82BB2B002D68AF /* Debug */ = {
