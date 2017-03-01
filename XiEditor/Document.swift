@@ -51,7 +51,11 @@ class Document: NSDocument {
         // Returns the Storyboard that contains your Document window.
         let storyboard = NSStoryboard(name: "Main", bundle: nil)
         let windowController = storyboard.instantiateController(withIdentifier: "Document Window Controller") as! NSWindowController
-        tabName = Events.NewTab().dispatch(dispatcher!)
+        Events.NewTab().dispatchWithCallback(dispatcher!) { (tabName) in
+            DispatchQueue.main.async {
+                self.tabName = tabName
+            }
+        }
         let editViewController = windowController.contentViewController as? EditViewController
         editViewController?.editView.document = self
         self.editView = editViewController?.editView
@@ -119,7 +123,7 @@ class Document: NSDocument {
     
     func update(_ content: [String: AnyObject]) {
         for windowController in windowControllers {
-            (windowController.contentViewController as? EditViewController)?.editView.updateSafe(update: content)
+            (windowController.contentViewController as? EditViewController)?.editView.update(update: content)
         }
     }
 

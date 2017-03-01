@@ -545,28 +545,22 @@ class EditView: NSView, NSTextInputClient {
         }
     }
 
-    // can be called from other threads
-    func updateSafe(update: [String: AnyObject]) {
+    func update(update: [String: AnyObject]) {
         var height: Int = 0;
         lines.applyUpdate(update: update)
         height = lines.height
-        DispatchQueue.main.async {
-            self.needsDisplay = true
-            self.heightConstraint?.constant = CGFloat(height) * self.linespace + 2 * self.descent
-            if self.isFrontmost {
-                self.setInsertionBlink(true)
-            }
+        self.needsDisplay = true
+        self.heightConstraint?.constant = CGFloat(height) * self.linespace + 2 * self.descent
+        if self.isFrontmost {
+            self.setInsertionBlink(true)
         }
     }
 
-    // can be called from other threads
     func scrollTo(_ line: Int, _ col: Int) {
         let x = CGFloat(col) * fontWidth  // TODO: deal with non-ASCII, non-monospaced case
         let y = CGFloat(line) * linespace + baseline
         let scrollRect = NSRect(x: x, y: y - baseline, width: 4, height: linespace + descent)
-        DispatchQueue.main.async {
-            self.scrollToVisible(scrollRect)
-        }
+        self.scrollToVisible(scrollRect)
     }
 
     func updateScroll(_ bounds: NSRect) {

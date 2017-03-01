@@ -86,20 +86,23 @@ class CoreConnection {
             let json = try JSONSerialization.jsonObject(with: data, options: .allowFragments)
             //print("got \(json)")
             if !handleRpcResponse(json as AnyObject) {
-                callback(json as AnyObject)
+                DispatchQueue.main.async {
+                    self.callback(json as AnyObject)
+                }
             }
         } catch _ {
             print("json error")
         }
     }
 
+    /// send an RPC request, returning immediately. The callback will be called when the
+    /// response comes in, likely from a different thread
     func sendRpcAsync(_ method: String, params: Any, callback: ((Any?) -> ())? = nil) {
-        var index = Int()
         var req = ["method": method, "params": params] as [String : Any]
         if let callback = callback {
             queue.sync {
-                req["id"] = self.rpcIndex
-                index = self.rpcIndex
+                let index = self.rpcIndex
+                req["id"] = index
                 self.rpcIndex += 1
                 self.pending[index] = callback
             }
@@ -107,7 +110,9 @@ class CoreConnection {
         sendJson(req as Any)
     }
 
-    // send RPC synchronously, blocking until return
+    /// send RPC synchronously, blocking until return. Note: there is no ordering guarantee on
+    /// when this function may return. In particular, an async notification sent by the core after
+    /// a response to a synchronous RPC may be delivered before it.
     func sendRpc(_ method: String, params: Any) -> Any? {
         let semaphore = DispatchSemaphore(value: 0)
         var result: Any? = nil
