@@ -44,9 +44,9 @@ class Document: NSDocument {
         let storyboard = NSStoryboard(name: "Main", bundle: nil)
         let windowController = storyboard.instantiateController(withIdentifier: "Document Window Controller") as! NSWindowController
         self.editViewController = windowController.contentViewController as? EditViewController
-        editViewController?.editView.document = self
-
+        editViewController?.document = self
         windowController.window?.delegate = editViewController
+
         //FIXME: some saner way of positioning new windows. maybe based on current window size, with some checks to not completely obscure an existing window?
         // also awareness of multiple screens (prefer to open on currently active screen)
         let screenHeight = windowController.window?.screen?.frame.height ?? 800
