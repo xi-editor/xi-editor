@@ -65,7 +65,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     else { print("tab or document missing for update event: ", obj); return }
                     document.update(update)
             }
-
         case "scroll_to":
             if let obj = params as? [String : AnyObject], let line = obj["line"] as? Int, let col = obj["col"] as? Int {
                 guard let tab = obj["tab"] as? String, let document = documentForTabName(tabName: tab)
@@ -78,16 +77,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         case "alert":
             if let obj = params as? [String : AnyObject], let msg = obj["msg"] as? String {
-                DispatchQueue.main.async(execute: {
-                    let alert =  NSAlert.init()
-                    #if swift(>=2.3)
-                        alert.alertStyle = .informational
-                    #else
-                        alert.alertStyle = .InformationalAlertStyle
-                    #endif
-                    alert.messageText = msg
-                    alert.runModal()
-                });
+                let alert =  NSAlert.init()
+                alert.alertStyle = .informational
+                alert.messageText = msg
+                alert.runModal()
             }
         default:
             print("unknown method from core:", method)

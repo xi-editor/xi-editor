@@ -64,7 +64,7 @@ class EditViewController: NSViewController {
     
     // MARK: - Core Commands
     func update(_ content: [String: AnyObject]) {
-        editView.updateSafe(update: content)
+        editView.update(update: content)
     }
 
     func scrollTo(_ line: Int, _ col: Int) {
@@ -80,8 +80,8 @@ class EditViewController: NSViewController {
     override func insertText(_ insertString: Any) {
         document?.sendRpcAsync("insert", params: insertedStringToJson(insertString as! NSString))
     }
-    // MARK: - Menu Items
     
+    // MARK: - Menu Items
     fileprivate func cutCopy(_ method: String) {
         let text = document?.sendRpc(method, params: [])
         if let text = text as? String {

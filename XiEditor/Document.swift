@@ -14,31 +14,35 @@
 
 import Cocoa
 
+struct PendingNotification {
+    let method: String
+    let params: Any
+}
 
 class Document: NSDocument {
 
     var dispatcher: Dispatcher!
-    var tabName: String
-    
-    /// an initial backend update to be rendered on load
-    var pendingUpdate: [String: AnyObject]? = nil
-    var editViewController: EditViewController? {
+    var tabName: String? {
         didSet {
-            if let new = editViewController, let content = pendingUpdate {
-                new.update(content)
-                pendingUpdate = nil
+            guard tabName != nil else { return }
+            // apply initial updates when tabName is set
+            for pending in self.pendingNotifications {
+                self.sendRpcAsync(pending.method, params: pending.params)
             }
+            self.pendingNotifications.removeAll()
         }
     }
+    
+	var pendingNotifications: [PendingNotification] = [];
+    var editViewController: EditViewController?
 
     override init() {
         dispatcher = (NSApplication.shared().delegate as? AppDelegate)?.dispatcher
-        tabName = Events.NewTab().dispatch(dispatcher!)
         super.init()
         // I'm not 100% sure this is necessary but it can't _hurt_
         self.hasUndoManager = false
     }
-    
+ 
     override func makeWindowControllers() {
         // Returns the Storyboard that contains your Document window.
         let storyboard = NSStoryboard(name: "Main", bundle: nil)
@@ -46,7 +50,12 @@ class Document: NSDocument {
         self.editViewController = windowController.contentViewController as? EditViewController
         editViewController?.document = self
         windowController.window?.delegate = editViewController
-
+        
+        Events.NewTab().dispatchWithCallback(dispatcher!) { (tabName) in
+            DispatchQueue.main.async {
+            self.tabName = tabName
+            }
+        }
         //FIXME: some saner way of positioning new windows. maybe based on current window size, with some checks to not completely obscure an existing window?
         // also awareness of multiple screens (prefer to open on currently active screen)
         let screenHeight = windowController.window?.screen?.frame.height ?? 800
@@ -69,7 +78,7 @@ class Document: NSDocument {
     
     override func close() {
         super.close()
-        Events.DeleteTab(tabId: tabName).dispatch(dispatcher!)
+        Events.DeleteTab(tabId: tabName!).dispatch(dispatcher!)
     }
     
     override var isEntireFileLoaded: Bool {
@@ -88,12 +97,19 @@ class Document: NSDocument {
         sendRpcAsync("save", params: ["filename": filename])
     }
     
-    
+    /// Send a notification specific to the tab. If the tab name hasn't been set, then the
+    /// notification is queued, and sent when the tab name arrives.
     func sendRpcAsync(_ method: String, params: Any) {
-        let inner = ["method": method as AnyObject, "params": params, "tab": tabName as AnyObject] as [String : Any]
-        dispatcher?.coreConnection.sendRpcAsync("edit", params: inner)
+        if let tabName = tabName {
+            let inner = ["method": method, "params": params, "tab": tabName] as [String : Any]
+            dispatcher?.coreConnection.sendRpcAsync("edit", params: inner)
+        } else {
+            pendingNotifications.append(PendingNotification(method: method, params: params))
+        }
     }
-    
+
+    /// Note: this is a blocking call, and will also fail if the tab name hasn't been set yet.
+    /// We should try to migrate users to either fully async or callback based approaches.
     func sendRpc(_ method: String, params: Any) -> Any? {
         let inner = ["method": method as AnyObject, "params": params, "tab": tabName as AnyObject] as [String : Any]
         return dispatcher?.coreConnection.sendRpc("edit", params: inner)
@@ -102,8 +118,6 @@ class Document: NSDocument {
     func update(_ content: [String: AnyObject]) {
         if let editVC = editViewController {
             editVC.update(content)
-        } else {
-            pendingUpdate = content
         }
     }
 }

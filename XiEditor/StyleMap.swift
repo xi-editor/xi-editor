@@ -58,18 +58,10 @@ func utf8_offset_to_utf16(_ s: String, _ ix: Int) -> Int {
 }
 
 /// A store of text styles, indexable by id.
-/// - Note: all public methods of this class are designed to be thread-safe.
 class StyleMap {
-    private let queue = DispatchQueue(label: "com.levien.xi.StyleMap")
     private var map: [Style?] = []
 
     func defStyle(json: [String: AnyObject]) {
-        queue.sync {
-            defStyleLocked(json: json)
-        }
-    }
-
-    private func defStyleLocked(json: [String: AnyObject]) {
         guard let styleID = json["id"] as? Int else { return }
         let fgColor = json["fg_color"] as? UInt32 ?? 0xFF000000
         let bgColor = json["bg_color"] as? UInt32 ?? 0
@@ -111,11 +103,9 @@ class StyleMap {
 
     /// Given style information, applies the appropriate text attributes to the passed NSAttributedString
     func applyStyles(text: String, string: inout NSMutableAttributedString, styles: [StyleSpan]) {
-        queue.sync {
-            // we handle the 0 style (selection) in EditView.drawRect
-            for styleSpan in styles.filter({ $0.style != 0 }) {
-                    applyStyle(string: string, id: styleSpan.style, range: styleSpan.range)
-            }
+        // we handle the 0 style (selection) in EditView.drawRect
+        for styleSpan in styles.filter({ $0.style != 0 }) {
+                applyStyle(string: string, id: styleSpan.style, range: styleSpan.range)
         }
     }
 }

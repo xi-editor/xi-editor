@@ -270,27 +270,19 @@ class EditView: NSView, NSTextInputClient {
     //MARK: - Public API
     
     /// apply the given updates to the view.
-    /// - Note: Threadsafe
-    public func updateSafe(update: [String: AnyObject]) {
-        var height: Int = 0;
+    public func update(update: [String: AnyObject]) {
         lines.applyUpdate(update: update)
-        height = lines.height
-        DispatchQueue.main.async {
-            self.heightConstraint?.constant = CGFloat(height) * self.linespace + 2 * self.descent
-            self.showBlinkingCursor = self.isFrontmostView
-            self.needsDisplay = true
-        }
+        self.heightConstraint?.constant = CGFloat(lines.height) * self.linespace + 2 * self.descent
+        self.showBlinkingCursor = self.isFrontmostView
+        self.needsDisplay = true
     }
-    
+
     /// scrolls the editview to display the given line and column
-    /// - Note: can be called from other threads
     public func scrollTo(_ line: Int, _ col: Int) {
         let x = CGFloat(col) * fontWidth  // TODO: deal with non-ASCII, non-monospaced case
         let y = CGFloat(line) * linespace + baseline
         let scrollRect = NSRect(x: x, y: y - baseline, width: 4, height: linespace + descent)
-        DispatchQueue.main.async {
-            self.scrollToVisible(scrollRect)
-        }
+        self.scrollToVisible(scrollRect)
     }
 
     

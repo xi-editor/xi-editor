@@ -66,31 +66,18 @@ struct Line {
 
 /// A data structure holding a cache of lines, with methods for updating based
 /// on deltas from the core.
-///
-/// - Note: all public methods of this class are designed to be thread-safe.
 class LineCache {
-    private let queue = DispatchQueue(label: "com.levien.xi.LineCache")
     var nInvalidBefore = 0;
     var lines: [Line?] = []
     var nInvalidAfter = 0;
 
     var height: Int {
         get {
-            return queue.sync { heightLocked }
-        }
-    }
-
-    private var heightLocked: Int {
-        get {
             return nInvalidBefore + lines.count + nInvalidAfter
         }
     }
 
     func get(_ ix: Int) -> Line? {
-        return queue.sync { getLocked(ix) }
-    }
-
-    private func getLocked(_ ix: Int) -> Line? {
         if ix < nInvalidBefore { return nil }
         let ix = ix - nInvalidBefore
         if ix < lines.count {
@@ -100,10 +87,6 @@ class LineCache {
     }
 
     func applyUpdate(update: [String: Any]) {
-        queue.sync { applyUpdateLocked(update: update) }
-    }
-
-    private func applyUpdateLocked(update: [String: Any]) {
         guard let ops = update["ops"] else { return }
         var newInvalidBefore = 0
         var newLines: [Line?] = []
@@ -175,12 +158,8 @@ class LineCache {
 
     /// Return ranges of invalid lines within the given range
     func computeMissing(_ first: Int, _ last: Int) -> [(Int, Int)] {
-        return queue.sync { computeMissingLocked(first, last) }
-    }
-
-    private func computeMissingLocked(_ first: Int, _ last: Int) -> [(Int, Int)] {
         var result: [(Int, Int)] = []
-        let last = min(last, heightLocked)  // lines past the end aren't considered missing
+        let last = min(last, height)  // lines past the end aren't considered missing
         for ix in first..<last {
             // could optimize a bit here, but unlikely to be important
             if ix < nInvalidBefore || ix >= nInvalidBefore + lines.count || lines[ix - nInvalidBefore] == nil {

@@ -30,6 +30,13 @@ class Dispatcher {
         let rpc = event.rpcRepresentation
         return coreConnection.sendRpcAsync(rpc.method, params: rpc.params) as! O
     }
+
+    func dispatchWithCallback<E: Event, O>(_ event: E, callback: @escaping (O) -> ()) {
+        let rpc = event.rpcRepresentation
+        return coreConnection.sendRpcAsync(rpc.method, params: rpc.params) { (result: Any?) in
+            callback(result as! O)
+        }
+    }
 }
 
 typealias RpcRepresentation = (method: String, params: AnyObject)
@@ -48,6 +55,8 @@ protocol Event {
     var dispatchMethod: EventDispatchMethod { get }
 
     func dispatch(_ dispatcher: Dispatcher) -> Output
+
+    func dispatchWithCallback(_ dispatcher: Dispatcher, callback: @escaping (Output) -> ())
 }
 
 extension Event {
@@ -55,11 +64,19 @@ extension Event {
         return (method, params ?? [] as AnyObject)
     }
 
+    /// Note: sync dispatch is discouraged, as it blocks the main thread, and also provides no
+    /// useful ordering guarantee.
     func dispatch(_ dispatcher: Dispatcher) -> Output {
         switch dispatchMethod {
         case .sync: return dispatcher.dispatchSync(self)
         case .async: return dispatcher.dispatchAsync(self)
         }
+    }
+
+    /// Note: the callback may be called from an arbitrary thread
+    func dispatchWithCallback(_ dispatcher: Dispatcher, callback: @escaping (Output) -> ()) {
+        assert(dispatchMethod == .sync)
+        dispatcher.dispatchWithCallback(self, callback: callback)
     }
 }
 
