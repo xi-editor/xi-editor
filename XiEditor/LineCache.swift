@@ -12,15 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// A data structure holding a cache of lines, with methods for updating based
-// on deltas from the core.
-
 import Foundation
 
+/// Represents a single line, including rendering information.
 struct Line {
     var text: String
     var cursor: [Int]
-    var styles: [Int]
+    var styles: [StyleSpan]
+    
+    /// A Boolean value representing whether this line contains selected text.
+    /// This is used to determine whether we should pre-draw its background.
+    var containsSelection: Bool {
+            return styles.contains { $0.style == 0 }
+        }
 
     init(fromJson json: [String: AnyObject]) {
         if let text = json["text"] as? String {
@@ -34,7 +38,7 @@ struct Line {
             self.cursor = []
         }
         if let styles = json["styles"] as? [Int] {
-            self.styles = styles
+            self.styles = StyleSpan.styles(fromRaw: styles, text: self.text)
         } else {
             self.styles = []
         }
@@ -49,7 +53,7 @@ struct Line {
                 self.cursor = line.cursor
             }
             if let styles = json["styles"] as? [Int] {
-                self.styles = styles
+                self.styles = StyleSpan.styles(fromRaw: styles, text: self.text)
             } else {
                 self.styles = line.styles
             }
@@ -57,9 +61,13 @@ struct Line {
             return nil
         }
     }
+
 }
 
-// Note: all public methods of this class are designed to be thread-safe
+/// A data structure holding a cache of lines, with methods for updating based
+/// on deltas from the core.
+///
+/// - Note: all public methods of this class are designed to be thread-safe.
 class LineCache {
     private let queue = DispatchQueue(label: "com.levien.xi.LineCache")
     var nInvalidBefore = 0;
@@ -165,7 +173,7 @@ class LineCache {
         nInvalidAfter = newInvalidAfter
     }
 
-    // Return ranges of invalid lines within the given range
+    /// Return ranges of invalid lines within the given range
     func computeMissing(_ first: Int, _ last: Int) -> [(Int, Int)] {
         return queue.sync { computeMissingLocked(first, last) }
     }
