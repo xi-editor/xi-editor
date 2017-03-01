@@ -65,9 +65,9 @@ func camelCaseToUnderscored(_ name: NSString) -> NSString {
 class EditView: NSView, NSTextInputClient {
     var document: Document!
 
+    var styleMap: StyleMap?
     var lines: LineCache
 
-//    var widthConstraint: NSLayoutConstraint?
     @IBOutlet var heightConstraint: NSLayoutConstraint?
 
     var attributes: [String: AnyObject]
@@ -78,30 +78,71 @@ class EditView: NSView, NSTextInputClient {
     var linespace: CGFloat
     var fontWidth: CGFloat
 
-    let fgSelcolor: NSColor
-    let bgSelcolor: NSColor
-
-    // visible scroll region, exclusive of lastLine
-    var firstLine: Int = 0
-    var lastLine: Int = 0
+    var textSelectionColor: NSColor {
+        if self.isFrontmostView {
+            return NSColor.selectedTextBackgroundColor
+        } else {
+        return NSColor(colorLiteralRed: 0.8, green: 0.8, blue: 0.8, alpha: 1.0)
+        }
+    }
 
     var lastDragLineCol: (Int, Int)?
     var timer: Timer?
     var timerEvent: NSEvent?
 
-    var currentEvent: NSEvent?
-
     var cursorPos: (Int, Int)?
-    var _selectedRange: NSRange
-    var _markedRange: NSRange
+    fileprivate var _selectedRange: NSRange
+    fileprivate var _markedRange: NSRange
     
-    var isFrontmost: Bool // Are we frontmost, the view that gets keyboard input?
+    var isFrontmostView = false {
+        didSet {
+            //TODO: blinking should one day be a user preference
+            showBlinkingCursor = isFrontmostView
+            self.needsDisplay = true
+        }
+    }
+    
+    /*  Insertion point blinking.
+     Only the frontmost ('key') window should have a blinking insertion point.
+     A new 'on' cycle starts every time the window comes to the front, or the text changes, or the ins. point moves.
+     Type fast enough and the ins. point stays on.
+     */
+    var _blinkTimer : Timer?
+    private var _cursorStateOn = false
+    /// if set to true, this view will show blinking cursors
+    private var showBlinkingCursor = false {
+        didSet {
+            _cursorStateOn = showBlinkingCursor
+            _blinkTimer?.invalidate()
+            if showBlinkingCursor {
+                _blinkTimer = Timer.scheduledTimer(timeInterval: TimeInterval(1.0), target: self, selector: #selector(_blinkInsertionPoint), userInfo: nil, repeats: true)
+            } else {
+                _blinkTimer = nil
+            }
+        }
+    }
+    
+    private var cursorColor: CGColor {
+        return _cursorStateOn ? CGColor(gray: 0, alpha: 1) : CGColor(gray: 1, alpha: 1)
+    }
+    
+    required init?(coder: NSCoder) {
+        let font = CTFontCreateWithName("InconsolataGo" as CFString?, 14, nil)
+        ascent = CTFontGetAscent(font)
+        descent = CTFontGetDescent(font)
+        leading = CTFontGetLeading(font)
+        linespace = ceil(ascent + descent + leading)
+        baseline = ceil(ascent)
+        attributes = [String(kCTFontAttributeName): font]
+        fontWidth = getFontWidth(font)
+        _selectedRange = NSMakeRange(NSNotFound, 0)
+        _markedRange = NSMakeRange(NSNotFound, 0)
+        lines = LineCache()
+        styleMap = (NSApplication.shared().delegate as? AppDelegate)?.styleMap
+        super.init(coder: coder)
+    }
 
-    var cursorFlashOn: Bool
-    var blinkTimer : Timer?
-
-    var styleMap: StyleMap?
-
+    // this gets called when the user changes the font with the font book, for example
     override func changeFont(_ sender: Any?) {
         let oldFont = attributes[String(kCTFontAttributeName)] as! CTFont
         let font = (sender as! NSFontManager).convert(oldFont)
@@ -113,36 +154,6 @@ class EditView: NSView, NSTextInputClient {
         attributes[String(kCTFontAttributeName)] = font
         fontWidth = getFontWidth(font)
         needsDisplay = true
-    }
-
-    required init?(coder: NSCoder) {
-        let font = CTFontCreateWithName("InconsolataGo" as CFString?, 14, nil)
-        ascent = CTFontGetAscent(font)
-        descent = CTFontGetDescent(font)
-        leading = CTFontGetLeading(font)
-        linespace = ceil(ascent + descent + leading)
-        baseline = ceil(ascent)
-        attributes = [String(kCTFontAttributeName): font]
-        fontWidth = getFontWidth(font)
-        fgSelcolor =  NSColor.selectedTextBackgroundColor
-        bgSelcolor = NSColor(colorLiteralRed: 0.8, green: 0.8, blue: 0.8, alpha: 1.0) //Gray for the selected text background when not 'key'
-        _selectedRange = NSMakeRange(NSNotFound, 0)
-        _markedRange = NSMakeRange(NSNotFound, 0)
-        isFrontmost = false
-        cursorFlashOn = true
-        lines = LineCache()
-        styleMap = (NSApplication.shared().delegate as? AppDelegate)?.styleMap
-        super.init(coder: coder)
-    }
-
-
-    func utf8_offset_to_utf16(_ s: String, _ ix: Int) -> Int {
-        // String(s.utf8.prefix(ix)).utf16.count
-        return s.utf8.index(s.utf8.startIndex, offsetBy: ix).samePosition(in: s.utf16)!._offset
-    }
-
-    func utf16_offset_to_utf8(_ s: String, _ ix: Int) -> Int {
-        return String(describing: s.utf16.prefix(ix)).utf8.count
     }
 
     let x0: CGFloat = 2;
@@ -180,7 +191,7 @@ class EditView: NSView, NSTextInputClient {
             let attrString = NSMutableAttributedString(string: line.text, attributes: self.attributes)
             let ctline = CTLineCreateWithAttributedString(attrString)
             let y = linespace * CGFloat(lineIx + 1)
-            context.setFillColor(selcolor().cgColor)
+            context.setFillColor(textSelectionColor.cgColor)
             for selection in selections {
                 let selStart = CTLineGetOffsetForStringIndex(ctline, selection.range.location, nil)
                 let selEnd = CTLineGetOffsetForStringIndex(ctline, selection.range.location + selection.range.length, nil)
@@ -193,12 +204,12 @@ class EditView: NSView, NSTextInputClient {
             // TODO: could block for ~1ms waiting for missing lines to arrive
             guard let line = getLine(lineIx) else { continue }
             let s = line.text
-            let attrString = NSMutableAttributedString(string: s, attributes: self.attributes)
+            var attrString = NSMutableAttributedString(string: s, attributes: self.attributes)
             /*
             let randcolor = NSColor(colorLiteralRed: Float(drand48()), green: Float(drand48()), blue: Float(drand48()), alpha: 1.0)
             attrString.addAttribute(NSForegroundColorAttributeName, value: randcolor, range: NSMakeRange(0, s.utf16.count))
             */
-            styleMap?.applyStyles(text: s, string: attrString, styles: line.styles, selColor: selcolor())
+            styleMap?.applyStyles(text: s, string: &attrString, styles: line.styles)
             for c in line.cursor {
                 let cix = utf8_offset_to_utf16(s, c)
                 if (markedRange().location != NSNotFound) {
@@ -225,7 +236,7 @@ class EditView: NSView, NSTextInputClient {
             //attrString.drawAtPoint(NSPoint(x: x0, y: y - 13))
             let y = linespace * CGFloat(lineIx + 1);
             attrString.draw(with: NSRect(x: x0, y: y, width: dirtyRect.origin.x + dirtyRect.width - x0, height: 14), options: [])
-            if isFrontmost {
+            if showBlinkingCursor {
                 for cursor in line.cursor {
                     let ctline = CTLineCreateWithAttributedString(attrString)
                     /*
@@ -238,7 +249,7 @@ class EditView: NSView, NSTextInputClient {
                         let utf16_ix = utf8_offset_to_utf16(s, cursor)
                         pos = CTLineGetOffsetForStringIndex(ctline, CFIndex(utf16_ix), nil)
                     }
-                    context.setStrokeColor(cursorColor())
+                    context.setStrokeColor(cursorColor)
                     context.move(to: CGPoint(x: x0 + pos, y: y + descent))
                     context.addLine(to: CGPoint(x: x0 + pos, y: y - ascent))
                     context.strokePath()
@@ -255,32 +266,36 @@ class EditView: NSView, NSTextInputClient {
     override var isFlipped: Bool {
         return true;
     }
-
-    // TODO: probably get rid of this, we get scroll notifications elsewhere
-    override func resize(withOldSuperviewSize oldSize: NSSize) {
-        super.resize(withOldSuperviewSize: oldSize)
-        //Swift.print("resizing, oldsize =", oldSize, ", frame =", frame);
+    
+    //MARK: - Public API
+    
+    /// apply the given updates to the view.
+    public func update(update: [String: AnyObject]) {
+        lines.applyUpdate(update: update)
+        self.heightConstraint?.constant = CGFloat(lines.height) * self.linespace + 2 * self.descent
+        self.showBlinkingCursor = self.isFrontmostView
+        self.needsDisplay = true
     }
 
-    override func keyDown(with theEvent: NSEvent) {
-        // store current event so that it can be sent to the core
-        // if the selector for the event is "noop:".
-        currentEvent = theEvent;
-        self.inputContext?.handleEvent(theEvent);
-        currentEvent = nil;
+    /// scrolls the editview to display the given line and column
+    public func scrollTo(_ line: Int, _ col: Int) {
+        let x = CGFloat(col) * fontWidth  // TODO: deal with non-ASCII, non-monospaced case
+        let y = CGFloat(line) * linespace + baseline
+        let scrollRect = NSRect(x: x, y: y - baseline, width: 4, height: linespace + descent)
+        self.scrollToVisible(scrollRect)
     }
 
-    // NSResponder (used mostly for paste)
-    override func insertText(_ insertString: Any) {
-        document?.sendRpcAsync("insert", params: insertedStringToJson(insertString as! NSString))
-    }
-
-    // NSTextInputClient protocol
+    
+    // MARK: - NSTextInputClient protocol
     func insertText(_ aString: Any, replacementRange: NSRange) {
         self.removeMarkedText()
         self.replaceCharactersInRange(replacementRange, withText: aString as AnyObject)
     }
-
+    
+    public func characterIndex(for point: NSPoint) -> Int {
+        return 0
+    }
+    
     func replacementMarkedRange(_ replacementRange: NSRange) -> NSRange {
         var markedRange = _markedRange
 
@@ -386,10 +401,8 @@ class EditView: NSView, NSTextInputClient {
         }
     }
 
-    func characterIndex(for aPoint: NSPoint) -> Int {
-        return 0
-    }
-
+    /// MARK: - System Events
+    
     override func doCommand(by aSelector: Selector) {
         if (self.responds(to: aSelector)) {
             super.doCommand(by: aSelector);
@@ -403,43 +416,6 @@ class EditView: NSView, NSTextInputClient {
         }
     }
 
-    func cutCopy(_ method: String) {
-        let text = document?.sendRpc(method, params: [])
-        if let text = text as? String {
-            let pasteboard = NSPasteboard.general()
-            pasteboard.clearContents()
-            pasteboard.writeObjects([text as NSPasteboardWriting])
-        }
-    }
-
-    func cut(_ sender: AnyObject?) {
-        cutCopy("cut")
-    }
-
-    func copy(_ sender: AnyObject?) {
-        cutCopy("copy")
-    }
-
-    func paste(_ sender: AnyObject?) {
-        let pasteboard = NSPasteboard.general()
-        if let items = pasteboard.pasteboardItems {
-            for element in items {
-                if let str = element.string(forType: "public.utf8-plain-text") {
-                    insertText(str)
-                    break
-                }
-            }
-        }
-    }
-
-    func undo(_ sender: AnyObject?) {
-        document?.sendRpcAsync("undo", params: [])
-    }
-
-    func redo(_ sender: AnyObject?) {
-        document?.sendRpcAsync("redo", params: [])
-    }
-
     override func mouseDown(with theEvent: NSEvent) {
         removeMarkedText()
         self.inputContext?.discardMarkedText()
@@ -448,7 +424,7 @@ class EditView: NSView, NSTextInputClient {
         let flags = theEvent.modifierFlags.rawValue >> 16
         let clickCount = theEvent.clickCount
         document?.sendRpcAsync("click", params: [line, col, flags, clickCount])
-        timer = Timer.scheduledTimer(timeInterval: TimeInterval(1.0/60), target: self, selector: #selector(autoscrollTimer), userInfo: nil, repeats: true)
+        timer = Timer.scheduledTimer(timeInterval: TimeInterval(1.0/60), target: self, selector: #selector(_autoscrollTimerCallback), userInfo: nil, repeats: true)
         timerEvent = theEvent
     }
 
@@ -468,11 +444,18 @@ class EditView: NSView, NSTextInputClient {
         timer = nil
         timerEvent = nil
     }
-
-    func autoscrollTimer() {
+    
+    // MARK: - Helpers etc
+    func _autoscrollTimerCallback() {
         if let event = timerEvent {
             mouseDragged(with: event)
         }
+    }
+    
+    /// timer callback to toggle the blink state
+    func _blinkInsertionPoint() {
+        _cursorStateOn = !_cursorStateOn
+        needsDisplay = true
     }
 
     // TODO: more functions should call this, just dividing by linespace doesn't account for descent
@@ -500,162 +483,16 @@ class EditView: NSView, NSTextInputClient {
         return (lineIx, col)
     }
 
-    /*  Insertion point blinking.
-        Only the frontmost ('key') window should have a blinking insertion point.
-        A new 'on' cycle starts every time the window is comes to the front, or the text changes, or the ins. point moves.
-        Type fast enough and the ins. point stays on.
-     */
-
-    /// Turns the ins. point visible, and set it flashing. Does nothing if window is not key.
-    func setInsertionBlink(_ on: Bool) {
-        // caller must set NeedsDisplay
-        cursorFlashOn = on
-        blinkTimer?.invalidate()
-        if on {
-            blinkTimer = Timer.scheduledTimer(timeInterval: TimeInterval(1.0), target: self, selector: #selector(blinkInsertionPoint), userInfo: nil, repeats: true)
-        }
-        else {
-            blinkTimer = nil
-        }
+    private func utf8_offset_to_utf16(_ s: String, _ ix: Int) -> Int {
+        // String(s.utf8.prefix(ix)).utf16.count
+        return s.utf8.index(s.utf8.startIndex, offsetBy: ix).samePosition(in: s.utf16)!._offset
     }
-
-    // Just performs the actual blinking.
-    func blinkInsertionPoint() {
-        cursorFlashOn = !cursorFlashOn
-        needsDisplay = true
-    }
-
-    // Current color for the ins. point. Implements flashing.
-    func cursorColor() -> CGColor {
-        if cursorFlashOn {
-            return CGColor(gray: 0, alpha: 1) // Black
-        }
-        else {
-            return CGColor(gray: 1, alpha: 1) // should match background.
-        }
-    }
-
-    // Background color for selected text. Only the first responder of the key window should have a non-gray selection.
-    func selcolor() -> NSColor {
-        if isFrontmost {
-            return fgSelcolor
-        }
-        else {
-            return bgSelcolor
-        }
-    }
-
-    func update(update: [String: AnyObject]) {
-        var height: Int = 0;
-        lines.applyUpdate(update: update)
-        height = lines.height
-        self.needsDisplay = true
-        self.heightConstraint?.constant = CGFloat(height) * self.linespace + 2 * self.descent
-        if self.isFrontmost {
-            self.setInsertionBlink(true)
-        }
-    }
-
-    func scrollTo(_ line: Int, _ col: Int) {
-        let x = CGFloat(col) * fontWidth  // TODO: deal with non-ASCII, non-monospaced case
-        let y = CGFloat(line) * linespace + baseline
-        let scrollRect = NSRect(x: x, y: y - baseline, width: 4, height: linespace + descent)
-        self.scrollToVisible(scrollRect)
-    }
-
-    func updateScroll(_ bounds: NSRect) {
-        let first = Int(floor(bounds.origin.y / linespace))
-        let height = Int(ceil((bounds.size.height) / linespace))
-        let last = first + height
-        if first != firstLine || last != lastLine {
-            firstLine = first
-            lastLine = last
-            document?.sendRpcAsync("scroll", params: [firstLine, lastLine])
-        }
+    
+    private func utf16_offset_to_utf8(_ s: String, _ ix: Int) -> Int {
+        return String(describing: s.utf16.prefix(ix)).utf8.count
     }
 
     func getLine(_ lineNum: Int) -> Line? {
         return lines.get(lineNum)
-    }
-
-    /*
-    let MAX_CACHE_LINES = 1000
-    let CACHE_FETCH_CHUNK = 100
-
-    // get a line, trying to hit the cache
-    func getLine(_ lineNum: Int) -> [AnyObject]? {
-        // TODO: maybe core should take care to set height >= 1
-        if lineNum < 0 || lineNum >= max(1, self.height) {
-            return nil
-        }
-        if let line = self.lineMap[lineNum] {
-            return line
-        }
-        // speculatively prefetch a bigger chunk from RPC, but don't get anything we already have
-        var first = lineNum
-        while first > max(0, lineNum - CACHE_FETCH_CHUNK) && lineMap.index(forKey: first - 1) == nil {
-            first -= 1
-        }
-        var last = lineNum + 1
-        while last < min(lineNum, height) + CACHE_FETCH_CHUNK && lineMap.index(forKey: last + 1) == nil {
-            last += 1
-        }
-        if lineMap.count + (last - first) > MAX_CACHE_LINES {
-            // a more sophisticated approach would be LRU replacement, but simple is probably good enough
-            lineMap = [:]
-        }
-        if let lines = fetchLineRange(first, last) {
-            for lineNum in first..<last {
-                if lineNum - first < lines.count {
-                    lineMap[lineNum] = lines[lineNum - first]
-                } else {
-                    lineMap[lineNum] = ["" as AnyObject]  // TODO: maybe core should always supply
-                }
-            }
-        }
-        return lineMap[lineNum]
-    }
-
-    func fetchLineRange(_ first: Int, _ last: Int) -> [[AnyObject]]? {
-        let start = Date()
-        if let result = document?.sendRpc("render_lines", params: ["first_line": first, "last_line": last]) as? [[AnyObject]] {
-            let interval = Date().timeIntervalSince(start)
-            Swift.print(String(format: "RPC latency = %3.2fms", interval as Double * 1e3))
-            return result
-        } else {
-            Swift.print("rpc error")
-            return nil
-        }
-    }
-    */
-
-    var isEmpty: Bool {
-        if lines.height == 0 { return true }
-        if lines.height > 1 { return false }
-        if let line = getLine(0) {
-            return line.text == ""
-        } else {
-            return true
-        }
-    }
-
-    func updateIsFrontmost(_ frontmost : Bool) {
-        isFrontmost = frontmost
-        setInsertionBlink(isFrontmost)
-        needsDisplay = true
-    }
-
-    // MARK: - Debug Methods
-
-    @IBAction func debugRewrap(_ sender: AnyObject) {
-        document?.sendRpcAsync("debug_rewrap", params: [])
-    }
-
-    @IBAction func debugTestFGSpans(_ sender: AnyObject) {
-        document?.sendRpcAsync("debug_test_fg_spans", params: [])
-    }
-
-    @IBAction func debugRunPlugin(_ sender: AnyObject) {
-        document?.sendRpcAsync("debug_run_plugin", params: [])
     }
 }

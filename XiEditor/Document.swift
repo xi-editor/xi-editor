@@ -21,86 +21,64 @@ struct PendingNotification {
 
 class Document: NSDocument {
 
-    /*
-    override var windowNibName: String? {
-        // Override returning the nib file name of the document
-        // If you need to use a subclass of NSWindowController or if your document supports multiple NSWindowControllers, you should remove this method and override -makeWindowControllers instead.
-        return "Document"
-    }
-    */
-    
-    var dispatcher: Dispatcher?
-    var tabName: String?
-    var editView: EditView?
-    var pendingNotifications: [PendingNotification] = [];
-    
-    var filename: String? {
+    var dispatcher: Dispatcher!
+    var tabName: String? {
         didSet {
-            if let filename = filename {
-                let url = URL(fileURLWithPath: filename)
-                let lastComponent = url.lastPathComponent;
-                for controller in windowControllers {
-                    controller.window?.title = lastComponent
-                }
+            guard tabName != nil else { return }
+            // apply initial updates when tabName is set
+            for pending in self.pendingNotifications {
+                self.sendRpcAsync(pending.method, params: pending.params)
             }
+            self.pendingNotifications.removeAll()
         }
     }
     
+	var pendingNotifications: [PendingNotification] = [];
+    var editViewController: EditViewController?
+
     override init() {
-        super.init()
-        
         dispatcher = (NSApplication.shared().delegate as? AppDelegate)?.dispatcher
+        super.init()
+        // I'm not 100% sure this is necessary but it can't _hurt_
+        self.hasUndoManager = false
     }
-    
+ 
     override func makeWindowControllers() {
         // Returns the Storyboard that contains your Document window.
         let storyboard = NSStoryboard(name: "Main", bundle: nil)
         let windowController = storyboard.instantiateController(withIdentifier: "Document Window Controller") as! NSWindowController
+        self.editViewController = windowController.contentViewController as? EditViewController
+        editViewController?.document = self
+        windowController.window?.delegate = editViewController
+        
         Events.NewTab().dispatchWithCallback(dispatcher!) { (tabName) in
             DispatchQueue.main.async {
-                self.tabName = tabName
-                for pending in self.pendingNotifications {
-                    self.sendRpcAsync(pending.method, params: pending.params)
-                }
-                self.pendingNotifications.removeAll()
+            self.tabName = tabName
             }
         }
-        let editViewController = windowController.contentViewController as? EditViewController
-        editViewController?.editView.document = self
-        self.editView = editViewController?.editView
-        windowController.window?.delegate = editViewController
         //FIXME: some saner way of positioning new windows. maybe based on current window size, with some checks to not completely obscure an existing window?
         // also awareness of multiple screens (prefer to open on currently active screen)
         let screenHeight = windowController.window?.screen?.frame.height ?? 800
         let windowHeight: CGFloat = 800
         windowController.window?.setFrame(NSRect(x: 200, y: screenHeight - windowHeight - 200, width: 700, height: 800), display: true)
 
-        if let filename = filename {
-            open(filename)
-        }
-
         self.addWindowController(windowController)
     }
     
     override func read(from url: URL, ofType typeName: String) throws {
-        filename = url.path
+        self.open(url.path)
     }
     
     override func save(to url: URL, ofType typeName: String, for saveOperation: NSSaveOperationType, completionHandler: @escaping (Error?) -> Void) {
-        self.filename = url.path
-        save(url.path)
-        
-        // An RPC Call received to indicate Save can be used to call this completion
+        self.fileURL = url
+        self.save(url.path)
+        //TODO: save operations should report success, and we should pass any errors to the completion handler
         completionHandler(nil)
     }
     
     override func close() {
         super.close()
-        
-        guard let tabName = tabName
-            else { return }
-
-        Events.DeleteTab(tabId: tabName).dispatch(dispatcher!)
+        Events.DeleteTab(tabId: tabName!).dispatch(dispatcher!)
     }
     
     override var isEntireFileLoaded: Bool {
@@ -133,14 +111,13 @@ class Document: NSDocument {
     /// Note: this is a blocking call, and will also fail if the tab name hasn't been set yet.
     /// We should try to migrate users to either fully async or callback based approaches.
     func sendRpc(_ method: String, params: Any) -> Any? {
-        let inner = ["method": method as AnyObject, "params": params, "tab": tabName! as AnyObject] as [String : Any]
+        let inner = ["method": method as AnyObject, "params": params, "tab": tabName as AnyObject] as [String : Any]
         return dispatcher?.coreConnection.sendRpc("edit", params: inner)
     }
-    
+
     func update(_ content: [String: AnyObject]) {
-        for windowController in windowControllers {
-            (windowController.contentViewController as? EditViewController)?.editView.update(update: content)
+        if let editVC = editViewController {
+            editVC.update(content)
         }
     }
-
 }

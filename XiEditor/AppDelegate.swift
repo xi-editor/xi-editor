@@ -69,7 +69,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if let obj = params as? [String : AnyObject], let line = obj["line"] as? Int, let col = obj["col"] as? Int {
                 guard let tab = obj["tab"] as? String, let document = documentForTabName(tabName: tab)
                     else { print("tab or document missing for update event: ", obj); return }
-                    document.editView?.scrollTo(line, col)
+                    document.editViewController?.scrollTo(line, col)
             }
         case "def_style":
             if let obj = params as? [String : AnyObject] {
