@@ -432,8 +432,7 @@
                                             <modifierMask key="keyEquivalentModifierMask"/>
                                             <menu key="submenu" title="Font" systemMenu="font" id="ygG-vO-u6v">
                                                 <items>
-                                                    <menuItem title="Show Fonts" id="oo6-pl-F7X">
-                                                        <modifierMask key="keyEquivalentModifierMask"/>
+                                                    <menuItem title="Show Fonts" keyEquivalent="T" id="oo6-pl-F7X">
                                                         <connections>
                                                             <action selector="orderFrontFontPanel:" target="7er-QZ-amI" id="RuE-Je-Tbe"/>
                                                         </connections>
