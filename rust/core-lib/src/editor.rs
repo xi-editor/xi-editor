@@ -101,7 +101,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             text: Rope::from(""),
             view: View::new(),
             text_dirty: false,
-            view_dirty: false,
+            view_dirty: true,
             engine: engine,
             last_rev_id: last_rev_id,
             undo_group_id: 0,
@@ -245,7 +245,7 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     // render if needed, sending to ui
-    fn render(&mut self) {
+    pub fn render(&mut self) {
         self.view.render_if_dirty(&self.text, &self.tab_ctx);
         if let Some(scrollto) = self.scroll_to {
             let (line, col) = self.view.offset_to_line_col(&self.text, scrollto);
