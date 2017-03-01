@@ -36,6 +36,9 @@ class Document: NSDocument {
 	var pendingNotifications: [PendingNotification] = [];
     var editViewController: EditViewController?
 
+    /// used to keep track of whether we're in the process of reusing an empty window
+    fileprivate var _skipShowingWindow = false
+
     override init() {
         dispatcher = (NSApplication.shared().delegate as? AppDelegate)?.dispatcher
         super.init()
@@ -44,25 +47,46 @@ class Document: NSDocument {
     }
  
     override func makeWindowControllers() {
-        // Returns the Storyboard that contains your Document window.
-        let storyboard = NSStoryboard(name: "Main", bundle: nil)
-        let windowController = storyboard.instantiateController(withIdentifier: "Document Window Controller") as! NSWindowController
+        var windowController: NSWindowController!
+        // check to see if we should reuse another document's window
+        if let delegate = (NSApplication.shared().delegate as? AppDelegate), let existing = delegate._documentForNextOpenCall {
+            assert(existing.windowControllers.count == 1, "each document should only and always own a single windowController")
+            windowController = existing.windowControllers[0]
+            delegate._documentForNextOpenCall = nil
+            // if we're reusing an existing window, we want to noop on the `showWindows()` call we receive from the DocumentController
+            _skipShowingWindow = true
+        } else {
+            // if we aren't reusing, create a new window as normal:
+            let storyboard = NSStoryboard(name: "Main", bundle: nil)
+            windowController = storyboard.instantiateController(withIdentifier: "Document Window Controller") as! NSWindowController
+            
+            //FIXME: some saner way of positioning new windows. maybe based on current window size, with some checks to not completely obscure an existing window?
+            // also awareness of multiple screens (prefer to open on currently active screen)
+            let screenHeight = windowController.window?.screen?.frame.height ?? 800
+            let windowHeight: CGFloat = 800
+            windowController.window?.setFrame(NSRect(x: 200, y: screenHeight - windowHeight - 200, width: 700, height: 800), display: true)
+        }
+
         self.editViewController = windowController.contentViewController as? EditViewController
         editViewController?.document = self
         windowController.window?.delegate = editViewController
-        
+        self.addWindowController(windowController)
+
         Events.NewTab().dispatchWithCallback(dispatcher!) { (tabName) in
             DispatchQueue.main.async {
             self.tabName = tabName
             }
         }
-        //FIXME: some saner way of positioning new windows. maybe based on current window size, with some checks to not completely obscure an existing window?
-        // also awareness of multiple screens (prefer to open on currently active screen)
-        let screenHeight = windowController.window?.screen?.frame.height ?? 800
-        let windowHeight: CGFloat = 800
-        windowController.window?.setFrame(NSRect(x: 200, y: screenHeight - windowHeight - 200, width: 700, height: 800), display: true)
+    }
 
-        self.addWindowController(windowController)
+    override func showWindows() {
+        // part of our code to reuse existing windows when opening documents
+        assert(windowControllers.count == 1, "documents should have a single window controller")
+        if !(_skipShowingWindow) {
+            super.showWindows()
+        } else {
+            _skipShowingWindow = false
+        }
     }
     
     override func read(from url: URL, ofType typeName: String) throws {

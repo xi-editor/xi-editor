@@ -20,6 +20,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var dispatcher: Dispatcher?
     var styleMap: StyleMap = StyleMap()
 
+    /// used internally to force open to an existing empty document when present.
+    var _documentForNextOpenCall: Document?
+
     func applicationWillFinishLaunching(_ aNotification: Notification) {
 
         guard let corePath = Bundle.main.path(forResource: "xi-core", ofType: "")
@@ -46,7 +49,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         return nil
     }
-    
+
     func handleCoreCmd(_ json: Any) {
         guard let obj = json as? [String : Any],
             let method = obj["method"] as? String,
