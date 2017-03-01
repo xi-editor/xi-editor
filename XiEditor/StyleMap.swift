@@ -70,36 +70,21 @@ class StyleMap {
     }
 
     private func defStyleLocked(json: [String: AnyObject]) {
-        //print("defStyle: \(json)")
-        guard let id = json["id"] as? Int else { return }
-        var fgColor: UInt32 = 0xFF000000;
-        var bgColor: UInt32 = 0;
-        var weight: UInt16 = 400;
-        var underline = false;
-        var italic = false;
-        if let fg = json["fg_color"] as? UInt32 {
-            fgColor = fg;
-        }
-        if let bg = json["bg_color"] as? UInt32 {
-            bgColor = bg;
-        }
-        if let w = json["weight"] as? UInt16 {
-            weight = w;
-        }
-        if let u = json["underline"] as? Bool {
-            underline = u;
-        }
-        if let i = json["italic"] as? Bool {
-            italic = i;
-        }
+        guard let styleID = json["id"] as? Int else { return }
+        let fgColor = json["fg_color"] as? UInt32 ?? 0xFF000000
+        let bgColor = json["bg_color"] as? UInt32 ?? 0
+        let weight = json["weight"] as? UInt16 ?? 400
+        let underline = json["underline"] as? Bool ?? false
+        let italic = json["italic"] as? Bool ?? false
+        
         let style = Style(fgColor: colorFromArgb(fgColor), bgColor: colorFromArgb(bgColor), weight: weight, underline: underline, italic: italic);
-        while map.count < id {
+        while map.count < styleID {
             map.append(nil)
         }
-        if map.count == id {
+        if map.count == styleID {
             map.append(style)
         } else {
-            map[id] = style
+            map[styleID] = style
         }
     }
 
