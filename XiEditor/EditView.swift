@@ -202,8 +202,8 @@ class EditView: NSView, NSTextInputClient {
             let y = linespace * CGFloat(lineIx + 1)
             context.setFillColor(selcolor().cgColor)
             for selection in selections {
-                let selStart = CTLineGetOffsetForStringIndex(ctline, utf8_offset_to_utf16(line.text, selection.range.location), nil)
-                let selEnd = CTLineGetOffsetForStringIndex(ctline, utf8_offset_to_utf16(line.text, selection.range.location + selection.range.length), nil)
+                let selStart = CTLineGetOffsetForStringIndex(ctline, selection.range.location, nil)
+                let selEnd = CTLineGetOffsetForStringIndex(ctline, selection.range.location + selection.range.length, nil)
                 context.fill(CGRect.init(x: x0 + selStart, y: y - ascent, width: selEnd - selStart + x0, height: linespace))
             }
             
