@@ -191,7 +191,7 @@ class EditView: NSView, NSTextInputClient {
             let attrString = NSMutableAttributedString(string: line.text, attributes: self.attributes)
             let ctline = CTLineCreateWithAttributedString(attrString)
             let y = linespace * CGFloat(lineIx + 1)
-            context.setFillColor(selcolor().cgColor)
+            context.setFillColor(textSelectionColor.cgColor)
             for selection in selections {
                 let selStart = CTLineGetOffsetForStringIndex(ctline, selection.range.location, nil)
                 let selEnd = CTLineGetOffsetForStringIndex(ctline, selection.range.location + selection.range.length, nil)
@@ -204,12 +204,12 @@ class EditView: NSView, NSTextInputClient {
             // TODO: could block for ~1ms waiting for missing lines to arrive
             guard let line = getLine(lineIx) else { continue }
             let s = line.text
-            let attrString = NSMutableAttributedString(string: s, attributes: self.attributes)
+            var attrString = NSMutableAttributedString(string: s, attributes: self.attributes)
             /*
             let randcolor = NSColor(colorLiteralRed: Float(drand48()), green: Float(drand48()), blue: Float(drand48()), alpha: 1.0)
             attrString.addAttribute(NSForegroundColorAttributeName, value: randcolor, range: NSMakeRange(0, s.utf16.count))
             */
-            styleMap?.applyStyles(text: s, string: attrString, styles: line.styles, selColor: textSelectionColor)
+            styleMap?.applyStyles(text: s, string: &attrString, styles: line.styles)
             for c in line.cursor {
                 let cix = utf8_offset_to_utf16(s, c)
                 if (markedRange().location != NSNotFound) {

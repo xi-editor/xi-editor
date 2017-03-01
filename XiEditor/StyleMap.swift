@@ -88,6 +88,7 @@ class StyleMap {
         }
     }
 
+    /// applies a given style to the AttributedString
     private func applyStyle(string: NSMutableAttributedString, id: Int, range: NSRange) {
         if id >= map.count { return }
         guard let style = map[id] else { return }
@@ -108,18 +109,12 @@ class StyleMap {
         }
     }
 
-    // Apply styles to the given string.
-    // The selection color (for which style 0 is reserverd) is passed in, as it might be different for
-    // different windows (while the StyleMap object is shared).
-    func applyStyles(text: String, string: NSMutableAttributedString, styles: [StyleSpan], selColor: NSColor) {
+    /// Given style information, applies the appropriate text attributes to the passed NSAttributedString
+    func applyStyles(text: String, string: inout NSMutableAttributedString, styles: [StyleSpan]) {
         queue.sync {
-            for styleSpan in styles {
-                if styleSpan.style == 0 {
-                    // we handle selection drawing in EditView.drawRect
-                    continue
-                } else {
+            // we handle the 0 style (selection) in EditView.drawRect
+            for styleSpan in styles.filter({ $0.style != 0 }) {
                     applyStyle(string: string, id: styleSpan.style, range: styleSpan.range)
-                }
             }
         }
     }
