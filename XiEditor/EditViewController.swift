@@ -80,12 +80,25 @@ class EditViewController: NSViewController {
     override func insertText(_ insertString: Any) {
         document?.sendRpcAsync("insert", params: insertedStringToJson(insertString as! NSString))
     }
-    
+
+    // we intercept this method to check if we should open a new tab
+    func newDocument(_ sender: NSMenuItem?) {
+        // this tag is a property of the New Tab menu item, set in interface builder
+        if sender?.tag == 10 {
+            Document.preferredTabbingIdentifier = document.tabbingIdentifier
+        } else {
+            Document.preferredTabbingIdentifier = nil
+        }
+        // pass the message to the intended recipient
+        NSDocumentController.shared().newDocument(sender)
+    }
+
     // we override this to see if our view is empty, and should be reused for this open call
      func openDocument(_ sender: Any?) {
         if editView?.lines.isEmpty ?? false {
             (NSApplication.shared().delegate as? AppDelegate)?._documentForNextOpenCall = self.document
         }
+        Document.preferredTabbingIdentifier = nil
         NSDocumentController.shared().openDocument(sender)
     }
     
