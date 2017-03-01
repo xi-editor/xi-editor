@@ -61,6 +61,7 @@ class Document: NSDocument {
     }
     
     override func save(to url: URL, ofType typeName: String, for saveOperation: NSSaveOperationType, completionHandler: @escaping (Error?) -> Void) {
+        self.fileURL = url
         self.save(url.path)
         //TODO: save operations should report success, and we should pass any errors to the completion handler
         completionHandler(nil)
