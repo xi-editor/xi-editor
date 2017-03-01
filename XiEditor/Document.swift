@@ -14,6 +14,10 @@
 
 import Cocoa
 
+struct PendingNotification {
+    let method: String
+    let params: Any
+}
 
 class Document: NSDocument {
 
@@ -28,6 +32,7 @@ class Document: NSDocument {
     var dispatcher: Dispatcher?
     var tabName: String?
     var editView: EditView?
+    var pendingNotifications: [PendingNotification] = [];
     
     var filename: String? {
         didSet {
@@ -54,6 +59,10 @@ class Document: NSDocument {
         Events.NewTab().dispatchWithCallback(dispatcher!) { (tabName) in
             DispatchQueue.main.async {
                 self.tabName = tabName
+                for pending in self.pendingNotifications {
+                    self.sendRpcAsync(pending.method, params: pending.params)
+                }
+                self.pendingNotifications.removeAll()
             }
         }
         let editViewController = windowController.contentViewController as? EditViewController
@@ -110,12 +119,19 @@ class Document: NSDocument {
         sendRpcAsync("save", params: ["filename": filename])
     }
     
-    
+    /// Send a notification specific to the tab. If the tab name hasn't been set, then the
+    /// notification is queued, and sent when the tab name arrives.
     func sendRpcAsync(_ method: String, params: Any) {
-        let inner = ["method": method as AnyObject, "params": params, "tab": tabName! as AnyObject] as [String : Any]
-        dispatcher?.coreConnection.sendRpcAsync("edit", params: inner)
+        if let tabName = tabName {
+            let inner = ["method": method, "params": params, "tab": tabName] as [String : Any]
+            dispatcher?.coreConnection.sendRpcAsync("edit", params: inner)
+        } else {
+            pendingNotifications.append(PendingNotification(method: method, params: params))
+        }
     }
-    
+
+    /// Note: this is a blocking call, and will also fail if the tab name hasn't been set yet.
+    /// We should try to migrate users to either fully async or callback based approaches.
     func sendRpc(_ method: String, params: Any) -> Any? {
         let inner = ["method": method as AnyObject, "params": params, "tab": tabName! as AnyObject] as [String : Any]
         return dispatcher?.coreConnection.sendRpc("edit", params: inner)
