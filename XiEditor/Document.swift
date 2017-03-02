@@ -52,7 +52,7 @@ class Document: NSDocument {
     /// I.e I'm not sure if the system ever modifies the tabbingIdentifier on our windows,
     /// which means these could get out of sync. But: nothing obviously bad happens when I test it.
     /// If this is problem we could use KVO to keep these in sync.
-    let tabbingIdentifier: String
+    var tabbingIdentifier: String
     
 	var pendingNotifications: [PendingNotification] = [];
     var editViewController: EditViewController?
@@ -77,6 +77,7 @@ class Document: NSDocument {
             delegate._documentForNextOpenCall = nil
             // if we're reusing an existing window, we want to noop on the `showWindows()` call we receive from the DocumentController
             _skipShowingWindow = true
+            tabbingIdentifier = existing.tabbingIdentifier
         } else {
             // if we aren't reusing, create a new window as normal:
             let storyboard = NSStoryboard(name: "Main", bundle: nil)
