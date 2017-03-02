@@ -83,10 +83,12 @@ class Document: NSDocument {
             let storyboard = NSStoryboard(name: "Main", bundle: nil)
             windowController = storyboard.instantiateController(withIdentifier: "Document Window Controller") as! NSWindowController
             
-            windowController.window?.tabbingIdentifier = tabbingIdentifier
-            // preferredTabbingIdentifier is set when a new document is created with cmd-T. When this is the case, set the window's tabbingMode.
-            if Document.preferredTabbingIdentifier != nil {
-                windowController.window?.tabbingMode = .preferred
+            if #available(OSX 10.12, *) {
+                windowController.window?.tabbingIdentifier = tabbingIdentifier
+                // preferredTabbingIdentifier is set when a new document is created with cmd-T. When this is the case, set the window's tabbingMode.
+                if Document.preferredTabbingIdentifier != nil {
+                    windowController.window?.tabbingMode = .preferred
+                }
             }
             //FIXME: some saner way of positioning new windows. maybe based on current window size, with some checks to not completely obscure an existing window?
             // also awareness of multiple screens (prefer to open on currently active screen)

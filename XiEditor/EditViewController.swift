@@ -102,6 +102,15 @@ class EditViewController: NSViewController {
         NSDocumentController.shared().openDocument(sender)
     }
     
+    // disable the New Tab menu item when running in 10.12
+    override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.tag == 10 {
+            if #available(OSX 10.12, *) { return true }
+            return false
+        }
+        return true
+    }
+    
     // MARK: - Menu Items
     fileprivate func cutCopy(_ method: String) {
         let text = document?.sendRpc(method, params: [])
