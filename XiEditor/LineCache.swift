@@ -81,7 +81,7 @@ class LineCache {
     /// - Note: An empty line cache will still contain a single empty line, this
     /// is sent as an update from the core after a new document is created.
     var isEmpty: Bool {
-        return lines.count == 1 && lines[0]?.text == ""
+        return lines.count == 0 || (lines.count == 1 && lines[0]?.text  == "")
     }
 
     func get(_ ix: Int) -> Line? {
