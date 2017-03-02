@@ -81,6 +81,14 @@ class EditViewController: NSViewController {
         document?.sendRpcAsync("insert", params: insertedStringToJson(insertString as! NSString))
     }
     
+    // we override this to see if our view is empty, and should be reused for this open call
+     func openDocument(_ sender: Any?) {
+        if editView?.lines.isEmpty ?? false {
+            (NSApplication.shared().delegate as? AppDelegate)?._documentForNextOpenCall = self.document
+        }
+        NSDocumentController.shared().openDocument(sender)
+    }
+    
     // MARK: - Menu Items
     fileprivate func cutCopy(_ method: String) {
         let text = document?.sendRpc(method, params: [])
