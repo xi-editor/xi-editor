@@ -96,7 +96,7 @@ class EditViewController: NSViewController {
     // we override this to see if our view is empty, and should be reused for this open call
      func openDocument(_ sender: Any?) {
         if editView?.lines.isEmpty ?? false {
-            (NSApplication.shared().delegate as? AppDelegate)?._documentForNextOpenCall = self.document
+            Document._documentForNextOpenCall = self.document
         }
         Document.preferredTabbingIdentifier = nil
         NSDocumentController.shared().openDocument(sender)

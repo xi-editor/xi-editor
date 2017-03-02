@@ -21,6 +21,9 @@ struct PendingNotification {
 
 class Document: NSDocument {
     
+    /// used internally to force open to an existing empty document when present.
+    static var _documentForNextOpenCall: Document?
+
     /// used internally to keep track of groups of tabs
     static fileprivate var _nextTabbingIdentifier = 0
 
@@ -71,10 +74,10 @@ class Document: NSDocument {
     override func makeWindowControllers() {
         var windowController: NSWindowController!
         // check to see if we should reuse another document's window
-        if let delegate = (NSApplication.shared().delegate as? AppDelegate), let existing = delegate._documentForNextOpenCall {
+        if let existing = Document._documentForNextOpenCall {
             assert(existing.windowControllers.count == 1, "each document should only and always own a single windowController")
             windowController = existing.windowControllers[0]
-            delegate._documentForNextOpenCall = nil
+            Document._documentForNextOpenCall = nil
             // if we're reusing an existing window, we want to noop on the `showWindows()` call we receive from the DocumentController
             _skipShowingWindow = true
             tabbingIdentifier = existing.tabbingIdentifier
