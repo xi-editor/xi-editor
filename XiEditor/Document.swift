@@ -20,8 +20,25 @@ struct PendingNotification {
 }
 
 class Document: NSDocument {
+    
+    /// used internally to force open to an existing empty document when present.
+    static var _documentForNextOpenCall: Document?
+
+    /// used internally to keep track of groups of tabs
+    static fileprivate var _nextTabbingIdentifier = 0
+
+    /// returns the next available tab group identifer. When we create a new window, if it is not part of an existing tab group it is assigned a new one.
+    static private func nextTabbingIdentifier() -> String {
+        _nextTabbingIdentifier += 1
+        return "tab-group-\(_nextTabbingIdentifier)"
+    }
+
+    /// if set, should be used as the tabbingIdentifier of new documents' windows.
+    static var preferredTabbingIdentifier: String?
 
     var dispatcher: Dispatcher!
+    /// tabName is the name used to identify this document when communicating with the Core.
+    /// - Note: This should not be confused with the tabbingIdentifier, which is a macOS/Cocoa property used to group windows together
     var tabName: String? {
         didSet {
             guard tabName != nil else { return }
@@ -33,6 +50,13 @@ class Document: NSDocument {
         }
     }
     
+    /// Identifier used to group windows together into tabs.
+    /// - Todo: I suspect there is some potential confusion here around dragging tabs into and out of windows? 
+    /// I.e I'm not sure if the system ever modifies the tabbingIdentifier on our windows,
+    /// which means these could get out of sync. But: nothing obviously bad happens when I test it.
+    /// If this is problem we could use KVO to keep these in sync.
+    var tabbingIdentifier: String
+    
 	var pendingNotifications: [PendingNotification] = [];
     var editViewController: EditViewController?
 
@@ -41,6 +65,7 @@ class Document: NSDocument {
 
     override init() {
         dispatcher = (NSApplication.shared().delegate as? AppDelegate)?.dispatcher
+        tabbingIdentifier = Document.preferredTabbingIdentifier ?? Document.nextTabbingIdentifier()
         super.init()
         // I'm not 100% sure this is necessary but it can't _hurt_
         self.hasUndoManager = false
@@ -49,17 +74,25 @@ class Document: NSDocument {
     override func makeWindowControllers() {
         var windowController: NSWindowController!
         // check to see if we should reuse another document's window
-        if let delegate = (NSApplication.shared().delegate as? AppDelegate), let existing = delegate._documentForNextOpenCall {
+        if let existing = Document._documentForNextOpenCall {
             assert(existing.windowControllers.count == 1, "each document should only and always own a single windowController")
             windowController = existing.windowControllers[0]
-            delegate._documentForNextOpenCall = nil
+            Document._documentForNextOpenCall = nil
             // if we're reusing an existing window, we want to noop on the `showWindows()` call we receive from the DocumentController
             _skipShowingWindow = true
+            tabbingIdentifier = existing.tabbingIdentifier
         } else {
             // if we aren't reusing, create a new window as normal:
             let storyboard = NSStoryboard(name: "Main", bundle: nil)
             windowController = storyboard.instantiateController(withIdentifier: "Document Window Controller") as! NSWindowController
             
+            if #available(OSX 10.12, *) {
+                windowController.window?.tabbingIdentifier = tabbingIdentifier
+                // preferredTabbingIdentifier is set when a new document is created with cmd-T. When this is the case, set the window's tabbingMode.
+                if Document.preferredTabbingIdentifier != nil {
+                    windowController.window?.tabbingMode = .preferred
+                }
+            }
             //FIXME: some saner way of positioning new windows. maybe based on current window size, with some checks to not completely obscure an existing window?
             // also awareness of multiple screens (prefer to open on currently active screen)
             let screenHeight = windowController.window?.screen?.frame.height ?? 800

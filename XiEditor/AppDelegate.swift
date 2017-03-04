@@ -20,8 +20,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var dispatcher: Dispatcher?
     var styleMap: StyleMap = StyleMap()
 
-    /// used internally to force open to an existing empty document when present.
-    var _documentForNextOpenCall: Document?
 
     func applicationWillFinishLaunching(_ aNotification: Notification) {
 

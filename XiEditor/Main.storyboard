@@ -145,6 +145,11 @@
                                                 <action selector="newDocument:" target="7er-QZ-amI" id="RMh-4o-lEC"/>
                                             </connections>
                                         </menuItem>
+                                        <menuItem title="New Tab" tag="10" keyEquivalent="t" id="HV3-As-Wbz">
+                                            <connections>
+                                                <action selector="newDocument:" target="7er-QZ-amI" id="ixJ-HB-WnB"/>
+                                            </connections>
+                                        </menuItem>
                                         <menuItem title="Open…" keyEquivalent="o" id="Fky-0f-86X">
                                             <connections>
                                                 <action selector="openDocument:" target="7er-QZ-amI" id="43H-U3-Lye"/>
@@ -427,7 +432,7 @@
                                             <modifierMask key="keyEquivalentModifierMask"/>
                                             <menu key="submenu" title="Font" systemMenu="font" id="ygG-vO-u6v">
                                                 <items>
-                                                    <menuItem title="Show Fonts" keyEquivalent="t" id="oo6-pl-F7X">
+                                                    <menuItem title="Show Fonts" keyEquivalent="T" id="oo6-pl-F7X">
                                                         <connections>
                                                             <action selector="orderFrontFontPanel:" target="7er-QZ-amI" id="RuE-Je-Tbe"/>
                                                         </connections>
