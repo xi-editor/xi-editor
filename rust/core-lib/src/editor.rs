@@ -660,7 +660,7 @@ impl<W: Write + Send + 'static> Editor<W> {
     fn do_undo(&mut self, self_ref: &Arc<Mutex<Editor<W>>>) {
         if self.cur_undo > 0 {
             self.cur_undo -= 1;
-            debug_assert!(self.undos.insert(self.live_undos[self.cur_undo]));
+            assert!(self.undos.insert(self.live_undos[self.cur_undo]));
             self.this_edit_type = EditType::Undo;
             self.update_undos(self_ref);
         }
@@ -668,7 +668,7 @@ impl<W: Write + Send + 'static> Editor<W> {
 
     fn do_redo(&mut self, self_ref: &Arc<Mutex<Editor<W>>>) {
         if self.cur_undo < self.live_undos.len() {
-            debug_assert!(self.undos.remove(&self.live_undos[self.cur_undo]));
+            assert!(self.undos.remove(&self.live_undos[self.cur_undo]));
             self.cur_undo += 1;
             self.this_edit_type = EditType::Redo;
             self.update_undos(self_ref);
