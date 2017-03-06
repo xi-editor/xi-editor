@@ -14,6 +14,49 @@
 
 import Cocoa
 
+extension NSFont {
+    /// If the font is monospace, returns the width of a character, else returns 0.
+    func characterWidth() -> CGFloat {
+        if self.isFixedPitch {
+            let characters = [UniChar(0x20)]
+            var glyphs = [CGGlyph(0)]
+            if CTFontGetGlyphsForCharacters(self, characters, &glyphs, 1) {
+                let advance = CTFontGetAdvancesForGlyphs(self, .horizontal, glyphs, nil, 1)
+                return CGFloat(advance)
+            }
+        }
+        return 0
+    }
+}
+
+/// A store of properties used to determine the layout of text.
+struct TextDrawingMetrics {
+    var attributes: [String: AnyObject] = [:]
+    var ascent: CGFloat
+    var descent: CGFloat
+    var leading: CGFloat
+    var baseline: CGFloat
+    var linespace: CGFloat
+    var fontWidth: CGFloat
+    
+    init(font: NSFont) {
+        ascent = CTFontGetAscent(font)
+        descent = CTFontGetDescent(font)
+        leading = CTFontGetLeading(font)
+        linespace = ceil(ascent + descent + leading)
+        baseline = ceil(ascent)
+        fontWidth = font.characterWidth()
+        attributes[String(kCTFontAttributeName)] = font
+    }
+    
+    /// Passed an NSFontManager instance (as on a user-initiated font change) computes the next set of drawing metrics.
+    func newMetricsForFontChange(fontManager: NSFontManager) -> TextDrawingMetrics {
+        let oldFont = attributes[String(kCTFontAttributeName)] as! CTFont
+        let newFont = fontManager.convert(oldFont)
+        return TextDrawingMetrics(font: newFont)
+    }
+}
+
 func eventToJson(_ event: NSEvent) -> Any {
     let flags = event.modifierFlags.rawValue >> 16;
     return ["keycode": Int(event.keyCode),
@@ -23,19 +66,6 @@ func eventToJson(_ event: NSEvent) -> Any {
 
 func insertedStringToJson(_ stringToInsert: NSString) -> Any {
     return ["chars": stringToInsert]
-}
-
-// compute the width if monospaced, 0 otherwise
-func getFontWidth(_ font: CTFont) -> CGFloat {
-    if (font as NSFont).isFixedPitch {
-        let characters = [UniChar(0x20)]
-        var glyphs = [CGGlyph(0)]
-        if CTFontGetGlyphsForCharacters(font, characters, &glyphs, 1) {
-            let advance = CTFontGetAdvancesForGlyphs(font, .horizontal, glyphs, nil, 1)
-            return CGFloat(advance)
-        }
-    }
-    return 0
 }
 
 func colorFromArgb(_ argb: UInt32) -> NSColor {
@@ -69,14 +99,7 @@ class EditView: NSView, NSTextInputClient {
     var lines: LineCache
 
     @IBOutlet var heightConstraint: NSLayoutConstraint?
-
-    var attributes: [String: AnyObject]
-    var ascent: CGFloat
-    var descent: CGFloat
-    var leading: CGFloat
-    var baseline: CGFloat
-    var linespace: CGFloat
-    var fontWidth: CGFloat
+    var textMetrics: TextDrawingMetrics
 
     var textSelectionColor: NSColor {
         if self.isFrontmostView {
@@ -128,13 +151,7 @@ class EditView: NSView, NSTextInputClient {
     
     required init?(coder: NSCoder) {
         let font = CTFontCreateWithName("InconsolataGo" as CFString?, 14, nil)
-        ascent = CTFontGetAscent(font)
-        descent = CTFontGetDescent(font)
-        leading = CTFontGetLeading(font)
-        linespace = ceil(ascent + descent + leading)
-        baseline = ceil(ascent)
-        attributes = [String(kCTFontAttributeName): font]
-        fontWidth = getFontWidth(font)
+        textMetrics = TextDrawingMetrics(font: font)
         _selectedRange = NSMakeRange(NSNotFound, 0)
         _markedRange = NSMakeRange(NSNotFound, 0)
         lines = LineCache()
@@ -144,16 +161,13 @@ class EditView: NSView, NSTextInputClient {
 
     // this gets called when the user changes the font with the font book, for example
     override func changeFont(_ sender: Any?) {
-        let oldFont = attributes[String(kCTFontAttributeName)] as! CTFont
-        let font = (sender as! NSFontManager).convert(oldFont)
-        ascent = CTFontGetAscent(font)
-        descent = CTFontGetDescent(font)
-        leading = CTFontGetLeading(font)
-        linespace = ceil(ascent + descent + leading)
-        baseline = ceil(ascent)
-        attributes[String(kCTFontAttributeName)] = font
-        fontWidth = getFontWidth(font)
+        if let manager = sender as? NSFontManager {
+        textMetrics = textMetrics.newMetricsForFontChange(fontManager: manager)
         needsDisplay = true
+        } else {
+            Swift.print("changeFont: called with nil")
+            return
+        }
     }
 
     let x0: CGFloat = 2;
@@ -175,8 +189,8 @@ class EditView: NSView, NSTextInputClient {
         */
 
         let context = NSGraphicsContext.current()!.cgContext
-        let first = Int(floor(dirtyRect.origin.y / linespace))
-        let last = Int(ceil((dirtyRect.origin.y + dirtyRect.size.height) / linespace))
+        let first = Int(floor(dirtyRect.origin.y / textMetrics.linespace))
+        let last = Int(ceil((dirtyRect.origin.y + dirtyRect.size.height) / textMetrics.linespace))
 
         let missing = lines.computeMissing(first, last)
         for (f, l) in missing {
@@ -188,14 +202,14 @@ class EditView: NSView, NSTextInputClient {
         for lineIx in first..<last {
             guard let line = getLine(lineIx), line.containsSelection == true else { continue }
             let selections = line.styles.filter { $0.style == 0 }
-            let attrString = NSMutableAttributedString(string: line.text, attributes: self.attributes)
+            let attrString = NSMutableAttributedString(string: line.text, attributes: textMetrics.attributes)
             let ctline = CTLineCreateWithAttributedString(attrString)
-            let y = linespace * CGFloat(lineIx + 1)
+            let y = textMetrics.linespace * CGFloat(lineIx + 1)
             context.setFillColor(textSelectionColor.cgColor)
             for selection in selections {
                 let selStart = CTLineGetOffsetForStringIndex(ctline, selection.range.location, nil)
                 let selEnd = CTLineGetOffsetForStringIndex(ctline, selection.range.location + selection.range.length, nil)
-                context.fill(CGRect.init(x: x0 + selStart, y: y - ascent, width: selEnd - selStart + x0, height: linespace))
+                context.fill(CGRect.init(x: x0 + selStart, y: y - textMetrics.ascent, width: selEnd - selStart + x0, height: textMetrics.linespace))
             }
             
         }
@@ -204,7 +218,7 @@ class EditView: NSView, NSTextInputClient {
             // TODO: could block for ~1ms waiting for missing lines to arrive
             guard let line = getLine(lineIx) else { continue }
             let s = line.text
-            var attrString = NSMutableAttributedString(string: s, attributes: self.attributes)
+            var attrString = NSMutableAttributedString(string: s, attributes: textMetrics.attributes)
             /*
             let randcolor = NSColor(colorLiteralRed: Float(drand48()), green: Float(drand48()), blue: Float(drand48()), alpha: 1.0)
             attrString.addAttribute(NSForegroundColorAttributeName, value: randcolor, range: NSMakeRange(0, s.utf16.count))
@@ -234,7 +248,7 @@ class EditView: NSView, NSTextInputClient {
             // probably want to move to using CTLineDraw instead of drawing the attributed string,
             // but that means drawing the selection highlight ourselves (which has other benefits).
             //attrString.drawAtPoint(NSPoint(x: x0, y: y - 13))
-            let y = linespace * CGFloat(lineIx + 1);
+            let y = textMetrics.linespace * CGFloat(lineIx + 1);
             attrString.draw(with: NSRect(x: x0, y: y, width: dirtyRect.origin.x + dirtyRect.width - x0, height: 14), options: [])
             if showBlinkingCursor {
                 for cursor in line.cursor {
@@ -250,8 +264,8 @@ class EditView: NSView, NSTextInputClient {
                         pos = CTLineGetOffsetForStringIndex(ctline, CFIndex(utf16_ix), nil)
                     }
                     context.setStrokeColor(cursorColor)
-                    context.move(to: CGPoint(x: x0 + pos, y: y + descent))
-                    context.addLine(to: CGPoint(x: x0 + pos, y: y - ascent))
+                    context.move(to: CGPoint(x: x0 + pos, y: y + textMetrics.descent))
+                    context.addLine(to: CGPoint(x: x0 + pos, y: y - textMetrics.ascent))
                     context.strokePath()
                 }
             }
@@ -272,16 +286,16 @@ class EditView: NSView, NSTextInputClient {
     /// apply the given updates to the view.
     public func update(update: [String: AnyObject]) {
         lines.applyUpdate(update: update)
-        self.heightConstraint?.constant = CGFloat(lines.height) * self.linespace + 2 * self.descent
+        self.heightConstraint?.constant = CGFloat(lines.height) * textMetrics.linespace + 2 * textMetrics.descent
         self.showBlinkingCursor = self.isFrontmostView
         self.needsDisplay = true
     }
 
     /// scrolls the editview to display the given line and column
     public func scrollTo(_ line: Int, _ col: Int) {
-        let x = CGFloat(col) * fontWidth  // TODO: deal with non-ASCII, non-monospaced case
-        let y = CGFloat(line) * linespace + baseline
-        let scrollRect = NSRect(x: x, y: y - baseline, width: 4, height: linespace + descent)
+        let x = CGFloat(col) * textMetrics.fontWidth  // TODO: deal with non-ASCII, non-monospaced case
+        let y = CGFloat(line) * textMetrics.linespace + textMetrics.baseline
+        let scrollRect = NSRect(x: x, y: y - textMetrics.baseline, width: 4, height: textMetrics.linespace + textMetrics.descent)
         self.scrollToVisible(scrollRect)
     }
 
@@ -390,12 +404,12 @@ class EditView: NSView, NSTextInputClient {
             let (lineIx, pos) = self.cursorPos,
             let line = getLine(lineIx) {
             let str = line.text
-            let ctLine = CTLineCreateWithAttributedString(NSMutableAttributedString(string: str, attributes: self.attributes))
+            let ctLine = CTLineCreateWithAttributedString(NSMutableAttributedString(string: str, attributes: textMetrics.attributes))
             let rangeWidth = CTLineGetOffsetForStringIndex(ctLine, pos, nil) - CTLineGetOffsetForStringIndex(ctLine, pos - aRange.length, nil)
             return NSRect(x: viewWinFrame.origin.x + CTLineGetOffsetForStringIndex(ctLine, pos, nil),
-                          y: viewWinFrame.origin.y + viewWinFrame.size.height - linespace * CGFloat(lineIx + 1) - 5,
+                          y: viewWinFrame.origin.y + viewWinFrame.size.height - textMetrics.linespace * CGFloat(lineIx + 1) - 5,
                           width: rangeWidth,
-                          height: linespace)
+                          height: textMetrics.linespace)
         } else {
             return NSRect(x: 0, y: 0, width: 0, height: 0)
         }
@@ -460,11 +474,11 @@ class EditView: NSView, NSTextInputClient {
 
     // TODO: more functions should call this, just dividing by linespace doesn't account for descent
     func yToLine(_ y: CGFloat) -> Int {
-        return Int(floor(max(y - descent, 0) / linespace))
+        return Int(floor(max(y - textMetrics.descent, 0) / textMetrics.linespace))
     }
 
     func lineIxToBaseline(_ lineIx: Int) -> CGFloat {
-        return CGFloat(lineIx + 1) * linespace
+        return CGFloat(lineIx + 1) * textMetrics.linespace
     }
 
     func pointToLineCol(_ loc: NSPoint) -> (Int, Int) {
@@ -472,7 +486,7 @@ class EditView: NSView, NSTextInputClient {
         var col = 0
         if let line = getLine(lineIx) {
             let s = line.text
-            let attrString = NSAttributedString(string: s, attributes: self.attributes)
+            let attrString = NSAttributedString(string: s, attributes: textMetrics.attributes)
             let ctline = CTLineCreateWithAttributedString(attrString)
             let relPos = NSPoint(x: loc.x - x0, y: lineIxToBaseline(lineIx) - loc.y)
             let utf16_ix = CTLineGetStringIndexForPosition(ctline, relPos)

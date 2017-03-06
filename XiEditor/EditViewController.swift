@@ -51,8 +51,8 @@ class EditViewController: NSViewController {
 
     
     fileprivate func updateEditViewScroll() {
-        let first = Int(floor(scrollView.contentView.bounds.origin.y / editView.linespace))
-        let height = Int(ceil((scrollView.contentView.bounds.size.height) / editView.linespace))
+        let first = Int(floor(scrollView.contentView.bounds.origin.y / editView.textMetrics.linespace))
+        let height = Int(ceil((scrollView.contentView.bounds.size.height) / editView.textMetrics.linespace))
         let last = first + height
         if first != firstLine || last != lastLine {
             firstLine = first
