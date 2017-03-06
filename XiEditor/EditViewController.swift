@@ -14,7 +14,15 @@
 
 import Cocoa
 
-class EditViewController: NSViewController {
+/// The EditViewDataSource protocol describes the properties that an editView uses to determine how to render its contents.
+protocol EditViewDataSource {
+    var lines: LineCache { get }
+    var styleMap: StyleMap { get }
+    var textMetrics: TextDrawingMetrics { get }
+}
+
+
+class EditViewController: NSViewController, EditViewDataSource {
 
     @IBOutlet var editView: EditView!
     @IBOutlet var shadowView: ShadowView!
@@ -26,13 +34,22 @@ class EditViewController: NSViewController {
             editView.document = document
         }
     }
+    
+    var lines: LineCache = LineCache()
+    var styleMap: StyleMap {
+        return (NSApplication.shared().delegate as! AppDelegate).styleMap
+    }
 
+    //TODO: preferred font should be a user preference
+    var textMetrics = TextDrawingMetrics(font: CTFontCreateWithName("InconsolataGo" as CFString?, 14, nil))
+    
     // visible scroll region, exclusive of lastLine
     var firstLine: Int = 0
     var lastLine: Int = 0
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        editView.dataSource = self
         self.shadowView.mouseUpHandler = editView.mouseUp(with:)
         self.shadowView.mouseDraggedHandler = editView.mouseDragged(with:)
         scrollView.contentView.documentCursor = NSCursor.iBeam();
@@ -40,6 +57,18 @@ class EditViewController: NSViewController {
         NotificationCenter.default.addObserver(self, selector: #selector(EditViewController.boundsDidChangeNotification(_:)), name: NSNotification.Name.NSViewBoundsDidChange, object: scrollView.contentView)
         NotificationCenter.default.addObserver(self, selector: #selector(EditViewController.frameDidChangeNotification(_:)), name: NSNotification.Name.NSViewFrameDidChange, object: scrollView)
     }
+
+    // this gets called when the user changes the font with the font book, for example
+    override func changeFont(_ sender: Any?) {
+        if let manager = sender as? NSFontManager {
+            textMetrics = textMetrics.newMetricsForFontChange(fontManager: manager)
+            self.editView.needsDisplay = true
+        } else {
+            Swift.print("changeFont: called with nil")
+            return
+        }
+    }
+
     
     func boundsDidChangeNotification(_ notification: Notification) {
         updateEditViewScroll()
@@ -49,10 +78,9 @@ class EditViewController: NSViewController {
         updateEditViewScroll()
     }
 
-    
     fileprivate func updateEditViewScroll() {
-        let first = Int(floor(scrollView.contentView.bounds.origin.y / editView.textMetrics.linespace))
-        let height = Int(ceil((scrollView.contentView.bounds.size.height) / editView.textMetrics.linespace))
+        let first = Int(floor(scrollView.contentView.bounds.origin.y / textMetrics.linespace))
+        let height = Int(ceil((scrollView.contentView.bounds.size.height) / textMetrics.linespace))
         let last = first + height
         if first != firstLine || last != lastLine {
             firstLine = first
@@ -95,7 +123,7 @@ class EditViewController: NSViewController {
 
     // we override this to see if our view is empty, and should be reused for this open call
      func openDocument(_ sender: Any?) {
-        if editView?.lines.isEmpty ?? false {
+        if self.lines.isEmpty {
             Document._documentForNextOpenCall = self.document
         }
         Document.preferredTabbingIdentifier = nil

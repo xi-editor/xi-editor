@@ -94,12 +94,9 @@ func camelCaseToUnderscored(_ name: NSString) -> NSString {
 
 class EditView: NSView, NSTextInputClient {
     var document: Document!
-
-    var styleMap: StyleMap?
-    var lines: LineCache
+    var dataSource: EditViewDataSource!
 
     @IBOutlet var heightConstraint: NSLayoutConstraint?
-    var textMetrics: TextDrawingMetrics
 
     var textSelectionColor: NSColor {
         if self.isFrontmostView {
@@ -150,24 +147,10 @@ class EditView: NSView, NSTextInputClient {
     }
     
     required init?(coder: NSCoder) {
-        let font = CTFontCreateWithName("InconsolataGo" as CFString?, 14, nil)
-        textMetrics = TextDrawingMetrics(font: font)
+        
         _selectedRange = NSMakeRange(NSNotFound, 0)
         _markedRange = NSMakeRange(NSNotFound, 0)
-        lines = LineCache()
-        styleMap = (NSApplication.shared().delegate as? AppDelegate)?.styleMap
         super.init(coder: coder)
-    }
-
-    // this gets called when the user changes the font with the font book, for example
-    override func changeFont(_ sender: Any?) {
-        if let manager = sender as? NSFontManager {
-        textMetrics = textMetrics.newMetricsForFontChange(fontManager: manager)
-        needsDisplay = true
-        } else {
-            Swift.print("changeFont: called with nil")
-            return
-        }
     }
 
     let x0: CGFloat = 2;
@@ -189,10 +172,10 @@ class EditView: NSView, NSTextInputClient {
         */
 
         let context = NSGraphicsContext.current()!.cgContext
-        let first = Int(floor(dirtyRect.origin.y / textMetrics.linespace))
-        let last = Int(ceil((dirtyRect.origin.y + dirtyRect.size.height) / textMetrics.linespace))
+        let first = Int(floor(dirtyRect.origin.y / dataSource.textMetrics.linespace))
+        let last = Int(ceil((dirtyRect.origin.y + dirtyRect.size.height) / dataSource.textMetrics.linespace))
 
-        let missing = lines.computeMissing(first, last)
+        let missing = dataSource.lines.computeMissing(first, last)
         for (f, l) in missing {
             Swift.print("requesting missing: \(f)..\(l)")
             document?.sendRpcAsync("request_lines", params: [f, l])
@@ -202,14 +185,14 @@ class EditView: NSView, NSTextInputClient {
         for lineIx in first..<last {
             guard let line = getLine(lineIx), line.containsSelection == true else { continue }
             let selections = line.styles.filter { $0.style == 0 }
-            let attrString = NSMutableAttributedString(string: line.text, attributes: textMetrics.attributes)
+            let attrString = NSMutableAttributedString(string: line.text, attributes: dataSource.textMetrics.attributes)
             let ctline = CTLineCreateWithAttributedString(attrString)
-            let y = textMetrics.linespace * CGFloat(lineIx + 1)
+            let y = dataSource.textMetrics.linespace * CGFloat(lineIx + 1)
             context.setFillColor(textSelectionColor.cgColor)
             for selection in selections {
                 let selStart = CTLineGetOffsetForStringIndex(ctline, selection.range.location, nil)
                 let selEnd = CTLineGetOffsetForStringIndex(ctline, selection.range.location + selection.range.length, nil)
-                context.fill(CGRect.init(x: x0 + selStart, y: y - textMetrics.ascent, width: selEnd - selStart + x0, height: textMetrics.linespace))
+                context.fill(CGRect.init(x: x0 + selStart, y: y - dataSource.textMetrics.ascent, width: selEnd - selStart + x0, height: dataSource.textMetrics.linespace))
             }
             
         }
@@ -218,12 +201,12 @@ class EditView: NSView, NSTextInputClient {
             // TODO: could block for ~1ms waiting for missing lines to arrive
             guard let line = getLine(lineIx) else { continue }
             let s = line.text
-            var attrString = NSMutableAttributedString(string: s, attributes: textMetrics.attributes)
+            var attrString = NSMutableAttributedString(string: s, attributes: dataSource.textMetrics.attributes)
             /*
             let randcolor = NSColor(colorLiteralRed: Float(drand48()), green: Float(drand48()), blue: Float(drand48()), alpha: 1.0)
             attrString.addAttribute(NSForegroundColorAttributeName, value: randcolor, range: NSMakeRange(0, s.utf16.count))
             */
-            styleMap?.applyStyles(text: s, string: &attrString, styles: line.styles)
+            dataSource.styleMap.applyStyles(text: s, string: &attrString, styles: line.styles)
             for c in line.cursor {
                 let cix = utf8_offset_to_utf16(s, c)
                 if (markedRange().location != NSNotFound) {
@@ -248,7 +231,7 @@ class EditView: NSView, NSTextInputClient {
             // probably want to move to using CTLineDraw instead of drawing the attributed string,
             // but that means drawing the selection highlight ourselves (which has other benefits).
             //attrString.drawAtPoint(NSPoint(x: x0, y: y - 13))
-            let y = textMetrics.linespace * CGFloat(lineIx + 1);
+            let y = dataSource.textMetrics.linespace * CGFloat(lineIx + 1);
             attrString.draw(with: NSRect(x: x0, y: y, width: dirtyRect.origin.x + dirtyRect.width - x0, height: 14), options: [])
             if showBlinkingCursor {
                 for cursor in line.cursor {
@@ -264,8 +247,8 @@ class EditView: NSView, NSTextInputClient {
                         pos = CTLineGetOffsetForStringIndex(ctline, CFIndex(utf16_ix), nil)
                     }
                     context.setStrokeColor(cursorColor)
-                    context.move(to: CGPoint(x: x0 + pos, y: y + textMetrics.descent))
-                    context.addLine(to: CGPoint(x: x0 + pos, y: y - textMetrics.ascent))
+                    context.move(to: CGPoint(x: x0 + pos, y: y + dataSource.textMetrics.descent))
+                    context.addLine(to: CGPoint(x: x0 + pos, y: y - dataSource.textMetrics.ascent))
                     context.strokePath()
                 }
             }
@@ -285,17 +268,17 @@ class EditView: NSView, NSTextInputClient {
     
     /// apply the given updates to the view.
     public func update(update: [String: AnyObject]) {
-        lines.applyUpdate(update: update)
-        self.heightConstraint?.constant = CGFloat(lines.height) * textMetrics.linespace + 2 * textMetrics.descent
+        dataSource.lines.applyUpdate(update: update)
+        self.heightConstraint?.constant = CGFloat(dataSource.lines.height) * dataSource.textMetrics.linespace + 2 * dataSource.textMetrics.descent
         self.showBlinkingCursor = self.isFrontmostView
         self.needsDisplay = true
     }
 
     /// scrolls the editview to display the given line and column
     public func scrollTo(_ line: Int, _ col: Int) {
-        let x = CGFloat(col) * textMetrics.fontWidth  // TODO: deal with non-ASCII, non-monospaced case
-        let y = CGFloat(line) * textMetrics.linespace + textMetrics.baseline
-        let scrollRect = NSRect(x: x, y: y - textMetrics.baseline, width: 4, height: textMetrics.linespace + textMetrics.descent)
+        let x = CGFloat(col) * dataSource.textMetrics.fontWidth  // TODO: deal with non-ASCII, non-monospaced case
+        let y = CGFloat(line) * dataSource.textMetrics.linespace + dataSource.textMetrics.baseline
+        let scrollRect = NSRect(x: x, y: y - dataSource.textMetrics.baseline, width: 4, height: dataSource.textMetrics.linespace + dataSource.textMetrics.descent)
         self.scrollToVisible(scrollRect)
     }
 
@@ -404,12 +387,12 @@ class EditView: NSView, NSTextInputClient {
             let (lineIx, pos) = self.cursorPos,
             let line = getLine(lineIx) {
             let str = line.text
-            let ctLine = CTLineCreateWithAttributedString(NSMutableAttributedString(string: str, attributes: textMetrics.attributes))
+            let ctLine = CTLineCreateWithAttributedString(NSMutableAttributedString(string: str, attributes: dataSource.textMetrics.attributes))
             let rangeWidth = CTLineGetOffsetForStringIndex(ctLine, pos, nil) - CTLineGetOffsetForStringIndex(ctLine, pos - aRange.length, nil)
             return NSRect(x: viewWinFrame.origin.x + CTLineGetOffsetForStringIndex(ctLine, pos, nil),
-                          y: viewWinFrame.origin.y + viewWinFrame.size.height - textMetrics.linespace * CGFloat(lineIx + 1) - 5,
+                          y: viewWinFrame.origin.y + viewWinFrame.size.height - dataSource.textMetrics.linespace * CGFloat(lineIx + 1) - 5,
                           width: rangeWidth,
-                          height: textMetrics.linespace)
+                          height: dataSource.textMetrics.linespace)
         } else {
             return NSRect(x: 0, y: 0, width: 0, height: 0)
         }
@@ -474,11 +457,11 @@ class EditView: NSView, NSTextInputClient {
 
     // TODO: more functions should call this, just dividing by linespace doesn't account for descent
     func yToLine(_ y: CGFloat) -> Int {
-        return Int(floor(max(y - textMetrics.descent, 0) / textMetrics.linespace))
+        return Int(floor(max(y - dataSource.textMetrics.descent, 0) / dataSource.textMetrics.linespace))
     }
 
     func lineIxToBaseline(_ lineIx: Int) -> CGFloat {
-        return CGFloat(lineIx + 1) * textMetrics.linespace
+        return CGFloat(lineIx + 1) * dataSource.textMetrics.linespace
     }
 
     func pointToLineCol(_ loc: NSPoint) -> (Int, Int) {
@@ -486,7 +469,7 @@ class EditView: NSView, NSTextInputClient {
         var col = 0
         if let line = getLine(lineIx) {
             let s = line.text
-            let attrString = NSAttributedString(string: s, attributes: textMetrics.attributes)
+            let attrString = NSAttributedString(string: s, attributes: dataSource.textMetrics.attributes)
             let ctline = CTLineCreateWithAttributedString(attrString)
             let relPos = NSPoint(x: loc.x - x0, y: lineIxToBaseline(lineIx) - loc.y)
             let utf16_ix = CTLineGetStringIndexForPosition(ctline, relPos)
@@ -507,6 +490,6 @@ class EditView: NSView, NSTextInputClient {
     }
 
     func getLine(_ lineNum: Int) -> Line? {
-        return lines.get(lineNum)
+        return dataSource.lines.get(lineNum)
     }
 }
