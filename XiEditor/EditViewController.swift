@@ -91,8 +91,12 @@ class EditViewController: NSViewController, EditViewDataSource {
     }
     
     // MARK: - Core Commands
-    func update(_ content: [String: AnyObject]) {
-        editView.update(update: content)
+    /// applies a set of line changes and redraws the view
+    func update(_ updates: [String: AnyObject]) {
+        lines.applyUpdate(update: updates)
+        editView.heightConstraint?.constant = CGFloat(lines.height) * textMetrics.linespace + 2 * textMetrics.descent
+        editView.showBlinkingCursor = editView.isFrontmostView
+        editView.needsDisplay = true
     }
 
     func scrollTo(_ line: Int, _ col: Int) {
