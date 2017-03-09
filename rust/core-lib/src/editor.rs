@@ -27,6 +27,7 @@ use xi_rope::tree::Cursor;
 use xi_rope::engine::Engine;
 use xi_rope::spans::SpansBuilder;
 use view::{Style, View};
+use word_boundaries::WordCursor;
 
 use tabs::TabCtx;
 use rpc::EditCommand;
@@ -379,6 +380,18 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
     }
 
+    fn move_word_left(&mut self, flags: u64) {
+        if (flags & FLAG_SELECT) != 0 {
+            self.modify_selection();
+        }
+        if let Some(offset) = {
+            let mut word_cursor = WordCursor::new(&self.text, self.view.sel_end);
+            word_cursor.prev_boundary()
+        } {
+            self.set_cursor(offset, true);
+        }
+    }
+
     fn move_to_left_end_of_line(&mut self, flags: u64) {
         if (flags & FLAG_SELECT) != 0 {
             self.modify_selection();
@@ -411,6 +424,18 @@ impl<W: Write + Send + 'static> Editor<W> {
         } else {
             self.col = self.view.offset_to_line_col(&self.text, self.view.sel_end).1;
             // see above
+        }
+    }
+
+    fn move_word_right(&mut self, flags: u64) {
+        if (flags & FLAG_SELECT) != 0 {
+            self.modify_selection();
+        }
+        if let Some(offset) = {
+            let mut word_cursor = WordCursor::new(&self.text, self.view.sel_end);
+            word_cursor.next_boundary()
+        } {
+            self.set_cursor(offset, true);
         }
     }
 
@@ -594,10 +619,26 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.view.send_update(&self.text, &self.tab_ctx, first as usize, last as usize);
     }
 
-    fn do_click(&mut self, line: u64, col: u64, flags: u64, _click_count: u64) {
+    fn do_click(&mut self, line: u64, col: u64, flags: u64, click_count: u64) {
         let offset = self.view.line_col_to_offset(&self.text, line as usize, col as usize);
         if (flags & FLAG_SELECT) != 0 {
             self.modify_selection();
+        } else if click_count == 2 {
+            let (start, end) = {
+                let mut word_cursor = WordCursor::new(&self.text, offset);
+                word_cursor.select_word()
+            };
+            self.view.sel_start = start;
+            self.modify_selection();
+            self.set_cursor(end, false);
+            return;
+        } else if click_count == 3 {
+            let start = self.view.line_col_to_offset(&self.text, line as usize, 0);
+            let end = self.view.line_col_to_offset(&self.text, line as usize + 1, 0);
+            self.view.sel_start = start;
+            self.modify_selection();
+            self.set_cursor(end, false);
+            return;
         }
         self.set_cursor(offset, true);
     }
@@ -751,6 +792,10 @@ impl<W: Write + Send + 'static> Editor<W> {
             MoveLeftAndModifySelection => async(self.move_left(FLAG_SELECT)),
             MoveRight => async(self.move_right(0)),
             MoveRightAndModifySelection => async(self.move_right(FLAG_SELECT)),
+            MoveWordLeft => async(self.move_word_left(0)),
+            MoveWordLeftAndModifySelection => async(self.move_word_left(FLAG_SELECT)),
+            MoveWordRight => async(self.move_word_right(0)),
+            MoveWordRightAndModifySelection => async(self.move_word_right(FLAG_SELECT)),
             MoveToBeginningOfParagraph => async(self.cursor_start()),
             MoveToEndOfParagraph => async(self.cursor_end()),
             MoveToLeftEndOfLine => async(self.move_to_left_end_of_line(0)),

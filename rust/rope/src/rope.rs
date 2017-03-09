@@ -418,6 +418,17 @@ impl<'a> From<&'a Rope> for String {
 // additional cursor features
 
 impl<'a> Cursor<'a, RopeInfo> {
+    /// Get previous codepoint before cursor position, and advance cursor backwards.
+    pub fn prev_codepoint(&mut self) -> Option<char> {
+        self.prev::<BaseMetric>();
+        if let Some((l, offset)) = self.get_leaf() {
+            l[offset..].chars().next()
+        } else {
+            None
+        }
+    }
+
+    /// Get next codepoint after cursor position, and advance cursor.
     pub fn next_codepoint(&mut self) -> Option<char> {
         if let Some((l, offset)) = self.get_leaf() {
             self.next::<BaseMetric>();

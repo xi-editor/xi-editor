@@ -54,7 +54,7 @@ class EditViewController: NSViewController {
         let first = Int(floor(scrollView.contentView.bounds.origin.y / editView.linespace))
         let height = Int(ceil((scrollView.contentView.bounds.size.height) / editView.linespace))
         let last = first + height
-        if first != firstLine || last != lastLine {
+        if first != firstLine || last != lastLine && document != nil {
             firstLine = first
             lastLine = last
             document?.sendRpcAsync("scroll", params: [firstLine, lastLine])

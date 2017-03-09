@@ -195,7 +195,7 @@ class EditView: NSView, NSTextInputClient {
             for selection in selections {
                 let selStart = CTLineGetOffsetForStringIndex(ctline, selection.range.location, nil)
                 let selEnd = CTLineGetOffsetForStringIndex(ctline, selection.range.location + selection.range.length, nil)
-                context.fill(CGRect.init(x: x0 + selStart, y: y - ascent, width: selEnd - selStart + x0, height: linespace))
+                context.fill(CGRect.init(x: x0 + selStart, y: y - ascent, width: selEnd - selStart, height: linespace))
             }
             
         }
