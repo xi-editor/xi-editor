@@ -14,13 +14,6 @@
 
 import Cocoa
 
-func eventToJson(_ event: NSEvent) -> Any {
-    let flags = event.modifierFlags.rawValue >> 16;
-    return ["keycode": Int(event.keyCode),
-        "chars": event.characters!,
-        "flags": flags]
-}
-
 func insertedStringToJson(_ stringToInsert: NSString) -> Any {
     return ["chars": stringToInsert]
 }
@@ -86,11 +79,9 @@ class EditView: NSView, NSTextInputClient {
         }
     }
 
-    var lastDragLineCol: (Int, Int)?
-    var timer: Timer?
-    var timerEvent: NSEvent?
+    fileprivate var _lastDragLineCol: (Int, Int)?
 
-    var cursorPos: (Int, Int)?
+    fileprivate var _cursorPos: (Int, Int)?
     fileprivate var _selectedRange: NSRange
     fileprivate var _markedRange: NSRange
     
@@ -387,7 +378,7 @@ class EditView: NSView, NSTextInputClient {
 
     func firstRect(forCharacterRange aRange: NSRange, actualRange: NSRangePointer?) -> NSRect {
         if let viewWinFrame = self.window?.convertToScreen(self.frame),
-            let (lineIx, pos) = self.cursorPos,
+            let (lineIx, pos) = self._cursorPos,
             let line = getLine(lineIx) {
             let str = line.text
             let ctLine = CTLineCreateWithAttributedString(NSMutableAttributedString(string: str, attributes: self.attributes))
@@ -417,40 +408,25 @@ class EditView: NSView, NSTextInputClient {
     }
 
     override func mouseDown(with theEvent: NSEvent) {
-        removeMarkedText()
-        self.inputContext?.discardMarkedText()
         let (line, col) = pointToLineCol(convert(theEvent.locationInWindow, from: nil))
-        lastDragLineCol = (line, col)
+        _lastDragLineCol = (line, col)
         let flags = theEvent.modifierFlags.rawValue >> 16
         let clickCount = theEvent.clickCount
         document?.sendRpcAsync("click", params: [line, col, flags, clickCount])
-        timer = Timer.scheduledTimer(timeInterval: TimeInterval(1.0/60), target: self, selector: #selector(_autoscrollTimerCallback), userInfo: nil, repeats: true)
-        timerEvent = theEvent
+        super.mouseDown(with: theEvent)
     }
 
     override func mouseDragged(with theEvent: NSEvent) {
-        autoscroll(with: theEvent)
         let (line, col) = pointToLineCol(convert(theEvent.locationInWindow, from: nil))
-        if let last = lastDragLineCol, last != (line, col) {
-            lastDragLineCol = (line, col)
+        if let last = _lastDragLineCol, last != (line, col) {
+            _lastDragLineCol = (line, col)
             let flags = theEvent.modifierFlags.rawValue >> 16
             document?.sendRpcAsync("drag", params: [line, col, flags])
         }
-        timerEvent = theEvent
-    }
-
-    override func mouseUp(with theEvent: NSEvent) {
-        timer?.invalidate()
-        timer = nil
-        timerEvent = nil
+        super.mouseDragged(with: theEvent)
     }
     
     // MARK: - Helpers etc
-    func _autoscrollTimerCallback() {
-        if let event = timerEvent {
-            mouseDragged(with: event)
-        }
-    }
     
     /// timer callback to toggle the blink state
     func _blinkInsertionPoint() {
