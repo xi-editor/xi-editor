@@ -105,7 +105,6 @@ class EditViewController: NSViewController, EditViewDataSource {
             firstLine = first
             lastLine = last
             document.sendRpcAsync("scroll", params: [firstLine, lastLine])
-            requestLines(first: first, last: last)
         }
         shadowView?.updateScroll(scrollView.contentView.bounds, scrollView.documentView!.bounds)
     }
@@ -125,7 +124,6 @@ class EditViewController: NSViewController, EditViewDataSource {
         editView.heightConstraint?.constant = CGFloat(lines.height) * textMetrics.linespace + 2 * textMetrics.descent
         editView.showBlinkingCursor = editView.isFrontmostView
         editView.needsDisplay = true
-        // make sure we aren't missing any lines
     }
 
     func scrollTo(_ line: Int, _ col: Int) {
