@@ -57,12 +57,9 @@ struct TextDrawingMetrics {
     }
 }
 
-func eventToJson(_ event: NSEvent) -> Any {
-    let flags = event.modifierFlags.rawValue >> 16;
-    return ["keycode": Int(event.keyCode),
-        "chars": event.characters!,
-        "flags": flags]
-}
+/// A line-column index into a displayed text buffer.
+typealias BufferPosition = (line: Int, column: Int)
+
 
 func insertedStringToJson(_ stringToInsert: NSString) -> Any {
     return ["chars": stringToInsert]
@@ -399,42 +396,6 @@ class EditView: NSView, NSTextInputClient {
             }
         }
     }
-
-    override func mouseDown(with theEvent: NSEvent) {
-        removeMarkedText()
-        self.inputContext?.discardMarkedText()
-        let (line, col) = pointToLineCol(convert(theEvent.locationInWindow, from: nil))
-        lastDragLineCol = (line, col)
-        let flags = theEvent.modifierFlags.rawValue >> 16
-        let clickCount = theEvent.clickCount
-        document?.sendRpcAsync("click", params: [line, col, flags, clickCount])
-        timer = Timer.scheduledTimer(timeInterval: TimeInterval(1.0/60), target: self, selector: #selector(_autoscrollTimerCallback), userInfo: nil, repeats: true)
-        timerEvent = theEvent
-    }
-
-    override func mouseDragged(with theEvent: NSEvent) {
-        autoscroll(with: theEvent)
-        let (line, col) = pointToLineCol(convert(theEvent.locationInWindow, from: nil))
-        if let last = lastDragLineCol, last != (line, col) {
-            lastDragLineCol = (line, col)
-            let flags = theEvent.modifierFlags.rawValue >> 16
-            document?.sendRpcAsync("drag", params: [line, col, flags])
-        }
-        timerEvent = theEvent
-    }
-
-    override func mouseUp(with theEvent: NSEvent) {
-        timer?.invalidate()
-        timer = nil
-        timerEvent = nil
-    }
-    
-    // MARK: - Helpers etc
-    func _autoscrollTimerCallback() {
-        if let event = timerEvent {
-            mouseDragged(with: event)
-        }
-    }
     
     /// timer callback to toggle the blink state
     func _blinkInsertionPoint() {
@@ -451,20 +412,23 @@ class EditView: NSView, NSTextInputClient {
         return CGFloat(lineIx + 1) * dataSource.textMetrics.linespace
     }
 
-    func pointToLineCol(_ loc: NSPoint) -> (Int, Int) {
-        let lineIx = yToLine(loc.y)
-        var col = 0
+    /// given a point in the containing window's coordinate space, converts it into a line / column position in the current view.
+    /// Note: - The returned position is not guaruanteed to be an existing line. For instance, if a buffer does not fill the current window, a point below the last line will return a buffer position with a line number exceeding the number of lines in the file. In this case position.column will always be zero.
+    func bufferPositionFromPoint(_ point: NSPoint) -> BufferPosition {
+        let point = self.convert(point, from: nil)
+        let lineIx = yToLine(point.y)
         if let line = getLine(lineIx) {
             let s = line.text
             let attrString = NSAttributedString(string: s, attributes: dataSource.textMetrics.attributes)
             let ctline = CTLineCreateWithAttributedString(attrString)
-            let relPos = NSPoint(x: loc.x - x0, y: lineIxToBaseline(lineIx) - loc.y)
+            let relPos = NSPoint(x: point.x - x0, y: lineIxToBaseline(lineIx) - point.y)
             let utf16_ix = CTLineGetStringIndexForPosition(ctline, relPos)
             if utf16_ix != kCFNotFound {
-                col = utf16_offset_to_utf8(s, utf16_ix)
+                let col = utf16_offset_to_utf8(s, utf16_ix)
+                return BufferPosition(line: lineIx, column: col)
             }
         }
-        return (lineIx, col)
+        return BufferPosition(line: lineIx, column: 0)
     }
 
     private func utf8_offset_to_utf16(_ s: String, _ ix: Int) -> Int {

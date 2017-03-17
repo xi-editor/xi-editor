@@ -52,6 +52,11 @@ class EditViewController: NSViewController, EditViewDataSource {
     var firstLine: Int = 0
     var lastLine: Int = 0
 
+    private var lastDragPosition: BufferPosition?
+    /// handles autoscrolling when a drag gesture exists the window
+    private var dragTimer: Timer?
+    private var dragEvent: NSEvent?
+
     override func viewDidLoad() {
         super.viewDidLoad()
         editView.dataSource = self
@@ -130,6 +135,41 @@ class EditViewController: NSViewController, EditViewDataSource {
     // MARK: - System Events
     override func keyDown(with theEvent: NSEvent) {
         self.editView.inputContext?.handleEvent(theEvent);
+    }
+    
+    override func mouseDown(with theEvent: NSEvent) {
+        editView.removeMarkedText()
+        editView.inputContext?.discardMarkedText()
+        let position  = editView.bufferPositionFromPoint(theEvent.locationInWindow)
+        lastDragPosition = position
+        let flags = theEvent.modifierFlags.rawValue >> 16
+        let clickCount = theEvent.clickCount
+        document.sendRpcAsync("click", params: [position.line, position.column, flags, clickCount])
+        dragTimer = Timer.scheduledTimer(timeInterval: TimeInterval(1.0/60), target: self, selector: #selector(_autoscrollTimerCallback), userInfo: nil, repeats: true)
+        dragEvent = theEvent
+    }
+    
+    override func mouseDragged(with theEvent: NSEvent) {
+        editView.autoscroll(with: theEvent)
+        let dragPosition = editView.bufferPositionFromPoint(theEvent.locationInWindow)
+        if let last = lastDragPosition, last != dragPosition {
+            lastDragPosition = dragPosition
+            let flags = theEvent.modifierFlags.rawValue >> 16
+            document?.sendRpcAsync("drag", params: [last.line, last.column, flags])
+        }
+        dragEvent = theEvent
+    }
+    
+    override func mouseUp(with theEvent: NSEvent) {
+        dragTimer?.invalidate()
+        dragTimer = nil
+        dragEvent = nil
+    }
+    
+    func _autoscrollTimerCallback() {
+        if let event = dragEvent {
+            mouseDragged(with: event)
+        }
     }
     
     // NSResponder (used mostly for paste)
