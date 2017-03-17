@@ -35,6 +35,11 @@ class EditViewController: NSViewController, EditViewDataSource {
         }
     }
     
+    /// the height of the edit view, in lines.
+    var linesHeight: Int {
+        return Int(ceil((scrollView.contentView.bounds.size.height) / textMetrics.linespace))
+    }
+
     var lines: LineCache = LineCache()
     var styleMap: StyleMap {
         return (NSApplication.shared().delegate as! AppDelegate).styleMap
@@ -53,7 +58,11 @@ class EditViewController: NSViewController, EditViewDataSource {
         self.shadowView.mouseUpHandler = editView.mouseUp(with:)
         self.shadowView.mouseDraggedHandler = editView.mouseDragged(with:)
         scrollView.contentView.documentCursor = NSCursor.iBeam();
-        
+    }
+    
+    override func viewWillAppear() {
+        super.viewWillAppear()
+        updateEditViewScroll()
         NotificationCenter.default.addObserver(self, selector: #selector(EditViewController.boundsDidChangeNotification(_:)), name: NSNotification.Name.NSViewBoundsDidChange, object: scrollView.contentView)
         NotificationCenter.default.addObserver(self, selector: #selector(EditViewController.frameDidChangeNotification(_:)), name: NSNotification.Name.NSViewFrameDidChange, object: scrollView)
     }
@@ -78,16 +87,30 @@ class EditViewController: NSViewController, EditViewDataSource {
         updateEditViewScroll()
     }
 
-    fileprivate func updateEditViewScroll() {
+    fileprivate func visibleLineRange() -> (first: Int, last: Int) {
         let first = Int(floor(scrollView.contentView.bounds.origin.y / textMetrics.linespace))
         let height = Int(ceil((scrollView.contentView.bounds.size.height) / textMetrics.linespace))
-        let last = first + height
+        return (first, first+height)
+    }
+
+    // notifies core of new scroll position. Also effectively notifies core of current viewport size.
+    fileprivate func updateEditViewScroll() {
+        let (first, last) = visibleLineRange()
         if first != firstLine || last != lastLine {
             firstLine = first
             lastLine = last
-            document?.sendRpcAsync("scroll", params: [firstLine, lastLine])
+            document.sendRpcAsync("scroll", params: [firstLine, lastLine])
+            requestLines(first: first, last: last)
         }
         shadowView?.updateScroll(scrollView.contentView.bounds, scrollView.documentView!.bounds)
+    }
+    
+    fileprivate func requestLines(first: Int, last: Int) {
+        let missing = lines.computeMissing(first, last)
+        for (f, l) in missing {
+            Swift.print("requesting missing: \(f)..\(l)")
+            document.sendRpcAsync("request_lines", params: [f, l])
+        }
     }
     
     // MARK: - Core Commands
@@ -97,6 +120,7 @@ class EditViewController: NSViewController, EditViewDataSource {
         editView.heightConstraint?.constant = CGFloat(lines.height) * textMetrics.linespace + 2 * textMetrics.descent
         editView.showBlinkingCursor = editView.isFrontmostView
         editView.needsDisplay = true
+        // make sure we aren't missing any lines
     }
 
     func scrollTo(_ line: Int, _ col: Int) {
@@ -110,7 +134,7 @@ class EditViewController: NSViewController, EditViewDataSource {
     
     // NSResponder (used mostly for paste)
     override func insertText(_ insertString: Any) {
-        document?.sendRpcAsync("insert", params: insertedStringToJson(insertString as! NSString))
+        document.sendRpcAsync("insert", params: insertedStringToJson(insertString as! NSString))
     }
 
     // we intercept this method to check if we should open a new tab
@@ -145,7 +169,7 @@ class EditViewController: NSViewController, EditViewDataSource {
     
     // MARK: - Menu Items
     fileprivate func cutCopy(_ method: String) {
-        let text = document?.sendRpc(method, params: [])
+        let text = document.sendRpc(method, params: [])
         if let text = text as? String {
             let pasteboard = NSPasteboard.general()
             pasteboard.clearContents()
@@ -174,24 +198,24 @@ class EditViewController: NSViewController, EditViewDataSource {
     }
     
     func undo(_ sender: AnyObject?) {
-        document?.sendRpcAsync("undo", params: [])
+        document.sendRpcAsync("undo", params: [])
     }
     
     func redo(_ sender: AnyObject?) {
-        document?.sendRpcAsync("redo", params: [])
+        document.sendRpcAsync("redo", params: [])
     }
 
     // MARK: - Debug Methods
     @IBAction func debugRewrap(_ sender: AnyObject) {
-        document?.sendRpcAsync("debug_rewrap", params: [])
+        document.sendRpcAsync("debug_rewrap", params: [])
     }
     
     @IBAction func debugTestFGSpans(_ sender: AnyObject) {
-        document?.sendRpcAsync("debug_test_fg_spans", params: [])
+        document.sendRpcAsync("debug_test_fg_spans", params: [])
     }
     
     @IBAction func debugRunPlugin(_ sender: AnyObject) {
-        document?.sendRpcAsync("debug_run_plugin", params: [])
+        document.sendRpcAsync("debug_run_plugin", params: [])
     }
 }
 

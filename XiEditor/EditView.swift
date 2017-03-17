@@ -175,11 +175,6 @@ class EditView: NSView, NSTextInputClient {
         let first = Int(floor(dirtyRect.origin.y / dataSource.textMetrics.linespace))
         let last = Int(ceil((dirtyRect.origin.y + dirtyRect.size.height) / dataSource.textMetrics.linespace))
 
-        let missing = dataSource.lines.computeMissing(first, last)
-        for (f, l) in missing {
-            Swift.print("requesting missing: \(f)..\(l)")
-            document?.sendRpcAsync("request_lines", params: [f, l])
-        }
 
         // first pass, for drawing background selections
         for lineIx in first..<last {
