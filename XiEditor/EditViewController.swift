@@ -77,6 +77,7 @@ class EditViewController: NSViewController, EditViewDataSource {
         if let manager = sender as? NSFontManager {
             textMetrics = textMetrics.newMetricsForFontChange(fontManager: manager)
             self.editView.needsDisplay = true
+            updateEditViewScroll()
         } else {
             Swift.print("changeFont: called with nil")
             return
