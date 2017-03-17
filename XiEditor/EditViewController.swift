@@ -14,7 +14,15 @@
 
 import Cocoa
 
-class EditViewController: NSViewController {
+/// The EditViewDataSource protocol describes the properties that an editView uses to determine how to render its contents.
+protocol EditViewDataSource {
+    var lines: LineCache { get }
+    var styleMap: StyleMap { get }
+    var textMetrics: TextDrawingMetrics { get }
+}
+
+
+class EditViewController: NSViewController, EditViewDataSource {
 
     @IBOutlet var editView: EditView!
     @IBOutlet var shadowView: ShadowView!
@@ -26,20 +34,56 @@ class EditViewController: NSViewController {
             editView.document = document
         }
     }
+    
+    /// the height of the edit view, in lines.
+    var linesHeight: Int {
+        return Int(ceil((scrollView.contentView.bounds.size.height) / textMetrics.linespace))
+    }
 
+    var lines: LineCache = LineCache()
+    var styleMap: StyleMap {
+        return (NSApplication.shared().delegate as! AppDelegate).styleMap
+    }
+
+    //TODO: preferred font should be a user preference
+    var textMetrics = TextDrawingMetrics(font: CTFontCreateWithName("InconsolataGo" as CFString?, 14, nil))
+    
     // visible scroll region, exclusive of lastLine
     var firstLine: Int = 0
     var lastLine: Int = 0
 
+    private var lastDragPosition: BufferPosition?
+    /// handles autoscrolling when a drag gesture exists the window
+    private var dragTimer: Timer?
+    private var dragEvent: NSEvent?
+
     override func viewDidLoad() {
         super.viewDidLoad()
+        editView.dataSource = self
         self.shadowView.mouseUpHandler = editView.mouseUp(with:)
         self.shadowView.mouseDraggedHandler = editView.mouseDragged(with:)
         scrollView.contentView.documentCursor = NSCursor.iBeam();
-        
+    }
+    
+    override func viewWillAppear() {
+        super.viewWillAppear()
+        updateEditViewScroll()
         NotificationCenter.default.addObserver(self, selector: #selector(EditViewController.boundsDidChangeNotification(_:)), name: NSNotification.Name.NSViewBoundsDidChange, object: scrollView.contentView)
         NotificationCenter.default.addObserver(self, selector: #selector(EditViewController.frameDidChangeNotification(_:)), name: NSNotification.Name.NSViewFrameDidChange, object: scrollView)
     }
+
+    // this gets called when the user changes the font with the font book, for example
+    override func changeFont(_ sender: Any?) {
+        if let manager = sender as? NSFontManager {
+            textMetrics = textMetrics.newMetricsForFontChange(fontManager: manager)
+            self.editView.needsDisplay = true
+            updateEditViewScroll()
+        } else {
+            Swift.print("changeFont: called with nil")
+            return
+        }
+    }
+
     
     func boundsDidChangeNotification(_ notification: Notification) {
         updateEditViewScroll()
@@ -49,22 +93,38 @@ class EditViewController: NSViewController {
         updateEditViewScroll()
     }
 
-    
+    fileprivate func visibleLineRange() -> (first: Int, last: Int) {
+        let first = Int(floor(scrollView.contentView.bounds.origin.y / textMetrics.linespace))
+        let height = Int(ceil((scrollView.contentView.bounds.size.height) / textMetrics.linespace))
+        return (first, first+height)
+    }
+
+    // notifies core of new scroll position. Also effectively notifies core of current viewport size.
     fileprivate func updateEditViewScroll() {
-        let first = Int(floor(scrollView.contentView.bounds.origin.y / editView.linespace))
-        let height = Int(ceil((scrollView.contentView.bounds.size.height) / editView.linespace))
-        let last = first + height
-        if first != firstLine || last != lastLine && document != nil {
+        let (first, last) = visibleLineRange()
+        if first != firstLine || last != lastLine {
             firstLine = first
             lastLine = last
-            document?.sendRpcAsync("scroll", params: [firstLine, lastLine])
+            document.sendRpcAsync("scroll", params: [firstLine, lastLine])
         }
         shadowView?.updateScroll(scrollView.contentView.bounds, scrollView.documentView!.bounds)
     }
     
+    fileprivate func requestLines(first: Int, last: Int) {
+        let missing = lines.computeMissing(first, last)
+        for (f, l) in missing {
+            Swift.print("requesting missing: \(f)..\(l)")
+            document.sendRpcAsync("request_lines", params: [f, l])
+        }
+    }
+    
     // MARK: - Core Commands
-    func update(_ content: [String: AnyObject]) {
-        editView.update(update: content)
+    /// applies a set of line changes and redraws the view
+    func update(_ updates: [String: AnyObject]) {
+        lines.applyUpdate(update: updates)
+        editView.heightConstraint?.constant = CGFloat(lines.height) * textMetrics.linespace + 2 * textMetrics.descent
+        editView.showBlinkingCursor = editView.isFrontmostView
+        editView.needsDisplay = true
     }
 
     func scrollTo(_ line: Int, _ col: Int) {
@@ -76,9 +136,44 @@ class EditViewController: NSViewController {
         self.editView.inputContext?.handleEvent(theEvent);
     }
     
+    override func mouseDown(with theEvent: NSEvent) {
+        editView.removeMarkedText()
+        editView.inputContext?.discardMarkedText()
+        let position  = editView.bufferPositionFromPoint(theEvent.locationInWindow)
+        lastDragPosition = position
+        let flags = theEvent.modifierFlags.rawValue >> 16
+        let clickCount = theEvent.clickCount
+        document.sendRpcAsync("click", params: [position.line, position.column, flags, clickCount])
+        dragTimer = Timer.scheduledTimer(timeInterval: TimeInterval(1.0/60), target: self, selector: #selector(_autoscrollTimerCallback), userInfo: nil, repeats: true)
+        dragEvent = theEvent
+    }
+    
+    override func mouseDragged(with theEvent: NSEvent) {
+        editView.autoscroll(with: theEvent)
+        let dragPosition = editView.bufferPositionFromPoint(theEvent.locationInWindow)
+        if let last = lastDragPosition, last != dragPosition {
+            lastDragPosition = dragPosition
+            let flags = theEvent.modifierFlags.rawValue >> 16
+            document?.sendRpcAsync("drag", params: [last.line, last.column, flags])
+        }
+        dragEvent = theEvent
+    }
+    
+    override func mouseUp(with theEvent: NSEvent) {
+        dragTimer?.invalidate()
+        dragTimer = nil
+        dragEvent = nil
+    }
+    
+    func _autoscrollTimerCallback() {
+        if let event = dragEvent {
+            mouseDragged(with: event)
+        }
+    }
+    
     // NSResponder (used mostly for paste)
     override func insertText(_ insertString: Any) {
-        document?.sendRpcAsync("insert", params: insertedStringToJson(insertString as! NSString))
+        document.sendRpcAsync("insert", params: insertedStringToJson(insertString as! NSString))
     }
 
     // we intercept this method to check if we should open a new tab
@@ -95,7 +190,7 @@ class EditViewController: NSViewController {
 
     // we override this to see if our view is empty, and should be reused for this open call
      func openDocument(_ sender: Any?) {
-        if editView?.lines.isEmpty ?? false {
+        if self.lines.isEmpty {
             Document._documentForNextOpenCall = self.document
         }
         Document.preferredTabbingIdentifier = nil
@@ -113,7 +208,7 @@ class EditViewController: NSViewController {
     
     // MARK: - Menu Items
     fileprivate func cutCopy(_ method: String) {
-        let text = document?.sendRpc(method, params: [])
+        let text = document.sendRpc(method, params: [])
         if let text = text as? String {
             let pasteboard = NSPasteboard.general()
             pasteboard.clearContents()
@@ -142,24 +237,24 @@ class EditViewController: NSViewController {
     }
     
     func undo(_ sender: AnyObject?) {
-        document?.sendRpcAsync("undo", params: [])
+        document.sendRpcAsync("undo", params: [])
     }
     
     func redo(_ sender: AnyObject?) {
-        document?.sendRpcAsync("redo", params: [])
+        document.sendRpcAsync("redo", params: [])
     }
 
     // MARK: - Debug Methods
     @IBAction func debugRewrap(_ sender: AnyObject) {
-        document?.sendRpcAsync("debug_rewrap", params: [])
+        document.sendRpcAsync("debug_rewrap", params: [])
     }
     
     @IBAction func debugTestFGSpans(_ sender: AnyObject) {
-        document?.sendRpcAsync("debug_test_fg_spans", params: [])
+        document.sendRpcAsync("debug_test_fg_spans", params: [])
     }
     
     @IBAction func debugRunPlugin(_ sender: AnyObject) {
-        document?.sendRpcAsync("debug_run_plugin", params: [])
+        document.sendRpcAsync("debug_run_plugin", params: [])
     }
 }
 

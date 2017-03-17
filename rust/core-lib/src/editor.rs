@@ -613,7 +613,9 @@ impl<W: Write + Send + 'static> Editor<W> {
 
     fn do_scroll(&mut self, first: i64, last: i64) {
         self.view.set_scroll(max(first, 0) as usize, last as usize);
-    }
+        self.view_dirty = true;
+        self.view.set_dirty();
+}
 
     fn do_request_lines(&mut self, first: i64, last: i64) {
         self.view.send_update(&self.text, &self.tab_ctx, first as usize, last as usize);
