@@ -27,6 +27,7 @@ use xi_rope::spans::{Spans, SpansBuilder};
 
 use tabs::TabCtx;
 use styles;
+use index_set::IndexSet;
 
 use linewrap;
 
@@ -47,6 +48,11 @@ pub struct View {
     style_spans: Spans<Style>,
     cols: usize,
 
+    // Ranges of lines held by the line cache in the front-end that are considered
+    // valid.
+    // TODO: separate tracking of text, cursors, and styles
+    valid_lines: IndexSet,
+
     // TODO: much finer grained tracking of dirty state
     dirty: bool,
 }
@@ -61,6 +67,7 @@ impl Default for View {
             breaks: None,
             style_spans: Spans::default(),
             cols: 0,
+            valid_lines: IndexSet::new(),
             dirty: true,
         }
     }
@@ -315,6 +322,61 @@ impl View {
             .insert("ops", ops_builder.build())
             .build();
         tab_ctx.update_tab(&params);
+        self.valid_lines.union_one_range(first_line, last_line);
+    }
+
+    /// Send lines within given region (plus slop) that the front-end does not already
+    /// have.
+    pub fn send_update_for_scroll<W: Write>(&mut self, text: &Rope, tab_ctx: &TabCtx<W>,
+        first_line: usize, last_line: usize)
+    {
+        let first_line = max(first_line, SCROLL_SLOP) - SCROLL_SLOP;
+        let last_line = last_line + SCROLL_SLOP;
+        let height = self.offset_to_line_col(text, text.len()).0 + 1;
+        let last_line = min(last_line, height);
+
+        let mut ops_builder = ArrayBuilder::new();
+        let mut line = 0;
+        for (start, end) in self.valid_lines.minus_one_range(first_line, last_line) {
+            // TODO: this has some duplication with send_update in the non-dirty case.
+            if start > line {
+                ops_builder = ops_builder.push_object(|builder|
+                    builder.insert("op", "copy")
+                    .insert("n", start - line));
+            }
+            let start_offset = self.offset_of_line(text, start);
+            let mut cursor = Cursor::new(text, start_offset);
+            let mut breaks_cursor = self.breaks.as_ref().map(|breaks|
+                Cursor::new(breaks, start_offset)
+            );
+            let mut lines_builder = ArrayBuilder::new();
+            for line_num in start..end {
+                lines_builder = self.render_line(tab_ctx, text, lines_builder,
+                    &mut cursor, breaks_cursor.as_mut(), line_num);
+            }
+            ops_builder = ops_builder.push_object(|builder|
+                builder.insert("op", "ins")
+                .insert("n", end - start)
+                .insert("lines", lines_builder.build()));
+            ops_builder = ops_builder.push_object(|builder|
+                builder.insert("op", "skip")
+                .insert("n", end - start));
+            line = end;
+        }
+        if line == 0 {
+            // Front-end already has all lines, no need to send any more.
+            return;
+        }
+        if line < height {
+            ops_builder = ops_builder.push_object(|builder|
+                builder.insert("op", "copy")
+                .insert("n", height - line));
+        }
+        let params = ObjectBuilder::new()
+            .insert("ops", ops_builder.build())
+            .build();
+        tab_ctx.update_tab(&params);
+        self.valid_lines.union_one_range(first_line, last_line);
     }
 
     // Update front-end with any changes to view since the last time sent.
@@ -329,6 +391,7 @@ impl View {
 
     // TODO: finer grained tracking
     pub fn set_dirty(&mut self) {
+        self.valid_lines.clear();
         self.dirty = true;
     }
 

@@ -33,6 +33,7 @@ mod linewrap;
 mod run_plugin;
 mod styles;
 mod word_boundaries;
+mod index_set;
 
 use tabs::Tabs;
 use rpc::Request;

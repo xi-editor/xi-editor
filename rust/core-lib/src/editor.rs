@@ -61,9 +61,6 @@ pub struct Editor<W: Write> {
     // TODO: use for all cursor motion?
     new_cursor: Option<(usize, usize)>,
 
-    // TODO: may not need separate view/text dirty flags
-    view_dirty: bool,
-    text_dirty: bool,
     scroll_to: Option<usize>,
     col: usize, // maybe this should live in view, it's similar to selection
 
@@ -101,8 +98,6 @@ impl<W: Write + Send + 'static> Editor<W> {
         let editor = Editor {
             text: Rope::from(""),
             view: View::new(),
-            text_dirty: false,
-            view_dirty: true,
             engine: engine,
             last_rev_id: last_rev_id,
             undo_group_id: 0,
@@ -138,7 +133,6 @@ impl<W: Write + Send + 'static> Editor<W> {
             self.scroll_to = Some(offset);
         }
         self.view.scroll_to_cursor(&self.text);
-        self.view_dirty = true;
         self.view.set_dirty();
     }
 
@@ -219,7 +213,6 @@ impl<W: Write + Send + 'static> Editor<W> {
             );
         }
         self.last_rev_id = self.engine.get_head_rev_id();
-        self.text_dirty = true;
     }
 
     // GC of CRDT engine is deferred until all plugins have acknowledged the new rev,
@@ -240,7 +233,6 @@ impl<W: Write + Send + 'static> Editor<W> {
     fn reset_contents(&mut self, new_contents: Rope) {
         self.engine = Engine::new(new_contents);
         self.text = self.engine.get_head();
-        self.text_dirty = true;
         self.view.reset_breaks();
         self.set_cursor(0, true);
     }
@@ -618,7 +610,10 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     fn do_scroll(&mut self, first: i64, last: i64) {
-        self.view.set_scroll(max(first, 0) as usize, last as usize);
+        let first = max(first, 0) as usize;
+        let last = last as usize;
+        self.view.set_scroll(first, last);
+        self.view.send_update_for_scroll(&self.text, &self.tab_ctx, first, last);
     }
 
     fn do_request_lines(&mut self, first: i64, last: i64) {
@@ -663,14 +658,12 @@ impl<W: Write + Send + 'static> Editor<W> {
     fn debug_rewrap(&mut self) {
         self.view.rewrap(&self.text, 72);
         self.view.set_dirty();
-        self.view_dirty = true;
     }
 
     fn debug_test_fg_spans(&mut self) {
         print_err!("setting fg spans");
         self.view.set_test_fg_spans();
         self.view.set_dirty();
-        self.view_dirty = true;
     }
 
     fn debug_run_plugin(&mut self, self_ref: &Arc<Mutex<Editor<W>>>) {
@@ -889,7 +882,6 @@ impl<W: Write + Send + 'static> Editor<W> {
             end_offset = transformer.transform(end_offset, true);
         }
         self.view.set_fg_spans(start, end_offset, spans);
-        self.view_dirty = true;
         self.view.set_dirty();
         self.render();
     }
