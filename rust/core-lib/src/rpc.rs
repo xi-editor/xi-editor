@@ -85,6 +85,7 @@ pub enum EditCommand<'a> {
     PageUpAndModifySelection,
     ScrollPageDown,
     PageDownAndModifySelection,
+    SelectAll,
     Open { file_path: &'a str },
     Save { file_path: &'a str },
     Scroll { first: i64, last: i64 },
@@ -195,6 +196,7 @@ impl<'a> EditCommand<'a> {
             "scroll_page_down" |
             "page_down" => Ok(ScrollPageDown),
             "page_down_and_modify_selection" => Ok(PageDownAndModifySelection),
+            "select_all" => Ok(SelectAll),
 
             "open" => params.as_object().and_then(|dict| {
                 dict_get_string(dict, "filename").map(|path| Open { file_path: path })
