@@ -536,6 +536,12 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.scroll_to = Some(scroll_offset);
     }
 
+    fn select_all(&mut self) {
+        self.view.sel_start = 0;
+        self.view.sel_end = self.text.len();
+        self.view.set_dirty();
+    }
+
     fn do_key(&mut self, chars: &str, flags: u64) {
         match chars {
             "\r" => self.insert_newline(),
@@ -812,6 +818,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             PageDownAndModifySelection => {
                 async(self.scroll_page_down(FLAG_SELECT))
             }
+            SelectAll => async(self.select_all()),
             Open { file_path } => async(self.do_open(file_path)),
             Save { file_path } => async(self.do_save(file_path)),
             Scroll { first, last } => async(self.do_scroll(first, last)),
