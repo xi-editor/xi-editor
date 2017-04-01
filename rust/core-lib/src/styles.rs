@@ -38,19 +38,20 @@ impl Style {
             "id": id,
             "fg_color": self.fg,
         });
-            if (self.bg >> 24) > 0 {
-                dict_add_value(&mut json, "bg_color", self.bg);
-            }
-            if self.weight != 400 {
-                dict_add_value(&mut json, "weight", self.weight);
-            }
-            if self.underline {
-                dict_add_value(&mut json, "underline", self.underline);
-            }
-            if self.italic {
-                dict_add_value(&mut json, "italic", self.italic);
-            }
-       json 
+
+        if (self.bg >> 24) > 0 {
+            dict_add_value(&mut json, "bg_color", self.bg);
+        }
+        if self.weight != 400 {
+            dict_add_value(&mut json, "weight", self.weight);
+        }
+        if self.underline {
+            dict_add_value(&mut json, "underline", self.underline);
+        }
+        if self.italic {
+            dict_add_value(&mut json, "italic", self.italic);
+        }
+        json 
     }
 }
 
