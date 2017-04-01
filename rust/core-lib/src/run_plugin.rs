@@ -20,10 +20,10 @@ use std::path::PathBuf;
 use std::process::{Command,Stdio,ChildStdin};
 use std::sync::{Arc, Mutex, Weak};
 use std::thread;
-use serde_json::Value;
-use serde_json::builder::ObjectBuilder;
+use serde_json;
+use serde_json::value::Value;
 
-use xi_rpc::{RpcLoop, RpcPeer, RpcCtx, Handler, Error, dict_get_u64};
+use xi_rpc::{RpcLoop, RpcPeer, RpcCtx, Handler, Error, dict_get_u64, dict_add_value};
 use editor::Editor;
 
 pub type PluginPeer = RpcPeer<ChildStdin>;
@@ -92,7 +92,7 @@ impl<W: Write + Send + 'static> PluginRef<W> {
             match method {
                 // TODO: parse json into enum first, just like front-end RPC
                 // (this will also improve error handling, no panic on malformed request from plugin)
-                "n_lines" => Some(Value::U64(editor.plugin_n_lines() as u64)),
+                "n_lines" => Some(serde_json::to_value(editor.plugin_n_lines() as u64).unwrap()),
                 "get_line" => {
                     let line = params.as_object().and_then(|dict| dict.get("line").and_then(Value::as_u64)).unwrap();
                     let result = editor.plugin_get_line(line as usize);
@@ -140,10 +140,10 @@ impl<W: Write + Send + 'static> PluginRef<W> {
 
     pub fn init_buf(&self, buf_size: usize, rev: usize) {
         let plugin = self.0.lock().unwrap();
-        let params = ObjectBuilder::new()
-            .insert("buf_size", buf_size as u64)
-            .insert("rev", rev as u64)
-            .build();
+        let params = json!({
+            "buf_size": buf_size,
+            "rev": rev,
+        });
         plugin.peer.send_rpc_notification("init_buf", &params);
     }
 
@@ -154,16 +154,18 @@ impl<W: Write + Send + 'static> PluginRef<W> {
             rev: usize, edit_type: &str, callback: F)
             where F: FnOnce(Result<Value, Error>) + Send + 'static {
         let plugin = self.0.lock().unwrap();
-        let mut builder = ObjectBuilder::new()
-            .insert("start", start)
-            .insert("end", end)
-            .insert("new_len", new_len)
-            .insert("rev", rev)
-            .insert("edit_type", edit_type);
+
+        let mut params = json!({
+            "start": start,
+            "end": end,
+            "new_len": new_len,
+            "rev": rev,
+            "edit_type": edit_type,
+        });
+
         if let Some(text) = text {
-            builder = builder.insert("text", text);
+            dict_add_value(&mut params, "text", text);
         }
-        let params = builder.build();
         plugin.peer.send_rpc_request_async("update", &params, callback);
     }
 }

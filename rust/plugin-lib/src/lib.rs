@@ -15,6 +15,7 @@
 //! The library base for implementing xi-editor plugins.
 
 extern crate xi_rpc;
+#[macro_use]
 extern crate serde_json;
 
 #[macro_use]

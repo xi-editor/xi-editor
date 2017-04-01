@@ -6,8 +6,8 @@ authors = ["Raph Levien <raph@google.com>"]
 description = "Main process for xi-core, based on json-rpc"
 
 [dependencies]
-serde = "0.8"
-serde_json = "0.8"
+serde = "0.9"
+serde_json = "0.9"
 
 [dependencies.xi-core-lib]
 path = "core-lib"

@@ -17,8 +17,7 @@
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::sync::{Arc, Mutex};
-use serde_json::Value;
-use serde_json::builder::ObjectBuilder;
+use serde_json::value::Value;
 
 use xi_rope::rope::Rope;
 use editor::Editor;
@@ -112,19 +111,19 @@ impl<W: Write + Send + 'static> Tabs<W> {
 impl<W: Write> TabCtx<W> {
     pub fn update_tab(&self, update: &Value) {
         self.rpc_peer.send_rpc_notification("update",
-            &ObjectBuilder::new()
-                .insert("tab", &self.tab)
-                .insert("update", update)
-                .build());
+            &json!({
+                "tab": &self.tab,
+                "update": update,
+            }));
     }
 
     pub fn scroll_to(&self, line: usize, col: usize) {
         self.rpc_peer.send_rpc_notification("scroll_to",
-            &ObjectBuilder::new()
-                .insert("tab", &self.tab)
-                .insert("line", line)
-                .insert("col", col)
-                .build());
+            &json!({
+                "tab": &self.tab,
+                "line": line,
+                "col": col,
+            }));
     }
 
     pub fn get_kill_ring(&self) -> Rope {
@@ -138,9 +137,9 @@ impl<W: Write> TabCtx<W> {
 
     pub fn alert(&self, msg: &str) {
         self.rpc_peer.send_rpc_notification("alert",
-            &ObjectBuilder::new()
-                .insert("msg", msg)
-                .build());
+            &json!({
+                "msg": msg,
+            }));
     }
 
     // Get the index for a given style. If the style is not in the existing

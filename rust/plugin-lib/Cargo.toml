@@ -7,7 +7,7 @@ repository = "https://github.com/google/xi-editor"
 description = "The library base for implementing xi-editor plugins."
 
 [dependencies]
-serde_json = "0.8"
+serde_json = "0.9"
 
 [dependencies.xi-rpc]
 path = "../rpc"

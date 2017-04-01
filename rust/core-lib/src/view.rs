@@ -15,8 +15,7 @@
 use std::cmp::{min,max};
 use std::io::Write;
 
-use serde_json::Value;
-use serde_json::builder::{ArrayBuilder,ObjectBuilder};
+use serde_json::value::Value;
 
 use xi_rope::rope::{Rope, LinesMetric, RopeInfo};
 use xi_rope::delta::{Delta};
@@ -24,6 +23,7 @@ use xi_rope::tree::Cursor;
 use xi_rope::breaks::{Breaks, BreaksInfo, BreaksMetric, BreaksBaseMetric};
 use xi_rope::interval::Interval;
 use xi_rope::spans::{Spans, SpansBuilder};
+use xi_rpc::dict_add_value;
 
 use tabs::TabCtx;
 use styles;
@@ -104,130 +104,30 @@ impl View {
         }
     }
 
-    // TODO: remove this, no longer used
-    pub fn render_lines(&self, text: &Rope, first_line: usize, last_line: usize) -> Value {
-        let mut builder = ArrayBuilder::new();
-        let (cursor_line, cursor_col) = self.offset_to_line_col(text, self.sel_end);
-        let sel_min_line = if self.sel_start == self.sel_end {
-            cursor_line
-        } else {
-            self.line_of_offset(text, self.sel_min())
-        };
-        let sel_max_line = if self.sel_start == self.sel_end {
-            cursor_line
-        } else {
-            self.line_of_offset(text, self.sel_max())
-        };
-        let first_line_offset = self.offset_of_line(text, first_line);
-        let mut cursor = Cursor::new(text, first_line_offset);
-        let mut breaks_cursor = self.breaks.as_ref().map(|breaks|
-            Cursor::new(breaks, first_line_offset)
-        );
-        let mut line_num = first_line;
-        loop {
-            let mut line_builder = ArrayBuilder::new();
-            let start_pos = cursor.pos();
-            let pos = match breaks_cursor {
-                Some(ref mut bc) => {
-                    let pos = bc.next::<BreaksMetric>();
-                    if let Some(pos) = pos {
-                        cursor.set(pos);
-                    }
-                    pos
-                }
-                None => cursor.next::<LinesMetric>()
-            };
-            let mut is_last_line = false;
-            let pos = match pos {
-                Some(pos) => pos,
-                None => {
-                    is_last_line = true;
-                    text.len()
-                }
-            };
-            let l_str = text.slice_to_string(start_pos, pos);
-            let l = &l_str;
-            // TODO: strip trailing line end
-            let l_len = l.len();
-            line_builder = line_builder.push(l);
-            line_builder = self.render_spans(line_builder, start_pos, pos);
-            if line_num >= sel_min_line && line_num <= sel_max_line && self.sel_start != self.sel_end {
-                let sel_start_ix = if line_num == sel_min_line {
-                    self.sel_min() - self.offset_of_line(text, line_num)
-                } else {
-                    0
-                };
-                let sel_end_ix = if line_num == sel_max_line {
-                    self.sel_max() - self.offset_of_line(text, line_num)
-                } else {
-                    l_len
-                };
-                line_builder = line_builder.push_array(|builder|
-                    builder.push("sel")
-                        .push(sel_start_ix)
-                        .push(sel_end_ix)
-                );
-            }
-            if line_num == cursor_line {
-                line_builder = line_builder.push_array(|builder|
-                    builder.push("cursor")
-                        .push(cursor_col)
-                );
-            }
-            builder = builder.push(line_builder.build());
-            line_num += 1;
-            if is_last_line || line_num == last_line {
-                break;
-            }
-        }
-        builder.build()
-    }
-
-    pub fn render_spans(&self, mut builder: ArrayBuilder, start: usize, end: usize) -> ArrayBuilder {
-        let style_spans = self.style_spans.subseq(Interval::new_closed_open(start, end));
-        for (iv, style) in style_spans.iter() {
-            builder = builder.push_array(|builder|
-                builder.push("fg")
-                    .push(iv.start())
-                    .push(iv.end())
-                    .push(style.fg)
-                    .push(style.font_style));
-        }
-        builder
-    }
-
     // Render a single line, and advance cursors to next line.
     fn render_line<W: Write>(&self, tab_ctx: &TabCtx<W>, text: &Rope,
-        builder: ArrayBuilder, cursor: &mut Cursor<RopeInfo>,
-        breaks_cursor: Option<&mut Cursor<BreaksInfo>>, line_num: usize) -> ArrayBuilder
+        cursor: &mut Cursor<RopeInfo>, breaks_cursor: Option<&mut Cursor<BreaksInfo>>,
+        line_num: usize) -> Value
     {
-        let mut line_builder = ObjectBuilder::new();
         let start_pos = cursor.pos();
-        let pos = match breaks_cursor {
-            Some(bc) => {
-                let pos = bc.next::<BreaksMetric>();
-                if let Some(pos) = pos {
-                    cursor.set(pos);
-                }
-                pos
-            }
-            None => cursor.next::<LinesMetric>()
-        };
-        let pos = match pos {
-            Some(pos) => pos,
-            None => {
-                text.len()
-            }
-        };
+        let pos = breaks_cursor.map_or(cursor.next::<LinesMetric>(), |bc| {
+            let pos = bc.next::<BreaksMetric>();
+            // if using breaks update cursor
+            if let Some(pos) = pos { cursor.set(pos) }
+            pos
+        }).unwrap_or(text.len());
+
         let l_str = text.slice_to_string(start_pos, pos);
-        line_builder = line_builder.insert("text", &l_str);
         let (cursor_line, cursor_col) = self.offset_to_line_col(text, self.sel_end);
-        if line_num == cursor_line {
-            line_builder = line_builder.insert_array("cursor", |builder|
-                builder.push(cursor_col)
-            );
-        }
-        let mut sel = Vec::new();
+        let cursors = match line_num == cursor_line {
+            true => {
+                let mut c = Vec::new();
+                c.push(cursor_col);
+                Some(c) 
+            },
+            false => None,
+        };
+        let mut selections = Vec::new();
         if self.sel_start != self.sel_end {
             let sel_min_line = self.line_of_offset(text, self.sel_min());
             let sel_max_line = self.line_of_offset(text, self.sel_max());
@@ -244,24 +144,29 @@ impl View {
                 } else {
                     l_str.len()
                 };
-                sel.push((sel_start_ix, sel_end_ix));
+                selections.push((sel_start_ix, sel_end_ix));
             }
         }
-        line_builder = line_builder.insert("styles",
-            self.render_styles(tab_ctx, start_pos, pos, &sel));
-        builder.push(line_builder.build())
+
+        let styles = self.render_styles(tab_ctx, start_pos, pos, &selections);
+        json!({
+            "text": &l_str,
+            "cursor": cursors,
+            "styles": styles,
+        })
     }
 
     pub fn render_styles<W: Write>(&self, tab_ctx: &TabCtx<W>, start: usize, end: usize,
-        sel: &[(usize, usize)]) -> Value
+        sel: &[(usize, usize)]) -> Vec<isize>
     { 
+        let mut rendered_styles = Vec::new();
         let style_spans = self.style_spans.subseq(Interval::new_closed_open(start, end));
-        let mut builder = ArrayBuilder::new();
+
         let mut ix = 0;
         for &(sel_start, sel_end) in sel {
-            builder = builder.push((sel_start as isize) - ix);
-            builder = builder.push(sel_end - sel_start);
-            builder = builder.push(0);
+            rendered_styles.push((sel_start as isize) - ix);
+            rendered_styles.push(sel_end as isize - sel_start as isize);
+            rendered_styles.push(0);
             ix = sel_end as isize;
         }
         for (iv, style) in style_spans.iter() {
@@ -275,12 +180,12 @@ impl View {
                 italic: (style.font_style & 4) != 0,
             };
             let style_id = tab_ctx.get_style_id(&new_style);
-            builder = builder.push((iv.start() as isize) - ix);
-            builder = builder.push(iv.end() - iv.start());
-            builder = builder.push(style_id);
+            rendered_styles.push((iv.start() as isize) - ix);
+            rendered_styles.push(iv.end() as isize - iv.start() as isize);
+            rendered_styles.push(style_id as isize);
             ix = iv.end() as isize;
         }
-        builder.build()
+        rendered_styles
     }
 
     pub fn send_update<W: Write>(&mut self, text: &Rope, tab_ctx: &TabCtx<W>,
@@ -288,42 +193,35 @@ impl View {
     {
         let height = self.offset_to_line_col(text, text.len()).0 + 1;
         let last_line = min(last_line, height);
-        let mut ops_builder = ArrayBuilder::new();
+        let mut ops = Vec::new();
         if first_line > 0 {
-            ops_builder = ops_builder.push_object(|builder|
-                builder.insert("op", if self.dirty { "invalidate" } else { "copy" })
-                .insert("n", first_line));
+            let op = if self.dirty { "invalidate" } else { "copy" };
+            ops.push(self.build_update_op(op, None, first_line));
         }
         let first_line_offset = self.offset_of_line(text, first_line);
         let mut cursor = Cursor::new(text, first_line_offset);
         let mut breaks_cursor = self.breaks.as_ref().map(|breaks|
             Cursor::new(breaks, first_line_offset)
         );
-        let mut lines_builder = ArrayBuilder::new();
+
+        let mut rendered_lines = Vec::new();
         for line_num in first_line..last_line {
-            lines_builder = self.render_line(tab_ctx, text, lines_builder,
-                &mut cursor, breaks_cursor.as_mut(), line_num);
+            rendered_lines.push(self.render_line(tab_ctx, text, 
+                &mut cursor, breaks_cursor.as_mut(), line_num));
         }
-        ops_builder = ops_builder.push_object(|builder|
-            builder.insert("op", "ins")
-            .insert("n", last_line - first_line)
-            .insert("lines", lines_builder.build()));
+        ops.push(self.build_update_op("ins", Some(rendered_lines), last_line - first_line));
         if last_line < height {
             if !self.dirty {
-                ops_builder = ops_builder.push_object(|builder|
-                    builder.insert("op", "skip")
-                    .insert("n", last_line - first_line));
+            ops.push(self.build_update_op("skip", None, last_line - first_line));
             }
-            ops_builder = ops_builder.push_object(|builder|
-                builder.insert("op", if self.dirty { "invalidate" } else { "copy" })
-                .insert("n", height - last_line));
+            let op = if self.dirty { "invalidate" } else { "copy" };
+            ops.push(self.build_update_op(op, None, height - last_line));
         }
-        let params = ObjectBuilder::new()
-            .insert("ops", ops_builder.build())
-            .build();
+        let params = json!({"ops": ops});
         tab_ctx.update_tab(&params);
         self.valid_lines.union_one_range(first_line, last_line);
     }
+
 
     /// Send lines within given region (plus slop) that the front-end does not already
     /// have.
@@ -335,32 +233,26 @@ impl View {
         let height = self.offset_to_line_col(text, text.len()).0 + 1;
         let last_line = min(last_line, height);
 
-        let mut ops_builder = ArrayBuilder::new();
+        let mut ops = Vec::new();
         let mut line = 0;
         for (start, end) in self.valid_lines.minus_one_range(first_line, last_line) {
             // TODO: this has some duplication with send_update in the non-dirty case.
             if start > line {
-                ops_builder = ops_builder.push_object(|builder|
-                    builder.insert("op", "copy")
-                    .insert("n", start - line));
+                ops.push(self.build_update_op("copy", None, start - line));
             }
             let start_offset = self.offset_of_line(text, start);
             let mut cursor = Cursor::new(text, start_offset);
             let mut breaks_cursor = self.breaks.as_ref().map(|breaks|
                 Cursor::new(breaks, start_offset)
             );
-            let mut lines_builder = ArrayBuilder::new();
+            let mut rendered_lines = Vec::new();
             for line_num in start..end {
-                lines_builder = self.render_line(tab_ctx, text, lines_builder,
-                    &mut cursor, breaks_cursor.as_mut(), line_num);
+                rendered_lines.push(self.render_line(tab_ctx, text,
+                                                     &mut cursor, breaks_cursor.as_mut(),
+                                                     line_num));
             }
-            ops_builder = ops_builder.push_object(|builder|
-                builder.insert("op", "ins")
-                .insert("n", end - start)
-                .insert("lines", lines_builder.build()));
-            ops_builder = ops_builder.push_object(|builder|
-                builder.insert("op", "skip")
-                .insert("n", end - start));
+            ops.push(self.build_update_op("ins", Some(rendered_lines), end - start));
+            ops.push(self.build_update_op("skip", None, end - start));
             line = end;
         }
         if line == 0 {
@@ -368,15 +260,24 @@ impl View {
             return;
         }
         if line < height {
-            ops_builder = ops_builder.push_object(|builder|
-                builder.insert("op", "copy")
-                .insert("n", height - line));
+            ops.push(self.build_update_op("copy", None, height - line));
         }
-        let params = ObjectBuilder::new()
-            .insert("ops", ops_builder.build())
-            .build();
+        let params = json!({"ops": ops});
         tab_ctx.update_tab(&params);
         self.valid_lines.union_one_range(first_line, last_line);
+    }
+
+    fn build_update_op(&self, op: &str, lines: Option<Vec<Value>>, n: usize) -> Value {
+        let mut update = json!({
+            "op": op,
+            "n": n,
+        });
+
+        if let Some(lines) = lines {
+            dict_add_value(&mut update, "lines", lines);
+        }
+
+        update
     }
 
     // Update front-end with any changes to view since the last time sent.
@@ -465,6 +366,7 @@ impl View {
         }
     }
 
+    /// Return the byte offset corresponding to the line `line`.
     fn offset_of_line(&self, text: &Rope, offset: usize) -> usize {
         match self.breaks {
             Some(ref breaks) => {
