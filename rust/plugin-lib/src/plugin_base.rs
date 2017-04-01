@@ -17,8 +17,7 @@
 use std::io;
 use std::fmt;
 
-use serde_json::Value;
-use serde_json::builder::ObjectBuilder;
+use serde_json::value::Value;
 
 use xi_rpc;
 use xi_rpc::{RpcLoop, RpcCtx, dict_get_u64, dict_get_string};
@@ -59,12 +58,12 @@ impl SpansBuilder {
     }
 
     pub fn add_style_span(&mut self, start: usize, end: usize, fg: u32, font_style: u8) {
-        self.0.push(ObjectBuilder::new()
-            .insert("start", start as u64)
-            .insert("end", end as u64)
-            .insert("fg", fg as u64)
-            .insert("font", font_style as u64)
-            .build());
+        self.0.push(json!({
+            "start": start,
+            "end": end,
+            "fg": fg,
+            "font": font_style,
+        }));
     }
 
     pub fn build(self) -> Spans {
@@ -100,11 +99,11 @@ impl<'a> PluginCtx<'a> {
     */
 
     pub fn get_data(&self, offset: usize, max_size: usize, rev: usize) -> Result<String, Error> {
-        let params = ObjectBuilder::new()
-            .insert("offset", offset)
-            .insert("max_size", max_size)
-            .insert("rev", rev)
-            .build();
+        let params = json!({
+            "offset": offset,
+            "max_size": max_size,
+            "rev": rev,
+        });
         let result = self.send_rpc_request("get_data", &params);
         match result {
             Ok(Value::String(s)) => Ok(s),
@@ -114,12 +113,12 @@ impl<'a> PluginCtx<'a> {
     }
 
     pub fn set_fg_spans(&self, start: usize, len: usize, spans: Spans, rev: usize) {
-        let params = ObjectBuilder::new()
-            .insert("start", start)
-            .insert("len", len)
-            .insert("spans", spans)
-            .insert("rev", rev)
-            .build();
+        let params = json!({
+            "start": start,
+            "len": len,
+            "spans": spans,
+            "rev": rev,
+        });
         self.send_rpc_notification("set_fg_spans", &params);
     }
 

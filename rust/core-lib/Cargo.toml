@@ -6,8 +6,8 @@ authors = ["Raph Levien <raph@google.com>"]
 description = "Library module for xi-core"
 
 [dependencies]
-serde = "0.8"
-serde_json = "0.8"
+serde = "0.9"
+serde_json = "0.9"
 time = "0.1"
 
 xi-rope = { path = "../rope", version = "0.1.1" }

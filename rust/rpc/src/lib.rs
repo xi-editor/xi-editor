@@ -23,6 +23,7 @@
 //! the `"jsonrpc"` member is omitted from request and response objects.
 
 extern crate serde;
+#[macro_use]
 extern crate serde_json;
 extern crate crossbeam;
 
@@ -35,9 +36,10 @@ use std::io::{BufRead, Write};
 use std::sync::{Arc, Mutex, Condvar};
 use std::sync::mpsc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::fmt::Debug;
 
-use serde_json::builder::ObjectBuilder;
-use serde_json::Value;
+use serde_json::value::Value;
+use serde::ser::Serialize;
 
 #[derive(Debug)]
 pub enum Error {
@@ -268,23 +270,22 @@ impl<W:Write> RpcPeer<W> {
     }
 
     fn respond(&self, result: Result<Value, Value>, id: &Value) {
-        let mut builder = ObjectBuilder::new()
-            .insert("id", id);
+        let mut response = json!({"id": id});
         match result {
-            Ok(result) => builder = builder.insert("result", result),
-            Err(error) => builder = builder.insert("error", error),
-        }
-        if let Err(e) = self.send(&builder.build()) {
+            Ok(result) => dict_add_value(&mut response, "result", result),
+            Err(error) => dict_add_value(&mut response, "error", error),
+        };
+        if let Err(e) = self.send(&response) {
             print_err!("error {} sending response to RPC {:?}", e, id);
         }
     }
 
     /// Sends a notification (asynchronous rpc) to the peer.
     pub fn send_rpc_notification(&self, method: &str, params: &Value) {
-        if let Err(e) = self.send(&ObjectBuilder::new()
-            .insert("method", method)
-            .insert("params", params)
-            .build()) {
+        if let Err(e) = self.send(&json!({
+            "method": method,
+            "params": params,
+        })) {
             print_err!("send error on send_rpc_notification method {}: {}", method, e);
         }
     }
@@ -295,11 +296,11 @@ impl<W:Write> RpcPeer<W> {
             let mut pending = self.0.pending.lock().unwrap();
             pending.insert(id, rh);
         }
-        if let Err(e) = self.send(&ObjectBuilder::new()
-                .insert("id", id)
-                .insert("method", method)
-                .insert("params", params)
-                .build()) {
+        if let Err(e) = self.send(&json!({
+            "id": id,
+            "method": method,
+            "params": params,
+        })) {
             let mut pending = self.0.pending.lock().unwrap();
             if let Some(rh) = pending.remove(&id) {
                 rh.invoke(Err(Error::IoError(e)));
@@ -383,14 +384,25 @@ impl<W:Write> Clone for RpcPeer<W> {
 }
 
 // =============================================================================
-//  Helper functions for value access
+//  Helper functions for value manipulation
 // =============================================================================
 
-pub fn dict_get_u64(dict: &BTreeMap<String, Value>, key: &str) -> Option<u64> {
+/// Convenience function for adding a key/value pair to a json object.
+/// This function does minimal error handling, and panics on bad input.
+pub fn dict_add_value<T: Serialize + Debug>(dict: &mut Value, key: &str, value: T) {
+    let mut dict_ref = dict.as_object_mut().expect("dict_add_value passed non-object.");
+    let val = match serde_json::to_value(&value) {
+        Ok(val) => val,
+        Err(err) => panic!("failed to serialize value {:?}, error {:?}", value, err),
+    };
+    dict_ref.insert(key.to_owned(), val);
+}
+
+pub fn dict_get_u64(dict: &serde_json::Map<String, Value>, key: &str) -> Option<u64> {
     dict.get(key).and_then(Value::as_u64)
 }
 
-pub fn dict_get_string<'a>(dict: &'a BTreeMap<String, Value>, key: &str) -> Option<&'a str> {
+pub fn dict_get_string<'a>(dict: &'a serde_json::Map<String, Value>, key: &str) -> Option<&'a str> {
     dict.get(key).and_then(Value::as_str)
 }
 
@@ -400,4 +412,17 @@ pub fn arr_get_u64(arr: &[Value], idx: usize) -> Option<u64> {
 
 pub fn arr_get_i64(arr: &[Value], idx: usize) -> Option<i64> {
     arr.get(idx).and_then(Value::as_i64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_dict_add_value() {
+        let mut dict = json!({"id": 10});
+        dict_add_value(&mut dict, "key", "value");
+        let exp = r#"{"id":10,"key":"value"}"#;
+        assert_eq!(serde_json::to_string(&dict).ok(), Some(exp.to_owned()));
+    }
 }

@@ -650,11 +650,6 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.set_cursor(offset, true);
     }
 
-    fn do_render_lines(&mut self, first_line: usize, last_line: usize) -> Value {
-        self.this_edit_type = self.last_edit_type;  // doesn't break undo group
-        self.view.render_lines(&self.text, first_line as usize, last_line as usize)
-    }
-
     fn debug_rewrap(&mut self) {
         self.view.rewrap(&self.text, 72);
         self.view.set_dirty();
@@ -772,9 +767,6 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.this_edit_type = EditType::Other;
 
         let result = match cmd {
-            RenderLines { first_line, last_line } => {
-                Some(self.do_render_lines(first_line, last_line))
-            }
             Key { chars, flags } => async(self.do_key(chars, flags)),
             Insert { chars } => async(self.do_insert(chars)),
             DeleteForward => async(self.delete_forward()),

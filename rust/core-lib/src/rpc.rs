@@ -50,7 +50,6 @@ pub enum TabCommand<'a> {
 /// An enum representing an edit command, parsed from JSON.
 #[derive(Debug, PartialEq, Eq)]
 pub enum EditCommand<'a> {
-    RenderLines { first_line: usize, last_line: usize },
     Key { chars: &'a str, flags: u64 },
     Insert { chars: &'a str },
     DeleteForward,
@@ -139,18 +138,6 @@ impl<'a> EditCommand<'a> {
         use self::Error::*;
 
         match method {
-            "render_lines" => {
-                params.as_object().and_then(|dict| {
-                    if let (Some(first_line), Some(last_line)) =
-                        (dict_get_u64(dict, "first_line"), dict_get_u64(dict, "last_line")) {
-                            Some(RenderLines {
-                                first_line: first_line as usize,
-                                last_line: last_line as usize
-                            })
-                        } else { None }
-                }).ok_or_else(|| MalformedEditParams(method.to_string(), params.clone()))
-            },
-
             "key" => params.as_object().and_then(|dict| {
                 dict_get_string(dict, "chars").and_then(|chars| {
                     dict_get_u64(dict, "flags").map(|flags| {

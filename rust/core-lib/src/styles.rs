@@ -15,8 +15,10 @@
 //! Management of styles.
 
 use std::collections::HashMap;
-use serde_json::Value;
-use serde_json::builder::ObjectBuilder;
+
+use serde_json::value::Value;
+
+use xi_rpc::dict_add_value;
 
 const N_RESERVED_STYLES: usize = 1;
 
@@ -32,22 +34,23 @@ pub struct Style {
 impl Style {
     // construct the params for a def_style request
     pub fn to_json(&self, id: usize) -> Value {
-        let mut builder = ObjectBuilder::new()
-            .insert("id", id)
-            .insert("fg_color", self.fg);
-        if (self.bg >> 24) > 0 {
-            builder = builder.insert("bg_color", self.bg);
-        }
-        if self.weight != 400 {
-            builder = builder.insert("weight", self.weight);
-        }
-        if self.underline {
-            builder = builder.insert("underline", self.underline);
-        }
-        if self.italic {
-            builder = builder.insert("italic", self.italic);
-        }
-        builder.build()
+        let mut json = json!({
+            "id": id,
+            "fg_color": self.fg,
+        });
+            if (self.bg >> 24) > 0 {
+                dict_add_value(&mut json, "bg_color", self.bg);
+            }
+            if self.weight != 400 {
+                dict_add_value(&mut json, "weight", self.weight);
+            }
+            if self.underline {
+                dict_add_value(&mut json, "underline", self.underline);
+            }
+            if self.italic {
+                dict_add_value(&mut json, "italic", self.italic);
+            }
+       json 
     }
 }
 
