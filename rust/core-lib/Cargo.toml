@@ -1,18 +1,19 @@
 [package]
 name = "xi-core-lib"
-version = "0.1.0"
+version = "0.2.0"
 license = "Apache-2.0"
 authors = ["Raph Levien <raph@google.com>"]
 description = "Library module for xi-core"
+repository = "https://github.com/google/xi-editor"
 
 [dependencies]
 serde = "0.9"
 serde_json = "0.9"
 time = "0.1"
 
-xi-rope = { path = "../rope", version = "0.1.1" }
+xi-rope = { path = "../rope", version = "0.2" }
 xi-unicode = { path = "../unicode", version = "0.1.0" }
-xi-rpc = { path = "../rpc", version = "0.1.0" }
+xi-rpc = { path = "../rpc", version = "0.2.0" }
 
 [features]
 avx-accel = ["xi-rope/avx-accel"]

@@ -1,9 +1,10 @@
 [package]
 name = "xi-core"
-version = "0.1.0"
+version = "0.2.0"
 license = "Apache-2.0"
 authors = ["Raph Levien <raph@google.com>"]
 description = "Main process for xi-core, based on json-rpc"
+repository = "https://github.com/google/xi-editor"
 
 [dependencies]
 serde = "0.9"
