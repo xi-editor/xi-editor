@@ -275,12 +275,12 @@ name = "xi-plugin-lib"
 version = "0.1.0"
 dependencies = [
  "serde_json 0.9.9 (registry+https://github.com/rust-lang/crates.io-index)",
- "xi-rpc 0.1.0",
+ "xi-rpc 0.2.0",
 ]
 
 [[package]]
 name = "xi-rpc"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "crossbeam 0.2.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 0.9.12 (registry+https://github.com/rust-lang/crates.io-index)",
