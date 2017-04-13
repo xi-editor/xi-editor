@@ -88,6 +88,7 @@ pub enum EditCommand<'a> {
     Open { file_path: &'a str },
     Save { file_path: &'a str },
     Scroll { first: i64, last: i64 },
+    GoToLine { line: u64 },
     RequestLines { first: i64, last: i64 },
     Yank,
     Transpose,
@@ -200,6 +201,11 @@ impl<'a> EditCommand<'a> {
                     Some(Scroll { first: first, last: last })
                 } else { None }
             }).ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
+
+            "go_to_line" => params.as_object().and_then(|dict| {
+                dict_get_u64(dict, "line").map(|line| GoToLine { line: line })
+            }).ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
+
             "request_lines" => params.as_array().and_then(|arr| {
                 if let (Some(first), Some(last)) =
                     (arr_get_i64(arr, 0), arr_get_i64(arr, 1)) {
