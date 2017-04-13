@@ -617,11 +617,9 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     /// Sets the cursor and scrolls to the beginning of the given line.
-    fn do_go_to_line(&mut self, line: u64) {
-        if let Some(line) = line.checked_sub(1) {
-            let line = self.view.line_col_to_offset(&self.text, line as usize, 0);
-            self.set_cursor(line, true);
-        }
+    fn do_goto_line(&mut self, line: u64) {
+        let line = self.view.line_col_to_offset(&self.text, line as usize, 0);
+        self.set_cursor(line, true);
     }
 
     fn do_request_lines(&mut self, first: i64, last: i64) {
@@ -815,7 +813,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             Open { file_path } => async(self.do_open(file_path)),
             Save { file_path } => async(self.do_save(file_path)),
             Scroll { first, last } => async(self.do_scroll(first, last)),
-            GoToLine { line } => async(self.do_go_to_line(line)),
+            GotoLine { line } => async(self.do_goto_line(line)),
             RequestLines { first, last } => async(self.do_request_lines(first, last)),
             Yank => async(self.yank()),
             Transpose => async(self.do_transpose()),
