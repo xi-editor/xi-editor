@@ -43,8 +43,13 @@ pub enum Request<'a> {
 #[derive(Debug, PartialEq, Eq)]
 pub enum TabCommand<'a> {
     Edit { tab_name: &'a str, edit_command: EditCommand<'a> },
+    // deprecated
     NewTab,
+    // deprecated
     DeleteTab { tab_name: &'a str },
+    /// Request a new view, opening a file if `file_path` is Some, else creating an empty buffer.
+    NewView { file_path: Option<&'a str> },
+    CloseView { view_id: &'a str },
 }
 
 /// An enum representing an edit command, parsed from JSON.
@@ -85,6 +90,7 @@ pub enum EditCommand<'a> {
     ScrollPageDown,
     PageDownAndModifySelection,
     SelectAll,
+    // deprecated
     Open { file_path: &'a str },
     Save { file_path: &'a str },
     Scroll { first: i64, last: i64 },
@@ -113,6 +119,14 @@ impl<'a> TabCommand<'a> {
             "delete_tab" => params.as_object().and_then(|dict| {
                 dict_get_string(dict, "tab").map(|tab_name| DeleteTab { tab_name: tab_name })
             }).ok_or_else(|| MalformedTabParams(method.to_string(), params.clone())),
+
+            "close_view" => params.as_object().and_then(|dict| {
+                dict_get_string(dict, "tab").map(|view_id| CloseView { view_id: view_id })
+            }).ok_or_else(|| MalformedTabParams(method.to_string(), params.clone())),
+
+            "new_view" => params.as_object()
+                .map(|dict| NewView { file_path: dict_get_string(dict, "filename") }) // optional
+                .ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
 
             "edit" =>
                 params

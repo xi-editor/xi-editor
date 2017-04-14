@@ -15,8 +15,8 @@
 use std::borrow::Cow;
 use std::cmp::{min, max};
 use std::fs::File;
-use std::io::{Read, Write};
-use std::collections::BTreeSet;
+use std::io::Write;
+use std::collections::{BTreeSet, BTreeMap};
 use std::sync::{Arc, Mutex};
 use serde_json::Value;
 
@@ -29,7 +29,7 @@ use xi_rope::spans::SpansBuilder;
 use view::{Style, View};
 use word_boundaries::WordCursor;
 
-use tabs::TabCtx;
+use tabs::{TabCtx, ViewIdentifier};
 use rpc::EditCommand;
 use run_plugin::{start_plugin, PluginRef};
 
@@ -44,8 +44,9 @@ const MAX_SIZE_LIMIT: usize = 1024 * 1024;
 
 pub struct Editor<W: Write> {
     text: Rope,
-    view: View,
+    //views: BtreeMap<ViewIdentifier, View>,
 
+    view: View,
     engine: Engine,
     last_rev_id: usize,
     undo_group_id: usize,
@@ -93,10 +94,17 @@ impl EditType {
 
 impl<W: Write + Send + 'static> Editor<W> {
     pub fn new(tab_ctx: TabCtx<W>) -> Arc<Mutex<Editor<W>>> {
-        let engine = Engine::new(Rope::from(""));
+        Self::with_text(tab_ctx, "".to_owned())
+    }
+
+    pub fn with_text(tab_ctx: TabCtx<W>, text: String) -> Arc<Mutex<Editor<W>>> {
+
+        let engine = Engine::new(Rope::from(text));
+        let buffer = engine.get_head();
         let last_rev_id = engine.get_head_rev_id();
+
         let editor = Editor {
-            text: Rope::from(""),
+            text: buffer,
             view: View::new(),
             engine: engine,
             last_rev_id: last_rev_id,
@@ -115,6 +123,14 @@ impl<W: Write + Send + 'static> Editor<W> {
             revs_in_flight: 0,
         };
         Arc::new(Mutex::new(editor))
+    }
+
+
+    pub fn add_view(&mut self, view_id: ViewIdentifier) {
+        //FIXME: this is a no-op for the time being
+        self.view = View::new();
+        //assert!(self.views.count() == 0, "an editor should only currently have one view");
+        //self.views.push(View::new());
     }
 
     fn insert(&mut self, s: &str) {
@@ -230,12 +246,12 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
     }
 
-    fn reset_contents(&mut self, new_contents: Rope) {
-        self.engine = Engine::new(new_contents);
-        self.text = self.engine.get_head();
-        self.view.reset_breaks();
-        self.set_cursor(0, true);
-    }
+    //fn reset_contents(&mut self, new_contents: Rope) {
+        //self.engine = Engine::new(new_contents);
+        //self.text = self.engine.get_head();
+        //self.view.reset_breaks();
+        //self.set_cursor(0, true);
+    //}
 
     // render if needed, sending to ui
     pub fn render(&mut self) {
@@ -584,15 +600,7 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     fn do_open(&mut self, path: &str) {
-        match File::open(path) {
-            Ok(mut f) => {
-                let mut s = String::new();
-                if f.read_to_string(&mut s).is_ok() {
-                    self.reset_contents(Rope::from(s));
-                }
-            }
-            Err(e) => print_err!("error {}", e),
-        }
+        print_err!("do_open should no longer be called");
     }
 
     fn do_save(&mut self, path: &str) {
