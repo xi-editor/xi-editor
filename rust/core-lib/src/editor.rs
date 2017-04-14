@@ -63,7 +63,6 @@ pub struct Editor<W: Write> {
     new_cursor: Option<(usize, usize)>,
 
     scroll_to: Option<usize>,
-    col: usize, // maybe this should live in view, it's similar to selection
 
     tab_ctx: TabCtx<W>,
     plugins: Vec<PluginRef<W>>,
@@ -117,7 +116,6 @@ impl<W: Write + Send + 'static> Editor<W> {
             this_edit_type: EditType::Other,
             new_cursor: None,
             scroll_to: Some(0),
-            col: 0,
             tab_ctx: tab_ctx,
             plugins: Vec::new(),
             revs_in_flight: 0,
@@ -145,7 +143,8 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
         self.view.sel_end = offset;
         if hard {
-            self.col = self.view.offset_to_line_col(&self.text, offset).1;
+            let new_col = self.view.offset_to_line_col(&self.text, offset).1;
+            self.view.set_cursor_col(new_col);
             self.scroll_to = Some(offset);
         }
         self.view.scroll_to_cursor(&self.text);
@@ -349,7 +348,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
 
         let old_offset = self.view.sel_end;
-        let offset = self.view.vertical_motion(&self.text, -1, self.col);
+        let offset = self.view.vertical_motion(&self.text, -1);
         self.set_cursor(offset, old_offset == offset);
         self.scroll_to = Some(offset);
     }
@@ -360,7 +359,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
 
         let old_offset = self.view.sel_end;
-        let offset = self.view.vertical_motion(&self.text, 1, self.col);
+        let offset = self.view.vertical_motion(&self.text, 1);
         self.set_cursor(offset, old_offset == offset);
         self.scroll_to = Some(offset);
     }
@@ -382,7 +381,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         if let Some(offset) = self.text.prev_grapheme_offset(self.view.sel_end) {
             self.set_cursor(offset, true);
         } else {
-                self.col = 0;
+            self.view.set_cursor_col(0);
             // TODO: should set scroll_to_cursor in this case too,
             // but it won't get sent; probably it needs to be a separate cmd
         }
@@ -430,8 +429,8 @@ impl<W: Write + Send + 'static> Editor<W> {
         if let Some(offset) = self.text.next_grapheme_offset(self.view.sel_end) {
             self.set_cursor(offset, true);
         } else {
-            self.col = self.view.offset_to_line_col(&self.text, self.view.sel_end).1;
-            // see above
+            let new_col = self.view.offset_to_line_col(&self.text, self.view.sel_end).1;
+            self.view.set_cursor_col(new_col);
         }
     }
 
@@ -469,7 +468,7 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     fn cursor_start(&mut self) {
-        let start = self.view.sel_min() - self.col;
+        let start = self.view.sel_min() - self.view.get_cursor_col();
         self.set_cursor(start, true);
     }
 
@@ -525,9 +524,9 @@ impl<W: Write + Send + 'static> Editor<W> {
 
         let scroll = -max(self.view.scroll_height() as isize - 2, 1);
         let old_offset = self.view.sel_end;
-        let offset = self.view.vertical_motion(&self.text, scroll, self.col);
+        let offset = self.view.vertical_motion(&self.text, scroll);
         self.set_cursor(offset, old_offset == offset);
-        let scroll_offset = self.view.vertical_motion(&self.text, scroll, self.col);
+        let scroll_offset = self.view.vertical_motion(&self.text, scroll);
         self.scroll_to = Some(scroll_offset);
     }
 
@@ -538,9 +537,9 @@ impl<W: Write + Send + 'static> Editor<W> {
 
         let scroll = max(self.view.scroll_height() as isize - 2, 1);
         let old_offset = self.view.sel_end;
-        let offset = self.view.vertical_motion(&self.text, scroll, self.col);
+        let offset = self.view.vertical_motion(&self.text, scroll);
         self.set_cursor(offset, old_offset == offset);
-        let scroll_offset = self.view.vertical_motion(&self.text, scroll, self.col);
+        let scroll_offset = self.view.vertical_motion(&self.text, scroll);
         self.scroll_to = Some(scroll_offset);
     }
 

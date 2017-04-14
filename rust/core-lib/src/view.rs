@@ -46,7 +46,8 @@ pub struct View {
     height: usize,  // height of visible portion
     breaks: Option<Breaks>,
     style_spans: Spans<Style>,
-    cols: usize,
+    wrap_col: usize,
+    cursor_col: usize,
 
     // Ranges of lines held by the line cache in the front-end that are considered
     // valid.
@@ -66,7 +67,9 @@ impl Default for View {
             height: 10,
             breaks: None,
             style_spans: Spans::default(),
-            cols: 0,
+            wrap_col: 0,
+            // used to maintain preferred hpos during vertical movement
+            cursor_col: 0,
             valid_lines: IndexSet::new(),
             dirty: true,
         }
@@ -102,6 +105,14 @@ impl View {
         } else if self.first_line + self.height <= line {
             self.first_line = line - (self.height - 1);
         }
+    }
+
+    pub fn set_cursor_col(&mut self, col: usize) {
+        self.cursor_col = col;
+    }
+
+    pub fn get_cursor_col(&mut self) -> usize {
+        self.cursor_col
     }
 
     // Render a single line, and advance cursors to next line.
@@ -334,9 +345,8 @@ impl View {
     }
 
     // Move up or down by `line_delta` lines and return offset where the
-    // cursor lands. The `col` argument should probably move into the View
-    // struct.
-    pub fn vertical_motion(&self, text: &Rope, line_delta: isize, col: usize) -> usize {
+    // cursor lands. 
+    pub fn vertical_motion(&self, text: &Rope, line_delta: isize) -> usize {
         // This code is quite careful to avoid integer overflow.
         // TODO: write tests to verify
         let line = self.line_of_offset(text, self.sel_end);
@@ -352,7 +362,7 @@ impl View {
         if line > n_lines {
             return text.len();
         }
-        self.line_col_to_offset(text, line, col)
+        self.line_col_to_offset(text, line, self.cursor_col)
     }
 
     // use own breaks if present, or text if not (no line wrapping)
@@ -376,9 +386,9 @@ impl View {
         }
     }
 
-    pub fn rewrap(&mut self, text: &Rope, cols: usize) {
-        self.breaks = Some(linewrap::linewrap(text, cols));
-        self.cols = cols;
+    pub fn rewrap(&mut self, text: &Rope, wrap_col: usize) {
+        self.breaks = Some(linewrap::linewrap(text, wrap_col));
+        self.wrap_col = wrap_col;
     }
 
     pub fn after_edit(&mut self, text: &Rope, delta: &Delta<RopeInfo>) {
@@ -397,7 +407,7 @@ impl View {
         }
         self.sel_start = self.sel_end;
         if self.breaks.is_some() {
-            linewrap::rewrap(self.breaks.as_mut().unwrap(), text, iv, new_len, self.cols);
+            linewrap::rewrap(self.breaks.as_mut().unwrap(), text, iv, new_len, self.wrap_col);
         }
         // TODO: maybe more precise editing based on actual delta rather than summary.
         // TODO: perhaps use different semantics for spans that enclose the edited region.
