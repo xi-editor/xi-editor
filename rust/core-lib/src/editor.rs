@@ -25,7 +25,7 @@ use xi_rope::interval::Interval;
 use xi_rope::delta::{Delta, Transformer};
 use xi_rope::tree::Cursor;
 use xi_rope::engine::Engine;
-use xi_rope::spans::SpansBuilder;
+use xi_rope::spans::{Spans, SpansBuilder};
 use view::{Style, View};
 use word_boundaries::WordCursor;
 
@@ -64,6 +64,7 @@ pub struct Editor<W: Write> {
 
     scroll_to: Option<usize>,
 
+    style_spans: Spans<Style>,
     tab_ctx: TabCtx<W>,
     plugins: Vec<PluginRef<W>>,
     revs_in_flight: usize,
@@ -116,6 +117,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             this_edit_type: EditType::Other,
             new_cursor: None,
             scroll_to: Some(0),
+            style_spans: Spans::default(),
             tab_ctx: tab_ctx,
             plugins: Vec::new(),
             revs_in_flight: 0,
@@ -208,6 +210,14 @@ impl<W: Write + Send + 'static> Editor<W> {
         let delta = self.engine.delta_rev_head(self.last_rev_id);
         self.view.after_edit(&self.text, &delta);
         let (iv, new_len) = delta.summary();
+
+        // TODO: maybe more precise editing based on actual delta rather than summary.
+        // TODO: perhaps use different semantics for spans that enclose the edited region.
+        // Currently it breaks any such span in half and applies no spans to the inserted
+        // text. That's ok for syntax highlighting but not ideal for rich text.
+        let empty_spans = SpansBuilder::new(new_len).build();
+        self.style_spans.edit(iv, empty_spans);
+
         //print_err!("delta {}:{} +{} {}", iv.start(), iv.end(), new_len, self.this_edit_type.json_string());
         for plugin in &self.plugins {
             self.revs_in_flight += 1;
@@ -254,7 +264,7 @@ impl<W: Write + Send + 'static> Editor<W> {
 
     // render if needed, sending to ui
     pub fn render(&mut self) {
-        self.view.render_if_dirty(&self.text, &self.tab_ctx);
+        self.view.render_if_dirty(&self.text, &self.tab_ctx, &self.style_spans);
         if let Some(scrollto) = self.scroll_to {
             let (line, col) = self.view.offset_to_line_col(&self.text, scrollto);
             self.tab_ctx.scroll_to(line, col);
@@ -620,11 +630,11 @@ impl<W: Write + Send + 'static> Editor<W> {
         let first = max(first, 0) as usize;
         let last = last as usize;
         self.view.set_scroll(first, last);
-        self.view.send_update_for_scroll(&self.text, &self.tab_ctx, first, last);
+        self.view.send_update_for_scroll(&self.text, &self.tab_ctx, &self.style_spans, first, last);
     }
 
     fn do_request_lines(&mut self, first: i64, last: i64) {
-        self.view.send_update(&self.text, &self.tab_ctx, first as usize, last as usize);
+        self.view.send_update(&self.text, &self.tab_ctx, &self.style_spans, first as usize, last as usize);
     }
 
     fn do_click(&mut self, line: u64, col: u64, flags: u64, click_count: u64) {
@@ -664,7 +674,11 @@ impl<W: Write + Send + 'static> Editor<W> {
 
     fn debug_test_fg_spans(&mut self) {
         print_err!("setting fg spans");
-        self.view.set_test_fg_spans();
+        let mut sb = SpansBuilder::new(15);
+        let style = Style { fg: 0xffc00000, font_style: 0 };
+        sb.add_span(Interval::new_closed_open(5, 10), style);
+        self.style_spans = sb.build();
+
         self.view.set_dirty();
     }
 
@@ -880,7 +894,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             start = new_start;
             end_offset = transformer.transform(end_offset, true);
         }
-        self.view.set_fg_spans(start, end_offset, spans);
+        self.style_spans.edit(Interval::new_closed_closed(start, end_offset), spans);
         self.view.set_dirty();
         self.render();
     }

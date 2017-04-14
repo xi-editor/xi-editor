@@ -45,7 +45,6 @@ pub struct View {
     first_line: usize,  // vertical scroll position
     height: usize,  // height of visible portion
     breaks: Option<Breaks>,
-    style_spans: Spans<Style>,
     wrap_col: usize,
     cursor_col: usize,
 
@@ -66,7 +65,6 @@ impl Default for View {
             first_line: 0,
             height: 10,
             breaks: None,
-            style_spans: Spans::default(),
             wrap_col: 0,
             // used to maintain preferred hpos during vertical movement
             cursor_col: 0,
@@ -117,7 +115,7 @@ impl View {
 
     // Render a single line, and advance cursors to next line.
     fn render_line<W: Write>(&self, tab_ctx: &TabCtx<W>, text: &Rope,
-        cursor: &mut Cursor<RopeInfo>, breaks_cursor: Option<&mut Cursor<BreaksInfo>>,
+        cursor: &mut Cursor<RopeInfo>, breaks_cursor: Option<&mut Cursor<BreaksInfo>>, style_spans: &Spans<Style>, 
         line_num: usize) -> Value
     {
         let start_pos = cursor.pos();
@@ -159,7 +157,7 @@ impl View {
             }
         }
 
-        let styles = self.render_styles(tab_ctx, start_pos, pos, &selections);
+        let styles = self.render_styles(tab_ctx, start_pos, pos, &selections, style_spans);
         json!({
             "text": &l_str,
             "cursor": cursors,
@@ -168,10 +166,10 @@ impl View {
     }
 
     pub fn render_styles<W: Write>(&self, tab_ctx: &TabCtx<W>, start: usize, end: usize,
-        sel: &[(usize, usize)]) -> Vec<isize>
+        sel: &[(usize, usize)], style_spans: &Spans<Style>) -> Vec<isize>
     { 
         let mut rendered_styles = Vec::new();
-        let style_spans = self.style_spans.subseq(Interval::new_closed_open(start, end));
+        let style_spans = style_spans.subseq(Interval::new_closed_open(start, end));
 
         let mut ix = 0;
         for &(sel_start, sel_end) in sel {
@@ -199,7 +197,7 @@ impl View {
         rendered_styles
     }
 
-    pub fn send_update<W: Write>(&mut self, text: &Rope, tab_ctx: &TabCtx<W>,
+    pub fn send_update<W: Write>(&mut self, text: &Rope, tab_ctx: &TabCtx<W>, style_spans: &Spans<Style>,
         first_line: usize, last_line: usize)
     {
         let height = self.offset_to_line_col(text, text.len()).0 + 1;
@@ -218,7 +216,7 @@ impl View {
         let mut rendered_lines = Vec::new();
         for line_num in first_line..last_line {
             rendered_lines.push(self.render_line(tab_ctx, text, 
-                &mut cursor, breaks_cursor.as_mut(), line_num));
+                &mut cursor, breaks_cursor.as_mut(), style_spans, line_num));
         }
         ops.push(self.build_update_op("ins", Some(rendered_lines), last_line - first_line));
         if last_line < height {
@@ -236,7 +234,7 @@ impl View {
 
     /// Send lines within given region (plus slop) that the front-end does not already
     /// have.
-    pub fn send_update_for_scroll<W: Write>(&mut self, text: &Rope, tab_ctx: &TabCtx<W>,
+    pub fn send_update_for_scroll<W: Write>(&mut self, text: &Rope, tab_ctx: &TabCtx<W>, style_spans: &Spans<Style>,
         first_line: usize, last_line: usize)
     {
         let first_line = max(first_line, SCROLL_SLOP) - SCROLL_SLOP;
@@ -260,7 +258,7 @@ impl View {
             for line_num in start..end {
                 rendered_lines.push(self.render_line(tab_ctx, text,
                                                      &mut cursor, breaks_cursor.as_mut(),
-                                                     line_num));
+                                                     style_spans, line_num));
             }
             ops.push(self.build_update_op("ins", Some(rendered_lines), end - start));
             ops.push(self.build_update_op("skip", None, end - start));
@@ -292,11 +290,11 @@ impl View {
     }
 
     // Update front-end with any changes to view since the last time sent.
-    pub fn render_if_dirty<W: Write>(&mut self, text: &Rope, tab_ctx: &TabCtx<W>) {
+    pub fn render_if_dirty<W: Write>(&mut self, text: &Rope, tab_ctx: &TabCtx<W>, style_spans: &Spans<Style>) {
         if self.dirty {
             let first_line = max(self.first_line, SCROLL_SLOP) - SCROLL_SLOP;
             let last_line = self.first_line + self.height + SCROLL_SLOP;
-            self.send_update(text, tab_ctx, first_line, last_line);
+            self.send_update(text, tab_ctx, style_spans, first_line, last_line);
             self.dirty = false;
         }
     }
@@ -409,27 +407,10 @@ impl View {
         if self.breaks.is_some() {
             linewrap::rewrap(self.breaks.as_mut().unwrap(), text, iv, new_len, self.wrap_col);
         }
-        // TODO: maybe more precise editing based on actual delta rather than summary.
-        // TODO: perhaps use different semantics for spans that enclose the edited region.
-        // Currently it breaks any such span in half and applies no spans to the inserted
-        // text. That's ok for syntax highlighting but not ideal for rich text.
-        let empty_spans = SpansBuilder::new(new_len).build();
-        self.style_spans.edit(iv, empty_spans);
         self.dirty = true;
     }
 
     pub fn reset_breaks(&mut self) {
         self.breaks = None;
-    }
-
-    pub fn set_test_fg_spans(&mut self) {
-        let mut sb = SpansBuilder::new(15);
-        let style = Style { fg: 0xffc00000, font_style: 0 };
-        sb.add_span(Interval::new_closed_open(5, 10), style);
-        self.style_spans = sb.build();
-    }
-
-    pub fn set_fg_spans(&mut self, start: usize, end: usize, spans: Spans<Style>) {
-        self.style_spans.edit(Interval::new_closed_closed(start, end), spans);
     }
 }
