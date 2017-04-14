@@ -616,6 +616,12 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.view.send_update_for_scroll(&self.text, &self.tab_ctx, first, last);
     }
 
+    /// Sets the cursor and scrolls to the beginning of the given line.
+    fn do_goto_line(&mut self, line: u64) {
+        let line = self.view.line_col_to_offset(&self.text, line as usize, 0);
+        self.set_cursor(line, true);
+    }
+
     fn do_request_lines(&mut self, first: i64, last: i64) {
         self.view.send_update(&self.text, &self.tab_ctx, first as usize, last as usize);
     }
@@ -807,6 +813,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             Open { file_path } => async(self.do_open(file_path)),
             Save { file_path } => async(self.do_save(file_path)),
             Scroll { first, last } => async(self.do_scroll(first, last)),
+            GotoLine { line } => async(self.do_goto_line(line)),
             RequestLines { first, last } => async(self.do_request_lines(first, last)),
             Yank => async(self.yank()),
             Transpose => async(self.do_transpose()),
