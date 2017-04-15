@@ -25,7 +25,7 @@ use xi_rope::interval::Interval;
 use xi_rope::spans::Spans;
 use xi_rpc::dict_add_value;
 
-use tabs::TabCtx;
+use tabs::{ViewIdentifier, TabCtx};
 use styles;
 use index_set::IndexSet;
 
@@ -40,6 +40,7 @@ pub struct Style {
 }
 
 pub struct View {
+    pub view_id: ViewIdentifier,
     pub sel_start: usize,
     pub sel_end: usize,
     first_line: usize,  // vertical scroll position
@@ -57,9 +58,10 @@ pub struct View {
     dirty: bool,
 }
 
-impl Default for View {
-    fn default() -> View {
+impl View {
+    pub fn new<S: AsRef<str>>(view_id: S) -> View {
         View {
+            view_id: view_id.as_ref().to_owned(),
             sel_start: 0,
             sel_end: 0,
             first_line: 0,
@@ -70,13 +72,7 @@ impl Default for View {
             cursor_col: 0,
             valid_lines: IndexSet::new(),
             dirty: true,
-        }
-    }
-}
-
-impl View {
-    pub fn new() -> View {
-        View::default()
+        }   
     }
 
     pub fn set_scroll(&mut self, first: usize, last: usize) {
@@ -227,7 +223,7 @@ impl View {
             ops.push(self.build_update_op(op, None, height - last_line));
         }
         let params = json!({"ops": ops});
-        tab_ctx.update_view(&params);
+        tab_ctx.update_view(&self.view_id, &params);
         self.valid_lines.union_one_range(first_line, last_line);
     }
 
@@ -272,7 +268,7 @@ impl View {
             ops.push(self.build_update_op("copy", None, height - line));
         }
         let params = json!({"ops": ops});
-        tab_ctx.update_view(&params);
+        tab_ctx.update_view(&self.view_id, &params);
         self.valid_lines.union_one_range(first_line, last_line);
     }
 

@@ -28,7 +28,7 @@ use styles::{Style, StyleMap};
 use MainPeer;
 
 /// ViewIdentifiers are the primary means of routing messages between xi-core and a client view.
-type ViewIdentifier = String;
+pub type ViewIdentifier = String;
 
 /// BufferIdentifiers uniquely identify open buffers.
 type BufferIdentifier = String;
@@ -50,7 +50,6 @@ pub struct Tabs<W: Write> {
 
 #[derive(Clone)]
 pub struct TabCtx<W: Write> {
-    tab: BufferIdentifier,
     kill_ring: Arc<Mutex<Rope>>,
     rpc_peer: MainPeer<W>,
     style_map: Arc<Mutex<StyleMap>>,
@@ -69,9 +68,8 @@ impl<W: Write + Send + 'static> Tabs<W> {
         }
     }
 
-    fn new_tab_ctx(&self, buffer_id: &str, peer: &MainPeer<W>) -> TabCtx<W> {
+    fn new_tab_ctx(&self, peer: &MainPeer<W>) -> TabCtx<W> {
         TabCtx {
-            tab: buffer_id.to_owned(),
             kill_ring: self.kill_ring.clone(),
             rpc_peer: peer.clone(),
             style_map: self.style_map.clone(),
@@ -143,14 +141,14 @@ impl<W: Write + Send + 'static> Tabs<W> {
 
     fn new_empty_view(&mut self, rpc_peer: &MainPeer<W>,
                       view_id: &str, buffer_id: BufferIdentifier) {
-        let editor = Editor::new(self.new_tab_ctx(view_id, rpc_peer));
+        let editor = Editor::new(self.new_tab_ctx(rpc_peer), view_id);
         self.finalize_new_view(view_id, buffer_id, editor);
     }
 
     fn new_view_with_file(&mut self, rpc_peer: &MainPeer<W>, view_id: &str, buffer_id: BufferIdentifier, path: &Path) {
         match self.read_file(&path) {
             Ok(contents) => {
-                let editor = Editor::with_text(self.new_tab_ctx(view_id, rpc_peer), contents);
+                let editor = Editor::with_text(self.new_tab_ctx(rpc_peer), view_id, contents);
                 self.finalize_new_view(view_id, buffer_id, editor)
             }
             Err(err) => {
@@ -220,7 +218,7 @@ impl<W: Write + Send + 'static> Tabs<W> {
         let buffer_id = self.views.get(view_id)
             .expect(&format!("missing buffer id for view {}", view_id));
         if let Some(editor) = self.buffers.get(buffer_id) {
-            Editor::do_rpc(editor, cmd)
+            Editor::do_rpc(editor, view_id, cmd)
         } else {
             print_err!("buffer not found: {}, for view {}", buffer_id, view_id);
             None
@@ -235,18 +233,18 @@ impl<W: Write + Send + 'static> Tabs<W> {
 }
 
 impl<W: Write> TabCtx<W> {
-    pub fn update_view(&self, update: &Value) {
+    pub fn update_view(&self, view_id: &str, update: &Value) {
         self.rpc_peer.send_rpc_notification("update",
             &json!({
-                "view_id": &self.tab,
+                "view_id": view_id,
                 "update": update,
             }));
     }
 
-    pub fn scroll_to(&self, line: usize, col: usize) {
+    pub fn scroll_to(&self, view_id: &str, line: usize, col: usize) {
         self.rpc_peer.send_rpc_notification("scroll_to",
             &json!({
-                "view_id": &self.tab,
+                "view_id": view_id,
                 "line": line,
                 "col": col,
             }));

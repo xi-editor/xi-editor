@@ -17,8 +17,9 @@ use std::cmp::{min, max};
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::io::Write;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
+use std::mem;
 use serde_json::Value;
 
 use xi_rope::rope::{LinesMetric, Rope};
@@ -30,7 +31,7 @@ use xi_rope::spans::{Spans, SpansBuilder};
 use view::{Style, View};
 use word_boundaries::WordCursor;
 
-use tabs::TabCtx;
+use tabs::{ViewIdentifier, TabCtx};
 use rpc::EditCommand;
 use run_plugin::{start_plugin, PluginRef};
 
@@ -48,6 +49,7 @@ pub struct Editor<W: Write> {
     // Maybe this should be in TabCtx or equivelant?
     path: Option<PathBuf>,
 
+    views: BTreeMap<ViewIdentifier, View>,
     view: View,
     engine: Engine,
     last_rev_id: usize,
@@ -95,11 +97,13 @@ impl EditType {
 }
 
 impl<W: Write + Send + 'static> Editor<W> {
-    pub fn new(tab_ctx: TabCtx<W>) -> Arc<Mutex<Editor<W>>> {
-        Self::with_text(tab_ctx, "".to_owned())
+    /// Creates a new `Editor` with a new empty buffer.
+    pub fn new(tab_ctx: TabCtx<W>, initial_view_id: &str) -> Arc<Mutex<Editor<W>>> {
+        Self::with_text(tab_ctx, initial_view_id, "".to_owned())
     }
 
-    pub fn with_text(tab_ctx: TabCtx<W>, text: String) -> Arc<Mutex<Editor<W>>> {
+    /// Creates a new `Editor`, loading text into a new buffer.
+    pub fn with_text(tab_ctx: TabCtx<W>, initial_view_id: &str, text: String) -> Arc<Mutex<Editor<W>>> {
 
         let engine = Engine::new(Rope::from(text));
         let buffer = engine.get_head();
@@ -108,7 +112,8 @@ impl<W: Write + Send + 'static> Editor<W> {
         let editor = Editor {
             text: buffer,
             path: None,
-            view: View::new(),
+            views: BTreeMap::new(),
+            view: View::new(initial_view_id),
             engine: engine,
             last_rev_id: last_rev_id,
             undo_group_id: 0,
@@ -129,22 +134,32 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
 
-    #[allow(unused_variables)] 
     pub fn add_view(&mut self, view_id: &str) {
-        //FIXME: this is a no-op for the time being
-        self.view = View::new();
+        assert!(!self.views.contains_key(view_id), "view_id already exists");
+        self.views.insert(view_id.to_owned(), View::new(view_id.to_owned()));
     }
 
-    #[allow(unused_variables)] 
-    pub fn remove_view(&mut self, view_id: &str) {
-        //FIXME: this is a no-op until we have multiple views
+    /// Removes a view from this editor's stack, if this editor has multiple views.
+    /// 
+    /// If the editor only has a single view this is a no-op. After removing a view the caller must
+    /// always call Editor::has_views() to determine whether or not the editor should be cleaned up.
+   pub fn remove_view(&mut self, view_id: &str) {
+        if self.view.view_id == view_id {
+            if self.views.len() > 0 {
+                //set some other view as active. This will be reset on the next EditCommand
+                let tempkey = self.views.keys().nth(0).unwrap().clone();
+                let mut temp = self.views.remove(&tempkey).unwrap();
+                mem::swap(&mut temp, &mut self.view);
+                self.views.insert(temp.view_id.clone(), temp);
+            }
+        } else {
+            self.views.remove(view_id).expect("attempt to remove missing view");
+        }
     }
 
     /// Returns true if this editor has any attached views.
-    /// If false, the editor will be cleaned up.
     pub fn has_views(&self) -> bool {
-        // always false until we implement multiple views
-        return false
+        return self.view.view_id != "Null" || self.views.len() > 0
     }
 
     pub fn set_path<P: AsRef<Path>>(&mut self, path: P) {
@@ -285,7 +300,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.view.render_if_dirty(&self.text, &self.tab_ctx, &self.style_spans);
         if let Some(scrollto) = self.scroll_to {
             let (line, col) = self.view.offset_to_line_col(&self.text, scrollto);
-            self.tab_ctx.scroll_to(line, col);
+            self.tab_ctx.scroll_to(&self.view.view_id, line, col);
             self.scroll_to = None;
         }
     }
@@ -791,17 +806,28 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.insert(&*String::from(kill_ring_string));
     }
 
-    pub fn do_rpc(self_ref: &Arc<Mutex<Editor<W>>>, cmd: EditCommand) -> Option<Value> {
-        self_ref.lock().unwrap().do_rpc_with_self_ref(cmd, self_ref)
+    pub fn do_rpc(self_ref: &Arc<Mutex<Editor<W>>>, view_id: &str, cmd: EditCommand) -> Option<Value> {
+        self_ref.lock().unwrap().do_rpc_with_self_ref(view_id, cmd, self_ref)
     }
 
-    fn do_rpc_with_self_ref(&mut self,
+    fn do_rpc_with_self_ref(&mut self, view_id: &str,
                   cmd: EditCommand,
                   self_ref: &Arc<Mutex<Editor<W>>>)
                   -> Option<Value> {
 
         use rpc::EditCommand::*;
 
+        // if this view is not the currently active view, swap it out
+        if self.view.view_id != view_id {
+            if self.view.view_id != "Null" {
+                let mut temp = self.views.remove(view_id).expect("no view for provided view_id");
+                mem::swap(&mut temp, &mut self.view);
+                self.views.insert(temp.view_id.clone(), temp);
+            } else {
+                self.view = self.views.remove(view_id).expect("no view for provided view_id");
+            }
+        }
+        
         self.this_edit_type = EditType::Other;
 
         let result = match cmd {
