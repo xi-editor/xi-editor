@@ -25,8 +25,8 @@ use xi_rpc::{dict_get_u64, dict_get_string, arr_get_u64, arr_get_i64};
 
 impl<'a> Request<'a> {
     pub fn from_json(method: &'a str, params: &'a Value) -> Result<Self, Error> {
-        TabCommand::from_json(method, params).map(|cmd|
-            Request::TabCommand { tab_command: cmd})
+        CoreCommand::from_json(method, params).map(|cmd|
+            Request::CoreCommand { core_command: cmd})
     }
 }
 
@@ -36,13 +36,13 @@ impl<'a> Request<'a> {
 
 #[derive(Debug, PartialEq)]
 pub enum Request<'a> {
-    TabCommand { tab_command: TabCommand<'a> }
+    CoreCommand { core_command: CoreCommand<'a> }
 }
 
-/// An enum representing a tab command, parsed from JSON.
+/// An enum representing a core command, parsed from JSON.
 #[derive(Debug, PartialEq, Eq)]
-pub enum TabCommand<'a> {
-    Edit { tab_name: &'a str, edit_command: EditCommand<'a> },
+pub enum CoreCommand<'a> {
+    Edit { view_id: &'a str, edit_command: EditCommand<'a> },
     /// Request a new view, opening a file if `file_path` is Some, else creating an empty buffer.
     NewView { file_path: Option<&'a str> },
     CloseView { view_id: &'a str },
@@ -102,39 +102,39 @@ pub enum EditCommand<'a> {
     DebugRunPlugin,
 }
 
-impl<'a> TabCommand<'a> {
+impl<'a> CoreCommand<'a> {
     pub fn from_json(method: &str, params: &'a Value) -> Result<Self, Error> {
-        use self::TabCommand::*;
+        use self::CoreCommand::*;
         use self::Error::*;
 
         match method {
             "close_view" => params.as_object().and_then(|dict| {
-                dict_get_string(dict, "tab").map(|view_id| CloseView { view_id: view_id })
-            }).ok_or_else(|| MalformedTabParams(method.to_string(), params.clone())),
+                dict_get_string(dict, "view_id").map(|view_id| CloseView { view_id: view_id })
+            }).ok_or_else(|| MalformedCoreParams(method.to_string(), params.clone())),
 
             "new_view" => params.as_object()
                 .map(|dict| NewView { file_path: dict_get_string(dict, "file_path") }) // optional
                 .ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
                 
             "save" => params.as_object().and_then(|dict| {
-                dict_get_string(dict, "tab").and_then(|view_id| {
+                dict_get_string(dict, "view_id").and_then(|view_id| {
                     dict_get_string(dict, "file_path").map(|file_path| {
                         Save { view_id: view_id, file_path: file_path }
                        })
                     })
-                }).ok_or_else(|| MalformedTabParams(method.to_string(), params.clone())),
+                }).ok_or_else(|| MalformedCoreParams(method.to_string(), params.clone())),
 
             "edit" => params.as_object()
-                .ok_or_else(|| MalformedTabParams(method.to_string(), params.clone()))
+                .ok_or_else(|| MalformedCoreParams(method.to_string(), params.clone()))
                 .and_then(|dict| {
-                    if let (Some(tab), Some(method), Some(edit_params)) =
-                        (dict_get_string(dict, "tab"), dict_get_string(dict, "method"), dict.get("params")) {
+                    if let (Some(view_id), Some(method), Some(edit_params)) =
+                        (dict_get_string(dict, "view_id"), dict_get_string(dict, "method"), dict.get("params")) {
                             EditCommand::from_json(method, edit_params)
-                                .map(|cmd| Edit { tab_name: tab, edit_command: cmd })
-                        } else { Err(MalformedTabParams(method.to_string(), params.clone())) }
+                                .map(|cmd| Edit { view_id: view_id, edit_command: cmd })
+                        } else { Err(MalformedCoreParams(method.to_string(), params.clone())) }
                 }),
 
-            _ => Err(UnknownTabMethod(method.to_string()))
+            _ => Err(UnknownCoreMethod(method.to_string()))
         }
     }
 }
@@ -247,8 +247,8 @@ impl<'a> EditCommand<'a> {
 /// An error that occurred while parsing an edit command.
 #[derive(Debug, PartialEq)]
 pub enum Error {
-    UnknownTabMethod(String), // method name
-    MalformedTabParams(String, Value), // method name, malformed params
+    UnknownCoreMethod(String), // method name
+    MalformedCoreParams(String, Value), // method name, malformed params
     UnknownEditMethod(String), // method name
     MalformedEditParams(String, Value), // method name, malformed params
 }
@@ -260,9 +260,9 @@ impl fmt::Display for Error {
         use self::Error::*;
 
         match *self {
-            UnknownTabMethod(ref method) => write!(f, "Error: Unknown tab method '{}'", method),
-            MalformedTabParams(ref method, ref params) =>
-                write!(f, "Error: Malformed tab parameters with method '{}', parameters: {:?}", method, params),
+            UnknownCoreMethod(ref method) => write!(f, "Error: Unknown core method '{}'", method),
+            MalformedCoreParams(ref method, ref params) =>
+                write!(f, "Error: Malformed core parameters with method '{}', parameters: {:?}", method, params),
             UnknownEditMethod(ref method) => write!(f, "Error: Unknown edit method '{}'", method),
             MalformedEditParams(ref method, ref params) =>
                 write!(f, "Error: Malformed edit parameters with method '{}', parameters: {:?}", method, params),
@@ -275,8 +275,8 @@ impl error::Error for Error {
         use self::Error::*;
 
         match *self {
-            UnknownTabMethod(_) => "Unknown tab method",
-            MalformedTabParams(_, _) => "Malformed tab parameters",
+            UnknownCoreMethod(_) => "Unknown core method",
+            MalformedCoreParams(_, _) => "Malformed core parameters",
             UnknownEditMethod(_) => "Unknown edit method",
             MalformedEditParams(_, _) => "Malformed edit parameters"
         }

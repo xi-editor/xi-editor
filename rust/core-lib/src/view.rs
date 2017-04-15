@@ -227,7 +227,7 @@ impl View {
             ops.push(self.build_update_op(op, None, height - last_line));
         }
         let params = json!({"ops": ops});
-        tab_ctx.update_tab(&params);
+        tab_ctx.update_view(&params);
         self.valid_lines.union_one_range(first_line, last_line);
     }
 
@@ -272,7 +272,7 @@ impl View {
             ops.push(self.build_update_op("copy", None, height - line));
         }
         let params = json!({"ops": ops});
-        tab_ctx.update_tab(&params);
+        tab_ctx.update_view(&params);
         self.valid_lines.union_one_range(first_line, last_line);
     }
 

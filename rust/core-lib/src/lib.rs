@@ -96,7 +96,7 @@ impl<W: Write + Send + 'static> MainState<W> {
     fn handle_req(&mut self, request: Request, rpc_peer: &MainPeer<W>) ->
         Option<Value> {
         match request {
-            Request::TabCommand { tab_command } => self.tabs.do_rpc(tab_command, rpc_peer)
+            Request::CoreCommand { core_command } => self.tabs.do_rpc(core_command, rpc_peer)
         }
     }
 }

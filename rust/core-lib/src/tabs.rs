@@ -23,7 +23,7 @@ use serde_json::value::Value;
 
 use xi_rope::rope::Rope;
 use editor::Editor;
-use rpc::{TabCommand, EditCommand};
+use rpc::{CoreCommand, EditCommand};
 use styles::{Style, StyleMap};
 use MainPeer;
 
@@ -88,8 +88,8 @@ impl<W: Write + Send + 'static> Tabs<W> {
         format!("buffer-id-{}", self.id_counter)
     }
 
-    pub fn do_rpc(&mut self, cmd: TabCommand, rpc_peer: &MainPeer<W>) -> Option<Value> {
-        use rpc::TabCommand::*;
+    pub fn do_rpc(&mut self, cmd: CoreCommand, rpc_peer: &MainPeer<W>) -> Option<Value> {
+        use rpc::CoreCommand::*;
 
         match cmd {
             CloseView { view_id } => {
@@ -99,7 +99,7 @@ impl<W: Write + Send + 'static> Tabs<W> {
 
             NewView { file_path } => Some(Value::String(self.do_new_view(rpc_peer, file_path))),
             Save { view_id, file_path } => self.do_save(view_id, file_path),
-            Edit { tab_name, edit_command } => self.do_edit(tab_name, edit_command),
+            Edit { view_id, edit_command } => self.do_edit(view_id, edit_command),
         }
     }
 
@@ -235,10 +235,10 @@ impl<W: Write + Send + 'static> Tabs<W> {
 }
 
 impl<W: Write> TabCtx<W> {
-    pub fn update_tab(&self, update: &Value) {
+    pub fn update_view(&self, update: &Value) {
         self.rpc_peer.send_rpc_notification("update",
             &json!({
-                "tab": &self.tab,
+                "view_id": &self.tab,
                 "update": update,
             }));
     }
@@ -246,7 +246,7 @@ impl<W: Write> TabCtx<W> {
     pub fn scroll_to(&self, line: usize, col: usize) {
         self.rpc_peer.send_rpc_notification("scroll_to",
             &json!({
-                "tab": &self.tab,
+                "view_id": &self.tab,
                 "line": line,
                 "col": col,
             }));
