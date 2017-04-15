@@ -134,7 +134,9 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
 
+    #[allow(unreachable_code, unused_variables)] 
     pub fn add_view(&mut self, view_id: &str) {
+        panic!("multi-view support is not currently implemented");
         assert!(!self.views.contains_key(view_id), "view_id already exists");
         self.views.insert(view_id.to_owned(), View::new(view_id.to_owned()));
     }
@@ -143,9 +145,11 @@ impl<W: Write + Send + 'static> Editor<W> {
     /// 
     /// If the editor only has a single view this is a no-op. After removing a view the caller must
     /// always call Editor::has_views() to determine whether or not the editor should be cleaned up.
+    #[allow(unreachable_code)] 
    pub fn remove_view(&mut self, view_id: &str) {
         if self.view.view_id == view_id {
             if self.views.len() > 0 {
+                panic!("multi-view support is not currently implemented");
                 //set some other view as active. This will be reset on the next EditCommand
                 let tempkey = self.views.keys().nth(0).unwrap().clone();
                 let mut temp = self.views.remove(&tempkey).unwrap();
@@ -157,9 +161,9 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
     }
 
-    /// Returns true if this editor has any attached views.
+    /// Returns true if this editor has additional attached views.
     pub fn has_views(&self) -> bool {
-        return self.view.view_id != "Null" || self.views.len() > 0
+        self.views.len() > 0
     }
 
     pub fn set_path<P: AsRef<Path>>(&mut self, path: P) {

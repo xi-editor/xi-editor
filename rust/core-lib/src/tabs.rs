@@ -117,8 +117,12 @@ impl<W: Write + Send + 'static> Tabs<W> {
         if let Some(file_path) = file_path.map(PathBuf::from) {
             // if this file is open, add a new view
             if self.open_files.contains_key(&file_path) {
-                let buffer_id = self.open_files.get(&file_path).unwrap().to_owned();
-                self.add_view(&view_id, buffer_id);
+                //TODO: we should eventually be adding views to the existing editor.
+                // for the time being, we just create a new empty view.
+                let buffer_id = self.next_buffer_id();
+                self.new_empty_view(rpc_peer, &view_id, buffer_id);
+                //let buffer_id = self.open_files.get(&file_path).unwrap().to_owned();
+                //self.add_view(&view_id, buffer_id);
             } else {
                 // not open: create new buffer_id and open file
                 let buffer_id = self.next_buffer_id();
@@ -162,7 +166,7 @@ impl<W: Write + Send + 'static> Tabs<W> {
     }
 
     /// Adds a new view to an existing editor instance.
-    #[allow(unreachable_code, unused_variables)] 
+    #[allow(unreachable_code, unused_variables, dead_code)] 
     fn add_view(&mut self, view_id: &str, buffer_id: BufferIdentifier) {
         panic!("add_view should not currently be accessible");
         let editor = self.buffers.get(&buffer_id).expect("missing editor_id for view_id");
@@ -173,7 +177,6 @@ impl<W: Write + Send + 'static> Tabs<W> {
     fn finalize_new_view(&mut self, view_id: &str, buffer_id: String, editor: Arc<Mutex<Editor<W>>>) {
         self.views.insert(view_id.to_owned(), buffer_id.clone());
         self.buffers.insert(buffer_id, editor.clone());
-        editor.lock().unwrap().add_view(view_id);
     }
     
     fn read_file<P: AsRef<Path>>(&self, path: P) -> io::Result<String> {
