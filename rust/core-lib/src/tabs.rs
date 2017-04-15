@@ -16,7 +16,7 @@
 
 use std::collections::BTreeMap;
 use std::io::{self, Read, Write};
-use std::path::Path;
+use std::path::{PathBuf, Path};
 use std::fs::File;
 use std::sync::{Arc, Mutex};
 use serde_json::value::Value;
@@ -28,21 +28,21 @@ use styles::{Style, StyleMap};
 use MainPeer;
 
 /// ViewIdentifiers are the primary means of routing messages between xi-core and a client view.
-pub type ViewIdentifier = String;
+type ViewIdentifier = String;
 
-// NOTE: there's a case that this should be an enum, with PathBuf & String members (for real files &
-//unsaved buffers)
-/// BufferIdentifiers are placeholder names used to identify buffers that do not have a filename.
+/// BufferIdentifiers uniquely identify open buffers.
 type BufferIdentifier = String;
 
-//TODO: proposed new name: something like "Core" or "CoreState" or "EditorState"?
+//TODO: proposed new name: something like "Core" or "CoreState" or "EditorState"? "Documents?"
 pub struct Tabs<W: Write> {
-    // NOTE: this is to allow multiple views into a single buffer
+    /// maps file names to buffer identifiers. If a client asks to open a file that is already
+    /// open, we treat it as a request for a new view.
+    open_files: BTreeMap<PathBuf, BufferIdentifier>,
     /// maps buffer identifiers (filenames) to editor instances
-    editors: BTreeMap<BufferIdentifier, Arc<Mutex<Editor<W>>>>,
+    buffers: BTreeMap<BufferIdentifier, Arc<Mutex<Editor<W>>>>,
     /// maps view identifiers to editor instances. All actions originate in a view; this lets us
     /// route messages correctly when multiple views share a buffer.
-    views: BTreeMap<ViewIdentifier, Arc<Mutex<Editor<W>>>>,
+    views: BTreeMap<ViewIdentifier, BufferIdentifier>,
     id_counter: usize,
     kill_ring: Arc<Mutex<Rope>>,
     style_map: Arc<Mutex<StyleMap>>,
@@ -50,10 +50,7 @@ pub struct Tabs<W: Write> {
 
 #[derive(Clone)]
 pub struct TabCtx<W: Write> {
-    // NOTE: this is essentially the buffer path. Should this be saved here, or in the editor
-    //itself, or does it matter?
-    //buffer_id: String,
-    tab: ViewIdentifier,
+    tab: BufferIdentifier,
     kill_ring: Arc<Mutex<Rope>>,
     rpc_peer: MainPeer<W>,
     style_map: Arc<Mutex<StyleMap>>,
@@ -63,7 +60,8 @@ pub struct TabCtx<W: Write> {
 impl<W: Write + Send + 'static> Tabs<W> {
     pub fn new() -> Tabs<W> {
         Tabs {
-            editors: BTreeMap::new(),
+            open_files: BTreeMap::new(),
+            buffers: BTreeMap::new(),
             views: BTreeMap::new(),
             id_counter: 0,
             kill_ring: Arc::new(Mutex::new(Rope::from(""))),
@@ -100,70 +98,84 @@ impl<W: Write + Send + 'static> Tabs<W> {
             },
 
             NewView { file_path } => Some(Value::String(self.do_new_view(rpc_peer, file_path))),
-
-            //TODO: intercept save, to make make sure we keep buffer_id up to date?
+            Save { view_id, file_path } => self.do_save(view_id, file_path),
             Edit { tab_name, edit_command } => self.do_edit(tab_name, edit_command),
-            _ => {  print_err!("unsupported command {:?}.", cmd); None },
         }
     }
 
-    fn do_new_view(&mut self, rpc_peer: &MainPeer<W>, file_path: Option<&str>) -> String {
-        // currently two code paths (new buffer, open file) but will eventually be at least three
-        // (new view into existing buffer)
-        if let Some(file_path) = file_path {
-            self.new_view_with_file(rpc_peer, file_path)
-        }  else {
-            self.new_empty_view(rpc_peer)
+    /// handles client `new_view` requests.
+    ///
+    ///This function always creates a new view and associates it with a buffer (which we access
+    ///through an `Editor` instance). This buffer may be existing, or it may be created.
+    ///
+    ///A `new_view` request is handled differently depending on the `file_path` argument, and on
+    ///application state. If `file_path` is given and a buffer associated with that file is already
+    ///open, we create a new view into the existing buffer. If `file_path` is given and that file
+    ///_isn't_ open, we load that file into a new buffer. If `file_path` is not given, we create a
+    ///new empty buffer.
+    fn do_new_view(&mut self, rpc_peer: &MainPeer<W>, file_path: Option<&str>) -> ViewIdentifier {
+        // three code paths: new buffer, open file, and new view into existing buffer
+        let view_id = self.next_view_id();
+        if let Some(file_path) = file_path.map(PathBuf::from) {
+            // if this file is open, add a new view
+            if self.open_files.contains_key(&file_path) {
+                let buffer_id = self.open_files.get(&file_path).unwrap().to_owned();
+                self.add_view(&view_id, buffer_id);
+            } else {
+                // not open: create new buffer_id and open file
+                let buffer_id = self.next_buffer_id();
+                self.open_files.insert(file_path.to_owned(), buffer_id.clone());
+                self.new_view_with_file(rpc_peer, &view_id, buffer_id.clone(), &file_path);
+                // above fn takes two paths: set path after
+                self.buffers.get(&buffer_id).unwrap().lock().unwrap().set_path(&file_path);
+            }
+        } else {
+            // file_path was nil: create a new empty buffer.
+            let buffer_id = self.next_buffer_id();
+            self.new_empty_view(rpc_peer, &view_id, buffer_id);
         }
+        view_id
     }
 
     fn do_close_view(&mut self, view_id: &str) {
         self.close_view(view_id);
     }
 
-    fn do_edit(&mut self, view_id: &str, cmd: EditCommand)
-            -> Option<Value> {
-        if let Some(editor) = self.views.get(view_id) {
-            Editor::do_rpc(editor, cmd)
-        } else {
-            print_err!("tab not found: {}", view_id);
-            None
-        }
+    fn new_empty_view(&mut self, rpc_peer: &MainPeer<W>,
+                      view_id: &str, buffer_id: BufferIdentifier) {
+        let editor = Editor::new(self.new_tab_ctx(view_id, rpc_peer));
+        self.finalize_new_view(view_id, buffer_id, editor);
     }
 
-    fn new_empty_view(&mut self, rpc_peer: &MainPeer<W>) -> String {
-        let view_id = self.next_view_id();
-        let buffer_id = self.next_buffer_id();
-        let editor = Editor::new(self.new_tab_ctx(&view_id, rpc_peer));
-        self.finalize_new_view(view_id, buffer_id, editor)
-    }
-
-    fn new_view_with_file(&mut self, rpc_peer: &MainPeer<W>, file_path:&str) -> String {
-        //TODO: double check logic around buffer_id / refactor this to be more readable
-        //TODO: there's a good argument that we should be validating/opening file_path here, so we
-        //can report errors to the client
-        match self.read_file(file_path) {
+    fn new_view_with_file(&mut self, rpc_peer: &MainPeer<W>, view_id: &str, buffer_id: BufferIdentifier, path: &Path) {
+        match self.read_file(&path) {
             Ok(contents) => {
-                let view_id = self.next_view_id();
-                let buffer_id = file_path.to_owned();
-                let editor = Editor::with_text(self.new_tab_ctx(&view_id, rpc_peer), contents);
+                let editor = Editor::with_text(self.new_tab_ctx(view_id, rpc_peer), contents);
                 self.finalize_new_view(view_id, buffer_id, editor)
             }
             Err(err) => {
                 //TODO: we should be reporting errors to the client
-                print_err!("unable to read file: {}, error: {:?}", file_path, err);
-               self.new_empty_view(rpc_peer)
+                // (if this is even an error? we treat opening a non-existent file as a new buffer,
+                // but set the editor's path)
+                print_err!("unable to read file: {}, error: {:?}", buffer_id, err);
+               self.new_empty_view(rpc_peer, view_id, buffer_id);
             }
         }
     }
 
-    fn finalize_new_view(&mut self, view_id: String, buffer_id: String, editor: Arc<Mutex<Editor<W>>>) -> String {
+    /// Adds a new view to an existing editor instance.
+    #[allow(unreachable_code, unused_variables)] 
+    fn add_view(&mut self, view_id: &str, buffer_id: BufferIdentifier) {
+        panic!("add_view should not currently be accessible");
+        let editor = self.buffers.get(&buffer_id).expect("missing editor_id for view_id");
+        self.views.insert(view_id.to_owned(), buffer_id);
+        editor.lock().unwrap().add_view(view_id);
+    }
 
-        editor.lock().unwrap().add_view(view_id.clone());
-        self.views.insert(view_id.clone(), editor.clone());
-        //TODO: stash buffer_id + editor
-        //self.editors.insert(buffer_id, editor);
-        view_id
+    fn finalize_new_view(&mut self, view_id: &str, buffer_id: String, editor: Arc<Mutex<Editor<W>>>) {
+        self.views.insert(view_id.to_owned(), buffer_id.clone());
+        self.buffers.insert(buffer_id, editor.clone());
+        editor.lock().unwrap().add_view(view_id);
     }
     
     fn read_file<P: AsRef<Path>>(&self, path: P) -> io::Result<String> {
@@ -174,14 +186,49 @@ impl<W: Write + Send + 'static> Tabs<W> {
     }
     
     fn close_view(&mut self, view_id: &str) {
-        //TODO: this should obviously also be removing from the buffers list if it's the last
-        //reference
-        let ed = self.views.remove(view_id).expect("missing editor when closing view");
-        //let buffer_id = ed.lock().unwrap().tab_ctx
+        let buf_id = self.views.remove(view_id).expect("missing buffer id when closing view");
+        let has_views = {
+            let editor = self.buffers.get(&buf_id).expect("missing editor when closing view");
+            editor.lock().unwrap().remove_view(view_id);
+            editor.lock().unwrap().has_views()
+        };
+
+        if !has_views {
+            self.buffers.remove(&buf_id);
+        }
+    }
+
+    fn do_save(&mut self, view_id: &str, file_path: &str) -> Option<Value> {
+        let buffer_id = self.views.get(view_id)
+            .expect(&format!("missing buffer id for view {}", view_id));
+        let editor = self.buffers.get(buffer_id)
+            .expect(&format!("missing editor for buffer {}", buffer_id));
+        let file_path = PathBuf::from(file_path);
+
+        // if this is a new path for an existing file, we have a bit of housekeeping to do:
+        if let Some(prev_path) = editor.lock().unwrap().get_path() {
+            if prev_path != file_path {
+                self.open_files.remove(prev_path);
+            }
+        }
+        editor.lock().unwrap().do_save(&file_path);
+        self.open_files.insert(file_path, buffer_id.to_owned());
+        None
+    }
+
+    fn do_edit(&mut self, view_id: &str, cmd: EditCommand) -> Option<Value> {
+        let buffer_id = self.views.get(view_id)
+            .expect(&format!("missing buffer id for view {}", view_id));
+        if let Some(editor) = self.buffers.get(buffer_id) {
+            Editor::do_rpc(editor, cmd)
+        } else {
+            print_err!("buffer not found: {}, for view {}", buffer_id, view_id);
+            None
+        }
     }
 
     pub fn handle_idle(&self) {
-        for editor in self.editors.values() {
+        for editor in self.buffers.values() {
             editor.lock().unwrap().render();
         }
     }

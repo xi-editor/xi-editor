@@ -43,13 +43,10 @@ pub enum Request<'a> {
 #[derive(Debug, PartialEq, Eq)]
 pub enum TabCommand<'a> {
     Edit { tab_name: &'a str, edit_command: EditCommand<'a> },
-    // deprecated
-    NewTab,
-    // deprecated
-    DeleteTab { tab_name: &'a str },
     /// Request a new view, opening a file if `file_path` is Some, else creating an empty buffer.
     NewView { file_path: Option<&'a str> },
     CloseView { view_id: &'a str },
+    Save { view_id: &'a str, file_path: &'a str },
 }
 
 /// An enum representing an edit command, parsed from JSON.
@@ -90,9 +87,6 @@ pub enum EditCommand<'a> {
     ScrollPageDown,
     PageDownAndModifySelection,
     SelectAll,
-    // deprecated
-    Open { file_path: &'a str },
-    Save { file_path: &'a str },
     Scroll { first: i64, last: i64 },
     RequestLines { first: i64, last: i64 },
     Yank,
@@ -114,23 +108,23 @@ impl<'a> TabCommand<'a> {
         use self::Error::*;
 
         match method {
-            "new_tab" => Ok(NewTab),
-
-            "delete_tab" => params.as_object().and_then(|dict| {
-                dict_get_string(dict, "tab").map(|tab_name| DeleteTab { tab_name: tab_name })
-            }).ok_or_else(|| MalformedTabParams(method.to_string(), params.clone())),
-
             "close_view" => params.as_object().and_then(|dict| {
                 dict_get_string(dict, "tab").map(|view_id| CloseView { view_id: view_id })
             }).ok_or_else(|| MalformedTabParams(method.to_string(), params.clone())),
 
             "new_view" => params.as_object()
-                .map(|dict| NewView { file_path: dict_get_string(dict, "filename") }) // optional
+                .map(|dict| NewView { file_path: dict_get_string(dict, "file_path") }) // optional
                 .ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
+                
+            "save" => params.as_object().and_then(|dict| {
+                dict_get_string(dict, "tab").and_then(|view_id| {
+                    dict_get_string(dict, "file_path").map(|file_path| {
+                        Save { view_id: view_id, file_path: file_path }
+                       })
+                    })
+                }).ok_or_else(|| MalformedTabParams(method.to_string(), params.clone())),
 
-            "edit" =>
-                params
-                .as_object()
+            "edit" => params.as_object()
                 .ok_or_else(|| MalformedTabParams(method.to_string(), params.clone()))
                 .and_then(|dict| {
                     if let (Some(tab), Some(method), Some(edit_params)) =
@@ -138,7 +132,7 @@ impl<'a> TabCommand<'a> {
                             EditCommand::from_json(method, edit_params)
                                 .map(|cmd| Edit { tab_name: tab, edit_command: cmd })
                         } else { Err(MalformedTabParams(method.to_string(), params.clone())) }
-            }),
+                }),
 
             _ => Err(UnknownTabMethod(method.to_string()))
         }
@@ -198,14 +192,6 @@ impl<'a> EditCommand<'a> {
             "page_down" => Ok(ScrollPageDown),
             "page_down_and_modify_selection" => Ok(PageDownAndModifySelection),
             "select_all" => Ok(SelectAll),
-
-            "open" => params.as_object().and_then(|dict| {
-                dict_get_string(dict, "filename").map(|path| Open { file_path: path })
-            }).ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
-
-            "save" => params.as_object().and_then(|dict| {
-                dict_get_string(dict, "filename").map(|path| Save { file_path: path })
-            }).ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
 
             "scroll" => params.as_array().and_then(|arr| {
                 if let (Some(first), Some(last)) =

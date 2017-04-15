@@ -22,7 +22,7 @@ use xi_rope::delta::{Delta};
 use xi_rope::tree::Cursor;
 use xi_rope::breaks::{Breaks, BreaksInfo, BreaksMetric, BreaksBaseMetric};
 use xi_rope::interval::Interval;
-use xi_rope::spans::{Spans, SpansBuilder};
+use xi_rope::spans::Spans;
 use xi_rpc::dict_add_value;
 
 use tabs::TabCtx;
@@ -408,9 +408,5 @@ impl View {
             linewrap::rewrap(self.breaks.as_mut().unwrap(), text, iv, new_len, self.wrap_col);
         }
         self.dirty = true;
-    }
-
-    pub fn reset_breaks(&mut self) {
-        self.breaks = None;
     }
 }

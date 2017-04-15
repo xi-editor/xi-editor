@@ -15,8 +15,9 @@
 use std::borrow::Cow;
 use std::cmp::{min, max};
 use std::fs::File;
+use std::path::{Path, PathBuf};
 use std::io::Write;
-use std::collections::{BTreeSet, BTreeMap};
+use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 use serde_json::Value;
 
@@ -29,7 +30,7 @@ use xi_rope::spans::{Spans, SpansBuilder};
 use view::{Style, View};
 use word_boundaries::WordCursor;
 
-use tabs::{TabCtx, ViewIdentifier};
+use tabs::TabCtx;
 use rpc::EditCommand;
 use run_plugin::{start_plugin, PluginRef};
 
@@ -44,7 +45,8 @@ const MAX_SIZE_LIMIT: usize = 1024 * 1024;
 
 pub struct Editor<W: Write> {
     text: Rope,
-    //views: BtreeMap<ViewIdentifier, View>,
+    // Maybe this should be in TabCtx or equivelant?
+    path: Option<PathBuf>,
 
     view: View,
     engine: Engine,
@@ -105,6 +107,7 @@ impl<W: Write + Send + 'static> Editor<W> {
 
         let editor = Editor {
             text: buffer,
+            path: None,
             view: View::new(),
             engine: engine,
             last_rev_id: last_rev_id,
@@ -126,11 +129,33 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
 
-    pub fn add_view(&mut self, view_id: ViewIdentifier) {
+    #[allow(unused_variables)] 
+    pub fn add_view(&mut self, view_id: &str) {
         //FIXME: this is a no-op for the time being
         self.view = View::new();
-        //assert!(self.views.count() == 0, "an editor should only currently have one view");
-        //self.views.push(View::new());
+    }
+
+    #[allow(unused_variables)] 
+    pub fn remove_view(&mut self, view_id: &str) {
+        //FIXME: this is a no-op until we have multiple views
+    }
+
+    /// Returns true if this editor has any attached views.
+    /// If false, the editor will be cleaned up.
+    pub fn has_views(&self) -> bool {
+        // always false until we implement multiple views
+        return false
+    }
+
+    pub fn set_path<P: AsRef<Path>>(&mut self, path: P) {
+        self.path = Some(path.as_ref().to_owned());
+    }
+
+    pub fn get_path(&self) -> Option<&Path> {
+        match self.path {
+            Some(ref p) => Some(p),
+            None => None,
+        }
     }
 
     fn insert(&mut self, s: &str) {
@@ -254,13 +279,6 @@ impl<W: Write + Send + 'static> Editor<W> {
             self.gc_undos.clear();
         }
     }
-
-    //fn reset_contents(&mut self, new_contents: Rope) {
-        //self.engine = Engine::new(new_contents);
-        //self.text = self.engine.get_head();
-        //self.view.reset_breaks();
-        //self.set_cursor(0, true);
-    //}
 
     // render if needed, sending to ui
     pub fn render(&mut self) {
@@ -608,12 +626,8 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.insert(chars);
     }
 
-    fn do_open(&mut self, path: &str) {
-        print_err!("do_open should no longer be called");
-    }
-
-    fn do_save(&mut self, path: &str) {
-        match File::create(path) {
+    pub fn do_save<P: AsRef<Path>>(&mut self, path: P) {
+        match File::create(&path) {
             Ok(mut f) => {
                 for chunk in self.text.iter_chunks(0, self.text.len()) {
                     if let Err(e) = f.write_all(chunk.as_bytes()) {
@@ -624,6 +638,9 @@ impl<W: Write + Send + 'static> Editor<W> {
             }
             Err(e) => print_err!("create error {}", e),
         }
+        // TODO: we should probably bubble up this error now. in the meantime always set path,
+        // because the caller has updated the open_files list
+        self.path = Some(path.as_ref().to_owned());
     }
 
     fn do_scroll(&mut self, first: i64, last: i64) {
@@ -825,8 +842,6 @@ impl<W: Write + Send + 'static> Editor<W> {
                 async(self.scroll_page_down(FLAG_SELECT))
             }
             SelectAll => async(self.select_all()),
-            Open { file_path } => async(self.do_open(file_path)),
-            Save { file_path } => async(self.do_save(file_path)),
             Scroll { first, last } => async(self.do_scroll(first, last)),
             RequestLines { first, last } => async(self.do_request_lines(first, last)),
             Yank => async(self.yank()),
