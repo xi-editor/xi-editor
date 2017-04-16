@@ -821,15 +821,11 @@ impl<W: Write + Send + 'static> Editor<W> {
 
         use rpc::EditCommand::*;
 
-        // if this view is not the currently active view, swap it out
+        // if the rpc's originating view is different from current self.view, swap it in
         if self.view.view_id != view_id {
-            if self.view.view_id != "Null" {
-                let mut temp = self.views.remove(view_id).expect("no view for provided view_id");
-                mem::swap(&mut temp, &mut self.view);
-                self.views.insert(temp.view_id.clone(), temp);
-            } else {
-                self.view = self.views.remove(view_id).expect("no view for provided view_id");
-            }
+            let mut temp = self.views.remove(view_id).expect("no view for provided view_id");
+            mem::swap(&mut temp, &mut self.view);
+            self.views.insert(temp.view_id.clone(), temp);
         }
         
         self.this_edit_type = EditType::Other;
