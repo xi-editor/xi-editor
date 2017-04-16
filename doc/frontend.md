@@ -34,30 +34,46 @@ versions.
 
 These are mostly described by example rather than specified in detail.
 They are given in shorthand, eliding the JSON-RPC boilerplate. For
-example, the actual interaction on the wire for `new_tab` is:
+example, the actual interaction on the wire for `new_view` is:
 
 ```
-to core: {"id":0,"method":"new_tab","params":[]}
-from core: {"id":0,"result":"1"}
+to core: {"id":0,"method":"new_view","params":{}}
+from core: {"id":0,"result":"view-id-1"}
 ```
 
 ## Top-level methods served by back-end
 
-### new_tab
+### new_view
 
-`new_tab []` -> `"1"`
+`new_view { "file_path": "path.md"? }` -> `"view-id-1"`
 
-Creates a new tab, returning the tab name as a string (currently
-a number, but tab names derived from filenames might be more
-debug-friendly).
+Creates a new view, returning the view identifier as a string.
+`file_path` is optional; if specified, the file is loaded into a new
+buffer; if not a new empty buffer is created. Currently, only a
+single view into a given file can be open at a time.
 
-### delete_tab
+**Note**, there is currently no mechanism for reporting errors. Also
+note, the protocol delegates power to load and save arbitrary files.
+Thus, exposing the protocol to any other agent than a front-end in
+direct control should be done with extreme caution.
 
-`delete_tab {"tab": "1"}`
+### close_view
 
-Deletes a tab, which was created by `new_tab`.
+`close_view {"view_id": "view-id-1"}`
 
-`edit {"method": "insert", "params": {"chars": "A"}, tab: "0"}`
+Closes the view associated with this `view_id`.
+
+### save
+
+`save {"view_id": "view-id-4", "file_path": "save.txt"}`
+
+Saves the buffer associated with `view_id` to `file_path`. See the
+note for `new_view`. Errors are not currently reported.
+
+
+### edit
+`edit {"method": "insert", "params": {"chars": "A"}, view_id:
+"view-id-4"}`
 
 Dispatches the inner method to the per-tab handler, with individual
 inner methods described below:
@@ -99,21 +115,6 @@ get something working quickly.
 
 Inserts the `chars` string at the current cursor location.
 
-#### open
-
-`open {filename:"/Users/raph/xi-editor/rust/src/editor.rs"}`
-
-Directs the back-end to open the named file. Note, there is currently
-no mechanism for reporting errors. Also note, the protocol delegates
-power to load and save arbitrary files. Thus, exposing the protocol
-to any other agent than a front-end in direct control should be done
-with extreme caution.
-
-#### save
-
-`save {filename:"/Users/raph/xi-editor/rust/src/editor.rs"}`
-
-Similar to `open`.
 
 #### scroll
 
@@ -165,6 +166,8 @@ page_down_and_modify_selection
 ### From back-end to front-end
 
 #### update
+**Note**: This document is not entirely up to date: some changes to
+the protocol are described in [this proposal](https://github.com/google/xi-editor/blob/protocol_doc/doc/update.md).
 
 ```
 update {"tab": "1", "update": {
