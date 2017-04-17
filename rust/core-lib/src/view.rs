@@ -160,7 +160,7 @@ impl View {
         });
 
         if let Some(cursors) = cursors {
-            result["cursors"] = json!(cursors);
+            result["cursor"] = json!(cursors);
         }
         result
     }
