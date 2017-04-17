@@ -36,7 +36,6 @@ use std::io::{BufRead, Write};
 use std::sync::{Arc, Mutex, Condvar};
 use std::sync::mpsc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::fmt::Debug;
 
 use serde_json::value::Value;
 
