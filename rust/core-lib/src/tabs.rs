@@ -91,7 +91,7 @@ impl<W: Write + Send + 'static> Tabs<W> {
 
         match cmd {
             CloseView { view_id } => {
-                self.do_close_view(view_id); self.
+                self.do_close_view(view_id);
                 None
             },
 
