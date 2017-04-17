@@ -39,7 +39,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::fmt::Debug;
 
 use serde_json::value::Value;
-use serde::ser::Serialize;
 
 #[derive(Debug)]
 pub enum Error {
@@ -272,8 +271,8 @@ impl<W:Write> RpcPeer<W> {
     fn respond(&self, result: Result<Value, Value>, id: &Value) {
         let mut response = json!({"id": id});
         match result {
-            Ok(result) => dict_add_value(&mut response, "result", result),
-            Err(error) => dict_add_value(&mut response, "error", error),
+            Ok(result) => response["result"] = json!(result), 
+            Err(error) => response["error"] = json!(error),
         };
         if let Err(e) = self.send(&response) {
             print_err!("error {} sending response to RPC {:?}", e, id);
@@ -386,17 +385,6 @@ impl<W:Write> Clone for RpcPeer<W> {
 // =============================================================================
 //  Helper functions for value manipulation
 // =============================================================================
-
-/// Convenience function for adding a key/value pair to a json object.
-/// This function does minimal error handling, and panics on bad input.
-pub fn dict_add_value<T: Serialize + Debug>(dict: &mut Value, key: &str, value: T) {
-    let mut dict_ref = dict.as_object_mut().expect("dict_add_value passed non-object.");
-    let val = match serde_json::to_value(&value) {
-        Ok(val) => val,
-        Err(err) => panic!("failed to serialize value {:?}, error {:?}", value, err),
-    };
-    dict_ref.insert(key.to_owned(), val);
-}
 
 pub fn dict_get_u64(dict: &serde_json::Map<String, Value>, key: &str) -> Option<u64> {
     dict.get(key).and_then(Value::as_u64)

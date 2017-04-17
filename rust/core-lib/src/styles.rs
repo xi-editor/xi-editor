@@ -18,8 +18,6 @@ use std::collections::HashMap;
 
 use serde_json::value::Value;
 
-use xi_rpc::dict_add_value;
-
 const N_RESERVED_STYLES: usize = 1;
 
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -40,16 +38,16 @@ impl Style {
         });
 
         if (self.bg >> 24) > 0 {
-            dict_add_value(&mut json, "bg_color", self.bg);
+            json["bg_color"] = json!(self.bg);
         }
         if self.weight != 400 {
-            dict_add_value(&mut json, "weight", self.weight);
+            json["weight"] = json!(self.weight);
         }
         if self.underline {
-            dict_add_value(&mut json, "underline", self.underline);
+            json["underline"] = json!(self.underline);
         }
         if self.italic {
-            dict_add_value(&mut json, "italic", self.italic);
+            json["italic"] = json!(self.italic);
         }
         json 
     }

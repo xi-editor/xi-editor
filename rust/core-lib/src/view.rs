@@ -23,7 +23,6 @@ use xi_rope::tree::Cursor;
 use xi_rope::breaks::{Breaks, BreaksInfo, BreaksMetric, BreaksBaseMetric};
 use xi_rope::interval::Interval;
 use xi_rope::spans::Spans;
-use xi_rpc::dict_add_value;
 
 use tabs::{ViewIdentifier, TabCtx};
 use styles;
@@ -154,11 +153,16 @@ impl View {
         }
 
         let styles = self.render_styles(tab_ctx, start_pos, pos, &selections, style_spans);
-        json!({
+
+        let mut result = json!({
             "text": &l_str,
-            "cursor": cursors,
             "styles": styles,
-        })
+        });
+
+        if let Some(cursors) = cursors {
+            result["cursors"] = json!(cursors);
+        }
+        result
     }
 
     pub fn render_styles<W: Write>(&self, tab_ctx: &TabCtx<W>, start: usize, end: usize,
@@ -279,7 +283,7 @@ impl View {
         });
 
         if let Some(lines) = lines {
-            dict_add_value(&mut update, "lines", lines);
+            update["lines"] = json!(lines);
         }
 
         update
