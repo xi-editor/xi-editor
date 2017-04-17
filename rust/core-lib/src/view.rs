@@ -156,7 +156,7 @@ impl View {
         let styles = self.render_styles(tab_ctx, start_pos, pos, &selections, style_spans);
         json!({
             "text": &l_str,
-            "cursor": cursors,
+            "cursor": cursors.unwrap_or_default(),
             "styles": styles,
         })
     }
