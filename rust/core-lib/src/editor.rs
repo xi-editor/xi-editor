@@ -49,7 +49,10 @@ pub struct Editor<W: Write> {
     // Maybe this should be in TabCtx or equivelant?
     path: Option<PathBuf>,
 
+    /// A collection of non-primary views attached to this buffer.
     views: BTreeMap<ViewIdentifier, View>,
+    /// The currently active view. This property is dynamically modified as events originating in
+    /// different views arrive.
     view: View,
     engine: Engine,
     last_rev_id: usize,
@@ -146,7 +149,7 @@ impl<W: Write + Send + 'static> Editor<W> {
     /// If the editor only has a single view this is a no-op. After removing a view the caller must
     /// always call Editor::has_views() to determine whether or not the editor should be cleaned up.
     #[allow(unreachable_code)] 
-   pub fn remove_view(&mut self, view_id: &str) {
+    pub fn remove_view(&mut self, view_id: &str) {
         if self.view.view_id == view_id {
             if self.views.len() > 0 {
                 panic!("multi-view support is not currently implemented");

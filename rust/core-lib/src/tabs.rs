@@ -33,7 +33,7 @@ pub type ViewIdentifier = String;
 /// BufferIdentifiers uniquely identify open buffers.
 type BufferIdentifier = String;
 
-//TODO: proposed new name: something like "Core" or "CoreState" or "EditorState"? "Documents?"
+// TODO: proposed new name: something like "Core" or "CoreState" or "EditorState"? "Documents?"
 pub struct Tabs<W: Write> {
     /// maps file names to buffer identifiers. If a client asks to open a file that is already
     /// open, we treat it as a request for a new view.
@@ -91,7 +91,7 @@ impl<W: Write + Send + 'static> Tabs<W> {
 
         match cmd {
             CloseView { view_id } => {
-                self.do_close_view(view_id);
+                self.do_close_view(view_id); self.
                 None
             },
 
@@ -101,9 +101,9 @@ impl<W: Write + Send + 'static> Tabs<W> {
         }
     }
 
-    /// handles client `new_view` requests.
+    /// Creates a new view and associates it with a buffer.
     ///
-    ///This function always creates a new view and associates it with a buffer (which we access
+    /// This function always creates a new view and associates it with a buffer (which we access
     ///through an `Editor` instance). This buffer may be existing, or it may be created.
     ///
     ///A `new_view` request is handled differently depending on the `file_path` argument, and on
@@ -115,20 +115,19 @@ impl<W: Write + Send + 'static> Tabs<W> {
         // three code paths: new buffer, open file, and new view into existing buffer
         let view_id = self.next_view_id();
         if let Some(file_path) = file_path.map(PathBuf::from) {
-            // if this file is open, add a new view
+            // TODO: here, we should eventually be adding views to the existing editor.
+            // for the time being, we just create a new empty view.
             if self.open_files.contains_key(&file_path) {
-                //TODO: we should eventually be adding views to the existing editor.
-                // for the time being, we just create a new empty view.
                 let buffer_id = self.next_buffer_id();
                 self.new_empty_view(rpc_peer, &view_id, buffer_id);
-                //let buffer_id = self.open_files.get(&file_path).unwrap().to_owned();
+                // let buffer_id = self.open_files.get(&file_path).unwrap().to_owned();
                 //self.add_view(&view_id, buffer_id);
             } else {
                 // not open: create new buffer_id and open file
                 let buffer_id = self.next_buffer_id();
                 self.open_files.insert(file_path.to_owned(), buffer_id.clone());
                 self.new_view_with_file(rpc_peer, &view_id, buffer_id.clone(), &file_path);
-                // above fn takes two paths: set path after
+                // above fn has two branches: set path after
                 self.buffers.get(&buffer_id).unwrap().lock().unwrap().set_path(&file_path);
             }
         } else {
@@ -156,7 +155,7 @@ impl<W: Write + Send + 'static> Tabs<W> {
                 self.finalize_new_view(view_id, buffer_id, editor)
             }
             Err(err) => {
-                //TODO: we should be reporting errors to the client
+                // TODO: we should be reporting errors to the client
                 // (if this is even an error? we treat opening a non-existent file as a new buffer,
                 // but set the editor's path)
                 print_err!("unable to read file: {}, error: {:?}", buffer_id, err);
