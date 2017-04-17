@@ -23,7 +23,7 @@ use std::thread;
 use serde_json;
 use serde_json::value::Value;
 
-use xi_rpc::{RpcLoop, RpcPeer, RpcCtx, Handler, Error, dict_get_u64, dict_add_value};
+use xi_rpc::{RpcLoop, RpcPeer, RpcCtx, Handler, Error, dict_get_u64};
 use editor::Editor;
 
 pub type PluginPeer = RpcPeer<ChildStdin>;
@@ -164,7 +164,7 @@ impl<W: Write + Send + 'static> PluginRef<W> {
         });
 
         if let Some(text) = text {
-            dict_add_value(&mut params, "text", text);
+            params["text"] = json!(text);
         }
         plugin.peer.send_rpc_request_async("update", &params, callback);
     }
