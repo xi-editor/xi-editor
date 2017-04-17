@@ -15,9 +15,11 @@
 use std::borrow::Cow;
 use std::cmp::{min, max};
 use std::fs::File;
-use std::io::{Read, Write};
-use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
+use std::io::Write;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
+use std::mem;
 use serde_json::Value;
 
 use xi_rope::rope::{LinesMetric, Rope};
@@ -25,11 +27,11 @@ use xi_rope::interval::Interval;
 use xi_rope::delta::{Delta, Transformer};
 use xi_rope::tree::Cursor;
 use xi_rope::engine::Engine;
-use xi_rope::spans::SpansBuilder;
+use xi_rope::spans::{Spans, SpansBuilder};
 use view::{Style, View};
 use word_boundaries::WordCursor;
 
-use tabs::TabCtx;
+use tabs::{ViewIdentifier, TabCtx};
 use rpc::EditCommand;
 use run_plugin::{start_plugin, PluginRef};
 
@@ -44,8 +46,14 @@ const MAX_SIZE_LIMIT: usize = 1024 * 1024;
 
 pub struct Editor<W: Write> {
     text: Rope,
-    view: View,
+    // Maybe this should be in TabCtx or equivelant?
+    path: Option<PathBuf>,
 
+    /// A collection of non-primary views attached to this buffer.
+    views: BTreeMap<ViewIdentifier, View>,
+    /// The currently active view. This property is dynamically modified as events originating in
+    /// different views arrive.
+    view: View,
     engine: Engine,
     last_rev_id: usize,
     undo_group_id: usize,
@@ -62,8 +70,8 @@ pub struct Editor<W: Write> {
     new_cursor: Option<(usize, usize)>,
 
     scroll_to: Option<usize>,
-    col: usize, // maybe this should live in view, it's similar to selection
 
+    style_spans: Spans<Style>,
     tab_ctx: TabCtx<W>,
     plugins: Vec<PluginRef<W>>,
     revs_in_flight: usize,
@@ -92,12 +100,23 @@ impl EditType {
 }
 
 impl<W: Write + Send + 'static> Editor<W> {
-    pub fn new(tab_ctx: TabCtx<W>) -> Arc<Mutex<Editor<W>>> {
-        let engine = Engine::new(Rope::from(""));
+    /// Creates a new `Editor` with a new empty buffer.
+    pub fn new(tab_ctx: TabCtx<W>, initial_view_id: &str) -> Arc<Mutex<Editor<W>>> {
+        Self::with_text(tab_ctx, initial_view_id, "".to_owned())
+    }
+
+    /// Creates a new `Editor`, loading text into a new buffer.
+    pub fn with_text(tab_ctx: TabCtx<W>, initial_view_id: &str, text: String) -> Arc<Mutex<Editor<W>>> {
+
+        let engine = Engine::new(Rope::from(text));
+        let buffer = engine.get_head();
         let last_rev_id = engine.get_head_rev_id();
+
         let editor = Editor {
-            text: Rope::from(""),
-            view: View::new(),
+            text: buffer,
+            path: None,
+            views: BTreeMap::new(),
+            view: View::new(initial_view_id),
             engine: engine,
             last_rev_id: last_rev_id,
             undo_group_id: 0,
@@ -109,12 +128,56 @@ impl<W: Write + Send + 'static> Editor<W> {
             this_edit_type: EditType::Other,
             new_cursor: None,
             scroll_to: Some(0),
-            col: 0,
+            style_spans: Spans::default(),
             tab_ctx: tab_ctx,
             plugins: Vec::new(),
             revs_in_flight: 0,
         };
         Arc::new(Mutex::new(editor))
+    }
+
+
+    #[allow(unreachable_code, unused_variables)] 
+    pub fn add_view(&mut self, view_id: &str) {
+        panic!("multi-view support is not currently implemented");
+        assert!(!self.views.contains_key(view_id), "view_id already exists");
+        self.views.insert(view_id.to_owned(), View::new(view_id.to_owned()));
+    }
+
+    /// Removes a view from this editor's stack, if this editor has multiple views.
+    /// 
+    /// If the editor only has a single view this is a no-op. After removing a view the caller must
+    /// always call Editor::has_views() to determine whether or not the editor should be cleaned up.
+    #[allow(unreachable_code)] 
+    pub fn remove_view(&mut self, view_id: &str) {
+        if self.view.view_id == view_id {
+            if self.views.len() > 0 {
+                panic!("multi-view support is not currently implemented");
+                //set some other view as active. This will be reset on the next EditCommand
+                let tempkey = self.views.keys().nth(0).unwrap().clone();
+                let mut temp = self.views.remove(&tempkey).unwrap();
+                mem::swap(&mut temp, &mut self.view);
+                self.views.insert(temp.view_id.clone(), temp);
+            }
+        } else {
+            self.views.remove(view_id).expect("attempt to remove missing view");
+        }
+    }
+
+    /// Returns true if this editor has additional attached views.
+    pub fn has_views(&self) -> bool {
+        self.views.len() > 0
+    }
+
+    pub fn set_path<P: AsRef<Path>>(&mut self, path: P) {
+        self.path = Some(path.as_ref().to_owned());
+    }
+
+    pub fn get_path(&self) -> Option<&Path> {
+        match self.path {
+            Some(ref p) => Some(p),
+            None => None,
+        }
     }
 
     fn insert(&mut self, s: &str) {
@@ -129,7 +192,8 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
         self.view.sel_end = offset;
         if hard {
-            self.col = self.view.offset_to_line_col(&self.text, offset).1;
+            let new_col = self.view.offset_to_line_col(&self.text, offset).1;
+            self.view.set_cursor_col(new_col);
             self.scroll_to = Some(offset);
         }
         self.view.scroll_to_cursor(&self.text);
@@ -193,6 +257,14 @@ impl<W: Write + Send + 'static> Editor<W> {
         let delta = self.engine.delta_rev_head(self.last_rev_id);
         self.view.after_edit(&self.text, &delta);
         let (iv, new_len) = delta.summary();
+
+        // TODO: maybe more precise editing based on actual delta rather than summary.
+        // TODO: perhaps use different semantics for spans that enclose the edited region.
+        // Currently it breaks any such span in half and applies no spans to the inserted
+        // text. That's ok for syntax highlighting but not ideal for rich text.
+        let empty_spans = SpansBuilder::new(new_len).build();
+        self.style_spans.edit(iv, empty_spans);
+
         //print_err!("delta {}:{} +{} {}", iv.start(), iv.end(), new_len, self.this_edit_type.json_string());
         for plugin in &self.plugins {
             self.revs_in_flight += 1;
@@ -230,19 +302,12 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
     }
 
-    fn reset_contents(&mut self, new_contents: Rope) {
-        self.engine = Engine::new(new_contents);
-        self.text = self.engine.get_head();
-        self.view.reset_breaks();
-        self.set_cursor(0, true);
-    }
-
     // render if needed, sending to ui
     pub fn render(&mut self) {
-        self.view.render_if_dirty(&self.text, &self.tab_ctx);
+        self.view.render_if_dirty(&self.text, &self.tab_ctx, &self.style_spans);
         if let Some(scrollto) = self.scroll_to {
             let (line, col) = self.view.offset_to_line_col(&self.text, scrollto);
-            self.tab_ctx.scroll_to(line, col);
+            self.tab_ctx.scroll_to(&self.view.view_id, line, col);
             self.scroll_to = None;
         }
     }
@@ -333,7 +398,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
 
         let old_offset = self.view.sel_end;
-        let offset = self.view.vertical_motion(&self.text, -1, self.col);
+        let offset = self.view.vertical_motion(&self.text, -1);
         self.set_cursor(offset, old_offset == offset);
         self.scroll_to = Some(offset);
     }
@@ -344,7 +409,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
 
         let old_offset = self.view.sel_end;
-        let offset = self.view.vertical_motion(&self.text, 1, self.col);
+        let offset = self.view.vertical_motion(&self.text, 1);
         self.set_cursor(offset, old_offset == offset);
         self.scroll_to = Some(offset);
     }
@@ -366,7 +431,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         if let Some(offset) = self.text.prev_grapheme_offset(self.view.sel_end) {
             self.set_cursor(offset, true);
         } else {
-                self.col = 0;
+            self.view.set_cursor_col(0);
             // TODO: should set scroll_to_cursor in this case too,
             // but it won't get sent; probably it needs to be a separate cmd
         }
@@ -414,8 +479,8 @@ impl<W: Write + Send + 'static> Editor<W> {
         if let Some(offset) = self.text.next_grapheme_offset(self.view.sel_end) {
             self.set_cursor(offset, true);
         } else {
-            self.col = self.view.offset_to_line_col(&self.text, self.view.sel_end).1;
-            // see above
+            let new_col = self.view.offset_to_line_col(&self.text, self.view.sel_end).1;
+            self.view.set_cursor_col(new_col);
         }
     }
 
@@ -453,7 +518,7 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     fn cursor_start(&mut self) {
-        let start = self.view.sel_min() - self.col;
+        let start = self.view.sel_min() - self.view.get_cursor_col();
         self.set_cursor(start, true);
     }
 
@@ -509,9 +574,9 @@ impl<W: Write + Send + 'static> Editor<W> {
 
         let scroll = -max(self.view.scroll_height() as isize - 2, 1);
         let old_offset = self.view.sel_end;
-        let offset = self.view.vertical_motion(&self.text, scroll, self.col);
+        let offset = self.view.vertical_motion(&self.text, scroll);
         self.set_cursor(offset, old_offset == offset);
-        let scroll_offset = self.view.vertical_motion(&self.text, scroll, self.col);
+        let scroll_offset = self.view.vertical_motion(&self.text, scroll);
         self.scroll_to = Some(scroll_offset);
     }
 
@@ -522,9 +587,9 @@ impl<W: Write + Send + 'static> Editor<W> {
 
         let scroll = max(self.view.scroll_height() as isize - 2, 1);
         let old_offset = self.view.sel_end;
-        let offset = self.view.vertical_motion(&self.text, scroll, self.col);
+        let offset = self.view.vertical_motion(&self.text, scroll);
         self.set_cursor(offset, old_offset == offset);
-        let scroll_offset = self.view.vertical_motion(&self.text, scroll, self.col);
+        let scroll_offset = self.view.vertical_motion(&self.text, scroll);
         self.scroll_to = Some(scroll_offset);
     }
 
@@ -583,20 +648,8 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.insert(chars);
     }
 
-    fn do_open(&mut self, path: &str) {
-        match File::open(path) {
-            Ok(mut f) => {
-                let mut s = String::new();
-                if f.read_to_string(&mut s).is_ok() {
-                    self.reset_contents(Rope::from(s));
-                }
-            }
-            Err(e) => print_err!("error {}", e),
-        }
-    }
-
-    fn do_save(&mut self, path: &str) {
-        match File::create(path) {
+    pub fn do_save<P: AsRef<Path>>(&mut self, path: P) {
+        match File::create(&path) {
             Ok(mut f) => {
                 for chunk in self.text.iter_chunks(0, self.text.len()) {
                     if let Err(e) = f.write_all(chunk.as_bytes()) {
@@ -607,13 +660,16 @@ impl<W: Write + Send + 'static> Editor<W> {
             }
             Err(e) => print_err!("create error {}", e),
         }
+        // TODO: we should probably bubble up this error now. in the meantime always set path,
+        // because the caller has updated the open_files list
+        self.path = Some(path.as_ref().to_owned());
     }
 
     fn do_scroll(&mut self, first: i64, last: i64) {
         let first = max(first, 0) as usize;
         let last = last as usize;
         self.view.set_scroll(first, last);
-        self.view.send_update_for_scroll(&self.text, &self.tab_ctx, first, last);
+        self.view.send_update_for_scroll(&self.text, &self.tab_ctx, &self.style_spans, first, last);
     }
 
     /// Sets the cursor and scrolls to the beginning of the given line.
@@ -623,7 +679,7 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     fn do_request_lines(&mut self, first: i64, last: i64) {
-        self.view.send_update(&self.text, &self.tab_ctx, first as usize, last as usize);
+        self.view.send_update(&self.text, &self.tab_ctx, &self.style_spans, first as usize, last as usize);
     }
 
     fn do_click(&mut self, line: u64, col: u64, flags: u64, click_count: u64) {
@@ -663,7 +719,11 @@ impl<W: Write + Send + 'static> Editor<W> {
 
     fn debug_test_fg_spans(&mut self) {
         print_err!("setting fg spans");
-        self.view.set_test_fg_spans();
+        let mut sb = SpansBuilder::new(15);
+        let style = Style { fg: 0xffc00000, font_style: 0 };
+        sb.add_span(Interval::new_closed_open(5, 10), style);
+        self.style_spans = sb.build();
+
         self.view.set_dirty();
     }
 
@@ -759,17 +819,24 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.insert(&*String::from(kill_ring_string));
     }
 
-    pub fn do_rpc(self_ref: &Arc<Mutex<Editor<W>>>, cmd: EditCommand) -> Option<Value> {
-        self_ref.lock().unwrap().do_rpc_with_self_ref(cmd, self_ref)
+    pub fn do_rpc(self_ref: &Arc<Mutex<Editor<W>>>, view_id: &str, cmd: EditCommand) -> Option<Value> {
+        self_ref.lock().unwrap().do_rpc_with_self_ref(view_id, cmd, self_ref)
     }
 
-    fn do_rpc_with_self_ref(&mut self,
+    fn do_rpc_with_self_ref(&mut self, view_id: &str,
                   cmd: EditCommand,
                   self_ref: &Arc<Mutex<Editor<W>>>)
                   -> Option<Value> {
 
         use rpc::EditCommand::*;
 
+        // if the rpc's originating view is different from current self.view, swap it in
+        if self.view.view_id != view_id {
+            let mut temp = self.views.remove(view_id).expect("no view for provided view_id");
+            mem::swap(&mut temp, &mut self.view);
+            self.views.insert(temp.view_id.clone(), temp);
+        }
+        
         self.this_edit_type = EditType::Other;
 
         let result = match cmd {
@@ -810,8 +877,6 @@ impl<W: Write + Send + 'static> Editor<W> {
                 async(self.scroll_page_down(FLAG_SELECT))
             }
             SelectAll => async(self.select_all()),
-            Open { file_path } => async(self.do_open(file_path)),
-            Save { file_path } => async(self.do_save(file_path)),
             Scroll { first, last } => async(self.do_scroll(first, last)),
             GotoLine { line } => async(self.do_goto_line(line)),
             RequestLines { first, last } => async(self.do_request_lines(first, last)),
@@ -880,7 +945,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             start = new_start;
             end_offset = transformer.transform(end_offset, true);
         }
-        self.view.set_fg_spans(start, end_offset, spans);
+        self.style_spans.edit(Interval::new_closed_closed(start, end_offset), spans);
         self.view.set_dirty();
         self.render();
     }
