@@ -72,7 +72,7 @@ note for `new_view`. Errors are not currently reported.
 
 
 ### edit
-`edit {"method": "insert", "params": {"chars": "A"}, view_id:
+`edit {"method": "insert", "params": {"chars": "A"}, "view_id":
 "view-id-4"}`
 
 Dispatches the inner method to the per-tab handler, with individual
