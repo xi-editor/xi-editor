@@ -97,6 +97,18 @@ impl Engine {
         from_union.apply(&self.union_str)
     }
 
+    fn get_subset_from_index(&self, rev_index: usize) -> Cow<Subset> {
+        let mut from_union = Cow::Borrowed(&self.revs[rev_index].from_union);
+        for rev in &self.revs[rev_index + 1..] {
+            if let Edit { ref inserts, .. } = rev.edit {
+                if !inserts.is_trivial() {
+                    from_union = Cow::Owned(from_union.transform_intersect(inserts));
+                }
+            }
+        }
+        from_union
+    }
+
     /// Get revision id of head revision.
     pub fn get_head_rev_id(&self) -> usize {
         self.revs.last().unwrap().rev_id
@@ -220,6 +232,18 @@ impl Engine {
         let new_rev = self.compute_undo(groups);
         self.revs.push(new_rev);
         self.rev_id_counter += 1;
+    }
+
+    pub fn compare(&self, base_rev: usize, other_rev: usize) -> bool {
+        let base_subset = self.find_rev(base_rev).map(|rev_index| self.get_subset_from_index(rev_index));
+        let other_subset = self.find_rev(other_rev).map(|rev_index| self.get_subset_from_index(rev_index));
+
+        if let Some(base_subset) = base_subset {
+            if let Some(other_subset) = other_subset {
+                return base_subset == other_subset;
+            }
+        }
+        false
     }
 
     // Note: this function would need some work to handle retaining arbitrary revisions,

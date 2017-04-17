@@ -71,7 +71,7 @@ impl View {
             cursor_col: 0,
             valid_lines: IndexSet::new(),
             dirty: true,
-        }   
+        }
     }
 
     pub fn set_scroll(&mut self, first: usize, last: usize) {
@@ -110,7 +110,7 @@ impl View {
 
     // Render a single line, and advance cursors to next line.
     fn render_line<W: Write>(&self, tab_ctx: &TabCtx<W>, text: &Rope,
-        cursor: &mut Cursor<RopeInfo>, breaks_cursor: Option<&mut Cursor<BreaksInfo>>, style_spans: &Spans<Style>, 
+        cursor: &mut Cursor<RopeInfo>, breaks_cursor: Option<&mut Cursor<BreaksInfo>>, style_spans: &Spans<Style>,
         line_num: usize) -> Value
     {
         let start_pos = cursor.pos();
@@ -127,7 +127,7 @@ impl View {
             true => {
                 let mut c = Vec::new();
                 c.push(cursor_col);
-                Some(c) 
+                Some(c)
             },
             false => None,
         };
@@ -167,7 +167,7 @@ impl View {
 
     pub fn render_styles<W: Write>(&self, tab_ctx: &TabCtx<W>, start: usize, end: usize,
         sel: &[(usize, usize)], style_spans: &Spans<Style>) -> Vec<isize>
-    { 
+    {
         let mut rendered_styles = Vec::new();
         let style_spans = style_spans.subseq(Interval::new_closed_open(start, end));
 
@@ -198,7 +198,7 @@ impl View {
     }
 
     pub fn send_update<W: Write>(&mut self, text: &Rope, tab_ctx: &TabCtx<W>, style_spans: &Spans<Style>,
-        first_line: usize, last_line: usize)
+        first_line: usize, last_line: usize, unsaved_changes: bool)
     {
         let height = self.offset_to_line_col(text, text.len()).0 + 1;
         let last_line = min(last_line, height);
@@ -215,18 +215,21 @@ impl View {
 
         let mut rendered_lines = Vec::new();
         for line_num in first_line..last_line {
-            rendered_lines.push(self.render_line(tab_ctx, text, 
+            rendered_lines.push(self.render_line(tab_ctx, text,
                 &mut cursor, breaks_cursor.as_mut(), style_spans, line_num));
         }
         ops.push(self.build_update_op("ins", Some(rendered_lines), last_line - first_line));
         if last_line < height {
             if !self.dirty {
-            ops.push(self.build_update_op("skip", None, last_line - first_line));
+                ops.push(self.build_update_op("skip", None, last_line - first_line));
             }
             let op = if self.dirty { "invalidate" } else { "copy" };
             ops.push(self.build_update_op(op, None, height - last_line));
         }
-        let params = json!({"ops": ops});
+        let params = json!({
+            "ops": ops,
+            "unsaved_changes": unsaved_changes,
+        });
         tab_ctx.update_view(&self.view_id, &params);
         self.valid_lines.union_one_range(first_line, last_line);
     }
@@ -235,7 +238,7 @@ impl View {
     /// Send lines within given region (plus slop) that the front-end does not already
     /// have.
     pub fn send_update_for_scroll<W: Write>(&mut self, text: &Rope, tab_ctx: &TabCtx<W>, style_spans: &Spans<Style>,
-        first_line: usize, last_line: usize)
+        first_line: usize, last_line: usize, unsaved_changes: bool)
     {
         let first_line = max(first_line, SCROLL_SLOP) - SCROLL_SLOP;
         let last_line = last_line + SCROLL_SLOP;
@@ -271,7 +274,10 @@ impl View {
         if line < height {
             ops.push(self.build_update_op("copy", None, height - line));
         }
-        let params = json!({"ops": ops});
+        let params = json!({
+            "ops": ops,
+            "unsaved_changes": unsaved_changes,
+        });
         tab_ctx.update_view(&self.view_id, &params);
         self.valid_lines.union_one_range(first_line, last_line);
     }
@@ -290,11 +296,12 @@ impl View {
     }
 
     // Update front-end with any changes to view since the last time sent.
-    pub fn render_if_dirty<W: Write>(&mut self, text: &Rope, tab_ctx: &TabCtx<W>, style_spans: &Spans<Style>) {
+    pub fn render_if_dirty<W: Write>(&mut self, text: &Rope, tab_ctx: &TabCtx<W>, style_spans: &Spans<Style>,
+        unsaved_changes: bool) {
         if self.dirty {
             let first_line = max(self.first_line, SCROLL_SLOP) - SCROLL_SLOP;
             let last_line = self.first_line + self.height + SCROLL_SLOP;
-            self.send_update(text, tab_ctx, style_spans, first_line, last_line);
+            self.send_update(text, tab_ctx, style_spans, first_line, last_line, unsaved_changes);
             self.dirty = false;
         }
     }
@@ -343,7 +350,7 @@ impl View {
     }
 
     // Move up or down by `line_delta` lines and return offset where the
-    // cursor lands. 
+    // cursor lands.
     pub fn vertical_motion(&self, text: &Rope, line_delta: isize) -> usize {
         // This code is quite careful to avoid integer overflow.
         // TODO: write tests to verify

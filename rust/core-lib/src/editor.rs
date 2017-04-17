@@ -56,6 +56,7 @@ pub struct Editor<W: Write> {
     view: View,
     engine: Engine,
     last_rev_id: usize,
+    save_rev_id: usize,
     undo_group_id: usize,
     live_undos: Vec<usize>, //  undo groups that may still be toggled
     cur_undo: usize, // index to live_undos, ones after this are undone
@@ -119,6 +120,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             view: View::new(initial_view_id),
             engine: engine,
             last_rev_id: last_rev_id,
+            save_rev_id: last_rev_id,
             undo_group_id: 0,
             live_undos: Vec::new(),
             cur_undo: 0,
@@ -137,7 +139,7 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
 
-    #[allow(unreachable_code, unused_variables)] 
+    #[allow(unreachable_code, unused_variables)]
     pub fn add_view(&mut self, view_id: &str) {
         panic!("multi-view support is not currently implemented");
         assert!(!self.views.contains_key(view_id), "view_id already exists");
@@ -145,10 +147,10 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     /// Removes a view from this editor's stack, if this editor has multiple views.
-    /// 
+    ///
     /// If the editor only has a single view this is a no-op. After removing a view the caller must
     /// always call Editor::has_views() to determine whether or not the editor should be cleaned up.
-    #[allow(unreachable_code)] 
+    #[allow(unreachable_code)]
     pub fn remove_view(&mut self, view_id: &str) {
         if self.view.view_id == view_id {
             if self.views.len() > 0 {
@@ -302,9 +304,14 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
     }
 
+    fn has_unsaved_changes(&self) -> bool {
+        !self.engine.compare(self.save_rev_id, self.last_rev_id)
+    }
+
     // render if needed, sending to ui
     pub fn render(&mut self) {
-        self.view.render_if_dirty(&self.text, &self.tab_ctx, &self.style_spans);
+        let has_unsaved_changes = self.has_unsaved_changes();
+        self.view.render_if_dirty(&self.text, &self.tab_ctx, &self.style_spans, has_unsaved_changes);
         if let Some(scrollto) = self.scroll_to {
             let (line, col) = self.view.offset_to_line_col(&self.text, scrollto);
             self.tab_ctx.scroll_to(&self.view.view_id, line, col);
@@ -663,13 +670,17 @@ impl<W: Write + Send + 'static> Editor<W> {
         // TODO: we should probably bubble up this error now. in the meantime always set path,
         // because the caller has updated the open_files list
         self.path = Some(path.as_ref().to_owned());
+        self.save_rev_id = self.last_rev_id;
+        self.view.set_dirty();
+        self.render();
     }
 
     fn do_scroll(&mut self, first: i64, last: i64) {
         let first = max(first, 0) as usize;
         let last = last as usize;
+        let unsaved_changes = self.has_unsaved_changes();
         self.view.set_scroll(first, last);
-        self.view.send_update_for_scroll(&self.text, &self.tab_ctx, &self.style_spans, first, last);
+        self.view.send_update_for_scroll(&self.text, &self.tab_ctx, &self.style_spans, first, last, unsaved_changes);
     }
 
     /// Sets the cursor and scrolls to the beginning of the given line.
@@ -679,7 +690,8 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     fn do_request_lines(&mut self, first: i64, last: i64) {
-        self.view.send_update(&self.text, &self.tab_ctx, &self.style_spans, first as usize, last as usize);
+        let unsaved_changes = self.has_unsaved_changes();
+        self.view.send_update(&self.text, &self.tab_ctx, &self.style_spans, first as usize, last as usize, unsaved_changes);
     }
 
     fn do_click(&mut self, line: u64, col: u64, flags: u64, click_count: u64) {
@@ -836,7 +848,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             mem::swap(&mut temp, &mut self.view);
             self.views.insert(temp.view_id.clone(), temp);
         }
-        
+
         self.this_edit_type = EditType::Other;
 
         let result = match cmd {
