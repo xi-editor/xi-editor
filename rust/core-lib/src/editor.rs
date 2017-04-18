@@ -56,7 +56,7 @@ pub struct Editor<W: Write> {
     view: View,
     engine: Engine,
     last_rev_id: usize,
-    save_rev_id: usize,
+    pristine_rev_id: usize,
     undo_group_id: usize,
     live_undos: Vec<usize>, //  undo groups that may still be toggled
     cur_undo: usize, // index to live_undos, ones after this are undone
@@ -120,7 +120,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             view: View::new(initial_view_id),
             engine: engine,
             last_rev_id: last_rev_id,
-            save_rev_id: last_rev_id,
+            pristine_rev_id: last_rev_id,
             undo_group_id: 0,
             live_undos: Vec::new(),
             cur_undo: 0,
@@ -257,7 +257,8 @@ impl<W: Write + Send + 'static> Editor<W> {
 
     fn update_after_revision(&mut self, self_ref: &Arc<Mutex<Editor<W>>>) {
         let delta = self.engine.delta_rev_head(self.last_rev_id);
-        self.view.after_edit(&self.text, &delta);
+        let is_pristine = self.is_pristine();
+        self.view.after_edit(&self.text, &delta, is_pristine);
         let (iv, new_len) = delta.summary();
 
         // TODO: maybe more precise editing based on actual delta rather than summary.
@@ -304,14 +305,13 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
     }
 
-    fn has_unsaved_changes(&self) -> bool {
-        !self.engine.compare(self.save_rev_id, self.last_rev_id)
+    fn is_pristine(&self) -> bool {
+        self.engine.is_equivalent_revision(self.pristine_rev_id, self.engine.get_head_rev_id())
     }
 
     // render if needed, sending to ui
     pub fn render(&mut self) {
-        let has_unsaved_changes = self.has_unsaved_changes();
-        self.view.render_if_dirty(&self.text, &self.tab_ctx, &self.style_spans, has_unsaved_changes);
+        self.view.render_if_dirty(&self.text, &self.tab_ctx, &self.style_spans);
         if let Some(scrollto) = self.scroll_to {
             let (line, col) = self.view.offset_to_line_col(&self.text, scrollto);
             self.tab_ctx.scroll_to(&self.view.view_id, line, col);
@@ -670,7 +670,8 @@ impl<W: Write + Send + 'static> Editor<W> {
         // TODO: we should probably bubble up this error now. in the meantime always set path,
         // because the caller has updated the open_files list
         self.path = Some(path.as_ref().to_owned());
-        self.save_rev_id = self.last_rev_id;
+        self.pristine_rev_id = self.last_rev_id;
+        self.view.set_pristine();
         self.view.set_dirty();
         self.render();
     }
@@ -678,9 +679,8 @@ impl<W: Write + Send + 'static> Editor<W> {
     fn do_scroll(&mut self, first: i64, last: i64) {
         let first = max(first, 0) as usize;
         let last = last as usize;
-        let unsaved_changes = self.has_unsaved_changes();
         self.view.set_scroll(first, last);
-        self.view.send_update_for_scroll(&self.text, &self.tab_ctx, &self.style_spans, first, last, unsaved_changes);
+        self.view.send_update_for_scroll(&self.text, &self.tab_ctx, &self.style_spans, first, last);
     }
 
     /// Sets the cursor and scrolls to the beginning of the given line.
@@ -690,8 +690,7 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     fn do_request_lines(&mut self, first: i64, last: i64) {
-        let unsaved_changes = self.has_unsaved_changes();
-        self.view.send_update(&self.text, &self.tab_ctx, &self.style_spans, first as usize, last as usize, unsaved_changes);
+        self.view.send_update(&self.text, &self.tab_ctx, &self.style_spans, first as usize, last as usize);
     }
 
     fn do_click(&mut self, line: u64, col: u64, flags: u64, click_count: u64) {

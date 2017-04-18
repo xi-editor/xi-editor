@@ -234,16 +234,11 @@ impl Engine {
         self.rev_id_counter += 1;
     }
 
-    pub fn compare(&self, base_rev: usize, other_rev: usize) -> bool {
+    pub fn is_equivalent_revision(&self, base_rev: usize, other_rev: usize) -> bool {
         let base_subset = self.find_rev(base_rev).map(|rev_index| self.get_subset_from_index(rev_index));
         let other_subset = self.find_rev(other_rev).map(|rev_index| self.get_subset_from_index(rev_index));
 
-        if let Some(base_subset) = base_subset {
-            if let Some(other_subset) = other_subset {
-                return base_subset == other_subset;
-            }
-        }
-        false
+        base_subset.is_some() && base_subset == other_subset
     }
 
     // Note: this function would need some work to handle retaining arbitrary revisions,

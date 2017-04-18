@@ -55,6 +55,9 @@ pub struct View {
 
     // TODO: much finer grained tracking of dirty state
     dirty: bool,
+
+    /// Tracks whether or not the view has unsaved changes.
+    pristine: bool,
 }
 
 impl View {
@@ -71,6 +74,7 @@ impl View {
             cursor_col: 0,
             valid_lines: IndexSet::new(),
             dirty: true,
+            pristine: true,
         }
     }
 
@@ -198,7 +202,7 @@ impl View {
     }
 
     pub fn send_update<W: Write>(&mut self, text: &Rope, tab_ctx: &TabCtx<W>, style_spans: &Spans<Style>,
-        first_line: usize, last_line: usize, unsaved_changes: bool)
+        first_line: usize, last_line: usize)
     {
         let height = self.offset_to_line_col(text, text.len()).0 + 1;
         let last_line = min(last_line, height);
@@ -228,7 +232,7 @@ impl View {
         }
         let params = json!({
             "ops": ops,
-            "unsaved_changes": unsaved_changes,
+            "pristine": self.pristine,
         });
         tab_ctx.update_view(&self.view_id, &params);
         self.valid_lines.union_one_range(first_line, last_line);
@@ -238,7 +242,7 @@ impl View {
     /// Send lines within given region (plus slop) that the front-end does not already
     /// have.
     pub fn send_update_for_scroll<W: Write>(&mut self, text: &Rope, tab_ctx: &TabCtx<W>, style_spans: &Spans<Style>,
-        first_line: usize, last_line: usize, unsaved_changes: bool)
+        first_line: usize, last_line: usize)
     {
         let first_line = max(first_line, SCROLL_SLOP) - SCROLL_SLOP;
         let last_line = last_line + SCROLL_SLOP;
@@ -276,7 +280,7 @@ impl View {
         }
         let params = json!({
             "ops": ops,
-            "unsaved_changes": unsaved_changes,
+            "pristine": self.pristine,
         });
         tab_ctx.update_view(&self.view_id, &params);
         self.valid_lines.union_one_range(first_line, last_line);
@@ -296,12 +300,11 @@ impl View {
     }
 
     // Update front-end with any changes to view since the last time sent.
-    pub fn render_if_dirty<W: Write>(&mut self, text: &Rope, tab_ctx: &TabCtx<W>, style_spans: &Spans<Style>,
-        unsaved_changes: bool) {
+    pub fn render_if_dirty<W: Write>(&mut self, text: &Rope, tab_ctx: &TabCtx<W>, style_spans: &Spans<Style>) {
         if self.dirty {
             let first_line = max(self.first_line, SCROLL_SLOP) - SCROLL_SLOP;
             let last_line = self.first_line + self.height + SCROLL_SLOP;
-            self.send_update(text, tab_ctx, style_spans, first_line, last_line, unsaved_changes);
+            self.send_update(text, tab_ctx, style_spans, first_line, last_line);
             self.dirty = false;
         }
     }
@@ -396,7 +399,7 @@ impl View {
         self.wrap_col = wrap_col;
     }
 
-    pub fn after_edit(&mut self, text: &Rope, delta: &Delta<RopeInfo>) {
+    pub fn after_edit(&mut self, text: &Rope, delta: &Delta<RopeInfo>, pristine: bool) {
         let (iv, new_len) = delta.summary();
         // Note: this logic almost replaces setting the cursor in Editor::commit_delta,
         // but doesn't set col or scroll to the cursor. It could be extended to subsume
@@ -414,6 +417,12 @@ impl View {
         if self.breaks.is_some() {
             linewrap::rewrap(self.breaks.as_mut().unwrap(), text, iv, new_len, self.wrap_col);
         }
+        self.pristine = pristine;
         self.dirty = true;
+    }
+
+    /// Call to mark view as pristine. Used after a buffer is saved.
+    pub fn set_pristine(&mut self) {
+        self.pristine = true;
     }
 }
