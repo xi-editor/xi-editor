@@ -6,7 +6,7 @@ I'm exploring how a MapReduce-like framework can help solve difficult problems i
 
 MapReduce is based on the concept of a monoid homomorphism. That sounds like I’m about to get all category-theoretical, but it’s pretty simple. A monoid is just an associative binary operator with an identity element; string concatenation and integer addition are two of the main monoids we’ll be looking at. The homomorphism is a mapping from one monoid to the other that preserves the identity and associativity properties. A very simple example is taking the length of a string; len(s + t) = len(s) + len(t), and the mapping from the empty string to 0 has the identity properties you’d expect.
 
-In this post, I’m setting out to explore the space of useful monoid homomorphisms where the monoid is just unsigned integer sum. I’m going to use the word “metric” to describe these, as I think they represent (simple, 1-d) metric spaces over positions in strings, and also inutitively capture the concept of measurement. A real math person might correct me or have a better idea.
+In this post, I’m setting out to explore the space of useful monoid homomorphisms where the monoid is just unsigned integer sum. I’m going to use the word “metric” to describe these, as I think they represent (simple, 1-d) metric spaces over positions in strings, and also intuitively capture the concept of measurement. A real math person might correct me or have a better idea.
 
 ## Code points and code units
 
