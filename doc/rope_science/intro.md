@@ -7,3 +7,16 @@ For the curious and persistent, here are the original posts, with a bit of light
 I don't think I ever wrote a part 7. It was supposed to be about spans and interval trees, still a very interesting topic.
 
 Enjoy!
+
+Table of Contents:
+* [01 MapReduce for Text](rope_science_01.md)
+* [02 Metrics](rope_science_02.md)
+* [03 Grapheme Cluster Boundaries](rope_science_03.md)
+* [04 Parenthesis matching](rope_science_04.md)
+* [05 Incremental Word Wrapping](rope_science_05.md)
+* [06 Parallel and Asynchronous Word Wrapping](rope_science_06.md)
+* [08 CRDTs for Concurrent Editing](rope_science_08.md)
+* [08(a) CRDT Follow-up](rope_science_08a.md)
+* [09 CRDT Approach to Async Plugins and Undo](rope_science_09.md)
+* [10 Designing for a Conflict-free World](rope_science_10.md)
+
