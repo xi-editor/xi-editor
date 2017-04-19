@@ -35,6 +35,7 @@ mod run_plugin;
 mod styles;
 mod word_boundaries;
 mod index_set;
+mod selection;
 
 use tabs::Tabs;
 use rpc::Request;
