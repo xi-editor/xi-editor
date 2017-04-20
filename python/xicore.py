@@ -18,13 +18,16 @@ import sys
 import struct
 import json
 
+
 def sendraw(buf):
     sys.stdout.write(struct.pack("<q", len(buf)))
     sys.stdout.write(buf)
     sys.stdout.flush()
 
+
 def send(obj):
     sendraw(json.dumps(obj))
+
 
 def mainloop():
     text = ''
@@ -44,4 +47,10 @@ def mainloop():
                 text += chars
             send(['settext', text])
 
-mainloop()
+
+def main():
+    mainloop()
+
+
+if __name__ == "__main__":
+    main()
