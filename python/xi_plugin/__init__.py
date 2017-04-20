@@ -13,3 +13,4 @@
 # limitations under the License.
 
 from .plugin import Plugin, start_plugin
+from .edit import Edit

@@ -66,7 +66,11 @@ class RpcPeer(object):
                 if data['id'] != waiting_for:
                     raise Exception('waiting for {}, got {}'.format(
                         waiting_for, data['id']))
-                return data['result']
+                try:
+                    return data['result']
+                except KeyError as err:
+                    print_err("key error in mainloop: {}".format(err))
+                    return None
             self.pending.append(data)
             if waiting_for is None:
                 while self.has_pending():
@@ -81,6 +85,8 @@ class RpcPeer(object):
         if result is not None:
             if req_id is None:
                 raise Exception('unexpected return value on method ' + method)
+            if hasattr(result, 'to_dict'):
+                result = result.to_dict()
             resp = {'result': result, 'id': req_id}
             self.send(resp)
         elif req_id is not None:

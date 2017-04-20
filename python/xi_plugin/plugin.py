@@ -61,7 +61,7 @@ class Plugin(object):
         return getattr(self, method, self.noop)(peer, **params)
 
     def print_err(self, err):
-        print("PLUGIN.PY {}>>> {}\n".format(type(self).__name__, err),
+        print("PLUGIN.PY {}>>> {}".format(type(self).__name__, err),
               file=sys.stderr)
         sys.stderr.flush()
 

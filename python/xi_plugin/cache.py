@@ -54,7 +54,7 @@ class LineCache(object):
     def __getitem__(self, idx):
         while idx >= len(self.raw_lines) and self.has_missing():
             self.get_data(self.peer, to_offset=self.total_bytes)
-        # trim trailling newline
+        # trim trailing newline
         return self.raw_lines[idx].rstrip('\n')
 
     def has_missing(self):
@@ -64,6 +64,8 @@ class LineCache(object):
     def apply_update(self, peer, rev, start, end, new_len, edit_type, text=None):
         # an update is bytes; can span multiple lines.
         text = text or ""
+        # FIXME: this can fail on very large updates. In that case we should
+        # clear raw_lines, update total_bytes, and maybe do a fetch?
         assert len(text) == new_len
         if end > self.total_bytes:
             self.get_data(peer, end)
@@ -77,7 +79,7 @@ class LineCache(object):
         orig_first_line = self.raw_lines[first_changed_idx]
         first_line_start = start - self.offsets[first_changed_idx]
         f_end = min(end - self.offsets[first_changed_idx], len(orig_first_line))
-        first_line = "%s%s%s" % (orig_first_line[:first_line_start], text, orig_first_line[f_end:])
+        first_line = ''.join((orig_first_line[:first_line_start], text, orig_first_line[f_end:]))
 
         # append remainder of last affected line, then recalculate lines in that interval
         if first_changed_idx != last_changed_idx:
