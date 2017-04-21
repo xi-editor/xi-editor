@@ -56,6 +56,7 @@ pub struct Editor<W: Write> {
     view: View,
     engine: Engine,
     last_rev_id: usize,
+    pristine_rev_id: usize,
     undo_group_id: usize,
     live_undos: Vec<usize>, //  undo groups that may still be toggled
     cur_undo: usize, // index to live_undos, ones after this are undone
@@ -119,6 +120,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             view: View::new(initial_view_id),
             engine: engine,
             last_rev_id: last_rev_id,
+            pristine_rev_id: last_rev_id,
             undo_group_id: 0,
             live_undos: Vec::new(),
             cur_undo: 0,
@@ -137,7 +139,7 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
 
-    #[allow(unreachable_code, unused_variables)] 
+    #[allow(unreachable_code, unused_variables)]
     pub fn add_view(&mut self, view_id: &str) {
         panic!("multi-view support is not currently implemented");
         assert!(!self.views.contains_key(view_id), "view_id already exists");
@@ -145,10 +147,10 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     /// Removes a view from this editor's stack, if this editor has multiple views.
-    /// 
+    ///
     /// If the editor only has a single view this is a no-op. After removing a view the caller must
     /// always call Editor::has_views() to determine whether or not the editor should be cleaned up.
-    #[allow(unreachable_code)] 
+    #[allow(unreachable_code)]
     pub fn remove_view(&mut self, view_id: &str) {
         if self.view.view_id == view_id {
             if self.views.len() > 0 {
@@ -255,7 +257,8 @@ impl<W: Write + Send + 'static> Editor<W> {
 
     fn update_after_revision(&mut self, self_ref: &Arc<Mutex<Editor<W>>>) {
         let delta = self.engine.delta_rev_head(self.last_rev_id);
-        self.view.after_edit(&self.text, &delta);
+        let is_pristine = self.is_pristine();
+        self.view.after_edit(&self.text, &delta, is_pristine);
         let (iv, new_len) = delta.summary();
 
         // TODO: maybe more precise editing based on actual delta rather than summary.
@@ -300,6 +303,10 @@ impl<W: Write + Send + 'static> Editor<W> {
             self.undos = &self.undos - &self.gc_undos;
             self.gc_undos.clear();
         }
+    }
+
+    fn is_pristine(&self) -> bool {
+        self.engine.is_equivalent_revision(self.pristine_rev_id, self.engine.get_head_rev_id())
     }
 
     // render if needed, sending to ui
@@ -663,6 +670,10 @@ impl<W: Write + Send + 'static> Editor<W> {
         // TODO: we should probably bubble up this error now. in the meantime always set path,
         // because the caller has updated the open_files list
         self.path = Some(path.as_ref().to_owned());
+        self.pristine_rev_id = self.last_rev_id;
+        self.view.set_pristine();
+        self.view.set_dirty();
+        self.render();
     }
 
     fn do_scroll(&mut self, first: i64, last: i64) {
@@ -836,7 +847,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             mem::swap(&mut temp, &mut self.view);
             self.views.insert(temp.view_id.clone(), temp);
         }
-        
+
         self.this_edit_type = EditType::Other;
 
         let result = match cmd {

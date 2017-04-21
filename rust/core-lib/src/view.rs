@@ -55,6 +55,9 @@ pub struct View {
 
     // TODO: much finer grained tracking of dirty state
     dirty: bool,
+
+    /// Tracks whether or not the view has unsaved changes.
+    pristine: bool,
 }
 
 impl View {
@@ -71,7 +74,8 @@ impl View {
             cursor_col: 0,
             valid_lines: IndexSet::new(),
             dirty: true,
-        }   
+            pristine: true,
+        }
     }
 
     pub fn set_scroll(&mut self, first: usize, last: usize) {
@@ -110,7 +114,7 @@ impl View {
 
     // Render a single line, and advance cursors to next line.
     fn render_line<W: Write>(&self, tab_ctx: &TabCtx<W>, text: &Rope,
-        cursor: &mut Cursor<RopeInfo>, breaks_cursor: Option<&mut Cursor<BreaksInfo>>, style_spans: &Spans<Style>, 
+        cursor: &mut Cursor<RopeInfo>, breaks_cursor: Option<&mut Cursor<BreaksInfo>>, style_spans: &Spans<Style>,
         line_num: usize) -> Value
     {
         let start_pos = cursor.pos();
@@ -127,7 +131,7 @@ impl View {
             true => {
                 let mut c = Vec::new();
                 c.push(cursor_col);
-                Some(c) 
+                Some(c)
             },
             false => None,
         };
@@ -167,7 +171,7 @@ impl View {
 
     pub fn render_styles<W: Write>(&self, tab_ctx: &TabCtx<W>, start: usize, end: usize,
         sel: &[(usize, usize)], style_spans: &Spans<Style>) -> Vec<isize>
-    { 
+    {
         let mut rendered_styles = Vec::new();
         let style_spans = style_spans.subseq(Interval::new_closed_open(start, end));
 
@@ -215,18 +219,21 @@ impl View {
 
         let mut rendered_lines = Vec::new();
         for line_num in first_line..last_line {
-            rendered_lines.push(self.render_line(tab_ctx, text, 
+            rendered_lines.push(self.render_line(tab_ctx, text,
                 &mut cursor, breaks_cursor.as_mut(), style_spans, line_num));
         }
         ops.push(self.build_update_op("ins", Some(rendered_lines), last_line - first_line));
         if last_line < height {
             if !self.dirty {
-            ops.push(self.build_update_op("skip", None, last_line - first_line));
+                ops.push(self.build_update_op("skip", None, last_line - first_line));
             }
             let op = if self.dirty { "invalidate" } else { "copy" };
             ops.push(self.build_update_op(op, None, height - last_line));
         }
-        let params = json!({"ops": ops});
+        let params = json!({
+            "ops": ops,
+            "pristine": self.pristine,
+        });
         tab_ctx.update_view(&self.view_id, &params);
         self.valid_lines.union_one_range(first_line, last_line);
     }
@@ -271,7 +278,10 @@ impl View {
         if line < height {
             ops.push(self.build_update_op("copy", None, height - line));
         }
-        let params = json!({"ops": ops});
+        let params = json!({
+            "ops": ops,
+            "pristine": self.pristine,
+        });
         tab_ctx.update_view(&self.view_id, &params);
         self.valid_lines.union_one_range(first_line, last_line);
     }
@@ -343,7 +353,7 @@ impl View {
     }
 
     // Move up or down by `line_delta` lines and return offset where the
-    // cursor lands. 
+    // cursor lands.
     pub fn vertical_motion(&self, text: &Rope, line_delta: isize) -> usize {
         // This code is quite careful to avoid integer overflow.
         // TODO: write tests to verify
@@ -389,7 +399,7 @@ impl View {
         self.wrap_col = wrap_col;
     }
 
-    pub fn after_edit(&mut self, text: &Rope, delta: &Delta<RopeInfo>) {
+    pub fn after_edit(&mut self, text: &Rope, delta: &Delta<RopeInfo>, pristine: bool) {
         let (iv, new_len) = delta.summary();
         // Note: this logic almost replaces setting the cursor in Editor::commit_delta,
         // but doesn't set col or scroll to the cursor. It could be extended to subsume
@@ -407,6 +417,12 @@ impl View {
         if self.breaks.is_some() {
             linewrap::rewrap(self.breaks.as_mut().unwrap(), text, iv, new_len, self.wrap_col);
         }
+        self.pristine = pristine;
         self.dirty = true;
+    }
+
+    /// Call to mark view as pristine. Used after a buffer is saved.
+    pub fn set_pristine(&mut self) {
+        self.pristine = true;
     }
 }

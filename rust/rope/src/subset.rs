@@ -21,7 +21,7 @@ use tree::{Node, NodeInfo, TreeBuilder};
 use interval::Interval;
 
 // Internally, a sorted list of (begin, end) ranges.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct Subset(Vec<(usize, usize)>);
 
 #[derive(Default)]
@@ -205,7 +205,7 @@ impl Subset {
         for &(b, e) in &self.0[i..] {
             sb.add_deletion(b + delta, e + delta);
         }
-        sb.build()   
+        sb.build()
     }
 
     /// Transform subset through other coordinate transform, shrinking.
