@@ -35,18 +35,57 @@ pub struct Plugin<W: Write> {
     peer: PluginPeer,
 }
 
+/// An simple edit, received from a plugin.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PluginEdit {
+    pub start: u64,
+    pub end: u64,
+    pub rev: u64,
+    pub text: String,
+    /// the edit priority determines the resolution strategy when merging
+    /// concurrent edits. The highest priority edit will be applied last.
+    pub priority: u64,
+    /// whether the inserted text prefers to be to the right of the cursor.
+    pub after_cursor: bool,
+    /// the originator of this edit: some identifier (plugin name, 'core', etc)
+    pub author: String,
+}
+
+/// A response to an `update` RPC sent to a plugin.
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(untagged)]
+pub enum UpdateResponse {
+    /// An edit to the buffer.
+    Edit(PluginEdit),
+    /// An acknowledgement with no action. A response cannot be Null, so we send a uint.
+    Ack(u64),
+}
+
+// edit in place during plugin development
+static DEBUG_PLUGIN_PATH: &'static str = "PATH_TO_PLUGIN";
+
+fn plugin_path() -> PathBuf {
+    let pathbuf = PathBuf::from(DEBUG_PLUGIN_PATH);
+    match pathbuf.exists() {
+        true => pathbuf,
+        false => {
+            let mut pathbuf: PathBuf = match env::current_exe() {
+                Ok(pathbuf) => pathbuf,
+                Err(e) => {
+                    panic!("Could not get current path: {}", e);
+                }
+            };
+            pathbuf.pop();
+            pathbuf.push("xi-syntect-plugin");
+            pathbuf
+        }
+    }
+}
+
 pub fn start_plugin<W: Write + Send + 'static>(editor: Arc<Mutex<Editor<W>>>) {
     thread::spawn(move || {
-        let mut pathbuf: PathBuf = match env::current_exe() {
-            Ok(pathbuf) => pathbuf,
-            Err(e) => {
-                print_err!("Could not get current path: {}", e);
-                return;
-            }
-        };
-        pathbuf.pop();
-        pathbuf.push("xi-syntect-plugin");
-        //print_err!("path = {:?}", pathbuf);
+        let pathbuf = plugin_path();
+            print_err!("starting plugin at path {:?}", pathbuf);
         let mut child = Command::new(&pathbuf)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -150,9 +189,10 @@ impl<W: Write + Send + 'static> PluginRef<W> {
     // TODO: send finer grain delta
     // TODO: make this a synchronous request (but with a callback to not block),
     // so editor can defer gc until request returns
-    pub fn update<F>(&self, start: usize, end: usize, new_len: usize, text: Option<&str>,
-            rev: usize, edit_type: &str, callback: F)
-            where F: FnOnce(Result<Value, Error>) + Send + 'static {
+    pub fn update<F, S>(&self, start: usize, end: usize, new_len: usize, text: Option<&str>,
+            rev: usize, edit_type: &str, author: S, callback: F)
+            where F: FnOnce(Result<Value, Error>) + Send + 'static,
+                  S: AsRef<str> {
         let plugin = self.0.lock().unwrap();
 
         let mut params = json!({
@@ -161,6 +201,7 @@ impl<W: Write + Send + 'static> PluginRef<W> {
             "new_len": new_len,
             "rev": rev,
             "edit_type": edit_type,
+            "author": author.as_ref(),
         });
 
         if let Some(text) = text {
@@ -175,3 +216,4 @@ impl<W: Write> Clone for PluginRef<W> {
         PluginRef(self.0.clone())
     }
 }
+

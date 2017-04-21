@@ -9,6 +9,7 @@ repository = "https://github.com/google/xi-editor"
 [dependencies]
 serde = "0.9"
 serde_json = "0.9"
+serde_derive = "0.9"
 time = "0.1"
 
 xi-rope = { path = "../rope", version = "0.2" }
