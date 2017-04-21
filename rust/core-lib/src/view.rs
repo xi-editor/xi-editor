@@ -27,6 +27,7 @@ use xi_rope::spans::Spans;
 use tabs::{ViewIdentifier, TabCtx};
 use styles;
 use index_set::IndexSet;
+use selection::{Affinity, Selection, SelRegion};
 
 use linewrap;
 
@@ -40,18 +41,31 @@ pub struct Style {
 
 pub struct View {
     pub view_id: ViewIdentifier,
+
+    // The following 3 fields are the old (single selection) cursor state.
+    // They will go away soon, but are kept for a gradual transition to the
+    // new multi-select version.
     pub sel_start: usize,
     pub sel_end: usize,
+    cursor_col: usize,
+
+    /// The selection state for this view.
+    selection: Selection,
+
     first_line: usize,  // vertical scroll position
     height: usize,  // height of visible portion
     breaks: Option<Breaks>,
     wrap_col: usize,
-    cursor_col: usize,
 
     // Ranges of lines held by the line cache in the front-end that are considered
     // valid.
     // TODO: separate tracking of text, cursors, and styles
     valid_lines: IndexSet,
+
+    // The old selection (single cursor) selection state was updated.
+    old_sel_dirty: bool,
+    // The selection state was updated.
+    sel_dirty: bool,
 
     // TODO: much finer grained tracking of dirty state
     dirty: bool,
@@ -66,13 +80,16 @@ impl View {
             view_id: view_id.as_ref().to_owned(),
             sel_start: 0,
             sel_end: 0,
+            // used to maintain preferred hpos during vertical movement
+            cursor_col: 0,
+            selection: Selection::default(),
             first_line: 0,
             height: 10,
             breaks: None,
             wrap_col: 0,
-            // used to maintain preferred hpos during vertical movement
-            cursor_col: 0,
             valid_lines: IndexSet::new(),
+            old_sel_dirty: true,
+            sel_dirty: true,
             dirty: true,
             pristine: true,
         }
@@ -126,32 +143,34 @@ impl View {
         }).unwrap_or(text.len());
 
         let l_str = text.slice_to_string(start_pos, pos);
-        let (cursor_line, cursor_col) = self.offset_to_line_col(text, self.sel_end);
-        let cursors = match line_num == cursor_line {
-            true => {
-                let mut c = Vec::new();
-                c.push(cursor_col);
-                Some(c)
-            },
-            false => None,
-        };
+        let mut cursors = None;
         let mut selections = Vec::new();
-        if self.sel_start != self.sel_end {
-            let sel_min_line = self.line_of_offset(text, self.sel_min());
-            let sel_max_line = self.line_of_offset(text, self.sel_max());
-            // Note: could early-reject based on offsets (avoiding line_of_offset
-            // calculation for non-selected lines).
-            if line_num >= sel_min_line && line_num <= sel_max_line {
-                let sel_start_ix = if line_num == sel_min_line {
-                    self.sel_min() - start_pos
-                } else {
-                    0
-                };
-                let sel_end_ix = if line_num == sel_max_line {
-                    self.sel_max() - start_pos
-                } else {
-                    l_str.len()
-                };
+        for region in self.selection.regions_in_range(start_pos, pos) {
+            // cursor
+            let c = region.end;
+            let is_upstream = region.affinity == Affinity::Upstream;
+            if (c > start_pos && c < pos) ||
+                (!is_upstream && c == start_pos) ||
+                (is_upstream && c == pos) ||
+                (c == pos && pos == text.len())
+            {
+                if cursors.is_none() {
+                    cursors = Some(Vec::new());
+                }
+                // TODO: make this handle upstream case (should be prev line)
+                // TODO: we really need utf-8 byte offsets; if the function starts
+                // using different units to measure "columns" we need to adapt.
+                let (cursor_line, cursor_col) = self.offset_to_line_col(text, c);
+                // this test is needed for previous line when at end of text
+                if cursor_line == line_num {
+                    cursors.as_mut().unwrap().push(cursor_col);
+                }
+            }
+
+            // selection with interior
+            let sel_start_ix = clamp(region.min(), start_pos, pos) - start_pos;
+            let sel_end_ix = clamp(region.max(), start_pos, pos) - start_pos;
+            if sel_end_ix > sel_start_ix {
                 selections.push((sel_start_ix, sel_end_ix));
             }
         }
@@ -299,12 +318,30 @@ impl View {
         update
     }
 
+    // If old-style selection is dirty, then copy it to (new) selection field.
+    fn propagate_old_sel(&mut self) {
+        if self.old_sel_dirty {
+            self.selection.clear();
+            let region = SelRegion {
+                start: self.sel_start,
+                end: self.sel_end,
+                horiz: Some(self.cursor_col),
+                affinity: Affinity::default(),
+            };
+            self.selection.add_region(region);
+            self.old_sel_dirty = false;
+            self.sel_dirty = true;
+        }
+    }
+
     // Update front-end with any changes to view since the last time sent.
     pub fn render_if_dirty<W: Write>(&mut self, text: &Rope, tab_ctx: &TabCtx<W>, style_spans: &Spans<Style>) {
-        if self.dirty {
+        self.propagate_old_sel();
+        if self.sel_dirty || self.dirty {
             let first_line = max(self.first_line, SCROLL_SLOP) - SCROLL_SLOP;
             let last_line = self.first_line + self.height + SCROLL_SLOP;
             self.send_update(text, tab_ctx, style_spans, first_line, last_line);
+            self.sel_dirty = false;
             self.dirty = false;
         }
     }
@@ -313,6 +350,10 @@ impl View {
     pub fn set_dirty(&mut self) {
         self.valid_lines.clear();
         self.dirty = true;
+    }
+
+    pub fn set_old_sel_dirty(&mut self) {
+        self.old_sel_dirty = true;
     }
 
     // How should we count "column"? Valid choices include:
@@ -424,5 +465,16 @@ impl View {
     /// Call to mark view as pristine. Used after a buffer is saved.
     pub fn set_pristine(&mut self) {
         self.pristine = true;
+    }
+}
+
+// utility function to clamp a value within the given range
+fn clamp(x: usize, min: usize, max: usize) -> usize {
+    if x < min {
+        min
+    } else if x < max {
+        x
+    } else {
+        max
     }
 }
