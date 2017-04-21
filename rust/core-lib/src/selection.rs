@@ -120,7 +120,32 @@ impl Deref for Selection {
     }
 }
 
-/// A type representing a single contiguous region of a selection.
+/// The "affinity" of a cursor which is sitting exactly on a line break.
+/// 
+/// We say "cursor" here rather than "caret" because (depending on presentation)
+/// the front-end may draw a cursor even when the region is not a caret.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Affinity {
+    /// The cursor should be displayed downstream of the line break. For
+    /// example, if the buffer is "abcd", and the cursor is on a line break
+    /// after "ab", it should be displayed on the second line before "cd".
+    Downstream,
+    /// The cursor should be displayed upstream of the line break. For
+    /// example, if the buffer is "abcd", and the cursor is on a line break
+    /// after "ab", it should be displayed on the previous line after "ab".
+    Upstream,
+}
+
+impl Default for Affinity {
+    fn default() -> Affinity {
+        Affinity::Downstream
+    }
+}
+
+/// A type representing a single contiguous region of a selection. We use the
+/// term "caret" (sometimes also "cursor", more loosely) to refer to a selection
+/// region with an empty interior. A "non-caret region" is one with a non-empty
+/// interior (i.e. `start != end`).
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct SelRegion {
     /// The inactive edge of a selection, as a byte offset. When
@@ -133,13 +158,8 @@ pub struct SelRegion {
     /// A saved horizontal position (used primarily for line up/down movement)
     pub horiz: Option<HorizPos>,
 
-    /// If the buffer is "abcd" and there is a line break between "ab" and
-    /// "cd" and the cursor is positioned at that break, then is_upstream
-    /// true causes the cursor to display after "ab" on the preceding line,
-    /// while false causes the cursor to display before "cd" on the second
-    /// line.
-    // Discussion: should this be an enum ("affinity")?
-    pub is_upstream: bool,
+    /// The affinity of the cursor.
+    pub affinity: Affinity,
 }
 
 impl SelRegion {
@@ -153,7 +173,7 @@ impl SelRegion {
         max(self.start, self.end)
     }
 
-    /// Determines whether the region is a caret (ie has no interior).
+    /// Determines whether the region is a caret (ie has an empty interior).
     pub fn is_caret(&self) -> bool {
         self.start == self.end
     }
@@ -180,7 +200,7 @@ impl SelRegion {
             // Could try to preserve horiz/affinity from one of the
             // sources, but very likely not worth it.
             horiz: None,
-            is_upstream: false,
+            affinity: Affinity::default(),
         }
     }
 }
