@@ -20,7 +20,7 @@ from xi_plugin import start_plugin, Plugin
 
 
 class Shouty(Plugin):
-    """Naively closes opened brackets, parens, & braces."""
+    """Replaces lowercase input with uppercase input."""
 
     def update(self, peer, author, rev, start, end,
                new_len, edit_type, text=None):

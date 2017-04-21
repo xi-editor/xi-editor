@@ -12,15 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import print_function
-from __future__ import unicode_literals
-
-
 import random
+
 # thinking about ways to make things simpler for plugin authors
 EDIT_PRIORITY_LOW =    0x100000
 EDIT_PRIORITY_NORMAL = 0x1000000
 EDIT_PRIORITY_HIGH =   0x10000000
+
 
 class Edit(object):
     """A convenience class for describing an edit action."""

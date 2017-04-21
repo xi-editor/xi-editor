@@ -42,7 +42,7 @@ pub struct PluginEdit {
     pub end: u64,
     pub rev: u64,
     pub text: String,
-    /// the edit priority determines the resolution strategy when merging this edit with other
+    /// the edit priority determines the resolution strategy when merging
     /// concurrent edits. The highest priority edit will be applied last.
     pub priority: u64,
     /// whether the inserted text prefers to be to the right of the cursor.
@@ -50,7 +50,6 @@ pub struct PluginEdit {
     /// the originator of this edit: some identifier (plugin name, 'core', etc)
     pub author: String,
 }
-
 
 /// A response to an `update` RPC sent to a plugin.
 #[derive(Serialize, Deserialize, Debug)]
@@ -62,11 +61,11 @@ pub enum UpdateResponse {
     Ack(u64),
 }
 
-
-static DEBUG_PLUGING_PATH: &'static str = "PATH_TO_PLUGIN";
+// edit in place during plugin development
+static DEBUG_PLUGIN_PATH: &'static str = "PATH_TO_PLUGIN";
 
 fn plugin_path() -> PathBuf {
-    let pathbuf = PathBuf::from(DEBUG_PLUGING_PATH);
+    let pathbuf = PathBuf::from(DEBUG_PLUGIN_PATH);
     match pathbuf.exists() {
         true => pathbuf,
         false => {
