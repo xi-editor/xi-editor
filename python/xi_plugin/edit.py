@@ -16,13 +16,36 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 
+import random
+# thinking about ways to make things simpler for plugin authors
+EDIT_PRIORITY_LOW =    0x100000
+EDIT_PRIORITY_NORMAL = 0x1000000
+EDIT_PRIORITY_HIGH =   0x10000000
+
 class Edit(object):
     """A convenience class for describing an edit action."""
-    def __init__(self, rev, insert_range, new_text, after_cursor=False):
+    def __init__(self, rev, insert_range, new_text, author,
+                 priority=EDIT_PRIORITY_NORMAL, after_cursor=False):
         self.rev = rev
         self.start, self.end = insert_range
         self.text = new_text
         self.after_cursor = after_cursor
+        self.priority = priority
+        self.author = author
+
+    # TODO: does this make sense
+    # TODO: Also make sure this is deterministic, a given priority should have a constant relationship with core's default priority.
+    # TODO: each plugin could be assigned a priority_factor on init which they apply to their edits instead of random bias
+    def _smudge_priority(self, priority):
+        """If priority is a default value, apply some random bias.
+
+        Does not modify custom priorities.
+        """
+        print(type(priority))
+        if priority in [EDIT_PRIORITY_LOW, EDIT_PRIORITY_HIGH, EDIT_PRIORITY_NORMAL]:
+            priority += random.randrange(0x10000)
+        print(type(priority))
+        return priority
 
     def to_dict(self):
         return {
@@ -30,9 +53,11 @@ class Edit(object):
             "start": self.start,
             "end": self.end,
             "after_cursor": self.after_cursor,
-            "text": self.text
+            "text": self.text,
+            # TODO: names should be assigned by core.
+            "author":  self.author,
+            "priority": self._smudge_priority(self.priority),
         }
 
     def __repr__(self):
         return repr(self.to_dict())
-

@@ -28,12 +28,12 @@ class Echo(Plugin):
     """
 
     def update(self, peer, rev, start, end,
-               new_len, edit_type, text=None):
+               new_len, edit_type, author, text=None):
         header = "### BUFFER REV {} LEN {} ###".format(rev, self.lines.total_bytes)
         contents = "\n".join(self.lines)
         footer = '#' * len(header)
         self.print_err("\n{}\n{}\n{}".format(header, contents, footer))
-        return {"rpc-request": "expects a response"}
+        return 1
 
 
 def main():

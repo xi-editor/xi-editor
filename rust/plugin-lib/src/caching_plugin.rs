@@ -72,7 +72,7 @@ impl<'a, H: Handler> plugin_base::Handler for MyHandler<'a, H> {
                 self.handler.init_buf(ctx, buf_size);
                 None
             }
-            PluginRequest::Update { start, end, new_len, rev, edit_type, text } => {
+            PluginRequest::Update { start, end, new_len, rev, edit_type, author, text } => {
                 print_err!("got update notification {:?}", edit_type);
                 ctx.state.buf_size = ctx.state.buf_size - (end - start) + new_len;
                 ctx.state.rev = rev;

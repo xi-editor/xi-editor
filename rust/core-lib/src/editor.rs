@@ -20,7 +20,7 @@ use std::io::Write;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 use std::mem;
-use serde_json::Value;
+use serde_json::{self, Value};
 
 use xi_rope::rope::{LinesMetric, Rope};
 use xi_rope::interval::Interval;
@@ -33,7 +33,7 @@ use word_boundaries::WordCursor;
 
 use tabs::{ViewIdentifier, TabCtx};
 use rpc::EditCommand;
-use run_plugin::{start_plugin, PluginRef};
+use run_plugin::{start_plugin, PluginRef, UpdateResponse, PluginEdit};
 
 const FLAG_SELECT: u64 = 2;
 
@@ -237,9 +237,9 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     // commit the current delta, updating views, plugins, and other invariants as needed
-    fn commit_delta(&mut self, self_ref: &Arc<Mutex<Editor<W>>>) {
+    fn commit_delta(&mut self, self_ref: &Arc<Mutex<Editor<W>>>, author: Option<&str>) {
         if self.engine.get_head_rev_id() != self.last_rev_id {
-            self.update_after_revision(self_ref);
+            self.update_after_revision(self_ref, author);
             if let Some((start, end)) = self.new_cursor.take() {
                 self.set_cursor(end, true);
                 self.view.sel_start = start;
@@ -247,13 +247,32 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
     }
 
+    // generates a delta from a plugin's response and applies it to the buffer.
+    fn apply_plugin_edit(&mut self, self_ref: &Arc<Mutex<Editor<W>>>,
+                         edit: PluginEdit, undo_group: usize) {
+        let interval = Interval::new_closed_open(edit.start as usize, edit.end as usize);
+        let text = Rope::from(&edit.text);
+        let rev_len = self.engine.get_rev(edit.rev as usize).unwrap().len();
+        let delta = Delta::simple_edit(interval, text, rev_len);
+        //self.engine.edit_rev(0x100000, undo_group, edit.rev as usize, delta);
+        self.engine.edit_rev(edit.priority as usize, undo_group, edit.rev as usize, delta);
+        self.text = self.engine.get_head();
+        if edit.after_cursor {
+            //FIXME: this needs to take account of potential changes between this rev and head.
+             self.new_cursor = Some((edit.start as usize, edit.end as usize));
+        }
+
+        self.commit_delta(self_ref, Some(&edit.author));
+        self.render();
+    }
+
     fn update_undos(&mut self, self_ref: &Arc<Mutex<Editor<W>>>) {
         self.engine.undo(self.undos.clone());
         self.text = self.engine.get_head();
-        self.update_after_revision(self_ref);
+        self.update_after_revision(self_ref, None);
     }
 
-    fn update_after_revision(&mut self, self_ref: &Arc<Mutex<Editor<W>>>) {
+    fn update_after_revision(&mut self, self_ref: &Arc<Mutex<Editor<W>>>, author: Option<&str>) {
         let delta = self.engine.delta_rev_head(self.last_rev_id);
         self.view.after_edit(&self.text, &delta);
         let (iv, new_len) = delta.summary();
@@ -265,6 +284,9 @@ impl<W: Write + Send + 'static> Editor<W> {
         let empty_spans = SpansBuilder::new(new_len).build();
         self.style_spans.edit(iv, empty_spans);
 
+        let author = author.unwrap_or(&self.view.view_id);
+        let undo_group = *self.live_undos.last().unwrap();
+
         //print_err!("delta {}:{} +{} {}", iv.start(), iv.end(), new_len, self.this_edit_type.json_string());
         for plugin in &self.plugins {
             self.revs_in_flight += 1;
@@ -274,15 +296,24 @@ impl<W: Write + Send + 'static> Editor<W> {
             } else {
                 None
             };
-            plugin.update(iv.start(), iv.end(), new_len, text.as_ref().map(|s| s.as_str()),
-                self.engine.get_head_rev_id(), self.this_edit_type.json_string(),
-                move |_| {
-                    if let Some(editor) = editor.upgrade() {
-                        editor.lock().unwrap().dec_revs_in_flight();
-                    }
-                    //print_err!("plugin update responded");
+            plugin.update(iv.start(), iv.end(), new_len,
+                          text.as_ref().map(|s| s.as_str()),
+                          self.engine.get_head_rev_id(),
+                          self.this_edit_type.json_string(), author,
+                          move |response| {
+                              if let Some(editor) = editor.upgrade() {
+                                  let response = response.expect("bad plugin response");
+                                  match serde_json::from_value::<UpdateResponse>(response) {
+                                      Ok(UpdateResponse::Edit(edit)) => {
+                                          //print_err!("got response {:?}", edit);
+                                          editor.lock().unwrap().apply_plugin_edit(&editor, edit, undo_group);
+                                      }
+                                      Ok(UpdateResponse::Ack(_)) => (),
+                                      Err(err) => { print_err!("plugin response json err: {:?}", err); }
+                    };
+                    editor.lock().unwrap().dec_revs_in_flight();
                 }
-            );
+            });
         }
         self.last_rev_id = self.engine.get_head_rev_id();
     }
@@ -896,7 +927,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         };
 
         // TODO: could defer this until input quiesces - will this help?
-        self.commit_delta(self_ref);
+        self.commit_delta(self_ref, None);
         self.render();
         self.last_edit_type = self.this_edit_type;
         self.gc_undos();

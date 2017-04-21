@@ -175,6 +175,7 @@ pub enum PluginRequest<'a> {
         new_len: usize,
         rev: usize,
         edit_type: EditType,
+        author: &'a str,
         text: Option<&'a str>,
     },
 }
@@ -210,16 +211,17 @@ fn parse_plugin_request<'a>(method: &str, params: &'a Value) ->
         }
         "update" => {
             params.as_object().and_then(|dict|
-                if let (Some(start), Some(end), Some(new_len), Some(rev), Some(edit_type)) =
+                if let (Some(start), Some(end), Some(new_len), Some(rev), Some(edit_type), Some(author)) =
                     (dict_get_u64(dict, "start"), dict_get_u64(dict, "end"),
                         dict_get_u64(dict, "new_len"), dict_get_u64(dict, "rev"),
-                        dict_get_string(dict, "edit_type")) {
+                        dict_get_string(dict, "edit_type"), dict_get_string(dict, "author")) {
                         Some(PluginRequest::Update {
                             start: start as usize,
                             end: end as usize,
                             new_len: new_len as usize,
                             rev: rev as usize,
                             edit_type: EditType::from_str(edit_type),
+                            author: author,
                             text: dict_get_string(dict, "text"),
                         })
                 } else { None }

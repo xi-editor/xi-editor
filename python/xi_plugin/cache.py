@@ -61,7 +61,7 @@ class LineCache(object):
         """Returns true if the cache does not have a copy of the full buffer."""
         return self.offsets[-1] != self.total_bytes
 
-    def apply_update(self, peer, rev, start, end, new_len, edit_type, text=None):
+    def apply_update(self, peer, author, rev, start, end, new_len, edit_type, text=None):
         # an update is bytes; can span multiple lines.
         text = text or ""
         # FIXME: this can fail on very large updates. In that case we should

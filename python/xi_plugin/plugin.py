@@ -17,6 +17,7 @@ from __future__ import unicode_literals
 
 import sys
 
+from . import edit
 from .rpc import RpcPeer
 from .cache import LineCache
 
@@ -50,6 +51,7 @@ class Plugin(object):
     """
     def __init__(self):
         self.cache = None
+        self.identifier = type(self).__name__
 
     def __call__(self, method, params, peer):
         params = params or {}
@@ -61,9 +63,12 @@ class Plugin(object):
         return getattr(self, method, self.noop)(peer, **params)
 
     def print_err(self, err):
-        print("PLUGIN.PY {}>>> {}".format(type(self).__name__, err),
-              file=sys.stderr)
+        print("PLUGIN.PY {}>>> {}".format(self.identifier, err), file=sys.stderr)
         sys.stderr.flush()
+
+    def new_edit(self, rev, edit_range, new_text,
+                  priority=edit.EDIT_PRIORITY_NORMAL, after_cursor=False):
+        return edit.Edit(rev, edit_range, new_text, self.identifier, priority, after_cursor)
 
     def ping(self, peer, **kwargs):
         self.print_err("ping")
