@@ -583,8 +583,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         let old_offset = self.view.sel_end;
         let offset = self.view.vertical_motion(&self.text, scroll);
         self.set_cursor(offset, old_offset == offset);
-        let scroll_offset = self.view.vertical_motion(&self.text, scroll);
-        self.scroll_to = Some(scroll_offset);
+        self.scroll_to = Some(offset);
     }
 
     fn scroll_page_down(&mut self, flags: u64) {
@@ -596,8 +595,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         let old_offset = self.view.sel_end;
         let offset = self.view.vertical_motion(&self.text, scroll);
         self.set_cursor(offset, old_offset == offset);
-        let scroll_offset = self.view.vertical_motion(&self.text, scroll);
-        self.scroll_to = Some(scroll_offset);
+        self.scroll_to = Some(offset);
     }
 
     fn select_all(&mut self) {
