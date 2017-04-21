@@ -24,7 +24,7 @@ pub struct IndexSet {
     ranges: Vec<(usize, usize)>,
 }
 
-fn remove_n_at<T: Clone>(v: &mut Vec<T>, index: usize, n: usize) {
+pub fn remove_n_at<T: Clone>(v: &mut Vec<T>, index: usize, n: usize) {
     if n == 1 {
         v.remove(index);
     } else if n > 1 {
