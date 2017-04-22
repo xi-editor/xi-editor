@@ -58,6 +58,42 @@ class LineCache(object):
         """Returns true if the cache does not have a copy of the full buffer."""
         return self.offsets[-1] != self.total_bytes
 
+    def linecol_for_offset(self, offset):
+        """Given a byte offset, returns the corresponding line and column.
+
+        Raises IndexError if the offset is out of bounds on the buffer.
+        """
+        if offset < 0 or offset > self.total_bytes:
+            raise IndexError("offset {} invalid for buffer length {}".format(
+                offset, self.total_bytes))
+        if offset == 0:
+            return (0, 0)
+        if offset > self.offsets[-1]:
+            self.get_data(offset, self.peer)
+
+        line_nb = bisect.bisect_left(self.offsets, offset) - 1
+        col = offset - self.offsets[line_nb]
+        return (line_nb, col)
+
+        return (0, 0)
+
+    def previous_word(self, offset):
+        """Returns the word immediately preceding `offset`, or None.
+
+        Word is defined as a "sequence of non-whitespace characters".
+        If the offset is inside a word, the left half of the word will be returned.
+
+        Returns None if no words precede `offset`.
+
+        Raises `IndexError` if `offset` is out of bounds of the buffer.
+        """
+
+        line_nb, col = self.linecol_for_offset(offset)
+        line = self[line_nb]
+        word = line[:col].split()[-1]
+        return word or None
+
+
     def apply_update(self, peer, author, rev, start, end, new_len, edit_type, text=None):
         # an update is bytes; can span multiple lines.
         text = text or ""
@@ -186,14 +222,14 @@ def test_get_data_on_missing_line():
 def test_update():
     testdata = "this\nhas\nsome\nlines\nin it"
     cache = LineCache(len(testdata), None, 0, testdata)
-    cache.apply_update(None, 0, 4, 4, 3, 'insert', 'tle')
+    cache.apply_update(None, 'author', 0, 4, 4, 3, 'insert', 'tle')
     assert cache.raw_lines[0] == "thistle\n"
     assert cache.offsets[1] == len(cache.raw_lines[0])
     assert cache.offsets[-1] == len(testdata) + 3
     assert len(cache.offsets) == len(cache.raw_lines) + 1
     assert len(cache.raw_lines) == 5
 
-    cache.apply_update(None, 1, 10, 11, 5, 'insert', 'ha\noh')
+    cache.apply_update(None, 'author', 1, 10, 11, 5, 'insert', 'ha\noh')
     assert len(cache.raw_lines) == 6
     assert cache.raw_lines[1] == "haha\n"
     assert cache.raw_lines[2] == "oh\n"
@@ -204,11 +240,11 @@ def test_empty_buff():
     cache = LineCache(0, None, 0, testdata)
     assert len(cache.raw_lines) == 1
     assert len(cache.offsets) == 2
-    cache.apply_update(None, 1, 0, 0, 1, 'insert', 'q')
+    cache.apply_update(None, 'author', 1, 0, 0, 1, 'insert', 'q')
     assert len(cache.offsets) == 2
-    cache.apply_update(None, 2, 1, 1, 1, 'insert', '\n')
+    cache.apply_update(None, 'author', 2, 1, 1, 1, 'insert', '\n')
     assert len(cache.offsets) == 2
-    cache.apply_update(None, 3, 2, 2, 1, 'insert', 'z')
+    cache.apply_update(None, 'author', 3, 2, 2, 1, 'insert', 'z')
     assert len(cache.raw_lines) == 2
     assert cache[0] == 'q'
     assert len(cache.offsets) == 3
@@ -217,6 +253,27 @@ def test_empty_buff():
 def test_delete_all():
     testdata = "this\nhas\nsome\nlines\nin it"
     cache = LineCache(len(testdata), None, 0, testdata)
-    cache.apply_update(None, 1, 0, len(testdata), 0, 'breakpoint', '')
+    cache.apply_update(None, 'author', 1, 0, len(testdata), 0, 'breakpoint', '')
     assert cache.total_bytes == 0
     assert sum(map(len, cache.raw_lines)) == 0
+
+
+def test_linecol():
+    testdata = "abc\ndef\nghi\njkl\nmno\n"
+    cache = LineCache(len(testdata), None, 0, testdata)
+    assert cache.linecol_for_offset(0) == (0, 0)
+    assert cache.linecol_for_offset(1) == (0, 1)
+    assert cache.linecol_for_offset(6) == (1, 2)
+    try:
+        assert cache.linecol_for_offset(100)
+        assert False
+    except IndexError:
+        pass
+
+
+def test_prev_word():
+    testdata = "this is a single line\n"
+    cache = LineCache(len(testdata), None, 0, testdata)
+    assert cache.previous_word(3) == "thi"
+    assert cache.previous_word(8) == "is"
+    assert cache.previous_word(7) == "is"

@@ -25,14 +25,11 @@ MAX_FETCH_SIZE = 1024*1024
 class PluginPeer(RpcPeer):
     """A proxy object which wraps RPC methods implemented in xi-core."""
 
-    def n_lines(self):
-        return self.send_rpc_sync('n_lines', [])
-
-    def get_line(self, i):
-        return self.send_rpc_sync('get_line', {'line': i})
-
-    def set_line_fg_spans(self, i, spans):
-        self.send_rpc('set_line_fg_spans', {'line': i, 'spans': spans})
+    def set_fg_spans(self, start, length, spans, rev):
+        self.send_rpc('set_fg_spans', {'start': start,
+                                       'len': length,
+                                       'spans': spans,
+                                       'rev': rev})
 
     def get_data(self, from_offset, rev, max_size=MAX_FETCH_SIZE):
         return self.send_rpc_sync('get_data', {'offset': from_offset,

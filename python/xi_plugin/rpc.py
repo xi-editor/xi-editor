@@ -17,11 +17,6 @@ import json
 from collections import deque
 
 
-def print_err(err):
-    sys.stderr.write("plugin err>> %s\n" % err)
-    sys.stderr.flush()
-
-
 class RpcPeer(object):
     '''
     This is a simple RPC peer with some limitations. It assumes a single-threaded
@@ -58,7 +53,7 @@ class RpcPeer(object):
             line = self.normalize_encoding(line)
             data = json.loads(line)
             if waiting_for is not None:
-                print_err("waiting for {}".format(waiting_for))
+                print("waiting for {}".format(waiting_for), file=sys.stderr, flush=True)
             # 'id' is unique required field in response objects
             if waiting_for is not None and 'id' in data:
                 if data['id'] != waiting_for:
@@ -67,7 +62,8 @@ class RpcPeer(object):
                 try:
                     return data['result']
                 except KeyError as err:
-                    print_err("key error in mainloop: {}".format(err))
+                    print("key error in mainloop: {}".format(err),
+                          file=sys.stderr, flush=True)
                     return None
             self.pending.append(data)
             if waiting_for is None:
