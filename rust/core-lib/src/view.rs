@@ -152,19 +152,12 @@ impl View {
             if (c > start_pos && c < pos) ||
                 (!is_upstream && c == start_pos) ||
                 (is_upstream && c == pos) ||
-                (c == pos && pos == text.len())
+                (c == pos && c == text.len() && self.line_of_offset(text, c) == line_num)
             {
                 if cursors.is_none() {
                     cursors = Some(Vec::new());
                 }
-                // TODO: make this handle upstream case (should be prev line)
-                // TODO: we really need utf-8 byte offsets; if the function starts
-                // using different units to measure "columns" we need to adapt.
-                let (cursor_line, cursor_col) = self.offset_to_line_col(text, c);
-                // this test is needed for previous line when at end of text
-                if cursor_line == line_num {
-                    cursors.as_mut().unwrap().push(cursor_col);
-                }
+                cursors.as_mut().unwrap().push(c - start_pos);
             }
 
             // selection with interior
