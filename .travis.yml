@@ -21,4 +21,4 @@ script:
   - cd rust
   - export CARGO_TARGET_DIR=/tmp/target
   - cargo build && cargo build --manifest-path syntect-plugin/Cargo.toml
-  - for MANIFEST in Cargo.toml */Cargo.toml; do cargo test --manifest-path $MANIFEST; done
+  - for MANIFEST in Cargo.toml */Cargo.toml; do cargo test --manifest-path $MANIFEST || break; done

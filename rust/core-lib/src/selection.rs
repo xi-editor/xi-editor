@@ -207,7 +207,7 @@ impl SelRegion {
 
 #[cfg(test)]
 mod tests {
-    use super::{Selection, SelRegion};
+    use super::{Affinity, Selection, SelRegion};
     use std::ops::Deref;
 
     fn r(start: usize, end: usize) -> SelRegion {
@@ -215,7 +215,7 @@ mod tests {
             start: start,
             end: end,
             horiz: None,
-            is_upstream: false,
+            affinity: Affinity::default(),
         }
     }
 

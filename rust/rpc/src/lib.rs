@@ -404,12 +404,12 @@ pub fn arr_get_i64(arr: &[Value], idx: usize) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
-    fn test_dict_add_value() {
-        let mut dict = json!({"id": 10});
-        dict_add_value(&mut dict, "key", "value");
-        let exp = r#"{"id":10,"key":"value"}"#;
-        assert_eq!(serde_json::to_string(&dict).ok(), Some(exp.to_owned()));
+    fn test_dict_get_u64() {
+        let dict = json!({"life_meaning": 42});
+        let dict = dict.as_object().unwrap();
+        assert_eq!(dict_get_u64(&dict, "life_meaning"), Some(42));
+        assert_eq!(dict_get_u64(&dict, "tea"), None);
     }
 }
