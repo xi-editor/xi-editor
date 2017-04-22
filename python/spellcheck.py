@@ -15,7 +15,7 @@
 # limitations under the License.
 
 import os
-from xi_plugin import start_plugin, Plugin
+from xi_plugin import start_plugin, Plugin, style
 
 try:
     import enchant
@@ -49,7 +49,12 @@ class Spellcheck(Plugin):
             # TODO: libs should provide some "Text" object, which represents some string,
             # and provides convenience methods for getting relevant offsets, setting styles, etc
             if prev_word and not self.dictionary.check(prev_word):
-                spans = [{'start': 0, 'end': len(prev_word), 'fg': 0xfff00000, 'font': 1}]
+                # we apply spans in groups; spans within a group may overlap.
+                # A span within a group is offset relative to group's start offset.
+                spans = [{'start': 0,
+                          'end': len(prev_word),
+                          'fg': style.color_for_rgb_float(1.0, 0, 0),
+                          'font': style.BOLD | style.UNDERLINE}]
                 peer.set_fg_spans(end-len(prev_word), len(prev_word), spans, rev)
         return 0
 

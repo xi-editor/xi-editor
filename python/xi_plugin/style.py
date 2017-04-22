@@ -12,6 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .plugin import Plugin, start_plugin
-from .edit import Edit
-from . import style
+"""Provides convenience methods for styling text."""
+
+BOLD = 1
+UNDERLINE = 2
+ITALIC = 4
+
+
+def color_for_rgb_float(red, green, blue):
+    if any(map(lambda x: x < 0 or x > 1, (red, green, blue))):
+        raise ValueError("Values must be in the range 0..1 (inclusive)")
+    red, green, blue = map(lambda c: int(0xFF * c), (red, green, blue))
+    return (0xFF << 24) | (red << 16) | (green << 8) | blue

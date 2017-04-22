@@ -75,8 +75,6 @@ class LineCache(object):
         col = offset - self.offsets[line_nb]
         return (line_nb, col)
 
-        return (0, 0)
-
     def previous_word(self, offset):
         """Returns the word immediately preceding `offset`, or None.
 
@@ -92,7 +90,6 @@ class LineCache(object):
         line = self[line_nb]
         word = line[:col].split()[-1]
         return word or None
-
 
     def apply_update(self, peer, author, rev, start, end, new_len, edit_type, text=None):
         # an update is bytes; can span multiple lines.
