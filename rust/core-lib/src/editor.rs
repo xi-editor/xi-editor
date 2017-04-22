@@ -256,12 +256,15 @@ impl<W: Write + Send + 'static> Editor<W> {
         let text = Rope::from(&edit.text);
         let rev_len = self.engine.get_rev(edit.rev as usize).unwrap().len();
         let delta = Delta::simple_edit(interval, text, rev_len);
+        let prev_head_rev_id = self.engine.get_head_rev_id();
         //self.engine.edit_rev(0x100000, undo_group, edit.rev as usize, delta);
         self.engine.edit_rev(edit.priority as usize, undo_group, edit.rev as usize, delta);
         self.text = self.engine.get_head();
-        if edit.after_cursor {
-            //FIXME: this needs to take account of potential changes between this rev and head.
-             self.new_cursor = Some((edit.start as usize, edit.end as usize));
+
+        // adjust cursor position so that the cursor is not moved by the plugin edit
+        let (changed_interval, _) = self.engine.delta_rev_head(prev_head_rev_id).summary();
+        if edit.after_cursor && (changed_interval.start() as usize) == self.view.sel_end {
+            self.new_cursor = Some((self.view.sel_start, self.view.sel_end));
         }
 
         self.commit_delta(self_ref, Some(&edit.author));
