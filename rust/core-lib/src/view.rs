@@ -148,10 +148,9 @@ impl View {
         for region in self.selection.regions_in_range(start_pos, pos) {
             // cursor
             let c = region.end;
-            let is_upstream = region.affinity == Affinity::Upstream;
             if (c > start_pos && c < pos) ||
-                (!is_upstream && c == start_pos) ||
-                (is_upstream && c == pos) ||
+                (!region.is_upstream() && c == start_pos) ||
+                (region.is_upstream() && c == pos) ||
                 (c == pos && c == text.len() && self.line_of_offset(text, c) == line_num)
             {
                 cursors.push(c - start_pos);
