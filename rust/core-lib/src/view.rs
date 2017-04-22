@@ -131,19 +131,19 @@ impl View {
 
     // Render a single line, and advance cursors to next line.
     fn render_line<W: Write>(&self, tab_ctx: &TabCtx<W>, text: &Rope,
-        cursor: &mut Cursor<RopeInfo>, breaks_cursor: Option<&mut Cursor<BreaksInfo>>, style_spans: &Spans<Style>,
+        start_of_line: &mut Cursor<RopeInfo>, soft_breaks: Option<&mut Cursor<BreaksInfo>>, style_spans: &Spans<Style>,
         line_num: usize) -> Value
     {
-        let start_pos = cursor.pos();
-        let pos = breaks_cursor.map_or(cursor.next::<LinesMetric>(), |bc| {
+        let start_pos = start_of_line.pos();
+        let pos = soft_breaks.map_or(start_of_line.next::<LinesMetric>(), |bc| {
             let pos = bc.next::<BreaksMetric>();
             // if using breaks update cursor
-            if let Some(pos) = pos { cursor.set(pos) }
+            if let Some(pos) = pos { start_of_line.set(pos) }
             pos
         }).unwrap_or(text.len());
 
         let l_str = text.slice_to_string(start_pos, pos);
-        let mut cursors = None;
+        let mut cursors = Vec::new();
         let mut selections = Vec::new();
         for region in self.selection.regions_in_range(start_pos, pos) {
             // cursor
@@ -154,10 +154,7 @@ impl View {
                 (is_upstream && c == pos) ||
                 (c == pos && c == text.len() && self.line_of_offset(text, c) == line_num)
             {
-                if cursors.is_none() {
-                    cursors = Some(Vec::new());
-                }
-                cursors.as_mut().unwrap().push(c - start_pos);
+                cursors.push(c - start_pos);
             }
 
             // selection with interior
@@ -175,7 +172,7 @@ impl View {
             "styles": styles,
         });
 
-        if let Some(cursors) = cursors {
+        if !cursors.is_empty() {
             result["cursor"] = json!(cursors);
         }
         result
@@ -224,15 +221,15 @@ impl View {
             ops.push(self.build_update_op(op, None, first_line));
         }
         let first_line_offset = self.offset_of_line(text, first_line);
-        let mut cursor = Cursor::new(text, first_line_offset);
-        let mut breaks_cursor = self.breaks.as_ref().map(|breaks|
+        let mut line_cursor = Cursor::new(text, first_line_offset);
+        let mut soft_breaks = self.breaks.as_ref().map(|breaks|
             Cursor::new(breaks, first_line_offset)
         );
 
         let mut rendered_lines = Vec::new();
         for line_num in first_line..last_line {
             rendered_lines.push(self.render_line(tab_ctx, text,
-                &mut cursor, breaks_cursor.as_mut(), style_spans, line_num));
+                &mut line_cursor, soft_breaks.as_mut(), style_spans, line_num));
         }
         ops.push(self.build_update_op("ins", Some(rendered_lines), last_line - first_line));
         if last_line < height {
@@ -269,14 +266,14 @@ impl View {
                 ops.push(self.build_update_op("copy", None, start - line));
             }
             let start_offset = self.offset_of_line(text, start);
-            let mut cursor = Cursor::new(text, start_offset);
-            let mut breaks_cursor = self.breaks.as_ref().map(|breaks|
+            let mut line_cursor = Cursor::new(text, start_offset);
+            let mut soft_breaks = self.breaks.as_ref().map(|breaks|
                 Cursor::new(breaks, start_offset)
             );
             let mut rendered_lines = Vec::new();
             for line_num in start..end {
                 rendered_lines.push(self.render_line(tab_ctx, text,
-                                                     &mut cursor, breaks_cursor.as_mut(),
+                                                     &mut line_cursor, soft_breaks.as_mut(),
                                                      style_spans, line_num));
             }
             ops.push(self.build_update_op("ins", Some(rendered_lines), end - start));
