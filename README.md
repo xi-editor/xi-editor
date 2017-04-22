@@ -59,6 +59,8 @@ experimental GL-based front-end in Rust.
 
 * [XiEditorVS2015](https://github.com/Sineaggi/XiEditorVS2015), C#.
 
+* [`xi-electron`](https://gitlab.com/callodacity/xi-electron), a front-end based on web-technologies.
+
 There are notes (I wouldn’t call it
 documentation at this point) on the protocol at
 [frontend.md](doc/frontend.md). If you're working on a front-end, feel free to
