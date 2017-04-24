@@ -25,6 +25,7 @@ pub mod rope;
 pub mod spans;
 pub mod subset;
 pub mod engine;
+pub mod find;
 
 // TODO: "pub use" the types we want to export publicly
 
