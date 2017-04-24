@@ -199,7 +199,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             self.scroll_to = Some(offset);
         }
         self.view.scroll_to_cursor(&self.text);
-        self.view.set_dirty();
+        self.view.set_old_sel_dirty();
     }
 
     // Apply the delta to the buffer, and store the new cursor so that it gets
@@ -632,7 +632,7 @@ impl<W: Write + Send + 'static> Editor<W> {
     fn select_all(&mut self) {
         self.view.sel_start = 0;
         self.view.sel_end = self.text.len();
-        self.view.set_dirty();
+        self.view.set_old_sel_dirty();
     }
 
     fn do_key(&mut self, chars: &str, flags: u64) {

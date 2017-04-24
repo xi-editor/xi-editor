@@ -178,6 +178,11 @@ impl SelRegion {
         self.start == self.end
     }
 
+    /// Determines whether the region's affinity is upstream.
+    pub fn is_upstream(&self) -> bool {
+        self.affinity == Affinity::Upstream
+    }
+
     // Indicate whether this region should merge with the next.
     // Assumption: regions are sorted (self.min() <= other.min())
     fn should_merge(&self, other: &SelRegion) -> bool {
