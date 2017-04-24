@@ -187,14 +187,18 @@ impl<W: Write + Send + 'static> Tabs<W> {
     
     fn close_view(&mut self, view_id: &str) {
         let buf_id = self.views.remove(view_id).expect("missing buffer id when closing view");
-        let has_views = {
+        let (has_views, path) = {
             let editor = self.buffers.get(&buf_id).expect("missing editor when closing view");
-            editor.lock().unwrap().remove_view(view_id);
-            editor.lock().unwrap().has_views()
+            let mut editor = editor.lock().unwrap();
+            editor.remove_view(view_id);
+            (editor.has_views(), editor.get_path().map(PathBuf::from))
         };
 
         if !has_views {
             self.buffers.remove(&buf_id);
+            if let Some(path) = path {
+                self.open_files.remove(&path);
+            }
         }
     }
 
