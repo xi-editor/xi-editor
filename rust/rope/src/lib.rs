@@ -15,6 +15,7 @@
 //! A rope data structure suitable for text editing
 
 extern crate bytecount;
+extern crate memchr;
 
 pub mod tree;
 pub mod breaks;

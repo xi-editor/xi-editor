@@ -8,6 +8,7 @@ version = "0.2.0"
 
 [dependencies]
 bytecount = "0.1.2"
+memchr = "1.0"
 
 [features]
 avx-accel = ["bytecount/avx-accel"]
