@@ -188,6 +188,10 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.add_delta(sel_interval, Rope::from(s), new_cursor, new_cursor);
     }
 
+    /// Sets the position of the cursor to `offset`, as part of an edit operation.
+    /// If this cursor position's horizontal component was chosen implicitly
+    /// (e.g. if the user moved up from the end of a long line to a shorter line)
+    /// then `hard` is false. In all other cases, `hard` is true.
     fn set_cursor(&mut self, offset: usize, hard: bool) {
         if self.this_edit_type != EditType::Select {
             self.view.sel_start = offset;
@@ -555,11 +559,14 @@ impl<W: Write + Send + 'static> Editor<W> {
         return;
     }
 
+    /// Moves the cursor to the beginning of the first line in the current region.
     fn cursor_start(&mut self) {
-        let start = self.view.sel_min() - self.view.get_cursor_col();
-        self.set_cursor(start, true);
+        let sel_min = self.view.sel_min();
+        self.set_cursor(sel_min, true);
+        self.move_to_left_end_of_line(0);
     }
 
+    /// Moves the cursor to the end of the last line in the current region.
     fn cursor_end(&mut self) {
         let offset = self.cursor_end_offset();
         self.set_cursor(offset, true);
