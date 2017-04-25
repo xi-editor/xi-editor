@@ -192,22 +192,29 @@ impl<W: Write + Send + 'static> Editor<W> {
         // process soft spans in front of the cursor
         let iv_ahead = Interval::new_closed_open(start, self.soft_spans.len());
         let soft_spans = self.soft_spans.subseq(iv_ahead);
-        if let Some((interval, _)) = soft_spans.iter().next() {
+        for (interval, _) in soft_spans.iter() {
             // only interested in soft spans that are directly in front of the cursor
-            if interval.start() == 0 {
-                let mut cursor = Cursor::new(&self.text, start);
-                let are_eql = compare_cursor_str(&mut cursor, s);
+            if interval.start() != 0 {
+                break
+            }
 
-                // are_eql is checked for 1 codepoint long inserts and cursor position is checked
-                // to also match longer inserts partially
-                if are_eql || cursor.pos() > start + 1 {
-                    self.soft_spans.clear_left(cursor.pos());
+            let mut cursor = Cursor::new(&self.text, start);
+            let are_eql = compare_cursor_str(&mut cursor, s);
 
-                    // update selection interval to replace matching part of soft span
-                    end += cursor.pos() - start;
-                } else {
-                    self.soft_spans.shift_right(s.len());
+            // are_eql is checked for 1 codepoint long inserts and cursor position is checked
+            // to also match longer inserts partially
+            if are_eql || cursor.pos() > start + 1 {
+                self.soft_spans.clear_left(cursor.pos());
+
+                // update selection interval to replace matching part of soft span
+                end += cursor.pos() - start;
+
+                // not necessary to look at the next soft span if only a substr matched
+                if !are_eql {
+                    break
                 }
+            } else {
+                self.soft_spans.shift_right(s.len());
             }
         }
 
@@ -808,7 +815,8 @@ impl<W: Write + Send + 'static> Editor<W> {
 
         let end = new_cursor + text.len();
         let mut sb = SpansBuilder::new(end);
-        sb.add_span(Interval::new_closed_open(new_cursor, end), ());
+        sb.add_span(Interval::new_closed_open(new_cursor, new_cursor + 3), ());
+        sb.add_span(Interval::new_closed_open(new_cursor + 3, end), ());
         self.soft_spans = sb.build();
 
         self.add_delta(sel_interval, text, new_cursor, new_cursor);
