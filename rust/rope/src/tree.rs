@@ -184,7 +184,7 @@ impl<N: NodeInfo> Node<N> {
         self.0.height == 0
     }
 
-    fn interval(&self) -> Interval {
+    pub fn interval(&self) -> Interval {
         self.0.info.interval(self.0.len)
     }
 

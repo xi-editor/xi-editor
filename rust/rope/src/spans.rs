@@ -189,6 +189,26 @@ impl<T: Clone + Default> Spans<T> {
             ix: 0,
         }
     }
+
+    pub fn clear_left(&mut self, pos: usize) {
+        let iv = Interval::new_closed_open(0, pos);
+        let mut b = TreeBuilder::new();
+        b.push(SpansBuilder::new(iv.end()).build());
+        self.push_subseq(&mut b, self.interval().suffix(iv));
+        *self = b.build();
+    }
+
+    pub fn shift_left(&mut self, len: usize) {
+        let iv = Interval::new_closed_open(len, self.interval().end());
+        *self = self.subseq(iv);
+    }
+
+    pub fn shift_right(&mut self, len: usize) {
+        let mut b = TreeBuilder::new();
+        b.push(SpansBuilder::new(len).build());
+        self.push_subseq(&mut b, self.interval());
+        *self = b.build();
+    }
 }
 
 impl<'a, T: Clone + Default> Iterator for SpanIter<'a, T> {
@@ -207,5 +227,47 @@ impl<'a, T: Clone + Default> Iterator for SpanIter<'a, T> {
             return Some((span.iv.translate(leaf_start), &span.data));
         }
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SpansBuilder;
+    use interval::Interval;
+
+    #[test]
+    fn clear_left() {
+        let mut sb = SpansBuilder::new(15);
+        sb.add_span(Interval::new_closed_open(5, 10), ());
+
+        let mut spans = sb.build();
+        spans.clear_left(7);
+
+        assert_eq!(spans.len(), 15);
+        assert_eq!(spans.iter().next(), Some((Interval::new_closed_open(7, 10), &())));
+    }
+
+    #[test]
+    fn shift_left() {
+        let mut sb = SpansBuilder::new(15);
+        sb.add_span(Interval::new_closed_open(5, 10), ());
+
+        let mut spans = sb.build();
+        spans.shift_left(2);
+
+        assert_eq!(spans.len(), 13);
+        assert_eq!(spans.iter().next(), Some((Interval::new_closed_open(3, 8), &())));
+    }
+
+    #[test]
+    fn shift_right() {
+        let mut sb = SpansBuilder::new(15);
+        sb.add_span(Interval::new_closed_open(5, 10), ());
+
+        let mut spans = sb.build();
+        spans.shift_right(2);
+
+        assert_eq!(spans.len(), 17);
+        assert_eq!(spans.iter().next(), Some((Interval::new_closed_open(7, 12), &())));
     }
 }

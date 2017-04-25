@@ -101,6 +101,7 @@ pub enum EditCommand<'a> {
     DebugRewrap,
     DebugTestFgSpans,
     DebugRunPlugin,
+    DebugTestSoftSpans,
 }
 
 impl<'a> CoreCommand<'a> {
@@ -240,6 +241,7 @@ impl<'a> EditCommand<'a> {
             "debug_rewrap" => Ok(DebugRewrap),
             "debug_test_fg_spans" => Ok(DebugTestFgSpans),
             "debug_run_plugin" => Ok(DebugRunPlugin),
+            "debug_test_soft_spans" => Ok(DebugTestSoftSpans),
 
             _ => Err(UnknownEditMethod(method.to_string())),
         }

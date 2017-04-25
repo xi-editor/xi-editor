@@ -131,8 +131,8 @@ impl View {
 
     // Render a single line, and advance cursors to next line.
     fn render_line<W: Write>(&self, tab_ctx: &TabCtx<W>, text: &Rope,
-        start_of_line: &mut Cursor<RopeInfo>, soft_breaks: Option<&mut Cursor<BreaksInfo>>, style_spans: &Spans<Style>,
-        line_num: usize) -> Value
+        start_of_line: &mut Cursor<RopeInfo>, soft_breaks: Option<&mut Cursor<BreaksInfo>>,
+        style_spans: &Spans<Style>, soft_spans: &Spans<()>, line_num: usize) -> Value
     {
         let start_pos = start_of_line.pos();
         let pos = soft_breaks.map_or(start_of_line.next::<LinesMetric>(), |bc| {
@@ -164,7 +164,7 @@ impl View {
             }
         }
 
-        let styles = self.render_styles(tab_ctx, start_pos, pos, &selections, style_spans);
+        let styles = self.render_styles(tab_ctx, start_pos, pos, &selections, style_spans, soft_spans);
 
         let mut result = json!({
             "text": &l_str,
@@ -178,10 +178,11 @@ impl View {
     }
 
     pub fn render_styles<W: Write>(&self, tab_ctx: &TabCtx<W>, start: usize, end: usize,
-        sel: &[(usize, usize)], style_spans: &Spans<Style>) -> Vec<isize>
+        sel: &[(usize, usize)], style_spans: &Spans<Style>, soft_spans: &Spans<()>) -> Vec<isize>
     {
         let mut rendered_styles = Vec::new();
         let style_spans = style_spans.subseq(Interval::new_closed_open(start, end));
+        let soft_spans = soft_spans.subseq(Interval::new_closed_open(start, end));
 
         let mut ix = 0;
         for &(sel_start, sel_end) in sel {
@@ -189,6 +190,12 @@ impl View {
             rendered_styles.push(sel_end as isize - sel_start as isize);
             rendered_styles.push(0);
             ix = sel_end as isize;
+        }
+        for (iv, _) in soft_spans.iter() {
+            rendered_styles.push((iv.start() as isize) - ix);
+            rendered_styles.push(iv.end() as isize - iv.start() as isize);
+            rendered_styles.push(1); // id one is reserved for soft spans
+            ix = iv.end() as isize;
         }
         for (iv, style) in style_spans.iter() {
             // This conversion will move because we'll store style id's in the spans
@@ -210,7 +217,7 @@ impl View {
     }
 
     pub fn send_update<W: Write>(&mut self, text: &Rope, tab_ctx: &TabCtx<W>, style_spans: &Spans<Style>,
-        first_line: usize, last_line: usize)
+        soft_spans: &Spans<()>, first_line: usize, last_line: usize)
     {
         let height = self.offset_to_line_col(text, text.len()).0 + 1;
         let last_line = min(last_line, height);
@@ -228,7 +235,7 @@ impl View {
         let mut rendered_lines = Vec::new();
         for line_num in first_line..last_line {
             rendered_lines.push(self.render_line(tab_ctx, text,
-                &mut line_cursor, soft_breaks.as_mut(), style_spans, line_num));
+                &mut line_cursor, soft_breaks.as_mut(), style_spans, soft_spans, line_num));
         }
         ops.push(self.build_update_op("ins", Some(rendered_lines), last_line - first_line));
         if last_line < height {
@@ -250,7 +257,7 @@ impl View {
     /// Send lines within given region (plus slop) that the front-end does not already
     /// have.
     pub fn send_update_for_scroll<W: Write>(&mut self, text: &Rope, tab_ctx: &TabCtx<W>, style_spans: &Spans<Style>,
-        first_line: usize, last_line: usize)
+        soft_spans: &Spans<()>, first_line: usize, last_line: usize)
     {
         let first_line = max(first_line, SCROLL_SLOP) - SCROLL_SLOP;
         let last_line = last_line + SCROLL_SLOP;
@@ -273,7 +280,7 @@ impl View {
             for line_num in start..end {
                 rendered_lines.push(self.render_line(tab_ctx, text,
                                                      &mut line_cursor, soft_breaks.as_mut(),
-                                                     style_spans, line_num));
+                                                     style_spans, soft_spans, line_num));
             }
             ops.push(self.build_update_op("ins", Some(rendered_lines), end - start));
             ops.push(self.build_update_op("skip", None, end - start));
@@ -324,12 +331,12 @@ impl View {
     }
 
     // Update front-end with any changes to view since the last time sent.
-    pub fn render_if_dirty<W: Write>(&mut self, text: &Rope, tab_ctx: &TabCtx<W>, style_spans: &Spans<Style>) {
+    pub fn render_if_dirty<W: Write>(&mut self, text: &Rope, tab_ctx: &TabCtx<W>, style_spans: &Spans<Style>, soft_spans: &Spans<()>) {
         self.propagate_old_sel();
         if self.sel_dirty || self.dirty {
             let first_line = max(self.first_line, SCROLL_SLOP) - SCROLL_SLOP;
             let last_line = self.first_line + self.height + SCROLL_SLOP;
-            self.send_update(text, tab_ctx, style_spans, first_line, last_line);
+            self.send_update(text, tab_ctx, style_spans, soft_spans, first_line, last_line);
             self.sel_dirty = false;
             self.dirty = false;
         }

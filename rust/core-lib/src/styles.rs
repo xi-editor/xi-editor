@@ -18,7 +18,7 @@ use std::collections::HashMap;
 
 use serde_json::value::Value;
 
-const N_RESERVED_STYLES: usize = 1;
+const N_RESERVED_STYLES: usize = 2;
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Style {
@@ -49,7 +49,7 @@ impl Style {
         if self.italic {
             json["italic"] = json!(self.italic);
         }
-        json 
+        json
     }
 }
 
