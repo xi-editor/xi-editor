@@ -167,7 +167,7 @@ page_down_and_modify_selection
 
 #### update
 **Note**: This document is not entirely up to date: some changes to
-the protocol are described in [this proposal](https://github.com/google/xi-editor/blob/protocol_doc/doc/update.md).
+the protocol are described in [this document](https://github.com/google/xi-editor/blob/master/doc/update.md).
 
 ```
 update {"tab": "1", "update": {
