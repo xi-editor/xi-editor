@@ -61,6 +61,8 @@ experimental GL-based front-end in Rust.
 
 * [`xi-electron`](https://github.com/callodacity/xi-electron), a front-end based on web-technologies.
 
+* [`gxi`](https://github.com/bvinc/gxi), a GTK+ front-end written in rust.
+
 There are notes (I wouldn’t call it
 documentation at this point) on the protocol at
 [frontend.md](doc/frontend.md). If you're working on a front-end, feel free to
