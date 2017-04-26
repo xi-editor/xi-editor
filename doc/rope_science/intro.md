@@ -20,3 +20,4 @@ Table of Contents:
 * [08(a) CRDT Follow-up](rope_science_08a.md)
 * [09 CRDT Approach to Async Plugins and Undo](rope_science_09.md)
 * [10 Designing for a Conflict-free World](rope_science_10.md)
+* [11 Practical Syntax Highlighting](rope_science_11.md)
