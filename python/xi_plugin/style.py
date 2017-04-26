@@ -19,8 +19,8 @@ UNDERLINE = 2
 ITALIC = 4
 
 
-def color_for_rgb_float(red, green, blue):
-    if any(map(lambda x: x < 0 or x > 1, (red, green, blue))):
+def color_for_rgba_float(red, green, blue, alpha=1):
+    if any(map(lambda x: x < 0 or x > 1, (red, green, blue, alpha))):
         raise ValueError("Values must be in the range 0..1 (inclusive)")
-    red, green, blue = map(lambda c: int(0xFF * c), (red, green, blue))
-    return (0xFF << 24) | (red << 16) | (green << 8) | blue
+    red, green, blue, alpha = map(lambda c: int(0xFF * c), (red, green, blue, alpha))
+    return (alpha << 24) | (red << 16) | (green << 8) | blue
