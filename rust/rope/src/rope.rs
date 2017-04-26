@@ -125,18 +125,21 @@ impl Metric<RopeInfo> for BaseMetric {
             None
         } else {
             let b = s.as_bytes()[offset];
-            let len = match b {
-                b if b < 0x80 => 1,
-                b if b < 0xe0 => 2,
-                b if b < 0xf0 => 3,
-                _ => 4
-            };
-            Some(offset + len)
+            Some(offset + len_utf8_from_first_byte(b))
         }
     }
 
     fn can_fragment() -> bool {
         false
+    }
+}
+
+pub fn len_utf8_from_first_byte(b: u8) -> usize {
+    match b {
+        b if b < 0x80 => 1,
+        b if b < 0xe0 => 2,
+        b if b < 0xf0 => 3,
+        _ => 4
     }
 }
 
