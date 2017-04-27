@@ -4,33 +4,53 @@ This document builds on the [existing plugins rfc](https://github.com/google/xi-
 
 ## Goals:
 
-This document aims to present an alpha/preliminary/experimental implementation that supports the global, editor-local, and one-shot/invocation plugin scopes described in the previous RFC. 
+This document aims to provide high-level direction towards an alpha/preliminary/experimental implementation that supports the global, editor-local, and one-shot/invocation plugin scopes described in the previous RFC. This implementation will provide the bare functionality necessary to begin writing plugins, a process which will clarify our final design choices.
+
+This will require:
+- supporting dispatch of events to multiple plugins
+- automatic activation of plugins in response to events
+- implementation of basic lifecycle events
+- implementing a reference plugin library, in python
+- describing a plugin manifest format
+- loading, parsing, and registering plugins through their manifests
+
+### non-goals
+
+This will not discuss (many) of the particulars of the protocol or the API, nor rule out any ideas or possibilities through omission. It will not settle on a manifest format (though it might discuss one).
 
 ## Plugin Capabilities + UI support
 
 For this preliminary implementation, I would like to provide basic support for a small subset of plugin capabilities:
 
-- _commands_ are actions a plugin can define which the user can specifically invoke, for instance through a command palette. 
-- _hooks_ are editor events that a plugin can be notified of, such as saving or opening a file or inserting text.
-- _exports_, similar to atom's [services](http://flight-manual.atom.io/behind-atom/sections/interacting-with-other-packages-via-services/); functionality that a plugin can provide to other plugins, as a list of named RPC methods. 
-
-And I would like to add a few simple UI elements to the editor, to make experimenting a bit easier:
-- a simple _command palette_, which will be automatically populated with commands provided by plugins,
-- _status fields_, elements a plugin can add to the bottom status bar of a window, and send ongoing updates to. A good simple UI paradigm, suitable for testing plugin->client interactions; 
+- _triggers_: plugins should be able to specify activation events, in a manner similar to VSCode's [activation-events](https://code.visualstudio.com/docs/extensionAPI/activation-events).
+- _commands_: actions a plugin can define which the user can specifically invoke, for instance through a command palette. 
+- _buffer updates_: the plugin should be able to send updates to the buffer.
+- _setting styles_: a plugin should be able to apply styles to buffer contents.
+- _status fields_, elements a plugin can add to the bottom status bar of a window, and send ongoing updates to. A good simple UI paradigm, suitable for testing plugin->client interactions;
 
 and then, a little later:
+- a simple _command palette_, which will be automatically populated with commands provided by plugins,
 - the ability to annotate the gutter (warnings/errors/lints)
 - an autocompletion UI/API (probably as similar as possible to the language server protocol)
 - inline documentation popovers
-
-
-_Question_: Are there any other client features that are obviously important for experimenting with plugins?
-
 
  
 ## Plugin Lifecycle
 
 Depending on its invocation scope, a plugin will receive certain notifications and requests from the editor automatically.
+
+In the general case, plugins will be notified when:
+
+- a new view is created (for a new buffer or opening a file)
+- a file is saved
+- a view is closed
+- a view's buffer is updated
+
+At some point in the future:
+- mouse events
+- completion requests
+- events originating in other plugins
+- lots more, probably
 
 ### Invocation Lifecycle
 
@@ -47,6 +67,7 @@ possible example `run` rpc:
 "params": {
     "buf_info": {
         "buf_len": 1337,
+        "nb_lines": 42,
         "revision": 161,
         "syntax": "rust",
     },
@@ -63,11 +84,7 @@ Once it has received the `run` request, the plugin is expected to perform its wo
 
 Editor-local scoped plugins are associated with a given buffer, receive lifecycle events for that buffer, and can query that buffer through the plugin API.
 
-_Question_: How will we handle multiple views per buffer? Are plugins buffer scoped or view scoped? It seems silly to be running a linter in multiple views into the same buffer, but certain use-cases (such as acting on selections, or showing the cursor position in the status bar) want to be running per-view. 
-
-The lifecyle for editor-local plugins is more involved than for invocation plugins. They should receive some version of `initialize` and `deinit`, for doing setup and teardown. They should also receive all of the [`EditCommand`](https://github.com/google/xi-editor/blob/master/rust/core-lib/src/rpc.rs#L52) events from core (probably?) and they should receive the special `update` event which sends deltas representing changes to the buffer.
-
-_Q_: Are there any other significant lifecycle events that would be useful for this alpha API?
+The lifecyle for editor-local plugins is more involved than for invocation plugins. They should receive some version of `initialize` and `deinit`, for doing setup and teardown.
 
 _Q_: Should a plugin receive events by default, or should it have to register for notifications it is interested in? The first is simpler, but inefficient; message volume on the wire will grow linearly with the number of plugins.
 
@@ -88,15 +105,29 @@ _Q_: What else might be useful here?
 
 _Q_: How are buffers identified to global plugins? Do we have some internal identifier (such as the tab identifer currently in use) or do we have some new identifier that is buffer specific, as opposed to being linked to a view?
 
-## Plugin API
+## Plugin RPC Protocol vs. Plugin Library API
 
-Once running, plugins are able to communicate with `xi-core` through the standard rpc mechanism. I'd like to flesh out this API a bit more, to provide a baseline set of functionality for people experimenting with plugins.
+To clarify the distinction between these two things: the plugin RPC protocol is the standard by which xi-core communicates with plugin clients. It is optimized for transfer efficiency over ergnomics; for instance it prefers sending raw bytes to structured data, and prefers byte-offsets to line/column positions. In the majority of cases, plugin authors do not need to know anything about this protocol. Instead they will interact with the Plugin API, which will handle RPC interactions and will expose a more ergnomic interface in a given language. We will be providing reference implementations of this library in Rust and Python.
 
-Much of the particulars of this API could in many cases will be abstracted behind a good client library: in python, for instance, a `Buffer` class might have a `lines` member which implements `__getitem__` and fetches raw bytes over rpc as necessary.
+Once running, plugins are able to communicate with `xi-core` through the standard rpc mechanism. 
 
-_Q_: How should the underlying RPC methods be namespaced? (Should they be namespaced?) This may be helpful for message routing, but also for debugging and legability. For the purposes of this document I am going to namespace things according to the struct where the given request would currently be handled:
+### Plugin RPC Protocol, + Caching
 
-### proposed bare bones API:
+Each plugin will have to maintain a cache of the document contents. It is a design goal that the memory usage of plugins can be capped.
+
+There is already a good discussion of a caching [here](https://github.com/google/xi-editor/blob/master/doc/rope_science/rope_science_11.md), although the general case of a line cache is distinct from the specific case for hilighting— there is no recomputation of state _from_ the cache in the general case, so hit rate is again more important than gap size.
+
+Currently, this cache is imagined as an array of lines, which may or may not have internal gaps.
+
+For the first pass (in the python library, a preliminary version of which is [now part of xi-core](https://github.com/google/xi-editor/pull/214)), this is a full cache, kept in sync as updates arrive.
+
+#### caching line breaks
+
+One problem uncovered with this pre-preliminary implementation is that the plugin has no way of knowing how many lines the document contains, which means the plugin cannot determine the line count of the document without fetching its full contents. An easy fix to this is to have core keep the plugin up to date on the line count.
+
+This raises a second issue: might it make sense for the plugin to keep a cache of _line breaks_? This would allow the plugin to more efficiently fetch specific lines (by calculating their byte offsets) and generally improve the granularity of fill requests, which would economize memory usage. Line breaks themselves can be represented very efficiently, as incrementing relative indices, an approach already used to represent [style spans](https://github.com/google/xi-editor/blob/master/doc/update.md).
+
+This feels like premature optimization (and may not represent an optimization in the general case, e.g. when working with a small source file) but it may be something to consider in the future.
 
 
 #### methods available to all plugins:
@@ -104,29 +135,6 @@ _global plugins will need to specify a buffer when calling methods, other plugin
 
 **n.b.**  there's some conflation here right now between the API provided by the plugin library and the actual rpc protocol.
 
-_Q_: by what interface should the buffer be presented by the plugin library?
-
-#### requests
-- `buffer/get_data(offset, max_size, rev)` (implemented): returns raw bytes.
-- `buffer/path()`: returns the filepath, if the file is saved, else `Null`
-- `buffer/syntax()`: returns the currently active syntax definition
-    
-    _Q_: should we just have a single `buf_info` call that returns a variety of basic information?
-- `view/selections()`: returns a list of the current selections
-- `view/cursors()`: returns a list of cursor positions
-- `view/position_for_offset(offset)` convert a byte offset into a line/column pair
-- `view/active_plugins()`(?? maybe not for this version of the API)
-- `client/prompt(prompt_text, type?, options?)` prompts the user for input. Maybe can provide a type for input validation, or a discreet list of options (for selecting a syntax definition, e.g)
-
-#### notifications
-- `buffer/update(delta)`: attempts to modify the buffer
-- `view/set_cursors(cursor_positions)`: sets the cursor(s)
-- `view/set_selections(selection_ranges)`: sets the selections
-- `view/set_fg_spans(span_info)`: (implemented) sets text styles
-- `view/update_statusbar(status_item_id, message)`: updates the text on a status bar item
-- `client/show_alert(message)` displays an alert dialog.
-
-_Q_: how do buffers identify themselves, e.g. for open/close?
 
 ## Other things to think about:
 
