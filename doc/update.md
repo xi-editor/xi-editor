@@ -48,15 +48,21 @@ scroll_to: [number, number]  // line, column (in utf-8 code units)
 
 ```
 update
-  rev: number
+  rev?: number
   ops: Op[]
+  view-id: string
+  pristine: bool
 
 interface Op {
   op: "copy" | "skip" | "invalidate" | "update" | "ins"
   n: number  // number of lines affected
-  lines?: Line[]  // only present when op is "update" or "ins"  
+  lines?: Line[]  // only present when op is "update" or "ins"
 }
 ```
+
+The `pristine` flag indicates whether or not, after this update, this document has unsaved changes.
+
+The `rev` field is not present in current builds, but will be at some point in the future.
 
 An update request can be seen as a function from the old client cache state to a new one. During evaluation, maintain an index (`old_ix`) into the old `lines` array, initially 0, and a new lines array, initially empty. [Note that this document specifies the semantics. The actual implementation will almost certainly represent at least initial and trailing sequences of invalid lines by their count; and the editing operations may be more efficiently done in-place than by copying from the old state to the new].
 

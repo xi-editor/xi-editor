@@ -117,9 +117,9 @@ contribute to the above goals:
 
 This is still a project in its early stages. The Mac build has basic editing
 functionality (it was used to write this README), but looks very spare and
-is still missing essentials such as syntax highlighting and auto-indent. At
-the moment, it’s expected that its main community will be developers
-interested in hacking on a text editor.
+is still missing essentials such as auto-indent. At the moment, it’s expected
+that its main community will be developers interested in hacking on a text
+editor.
 
 
 ## Authors
@@ -131,6 +131,10 @@ The main author is Raph Levien.
 We gladly accept contributions via GitHub pull requests, as long as the author
 has signed the Google Contributor License. Please see
 [CONTRIBUTING.md](CONTRIBUTING.md) for more details.
+
+If you are interested in contributing but not sure where to start, there is
+an active IRC channel at #xi on irc.mozilla.org. There is also a subreddit at
+[/r/xi_editor](https://www.reddit.com/r/xi_editor/).
 
 ### Disclaimer
 
