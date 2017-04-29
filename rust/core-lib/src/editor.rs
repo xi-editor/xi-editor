@@ -449,25 +449,11 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     fn move_up(&mut self, flags: u64) {
-        if (flags & FLAG_SELECT) != 0 {
-            self.modify_selection();
-        }
-
-        let old_offset = self.view.sel_end;
-        let offset = self.view.vertical_motion(&self.text, -1);
-        self.set_cursor(offset, old_offset == offset);
-        self.scroll_to = Some(offset);
+        self.do_move(Movement::Up, flags);
     }
 
     fn move_down(&mut self, flags: u64) {
-        if (flags & FLAG_SELECT) != 0 {
-            self.modify_selection();
-        }
-
-        let old_offset = self.view.sel_end;
-        let offset = self.view.vertical_motion(&self.text, 1);
-        self.set_cursor(offset, old_offset == offset);
-        self.scroll_to = Some(offset);
+        self.do_move(Movement::Down, flags);
     }
 
     fn move_left(&mut self, flags: u64) {
@@ -475,28 +461,11 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     fn move_word_left(&mut self, flags: u64) {
-        if (flags & FLAG_SELECT) != 0 {
-            self.modify_selection();
-        }
-        if let Some(offset) = {
-            let mut word_cursor = WordCursor::new(&self.text, self.view.sel_end);
-            word_cursor.prev_boundary()
-        } {
-            self.set_cursor(offset, true);
-        }
+        self.do_move(Movement::LeftWord, flags);
     }
 
     fn move_to_left_end_of_line(&mut self, flags: u64) {
-        if (flags & FLAG_SELECT) != 0 {
-            self.modify_selection();
-        }
-
-        let line_col = self.view.offset_to_line_col(&self.text, self.view.sel_end);
-        let offset = self.view.line_col_to_offset(&self.text, line_col.0, 0);
-
-        self.set_cursor(offset, true);
-
-        return;
+        self.do_move(Movement::LeftOfLine, flags);
     }
 
     fn move_right(&mut self, flags: u64) {
@@ -504,52 +473,22 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     fn move_word_right(&mut self, flags: u64) {
-        if (flags & FLAG_SELECT) != 0 {
-            self.modify_selection();
-        }
-        if let Some(offset) = {
-            let mut word_cursor = WordCursor::new(&self.text, self.view.sel_end);
-            word_cursor.next_boundary()
-        } {
-            self.set_cursor(offset, true);
-        }
+        self.do_move(Movement::RightWord, flags);
     }
 
     fn move_to_right_end_of_line(&mut self, flags: u64) {
-        if (flags & FLAG_SELECT) != 0 {
-            self.modify_selection();
-        }
-
-        let line_col = self.view.offset_to_line_col(&self.text, self.view.sel_end);
-        let mut offset = self.text.len();
-
-        // calculate end of line
-        let next_line_offset = self.view.line_col_to_offset(&self.text, line_col.0 + 1, 0);
-        if offset > next_line_offset {
-            if let Some(prev) = self.text.prev_grapheme_offset(next_line_offset) {
-                offset = prev;
-            }
-        }
-
-        self.set_cursor(offset, true);
-
-        return;
+        self.do_move(Movement::RightOfLine, flags);
     }
 
-    /// Moves the cursor to the beginning of the first line in the current region.
-    fn cursor_start(&mut self) {
-        let sel_min = self.view.sel_min();
-        self.set_cursor(sel_min, true);
-        self.move_to_left_end_of_line(0);
+    fn move_to_beginning_of_paragraph(&mut self, flags: u64) {
+        self.do_move(Movement::StartOfParagraph, flags);
     }
 
-    /// Moves the cursor to the end of the last line in the current region.
-    fn cursor_end(&mut self) {
-        let offset = self.cursor_end_offset();
-        self.set_cursor(offset, true);
+    fn move_to_end_of_paragraph(&mut self, flags: u64) {
+        self.do_move(Movement::EndOfParagraph, flags);
     }
 
-    fn cursor_end_offset(&mut self) -> usize {
+    fn end_of_paragraph_offset(&mut self) -> usize {
         let current = self.view.sel_max();
         let rope = self.text.clone();
         let mut cursor = Cursor::new(&rope, current);
@@ -570,47 +509,19 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     fn move_to_beginning_of_document(&mut self, flags: u64) {
-        if (flags & FLAG_SELECT) != 0 {
-            self.modify_selection();
-        }
-
-        let offset = 0;
-
-        self.set_cursor(offset, true);
+        self.do_move(Movement::StartOfDocument, flags);
     }
 
     fn move_to_end_of_document(&mut self, flags: u64) {
-        if (flags & FLAG_SELECT) != 0 {
-            self.modify_selection();
-        }
-
-        let offset = self.text.len();
-
-        self.set_cursor(offset, true);
+        self.do_move(Movement::EndOfDocument, flags);
     }
 
     fn scroll_page_up(&mut self, flags: u64) {
-        if (flags & FLAG_SELECT) != 0 {
-            self.modify_selection();
-        }
-
-        let scroll = -max(self.view.scroll_height() as isize - 2, 1);
-        let old_offset = self.view.sel_end;
-        let offset = self.view.vertical_motion(&self.text, scroll);
-        self.set_cursor(offset, old_offset == offset);
-        self.scroll_to = Some(offset);
+        self.do_move(Movement::UpPage, flags);
     }
 
     fn scroll_page_down(&mut self, flags: u64) {
-        if (flags & FLAG_SELECT) != 0 {
-            self.modify_selection();
-        }
-
-        let scroll = max(self.view.scroll_height() as isize - 2, 1);
-        let old_offset = self.view.sel_end;
-        let offset = self.view.vertical_motion(&self.text, scroll);
-        self.set_cursor(offset, old_offset == offset);
-        self.scroll_to = Some(offset);
+        self.do_move(Movement::DownPage, flags);
     }
 
     fn select_all(&mut self) {
@@ -829,7 +740,7 @@ impl<W: Write + Send + 'static> Editor<W> {
 
     fn delete_to_end_of_paragraph(&mut self) {
         let current = self.view.sel_max();
-        let offset = self.cursor_end_offset();
+        let offset = self.end_of_paragraph_offset();
         let mut val = String::from("");
 
         if current != offset {
@@ -891,8 +802,8 @@ impl<W: Write + Send + 'static> Editor<W> {
             MoveWordLeftAndModifySelection => async(self.move_word_left(FLAG_SELECT)),
             MoveWordRight => async(self.move_word_right(0)),
             MoveWordRightAndModifySelection => async(self.move_word_right(FLAG_SELECT)),
-            MoveToBeginningOfParagraph => async(self.cursor_start()),
-            MoveToEndOfParagraph => async(self.cursor_end()),
+            MoveToBeginningOfParagraph => async(self.move_to_beginning_of_paragraph(0)),
+            MoveToEndOfParagraph => async(self.move_to_end_of_paragraph(0)),
             MoveToLeftEndOfLine => async(self.move_to_left_end_of_line(0)),
             MoveToLeftEndOfLineAndModifySelection => async(self.move_to_left_end_of_line(FLAG_SELECT)),
             MoveToRightEndOfLine => async(self.move_to_right_end_of_line(0)),

@@ -423,30 +423,10 @@ impl View {
         offset
     }
 
-    // Move up or down by `line_delta` lines and return offset where the
-    // cursor lands.
-    pub fn vertical_motion(&self, text: &Rope, line_delta: isize) -> usize {
-        // This code is quite careful to avoid integer overflow.
-        // TODO: write tests to verify
-        let line = self.line_of_offset(text, self.sel_end);
-        if line_delta < 0 && (-line_delta as usize) > line {
-            return 0;
-        }
-        let line = if line_delta < 0 {
-            line - (-line_delta as usize)
-        } else {
-            line.saturating_add(line_delta as usize)
-        };
-        let n_lines = self.line_of_offset(text, text.len());
-        if line > n_lines {
-            return text.len();
-        }
-        self.line_col_to_offset(text, line, self.cursor_col)
-    }
-
     // use own breaks if present, or text if not (no line wrapping)
 
-    fn line_of_offset(&self, text: &Rope, offset: usize) -> usize {
+    /// Returns the visible line number containing the given offset.
+    pub fn line_of_offset(&self, text: &Rope, offset: usize) -> usize {
         match self.breaks {
             Some(ref breaks) => {
                 breaks.convert_metrics::<BreaksBaseMetric, BreaksMetric>(offset)
@@ -455,13 +435,13 @@ impl View {
         }
     }
 
-    /// Return the byte offset corresponding to the line `line`.
-    fn offset_of_line(&self, text: &Rope, offset: usize) -> usize {
+    /// Returns the byte offset corresponding to the line `line`.
+    pub fn offset_of_line(&self, text: &Rope, line: usize) -> usize {
         match self.breaks {
             Some(ref breaks) => {
-                breaks.convert_metrics::<BreaksMetric, BreaksBaseMetric>(offset)
+                breaks.convert_metrics::<BreaksMetric, BreaksBaseMetric>(line)
             }
-            None => text.offset_of_line(offset)
+            None => text.offset_of_line(line)
         }
     }
 
