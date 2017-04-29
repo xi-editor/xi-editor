@@ -28,17 +28,36 @@ use serde_json::Value;
 #[macro_use]
 mod macros;
 
-pub mod tabs;
 pub mod rpc;
-mod editor;
-mod view;
-mod linewrap;
-mod run_plugin;
-mod styles;
-mod word_boundaries;
-mod index_set;
-mod selection;
-mod movement;
+
+/// Internal data structures and logic.
+///
+/// These internals are not part of the public API (for the purpose of binding to
+/// a front-end), but are exposed here, largely so they appear in documentation.
+#[path=""]
+pub mod internal {
+    pub mod tabs;
+    pub mod editor;
+    pub mod view;
+    pub mod linewrap;
+    pub mod run_plugin;
+    pub mod styles;
+    pub mod word_boundaries;
+    pub mod index_set;
+    pub mod selection;
+    pub mod movement;
+}
+
+use internal::tabs;
+use internal::editor;
+use internal::view;
+use internal::linewrap;
+use internal::run_plugin;
+use internal::styles;
+use internal::word_boundaries;
+use internal::index_set;
+use internal::selection;
+use internal::movement;
 
 use tabs::Tabs;
 use rpc::Request;
