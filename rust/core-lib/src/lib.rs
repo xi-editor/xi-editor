@@ -38,6 +38,7 @@ mod styles;
 mod word_boundaries;
 mod index_set;
 mod selection;
+mod movement;
 
 use tabs::Tabs;
 use rpc::Request;

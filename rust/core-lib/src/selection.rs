@@ -14,9 +14,6 @@
 
 //! Data structures representing (multiple) selections and cursors.
 
-// TODO: actually use these
-#![allow(unused)]
-
 use std::cmp::{min, max};
 use std::ops::Deref;
 use index_set::remove_n_at;
@@ -107,6 +104,16 @@ impl Selection {
             last += 1;
         }
         &self.regions[first..last]
+    }
+
+    /// Deletes all the regions that intersect or touch the given range.
+    pub fn delete_range(&mut self, start: usize, end: usize) {
+        let first = self.search(start);
+        let mut last = self.search(end);
+        if last < self.regions.len() && self.regions[last].min() <= end {
+            last += 1;
+        }
+        remove_n_at(&mut self.regions, first, last - first);
     }
 }
 

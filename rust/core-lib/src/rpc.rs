@@ -49,6 +49,21 @@ pub enum CoreCommand<'a> {
     Save { view_id: &'a str, file_path: &'a str },
 }
 
+/// An enum representing touch and mouse gestures applied to the text.
+#[derive(PartialEq, Eq, Debug)]
+pub enum GestureType {
+    ToggleSel,
+}
+
+impl GestureType {
+    fn from_str(s: &str) -> Option<GestureType> {
+        match s {
+            "toggle_sel" => Some(GestureType::ToggleSel),
+            _ => None
+        }
+    }
+}
+
 /// An enum representing an edit command, parsed from JSON.
 #[derive(Debug, PartialEq, Eq)]
 pub enum EditCommand<'a> {
@@ -94,6 +109,7 @@ pub enum EditCommand<'a> {
     Transpose,
     Click { line: u64, column: u64, flags: u64, click_count: u64 },
     Drag { line: u64, column: u64, flags: u64 },
+    Gesture { line: u64, column: u64, ty: GestureType},
     Undo,
     Redo,
     Cut,
@@ -231,6 +247,16 @@ impl<'a> EditCommand<'a> {
 
                         Some(Drag { line: line, column: column, flags: flags })
                     } else { None }
+            }).ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
+
+            "gesture" => params.as_object().and_then(|dict| {
+                if let (Some(line), Some(column), Some(ty)) =
+                    (dict_get_u64(dict, "line"),
+                        dict_get_u64(dict, "col"),
+                        dict_get_string(dict, "ty").and_then(GestureType::from_str))
+                {
+                    Some(Gesture { line: line, column: column, ty: ty })
+                } else { None }
             }).ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
 
             "undo" => Ok(Undo),

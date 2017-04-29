@@ -28,6 +28,7 @@ use tabs::{ViewIdentifier, TabCtx};
 use styles;
 use index_set::IndexSet;
 use selection::{Affinity, Selection, SelRegion};
+use movement::{Movement, selection_movement};
 
 use linewrap;
 
@@ -82,7 +83,7 @@ impl View {
             sel_end: 0,
             // used to maintain preferred hpos during vertical movement
             cursor_col: 0,
-            selection: Selection::default(),
+            selection: Selection::new(),
             first_line: 0,
             height: 10,
             breaks: None,
@@ -125,8 +126,48 @@ impl View {
         self.cursor_col = col;
     }
 
-    pub fn get_cursor_col(&mut self) -> usize {
-        self.cursor_col
+    /// Toggles a caret at the given offset.
+    pub fn toggle_sel(&mut self, offset: usize) {
+        self.sel_dirty = true;
+        if !self.selection.regions_in_range(offset, offset).is_empty() {
+            self.selection.delete_range(offset, offset);
+            if !self.selection.is_empty() {
+                return;
+            }
+        }
+        let region = SelRegion {
+            start: offset,
+            end: offset,
+            // TODO: might want to set horiz to some meaningful value.
+            horiz: None,
+            affinity: Affinity::default(),
+        };
+        self.selection.add_region(region);
+    }
+
+    /// Move the selection by the given movement. Return value is the offset of
+    /// a point that should be scrolled into view.
+    ///
+    /// If `modify` is `true`, the selections are modified, otherwise the results
+    /// of individual region movements become carets.
+    pub fn do_move(&mut self, text: &Rope, movement: Movement, modify: bool)
+        -> Option<usize>
+    {
+        let new_selection = selection_movement(movement, &self.selection, self, text,
+            modify);
+        self.selection = new_selection;
+        // We somewhat arbitrarily choose the last region for setting the old-style
+        // selection state, and for scrolling it into view if needed. This choice can
+        // likely be improved.
+        let region = self.selection.last().unwrap().clone();
+        self.sel_start = region.start;
+        self.sel_end = region.end;
+        if let Some(horiz) = region.horiz {
+            self.cursor_col = horiz;
+        }
+        self.sel_dirty = true;
+        self.scroll_to_cursor(text);
+        Some(region.end)
     }
 
     // Render a single line, and advance cursors to next line.
