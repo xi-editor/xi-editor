@@ -55,13 +55,6 @@ pub enum Movement {
     EndOfDocument,
 }
 
-/// Calculate a horizontal position in the view, based on the offset. Return
-/// value has the same type as `region_movement` for convenience.
-fn calc_horiz(view: &View, text: &Rope, offset: usize) -> (usize, Option<HorizPos>) {
-    let (_line, col) = view.offset_to_line_col(text, offset);
-    (offset, Some(col))
-}
-
 /// Compute movement based on vertical motion by the given number of lines.
 ///
 /// Note: in non-exceptional cases, this function preserves the `horiz`
@@ -98,11 +91,7 @@ fn vertical_motion(r: &SelRegion, view: &View, text: &Rope, line_delta: isize,
         return (text.len(), Some(col));
     }
     let new_offset = view.line_col_to_offset(text, line, col);
-    if new_offset == active {
-        calc_horiz(view, text, new_offset)
-    } else {
-        (new_offset, Some(col))
-    }
+    (new_offset, Some(col))
 }
 
 /// Computes the actual desired amount of scrolling (generally slightly
@@ -113,9 +102,6 @@ fn scroll_height(view: &View) -> isize {
 
 /// Compute the result of movement on one selection region.
 
-// Note: most of these calls to calc_horiz could be eliminated (just use
-// None). That would cause the column to be calculated lazily on vertical
-// motion, rather than eagerly.
 fn region_movement(m: Movement, r: &SelRegion, view: &View, text: &Rope, modify: bool)
     -> (usize, Option<HorizPos>)
 {
@@ -123,39 +109,39 @@ fn region_movement(m: Movement, r: &SelRegion, view: &View, text: &Rope, modify:
         Movement::Left => {
             if r.is_caret() || modify {
                 if let Some(offset) = text.prev_grapheme_offset(r.end) {
-                    calc_horiz(view, text, offset)
+                    (offset, None)
                 } else {
                     (0, r.horiz)
                 }
             } else {
-                calc_horiz(view, text, r.min())
+                (r.min(), None)
             }
         }
         Movement::Right => {
             if r.is_caret() || modify {
                 if let Some(offset) = text.next_grapheme_offset(r.end) {
-                    calc_horiz(view, text, offset)
+                    (offset, None)
                 } else {
                     (r.end, r.horiz)
                 }
             } else {
-                calc_horiz(view, text, r.max())
+                (r.max(), None)
             }
         }
         Movement::LeftWord => {
             let mut word_cursor = WordCursor::new(text, r.end);
             let offset = word_cursor.prev_boundary().unwrap_or(0);
-            calc_horiz(view, text, offset)
+            (offset, None)
         }
         Movement::RightWord => {
             let mut word_cursor = WordCursor::new(text, r.end);
             let offset = word_cursor.next_boundary().unwrap_or_else(|| text.len());
-            calc_horiz(view, text, offset)
+            (offset, None)
         }
         Movement::LeftOfLine => {
             let line = view.line_of_offset(text, r.end);
             let offset = view.offset_of_line(text, line);
-            calc_horiz(view, text, offset)
+            (offset, None)
         }
         Movement::RightOfLine => {
             let line = view.line_of_offset(text, r.end);
@@ -168,7 +154,7 @@ fn region_movement(m: Movement, r: &SelRegion, view: &View, text: &Rope, modify:
                     offset = prev;
                 }
             }
-            calc_horiz(view, text, offset)
+            (offset, None)
         }
         Movement::Up => vertical_motion(r, view, text, -1, modify),
         Movement::Down => vertical_motion(r, view, text, 1, modify),
@@ -176,7 +162,7 @@ fn region_movement(m: Movement, r: &SelRegion, view: &View, text: &Rope, modify:
             // Note: TextEdit would start at modify ? r.end : r.min()
             let mut cursor = Cursor::new(&text, r.end);
             let offset = cursor.prev::<LinesMetric>().unwrap_or(0);
-            calc_horiz(view, text, offset)
+            (offset, None)
         }
         Movement::EndOfParagraph => {
             // Note: TextEdit would start at modify ? r.end : r.max()
@@ -189,12 +175,12 @@ fn region_movement(m: Movement, r: &SelRegion, view: &View, text: &Rope, modify:
                     }
                 }
             }
-            calc_horiz(view, text, offset)
+            (offset, None)
         }
         Movement::UpPage => vertical_motion(r, view, text, -scroll_height(view), modify),
         Movement::DownPage => vertical_motion(r, view, text, scroll_height(view), modify),
-        Movement::StartOfDocument => calc_horiz(view, text, 0),
-        Movement::EndOfDocument => calc_horiz(view, text, text.len()),
+        Movement::StartOfDocument => (0, None),
+        Movement::EndOfDocument => (text.len(), None),
     }
 }
 

@@ -138,7 +138,6 @@ impl View {
         let region = SelRegion {
             start: offset,
             end: offset,
-            // TODO: might want to set horiz to some meaningful value.
             horiz: None,
             affinity: Affinity::default(),
         };
@@ -355,7 +354,7 @@ impl View {
             let region = SelRegion {
                 start: self.sel_start,
                 end: self.sel_end,
-                horiz: Some(self.cursor_col),
+                horiz: None,
                 affinity: Affinity::default(),
             };
             self.selection.add_region(region);
