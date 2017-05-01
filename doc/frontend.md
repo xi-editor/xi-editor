@@ -141,8 +141,20 @@ click count.
 Implements dragging (extending a selection). Arguments are line,
 column, and flag as in `click`.
 
+#### gesture
+
+`gesture {"line": 42, "col": 31, "ty": "toggle_sel"}
+
+Note: both `click` and `drag` functionality will be migrated to
+additional `ty` options for `gesture`. For now, "toggle_sel" is the
+only supported option, and has the semantics of toggling one cursor
+in the selection (the usual mapping of Command-click in macOS
+front-ends).
+
 The following edit methods take no parameters, and have similar
-meanings as NSView actions. This list is expected to grow.
+meanings as NSView actions. The pure movement and selection
+modification methods will be migrated to a more general method
+that takes a "movement" enum as a parameter.
 
 ```
 delete_backward

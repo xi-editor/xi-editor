@@ -30,9 +30,10 @@ use xi_rope::engine::Engine;
 use xi_rope::spans::{Spans, SpansBuilder};
 use view::{Style, View};
 use word_boundaries::WordCursor;
+use movement::Movement;
 
 use tabs::{ViewIdentifier, TabCtx};
-use rpc::EditCommand;
+use rpc::{EditCommand, GestureType};
 use run_plugin::{start_plugin, PluginRef, UpdateResponse, PluginEdit};
 
 const FLAG_SELECT: u64 = 2;
@@ -437,6 +438,16 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.this_edit_type = EditType::Select;
     }
 
+    /// Apply a movement, also setting the scroll to the point requested by
+    /// the movement.
+    ///
+    /// The type of the `flags` parameter is a convenience to old-style
+    /// movement methods.
+    fn do_move(&mut self, movement: Movement, flags: u64) {
+        self.scroll_to = self.view.do_move(&self.text, movement,
+            (flags & FLAG_SELECT) != 0);
+    }
+
     fn move_up(&mut self, flags: u64) {
         if (flags & FLAG_SELECT) != 0 {
             self.modify_selection();
@@ -460,26 +471,7 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     fn move_left(&mut self, flags: u64) {
-        if (flags & FLAG_SELECT) != 0 {
-            self.modify_selection();
-        }
-
-        // Selecting cancel
-        if self.view.sel_start != self.view.sel_end && self.this_edit_type != EditType::Select {
-            let offset = self.view.sel_min();
-            self.set_cursor(offset, true);
-
-            return;
-        }
-
-        // Normal move
-        if let Some(offset) = self.text.prev_grapheme_offset(self.view.sel_end) {
-            self.set_cursor(offset, true);
-        } else {
-            self.view.set_cursor_col(0);
-            // TODO: should set scroll_to_cursor in this case too,
-            // but it won't get sent; probably it needs to be a separate cmd
-        }
+        self.do_move(Movement::Left, flags);
     }
 
     fn move_word_left(&mut self, flags: u64) {
@@ -508,25 +500,7 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     fn move_right(&mut self, flags: u64) {
-        if (flags & FLAG_SELECT) != 0 {
-            self.modify_selection();
-        }
-
-        // Selecting cancel
-        if self.view.sel_start != self.view.sel_end && self.this_edit_type != EditType::Select {
-            let offset = self.view.sel_max();
-            self.set_cursor(offset, true);
-
-            return;
-        }
-
-        // Normal move
-        if let Some(offset) = self.text.next_grapheme_offset(self.view.sel_end) {
-            self.set_cursor(offset, true);
-        } else {
-            let new_col = self.view.offset_to_line_col(&self.text, self.view.sel_end).1;
-            self.view.set_cursor_col(new_col);
-        }
+        self.do_move(Movement::Right, flags);
     }
 
     fn move_word_right(&mut self, flags: u64) {
@@ -762,6 +736,13 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.set_cursor(offset, true);
     }
 
+    fn do_gesture(&mut self, line: u64, col: u64, ty: GestureType) {
+        let offset = self.view.line_col_to_offset(&self.text, line as usize, col as usize);
+        match ty {
+            GestureType::ToggleSel => self.view.toggle_sel(offset),
+        }
+    }
+
     fn debug_rewrap(&mut self) {
         self.view.rewrap(&self.text, 72);
         self.view.set_dirty();
@@ -936,6 +917,7 @@ impl<W: Write + Send + 'static> Editor<W> {
                 async(self.do_click(line, column, flags, click_count))
             }
             Drag { line, column, flags } => async(self.do_drag(line, column, flags)),
+            Gesture { line, column, ty } => async(self.do_gesture(line, column, ty)),
             Undo => async(self.do_undo(self_ref)),
             Redo => async(self.do_redo(self_ref)),
             Cut => Some(self.do_cut()),
