@@ -23,6 +23,9 @@ use std::string::ParseError;
 use tree::{Leaf, Node, NodeInfo, Metric, TreeBuilder, Cursor};
 use interval::Interval;
 
+use bytecount;
+use memchr::memchr;
+
 const MIN_LEAF: usize = 511;
 const MAX_LEAF: usize = 1024;
 
@@ -122,18 +125,21 @@ impl Metric<RopeInfo> for BaseMetric {
             None
         } else {
             let b = s.as_bytes()[offset];
-            let len = match b {
-                b if b < 0x80 => 1,
-                b if b < 0xe0 => 2,
-                b if b < 0xf0 => 3,
-                _ => 4
-            };
-            Some(offset + len)
+            Some(offset + len_utf8_from_first_byte(b))
         }
     }
 
     fn can_fragment() -> bool {
         false
+    }
+}
+
+pub fn len_utf8_from_first_byte(b: u8) -> usize {
+    match b {
+        b if b < 0x80 => 1,
+        b if b < 0xe0 => 2,
+        b if b < 0xf0 => 3,
+        _ => 4
     }
 }
 
@@ -184,15 +190,8 @@ impl Metric<RopeInfo> for LinesMetric {
 
 // Low level functions
 
-// TODO: use burntsushi memchr
-pub fn memchr(needle: u8, haystack: &[u8]) -> Option<usize> {
-    haystack.iter().position(|&b| b == needle)
-}
-
-// TODO: explore ways to make this faster - SIMD would be a big win
-// memchr is probably best for now
 fn count_newlines(s: &str) -> usize {
-    s.as_bytes().iter().filter(|&&c| c == b'\n').count()
+    bytecount::count(s.as_bytes(), b'\n')
 }
 
 fn find_leaf_split_for_bulk(s: &str) -> usize {

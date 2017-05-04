@@ -15,6 +15,7 @@
 //! A rope data structure suitable for text editing
 
 extern crate bytecount;
+extern crate memchr;
 
 pub mod tree;
 pub mod breaks;
@@ -24,6 +25,7 @@ pub mod rope;
 pub mod spans;
 pub mod subset;
 pub mod engine;
+pub mod find;
 
 // TODO: "pub use" the types we want to export publicly
 
