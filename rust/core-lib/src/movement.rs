@@ -94,14 +94,17 @@ fn vertical_motion(r: &SelRegion, view: &View, text: &Rope, line_delta: isize,
     (new_offset, Some(col))
 }
 
+/// When paging through a file, the number of lines from the previous page
+/// that will also be visible in the next.
+const SCROLL_OVERLAP: isize = 2;
+
 /// Computes the actual desired amount of scrolling (generally slightly
 /// less than the height of the viewport, to allow overlap).
 fn scroll_height(view: &View) -> isize {
-    max(view.scroll_height() as isize - 2, 1)
+    max(view.scroll_height() as isize - SCROLL_OVERLAP, 1)
 }
 
 /// Compute the result of movement on one selection region.
-
 fn region_movement(m: Movement, r: &SelRegion, view: &View, text: &Rope, modify: bool)
     -> (usize, Option<HorizPos>)
 {
