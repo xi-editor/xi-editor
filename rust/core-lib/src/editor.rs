@@ -19,7 +19,6 @@ use std::path::{Path, PathBuf};
 use std::io::Write;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
-use std::mem;
 use serde_json::{self, Value};
 
 use xi_rope::rope::{LinesMetric, Rope};
@@ -52,9 +51,6 @@ pub struct Editor<W: Write> {
 
     /// A collection of non-primary views attached to this buffer.
     views: BTreeMap<ViewIdentifier, View>,
-    /// The currently active view. This property is dynamically modified as events originating in
-    /// different views arrive.
-    view: View,
     engine: Engine,
     last_rev_id: usize,
     pristine_rev_id: usize,
@@ -103,22 +99,23 @@ impl EditType {
 
 impl<W: Write + Send + 'static> Editor<W> {
     /// Creates a new `Editor` with a new empty buffer.
-    pub fn new(tab_ctx: TabCtx<W>, initial_view_id: &str) -> Arc<Mutex<Editor<W>>> {
+    pub fn new(tab_ctx: TabCtx<W>, initial_view_id: ViewIdentifier) -> Arc<Mutex<Editor<W>>> {
         Self::with_text(tab_ctx, initial_view_id, "".to_owned())
     }
 
     /// Creates a new `Editor`, loading text into a new buffer.
-    pub fn with_text(tab_ctx: TabCtx<W>, initial_view_id: &str, text: String) -> Arc<Mutex<Editor<W>>> {
+    pub fn with_text(tab_ctx: TabCtx<W>, initial_view_id: ViewIdentifier, text: String) -> Arc<Mutex<Editor<W>>> {
 
         let engine = Engine::new(Rope::from(text));
         let buffer = engine.get_head();
         let last_rev_id = engine.get_head_rev_id();
+        let mut views = BTreeMap::new();
+        views.insert(initial_view_id.clone(), View::new(initial_view_id));
 
         let editor = Editor {
             text: buffer,
             path: None,
-            views: BTreeMap::new(),
-            view: View::new(initial_view_id),
+            views: views,
             engine: engine,
             last_rev_id: last_rev_id,
             pristine_rev_id: last_rev_id,
@@ -140,10 +137,8 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
 
-    #[allow(unreachable_code, unused_variables)]
-    pub fn add_view(&mut self, view_id: &str) {
-        panic!("multi-view support is not currently implemented");
-        assert!(!self.views.contains_key(view_id), "view_id already exists");
+    pub fn add_view(&mut self, view_id: ViewIdentifier) {
+        assert!(!self.views.contains_key(&view_id), "view_id already exists");
         self.views.insert(view_id.to_owned(), View::new(view_id.to_owned()));
     }
 
@@ -152,19 +147,8 @@ impl<W: Write + Send + 'static> Editor<W> {
     /// If the editor only has a single view this is a no-op. After removing a view the caller must
     /// always call Editor::has_views() to determine whether or not the editor should be cleaned up.
     #[allow(unreachable_code)]
-    pub fn remove_view(&mut self, view_id: &str) {
-        if self.view.view_id == view_id {
-            if self.views.len() > 0 {
-                panic!("multi-view support is not currently implemented");
-                //set some other view as active. This will be reset on the next EditCommand
-                let tempkey = self.views.keys().nth(0).unwrap().clone();
-                let mut temp = self.views.remove(&tempkey).unwrap();
-                mem::swap(&mut temp, &mut self.view);
-                self.views.insert(temp.view_id.clone(), temp);
-            }
-        } else {
-            self.views.remove(view_id).expect("attempt to remove missing view");
-        }
+    pub fn remove_view(&mut self, view_id: &ViewIdentifier) {
+        self.views.remove(view_id).expect("attempt to remove missing view");
     }
 
     /// Returns true if this editor has additional attached views.
@@ -183,9 +167,13 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
     }
 
-    fn insert(&mut self, s: &str) {
-        let sel_interval = Interval::new_closed_open(self.view.sel_min(), self.view.sel_max());
-        let new_cursor = self.view.sel_min() + s.len();
+    fn insert(&mut self, view_id: &ViewIdentifier, s: &str) {
+        let (sel_interval, new_cursor) = {
+            let view = self.views.get_mut(view_id).expect(&format!("Failed to get view by id {}", view_id));
+            let sel_interval = Interval::new_closed_open(view.sel_min(), view.sel_max());
+            let new_cursor = view.sel_min() + s.len();
+            (sel_interval, new_cursor)
+        };
         self.add_delta(sel_interval, Rope::from(s), new_cursor, new_cursor);
     }
 
@@ -193,18 +181,20 @@ impl<W: Write + Send + 'static> Editor<W> {
     /// If this cursor position's horizontal component was chosen implicitly
     /// (e.g. if the user moved up from the end of a long line to a shorter line)
     /// then `hard` is false. In all other cases, `hard` is true.
-    fn set_cursor(&mut self, offset: usize, hard: bool) {
-        if self.this_edit_type != EditType::Select {
-            self.view.sel_start = offset;
+    fn set_cursor(&mut self, view_id: &ViewIdentifier, offset: usize, hard: bool) {
+        let view = self.views.get_mut(view_id).expect(&format!("Failed to get view by id {}", view_id));
+        let edit_type = self.this_edit_type;
+        if edit_type != EditType::Select {
+            view.sel_start = offset;
         }
-        self.view.sel_end = offset;
+        view.sel_end = offset;
         if hard {
-            let new_col = self.view.offset_to_line_col(&self.text, offset).1;
-            self.view.set_cursor_col(new_col);
+            let new_col = view.offset_to_line_col(&self.text, offset).1;
+            view.set_cursor_col(new_col);
             self.scroll_to = Some(offset);
         }
-        self.view.scroll_to_cursor(&self.text);
-        self.view.set_old_sel_dirty();
+        view.scroll_to_cursor(&self.text);
+        view.set_old_sel_dirty();
     }
 
     // Apply the delta to the buffer, and store the new cursor so that it gets
@@ -248,8 +238,13 @@ impl<W: Write + Send + 'static> Editor<W> {
         if self.engine.get_head_rev_id() != self.last_rev_id {
             self.update_after_revision(self_ref, author);
             if let Some((start, end)) = self.new_cursor.take() {
-                self.set_cursor(end, true);
-                self.view.sel_start = start;
+                let keys = self.views.keys().cloned().collect::<Vec<_>>();
+                // TODO: Should this update all views?
+                for view_id in keys {
+                    self.set_cursor(&view_id, end, true);
+                    let view = self.views.get_mut(&view_id).expect(&format!("Failed to get view by id {}", view_id));
+                    view.sel_start = start;
+                }
             }
         }
     }
@@ -268,8 +263,10 @@ impl<W: Write + Send + 'static> Editor<W> {
 
         // adjust cursor position so that the cursor is not moved by the plugin edit
         let (changed_interval, _) = self.engine.delta_rev_head(prev_head_rev_id).summary();
-        if edit.after_cursor && (changed_interval.start() as usize) == self.view.sel_end {
-            self.new_cursor = Some((self.view.sel_start, self.view.sel_end));
+        for (_, ref mut view) in &mut self.views {
+            if edit.after_cursor && (changed_interval.start() as usize) == view.sel_end {
+                self.new_cursor = Some((view.sel_start, view.sel_end));
+            }
         }
 
         self.commit_delta(self_ref, Some(&edit.author));
@@ -285,7 +282,9 @@ impl<W: Write + Send + 'static> Editor<W> {
     fn update_after_revision(&mut self, self_ref: &Arc<Mutex<Editor<W>>>, author: Option<&str>) {
         let delta = self.engine.delta_rev_head(self.last_rev_id);
         let is_pristine = self.is_pristine();
-        self.view.after_edit(&self.text, &delta, is_pristine);
+        for (_, ref mut view) in &mut self.views {
+            view.after_edit(&self.text, &delta, is_pristine);
+        }
         let (iv, new_len) = delta.summary();
 
         // TODO: maybe more precise editing based on actual delta rather than summary.
@@ -295,7 +294,8 @@ impl<W: Write + Send + 'static> Editor<W> {
         let empty_spans = SpansBuilder::new(new_len).build();
         self.style_spans.edit(iv, empty_spans);
 
-        let author = author.unwrap_or(&self.view.view_id);
+        // TODO: Not sure what we should do here if no author is sent
+        let author = author.unwrap_or(&"");
         let undo_group = *self.live_undos.last().unwrap();
 
         //print_err!("delta {}:{} +{} {}", iv.start(), iv.end(), new_len, self.this_edit_type.json_string());
@@ -350,84 +350,110 @@ impl<W: Write + Send + 'static> Editor<W> {
 
     // render if needed, sending to ui
     pub fn render(&mut self) {
-        self.view.render_if_dirty(&self.text, &self.tab_ctx, &self.style_spans);
-        if let Some(scrollto) = self.scroll_to {
-            let (line, col) = self.view.offset_to_line_col(&self.text, scrollto);
-            self.tab_ctx.scroll_to(&self.view.view_id, line, col);
-            self.scroll_to = None;
+        for (_, ref mut view) in &mut self.views {
+            view.render_if_dirty(&self.text, &self.tab_ctx, &self.style_spans);
+            if let Some(scrollto) = self.scroll_to {
+                let (line, col) = view.offset_to_line_col(&self.text, scrollto);
+                self.tab_ctx.scroll_to(&view.view_id, line, col);
+                self.scroll_to = None;
+            }
         }
     }
 
-    fn delete_forward(&mut self) {
-        if self.view.sel_start == self.view.sel_end {
+    fn delete_forward(&mut self, view_id: &ViewIdentifier) {
+        let (sel_start, sel_end) = {
+            let view = self.views.get_mut(view_id).expect(&format!("Failed to get view by id {}", view_id));
+            (view.sel_start, view.sel_end)
+        };
+
+        if sel_start == sel_end {
             let offset =
-                if let Some(pos) = self.text.next_grapheme_offset(self.view.sel_end) {
+                if let Some(pos) = self.text.next_grapheme_offset(sel_end) {
                     pos
                 } else {
                     return;
                 };
 
-            self.set_cursor(offset, true);
+            self.set_cursor(&view_id, offset, true);
         }
 
-        self.delete();
+        self.delete(view_id);
     }
 
-    fn delete_backward(&mut self) {
-        self.delete();
+    fn delete_backward(&mut self, view_id: &ViewIdentifier) {
+        self.delete(view_id);
     }
 
-    fn delete_to_beginning_of_line(&mut self) {
-        self.move_to_left_end_of_line(FLAG_SELECT);
+    fn delete_to_beginning_of_line(&mut self, view_id: &ViewIdentifier) {
+        self.move_to_left_end_of_line(view_id, FLAG_SELECT);
 
-        self.delete();
+        self.delete(view_id);
     }
 
-    fn delete(&mut self) {
-        let start = if self.view.sel_start != self.view.sel_end {
-            self.view.sel_min()
-        } else if let Some(bsp_pos) = self.text.prev_codepoint_offset(self.view.sel_end) {
+    fn delete(&mut self, view_id: &ViewIdentifier) {
+        let (sel_min, sel_max, sel_start, sel_end) = {
+            let view = self.views.get_mut(view_id).expect(&format!("Failed to get view by id {}", view_id));
+            (view.sel_min(), view.sel_max(), view.sel_start, view.sel_end)
+        };
+        let start = if sel_start != sel_end {
+            sel_min
+        } else if let Some(bsp_pos) = self.text.prev_codepoint_offset(sel_end) {
             // TODO: implement complex emoji logic
             bsp_pos
         } else {
-            self.view.sel_max()
+            sel_max
         };
 
-        if start < self.view.sel_max() {
+        if start < sel_max {
             self.this_edit_type = EditType::Delete;
-            let del_interval = Interval::new_closed_open(start, self.view.sel_max());
+            let del_interval = Interval::new_closed_open(start, sel_max);
             self.add_delta(del_interval, Rope::from(""), start, start);
         }
     }
 
-    fn insert_newline(&mut self) {
+    fn insert_newline(&mut self, view_id: &ViewIdentifier) {
         self.this_edit_type = EditType::InsertChars;
-        self.insert("\n");
+        self.insert(view_id, "\n");
     }
 
-    fn insert_tab(&mut self) {
+    fn insert_tab(&mut self, view_id: &ViewIdentifier) {
+        let (sel_min, sel_max, sel_start, sel_end) = {
+            let view = self.views.get(view_id).expect(&format!("Failed to get view by id {}", view_id));
+            (view.sel_min(), view.sel_max(), view.sel_start, view.sel_end)
+        };
+
         self.this_edit_type = EditType::InsertChars;
-        if self.view.sel_start == self.view.sel_end {
-            let (_, col) = self.view.offset_to_line_col(&self.text, self.view.sel_end);
+        if sel_start == sel_end {
+            let col = {
+                let view = self.views.get(view_id).expect(&format!("Failed to get view by id {}", view_id));
+                let (_, col) = view.offset_to_line_col(&self.text, sel_end);
+                col
+            };
             let n = TAB_SIZE - (col % TAB_SIZE);
-            self.insert(n_spaces(n));
+            self.insert(view_id, n_spaces(n));
         } else {
-            let (first_line, _) = self.view.offset_to_line_col(&self.text, self.view.sel_min());
-            let (last_line, last_col) =
-                self.view.offset_to_line_col(&self.text, self.view.sel_max());
+            let (first_line, last_line, last_col) = {
+                let view = self.views.get(view_id).expect(&format!("Failed to get view by id {}", view_id));
+                let (first_line, _) = view.offset_to_line_col(&self.text, sel_min);
+                let (last_line, last_col) = view.offset_to_line_col(&self.text, sel_max);
+                (first_line, last_line, last_col)
+            };
             let last_line = if last_col == 0 && last_line > first_line {
                 last_line
             } else {
                 last_line + 1
             };
             let added = (last_line - first_line) * TAB_SIZE;
-            let (start, end) = if self.view.sel_start < self.view.sel_end {
-                (self.view.sel_start + TAB_SIZE, self.view.sel_end + added)
+            let (start, end) = if sel_start < sel_end {
+                (sel_start + TAB_SIZE, sel_end + added)
             } else {
-                (self.view.sel_start + added, self.view.sel_end + TAB_SIZE)
+                (sel_start + added, sel_end + TAB_SIZE)
             };
             for line in first_line..last_line {
-                let offset = self.view.line_col_to_offset(&self.text, line, 0);
+                let offset = {
+                    let view = self.views.get(view_id).expect(&format!("Failed to get view by id {}", view_id));
+                    view.line_col_to_offset(&self.text, line, 0)
+                };
                 let iv = Interval::new_closed_open(offset, offset);
                 self.add_delta(iv, Rope::from(n_spaces(TAB_SIZE)), start, end);
             }
@@ -443,53 +469,54 @@ impl<W: Write + Send + 'static> Editor<W> {
     ///
     /// The type of the `flags` parameter is a convenience to old-style
     /// movement methods.
-    fn do_move(&mut self, movement: Movement, flags: u64) {
-        self.scroll_to = self.view.do_move(&self.text, movement,
-            (flags & FLAG_SELECT) != 0);
+    fn do_move(&mut self, view_id: &ViewIdentifier, movement: Movement, flags: u64) {
+        let view = self.views.get_mut(view_id).expect(&format!("Failed to get view by id {}", view_id));
+        self.scroll_to = view.do_move(&self.text, movement, (flags & FLAG_SELECT) != 0);
     }
 
-    fn move_up(&mut self, flags: u64) {
-        self.do_move(Movement::Up, flags);
+    fn move_up(&mut self, view_id: &ViewIdentifier, flags: u64) {
+        self.do_move(view_id, Movement::Up, flags);
     }
 
-    fn move_down(&mut self, flags: u64) {
-        self.do_move(Movement::Down, flags);
+    fn move_down(&mut self, view_id: &ViewIdentifier, flags: u64) {
+        self.do_move(view_id, Movement::Down, flags);
     }
 
-    fn move_left(&mut self, flags: u64) {
-        self.do_move(Movement::Left, flags);
+    fn move_left(&mut self, view_id: &ViewIdentifier, flags: u64) {
+        self.do_move(view_id, Movement::Left, flags);
     }
 
-    fn move_word_left(&mut self, flags: u64) {
-        self.do_move(Movement::LeftWord, flags);
+    fn move_word_left(&mut self, view_id: &ViewIdentifier, flags: u64) {
+        self.do_move(view_id, Movement::LeftWord, flags);
     }
 
-    fn move_to_left_end_of_line(&mut self, flags: u64) {
-        self.do_move(Movement::LeftOfLine, flags);
+    fn move_to_left_end_of_line(&mut self, view_id: &ViewIdentifier, flags: u64) {
+        self.do_move(view_id, Movement::LeftOfLine, flags);
     }
 
-    fn move_right(&mut self, flags: u64) {
-        self.do_move(Movement::Right, flags);
+    fn move_right(&mut self, view_id: &ViewIdentifier, flags: u64) {
+        self.do_move(view_id, Movement::Right, flags);
     }
 
-    fn move_word_right(&mut self, flags: u64) {
-        self.do_move(Movement::RightWord, flags);
+    fn move_word_right(&mut self, view_id: &ViewIdentifier, flags: u64) {
+        self.do_move(view_id, Movement::RightWord, flags);
     }
 
-    fn move_to_right_end_of_line(&mut self, flags: u64) {
-        self.do_move(Movement::RightOfLine, flags);
+    fn move_to_right_end_of_line(&mut self, view_id: &ViewIdentifier, flags: u64) {
+        self.do_move(view_id, Movement::RightOfLine, flags);
     }
 
-    fn move_to_beginning_of_paragraph(&mut self, flags: u64) {
-        self.do_move(Movement::StartOfParagraph, flags);
+    fn move_to_beginning_of_paragraph(&mut self, view_id: &ViewIdentifier, flags: u64) {
+        self.do_move(view_id, Movement::StartOfParagraph, flags);
     }
 
-    fn move_to_end_of_paragraph(&mut self, flags: u64) {
-        self.do_move(Movement::EndOfParagraph, flags);
+    fn move_to_end_of_paragraph(&mut self, view_id: &ViewIdentifier, flags: u64) {
+        self.do_move(view_id, Movement::EndOfParagraph, flags);
     }
 
-    fn end_of_paragraph_offset(&mut self) -> usize {
-        let current = self.view.sel_max();
+    fn end_of_paragraph_offset(&mut self, view_id: &ViewIdentifier) -> usize {
+        let view = self.views.get_mut(view_id).expect(&format!("Failed to get view by id {}", view_id));
+        let current = view.sel_max();
         let rope = self.text.clone();
         let mut cursor = Cursor::new(&rope, current);
         match cursor.next::<LinesMetric>() {
@@ -508,75 +535,76 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
     }
 
-    fn move_to_beginning_of_document(&mut self, flags: u64) {
-        self.do_move(Movement::StartOfDocument, flags);
+    fn move_to_beginning_of_document(&mut self, view_id: &ViewIdentifier, flags: u64) {
+        self.do_move(view_id, Movement::StartOfDocument, flags);
     }
 
-    fn move_to_end_of_document(&mut self, flags: u64) {
-        self.do_move(Movement::EndOfDocument, flags);
+    fn move_to_end_of_document(&mut self, view_id: &ViewIdentifier, flags: u64) {
+        self.do_move(view_id, Movement::EndOfDocument, flags);
     }
 
-    fn scroll_page_up(&mut self, flags: u64) {
-        self.do_move(Movement::UpPage, flags);
+    fn scroll_page_up(&mut self, view_id: &ViewIdentifier, flags: u64) {
+        self.do_move(view_id, Movement::UpPage, flags);
     }
 
-    fn scroll_page_down(&mut self, flags: u64) {
-        self.do_move(Movement::DownPage, flags);
+    fn scroll_page_down(&mut self, view_id: &ViewIdentifier, flags: u64) {
+        self.do_move(view_id, Movement::DownPage, flags);
     }
 
-    fn select_all(&mut self) {
-        self.view.sel_start = 0;
-        self.view.sel_end = self.text.len();
-        self.view.set_old_sel_dirty();
+    fn select_all(&mut self, view_id: &ViewIdentifier) {
+        let view = self.views.get_mut(view_id).expect(&format!("Failed to get view by id {}", view_id));
+        view.sel_start = 0;
+        view.sel_end = self.text.len();
+        view.set_old_sel_dirty();
     }
 
-    fn do_key(&mut self, chars: &str, flags: u64) {
+    fn do_key(&mut self, view_id: &ViewIdentifier, chars: &str, flags: u64) {
         match chars {
-            "\r" => self.insert_newline(),
+            "\r" => self.insert_newline(view_id),
             "\x7f" => {
-                self.delete_backward();
+                self.delete_backward(view_id);
             }
             "\u{F700}" => {
                 // up arrow
-                self.move_up(flags);
+                self.move_up(view_id, flags);
             }
             "\u{F701}" => {
                 // down arrow
-                self.move_down(flags);
+                self.move_down(view_id, flags);
             }
             "\u{F702}" => {
                 // left arrow
-                self.move_left(flags);
+                self.move_left(view_id, flags);
             }
             "\u{F703}" => {
                 // right arrow
-                self.move_right(flags);
+                self.move_right(view_id, flags);
             }
             "\u{F72C}" => {
                 // page up
-                self.scroll_page_up(flags);
+                self.scroll_page_up(view_id, flags);
             }
             "\u{F72D}" => {
                 // page down
-                self.scroll_page_down(flags);
+                self.scroll_page_down(view_id, flags);
             }
             "\u{F704}" => {
                 // F1, but using for debugging
-                self.debug_rewrap();
+                self.debug_rewrap(view_id);
             }
             "\u{F705}" => {
                 // F2, but using for debugging
-                self.debug_test_fg_spans();
+                self.debug_test_fg_spans(view_id);
             }
-            _ => self.insert(chars),
+            _ => self.insert(view_id, chars),
         }
     }
 
     // TODO: insert from keyboard or input method shouldn't break undo group,
     // but paste should.
-    fn do_insert(&mut self, chars: &str) {
+    fn do_insert(&mut self, view_id: &ViewIdentifier, chars: &str) {
         self.this_edit_type = EditType::InsertChars;
-        self.insert(chars);
+        self.insert(view_id, chars);
     }
 
     pub fn do_save<P: AsRef<Path>>(&mut self, path: P) {
@@ -595,78 +623,96 @@ impl<W: Write + Send + 'static> Editor<W> {
         // because the caller has updated the open_files list
         self.path = Some(path.as_ref().to_owned());
         self.pristine_rev_id = self.last_rev_id;
-        self.view.set_pristine();
-        self.view.set_dirty();
+        for (_, ref mut view) in &mut self.views {
+            view.set_pristine();
+            view.set_dirty();
+        }
         self.render();
     }
 
-    fn do_scroll(&mut self, first: i64, last: i64) {
+    fn do_scroll(&mut self, view_id: &ViewIdentifier, first: i64, last: i64) {
+        let view = self.views.get_mut(view_id).expect(&format!("Failed to get view by id {}", view_id));
         let first = max(first, 0) as usize;
         let last = last as usize;
-        self.view.set_scroll(first, last);
-        self.view.send_update_for_scroll(&self.text, &self.tab_ctx, &self.style_spans, first, last);
+        view.set_scroll(first, last);
+        view.send_update_for_scroll(&self.text, &self.tab_ctx, &self.style_spans, first, last);
     }
 
     /// Sets the cursor and scrolls to the beginning of the given line.
-    fn do_goto_line(&mut self, line: u64) {
-        let line = self.view.line_col_to_offset(&self.text, line as usize, 0);
-        self.set_cursor(line, true);
+    fn do_goto_line(&mut self, view_id: &ViewIdentifier, line: u64) {
+        let line = {
+            let view = self.views.get_mut(view_id).expect(&format!("Failed to get view by id {}", view_id));
+            view.line_col_to_offset(&self.text, line as usize, 0)
+        };
+        self.set_cursor(&view_id, line, true);
     }
 
-    fn do_request_lines(&mut self, first: i64, last: i64) {
-        self.view.send_update(&self.text, &self.tab_ctx, &self.style_spans, first as usize, last as usize);
+    fn do_request_lines(&mut self, view_id: &ViewIdentifier, first: i64, last: i64) {
+        let view = self.views.get_mut(view_id).expect(&format!("Failed to get view by id {}", view_id));
+        view.send_update(&self.text, &self.tab_ctx, &self.style_spans, first as usize, last as usize);
     }
 
-    fn do_click(&mut self, line: u64, col: u64, flags: u64, click_count: u64) {
-        let offset = self.view.line_col_to_offset(&self.text, line as usize, col as usize);
-        if (flags & FLAG_SELECT) != 0 {
+    fn do_click(&mut self, view_id: &ViewIdentifier, line: u64, col: u64, flags: u64, click_count: u64) {
+        let (offset, hard, modify_selection) = {
+            let view = self.views.get_mut(view_id).expect(&format!("Failed to get view by id {}", view_id));
+            let offset = view.line_col_to_offset(&self.text, line as usize, col as usize);
+            if (flags & FLAG_SELECT) != 0 {
+                (offset, true, true)
+            } else if click_count == 2 {
+                let (start, end) = {
+                    let mut word_cursor = WordCursor::new(&self.text, offset);
+                    word_cursor.select_word()
+                };
+                view.sel_start = start;
+                (end, false, true)
+            } else if click_count == 3 {
+                let start = view.line_col_to_offset(&self.text, line as usize, 0);
+                let end = view.line_col_to_offset(&self.text, line as usize + 1, 0);
+                view.sel_start = start;
+                (end, false, true)
+            } else {
+                (offset, true, false)
+            }
+        };
+        if modify_selection {
             self.modify_selection();
-        } else if click_count == 2 {
-            let (start, end) = {
-                let mut word_cursor = WordCursor::new(&self.text, offset);
-                word_cursor.select_word()
-            };
-            self.view.sel_start = start;
-            self.modify_selection();
-            self.set_cursor(end, false);
-            return;
-        } else if click_count == 3 {
-            let start = self.view.line_col_to_offset(&self.text, line as usize, 0);
-            let end = self.view.line_col_to_offset(&self.text, line as usize + 1, 0);
-            self.view.sel_start = start;
-            self.modify_selection();
-            self.set_cursor(end, false);
-            return;
         }
-        self.set_cursor(offset, true);
+        self.set_cursor(&view_id, offset, hard);
     }
 
-    fn do_drag(&mut self, line: u64, col: u64, _flags: u64) {
-        let offset = self.view.line_col_to_offset(&self.text, line as usize, col as usize);
+    fn do_drag(&mut self, view_id: &ViewIdentifier, line: u64, col: u64, _flags: u64) {
+        let offset = {
+            let view = self.views.get(view_id).expect(&format!("Failed to get view by id {}", view_id));
+            view.line_col_to_offset(&self.text, line as usize, col as usize)
+        };
         self.modify_selection();
-        self.set_cursor(offset, true);
+        self.set_cursor(&view_id, offset, true);
     }
 
-    fn do_gesture(&mut self, line: u64, col: u64, ty: GestureType) {
-        let offset = self.view.line_col_to_offset(&self.text, line as usize, col as usize);
+    fn do_gesture(&mut self, view_id: &ViewIdentifier, line: u64, col: u64, ty: GestureType) {
+        let view = self.views.get_mut(view_id).expect(&format!("Failed to get view by id {}", view_id));
+        let offset = view.line_col_to_offset(&self.text, line as usize, col as usize);
         match ty {
-            GestureType::ToggleSel => self.view.toggle_sel(offset),
+            GestureType::ToggleSel => view.toggle_sel(offset),
         }
     }
 
-    fn debug_rewrap(&mut self) {
-        self.view.rewrap(&self.text, 72);
-        self.view.set_dirty();
+    fn debug_rewrap(&mut self, view_id: &ViewIdentifier) {
+        let view = self.views.get_mut(view_id).expect(&format!("Failed to get view by id {}", view_id));
+        view.rewrap(&self.text, 72);
+        view.set_dirty();
     }
 
-    fn debug_test_fg_spans(&mut self) {
+    fn debug_test_fg_spans(&mut self, view_id: &ViewIdentifier) {
         print_err!("setting fg spans");
+        let view = self.views.get_mut(view_id).expect(&format!("Failed to get view by id {}", view_id));
         let mut sb = SpansBuilder::new(15);
         let style = Style { fg: 0xffc00000, font_style: 0 };
         sb.add_span(Interval::new_closed_open(5, 10), style);
         self.style_spans = sb.build();
 
-        self.view.set_dirty();
+        // TODO: Update all views? Or just the one sending this request
+        view.set_dirty();
     }
 
     fn debug_run_plugin(&mut self, self_ref: &Arc<Mutex<Editor<W>>>) {
@@ -679,21 +725,28 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.plugins.push(plugin_ref);
     }
 
-    fn do_cut(&mut self) -> Value {
-        let min = self.view.sel_min();
-        if min != self.view.sel_max() {
-            let val = self.text.slice_to_string(min, self.view.sel_max());
-            let del_interval = Interval::new_closed_open(min, self.view.sel_max());
-            self.add_delta(del_interval, Rope::from(""), min, min);
+    fn do_cut(&mut self, view_id: &ViewIdentifier) -> Value {
+        let (sel_min, sel_max) = {
+            let view = self.views.get(view_id).expect(&format!("Failed to get view by id {}", view_id));
+            (view.sel_min(), view.sel_max())
+        };
+        if sel_min != sel_max {
+            let val = self.text.slice_to_string(sel_min, sel_max);
+            let del_interval = Interval::new_closed_open(sel_min, sel_max);
+            self.add_delta(del_interval, Rope::from(""), sel_min, sel_min);
             Value::String(val)
         } else {
             Value::Null
         }
     }
 
-    fn do_copy(&mut self) -> Value {
-        if self.view.sel_start != self.view.sel_end {
-            let val = self.text.slice_to_string(self.view.sel_min(), self.view.sel_max());
+    fn do_copy(&mut self, view_id: &ViewIdentifier) -> Value {
+        let (sel_min, sel_max, sel_start, sel_end) = {
+            let view = self.views.get(view_id).expect(&format!("Failed to get view by id {}", view_id));
+            (view.sel_min(), view.sel_max(), view.sel_start, view.sel_end)
+        };
+        if sel_start != sel_end {
+            let val = self.text.slice_to_string(sel_min, sel_max);
             Value::String(val)
         } else {
             Value::Null
@@ -718,18 +771,22 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
     }
 
-    fn do_transpose(&mut self) {
-        let end_opt = self.text.next_grapheme_offset(self.view.sel_end);
-        let start_opt = self.text.prev_grapheme_offset(self.view.sel_end);
+    fn do_transpose(&mut self, view_id: &ViewIdentifier) {
+        let sel_end = {
+            let view = self.views.get(view_id).expect(&format!("Failed to get view by id {}", view_id));
+            view.sel_end
+        };
+        let end_opt = self.text.next_grapheme_offset(sel_end);
+        let start_opt = self.text.prev_grapheme_offset(sel_end);
 
-        let end = end_opt.unwrap_or(self.view.sel_end);
+        let end = end_opt.unwrap_or(sel_end);
         let (start, middle) = if end_opt.is_none() && start_opt.is_some() {
             // if at the very end, swap previous TWO characters (instead of ONE)
             let middle = start_opt.unwrap();
             let start = self.text.prev_grapheme_offset(middle).unwrap_or(middle);
             (start, middle)
         } else {
-            (start_opt.unwrap_or(self.view.sel_end), self.view.sel_end)
+            (start_opt.unwrap_or(sel_end), sel_end)
         };
 
         let interval = Interval::new_closed_open(start, end);
@@ -738,16 +795,20 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.add_delta(interval, Rope::from(swapped), end, end);
     }
 
-    fn delete_to_end_of_paragraph(&mut self) {
-        let current = self.view.sel_max();
-        let offset = self.end_of_paragraph_offset();
+    fn delete_to_end_of_paragraph(&mut self, view_id: &ViewIdentifier) {
+        let (sel_max, sel_end) = {
+            let view = self.views.get_mut(view_id).expect(&format!("Failed to get view by id {}", view_id));
+            (view.sel_max(), view.sel_end)
+        };
+        let current = sel_max;
+        let offset = self.end_of_paragraph_offset(view_id);
         let mut val = String::from("");
 
         if current != offset {
             val = self.text.slice_to_string(current, offset);
             let del_interval = Interval::new_closed_open(current, offset);
             self.add_delta(del_interval, Rope::from(""), current, current);
-        } else if let Some(grapheme_offset) = self.text.next_grapheme_offset(self.view.sel_end) {
+        } else if let Some(grapheme_offset) = self.text.next_grapheme_offset(sel_end) {
             val = self.text.slice_to_string(current, grapheme_offset);
             let del_interval = Interval::new_closed_open(current, grapheme_offset);
             self.add_delta(del_interval, Rope::from(""), current, current)
@@ -756,85 +817,78 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.tab_ctx.set_kill_ring(Rope::from(val));
     }
 
-    fn yank(&mut self) {
+    fn yank(&mut self, view_id: &ViewIdentifier) {
         let kill_ring_string = self.tab_ctx.get_kill_ring();
-        self.insert(&*String::from(kill_ring_string));
+        self.insert(view_id, &*String::from(kill_ring_string));
     }
 
-    pub fn do_rpc(self_ref: &Arc<Mutex<Editor<W>>>, view_id: &str, cmd: EditCommand) -> Option<Value> {
+    pub fn do_rpc(self_ref: &Arc<Mutex<Editor<W>>>, view_id: &ViewIdentifier, cmd: EditCommand) -> Option<Value> {
         self_ref.lock().unwrap().do_rpc_with_self_ref(view_id, cmd, self_ref)
     }
 
-    fn do_rpc_with_self_ref(&mut self, view_id: &str,
+    fn do_rpc_with_self_ref(&mut self, view_id: &ViewIdentifier,
                   cmd: EditCommand,
                   self_ref: &Arc<Mutex<Editor<W>>>)
                   -> Option<Value> {
 
         use rpc::EditCommand::*;
 
-        // if the rpc's originating view is different from current self.view, swap it in
-        if self.view.view_id != view_id {
-            let mut temp = self.views.remove(view_id).expect("no view for provided view_id");
-            mem::swap(&mut temp, &mut self.view);
-            self.views.insert(temp.view_id.clone(), temp);
-        }
-
         self.this_edit_type = EditType::Other;
 
         let result = match cmd {
-            Key { chars, flags } => async(self.do_key(chars, flags)),
-            Insert { chars } => async(self.do_insert(chars)),
-            DeleteForward => async(self.delete_forward()),
-            DeleteBackward => async(self.delete_backward()),
-            DeleteToEndOfParagraph => async(self.delete_to_end_of_paragraph()),
-            DeleteToBeginningOfLine => async(self.delete_to_beginning_of_line()),
-            InsertNewline => async(self.insert_newline()),
-            InsertTab => async(self.insert_tab()),
-            MoveUp => async(self.move_up(0)),
-            MoveUpAndModifySelection => async(self.move_up(FLAG_SELECT)),
-            MoveDown => async(self.move_down(0)),
-            MoveDownAndModifySelection => async(self.move_down(FLAG_SELECT)),
-            MoveLeft => async(self.move_left(0)),
-            MoveLeftAndModifySelection => async(self.move_left(FLAG_SELECT)),
-            MoveRight => async(self.move_right(0)),
-            MoveRightAndModifySelection => async(self.move_right(FLAG_SELECT)),
-            MoveWordLeft => async(self.move_word_left(0)),
-            MoveWordLeftAndModifySelection => async(self.move_word_left(FLAG_SELECT)),
-            MoveWordRight => async(self.move_word_right(0)),
-            MoveWordRightAndModifySelection => async(self.move_word_right(FLAG_SELECT)),
-            MoveToBeginningOfParagraph => async(self.move_to_beginning_of_paragraph(0)),
-            MoveToEndOfParagraph => async(self.move_to_end_of_paragraph(0)),
-            MoveToLeftEndOfLine => async(self.move_to_left_end_of_line(0)),
-            MoveToLeftEndOfLineAndModifySelection => async(self.move_to_left_end_of_line(FLAG_SELECT)),
-            MoveToRightEndOfLine => async(self.move_to_right_end_of_line(0)),
-            MoveToRightEndOfLineAndModifySelection => async(self.move_to_right_end_of_line(FLAG_SELECT)),
-            MoveToBeginningOfDocument => async(self.move_to_beginning_of_document(0)),
-            MoveToBeginningOfDocumentAndModifySelection => async(self.move_to_beginning_of_document(FLAG_SELECT)),
-            MoveToEndOfDocument => async(self.move_to_end_of_document(0)),
-            MoveToEndOfDocumentAndModifySelection => async(self.move_to_end_of_document(FLAG_SELECT)),
-            ScrollPageUp => async(self.scroll_page_up(0)),
-            PageUpAndModifySelection => async(self.scroll_page_up(FLAG_SELECT)),
-            ScrollPageDown => async(self.scroll_page_down(0)),
+            Key { chars, flags } => async(self.do_key(view_id, chars, flags)),
+            Insert { chars } => async(self.do_insert(view_id, chars)),
+            DeleteForward => async(self.delete_forward(view_id)),
+            DeleteBackward => async(self.delete_backward(view_id)),
+            DeleteToEndOfParagraph => async(self.delete_to_end_of_paragraph(view_id)),
+            DeleteToBeginningOfLine => async(self.delete_to_beginning_of_line(view_id)),
+            InsertNewline => async(self.insert_newline(view_id)),
+            InsertTab => async(self.insert_tab(view_id)),
+            MoveUp => async(self.move_up(view_id, 0)),
+            MoveUpAndModifySelection => async(self.move_up(view_id, FLAG_SELECT)),
+            MoveDown => async(self.move_down(view_id, 0)),
+            MoveDownAndModifySelection => async(self.move_down(view_id, FLAG_SELECT)),
+            MoveLeft => async(self.move_left(view_id, 0)),
+            MoveLeftAndModifySelection => async(self.move_left(view_id, FLAG_SELECT)),
+            MoveRight => async(self.move_right(view_id, 0)),
+            MoveRightAndModifySelection => async(self.move_right(view_id, FLAG_SELECT)),
+            MoveWordLeft => async(self.move_word_left(view_id, 0)),
+            MoveWordLeftAndModifySelection => async(self.move_word_left(view_id, FLAG_SELECT)),
+            MoveWordRight => async(self.move_word_right(view_id, 0)),
+            MoveWordRightAndModifySelection => async(self.move_word_right(view_id, FLAG_SELECT)),
+            MoveToBeginningOfParagraph => async(self.move_to_beginning_of_paragraph(view_id, 0)),
+            MoveToEndOfParagraph => async(self.move_to_end_of_paragraph(view_id, 0)),
+            MoveToLeftEndOfLine => async(self.move_to_left_end_of_line(view_id, 0)),
+            MoveToLeftEndOfLineAndModifySelection => async(self.move_to_left_end_of_line(view_id, FLAG_SELECT)),
+            MoveToRightEndOfLine => async(self.move_to_right_end_of_line(view_id, 0)),
+            MoveToRightEndOfLineAndModifySelection => async(self.move_to_right_end_of_line(view_id, FLAG_SELECT)),
+            MoveToBeginningOfDocument => async(self.move_to_beginning_of_document(view_id, 0)),
+            MoveToBeginningOfDocumentAndModifySelection => async(self.move_to_beginning_of_document(view_id, FLAG_SELECT)),
+            MoveToEndOfDocument => async(self.move_to_end_of_document(view_id, 0)),
+            MoveToEndOfDocumentAndModifySelection => async(self.move_to_end_of_document(view_id, FLAG_SELECT)),
+            ScrollPageUp => async(self.scroll_page_up(view_id, 0)),
+            PageUpAndModifySelection => async(self.scroll_page_up(view_id, FLAG_SELECT)),
+            ScrollPageDown => async(self.scroll_page_down(view_id, 0)),
             PageDownAndModifySelection => {
-                async(self.scroll_page_down(FLAG_SELECT))
+                async(self.scroll_page_down(view_id, FLAG_SELECT))
             }
-            SelectAll => async(self.select_all()),
-            Scroll { first, last } => async(self.do_scroll(first, last)),
-            GotoLine { line } => async(self.do_goto_line(line)),
-            RequestLines { first, last } => async(self.do_request_lines(first, last)),
-            Yank => async(self.yank()),
-            Transpose => async(self.do_transpose()),
+            SelectAll => async(self.select_all(view_id)),
+            Scroll { first, last } => async(self.do_scroll(view_id, first, last)),
+            GotoLine { line } => async(self.do_goto_line(view_id, line)),
+            RequestLines { first, last } => async(self.do_request_lines(view_id, first, last)),
+            Yank => async(self.yank(view_id)),
+            Transpose => async(self.do_transpose(view_id)),
             Click { line, column, flags, click_count } => {
-                async(self.do_click(line, column, flags, click_count))
+                async(self.do_click(view_id, line, column, flags, click_count))
             }
-            Drag { line, column, flags } => async(self.do_drag(line, column, flags)),
-            Gesture { line, column, ty } => async(self.do_gesture(line, column, ty)),
+            Drag { line, column, flags } => async(self.do_drag(view_id, line, column, flags)),
+            Gesture { line, column, ty } => async(self.do_gesture(view_id, line, column, ty)),
             Undo => async(self.do_undo(self_ref)),
             Redo => async(self.do_redo(self_ref)),
-            Cut => Some(self.do_cut()),
-            Copy => Some(self.do_copy()),
-            DebugRewrap => async(self.debug_rewrap()),
-            DebugTestFgSpans => async(self.debug_test_fg_spans()),
+            Cut => Some(self.do_cut(view_id)),
+            Copy => Some(self.do_copy(view_id)),
+            DebugRewrap => async(self.debug_rewrap(view_id)),
+            DebugTestFgSpans => async(self.debug_test_fg_spans(view_id)),
             DebugRunPlugin => async(self.debug_run_plugin(self_ref)),
         };
 
@@ -889,7 +943,9 @@ impl<W: Write + Send + 'static> Editor<W> {
             end_offset = transformer.transform(end_offset, true);
         }
         self.style_spans.edit(Interval::new_closed_closed(start, end_offset), spans);
-        self.view.set_dirty();
+        for (_, ref mut view) in &mut self.views {
+            view.set_dirty();
+        }
         self.render();
     }
 
