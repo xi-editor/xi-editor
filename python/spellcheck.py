@@ -53,7 +53,7 @@ class Spellcheck(Plugin):
                 # A span within a group is offset relative to group's start offset.
                 spans = [{'start': 0,
                           'end': len(prev_word),
-                          'fg': style.color_for_rgb_float(1.0, 0, 0),
+                          'fg': style.color_for_rgba_float(1.0, 0, 0),
                           'font': style.BOLD | style.UNDERLINE}]
                 peer.set_fg_spans(end-len(prev_word), len(prev_word), spans, rev)
         return 0
