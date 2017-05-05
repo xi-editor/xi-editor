@@ -25,6 +25,9 @@ Goals include:
 * ***Developer friendliness***. It should be easy to customize xi editor, whether
   by adding plug-ins or hacking on the core.
 
+Please refer to the [May 2017 roadmap](https://github.com/google/xi-editor/pull/248)
+to learn more about planned features.
+
 Screenshot (will need to be updated as syntax coloring and UI polish is added):
 
 ![xi screenshot](/doc/img/xi-mac-screenshot.png?raw=true)
@@ -50,18 +53,23 @@ Here are some other front-ends in various stages of development:
 * [fuchsia/xi](https://fuchsia.googlesource.com/xi), a front-end in Flutter for Fuchsia,
 and might work on other Flutter targets.
 
-* [xi_glium](https://github.com/potocpav/xi_glium), an
-experimental GL-based front-end in Rust.
-
 * [xi-gtk](https://github.com/eyelash/xi-gtk), a GTK+ front-end.
 
 * [xi-tui](https://github.com/little-dude/xi-tui), a text UI.
 
-* [XiEditorVS2015](https://github.com/Sineaggi/XiEditorVS2015), C#.
-
 * [`xi-electron`](https://github.com/callodacity/xi-electron), a front-end based on web-technologies.
 
-* [`gxi`](https://github.com/bvinc/gxi), a GTK+ front-end written in rust.
+* [`gxi`](https://github.com/bvinc/gxi), a GTK+ front-end written in Rust.
+
+* [xi-win](https://github.com/google/xi-win), an experimental Windows front-end written in Rust.
+
+The following are currently inactive, based on earlier versions of the front-end
+protcol, but perhaps could be revitalized:
+
+* [xi_glium](https://github.com/potocpav/xi_glium), an
+experimental GL-based front-end in Rust.
+
+* [XiEditorVS2015](https://github.com/Sineaggi/XiEditorVS2015), C#.
 
 There are notes (I wouldn’t call it
 documentation at this point) on the protocol at
@@ -120,7 +128,6 @@ functionality (it was used to write this README), but looks very spare and
 is still missing essentials such as auto-indent. At the moment, it’s expected
 that its main community will be developers interested in hacking on a text
 editor.
-
 
 ## Authors
 
