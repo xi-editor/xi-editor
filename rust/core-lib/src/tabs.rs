@@ -23,29 +23,32 @@ use serde_json::value::Value;
 
 use xi_rope::rope::Rope;
 use editor::Editor;
-use rpc::{CoreCommand, EditCommand};
+use rpc::{CoreCommand, EditCommand, PluginCommand};
 use styles::{Style, StyleMap};
 use MainPeer;
+use plugins::{PluginManager, PluginUpdate};
 
 /// ViewIdentifiers are the primary means of routing messages between xi-core and a client view.
 pub type ViewIdentifier = String;
 
 /// BufferIdentifiers uniquely identify open buffers.
-type BufferIdentifier = String;
+pub type BufferIdentifier = String;
 
 // TODO: proposed new name: something like "Core" or "CoreState" or "EditorState"? "Documents?"
 pub struct Tabs<W: Write> {
     /// maps file names to buffer identifiers. If a client asks to open a file that is already
     /// open, we treat it as a request for a new view.
     open_files: BTreeMap<PathBuf, BufferIdentifier>,
+    // TODO: maybe some ActiveBuffersRef type, to replace buffers/views here?
     /// maps buffer identifiers (filenames) to editor instances
-    buffers: BTreeMap<BufferIdentifier, Arc<Mutex<Editor<W>>>>,
+    buffers: Arc<Mutex<BTreeMap<BufferIdentifier, Arc<Mutex<Editor<W>>>>>>,
     /// maps view identifiers to editor instances. All actions originate in a view; this lets us
     /// route messages correctly when multiple views share a buffer.
     views: BTreeMap<ViewIdentifier, BufferIdentifier>,
     id_counter: usize,
     kill_ring: Arc<Mutex<Rope>>,
     style_map: Arc<Mutex<StyleMap>>,
+    plugins: Arc<Mutex<PluginManager<W>>>,
 }
 
 #[derive(Clone)]
@@ -53,18 +56,21 @@ pub struct TabCtx<W: Write> {
     kill_ring: Arc<Mutex<Rope>>,
     rpc_peer: MainPeer<W>,
     style_map: Arc<Mutex<StyleMap>>,
+    plugins: Arc<Mutex<PluginManager<W>>>,
 }
 
 
 impl<W: Write + Send + 'static> Tabs<W> {
     pub fn new() -> Tabs<W> {
+        let buffers = Arc::new(Mutex::new(BTreeMap::new()));
         Tabs {
             open_files: BTreeMap::new(),
-            buffers: BTreeMap::new(),
+            buffers: buffers.clone(),
             views: BTreeMap::new(),
             id_counter: 0,
             kill_ring: Arc::new(Mutex::new(Rope::from(""))),
             style_map: Arc::new(Mutex::new(StyleMap::new())),
+            plugins: Arc::new(Mutex::new(PluginManager::new(buffers))),
         }
     }
 
@@ -73,6 +79,7 @@ impl<W: Write + Send + 'static> Tabs<W> {
             kill_ring: self.kill_ring.clone(),
             rpc_peer: peer.clone(),
             style_map: self.style_map.clone(),
+            plugins: self.plugins.clone(),
         }
     }
 
@@ -95,23 +102,26 @@ impl<W: Write + Send + 'static> Tabs<W> {
                 None
             },
 
-            NewView { file_path } => Some(Value::String(self.do_new_view(rpc_peer, file_path))),
+            NewView { file_path } => Some(self.do_new_view(rpc_peer, file_path)),
             Save { view_id, file_path } => self.do_save(view_id, file_path),
             Edit { view_id, edit_command } => self.do_edit(view_id, edit_command),
+            Plugin { plugin_command } => self.do_plugin_cmd(plugin_command),
         }
     }
 
     /// Creates a new view and associates it with a buffer.
     ///
-    /// This function always creates a new view and associates it with a buffer (which we access
-    ///through an `Editor` instance). This buffer may be existing, or it may be created.
+    /// This function always creates a new view and associates it with a buffer
+    /// (which we access through an `Editor` instance). This buffer may be existing,
+    /// or it may be created.
     ///
-    ///A `new_view` request is handled differently depending on the `file_path` argument, and on
-    ///application state. If `file_path` is given and a buffer associated with that file is already
-    ///open, we create a new view into the existing buffer. If `file_path` is given and that file
-    ///_isn't_ open, we load that file into a new buffer. If `file_path` is not given, we create a
-    ///new empty buffer.
-    fn do_new_view(&mut self, rpc_peer: &MainPeer<W>, file_path: Option<&str>) -> ViewIdentifier {
+    /// A `new_view` request is handled differently depending on the `file_path`
+    /// argument, and on application state. If `file_path` is given and a buffer
+    /// associated with that file is already open, we create a new view into the
+    /// existing buffer. If `file_path` is given and that file _isn't_ open,
+    /// we load that file into a new buffer. If `file_path` is not given,
+    /// we create a new empty buffer.
+    fn do_new_view(&mut self, rpc_peer: &MainPeer<W>, file_path: Option<&str>) -> Value {
         // three code paths: new buffer, open file, and new view into existing buffer
         let view_id = self.next_view_id();
         if let Some(file_path) = file_path.map(PathBuf::from) {
@@ -128,14 +138,20 @@ impl<W: Write + Send + 'static> Tabs<W> {
                 self.open_files.insert(file_path.to_owned(), buffer_id.clone());
                 self.new_view_with_file(rpc_peer, &view_id, buffer_id.clone(), &file_path);
                 // above fn has two branches: set path after
-                self.buffers.get(&buffer_id).unwrap().lock().unwrap().set_path(&file_path);
+                let editor_map = self.buffers.lock().unwrap();
+                editor_map.get(&buffer_id)
+                    .unwrap().lock().unwrap().set_path(&file_path);
             }
         } else {
             // file_path was nil: create a new empty buffer.
             let buffer_id = self.next_buffer_id();
             self.new_empty_view(rpc_peer, &view_id, buffer_id);
         }
-        view_id
+        json!({
+            "view_id": view_id,
+            //TODO: this should be determined based on filetype etc
+            "available_plugins": self.plugins.lock().unwrap().debug_available_plugins(),
+        })
     }
 
     fn do_close_view(&mut self, view_id: &str) {
@@ -168,34 +184,37 @@ impl<W: Write + Send + 'static> Tabs<W> {
     #[allow(unreachable_code, unused_variables, dead_code)] 
     fn add_view(&mut self, view_id: &str, buffer_id: BufferIdentifier) {
         panic!("add_view should not currently be accessible");
-        let editor = self.buffers.get(&buffer_id).expect("missing editor_id for view_id");
+        let editor_map = self.buffers.lock().unwrap();
+        let editor = editor_map.get(&buffer_id).expect("missing editor_id for view_id");
+        //let editor = self.buffers.get(&buffer_id)
         self.views.insert(view_id.to_owned(), buffer_id);
         editor.lock().unwrap().add_view(view_id);
     }
 
     fn finalize_new_view(&mut self, view_id: &str, buffer_id: String, editor: Arc<Mutex<Editor<W>>>) {
         self.views.insert(view_id.to_owned(), buffer_id.clone());
-        self.buffers.insert(buffer_id, editor.clone());
+        self.buffers.lock().unwrap().insert(buffer_id, editor.clone());
     }
-    
+
     fn read_file<P: AsRef<Path>>(&self, path: P) -> io::Result<String> {
         let mut f = File::open(path)?;
         let mut s = String::new();
         f.read_to_string(&mut s)?;
         Ok(s)
     }
-    
+
     fn close_view(&mut self, view_id: &str) {
-        let buf_id = self.views.remove(view_id).expect("missing buffer id when closing view");
+        let buffer_id = self.views.remove(view_id).expect("missing buffer id when closing view");
         let (has_views, path) = {
-            let editor = self.buffers.get(&buf_id).expect("missing editor when closing view");
+            let editor_map = self.buffers.lock().unwrap();
+        let editor = editor_map.get(&buffer_id).expect("missing editor when closing view");
             let mut editor = editor.lock().unwrap();
             editor.remove_view(view_id);
             (editor.has_views(), editor.get_path().map(PathBuf::from))
         };
 
         if !has_views {
-            self.buffers.remove(&buf_id);
+            self.buffers.lock().unwrap().remove(&buffer_id);
             if let Some(path) = path {
                 self.open_files.remove(&path);
             }
@@ -205,7 +224,8 @@ impl<W: Write + Send + 'static> Tabs<W> {
     fn do_save(&mut self, view_id: &str, file_path: &str) -> Option<Value> {
         let buffer_id = self.views.get(view_id)
             .expect(&format!("missing buffer id for view {}", view_id));
-        let editor = self.buffers.get(buffer_id)
+        let editor_map = self.buffers.lock().unwrap();
+        let editor = editor_map.get(buffer_id)
             .expect(&format!("missing editor for buffer {}", buffer_id));
         let file_path = PathBuf::from(file_path);
 
@@ -221,18 +241,58 @@ impl<W: Write + Send + 'static> Tabs<W> {
     }
 
     fn do_edit(&mut self, view_id: &str, cmd: EditCommand) -> Option<Value> {
-        let buffer_id = self.views.get(view_id)
-            .expect(&format!("missing buffer id for view {}", view_id));
-        if let Some(editor) = self.buffers.get(buffer_id) {
-            Editor::do_rpc(editor, view_id, cmd)
+        if let Some(buffer_id) = self.views.get(view_id) {
+            let (editor, should_update, result) = {
+                let editor_map = self.buffers.lock().unwrap();
+                let editor = editor_map.get(buffer_id).unwrap();
+                let result = Editor::do_rpc(editor, view_id, cmd);
+                let should_update = editor.lock().unwrap().get_last_plugin_update();
+                (editor.clone(), should_update, result)
+            };
+
+            if should_update.is_some() {
+                self.update_plugins(editor, should_update.unwrap(), buffer_id);
+            }
+            result
         } else {
-            print_err!("buffer not found: {}, for view {}", buffer_id, view_id);
+            // should this just be a crash?
+            print_err!("missing buffer_id for view {}", view_id);
             None
         }
     }
 
+    fn do_plugin_cmd(&mut self, cmd: PluginCommand) -> Option<Value> {
+        use self::PluginCommand::*;
+        match cmd {
+            Start { view_id, plugin_name } => {
+                let buffer_id = self.views.get(&view_id)
+                    .expect(&format!("missing buffer id for view {}", view_id));
+                // TODO: this is a hack, there are different ways a plugin might be launched
+                // and they would have different init params, this is just mimicing old api
+                let (buf_size, _, rev) = {
+                    let editor_map = self.buffers.lock().unwrap();
+                    let editor = editor_map.get(buffer_id).unwrap();
+                    let params = editor.lock().unwrap().plugin_init_params();
+                    params
+                };
+
+                self.plugins.lock().unwrap().start_plugin(
+                    &self.plugins, buffer_id, &plugin_name, buf_size, rev);
+            }
+            //TODO: stop a plugin
+            //Stop { view_id, plugin_name } => (),
+            _ => (),
+        }
+        None
+    }
+
+    fn update_plugins(&self, editor: Arc<Mutex<Editor<W>>>, update: PluginUpdate, buffer_id: &str) {
+       let undo_group = editor.lock().unwrap().get_last_undo_group(); 
+       self.plugins.lock().unwrap().update(buffer_id, update, undo_group);
+    }
+
     pub fn handle_idle(&self) {
-        for editor in self.buffers.values() {
+        for editor in self.buffers.lock().unwrap().values() {
             editor.lock().unwrap().render();
         }
     }
@@ -254,6 +314,13 @@ impl<W: Write> TabCtx<W> {
                 "line": line,
                 "col": col,
             }));
+    }
+
+    pub fn available_plugins(&self, view_id: &str, plugins: Vec<&str>) {
+        self.rpc_peer.send_rpc_notification("available_plugins",
+                                            &json!({
+                                                "view_id": view_id,
+                                                "plugins": plugins }));
     }
 
     pub fn get_kill_ring(&self) -> Rope {

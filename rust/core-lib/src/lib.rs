@@ -40,7 +40,7 @@ pub mod internal {
     pub mod editor;
     pub mod view;
     pub mod linewrap;
-    pub mod run_plugin;
+    pub mod plugins;
     pub mod styles;
     pub mod word_boundaries;
     pub mod index_set;
@@ -52,7 +52,7 @@ use internal::tabs;
 use internal::editor;
 use internal::view;
 use internal::linewrap;
-use internal::run_plugin;
+use internal::plugins;
 use internal::styles;
 use internal::word_boundaries;
 use internal::index_set;

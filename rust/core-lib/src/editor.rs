@@ -20,7 +20,7 @@ use std::io::Write;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 use std::mem;
-use serde_json::{self, Value};
+use serde_json::Value;
 
 use xi_rope::rope::{LinesMetric, Rope};
 use xi_rope::interval::Interval;
@@ -34,7 +34,7 @@ use movement::Movement;
 
 use tabs::{ViewIdentifier, TabCtx};
 use rpc::{EditCommand, GestureType};
-use run_plugin::{start_plugin, PluginRef, UpdateResponse, PluginEdit};
+use plugins::{PluginUpdate, PluginEdit, Span};
 
 const FLAG_SELECT: u64 = 2;
 
@@ -66,6 +66,8 @@ pub struct Editor<W: Write> {
 
     this_edit_type: EditType,
     last_edit_type: EditType,
+    /// update information to be propogated to plugins after an edit.
+    last_plugin_update: Option<PluginUpdate>,
 
     // update to cursor, to be committed atomically with delta
     // TODO: use for all cursor motion?
@@ -75,7 +77,6 @@ pub struct Editor<W: Write> {
 
     style_spans: Spans<Style>,
     tab_ctx: TabCtx<W>,
-    plugins: Vec<PluginRef<W>>,
     revs_in_flight: usize,
 }
 
@@ -129,11 +130,11 @@ impl<W: Write + Send + 'static> Editor<W> {
             gc_undos: BTreeSet::new(),
             last_edit_type: EditType::Other,
             this_edit_type: EditType::Other,
+            last_plugin_update: None,
             new_cursor: None,
             scroll_to: Some(0),
             style_spans: Spans::default(),
             tab_ctx: tab_ctx,
-            plugins: Vec::new(),
             revs_in_flight: 0,
         };
         Arc::new(Mutex::new(editor))
@@ -181,6 +182,38 @@ impl<W: Write + Send + 'static> Editor<W> {
             Some(ref p) => Some(p),
             None => None,
         }
+    }
+
+    //TODO: reconsider whether we want to be storing state like this.
+    /// Returns a plugin-ready summary of the last edit event.
+    pub fn get_last_plugin_update(&mut self) -> Option<PluginUpdate> {
+        self.last_plugin_update.take()
+    }
+
+    /// Returns the editor's last undo group.
+    ///
+    /// Edits from plugins that occur in response to a user edit are added to
+    /// the same undo group as the user edit.
+    pub fn get_last_undo_group(&self) -> usize {
+        *self.live_undos.last().unwrap_or(&0)
+    }
+
+    // each outstanding plugin edit represents a rev_in_flight.
+    pub fn increment_revs_in_flight(&mut self) {
+        self.revs_in_flight += 1;
+    }
+
+    // GC of CRDT engine is deferred until all plugins have acknowledged the new rev,
+    // so when the ack comes back, potentially trigger GC.
+    pub fn dec_revs_in_flight(&mut self) {
+        self.revs_in_flight -= 1;
+        self.gc_undos();
+    }
+
+    /// Returns metrics used to initialize plugins.
+    pub fn plugin_init_params(&self) -> (usize, usize, usize) {
+        let nb_lines = self.text.measure::<LinesMetric>() + 1;
+        (self.text.len(), nb_lines, self.engine.get_head_rev_id())
     }
 
     fn insert(&mut self, s: &str) {
@@ -244,9 +277,9 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     // commit the current delta, updating views, plugins, and other invariants as needed
-    fn commit_delta(&mut self, self_ref: &Arc<Mutex<Editor<W>>>, author: Option<&str>) {
+    fn commit_delta(&mut self, author: Option<&str>) {
         if self.engine.get_head_rev_id() != self.last_rev_id {
-            self.update_after_revision(self_ref, author);
+            self.update_after_revision(author);
             if let Some((start, end)) = self.new_cursor.take() {
                 self.set_cursor(end, true);
                 self.view.sel_start = start;
@@ -255,8 +288,7 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     // generates a delta from a plugin's response and applies it to the buffer.
-    fn apply_plugin_edit(&mut self, self_ref: &Arc<Mutex<Editor<W>>>,
-                         edit: PluginEdit, undo_group: usize) {
+    pub fn apply_plugin_edit(&mut self, edit: PluginEdit, undo_group: usize) {
         let interval = Interval::new_closed_open(edit.start as usize, edit.end as usize);
         let text = Rope::from(&edit.text);
         let rev_len = self.engine.get_rev(edit.rev as usize).unwrap().len();
@@ -272,17 +304,17 @@ impl<W: Write + Send + 'static> Editor<W> {
             self.new_cursor = Some((self.view.sel_start, self.view.sel_end));
         }
 
-        self.commit_delta(self_ref, Some(&edit.author));
+        self.commit_delta(Some(&edit.author));
         self.render();
     }
 
-    fn update_undos(&mut self, self_ref: &Arc<Mutex<Editor<W>>>) {
+    fn update_undos(&mut self) {
         self.engine.undo(self.undos.clone());
         self.text = self.engine.get_head();
-        self.update_after_revision(self_ref, None);
+        self.update_after_revision(None);
     }
 
-    fn update_after_revision(&mut self, self_ref: &Arc<Mutex<Editor<W>>>, author: Option<&str>) {
+    fn update_after_revision(&mut self, author: Option<&str>) {
         let delta = self.engine.delta_rev_head(self.last_rev_id);
         let is_pristine = self.is_pristine();
         self.view.after_edit(&self.text, &delta, is_pristine);
@@ -296,44 +328,17 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.style_spans.edit(iv, empty_spans);
 
         let author = author.unwrap_or(&self.view.view_id);
-        let undo_group = *self.live_undos.last().unwrap();
+        let text = match new_len < MAX_SIZE_LIMIT {
+            true => Some(self.text.slice_to_string(iv.start(), iv.start() + new_len)),
+            false => None
+        };
 
-        //print_err!("delta {}:{} +{} {}", iv.start(), iv.end(), new_len, self.this_edit_type.json_string());
-        for plugin in &self.plugins {
-            self.revs_in_flight += 1;
-            let editor = Arc::downgrade(self_ref);
-            let text = if new_len < MAX_SIZE_LIMIT {
-                Some(self.text.slice_to_string(iv.start(), iv.start() + new_len))
-            } else {
-                None
-            };
-            plugin.update(iv.start(), iv.end(), new_len,
-                          text.as_ref().map(|s| s.as_str()),
-                          self.engine.get_head_rev_id(),
-                          self.this_edit_type.json_string(), author,
-                          move |response| {
-                              if let Some(editor) = editor.upgrade() {
-                                  let response = response.expect("bad plugin response");
-                                  match serde_json::from_value::<UpdateResponse>(response) {
-                                      Ok(UpdateResponse::Edit(edit)) => {
-                                          //print_err!("got response {:?}", edit);
-                                          editor.lock().unwrap().apply_plugin_edit(&editor, edit, undo_group);
-                                      }
-                                      Ok(UpdateResponse::Ack(_)) => (),
-                                      Err(err) => { print_err!("plugin response json err: {:?}", err); }
-                    };
-                    editor.lock().unwrap().dec_revs_in_flight();
-                }
-            });
-        }
+        self.last_plugin_update = Some(PluginUpdate::new(
+            iv.start(), iv.end(), new_len,
+            self.engine.get_head_rev_id(), text,
+            self.this_edit_type.json_string().to_owned(),
+            author.to_owned()));
         self.last_rev_id = self.engine.get_head_rev_id();
-    }
-
-    // GC of CRDT engine is deferred until all plugins have acknowledged the new rev,
-    // so when the ack comes back, potentially trigger GC.
-    fn dec_revs_in_flight(&mut self) {
-        self.revs_in_flight -= 1;
-        self.gc_undos();
     }
 
     fn gc_undos(&mut self) {
@@ -669,16 +674,6 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.view.set_dirty();
     }
 
-    fn debug_run_plugin(&mut self, self_ref: &Arc<Mutex<Editor<W>>>) {
-        print_err!("running plugin");
-        start_plugin(self_ref.clone());
-    }
-
-    pub fn on_plugin_connect(&mut self, plugin_ref: PluginRef<W>) {
-        plugin_ref.init_buf(self.plugin_buf_size(), self.engine.get_head_rev_id());
-        self.plugins.push(plugin_ref);
-    }
-
     fn do_cut(&mut self) -> Value {
         let min = self.view.sel_min();
         if min != self.view.sel_max() {
@@ -700,21 +695,21 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
     }
 
-    fn do_undo(&mut self, self_ref: &Arc<Mutex<Editor<W>>>) {
+    fn do_undo(&mut self) {
         if self.cur_undo > 0 {
             self.cur_undo -= 1;
             assert!(self.undos.insert(self.live_undos[self.cur_undo]));
             self.this_edit_type = EditType::Undo;
-            self.update_undos(self_ref);
+            self.update_undos();
         }
     }
 
-    fn do_redo(&mut self, self_ref: &Arc<Mutex<Editor<W>>>) {
+    fn do_redo(&mut self) {
         if self.cur_undo < self.live_undos.len() {
             assert!(self.undos.remove(&self.live_undos[self.cur_undo]));
             self.cur_undo += 1;
             self.this_edit_type = EditType::Redo;
-            self.update_undos(self_ref);
+            self.update_undos();
         }
     }
 
@@ -762,13 +757,12 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     pub fn do_rpc(self_ref: &Arc<Mutex<Editor<W>>>, view_id: &str, cmd: EditCommand) -> Option<Value> {
-        self_ref.lock().unwrap().do_rpc_with_self_ref(view_id, cmd, self_ref)
+        self_ref.lock().unwrap().do_rpc_impl(view_id, cmd)
     }
 
-    fn do_rpc_with_self_ref(&mut self, view_id: &str,
-                  cmd: EditCommand,
-                  self_ref: &Arc<Mutex<Editor<W>>>)
-                  -> Option<Value> {
+    //FIXME: what is the relationship between this and `do_rpc`, now?
+    // was `do_rpc_with_self_ref` only necessary for plugin handling?
+    fn do_rpc_impl(&mut self, view_id: &str, cmd: EditCommand) -> Option<Value> {
 
         use rpc::EditCommand::*;
 
@@ -829,17 +823,17 @@ impl<W: Write + Send + 'static> Editor<W> {
             }
             Drag { line, column, flags } => async(self.do_drag(line, column, flags)),
             Gesture { line, column, ty } => async(self.do_gesture(line, column, ty)),
-            Undo => async(self.do_undo(self_ref)),
-            Redo => async(self.do_redo(self_ref)),
+            Undo => async(self.do_undo()),
+            Redo => async(self.do_redo()),
             Cut => Some(self.do_cut()),
             Copy => Some(self.do_copy()),
             DebugRewrap => async(self.debug_rewrap()),
             DebugTestFgSpans => async(self.debug_test_fg_spans()),
-            DebugRunPlugin => async(self.debug_run_plugin(self_ref)),
+            DebugRunPlugin => None,
         };
 
         // TODO: could defer this until input quiesces - will this help?
-        self.commit_delta(self_ref, None);
+        self.commit_delta(None);
         self.render();
         self.last_edit_type = self.this_edit_type;
         self.gc_undos();
@@ -849,33 +843,18 @@ impl<W: Write + Send + 'static> Editor<W> {
     // Note: the following are placeholders for prototyping, and are not intended to
     // deal with asynchrony or be efficient.
 
-    pub fn plugin_buf_size(&self) -> usize {
-        self.text.len()
-    }
-
     pub fn plugin_n_lines(&self) -> usize {
         self.text.measure::<LinesMetric>() + 1
     }
 
-    pub fn plugin_get_line(&self, line_num: usize) -> String {
-        let start_offset = self.text.offset_of_line(line_num);
-        let end_offset = self.text.offset_of_line(line_num + 1);
-        self.text.slice_to_string(start_offset, end_offset)
-    }
-
-    pub fn plugin_set_fg_spans(&mut self, start: usize, len: usize, spans: &Value, rev: usize) {
+    pub fn plugin_set_fg_spans(&mut self, start: usize, len: usize, spans: Vec<Span>, rev: usize) {
         // TODO: more protection against invalid input
         let mut start = start;
         let mut end_offset = start + len;
         let mut sb = SpansBuilder::new(len);
-        for span in spans.as_array().unwrap() {
-            let span_dict = span.as_object().unwrap();
-            let start = span_dict.get("start").and_then(Value::as_u64).unwrap() as usize;
-            let end = span_dict.get("end").and_then(Value::as_u64).unwrap() as usize;
-            let fg = span_dict.get("fg").and_then(Value::as_u64).unwrap() as u32;
-            let font_style = span_dict.get("font").and_then(Value::as_u64).unwrap_or(0) as u8;
-            let style = Style { fg: fg, font_style: font_style };
-            sb.add_span(Interval::new_open_open(start, end), style);
+        for span in spans {
+            let style = Style { fg: span.fg, font_style: span.font_style };
+            sb.add_span(Interval::new_open_open(span.start, span.end), style);
         }
         let mut spans = sb.build();
         if rev != self.engine.get_head_rev_id() {
