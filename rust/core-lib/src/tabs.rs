@@ -20,12 +20,11 @@ use std::path::{PathBuf, Path};
 use std::fs::File;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::Sender;
-use std::marker::PhantomData;
 use serde_json::value::Value;
 
 use xi_rope::rope::Rope;
-use editor::Editor;
-use rpc::{CoreCommand, EditCommand, EditorCommand};
+use editor::{Editor, EditorCommand};
+use rpc::{CoreCommand, EditCommand};
 use styles::{Style, StyleMap};
 use MainPeer;
 
@@ -41,14 +40,13 @@ pub struct Tabs<W: Write> {
     /// open, we treat it as a request for a new view.
     open_files: BTreeMap<PathBuf, BufferIdentifier>,
     /// maps buffer identifiers (filenames) to editor instances
-    buffers: BTreeMap<BufferIdentifier, Sender<EditorCommand>>,
+    buffers: BTreeMap<BufferIdentifier, Sender<EditorCommand<W>>>,
     /// maps view identifiers to editor instances. All actions originate in a view; this lets us
     /// route messages correctly when multiple views share a buffer.
     views: BTreeMap<ViewIdentifier, BufferIdentifier>,
     id_counter: usize,
     kill_ring: Arc<Mutex<Rope>>,
     style_map: Arc<Mutex<StyleMap>>,
-    marker: PhantomData<W>,
 }
 
 #[derive(Clone)]
@@ -68,7 +66,6 @@ impl<W: Write + Send + 'static> Tabs<W> {
             id_counter: 0,
             kill_ring: Arc::new(Mutex::new(Rope::from(""))),
             style_map: Arc::new(Mutex::new(StyleMap::new())),
-            marker: PhantomData::default(),
         }
     }
 
@@ -178,7 +175,7 @@ impl<W: Write + Send + 'static> Tabs<W> {
         let _ = editor.send(EditorCommand::AddView { view_id: view_id.to_owned() });
     }
 
-    fn finalize_new_view(&mut self, view_id: &str, buffer_id: String, editor: Sender<EditorCommand>) {
+    fn finalize_new_view(&mut self, view_id: &str, buffer_id: String, editor: Sender<EditorCommand<W>>) {
         self.views.insert(view_id.to_owned(), buffer_id.clone());
         self.buffers.insert(buffer_id, editor);
     }
@@ -196,7 +193,7 @@ impl<W: Write + Send + 'static> Tabs<W> {
             let editor = self.buffers.get(&buf_id).expect("missing editor when closing view");
 
             // TODO: Add a sync channel to get views/paths
-            editor.send(EditorCommand::RemoveView { view_id: view_id.to_owned() });
+            let _ = editor.send(EditorCommand::RemoveView { view_id: view_id.to_owned() });
             // (editor.has_views(), editor.get_path().map(PathBuf::from))
         // };
 

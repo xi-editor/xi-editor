@@ -16,7 +16,6 @@
 
 use std::error;
 use std::fmt;
-use std::path::PathBuf;
 use serde_json::Value;
 use xi_rpc::{dict_get_u64, dict_get_string, arr_get_u64, arr_get_i64};
 
@@ -48,16 +47,6 @@ pub enum CoreCommand {
     NewView { file_path: Option<String> },
     CloseView { view_id: String },
     Save { view_id: String, file_path: String },
-}
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum EditorCommand {
-    SetPath { file_path: PathBuf },
-    AddView { view_id: String },
-    RemoveView { view_id: String },
-    Edit { view_id: String, edit_command: EditCommand },
-    DoSave { file_path: PathBuf },
-    Render,
 }
 
 /// An enum representing touch and mouse gestures applied to the text.
