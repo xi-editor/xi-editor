@@ -21,7 +21,7 @@ use tree::{Node, NodeInfo, TreeBuilder};
 use subset::{Subset, SubsetBuilder};
 use std::cmp::min;
 
-pub enum DeltaElement<N: NodeInfo> {
+enum DeltaElement<N: NodeInfo> {
     Copy(usize, usize),  // note: for now, we lose open/closed info at interval endpoints
     Insert(Node<N>),
 }
@@ -33,18 +33,13 @@ pub struct Delta<N: NodeInfo> {
 
 impl<N: NodeInfo> Delta<N> {
     pub fn simple_edit(interval: Interval, rope: Node<N>, base_len: usize) -> Delta<N> {
-        let mut result = Vec::new();
-        let (start, end) = interval.start_end();
-        if start > 0 {
-            result.push(DeltaElement::Copy(0, start));
-        }
+        let mut builder = Builder::new(base_len);
         if rope.len() > 0 {
-            result.push(DeltaElement::Insert(rope));
+            builder.replace(interval, rope);
+        } else {
+            builder.delete(interval);
         }
-        if end < base_len {
-            result.push(DeltaElement::Copy(end, base_len));
-        }
-        Delta { els: result, base_len: base_len }
+        builder.build()
     }
 
     /// Apply the delta to the given rope. May not work well if the length of the rope
@@ -338,6 +333,60 @@ impl<'a, N: NodeInfo + 'a> Transformer<'a, N> {
             }
         }
         false
+    }
+}
+
+/// A builder for creating new `Delta` objects.
+///
+/// Note that all edit operations must be sorted; the start point of each
+/// interval must be no less than the end point of the previous one.
+pub struct Builder<N: NodeInfo> {
+    delta: Delta<N>,
+    last_offset: usize,
+}
+
+impl<N: NodeInfo> Builder<N> {
+    /// Creates a new builder, applicable to a base rope of length `base_len`.
+    pub fn new(base_len: usize) -> Builder<N> {
+        Builder {
+            delta: Delta {
+                els: Vec::new(),
+                base_len: base_len,
+            },
+            last_offset: 0,
+        }
+    }
+
+    /// Deletes the given interval. Panics if interval is not properly sorted.
+    pub fn delete(&mut self, interval: Interval) {
+        let (start, end) = interval.start_end();
+        if start < self.last_offset {
+            panic!("Delta builder: intervals not properly sorted");
+        }
+        if start > self.last_offset {
+            self.delta.els.push(DeltaElement::Copy(self.last_offset, start));
+        }
+        self.last_offset = end;
+    }
+
+    /// Replaces the given interval with the new rope. Panics if interval
+    /// is not properly sorted.
+    pub fn replace(&mut self, interval: Interval, rope: Node<N>) {
+        self.delete(interval);
+        self.delta.els.push(DeltaElement::Insert(rope));
+    }
+
+    /// Determines if delta would be trivial if built
+    pub fn is_trivial(&self) -> bool {
+        self.last_offset == 0 && self.delta.els.is_empty()
+    }
+
+    /// Builds the `Delta`.
+    pub fn build(mut self) -> Delta<N> {
+        if self.last_offset < self.delta.base_len {
+            self.delta.els.push(DeltaElement::Copy(self.last_offset, self.delta.base_len));
+        }
+        self.delta
     }
 }
 
