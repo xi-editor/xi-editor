@@ -68,7 +68,7 @@ pub struct Editor<W: Write> {
     last_edit_type: EditType,
 
     // update to cursor, to be committed atomically with delta
-    // TODO: use for all cursor motion?
+    // Note: this will go away by the time the multi-selection work is done.
     new_cursor: Option<(usize, usize)>,
 
     scroll_to: Option<usize>,
@@ -185,8 +185,7 @@ impl<W: Write + Send + 'static> Editor<W> {
 
     fn insert(&mut self, s: &str) {
         let sel_interval = Interval::new_closed_open(self.view.sel_min(), self.view.sel_max());
-        let new_cursor = self.view.sel_min() + s.len();
-        self.add_delta(sel_interval, Rope::from(s), new_cursor, new_cursor);
+        self.add_delta(sel_interval, Rope::from(s));
     }
 
     /// Sets the position of the cursor to `offset`, as part of an edit operation.
@@ -207,13 +206,17 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.view.set_old_sel_dirty();
     }
 
-    // Apply the delta to the buffer, and store the new cursor so that it gets
-    // set when commit_delta is called.
-    //
-    // Records the delta into the CRDT engine so that it can be undone. Also contains
-    // the logic for merging edits into the same undo group. At call time,
-    // self.this_edit_type should be set appropriately.
-    fn add_delta(&mut self, iv: Interval, new: Rope, new_start: usize, new_end: usize) {
+    /// Applies the delta to the text, and updates undo state.
+    ///
+    /// Records the delta into the CRDT engine so that it can be undone. Also contains
+    /// the logic for merging edits into the same undo group. At call time,
+    /// self.this_edit_type should be set appropriately.
+    ///
+    /// This method can be called multiple times. Note that it does not update
+    /// the views. Thus, view-associated state such as the selection and line breaks
+    /// are to be considered invalid after this method, until `commit_delta` is
+    /// called.
+    fn add_delta(&mut self, iv: Interval, new: Rope) {
         let delta = Delta::simple_edit(iv, new, self.text.len());
         let head_rev_id = self.engine.get_head_rev_id();
         let undo_group;
@@ -240,10 +243,9 @@ impl<W: Write + Send + 'static> Editor<W> {
         let priority = 0x10000;
         self.engine.edit_rev(priority, undo_group, head_rev_id, delta);
         self.text = self.engine.get_head();
-        self.new_cursor = Some((new_start, new_end));
     }
 
-    // commit the current delta, updating views, plugins, and other invariants as needed
+    /// Commits the current delta, updating views, plugins, and other invariants as needed.
     fn commit_delta(&mut self, self_ref: &Arc<Mutex<Editor<W>>>, author: Option<&str>) {
         if self.engine.get_head_rev_id() != self.last_rev_id {
             self.update_after_revision(self_ref, author);
@@ -285,7 +287,7 @@ impl<W: Write + Send + 'static> Editor<W> {
     fn update_after_revision(&mut self, self_ref: &Arc<Mutex<Editor<W>>>, author: Option<&str>) {
         let delta = self.engine.delta_rev_head(self.last_rev_id);
         let is_pristine = self.is_pristine();
-        self.view.after_edit(&self.text, &delta, is_pristine);
+        self.scroll_to = self.view.after_edit(&self.text, &delta, is_pristine);
         let (iv, new_len) = delta.summary();
 
         // TODO: maybe more precise editing based on actual delta rather than summary.
@@ -396,7 +398,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         if start < self.view.sel_max() {
             self.this_edit_type = EditType::Delete;
             let del_interval = Interval::new_closed_open(start, self.view.sel_max());
-            self.add_delta(del_interval, Rope::from(""), start, start);
+            self.add_delta(del_interval, Rope::from(""));
         }
     }
 
@@ -420,16 +422,10 @@ impl<W: Write + Send + 'static> Editor<W> {
             } else {
                 last_line + 1
             };
-            let added = (last_line - first_line) * TAB_SIZE;
-            let (start, end) = if self.view.sel_start < self.view.sel_end {
-                (self.view.sel_start + TAB_SIZE, self.view.sel_end + added)
-            } else {
-                (self.view.sel_start + added, self.view.sel_end + TAB_SIZE)
-            };
             for line in first_line..last_line {
                 let offset = self.view.line_col_to_offset(&self.text, line, 0);
                 let iv = Interval::new_closed_open(offset, offset);
-                self.add_delta(iv, Rope::from(n_spaces(TAB_SIZE)), start, end);
+                self.add_delta(iv, Rope::from(n_spaces(TAB_SIZE)));
             }
         }
     }
@@ -684,7 +680,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         if min != self.view.sel_max() {
             let val = self.text.slice_to_string(min, self.view.sel_max());
             let del_interval = Interval::new_closed_open(min, self.view.sel_max());
-            self.add_delta(del_interval, Rope::from(""), min, min);
+            self.add_delta(del_interval, Rope::from(""));
             Value::String(val)
         } else {
             Value::Null
@@ -735,7 +731,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         let interval = Interval::new_closed_open(start, end);
         let swapped = self.text.slice_to_string(middle, end) +
                       &self.text.slice_to_string(start, middle);
-        self.add_delta(interval, Rope::from(swapped), end, end);
+        self.add_delta(interval, Rope::from(swapped));
     }
 
     fn delete_to_end_of_paragraph(&mut self) {
@@ -746,11 +742,11 @@ impl<W: Write + Send + 'static> Editor<W> {
         if current != offset {
             val = self.text.slice_to_string(current, offset);
             let del_interval = Interval::new_closed_open(current, offset);
-            self.add_delta(del_interval, Rope::from(""), current, current);
+            self.add_delta(del_interval, Rope::from(""));
         } else if let Some(grapheme_offset) = self.text.next_grapheme_offset(self.view.sel_end) {
             val = self.text.slice_to_string(current, grapheme_offset);
             let del_interval = Interval::new_closed_open(current, grapheme_offset);
-            self.add_delta(del_interval, Rope::from(""), current, current)
+            self.add_delta(del_interval, Rope::from(""));
         }
 
         self.tab_ctx.set_kill_ring(Rope::from(val));
