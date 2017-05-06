@@ -49,7 +49,7 @@ const MAX_SIZE_LIMIT: usize = 1024 * 1024;
 pub enum EditorCommand<W: Write> {
     SetPath { file_path: PathBuf },
     AddView { view_id: String },
-    RemoveView { view_id: String },
+    RemoveView { view_id: String, sender: Sender<(bool, Option<PathBuf>)> },
     Edit { view_id: String, edit_command: EditCommand },
     DoSave { file_path: PathBuf },
     ApplyPluginEdit { edit: PluginEdit, undo_group: usize },
@@ -796,7 +796,10 @@ impl<W: Write + Send + 'static> Editor<W> {
                 EditorCommand::AddView { view_id } => self.add_view(&view_id),
                 EditorCommand::Edit { view_id, edit_command } => self.do_rpc(&view_id, edit_command),
                 EditorCommand::DoSave { file_path } => self.do_save(file_path),
-                EditorCommand::RemoveView { view_id } => self.remove_view(&view_id),
+                EditorCommand::RemoveView { view_id, sender } => {
+                    self.remove_view(&view_id);
+                    let _ = sender.send((self.has_views(), self.get_path().map(PathBuf::from)));
+                },
                 EditorCommand::ApplyPluginEdit { edit, undo_group } => self.apply_plugin_edit(edit, undo_group),
                 EditorCommand::DecRevsInFlight => self.dec_revs_in_flight(),
                 EditorCommand::Render => self.render(),

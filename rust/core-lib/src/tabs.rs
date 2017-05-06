@@ -19,7 +19,7 @@ use std::io::{self, Read, Write};
 use std::path::{PathBuf, Path};
 use std::fs::File;
 use std::sync::{Arc, Mutex};
-use std::sync::mpsc::Sender;
+use std::sync::mpsc::{channel, Sender};
 use serde_json::value::Value;
 
 use xi_rope::rope::Rope;
@@ -189,20 +189,20 @@ impl<W: Write + Send + 'static> Tabs<W> {
 
     fn close_view(&mut self, view_id: &str) {
         let buf_id = self.views.remove(view_id).expect("missing buffer id when closing view");
-        // let (has_views, path) = {
+        let (has_views, path) = {
             let editor = self.buffers.get(&buf_id).expect("missing editor when closing view");
 
-            // TODO: Add a sync channel to get views/paths
-            let _ = editor.send(EditorCommand::RemoveView { view_id: view_id.to_owned() });
-            // (editor.has_views(), editor.get_path().map(PathBuf::from))
-        // };
+            let (tx, rx) = channel();
+            let _ = editor.send(EditorCommand::RemoveView { view_id: view_id.to_owned(), sender: tx });
+            rx.recv().unwrap()
+        };
 
-        // if !has_views {
-        //     self.buffers.remove(&buf_id);
-        //     if let Some(path) = path {
-        //         self.open_files.remove(&path);
-        //     }
-        // }
+        if !has_views {
+            self.buffers.remove(&buf_id);
+            if let Some(path) = path {
+                self.open_files.remove(&path);
+            }
+        }
     }
 
     fn do_save(&mut self, view_id: &str, file_path: String) -> Option<Value> {
