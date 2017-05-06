@@ -342,7 +342,7 @@ def mk_lb_rules():
     bk_to_flags = {'x': 0, '_': 0x80, '!': 0xc0}
     for left in range(n + nspecial):
         L = Any[left]
-        if L == 'CM':
+        if L == 'CM' or L == 'ZWJ':
             L = 'AL'  # handling for LB10
         L = resolve_ambig(L)
         for right in range(n):
