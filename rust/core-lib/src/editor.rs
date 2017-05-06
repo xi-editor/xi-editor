@@ -104,12 +104,12 @@ impl EditType {
 
 impl<W: Write + Send + 'static> Editor<W> {
     /// Creates a new `Editor` with a new empty buffer.
-    pub fn new(tab_ctx: TabCtx<W>, initial_view_id: &str) -> Arc<Mutex<Editor<W>>> {
+    pub fn new(tab_ctx: TabCtx<W>, initial_view_id: &str) -> Editor<W> {
         Self::with_text(tab_ctx, initial_view_id, "".to_owned())
     }
 
     /// Creates a new `Editor`, loading text into a new buffer.
-    pub fn with_text(tab_ctx: TabCtx<W>, initial_view_id: &str, text: String) -> Arc<Mutex<Editor<W>>> {
+    pub fn with_text(tab_ctx: TabCtx<W>, initial_view_id: &str, text: String) -> Editor<W> {
 
         let engine = Engine::new(Rope::from(text));
         let buffer = engine.get_head();
@@ -137,7 +137,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             tab_ctx: tab_ctx,
             revs_in_flight: 0,
         };
-        Arc::new(Mutex::new(editor))
+        editor
     }
 
 
@@ -762,7 +762,7 @@ impl<W: Write + Send + 'static> Editor<W> {
 
     //FIXME: what is the relationship between this and `do_rpc`, now?
     // was `do_rpc_with_self_ref` only necessary for plugin handling?
-    fn do_rpc_impl(&mut self, view_id: &str, cmd: EditCommand) -> Option<Value> {
+    pub fn do_rpc_impl(&mut self, view_id: &str, cmd: EditCommand) -> Option<Value> {
 
         use rpc::EditCommand::*;
 

@@ -26,7 +26,7 @@ use editor::Editor;
 use rpc::{CoreCommand, EditCommand, PluginCommand};
 use styles::{Style, StyleMap};
 use MainPeer;
-use plugins::{PluginManager, PluginUpdate};
+use plugins::PluginManager;
 
 /// ViewIdentifiers are the primary means of routing messages between xi-core and a client view.
 pub type ViewIdentifier = String;
@@ -41,7 +41,7 @@ pub struct Tabs<W: Write> {
     open_files: BTreeMap<PathBuf, BufferIdentifier>,
     // TODO: maybe some ActiveBuffersRef type, to replace buffers/views here?
     /// maps buffer identifiers (filenames) to editor instances
-    buffers: Arc<Mutex<BTreeMap<BufferIdentifier, Arc<Mutex<Editor<W>>>>>>,
+    buffers: Arc<Mutex<BTreeMap<BufferIdentifier, Editor<W>>>>,
     /// maps view identifiers to editor instances. All actions originate in a view; this lets us
     /// route messages correctly when multiple views share a buffer.
     views: BTreeMap<ViewIdentifier, BufferIdentifier>,
@@ -138,9 +138,8 @@ impl<W: Write + Send + 'static> Tabs<W> {
                 self.open_files.insert(file_path.to_owned(), buffer_id.clone());
                 self.new_view_with_file(rpc_peer, &view_id, buffer_id.clone(), &file_path);
                 // above fn has two branches: set path after
-                let editor_map = self.buffers.lock().unwrap();
-                editor_map.get(&buffer_id)
-                    .unwrap().lock().unwrap().set_path(&file_path);
+                let mut editor_map = self.buffers.lock().unwrap();
+                editor_map.get_mut(&buffer_id).unwrap().set_path(&file_path);
             }
         } else {
             // file_path was nil: create a new empty buffer.
@@ -184,16 +183,15 @@ impl<W: Write + Send + 'static> Tabs<W> {
     #[allow(unreachable_code, unused_variables, dead_code)] 
     fn add_view(&mut self, view_id: &str, buffer_id: BufferIdentifier) {
         panic!("add_view should not currently be accessible");
-        let editor_map = self.buffers.lock().unwrap();
-        let editor = editor_map.get(&buffer_id).expect("missing editor_id for view_id");
-        //let editor = self.buffers.get(&buffer_id)
+        let mut editor_map = self.buffers.lock().unwrap();
+        let editor = editor_map.get_mut(&buffer_id).expect("missing editor_id for view_id");
         self.views.insert(view_id.to_owned(), buffer_id);
-        editor.lock().unwrap().add_view(view_id);
+        editor.add_view(view_id);
     }
 
-    fn finalize_new_view(&mut self, view_id: &str, buffer_id: String, editor: Arc<Mutex<Editor<W>>>) {
+    fn finalize_new_view(&mut self, view_id: &str, buffer_id: String, editor: Editor<W>) {
         self.views.insert(view_id.to_owned(), buffer_id.clone());
-        self.buffers.lock().unwrap().insert(buffer_id, editor.clone());
+        self.buffers.lock().unwrap().insert(buffer_id, editor);
     }
 
     fn read_file<P: AsRef<Path>>(&self, path: P) -> io::Result<String> {
@@ -206,9 +204,8 @@ impl<W: Write + Send + 'static> Tabs<W> {
     fn close_view(&mut self, view_id: &str) {
         let buffer_id = self.views.remove(view_id).expect("missing buffer id when closing view");
         let (has_views, path) = {
-            let editor_map = self.buffers.lock().unwrap();
-        let editor = editor_map.get(&buffer_id).expect("missing editor when closing view");
-            let mut editor = editor.lock().unwrap();
+            let mut editor_map = self.buffers.lock().unwrap();
+            let editor = editor_map.get_mut(&buffer_id).expect("missing editor when closing view");
             editor.remove_view(view_id);
             (editor.has_views(), editor.get_path().map(PathBuf::from))
         };
@@ -224,36 +221,38 @@ impl<W: Write + Send + 'static> Tabs<W> {
     fn do_save(&mut self, view_id: &str, file_path: &str) -> Option<Value> {
         let buffer_id = self.views.get(view_id)
             .expect(&format!("missing buffer id for view {}", view_id));
-        let editor_map = self.buffers.lock().unwrap();
-        let editor = editor_map.get(buffer_id)
+        let mut editor_map = self.buffers.lock().unwrap();
+        let editor = editor_map.get_mut(buffer_id)
             .expect(&format!("missing editor for buffer {}", buffer_id));
         let file_path = PathBuf::from(file_path);
 
         // if this is a new path for an existing file, we have a bit of housekeeping to do:
-        if let Some(prev_path) = editor.lock().unwrap().get_path() {
+        if let Some(prev_path) = editor.get_path() {
             if prev_path != file_path {
                 self.open_files.remove(prev_path);
             }
         }
-        editor.lock().unwrap().do_save(&file_path);
+        editor.do_save(&file_path);
         self.open_files.insert(file_path, buffer_id.to_owned());
         None
     }
 
     fn do_edit(&mut self, view_id: &str, cmd: EditCommand) -> Option<Value> {
         if let Some(buffer_id) = self.views.get(view_id) {
-            let (editor, should_update, result) = {
-                let editor_map = self.buffers.lock().unwrap();
-                let editor = editor_map.get(buffer_id).unwrap();
-                let result = Editor::do_rpc(editor, view_id, cmd);
-                let should_update = editor.lock().unwrap().get_last_plugin_update();
-                (editor.clone(), should_update, result)
+            let (should_update, result, undo_group) = {
+                let mut editor_map = self.buffers.lock().unwrap();
+                let editor = editor_map.get_mut(buffer_id).unwrap();
+                let result = editor.do_rpc_impl(view_id, cmd);
+                let should_update = editor.get_last_plugin_update();
+                let undo_group = editor.get_last_undo_group();
+                (should_update, result, undo_group)
             };
-
             if should_update.is_some() {
-                self.update_plugins(editor, should_update.unwrap(), buffer_id);
+                self.plugins.lock().unwrap()
+                    .update(buffer_id, should_update.unwrap(), undo_group);
             }
             result
+
         } else {
             // should this just be a crash?
             print_err!("missing buffer_id for view {}", view_id);
@@ -272,7 +271,7 @@ impl<W: Write + Send + 'static> Tabs<W> {
                 let (buf_size, _, rev) = {
                     let editor_map = self.buffers.lock().unwrap();
                     let editor = editor_map.get(buffer_id).unwrap();
-                    let params = editor.lock().unwrap().plugin_init_params();
+                    let params = editor.plugin_init_params();
                     params
                 };
 
@@ -286,14 +285,9 @@ impl<W: Write + Send + 'static> Tabs<W> {
         None
     }
 
-    fn update_plugins(&self, editor: Arc<Mutex<Editor<W>>>, update: PluginUpdate, buffer_id: &str) {
-       let undo_group = editor.lock().unwrap().get_last_undo_group(); 
-       self.plugins.lock().unwrap().update(buffer_id, update, undo_group);
-    }
-
     pub fn handle_idle(&self) {
-        for editor in self.buffers.lock().unwrap().values() {
-            editor.lock().unwrap().render();
+        for editor in self.buffers.lock().unwrap().values_mut() {
+            editor.render();
         }
     }
 }

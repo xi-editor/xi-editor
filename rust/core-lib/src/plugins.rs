@@ -194,7 +194,7 @@ type PluginName = String;
 pub struct PluginManager<W: Write> {
     catalog: Vec<PluginDescription>,
     running: BTreeMap<(BufferIdentifier, PluginName), PluginRef<W>>,
-    buffers: Arc<Mutex<BTreeMap<BufferIdentifier, Arc<Mutex<Editor<W>>>>>>,
+    buffers: Arc<Mutex<BTreeMap<BufferIdentifier, Editor<W>>>>,
     // TODO: maybe we give plugin process unique IDs, and map them to editors
 }
 
@@ -209,7 +209,7 @@ impl<W: Write> Default for PluginManager<W> {
     }
 }
 impl<W: Write> PluginManager<W> {
-    pub fn new(buffers: Arc<Mutex<BTreeMap<BufferIdentifier, Arc<Mutex<Editor<W>>>>>>) -> Self {
+    pub fn new(buffers: Arc<Mutex<BTreeMap<BufferIdentifier, Editor<W>>>>) -> Self {
         PluginManager {
             // TODO: actually parse these from manifest files
             catalog: debug_plugins(),
@@ -234,24 +234,25 @@ impl<W: Write + Send + 'static> PluginManager<W> {
     pub fn update(&mut self, buffer_id: &str, update: PluginUpdate,
                   undo_group: usize) {
         // find all running plugins for this buffer, and send them the update
-        let editor_map = self.buffers.lock().unwrap();
-        let editor = editor_map.get(buffer_id).expect("missing editor for update");
-        //let mut update_count = 0usize;
+        let editor_map = self.buffers.clone();
         for (_, plugin) in self.running.iter().filter(|kv| (kv.0).0 == buffer_id) {
-            editor.lock().unwrap().increment_revs_in_flight();
-            let editor = Arc::downgrade(&editor);
+            let buffer_id = buffer_id.to_owned();
+            editor_map.lock().unwrap().get_mut(&buffer_id)
+                .unwrap().increment_revs_in_flight();
+            let editor_map = Arc::downgrade(&editor_map);
             plugin.update(&update, move |response| {
-                if let Some(editor) = editor.upgrade() {
+                if let Some(editor_map) = editor_map.upgrade() {
                     let response = response.expect("bad plugin response");
                     match serde_json::from_value::<UpdateResponse>(response) {
                         Ok(UpdateResponse::Edit(edit)) => {
-                            editor.lock().unwrap()
+                            editor_map.lock().unwrap().get_mut(&buffer_id).unwrap()
                                 .apply_plugin_edit(edit, undo_group);
                         }
                         Ok(UpdateResponse::Ack(_)) => (),
                         Err(err) => { print_err!("plugin response json err: {:?}", err); }
                     }
-                    editor.lock().unwrap().dec_revs_in_flight();
+                    editor_map.lock().unwrap().get_mut(&buffer_id)
+                        .unwrap().dec_revs_in_flight();
                 }
             })
         }
@@ -283,24 +284,24 @@ impl<W: Write + Send + 'static> PluginManager<W> {
     /// Handle a request from a plugin.
     fn handle_plugin_cmd(&self, cmd: PluginCommand, buffer_id: &str) -> Option<Value> {
         use self::PluginCommand::*;
-        let editor_map = self.buffers.lock().unwrap();
-        let editor = editor_map.get(buffer_id).expect("missing editor");
+        let mut editor_map = self.buffers.lock().unwrap();
+        let editor = editor_map.get_mut(buffer_id).expect("missing editor");
         match cmd {
             LineCount => {
-                let n_lines = editor.lock().unwrap().plugin_n_lines() as u64;
+                let n_lines = editor.plugin_n_lines() as u64;
                 Some(serde_json::to_value(n_lines).unwrap())
             },
             SetFgSpans { start, len, spans, rev } => {
-                editor.lock().unwrap().plugin_set_fg_spans(start, len, spans, rev);
+                editor.plugin_set_fg_spans(start, len, spans, rev);
                 None
             }
             GetData { offset, max_size, rev } => {
-                editor.lock().unwrap().plugin_get_data(offset, max_size, rev)
+                editor.plugin_get_data(offset, max_size, rev)
                     .map(|data| Value::String(data))
             }
 
             Alert { msg } => {
-                editor.lock().unwrap().plugin_alert(&msg);
+                editor.plugin_alert(&msg);
                 None
             }
         }
@@ -338,7 +339,6 @@ impl PluginUpdate {
             edit_type: edit_type,
             author: author
         }
-
     }
 }
 
