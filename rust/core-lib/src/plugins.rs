@@ -16,18 +16,17 @@
 
 use std::env;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Weak};
 use std::thread;
 use std::collections::BTreeMap;
 use std::process::{Command, Stdio, ChildStdin, Child};
 use std::io::{BufReader, Write};
 
 use serde_json::{self, Value};
+use parking_lot::Mutex;
 
 use xi_rpc::{RpcLoop, RpcPeer, RpcCtx, Handler, Error};
-use tabs::BufferIdentifier;
-use editor::Editor;
-
+use tabs::{BufferIdentifier, ViewIdentifier, BufferContainerRef};
 
 pub type PluginPeer = RpcPeer<ChildStdin>;
 
@@ -70,15 +69,15 @@ impl<W: Write + Send + 'static> Handler<ChildStdin> for PluginRef<W> {
 impl<W: Write + Send + 'static> PluginRef<W> {
     fn rpc_handler(&self, method: &str, params: &Value) -> Option<Value> {
         let plugin_manager = {
-            self.0.lock().unwrap().manager.upgrade()
+            self.0.lock().manager.upgrade()
         };
 
         if let Some(plugin_manager) = plugin_manager {
             let cmd = serde_json::from_value::<PluginCommand>(params.to_owned())
                 .expect(&format!("failed to parse plugin rpc {}, params {:?}",
                         method, params));
-            let result = plugin_manager.lock().unwrap()
-                .handle_plugin_cmd(cmd, &self.0.lock().unwrap().buffer_id);
+            let result = plugin_manager.lock()
+                .handle_plugin_cmd(cmd, &self.0.lock().buffer_id);
         result
         } else {
             None
@@ -87,7 +86,7 @@ impl<W: Write + Send + 'static> PluginRef<W> {
 
     /// Init message sent to the plugin.
     pub fn init_buf(&self, buf_size: usize, rev: usize) {
-        let plugin = self.0.lock().unwrap();
+        let plugin = self.0.lock();
         let params = json!({
             "buf_size": buf_size,
             "rev": rev,
@@ -101,9 +100,8 @@ impl<W: Write + Send + 'static> PluginRef<W> {
     /// Update message sent to the plugin.
     pub fn update<F>(&self, update: &PluginUpdate, callback: F)
             where F: FnOnce(Result<Value, Error>) + Send + 'static {
-        let plugin = self.0.lock().unwrap();
         let params = serde_json::to_value(update).expect("PluginUpdate invalid");
-        plugin.peer.send_rpc_request_async("update", &params, callback);
+        self.0.lock().peer.send_rpc_request_async("update", &params, callback);
     }
 }
 
@@ -194,22 +192,11 @@ type PluginName = String;
 pub struct PluginManager<W: Write> {
     catalog: Vec<PluginDescription>,
     running: BTreeMap<(BufferIdentifier, PluginName), PluginRef<W>>,
-    buffers: Arc<Mutex<BTreeMap<BufferIdentifier, Editor<W>>>>,
-    // TODO: maybe we give plugin process unique IDs, and map them to editors
+    buffers: BufferContainerRef<W>,
 }
 
-impl<W: Write> Default for PluginManager<W> {
-    fn default() -> Self {
-        // TODO: start globals
-        PluginManager {
-            catalog: Vec::new(),
-            running: BTreeMap::new(),
-            buffers: Arc::new(Mutex::new(BTreeMap::new())),
-        }
-    }
-}
 impl<W: Write> PluginManager<W> {
-    pub fn new(buffers: Arc<Mutex<BTreeMap<BufferIdentifier, Editor<W>>>>) -> Self {
+    pub fn new(buffers: BufferContainerRef<W>) -> Self {
         PluginManager {
             // TODO: actually parse these from manifest files
             catalog: debug_plugins(),
@@ -231,27 +218,26 @@ impl<W: Write + Send + 'static> PluginManager<W> {
     //fn view_close(&mut self, view_id: &str) {}
 
     /// Passes an update from a buffer to all registered plugins.
-    pub fn update(&mut self, buffer_id: &str, update: PluginUpdate,
+    pub fn update(&mut self, view_id: &ViewIdentifier, update: PluginUpdate,
                   undo_group: usize) {
         // find all running plugins for this buffer, and send them the update
-        let editor_map = self.buffers.clone();
-        for (_, plugin) in self.running.iter().filter(|kv| (kv.0).0 == buffer_id) {
-            let buffer_id = buffer_id.to_owned();
-            editor_map.lock().unwrap().get_mut(&buffer_id)
+        for (_, plugin) in self.running.iter().filter(|kv| (kv.0).0 == *view_id) {
+            self.buffers.lock().editor_for_view_mut(view_id)
                 .unwrap().increment_revs_in_flight();
-            let editor_map = Arc::downgrade(&editor_map);
+            let view_id = view_id.to_owned();
+            let buffers = self.buffers.clone().to_weak();
             plugin.update(&update, move |response| {
-                if let Some(editor_map) = editor_map.upgrade() {
+                if let Some(buffers) = buffers.upgrade() {
                     let response = response.expect("bad plugin response");
                     match serde_json::from_value::<UpdateResponse>(response) {
                         Ok(UpdateResponse::Edit(edit)) => {
-                            editor_map.lock().unwrap().get_mut(&buffer_id).unwrap()
+                            buffers.lock().editor_for_view_mut(&view_id).unwrap()
                                 .apply_plugin_edit(edit, undo_group);
                         }
                         Ok(UpdateResponse::Ack(_)) => (),
                         Err(err) => { print_err!("plugin response json err: {:?}", err); }
                     }
-                    editor_map.lock().unwrap().get_mut(&buffer_id)
+                    buffers.lock().editor_for_view_mut(&view_id)
                         .unwrap().dec_revs_in_flight();
                 }
             })
@@ -274,7 +260,7 @@ impl<W: Write + Send + 'static> PluginManager<W> {
             match result {
                 Ok(plugin_ref) => {
                     plugin_ref.init_buf(buf_size, rev);
-                    me.lock().unwrap().running.insert(key, plugin_ref);
+                    me.lock().running.insert(key, plugin_ref);
                 },
                 Err(_) => panic!("error handling is not implemented"),
             }
@@ -282,26 +268,28 @@ impl<W: Write + Send + 'static> PluginManager<W> {
     }
 
     /// Handle a request from a plugin.
-    fn handle_plugin_cmd(&self, cmd: PluginCommand, buffer_id: &str) -> Option<Value> {
+    fn handle_plugin_cmd(&self, cmd: PluginCommand, view_id: &ViewIdentifier) -> Option<Value> {
         use self::PluginCommand::*;
-        let mut editor_map = self.buffers.lock().unwrap();
-        let editor = editor_map.get_mut(buffer_id).expect("missing editor");
         match cmd {
             LineCount => {
-                let n_lines = editor.plugin_n_lines() as u64;
+                let n_lines = self.buffers.lock().editor_for_view(view_id).unwrap()
+                    .plugin_n_lines() as u64;
                 Some(serde_json::to_value(n_lines).unwrap())
             },
             SetFgSpans { start, len, spans, rev } => {
-                editor.plugin_set_fg_spans(start, len, spans, rev);
+                self.buffers.lock().editor_for_view_mut(view_id).unwrap()
+                    .plugin_set_fg_spans(start, len, spans, rev);
                 None
             }
             GetData { offset, max_size, rev } => {
-                editor.plugin_get_data(offset, max_size, rev)
-                    .map(|data| Value::String(data))
+                self.buffers.lock().editor_for_view(view_id).unwrap()
+                .plugin_get_data(offset, max_size, rev)
+                .map(|data| Value::String(data))
             }
 
             Alert { msg } => {
-                editor.plugin_alert(&msg);
+                self.buffers.lock().editor_for_view(view_id).unwrap()
+                .plugin_alert(&msg);
                 None
             }
         }
