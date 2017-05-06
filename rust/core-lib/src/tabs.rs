@@ -19,11 +19,13 @@ use std::io::{self, Read, Write};
 use std::path::{PathBuf, Path};
 use std::fs::File;
 use std::sync::{Arc, Mutex};
+use std::sync::mpsc::Sender;
+use std::marker::PhantomData;
 use serde_json::value::Value;
 
 use xi_rope::rope::Rope;
 use editor::Editor;
-use rpc::{CoreCommand, EditCommand};
+use rpc::{CoreCommand, EditCommand, EditorCommand};
 use styles::{Style, StyleMap};
 use MainPeer;
 
@@ -39,13 +41,14 @@ pub struct Tabs<W: Write> {
     /// open, we treat it as a request for a new view.
     open_files: BTreeMap<PathBuf, BufferIdentifier>,
     /// maps buffer identifiers (filenames) to editor instances
-    buffers: BTreeMap<BufferIdentifier, Arc<Mutex<Editor<W>>>>,
+    buffers: BTreeMap<BufferIdentifier, Sender<EditorCommand>>,
     /// maps view identifiers to editor instances. All actions originate in a view; this lets us
     /// route messages correctly when multiple views share a buffer.
     views: BTreeMap<ViewIdentifier, BufferIdentifier>,
     id_counter: usize,
     kill_ring: Arc<Mutex<Rope>>,
     style_map: Arc<Mutex<StyleMap>>,
+    marker: PhantomData<W>,
 }
 
 #[derive(Clone)]
@@ -65,6 +68,7 @@ impl<W: Write + Send + 'static> Tabs<W> {
             id_counter: 0,
             kill_ring: Arc::new(Mutex::new(Rope::from(""))),
             style_map: Arc::new(Mutex::new(StyleMap::new())),
+            marker: PhantomData::default(),
         }
     }
 
@@ -89,15 +93,15 @@ impl<W: Write + Send + 'static> Tabs<W> {
     pub fn do_rpc(&mut self, cmd: CoreCommand, rpc_peer: &MainPeer<W>) -> Option<Value> {
         use rpc::CoreCommand::*;
 
-        match cmd {
+        match cmd.clone() {
             CloseView { view_id } => {
-                self.do_close_view(view_id);
+                self.do_close_view(&view_id);
                 None
             },
 
             NewView { file_path } => Some(Value::String(self.do_new_view(rpc_peer, file_path))),
-            Save { view_id, file_path } => self.do_save(view_id, file_path),
-            Edit { view_id, edit_command } => self.do_edit(view_id, edit_command),
+            Save { view_id, file_path } => self.do_save(&view_id, file_path),
+            Edit { view_id, edit_command } => self.do_edit(&view_id, edit_command),
         }
     }
 
@@ -111,7 +115,7 @@ impl<W: Write + Send + 'static> Tabs<W> {
     ///open, we create a new view into the existing buffer. If `file_path` is given and that file
     ///_isn't_ open, we load that file into a new buffer. If `file_path` is not given, we create a
     ///new empty buffer.
-    fn do_new_view(&mut self, rpc_peer: &MainPeer<W>, file_path: Option<&str>) -> ViewIdentifier {
+    fn do_new_view(&mut self, rpc_peer: &MainPeer<W>, file_path: Option<String>) -> ViewIdentifier {
         // three code paths: new buffer, open file, and new view into existing buffer
         let view_id = self.next_view_id();
         if let Some(file_path) = file_path.map(PathBuf::from) {
@@ -128,7 +132,8 @@ impl<W: Write + Send + 'static> Tabs<W> {
                 self.open_files.insert(file_path.to_owned(), buffer_id.clone());
                 self.new_view_with_file(rpc_peer, &view_id, buffer_id.clone(), &file_path);
                 // above fn has two branches: set path after
-                self.buffers.get(&buffer_id).unwrap().lock().unwrap().set_path(&file_path);
+                let editor = self.buffers.get(&buffer_id).unwrap();
+                let _ = editor.send(EditorCommand::SetPath{file_path: file_path});
             }
         } else {
             // file_path was nil: create a new empty buffer.
@@ -165,44 +170,45 @@ impl<W: Write + Send + 'static> Tabs<W> {
     }
 
     /// Adds a new view to an existing editor instance.
-    #[allow(unreachable_code, unused_variables, dead_code)] 
+    #[allow(unreachable_code, unused_variables, dead_code)]
     fn add_view(&mut self, view_id: &str, buffer_id: BufferIdentifier) {
         panic!("add_view should not currently be accessible");
         let editor = self.buffers.get(&buffer_id).expect("missing editor_id for view_id");
         self.views.insert(view_id.to_owned(), buffer_id);
-        editor.lock().unwrap().add_view(view_id);
+        let _ = editor.send(EditorCommand::AddView { view_id: view_id.to_owned() });
     }
 
-    fn finalize_new_view(&mut self, view_id: &str, buffer_id: String, editor: Arc<Mutex<Editor<W>>>) {
+    fn finalize_new_view(&mut self, view_id: &str, buffer_id: String, editor: Sender<EditorCommand>) {
         self.views.insert(view_id.to_owned(), buffer_id.clone());
-        self.buffers.insert(buffer_id, editor.clone());
+        self.buffers.insert(buffer_id, editor);
     }
-    
+
     fn read_file<P: AsRef<Path>>(&self, path: P) -> io::Result<String> {
         let mut f = File::open(path)?;
         let mut s = String::new();
         f.read_to_string(&mut s)?;
         Ok(s)
     }
-    
+
     fn close_view(&mut self, view_id: &str) {
         let buf_id = self.views.remove(view_id).expect("missing buffer id when closing view");
-        let (has_views, path) = {
+        // let (has_views, path) = {
             let editor = self.buffers.get(&buf_id).expect("missing editor when closing view");
-            let mut editor = editor.lock().unwrap();
-            editor.remove_view(view_id);
-            (editor.has_views(), editor.get_path().map(PathBuf::from))
-        };
 
-        if !has_views {
-            self.buffers.remove(&buf_id);
-            if let Some(path) = path {
-                self.open_files.remove(&path);
-            }
-        }
+            // TODO: Add a sync channel to get views/paths
+            editor.send(EditorCommand::RemoveView { view_id: view_id.to_owned() });
+            // (editor.has_views(), editor.get_path().map(PathBuf::from))
+        // };
+
+        // if !has_views {
+        //     self.buffers.remove(&buf_id);
+        //     if let Some(path) = path {
+        //         self.open_files.remove(&path);
+        //     }
+        // }
     }
 
-    fn do_save(&mut self, view_id: &str, file_path: &str) -> Option<Value> {
+    fn do_save(&mut self, view_id: &str, file_path: String) -> Option<Value> {
         let buffer_id = self.views.get(view_id)
             .expect(&format!("missing buffer id for view {}", view_id));
         let editor = self.buffers.get(buffer_id)
@@ -210,21 +216,26 @@ impl<W: Write + Send + 'static> Tabs<W> {
         let file_path = PathBuf::from(file_path);
 
         // if this is a new path for an existing file, we have a bit of housekeeping to do:
-        if let Some(prev_path) = editor.lock().unwrap().get_path() {
-            if prev_path != file_path {
-                self.open_files.remove(prev_path);
-            }
-        }
-        editor.lock().unwrap().do_save(&file_path);
+        // if let Some(prev_path) = editor.lock().unwrap().get_path() {
+        //     if prev_path != file_path {
+        //         self.open_files.remove(prev_path);
+        //     }
+        // }
+        let _ = editor.send(EditorCommand::DoSave { file_path: file_path.clone() });
         self.open_files.insert(file_path, buffer_id.to_owned());
         None
     }
 
-    fn do_edit(&mut self, view_id: &str, cmd: EditCommand) -> Option<Value> {
+    fn do_edit(&mut self, view_id: &str, edit_cmd: EditCommand) -> Option<Value> {
         let buffer_id = self.views.get(view_id)
             .expect(&format!("missing buffer id for view {}", view_id));
         if let Some(editor) = self.buffers.get(buffer_id) {
-            Editor::do_rpc(editor, view_id, cmd)
+            let cmd = EditorCommand::Edit {
+                view_id: view_id.to_owned(),
+                edit_command: edit_cmd,
+            };
+            let _ = editor.send(cmd);
+            None
         } else {
             print_err!("buffer not found: {}, for view {}", buffer_id, view_id);
             None
@@ -233,7 +244,7 @@ impl<W: Write + Send + 'static> Tabs<W> {
 
     pub fn handle_idle(&self) {
         for editor in self.buffers.values() {
-            editor.lock().unwrap().render();
+            let _ = editor.send(EditorCommand::Render);
         }
     }
 }

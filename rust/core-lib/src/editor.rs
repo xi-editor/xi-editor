@@ -19,6 +19,8 @@ use std::path::{Path, PathBuf};
 use std::io::Write;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
+use std::sync::mpsc::{channel, Receiver, Sender};
+use std::thread;
 use std::mem;
 use serde_json::{self, Value};
 
@@ -33,7 +35,7 @@ use word_boundaries::WordCursor;
 use movement::Movement;
 
 use tabs::{ViewIdentifier, TabCtx};
-use rpc::{EditCommand, GestureType};
+use rpc::{EditorCommand, EditCommand, GestureType};
 use run_plugin::{start_plugin, PluginRef, UpdateResponse, PluginEdit};
 
 const FLAG_SELECT: u64 = 2;
@@ -77,6 +79,7 @@ pub struct Editor<W: Write> {
     tab_ctx: TabCtx<W>,
     plugins: Vec<PluginRef<W>>,
     revs_in_flight: usize,
+    receiver: Receiver<EditorCommand>,
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
@@ -103,40 +106,49 @@ impl EditType {
 
 impl<W: Write + Send + 'static> Editor<W> {
     /// Creates a new `Editor` with a new empty buffer.
-    pub fn new(tab_ctx: TabCtx<W>, initial_view_id: &str) -> Arc<Mutex<Editor<W>>> {
+    pub fn new(tab_ctx: TabCtx<W>, initial_view_id: &str) -> Sender<EditorCommand> {
         Self::with_text(tab_ctx, initial_view_id, "".to_owned())
     }
 
     /// Creates a new `Editor`, loading text into a new buffer.
-    pub fn with_text(tab_ctx: TabCtx<W>, initial_view_id: &str, text: String) -> Arc<Mutex<Editor<W>>> {
+    pub fn with_text(tab_ctx: TabCtx<W>,
+                     initial_view_id: &str,
+                     text: String)
+                     -> Sender<EditorCommand> {
+        let initial_view_id = initial_view_id.to_owned();
+        let (tx, rx) = channel();
+        thread::spawn(move || {
+            let engine = Engine::new(Rope::from(text));
+            let buffer = engine.get_head();
+            let last_rev_id = engine.get_head_rev_id();
 
-        let engine = Engine::new(Rope::from(text));
-        let buffer = engine.get_head();
-        let last_rev_id = engine.get_head_rev_id();
+            let editor = Editor {
+                text: buffer,
+                path: None,
+                views: BTreeMap::new(),
+                view: View::new(initial_view_id),
+                engine: engine,
+                last_rev_id: last_rev_id,
+                pristine_rev_id: last_rev_id,
+                undo_group_id: 0,
+                live_undos: Vec::new(),
+                cur_undo: 0,
+                undos: BTreeSet::new(),
+                gc_undos: BTreeSet::new(),
+                last_edit_type: EditType::Other,
+                this_edit_type: EditType::Other,
+                new_cursor: None,
+                scroll_to: Some(0),
+                style_spans: Spans::default(),
+                tab_ctx: tab_ctx,
+                plugins: Vec::new(),
+                revs_in_flight: 0,
+                receiver: rx,
+            };
 
-        let editor = Editor {
-            text: buffer,
-            path: None,
-            views: BTreeMap::new(),
-            view: View::new(initial_view_id),
-            engine: engine,
-            last_rev_id: last_rev_id,
-            pristine_rev_id: last_rev_id,
-            undo_group_id: 0,
-            live_undos: Vec::new(),
-            cur_undo: 0,
-            undos: BTreeSet::new(),
-            gc_undos: BTreeSet::new(),
-            last_edit_type: EditType::Other,
-            this_edit_type: EditType::Other,
-            new_cursor: None,
-            scroll_to: Some(0),
-            style_spans: Spans::default(),
-            tab_ctx: tab_ctx,
-            plugins: Vec::new(),
-            revs_in_flight: 0,
-        };
-        Arc::new(Mutex::new(editor))
+            editor.mainloop();
+        });
+        tx
     }
 
 
@@ -244,9 +256,9 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     // commit the current delta, updating views, plugins, and other invariants as needed
-    fn commit_delta(&mut self, self_ref: &Arc<Mutex<Editor<W>>>, author: Option<&str>) {
+    fn commit_delta(&mut self,/* self_ref: &Arc<Mutex<Editor<W>>>,*/ author: Option<&str>) {
         if self.engine.get_head_rev_id() != self.last_rev_id {
-            self.update_after_revision(self_ref, author);
+            self.update_after_revision(/*self_ref, */author);
             if let Some((start, end)) = self.new_cursor.take() {
                 self.set_cursor(end, true);
                 self.view.sel_start = start;
@@ -255,7 +267,7 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     // generates a delta from a plugin's response and applies it to the buffer.
-    fn apply_plugin_edit(&mut self, self_ref: &Arc<Mutex<Editor<W>>>,
+    fn apply_plugin_edit(&mut self,/* self_ref: &Arc<Mutex<Editor<W>>>,*/
                          edit: PluginEdit, undo_group: usize) {
         let interval = Interval::new_closed_open(edit.start as usize, edit.end as usize);
         let text = Rope::from(&edit.text);
@@ -272,17 +284,17 @@ impl<W: Write + Send + 'static> Editor<W> {
             self.new_cursor = Some((self.view.sel_start, self.view.sel_end));
         }
 
-        self.commit_delta(self_ref, Some(&edit.author));
+        self.commit_delta(/*self_ref, */Some(&edit.author));
         self.render();
     }
 
-    fn update_undos(&mut self, self_ref: &Arc<Mutex<Editor<W>>>) {
+    fn update_undos(&mut self/*, self_ref: &Arc<Mutex<Editor<W>>>*/) {
         self.engine.undo(self.undos.clone());
         self.text = self.engine.get_head();
-        self.update_after_revision(self_ref, None);
+        self.update_after_revision(/*self_ref, */None);
     }
 
-    fn update_after_revision(&mut self, self_ref: &Arc<Mutex<Editor<W>>>, author: Option<&str>) {
+    fn update_after_revision(&mut self,/* self_ref: &Arc<Mutex<Editor<W>>>,*/ author: Option<&str>) {
         let delta = self.engine.delta_rev_head(self.last_rev_id);
         let is_pristine = self.is_pristine();
         self.view.after_edit(&self.text, &delta, is_pristine);
@@ -299,33 +311,33 @@ impl<W: Write + Send + 'static> Editor<W> {
         let undo_group = *self.live_undos.last().unwrap();
 
         //print_err!("delta {}:{} +{} {}", iv.start(), iv.end(), new_len, self.this_edit_type.json_string());
-        for plugin in &self.plugins {
-            self.revs_in_flight += 1;
-            let editor = Arc::downgrade(self_ref);
-            let text = if new_len < MAX_SIZE_LIMIT {
-                Some(self.text.slice_to_string(iv.start(), iv.start() + new_len))
-            } else {
-                None
-            };
-            plugin.update(iv.start(), iv.end(), new_len,
-                          text.as_ref().map(|s| s.as_str()),
-                          self.engine.get_head_rev_id(),
-                          self.this_edit_type.json_string(), author,
-                          move |response| {
-                              if let Some(editor) = editor.upgrade() {
-                                  let response = response.expect("bad plugin response");
-                                  match serde_json::from_value::<UpdateResponse>(response) {
-                                      Ok(UpdateResponse::Edit(edit)) => {
-                                          //print_err!("got response {:?}", edit);
-                                          editor.lock().unwrap().apply_plugin_edit(&editor, edit, undo_group);
-                                      }
-                                      Ok(UpdateResponse::Ack(_)) => (),
-                                      Err(err) => { print_err!("plugin response json err: {:?}", err); }
-                    };
-                    editor.lock().unwrap().dec_revs_in_flight();
-                }
-            });
-        }
+        // for plugin in &self.plugins {
+        //     self.revs_in_flight += 1;
+        //     let editor = Arc::downgrade(self_ref);
+        //     let text = if new_len < MAX_SIZE_LIMIT {
+        //         Some(self.text.slice_to_string(iv.start(), iv.start() + new_len))
+        //     } else {
+        //         None
+        //     };
+        //     plugin.update(iv.start(), iv.end(), new_len,
+        //                   text.as_ref().map(|s| s.as_str()),
+        //                   self.engine.get_head_rev_id(),
+        //                   self.this_edit_type.json_string(), author,
+        //                   move |response| {
+        //                       if let Some(editor) = editor.upgrade() {
+        //                           let response = response.expect("bad plugin response");
+        //                           match serde_json::from_value::<UpdateResponse>(response) {
+        //                               Ok(UpdateResponse::Edit(edit)) => {
+        //                                   //print_err!("got response {:?}", edit);
+        //                                   editor.lock().unwrap().apply_plugin_edit(&editor, edit, undo_group);
+        //                               }
+        //                               Ok(UpdateResponse::Ack(_)) => (),
+        //                               Err(err) => { print_err!("plugin response json err: {:?}", err); }
+        //             };
+        //             editor.lock().unwrap().dec_revs_in_flight();
+        //         }
+        //     });
+        // }
         self.last_rev_id = self.engine.get_head_rev_id();
     }
 
@@ -700,21 +712,21 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
     }
 
-    fn do_undo(&mut self, self_ref: &Arc<Mutex<Editor<W>>>) {
+    fn do_undo(&mut self/*, self_ref: &Arc<Mutex<Editor<W>>>*/) {
         if self.cur_undo > 0 {
             self.cur_undo -= 1;
             assert!(self.undos.insert(self.live_undos[self.cur_undo]));
             self.this_edit_type = EditType::Undo;
-            self.update_undos(self_ref);
+            self.update_undos(/*self_ref*/);
         }
     }
 
-    fn do_redo(&mut self, self_ref: &Arc<Mutex<Editor<W>>>) {
+    fn do_redo(&mut self/*, self_ref: &Arc<Mutex<Editor<W>>>*/) {
         if self.cur_undo < self.live_undos.len() {
             assert!(self.undos.remove(&self.live_undos[self.cur_undo]));
             self.cur_undo += 1;
             self.this_edit_type = EditType::Redo;
-            self.update_undos(self_ref);
+            self.update_undos(/*self_ref*/);
         }
     }
 
@@ -761,14 +773,24 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.insert(&*String::from(kill_ring_string));
     }
 
-    pub fn do_rpc(self_ref: &Arc<Mutex<Editor<W>>>, view_id: &str, cmd: EditCommand) -> Option<Value> {
-        self_ref.lock().unwrap().do_rpc_with_self_ref(view_id, cmd, self_ref)
+    pub fn mainloop(mut self) {
+        while let Ok(cmd) = self.receiver.recv() {
+            match cmd {
+                EditorCommand::SetPath { file_path } => self.set_path(file_path),
+                EditorCommand::AddView { view_id } => self.add_view(&view_id),
+                EditorCommand::Edit { view_id, edit_command } => self.do_rpc_with_self_ref(&view_id, edit_command),
+                EditorCommand::DoSave { file_path } => self.do_save(file_path),
+                EditorCommand::RemoveView { view_id } => self.remove_view(&view_id),
+                EditorCommand::Render => self.render(),
+            }
+        }
     }
 
-    fn do_rpc_with_self_ref(&mut self, view_id: &str,
-                  cmd: EditCommand,
-                  self_ref: &Arc<Mutex<Editor<W>>>)
-                  -> Option<Value> {
+    // pub fn do_rpc(self_ref: &Arc<Mutex<Editor<W>>>, view_id: &str, cmd: EditCommand) {
+    //     self_ref.lock().unwrap().do_rpc_with_self_ref(view_id, cmd, self_ref)
+    // }
+
+    fn do_rpc_with_self_ref(&mut self, view_id: &str, cmd: EditCommand) {
 
         use rpc::EditCommand::*;
 
@@ -781,69 +803,70 @@ impl<W: Write + Send + 'static> Editor<W> {
 
         self.this_edit_type = EditType::Other;
 
-        let result = match cmd {
-            Key { chars, flags } => async(self.do_key(chars, flags)),
-            Insert { chars } => async(self.do_insert(chars)),
-            DeleteForward => async(self.delete_forward()),
-            DeleteBackward => async(self.delete_backward()),
-            DeleteToEndOfParagraph => async(self.delete_to_end_of_paragraph()),
-            DeleteToBeginningOfLine => async(self.delete_to_beginning_of_line()),
-            InsertNewline => async(self.insert_newline()),
-            InsertTab => async(self.insert_tab()),
-            MoveUp => async(self.move_up(0)),
-            MoveUpAndModifySelection => async(self.move_up(FLAG_SELECT)),
-            MoveDown => async(self.move_down(0)),
-            MoveDownAndModifySelection => async(self.move_down(FLAG_SELECT)),
-            MoveLeft => async(self.move_left(0)),
-            MoveLeftAndModifySelection => async(self.move_left(FLAG_SELECT)),
-            MoveRight => async(self.move_right(0)),
-            MoveRightAndModifySelection => async(self.move_right(FLAG_SELECT)),
-            MoveWordLeft => async(self.move_word_left(0)),
-            MoveWordLeftAndModifySelection => async(self.move_word_left(FLAG_SELECT)),
-            MoveWordRight => async(self.move_word_right(0)),
-            MoveWordRightAndModifySelection => async(self.move_word_right(FLAG_SELECT)),
-            MoveToBeginningOfParagraph => async(self.move_to_beginning_of_paragraph(0)),
-            MoveToEndOfParagraph => async(self.move_to_end_of_paragraph(0)),
-            MoveToLeftEndOfLine => async(self.move_to_left_end_of_line(0)),
-            MoveToLeftEndOfLineAndModifySelection => async(self.move_to_left_end_of_line(FLAG_SELECT)),
-            MoveToRightEndOfLine => async(self.move_to_right_end_of_line(0)),
-            MoveToRightEndOfLineAndModifySelection => async(self.move_to_right_end_of_line(FLAG_SELECT)),
-            MoveToBeginningOfDocument => async(self.move_to_beginning_of_document(0)),
-            MoveToBeginningOfDocumentAndModifySelection => async(self.move_to_beginning_of_document(FLAG_SELECT)),
-            MoveToEndOfDocument => async(self.move_to_end_of_document(0)),
-            MoveToEndOfDocumentAndModifySelection => async(self.move_to_end_of_document(FLAG_SELECT)),
-            ScrollPageUp => async(self.scroll_page_up(0)),
-            PageUpAndModifySelection => async(self.scroll_page_up(FLAG_SELECT)),
-            ScrollPageDown => async(self.scroll_page_down(0)),
+        match cmd {
+            Key { chars, flags } => self.do_key(&chars, flags),
+            Insert { chars } => self.do_insert(&chars),
+            DeleteForward => self.delete_forward(),
+            DeleteBackward => self.delete_backward(),
+            DeleteToEndOfParagraph => self.delete_to_end_of_paragraph(),
+            DeleteToBeginningOfLine => self.delete_to_beginning_of_line(),
+            InsertNewline => self.insert_newline(),
+            InsertTab => self.insert_tab(),
+            MoveUp => self.move_up(0),
+            MoveUpAndModifySelection => self.move_up(FLAG_SELECT),
+            MoveDown => self.move_down(0),
+            MoveDownAndModifySelection => self.move_down(FLAG_SELECT),
+            MoveLeft => self.move_left(0),
+            MoveLeftAndModifySelection => self.move_left(FLAG_SELECT),
+            MoveRight => self.move_right(0),
+            MoveRightAndModifySelection => self.move_right(FLAG_SELECT),
+            MoveWordLeft => self.move_word_left(0),
+            MoveWordLeftAndModifySelection => self.move_word_left(FLAG_SELECT),
+            MoveWordRight => self.move_word_right(0),
+            MoveWordRightAndModifySelection => self.move_word_right(FLAG_SELECT),
+            MoveToBeginningOfParagraph => self.move_to_beginning_of_paragraph(0),
+            MoveToEndOfParagraph => self.move_to_end_of_paragraph(0),
+            MoveToLeftEndOfLine => self.move_to_left_end_of_line(0),
+            MoveToLeftEndOfLineAndModifySelection => self.move_to_left_end_of_line(FLAG_SELECT),
+            MoveToRightEndOfLine => self.move_to_right_end_of_line(0),
+            MoveToRightEndOfLineAndModifySelection => self.move_to_right_end_of_line(FLAG_SELECT),
+            MoveToBeginningOfDocument => self.move_to_beginning_of_document(0),
+            MoveToBeginningOfDocumentAndModifySelection => self.move_to_beginning_of_document(FLAG_SELECT),
+            MoveToEndOfDocument => self.move_to_end_of_document(0),
+            MoveToEndOfDocumentAndModifySelection => self.move_to_end_of_document(FLAG_SELECT),
+            ScrollPageUp => self.scroll_page_up(0),
+            PageUpAndModifySelection => self.scroll_page_up(FLAG_SELECT),
+            ScrollPageDown => self.scroll_page_down(0),
             PageDownAndModifySelection => {
-                async(self.scroll_page_down(FLAG_SELECT))
+                self.scroll_page_down(FLAG_SELECT)
             }
-            SelectAll => async(self.select_all()),
-            Scroll { first, last } => async(self.do_scroll(first, last)),
-            GotoLine { line } => async(self.do_goto_line(line)),
-            RequestLines { first, last } => async(self.do_request_lines(first, last)),
-            Yank => async(self.yank()),
-            Transpose => async(self.do_transpose()),
+            SelectAll => self.select_all(),
+            Scroll { first, last } => self.do_scroll(first, last),
+            GotoLine { line } => self.do_goto_line(line),
+            RequestLines { first, last } => self.do_request_lines(first, last),
+            Yank => self.yank(),
+            Transpose => self.do_transpose(),
             Click { line, column, flags, click_count } => {
-                async(self.do_click(line, column, flags, click_count))
+                self.do_click(line, column, flags, click_count)
             }
-            Drag { line, column, flags } => async(self.do_drag(line, column, flags)),
-            Gesture { line, column, ty } => async(self.do_gesture(line, column, ty)),
-            Undo => async(self.do_undo(self_ref)),
-            Redo => async(self.do_redo(self_ref)),
-            Cut => Some(self.do_cut()),
-            Copy => Some(self.do_copy()),
-            DebugRewrap => async(self.debug_rewrap()),
-            DebugTestFgSpans => async(self.debug_test_fg_spans()),
-            DebugRunPlugin => async(self.debug_run_plugin(self_ref)),
-        };
+            Drag { line, column, flags } => self.do_drag(line, column, flags),
+            Gesture { line, column, ty } => self.do_gesture(line, column, ty),
+            Undo => self.do_undo(/*self_ref*/),
+            Redo => self.do_redo(/*self_ref*/),
+            // TODO: SYNC RETURN
+            Cut => {self.do_cut();},
+            Copy => {self.do_copy();},
+            DebugRewrap => self.debug_rewrap(),
+            DebugTestFgSpans => self.debug_test_fg_spans(),
+            // DebugRunPlugin => self.debug_run_plugin(self_ref),
+            _ => (),
+        }
 
         // TODO: could defer this until input quiesces - will this help?
-        self.commit_delta(self_ref, None);
+        self.commit_delta(/*self_ref,*/ None);
         self.render();
         self.last_edit_type = self.this_edit_type;
         self.gc_undos();
-        result
     }
 
     // Note: the following are placeholders for prototyping, and are not intended to

@@ -16,6 +16,7 @@
 
 use std::error;
 use std::fmt;
+use std::path::PathBuf;
 use serde_json::Value;
 use xi_rpc::{dict_get_u64, dict_get_string, arr_get_u64, arr_get_i64};
 
@@ -23,8 +24,8 @@ use xi_rpc::{dict_get_u64, dict_get_string, arr_get_u64, arr_get_i64};
 //  Request handling
 // =============================================================================
 
-impl<'a> Request<'a> {
-    pub fn from_json(method: &'a str, params: &'a Value) -> Result<Self, Error> {
+impl Request {
+    pub fn from_json(method: &str, params: Value) -> Result<Self, Error> {
         CoreCommand::from_json(method, params).map(|cmd|
             Request::CoreCommand { core_command: cmd})
     }
@@ -35,22 +36,32 @@ impl<'a> Request<'a> {
 // =============================================================================
 
 #[derive(Debug, PartialEq)]
-pub enum Request<'a> {
-    CoreCommand { core_command: CoreCommand<'a> }
+pub enum Request {
+    CoreCommand { core_command: CoreCommand }
 }
 
 /// An enum representing a core command, parsed from JSON.
-#[derive(Debug, PartialEq, Eq)]
-pub enum CoreCommand<'a> {
-    Edit { view_id: &'a str, edit_command: EditCommand<'a> },
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum CoreCommand {
+    Edit { view_id: String, edit_command: EditCommand },
     /// Request a new view, opening a file if `file_path` is Some, else creating an empty buffer.
-    NewView { file_path: Option<&'a str> },
-    CloseView { view_id: &'a str },
-    Save { view_id: &'a str, file_path: &'a str },
+    NewView { file_path: Option<String> },
+    CloseView { view_id: String },
+    Save { view_id: String, file_path: String },
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum EditorCommand {
+    SetPath { file_path: PathBuf },
+    AddView { view_id: String },
+    RemoveView { view_id: String },
+    Edit { view_id: String, edit_command: EditCommand },
+    DoSave { file_path: PathBuf },
+    Render,
 }
 
 /// An enum representing touch and mouse gestures applied to the text.
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum GestureType {
     ToggleSel,
 }
@@ -65,10 +76,10 @@ impl GestureType {
 }
 
 /// An enum representing an edit command, parsed from JSON.
-#[derive(Debug, PartialEq, Eq)]
-pub enum EditCommand<'a> {
-    Key { chars: &'a str, flags: u64 },
-    Insert { chars: &'a str },
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum EditCommand {
+    Key { chars: String, flags: u64 },
+    Insert { chars: String },
     DeleteForward,
     DeleteBackward,
     DeleteToEndOfParagraph,
@@ -119,24 +130,24 @@ pub enum EditCommand<'a> {
     DebugRunPlugin,
 }
 
-impl<'a> CoreCommand<'a> {
-    pub fn from_json(method: &str, params: &'a Value) -> Result<Self, Error> {
+impl CoreCommand {
+    pub fn from_json(method: &str, params: Value) -> Result<Self, Error> {
         use self::CoreCommand::*;
         use self::Error::*;
 
         match method {
             "close_view" => params.as_object().and_then(|dict| {
-                dict_get_string(dict, "view_id").map(|view_id| CloseView { view_id: view_id })
+                dict_get_string(dict, "view_id").map(|view_id| CloseView { view_id: view_id.to_owned() })
             }).ok_or_else(|| MalformedCoreParams(method.to_string(), params.clone())),
 
             "new_view" => params.as_object()
-                .map(|dict| NewView { file_path: dict_get_string(dict, "file_path") }) // optional
+                .map(|dict| NewView { file_path: dict_get_string(dict, "file_path").map(str::to_owned) }) // optional
                 .ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
-                
+
             "save" => params.as_object().and_then(|dict| {
                 dict_get_string(dict, "view_id").and_then(|view_id| {
                     dict_get_string(dict, "file_path").map(|file_path| {
-                        Save { view_id: view_id, file_path: file_path }
+                        Save { view_id: view_id.to_owned(), file_path: file_path.to_owned() }
                        })
                     })
                 }).ok_or_else(|| MalformedCoreParams(method.to_string(), params.clone())),
@@ -146,8 +157,8 @@ impl<'a> CoreCommand<'a> {
                 .and_then(|dict| {
                     if let (Some(view_id), Some(method), Some(edit_params)) =
                         (dict_get_string(dict, "view_id"), dict_get_string(dict, "method"), dict.get("params")) {
-                            EditCommand::from_json(method, edit_params)
-                                .map(|cmd| Edit { view_id: view_id, edit_command: cmd })
+                            EditCommand::from_json(method, edit_params.clone())
+                                .map(|cmd| Edit { view_id: view_id.to_owned(), edit_command: cmd })
                         } else { Err(MalformedCoreParams(method.to_string(), params.clone())) }
                 }),
 
@@ -156,9 +167,9 @@ impl<'a> CoreCommand<'a> {
     }
 }
 
-impl<'a> EditCommand<'a> {
+impl EditCommand {
     /// Try to read an edit command with the given method and parameters.
-    pub fn from_json(method: &str, params: &'a Value) -> Result<Self, Error> {
+    pub fn from_json(method: &str, params: Value) -> Result<Self, Error> {
         use self::EditCommand::*;
         use self::Error::*;
 
@@ -166,13 +177,13 @@ impl<'a> EditCommand<'a> {
             "key" => params.as_object().and_then(|dict| {
                 dict_get_string(dict, "chars").and_then(|chars| {
                     dict_get_u64(dict, "flags").map(|flags| {
-                        Key { chars: chars, flags: flags }
+                        Key { chars: chars.to_owned(), flags: flags }
                     })
                 })
             }).ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
 
             "insert" => params.as_object().and_then(|dict| {
-                dict_get_string(dict, "chars").map(|chars| Insert { chars: chars })
+                dict_get_string(dict, "chars").map(|chars| Insert { chars: chars.to_owned() })
             }).ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
 
             "delete_forward" => Ok(DeleteForward),

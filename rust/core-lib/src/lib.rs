@@ -83,7 +83,7 @@ impl<W: Write + Send + 'static> MainState<W> {
 }
 
 impl<W: Write + Send + 'static> Handler<W> for MainState<W> {
-    fn handle_notification(&mut self, ctx: RpcCtx<W>, method: &str, params: &Value) {
+    fn handle_notification(&mut self, ctx: RpcCtx<W>, method: &str, params: Value) {
         match Request::from_json(method, params) {
             Ok(req) => {
                 let _ = self.handle_req(req, ctx.get_peer());
@@ -93,7 +93,7 @@ impl<W: Write + Send + 'static> Handler<W> for MainState<W> {
         }
     }
 
-    fn handle_request(&mut self, mut ctx: RpcCtx<W>, method: &str, params: &Value) ->
+    fn handle_request(&mut self, mut ctx: RpcCtx<W>, method: &str, params: Value) ->
         Result<Value, Value> {
         match Request::from_json(method, params) {
             Ok(req) => {

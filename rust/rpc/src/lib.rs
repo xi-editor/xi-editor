@@ -66,8 +66,8 @@ pub struct RpcCtx<'a, W: 'a + Write> {
 }
 
 pub trait Handler<W: Write> {
-    fn handle_notification(&mut self, ctx: RpcCtx<W>, method: &str, params: &Value);
-    fn handle_request(&mut self, ctx: RpcCtx<W>, method: &str, params: &Value) ->
+    fn handle_notification(&mut self, ctx: RpcCtx<W>, method: &str, params: Value);
+    fn handle_request(&mut self, ctx: RpcCtx<W>, method: &str, params: Value) ->
         Result<Value, Value>;
     #[allow(unused_variables)]
     fn idle(&mut self, ctx: RpcCtx<W>, token: usize) {}
@@ -234,10 +234,10 @@ impl<W:Write + Send> RpcLoop<W> {
                             idle: &mut idle,
                         };
                         if let Some(id) = id {
-                            let result = handler.handle_request(ctx, method, params);
+                            let result = handler.handle_request(ctx, method, params.clone());
                             peer.respond(result, id);
                         } else {
-                            handler.handle_notification(ctx, method, params);
+                            handler.handle_notification(ctx, method, params.clone());
                         }
                     }
                     None => print_err!("invalid RPC request")
@@ -270,7 +270,7 @@ impl<W:Write> RpcPeer<W> {
     fn respond(&self, result: Result<Value, Value>, id: &Value) {
         let mut response = json!({"id": id});
         match result {
-            Ok(result) => response["result"] = json!(result), 
+            Ok(result) => response["result"] = json!(result),
             Err(error) => response["error"] = json!(error),
         };
         if let Err(e) = self.send(&response) {

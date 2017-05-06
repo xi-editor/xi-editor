@@ -109,12 +109,12 @@ pub fn start_plugin<W: Write + Send + 'static>(editor: Arc<Mutex<Editor<W>>>) {
 }
 
 impl<W: Write + Send + 'static> Handler<ChildStdin> for PluginRef<W> {
-    fn handle_notification(&mut self, _ctx: RpcCtx<ChildStdin>, method: &str, params: &Value) {
+    fn handle_notification(&mut self, _ctx: RpcCtx<ChildStdin>, method: &str, params: Value) {
         let _ = self.rpc_handler(method, params);
         // TODO: should check None
     }
 
-    fn handle_request(&mut self, _ctx: RpcCtx<ChildStdin>, method: &str, params: &Value) ->
+    fn handle_request(&mut self, _ctx: RpcCtx<ChildStdin>, method: &str, params: Value) ->
         Result<Value, Value> {
         let result = self.rpc_handler(method, params);
         result.ok_or_else(|| Value::String("missing return value".to_string()))
@@ -122,7 +122,7 @@ impl<W: Write + Send + 'static> Handler<ChildStdin> for PluginRef<W> {
 }
 
 impl<W: Write + Send + 'static> PluginRef<W> {
-    fn rpc_handler(&self, method: &str, params: &Value) -> Option<Value> {
+    fn rpc_handler(&self, method: &str, params: Value) -> Option<Value> {
         let editor = {
             self.0.lock().unwrap().editor.upgrade()
         };
