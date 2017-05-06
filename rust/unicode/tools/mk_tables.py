@@ -367,7 +367,7 @@ def mk_lb_rules():
             elif flags == 0 and L == 'HL' and R == 'BA':
                 # special state for LB21a
                 state = n + 1
-            elif R == 'CM' and L not in ['BK', 'CR', 'LF', 'NL', 'SP', 'ZW']:
+            elif R in ['CM', 'ZWJ'] and L not in ['BK', 'CR', 'LF', 'NL', 'SP', 'ZW']:
                 # handling for LB9
                 state = left
             elif flags == 0 and R == 'RI' and L == 'RI':
