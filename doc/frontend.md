@@ -227,9 +227,9 @@ follow the existing pattern.
 
 ### RPCs from front-end to back-end
 
-#### render_lines
+#### request_lines
 
-`render_lines {"first_line":45,"last_line":64}` -> *lines*
+`request_lines {"first_line":45,"last_line":64}` -> *lines*
 
 A request for a "lines" array to cover the given range of formatted
 lines. The response is an array with the same meaning as the
