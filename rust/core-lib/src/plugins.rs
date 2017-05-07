@@ -94,9 +94,6 @@ impl<W: Write + Send + 'static> PluginRef<W> {
         plugin.peer.send_rpc_notification("init_buf", &params);
     }
 
-    // TODO: send finer grain delta
-    // TODO: make this a synchronous request (but with a callback to not block),
-    // so editor can defer gc until request returns
     /// Update message sent to the plugin.
     pub fn update<F>(&self, update: &PluginUpdate, callback: F)
             where F: FnOnce(Result<Value, Error>) + Send + 'static {
@@ -106,7 +103,7 @@ impl<W: Write + Send + 'static> PluginRef<W> {
 }
 
 
-// example plugins. Eventually these should be loadd from disk.
+// example plugins. Eventually these should be loaded from disk.
 pub fn debug_plugins() -> Vec<PluginDescription> {
     let mut path_base = env::current_exe().unwrap();
     path_base.pop();
@@ -139,18 +136,21 @@ pub struct PluginDescription {
 
 impl PluginDescription {
     fn new<S, P>(name: S, version: S, exec_path: P) -> Self
-        where S: Into<String>, P: Into<PathBuf> {
-            PluginDescription {
-                name: name.into(),
-                version: version.into(),
-                exec_path: exec_path.into()
-            }
+        where S: Into<String>, P: Into<PathBuf>
+    {
+        PluginDescription {
+            name: name.into(),
+            version: version.into(),
+            exec_path: exec_path.into()
+        }
     }
 
     /// Starts the executable described in this `PluginDescription`.
     fn launch<W, C>(&self, manager_ref: &Arc<Mutex<PluginManager<W>>>, buffer_id: &str, completion: C)
-    where W: Write + Send + 'static, C: FnOnce(Result<PluginRef<W>, &'static str>) + Send + 'static {
-    //TODO: a real result type
+        where W: Write + Send + 'static,
+              C: FnOnce(Result<PluginRef<W>, &'static str>) + Send + 'static
+              // TODO: a real result type
+    {
 
         let path = self.exec_path.clone();
         let buffer_id = buffer_id.to_owned();

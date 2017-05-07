@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A container for all the tabs being edited. Also functions as main dispatch for RPC.
+//! A container for all the documents being edited. Also functions as main dispatch for RPC.
 
 use std::collections::BTreeMap;
 use std::io::{self, Read, Write};
@@ -115,14 +115,16 @@ impl <W: Write + Send + 'static>BufferContainerRef<W> {
 
     /// Adds `file_path` as an open file, associated with `view_id`'s buffer.
     pub fn add_file<P: AsRef<Path>>(&self, file_path: P, view_id: &ViewIdentifier) {
-        let buffer_id = self.lock().views.get(view_id).unwrap().to_owned();
-        self.lock().open_files.insert(file_path.as_ref().to_owned(), buffer_id);
+        let mut inner = self.lock();
+        let buffer_id = inner.views.get(view_id).unwrap().to_owned();
+        inner.open_files.insert(file_path.as_ref().to_owned(), buffer_id);
     }
 
     /// Adds a new view to the `Editor` instance owning `buffer_id`.
     pub fn add_view(&self, view_id: &ViewIdentifier, buffer_id: &BufferIdentifier) {
-        self.lock().views.insert(view_id.to_owned(), buffer_id.to_owned());
-        self.lock().editor_for_view_mut(view_id).unwrap().add_view(view_id);
+        let mut inner = self.lock();
+        inner.views.insert(view_id.to_owned(), buffer_id.to_owned());
+        inner.editor_for_view_mut(view_id).unwrap().add_view(view_id);
     }
 
     /// Closes the view with identifier `view_id`.
@@ -137,14 +139,15 @@ impl <W: Write + Send + 'static>BufferContainerRef<W> {
             if !editor.has_views() {
                 editor.get_path().map(PathBuf::from)
             } else {
-            None
+                None
             }
         };
 
         if let Some(path) = path_to_remove {
-            let buffer_id = self.lock().views.remove(view_id).unwrap();
-            self.lock().open_files.remove(&path);
-            self.lock().editors.remove(&buffer_id);
+            let mut inner = self.lock();
+            let buffer_id = inner.views.remove(view_id).unwrap();
+            inner.open_files.remove(&path);
+            inner.editors.remove(&buffer_id);
         }
     }
 }
@@ -167,8 +170,13 @@ impl<W: Write> Clone for BufferContainerRef<W> {
     }
 }
 
-// TODO: proposed new name: something like "Core" or "CoreState" or "EditorState"? "Documents?"
-pub struct Tabs<W: Write> {
+/// A container for all open documents.
+///
+/// `Documents` is effectively the apex of the xi's model graph. It keeps references
+/// to all active `Editor ` instances (through a `BufferContainerRef` instance),
+/// and handles dispatch of RPC methods between client views and `Editor`
+/// instances, as well as between `Editor` instances and Plugins.
+pub struct Documents<W: Write> {
     /// keeps track of buffer/view state.
     buffers: BufferContainerRef<W>,
     id_counter: usize,
@@ -178,18 +186,18 @@ pub struct Tabs<W: Write> {
 }
 
 #[derive(Clone)]
-pub struct TabCtx<W: Write> {
+/// A container for state shared between `Editor` instances.
+pub struct DocumentCtx<W: Write> {
     kill_ring: Arc<Mutex<Rope>>,
     rpc_peer: MainPeer<W>,
     style_map: Arc<Mutex<StyleMap>>,
-    plugins: Arc<Mutex<PluginManager<W>>>,
 }
 
 
-impl<W: Write + Send + 'static> Tabs<W> {
-    pub fn new() -> Tabs<W> {
+impl<W: Write + Send + 'static> Documents<W> {
+    pub fn new() -> Documents<W> {
         let buffers = BufferContainerRef::new();
-        Tabs {
+        Documents {
             buffers: buffers.clone(),
             id_counter: 0,
             kill_ring: Arc::new(Mutex::new(Rope::from(""))),
@@ -198,12 +206,11 @@ impl<W: Write + Send + 'static> Tabs<W> {
         }
     }
 
-    fn new_tab_ctx(&self, peer: &MainPeer<W>) -> TabCtx<W> {
-        TabCtx {
+    fn new_tab_ctx(&self, peer: &MainPeer<W>) -> DocumentCtx<W> {
+        DocumentCtx {
             kill_ring: self.kill_ring.clone(),
             rpc_peer: peer.clone(),
             style_map: self.style_map.clone(),
-            plugins: self.plugins.clone(),
         }
     }
 
@@ -284,8 +291,9 @@ impl<W: Write + Send + 'static> Tabs<W> {
     fn new_empty_view(&mut self, rpc_peer: &MainPeer<W>,
                       view_id: &str, buffer_id: BufferIdentifier) {
         let editor = Editor::new(self.new_tab_ctx(rpc_peer), view_id);
-        self.buffers.lock().views.insert(view_id.to_owned(), buffer_id.clone());
-        self.buffers.lock().editors.insert(buffer_id, editor);
+        let mut inner = self.buffers.lock();
+        inner.views.insert(view_id.to_owned(), buffer_id.clone());
+        inner.editors.insert(buffer_id, editor);
     }
 
     fn new_view_with_file(&mut self, rpc_peer: &MainPeer<W>, view_id: &ViewIdentifier,
@@ -293,8 +301,11 @@ impl<W: Write + Send + 'static> Tabs<W> {
         match self.read_file(&path) {
             Ok(contents) => {
                 let editor = Editor::with_text(self.new_tab_ctx(rpc_peer), view_id, contents);
-                self.buffers.lock().views.insert(view_id.to_owned(), buffer_id.clone());
-                self.buffers.lock().editors.insert(buffer_id, editor);
+                {
+                    let mut inner = self.buffers.lock();
+                    inner.views.insert(view_id.to_owned(), buffer_id.clone());
+                    inner.editors.insert(buffer_id, editor);
+                }
                 self.buffers.add_file(path, view_id);
             }
             Err(err) => {
@@ -347,13 +358,14 @@ impl<W: Write + Send + 'static> Tabs<W> {
             // where we've already closed, and will have a crash.
             // There should probably be a generally more tolerant approach here.
             let editor = inner.editor_for_view_mut(view_id).unwrap();
-            let result = editor.do_rpc_impl(view_id, cmd);
+            let result = editor.do_rpc(view_id, cmd);
             let should_update = editor.get_last_plugin_update();
             let undo_group = editor.get_last_undo_group();
             (should_update, result, undo_group)
         };
-        if should_update.is_some() {
-            self.plugins.lock().update(view_id, should_update.unwrap(), undo_group);
+
+        if let Some(should_update) = should_update {
+            self.plugins.lock().update(view_id, should_update, undo_group);
         }
         result
     }
@@ -387,7 +399,7 @@ impl<W: Write + Send + 'static> Tabs<W> {
     }
 }
 
-impl<W: Write> TabCtx<W> {
+impl<W: Write> DocumentCtx<W> {
     pub fn update_view(&self, view_id: &str, update: &Value) {
         self.rpc_peer.send_rpc_notification("update",
             &json!({

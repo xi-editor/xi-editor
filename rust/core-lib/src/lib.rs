@@ -60,7 +60,7 @@ use internal::index_set;
 use internal::selection;
 use internal::movement;
 
-use tabs::Tabs;
+use tabs::Documents;
 use rpc::Request;
 
 extern crate xi_rope;
@@ -72,13 +72,13 @@ use xi_rpc::{RpcPeer, RpcCtx, Handler};
 pub type MainPeer<W> = RpcPeer<W>;
 
 pub struct MainState<W: Write> {
-    tabs: Tabs<W>,
+    tabs: Documents<W>,
 }
 
 impl<W: Write + Send + 'static> MainState<W> {
     pub fn new() -> Self {
         MainState {
-            tabs: Tabs::new(),
+            tabs: Documents::new(),
         }
     }
 }

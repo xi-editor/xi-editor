@@ -18,7 +18,6 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::io::Write;
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::{Arc, Mutex};
 use std::mem;
 use serde_json::Value;
 
@@ -32,7 +31,7 @@ use view::{Style, View};
 use word_boundaries::WordCursor;
 use movement::Movement;
 
-use tabs::{ViewIdentifier, TabCtx};
+use tabs::{ViewIdentifier, DocumentCtx};
 use rpc::{EditCommand, GestureType};
 use plugins::{PluginUpdate, PluginEdit, Span};
 
@@ -47,7 +46,7 @@ const MAX_SIZE_LIMIT: usize = 1024 * 1024;
 
 pub struct Editor<W: Write> {
     text: Rope,
-    // Maybe this should be in TabCtx or equivelant?
+    // Maybe this should be in DocumentCtx or equivelant?
     path: Option<PathBuf>,
 
     /// A collection of non-primary views attached to this buffer.
@@ -66,7 +65,8 @@ pub struct Editor<W: Write> {
 
     this_edit_type: EditType,
     last_edit_type: EditType,
-    /// update information to be propogated to plugins after an edit.
+    /// update information to be propagated to plugins after an edit.
+    ///
     last_plugin_update: Option<PluginUpdate>,
 
     // update to cursor, to be committed atomically with delta
@@ -76,7 +76,7 @@ pub struct Editor<W: Write> {
     scroll_to: Option<usize>,
 
     style_spans: Spans<Style>,
-    tab_ctx: TabCtx<W>,
+    doc_ctx: DocumentCtx<W>,
     revs_in_flight: usize,
 }
 
@@ -104,12 +104,12 @@ impl EditType {
 
 impl<W: Write + Send + 'static> Editor<W> {
     /// Creates a new `Editor` with a new empty buffer.
-    pub fn new(tab_ctx: TabCtx<W>, initial_view_id: &str) -> Editor<W> {
-        Self::with_text(tab_ctx, initial_view_id, "".to_owned())
+    pub fn new(doc_ctx: DocumentCtx<W>, initial_view_id: &str) -> Editor<W> {
+        Self::with_text(doc_ctx, initial_view_id, "".to_owned())
     }
 
     /// Creates a new `Editor`, loading text into a new buffer.
-    pub fn with_text(tab_ctx: TabCtx<W>, initial_view_id: &str, text: String) -> Editor<W> {
+    pub fn with_text(doc_ctx: DocumentCtx<W>, initial_view_id: &str, text: String) -> Editor<W> {
 
         let engine = Engine::new(Rope::from(text));
         let buffer = engine.get_head();
@@ -134,7 +134,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             new_cursor: None,
             scroll_to: Some(0),
             style_spans: Spans::default(),
-            tab_ctx: tab_ctx,
+            doc_ctx: doc_ctx,
             revs_in_flight: 0,
         };
         editor
@@ -355,10 +355,10 @@ impl<W: Write + Send + 'static> Editor<W> {
 
     // render if needed, sending to ui
     pub fn render(&mut self) {
-        self.view.render_if_dirty(&self.text, &self.tab_ctx, &self.style_spans);
+        self.view.render_if_dirty(&self.text, &self.doc_ctx, &self.style_spans);
         if let Some(scrollto) = self.scroll_to {
             let (line, col) = self.view.offset_to_line_col(&self.text, scrollto);
-            self.tab_ctx.scroll_to(&self.view.view_id, line, col);
+            self.doc_ctx.scroll_to(&self.view.view_id, line, col);
             self.scroll_to = None;
         }
     }
@@ -609,7 +609,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         let first = max(first, 0) as usize;
         let last = last as usize;
         self.view.set_scroll(first, last);
-        self.view.send_update_for_scroll(&self.text, &self.tab_ctx, &self.style_spans, first, last);
+        self.view.send_update_for_scroll(&self.text, &self.doc_ctx, &self.style_spans, first, last);
     }
 
     /// Sets the cursor and scrolls to the beginning of the given line.
@@ -619,7 +619,7 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     fn do_request_lines(&mut self, first: i64, last: i64) {
-        self.view.send_update(&self.text, &self.tab_ctx, &self.style_spans, first as usize, last as usize);
+        self.view.send_update(&self.text, &self.doc_ctx, &self.style_spans, first as usize, last as usize);
     }
 
     fn do_click(&mut self, line: u64, col: u64, flags: u64, click_count: u64) {
@@ -748,21 +748,15 @@ impl<W: Write + Send + 'static> Editor<W> {
             self.add_delta(del_interval, Rope::from(""), current, current)
         }
 
-        self.tab_ctx.set_kill_ring(Rope::from(val));
+        self.doc_ctx.set_kill_ring(Rope::from(val));
     }
 
     fn yank(&mut self) {
-        let kill_ring_string = self.tab_ctx.get_kill_ring();
+        let kill_ring_string = self.doc_ctx.get_kill_ring();
         self.insert(&*String::from(kill_ring_string));
     }
 
-    pub fn do_rpc(self_ref: &Arc<Mutex<Editor<W>>>, view_id: &str, cmd: EditCommand) -> Option<Value> {
-        self_ref.lock().unwrap().do_rpc_impl(view_id, cmd)
-    }
-
-    //FIXME: what is the relationship between this and `do_rpc`, now?
-    // was `do_rpc_with_self_ref` only necessary for plugin handling?
-    pub fn do_rpc_impl(&mut self, view_id: &str, cmd: EditCommand) -> Option<Value> {
+    pub fn do_rpc(&mut self, view_id: &str, cmd: EditCommand) -> Option<Value> {
 
         use rpc::EditCommand::*;
 
@@ -895,10 +889,10 @@ impl<W: Write + Send + 'static> Editor<W> {
         Some(text.slice_to_string(offset, end_off))
     }
 
-    // Note: currently we route up through Editor to TabCtx, but perhaps the plugin
+    // Note: currently we route up through Editor to DocumentCtx, but perhaps the plugin
     // should have its own reference.
     pub fn plugin_alert(&self, msg: &str) {
-        self.tab_ctx.alert(msg);
+        self.doc_ctx.alert(msg);
     }
 }
 
