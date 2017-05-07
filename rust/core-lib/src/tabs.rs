@@ -17,6 +17,7 @@
 use std::collections::BTreeMap;
 use std::io::{self, Read, Write};
 use std::path::{PathBuf, Path};
+use std::fmt::{self, Display, Formatter};
 use std::fs::File;
 use std::sync::{Arc, Mutex};
 use serde_json::value::Value;
@@ -28,7 +29,28 @@ use styles::{Style, StyleMap};
 use MainPeer;
 
 /// ViewIdentifiers are the primary means of routing messages between xi-core and a client view.
-pub type ViewIdentifier = String;
+#[derive(Ord, PartialOrd, Eq, PartialEq, Debug, Clone)]
+pub struct ViewIdentifier {
+    id: String,
+}
+
+impl ViewIdentifier {
+    pub fn new<S: Into<String>>(id: S) -> ViewIdentifier {
+        ViewIdentifier {
+            id: id.into()
+        }
+    }
+
+    pub fn into_value(self) -> Value {
+        Value::String(self.id)
+    }
+}
+
+impl Display for ViewIdentifier {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        f.write_str(&self.id)
+    }
+}
 
 /// BufferIdentifiers uniquely identify open buffers.
 type BufferIdentifier = String;
@@ -78,7 +100,7 @@ impl<W: Write + Send + 'static> Tabs<W> {
 
     fn next_view_id(&mut self) -> ViewIdentifier {
         self.id_counter += 1;
-        format!("view-id-{}", self.id_counter)
+        ViewIdentifier::new(format!("view-id-{}", self.id_counter))
     }
 
     fn next_buffer_id(&mut self) -> BufferIdentifier {
@@ -91,13 +113,20 @@ impl<W: Write + Send + 'static> Tabs<W> {
 
         match cmd {
             CloseView { view_id } => {
-                self.do_close_view(view_id);
+                let view_id = ViewIdentifier::new(view_id);
+                self.do_close_view(&view_id);
                 None
             },
 
-            NewView { file_path } => Some(Value::String(self.do_new_view(rpc_peer, file_path))),
-            Save { view_id, file_path } => self.do_save(view_id, file_path),
-            Edit { view_id, edit_command } => self.do_edit(view_id, edit_command),
+            NewView { file_path } => Some(self.do_new_view(rpc_peer, file_path).into_value()),
+            Save { view_id, file_path } => {
+                let view_id = ViewIdentifier::new(view_id);
+                self.do_save(&view_id, file_path)
+            },
+            Edit { view_id, edit_command } => {
+                let view_id = ViewIdentifier::new(view_id);
+                self.do_edit(&view_id, edit_command)
+            },
         }
     }
 
@@ -117,11 +146,8 @@ impl<W: Write + Send + 'static> Tabs<W> {
         if let Some(file_path) = file_path.map(PathBuf::from) {
             // TODO: here, we should eventually be adding views to the existing editor.
             // for the time being, we just create a new empty view.
-            if self.open_files.contains_key(&file_path) {
-                let buffer_id = self.next_buffer_id();
-                self.new_empty_view(rpc_peer, &view_id, buffer_id);
-                // let buffer_id = self.open_files.get(&file_path).unwrap().to_owned();
-                //self.add_view(&view_id, buffer_id);
+            if let Some(buffer_id) = self.open_files.get(&file_path).cloned() {
+                self.add_view(&view_id, buffer_id);
             } else {
                 // not open: create new buffer_id and open file
                 let buffer_id = self.next_buffer_id();
@@ -138,20 +164,20 @@ impl<W: Write + Send + 'static> Tabs<W> {
         view_id
     }
 
-    fn do_close_view(&mut self, view_id: &str) {
+    fn do_close_view(&mut self, view_id: &ViewIdentifier) {
         self.close_view(view_id);
     }
 
     fn new_empty_view(&mut self, rpc_peer: &MainPeer<W>,
-                      view_id: &str, buffer_id: BufferIdentifier) {
-        let editor = Editor::new(self.new_tab_ctx(rpc_peer), view_id);
+                      view_id: &ViewIdentifier, buffer_id: BufferIdentifier) {
+        let editor = Editor::new(self.new_tab_ctx(rpc_peer), view_id.clone());
         self.finalize_new_view(view_id, buffer_id, editor);
     }
 
-    fn new_view_with_file(&mut self, rpc_peer: &MainPeer<W>, view_id: &str, buffer_id: BufferIdentifier, path: &Path) {
+    fn new_view_with_file(&mut self, rpc_peer: &MainPeer<W>, view_id: &ViewIdentifier, buffer_id: BufferIdentifier, path: &Path) {
         match self.read_file(&path) {
             Ok(contents) => {
-                let editor = Editor::with_text(self.new_tab_ctx(rpc_peer), view_id, contents);
+                let editor = Editor::with_text(self.new_tab_ctx(rpc_peer), view_id.clone(), contents);
                 self.finalize_new_view(view_id, buffer_id, editor)
             }
             Err(err) => {
@@ -165,27 +191,25 @@ impl<W: Write + Send + 'static> Tabs<W> {
     }
 
     /// Adds a new view to an existing editor instance.
-    #[allow(unreachable_code, unused_variables, dead_code)] 
-    fn add_view(&mut self, view_id: &str, buffer_id: BufferIdentifier) {
-        panic!("add_view should not currently be accessible");
+    fn add_view(&mut self, view_id: &ViewIdentifier, buffer_id: BufferIdentifier) {
         let editor = self.buffers.get(&buffer_id).expect("missing editor_id for view_id");
         self.views.insert(view_id.to_owned(), buffer_id);
-        editor.lock().unwrap().add_view(view_id);
+        editor.lock().unwrap().add_view(view_id.clone());
     }
 
-    fn finalize_new_view(&mut self, view_id: &str, buffer_id: String, editor: Arc<Mutex<Editor<W>>>) {
+    fn finalize_new_view(&mut self, view_id: &ViewIdentifier, buffer_id: String, editor: Arc<Mutex<Editor<W>>>) {
         self.views.insert(view_id.to_owned(), buffer_id.clone());
         self.buffers.insert(buffer_id, editor.clone());
     }
-    
+
     fn read_file<P: AsRef<Path>>(&self, path: P) -> io::Result<String> {
         let mut f = File::open(path)?;
         let mut s = String::new();
         f.read_to_string(&mut s)?;
         Ok(s)
     }
-    
-    fn close_view(&mut self, view_id: &str) {
+
+    fn close_view(&mut self, view_id: &ViewIdentifier) {
         let buf_id = self.views.remove(view_id).expect("missing buffer id when closing view");
         let (has_views, path) = {
             let editor = self.buffers.get(&buf_id).expect("missing editor when closing view");
@@ -202,7 +226,7 @@ impl<W: Write + Send + 'static> Tabs<W> {
         }
     }
 
-    fn do_save(&mut self, view_id: &str, file_path: &str) -> Option<Value> {
+    fn do_save(&mut self, view_id: &ViewIdentifier, file_path: &str) -> Option<Value> {
         let buffer_id = self.views.get(view_id)
             .expect(&format!("missing buffer id for view {}", view_id));
         let editor = self.buffers.get(buffer_id)
@@ -220,7 +244,7 @@ impl<W: Write + Send + 'static> Tabs<W> {
         None
     }
 
-    fn do_edit(&mut self, view_id: &str, cmd: EditCommand) -> Option<Value> {
+    fn do_edit(&mut self, view_id: &ViewIdentifier, cmd: EditCommand) -> Option<Value> {
         let buffer_id = self.views.get(view_id)
             .expect(&format!("missing buffer id for view {}", view_id));
         if let Some(editor) = self.buffers.get(buffer_id) {
@@ -239,18 +263,18 @@ impl<W: Write + Send + 'static> Tabs<W> {
 }
 
 impl<W: Write> TabCtx<W> {
-    pub fn update_view(&self, view_id: &str, update: &Value) {
+    pub fn update_view(&self, view_id: &ViewIdentifier, update: &Value) {
         self.rpc_peer.send_rpc_notification("update",
             &json!({
-                "view_id": view_id,
+                "view_id": view_id.clone().into_value(),
                 "update": update,
             }));
     }
 
-    pub fn scroll_to(&self, view_id: &str, line: usize, col: usize) {
+    pub fn scroll_to(&self, view_id: &ViewIdentifier, line: usize, col: usize) {
         self.rpc_peer.send_rpc_notification("scroll_to",
             &json!({
-                "view_id": view_id,
+                "view_id": view_id.clone().into_value(),
                 "line": line,
                 "col": col,
             }));
