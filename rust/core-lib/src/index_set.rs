@@ -79,7 +79,7 @@ impl IndexSet {
             ranges = &ranges[1..];
         }
         MinusIter {
-            ranges: &self.ranges,
+            ranges: ranges,
             start: start,
             end: end,
         }
@@ -141,6 +141,21 @@ mod tests {
         assert_eq!(e.minus_one_range(4, 10).collect::<Vec<_>>(), vec![(5, 10)]);
         assert_eq!(e.minus_one_range(5, 10).collect::<Vec<_>>(), vec![(5, 10)]);
         assert_eq!(e.minus_one_range(0, 10).collect::<Vec<_>>(), vec![(0, 3), (5, 10)]);
+    }
+
+    #[test]
+    fn two_range_minus() {
+        let mut e = IndexSet::new();
+        e.union_one_range(3, 5);
+        e.union_one_range(7, 9);
+        assert_eq!(e.minus_one_range(0, 0).collect::<Vec<_>>(), vec![]);
+        assert_eq!(e.minus_one_range(3, 5).collect::<Vec<_>>(), vec![]);
+        assert_eq!(e.minus_one_range(0, 3).collect::<Vec<_>>(), vec![(0, 3)]);
+        assert_eq!(e.minus_one_range(0, 4).collect::<Vec<_>>(), vec![(0, 3)]);
+        assert_eq!(e.minus_one_range(4, 10).collect::<Vec<_>>(), vec![(5, 7), (9, 10)]);
+        assert_eq!(e.minus_one_range(5, 10).collect::<Vec<_>>(), vec![(5, 7), (9, 10)]);
+        assert_eq!(e.minus_one_range(8, 10).collect::<Vec<_>>(), vec![(9, 10)]);
+        assert_eq!(e.minus_one_range(0, 10).collect::<Vec<_>>(), vec![(0, 3), (5, 7), (9, 10)]);
     }
 
     #[test]
