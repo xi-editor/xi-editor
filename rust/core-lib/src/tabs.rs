@@ -18,7 +18,7 @@ use std::collections::BTreeMap;
 use std::io::{self, Read, Write};
 use std::path::{PathBuf, Path};
 use std::fs::File;
-use std::sync::{Arc, Mutex, MutexGuard, Weak};
+use std::sync::{Arc, Mutex, MutexGuard, Weak, mpsc};
 
 use serde_json::value::Value;
 
@@ -27,7 +27,7 @@ use editor::Editor;
 use rpc::{CoreCommand, EditCommand, PluginCommand};
 use styles::{Style, StyleMap};
 use MainPeer;
-use plugins::PluginManager;
+use plugins::{PluginManager, PluginUpdate, start_update_thread};
 
 /// ViewIdentifiers are the primary means of routing messages between xi-core and a client view.
 pub type ViewIdentifier = String;
@@ -182,6 +182,8 @@ pub struct Documents<W: Write> {
     kill_ring: Arc<Mutex<Rope>>,
     style_map: Arc<Mutex<StyleMap>>,
     plugins: Arc<Mutex<PluginManager<W>>>,
+    /// A tx channel used to propagate plugin updates from all `Editor`s.
+    update_channel: mpsc::Sender<(ViewIdentifier, PluginUpdate, usize)>
 }
 
 #[derive(Clone)]
@@ -190,18 +192,25 @@ pub struct DocumentCtx<W: Write> {
     kill_ring: Arc<Mutex<Rope>>,
     rpc_peer: MainPeer<W>,
     style_map: Arc<Mutex<StyleMap>>,
+    update_channel: mpsc::Sender<(ViewIdentifier, PluginUpdate, usize)>
 }
 
 
 impl<W: Write + Send + 'static> Documents<W> {
     pub fn new() -> Documents<W> {
         let buffers = BufferContainerRef::new();
+        let plugins = Arc::new(Mutex::new(PluginManager::new(buffers.clone())));
+        let (update_tx, update_rx) = mpsc::channel();
+
+        start_update_thread(update_rx, plugins.clone());
+
         Documents {
-            buffers: buffers.clone(),
+            buffers: buffers,
             id_counter: 0,
             kill_ring: Arc::new(Mutex::new(Rope::from(""))),
             style_map: Arc::new(Mutex::new(StyleMap::new())),
-            plugins: Arc::new(Mutex::new(PluginManager::new(buffers))),
+            plugins: plugins,
+            update_channel: update_tx,
         }
     }
 
@@ -210,6 +219,7 @@ impl<W: Write + Send + 'static> Documents<W> {
             kill_ring: self.kill_ring.clone(),
             rpc_peer: peer.clone(),
             style_map: self.style_map.clone(),
+            update_channel: self.update_channel.clone(),
         }
     }
 
@@ -351,22 +361,7 @@ impl<W: Write + Send + 'static> Documents<W> {
     }
 
     fn do_edit(&mut self, view_id: &ViewIdentifier, cmd: EditCommand) -> Option<Value> {
-        let (should_update, result, undo_group) = {
-            let mut inner = self.buffers.lock();
-            // TODO: audit all these unwraps. there's probably a race
-            // where we've already closed, and will have a crash.
-            // There should probably be a generally more tolerant approach here.
-            let editor = inner.editor_for_view_mut(view_id).unwrap();
-            let result = editor.do_rpc(view_id, cmd);
-            let should_update = editor.get_last_plugin_update();
-            let undo_group = editor.get_last_undo_group();
-            (should_update, result, undo_group)
-        };
-
-        if let Some(should_update) = should_update {
-            self.plugins.lock().unwrap().update(view_id, should_update, undo_group);
-        }
-        result
+        self.buffers.lock().editor_for_view_mut(view_id).unwrap().do_rpc(view_id, cmd)
     }
 
     fn do_plugin_cmd(&mut self, cmd: PluginCommand) -> Option<Value> {
@@ -451,5 +446,11 @@ impl<W: Write> DocumentCtx<W> {
         let ix = style_map.add(style);
         self.rpc_peer.send_rpc_notification("def_style", &style.to_json(ix));
         ix
+    }
+
+    /// Notify plugins of an update
+    pub fn update_plugins(&self, view_id: ViewIdentifier,
+                          update: PluginUpdate, undo_group: usize) {
+        self.update_channel.send((view_id, update, undo_group)).unwrap();
     }
 }

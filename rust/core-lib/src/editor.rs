@@ -65,9 +65,6 @@ pub struct Editor<W: Write> {
 
     this_edit_type: EditType,
     last_edit_type: EditType,
-    /// update information to be propagated to plugins after an edit.
-    ///
-    last_plugin_update: Option<PluginUpdate>,
 
     // update to cursor, to be committed atomically with delta
     // TODO: use for all cursor motion?
@@ -130,7 +127,6 @@ impl<W: Write + Send + 'static> Editor<W> {
             gc_undos: BTreeSet::new(),
             last_edit_type: EditType::Other,
             this_edit_type: EditType::Other,
-            last_plugin_update: None,
             new_cursor: None,
             scroll_to: Some(0),
             style_spans: Spans::default(),
@@ -182,20 +178,6 @@ impl<W: Write + Send + 'static> Editor<W> {
             Some(ref p) => Some(p),
             None => None,
         }
-    }
-
-    //TODO: reconsider whether we want to be storing state like this.
-    /// Returns a plugin-ready summary of the last edit event.
-    pub fn get_last_plugin_update(&mut self) -> Option<PluginUpdate> {
-        self.last_plugin_update.take()
-    }
-
-    /// Returns the editor's last undo group.
-    ///
-    /// Edits from plugins that occur in response to a user edit are added to
-    /// the same undo group as the user edit.
-    pub fn get_last_undo_group(&self) -> usize {
-        *self.live_undos.last().unwrap_or(&0)
     }
 
     // each outstanding plugin edit represents a rev_in_flight.
@@ -333,11 +315,16 @@ impl<W: Write + Send + 'static> Editor<W> {
             false => None
         };
 
-        self.last_plugin_update = Some(PluginUpdate::new(
+        let update = PluginUpdate::new(
             iv.start(), iv.end(), new_len,
             self.engine.get_head_rev_id(), text,
             self.this_edit_type.json_string().to_owned(),
-            author.to_owned()));
+            author.to_owned());
+
+        let undo_group = *self.live_undos.last().unwrap_or(&0);
+        let view_id = self.view.view_id.clone();
+        self.doc_ctx.update_plugins(view_id, update, undo_group);
+
         self.last_rev_id = self.engine.get_head_rev_id();
     }
 

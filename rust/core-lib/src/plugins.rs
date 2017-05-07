@@ -16,7 +16,7 @@
 
 use std::env;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex, Weak, mpsc};
 use std::thread;
 use std::collections::BTreeMap;
 use std::process::{Command, Stdio, ChildStdin, Child};
@@ -292,6 +292,32 @@ impl<W: Write + Send + 'static> PluginManager<W> {
             }
         }
     }
+}
+
+
+/// Starts a thread which collects editor updates and propagates them to plugins.
+///
+/// In addition to updates caused by user edits, updates can be caused by
+/// plugin edits. These updates arrive asynchronously. After being applied to
+/// the relevant buffer via an `Editor` instance, they need to be propogated
+/// back out to all interested plugins.
+///
+/// In order to avoid additional complexity in the model graph (e.g. giving each
+/// `Editor` a weak reference to the `PluginManager`) we instead give each
+/// `Editor` a tx end of an `mpsc::channel`. As plugin updates are generated,
+/// they are sent over this channel to a receiver running in another thread,
+/// which sends them to the appropriate plugins.
+pub fn start_update_thread<W: Write + Send + 'static>(
+    rx: mpsc::Receiver<(ViewIdentifier, PluginUpdate, usize)>,
+    plugins: Arc<Mutex<PluginManager<W>>>)
+{
+    thread::spawn(move ||{
+        loop {
+            let (view_id, update, undo_group) = rx.recv().unwrap();
+            plugins.lock().unwrap().update(&view_id, update, undo_group);
+        }
+    });
+    //FIXME: any reason not to drop the handle, here?
 }
 
 //TODO: Much of this might live somewhere else, and be shared with the plugin lib.
