@@ -18,10 +18,9 @@ use std::collections::BTreeMap;
 use std::io::{self, Read, Write};
 use std::path::{PathBuf, Path};
 use std::fs::File;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
 use serde_json::value::Value;
-use parking_lot::{MutexGuard, Mutex};
 
 use xi_rope::rope::Rope;
 use editor::Editor;
@@ -99,7 +98,7 @@ impl <W: Write + Send + 'static>BufferContainerRef<W> {
 
     /// Returns a handle to the inner `MutexGuard`.
     pub fn lock(&self) -> MutexGuard<BufferContainer<W>> {
-        self.0.lock()
+        self.0.lock().unwrap()
     }
 
     /// Creates a new `WeakBufferContainerRef<W>`.
@@ -280,7 +279,7 @@ impl<W: Write + Send + 'static> Documents<W> {
         json!({
             "view_id": view_id,
             //TODO: this should be determined based on filetype etc
-            "available_plugins": self.plugins.lock().debug_available_plugins(),
+            "available_plugins": self.plugins.lock().unwrap().debug_available_plugins(),
         })
     }
 
@@ -365,7 +364,7 @@ impl<W: Write + Send + 'static> Documents<W> {
         };
 
         if let Some(should_update) = should_update {
-            self.plugins.lock().update(view_id, should_update, undo_group);
+            self.plugins.lock().unwrap().update(view_id, should_update, undo_group);
         }
         result
     }
@@ -382,7 +381,7 @@ impl<W: Write + Send + 'static> Documents<W> {
                 };
 
                 //TODO: stop passing buffer ids
-                self.plugins.lock().start_plugin(
+                self.plugins.lock().unwrap().start_plugin(
                     &self.plugins, &view_id, &plugin_name, buf_size, rev);
             }
             //TODO: stop a plugin
@@ -425,11 +424,11 @@ impl<W: Write> DocumentCtx<W> {
     }
 
     pub fn get_kill_ring(&self) -> Rope {
-        self.kill_ring.lock().clone()
+        self.kill_ring.lock().unwrap().clone()
     }
 
     pub fn set_kill_ring(&self, val: Rope) {
-        let mut kill_ring = self.kill_ring.lock();
+        let mut kill_ring = self.kill_ring.lock().unwrap();
         *kill_ring = val;
     }
 
@@ -445,7 +444,7 @@ impl<W: Write> DocumentCtx<W> {
     // to be reasonably efficient, but ideally callers would do their own
     // indexing.
     pub fn get_style_id(&self, style: &Style) -> usize {
-        let mut style_map = self.style_map.lock();
+        let mut style_map = self.style_map.lock().unwrap();
         if let Some(ix) = style_map.lookup(style) {
             return ix;
         }

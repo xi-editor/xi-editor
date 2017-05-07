@@ -20,7 +20,6 @@ extern crate serde_json;
 #[macro_use]
 extern crate serde_derive;
 extern crate time;
-extern crate parking_lot;
 
 use std::io::Write;
 

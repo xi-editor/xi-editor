@@ -16,14 +16,13 @@
 
 use std::env;
 use std::path::PathBuf;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, Mutex, Weak};
 use std::thread;
 use std::collections::BTreeMap;
 use std::process::{Command, Stdio, ChildStdin, Child};
 use std::io::{BufReader, Write};
 
 use serde_json::{self, Value};
-use parking_lot::Mutex;
 
 use xi_rpc::{RpcLoop, RpcPeer, RpcCtx, Handler, Error};
 use tabs::{BufferIdentifier, ViewIdentifier, BufferContainerRef};
@@ -69,15 +68,15 @@ impl<W: Write + Send + 'static> Handler<ChildStdin> for PluginRef<W> {
 impl<W: Write + Send + 'static> PluginRef<W> {
     fn rpc_handler(&self, method: &str, params: &Value) -> Option<Value> {
         let plugin_manager = {
-            self.0.lock().manager.upgrade()
+            self.0.lock().unwrap().manager.upgrade()
         };
 
         if let Some(plugin_manager) = plugin_manager {
             let cmd = serde_json::from_value::<PluginCommand>(params.to_owned())
                 .expect(&format!("failed to parse plugin rpc {}, params {:?}",
                         method, params));
-            let result = plugin_manager.lock()
-                .handle_plugin_cmd(cmd, &self.0.lock().buffer_id);
+            let result = plugin_manager.lock().unwrap()
+                .handle_plugin_cmd(cmd, &self.0.lock().unwrap().buffer_id);
         result
         } else {
             None
@@ -86,7 +85,7 @@ impl<W: Write + Send + 'static> PluginRef<W> {
 
     /// Init message sent to the plugin.
     pub fn init_buf(&self, buf_size: usize, rev: usize) {
-        let plugin = self.0.lock();
+        let plugin = self.0.lock().unwrap();
         let params = json!({
             "buf_size": buf_size,
             "rev": rev,
@@ -98,7 +97,7 @@ impl<W: Write + Send + 'static> PluginRef<W> {
     pub fn update<F>(&self, update: &PluginUpdate, callback: F)
             where F: FnOnce(Result<Value, Error>) + Send + 'static {
         let params = serde_json::to_value(update).expect("PluginUpdate invalid");
-        self.0.lock().peer.send_rpc_request_async("update", &params, callback);
+        self.0.lock().unwrap().peer.send_rpc_request_async("update", &params, callback);
     }
 }
 
@@ -151,7 +150,6 @@ impl PluginDescription {
               C: FnOnce(Result<PluginRef<W>, &'static str>) + Send + 'static
               // TODO: a real result type
     {
-
         let path = self.exec_path.clone();
         let buffer_id = buffer_id.to_owned();
         let manager_ref = manager_ref.clone();
@@ -260,7 +258,7 @@ impl<W: Write + Send + 'static> PluginManager<W> {
             match result {
                 Ok(plugin_ref) => {
                     plugin_ref.init_buf(buf_size, rev);
-                    me.lock().running.insert(key, plugin_ref);
+                    me.lock().unwrap().running.insert(key, plugin_ref);
                 },
                 Err(_) => panic!("error handling is not implemented"),
             }
