@@ -200,7 +200,7 @@ fn parse_plugin_request<'a>(method: &str, params: &'a Value) ->
         "ping" => Ok(PluginRequest::Ping),
         "init_buf" => {
             params.as_object().and_then(|dict|
-                if let (Some(buf_size), Some(rev)) = 
+                if let (Some(buf_size), Some(rev)) =
                     (dict_get_u64(dict, "buf_size"), dict_get_u64(dict, "rev")) {
                         Some(PluginRequest::InitBuf {
                             buf_size: buf_size as usize,
@@ -234,8 +234,8 @@ fn parse_plugin_request<'a>(method: &str, params: &'a Value) ->
 struct MyHandler<'a, H: 'a>(&'a mut H);
 
 impl<'a, H: Handler> xi_rpc::Handler<io::Stdout> for MyHandler<'a, H> {
-    fn handle_notification(&mut self, ctx: RpcCtx<io::Stdout>, method: &str, params: &Value) {
-        match parse_plugin_request(method, params) {
+    fn handle_notification(&mut self, ctx: RpcCtx<io::Stdout>, method: &str, params: Value) {
+        match parse_plugin_request(method, &params) {
             Ok(req) => {
                 let _ = self.0.call(&req, PluginCtx(ctx));
                 // TODO: should check None
@@ -244,9 +244,9 @@ impl<'a, H: Handler> xi_rpc::Handler<io::Stdout> for MyHandler<'a, H> {
         }
     }
 
-    fn handle_request(&mut self, ctx: RpcCtx<io::Stdout>, method: &str, params: &Value) ->
+    fn handle_request(&mut self, ctx: RpcCtx<io::Stdout>, method: &str, params: Value) ->
         Result<Value, Value> {
-        match parse_plugin_request(method, params) {
+        match parse_plugin_request(method, &params) {
             Ok(req) => {
                 let result = self.0.call(&req, PluginCtx(ctx));
                 result.ok_or_else(|| Value::String("return value missing".to_string()))

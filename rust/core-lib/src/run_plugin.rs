@@ -18,20 +18,21 @@ use std::io::{BufReader, Write};
 use std::env;
 use std::path::PathBuf;
 use std::process::{Command,Stdio,ChildStdin};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex};
+use std::sync::mpsc::{channel, Sender};
 use std::thread;
 use serde_json;
 use serde_json::value::Value;
 
 use xi_rpc::{RpcLoop, RpcPeer, RpcCtx, Handler, Error, dict_get_u64};
-use editor::Editor;
+use editor::EditorCommand;
 
 pub type PluginPeer = RpcPeer<ChildStdin>;
 
 pub struct PluginRef<W: Write>(Arc<Mutex<Plugin<W>>>);
 
 pub struct Plugin<W: Write> {
-    editor: Weak<Mutex<Editor<W>>>,
+    editor: Sender<EditorCommand<W>>,
     peer: PluginPeer,
 }
 
@@ -82,7 +83,7 @@ fn plugin_path() -> PathBuf {
     }
 }
 
-pub fn start_plugin<W: Write + Send + 'static>(editor: Arc<Mutex<Editor<W>>>) {
+pub fn start_plugin<W: Write + Send + 'static>(editor: Sender<EditorCommand<W>>) {
     thread::spawn(move || {
         let pathbuf = plugin_path();
             print_err!("starting plugin at path {:?}", pathbuf);
@@ -97,11 +98,11 @@ pub fn start_plugin<W: Write + Send + 'static>(editor: Arc<Mutex<Editor<W>>>) {
         let peer = looper.get_peer();
         peer.send_rpc_notification("ping", &Value::Array(Vec::new()));
         let plugin = Plugin {
-            editor: Arc::downgrade(&editor),
+            editor: editor.clone(),
             peer: peer,
         };
         let mut plugin_ref = PluginRef(Arc::new(Mutex::new(plugin)));
-        editor.lock().unwrap().on_plugin_connect(plugin_ref.clone());
+        let _ = editor.send(EditorCommand::OnPluginConnect { plugin: plugin_ref.clone() });
         looper.mainloop(|| BufReader::new(child_stdout), &mut plugin_ref);
         let status = child.wait();
         print_err!("child exit = {:?}", status);
@@ -109,12 +110,12 @@ pub fn start_plugin<W: Write + Send + 'static>(editor: Arc<Mutex<Editor<W>>>) {
 }
 
 impl<W: Write + Send + 'static> Handler<ChildStdin> for PluginRef<W> {
-    fn handle_notification(&mut self, _ctx: RpcCtx<ChildStdin>, method: &str, params: &Value) {
+    fn handle_notification(&mut self, _ctx: RpcCtx<ChildStdin>, method: &str, params: Value) {
         let _ = self.rpc_handler(method, params);
         // TODO: should check None
     }
 
-    fn handle_request(&mut self, _ctx: RpcCtx<ChildStdin>, method: &str, params: &Value) ->
+    fn handle_request(&mut self, _ctx: RpcCtx<ChildStdin>, method: &str, params: Value) ->
         Result<Value, Value> {
         let result = self.rpc_handler(method, params);
         result.ok_or_else(|| Value::String("missing return value".to_string()))
@@ -122,58 +123,55 @@ impl<W: Write + Send + 'static> Handler<ChildStdin> for PluginRef<W> {
 }
 
 impl<W: Write + Send + 'static> PluginRef<W> {
-    fn rpc_handler(&self, method: &str, params: &Value) -> Option<Value> {
-        let editor = {
-            self.0.lock().unwrap().editor.upgrade()
-        };
-        if let Some(editor) = editor {
-            let mut editor = editor.lock().unwrap();
-            match method {
-                // TODO: parse json into enum first, just like front-end RPC
-                // (this will also improve error handling, no panic on malformed request from plugin)
-                "n_lines" => Some(serde_json::to_value(editor.plugin_n_lines() as u64).unwrap()),
-                "get_line" => {
-                    let line = params.as_object().and_then(|dict| dict.get("line").and_then(Value::as_u64)).unwrap();
-                    let result = editor.plugin_get_line(line as usize);
-                    Some(Value::String(result))
-                }
-                "get_data" => {
-                    params.as_object().and_then(|dict|
-                        dict_get_u64(dict, "offset").and_then(|offset|
-                            dict_get_u64(dict, "max_size").and_then(|max_size|
-                                dict_get_u64(dict, "rev").and_then(|rev| {
-                                    let result = editor.plugin_get_data(offset as usize,
-                                            max_size as usize, rev as usize);
-                                    result.map(|s| Value::String(s))
-                                })
-                            )
+    fn rpc_handler(&self, method: &str, params: Value) -> Option<Value> {
+        let plugin = self.0.lock().unwrap();
+        let editor = &plugin.editor;
+        match method {
+            // TODO: parse json into enum first, just like front-end RPC
+            // (this will also improve error handling, no panic on malformed request from plugin)
+            "n_lines" => {
+                let (tx, rx) = channel();
+                let _ = editor.send(EditorCommand::PluginNLines { sender: tx });
+                Some(serde_json::to_value(rx.recv().unwrap() as u64).unwrap())
+            },
+            "get_line" => {
+                let line = params.as_object().and_then(|dict| dict.get("line").and_then(Value::as_u64)).unwrap();
+                let (tx, rx) = channel();
+                let _ = editor.send(EditorCommand::PluginGetLine { line: line as usize, sender: tx });
+                Some(Value::String(rx.recv().unwrap()))
+            }
+            "get_data" => {
+                params.as_object().and_then(|dict|
+                    dict_get_u64(dict, "offset").and_then(|offset|
+                        dict_get_u64(dict, "max_size").and_then(|max_size|
+                            dict_get_u64(dict, "rev").and_then(|rev| {
+                                let (tx, rx) = channel();
+                                let _ = editor.send(EditorCommand::PluginGetData { offset: offset as usize, max_size: max_size as usize, rev: rev as usize, sender: tx });
+                                rx.recv().unwrap().map(|s| Value::String(s))
+                            })
                         )
                     )
-                }
-                "set_fg_spans" => {
-                    if let Some(dict) = params.as_object() {
-                        if let (Some(start), Some(len), Some(spans), Some(rev)) =
-                            (dict_get_u64(dict, "start"), dict_get_u64(dict, "len"),
-                                dict.get("spans"), dict_get_u64(dict, "rev")) {
-                            editor.plugin_set_fg_spans(start as usize, len as usize, spans,
-                                rev as usize);
-                        }
-                    }
-                    None
-                }
-                "alert" => {
-                    let msg = params.as_object().and_then(|dict| dict.get("msg").and_then(Value::as_str)).unwrap();
-                    editor.plugin_alert(msg);
-                    None
-                }
-                _ => {
-                    print_err!("unknown plugin callback method: {}", method);
-                    None
-                }
+                )
             }
-        } else {
-            // connection to editor lost
-            None  // TODO: return error value
+            "set_fg_spans" => {
+                if let Some(dict) = params.as_object() {
+                    if let (Some(start), Some(len), Some(spans), Some(rev)) =
+                        (dict_get_u64(dict, "start"), dict_get_u64(dict, "len"),
+                            dict.get("spans"), dict_get_u64(dict, "rev")) {
+                        let _ = editor.send(EditorCommand::PluginSetFgSpans { start: start as usize, len: len as usize, spans: spans.clone(), rev: rev as usize});
+                    }
+                }
+                None
+            }
+            "alert" => {
+                let msg = params.as_object().and_then(|dict| dict.get("msg").and_then(Value::as_str)).unwrap();
+                let _ = editor.send(EditorCommand::PluginAlert { msg: msg.to_owned() });
+                None
+            }
+            _ => {
+                print_err!("unknown plugin callback method: {}", method);
+                None
+            }
         }
     }
 
