@@ -208,14 +208,15 @@ impl<W: Write + Send + 'static> Editor<W> {
 
     /// Applies the delta to the text, and updates undo state.
     ///
-    /// Records the delta into the CRDT engine so that it can be undone. Also contains
-    /// the logic for merging edits into the same undo group. At call time,
-    /// self.this_edit_type should be set appropriately.
+    /// Records the delta into the CRDT engine so that it can be undone. Also
+    /// contains the logic for merging edits into the same undo group. At call
+    /// time, self.this_edit_type should be set appropriately.
     ///
-    /// This method can be called multiple times. Note that it does not update
-    /// the views. Thus, view-associated state such as the selection and line breaks
-    /// are to be considered invalid after this method, until `commit_delta` is
-    /// called.
+    /// This method can be called multiple times, accumulating deltas that will
+    /// be committed at once with `commit_delta`. Note that it does not update
+    /// the views. Thus, view-associated state such as the selection and line
+    /// breaks are to be considered invalid after this method, until the
+    /// `commit_delta` call.
     fn add_delta(&mut self, iv: Interval, new: Rope) {
         let delta = Delta::simple_edit(iv, new, self.text.len());
         let head_rev_id = self.engine.get_head_rev_id();

@@ -458,7 +458,7 @@ impl View {
     /// This method is responsible for updating the cursors, and also for
     /// recomputing line wraps.
     ///
-    /// Return value is a locatio
+    /// Return value is a location of a point that should be scrolled into view.
     pub fn after_edit(&mut self, text: &Rope, delta: &Delta<RopeInfo>, pristine: bool)
         -> Option<usize>
     {
