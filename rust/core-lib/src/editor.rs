@@ -309,6 +309,11 @@ impl<W: Write + Send + 'static> Editor<W> {
         let empty_spans = SpansBuilder::new(new_len).build();
         self.style_spans.edit(iv, empty_spans);
 
+        // We increment revs in flight once here, and we decrement once
+        // after sending plugin updates, regardless of whether or not any actual
+        // plugins get updated. This ensures that gc runs.
+        self.increment_revs_in_flight();
+
         let author = author.unwrap_or(&self.view.view_id);
         let text = match new_len < MAX_SIZE_LIMIT {
             true => Some(self.text.slice_to_string(iv.start(), iv.start() + new_len)),
@@ -817,7 +822,6 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.commit_delta(None);
         self.render();
         self.last_edit_type = self.this_edit_type;
-        self.gc_undos();
         result
     }
 

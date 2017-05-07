@@ -240,6 +240,7 @@ impl<W: Write + Send + 'static> PluginManager<W> {
                 }
             })
         }
+        self.buffers.lock().editor_for_view_mut(view_id).unwrap().dec_revs_in_flight();
     }
 
     /// Launches and initializes the named plugin.
@@ -299,14 +300,14 @@ impl<W: Write + Send + 'static> PluginManager<W> {
 ///
 /// In addition to updates caused by user edits, updates can be caused by
 /// plugin edits. These updates arrive asynchronously. After being applied to
-/// the relevant buffer via an `Editor` instance, they need to be propogated
+/// the relevant buffer via an `Editor` instance, they need to be propagated
 /// back out to all interested plugins.
 ///
 /// In order to avoid additional complexity in the model graph (e.g. giving each
 /// `Editor` a weak reference to the `PluginManager`) we instead give each
 /// `Editor` a tx end of an `mpsc::channel`. As plugin updates are generated,
 /// they are sent over this channel to a receiver running in another thread,
-/// which sends them to the appropriate plugins.
+/// which forwards them to interested plugins.
 pub fn start_update_thread<W: Write + Send + 'static>(
     rx: mpsc::Receiver<(ViewIdentifier, PluginUpdate, usize)>,
     plugins: Arc<Mutex<PluginManager<W>>>)
