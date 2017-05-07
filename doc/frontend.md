@@ -38,14 +38,14 @@ example, the actual interaction on the wire for `new_view` is:
 
 ```
 to core: {"id":0,"method":"new_view","params":{}}
-from core: {"id":0,"result": {"view_id": "view-id-1", "available_plugins": [])}
+from core: {"id":0,"result": view-id-1"}
 ```
 
 ## Top-level methods served by back-end
 
 ### new_view
 
-`new_view { "file_path": "path.md"? }` -> `{"view_id": "view-id-1", "available_plugins": [])}`
+`new_view { "file_path": "path.md"? }` -> `view-id-1"`
 
 Creates a new view, returning the view identifier as a string.
 `file_path` is optional; if specified, the file is loaded into a new
@@ -71,12 +71,40 @@ Saves the buffer associated with `view_id` to `file_path`. See the
 note for `new_view`. Errors are not currently reported.
 
 
+### plugin
+`plugin {"method": "start", params: {"view_id": "view-id-1", plugin_name: "syntect"}}`
+
+Dispatches the inner method to the plugin manager.
+
+### Plugin methods
+
+#### initial_plugins
+
+`initial_plugins {"view_id": "view-id-1"}` -> `[plugin_name]`
+
+Returns an initial list of plugins available for this view.
+
+#### start
+
+`start {"view_id": "view-id-1", "plugin_name": "syntect"}`
+
+Starts the named given for the given view.
+
+
+#### stop
+
+**Not Implemented**
+`stop {"view_id": "view-id-1", "plugin_name": "syntect"}`
+
+Stops the named plugin for the given view.
+
 ### edit
 `edit {"method": "insert", "params": {"chars": "A"}, "view_id":
 "view-id-4"}`
 
 Dispatches the inner method to the per-tab handler, with individual
 inner methods described below:
+
 
 ### Edit methods
 
@@ -143,7 +171,7 @@ column, and flag as in `click`.
 
 #### gesture
 
-`gesture {"line": 42, "col": 31, "ty": "toggle_sel"}
+`gesture {"line": 42, "col": 31, "ty": "toggle_sel"}`
 
 Note: both `click` and `drag` functionality will be migrated to
 additional `ty` options for `gesture`. For now, "toggle_sel" is the

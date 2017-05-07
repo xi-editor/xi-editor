@@ -27,7 +27,7 @@ use editor::Editor;
 use rpc::{CoreCommand, EditCommand, PluginCommand};
 use styles::{Style, StyleMap};
 use MainPeer;
-use plugins::{PluginManager, PluginUpdate, start_update_thread};
+use plugins::{self, PluginManager, PluginUpdate};
 
 /// ViewIdentifiers are the primary means of routing messages between xi-core and a client view.
 pub type ViewIdentifier = String;
@@ -199,17 +199,17 @@ pub struct DocumentCtx<W: Write> {
 impl<W: Write + Send + 'static> Documents<W> {
     pub fn new() -> Documents<W> {
         let buffers = BufferContainerRef::new();
-        let plugins = Arc::new(Mutex::new(PluginManager::new(buffers.clone())));
+        let plugin_manager = Arc::new(Mutex::new(PluginManager::new(buffers.clone())));
         let (update_tx, update_rx) = mpsc::channel();
 
-        start_update_thread(update_rx, plugins.clone());
+        plugins::start_update_thread(update_rx, plugin_manager.clone());
 
         Documents {
             buffers: buffers,
             id_counter: 0,
             kill_ring: Arc::new(Mutex::new(Rope::from(""))),
             style_map: Arc::new(Mutex::new(StyleMap::new())),
-            plugins: plugins,
+            plugins: plugin_manager,
             update_channel: update_tx,
         }
     }
@@ -286,11 +286,7 @@ impl<W: Write + Send + 'static> Documents<W> {
             let buffer_id = self.next_buffer_id();
             self.new_empty_view(rpc_peer, &view_id, buffer_id);
         }
-        json!({
-            "view_id": view_id,
-            //TODO: this should be determined based on filetype etc
-            "available_plugins": self.plugins.lock().unwrap().debug_available_plugins(),
-        })
+        json!(view_id)
     }
 
     fn do_close_view(&mut self, view_id: &ViewIdentifier) {
@@ -364,9 +360,12 @@ impl<W: Write + Send + 'static> Documents<W> {
         self.buffers.lock().editor_for_view_mut(view_id).unwrap().do_rpc(view_id, cmd)
     }
 
+    #[allow(unused_variables)]
     fn do_plugin_cmd(&mut self, cmd: PluginCommand) -> Option<Value> {
         use self::PluginCommand::*;
         match cmd {
+            InitialPlugins { view_id } => Some(json!(
+                    self.plugins.lock().unwrap().debug_available_plugins())),
             Start { view_id, plugin_name } => {
                 // TODO: this is a hack, there are different ways a plugin might be launched
                 // and they would have different init params, this is just mimicing old api
@@ -378,12 +377,11 @@ impl<W: Write + Send + 'static> Documents<W> {
                 //TODO: stop passing buffer ids
                 self.plugins.lock().unwrap().start_plugin(
                     &self.plugins, &view_id, &plugin_name, buf_size, rev);
+                None
             }
             //TODO: stop a plugin
-            //Stop { view_id, plugin_name } => (),
-            _ => (),
+            Stop { view_id, plugin_name } => None,
         }
-        None
     }
 
     pub fn handle_idle(&self) {

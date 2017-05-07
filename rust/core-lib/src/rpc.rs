@@ -118,7 +118,6 @@ pub enum EditCommand<'a> {
     Copy,
     DebugRewrap,
     DebugTestFgSpans,
-    DebugRunPlugin,
 }
 
 
@@ -126,6 +125,8 @@ pub enum EditCommand<'a> {
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(tag = "command")]
 pub enum PluginCommand {
+    #[serde(rename = "initial_plugins")]
+    InitialPlugins { view_id: String },
     #[serde(rename = "start")]
     Start { view_id: String, plugin_name: String },
     #[serde(rename = "stop")]
@@ -282,7 +283,6 @@ impl<'a> EditCommand<'a> {
             "copy" => Ok(Copy),
             "debug_rewrap" => Ok(DebugRewrap),
             "debug_test_fg_spans" => Ok(DebugTestFgSpans),
-            "debug_run_plugin" => Ok(DebugRunPlugin),
 
             _ => Err(UnknownEditMethod(method.to_string())),
         }

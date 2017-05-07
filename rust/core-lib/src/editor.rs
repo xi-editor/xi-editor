@@ -815,7 +815,6 @@ impl<W: Write + Send + 'static> Editor<W> {
             Copy => Some(self.do_copy()),
             DebugRewrap => async(self.debug_rewrap()),
             DebugTestFgSpans => async(self.debug_test_fg_spans()),
-            DebugRunPlugin => None,
         };
 
         // TODO: could defer this until input quiesces - will this help?
