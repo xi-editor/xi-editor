@@ -16,7 +16,10 @@
 
 use std::cmp::{min, max};
 use std::ops::Deref;
+
 use index_set::remove_n_at;
+use xi_rope::delta::{Delta, Transformer};
+use xi_rope::rope::RopeInfo;
 
 /// A type representing horizontal measurements. This is currently in units
 /// that are not very well defined except that ASCII characters count as
@@ -115,6 +118,26 @@ impl Selection {
         }
         remove_n_at(&mut self.regions, first, last - first);
     }
+
+    /// Computes a new selection based on applying a delta to the old selection.
+    ///
+    /// When new text is inserted at a caret, the new caret can be either before
+    /// or after the inserted text, depending on the `after` parameter.
+    pub fn apply_delta(&self, delta: &Delta<RopeInfo>, after: bool) -> Selection {
+        let mut result = Selection::new();
+        let mut transformer = Transformer::new(delta);
+        for region in self.iter() {
+            let new_region = SelRegion {
+                start: transformer.transform(region.start, after),
+                end: transformer.transform(region.end, after),
+                horiz: None,
+                affinity: region.affinity,
+            };
+            result.add_region(new_region);
+        }
+        result
+    }
+
 }
 
 /// Implementing the Deref trait allows callers to easily test `is_empty`, iterate
