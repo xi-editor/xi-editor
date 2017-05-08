@@ -360,9 +360,7 @@ impl<N: NodeInfo> Builder<N> {
     /// Deletes the given interval. Panics if interval is not properly sorted.
     pub fn delete(&mut self, interval: Interval) {
         let (start, end) = interval.start_end();
-        if start < self.last_offset {
-            panic!("Delta builder: intervals not properly sorted");
-        }
+        assert!(start >= self.last_offset, "Delta builder: intervals not properly sorted");
         if start > self.last_offset {
             self.delta.els.push(DeltaElement::Copy(self.last_offset, start));
         }
@@ -376,8 +374,8 @@ impl<N: NodeInfo> Builder<N> {
         self.delta.els.push(DeltaElement::Insert(rope));
     }
 
-    /// Determines if delta would be trivial if built
-    pub fn is_trivial(&self) -> bool {
+    /// Determines if delta would be a no-op transformation if built.
+    pub fn is_empty(&self) -> bool {
         self.last_offset == 0 && self.delta.els.is_empty()
     }
 

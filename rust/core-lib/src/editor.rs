@@ -402,11 +402,9 @@ impl<W: Write + Send + 'static> Editor<W> {
         for region in self.view.sel_regions() {
             let start = if !region.is_caret() {
                 region.min()
-            } else if let Some(bsp_pos) = self.text.prev_codepoint_offset(region.end) {
-                // TODO: implement complex emoji logic
-                bsp_pos
             } else {
-                region.end
+                // TODO: implement complex emoji logic
+                self.text.prev_codepoint_offset(region.end).unwrap_or(region.end)
             };
             let iv = Interval::new_closed_open(start, region.max());
             if !iv.is_empty() {
@@ -414,7 +412,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             }
         }
 
-        if !builder.is_trivial() {
+        if !builder.is_empty() {
             self.this_edit_type = EditType::Delete;
             self.add_delta(builder.build());
         }
