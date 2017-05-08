@@ -112,11 +112,34 @@ impl <W: Write + Send + 'static>BufferContainerRef<W> {
         self.lock().open_files.contains_key(file_path.as_ref())
     }
 
-    /// Adds `file_path` as an open file, associated with `view_id`'s buffer.
-    pub fn add_file<P: AsRef<Path>>(&self, file_path: P, view_id: &ViewIdentifier) {
+    /// Adds a new editor, associating it with the provided identifiers.
+    pub fn add_editor(&self, view_id: &ViewIdentifier, buffer_id: &BufferIdentifier,
+                      editor: Editor<W>, path: Option<&Path>) {
+        {
+            let mut inner = self.lock();
+            inner.views.insert(view_id.to_owned(), buffer_id.to_owned());
+            inner.editors.insert(buffer_id.to_owned(), editor);
+        }
+        if let Some(path) = path {
+            self.set_path(path, view_id);
+        }
+    }
+    /// Registers `file_path` as an open file, associated with `view_id`'s buffer.
+    ///
+    /// If an existing path is already associated with this buffer, it is removed.
+    pub fn set_path<P: AsRef<Path>>(&self, file_path: P, view_id: &ViewIdentifier) {
+        let file_path = file_path.as_ref();
         let mut inner = self.lock();
         let buffer_id = inner.views.get(view_id).unwrap().to_owned();
-        inner.open_files.insert(file_path.as_ref().to_owned(), buffer_id);
+        let prev_path = inner.editor_for_view(view_id).unwrap()
+            .get_path().map(Path::to_owned);
+        if let Some(prev_path) = prev_path {
+            if prev_path != file_path {
+                inner.open_files.remove(&prev_path);
+            }
+        }
+        inner.open_files.insert(file_path.to_owned(), buffer_id);
+        inner.editor_for_view_mut(view_id).unwrap()._set_path(file_path);
     }
 
     /// Adds a new view to the `Editor` instance owning `buffer_id`.
@@ -238,7 +261,7 @@ impl<W: Write + Send + 'static> Documents<W> {
 
         match cmd {
             CloseView { view_id } => {
-                self.do_close_view(&view_id.to_owned());
+                self.close_view(&view_id.to_owned());
                 None
             },
 
@@ -275,11 +298,7 @@ impl<W: Write + Send + 'static> Documents<W> {
             } else {
                 // not open: create new buffer_id and open file
                 let buffer_id = self.next_buffer_id();
-                //self.buffers.add_file(&file_path.to_owned(), &buffer_id);
                 self.new_view_with_file(rpc_peer, &view_id, buffer_id.clone(), &file_path);
-                // above fn has two branches: set path after
-                self.buffers.lock().editor_for_view_mut(&view_id)
-                    .unwrap().set_path(&file_path);
             }
         } else {
             // file_path was nil: create a new empty buffer.
@@ -289,38 +308,36 @@ impl<W: Write + Send + 'static> Documents<W> {
         json!(view_id)
     }
 
-    fn do_close_view(&mut self, view_id: &ViewIdentifier) {
-        self.close_view(view_id);
+    fn close_view(&mut self, view_id: &ViewIdentifier) {
+        self.buffers.close_view(view_id);
     }
 
-    fn new_empty_view(&mut self, rpc_peer: &MainPeer<W>,
-                      view_id: &str, buffer_id: BufferIdentifier) {
+    fn new_empty_view(&mut self, rpc_peer: &MainPeer<W>, view_id: &ViewIdentifier,
+                      buffer_id: BufferIdentifier) {
         let editor = Editor::new(self.new_tab_ctx(rpc_peer), view_id);
-        let mut inner = self.buffers.lock();
-        inner.views.insert(view_id.to_owned(), buffer_id.clone());
-        inner.editors.insert(buffer_id, editor);
+        self.buffers.add_editor(view_id, &buffer_id, editor, None);
     }
 
     fn new_view_with_file(&mut self, rpc_peer: &MainPeer<W>, view_id: &ViewIdentifier,
                           buffer_id: BufferIdentifier, path: &Path) {
         match self.read_file(&path) {
             Ok(contents) => {
-                let editor = Editor::with_text(self.new_tab_ctx(rpc_peer), view_id, contents);
-                {
-                    let mut inner = self.buffers.lock();
-                    inner.views.insert(view_id.to_owned(), buffer_id.clone());
-                    inner.editors.insert(buffer_id, editor);
-                }
-                self.buffers.add_file(path, view_id);
+                let ed = Editor::with_text(self.new_tab_ctx(rpc_peer), view_id, contents);
+                self.buffers.add_editor(view_id, &buffer_id, ed, Some(path));
             }
             Err(err) => {
-                // TODO: we should be reporting errors to the client
-                // (if this is even an error? we treat opening a non-existent file
-                // as a new buffer, but set the editor's path)
-                print_err!("unable to read file: {}, error: {:?}", buffer_id, err);
-               self.new_empty_view(rpc_peer, view_id, buffer_id);
+                let ed = Editor::new(self.new_tab_ctx(rpc_peer), view_id);
+                if path.exists() {
+                    // if this is a read error of an actual file, we don't set path
+                    // TODO: we should be reporting errors to the client
+                    print_err!("unable to read file: {}, error: {:?}", buffer_id, err);
+                    self.buffers.add_editor(view_id, &buffer_id, ed, None);
+                } else {
+                    // if a path that doesn't exist, create a new empty buffer + set path
+                    self.buffers.add_editor(view_id, &buffer_id, ed, Some(path));
+                }
             }
-        }
+        }; 
     }
 
     /// Adds a new view to an existing editor instance.
@@ -337,23 +354,12 @@ impl<W: Write + Send + 'static> Documents<W> {
         Ok(s)
     }
 
-    fn close_view(&mut self, view_id: &ViewIdentifier) {
-        self.buffers.close_view(view_id);
-        }
-
-    fn do_save(&mut self, view_id: &ViewIdentifier, file_path: &str) -> Option<Value> {
-        let file_path = PathBuf::from(file_path);
-        // if this is a new path for an existing file, we have a bit of housekeeping to do:
-        let prev_path = self.buffers.lock()
-            .editor_for_view(view_id).unwrap().get_path().map(Path::to_owned);
-        if let Some(prev_path) = prev_path {
-            if prev_path != file_path {
-                self.buffers.lock().open_files.remove(&prev_path);
-            }
-        }
-        self.buffers.lock().editor_for_view_mut(view_id).unwrap().do_save(&file_path);
-        self.buffers.add_file(&file_path, view_id);
-        //TODO: report errors
+    fn do_save<P: AsRef<Path>>(&mut self, view_id: &ViewIdentifier,
+                               file_path: P) -> Option<Value> {
+        //TODO: handle & report errors
+        let file_path = file_path.as_ref();
+        self.buffers.lock().editor_for_view_mut(view_id).unwrap().do_save(file_path);
+        self.buffers.set_path(file_path, view_id);
         None
     }
 
@@ -451,5 +457,69 @@ impl<W: Write> DocumentCtx<W> {
     pub fn update_plugins(&self, view_id: ViewIdentifier,
                           update: PluginUpdate, undo_group: usize) {
         self.update_channel.send((view_id, update, undo_group)).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use xi_rpc::{RpcLoop};
+    use std::env;
+    use std::fs::File;
+
+    // a bit of gymnastics to let us instantiate an Editor instance
+    fn mock_doc_ctx(tempfile: &str) -> DocumentCtx<File> {
+        let mut dir = env::temp_dir();
+        dir.push(tempfile);
+        let f = File::create(dir).unwrap();
+
+        let mock_loop = RpcLoop::new(f);
+        let mock_peer = mock_loop.get_peer();
+        let (update_tx, _) = mpsc::channel();
+
+        DocumentCtx {
+            kill_ring: Arc::new(Mutex::new(Rope::from(""))),
+            rpc_peer: mock_peer.clone(),
+            style_map: Arc::new(Mutex::new(StyleMap::new())),
+            update_channel: update_tx,
+        }
+    }
+
+    #[test]
+    fn test_save_as() {
+        let container_ref = BufferContainerRef::new();
+        assert!(!container_ref.has_open_file("a fake file, for sure"));
+        let view_id_1 = "view-id-1".to_owned();
+        let buf_id_1 = "buf-id-1".to_owned();
+        let path_1 = PathBuf::from("a_path");
+        let path_2 = PathBuf::from("a_different_path");
+        let editor = Editor::new(mock_doc_ctx(&view_id_1), &view_id_1);
+        container_ref.add_editor(&view_id_1, &buf_id_1, editor, None);
+        assert_eq!(container_ref.lock().editors.len(), 1);
+
+        // save this somewhere:
+        container_ref.set_path(&path_1, &view_id_1);
+        assert_eq!(container_ref.has_open_file(&path_1), true);
+        assert_eq!(
+            container_ref.lock().editor_for_view(&view_id_1).unwrap().get_path(),
+            Some(path_1.as_ref()));
+
+        // then save somewhere else:
+        container_ref.set_path(&path_2, &view_id_1);
+        assert_eq!(container_ref.lock().editors.len(), 1);
+        assert_eq!(container_ref.has_open_file(&path_1), false);
+        assert_eq!(container_ref.has_open_file(&path_2), true);
+        assert_eq!(
+            container_ref.lock().editor_for_view(&view_id_1).unwrap().get_path(),
+            Some(path_2.as_ref()));
+
+        // reopen the original file:
+        let view_id_2 = "view-id-2".to_owned();
+        let buf_id_2 = "buf-id-2".to_owned();
+        let editor = Editor::new(mock_doc_ctx(&view_id_2), &view_id_2);
+        container_ref.add_editor(&view_id_2, &buf_id_2, editor, Some(&path_1));
+        assert_eq!(container_ref.lock().editors.len(), 2);
+        assert_eq!(container_ref.has_open_file(&path_1), true);
+        assert_eq!(container_ref.has_open_file(&path_2), true);
     }
 }
