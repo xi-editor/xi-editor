@@ -18,7 +18,7 @@ use std::io::Write;
 use serde_json::value::Value;
 
 use xi_rope::rope::{Rope, LinesMetric, RopeInfo};
-use xi_rope::delta::{Delta, Transformer};
+use xi_rope::delta::Delta;
 use xi_rope::tree::Cursor;
 use xi_rope::breaks::{Breaks, BreaksInfo, BreaksMetric, BreaksBaseMetric};
 use xi_rope::interval::Interval;
@@ -462,15 +462,15 @@ impl View {
     pub fn after_edit(&mut self, text: &Rope, delta: &Delta<RopeInfo>, pristine: bool)
         -> Option<usize>
     {
-        if self.breaks.is_some() {
+        if let Some(breaks) = self.breaks.as_mut() {
             let (iv, new_len) = delta.summary();
-            linewrap::rewrap(self.breaks.as_mut().unwrap(), text, iv, new_len, self.wrap_col);
+            linewrap::rewrap(breaks, text, iv, new_len, self.wrap_col);
         }
         self.pristine = pristine;
         self.dirty = true;
         // Note: for committing plugin edits, we probably want to know the priority
         // of the delta so we can set the cursor before or after the edit, as needed.
-        let new_sel = selection_apply_delta(&self.selection, delta, true);
+        let new_sel = self.selection.apply_delta(delta, true);
         self.set_selection(text, new_sel)
     }
 
@@ -489,24 +489,4 @@ fn clamp(x: usize, min: usize, max: usize) -> usize {
     } else {
         max
     }
-}
-
-/// Computes a new selection based on applying a delta to the old selection.
-///
-/// When new text is inserted at a caret, the new caret can be either before
-/// or after the inserted text, depending on the `after` parameter.
-// Should this move to Selection itself?
-fn selection_apply_delta(sel: &Selection, delta: &Delta<RopeInfo>, after: bool) -> Selection {
-    let mut result = Selection::new();
-    let mut transformer = Transformer::new(delta);
-    for region in sel.iter() {
-        let new_region = SelRegion {
-            start: transformer.transform(region.start, after),
-            end: transformer.transform(region.end, after),
-            horiz: None,
-            affinity: region.affinity,
-        };
-        result.add_region(new_region);
-    }
-    result
 }
