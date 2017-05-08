@@ -314,11 +314,14 @@ pub fn start_update_thread<W: Write + Send + 'static>(
 {
     thread::spawn(move ||{
         loop {
-            let (view_id, update, undo_group) = rx.recv().unwrap();
-            plugins.lock().unwrap().update(&view_id, update, undo_group);
+            match rx.recv() {
+                Ok((view_id, update, undo_group)) => {
+                    plugins.lock().unwrap().update(&view_id, update, undo_group);
+                }
+                Err(_) => break,
+            }
         }
     });
-    //FIXME: any reason not to drop the handle, here?
 }
 
 //TODO: Much of this might live somewhere else, and be shared with the plugin lib.

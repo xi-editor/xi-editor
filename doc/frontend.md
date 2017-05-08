@@ -38,14 +38,14 @@ example, the actual interaction on the wire for `new_view` is:
 
 ```
 to core: {"id":0,"method":"new_view","params":{}}
-from core: {"id":0,"result": view-id-1"}
+from core: {"id":0,"result": "view-id-1"}
 ```
 
 ## Top-level methods served by back-end
 
 ### new_view
 
-`new_view { "file_path": "path.md"? }` -> `view-id-1"`
+`new_view { "file_path": "path.md"? }` -> `"view-id-1"`
 
 Creates a new view, returning the view identifier as a string.
 `file_path` is optional; if specified, the file is loaded into a new
