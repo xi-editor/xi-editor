@@ -21,9 +21,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::mem;
 use serde_json::Value;
 
-use xi_rope::rope::{LinesMetric, Rope};
+use xi_rope::rope::{LinesMetric, Rope, RopeInfo};
 use xi_rope::interval::Interval;
-use xi_rope::delta::{Delta, Transformer};
+use xi_rope::delta::{self, Delta, Transformer};
 use xi_rope::tree::Cursor;
 use xi_rope::engine::Engine;
 use xi_rope::spans::{Spans, SpansBuilder};
@@ -199,8 +199,13 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     fn insert(&mut self, s: &str) {
-        let sel_interval = Interval::new_closed_open(self.view.sel_min(), self.view.sel_max());
-        self.add_delta(sel_interval, Rope::from(s));
+        let rope = Rope::from(s);
+        let mut builder = delta::Builder::new(self.text.len());
+        for region in self.view.sel_regions() {
+            let iv = Interval::new_closed_open(region.min(), region.max());
+            builder.replace(iv, rope.clone());
+        }
+        self.add_delta(builder.build());
     }
 
     /// Sets the position of the cursor to `offset`, as part of an edit operation.
@@ -221,7 +226,15 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.view.set_old_sel_dirty();
     }
 
-    /// Applies the delta to the text, and updates undo state.
+    /// Applies a simple edit to the text, and updates undo state.
+    ///
+    /// See `add_delta` for more details.
+    fn add_simple_edit(&mut self, iv: Interval, new: Rope) {
+        let delta = Delta::simple_edit(iv, new, self.text.len());
+        self.add_delta(delta);
+    }
+
+    /// Applies a delta to the text, and updates undo state.
     ///
     /// Records the delta into the CRDT engine so that it can be undone. Also
     /// contains the logic for merging edits into the same undo group. At call
@@ -232,8 +245,7 @@ impl<W: Write + Send + 'static> Editor<W> {
     /// the views. Thus, view-associated state such as the selection and line
     /// breaks are to be considered invalid after this method, until the
     /// `commit_delta` call.
-    fn add_delta(&mut self, iv: Interval, new: Rope) {
-        let delta = Delta::simple_edit(iv, new, self.text.len());
+    fn add_delta(&mut self, delta: Delta<RopeInfo>) {
         let head_rev_id = self.engine.get_head_rev_id();
         let undo_group;
 
@@ -384,19 +396,23 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     fn delete(&mut self) {
-        let start = if self.view.sel_start != self.view.sel_end {
-            self.view.sel_min()
-        } else if let Some(bsp_pos) = self.text.prev_codepoint_offset(self.view.sel_end) {
-            // TODO: implement complex emoji logic
-            bsp_pos
-        } else {
-            self.view.sel_max()
-        };
+        let mut builder = delta::Builder::new(self.text.len());
+        for region in self.view.sel_regions() {
+            let start = if !region.is_caret() {
+                region.min()
+            } else {
+                // TODO: implement complex emoji logic
+                self.text.prev_codepoint_offset(region.end).unwrap_or(region.end)
+            };
+            let iv = Interval::new_closed_open(start, region.max());
+            if !iv.is_empty() {
+                builder.delete(iv);
+            }
+        }
 
-        if start < self.view.sel_max() {
+        if !builder.is_empty() {
             self.this_edit_type = EditType::Delete;
-            let del_interval = Interval::new_closed_open(start, self.view.sel_max());
-            self.add_delta(del_interval, Rope::from(""));
+            self.add_delta(builder.build());
         }
     }
 
@@ -423,7 +439,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             for line in first_line..last_line {
                 let offset = self.view.line_col_to_offset(&self.text, line, 0);
                 let iv = Interval::new_closed_open(offset, offset);
-                self.add_delta(iv, Rope::from(n_spaces(TAB_SIZE)));
+                self.add_simple_edit(iv, Rope::from(n_spaces(TAB_SIZE)));
             }
         }
     }
@@ -668,7 +684,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         if min != self.view.sel_max() {
             let val = self.text.slice_to_string(min, self.view.sel_max());
             let del_interval = Interval::new_closed_open(min, self.view.sel_max());
-            self.add_delta(del_interval, Rope::from(""));
+            self.add_simple_edit(del_interval, Rope::from(""));
             Value::String(val)
         } else {
             Value::Null
@@ -719,7 +735,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         let interval = Interval::new_closed_open(start, end);
         let swapped = self.text.slice_to_string(middle, end) +
                       &self.text.slice_to_string(start, middle);
-        self.add_delta(interval, Rope::from(swapped));
+        self.add_simple_edit(interval, Rope::from(swapped));
     }
 
     fn delete_to_end_of_paragraph(&mut self) {
@@ -730,11 +746,11 @@ impl<W: Write + Send + 'static> Editor<W> {
         if current != offset {
             val = self.text.slice_to_string(current, offset);
             let del_interval = Interval::new_closed_open(current, offset);
-            self.add_delta(del_interval, Rope::from(""));
+            self.add_simple_edit(del_interval, Rope::from(""));
         } else if let Some(grapheme_offset) = self.text.next_grapheme_offset(self.view.sel_end) {
             val = self.text.slice_to_string(current, grapheme_offset);
             let del_interval = Interval::new_closed_open(current, grapheme_offset);
-            self.add_delta(del_interval, Rope::from(""));
+            self.add_simple_edit(del_interval, Rope::from(""));
         }
 
         self.doc_ctx.set_kill_ring(Rope::from(val));

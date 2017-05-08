@@ -174,6 +174,11 @@ impl View {
         Some(region.end)
     }
 
+    /// Returns the regions of the current selection.
+    pub fn sel_regions(&self) -> &[SelRegion] {
+        &self.selection
+    }
+
     // Render a single line, and advance cursors to next line.
     fn render_line<W: Write>(&self, tab_ctx: &DocumentCtx<W>, text: &Rope,
         start_of_line: &mut Cursor<RopeInfo>, soft_breaks: Option<&mut Cursor<BreaksInfo>>, style_spans: &Spans<Style>,
