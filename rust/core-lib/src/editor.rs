@@ -74,6 +74,7 @@ pub struct Editor<W: Write> {
     scroll_to: Option<usize>,
 
     style_spans: Spans<Style>,
+    soft_spans: Spans<()>,
     tab_ctx: TabCtx<W>,
     plugins: Vec<PluginRef<W>>,
     revs_in_flight: usize,
@@ -132,6 +133,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             new_cursor: None,
             scroll_to: Some(0),
             style_spans: Spans::default(),
+            soft_spans: Spans::default(),
             tab_ctx: tab_ctx,
             plugins: Vec::new(),
             revs_in_flight: 0,
@@ -184,8 +186,40 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     fn insert(&mut self, s: &str) {
-        let sel_interval = Interval::new_closed_open(self.view.sel_min(), self.view.sel_max());
-        let new_cursor = self.view.sel_min() + s.len();
+        let start = self.view.sel_min();
+        let mut end = self.view.sel_max();
+        let new_cursor = start + s.len();
+
+        // process soft spans in front of the cursor
+        let iv_ahead = Interval::new_closed_open(start, self.soft_spans.len());
+        let soft_spans = self.soft_spans.subseq(iv_ahead);
+        for (interval, _) in soft_spans.iter() {
+            // only interested in soft spans that are directly in front of the cursor
+            if interval.start() != 0 {
+                break
+            }
+
+            let mut cursor = Cursor::new(&self.text, start);
+            let are_eql = compare_cursor_str(&mut cursor, s);
+
+            // are_eql is checked for 1 codepoint long inserts and cursor position is checked
+            // to also match longer inserts partially
+            if are_eql || cursor.pos() > start + 1 {
+                self.soft_spans.clear_left(cursor.pos());
+
+                // update selection interval to replace matching part of soft span
+                end += cursor.pos() - start;
+
+                // not necessary to look at the next soft span if only a substr matched
+                if !are_eql {
+                    break
+                }
+            } else {
+                self.soft_spans.shift_right(s.len());
+            }
+        }
+
+        let sel_interval = Interval::new_closed_open(start, end);
         self.add_delta(sel_interval, Rope::from(s), new_cursor, new_cursor);
     }
 
@@ -205,6 +239,9 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
         self.view.scroll_to_cursor(&self.text);
         self.view.set_old_sel_dirty();
+
+        // remove soft spans before cursor
+        self.soft_spans.clear_left(self.view.sel_start);
     }
 
     // Apply the delta to the buffer, and store the new cursor so that it gets
@@ -350,7 +387,7 @@ impl<W: Write + Send + 'static> Editor<W> {
 
     // render if needed, sending to ui
     pub fn render(&mut self) {
-        self.view.render_if_dirty(&self.text, &self.tab_ctx, &self.style_spans);
+        self.view.render_if_dirty(&self.text, &self.tab_ctx, &self.style_spans, &self.soft_spans);
         if let Some(scrollto) = self.scroll_to {
             let (line, col) = self.view.offset_to_line_col(&self.text, scrollto);
             self.tab_ctx.scroll_to(&self.view.view_id, line, col);
@@ -397,6 +434,8 @@ impl<W: Write + Send + 'static> Editor<W> {
             self.this_edit_type = EditType::Delete;
             let del_interval = Interval::new_closed_open(start, self.view.sel_max());
             self.add_delta(del_interval, Rope::from(""), start, start);
+
+            self.soft_spans.shift_left(del_interval.size());
         }
     }
 
@@ -604,7 +643,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         let first = max(first, 0) as usize;
         let last = last as usize;
         self.view.set_scroll(first, last);
-        self.view.send_update_for_scroll(&self.text, &self.tab_ctx, &self.style_spans, first, last);
+        self.view.send_update_for_scroll(&self.text, &self.tab_ctx, &self.style_spans, &self.soft_spans, first, last);
     }
 
     /// Sets the cursor and scrolls to the beginning of the given line.
@@ -614,7 +653,7 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     fn do_request_lines(&mut self, first: i64, last: i64) {
-        self.view.send_update(&self.text, &self.tab_ctx, &self.style_spans, first as usize, last as usize);
+        self.view.send_update(&self.text, &self.tab_ctx, &self.style_spans, &self.soft_spans, first as usize, last as usize);
     }
 
     fn do_click(&mut self, line: u64, col: u64, flags: u64, click_count: u64) {
@@ -667,6 +706,22 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.style_spans = sb.build();
 
         self.view.set_dirty();
+    }
+
+    fn debug_test_soft_spans(&mut self) {
+        print_err!("adding soft spans example");
+
+        let sel_interval = Interval::new_closed_open(self.view.sel_start, self.view.sel_end);
+        let text = Rope::from("soft spans!");
+        let new_cursor = self.view.sel_start;
+
+        let end = new_cursor + text.len();
+        let mut sb = SpansBuilder::new(end);
+        sb.add_span(Interval::new_closed_open(new_cursor, new_cursor + 3), ());
+        sb.add_span(Interval::new_closed_open(new_cursor + 3, end), ());
+        self.soft_spans = sb.build();
+
+        self.add_delta(sel_interval, text, new_cursor, new_cursor);
     }
 
     fn debug_run_plugin(&mut self, self_ref: &Arc<Mutex<Editor<W>>>) {
@@ -836,6 +891,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             DebugRewrap => async(self.debug_rewrap()),
             DebugTestFgSpans => async(self.debug_test_fg_spans()),
             DebugRunPlugin => async(self.debug_run_plugin(self_ref)),
+            DebugTestSoftSpans => async(self.debug_test_soft_spans()),
         };
 
         // TODO: could defer this until input quiesces - will this help?
@@ -932,4 +988,17 @@ fn n_spaces(n: usize) -> &'static str {
     let spaces = "                                ";
     assert!(n <= spaces.len());
     &spaces[..n]
+}
+
+use xi_rope::rope::RopeInfo;
+fn compare_cursor_str(cursor: &mut Cursor<RopeInfo>, pat: &str) -> bool {
+    for c in pat.chars() {
+        if let Some(rope_c) = cursor.next_codepoint() {
+            if rope_c != c { return false; }
+        } else {
+            // end of string before pattern is complete
+            return false;
+        }
+    }
+    true
 }
