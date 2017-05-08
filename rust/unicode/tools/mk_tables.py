@@ -342,19 +342,21 @@ def mk_lb_rules():
     bk_to_flags = {'x': 0, '_': 0x80, '!': 0xc0}
     for left in range(n + nspecial):
         L = Any[left]
-        if L == 'CM' or L == 'ZWJ':
+        if L == 'CM':
             L = 'AL'  # handling for LB10
         L = resolve_ambig(L)
         for right in range(n):
             R = linebreak_assignments[right]
             R = resolve_ambig(R)
             r_with_cm = right
+            l_with_cm = left
             if R in ['CM', 'ZWJ'] and L in ['BK', 'CR', 'LF', 'NL', 'SP', 'ZW']:
                 # handling for LB10
                 r_with_cm = 2  # AL
                 bk = t[L + '|' + 'AL']
             elif L == 'ZWJ' and R not in ['ID', 'EB', 'EM']:
                 #handling for LB10
+                l_with_cm = 2  # AL
                 bk = t['AL' + '|' + R]
             else:
                 bk = t[L + '|' + R]
@@ -372,7 +374,7 @@ def mk_lb_rules():
                 state = n + 1
             elif R in ['CM', 'ZWJ'] and L not in ['BK', 'CR', 'LF', 'NL', 'SP', 'ZW']:
                 # handling for LB9
-                state = left
+                state = l_with_cm
             elif flags == 0 and R == 'RI' and L == 'RI':
                 # handling for LB31
                 state = n + 2
