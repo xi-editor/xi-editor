@@ -25,7 +25,7 @@ Goals include:
 * ***Developer friendliness***. It should be easy to customize xi editor, whether
   by adding plug-ins or hacking on the core.
 
-Please refer to the [May 2017 roadmap](https://github.com/google/xi-editor/pull/248)
+Please refer to the [May 2017 roadmap](https://github.com/google/xi-editor/issues/252)
 to learn more about planned features.
 
 Screenshot (will need to be updated as syntax coloring and UI polish is added):

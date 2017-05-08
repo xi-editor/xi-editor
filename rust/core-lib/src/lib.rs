@@ -40,7 +40,7 @@ pub mod internal {
     pub mod editor;
     pub mod view;
     pub mod linewrap;
-    pub mod run_plugin;
+    pub mod plugins;
     pub mod styles;
     pub mod word_boundaries;
     pub mod index_set;
@@ -52,14 +52,14 @@ use internal::tabs;
 use internal::editor;
 use internal::view;
 use internal::linewrap;
-use internal::run_plugin;
+use internal::plugins;
 use internal::styles;
 use internal::word_boundaries;
 use internal::index_set;
 use internal::selection;
 use internal::movement;
 
-use tabs::Tabs;
+use tabs::Documents;
 use rpc::Request;
 
 extern crate xi_rope;
@@ -71,13 +71,13 @@ use xi_rpc::{RpcPeer, RpcCtx, Handler};
 pub type MainPeer<W> = RpcPeer<W>;
 
 pub struct MainState<W: Write> {
-    tabs: Tabs<W>,
+    tabs: Documents<W>,
 }
 
 impl<W: Write + Send + 'static> MainState<W> {
     pub fn new() -> Self {
         MainState {
-            tabs: Tabs::new(),
+            tabs: Documents::new(),
         }
     }
 }

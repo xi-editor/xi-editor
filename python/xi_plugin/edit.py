@@ -39,10 +39,8 @@ class Edit(object):
 
         Does not modify custom priorities.
         """
-        print(type(priority))
         if priority in [EDIT_PRIORITY_LOW, EDIT_PRIORITY_HIGH, EDIT_PRIORITY_NORMAL]:
             priority += random.randrange(0x10000)
-        print(type(priority))
         return priority
 
     def to_dict(self):
