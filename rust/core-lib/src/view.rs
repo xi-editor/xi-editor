@@ -24,7 +24,7 @@ use xi_rope::breaks::{Breaks, BreaksInfo, BreaksMetric, BreaksBaseMetric};
 use xi_rope::interval::Interval;
 use xi_rope::spans::Spans;
 
-use tabs::{ViewIdentifier, TabCtx};
+use tabs::{ViewIdentifier, DocumentCtx};
 use styles;
 use index_set::IndexSet;
 use selection::{Affinity, Selection, SelRegion};
@@ -175,7 +175,7 @@ impl View {
     }
 
     // Render a single line, and advance cursors to next line.
-    fn render_line<W: Write>(&self, tab_ctx: &TabCtx<W>, text: &Rope,
+    fn render_line<W: Write>(&self, tab_ctx: &DocumentCtx<W>, text: &Rope,
         start_of_line: &mut Cursor<RopeInfo>, soft_breaks: Option<&mut Cursor<BreaksInfo>>, style_spans: &Spans<Style>,
         line_num: usize) -> Value
     {
@@ -222,7 +222,7 @@ impl View {
         result
     }
 
-    pub fn render_styles<W: Write>(&self, tab_ctx: &TabCtx<W>, start: usize, end: usize,
+    pub fn render_styles<W: Write>(&self, tab_ctx: &DocumentCtx<W>, start: usize, end: usize,
         sel: &[(usize, usize)], style_spans: &Spans<Style>) -> Vec<isize>
     {
         let mut rendered_styles = Vec::new();
@@ -254,7 +254,7 @@ impl View {
         rendered_styles
     }
 
-    pub fn send_update<W: Write>(&mut self, text: &Rope, tab_ctx: &TabCtx<W>, style_spans: &Spans<Style>,
+    pub fn send_update<W: Write>(&mut self, text: &Rope, tab_ctx: &DocumentCtx<W>, style_spans: &Spans<Style>,
         first_line: usize, last_line: usize)
     {
         let height = self.offset_to_line_col(text, text.len()).0 + 1;
@@ -294,7 +294,7 @@ impl View {
 
     /// Send lines within given region (plus slop) that the front-end does not already
     /// have.
-    pub fn send_update_for_scroll<W: Write>(&mut self, text: &Rope, tab_ctx: &TabCtx<W>, style_spans: &Spans<Style>,
+    pub fn send_update_for_scroll<W: Write>(&mut self, text: &Rope, tab_ctx: &DocumentCtx<W>, style_spans: &Spans<Style>,
         first_line: usize, last_line: usize)
     {
         let first_line = max(first_line, SCROLL_SLOP) - SCROLL_SLOP;
@@ -369,7 +369,7 @@ impl View {
     }
 
     // Update front-end with any changes to view since the last time sent.
-    pub fn render_if_dirty<W: Write>(&mut self, text: &Rope, tab_ctx: &TabCtx<W>, style_spans: &Spans<Style>) {
+    pub fn render_if_dirty<W: Write>(&mut self, text: &Rope, tab_ctx: &DocumentCtx<W>, style_spans: &Spans<Style>) {
         self.propagate_old_sel();
         if self.sel_dirty || self.dirty {
             let first_line = max(self.first_line, SCROLL_SLOP) - SCROLL_SLOP;
