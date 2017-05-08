@@ -16,7 +16,7 @@
 
 use std::error;
 use std::fmt;
-use serde_json::Value;
+use serde_json::{self, Value};
 use xi_rpc::{dict_get_u64, dict_get_string, arr_get_u64, arr_get_i64};
 
 // =============================================================================
@@ -43,6 +43,8 @@ pub enum Request<'a> {
 #[derive(Debug, PartialEq, Eq)]
 pub enum CoreCommand<'a> {
     Edit { view_id: &'a str, edit_command: EditCommand<'a> },
+    /// A command from the client to a plugin.
+    Plugin {  plugin_command: PluginCommand },
     /// Request a new view, opening a file if `file_path` is Some, else creating an empty buffer.
     NewView { file_path: Option<&'a str> },
     CloseView { view_id: &'a str },
@@ -116,7 +118,20 @@ pub enum EditCommand<'a> {
     Copy,
     DebugRewrap,
     DebugTestFgSpans,
-    DebugRunPlugin,
+}
+
+
+//TODO: just prototyping, these should be borrows
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[serde(tag = "command")]
+pub enum PluginCommand {
+    #[serde(rename = "initial_plugins")]
+    InitialPlugins { view_id: String },
+    #[serde(rename = "start")]
+    Start { view_id: String, plugin_name: String },
+    #[serde(rename = "stop")]
+    Stop { view_id: String, plugin_name: String },
+    //Other { view_id: String, params: Value },
 }
 
 impl<'a> CoreCommand<'a> {
@@ -150,6 +165,9 @@ impl<'a> CoreCommand<'a> {
                                 .map(|cmd| Edit { view_id: view_id, edit_command: cmd })
                         } else { Err(MalformedCoreParams(method.to_string(), params.clone())) }
                 }),
+                "plugin" => serde_json::from_value::<PluginCommand>(params.clone())
+                    .map(|cmd| Plugin { plugin_command: cmd })
+                    .map_err(|_| MalformedPluginParams(method.to_string(), params.clone())),
 
             _ => Err(UnknownCoreMethod(method.to_string()))
         }
@@ -265,7 +283,6 @@ impl<'a> EditCommand<'a> {
             "copy" => Ok(Copy),
             "debug_rewrap" => Ok(DebugRewrap),
             "debug_test_fg_spans" => Ok(DebugTestFgSpans),
-            "debug_run_plugin" => Ok(DebugRunPlugin),
 
             _ => Err(UnknownEditMethod(method.to_string())),
         }
@@ -283,6 +300,7 @@ pub enum Error {
     MalformedCoreParams(String, Value), // method name, malformed params
     UnknownEditMethod(String), // method name
     MalformedEditParams(String, Value), // method name, malformed params
+    MalformedPluginParams(String, Value), // method name, malformed params
 }
 
 impl fmt::Display for Error {
@@ -298,6 +316,9 @@ impl fmt::Display for Error {
             UnknownEditMethod(ref method) => write!(f, "Error: Unknown edit method '{}'", method),
             MalformedEditParams(ref method, ref params) =>
                 write!(f, "Error: Malformed edit parameters with method '{}', parameters: {:?}", method, params),
+
+            MalformedPluginParams(ref method, ref params) =>
+                write!(f, "Error: Malformed plugin parameters with method '{}', parameters: {:?}", method, params),
         }
     }
 }
@@ -310,7 +331,8 @@ impl error::Error for Error {
             UnknownCoreMethod(_) => "Unknown core method",
             MalformedCoreParams(_, _) => "Malformed core parameters",
             UnknownEditMethod(_) => "Unknown edit method",
-            MalformedEditParams(_, _) => "Malformed edit parameters"
+            MalformedEditParams(_, _) => "Malformed edit parameters",
+            MalformedPluginParams(_, _) => "Malformed plugin parameters",
         }
     }
 }
