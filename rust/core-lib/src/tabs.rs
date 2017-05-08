@@ -344,10 +344,11 @@ impl<W: Write + Send + 'static> Documents<W> {
     fn do_save(&mut self, view_id: &ViewIdentifier, file_path: &str) -> Option<Value> {
         let file_path = PathBuf::from(file_path);
         // if this is a new path for an existing file, we have a bit of housekeeping to do:
-        if let Some(prev_path) = self.buffers.lock()
-            .editor_for_view(view_id).unwrap().get_path() {
+        let prev_path = self.buffers.lock()
+            .editor_for_view(view_id).unwrap().get_path().map(Path::to_owned);
+        if let Some(prev_path) = prev_path {
             if prev_path != file_path {
-                self.buffers.lock().open_files.remove(prev_path);
+                self.buffers.lock().open_files.remove(&prev_path);
             }
         }
         self.buffers.lock().editor_for_view_mut(view_id).unwrap().do_save(&file_path);
