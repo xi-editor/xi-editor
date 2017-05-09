@@ -261,7 +261,7 @@ impl<W: Write + Send + 'static> Documents<W> {
 
         match cmd {
             CloseView { view_id } => {
-                self.close_view(&view_id.to_owned());
+                self.do_close_view(&view_id.to_owned());
                 None
             },
 
@@ -308,7 +308,7 @@ impl<W: Write + Send + 'static> Documents<W> {
         json!(view_id)
     }
 
-    fn close_view(&mut self, view_id: &ViewIdentifier) {
+    fn do_close_view(&mut self, view_id: &ViewIdentifier) {
         self.buffers.close_view(view_id);
     }
 
@@ -337,7 +337,7 @@ impl<W: Write + Send + 'static> Documents<W> {
                     self.buffers.add_editor(view_id, &buffer_id, ed, Some(path));
                 }
             }
-        }; 
+        }
     }
 
     /// Adds a new view to an existing editor instance.
@@ -497,7 +497,7 @@ mod tests {
         container_ref.add_editor(&view_id_1, &buf_id_1, editor, None);
         assert_eq!(container_ref.lock().editors.len(), 1);
 
-        // save this somewhere:
+        // set path (as if on save)
         container_ref.set_path(&path_1, &view_id_1);
         assert_eq!(container_ref.has_open_file(&path_1), true);
         assert_eq!(
@@ -521,5 +521,14 @@ mod tests {
         assert_eq!(container_ref.lock().editors.len(), 2);
         assert_eq!(container_ref.has_open_file(&path_1), true);
         assert_eq!(container_ref.has_open_file(&path_2), true);
+
+        container_ref.close_view(&view_id_1);
+        assert_eq!(container_ref.lock().editors.len(), 1);
+        assert_eq!(container_ref.has_open_file(&path_2), false);
+        assert_eq!(container_ref.has_open_file(&path_1), true);
+
+        container_ref.close_view(&view_id_2);
+        assert_eq!(container_ref.has_open_file(&path_2), false);
+        assert_eq!(container_ref.lock().editors.len(), 0);
     }
 }

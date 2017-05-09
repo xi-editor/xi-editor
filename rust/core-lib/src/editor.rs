@@ -170,6 +170,7 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     /// should only ever be called from `BufferContainerRef::set_path`
+    #[doc(hidden)]
     pub fn _set_path<P: AsRef<Path>>(&mut self, path: P) {
         self.path = Some(path.as_ref().to_owned());
     }
