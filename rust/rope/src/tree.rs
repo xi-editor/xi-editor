@@ -196,6 +196,19 @@ impl<N: NodeInfo> Node<N> {
         }
     }
 
+    fn next_positive_measure_child<M: Metric<N>>(&self, j: usize) -> (Option<usize>, usize) {
+        let children = self.get_children();
+        let mut offset = 0;
+        for i in j .. children.len() {
+            if children[i].measure::<M>() > 0 {
+                return (Some(i), offset);
+            } else {
+                offset += children[i].len();
+            }
+        }
+        (None, offset)
+    }
+
     fn get_leaf(&self) -> &N::L {
         if let NodeVal::Leaf(ref l) = self.0.val {
             l
@@ -566,33 +579,74 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
         }
     }
 
+    // Moves the cursor to the next discontinuity, or to the end
+    // of the rope. In the former case, returns the offset of said
+    // discontinuity.
     pub fn next<M: Metric<N>>(&mut self) -> Option<(usize)> {
         if self.position >= self.root.len() || self.leaf.is_none() {
             self.leaf = None;
             return None;
         }
-        // TODO: walk up tree to skip measure-0 nodes
-        loop {
-            if let Some(l) = self.leaf {
-                let offset_in_leaf = self.position - self.offset_of_leaf;
-                if let Some(offset_in_leaf) = M::next(l, offset_in_leaf) {
-                    if offset_in_leaf == l.len() &&
-                            self.offset_of_leaf + offset_in_leaf != self.root.len() {
-                        let _ = self.next_leaf();
-                    } else {
-                        self.position = self.offset_of_leaf + offset_in_leaf;
-                    }
-                    return Some(self.position);
-                }
-                if self.offset_of_leaf + l.len() == self.root.len() {
-                    self.position = self.root.len();
-                    return Some(self.position);
-                }
-                let _ = self.next_leaf();
-            } else {
-                panic!("inconsistent, shouldn't get here");
-            }
+
+        if let Some(offset) = self.next_inside_leaf::<M>() {
+            return Some(offset);
         }
+
+        if let Some(l) = self.leaf {
+            self.position = self.offset_of_leaf + l.len();
+            for i in 0..CURSOR_CACHE_SIZE {
+                if self.cache[i].is_none() {
+                    // we are at the root of the tree.
+                    return Some(self.root.len());
+                }
+                let (node, j) = self.cache[i].unwrap();
+                let (next_j, offset) = node.next_positive_measure_child::<M>(j+1);
+                self.position += offset;
+                if let Some(next_j) = next_j {
+                    self.cache[i] = Some((node, next_j));
+                    let mut node_down = &node.get_children()[next_j];
+                    for k in (0..i).rev() {
+                        let (pm_child, offset) = node_down.next_positive_measure_child::<M>(0);
+                        let pm_child = pm_child.unwrap(); // at least one child must have positive measure
+                        self.position += offset;
+                        self.cache[k] = Some((node_down, pm_child));
+                        node_down = &node_down.get_children()[pm_child];
+                    }
+                    self.leaf = Some(node_down.get_leaf());
+                    self.offset_of_leaf = self.position;
+                    return self.next_inside_leaf::<M>();
+                }
+            }
+            // At this point, we know that (1) the next discontinuity is not not in the
+            // cached subtree, (2) self.position corresponds to the begining of the firt
+            // leaf after the cached subtree.
+            self.descend();
+            return self.next::<M>();
+        } else {
+            panic!("inconsistent, shouldn't get here");
+        }
+    }
+
+    fn next_inside_leaf<M: Metric<N>>(&mut self) -> Option<usize> {
+        if let Some(l) = self.leaf {
+            let offset_in_leaf = self.position - self.offset_of_leaf;
+            if let Some(offset_in_leaf) = M::next(l, offset_in_leaf) {
+                if offset_in_leaf == l.len() &&
+                        self.offset_of_leaf + offset_in_leaf != self.root.len() {
+                    let _ = self.next_leaf();
+                } else {
+                    self.position = self.offset_of_leaf + offset_in_leaf;
+                }
+                return Some(self.position);
+            }
+            if self.offset_of_leaf + l.len() == self.root.len() {
+                self.position = self.root.len();
+                return Some(self.position);
+            }
+        } else {
+            panic!("inconsistent, shouldn't get here");
+        }
+        return None;
     }
 
     // same return as get_leaf, moves to beginning of next leaf
