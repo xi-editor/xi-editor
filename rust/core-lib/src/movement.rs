@@ -176,6 +176,8 @@ fn region_movement(m: Movement, r: &SelRegion, view: &View, text: &Rope, modify:
                     if let Some(eol) = text.prev_grapheme_offset(next_para_offset) {
                         offset = eol;
                     }
+                } else if cursor.pos() == text.len() {
+                    offset = text.len();
                 }
             }
             (offset, None)
