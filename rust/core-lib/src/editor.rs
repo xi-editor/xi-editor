@@ -33,7 +33,7 @@ use movement::Movement;
 
 use tabs::{ViewIdentifier, DocumentCtx};
 use rpc::{EditCommand, GestureType};
-use plugins::{PluginUpdate, PluginEdit, Span};
+use plugins::rpc_types::{PluginUpdate, PluginEdit, Span};
 
 const FLAG_SELECT: u64 = 2;
 
@@ -169,7 +169,9 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.views.len() > 0
     }
 
-    pub fn set_path<P: AsRef<Path>>(&mut self, path: P) {
+    /// should only ever be called from `BufferContainerRef::set_path`
+    #[doc(hidden)]
+    pub fn _set_path<P: AsRef<Path>>(&mut self, path: P) {
         self.path = Some(path.as_ref().to_owned());
     }
 
@@ -603,7 +605,6 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
         // TODO: we should probably bubble up this error now. in the meantime always set path,
         // because the caller has updated the open_files list
-        self.path = Some(path.as_ref().to_owned());
         self.pristine_rev_id = self.last_rev_id;
         self.view.set_pristine();
         self.view.set_dirty();
