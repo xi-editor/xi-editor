@@ -85,18 +85,12 @@ impl Engine {
         None
     }
 
+    /// Get the contents of the document at a given revision number
     fn get_rev_from_index(&self, rev_index: usize) -> Rope {
-        let mut deletes_from_union = Cow::Borrowed(&self.revs[rev_index].deletes_from_union);
-        for rev in &self.revs[rev_index + 1..] {
-            if let Edit { ref inserts, .. } = rev.edit {
-                if !inserts.is_empty() {
-                    deletes_from_union = Cow::Owned(deletes_from_union.transform_union(inserts));
-                }
-            }
-        }
-        deletes_from_union.delete_in(&self.union_str)
+        self.get_subset_from_index(rev_index).delete_in(&self.union_str)
     }
 
+    /// Get the Subset to delete from the current union string in order to obtain a revision's content
     fn get_subset_from_index(&self, rev_index: usize) -> Cow<Subset> {
         let mut deletes_from_union = Cow::Borrowed(&self.revs[rev_index].deletes_from_union);
         for rev in &self.revs[rev_index + 1..] {
