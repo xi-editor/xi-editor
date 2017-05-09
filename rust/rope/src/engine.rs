@@ -89,20 +89,20 @@ impl Engine {
         let mut from_union = Cow::Borrowed(&self.revs[rev_index].from_union);
         for rev in &self.revs[rev_index + 1..] {
             if let Edit { ref inserts, .. } = rev.edit {
-                if !inserts.is_trivial() {
-                    from_union = Cow::Owned(from_union.transform_intersect(inserts));
+                if !inserts.is_empty() {
+                    from_union = Cow::Owned(from_union.transform_union(inserts));
                 }
             }
         }
-        from_union.apply(&self.union_str)
+        from_union.delete_in(&self.union_str)
     }
 
     fn get_subset_from_index(&self, rev_index: usize) -> Cow<Subset> {
         let mut from_union = Cow::Borrowed(&self.revs[rev_index].from_union);
         for rev in &self.revs[rev_index + 1..] {
             if let Edit { ref inserts, .. } = rev.edit {
-                if !inserts.is_trivial() {
-                    from_union = Cow::Owned(from_union.transform_intersect(inserts));
+                if !inserts.is_empty() {
+                    from_union = Cow::Owned(from_union.transform_union(inserts));
                 }
             }
         }
@@ -132,8 +132,8 @@ impl Engine {
         let mut prev_from_union = Cow::Borrowed(&rev.from_union);
         for r in &self.revs[ix + 1..] {
             if let Edit { ref inserts, .. } = r.edit {
-                if !inserts.is_trivial() {
-                    prev_from_union = Cow::Owned(prev_from_union.transform_intersect(inserts));
+                if !inserts.is_empty() {
+                    prev_from_union = Cow::Owned(prev_from_union.transform_union(inserts));
                 }
             }
         }
@@ -150,30 +150,30 @@ impl Engine {
         let mut new_deletes = deletes.transform_expand(&rev.from_union);
         for r in &self.revs[ix + 1..] {
             if let Edit { priority, ref inserts, .. } = r.edit {
-                if !inserts.is_trivial() {
+                if !inserts.is_empty() {
                     let after = new_priority >= priority;  // should never be ==
                     union_ins_delta = union_ins_delta.transform_expand(inserts, r.union_str_len, after);
                     new_deletes = new_deletes.transform_expand(inserts);
                 }
             }
         }
-        let new_inserts = union_ins_delta.invert_insert();
-        if !new_inserts.is_trivial() {
+        let new_inserts = union_ins_delta.inserted_subset();
+        if !new_inserts.is_empty() {
             new_deletes = new_deletes.transform_expand(&new_inserts);
         }
         let new_union_str = union_ins_delta.apply(&self.union_str);
         let undone = self.get_current_undo().map_or(false, |undos| undos.contains(&undo_group));
         let mut new_from_union = Cow::Borrowed(&self.revs.last().unwrap().from_union);
         if undone {
-            if !new_inserts.is_trivial() {
-                new_from_union = Cow::Owned(new_from_union.transform_intersect(&new_inserts));
+            if !new_inserts.is_empty() {
+                new_from_union = Cow::Owned(new_from_union.transform_union(&new_inserts));
             }
         } else {
-            if !new_inserts.is_trivial() {
+            if !new_inserts.is_empty() {
                 new_from_union = Cow::Owned(new_from_union.transform_expand(&new_inserts));
             }
-            if !new_deletes.is_trivial() {
-                new_from_union = Cow::Owned(new_from_union.intersect(&new_deletes));
+            if !new_deletes.is_empty() {
+                new_from_union = Cow::Owned(new_from_union.union(&new_deletes));
             }
         }
         (Revision {
@@ -205,15 +205,15 @@ impl Engine {
         for rev in &self.revs {
             if let Edit { ref undo_group, ref inserts, ref deletes, .. } = rev.edit {
                 if groups.contains(undo_group) {
-                    if !inserts.is_trivial() {
-                        from_union = from_union.transform_intersect(inserts);
+                    if !inserts.is_empty() {
+                        from_union = from_union.transform_union(inserts);
                     }
                 } else {
-                    if !inserts.is_trivial() {
+                    if !inserts.is_empty() {
                         from_union = from_union.transform_expand(inserts);
                     }
-                    if !deletes.is_trivial() {
-                        from_union = from_union.intersect(deletes);
+                    if !deletes.is_empty() {
+                        from_union = from_union.union(deletes);
                     }
                 }
             }
@@ -262,43 +262,43 @@ impl Engine {
                 if let Edit { ref undo_group, ref inserts, ref deletes, .. } = rev.edit {
                     if !retain_revs.contains(&rev.rev_id) && gc_groups.contains(undo_group) {
                         if cur_undo.map_or(false, |undos| undos.contains(undo_group)) {
-                            if !inserts.is_trivial() {
-                                gc_dels = gc_dels.transform_intersect(inserts);
+                            if !inserts.is_empty() {
+                                gc_dels = gc_dels.transform_union(inserts);
                             }
                         } else {
-                            if !inserts.is_trivial() {
+                            if !inserts.is_empty() {
                                 gc_dels = gc_dels.transform_expand(inserts);
                             }
-                            if !deletes.is_trivial() {
-                                gc_dels = gc_dels.intersect(deletes);
+                            if !deletes.is_empty() {
+                                gc_dels = gc_dels.union(deletes);
                             }
                         }
-                    } else if !inserts.is_trivial() {
+                    } else if !inserts.is_empty() {
                         gc_dels = gc_dels.transform_expand(inserts);
                     }
                 }
             }
         }
-        if !gc_dels.is_trivial() {
-            self.union_str = gc_dels.apply(&self.union_str);
+        if !gc_dels.is_empty() {
+            self.union_str = gc_dels.delete_in(&self.union_str);
         }
         let old_revs = std::mem::replace(&mut self.revs, Vec::new());
         for rev in old_revs.into_iter().rev() {
             match rev.edit {
                 Edit { priority, undo_group, inserts, deletes } => {
-                    let new_gc_dels = if inserts.is_trivial() {
+                    let new_gc_dels = if inserts.is_empty() {
                         None
                     } else {
                         Some(inserts.transform_shrink(&gc_dels))
                     };
                     if retain_revs.contains(&rev.rev_id) || !gc_groups.contains(&undo_group) {
-                        let (inserts, deletes, from_union, len) = if gc_dels.is_trivial() {
+                        let (inserts, deletes, from_union, len) = if gc_dels.is_empty() {
                             (inserts, deletes, rev.from_union, rev.union_str_len)
                         } else {
                             (gc_dels.transform_shrink(&inserts),
                                 gc_dels.transform_shrink(&deletes),
                                 gc_dels.transform_shrink(&rev.from_union),
-                                gc_dels.len(rev.union_str_len))
+                                gc_dels.len_after_delete(rev.union_str_len))
                         };
                         self.revs.push(Revision {
                             rev_id: rev.rev_id,
@@ -320,11 +320,11 @@ impl Engine {
                     // We're super-aggressive about dropping these; after gc, the history
                     // of which undos were used to compute from_union in edits may be lost.
                     if retain_revs.contains(&rev.rev_id) {
-                        let (from_union, len) = if gc_dels.is_trivial() {
+                        let (from_union, len) = if gc_dels.is_empty() {
                             (rev.from_union, rev.union_str_len)
                         } else {
                             (gc_dels.transform_shrink(&rev.from_union),
-                                gc_dels.len(rev.union_str_len))
+                                gc_dels.len_after_delete(rev.union_str_len))
                         };
                         self.revs.push(Revision {
                             rev_id: rev.rev_id,
