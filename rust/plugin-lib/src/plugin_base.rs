@@ -237,8 +237,9 @@ impl<'a, H: Handler> xi_rpc::Handler<io::Stdout> for MyHandler<'a, H> {
     fn handle_notification(&mut self, ctx: RpcCtx<io::Stdout>, method: &str, params: &Value) {
         match parse_plugin_request(method, params) {
             Ok(req) => {
-                let _ = self.0.call(&req, PluginCtx(ctx));
-                // TODO: should check None
+                if let Some(_) = self.0.call(&req, PluginCtx(ctx)) {
+                    print_err!("Unexpected return value for notification {}", method)
+                }
             }
             Err(err) => print_err!("error: {}", err)
         }
