@@ -33,7 +33,7 @@ use movement::Movement;
 
 use tabs::{ViewIdentifier, DocumentCtx};
 use rpc::{EditCommand, GestureType};
-use plugins::{PluginUpdate, PluginEdit, Span};
+use plugins::rpc_types::{PluginUpdate, PluginEdit, Span};
 
 const FLAG_SELECT: u64 = 2;
 
