@@ -27,7 +27,8 @@ use editor::Editor;
 use rpc::{CoreCommand, EditCommand, PluginCommand};
 use styles::{Style, StyleMap};
 use MainPeer;
-use plugins::{self, PluginManager, PluginUpdate};
+use plugins::{self, PluginManager};
+use plugins::rpc_types::PluginUpdate;
 
 /// ViewIdentifiers are the primary means of routing messages between xi-core and a client view.
 pub type ViewIdentifier = String;
