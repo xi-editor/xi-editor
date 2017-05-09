@@ -145,7 +145,7 @@ impl Subset {
     ///
     /// s2 = self.apply_to_string(s1)
     ///
-    /// element in self.transform_expand(other).apply_to_string(s0) if not in s1 or in s2
+    /// element in self.transform_expand(other).apply_to_string(s0) if (not in s1) or in s2
     pub fn transform_expand(&self, other: &Subset) -> Subset {
         let mut sb = SubsetBuilder::new();
         let mut last = 0;
