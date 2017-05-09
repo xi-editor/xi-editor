@@ -33,7 +33,7 @@ pub struct Engine {
 
 struct Revision {
     rev_id: usize,
-    deletes_from_union: Subset,
+    from_union: Subset,
     union_str_len: usize,
     edit: Contents,
 }
@@ -56,7 +56,7 @@ impl Engine {
     pub fn new(initial_contents: Rope) -> Engine {
         let rev = Revision {
             rev_id: 0,
-            deletes_from_union: Subset::default(),
+            from_union: Subset::default(),
             union_str_len: initial_contents.len(),
             edit: Undo { groups: BTreeSet::default() },
         };
@@ -85,22 +85,28 @@ impl Engine {
         None
     }
 
-    /// Get the contents of the document at a given revision number
     fn get_rev_from_index(&self, rev_index: usize) -> Rope {
-        self.get_subset_from_index(rev_index).delete_in(&self.union_str)
-    }
-
-    /// Get the Subset to delete from the current union string in order to obtain a revision's content
-    fn get_subset_from_index(&self, rev_index: usize) -> Cow<Subset> {
-        let mut deletes_from_union = Cow::Borrowed(&self.revs[rev_index].deletes_from_union);
+        let mut from_union = Cow::Borrowed(&self.revs[rev_index].from_union);
         for rev in &self.revs[rev_index + 1..] {
             if let Edit { ref inserts, .. } = rev.edit {
-                if !inserts.is_empty() {
-                    deletes_from_union = Cow::Owned(deletes_from_union.transform_union(inserts));
+                if !inserts.is_trivial() {
+                    from_union = Cow::Owned(from_union.transform_intersect(inserts));
                 }
             }
         }
-        deletes_from_union
+        from_union.apply(&self.union_str)
+    }
+
+    fn get_subset_from_index(&self, rev_index: usize) -> Cow<Subset> {
+        let mut from_union = Cow::Borrowed(&self.revs[rev_index].from_union);
+        for rev in &self.revs[rev_index + 1..] {
+            if let Edit { ref inserts, .. } = rev.edit {
+                if !inserts.is_trivial() {
+                    from_union = Cow::Owned(from_union.transform_intersect(inserts));
+                }
+            }
+        }
+        from_union
     }
 
     /// Get revision id of head revision.
@@ -123,16 +129,16 @@ impl Engine {
     pub fn delta_rev_head(&self, base_rev: usize) -> Delta<RopeInfo> {
         let ix = self.find_rev(base_rev).expect("base revision not found");
         let rev = &self.revs[ix];
-        let mut prev_from_union = Cow::Borrowed(&rev.deletes_from_union);
+        let mut prev_from_union = Cow::Borrowed(&rev.from_union);
         for r in &self.revs[ix + 1..] {
             if let Edit { ref inserts, .. } = r.edit {
-                if !inserts.is_empty() {
-                    prev_from_union = Cow::Owned(prev_from_union.transform_union(inserts));
+                if !inserts.is_trivial() {
+                    prev_from_union = Cow::Owned(prev_from_union.transform_intersect(inserts));
                 }
             }
         }
         let head_rev = &self.revs.last().unwrap();
-        Delta::synthesize(&self.union_str, &prev_from_union, &head_rev.deletes_from_union)
+        Delta::synthesize(&self.union_str, &prev_from_union, &head_rev.from_union)
     }
 
     fn mk_new_rev(&self, new_priority: usize, undo_group: usize,
@@ -140,39 +146,39 @@ impl Engine {
         let ix = self.find_rev(base_rev).expect("base revision not found");
         let rev = &self.revs[ix];
         let (ins_delta, deletes) = delta.factor();
-        let mut union_ins_delta = ins_delta.transform_expand(&rev.deletes_from_union, rev.union_str_len, true);
-        let mut new_deletes = deletes.transform_expand(&rev.deletes_from_union);
+        let mut union_ins_delta = ins_delta.transform_expand(&rev.from_union, rev.union_str_len, true);
+        let mut new_deletes = deletes.transform_expand(&rev.from_union);
         for r in &self.revs[ix + 1..] {
             if let Edit { priority, ref inserts, .. } = r.edit {
-                if !inserts.is_empty() {
+                if !inserts.is_trivial() {
                     let after = new_priority >= priority;  // should never be ==
                     union_ins_delta = union_ins_delta.transform_expand(inserts, r.union_str_len, after);
                     new_deletes = new_deletes.transform_expand(inserts);
                 }
             }
         }
-        let new_inserts = union_ins_delta.inserted_subset();
-        if !new_inserts.is_empty() {
+        let new_inserts = union_ins_delta.invert_insert();
+        if !new_inserts.is_trivial() {
             new_deletes = new_deletes.transform_expand(&new_inserts);
         }
         let new_union_str = union_ins_delta.apply(&self.union_str);
         let undone = self.get_current_undo().map_or(false, |undos| undos.contains(&undo_group));
-        let mut new_from_union = Cow::Borrowed(&self.revs.last().unwrap().deletes_from_union);
+        let mut new_from_union = Cow::Borrowed(&self.revs.last().unwrap().from_union);
         if undone {
-            if !new_inserts.is_empty() {
-                new_from_union = Cow::Owned(new_from_union.transform_union(&new_inserts));
+            if !new_inserts.is_trivial() {
+                new_from_union = Cow::Owned(new_from_union.transform_intersect(&new_inserts));
             }
         } else {
-            if !new_inserts.is_empty() {
+            if !new_inserts.is_trivial() {
                 new_from_union = Cow::Owned(new_from_union.transform_expand(&new_inserts));
             }
-            if !new_deletes.is_empty() {
-                new_from_union = Cow::Owned(new_from_union.union(&new_deletes));
+            if !new_deletes.is_trivial() {
+                new_from_union = Cow::Owned(new_from_union.intersect(&new_deletes));
             }
         }
         (Revision {
             rev_id: self.rev_id_counter,
-            deletes_from_union: new_from_union.into_owned(),
+            from_union: new_from_union.into_owned(),
             union_str_len: new_union_str.len(),
             edit: Edit {
                 priority: new_priority,
@@ -195,26 +201,26 @@ impl Engine {
     // recompute the prefix up to where the history diverges, but it's not clear that's
     // even worth the code complexity.
     fn compute_undo(&self, groups: BTreeSet<usize>) -> Revision {
-        let mut deletes_from_union = Subset::default();
+        let mut from_union = Subset::default();
         for rev in &self.revs {
             if let Edit { ref undo_group, ref inserts, ref deletes, .. } = rev.edit {
                 if groups.contains(undo_group) {
-                    if !inserts.is_empty() {
-                        deletes_from_union = deletes_from_union.transform_union(inserts);
+                    if !inserts.is_trivial() {
+                        from_union = from_union.transform_intersect(inserts);
                     }
                 } else {
-                    if !inserts.is_empty() {
-                        deletes_from_union = deletes_from_union.transform_expand(inserts);
+                    if !inserts.is_trivial() {
+                        from_union = from_union.transform_expand(inserts);
                     }
-                    if !deletes.is_empty() {
-                        deletes_from_union = deletes_from_union.union(deletes);
+                    if !deletes.is_trivial() {
+                        from_union = from_union.intersect(deletes);
                     }
                 }
             }
         }
         Revision {
             rev_id: self.rev_id_counter,
-            deletes_from_union: deletes_from_union,
+            from_union: from_union,
             union_str_len: self.union_str.len(),
             edit: Undo {
                 groups: groups
@@ -256,47 +262,47 @@ impl Engine {
                 if let Edit { ref undo_group, ref inserts, ref deletes, .. } = rev.edit {
                     if !retain_revs.contains(&rev.rev_id) && gc_groups.contains(undo_group) {
                         if cur_undo.map_or(false, |undos| undos.contains(undo_group)) {
-                            if !inserts.is_empty() {
-                                gc_dels = gc_dels.transform_union(inserts);
+                            if !inserts.is_trivial() {
+                                gc_dels = gc_dels.transform_intersect(inserts);
                             }
                         } else {
-                            if !inserts.is_empty() {
+                            if !inserts.is_trivial() {
                                 gc_dels = gc_dels.transform_expand(inserts);
                             }
-                            if !deletes.is_empty() {
-                                gc_dels = gc_dels.union(deletes);
+                            if !deletes.is_trivial() {
+                                gc_dels = gc_dels.intersect(deletes);
                             }
                         }
-                    } else if !inserts.is_empty() {
+                    } else if !inserts.is_trivial() {
                         gc_dels = gc_dels.transform_expand(inserts);
                     }
                 }
             }
         }
-        if !gc_dels.is_empty() {
-            self.union_str = gc_dels.delete_in(&self.union_str);
+        if !gc_dels.is_trivial() {
+            self.union_str = gc_dels.apply(&self.union_str);
         }
         let old_revs = std::mem::replace(&mut self.revs, Vec::new());
         for rev in old_revs.into_iter().rev() {
             match rev.edit {
                 Edit { priority, undo_group, inserts, deletes } => {
-                    let new_gc_dels = if inserts.is_empty() {
+                    let new_gc_dels = if inserts.is_trivial() {
                         None
                     } else {
                         Some(inserts.transform_shrink(&gc_dels))
                     };
                     if retain_revs.contains(&rev.rev_id) || !gc_groups.contains(&undo_group) {
-                        let (inserts, deletes, deletes_from_union, len) = if gc_dels.is_empty() {
-                            (inserts, deletes, rev.deletes_from_union, rev.union_str_len)
+                        let (inserts, deletes, from_union, len) = if gc_dels.is_trivial() {
+                            (inserts, deletes, rev.from_union, rev.union_str_len)
                         } else {
                             (gc_dels.transform_shrink(&inserts),
                                 gc_dels.transform_shrink(&deletes),
-                                gc_dels.transform_shrink(&rev.deletes_from_union),
-                                gc_dels.len_after_delete(rev.union_str_len))
+                                gc_dels.transform_shrink(&rev.from_union),
+                                gc_dels.len(rev.union_str_len))
                         };
                         self.revs.push(Revision {
                             rev_id: rev.rev_id,
-                            deletes_from_union: deletes_from_union,
+                            from_union: from_union,
                             union_str_len: len,
                             edit: Edit {
                                 priority: priority,
@@ -312,17 +318,17 @@ impl Engine {
                 }
                 Undo { groups } => {
                     // We're super-aggressive about dropping these; after gc, the history
-                    // of which undos were used to compute deletes_from_union in edits may be lost.
+                    // of which undos were used to compute from_union in edits may be lost.
                     if retain_revs.contains(&rev.rev_id) {
-                        let (deletes_from_union, len) = if gc_dels.is_empty() {
-                            (rev.deletes_from_union, rev.union_str_len)
+                        let (from_union, len) = if gc_dels.is_trivial() {
+                            (rev.from_union, rev.union_str_len)
                         } else {
-                            (gc_dels.transform_shrink(&rev.deletes_from_union),
-                                gc_dels.len_after_delete(rev.union_str_len))
+                            (gc_dels.transform_shrink(&rev.from_union),
+                                gc_dels.len(rev.union_str_len))
                         };
                         self.revs.push(Revision {
                             rev_id: rev.rev_id,
-                            deletes_from_union: deletes_from_union,
+                            from_union: from_union,
                             union_str_len: len,
                             edit: Undo {
                                 groups: &groups - gc_groups,
