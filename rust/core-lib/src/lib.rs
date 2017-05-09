@@ -86,10 +86,8 @@ impl<W: Write + Send + 'static> Handler<W> for MainState<W> {
     fn handle_notification(&mut self, ctx: RpcCtx<W>, method: &str, params: &Value) {
         match Request::from_json(method, params) {
             Ok(req) => {
-                if let Some(value) = self.handle_req(req, ctx.get_peer()) {
-                    if !value.is_null() {
-                        print_err!("Unexpected return value for notification {}", method)
-                    }
+                if let Some(_) = self.handle_req(req, ctx.get_peer()) {
+                    print_err!("Unexpected return value for notification {}", method)
                 }
             }
             Err(e) => print_err!("Error {} decoding RPC request {}", e, method)
