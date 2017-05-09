@@ -80,7 +80,7 @@ impl<N: NodeInfo> Delta<N> {
         for elem in self.els {
             match elem {
                 DeltaElement::Copy(b, e) => {
-                    sb.add_deletion(e1, b);
+                    sb.add_range(e1, b);
                     e1 = e;
                 }
                 DeltaElement::Insert(n) => {
@@ -95,7 +95,7 @@ impl<N: NodeInfo> Delta<N> {
         if b1 < self.base_len {
             ins.push(DeltaElement::Copy(b1, self.base_len));
         }
-        sb.add_deletion(e1, self.base_len);
+        sb.add_range(e1, self.base_len);
         (Delta { els: ins, base_len: self.base_len }, sb.build())
     }
 
@@ -103,12 +103,12 @@ impl<N: NodeInfo> Delta<N> {
     /// insertions and the other representing deletions. This is basically the inverse
     /// of `factor`.
     pub fn synthesize(s: &Node<N>, ins: &Subset, del: &Subset) -> Delta<N> {
-        let base_len = ins.len(s.len());
+        let base_len = ins.len_after_delete(s.len());
         let mut els = Vec::new();
         let mut x = 0;
-        let mut ins_ranges = ins.range_iter(s.len());
+        let mut ins_ranges = ins.complement_iter(s.len());
         let mut last_ins = ins_ranges.next();
-        for (b, e) in del.range_iter(s.len()) {
+        for (b, e) in del.complement_iter(s.len()) {
             let mut beg = b;
             while beg < e {
                 while let Some((ib, ie)) = last_ins {
@@ -163,7 +163,7 @@ impl<N: NodeInfo> Delta<N> {
         let mut y = 0;  // coordinate within xform
         let mut i = 0;  // index into self.els
         let mut b1 = 0;
-        let mut xform_ranges = xform.range_iter(l);
+        let mut xform_ranges = xform.complement_iter(l);
         let mut last_xform = xform_ranges.next();
         while y < l || i < self.els.len() {
             let next_iv_beg = if let Some((xb, _)) = last_xform { xb } else { l };
@@ -211,10 +211,10 @@ impl<N: NodeInfo> Delta<N> {
         Delta { els: els, base_len: l }
     }
 
-    /// Return a subset that inverts the insert-only delta:
+    /// Return a Subset containing the inserted ranges of an insert-only delta.
     ///
-    /// `d.invert_insert().apply_to_string(d.apply_to_string(s)) == s`
-    pub fn invert_insert(&self) -> Subset {
+    /// `d.inserted_subset().delete_in_string(d.apply_to_string(s)) == s`
+    pub fn inserted_subset(&self) -> Subset {
         let mut sb = SubsetBuilder::new();
         let mut x = 0;
         for elem in &self.els {
@@ -223,7 +223,7 @@ impl<N: NodeInfo> Delta<N> {
                     x += e - b;
                 }
                 DeltaElement::Insert(ref n) => {
-                    sb.add_deletion(x, x + n.len());
+                    sb.add_range(x, x + n.len());
                     x += n.len();
                 }
             }
@@ -411,7 +411,7 @@ mod tests {
             if j < substr.len() && substr.as_bytes()[j] == s.as_bytes()[i] {
                 j += 1;
             } else {
-                sb.add_deletion(i, i + 1);
+                sb.add_range(i, i + 1);
             }
         }
         sb.build()
@@ -434,14 +434,14 @@ mod tests {
         let d = Delta::simple_edit(Interval::new_closed_open(1, 9), Rope::from("era"), 11);
         let (d1, ss) = d.factor();
         assert_eq!("heraello world", d1.apply_to_string("hello world"));
-        assert_eq!("hld", ss.apply_to_string("hello world"));
+        assert_eq!("hld", ss.delete_in_string("hello world"));
     }
 
     #[test]
     fn synthesize() {
         let d = Delta::simple_edit(Interval::new_closed_open(1, 9), Rope::from("era"), 11);
         let (d1, del) = d.factor();
-        let ins = d1.invert_insert();
+        let ins = d1.inserted_subset();
         let del = del.transform_expand(&ins);
         let union_str = d1.apply_to_string("hello world");
         let new_d = Delta::synthesize(&Rope::from(&union_str), &ins, &del);
@@ -451,10 +451,10 @@ mod tests {
     }
 
     #[test]
-    fn invert_insert() {
+    fn inserted_subset() {
         let d = Delta::simple_edit(Interval::new_closed_open(1, 9), Rope::from("era"), 11);
         let (d1, _ss) = d.factor();
-        assert_eq!("hello world", d1.invert_insert().apply_to_string("heraello world"));
+        assert_eq!("hello world", d1.inserted_subset().delete_in_string("heraello world"));
     }
 
     #[test]
