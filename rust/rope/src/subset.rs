@@ -95,7 +95,7 @@ impl Subset {
     }
 
     /// Compute the union of two subsets. In other words, an element exists in the
-    /// resulting subset if it exists either input.
+    /// resulting subset iff it exists in at least one of the inputs.
     pub fn union(&self, other: &Subset) -> Subset {
         let mut sb = SubsetBuilder::new();
         let mut i = 0;

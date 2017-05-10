@@ -182,10 +182,15 @@ impl<N: NodeInfo> Delta<N> {
                 els = init;
             }
         }
-        (Interval::new_closed_open(iv_start, iv_end), Delta::els_len(els))
+        (Interval::new_closed_open(iv_start, iv_end), Delta::new_document_len(els))
     }
 
-    fn els_len(els: &[DeltaElement<N>]) -> usize {
+    /// Returns the length of the new document given the internal
+    /// representation of it. In other words, the length of the transformed
+    /// string after this Delta is applied.
+    ///
+    /// d.apply(r).len() == new_document_len(d.els)
+    fn new_document_len(els: &[DeltaElement<N>]) -> usize {
         els.iter().fold(0, |sum, el|
             sum + match *el {
                 DeltaElement::Copy(beg, end) => end - beg,
