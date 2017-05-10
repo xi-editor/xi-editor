@@ -55,7 +55,7 @@ impl SubsetBuilder {
 }
 
 impl Subset {
-    // mostly for testing
+    /// Mostly for testing.
     pub fn delete_from_string(&self, s: &str) -> String {
         let mut result = String::new();
         for (b, e) in self.complement_iter(s.len()) {
@@ -66,6 +66,7 @@ impl Subset {
 
     // Maybe Subset should be a pure data structure and this method should
     // be a method of Node.
+    /// Builds a version of `s` with all the elements in this `Subset` deleted from it.
     pub fn delete_from<N: NodeInfo>(&self, s: &Node<N>) -> Node<N> {
         let mut b = TreeBuilder::new();
         for (beg, end) in self.complement_iter(s.len()) {
