@@ -831,3 +831,43 @@ impl Metric<BytesInfo> for BytesMetric {
 }
 
 */
+
+#[cfg(test)]
+mod test {
+    use ::rope::*;
+    use super::*;
+
+    fn build_triangle(n: u32) -> String {
+        let mut s = String::new();
+        let mut line = String::new();
+        for _ in 0 .. n {
+            s += &line;
+            s += "\n";
+            line += "a";
+        }
+        s
+    }
+
+    #[test]
+    fn cursor_next_triangle() {
+        let n = 10_000;
+        let text = Rope::from(build_triangle(n));
+
+        let mut cursor = Cursor::new(&text, 0);
+        let mut prev_offset = cursor.pos();
+        for i in 1..(n+1) as usize {
+            let offset = cursor.next::<LinesMetric>().expect("arrived at the end too soon");
+            assert_eq!(offset - prev_offset, i);
+            prev_offset = offset;
+        }
+        assert_eq!(cursor.next::<LinesMetric>(), None);
+    }
+
+    #[test]
+    fn cursor_next_empty() {
+        let text = Rope::from(String::new());
+        let mut cursor = Cursor::new(&text, 0);
+        assert_eq!(cursor.next::<LinesMetric>(), None);
+        assert_eq!(cursor.pos(), 0);
+    }
+}
