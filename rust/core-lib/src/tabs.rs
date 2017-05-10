@@ -115,16 +115,12 @@ impl <W: Write + Send + 'static>BufferContainerRef<W> {
 
     /// Adds a new editor, associating it with the provided identifiers.
     pub fn add_editor(&self, view_id: &ViewIdentifier, buffer_id: &BufferIdentifier,
-                      editor: Editor<W>, path: Option<&Path>) {
-        {
-            let mut inner = self.lock();
-            inner.views.insert(view_id.to_owned(), buffer_id.to_owned());
-            inner.editors.insert(buffer_id.to_owned(), editor);
-        }
-        if let Some(path) = path {
-            self.set_path(path, view_id);
-        }
+                      editor: Editor<W>) {
+        let mut inner = self.lock();
+        inner.views.insert(view_id.to_owned(), buffer_id.to_owned());
+        inner.editors.insert(buffer_id.to_owned(), editor);
     }
+
     /// Registers `file_path` as an open file, associated with `view_id`'s buffer.
     ///
     /// If an existing path is already associated with this buffer, it is removed.
@@ -316,7 +312,7 @@ impl<W: Write + Send + 'static> Documents<W> {
     fn new_empty_view(&mut self, rpc_peer: &MainPeer<W>, view_id: &ViewIdentifier,
                       buffer_id: BufferIdentifier) {
         let editor = Editor::new(self.new_tab_ctx(rpc_peer), view_id);
-        self.buffers.add_editor(view_id, &buffer_id, editor, None);
+        self.add_editor(view_id, &buffer_id, editor, None);
     }
 
     fn new_view_with_file(&mut self, rpc_peer: &MainPeer<W>, view_id: &ViewIdentifier,
@@ -324,7 +320,7 @@ impl<W: Write + Send + 'static> Documents<W> {
         match self.read_file(&path) {
             Ok(contents) => {
                 let ed = Editor::with_text(self.new_tab_ctx(rpc_peer), view_id, contents);
-                self.buffers.add_editor(view_id, &buffer_id, ed, Some(path));
+                self.add_editor(view_id, &buffer_id, ed, Some(path));
             }
             Err(err) => {
                 let ed = Editor::new(self.new_tab_ctx(rpc_peer), view_id);
@@ -332,12 +328,23 @@ impl<W: Write + Send + 'static> Documents<W> {
                     // if this is a read error of an actual file, we don't set path
                     // TODO: we should be reporting errors to the client
                     print_err!("unable to read file: {}, error: {:?}", buffer_id, err);
-                    self.buffers.add_editor(view_id, &buffer_id, ed, None);
+                    self.add_editor(view_id, &buffer_id, ed, None);
                 } else {
                     // if a path that doesn't exist, create a new empty buffer + set path
-                    self.buffers.add_editor(view_id, &buffer_id, ed, Some(path));
+                    self.add_editor(view_id, &buffer_id, ed, Some(path));
                 }
             }
+        }
+    }
+
+    /// Adds a new editor, associating it with the provided identifiers.
+    ///
+    /// This is called once each time a new editor is created.
+    fn add_editor(&self, view_id: &ViewIdentifier, buffer_id: &BufferIdentifier,
+                  editor: Editor<W>, path: Option<&Path>) {
+        self.buffers.add_editor(view_id, buffer_id, editor);
+        if let Some(path) = path {
+            self.buffers.set_path(path, view_id);
         }
     }
 
@@ -495,7 +502,7 @@ mod tests {
         let path_1 = PathBuf::from("a_path");
         let path_2 = PathBuf::from("a_different_path");
         let editor = Editor::new(mock_doc_ctx(&view_id_1), &view_id_1);
-        container_ref.add_editor(&view_id_1, &buf_id_1, editor, None);
+        container_ref.add_editor(&view_id_1, &buf_id_1, editor);
         assert_eq!(container_ref.lock().editors.len(), 1);
 
         // set path (as if on save)
@@ -518,7 +525,8 @@ mod tests {
         let view_id_2 = "view-id-2".to_owned();
         let buf_id_2 = "buf-id-2".to_owned();
         let editor = Editor::new(mock_doc_ctx(&view_id_2), &view_id_2);
-        container_ref.add_editor(&view_id_2, &buf_id_2, editor, Some(&path_1));
+        container_ref.add_editor(&view_id_2, &buf_id_2, editor);
+        container_ref.set_path(&path_1, &view_id_2);
         assert_eq!(container_ref.lock().editors.len(), 2);
         assert_eq!(container_ref.has_open_file(&path_1), true);
         assert_eq!(container_ref.has_open_file(&path_2), true);
