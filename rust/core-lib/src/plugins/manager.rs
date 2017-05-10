@@ -50,10 +50,30 @@ impl<W: Write + Send + 'static> PluginManager<W> {
         self.catalog.iter().map(|p| p.name.as_ref()).collect::<Vec<_>>()
     }
 
-    //fn new_buffer(&mut self, view_id: &ViewIdentifier) {}
-    //fn file_open(&mut self, view_id: &ViewIdentifier, path: &Path) {}
-    //fn file_save(&mut self, view_id: &ViewIdentifier, path: &Path) {}
-    //fn view_close(&mut self, view_id: &ViewIdentifier) {}
+    /// Called when a new empty buffer is created.
+    pub fn document_new(&mut self, view_id: &ViewIdentifier) {
+        print_err!("document_new {}", view_id);
+    }
+
+    /// Called when an existing file is loaded into a buffer.
+    pub fn document_open(&mut self, view_id: &ViewIdentifier) {
+        print_err!("document_open {}", view_id);
+    }
+
+    /// Called when a buffer is saved to a file.
+    pub fn document_did_save(&mut self, view_id: &ViewIdentifier) {
+        print_err!("document_did_save {}", view_id);
+    }
+
+    /// Called when a buffer is closed.
+    pub fn document_close(&mut self, view_id: &ViewIdentifier) {
+        print_err!("document_close {}", view_id);
+    }
+
+    /// Called when a document's syntax definition has changed.
+    pub fn document_syntax_changed(&mut self, view_id: &ViewIdentifier) {
+        print_err!("document_syntax_changed {}", view_id);
+    }
 
     /// Passes an update from a buffer to all registered plugins.
     pub fn update(&mut self, view_id: &ViewIdentifier, update: PluginUpdate,

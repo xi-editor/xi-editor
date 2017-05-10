@@ -27,6 +27,7 @@ use editor::Editor;
 use rpc::{CoreCommand, EditCommand, PluginCommand};
 use styles::{Style, StyleMap};
 use MainPeer;
+use syntax::SyntaxDefinition;
 use plugins::{self, PluginManager};
 use plugins::rpc_types::PluginUpdate;
 
@@ -307,12 +308,14 @@ impl<W: Write + Send + 'static> Documents<W> {
 
     fn do_close_view(&mut self, view_id: &ViewIdentifier) {
         self.buffers.close_view(view_id);
+        self.plugins.lock().unwrap().document_close(view_id);
     }
 
     fn new_empty_view(&mut self, rpc_peer: &MainPeer<W>, view_id: &ViewIdentifier,
                       buffer_id: BufferIdentifier) {
         let editor = Editor::new(self.new_tab_ctx(rpc_peer), view_id);
         self.add_editor(view_id, &buffer_id, editor, None);
+        self.plugins.lock().unwrap().document_new(view_id);
     }
 
     fn new_view_with_file(&mut self, rpc_peer: &MainPeer<W>, view_id: &ViewIdentifier,
@@ -321,6 +324,7 @@ impl<W: Write + Send + 'static> Documents<W> {
             Ok(contents) => {
                 let ed = Editor::with_text(self.new_tab_ctx(rpc_peer), view_id, contents);
                 self.add_editor(view_id, &buffer_id, ed, Some(path));
+                self.plugins.lock().unwrap().document_open(view_id);
             }
             Err(err) => {
                 let ed = Editor::new(self.new_tab_ctx(rpc_peer), view_id);
@@ -333,6 +337,7 @@ impl<W: Write + Send + 'static> Documents<W> {
                     // if a path that doesn't exist, create a new empty buffer + set path
                     self.add_editor(view_id, &buffer_id, ed, Some(path));
                 }
+                self.plugins.lock().unwrap().document_new(view_id);
             }
         }
     }
@@ -366,8 +371,19 @@ impl<W: Write + Send + 'static> Documents<W> {
                                file_path: P) -> Option<Value> {
         //TODO: handle & report errors
         let file_path = file_path.as_ref();
-        self.buffers.lock().editor_for_view_mut(view_id).unwrap().do_save(file_path);
+        let prev_syntax = self.buffers.lock().editor_for_view(view_id)
+            .unwrap().get_syntax().to_owned();
+        // notify of syntax change before notify of file_save
+        //FIXME: this doesn't tell us if the syntax _will_ change, for instance if syntax was a user
+        //selection. (we don't handle this case right now)
+        if prev_syntax != SyntaxDefinition::new(file_path.to_str()) {
+                self.plugins.lock().unwrap().document_syntax_changed(view_id);
+        }
+
+        self.buffers.lock().editor_for_view_mut(view_id)
+            .unwrap().do_save(file_path);
         self.buffers.set_path(file_path, view_id);
+        self.plugins.lock().unwrap().document_did_save(&view_id);
         None
     }
 
