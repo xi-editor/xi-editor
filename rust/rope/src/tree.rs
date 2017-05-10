@@ -196,7 +196,7 @@ impl<N: NodeInfo> Node<N> {
         }
     }
 
-    /// Returns the fist child with a positive measure, starting from the `j`th.
+    /// Returns the first child with a positive measure, starting from the `j`th.
     /// Also, returns the offset we have skipped; note that if it returns `None`in the first component, we skip all the children.
     fn next_positive_measure_child<M: Metric<N>>(&self, j: usize) -> (Option<usize>, usize) {
         let children = self.get_children();
@@ -534,6 +534,9 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
         result
     }
 
+    /// Moves the cursor to the previous boundary, or to the beginning of the
+    /// rope. In the former case, returns the position of the first character
+    /// past this boundary. In the latter case, returns `0`.
     pub fn prev<M: Metric<N>>(&mut self) -> Option<(usize)> {
         if self.position == 0 || self.leaf.is_none() {
             self.leaf = None;
@@ -581,9 +584,9 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
         }
     }
 
-    /// Moves the cursor to the next discontinuity, or to the end
-    /// of the rope. In the former case, returns the offset of said
-    /// discontinuity.
+    /// Moves the cursor to the next boundary, or to the end of the rope. In the
+    /// former case, returns the position of the first character past this
+    /// boundary. In the latter case, returns the length of the rope.
     pub fn next<M: Metric<N>>(&mut self) -> Option<(usize)> {
         if self.position >= self.root.len() || self.leaf.is_none() {
             self.leaf = None;
@@ -851,7 +854,7 @@ mod test {
 
     #[test]
     fn cursor_next_triangle() {
-        let n = 10_000;
+        let n = 2_000;
         let text = Rope::from(build_triangle(n));
 
         let mut cursor = Cursor::new(&text, 0);
@@ -871,4 +874,58 @@ mod test {
         assert_eq!(cursor.next::<LinesMetric>(), None);
         assert_eq!(cursor.pos(), 0);
     }
+
+    #[test]
+    fn cursor_next_misc() {
+        cursor_next_for("toto");
+        cursor_next_for("toto\n");
+        cursor_next_for("toto\ntata");
+        cursor_next_for("歴史\n科学的");
+        cursor_next_for("\n歴史\n科学的\n");
+        cursor_next_for(&build_triangle(100));
+    }
+
+    fn cursor_next_for(s: &str) {
+        let r = Rope::from(s.to_owned());
+        for i in 0..r.len() {
+            let mut c = Cursor::new(&r, i);
+            let it = c.next::<LinesMetric>();
+            let pos = c.pos();
+            assert!(s.as_bytes()[i..pos-1].iter().all(|c| *c != b'\n'), "missed linebreak");
+            if pos < s.len() {
+                assert!(it.is_some(), "must be Some(_)");
+                assert!(s.as_bytes()[pos-1]  == b'\n', "not a linebreak");
+            }
+        }
+    }
+
+    #[test]
+    fn cursor_prev_misc() {
+        cursor_prev_for("toto");
+        cursor_prev_for("toto\n");
+        cursor_prev_for("toto\ntata");
+        cursor_prev_for("歴史\n科学的");
+        cursor_prev_for("\n歴史\n科学的\n");
+        cursor_prev_for(&build_triangle(100));
+    }
+
+    fn cursor_prev_for(s: &str) {
+        let r = Rope::from(s.to_owned());
+        for i in 0..r.len() {
+            let mut c = Cursor::new(&r, i);
+            let it = c.prev::<LinesMetric>();
+            let pos = c.pos();
+            assert!(s.as_bytes()[pos..i].iter().all(|c| *c != b'\n'), "missed linebreak");
+
+            if i == 0 && s.as_bytes()[i] == b'\n' {
+                assert_eq!(pos, 0);
+            }
+
+            if pos > 0 {
+                assert!(it.is_some(), "must be Some(_)");
+                assert!(s.as_bytes()[pos-1]  == b'\n', "not a linebreak");
+            }
+        }
+    }
+
 }
