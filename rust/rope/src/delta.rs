@@ -259,7 +259,7 @@ impl<N: NodeInfo> InsertDelta<N> {
 
     /// Return a Subset containing the inserted ranges.
     ///
-    /// `d.inserted_subset().delete_in_string(d.apply_to_string(s)) == s`
+    /// `d.inserted_subset().delete_from_string(d.apply_to_string(s)) == s`
     pub fn inserted_subset(&self) -> Subset {
         let mut sb = SubsetBuilder::new();
         let mut x = 0;
@@ -456,7 +456,7 @@ mod tests {
         let d = Delta::simple_edit(Interval::new_closed_open(1, 9), Rope::from("era"), 11);
         let (d1, ss) = d.factor();
         assert_eq!("heraello world", d1.apply_to_string("hello world"));
-        assert_eq!("hld", ss.delete_in_string("hello world"));
+        assert_eq!("hld", ss.delete_from_string("hello world"));
     }
 
     #[test]
@@ -476,7 +476,7 @@ mod tests {
     fn inserted_subset() {
         let d = Delta::simple_edit(Interval::new_closed_open(1, 9), Rope::from("era"), 11);
         let (d1, _ss) = d.factor();
-        assert_eq!("hello world", d1.inserted_subset().delete_in_string("heraello world"));
+        assert_eq!("hello world", d1.inserted_subset().delete_from_string("heraello world"));
     }
 
     #[test]

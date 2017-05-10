@@ -56,7 +56,7 @@ impl SubsetBuilder {
 
 impl Subset {
     // mostly for testing
-    pub fn delete_in_string(&self, s: &str) -> String {
+    pub fn delete_from_string(&self, s: &str) -> String {
         let mut result = String::new();
         for (b, e) in self.complement_iter(s.len()) {
             result.push_str(&s[b..e]);
@@ -66,7 +66,7 @@ impl Subset {
 
     // Maybe Subset should be a pure data structure and this method should
     // be a method of Node.
-    pub fn delete_in<N: NodeInfo>(&self, s: &Node<N>) -> Node<N> {
+    pub fn delete_from<N: NodeInfo>(&self, s: &Node<N>) -> Node<N> {
         let mut b = TreeBuilder::new();
         for (beg, end) in self.complement_iter(s.len()) {
             s.push_subseq(&mut b, Interval::new_closed_open(beg, end));
@@ -76,7 +76,7 @@ impl Subset {
 
     /// The length of the resulting sequence after deleting this subset.
     ///
-    /// `self.delete_in_string(s).len() = self.len(s.len())`
+    /// `self.delete_from_string(s).len() = self.len(s.len())`
     pub fn len_after_delete(&self, base_len: usize) -> usize {
         self.0.iter().fold(base_len, |acc, &(b, e)| acc - (e - b))
     }
@@ -138,11 +138,11 @@ impl Subset {
     /// Transform through coordinate transform represented by other.
     /// The equation satisfied is as follows:
     ///
-    /// s1 = other.delete_in_string(s0)
+    /// s1 = other.delete_from_string(s0)
     ///
-    /// s2 = self.delete_in_string(s1)
+    /// s2 = self.delete_from_string(s1)
     ///
-    /// element in self.transform_expand(other).delete_in_string(s0) if (not in s1) or in s2
+    /// element in self.transform_expand(other).delete_from_string(s0) if (not in s1) or in s2
     pub fn transform_expand(&self, other: &Subset) -> Subset {
         let mut sb = SubsetBuilder::new();
         let mut last = 0;
@@ -210,8 +210,8 @@ impl Subset {
     ///
     /// C = A.transform_expand(B)
     ///
-    /// C.transform_shrink(B).delete_in_string(C.delete_in_string(s)) =
-    ///   A.delete_in_string(B.delete_in_string(s))
+    /// C.transform_shrink(B).delete_from_string(C.delete_from_string(s)) =
+    ///   A.delete_from_string(B.delete_from_string(s))
     pub fn transform_shrink(&self, other: &Subset) -> Subset {
         let mut sb = SubsetBuilder::new();
         let mut last = 0;
@@ -317,7 +317,7 @@ mod tests {
             sb.add_range(b, e);
         }
         let s = sb.build();
-        assert_eq!("145BCEINQRSTUWZbcdimpvxyz", s.delete_in_string(TEST_STR));
+        assert_eq!("145BCEINQRSTUWZbcdimpvxyz", s.delete_from_string(TEST_STR));
     }
 
     #[test]
@@ -330,7 +330,7 @@ mod tests {
     fn test_mk_subset() {
         let substr = "015ABDFHJOPQVYdfgloprsuvz";
         let s = mk_subset(substr, TEST_STR);
-        assert_eq!(substr, s.delete_in_string(TEST_STR));
+        assert_eq!(substr, s.delete_from_string(TEST_STR));
         assert!(!s.is_empty())
     }
 
@@ -338,17 +338,17 @@ mod tests {
     fn union() {
         let s1 = mk_subset("024AEGHJKNQTUWXYZabcfgikqrvy", TEST_STR);
         let s2 = mk_subset("14589DEFGIKMOPQRUXZabcdefglnpsuxyz", TEST_STR);
-        assert_eq!("4EGKQUXZabcfgy", s1.union(&s2).delete_in_string(TEST_STR));
+        assert_eq!("4EGKQUXZabcfgy", s1.union(&s2).delete_from_string(TEST_STR));
     }
 
     fn transform_case(str1: &str, str2: &str, result: &str) {
         let s1 = mk_subset(str1, TEST_STR);
         let s2 = mk_subset(str2, str1);
         let s3 = s2.transform_expand(&s1);
-        let str3 = s3.delete_in_string(TEST_STR);
+        let str3 = s3.delete_from_string(TEST_STR);
         assert_eq!(result, str3);
-        assert_eq!(str2, s3.transform_shrink(&s1).delete_in_string(&str3));
-        assert_eq!(str2, s2.transform_union(&s1).delete_in_string(TEST_STR));
+        assert_eq!(str2, s3.transform_shrink(&s1).delete_from_string(&str3));
+        assert_eq!(str2, s2.transform_union(&s1).delete_from_string(TEST_STR));
     }
 
     #[test]

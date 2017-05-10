@@ -87,7 +87,7 @@ impl Engine {
 
     /// Get the contents of the document at a given revision number
     fn get_rev_from_index(&self, rev_index: usize) -> Rope {
-        self.get_subset_from_index(rev_index).delete_in(&self.union_str)
+        self.get_subset_from_index(rev_index).delete_from(&self.union_str)
     }
 
     /// Get the Subset to delete from the current union string in order to obtain a revision's content
@@ -274,7 +274,7 @@ impl Engine {
             }
         }
         if !gc_dels.is_empty() {
-            self.union_str = gc_dels.delete_in(&self.union_str);
+            self.union_str = gc_dels.delete_from(&self.union_str);
         }
         let old_revs = std::mem::replace(&mut self.revs, Vec::new());
         for rev in old_revs.into_iter().rev() {
