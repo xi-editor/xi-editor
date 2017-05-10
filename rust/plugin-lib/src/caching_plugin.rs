@@ -73,7 +73,7 @@ impl<'a, H: Handler> plugin_base::Handler for MyHandler<'a, H> {
                 None
             }
             PluginRequest::Update { start, end, new_len, rev, edit_type, author, text } => {
-                print_err!("got update notification {:?}", edit_type);
+                //print_err!("got update notification {:?}", edit_type);
                 ctx.state.buf_size = ctx.state.buf_size - (end - start) + new_len;
                 ctx.state.rev = rev;
                 if let (Some(text), Some(mut cache)) = (text, ctx.state.cache.take()) {
@@ -95,7 +95,7 @@ impl<'a, H: Handler> plugin_base::Handler for MyHandler<'a, H> {
                 ctx.state.line_num = 0;
                 ctx.state.offset_of_line = 0;
                 self.handler.update(ctx);
-                Some(Value::Null)
+                Some(Value::from(0i32))
             }
         }
     }
