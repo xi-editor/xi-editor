@@ -24,7 +24,7 @@ use tabs::{BufferIdentifier, ViewIdentifier, BufferContainerRef};
 
 use super::{PluginDescription, PluginRef};
 use super::rpc_types::{PluginCommand, PluginUpdate, UpdateResponse};
-use super::manifest::debug_plugins;
+use super::manifest::{PluginActivation, debug_plugins};
 
 type PluginName = String;
 
@@ -174,12 +174,16 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
 
     /// Called when a new empty buffer is created.
     pub fn document_new(&mut self, view_id: &ViewIdentifier) {
-        print_err!("document_new {}", view_id);
+        print_err!("document new {}", view_id);
+        self.start_initial_plugins(view_id);
+        //TODO: send lifecycle notification
     }
 
     /// Called when an existing file is loaded into a buffer.
     pub fn document_open(&mut self, view_id: &ViewIdentifier) {
-        print_err!("document_open {}", view_id);
+        print_err!("document open {}", view_id);
+        self.start_initial_plugins(view_id);
+        //TODO: send lifecycle notification
     }
 
     /// Called when a buffer is saved to a file.
@@ -201,6 +205,45 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
     pub fn start_plugin(&self, buffer_id: &str, plugin_name: &str,
                         buf_size: usize, rev: usize) {
         self.lock().start_plugin(self, buffer_id, plugin_name, buf_size, rev);
+    }
+
+    // ====================================================================
+    // implementation details
+    // ====================================================================
+
+    /// Called once each time a buffer is created.
+    fn start_initial_plugins(&mut self, view_id: &ViewIdentifier) {
+        print_err!("starting initial plugins for {}", view_id);
+        let to_start = {
+        let inner = self.lock();
+        let syntax = inner.buffers.lock()
+            .editor_for_view(view_id).unwrap().get_syntax().to_owned();
+
+        inner.catalog.iter()
+            .filter(|plug_desc|{
+                plug_desc.activations.iter().any(|act|{
+                    match *act {
+                        PluginActivation::Autorun => true,
+                        PluginActivation::OnSyntax(ref on_syntax) if *on_syntax == syntax => true,
+                        _ => false,
+                    }
+                })
+            })
+            .map(|desc| desc.name.to_owned())
+            .collect::<Vec<_>>()
+        };
+
+        let (buf_size, _, rev) = {
+            let inner = self.lock();
+            let params = inner.buffers.lock().editor_for_view(&view_id).unwrap()
+                .plugin_init_params();
+            params
+        };
+
+        for plugin_name in to_start.iter() {
+            print_err!("starting plugin {}", plugin_name);
+            self.start_plugin(view_id, plugin_name, buf_size, rev);
+        }
     }
 }
 

@@ -59,13 +59,13 @@ pub fn debug_plugins() -> Vec<PluginDescription> {
 #[derive(Debug, Clone)]
 pub struct PluginDescription {
     pub name: String,
-    version: String,
+    pub version: String,
     //scope: PluginScope,
     // more metadata ...
     /// path to plugin executable
     pub exec_path: PathBuf,
     /// Events that cause this plugin to run
-    activations: Vec<PluginActivation>,
+    pub activations: Vec<PluginActivation>,
 }
 
 /// `PluginActivation`s represent events that trigger running a plugin.
@@ -100,7 +100,7 @@ impl PluginDescription {
     {
         let path = self.exec_path.clone();
         let buffer_id = buffer_id.to_owned();
-        let manager_ref = manager_ref.clone();
+        let manager_ref = manager_ref.to_weak();
         let description = self.clone();
 
         thread::spawn(move || {
@@ -120,7 +120,7 @@ impl PluginDescription {
                 //TODO: I had the bright idea of keeping this reference but
                 // I'm not sure exactly what to do with it (stopping the plugin is one thing)
                 process: child,
-                manager: manager_ref.to_weak(),
+                manager: manager_ref,
                 description: description,
                 buffer_id: buffer_id,
             };
