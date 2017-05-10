@@ -22,13 +22,15 @@ use subset::{Subset, SubsetBuilder};
 use std::cmp::min;
 
 enum DeltaElement<N: NodeInfo> {
-    /// Represents the text in a range of the base document. Includes beginning, excludes end.
+    /// Represents a range of text in the base document. Includes beginning, excludes end.
     Copy(usize, usize),  // note: for now, we lose open/closed info at interval endpoints
     Insert(Node<N>),
 }
 
-/// Represents an entire new document as a sequence of sections copied from
-/// the old document and of new inserted text.
+/// Represents changes to a document by describing the new document as a
+/// sequence of sections copied from the old document and of new inserted
+/// text. Deletions are represented by gaps in the ranges copied from the old
+/// document.
 ///
 /// For example, Editing "abcd" into "acde" could be represented as:
 /// `[Copy(0,1),Copy(2,4),Insert("e")]`
