@@ -123,14 +123,14 @@ impl<W: Write + Send + 'static> PluginRef<W> {
 /// which forwards them to interested plugins.
 pub fn start_update_thread<W: Write + Send + 'static>(
     rx: mpsc::Receiver<(ViewIdentifier, PluginUpdate, usize)>,
-    plugins: &PluginManagerRef<W>)
+    plugins_ref: &PluginManagerRef<W>)
 {
-    let mut plugins = plugins.clone();
+    let plugins_ref = plugins_ref.clone();
     thread::spawn(move ||{
         loop {
             match rx.recv() {
                 Ok((view_id, update, undo_group)) => {
-                    plugins.update(&view_id, update, undo_group);
+                    plugins_ref.lock().update(&view_id, update, undo_group);
                 }
                 Err(_) => break,
             }
