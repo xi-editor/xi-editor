@@ -630,6 +630,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
     }
 
     /// Tries to find the next boundary in the leaf the cursor is currently in.
+    #[inline(always)]
     fn next_inside_leaf<M: Metric<N>>(&mut self) -> Option<usize> {
         if let Some(l) = self.leaf {
             let offset_in_leaf = self.position - self.offset_of_leaf;
