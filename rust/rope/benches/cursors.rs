@@ -75,6 +75,6 @@ fn benchmark_short_lines(b: &mut Bencher) {
 
 #[bench]
 fn benchmark_few_big_lines(b: &mut Bencher) {
-    let text = Rope::from(build_short_lines(1_000_000));
+    let text = Rope::from(build_few_big_lines(1_000_000));
     b.iter(|| run_down_rope(&text));
 }
