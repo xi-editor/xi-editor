@@ -28,7 +28,7 @@ use rpc::{CoreCommand, EditCommand, PluginCommand};
 use styles::{Style, StyleMap};
 use MainPeer;
 use syntax::SyntaxDefinition;
-use plugins::{self, PluginManager};
+use plugins::{self, PluginManagerRef};
 use plugins::rpc_types::PluginUpdate;
 
 /// ViewIdentifiers are the primary means of routing messages between xi-core and a client view.
@@ -202,7 +202,7 @@ pub struct Documents<W: Write> {
     id_counter: usize,
     kill_ring: Arc<Mutex<Rope>>,
     style_map: Arc<Mutex<StyleMap>>,
-    plugins: Arc<Mutex<PluginManager<W>>>,
+    plugins: PluginManagerRef<W>,
     /// A tx channel used to propagate plugin updates from all `Editor`s.
     update_channel: mpsc::Sender<(ViewIdentifier, PluginUpdate, usize)>
 }
@@ -220,10 +220,10 @@ pub struct DocumentCtx<W: Write> {
 impl<W: Write + Send + 'static> Documents<W> {
     pub fn new() -> Documents<W> {
         let buffers = BufferContainerRef::new();
-        let plugin_manager = Arc::new(Mutex::new(PluginManager::new(buffers.clone())));
+        let plugin_manager = PluginManagerRef::new(buffers.clone());
         let (update_tx, update_rx) = mpsc::channel();
 
-        plugins::start_update_thread(update_rx, plugin_manager.clone());
+        plugins::start_update_thread(update_rx, &plugin_manager);
 
         Documents {
             buffers: buffers,
@@ -308,14 +308,14 @@ impl<W: Write + Send + 'static> Documents<W> {
 
     fn do_close_view(&mut self, view_id: &ViewIdentifier) {
         self.buffers.close_view(view_id);
-        self.plugins.lock().unwrap().document_close(view_id);
+        self.plugins.document_close(view_id);
     }
 
     fn new_empty_view(&mut self, rpc_peer: &MainPeer<W>, view_id: &ViewIdentifier,
                       buffer_id: BufferIdentifier) {
         let editor = Editor::new(self.new_tab_ctx(rpc_peer), view_id);
         self.add_editor(view_id, &buffer_id, editor, None);
-        self.plugins.lock().unwrap().document_new(view_id);
+        self.plugins.document_new(view_id);
     }
 
     fn new_view_with_file(&mut self, rpc_peer: &MainPeer<W>, view_id: &ViewIdentifier,
@@ -324,7 +324,7 @@ impl<W: Write + Send + 'static> Documents<W> {
             Ok(contents) => {
                 let ed = Editor::with_text(self.new_tab_ctx(rpc_peer), view_id, contents);
                 self.add_editor(view_id, &buffer_id, ed, Some(path));
-                self.plugins.lock().unwrap().document_open(view_id);
+                self.plugins.document_open(view_id);
             }
             Err(err) => {
                 let ed = Editor::new(self.new_tab_ctx(rpc_peer), view_id);
@@ -337,7 +337,7 @@ impl<W: Write + Send + 'static> Documents<W> {
                     // if a path that doesn't exist, create a new empty buffer + set path
                     self.add_editor(view_id, &buffer_id, ed, Some(path));
                 }
-                self.plugins.lock().unwrap().document_new(view_id);
+                self.plugins.document_new(view_id);
             }
         }
     }
@@ -377,13 +377,13 @@ impl<W: Write + Send + 'static> Documents<W> {
         //FIXME: this doesn't tell us if the syntax _will_ change, for instance if syntax was a user
         //selection. (we don't handle this case right now)
         if prev_syntax != SyntaxDefinition::new(file_path.to_str()) {
-                self.plugins.lock().unwrap().document_syntax_changed(view_id);
+                self.plugins.document_syntax_changed(view_id);
         }
 
         self.buffers.lock().editor_for_view_mut(view_id)
             .unwrap().do_save(file_path);
         self.buffers.set_path(file_path, view_id);
-        self.plugins.lock().unwrap().document_did_save(&view_id);
+        self.plugins.document_did_save(&view_id);
         None
     }
 
@@ -396,7 +396,7 @@ impl<W: Write + Send + 'static> Documents<W> {
         use self::PluginCommand::*;
         match cmd {
             InitialPlugins { view_id } => Some(json!(
-                    self.plugins.lock().unwrap().debug_available_plugins())),
+                    self.plugins.lock().debug_available_plugins())),
             Start { view_id, plugin_name } => {
                 // TODO: this is a hack, there are different ways a plugin might be launched
                 // and they would have different init params, this is just mimicing old api
@@ -406,8 +406,7 @@ impl<W: Write + Send + 'static> Documents<W> {
                 };
 
                 //TODO: stop passing buffer ids
-                self.plugins.lock().unwrap().start_plugin(
-                    &self.plugins, &view_id, &plugin_name, buf_size, rev);
+                self.plugins.start_plugin(&view_id, &plugin_name, buf_size, rev);
                 None
             }
             //TODO: stop a plugin

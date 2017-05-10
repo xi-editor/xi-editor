@@ -26,7 +26,7 @@ use serde_json::Value;
 use xi_rpc::RpcLoop;
 
 use syntax::SyntaxDefinition;
-use super::PluginManager;
+use super::PluginManagerRef;
 use super::{Plugin, PluginRef};
 
 // example plugins. Eventually these should be loaded from disk.
@@ -93,7 +93,7 @@ impl PluginDescription {
     }
 
     /// Starts the executable described in this `PluginDescription`.
-    pub fn launch<W, C>(&self, manager_ref: &Arc<Mutex<PluginManager<W>>>, buffer_id: &str, completion: C)
+    pub fn launch<W, C>(&self, manager_ref: &PluginManagerRef<W>, buffer_id: &str, completion: C)
         where W: Write + Send + 'static,
               C: FnOnce(Result<PluginRef<W>, &'static str>) + Send + 'static
               // TODO: a real result type
@@ -120,7 +120,7 @@ impl PluginDescription {
                 //TODO: I had the bright idea of keeping this reference but
                 // I'm not sure exactly what to do with it (stopping the plugin is one thing)
                 process: child,
-                manager: Arc::downgrade(&manager_ref),
+                manager: manager_ref.to_weak(),
                 description: description,
                 buffer_id: buffer_id,
             };

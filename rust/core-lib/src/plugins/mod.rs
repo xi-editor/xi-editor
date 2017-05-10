@@ -18,7 +18,7 @@ pub mod rpc_types;
 mod manager;
 mod manifest;
 
-use std::sync::{Arc, Mutex, Weak, mpsc};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::process::{ChildStdin, Child};
 use std::io::Write;
@@ -28,7 +28,7 @@ use serde_json::{self, Value};
 use xi_rpc::{RpcPeer, RpcCtx, Handler, Error};
 use tabs::{BufferIdentifier, ViewIdentifier};
 
-pub use self::manager::PluginManager;
+pub use self::manager::{PluginManagerRef, WeakPluginManagerRef};
 
 use self::rpc_types::{PluginUpdate, PluginCommand};
 use self::manifest::PluginDescription;
@@ -42,7 +42,7 @@ pub struct Plugin<W: Write> {
     peer: PluginPeer,
     /// The plugin's process
     process: Child,
-    manager: Weak<Mutex<PluginManager<W>>>,
+    manager: WeakPluginManagerRef<W>,
     description: PluginDescription,
     //TODO: temporary, eventually ids (view ids?) should be passed back and forth with RPCs
     buffer_id: BufferIdentifier,
@@ -82,8 +82,8 @@ impl<W: Write + Send + 'static> PluginRef<W> {
             let cmd = serde_json::from_value::<PluginCommand>(params.to_owned())
                 .expect(&format!("failed to parse plugin rpc {}, params {:?}",
                         method, params));
-            let result = plugin_manager.lock().unwrap()
-                .handle_plugin_cmd(cmd, &self.0.lock().unwrap().buffer_id);
+            let result = plugin_manager.handle_plugin_cmd(
+                cmd, &self.0.lock().unwrap().buffer_id);
         result
         } else {
             None
@@ -123,13 +123,14 @@ impl<W: Write + Send + 'static> PluginRef<W> {
 /// which forwards them to interested plugins.
 pub fn start_update_thread<W: Write + Send + 'static>(
     rx: mpsc::Receiver<(ViewIdentifier, PluginUpdate, usize)>,
-    plugins: Arc<Mutex<PluginManager<W>>>)
+    plugins: &PluginManagerRef<W>)
 {
+    let mut plugins = plugins.clone();
     thread::spawn(move ||{
         loop {
             match rx.recv() {
                 Ok((view_id, update, undo_group)) => {
-                    plugins.lock().unwrap().update(&view_id, update, undo_group);
+                    plugins.update(&view_id, update, undo_group);
                 }
                 Err(_) => break,
             }

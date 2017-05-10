@@ -16,7 +16,7 @@
 
 use std::collections::BTreeMap;
 use std::io::Write;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak, MutexGuard};
 
 use serde_json::{self, Value};
 
@@ -35,20 +35,57 @@ pub struct PluginManager<W: Write> {
     buffers: BufferContainerRef<W>,
 }
 
+impl <W: Write>PluginManager<W> {
+    pub fn debug_available_plugins(&self) -> Vec<&str> {
+        self.catalog.iter().map(|p| p.name.as_ref()).collect::<Vec<_>>()
+    }
+}
 
-impl<W: Write + Send + 'static> PluginManager<W> {
+/// Wrapper around a `Arc<Mutex<PluginManager<W>>>`.
+pub struct PluginManagerRef<W: Write>(Arc<Mutex<PluginManager<W>>>);
+
+impl<W: Write> Clone for PluginManagerRef<W> {
+    fn clone(&self) -> Self {
+        PluginManagerRef(self.0.clone())
+    }
+}
+
+/// Wrapper around a `Weak<Mutex<PluginManager<W>>>`
+pub struct WeakPluginManagerRef<W: Write>(Weak<Mutex<PluginManager<W>>>);
+
+impl <W: Write>WeakPluginManagerRef<W> {
+    /// Upgrades the weak reference to an Arc, if possible.
+    ///
+    /// Returns `None` if the inner value has been deallocated.
+    pub fn upgrade(&self) -> Option<PluginManagerRef<W>> {
+        match self.0.upgrade() {
+            Some(inner) => Some(PluginManagerRef(inner)),
+            None => None
+        }
+    }
+}
+
+impl<W: Write + Send + 'static> PluginManagerRef<W> {
     pub fn new(buffers: BufferContainerRef<W>) -> Self {
+        PluginManagerRef(Arc::new(Mutex::new(
         PluginManager {
             // TODO: actually parse these from manifest files
             catalog: debug_plugins(),
             running: BTreeMap::new(),
             buffers: buffers,
-        }
+        })))
     }
 
-    pub fn debug_available_plugins(&self) -> Vec<&str> {
-        self.catalog.iter().map(|p| p.name.as_ref()).collect::<Vec<_>>()
+    pub fn lock(&self) -> MutexGuard<PluginManager<W>> {
+        self.0.lock().unwrap()
     }
+
+    /// Creates a new `WeakPluginManagerRef<W>`.
+    pub fn to_weak(&self) -> WeakPluginManagerRef<W> {
+        let weak_inner = Arc::downgrade(&self.0);
+        WeakPluginManagerRef(weak_inner)
+    }
+
 
     /// Called when a new empty buffer is created.
     pub fn document_new(&mut self, view_id: &ViewIdentifier) {
@@ -79,11 +116,12 @@ impl<W: Write + Send + 'static> PluginManager<W> {
     pub fn update(&mut self, view_id: &ViewIdentifier, update: PluginUpdate,
                   undo_group: usize) {
         // find all running plugins for this buffer, and send them the update
-        for (_, plugin) in self.running.iter().filter(|kv| (kv.0).0 == *view_id) {
-            self.buffers.lock().editor_for_view_mut(view_id)
+        let inner = self.lock();
+        for (_, plugin) in inner.running.iter().filter(|kv| (kv.0).0 == *view_id) {
+            inner.buffers.lock().editor_for_view_mut(view_id)
                 .unwrap().increment_revs_in_flight();
             let view_id = view_id.to_owned();
-            let buffers = self.buffers.clone().to_weak();
+            let buffers = inner.buffers.clone().to_weak();
             plugin.update(&update, move |response| {
                 if let Some(buffers) = buffers.upgrade() {
                     let response = response.expect("bad plugin response");
@@ -100,26 +138,28 @@ impl<W: Write + Send + 'static> PluginManager<W> {
                 }
             })
         }
-        self.buffers.lock().editor_for_view_mut(view_id).unwrap().dec_revs_in_flight();
+        inner.buffers.lock().editor_for_view_mut(view_id).unwrap().dec_revs_in_flight();
     }
 
     /// Launches and initializes the named plugin.
-    pub fn start_plugin(&mut self, self_ref: &Arc<Mutex<PluginManager<W>>>,
-                          buffer_id: &str, plugin_name: &str, buf_size: usize, rev: usize) {
+    pub fn start_plugin(&mut self, buffer_id: &str, plugin_name: &str,
+                        buf_size: usize, rev: usize) {
         //TODO: error handling: this should maybe have a completion callback with a Result
         let key = (buffer_id.to_owned(), plugin_name.to_owned());
-        if self.running.contains_key(&key) {
+        let inner = self.lock();
+        if inner.running.contains_key(&key) {
             print_err!("plugin {} already running for buffer {}", plugin_name, buffer_id);
         }
-        let plugin = self.catalog.iter().find(|desc| desc.name == plugin_name)
+
+        let plugin = inner.catalog.iter().find(|desc| desc.name == plugin_name)
             .expect(&format!("no plugin found with name {}", plugin_name));
 
-        let me = self_ref.clone();
-        plugin.launch(self_ref, buffer_id, move |result| {
+        let me = self.clone();
+        plugin.launch(self, buffer_id, move |result| {
             match result {
                 Ok(plugin_ref) => {
                     plugin_ref.init_buf(buf_size, rev);
-                    me.lock().unwrap().running.insert(key, plugin_ref);
+                    me.lock().running.insert(key, plugin_ref);
                 },
                 Err(_) => panic!("error handling is not implemented"),
             }
@@ -129,28 +169,30 @@ impl<W: Write + Send + 'static> PluginManager<W> {
     /// Handle a request from a plugin.
     pub fn handle_plugin_cmd(&self, cmd: PluginCommand, view_id: &ViewIdentifier) -> Option<Value> {
         use self::PluginCommand::*;
+        let inner = self.lock();
         match cmd {
             LineCount => {
-                let n_lines = self.buffers.lock().editor_for_view(view_id).unwrap()
+                let n_lines = inner.buffers.lock().editor_for_view(view_id).unwrap()
                     .plugin_n_lines() as u64;
                 Some(serde_json::to_value(n_lines).unwrap())
             },
             SetFgSpans { start, len, spans, rev } => {
-                self.buffers.lock().editor_for_view_mut(view_id).unwrap()
+                inner.buffers.lock().editor_for_view_mut(view_id).unwrap()
                     .plugin_set_fg_spans(start, len, spans, rev);
                 None
             }
             GetData { offset, max_size, rev } => {
-                self.buffers.lock().editor_for_view(view_id).unwrap()
+                inner.buffers.lock().editor_for_view(view_id).unwrap()
                 .plugin_get_data(offset, max_size, rev)
                 .map(|data| Value::String(data))
             }
 
             Alert { msg } => {
-                self.buffers.lock().editor_for_view(view_id).unwrap()
+                inner.buffers.lock().editor_for_view(view_id).unwrap()
                 .plugin_alert(&msg);
                 None
             }
         }
     }
 }
+
