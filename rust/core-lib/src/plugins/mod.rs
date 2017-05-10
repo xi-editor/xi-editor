@@ -61,8 +61,9 @@ impl<W: Write> Clone for PluginRef<W> {
 
 impl<W: Write + Send + 'static> Handler<ChildStdin> for PluginRef<W> {
     fn handle_notification(&mut self, _ctx: RpcCtx<ChildStdin>, method: &str, params: &Value) {
-        let _ = self.rpc_handler(method, params);
-        // TODO: should check None
+        if let Some(_) = self.rpc_handler(method, params) {
+            print_err!("Unexpected return value for notification {}", method)
+        }
     }
 
     fn handle_request(&mut self, _ctx: RpcCtx<ChildStdin>, method: &str, params: &Value) ->
