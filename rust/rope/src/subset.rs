@@ -26,7 +26,7 @@ pub struct Subset(Vec<(usize, usize)>);
 
 #[derive(Default)]
 pub struct SubsetBuilder {
-    dels: Vec<(usize, usize)>,
+    ranges: Vec<(usize, usize)>,
     b: usize,
     e: usize,
 }
@@ -36,10 +36,10 @@ impl SubsetBuilder {
         SubsetBuilder::default()
     }
 
-    pub fn add_deletion(&mut self, beg: usize, end: usize) {
+    pub fn add_range(&mut self, beg: usize, end: usize) {
         if beg > self.e {
             if self.e > self.b {
-                self.dels.push((self.b, self.e));
+                self.ranges.push((self.b, self.e));
             }
             self.b = beg
         }
@@ -48,17 +48,17 @@ impl SubsetBuilder {
 
     pub fn build(mut self) -> Subset {
         if self.e > self.b {
-            self.dels.push((self.b, self.e));
+            self.ranges.push((self.b, self.e));
         }
-        Subset(self.dels)
+        Subset(self.ranges)
     }
 }
 
 impl Subset {
-    // mostly for testing
-    pub fn apply_to_string(&self, s: &str) -> String {
+    /// Mostly for testing.
+    pub fn delete_from_string(&self, s: &str) -> String {
         let mut result = String::new();
-        for (b, e) in self.range_iter(s.len()) {
+        for (b, e) in self.complement_iter(s.len()) {
             result.push_str(&s[b..e]);
         }
         result
@@ -66,39 +66,37 @@ impl Subset {
 
     // Maybe Subset should be a pure data structure and this method should
     // be a method of Node.
-    pub fn apply<N: NodeInfo>(&self, s: &Node<N>) -> Node<N> {
+    /// Builds a version of `s` with all the elements in this `Subset` deleted from it.
+    pub fn delete_from<N: NodeInfo>(&self, s: &Node<N>) -> Node<N> {
         let mut b = TreeBuilder::new();
-        for (beg, end) in self.range_iter(s.len()) {
+        for (beg, end) in self.complement_iter(s.len()) {
             s.push_subseq(&mut b, Interval::new_closed_open(beg, end));
         }
         b.build()
     }
 
-    /// The length of the resulting sequence.
+    /// The length of the resulting sequence after deleting this subset.
     ///
-    /// `self.apply_to_string(s).len() = self.len(s.len())`
-    pub fn len(&self, base_len: usize) -> usize {
+    /// `self.delete_from_string(s).len() = self.len(s.len())`
+    pub fn len_after_delete(&self, base_len: usize) -> usize {
         self.0.iter().fold(base_len, |acc, &(b, e)| acc - (e - b))
     }
 
-    /// Determine whether the subset is trivial, ie applying it does not
-    /// change the sequence. In purely set theoretic terms, this is the
-    /// same as testing equality with the universal set.
-    pub fn is_trivial(&self) -> bool {
+    /// Determine whether the subset is empty.
+    /// In this case deleting it would do nothing.
+    pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
     #[doc(hidden)]
     // Access to internal state, shouldn't really be part of public API
-    // Perhaps exposing an iterator over deleted regions would be more suitable,
-    // but it's more of a hassle.
-    pub fn _deletions(&self) -> &[(usize, usize)] {
+    pub fn _ranges(&self) -> &[(usize, usize)] {
         &self.0
     }
 
-    /// Compute the intersection of two subsets. In other words, an element exists in the
-    /// resulting subset iff it exists in both inputs.
-    pub fn intersect(&self, other: &Subset) -> Subset {
+    /// Compute the union of two subsets. In other words, an element exists in the
+    /// resulting subset iff it exists in at least one of the inputs.
+    pub fn union(&self, other: &Subset) -> Subset {
         let mut sb = SubsetBuilder::new();
         let mut i = 0;
         let mut j = 0;
@@ -133,7 +131,7 @@ impl Subset {
                     break;
                 }
             }
-            sb.add_deletion(next_beg, next_end);
+            sb.add_range(next_beg, next_end);
         }
         sb.build()
     }
@@ -141,11 +139,11 @@ impl Subset {
     /// Transform through coordinate transform represented by other.
     /// The equation satisfied is as follows:
     ///
-    /// s1 = other.apply_to_string(s0)
+    /// s1 = other.delete_from_string(s0)
     ///
-    /// s2 = self.apply_to_string(s1)
+    /// s2 = self.delete_from_string(s1)
     ///
-    /// element in self.transform_expand(other).apply_to_string(s0) if not in s1 or in s2
+    /// element in self.transform_expand(other).delete_from_string(s0) if (not in s1) or in s2
     pub fn transform_expand(&self, other: &Subset) -> Subset {
         let mut sb = SubsetBuilder::new();
         let mut last = 0;
@@ -158,52 +156,52 @@ impl Subset {
                     return sb.build();
                 }
                 if self.0[i].1 + delta < b {
-                    sb.add_deletion(max(last, self.0[i].0 + delta), self.0[i].1 + delta);
+                    sb.add_range(max(last, self.0[i].0 + delta), self.0[i].1 + delta);
                     i += 1;
                 } else {
                     break;
                 }
             }
             if self.0[i].0 + delta < b {
-                sb.add_deletion(max(last, self.0[i].0 + delta), b);
+                sb.add_range(max(last, self.0[i].0 + delta), b);
             }
             last = e;
             delta += e - b;
         }
         if i < self.0.len() && self.0[i].0 + delta < last {
-            sb.add_deletion(last, self.0[i].1 + delta);
+            sb.add_range(last, self.0[i].1 + delta);
             i += 1;
         }
         for &(b, e) in &self.0[i..] {
-            sb.add_deletion(b + delta, e + delta);
+            sb.add_range(b + delta, e + delta);
         }
         sb.build()
     }
 
-    /// The same as taking transform_expand and then intersecting with `other`.
-    pub fn transform_intersect(&self, other: &Subset) -> Subset {
+    /// The same as taking transform_expand and then unioning with `other`.
+    pub fn transform_union(&self, other: &Subset) -> Subset {
         let mut sb = SubsetBuilder::new();
         let mut last = 0;
         let mut i = 0;
         let mut delta = 0;
         for &(b, e) in &other.0 {
             while i < self.0.len() && self.0[i].1 + delta < b {
-                sb.add_deletion(max(last, self.0[i].0 + delta), self.0[i].1 + delta);
+                sb.add_range(max(last, self.0[i].0 + delta), self.0[i].1 + delta);
                 i += 1;
             }
             if i < self.0.len() && self.0[i].0 + delta < b {
-                sb.add_deletion(max(last, self.0[i].0 + delta), b);
+                sb.add_range(max(last, self.0[i].0 + delta), b);
             }
-            sb.add_deletion(b, e);
+            sb.add_range(b, e);
             last = e;
             delta += e - b;
         }
         if i < self.0.len() && self.0[i].0 + delta < last {
-            sb.add_deletion(last, self.0[i].1 + delta);
+            sb.add_range(last, self.0[i].1 + delta);
             i += 1;
         }
         for &(b, e) in &self.0[i..] {
-            sb.add_deletion(b + delta, e + delta);
+            sb.add_range(b + delta, e + delta);
         }
         sb.build()
     }
@@ -213,8 +211,8 @@ impl Subset {
     ///
     /// C = A.transform_expand(B)
     ///
-    /// C.transform_shrink(B).apply_to_string(C.apply_to_string(s)) =
-    ///   A.apply_to_string(B.apply_to_string(s))
+    /// C.transform_shrink(B).delete_from_string(C.delete_from_string(s)) =
+    ///   A.delete_from_string(B.delete_from_string(s))
     pub fn transform_shrink(&self, other: &Subset) -> Subset {
         let mut sb = SubsetBuilder::new();
         let mut last = 0;
@@ -222,15 +220,15 @@ impl Subset {
         let mut y = 0;
         for &(b, e) in &self.0 {
             if i < other.0.len() && other.0[i].0 < last && other.0[i].1 < b {
-                sb.add_deletion(y, other.0[i].1 + y - last);
+                sb.add_range(y, other.0[i].1 + y - last);
                 i += 1;
             }
             while i < other.0.len() && other.0[i].1 < b {
-                sb.add_deletion(other.0[i].0 + y - last, other.0[i].1 + y - last);
+                sb.add_range(other.0[i].0 + y - last, other.0[i].1 + y - last);
                 i += 1;
             }
             if i < other.0.len() && other.0[i].0 < b {
-                sb.add_deletion(max(last, other.0[i].0) + y - last, b + y - last);
+                sb.add_range(max(last, other.0[i].0) + y - last, b + y - last);
             }
             while i < other.0.len() && other.0[i].1 < e {
                 i += 1;
@@ -239,19 +237,19 @@ impl Subset {
             last = e;
         }
         if i < other.0.len() && other.0[i].0 < last {
-            sb.add_deletion(y, other.0[i].1 + y - last);
+            sb.add_range(y, other.0[i].1 + y - last);
             i += 1;
         }
         for &(b, e) in &other.0[i..] {
-            sb.add_deletion(b + y - last, e + y - last);
+            sb.add_range(b + y - last, e + y - last);
         }
         sb.build()
     }
 
-    /// Return an iterator over ranges retained from the source sequence. These will
-    /// often be easier to work with than the raw deletions in the representation.
-    pub fn range_iter(&self, base_len: usize) -> RangeIter {
-        RangeIter {
+    /// Return an iterator over the ranges not in the Subset. These will
+    /// often be easier to work with if the raw ranges are deletions.
+    pub fn complement_iter(&self, base_len: usize) -> ComplementIter {
+        ComplementIter {
             deletions: &self.0,
             base_len: base_len,
             i: 0,
@@ -260,14 +258,14 @@ impl Subset {
     }
 }
 
-pub struct RangeIter<'a> {
+pub struct ComplementIter<'a> {
     deletions: &'a [(usize, usize)],
     base_len: usize,
     i: usize,
     last: usize,
 }
 
-impl<'a> Iterator for RangeIter<'a> {
+impl<'a> Iterator for ComplementIter<'a> {
     type Item = (usize, usize);
 
     fn next(&mut self) -> Option<(usize, usize)> {
@@ -306,7 +304,7 @@ mod tests {
             if j < substr.len() && substr.as_bytes()[j] == s.as_bytes()[i] {
                 j += 1;
             } else {
-                sb.add_deletion(i, i + 1);
+                sb.add_range(i, i + 1);
             }
         }
         sb.build()
@@ -317,41 +315,41 @@ mod tests {
         let mut sb = SubsetBuilder::new();
         for &(b, e) in &[(0, 1), (2, 4), (6, 11), (13, 14), (15, 18), (19, 23), (24, 26), (31, 32),
                 (33, 35), (36, 37), (40, 44), (45, 48), (49, 51), (52, 57), (58, 59)] {
-            sb.add_deletion(b, e);
+            sb.add_range(b, e);
         }
         let s = sb.build();
-        assert_eq!("145BCEINQRSTUWZbcdimpvxyz", s.apply_to_string(TEST_STR));
+        assert_eq!("145BCEINQRSTUWZbcdimpvxyz", s.delete_from_string(TEST_STR));
     }
 
     #[test]
     fn trivial() {
         let s = SubsetBuilder::new().build();
-        assert!(s.is_trivial());
+        assert!(s.is_empty());
     }
 
     #[test]
     fn test_mk_subset() {
         let substr = "015ABDFHJOPQVYdfgloprsuvz";
         let s = mk_subset(substr, TEST_STR);
-        assert_eq!(substr, s.apply_to_string(TEST_STR));
-        assert!(!s.is_trivial())
+        assert_eq!(substr, s.delete_from_string(TEST_STR));
+        assert!(!s.is_empty())
     }
 
     #[test]
-    fn intersect() {
+    fn union() {
         let s1 = mk_subset("024AEGHJKNQTUWXYZabcfgikqrvy", TEST_STR);
         let s2 = mk_subset("14589DEFGIKMOPQRUXZabcdefglnpsuxyz", TEST_STR);
-        assert_eq!("4EGKQUXZabcfgy", s1.intersect(&s2).apply_to_string(TEST_STR));
+        assert_eq!("4EGKQUXZabcfgy", s1.union(&s2).delete_from_string(TEST_STR));
     }
 
     fn transform_case(str1: &str, str2: &str, result: &str) {
         let s1 = mk_subset(str1, TEST_STR);
         let s2 = mk_subset(str2, str1);
         let s3 = s2.transform_expand(&s1);
-        let str3 = s3.apply_to_string(TEST_STR);
+        let str3 = s3.delete_from_string(TEST_STR);
         assert_eq!(result, str3);
-        assert_eq!(str2, s3.transform_shrink(&s1).apply_to_string(&str3));
-        assert_eq!(str2, s2.transform_intersect(&s1).apply_to_string(TEST_STR));
+        assert_eq!(str2, s3.transform_shrink(&s1).delete_from_string(&str3));
+        assert_eq!(str2, s2.transform_union(&s1).delete_from_string(TEST_STR));
     }
 
     #[test]
