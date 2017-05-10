@@ -35,9 +35,36 @@ pub struct PluginManager<W: Write> {
     buffers: BufferContainerRef<W>,
 }
 
-impl <W: Write>PluginManager<W> {
+impl <W: Write + Send + 'static>PluginManager<W> {
     pub fn debug_available_plugins(&self) -> Vec<&str> {
         self.catalog.iter().map(|p| p.name.as_ref()).collect::<Vec<_>>()
+    }
+
+    /// Handle a request from a plugin.
+    pub fn handle_plugin_cmd(&self, cmd: PluginCommand, view_id: &ViewIdentifier) -> Option<Value> {
+        use self::PluginCommand::*;
+        match cmd {
+            LineCount => {
+                let n_lines = self.buffers.lock().editor_for_view(view_id).unwrap()
+                    .plugin_n_lines() as u64;
+                Some(serde_json::to_value(n_lines).unwrap())
+            },
+            SetFgSpans { start, len, spans, rev } => {
+                self.buffers.lock().editor_for_view_mut(view_id).unwrap()
+                    .plugin_set_fg_spans(start, len, spans, rev);
+                None
+            }
+            GetData { offset, max_size, rev } => {
+                self.buffers.lock().editor_for_view(view_id).unwrap()
+                .plugin_get_data(offset, max_size, rev)
+                .map(|data| Value::String(data))
+            }
+            Alert { msg } => {
+                self.buffers.lock().editor_for_view(view_id).unwrap()
+                .plugin_alert(&msg);
+                None
+            }
+        }
     }
 }
 
@@ -164,35 +191,6 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
                 Err(_) => panic!("error handling is not implemented"),
             }
         });
-    }
-
-    /// Handle a request from a plugin.
-    pub fn handle_plugin_cmd(&self, cmd: PluginCommand, view_id: &ViewIdentifier) -> Option<Value> {
-        use self::PluginCommand::*;
-        let inner = self.lock();
-        match cmd {
-            LineCount => {
-                let n_lines = inner.buffers.lock().editor_for_view(view_id).unwrap()
-                    .plugin_n_lines() as u64;
-                Some(serde_json::to_value(n_lines).unwrap())
-            },
-            SetFgSpans { start, len, spans, rev } => {
-                inner.buffers.lock().editor_for_view_mut(view_id).unwrap()
-                    .plugin_set_fg_spans(start, len, spans, rev);
-                None
-            }
-            GetData { offset, max_size, rev } => {
-                inner.buffers.lock().editor_for_view(view_id).unwrap()
-                .plugin_get_data(offset, max_size, rev)
-                .map(|data| Value::String(data))
-            }
-
-            Alert { msg } => {
-                inner.buffers.lock().editor_for_view(view_id).unwrap()
-                .plugin_alert(&msg);
-                None
-            }
-        }
     }
 }
 

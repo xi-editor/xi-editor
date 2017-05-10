@@ -82,7 +82,7 @@ impl<W: Write + Send + 'static> PluginRef<W> {
             let cmd = serde_json::from_value::<PluginCommand>(params.to_owned())
                 .expect(&format!("failed to parse plugin rpc {}, params {:?}",
                         method, params));
-            let result = plugin_manager.handle_plugin_cmd(
+            let result = plugin_manager.lock().handle_plugin_cmd(
                 cmd, &self.0.lock().unwrap().buffer_id);
         result
         } else {
