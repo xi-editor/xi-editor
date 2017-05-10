@@ -86,12 +86,12 @@ impl Engine {
     }
 
     /// Get the contents of the document at a given revision number
-    fn get_rev_from_index(&self, rev_index: usize) -> Rope {
-        self.get_subset_from_index(rev_index).delete_from(&self.union_str)
+    fn rev_content_for_index(&self, rev_index: usize) -> Rope {
+        self.deletes_from_union_for_index(rev_index).delete_from(&self.union_str)
     }
 
     /// Get the Subset to delete from the current union string in order to obtain a revision's content
-    fn get_subset_from_index(&self, rev_index: usize) -> Cow<Subset> {
+    fn deletes_from_union_for_index(&self, rev_index: usize) -> Cow<Subset> {
         let mut deletes_from_union = Cow::Borrowed(&self.revs[rev_index].deletes_from_union);
         for rev in &self.revs[rev_index + 1..] {
             if let Edit { ref inserts, .. } = rev.edit {
@@ -110,12 +110,12 @@ impl Engine {
 
     /// Get text of head revision.
     pub fn get_head(&self) -> Rope {
-        self.get_rev_from_index(self.revs.len() - 1)
+        self.rev_content_for_index(self.revs.len() - 1)
     }
 
     /// Get text of a given revision, if it can be found.
     pub fn get_rev(&self, rev: usize) -> Option<Rope> {
-        self.find_rev(rev).map(|rev_index| self.get_rev_from_index(rev_index))
+        self.find_rev(rev).map(|rev_index| self.rev_content_for_index(rev_index))
     }
 
     /// A delta that, when applied to previous head, results in the current head. Panics
@@ -229,8 +229,8 @@ impl Engine {
     }
 
     pub fn is_equivalent_revision(&self, base_rev: usize, other_rev: usize) -> bool {
-        let base_subset = self.find_rev(base_rev).map(|rev_index| self.get_subset_from_index(rev_index));
-        let other_subset = self.find_rev(other_rev).map(|rev_index| self.get_subset_from_index(rev_index));
+        let base_subset = self.find_rev(base_rev).map(|rev_index| self.deletes_from_union_for_index(rev_index));
+        let other_subset = self.find_rev(other_rev).map(|rev_index| self.deletes_from_union_for_index(rev_index));
 
         base_subset.is_some() && base_subset == other_subset
     }
