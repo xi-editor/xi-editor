@@ -196,6 +196,8 @@ impl<N: NodeInfo> Node<N> {
         }
     }
 
+    /// Returns the fist child with a positive measure, starting from the `j`th.
+    /// Also, returns the offset we have skipped; note that if it returns `None`in the first component, we skip all the children.
     fn next_positive_measure_child<M: Metric<N>>(&self, j: usize) -> (Option<usize>, usize) {
         let children = self.get_children();
         let mut offset = 0;
@@ -579,9 +581,9 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
         }
     }
 
-    // Moves the cursor to the next discontinuity, or to the end
-    // of the rope. In the former case, returns the offset of said
-    // discontinuity.
+    /// Moves the cursor to the next discontinuity, or to the end
+    /// of the rope. In the former case, returns the offset of said
+    /// discontinuity.
     pub fn next<M: Metric<N>>(&mut self) -> Option<(usize)> {
         if self.position >= self.root.len() || self.leaf.is_none() {
             self.leaf = None;
@@ -617,9 +619,9 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
                     return self.next_inside_leaf::<M>();
                 }
             }
-            // At this point, we know that (1) the next discontinuity is not not in the
-            // cached subtree, (2) self.position corresponds to the begining of the firt
-            // leaf after the cached subtree.
+            // At this point, we know that (1) the next boundary is not not in
+            // the cached subtree, (2) self.position corresponds to the begining
+            // of the first leaf after the cached subtree.
             self.descend();
             return self.next::<M>();
         } else {
@@ -627,6 +629,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
         }
     }
 
+    /// Tries to find the next boundary in the leaf the cursor is currently in.
     fn next_inside_leaf<M: Metric<N>>(&mut self) -> Option<usize> {
         if let Some(l) = self.leaf {
             let offset_in_leaf = self.position - self.offset_of_leaf;
@@ -646,7 +649,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
         } else {
             panic!("inconsistent, shouldn't get here");
         }
-        return None;
+        None
     }
 
     // same return as get_leaf, moves to beginning of next leaf
