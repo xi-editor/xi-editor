@@ -20,6 +20,7 @@ use interval::Interval;
 use tree::{Node, NodeInfo, TreeBuilder};
 use subset::{Subset, SubsetBuilder};
 use std::cmp::min;
+use std::ops::Deref;
 
 enum DeltaElement<N: NodeInfo> {
     /// Represents a range of text in the base document. Includes beginning, excludes end.
@@ -38,6 +39,11 @@ pub struct Delta<N: NodeInfo> {
     els: Vec<DeltaElement<N>>,
     base_len: usize,
 }
+
+/// A struct marking that a Delta contains only insertions. That is, it copies
+/// all of the old document in the same order. It has a `Deref` impl so all
+/// normal `Delta` methods can also be used on it.
+pub struct InsertDelta<N: NodeInfo>(Delta<N>);
 
 impl<N: NodeInfo> Delta<N> {
     pub fn simple_edit(interval: Interval, rope: Node<N>, base_len: usize) -> Delta<N> {
@@ -74,7 +80,7 @@ impl<N: NodeInfo> Delta<N> {
     /// ss2 = ss.transform_expand(&d1.reverse_insert())
     ///
     /// `ss2.apply_to_string(d1.apply_to_string(s)) == d.apply_to_string(s)`
-    pub fn factor(self) -> (Delta<N>, Subset) {
+    pub fn factor(self) -> (InsertDelta<N>, Subset) {
         let mut ins = Vec::new();
         let mut sb = SubsetBuilder::new();
         let mut b1 = 0;
@@ -98,7 +104,7 @@ impl<N: NodeInfo> Delta<N> {
             ins.push(DeltaElement::Copy(b1, self.base_len));
         }
         sb.add_range(e1, self.base_len);
-        (Delta { els: ins, base_len: self.base_len }, sb.build())
+        (InsertDelta(Delta { els: ins, base_len: self.base_len }), sb.build())
     }
 
     /// Synthesize a delta from a "union string" and two subsets, one representing
@@ -153,13 +159,51 @@ impl<N: NodeInfo> Delta<N> {
         Delta { els: els, base_len: base_len }
     }
 
+    /// Produce a summary of the delta. Everything outside the returned interval
+    /// is unchanged, and the old contents of the interval are replaced by new
+    /// contents of the returned length. Equations:
+    ///
+    /// `(iv, new_len) = self.summary()`
+    ///
+    /// `new_s = self.apply(s)`
+    ///
+    /// `new_s = simple_edit(iv, new_s.subseq(iv.start(), iv.start() + new_len), s.len()).apply(s)`
+    pub fn summary(&self) -> (Interval, usize) {
+        let mut els = self.els.as_slice();
+        let mut iv_start = 0;
+        if let Some((&DeltaElement::Copy(0, end), rest)) = els.split_first() {
+            iv_start = end;
+            els = rest;
+        }
+        let mut iv_end = self.base_len;
+        if let Some((&DeltaElement::Copy(beg, end), init)) = els.split_last() {
+            if end == iv_end {
+                iv_end = beg;
+                els = init;
+            }
+        }
+        (Interval::new_closed_open(iv_start, iv_end), Delta::els_len(els))
+    }
+
+    fn els_len(els: &[DeltaElement<N>]) -> usize {
+        els.iter().fold(0, |sum, el|
+            sum + match *el {
+                DeltaElement::Copy(beg, end) => end - beg,
+                DeltaElement::Insert(ref n) => n.len()
+            }
+        )
+    }
+}
+
+impl<N: NodeInfo> InsertDelta<N> {
     /// Do a coordinate transformation on an insert-only delta. The `after` parameter
     /// controls whether the insertions in `self` come after those specific in the
     /// coordinate transform.
     //
     // TODO: write accurate equations
     // TODO: can we infer l from the other inputs?
-    pub fn transform_expand(&self, xform: &Subset, l: usize, after: bool) -> Delta<N> {
+    pub fn transform_expand(&self, xform: &Subset, l: usize, after: bool) -> InsertDelta<N> {
+        let cur_els = &self.0.els;
         let mut els = Vec::new();
         let mut x = 0;  // coordinate within self
         let mut y = 0;  // coordinate within xform
@@ -167,13 +211,13 @@ impl<N: NodeInfo> Delta<N> {
         let mut b1 = 0;
         let mut xform_ranges = xform.complement_iter(l);
         let mut last_xform = xform_ranges.next();
-        while y < l || i < self.els.len() {
+        while y < l || i < cur_els.len() {
             let next_iv_beg = if let Some((xb, _)) = last_xform { xb } else { l };
             if after && y < next_iv_beg {
                 y = next_iv_beg;
             }
-            while i < self.els.len() {
-                match self.els[i] {
+            while i < cur_els.len() {
+                match cur_els[i] {
                     DeltaElement::Insert(ref n) => {
                         if y > b1 {
                             els.push(DeltaElement::Copy(b1, y));
@@ -210,16 +254,16 @@ impl<N: NodeInfo> Delta<N> {
         if y > b1 {
             els.push(DeltaElement::Copy(b1, y));
         }
-        Delta { els: els, base_len: l }
+        InsertDelta(Delta { els: els, base_len: l })
     }
 
-    /// Return a Subset containing the inserted ranges of an insert-only delta.
+    /// Return a Subset containing the inserted ranges.
     ///
     /// `d.inserted_subset().delete_in_string(d.apply_to_string(s)) == s`
     pub fn inserted_subset(&self) -> Subset {
         let mut sb = SubsetBuilder::new();
         let mut x = 0;
-        for elem in &self.els {
+        for elem in &self.0.els {
             match *elem {
                 DeltaElement::Copy(b, e) => {
                     x += e - b;
@@ -232,40 +276,16 @@ impl<N: NodeInfo> Delta<N> {
         }
         sb.build()
     }
+}
 
-    /// Produce a summary of the delta. Everything outside the returned interval
-    /// is unchanged, and the old contents of the interval are replaced by new
-    /// contents of the returned length. Equations:
-    ///
-    /// `(iv, new_len) = self.summary()`
-    ///
-    /// `new_s = self.apply(s)`
-    ///
-    /// `new_s = simple_edit(iv, new_s.subseq(iv.start(), iv.start() + new_len), s.len()).apply(s)`
-    pub fn summary(&self) -> (Interval, usize) {
-        let mut els = self.els.as_slice();
-        let mut iv_start = 0;
-        if let Some((&DeltaElement::Copy(0, end), rest)) = els.split_first() {
-            iv_start = end;
-            els = rest;
-        }
-        let mut iv_end = self.base_len;
-        if let Some((&DeltaElement::Copy(beg, end), init)) = els.split_last() {
-            if end == iv_end {
-                iv_end = beg;
-                els = init;
-            }
-        }
-        (Interval::new_closed_open(iv_start, iv_end), Delta::els_len(els))
-    }
+/// An InsertDelta is a certain kind of Delta, and anything that applies to a
+/// Delta that may include deletes also applies to one that definitely
+/// doesn't. This impl allows implicit use of those methods.
+impl<N: NodeInfo> Deref for InsertDelta<N> {
+    type Target = Delta<N>;
 
-    fn els_len(els: &[DeltaElement<N>]) -> usize {
-        els.iter().fold(0, |sum, el|
-            sum + match *el {
-                DeltaElement::Copy(beg, end) => end - beg,
-                DeltaElement::Insert(ref n) => n.len()
-            }
-        )
+    fn deref(&self) -> &Delta<N> {
+        &self.0
     }
 }
 
