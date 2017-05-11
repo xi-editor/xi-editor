@@ -23,7 +23,7 @@ use serde_json::{self, Value};
 use tabs::{BufferIdentifier, ViewIdentifier, BufferContainerRef};
 
 use super::{PluginDescription, PluginRef};
-use super::rpc_types::{PluginCommand, PluginUpdate, UpdateResponse};
+use super::rpc_types::{PluginCommand, PluginUpdate, UpdateResponse, ClientPluginInfo};
 use super::manifest::{PluginActivation, debug_plugins};
 
 type PluginName = String;
@@ -41,9 +41,14 @@ pub struct PluginManager<W: Write> {
 
 impl <W: Write + Send + 'static>PluginManager<W> {
 
-    /// Returns available plugins, for populating the client menu.
-    pub fn debug_available_plugins(&self) -> Vec<&str> {
-        self.catalog.iter().map(|p| p.name.as_ref()).collect::<Vec<_>>()
+    /// Returns plugins available to this view.
+    pub fn available_plugins(&self, view_id: &ViewIdentifier) -> Vec<ClientPluginInfo> {
+        self.catalog.iter().map(|p| {
+            let key = (view_id.to_owned(), p.name.clone());
+            let running = self.running.contains_key(&key);
+            let name = key.1;
+            ClientPluginInfo { name, running }
+        }).collect::<Vec<_>>()
     }
 
     /// Handle a request from a plugin.

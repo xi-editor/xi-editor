@@ -19,6 +19,14 @@
 // At some point, it will be stabalized and then perhaps will live in another crate,
 // shared with the plugin lib.
 
+//TODO: very likely this should be merged with PluginDescription
+/// Describes an available plugin to the client.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ClientPluginInfo {
+    pub name: String,
+    pub running: bool,
+}
+
 /// A simple update, sent to a plugin.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct PluginUpdate {

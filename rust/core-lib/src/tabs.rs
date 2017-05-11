@@ -396,7 +396,7 @@ impl<W: Write + Send + 'static> Documents<W> {
         use self::PluginCommand::*;
         match cmd {
             InitialPlugins { view_id } => Some(json!(
-                    self.plugins.lock().debug_available_plugins())),
+                    self.plugins.lock().available_plugins(&view_id))),
             Start { view_id, plugin_name } => {
                 // TODO: this is a hack, there are different ways a plugin might be launched
                 // and they would have different init params, this is just mimicing old api
