@@ -73,18 +73,26 @@ impl <W:Write>BufferContainer<W> {
     ///
     /// Panics if no buffer is associated with `view_id`.
     pub fn editor_for_view(&self, view_id: &ViewIdentifier) -> Option<&Editor<W>> {
-        let buffer_id = self.views.get(view_id)
-            .expect(&format!("no buffer_id for view {}", view_id));
-        self.editors.get(buffer_id)
+        match self.views.get(view_id) {
+            Some(id) => self.editors.get(id),
+            None => {
+                format!("no buffer_id for view {}", view_id);
+                None
+            }
+        }
     }
 
     /// Returns a mutable reference to the `Editor` instance owning `view_id`'s view.
     ///
     /// Panics if no buffer is associated with `view_id`.
     pub fn editor_for_view_mut(&mut self, view_id: &ViewIdentifier) -> Option<&mut Editor<W>> {
-        let buffer_id = self.views.get(view_id)
-            .expect(&format!("no buffer_id for view {}", view_id));
-        self.editors.get_mut(buffer_id)
+        match self.views.get(view_id) {
+            Some(id) => self.editors.get_mut(id),
+            None => {
+                format!("no buffer_id for view {}", view_id);
+                None
+            }
+        }
     }
 }
 
@@ -376,13 +384,13 @@ impl<W: Write + Send + 'static> Documents<W> {
         // notify of syntax change before notify of file_save
         //FIXME: this doesn't tell us if the syntax _will_ change, for instance if syntax was a user
         //selection. (we don't handle this case right now)
-        if prev_syntax != SyntaxDefinition::new(file_path.to_str()) {
-                self.plugins.document_syntax_changed(view_id);
-        }
 
         self.buffers.lock().editor_for_view_mut(view_id)
             .unwrap().do_save(file_path);
         self.buffers.set_path(file_path, view_id);
+        if prev_syntax != SyntaxDefinition::new(file_path.to_str()) {
+                self.plugins.document_syntax_changed(view_id);
+        }
         self.plugins.document_did_save(&view_id);
         None
     }
@@ -408,7 +416,6 @@ impl<W: Write + Send + 'static> Documents<W> {
                 self.plugins.start_plugin(&view_id, &plugin_name, buf_size, rev);
                 None
             }
-            //TODO: stop a plugin
             Stop { view_id, plugin_name } => {
                 print_err!("stop plugin rpc {}", plugin_name);
                 self.plugins.stop_plugin(&view_id, &plugin_name);

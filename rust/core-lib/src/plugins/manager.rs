@@ -14,7 +14,7 @@
 
 //! `PluginManager` handles launching, monitoring, and communicating with plugins.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::sync::{Arc, Mutex, Weak, MutexGuard};
 
@@ -139,8 +139,9 @@ impl <W: Write + Send + 'static>PluginManager<W> {
                 plugin.shutdown();
                 //TODO: should we notify now, or wait until we know this worked?
                 //can this fail? (yes.) How do we tell, and when do we kill the proc?
-                self.buffers.lock().editor_for_view(view_id)
-                    .unwrap().plugin_stopped(view_id, plugin_name, 0);
+                if let Some(editor) = self.buffers.lock().editor_for_view(view_id) {
+                    editor.plugin_stopped(view_id, plugin_name, 0);
+                }
             }
             None => print_err!("stop_plugin: plugin not running for buffer {} {}",
                                plugin_name, view_id),
@@ -197,14 +198,16 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
     /// Called when a new empty buffer is created.
     pub fn document_new(&mut self, view_id: &ViewIdentifier) {
         print_err!("document new {}", view_id);
-        self.start_initial_plugins(view_id);
+        let to_start = self.activatable_plugins(view_id);
+        self.start_plugins(view_id, &to_start);
         //TODO: send lifecycle notification
     }
 
     /// Called when an existing file is loaded into a buffer.
     pub fn document_open(&mut self, view_id: &ViewIdentifier) {
         print_err!("document open {}", view_id);
-        self.start_initial_plugins(view_id);
+        let to_start = self.activatable_plugins(view_id);
+        self.start_plugins(view_id, &to_start);
         //TODO: send lifecycle notification
     }
 
@@ -215,12 +218,41 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
 
     /// Called when a buffer is closed.
     pub fn document_close(&mut self, view_id: &ViewIdentifier) {
-        print_err!("document_close {}", view_id);
+        let to_stop = self.lock().running.keys()
+            .filter(|k| k.0 == *view_id)
+            .map(|k| k.1.to_owned())
+            .collect::<Vec<_>>();
+        for plugin_name in to_stop {
+            self.stop_plugin(view_id, &plugin_name);
+        }
+        //TODO: send lifecycle notification
     }
 
     /// Called when a document's syntax definition has changed.
     pub fn document_syntax_changed(&mut self, view_id: &ViewIdentifier) {
         print_err!("document_syntax_changed {}", view_id);
+        let start_keys = self.activatable_plugins(view_id)
+            .iter()
+            .map(|plg| (view_id.to_owned(), plg.to_owned()))
+            .collect::<BTreeSet<_>>();
+
+        // stop currently running plugins that aren't on list
+        // TODO: don't stop plugins that weren't
+        let to_stop = self.lock().running.keys()
+            .filter(|k| !start_keys.contains(k))
+            .map(|k| k.1.to_owned())
+            .collect::<Vec<_>>();
+
+        let to_run = start_keys.iter()
+            .filter(|k| !self.lock().running.contains_key(&k))
+            .map(|k| k.1.to_owned())
+            .collect::<Vec<_>>();
+
+        for plugin_name in to_stop {
+            self.stop_plugin(&view_id, &plugin_name);
+        }
+
+        self.start_plugins(view_id, &to_run);
     }
 
     /// Launches and initializes the named plugin.
@@ -238,10 +270,11 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
     // implementation details
     // ====================================================================
 
-    /// Called once each time a buffer is created.
-    fn start_initial_plugins(&mut self, view_id: &ViewIdentifier) {
-        print_err!("starting initial plugins for {}", view_id);
-        let to_start = {
+    /// Returns the plugins which want to activate for this view.
+    ///
+    /// That a plugin wants to activate does not mean it will be activated. For instance,
+    /// it could have already been disabled by user preference.
+    fn activatable_plugins(&self, view_id: &ViewIdentifier) -> Vec<String> {
         let inner = self.lock();
         let syntax = inner.buffers.lock()
             .editor_for_view(view_id).unwrap().get_syntax().to_owned();
@@ -256,9 +289,13 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
                     }
                 })
             })
-            .map(|desc| desc.name.to_owned())
+        .map(|desc| desc.name.to_owned())
             .collect::<Vec<_>>()
-        };
+    }
+
+    /// Called once each time a buffer is created.
+    fn start_plugins(&mut self, view_id: &ViewIdentifier, plugin_names: &Vec<String>) {
+        print_err!("starting plugins for {}", view_id);
 
         let (buf_size, _, rev) = {
             let inner = self.lock();
@@ -267,7 +304,7 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
             params
         };
 
-        for plugin_name in to_start.iter() {
+        for plugin_name in plugin_names.iter() {
             print_err!("starting plugin {}", plugin_name);
             self.start_plugin(view_id, plugin_name, buf_size, rev);
         }

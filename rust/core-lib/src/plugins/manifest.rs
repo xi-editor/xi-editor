@@ -49,7 +49,7 @@ pub fn debug_plugins() -> Vec<PluginDescription> {
         PluginDescription::new("spellcheck", "0.0", make_path("spellcheck.py"),
         vec![OnSyntax(Markdown), OnSyntax(Plaintext)]),
         PluginDescription::new("shouty", "0.0", make_path("shouty.py"),
-        vec![OnSyntax(Markdown), OnSyntax(Plaintext)])
+        Vec::new()),
     ]
 }
 
