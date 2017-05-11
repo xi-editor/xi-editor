@@ -909,6 +909,18 @@ impl<W: Write + Send + 'static> Editor<W> {
     pub fn plugin_alert(&self, msg: &str) {
         self.doc_ctx.alert(msg);
     }
+
+    /// Notifies the client that the named plugin has started.
+    pub fn plugin_started(&self, view_id: &ViewIdentifier, plugin: &str) {
+        self.doc_ctx.plugin_started(view_id, plugin);
+    }
+
+    /// Notifies client that the named plugin has stopped.
+    ///
+    /// `code` is reserved for future use.
+    pub fn plugin_stopped(&self, view_id: &ViewIdentifier, plugin: &str, code: i32) {
+        self.doc_ctx.plugin_stopped(view_id, plugin, code);
+    }
 }
 
 // wrapper so async methods don't have to return None themselves

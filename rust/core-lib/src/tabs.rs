@@ -405,7 +405,6 @@ impl<W: Write + Send + 'static> Documents<W> {
                     .plugin_init_params()
                 };
 
-                //TODO: stop passing buffer ids
                 self.plugins.start_plugin(&view_id, &plugin_name, buf_size, rev);
                 None
             }
@@ -439,11 +438,40 @@ impl<W: Write> DocumentCtx<W> {
             }));
     }
 
-    pub fn available_plugins(&self, view_id: &str, plugins: Vec<&str>) {
+    /// Notify the client of the available plugins.
+    pub fn available_plugins(&self, view_id: &ViewIdentifier, plugins: Vec<&str>) {
         self.rpc_peer.send_rpc_notification("available_plugins",
                                             &json!({
                                                 "view_id": view_id,
                                                 "plugins": plugins }));
+    }
+
+    /// Notify the client that a plugin ha started.
+    pub fn plugin_started(&self, view_id: &ViewIdentifier, plugin: &str) {
+        self.rpc_peer.send_rpc_notification("plugin_started",
+                                            &json!({
+                                                "view_id": view_id,
+                                                "plugin": plugin,
+                                            }));
+    }
+
+    /// Notify the client that a plugin ha stopped.
+    ///
+    /// `code` is not currently used.
+    pub fn plugin_stopped(&self, view_id: &ViewIdentifier, plugin: &str, code: i32) {
+        self.rpc_peer.send_rpc_notification("plugin_stopped",
+                                            &json!({
+                                                "view_id": view_id,
+                                                "plugin": plugin,
+                                                "code": code,
+                                            }));
+    }
+
+    pub fn alert(&self, msg: &str) {
+        self.rpc_peer.send_rpc_notification("alert",
+            &json!({
+                "msg": msg,
+            }));
     }
 
     pub fn get_kill_ring(&self) -> Rope {
@@ -455,12 +483,6 @@ impl<W: Write> DocumentCtx<W> {
         *kill_ring = val;
     }
 
-    pub fn alert(&self, msg: &str) {
-        self.rpc_peer.send_rpc_notification("alert",
-            &json!({
-                "msg": msg,
-            }));
-    }
 
     // Get the index for a given style. If the style is not in the existing
     // style map, then issues a def_style request to the front end. Intended

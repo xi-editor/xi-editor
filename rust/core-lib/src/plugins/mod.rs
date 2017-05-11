@@ -106,6 +106,17 @@ impl<W: Write + Send + 'static> PluginRef<W> {
         let params = serde_json::to_value(update).expect("PluginUpdate invalid");
         self.0.lock().unwrap().peer.send_rpc_request_async("update", &params, callback);
     }
+
+    /// Termination message sent to the plugin.
+    ///
+    /// The plugin is expected to clean up and close the pipe.
+    pub fn shutdown(&self) {
+        match self.0.lock() {
+            Ok(inner) => inner.peer.send_rpc_notification("shutdown", &json!({})),
+            Err(_) => print_err!("plugin mutex poisoned"),
+        }
+        self.0.lock().unwrap().peer.send_rpc_notification("shutdown", &json!({}));
+    }
 }
 
 

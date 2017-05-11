@@ -102,27 +102,44 @@ impl <W: Write + Send + 'static>PluginManager<W> {
     }
 
     /// Launches and initializes the named plugin.
-    pub fn start_plugin(&mut self,self_ref: &PluginManagerRef<W>,
-                        buffer_id: &str, plugin_name: &str, buf_size: usize, rev: usize) {
+    fn start_plugin(&mut self, self_ref: &PluginManagerRef<W>,
+                        view_id: &ViewIdentifier, plugin_name: &str, buf_size: usize, rev: usize) {
         //TODO: error handling: this should maybe have a completion callback with a Result
-        let key = (buffer_id.to_owned(), plugin_name.to_owned());
+        let key = (view_id.to_owned(), plugin_name.to_owned());
         if self.running.contains_key(&key) {
-            print_err!("plugin {} already running for buffer {}", plugin_name, buffer_id);
+            return print_err!("plugin {} already running for buffer {}", plugin_name, view_id);
         }
 
         let plugin = self.catalog.iter().find(|desc| desc.name == plugin_name)
             .expect(&format!("no plugin found with name {}", plugin_name));
 
         let me = self_ref.clone();
-        plugin.launch(self_ref, buffer_id, move |result| {
+        plugin.launch(self_ref, view_id, move |result| {
             match result {
                 Ok(plugin_ref) => {
                     plugin_ref.init_buf(buf_size, rev);
-                    me.lock().running.insert(key, plugin_ref);
+                    let mut inner = me.lock();
+                    inner.buffers.lock().editor_for_view(&key.0).unwrap().plugin_started(&key.0, &key.1);
+                    inner.running.insert(key, plugin_ref);
                 },
                 Err(_) => panic!("error handling is not implemented"),
             }
         });
+    }
+
+    fn stop_plugin(&mut self, view_id: &ViewIdentifier, plugin_name: &str) {
+        let key = (view_id.to_owned(), plugin_name.to_owned());
+        match self.running.remove(&key) {
+            Some(plugin) => {
+                plugin.shutdown();
+                //TODO: should we notify now, or wait until we know this worked?
+                //can this fail? How do we tell, and when do we kill the proc?
+                self.buffers.lock().editor_for_view(view_id)
+                    .unwrap().plugin_stopped(view_id, plugin_name, 0);
+            }
+            None => print_err!("stop_plugin: plugin not running for buffer {} {}",
+                               plugin_name, view_id),
+        }
     }
 }
 
@@ -202,9 +219,14 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
     }
 
     /// Launches and initializes the named plugin.
-    pub fn start_plugin(&self, buffer_id: &str, plugin_name: &str,
+    pub fn start_plugin(&self, view_id: &ViewIdentifier, plugin_name: &str,
                         buf_size: usize, rev: usize) {
-        self.lock().start_plugin(self, buffer_id, plugin_name, buf_size, rev);
+        self.lock().start_plugin(self, view_id, plugin_name, buf_size, rev);
+    }
+
+    /// Terminates and cleans up the named plugin.
+    pub fn stop_plugin(&self, view_id: &ViewIdentifier, plugin_name: &str) {
+        self.lock().stop_plugin(view_id, plugin_name);
     }
 
     // ====================================================================
