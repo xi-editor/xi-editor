@@ -256,6 +256,12 @@ impl Subset {
             last: 0,
         }
     }
+
+    /// Find the complement of this Subset, every element in the subset will
+    /// be excluded and vice versa.
+    pub fn complement(&self, base_len: usize) -> Subset {
+        Subset(self.complement_iter(base_len).collect())
+    }
 }
 
 pub struct ComplementIter<'a> {
@@ -297,7 +303,7 @@ mod tests {
 
     const TEST_STR: &'static str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
-    fn mk_subset(substr: &str, s: &str) -> Subset {
+    fn find_deletions(substr: &str, s: &str) -> Subset {
         let mut sb = SubsetBuilder::new();
         let mut j = 0;
         for i in 0..s.len() {
@@ -328,23 +334,32 @@ mod tests {
     }
 
     #[test]
-    fn test_mk_subset() {
+    fn test_find_deletions() {
         let substr = "015ABDFHJOPQVYdfgloprsuvz";
-        let s = mk_subset(substr, TEST_STR);
+        let s = find_deletions(substr, TEST_STR);
         assert_eq!(substr, s.delete_from_string(TEST_STR));
         assert!(!s.is_empty())
     }
 
     #[test]
+    fn test_complement() {
+        let substr = "0456789DEFGHIJKLMNOPQRSTUVWXYZdefghijklmnopqrstuvw";
+        let s = find_deletions(substr, TEST_STR);
+        let c = s.complement(TEST_STR.len());
+        // deleting the complement of the deletions we found should yield the deletions
+        assert_eq!("123ABCabcxyz", c.delete_from_string(TEST_STR));
+    }
+
+    #[test]
     fn union() {
-        let s1 = mk_subset("024AEGHJKNQTUWXYZabcfgikqrvy", TEST_STR);
-        let s2 = mk_subset("14589DEFGIKMOPQRUXZabcdefglnpsuxyz", TEST_STR);
+        let s1 = find_deletions("024AEGHJKNQTUWXYZabcfgikqrvy", TEST_STR);
+        let s2 = find_deletions("14589DEFGIKMOPQRUXZabcdefglnpsuxyz", TEST_STR);
         assert_eq!("4EGKQUXZabcfgy", s1.union(&s2).delete_from_string(TEST_STR));
     }
 
     fn transform_case(str1: &str, str2: &str, result: &str) {
-        let s1 = mk_subset(str1, TEST_STR);
-        let s2 = mk_subset(str2, str1);
+        let s1 = find_deletions(str1, TEST_STR);
+        let s2 = find_deletions(str2, str1);
         let s3 = s2.transform_expand(&s1);
         let str3 = s3.delete_from_string(TEST_STR);
         assert_eq!(result, str3);

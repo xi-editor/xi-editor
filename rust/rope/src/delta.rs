@@ -22,6 +22,7 @@ use subset::{Subset, SubsetBuilder};
 use std::cmp::min;
 use std::ops::Deref;
 
+#[derive(Clone)]
 enum DeltaElement<N: NodeInfo> {
     /// Represents a range of text in the base document. Includes beginning, excludes end.
     Copy(usize, usize),  // note: for now, we lose open/closed info at interval endpoints
@@ -35,6 +36,7 @@ enum DeltaElement<N: NodeInfo> {
 ///
 /// For example, Editing "abcd" into "acde" could be represented as:
 /// `[Copy(0,1),Copy(2,4),Insert("e")]`
+#[derive(Clone)]
 pub struct Delta<N: NodeInfo> {
     els: Vec<DeltaElement<N>>,
     base_len: usize,
@@ -75,11 +77,16 @@ impl<N: NodeInfo> Delta<N> {
     /// Factor the delta into an insert-only delta and a subset representing deletions.
     /// Applying the insert then the delete yields the same result as the original delta:
     ///
-    /// `let (d1, ss) = d.factor();`
-    ///
-    /// ss2 = ss.transform_expand(&d1.reverse_insert())
-    ///
-    /// `ss2.apply_to_string(d1.apply_to_string(s)) == d.apply_to_string(s)`
+    /// ```no_run
+    /// # use xi_rope::rope::{Rope, RopeInfo};
+    /// # use xi_rope::delta::Delta;
+    /// # use std::str::FromStr;
+    /// fn test_factor(d : &Delta<RopeInfo>, r : &Rope) {
+    ///     let (ins, del) = d.clone().factor();
+    ///     let del2 = del.transform_expand(&ins.inserted_subset());
+    ///     assert_eq!(String::from(del2.delete_from(&ins.apply(r))), String::from(d.apply(r)));
+    /// }
+    /// ```
     pub fn factor(self) -> (InsertDelta<N>, Subset) {
         let mut ins = Vec::new();
         let mut sb = SubsetBuilder::new();
@@ -107,9 +114,26 @@ impl<N: NodeInfo> Delta<N> {
         (InsertDelta(Delta { els: ins, base_len: self.base_len }), sb.build())
     }
 
-    /// Synthesize a delta from a "union string" and two subsets, one representing
-    /// insertions and the other representing deletions. This is basically the inverse
-    /// of `factor`.
+    /// Synthesize a delta from a "union string" and two subsets, an old set
+    /// of deletions and a new set of deletions from the union. The Delta is
+    /// from text to text, not union to union; anything in both subsets will
+    /// be assumed to be missing from the Delta base and the new text. You can
+    /// also think of these as a set of insertions and one of deletions, with
+    /// overlap doing nothing. This is basically the inverse of `factor`.
+    ///
+    /// ```no_run
+    /// # use xi_rope::rope::{Rope, RopeInfo};
+    /// # use xi_rope::delta::Delta;
+    /// # use std::str::FromStr;
+    /// fn test_synthesize(d : &Delta<RopeInfo>, r : &Rope) {
+    ///     let (ins_d, del) = d.clone().factor();
+    ///     let ins = ins_d.inserted_subset();
+    ///     let del2 = del.transform_expand(&ins);
+    ///     let r2 = ins_d.apply(&r);
+    ///     let d2 = Delta::synthesize(&r2, &ins, &del);
+    ///     assert_eq!(String::from(d2.apply(r)), String::from(d.apply(r)));
+    /// }
+    /// ```
     pub fn synthesize(s: &Node<N>, ins: &Subset, del: &Subset) -> Delta<N> {
         let base_len = ins.len_after_delete(s.len());
         let mut els = Vec::new();
@@ -182,15 +206,18 @@ impl<N: NodeInfo> Delta<N> {
                 els = init;
             }
         }
-        (Interval::new_closed_open(iv_start, iv_end), Delta::new_document_len(els))
+        (Interval::new_closed_open(iv_start, iv_end), Delta::total_element_len(els))
     }
 
-    /// Returns the length of the new document given the internal
-    /// representation of it. In other words, the length of the transformed
-    /// string after this Delta is applied.
+    /// Returns the length of the new document. In other words, the length of
+    /// the transformed string after this Delta is applied.
     ///
-    /// d.apply(r).len() == new_document_len(d.els)
-    fn new_document_len(els: &[DeltaElement<N>]) -> usize {
+    /// `d.apply(r).len() == d.new_document_len()`
+    pub fn new_document_len(&self) -> usize {
+        Delta::total_element_len(self.els.as_slice())
+    }
+
+    fn total_element_len(els: &[DeltaElement<N>]) -> usize {
         els.iter().fold(0, |sum, el|
             sum + match *el {
                 DeltaElement::Copy(beg, end) => end - beg,
@@ -454,6 +481,7 @@ mod tests {
     fn simple() {
         let d = Delta::simple_edit(Interval::new_closed_open(1, 9), Rope::from("era"), 11);
         assert_eq!("herald", d.apply_to_string("hello world"));
+        assert_eq!(6, d.new_document_len());
     }
 
     #[test]

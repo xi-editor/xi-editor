@@ -118,11 +118,18 @@ impl Engine {
         self.find_rev(rev).map(|rev_index| self.rev_content_for_index(rev_index))
     }
 
-    /// A delta that, when applied to previous head, results in the current head. Panics
+    // TODO: doesn't this totally break in the presence of Undo currently?
+    /// A delta that, when applied to `base_rev`, results in the current head. Panics
     /// if there is not at least one edit.
     pub fn delta_rev_head(&self, base_rev: usize) -> Delta<RopeInfo> {
         let ix = self.find_rev(base_rev).expect("base revision not found");
         let rev = &self.revs[ix];
+
+        // Delta::synthesize will add inserts for everything that is in
+        // prev_from_union (old deletes) but not in
+        // head_rev.deletes_from_union (new deletes). So we add all inserts
+        // since base_rev to prev_from_union so that they will be inserted in
+        // the Delta if they weren't also deleted.
         let mut prev_from_union = Cow::Borrowed(&rev.deletes_from_union);
         for r in &self.revs[ix + 1..] {
             if let Edit { ref inserts, .. } = r.edit {
@@ -131,6 +138,7 @@ impl Engine {
                 }
             }
         }
+
         let head_rev = &self.revs.last().unwrap();
         Delta::synthesize(&self.union_str, &prev_from_union, &head_rev.deletes_from_union)
     }
@@ -140,8 +148,12 @@ impl Engine {
         let ix = self.find_rev(base_rev).expect("base revision not found");
         let rev = &self.revs[ix];
         let (ins_delta, deletes) = delta.factor();
+
+        // rebase delta to be on the base_rev union instead of the text
         let mut union_ins_delta = ins_delta.transform_expand(&rev.deletes_from_union, rev.union_str_len, true);
         let mut new_deletes = deletes.transform_expand(&rev.deletes_from_union);
+
+        // rebase the delta to be on the head union instead of the base_rev union
         for r in &self.revs[ix + 1..] {
             if let Edit { priority, ref inserts, .. } = r.edit {
                 if !inserts.is_empty() {
@@ -151,28 +163,32 @@ impl Engine {
                 }
             }
         }
+
+        // rebase the deletion to be after the inserts instead of directly on the head union
         let new_inserts = union_ins_delta.inserted_subset();
         if !new_inserts.is_empty() {
             new_deletes = new_deletes.transform_expand(&new_inserts);
         }
+
         let new_union_str = union_ins_delta.apply(&self.union_str);
+        // is the new edit in an undo group that was already undone due to concurrency?
         let undone = self.get_current_undo().map_or(false, |undos| undos.contains(&undo_group));
-        let mut new_from_union = Cow::Borrowed(&self.revs.last().unwrap().deletes_from_union);
+        let mut new_deletes_from_union = Cow::Borrowed(&self.revs.last().unwrap().deletes_from_union);
         if undone {
             if !new_inserts.is_empty() {
-                new_from_union = Cow::Owned(new_from_union.transform_union(&new_inserts));
+                new_deletes_from_union = Cow::Owned(new_deletes_from_union.transform_union(&new_inserts));
             }
         } else {
             if !new_inserts.is_empty() {
-                new_from_union = Cow::Owned(new_from_union.transform_expand(&new_inserts));
+                new_deletes_from_union = Cow::Owned(new_deletes_from_union.transform_expand(&new_inserts));
             }
             if !new_deletes.is_empty() {
-                new_from_union = Cow::Owned(new_from_union.union(&new_deletes));
+                new_deletes_from_union = Cow::Owned(new_deletes_from_union.union(&new_deletes));
             }
         }
         (Revision {
             rev_id: self.rev_id_counter,
-            deletes_from_union: new_from_union.into_owned(),
+            deletes_from_union: new_deletes_from_union.into_owned(),
             union_str_len: new_union_str.len(),
             edit: Edit {
                 priority: new_priority,
