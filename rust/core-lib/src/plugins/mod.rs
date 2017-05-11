@@ -112,10 +112,19 @@ impl<W: Write + Send + 'static> PluginRef<W> {
     /// The plugin is expected to clean up and close the pipe.
     pub fn shutdown(&self) {
         match self.0.lock() {
-            Ok(inner) => inner.peer.send_rpc_notification("shutdown", &json!({})),
+            Ok(mut inner) => {
+                //FIXME: don't block here
+                inner.peer.send_rpc_notification("shutdown", &json!({}));
+                // TODO: get rust plugin lib to respect shutdown msg
+                if inner.description.name == "syntect" {
+                    let _ = inner.process.kill();
+                }
+                print_err!("waiting on process {}", inner.process.id());
+                let exit_status = inner.process.wait();
+                print_err!("process ended {:?}", exit_status);
+            }
             Err(_) => print_err!("plugin mutex poisoned"),
         }
-        self.0.lock().unwrap().peer.send_rpc_notification("shutdown", &json!({}));
     }
 }
 

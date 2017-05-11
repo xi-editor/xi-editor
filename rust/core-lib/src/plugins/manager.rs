@@ -133,7 +133,7 @@ impl <W: Write + Send + 'static>PluginManager<W> {
             Some(plugin) => {
                 plugin.shutdown();
                 //TODO: should we notify now, or wait until we know this worked?
-                //can this fail? How do we tell, and when do we kill the proc?
+                //can this fail? (yes.) How do we tell, and when do we kill the proc?
                 self.buffers.lock().editor_for_view(view_id)
                     .unwrap().plugin_stopped(view_id, plugin_name, 0);
             }

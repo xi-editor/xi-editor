@@ -50,10 +50,15 @@ class Plugin(object):
     def __call__(self, method, params, peer):
         params = params or {}
         # intercept these to do bookkeeping, so subclasses don't have to call super
+        self.__last_method = method
+
         if method == "init_buf":
             self._init_buf(peer, **params)
         if method == "update":
             self._update(peer, params)
+        if method == "shutdown":
+            peer.done = True
+
         return getattr(self, method, self.noop)(peer, **params)
 
     def print_err(self, err):
@@ -78,7 +83,7 @@ class Plugin(object):
 
     def noop(self, *args, **kwargs):
         """Default responder for unimplemented RPC methods."""
-        return None
+        return self.print_err("{} not implemented".format(self.__last_method))
 
 
 def start_plugin(plugin):

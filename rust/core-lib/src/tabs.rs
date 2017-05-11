@@ -409,7 +409,11 @@ impl<W: Write + Send + 'static> Documents<W> {
                 None
             }
             //TODO: stop a plugin
-            Stop { view_id, plugin_name } => None,
+            Stop { view_id, plugin_name } => {
+                print_err!("stop plugin rpc {}", plugin_name);
+                self.plugins.stop_plugin(&view_id, &plugin_name);
+                None
+            }
         }
     }
 
