@@ -26,7 +26,7 @@ use std::io::Write;
 use serde_json::{self, Value};
 
 use xi_rpc::{RpcPeer, RpcCtx, Handler, Error};
-use tabs::{BufferIdentifier, ViewIdentifier};
+use tabs::ViewIdentifier;
 
 pub use self::manager::{PluginManagerRef, WeakPluginManagerRef};
 

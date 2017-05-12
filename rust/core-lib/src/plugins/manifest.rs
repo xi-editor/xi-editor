@@ -30,14 +30,21 @@ use syntax::SyntaxDefinition;
 use super::PluginManagerRef;
 use super::{Plugin, PluginRef};
 
+// optional environment variable for debug plugin executables
+static PLUGIN_DIR: &'static str = "XI_PLUGIN_DIR";
+
 // example plugins. Eventually these should be loaded from disk.
 pub fn debug_plugins() -> Vec<PluginDescription> {
     use self::PluginActivation::*;
     use self::SyntaxDefinition::*;
-    let mut path_base = env::current_exe().unwrap();
-    path_base.pop();
+    let plugin_dir = match env::var(PLUGIN_DIR).map(PathBuf::from) {
+        Ok(p) => p,
+        Err(_) => env::current_exe().unwrap().parent().unwrap().to_owned(),
+    };
+    print_err!("looking for debug plugins in {:?}", plugin_dir);
+
     let make_path = |p: &str| -> PathBuf {
-        let mut pb = path_base.clone();
+        let mut pb = plugin_dir.clone();
         pb.push(p);
         pb
     };
@@ -51,7 +58,17 @@ pub fn debug_plugins() -> Vec<PluginDescription> {
         vec![OnSyntax(Markdown), OnSyntax(Plaintext)]),
         PluginDescription::new("shouty", "0.0", make_path("shouty.py"),
         Vec::new()),
-    ]
+    ].iter()
+        .filter(|desc|{ 
+            if !desc.exec_path.exists() {
+                print_err!("missing plugin {} at {:?}", desc.name, desc.exec_path);
+                false
+            } else {
+                true
+            }
+        })
+        .map(|desc| desc.to_owned())
+        .collect::<Vec<_>>()
 }
 
 /// Describes attributes and capabilities of a plugin.
