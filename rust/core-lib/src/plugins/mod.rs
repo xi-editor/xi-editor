@@ -30,7 +30,7 @@ use tabs::{BufferIdentifier, ViewIdentifier};
 
 pub use self::manager::{PluginManagerRef, WeakPluginManagerRef};
 
-use self::rpc_types::{PluginUpdate, PluginCommand};
+use self::rpc_types::{PluginUpdate, PluginCommand, PluginBufferInfo};
 use self::manifest::PluginDescription;
 
 
@@ -90,14 +90,12 @@ impl<W: Write + Send + 'static> PluginRef<W> {
         }
     }
 
-    /// Init message sent to the plugin.
-    pub fn init_buf(&self, buf_size: usize, rev: usize) {
-        let plugin = self.0.lock().unwrap();
-        let params = json!({
-            "buf_size": buf_size,
-            "rev": rev,
-        });
-        plugin.peer.send_rpc_notification("init_buf", &params);
+    /// Initialize the plugin.
+    pub fn initialize(&self, init: &PluginBufferInfo) {
+        self.0.lock().unwrap().peer
+            .send_rpc_notification("initialize", &json!({
+                "buffer_info": init,
+            }));
     }
 
     /// Update message sent to the plugin.
@@ -113,7 +111,7 @@ impl<W: Write + Send + 'static> PluginRef<W> {
     pub fn shutdown(&self) {
         match self.0.lock() {
             Ok(mut inner) => {
-                //FIXME: don't block here
+                //FIXME: don't block here?
                 inner.peer.send_rpc_notification("shutdown", &json!({}));
                 // TODO: get rust plugin lib to respect shutdown msg
                 if inner.description.name == "syntect" {

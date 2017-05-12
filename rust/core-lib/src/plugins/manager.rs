@@ -23,7 +23,7 @@ use serde_json::{self, Value};
 use tabs::{BufferIdentifier, ViewIdentifier, BufferContainerRef};
 
 use super::{PluginDescription, PluginRef};
-use super::rpc_types::{PluginCommand, PluginUpdate, UpdateResponse, ClientPluginInfo};
+use super::rpc_types::{PluginCommand, PluginUpdate, UpdateResponse, ClientPluginInfo, PluginBufferInfo};
 use super::manifest::{PluginActivation, debug_plugins};
 
 type PluginName = String;
@@ -107,8 +107,8 @@ impl <W: Write + Send + 'static>PluginManager<W> {
     }
 
     /// Launches and initializes the named plugin.
-    fn start_plugin(&mut self, self_ref: &PluginManagerRef<W>,
-                        view_id: &ViewIdentifier, plugin_name: &str, buf_size: usize, rev: usize) {
+    pub fn start_plugin(&mut self, self_ref: &PluginManagerRef<W>,
+                          view_id: &ViewIdentifier, plugin_name: &str, init_info: PluginBufferInfo) {
         //TODO: error handling: this should maybe have a completion callback with a Result
         let key = (view_id.to_owned(), plugin_name.to_owned());
         if self.running.contains_key(&key) {
@@ -122,7 +122,7 @@ impl <W: Write + Send + 'static>PluginManager<W> {
         plugin.launch(self_ref, view_id, move |result| {
             match result {
                 Ok(plugin_ref) => {
-                    plugin_ref.init_buf(buf_size, rev);
+                    plugin_ref.initialize(&init_info);
                     let mut inner = me.lock();
                     inner.buffers.lock().editor_for_view(&key.0).unwrap().plugin_started(&key.0, &key.1);
                     inner.running.insert(key, plugin_ref);
@@ -257,8 +257,9 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
 
     /// Launches and initializes the named plugin.
     pub fn start_plugin(&self, view_id: &ViewIdentifier, plugin_name: &str,
-                        buf_size: usize, rev: usize) {
-        self.lock().start_plugin(self, view_id, plugin_name, buf_size, rev);
+                        init_info: &PluginBufferInfo) {
+        //let init_info = init_info.to_owned();
+        self.lock().start_plugin(self, view_id, plugin_name, init_info.to_owned());
     }
 
     /// Terminates and cleans up the named plugin.
@@ -293,20 +294,20 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
             .collect::<Vec<_>>()
     }
 
-    /// Called once each time a buffer is created.
+    /// Batch run a group of plugins (as on creating a new view, for instance)
     fn start_plugins(&mut self, view_id: &ViewIdentifier, plugin_names: &Vec<String>) {
         print_err!("starting plugins for {}", view_id);
 
-        let (buf_size, _, rev) = {
+        let init_info = {
             let inner = self.lock();
-            let params = inner.buffers.lock().editor_for_view(&view_id).unwrap()
-                .plugin_init_params();
-            params
+            let init_info = inner.buffers.lock().editor_for_view(view_id)
+                .unwrap().plugin_init_info();
+            init_info
         };
 
         for plugin_name in plugin_names.iter() {
             print_err!("starting plugin {}", plugin_name);
-            self.start_plugin(view_id, plugin_name, buf_size, rev);
+            self.start_plugin(view_id, plugin_name, &init_info);
         }
     }
 }

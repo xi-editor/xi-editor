@@ -33,8 +33,8 @@ use movement::Movement;
 
 use tabs::{ViewIdentifier, DocumentCtx};
 use rpc::{EditCommand, GestureType};
-use plugins::rpc_types::{PluginUpdate, PluginEdit, Span};
 use syntax::SyntaxDefinition;
+use plugins::rpc_types::{PluginUpdate, PluginEdit, Span, PluginBufferInfo};
 
 const FLAG_SELECT: u64 = 2;
 
@@ -206,10 +206,11 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.gc_undos();
     }
 
-    /// Returns metrics used to initialize plugins.
-    pub fn plugin_init_params(&self) -> (usize, usize, usize) {
+    /// Returns buffer information used to initialize plugins.
+    pub fn plugin_init_info(&self) -> PluginBufferInfo {
         let nb_lines = self.text.measure::<LinesMetric>() + 1;
-        (self.text.len(), nb_lines, self.engine.get_head_rev_id())
+        PluginBufferInfo::new(self.engine.get_head_rev_id(), self.text.len(),
+        nb_lines, self.path.clone(), self.syntax.clone())
     }
 
     fn insert(&mut self, s: &str) {

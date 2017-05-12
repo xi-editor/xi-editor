@@ -27,6 +27,7 @@ use editor::Editor;
 use rpc::{CoreCommand, EditCommand, PluginCommand};
 use styles::{Style, StyleMap};
 use MainPeer;
+
 use syntax::SyntaxDefinition;
 use plugins::{self, PluginManagerRef};
 use plugins::rpc_types::PluginUpdate;
@@ -408,12 +409,14 @@ impl<W: Write + Send + 'static> Documents<W> {
             Start { view_id, plugin_name } => {
                 // TODO: this is a hack, there are different ways a plugin might be launched
                 // and they would have different init params, this is just mimicing old api
-                let (buf_size, _, rev) = {
-                self.buffers.lock().editor_for_view(&view_id).unwrap()
-                    .plugin_init_params()
-                };
 
-                self.plugins.start_plugin(&view_id, &plugin_name, buf_size, rev);
+                // TODO: track syntax defs
+                let syntax = SyntaxDefinition::Plaintext;
+                let buffer_info = self.buffers.lock().editor_for_view(&view_id).unwrap()
+                    .plugin_init_info();
+
+                //TODO: stop passing buffer ids
+                self.plugins.start_plugin(&view_id, &plugin_name, &buffer_info);
                 None
             }
             Stop { view_id, plugin_name } => {
