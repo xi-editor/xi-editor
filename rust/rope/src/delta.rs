@@ -61,7 +61,7 @@ impl<N: NodeInfo> Delta<N> {
     /// Apply the delta to the given rope. May not work well if the length of the rope
     /// is not compatible with the construction of the delta.
     pub fn apply(&self, base: &Node<N>) -> Node<N> {
-        debug_assert_eq!(base.len(), self.base_len);
+        debug_assert_eq!(base.len(), self.base_len, "must apply Delta to Node of correct length");
         let mut b = TreeBuilder::new();
         for elem in &self.els {
             match *elem {
@@ -293,6 +293,30 @@ impl<N: NodeInfo> InsertDelta<N> {
             els.push(DeltaElement::Copy(b1, y));
         }
         InsertDelta(Delta { els: els, base_len: l })
+    }
+
+    // TODO: it is plausible this method also works on Deltas with deletes
+    /// Shrink a delta through a deletion of some of its copied regions with
+    /// the same base. For example, if `self` applies to a union string, and
+    /// `xform` is the deletions from that union, the resulting Delta will
+    /// apply to the text.
+    ///
+    /// **Note:** this is similar to `Subset::transform_shrink` but *the argument
+    /// order is reversed* due to this being a method on `InsertDelta`.
+    pub fn transform_shrink(&self, xform: &Subset) -> InsertDelta<N> {
+        let compl = xform.complement(self.base_len);
+        let mut m = compl.mapper();
+        let els = self.0.els.iter().map(|elem| {
+            match *elem {
+                DeltaElement::Copy(b, e) => {
+                    DeltaElement::Copy(m.doc_index_to_subset(b), m.doc_index_to_subset(e))
+                }
+                DeltaElement::Insert(ref n) => {
+                    DeltaElement::Insert(n.clone())
+                }
+            }
+        }).collect();
+        InsertDelta(Delta { els: els, base_len: xform.len_after_delete(self.base_len)})
     }
 
     /// Return a Subset containing the inserted ranges.
@@ -530,5 +554,22 @@ mod tests {
         assert_eq!("0123456789ABCDEFGHIJKLMN+OPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", d3.apply_to_string(TEST_STR));
         let d4 = d2.transform_expand(&s1, TEST_STR.len(), true);
         assert_eq!("0123456789ABCDEFGHIJKLMNOP+QRSTUVWXYZabcdefghijklmnopqrstuvwxyz", d4.apply_to_string(TEST_STR));
+    }
+
+    #[test]
+    fn transform_shrink() {
+        let d = Delta::simple_edit(Interval::new_closed_open(10, 12), Rope::from("+"), TEST_STR.len());
+        let (d2, _ss) = d.factor();
+        assert_eq!("0123456789+ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", d2.apply_to_string(TEST_STR));
+
+        let str1 = "0345678BCxyz";
+        let s1 = mk_subset(str1, TEST_STR);
+        let d3 = d2.transform_shrink(&s1);
+        assert_eq!("0345678+BCxyz", d3.apply_to_string(str1));
+
+        let str2 = "356789ABCx";
+        let s2 = mk_subset(str2, TEST_STR);
+        let d4 = d2.transform_shrink(&s2);
+        assert_eq!("356789+ABCx", d4.apply_to_string(str2));
     }
 }
