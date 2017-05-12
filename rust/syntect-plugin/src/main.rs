@@ -105,8 +105,13 @@ impl<'a> PluginState<'a> {
     }
 
     fn do_highlighting(&mut self, mut ctx: PluginCtx) {
-        let syntax = self.sets.ss.find_syntax_by_extension("rs")
-            .unwrap_or_else(|| self.sets.ss.find_syntax_plain_text());
+        let syntax = match ctx.get_path() {
+            Some(ref path) => self.sets.ss.find_syntax_for_file(path).unwrap()
+                .unwrap_or_else(|| self.sets.ss.find_syntax_plain_text()),
+            None => self.sets.ss.find_syntax_plain_text(),
+        };
+        print_err!("syntect using {}", syntax.name);
+
         self.parse_state = Some(ParseState::new(syntax));
         let theme = &self.sets.ts.themes["InspiredGitHub"];
         self.highlighter = Some(Highlighter::new(theme));
@@ -121,7 +126,7 @@ impl<'a> PluginState<'a> {
 const LINES_PER_RPC: usize = 50;
 
 impl<'a> caching_plugin::Handler for PluginState<'a> {
-    fn init_buf(&mut self, ctx: PluginCtx, _buf_size: usize) {
+    fn initialize(&mut self, ctx: PluginCtx, _buf_size: usize) {
         self.do_highlighting(ctx);
     }
 
