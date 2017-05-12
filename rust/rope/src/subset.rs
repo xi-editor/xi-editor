@@ -19,6 +19,7 @@ use std::cmp::{max};
 // These two imports are for the `apply` method only.
 use tree::{Node, NodeInfo, TreeBuilder};
 use interval::Interval;
+use std::slice;
 
 // Internally, a sorted list of (begin, end) ranges.
 #[derive(Clone, Default, PartialEq, Eq)]
@@ -250,7 +251,7 @@ impl Subset {
     /// often be easier to work with if the raw ranges are deletions.
     pub fn complement_iter(&self, base_len: usize) -> ComplementIter {
         ComplementIter {
-            deletions: &self.0,
+            ranges: &self.0,
             base_len: base_len,
             i: 0,
             last: 0,
@@ -262,10 +263,21 @@ impl Subset {
     pub fn complement(&self, base_len: usize) -> Subset {
         Subset(self.complement_iter(base_len).collect())
     }
+
+    /// Return a `Mapper` that can be use to map coordinates in the document to coordinates
+    /// in this `Subset`, but only in non-decreasing order for performance reasons.
+    pub fn mapper(&self) -> Mapper {
+        Mapper {
+            range_iter: self.0.iter(),
+            last_i: 0, // indices only need to be in non-decreasing order, not increasing
+            cur_range: (0,0), // will immediately try to consume next range
+            subset_amount_consumed: 0,
+        }
+    }
 }
 
 pub struct ComplementIter<'a> {
-    deletions: &'a [(usize, usize)],
+    ranges: &'a [(usize, usize)],
     base_len: usize,
     i: usize,
     last: usize,
@@ -276,7 +288,7 @@ impl<'a> Iterator for ComplementIter<'a> {
 
     fn next(&mut self) -> Option<(usize, usize)> {
         loop {
-            if self.i == self.deletions.len() {
+            if self.i == self.ranges.len() {
                 if self.base_len > self.last {
                     let beg = self.last;
                     self.last = self.base_len;
@@ -286,7 +298,7 @@ impl<'a> Iterator for ComplementIter<'a> {
                 }
             } else {
                 let beg = self.last;
-                let (end, last) = self.deletions[self.i];
+                let (end, last) = self.ranges[self.i];
                 self.last = last;
                 self.i += 1;
                 if end > beg {
@@ -294,6 +306,40 @@ impl<'a> Iterator for ComplementIter<'a> {
                 }
             }
         }
+    }
+}
+
+pub struct Mapper<'a> {
+    range_iter: slice::Iter<'a, (usize,usize)>,
+    // Not actually necessary for computation, just for dynamic checking of invariant
+    last_i: usize,
+    cur_range: (usize,usize),
+    subset_amount_consumed: usize,
+}
+
+impl<'a> Mapper<'a> {
+    /// Map a coordinate in the document this subset corresponds to, to a
+    /// coordinate in the subset. For example, if the Subset is a set of
+    /// deletions, this would map indices in the union string to indices in
+    /// the tombstones string. Will panic if the index is not in the subset.
+    ///
+    /// In order to guarantee good performance, this method must be called
+    /// with `i` values in non-decreasing order or it will panic. This allows
+    /// the total cost to be O(n) where `n = max(calls,ranges)` over all times
+    /// called on a single `Mapper`.
+    #[inline]
+    pub fn doc_index_to_subset(&mut self, i: usize) -> usize {
+        assert!(i >= self.last_i, "method must be called with i in non-decreasing order. i={}<{}=last_i", i, self.last_i);
+        self.last_i = i;
+
+        while i >= self.cur_range.1 {
+            self.subset_amount_consumed += self.cur_range.1 - self.cur_range.0;
+            self.cur_range = self.range_iter.next().expect("index must be in the subset, but it is past the last segment").clone();
+        }
+        assert!(i >= self.cur_range.0, "index i={} must be in the subset, but next segment starts at {}", i, self.cur_range.0);
+
+        let dist_in_range = i - self.cur_range.0;
+        dist_in_range + self.subset_amount_consumed
     }
 }
 
@@ -348,6 +394,43 @@ mod tests {
         let c = s.complement(TEST_STR.len());
         // deleting the complement of the deletions we found should yield the deletions
         assert_eq!("123ABCabcxyz", c.delete_from_string(TEST_STR));
+    }
+
+    #[test]
+    fn test_mapper() {
+        let substr = "469ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvw";
+        let s = find_deletions(substr, TEST_STR);
+        let mut m = s.mapper();
+        // subset is {0123 5 78 xyz}
+        assert_eq!(0, m.doc_index_to_subset(0));
+        assert_eq!(2, m.doc_index_to_subset(2));
+        assert_eq!(2, m.doc_index_to_subset(2));
+        assert_eq!(3, m.doc_index_to_subset(3));
+        assert_eq!(4, m.doc_index_to_subset(5));
+        assert_eq!(5, m.doc_index_to_subset(7));
+        assert_eq!(6, m.doc_index_to_subset(8));
+        assert_eq!(6, m.doc_index_to_subset(8));
+        assert_eq!(9, m.doc_index_to_subset(61));
+    }
+
+    #[test]
+    #[should_panic(expected = "index i=4 must be in the subset")]
+    fn test_mapper_only_allows_subset() {
+        let substr = "469ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvw";
+        let s = find_deletions(substr, TEST_STR);
+        let mut m = s.mapper();
+        m.doc_index_to_subset(4);
+    }
+
+    #[test]
+    #[should_panic(expected = "non-decreasing")]
+    fn test_mapper_requires_non_decreasing() {
+        let substr = "469ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvw";
+        let s = find_deletions(substr, TEST_STR);
+        let mut m = s.mapper();
+        m.doc_index_to_subset(0);
+        m.doc_index_to_subset(2);
+        m.doc_index_to_subset(1);
     }
 
     #[test]
