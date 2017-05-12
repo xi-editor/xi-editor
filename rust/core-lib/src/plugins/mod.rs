@@ -45,7 +45,7 @@ pub struct Plugin<W: Write> {
     manager: WeakPluginManagerRef<W>,
     description: PluginDescription,
     //TODO: temporary, eventually ids (view ids?) should be passed back and forth with RPCs
-    buffer_id: BufferIdentifier,
+    view_id: ViewIdentifier,
 }
 
 /// A convenience wrapper for passing around a reference to a plugin.
@@ -83,7 +83,7 @@ impl<W: Write + Send + 'static> PluginRef<W> {
                 .expect(&format!("failed to parse plugin rpc {}, params {:?}",
                         method, params));
             let result = plugin_manager.lock().handle_plugin_cmd(
-                cmd, &self.0.lock().unwrap().buffer_id);
+                cmd, &self.0.lock().unwrap().view_id);
         result
         } else {
             None

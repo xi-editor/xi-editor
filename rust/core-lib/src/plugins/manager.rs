@@ -237,7 +237,7 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
             .collect::<BTreeSet<_>>();
 
         // stop currently running plugins that aren't on list
-        // TODO: don't stop plugins that weren't
+        // TODO: don't stop plugins that weren't started by a syntax activation
         let to_stop = self.lock().running.keys()
             .filter(|k| !start_keys.contains(k))
             .map(|k| k.1.to_owned())
@@ -258,7 +258,6 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
     /// Launches and initializes the named plugin.
     pub fn start_plugin(&self, view_id: &ViewIdentifier, plugin_name: &str,
                         init_info: &PluginBufferInfo) {
-        //let init_info = init_info.to_owned();
         self.lock().start_plugin(self, view_id, plugin_name, init_info.to_owned());
     }
 
@@ -273,8 +272,8 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
 
     /// Returns the plugins which want to activate for this view.
     ///
-    /// That a plugin wants to activate does not mean it will be activated. For instance,
-    /// it could have already been disabled by user preference.
+    /// That a plugin wants to activate does not mean it will be activated.
+    /// For instance, it could have already been disabled by user preference.
     fn activatable_plugins(&self, view_id: &ViewIdentifier) -> Vec<String> {
         let inner = self.lock();
         let syntax = inner.buffers.lock()
@@ -285,7 +284,7 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
                 plug_desc.activations.iter().any(|act|{
                     match *act {
                         PluginActivation::Autorun => true,
-                        PluginActivation::OnSyntax(ref on_syntax) if *on_syntax == syntax => true,
+                        PluginActivation::OnSyntax(ref other) if *other == syntax => true,
                         _ => false,
                     }
                 })
@@ -311,4 +310,3 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
         }
     }
 }
-

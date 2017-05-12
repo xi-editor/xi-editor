@@ -25,6 +25,7 @@ use serde_json::Value;
 
 use xi_rpc::RpcLoop;
 
+use tabs::ViewIdentifier;
 use syntax::SyntaxDefinition;
 use super::PluginManagerRef;
 use super::{Plugin, PluginRef};
@@ -81,7 +82,8 @@ pub enum PluginActivation {
 }
 
 impl PluginDescription {
-    fn new<S, P>(name: S, version: S, exec_path: P, activations: Vec<PluginActivation>) -> Self
+    fn new<S, P>(name: S, version: S, exec_path: P,
+                 activations: Vec<PluginActivation>) -> Self
         where S: Into<String>, P: Into<PathBuf>
     {
         PluginDescription {
@@ -93,13 +95,15 @@ impl PluginDescription {
     }
 
     /// Starts the executable described in this `PluginDescription`.
-    pub fn launch<W, C>(&self, manager_ref: &PluginManagerRef<W>, buffer_id: &str, completion: C)
+    //TODO: make this a free function, & move out of manifest
+    pub fn launch<W, C>(&self, manager_ref: &PluginManagerRef<W>,
+                        view_id: &ViewIdentifier, completion: C)
         where W: Write + Send + 'static,
               C: FnOnce(Result<PluginRef<W>, &'static str>) + Send + 'static
               // TODO: a real result type
     {
         let path = self.exec_path.clone();
-        let buffer_id = buffer_id.to_owned();
+        let view_id = view_id.to_owned();
         let manager_ref = manager_ref.to_weak();
         let description = self.clone();
 
@@ -117,12 +121,10 @@ impl PluginDescription {
             peer.send_rpc_notification("ping", &Value::Array(Vec::new()));
             let plugin = Plugin {
                 peer: peer,
-                //TODO: I had the bright idea of keeping this reference but
-                // I'm not sure exactly what to do with it (stopping the plugin is one thing)
                 process: child,
                 manager: manager_ref,
                 description: description,
-                buffer_id: buffer_id,
+                view_id: view_id,
             };
             let mut plugin_ref = PluginRef(Arc::new(Mutex::new(plugin)));
             completion(Ok(plugin_ref.clone()));
