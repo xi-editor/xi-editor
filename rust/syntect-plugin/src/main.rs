@@ -25,7 +25,7 @@ use syntect::highlighting::{Color, FontStyle, Highlighter, HighlightIterator, Hi
     Style, ThemeSet};
 
 fn color_to_rgba(color: Color) -> u32 {
-    ((color.a as u32) << 24) | ((color.r as u32) << 16) | ((color.g as u32) << 8) | (color.r as u32)
+    ((color.a as u32) << 24) | ((color.r as u32) << 16) | ((color.g as u32) << 8) | (color.b as u32)
 }
 
 fn font_style_to_u8(fs: FontStyle) -> u8 {
@@ -51,6 +51,7 @@ struct PluginState<'a> {
     hstate: Option<HighlightState>,
     spans_start: usize,
     builder: Option<SpansBuilder>,
+    syntax_name: String,
 }
 
 impl<'a> PluginState<'a> {
@@ -64,6 +65,7 @@ impl<'a> PluginState<'a> {
             hstate: None,
             spans_start: 0,
             builder: None,
+            syntax_name: String::from("None"),
         }
     }
 
@@ -110,7 +112,11 @@ impl<'a> PluginState<'a> {
                 .unwrap_or_else(|| self.sets.ss.find_syntax_plain_text()),
             None => self.sets.ss.find_syntax_plain_text(),
         };
-        print_err!("syntect using {}", syntax.name);
+
+        if syntax.name != self.syntax_name {
+            self.syntax_name = syntax.name.clone();
+            print_err!("syntect using {}", syntax.name);
+        }
 
         self.parse_state = Some(ParseState::new(syntax));
         let theme = &self.sets.ts.themes["InspiredGitHub"];
