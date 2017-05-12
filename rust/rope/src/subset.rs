@@ -321,7 +321,13 @@ impl<'a> Mapper<'a> {
     /// Map a coordinate in the document this subset corresponds to, to a
     /// coordinate in the subset. For example, if the Subset is a set of
     /// deletions, this would map indices in the union string to indices in
-    /// the tombstones string. Will panic if the index is not in the subset.
+    /// the tombstones string.
+    ///
+    /// Will return the closest coordinate in the subset if the index is not
+    /// in the subset. If the coordinate is past the end of the subset it will
+    /// return one more than the largest index in the subset (i.e the length).
+    /// This behaviour is suitable for mapping closed-open intervals in a
+    /// string to intervals in a subset of the string.
     ///
     /// In order to guarantee good performance, this method must be called
     /// with `i` values in non-decreasing order or it will panic. This allows
@@ -334,12 +340,23 @@ impl<'a> Mapper<'a> {
 
         while i >= self.cur_range.1 {
             self.subset_amount_consumed += self.cur_range.1 - self.cur_range.0;
-            self.cur_range = self.range_iter.next().expect("index must be in the subset, but it is past the last segment").clone();
+            self.cur_range = match self.range_iter.next() {
+                Some(range) => range.clone(),
+                // past the end of the subset
+                None => {
+                    // ensure we don't try to consume any more
+                    self.cur_range = (usize::max_value(), usize::max_value());
+                    return self.subset_amount_consumed
+                }
+            }
         }
-        assert!(i >= self.cur_range.0, "index i={} must be in the subset, but next segment starts at {}", i, self.cur_range.0);
 
-        let dist_in_range = i - self.cur_range.0;
-        dist_in_range + self.subset_amount_consumed
+        if i >= self.cur_range.0 {
+            let dist_in_range = i - self.cur_range.0;
+            dist_in_range + self.subset_amount_consumed
+        } else { // not in the subset
+            self.subset_amount_consumed
+        }
     }
 }
 
@@ -398,28 +415,22 @@ mod tests {
 
     #[test]
     fn test_mapper() {
-        let substr = "469ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvw";
+        let substr = "469ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwz";
         let s = find_deletions(substr, TEST_STR);
         let mut m = s.mapper();
-        // subset is {0123 5 78 xyz}
+        // subset is {0123 5 78 xy}
         assert_eq!(0, m.doc_index_to_subset(0));
         assert_eq!(2, m.doc_index_to_subset(2));
         assert_eq!(2, m.doc_index_to_subset(2));
         assert_eq!(3, m.doc_index_to_subset(3));
+        assert_eq!(4, m.doc_index_to_subset(4)); // not in subset
         assert_eq!(4, m.doc_index_to_subset(5));
         assert_eq!(5, m.doc_index_to_subset(7));
         assert_eq!(6, m.doc_index_to_subset(8));
         assert_eq!(6, m.doc_index_to_subset(8));
-        assert_eq!(9, m.doc_index_to_subset(61));
-    }
-
-    #[test]
-    #[should_panic(expected = "index i=4 must be in the subset")]
-    fn test_mapper_only_allows_subset() {
-        let substr = "469ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvw";
-        let s = find_deletions(substr, TEST_STR);
-        let mut m = s.mapper();
-        m.doc_index_to_subset(4);
+        assert_eq!(8, m.doc_index_to_subset(60));
+        assert_eq!(9, m.doc_index_to_subset(61)); // not in subset
+        assert_eq!(9, m.doc_index_to_subset(62)); // not in subset
     }
 
     #[test]
