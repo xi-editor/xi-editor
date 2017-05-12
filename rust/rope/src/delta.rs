@@ -134,25 +134,30 @@ impl<N: NodeInfo> Delta<N> {
     ///     assert_eq!(String::from(d2.apply(r)), String::from(d.apply(r)));
     /// }
     /// ```
-    pub fn synthesize(s: &Node<N>, ins: &Subset, del: &Subset) -> Delta<N> {
-        let base_len = ins.len_after_delete(s.len());
+    pub fn synthesize(s: &Node<N>, old_dels: &Subset, new_dels: &Subset) -> Delta<N> {
+        let base_len = old_dels.len_after_delete(s.len());
         let mut els = Vec::new();
         let mut x = 0;
-        let mut ins_ranges = ins.complement_iter(s.len());
-        let mut last_ins = ins_ranges.next();
-        for (b, e) in del.complement_iter(s.len()) {
+        let mut old_ranges = old_dels.complement_iter(s.len());
+        let mut last_old = old_ranges.next();
+        // For each segment of the new text
+        for (b, e) in new_dels.complement_iter(s.len()) {
+            // Fill the whole segment
             let mut beg = b;
             while beg < e {
-                while let Some((ib, ie)) = last_ins {
+                // Skip over ranges in old text until one overlaps where we want to fill
+                while let Some((ib, ie)) = last_old {
                     if ie > beg {
                         break;
                     }
                     x += ie - ib;
-                    last_ins = ins_ranges.next();
+                    last_old = old_ranges.next();
                 }
-                if last_ins.is_some() && last_ins.unwrap().0 <= beg {
-                    let (ib, ie) = last_ins.unwrap();
+                // If we have a range in the old text with the character at beg, then we Copy
+                if last_old.is_some() && last_old.unwrap().0 <= beg {
+                    let (ib, ie) = last_old.unwrap();
                     let end = min(e, ie);
+                    // Try to merge contigous Copys in the output
                     let xbeg = beg + x - ib;  // "beg - ib + x" better for overflow?
                     let xend = end + x - ib;  // ditto
                     let merged = if let Some(&mut DeltaElement::Copy(_, ref mut le)) = els.last_mut() {
@@ -169,9 +174,10 @@ impl<N: NodeInfo> Delta<N> {
                         els.push(DeltaElement::Copy(xbeg, xend));
                     }
                     beg = end;
-                } else {
+                } else { // if the character at beg isn't in the old text, then we Insert
+                    // Insert up until the next old range we could Copy from, or the end of this segment
                     let mut end = e;
-                    if let Some((ib, _)) = last_ins {
+                    if let Some((ib, _)) = last_old {
                         end = min(end, ib)
                     }
                     // Note: could try to aggregate insertions, but not sure of the win.
