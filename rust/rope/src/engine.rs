@@ -25,12 +25,15 @@ use rope::{Rope, RopeInfo};
 use subset::Subset;
 use delta::Delta;
 
+#[derive(Debug)]
 pub struct Engine {
     rev_id_counter: usize,
-    union_str: Rope,
+    text: Rope,
+    tombstones: Rope,
     revs: Vec<Revision>,
 }
 
+#[derive(Debug)]
 struct Revision {
     rev_id: usize,
     deletes_from_union: Subset,
@@ -40,6 +43,7 @@ struct Revision {
 
 use self::Contents::*;
 
+#[derive(Debug)]
 enum Contents {
     Edit {
         priority: usize,
@@ -62,7 +66,8 @@ impl Engine {
         };
         Engine {
             rev_id_counter: 1,
-            union_str: initial_contents,
+            text: initial_contents,
+            tombstones: Rope::default(),
             revs: vec![rev],
         }
     }
@@ -87,7 +92,11 @@ impl Engine {
 
     /// Get the contents of the document at a given revision number
     fn rev_content_for_index(&self, rev_index: usize) -> Rope {
-        self.deletes_from_union_for_index(rev_index).delete_from(&self.union_str)
+        let old_deletes_from_union = self.deletes_from_union_for_index(rev_index);
+        let head_rev = &self.revs.last().unwrap();
+        let delta = Delta::synthesize(&self.tombstones, head_rev.union_str_len,
+            &head_rev.deletes_from_union, &old_deletes_from_union);
+        delta.apply(&self.text)
     }
 
     /// Get the Subset to delete from the current union string in order to obtain a revision's content
@@ -110,7 +119,7 @@ impl Engine {
 
     /// Get text of head revision.
     pub fn get_head(&self) -> Rope {
-        self.rev_content_for_index(self.revs.len() - 1)
+        self.text.clone()
     }
 
     /// Get text of a given revision, if it can be found.
@@ -139,11 +148,16 @@ impl Engine {
         }
 
         let head_rev = &self.revs.last().unwrap();
-        Delta::synthesize(&self.union_str, &prev_from_union, &head_rev.deletes_from_union)
+        // TODO: this does 3 calls to Delta::synthesize and 2 to apply, this should definitely be better.
+        let old_tombstones = Engine::shuffle_tombstones(&self.text, &self.tombstones, &head_rev.deletes_from_union, &prev_from_union);
+        Delta::synthesize(&old_tombstones, head_rev.union_str_len, &prev_from_union, &head_rev.deletes_from_union)
     }
 
+    // TODO: don't construct transform if subsets are empty
+    /// Retuns a tuple of a new `Revision` representing the edit based on the
+    /// current head, a new text `Rope`, and a new tombstones `Rope`.
     fn mk_new_rev(&self, new_priority: usize, undo_group: usize,
-            base_rev: usize, delta: Delta<RopeInfo>) -> (Revision, Rope) {
+            base_rev: usize, delta: Delta<RopeInfo>) -> (Revision, Rope, Rope) {
         let ix = self.find_rev(base_rev).expect("base revision not found");
         let rev = &self.revs[ix];
         let (ins_delta, deletes) = delta.factor();
@@ -169,41 +183,66 @@ impl Engine {
             new_deletes = new_deletes.transform_expand(&new_inserts);
         }
 
-        let new_union_str = union_ins_delta.apply(&self.union_str);
+        // rebase insertions on text and apply
+        let cur_deletes_from_union = &self.revs.last().unwrap().deletes_from_union;
+        let text_ins_delta = union_ins_delta.transform_shrink(cur_deletes_from_union);
+        let text_with_inserts = text_ins_delta.apply(&self.text);
+        let rebased_deletes_from_union = cur_deletes_from_union.transform_expand(&new_inserts);
+
         // is the new edit in an undo group that was already undone due to concurrency?
         let undone = self.get_current_undo().map_or(false, |undos| undos.contains(&undo_group));
-        let mut new_deletes_from_union = Cow::Borrowed(&self.revs.last().unwrap().deletes_from_union);
-        if undone {
-            if !new_inserts.is_empty() {
-                new_deletes_from_union = Cow::Owned(new_deletes_from_union.transform_union(&new_inserts));
-            }
-        } else {
-            if !new_inserts.is_empty() {
-                new_deletes_from_union = Cow::Owned(new_deletes_from_union.transform_expand(&new_inserts));
-            }
-            if !new_deletes.is_empty() {
-                new_deletes_from_union = Cow::Owned(new_deletes_from_union.union(&new_deletes));
-            }
-        }
+        let new_deletes_from_union = {
+            let to_delete = if undone { &new_inserts } else { &new_deletes };
+            rebased_deletes_from_union.union(to_delete)
+        };
+
+        // move deleted or undone-inserted things from text to tombstones
+        let (new_text, new_tombstones) = Engine::shuffle(&text_with_inserts, &self.tombstones,
+            &rebased_deletes_from_union, &new_deletes_from_union);
+
         (Revision {
             rev_id: self.rev_id_counter,
-            deletes_from_union: new_deletes_from_union.into_owned(),
-            union_str_len: new_union_str.len(),
+            deletes_from_union: new_deletes_from_union,
+            union_str_len: union_ins_delta.new_document_len(),
             edit: Edit {
                 priority: new_priority,
                 undo_group: undo_group,
                 inserts: new_inserts,
                 deletes: new_deletes,
             }
-        }, new_union_str)
+        }, new_text, new_tombstones)
+    }
+
+    /// Move sections from text to tombstones and out of tombstones based on a new and old set of deletions
+    fn shuffle_tombstones(text: &Rope, tombstones: &Rope,
+            old_deletes_from_union: &Subset, new_deletes_from_union: &Subset) -> Rope {
+        // Taking the complement of deletes_from_union leads to an interleaving valid for swapped text and tombstones,
+        // allowing us to use the same method to insert the text into the tombstones.
+        let union_len = text.len() + tombstones.len();
+        let inverse_tombstones_map = old_deletes_from_union.complement(union_len);
+        let move_delta = Delta::synthesize(text, union_len,
+            &inverse_tombstones_map, &new_deletes_from_union.complement(union_len));
+        move_delta.apply(tombstones)
+    }
+
+    /// Move sections from text to tombstones and vice versa based on a new and old set of deletions.
+    /// Returns a tuple of a new text `Rope` and a new `Tombstones` rope described by `new_deletes_from_union`.
+    fn shuffle(text: &Rope, tombstones: &Rope,
+            old_deletes_from_union: &Subset, new_deletes_from_union: &Subset) -> (Rope,Rope) {
+        let union_len = text.len() + tombstones.len();
+        // Delta that deletes the right bits from the text
+        let del_delta = Delta::synthesize(tombstones, union_len, old_deletes_from_union, new_deletes_from_union);
+        let new_text = del_delta.apply(text);
+        (new_text, Engine::shuffle_tombstones(text,tombstones,old_deletes_from_union,new_deletes_from_union))
     }
 
     pub fn edit_rev(&mut self, priority: usize, undo_group: usize,
             base_rev: usize, delta: Delta<RopeInfo>) {
-        let (new_rev, new_union_str) = self.mk_new_rev(priority, undo_group, base_rev, delta);
+        let (new_rev, new_text, new_tombstones) = self.mk_new_rev(priority, undo_group, base_rev, delta);
         self.rev_id_counter += 1;
         self.revs.push(new_rev);
-        self.union_str = new_union_str;
+        self.text = new_text;
+        self.tombstones = new_tombstones;
     }
 
     // This computes undo all the way from the beginning. An optimization would be to not
@@ -227,10 +266,11 @@ impl Engine {
                 }
             }
         }
+        let head_rev = &self.revs.last().unwrap();
         Revision {
             rev_id: self.rev_id_counter,
             deletes_from_union: deletes_from_union,
-            union_str_len: self.union_str.len(),
+            union_str_len: head_rev.union_str_len,
             edit: Undo {
                 groups: groups
             }
@@ -239,6 +279,14 @@ impl Engine {
 
     pub fn undo(&mut self, groups: BTreeSet<usize>) {
         let new_rev = self.compute_undo(groups);
+
+        let (new_text, new_tombstones) = {
+            let cur_deletes_from_union = &self.revs.last().unwrap().deletes_from_union;
+            Engine::shuffle(&self.text, &self.tombstones, cur_deletes_from_union, &new_rev.deletes_from_union)
+        };
+
+        self.text = new_text;
+        self.tombstones = new_tombstones;
         self.revs.push(new_rev);
         self.rev_id_counter += 1;
     }
@@ -289,7 +337,10 @@ impl Engine {
             }
         }
         if !gc_dels.is_empty() {
-            self.union_str = gc_dels.delete_from(&self.union_str);
+            let head_rev = &self.revs.last().unwrap();
+            let not_in_tombstones = head_rev.deletes_from_union.complement(head_rev.union_str_len);
+            let dels_from_tombstones = not_in_tombstones.transform_shrink(&gc_dels);
+            self.tombstones = dels_from_tombstones.delete_from(&self.tombstones);
         }
         let old_revs = std::mem::replace(&mut self.revs, Vec::new());
         for rev in old_revs.into_iter().rev() {
@@ -395,27 +446,32 @@ mod tests {
         assert_eq!("0!3456789abcDEEFGIjklmnopqr888999stuvHIz", String::from(engine.get_head()));
     }
 
-    fn edit_rev_undo_test(undos : BTreeSet<usize>, output: &str) {
+    fn undo_test(before: bool, undos : BTreeSet<usize>, output: &str) {
         let mut engine = Engine::new(Rope::from(TEST_STR));
-        engine.undo(undos);
+        if before {
+            engine.undo(undos.clone());
+        }
         engine.edit_rev(1, 0, 0, build_delta_1());
         engine.edit_rev(0, 1, 0, build_delta_2());
+        if !before {
+            engine.undo(undos);
+        }
         assert_eq!(output, String::from(engine.get_head()));
     }
 
     #[test]
     fn edit_rev_undo() {
-        edit_rev_undo_test([0,1].iter().cloned().collect(), TEST_STR);
+        undo_test(true, [0,1].iter().cloned().collect(), TEST_STR);
     }
 
     #[test]
     fn edit_rev_undo_2() {
-        edit_rev_undo_test([1].iter().cloned().collect(), "0123456789abcDEEFghijklmnopqr999stuvz");
+        undo_test(true, [1].iter().cloned().collect(), "0123456789abcDEEFghijklmnopqr999stuvz");
     }
 
     #[test]
     fn edit_rev_undo_3() {
-        edit_rev_undo_test([0].iter().cloned().collect(), "0!3456789abcdefGIjklmnopqr888stuvwHIyz");
+        undo_test(true, [0].iter().cloned().collect(), "0!3456789abcdefGIjklmnopqr888stuvwHIyz");
     }
 
     #[test]
@@ -442,5 +498,20 @@ mod tests {
         engine.edit_rev(0, 1, 0, build_delta_2());
         let d = engine.delta_rev_head(1);
         assert_eq!(String::from(engine.get_head()), d.apply_to_string("0123456789abcDEEFghijklmnopqr999stuvz"));
+    }
+
+    #[test]
+    fn undo() {
+        undo_test(false, [0,1].iter().cloned().collect(), TEST_STR);
+    }
+
+    #[test]
+    fn undo_2() {
+        undo_test(false, [1].iter().cloned().collect(), "0123456789abcDEEFghijklmnopqr999stuvz");
+    }
+
+    #[test]
+    fn undo_3() {
+        undo_test(false, [0].iter().cloned().collect(), "0!3456789abcdefGIjklmnopqr888stuvwHIyz");
     }
 }

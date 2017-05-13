@@ -122,6 +122,12 @@ impl<N: NodeInfo> Delta<N> {
     /// also think of these as a set of insertions and one of deletions, with
     /// overlap doing nothing. This is basically the inverse of `factor`.
     ///
+    /// Since only the deleted portions of the union string are necessary,
+    /// instead of requiring a union string the function takes a `tombstones`
+    /// rope which contains the deleted portions of the union string. The
+    /// `from_dels` subset must be the interleaving of `tombstones` into the
+    /// union string.
+    ///
     /// ```no_run
     /// # use xi_rope::rope::{Rope, RopeInfo};
     /// # use xi_rope::delta::Delta;
@@ -131,18 +137,20 @@ impl<N: NodeInfo> Delta<N> {
     ///     let ins = ins_d.inserted_subset();
     ///     let del2 = del.transform_expand(&ins);
     ///     let r2 = ins_d.apply(&r);
-    ///     let d2 = Delta::synthesize(&r2, &ins, &del);
+    ///     let tombstones = ins.complement(r2.len()).delete_from(&r2);
+    ///     let d2 = Delta::synthesize(&tombstones, r2.len(), &ins, &del);
     ///     assert_eq!(String::from(d2.apply(r)), String::from(d.apply(r)));
     /// }
     /// ```
-    pub fn synthesize(s: &Node<N>, old_dels: &Subset, new_dels: &Subset) -> Delta<N> {
-        let base_len = old_dels.len_after_delete(s.len());
+    pub fn synthesize(tombstones: &Node<N>, union_len: usize, from_dels: &Subset, to_dels: &Subset) -> Delta<N> {
+        let base_len = from_dels.len_after_delete(union_len);
         let mut els = Vec::new();
         let mut x = 0;
-        let mut old_ranges = old_dels.complement_iter(s.len());
+        let mut old_ranges = from_dels.complement_iter(union_len);
         let mut last_old = old_ranges.next();
+        let mut m = from_dels.mapper();
         // For each segment of the new text
-        for (b, e) in new_dels.complement_iter(s.len()) {
+        for (b, e) in to_dels.complement_iter(union_len) {
             // Fill the whole segment
             let mut beg = b;
             while beg < e {
@@ -182,7 +190,9 @@ impl<N: NodeInfo> Delta<N> {
                         end = min(end, ib)
                     }
                     // Note: could try to aggregate insertions, but not sure of the win.
-                    els.push(DeltaElement::Insert(s.subseq(Interval::new_closed_open(beg, end))));
+                    // Use the mapper to insert the corresponding section of the tombstones rope
+                    let interval = Interval::new_closed_open(m.doc_index_to_subset(beg), m.doc_index_to_subset(end));
+                    els.push(DeltaElement::Insert(tombstones.subseq(interval)));
                     beg = end;
                 }
             }
@@ -528,9 +538,12 @@ mod tests {
         let ins = d1.inserted_subset();
         let del = del.transform_expand(&ins);
         let union_str = d1.apply_to_string("hello world");
-        let new_d = Delta::synthesize(&Rope::from(&union_str), &ins, &del);
+        let union_len = union_str.len();
+        let tombstones = ins.complement(union_len).delete_from_string(&union_str);
+        let new_d = Delta::synthesize(&Rope::from(&tombstones), union_len, &ins, &del);
         assert_eq!("herald", new_d.apply_to_string("hello world"));
-        let inv_d = Delta::synthesize(&Rope::from(&union_str), &del, &ins);
+        let text = del.complement(union_len).delete_from_string(&union_str);
+        let inv_d = Delta::synthesize(&Rope::from(&text), union_len, &del, &ins);
         assert_eq!("hello world", inv_d.apply_to_string("herald"));
     }
 
