@@ -77,7 +77,7 @@ impl <W:Write>BufferContainer<W> {
         match self.views.get(view_id) {
             Some(id) => self.editors.get(id),
             None => {
-                format!("no buffer_id for view {}", view_id);
+                print_err!("no buffer_id for view {}", view_id);
                 None
             }
         }
@@ -90,7 +90,7 @@ impl <W:Write>BufferContainer<W> {
         match self.views.get(view_id) {
             Some(id) => self.editors.get_mut(id),
             None => {
-                format!("no buffer_id for view {}", view_id);
+                print_err!("no buffer_id for view {}", view_id);
                 None
             }
         }
@@ -407,15 +407,8 @@ impl<W: Write + Send + 'static> Documents<W> {
             InitialPlugins { view_id } => Some(json!(
                     self.plugins.lock().available_plugins(&view_id))),
             Start { view_id, plugin_name } => {
-                // TODO: this is a hack, there are different ways a plugin might be launched
-                // and they would have different init params, this is just mimicing old api
-
-                // TODO: track syntax defs
-                let syntax = SyntaxDefinition::Plaintext;
                 let buffer_info = self.buffers.lock().editor_for_view(&view_id).unwrap()
                     .plugin_init_info();
-
-                //TODO: stop passing buffer ids
                 self.plugins.start_plugin(&view_id, &plugin_name, &buffer_info);
                 None
             }
