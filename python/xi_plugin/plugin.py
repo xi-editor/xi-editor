@@ -46,14 +46,22 @@ class Plugin(object):
     def __init__(self):
         self.cache = None
         self.identifier = type(self).__name__
+        self.path = None,
+        self.syntax = "plaintext"
 
     def __call__(self, method, params, peer):
         params = params or {}
         # intercept these to do bookkeeping, so subclasses don't have to call super
-        if method == "init_buf":
-            self._init_buf(peer, **params)
+        self.__last_method = method
+
+        if method == "initialize":
+            params = params['buffer_info']
+            self._initialize(peer, **params)
         if method == "update":
             self._update(peer, params)
+        if method == "shutdown":
+            peer.done = True
+
         return getattr(self, method, self.noop)(peer, **params)
 
     def print_err(self, err):
@@ -67,18 +75,19 @@ class Plugin(object):
     def ping(self, peer, **kwargs):
         self.print_err("ping")
 
-    def _init_buf(self, peer, rev, buf_size):
-        self.print_err("init_buf")
+    def _initialize(self, peer, rev, buf_size, nb_lines, syntax, path=None):
         # fetch an initial chunk (this isn't great: we don't know
         # where the cursor is)
         self.lines = LineCache(buf_size, peer, rev)
+        self.path = path
+        self.syntax = syntax
 
     def _update(self, peer, params):
         self.lines.apply_update(peer, **params)
 
     def noop(self, *args, **kwargs):
         """Default responder for unimplemented RPC methods."""
-        return None
+        return self.print_err("{} not implemented".format(self.__last_method))
 
 
 def start_plugin(plugin):

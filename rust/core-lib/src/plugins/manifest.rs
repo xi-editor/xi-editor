@@ -25,25 +25,50 @@ use serde_json::Value;
 
 use xi_rpc::RpcLoop;
 
-use super::PluginManager;
+use tabs::ViewIdentifier;
+use syntax::SyntaxDefinition;
+use super::PluginManagerRef;
 use super::{Plugin, PluginRef};
+
+// optional environment variable for debug plugin executables
+static PLUGIN_DIR: &'static str = "XI_PLUGIN_DIR";
 
 // example plugins. Eventually these should be loaded from disk.
 pub fn debug_plugins() -> Vec<PluginDescription> {
-    let mut path_base = env::current_exe().unwrap();
-    path_base.pop();
+    use self::PluginActivation::*;
+    use self::SyntaxDefinition::*;
+    let plugin_dir = match env::var(PLUGIN_DIR).map(PathBuf::from) {
+        Ok(p) => p,
+        Err(_) => env::current_exe().unwrap().parent().unwrap().to_owned(),
+    };
+    print_err!("looking for debug plugins in {:?}", plugin_dir);
+
     let make_path = |p: &str| -> PathBuf {
-        let mut pb = path_base.clone();
+        let mut pb = plugin_dir.clone();
         pb.push(p);
         pb
     };
 
     vec![
-        PluginDescription::new("syntect", "0.0", make_path("xi-syntect-plugin")),
-        PluginDescription::new("braces", "0.0", make_path("bracket_example.py")),
-        PluginDescription::new("spellcheck", "0.0", make_path("spellcheck.py")),
-        PluginDescription::new("shouty", "0.0", make_path("shouty.py")),
-    ]
+        PluginDescription::new("syntect", "0.0", make_path("xi-syntect-plugin"),
+        vec![Autorun]),
+        PluginDescription::new("braces", "0.0", make_path("bracket_example.py"),
+        Vec::new()),
+        PluginDescription::new("spellcheck", "0.0", make_path("spellcheck.py"),
+        vec![OnSyntax(Markdown), OnSyntax(Plaintext)]),
+        PluginDescription::new("shouty", "0.0", make_path("shouty.py"),
+        Vec::new()),
+    ].iter()
+        .filter(|desc|{ 
+            if !desc.exec_path.exists() {
+                print_err!("missing plugin {} at {:?}", desc.name, desc.exec_path);
+                false
+            } else {
+                true
+            }
+        })
+        .map(|desc| desc.to_owned())
+        .collect::<Vec<_>>()
 }
 
 /// Describes attributes and capabilities of a plugin.
@@ -52,33 +77,51 @@ pub fn debug_plugins() -> Vec<PluginDescription> {
 #[derive(Debug, Clone)]
 pub struct PluginDescription {
     pub name: String,
-    version: String,
+    pub version: String,
     //scope: PluginScope,
     // more metadata ...
     /// path to plugin executable
     pub exec_path: PathBuf,
+    /// Events that cause this plugin to run
+    pub activations: Vec<PluginActivation>,
+}
+
+/// `PluginActivation`s represent events that trigger running a plugin.
+#[derive(Debug, Clone)]
+pub enum PluginActivation {
+    /// Always run this plugin, when available.
+    Autorun,
+    /// Run this plugin if the provided SyntaxDefinition is active.
+    OnSyntax(SyntaxDefinition),
+    /// Run this plugin in response to a given command.
+    #[allow(dead_code)]
+    OnCommand,
 }
 
 impl PluginDescription {
-    fn new<S, P>(name: S, version: S, exec_path: P) -> Self
+    fn new<S, P>(name: S, version: S, exec_path: P,
+                 activations: Vec<PluginActivation>) -> Self
         where S: Into<String>, P: Into<PathBuf>
     {
         PluginDescription {
             name: name.into(),
             version: version.into(),
-            exec_path: exec_path.into()
+            exec_path: exec_path.into(),
+            activations: activations,
         }
     }
 
     /// Starts the executable described in this `PluginDescription`.
-    pub fn launch<W, C>(&self, manager_ref: &Arc<Mutex<PluginManager<W>>>, buffer_id: &str, completion: C)
+    //TODO: make this a free function, & move out of manifest
+    pub fn launch<W, C>(&self, manager_ref: &PluginManagerRef<W>,
+                        view_id: &ViewIdentifier, completion: C)
         where W: Write + Send + 'static,
               C: FnOnce(Result<PluginRef<W>, &'static str>) + Send + 'static
               // TODO: a real result type
     {
         let path = self.exec_path.clone();
-        let buffer_id = buffer_id.to_owned();
-        let manager_ref = manager_ref.clone();
+        let view_id = view_id.to_owned();
+        let manager_ref = manager_ref.to_weak();
         let description = self.clone();
 
         thread::spawn(move || {
@@ -95,12 +138,10 @@ impl PluginDescription {
             peer.send_rpc_notification("ping", &Value::Array(Vec::new()));
             let plugin = Plugin {
                 peer: peer,
-                //TODO: I had the bright idea of keeping this reference but
-                // I'm not sure exactly what to do with it (stopping the plugin is one thing)
                 process: child,
-                manager: Arc::downgrade(&manager_ref),
+                manager: manager_ref,
                 description: description,
-                buffer_id: buffer_id,
+                view_id: view_id,
             };
             let mut plugin_ref = PluginRef(Arc::new(Mutex::new(plugin)));
             completion(Ok(plugin_ref.clone()));

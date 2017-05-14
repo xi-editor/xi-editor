@@ -18,7 +18,7 @@ pub mod rpc_types;
 mod manager;
 mod manifest;
 
-use std::sync::{Arc, Mutex, Weak, mpsc};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::process::{ChildStdin, Child};
 use std::io::Write;
@@ -26,11 +26,11 @@ use std::io::Write;
 use serde_json::{self, Value};
 
 use xi_rpc::{RpcPeer, RpcCtx, Handler, Error};
-use tabs::{BufferIdentifier, ViewIdentifier};
+use tabs::ViewIdentifier;
 
-pub use self::manager::PluginManager;
+pub use self::manager::{PluginManagerRef, WeakPluginManagerRef};
 
-use self::rpc_types::{PluginUpdate, PluginCommand};
+use self::rpc_types::{PluginUpdate, PluginCommand, PluginBufferInfo};
 use self::manifest::PluginDescription;
 
 
@@ -42,10 +42,10 @@ pub struct Plugin<W: Write> {
     peer: PluginPeer,
     /// The plugin's process
     process: Child,
-    manager: Weak<Mutex<PluginManager<W>>>,
+    manager: WeakPluginManagerRef<W>,
     description: PluginDescription,
     //TODO: temporary, eventually ids (view ids?) should be passed back and forth with RPCs
-    buffer_id: BufferIdentifier,
+    view_id: ViewIdentifier,
 }
 
 /// A convenience wrapper for passing around a reference to a plugin.
@@ -83,22 +83,20 @@ impl<W: Write + Send + 'static> PluginRef<W> {
             let cmd = serde_json::from_value::<PluginCommand>(params.to_owned())
                 .expect(&format!("failed to parse plugin rpc {}, params {:?}",
                         method, params));
-            let result = plugin_manager.lock().unwrap()
-                .handle_plugin_cmd(cmd, &self.0.lock().unwrap().buffer_id);
+            let result = plugin_manager.lock().handle_plugin_cmd(
+                cmd, &self.0.lock().unwrap().view_id);
         result
         } else {
             None
         }
     }
 
-    /// Init message sent to the plugin.
-    pub fn init_buf(&self, buf_size: usize, rev: usize) {
-        let plugin = self.0.lock().unwrap();
-        let params = json!({
-            "buf_size": buf_size,
-            "rev": rev,
-        });
-        plugin.peer.send_rpc_notification("init_buf", &params);
+    /// Initialize the plugin.
+    pub fn initialize(&self, init: &PluginBufferInfo) {
+        self.0.lock().unwrap().peer
+            .send_rpc_notification("initialize", &json!({
+                "buffer_info": init,
+            }));
     }
 
     /// Update message sent to the plugin.
@@ -106,6 +104,26 @@ impl<W: Write + Send + 'static> PluginRef<W> {
             where F: FnOnce(Result<Value, Error>) + Send + 'static {
         let params = serde_json::to_value(update).expect("PluginUpdate invalid");
         self.0.lock().unwrap().peer.send_rpc_request_async("update", &params, callback);
+    }
+
+    /// Termination message sent to the plugin.
+    ///
+    /// The plugin is expected to clean up and close the pipe.
+    pub fn shutdown(&self) {
+        match self.0.lock() {
+            Ok(mut inner) => {
+                //FIXME: don't block here?
+                inner.peer.send_rpc_notification("shutdown", &json!({}));
+                // TODO: get rust plugin lib to respect shutdown msg
+                if inner.description.name == "syntect" {
+                    let _ = inner.process.kill();
+                }
+                print_err!("waiting on process {}", inner.process.id());
+                let exit_status = inner.process.wait();
+                print_err!("process ended {:?}", exit_status);
+            }
+            Err(_) => print_err!("plugin mutex poisoned"),
+        }
     }
 }
 
@@ -124,13 +142,14 @@ impl<W: Write + Send + 'static> PluginRef<W> {
 /// which forwards them to interested plugins.
 pub fn start_update_thread<W: Write + Send + 'static>(
     rx: mpsc::Receiver<(ViewIdentifier, PluginUpdate, usize)>,
-    plugins: Arc<Mutex<PluginManager<W>>>)
+    plugins_ref: &PluginManagerRef<W>)
 {
+    let plugins_ref = plugins_ref.clone();
     thread::spawn(move ||{
         loop {
             match rx.recv() {
                 Ok((view_id, update, undo_group)) => {
-                    plugins.lock().unwrap().update(&view_id, update, undo_group);
+                    plugins_ref.lock().update(&view_id, update, undo_group);
                 }
                 Err(_) => break,
             }

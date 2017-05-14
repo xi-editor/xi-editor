@@ -14,10 +14,47 @@
 
 //! RPC types, corresponding to protocol requests, notifications & responses.
 
+use std::path::PathBuf;
+
+use syntax::SyntaxDefinition;
 
 //TODO: At the moment (May 08, 2017) this is all very much in flux.
 // At some point, it will be stabalized and then perhaps will live in another crate,
 // shared with the plugin lib.
+
+// ====================================================================
+// core -> plugin RPC method types + responses
+// ====================================================================
+
+/// Buffer information sent on plugin init.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PluginBufferInfo {
+    rev: usize,
+    buf_size: usize,
+    nb_lines: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
+    syntax: SyntaxDefinition,
+}
+
+impl PluginBufferInfo {
+    pub fn new(rev: usize, buf_size: usize, nb_lines: usize,
+               path: Option<PathBuf>, syntax: SyntaxDefinition) -> Self {
+        //TODO: do make any current assertions about paths being valid utf-8? do we want to?
+        let path = path.map(|p| p.to_str().unwrap().to_owned());
+        PluginBufferInfo { rev, buf_size, nb_lines, path, syntax }
+    }
+}
+
+
+//TODO: very likely this should be merged with PluginDescription
+//TODO: also this does not belong here.
+/// Describes an available plugin to the client.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ClientPluginInfo {
+    pub name: String,
+    pub running: bool,
+}
 
 /// A simple update, sent to a plugin.
 #[derive(Serialize, Deserialize, Debug)]
@@ -47,6 +84,22 @@ impl PluginUpdate {
     }
 }
 
+/// A response to an `update` RPC sent to a plugin.
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(untagged)]
+pub enum UpdateResponse {
+    /// An edit to the buffer.
+    Edit(PluginEdit),
+    /// An acknowledgement with no action. A response cannot be Null, so we send a uint.
+    Ack(u64),
+}
+
+
+// ====================================================================
+// plugin -> core RPC method types
+// ====================================================================
+
+
 /// An simple edit, received from a plugin.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct PluginEdit {
@@ -63,17 +116,8 @@ pub struct PluginEdit {
     pub author: String,
 }
 
-/// A response to an `update` RPC sent to a plugin.
 #[derive(Serialize, Deserialize, Debug)]
-#[serde(untagged)]
-pub enum UpdateResponse {
-    /// An edit to the buffer.
-    Edit(PluginEdit),
-    /// An acknowledgement with no action. A response cannot be Null, so we send a uint.
-    Ack(u64),
-}
-
-#[derive(Serialize, Deserialize, Debug)]
+/// A text range and style information.
 pub struct Span {
     pub start: usize,
     pub end: usize,
@@ -84,10 +128,53 @@ pub struct Span {
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(untagged)]
-/// RPC commands sent from the plugins.
+/// RPC commands sent from plugins.
 pub enum PluginCommand {
     SetFgSpans {start: usize, len: usize, spans: Vec<Span>, rev: usize },
     GetData { offset: usize, max_size: usize, rev: usize },
     Alert { msg: String },
     LineCount,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json;
+    
+    #[test]
+    fn test_plugin_update() {
+        let json = r#"{
+            "start": 1,
+            "end": 5,
+            "new_len": 2,
+            "rev": 5,
+            "edit_type": "something",
+            "author": "me"
+    }"#;
+
+    let val: PluginUpdate = match serde_json::from_str(json) {
+        Ok(val) => val,
+        Err(err) => panic!("{:?}", err),
+    };
+    assert!(val.text.is_none());
+    assert_eq!(val.start, 1);
+    }
+
+    #[test]
+    fn test_deserde_init() {
+        let json = r#"
+            {"rev": 1,
+             "buf_size": 20,
+             "nb_lines": 5,
+             "path": "some_path",
+             "syntax": "toml"}"#;
+
+        let val: PluginBufferInfo = match serde_json::from_str(json) {
+            Ok(val) => val,
+            Err(err) => panic!("{:?}", err),
+        };
+        assert_eq!(val.rev, 1);
+        assert_eq!(val.path, Some("some_path".to_owned()));
+        assert_eq!(val.syntax, SyntaxDefinition::Toml);
+    }
 }

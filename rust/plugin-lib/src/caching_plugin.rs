@@ -14,6 +14,7 @@
 
 //! A caching layer for xi plugins. Will be split out into its own crate once it's a bit more stable.
 
+use std::path::PathBuf;
 use serde_json::Value;
 
 use plugin_base;
@@ -25,7 +26,7 @@ const CHUNK_SIZE: usize = 1024 * 1024;
 
 /// A handler that the plugin needs to instantiate.
 pub trait Handler {
-    fn init_buf(&mut self, ctx: PluginCtx, buf_size: usize);
+    fn initialize(&mut self, ctx: PluginCtx, buf_size: usize);
     fn update(&mut self, ctx: PluginCtx);
     #[allow(unused_variables)]
     fn idle(&mut self, ctx: PluginCtx, token: usize) {}
@@ -42,6 +43,9 @@ struct State {
     // line iteration state
     line_num: usize,
     offset_of_line: usize,
+
+    syntax: String,
+    path: Option<PathBuf>,
 }
 
 pub struct PluginCtx<'a> {
@@ -65,15 +69,16 @@ impl<'a, H: Handler> plugin_base::Handler for MyHandler<'a, H> {
                 print_err!("got ping");
                 None
             }
-            PluginRequest::InitBuf { buf_size, rev } => {
-                print_err!("got init_buf buf_size = {}, rev = {}", buf_size, rev);
-                ctx.state.buf_size = buf_size;
-                ctx.state.rev = rev;
-                self.handler.init_buf(ctx, buf_size);
+            PluginRequest::Initialize(ref init_info) => {
+                ctx.state.buf_size = init_info.buf_size;
+                ctx.state.rev = init_info.rev;
+                ctx.state.syntax = init_info.syntax.clone();
+                ctx.state.path = init_info.path.clone().map(|p| PathBuf::from(p));
+                self.handler.initialize(ctx, init_info.buf_size);
                 None
             }
             PluginRequest::Update { start, end, new_len, rev, edit_type, author, text } => {
-                print_err!("got update notification {:?}", edit_type);
+                //print_err!("got update notification {:?}", edit_type);
                 ctx.state.buf_size = ctx.state.buf_size - (end - start) + new_len;
                 ctx.state.rev = rev;
                 if let (Some(text), Some(mut cache)) = (text, ctx.state.cache.take()) {
@@ -95,7 +100,7 @@ impl<'a, H: Handler> plugin_base::Handler for MyHandler<'a, H> {
                 ctx.state.line_num = 0;
                 ctx.state.offset_of_line = 0;
                 self.handler.update(ctx);
-                Some(Value::Null)
+                Some(Value::from(0i32))
             }
         }
     }
@@ -166,6 +171,13 @@ impl<'a> PluginCtx<'a> {
                     return Ok(Some(result));
                 }
             }
+        }
+    }
+
+    pub fn get_path(&self) -> Option<&PathBuf> {
+        match self.state.path {
+            Some(ref p) => Some(p),
+            None => None,
         }
     }
 

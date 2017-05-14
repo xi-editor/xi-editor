@@ -33,7 +33,8 @@ use movement::Movement;
 
 use tabs::{ViewIdentifier, DocumentCtx};
 use rpc::{EditCommand, GestureType};
-use plugins::rpc_types::{PluginUpdate, PluginEdit, Span};
+use syntax::SyntaxDefinition;
+use plugins::rpc_types::{PluginUpdate, PluginEdit, Span, PluginBufferInfo};
 
 const FLAG_SELECT: u64 = 2;
 
@@ -46,8 +47,9 @@ const MAX_SIZE_LIMIT: usize = 1024 * 1024;
 
 pub struct Editor<W: Write> {
     text: Rope,
-    // Maybe this should be in DocumentCtx or equivelant?
+
     path: Option<PathBuf>,
+    syntax: SyntaxDefinition,
 
     /// A collection of non-primary views attached to this buffer.
     views: BTreeMap<ViewIdentifier, View>,
@@ -115,6 +117,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         let editor = Editor {
             text: buffer,
             path: None,
+            syntax: SyntaxDefinition::default(),
             views: BTreeMap::new(),
             view: View::new(initial_view_id),
             engine: engine,
@@ -172,14 +175,23 @@ impl<W: Write + Send + 'static> Editor<W> {
     /// should only ever be called from `BufferContainerRef::set_path`
     #[doc(hidden)]
     pub fn _set_path<P: AsRef<Path>>(&mut self, path: P) {
-        self.path = Some(path.as_ref().to_owned());
+        let path = path.as_ref();
+        //TODO: if the user sets syntax, we shouldn't overwrite here
+        self.syntax = SyntaxDefinition::new(path.to_str());
+        self.path = Some(path.to_owned());
     }
 
+    /// If this `Editor`'s buffer has been saved, Returns its path.
     pub fn get_path(&self) -> Option<&Path> {
         match self.path {
             Some(ref p) => Some(p),
             None => None,
         }
+    }
+
+    /// Returns this `Editor`'s active `SyntaxDefinition`.
+    pub fn get_syntax(&self) -> &SyntaxDefinition {
+        &self.syntax
     }
 
     // each outstanding plugin edit represents a rev_in_flight.
@@ -194,10 +206,11 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.gc_undos();
     }
 
-    /// Returns metrics used to initialize plugins.
-    pub fn plugin_init_params(&self) -> (usize, usize, usize) {
+    /// Returns buffer information used to initialize plugins.
+    pub fn plugin_init_info(&self) -> PluginBufferInfo {
         let nb_lines = self.text.measure::<LinesMetric>() + 1;
-        (self.text.len(), nb_lines, self.engine.get_head_rev_id())
+        PluginBufferInfo::new(self.engine.get_head_rev_id(), self.text.len(),
+        nb_lines, self.path.clone(), self.syntax.clone())
     }
 
     fn insert(&mut self, s: &str) {
@@ -603,8 +616,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             }
             Err(e) => print_err!("create error {}", e),
         }
-        // TODO: we should probably bubble up this error now. in the meantime always set path,
-        // because the caller has updated the open_files list
+
         self.pristine_rev_id = self.last_rev_id;
         self.view.set_pristine();
         self.view.set_dirty();
@@ -897,6 +909,18 @@ impl<W: Write + Send + 'static> Editor<W> {
     // should have its own reference.
     pub fn plugin_alert(&self, msg: &str) {
         self.doc_ctx.alert(msg);
+    }
+
+    /// Notifies the client that the named plugin has started.
+    pub fn plugin_started(&self, view_id: &ViewIdentifier, plugin: &str) {
+        self.doc_ctx.plugin_started(view_id, plugin);
+    }
+
+    /// Notifies client that the named plugin has stopped.
+    ///
+    /// `code` is reserved for future use.
+    pub fn plugin_stopped(&self, view_id: &ViewIdentifier, plugin: &str, code: i32) {
+        self.doc_ctx.plugin_stopped(view_id, plugin, code);
     }
 }
 

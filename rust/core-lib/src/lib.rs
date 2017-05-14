@@ -46,6 +46,7 @@ pub mod internal {
     pub mod index_set;
     pub mod selection;
     pub mod movement;
+    pub mod syntax;
 }
 
 use internal::tabs;
@@ -58,6 +59,7 @@ use internal::word_boundaries;
 use internal::index_set;
 use internal::selection;
 use internal::movement;
+use internal::syntax;
 
 use tabs::Documents;
 use rpc::Request;

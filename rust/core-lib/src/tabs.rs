@@ -27,7 +27,9 @@ use editor::Editor;
 use rpc::{CoreCommand, EditCommand, PluginCommand};
 use styles::{Style, StyleMap};
 use MainPeer;
-use plugins::{self, PluginManager};
+
+use syntax::SyntaxDefinition;
+use plugins::{self, PluginManagerRef};
 use plugins::rpc_types::PluginUpdate;
 
 /// ViewIdentifiers are the primary means of routing messages between xi-core and a client view.
@@ -72,18 +74,26 @@ impl <W:Write>BufferContainer<W> {
     ///
     /// Panics if no buffer is associated with `view_id`.
     pub fn editor_for_view(&self, view_id: &ViewIdentifier) -> Option<&Editor<W>> {
-        let buffer_id = self.views.get(view_id)
-            .expect(&format!("no buffer_id for view {}", view_id));
-        self.editors.get(buffer_id)
+        match self.views.get(view_id) {
+            Some(id) => self.editors.get(id),
+            None => {
+                print_err!("no buffer_id for view {}", view_id);
+                None
+            }
+        }
     }
 
     /// Returns a mutable reference to the `Editor` instance owning `view_id`'s view.
     ///
     /// Panics if no buffer is associated with `view_id`.
     pub fn editor_for_view_mut(&mut self, view_id: &ViewIdentifier) -> Option<&mut Editor<W>> {
-        let buffer_id = self.views.get(view_id)
-            .expect(&format!("no buffer_id for view {}", view_id));
-        self.editors.get_mut(buffer_id)
+        match self.views.get(view_id) {
+            Some(id) => self.editors.get_mut(id),
+            None => {
+                print_err!("no buffer_id for view {}", view_id);
+                None
+            }
+        }
     }
 }
 
@@ -115,16 +125,12 @@ impl <W: Write + Send + 'static>BufferContainerRef<W> {
 
     /// Adds a new editor, associating it with the provided identifiers.
     pub fn add_editor(&self, view_id: &ViewIdentifier, buffer_id: &BufferIdentifier,
-                      editor: Editor<W>, path: Option<&Path>) {
-        {
-            let mut inner = self.lock();
-            inner.views.insert(view_id.to_owned(), buffer_id.to_owned());
-            inner.editors.insert(buffer_id.to_owned(), editor);
-        }
-        if let Some(path) = path {
-            self.set_path(path, view_id);
-        }
+                      editor: Editor<W>) {
+        let mut inner = self.lock();
+        inner.views.insert(view_id.to_owned(), buffer_id.to_owned());
+        inner.editors.insert(buffer_id.to_owned(), editor);
     }
+
     /// Registers `file_path` as an open file, associated with `view_id`'s buffer.
     ///
     /// If an existing path is already associated with this buffer, it is removed.
@@ -205,7 +211,7 @@ pub struct Documents<W: Write> {
     id_counter: usize,
     kill_ring: Arc<Mutex<Rope>>,
     style_map: Arc<Mutex<StyleMap>>,
-    plugins: Arc<Mutex<PluginManager<W>>>,
+    plugins: PluginManagerRef<W>,
     /// A tx channel used to propagate plugin updates from all `Editor`s.
     update_channel: mpsc::Sender<(ViewIdentifier, PluginUpdate, usize)>
 }
@@ -223,10 +229,10 @@ pub struct DocumentCtx<W: Write> {
 impl<W: Write + Send + 'static> Documents<W> {
     pub fn new() -> Documents<W> {
         let buffers = BufferContainerRef::new();
-        let plugin_manager = Arc::new(Mutex::new(PluginManager::new(buffers.clone())));
+        let plugin_manager = PluginManagerRef::new(buffers.clone());
         let (update_tx, update_rx) = mpsc::channel();
 
-        plugins::start_update_thread(update_rx, plugin_manager.clone());
+        plugins::start_update_thread(update_rx, &plugin_manager);
 
         Documents {
             buffers: buffers,
@@ -311,12 +317,14 @@ impl<W: Write + Send + 'static> Documents<W> {
 
     fn do_close_view(&mut self, view_id: &ViewIdentifier) {
         self.buffers.close_view(view_id);
+        self.plugins.document_close(view_id);
     }
 
     fn new_empty_view(&mut self, rpc_peer: &MainPeer<W>, view_id: &ViewIdentifier,
                       buffer_id: BufferIdentifier) {
         let editor = Editor::new(self.new_tab_ctx(rpc_peer), view_id);
-        self.buffers.add_editor(view_id, &buffer_id, editor, None);
+        self.add_editor(view_id, &buffer_id, editor, None);
+        self.plugins.document_new(view_id);
     }
 
     fn new_view_with_file(&mut self, rpc_peer: &MainPeer<W>, view_id: &ViewIdentifier,
@@ -324,7 +332,8 @@ impl<W: Write + Send + 'static> Documents<W> {
         match self.read_file(&path) {
             Ok(contents) => {
                 let ed = Editor::with_text(self.new_tab_ctx(rpc_peer), view_id, contents);
-                self.buffers.add_editor(view_id, &buffer_id, ed, Some(path));
+                self.add_editor(view_id, &buffer_id, ed, Some(path));
+                self.plugins.document_open(view_id);
             }
             Err(err) => {
                 let ed = Editor::new(self.new_tab_ctx(rpc_peer), view_id);
@@ -332,12 +341,24 @@ impl<W: Write + Send + 'static> Documents<W> {
                     // if this is a read error of an actual file, we don't set path
                     // TODO: we should be reporting errors to the client
                     print_err!("unable to read file: {}, error: {:?}", buffer_id, err);
-                    self.buffers.add_editor(view_id, &buffer_id, ed, None);
+                    self.add_editor(view_id, &buffer_id, ed, None);
                 } else {
                     // if a path that doesn't exist, create a new empty buffer + set path
-                    self.buffers.add_editor(view_id, &buffer_id, ed, Some(path));
+                    self.add_editor(view_id, &buffer_id, ed, Some(path));
                 }
+                self.plugins.document_new(view_id);
             }
+        }
+    }
+
+    /// Adds a new editor, associating it with the provided identifiers.
+    ///
+    /// This is called once each time a new editor is created.
+    fn add_editor(&self, view_id: &ViewIdentifier, buffer_id: &BufferIdentifier,
+                  editor: Editor<W>, path: Option<&Path>) {
+        self.buffers.add_editor(view_id, buffer_id, editor);
+        if let Some(path) = path {
+            self.buffers.set_path(path, view_id);
         }
     }
 
@@ -359,8 +380,19 @@ impl<W: Write + Send + 'static> Documents<W> {
                                file_path: P) -> Option<Value> {
         //TODO: handle & report errors
         let file_path = file_path.as_ref();
-        self.buffers.lock().editor_for_view_mut(view_id).unwrap().do_save(file_path);
+        let prev_syntax = self.buffers.lock().editor_for_view(view_id)
+            .unwrap().get_syntax().to_owned();
+        // notify of syntax change before notify of file_save
+        //FIXME: this doesn't tell us if the syntax _will_ change, for instance if syntax was a user
+        //selection. (we don't handle this case right now)
+
+        self.buffers.lock().editor_for_view_mut(view_id)
+            .unwrap().do_save(file_path);
         self.buffers.set_path(file_path, view_id);
+        if prev_syntax != SyntaxDefinition::new(file_path.to_str()) {
+                self.plugins.document_syntax_changed(view_id);
+        }
+        self.plugins.document_did_save(&view_id);
         None
     }
 
@@ -373,22 +405,18 @@ impl<W: Write + Send + 'static> Documents<W> {
         use self::PluginCommand::*;
         match cmd {
             InitialPlugins { view_id } => Some(json!(
-                    self.plugins.lock().unwrap().debug_available_plugins())),
+                    self.plugins.lock().available_plugins(&view_id))),
             Start { view_id, plugin_name } => {
-                // TODO: this is a hack, there are different ways a plugin might be launched
-                // and they would have different init params, this is just mimicing old api
-                let (buf_size, _, rev) = {
-                self.buffers.lock().editor_for_view(&view_id).unwrap()
-                    .plugin_init_params()
-                };
-
-                //TODO: stop passing buffer ids
-                self.plugins.lock().unwrap().start_plugin(
-                    &self.plugins, &view_id, &plugin_name, buf_size, rev);
+                let buffer_info = self.buffers.lock().editor_for_view(&view_id).unwrap()
+                    .plugin_init_info();
+                self.plugins.start_plugin(&view_id, &plugin_name, &buffer_info);
                 None
             }
-            //TODO: stop a plugin
-            Stop { view_id, plugin_name } => None,
+            Stop { view_id, plugin_name } => {
+                print_err!("stop plugin rpc {}", plugin_name);
+                self.plugins.stop_plugin(&view_id, &plugin_name);
+                None
+            }
         }
     }
 
@@ -417,11 +445,40 @@ impl<W: Write> DocumentCtx<W> {
             }));
     }
 
-    pub fn available_plugins(&self, view_id: &str, plugins: Vec<&str>) {
+    /// Notify the client of the available plugins.
+    pub fn available_plugins(&self, view_id: &ViewIdentifier, plugins: Vec<&str>) {
         self.rpc_peer.send_rpc_notification("available_plugins",
                                             &json!({
                                                 "view_id": view_id,
                                                 "plugins": plugins }));
+    }
+
+    /// Notify the client that a plugin ha started.
+    pub fn plugin_started(&self, view_id: &ViewIdentifier, plugin: &str) {
+        self.rpc_peer.send_rpc_notification("plugin_started",
+                                            &json!({
+                                                "view_id": view_id,
+                                                "plugin": plugin,
+                                            }));
+    }
+
+    /// Notify the client that a plugin ha stopped.
+    ///
+    /// `code` is not currently used.
+    pub fn plugin_stopped(&self, view_id: &ViewIdentifier, plugin: &str, code: i32) {
+        self.rpc_peer.send_rpc_notification("plugin_stopped",
+                                            &json!({
+                                                "view_id": view_id,
+                                                "plugin": plugin,
+                                                "code": code,
+                                            }));
+    }
+
+    pub fn alert(&self, msg: &str) {
+        self.rpc_peer.send_rpc_notification("alert",
+            &json!({
+                "msg": msg,
+            }));
     }
 
     pub fn get_kill_ring(&self) -> Rope {
@@ -433,12 +490,6 @@ impl<W: Write> DocumentCtx<W> {
         *kill_ring = val;
     }
 
-    pub fn alert(&self, msg: &str) {
-        self.rpc_peer.send_rpc_notification("alert",
-            &json!({
-                "msg": msg,
-            }));
-    }
 
     // Get the index for a given style. If the style is not in the existing
     // style map, then issues a def_style request to the front end. Intended
@@ -495,7 +546,7 @@ mod tests {
         let path_1 = PathBuf::from("a_path");
         let path_2 = PathBuf::from("a_different_path");
         let editor = Editor::new(mock_doc_ctx(&view_id_1), &view_id_1);
-        container_ref.add_editor(&view_id_1, &buf_id_1, editor, None);
+        container_ref.add_editor(&view_id_1, &buf_id_1, editor);
         assert_eq!(container_ref.lock().editors.len(), 1);
 
         // set path (as if on save)
@@ -518,7 +569,8 @@ mod tests {
         let view_id_2 = "view-id-2".to_owned();
         let buf_id_2 = "buf-id-2".to_owned();
         let editor = Editor::new(mock_doc_ctx(&view_id_2), &view_id_2);
-        container_ref.add_editor(&view_id_2, &buf_id_2, editor, Some(&path_1));
+        container_ref.add_editor(&view_id_2, &buf_id_2, editor);
+        container_ref.set_path(&path_1, &view_id_2);
         assert_eq!(container_ref.lock().editors.len(), 2);
         assert_eq!(container_ref.has_open_file(&path_1), true);
         assert_eq!(container_ref.has_open_file(&path_2), true);

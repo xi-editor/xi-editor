@@ -17,7 +17,7 @@
 use std::io;
 use std::fmt;
 
-use serde_json::value::Value;
+use serde_json::{self, Value};
 
 use xi_rpc;
 use xi_rpc::{RpcLoop, RpcCtx, dict_get_u64, dict_get_string};
@@ -165,10 +165,7 @@ impl EditType {
 
 pub enum PluginRequest<'a> {
     Ping,
-    InitBuf {
-        buf_size: usize,
-        rev: usize,
-    },
+    Initialize(PluginBufferInfo),
     Update {
         start: usize,
         end: usize,
@@ -178,6 +175,25 @@ pub enum PluginRequest<'a> {
         author: &'a str,
         text: Option<&'a str>,
     },
+}
+
+//TODO: this is just copy-paste from core-lib::plugins::rpc_types
+//these should be shared, it looks like
+
+/// Buffer information sent on plugin init.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PluginBufferInfo {
+    pub rev: usize,
+    pub buf_size: usize,
+    pub nb_lines: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    pub syntax: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct BufferInfoWrapper {
+    pub buffer_info: PluginBufferInfo,
 }
 
 enum InternalError {
@@ -198,16 +214,14 @@ fn parse_plugin_request<'a>(method: &str, params: &'a Value) ->
         Result<PluginRequest<'a>, InternalError> {
     match method {
         "ping" => Ok(PluginRequest::Ping),
-        "init_buf" => {
-            params.as_object().and_then(|dict|
-                if let (Some(buf_size), Some(rev)) = 
-                    (dict_get_u64(dict, "buf_size"), dict_get_u64(dict, "rev")) {
-                        Some(PluginRequest::InitBuf {
-                            buf_size: buf_size as usize,
-                            rev: rev as usize,
-                        })
-                } else { None }
-            ).ok_or_else(|| InternalError::InvalidParams)
+        "initialize" => {
+            match serde_json::from_value::<BufferInfoWrapper>(params.to_owned()) {
+                Ok(BufferInfoWrapper { buffer_info }) => Ok(PluginRequest::Initialize(buffer_info)),
+                Err(_) => {
+                    print_err!("bad params? {:?}", params);
+                    Err(InternalError::InvalidParams)
+                }
+            }
         }
         "update" => {
             params.as_object().and_then(|dict|
