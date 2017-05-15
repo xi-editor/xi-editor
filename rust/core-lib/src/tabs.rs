@@ -16,7 +16,6 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
-use std::ops::Deref;
 use std::io::{self, Read, Write};
 use std::path::{PathBuf, Path};
 use std::fs::File;
@@ -38,16 +37,13 @@ use plugins::rpc_types::PluginUpdate;
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ViewIdentifier(String);
 
+/// BufferIdentifiers uniquely identify open buffers.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct BufferIdentifier(String);
+
 impl fmt::Display for ViewIdentifier {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0) 
-    }
-}
-
-impl Deref for ViewIdentifier {
-    type Target = String;
-    fn deref(&self) -> &String {
-        &self.0
     }
 }
 
@@ -57,21 +53,16 @@ impl<T: AsRef<str>> From<T> for ViewIdentifier {
     }
 }
 
-
-/// BufferIdentifiers uniquely identify open buffers.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct BufferIdentifier(String);
+impl ViewIdentifier {
+    /// Returns a reference to the identifier's String value.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
 impl fmt::Display for BufferIdentifier {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0) 
-    }
-}
-
-impl Deref for BufferIdentifier {
-    type Target = String;
-    fn deref(&self) -> &String {
-        &self.0
     }
 }
 
@@ -475,7 +466,7 @@ impl<W: Write + Send + 'static> Documents<W> {
 }
 
 impl<W: Write> DocumentCtx<W> {
-    pub fn update_view(&self, view_id: &str, update: &Value) {
+    pub fn update_view(&self, view_id: &ViewIdentifier, update: &Value) {
         self.rpc_peer.send_rpc_notification("update",
             &json!({
                 "view_id": view_id,
@@ -483,7 +474,7 @@ impl<W: Write> DocumentCtx<W> {
             }));
     }
 
-    pub fn scroll_to(&self, view_id: &str, line: usize, col: usize) {
+    pub fn scroll_to(&self, view_id: &ViewIdentifier, line: usize, col: usize) {
         self.rpc_peer.send_rpc_notification("scroll_to",
             &json!({
                 "view_id": view_id,
@@ -593,7 +584,7 @@ mod tests {
         let buf_id_1 = BufferIdentifier::from("buf-id-1");
         let path_1 = PathBuf::from("a_path");
         let path_2 = PathBuf::from("a_different_path");
-        let editor = Editor::new(mock_doc_ctx(&view_id_1), &view_id_1);
+        let editor = Editor::new(mock_doc_ctx(view_id_1.as_str()), &view_id_1);
         container_ref.add_editor(&view_id_1, &buf_id_1, editor);
         assert_eq!(container_ref.lock().editors.len(), 1);
 
@@ -616,7 +607,7 @@ mod tests {
         // reopen the original file:
         let view_id_2 = ViewIdentifier::from("view-id-2");
         let buf_id_2 = BufferIdentifier::from("buf-id-2");
-        let editor = Editor::new(mock_doc_ctx(&view_id_2), &view_id_2);
+        let editor = Editor::new(mock_doc_ctx(view_id_2.as_str()), &view_id_2);
         container_ref.add_editor(&view_id_2, &buf_id_2, editor);
         container_ref.set_path(&path_1, &view_id_2);
         assert_eq!(container_ref.lock().editors.len(), 2);
@@ -639,5 +630,23 @@ mod tests {
         let view_id = ViewIdentifier::from("hello-id-8");
         let as_val = serde_json::to_value(&view_id).unwrap();
         assert_eq!(as_val.to_string(), "\"hello-id-8\"");
+    }
+
+    #[test]
+    fn test_struct_serde() {
+        #[derive(Serialize, Deserialize)]
+        struct TestStruct {
+            name: String,
+            view: ViewIdentifier,
+            flag: u64,
+        }
+        let json = r#"
+        {"name": "victor",
+         "view": "a-view",
+         "flag": 42
+        }"#;
+        
+        let result: TestStruct = serde_json::from_str(json).unwrap();
+        assert_eq!(result.view.as_str(), "a-view");
     }
 }

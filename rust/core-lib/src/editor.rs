@@ -344,7 +344,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         // plugins get updated. This ensures that gc runs.
         self.increment_revs_in_flight();
 
-        let author = author.unwrap_or(&self.view.view_id);
+        let author = author.unwrap_or(&self.view.view_id.as_str());
         let text = match new_len < MAX_SIZE_LIMIT {
             true => Some(self.text.slice_to_string(iv.start(), iv.start() + new_len)),
             false => None
