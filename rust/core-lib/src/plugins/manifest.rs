@@ -55,7 +55,7 @@ pub fn debug_plugins() -> Vec<PluginDescription> {
         PluginDescription::new("braces", "0.0", make_path("bracket_example.py"),
         Vec::new()),
         PluginDescription::new("spellcheck", "0.0", make_path("spellcheck.py"),
-        vec![OnSyntax(Markdown), OnSyntax(Plaintext)]),
+        Vec::new()),
         PluginDescription::new("shouty", "0.0", make_path("shouty.py"),
         Vec::new()),
     ].iter()
