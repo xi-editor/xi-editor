@@ -44,7 +44,8 @@ impl <W: Write + Send + 'static>PluginManager<W> {
     /// Returns plugins available to this view.
     pub fn available_plugins(&self, view_id: &ViewIdentifier) -> Vec<ClientPluginInfo> {
         self.catalog.iter().map(|p| {
-            let key = (view_id.to_owned(), p.name.clone());
+            let buffer_id = self.buffer_for_view(view_id);
+            let key = (buffer_id, p.name.clone());
             let running = self.running.contains_key(&key);
             let name = key.1;
             ClientPluginInfo { name, running }
@@ -82,7 +83,8 @@ impl <W: Write + Send + 'static>PluginManager<W> {
     pub fn update(&mut self, view_id: &ViewIdentifier, update: PluginUpdate,
                   undo_group: usize) {
         // find all running plugins for this buffer, and send them the update
-        for (_, plugin) in self.running.iter().filter(|kv| (kv.0).0 == *view_id) {
+        let buffer_id = self.buffer_for_view(view_id);
+        for (_, plugin) in self.running.iter().filter(|kv| (kv.0).0 == buffer_id) {
             self.buffers.lock().editor_for_view_mut(view_id)
                 .unwrap().increment_revs_in_flight();
             let view_id = view_id.to_owned();
@@ -110,42 +112,66 @@ impl <W: Write + Send + 'static>PluginManager<W> {
     pub fn start_plugin(&mut self, self_ref: &PluginManagerRef<W>,
                           view_id: &ViewIdentifier, plugin_name: &str, init_info: PluginBufferInfo) {
         //TODO: error handling: this should maybe have a completion callback with a Result
-        let key = (view_id.to_owned(), plugin_name.to_owned());
-        if self.running.contains_key(&key) {
-            return print_err!("plugin {} already running for buffer {}", plugin_name, view_id);
-        }
-
-        let plugin = self.catalog.iter().find(|desc| desc.name == plugin_name)
-            .expect(&format!("no plugin found with name {}", plugin_name));
-
-        let me = self_ref.clone();
-        plugin.launch(self_ref, view_id, move |result| {
-            match result {
-                Ok(plugin_ref) => {
-                    plugin_ref.initialize(&init_info);
-                    let mut inner = me.lock();
-                    inner.buffers.lock().editor_for_view(&key.0).unwrap().plugin_started(&key.0, &key.1);
-                    inner.running.insert(key, plugin_ref);
-                },
-                Err(_) => panic!("error handling is not implemented"),
+        let buffer_id = self.buffers.buffer_for_view(view_id);
+        if let Some(buffer_id) = buffer_id {
+            let key = (buffer_id.to_owned(), plugin_name.to_owned());
+            if self.running.contains_key(&key) {
+                return print_err!("plugin {} already running for buffer {}", plugin_name, key.0);
             }
-        });
+
+            let plugin = self.catalog.iter().find(|desc| desc.name == plugin_name)
+                .expect(&format!("no plugin found with name {}", plugin_name));
+
+            let me = self_ref.clone();
+            let view_id2 = view_id.to_owned();
+            plugin.launch(self_ref, view_id, move |result| {
+                match result {
+                    Ok(plugin_ref) => {
+                        plugin_ref.initialize(&init_info);
+                        let mut inner = me.lock();
+                        let mut running = false;
+
+                        if let Some(ed) = inner.buffers.lock()
+                            .editor_for_view(&view_id2) {
+                                ed.plugin_started(&view_id2, &key.1);
+                                running = true;
+                        }
+                        if running {
+                            inner.running.insert(key, plugin_ref);
+                        }
+                    }
+                    Err(_) => panic!("error handling is not implemented"),
+                }
+            });
+        }
+        else {
+            print_err!("couldn't start plugin {}, no buffer found for view {}",
+                       plugin_name, view_id)
+        }
     }
 
     fn stop_plugin(&mut self, view_id: &ViewIdentifier, plugin_name: &str) {
-        let key = (view_id.to_owned(), plugin_name.to_owned());
-        match self.running.remove(&key) {
-            Some(plugin) => {
-                plugin.shutdown();
-                //TODO: should we notify now, or wait until we know this worked?
-                //can this fail? (yes.) How do we tell, and when do we kill the proc?
-                if let Some(editor) = self.buffers.lock().editor_for_view(view_id) {
-                    editor.plugin_stopped(view_id, plugin_name, 0);
+        if let Some(buffer_id) = self.buffers.buffer_for_view(view_id) {
+            let key = (buffer_id.to_owned(), plugin_name.to_owned());
+            match self.running.remove(&key) {
+                Some(plugin) => {
+                    plugin.shutdown();
+                    //TODO: should we notify now, or wait until we know this worked?
+                    //can this fail? (yes.) How do we tell, and when do we kill the proc?
+                    if let Some(editor) = self.buffers.lock().editor_for_view(view_id) {
+                        editor.plugin_stopped(view_id, plugin_name, 0);
+                    }
                 }
+                None => print_err!("stop_plugin: plugin not running for buffer {} {}",
+                                   plugin_name, view_id),
             }
-            None => print_err!("stop_plugin: plugin not running for buffer {} {}",
-                               plugin_name, view_id),
         }
+    }
+
+    fn buffer_for_view(&self, view_id: &ViewIdentifier) -> BufferIdentifier {
+        let buffer_id = self.buffers.buffer_for_view(view_id);
+        if buffer_id.is_none() { print_err!("no buffer for view {}", view_id) }
+        buffer_id.unwrap_or(BufferIdentifier::from("null-id"))
     }
 }
 
@@ -218,8 +244,9 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
 
     /// Called when a buffer is closed.
     pub fn document_close(&mut self, view_id: &ViewIdentifier) {
+        let buffer_id = self.lock().buffer_for_view(view_id);
         let to_stop = self.lock().running.keys()
-            .filter(|k| k.0 == *view_id)
+            .filter(|k| k.0 == buffer_id)
             .map(|k| k.1.to_owned())
             .collect::<Vec<_>>();
         for plugin_name in to_stop {
@@ -231,9 +258,11 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
     /// Called when a document's syntax definition has changed.
     pub fn document_syntax_changed(&mut self, view_id: &ViewIdentifier) {
         print_err!("document_syntax_changed {}", view_id);
+        let buffer_id = self.lock().buffer_for_view(view_id);
+
         let start_keys = self.activatable_plugins(view_id)
             .iter()
-            .map(|plg| (view_id.to_owned(), plg.to_owned()))
+            .map(|plg| (buffer_id.clone(), plg.to_owned()))
             .collect::<BTreeSet<_>>();
 
         // stop currently running plugins that aren't on list

@@ -18,6 +18,7 @@ use std::error;
 use std::fmt;
 use serde_json::{self, Value};
 use xi_rpc::{dict_get_u64, dict_get_string, arr_get_u64, arr_get_i64};
+use tabs::ViewIdentifier;
 
 // =============================================================================
 //  Request handling
@@ -42,13 +43,13 @@ pub enum Request<'a> {
 /// An enum representing a core command, parsed from JSON.
 #[derive(Debug, PartialEq, Eq)]
 pub enum CoreCommand<'a> {
-    Edit { view_id: &'a str, edit_command: EditCommand<'a> },
+    Edit { view_id: ViewIdentifier, edit_command: EditCommand<'a> },
     /// A command from the client to a plugin.
     Plugin {  plugin_command: PluginCommand },
     /// Request a new view, opening a file if `file_path` is Some, else creating an empty buffer.
     NewView { file_path: Option<&'a str> },
-    CloseView { view_id: &'a str },
-    Save { view_id: &'a str, file_path: &'a str },
+    CloseView { view_id: ViewIdentifier },
+    Save { view_id: ViewIdentifier, file_path: &'a str },
 }
 
 /// An enum representing touch and mouse gestures applied to the text.
@@ -126,11 +127,11 @@ pub enum EditCommand<'a> {
 #[serde(tag = "command")]
 pub enum PluginCommand {
     #[serde(rename = "initial_plugins")]
-    InitialPlugins { view_id: String },
+    InitialPlugins { view_id: ViewIdentifier },
     #[serde(rename = "start")]
-    Start { view_id: String, plugin_name: String },
+    Start { view_id: ViewIdentifier, plugin_name: String },
     #[serde(rename = "stop")]
-    Stop { view_id: String, plugin_name: String },
+    Stop { view_id: ViewIdentifier, plugin_name: String },
     //Other { view_id: String, params: Value },
 }
 
@@ -141,7 +142,7 @@ impl<'a> CoreCommand<'a> {
 
         match method {
             "close_view" => params.as_object().and_then(|dict| {
-                dict_get_string(dict, "view_id").map(|view_id| CloseView { view_id: view_id })
+                dict_get_string(dict, "view_id").map(|view_id| CloseView { view_id: ViewIdentifier::from(view_id) })
             }).ok_or_else(|| MalformedCoreParams(method.to_string(), params.clone())),
 
             "new_view" => params.as_object()
@@ -151,7 +152,7 @@ impl<'a> CoreCommand<'a> {
             "save" => params.as_object().and_then(|dict| {
                 dict_get_string(dict, "view_id").and_then(|view_id| {
                     dict_get_string(dict, "file_path").map(|file_path| {
-                        Save { view_id: view_id, file_path: file_path }
+                        Save { view_id: ViewIdentifier::from(view_id), file_path: file_path }
                        })
                     })
                 }).ok_or_else(|| MalformedCoreParams(method.to_string(), params.clone())),
@@ -162,7 +163,7 @@ impl<'a> CoreCommand<'a> {
                     if let (Some(view_id), Some(method), Some(edit_params)) =
                         (dict_get_string(dict, "view_id"), dict_get_string(dict, "method"), dict.get("params")) {
                             EditCommand::from_json(method, edit_params)
-                                .map(|cmd| Edit { view_id: view_id, edit_command: cmd })
+                                .map(|cmd| Edit { view_id: ViewIdentifier::from(view_id), edit_command: cmd })
                         } else { Err(MalformedCoreParams(method.to_string(), params.clone())) }
                 }),
                 "plugin" => serde_json::from_value::<PluginCommand>(params.clone())

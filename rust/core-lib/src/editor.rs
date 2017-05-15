@@ -103,12 +103,12 @@ impl EditType {
 
 impl<W: Write + Send + 'static> Editor<W> {
     /// Creates a new `Editor` with a new empty buffer.
-    pub fn new(doc_ctx: DocumentCtx<W>, initial_view_id: &str) -> Editor<W> {
+    pub fn new(doc_ctx: DocumentCtx<W>, initial_view_id: &ViewIdentifier) -> Editor<W> {
         Self::with_text(doc_ctx, initial_view_id, "".to_owned())
     }
 
     /// Creates a new `Editor`, loading text into a new buffer.
-    pub fn with_text(doc_ctx: DocumentCtx<W>, initial_view_id: &str, text: String) -> Editor<W> {
+    pub fn with_text(doc_ctx: DocumentCtx<W>, initial_view_id: &ViewIdentifier, text: String) -> Editor<W> {
 
         let engine = Engine::new(Rope::from(text));
         let buffer = engine.get_head();
@@ -141,10 +141,10 @@ impl<W: Write + Send + 'static> Editor<W> {
 
 
     #[allow(unreachable_code, unused_variables)]
-    pub fn add_view(&mut self, view_id: &str) {
+    pub fn add_view(&mut self, view_id: &ViewIdentifier) {
         panic!("multi-view support is not currently implemented");
         assert!(!self.views.contains_key(view_id), "view_id already exists");
-        self.views.insert(view_id.to_owned(), View::new(view_id.to_owned()));
+        self.views.insert(view_id.to_owned(), View::new(view_id));
     }
 
     /// Removes a view from this editor's stack, if this editor has multiple views.
@@ -152,8 +152,8 @@ impl<W: Write + Send + 'static> Editor<W> {
     /// If the editor only has a single view this is a no-op. After removing a view the caller must
     /// always call Editor::has_views() to determine whether or not the editor should be cleaned up.
     #[allow(unreachable_code)]
-    pub fn remove_view(&mut self, view_id: &str) {
-        if self.view.view_id == view_id {
+    pub fn remove_view(&mut self, view_id: &ViewIdentifier) {
+        if self.view.view_id == *view_id {
             if self.views.len() > 0 {
                 panic!("multi-view support is not currently implemented");
                 //set some other view as active. This will be reset on the next EditCommand
@@ -344,7 +344,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         // plugins get updated. This ensures that gc runs.
         self.increment_revs_in_flight();
 
-        let author = author.unwrap_or(&self.view.view_id);
+        let author = author.unwrap_or(&self.view.view_id.as_str());
         let text = match new_len < MAX_SIZE_LIMIT {
             true => Some(self.text.slice_to_string(iv.start(), iv.start() + new_len)),
             false => None
@@ -774,12 +774,12 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.insert(&*String::from(kill_ring_string));
     }
 
-    pub fn do_rpc(&mut self, view_id: &str, cmd: EditCommand) -> Option<Value> {
+    pub fn do_rpc(&mut self, view_id: &ViewIdentifier, cmd: EditCommand) -> Option<Value> {
 
         use rpc::EditCommand::*;
 
         // if the rpc's originating view is different from current self.view, swap it in
-        if self.view.view_id != view_id {
+        if self.view.view_id != *view_id {
             let mut temp = self.views.remove(view_id).expect("no view for provided view_id");
             mem::swap(&mut temp, &mut self.view);
             self.views.insert(temp.view_id.clone(), temp);

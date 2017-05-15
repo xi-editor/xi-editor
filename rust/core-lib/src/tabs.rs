@@ -15,6 +15,7 @@
 //! A container for all the documents being edited. Also functions as main dispatch for RPC.
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::io::{self, Read, Write};
 use std::path::{PathBuf, Path};
 use std::fs::File;
@@ -33,11 +34,43 @@ use plugins::{self, PluginManagerRef};
 use plugins::rpc_types::PluginUpdate;
 
 /// ViewIdentifiers are the primary means of routing messages between xi-core and a client view.
-pub type ViewIdentifier = String;
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct ViewIdentifier(String);
 
 /// BufferIdentifiers uniquely identify open buffers.
-pub type BufferIdentifier = String;
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct BufferIdentifier(String);
 
+impl fmt::Display for ViewIdentifier {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0) 
+    }
+}
+
+impl<T: AsRef<str>> From<T> for ViewIdentifier {
+    fn from(s: T) -> Self {
+        ViewIdentifier(String::from(s.as_ref()))
+    }
+}
+
+impl ViewIdentifier {
+    /// Returns a reference to the identifier's String value.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for BufferIdentifier {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0) 
+    }
+}
+
+impl<T: AsRef<str>> From<T> for BufferIdentifier {
+    fn from(s: T) -> Self {
+        BufferIdentifier(String::from(s.as_ref()))
+    }
+}
 
 /// Tracks open buffers, and relationships between buffers and views.
 pub struct BufferContainer<W: Write> {
@@ -69,7 +102,7 @@ pub struct BufferContainerRef<W: Write>(Arc<Mutex<BufferContainer<W>>>);
 /// [BufferContainer]: struct.BufferContainer.html
 pub struct WeakBufferContainerRef<W: Write>(Weak<Mutex<BufferContainer<W>>>);
 
-impl <W:Write>BufferContainer<W> {
+impl<W:Write> BufferContainer<W> {
     /// Returns a reference to the `Editor` instance owning `view_id`'s view.
     ///
     /// Panics if no buffer is associated with `view_id`.
@@ -97,7 +130,7 @@ impl <W:Write>BufferContainer<W> {
     }
 }
 
-impl <W: Write + Send + 'static>BufferContainerRef<W> {
+impl<W: Write + Send + 'static> BufferContainerRef<W> {
     pub fn new() -> Self {
         BufferContainerRef(Arc::new(Mutex::new(
                     BufferContainer {
@@ -121,6 +154,11 @@ impl <W: Write + Send + 'static>BufferContainerRef<W> {
     /// Returns `true` if `file_path` is already open, else `false`.
     pub fn has_open_file<P: AsRef<Path>>(&self, file_path: P) -> bool {
         self.lock().open_files.contains_key(file_path.as_ref())
+    }
+
+    /// Returns a copy of the BufferIdentifier associated with a given view.
+    pub fn buffer_for_view(&self, view_id: &ViewIdentifier) -> Option<BufferIdentifier> {
+        self.lock().views.get(view_id).map(|id| id.to_owned())
     }
 
     /// Adds a new editor, associating it with the provided identifiers.
@@ -255,12 +293,12 @@ impl<W: Write + Send + 'static> Documents<W> {
 
     fn next_view_id(&mut self) -> ViewIdentifier {
         self.id_counter += 1;
-        format!("view-id-{}", self.id_counter)
+        ViewIdentifier::from(format!("view-id-{}", self.id_counter))
     }
 
     fn next_buffer_id(&mut self) -> BufferIdentifier {
         self.id_counter += 1;
-        format!("buffer-id-{}", self.id_counter)
+        BufferIdentifier::from(format!("buffer-id-{}", self.id_counter))
     }
 
     pub fn do_rpc(&mut self, cmd: CoreCommand, rpc_peer: &MainPeer<W>) -> Option<Value> {
@@ -268,13 +306,13 @@ impl<W: Write + Send + 'static> Documents<W> {
 
         match cmd {
             CloseView { view_id } => {
-                self.do_close_view(&view_id.to_owned());
+                self.do_close_view(&view_id);
                 None
             },
 
             NewView { file_path } => Some(self.do_new_view(rpc_peer, file_path)),
-            Save { view_id, file_path } => self.do_save(&view_id.to_owned(), file_path),
-            Edit { view_id, edit_command } => self.do_edit(&view_id.to_owned(), edit_command),
+            Save { view_id, file_path } => self.do_save(&view_id, file_path),
+            Edit { view_id, edit_command } => self.do_edit(&view_id, edit_command),
             Plugin { plugin_command } => self.do_plugin_cmd(plugin_command),
         }
     }
@@ -316,8 +354,8 @@ impl<W: Write + Send + 'static> Documents<W> {
     }
 
     fn do_close_view(&mut self, view_id: &ViewIdentifier) {
-        self.buffers.close_view(view_id);
         self.plugins.document_close(view_id);
+        self.buffers.close_view(view_id);
     }
 
     fn new_empty_view(&mut self, rpc_peer: &MainPeer<W>, view_id: &ViewIdentifier,
@@ -428,7 +466,7 @@ impl<W: Write + Send + 'static> Documents<W> {
 }
 
 impl<W: Write> DocumentCtx<W> {
-    pub fn update_view(&self, view_id: &str, update: &Value) {
+    pub fn update_view(&self, view_id: &ViewIdentifier, update: &Value) {
         self.rpc_peer.send_rpc_notification("update",
             &json!({
                 "view_id": view_id,
@@ -436,7 +474,7 @@ impl<W: Write> DocumentCtx<W> {
             }));
     }
 
-    pub fn scroll_to(&self, view_id: &str, line: usize, col: usize) {
+    pub fn scroll_to(&self, view_id: &ViewIdentifier, line: usize, col: usize) {
         self.rpc_peer.send_rpc_notification("scroll_to",
             &json!({
                 "view_id": view_id,
@@ -518,6 +556,7 @@ mod tests {
     use xi_rpc::{RpcLoop};
     use std::env;
     use std::fs::File;
+    use serde_json;
 
     // a bit of gymnastics to let us instantiate an Editor instance
     fn mock_doc_ctx(tempfile: &str) -> DocumentCtx<File> {
@@ -541,11 +580,11 @@ mod tests {
     fn test_save_as() {
         let container_ref = BufferContainerRef::new();
         assert!(!container_ref.has_open_file("a fake file, for sure"));
-        let view_id_1 = "view-id-1".to_owned();
-        let buf_id_1 = "buf-id-1".to_owned();
+        let view_id_1 = ViewIdentifier::from("view-id-1");
+        let buf_id_1 = BufferIdentifier::from("buf-id-1");
         let path_1 = PathBuf::from("a_path");
         let path_2 = PathBuf::from("a_different_path");
-        let editor = Editor::new(mock_doc_ctx(&view_id_1), &view_id_1);
+        let editor = Editor::new(mock_doc_ctx(view_id_1.as_str()), &view_id_1);
         container_ref.add_editor(&view_id_1, &buf_id_1, editor);
         assert_eq!(container_ref.lock().editors.len(), 1);
 
@@ -566,9 +605,9 @@ mod tests {
             Some(path_2.as_ref()));
 
         // reopen the original file:
-        let view_id_2 = "view-id-2".to_owned();
-        let buf_id_2 = "buf-id-2".to_owned();
-        let editor = Editor::new(mock_doc_ctx(&view_id_2), &view_id_2);
+        let view_id_2 = ViewIdentifier::from("view-id-2");
+        let buf_id_2 = BufferIdentifier::from("buf-id-2");
+        let editor = Editor::new(mock_doc_ctx(view_id_2.as_str()), &view_id_2);
         container_ref.add_editor(&view_id_2, &buf_id_2, editor);
         container_ref.set_path(&path_1, &view_id_2);
         assert_eq!(container_ref.lock().editors.len(), 2);
@@ -583,5 +622,31 @@ mod tests {
         container_ref.close_view(&view_id_2);
         assert_eq!(container_ref.has_open_file(&path_2), false);
         assert_eq!(container_ref.lock().editors.len(), 0);
+    }
+
+    #[test]
+    fn test_id_serde() {
+        // check to see that struct with single string member serializes as string
+        let view_id = ViewIdentifier::from("hello-id-8");
+        let as_val = serde_json::to_value(&view_id).unwrap();
+        assert_eq!(as_val.to_string(), "\"hello-id-8\"");
+    }
+
+    #[test]
+    fn test_struct_serde() {
+        #[derive(Serialize, Deserialize)]
+        struct TestStruct {
+            name: String,
+            view: ViewIdentifier,
+            flag: u64,
+        }
+        let json = r#"
+        {"name": "victor",
+         "view": "a-view",
+         "flag": 42
+        }"#;
+        
+        let result: TestStruct = serde_json::from_str(json).unwrap();
+        assert_eq!(result.view.as_str(), "a-view");
     }
 }

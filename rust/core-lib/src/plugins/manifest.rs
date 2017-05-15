@@ -36,7 +36,6 @@ static PLUGIN_DIR: &'static str = "XI_PLUGIN_DIR";
 // example plugins. Eventually these should be loaded from disk.
 pub fn debug_plugins() -> Vec<PluginDescription> {
     use self::PluginActivation::*;
-    use self::SyntaxDefinition::*;
     let plugin_dir = match env::var(PLUGIN_DIR).map(PathBuf::from) {
         Ok(p) => p,
         Err(_) => env::current_exe().unwrap().parent().unwrap().to_owned(),
@@ -92,6 +91,7 @@ pub enum PluginActivation {
     /// Always run this plugin, when available.
     Autorun,
     /// Run this plugin if the provided SyntaxDefinition is active.
+    #[allow(dead_code)]
     OnSyntax(SyntaxDefinition),
     /// Run this plugin in response to a given command.
     #[allow(dead_code)]
