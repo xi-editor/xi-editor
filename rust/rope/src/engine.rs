@@ -233,6 +233,8 @@ impl Engine {
         // Delta that deletes the right bits from the text
         let del_delta = Delta::synthesize(tombstones, union_len, old_deletes_from_union, new_deletes_from_union);
         let new_text = del_delta.apply(text);
+        // println!("shuffle: old={:?} new={:?} old_text={:?} new_text={:?} old_tombstones={:?}",
+        //     old_deletes_from_union, new_deletes_from_union, text, new_text, tombstones);
         (new_text, Engine::shuffle_tombstones(text,tombstones,old_deletes_from_union,new_deletes_from_union))
     }
 
@@ -513,5 +515,93 @@ mod tests {
     #[test]
     fn undo_3() {
         undo_test(false, [0].iter().cloned().collect(), "0!3456789abcdefGIjklmnopqr888stuvwHIyz");
+    }
+
+    #[test]
+    fn undo_4() {
+        let mut engine = Engine::new(Rope::from(TEST_STR));
+        let d1 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("a"), TEST_STR.len());
+        engine.edit_rev(1, 0, 0, d1.clone());
+        engine.undo([0].iter().cloned().collect());
+        let d2 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("a"), TEST_STR.len()+1);
+        engine.edit_rev(1, 1, 1, d2);
+        let d3 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("b"), TEST_STR.len()+2);
+        engine.edit_rev(1, 2, 2, d3);
+        engine.undo([0,2].iter().cloned().collect());
+        assert_eq!("a0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", String::from(engine.get_head()));
+    }
+
+    #[test]
+    fn gc() {
+        let mut engine = Engine::new(Rope::from(TEST_STR));
+        let d1 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("a"), TEST_STR.len());
+        engine.edit_rev(1, 0, 0, d1.clone());
+        engine.undo([0].iter().cloned().collect());
+        let d2 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("a"), TEST_STR.len()+1);
+        engine.edit_rev(1, 1, 1, d2);
+        let gc : BTreeSet<usize> = [0].iter().cloned().collect();
+        engine.gc(&gc);
+        let d3 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("b"), TEST_STR.len()+2);
+        let new_head = engine.get_head_rev_id();
+        engine.edit_rev(1, 2, new_head, d3);
+        engine.undo([2].iter().cloned().collect());
+        assert_eq!("a0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", String::from(engine.get_head()));
+    }
+
+    /// This case is a regression test reproducing a panic I found while using the UI.
+    /// It does undos and gcs in a pattern that can actually happen when using the editor.
+    fn gc_scenario(edits: usize, max_undos: usize) {
+        let mut engine = Engine::new(Rope::from(""));
+
+        // insert `edits` letter "b"s in separate undo groups
+        for i in 0..edits {
+            let d = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("b"), i);
+            let head = engine.get_head_rev_id();
+            engine.edit_rev(1, i, head, d);
+            if i >= max_undos {
+                let to_gc : BTreeSet<usize> = [i-max_undos].iter().cloned().collect();
+                engine.gc(&to_gc)
+            }
+        }
+
+        // spam cmd+z until the available undo history is exhausted
+        let mut to_undo = BTreeSet::new();
+        for i in ((edits-max_undos)..edits).rev() {
+            to_undo.insert(i);
+            engine.undo(to_undo.clone());
+        }
+
+        // insert a character at the beginning
+        let d1 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("h"), engine.get_head().len());
+        let head = engine.get_head_rev_id();
+        engine.edit_rev(1, edits, head, d1);
+
+        // since character was inserted after gc, editor gcs all undone things
+        engine.gc(&to_undo);
+
+        // insert character at end, when this test was added, it panic'd here
+        let chars_left = (edits-max_undos)+1;
+        let d2 = Delta::simple_edit(Interval::new_closed_open(chars_left, chars_left), Rope::from("f"), engine.get_head().len());
+        let head2 = engine.get_head_rev_id();
+        engine.edit_rev(1, edits, head2, d2);
+
+        let mut soln = String::from("h");
+        for _ in 0..(edits-max_undos) {
+            soln.push('b');
+        }
+        soln.push('f');
+        assert_eq!(soln, String::from(engine.get_head()));
+    }
+
+    #[test]
+    fn gc_2() {
+        // the smallest values with which it still fails:
+        gc_scenario(4,3);
+    }
+
+    #[test]
+    fn gc_3() {
+        // original values this test was created/found with in the UI:
+        gc_scenario(35,20);
     }
 }
