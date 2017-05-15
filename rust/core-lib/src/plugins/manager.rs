@@ -135,7 +135,7 @@ impl <W: Write + Send + 'static>PluginManager<W> {
                             .editor_for_view(&view_id2) {
                                 ed.plugin_started(&view_id2, &key.1);
                                 running = true;
-                            }
+                        }
                         if running {
                             inner.running.insert(key, plugin_ref);
                         }
