@@ -20,12 +20,12 @@ mod manifest;
 
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
-use std::process::{ChildStdin, Child};
-use std::io::Write;
+use std::process::{ChildStdin, Child, Command, Stdio};
+use std::io::{self, BufReader, Write};
 
 use serde_json::{self, Value};
 
-use xi_rpc::{RpcPeer, RpcCtx, Handler, Error};
+use xi_rpc::{RpcPeer, RpcCtx, RpcLoop, Handler, Error};
 use tabs::ViewIdentifier;
 
 pub use self::manager::{PluginManagerRef, WeakPluginManagerRef};
@@ -153,6 +153,49 @@ pub fn start_update_thread<W: Write + Send + 'static>(
                 }
                 Err(_) => break,
             }
+        }
+    });
+}
+
+/// Launches a plugin, associating it with a given view.
+pub fn start_plugin<W, C>(manager_ref: &PluginManagerRef<W>,
+                          plugin_desc: &PluginDescription,
+                          view_id: &ViewIdentifier,
+                          completion: C)
+    where W: Write + Send + 'static,
+          C: FnOnce(Result<PluginRef<W>, io::Error>) + Send + 'static
+{
+
+    let manager_ref = manager_ref.to_weak();
+    let view_id = view_id.to_owned();
+    let plugin_desc = plugin_desc.to_owned();
+
+    thread::spawn(move || {
+        print_err!("starting plugin at path {:?}", &plugin_desc.exec_path);
+        let child = Command::new(&plugin_desc.exec_path)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn();
+
+        match child {
+            Ok(mut child) => {
+                let child_stdin = child.stdin.take().unwrap();
+                let child_stdout = child.stdout.take().unwrap();
+                let mut looper = RpcLoop::new(child_stdin);
+                let peer = looper.get_peer();
+                peer.send_rpc_notification("ping", &Value::Array(Vec::new()));
+                let plugin = Plugin {
+                    peer: peer,
+                    process: child,
+                    manager: manager_ref,
+                    description: plugin_desc,
+                    view_id: view_id,
+                };
+                let mut plugin_ref = PluginRef(Arc::new(Mutex::new(plugin)));
+                completion(Ok(plugin_ref.clone()));
+                looper.mainloop(|| BufReader::new(child_stdout), &mut plugin_ref);
+            }
+            Err(err) => completion(Err(err)),
         }
     });
 }

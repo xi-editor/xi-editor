@@ -22,7 +22,7 @@ use serde_json::{self, Value};
 
 use tabs::{BufferIdentifier, ViewIdentifier, BufferContainerRef};
 
-use super::{PluginDescription, PluginRef};
+use super::{PluginDescription, PluginRef, start_plugin};
 use super::rpc_types::{PluginCommand, PluginUpdate, UpdateResponse, ClientPluginInfo, PluginBufferInfo};
 use super::manifest::{PluginActivation, debug_plugins};
 
@@ -124,7 +124,8 @@ impl <W: Write + Send + 'static>PluginManager<W> {
 
             let me = self_ref.clone();
             let view_id2 = view_id.to_owned();
-            plugin.launch(self_ref, view_id, move |result| {
+
+            start_plugin(self_ref, &plugin, &view_id, move |result| {
                 match result {
                     Ok(plugin_ref) => {
                         plugin_ref.initialize(&init_info);
