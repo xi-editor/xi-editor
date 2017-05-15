@@ -351,3 +351,97 @@ impl Engine {
         self.revs.reverse();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use engine::Engine;
+    use rope::{Rope, RopeInfo};
+    use delta::{Builder, Delta};
+    use interval::Interval;
+    use std::collections::BTreeSet;
+
+    const TEST_STR: &'static str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+    fn build_delta_1() -> Delta<RopeInfo> {
+        let mut d_builder = Builder::new(TEST_STR.len());
+        d_builder.delete(Interval::new_closed_open(10, 36));
+        d_builder.replace(Interval::new_closed_open(39, 42), Rope::from("DEEF"));
+        d_builder.replace(Interval::new_closed_open(54, 54), Rope::from("999"));
+        d_builder.delete(Interval::new_closed_open(58, 61));
+        d_builder.build()
+    }
+
+    fn build_delta_2() -> Delta<RopeInfo> {
+        let mut d_builder = Builder::new(TEST_STR.len());
+        d_builder.replace(Interval::new_closed_open(1, 3), Rope::from("!"));
+        d_builder.delete(Interval::new_closed_open(10, 36));
+        d_builder.replace(Interval::new_closed_open(42, 45), Rope::from("GI"));
+        d_builder.replace(Interval::new_closed_open(54, 54), Rope::from("888"));
+        d_builder.replace(Interval::new_closed_open(59, 60), Rope::from("HI"));
+        d_builder.build()
+    }
+
+    #[test]
+    fn edit_rev_simple() {
+        let mut engine = Engine::new(Rope::from(TEST_STR));
+        engine.edit_rev(0, 0, 0, build_delta_1());
+        assert_eq!("0123456789abcDEEFghijklmnopqr999stuvz", String::from(engine.get_head()));
+    }
+
+    #[test]
+    fn edit_rev_concurrent() {
+        let mut engine = Engine::new(Rope::from(TEST_STR));
+        engine.edit_rev(1, 0, 0, build_delta_1());
+        engine.edit_rev(0, 1, 0, build_delta_2());
+        assert_eq!("0!3456789abcDEEFGIjklmnopqr888999stuvHIz", String::from(engine.get_head()));
+    }
+
+    fn edit_rev_undo_test(undos : BTreeSet<usize>, output: &str) {
+        let mut engine = Engine::new(Rope::from(TEST_STR));
+        engine.undo(undos);
+        engine.edit_rev(1, 0, 0, build_delta_1());
+        engine.edit_rev(0, 1, 0, build_delta_2());
+        assert_eq!(output, String::from(engine.get_head()));
+    }
+
+    #[test]
+    fn edit_rev_undo() {
+        edit_rev_undo_test([0,1].iter().cloned().collect(), TEST_STR);
+    }
+
+    #[test]
+    fn edit_rev_undo_2() {
+        edit_rev_undo_test([1].iter().cloned().collect(), "0123456789abcDEEFghijklmnopqr999stuvz");
+    }
+
+    #[test]
+    fn edit_rev_undo_3() {
+        edit_rev_undo_test([0].iter().cloned().collect(), "0!3456789abcdefGIjklmnopqr888stuvwHIyz");
+    }
+
+    #[test]
+    fn delta_rev_head() {
+        let mut engine = Engine::new(Rope::from(TEST_STR));
+        engine.edit_rev(1, 0, 0, build_delta_1());
+        let d = engine.delta_rev_head(0);
+        assert_eq!(String::from(engine.get_head()), d.apply_to_string(TEST_STR));
+    }
+
+    #[test]
+    fn delta_rev_head_2() {
+        let mut engine = Engine::new(Rope::from(TEST_STR));
+        engine.edit_rev(1, 0, 0, build_delta_1());
+        engine.edit_rev(0, 1, 0, build_delta_2());
+        let d = engine.delta_rev_head(0);
+        assert_eq!(String::from(engine.get_head()), d.apply_to_string(TEST_STR));
+    }
+
+    #[test]
+    fn delta_rev_head_3() {
+        let mut engine = Engine::new(Rope::from(TEST_STR));
+        engine.edit_rev(1, 0, 0, build_delta_1());
+        engine.edit_rev(0, 1, 0, build_delta_2());
+        let d = engine.delta_rev_head(1);
+        assert_eq!(String::from(engine.get_head()), d.apply_to_string("0123456789abcDEEFghijklmnopqr999stuvz"));
+    }
+}
