@@ -77,6 +77,8 @@ pub struct Editor<W: Write> {
     style_spans: Spans<Style>,
     doc_ctx: DocumentCtx<W>,
     revs_in_flight: usize,
+
+    vim_state: VimState,
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
@@ -135,6 +137,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             style_spans: Spans::default(),
             doc_ctx: doc_ctx,
             revs_in_flight: 0,
+            vim_state: VimState::default(),
         };
         editor
     }
@@ -841,6 +844,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             Copy => Some(self.do_copy()),
             DebugRewrap => async(self.debug_rewrap()),
             DebugTestFgSpans => async(self.debug_test_fg_spans()),
+            VimKey { key } => async(self.do_vim_key(key)),
         };
 
         // TODO: could defer this until input quiesces - will this help?
@@ -933,4 +937,102 @@ fn n_spaces(n: usize) -> &'static str {
     let spaces = "                                ";
     assert!(n <= spaces.len());
     &spaces[..n]
+}
+
+// vim-compatible editing follows (should be split out into its own file)
+
+/// State of vim-compatible editing modes
+#[derive(Default)]
+struct VimState {
+    mode: Mode,
+}
+
+#[derive(PartialEq, Eq)]
+enum Mode {
+    Normal,
+    Insert,
+    Replace,
+}
+
+impl Default for Mode {
+    fn default() -> Mode {
+        Mode::Normal
+    }
+}
+
+const ESC: u8 = 0x1B;
+const DEL: u8 = 0x7F;
+
+impl<W: Write + Send + 'static> Editor<W> {
+    /// Apply a single vim editing key, modifying vim state and applying to editor
+    fn do_vim_key(&mut self, key: u64) {
+        let key = key as u8;
+        if self.vim_state.mode == Mode::Insert {
+            if key == ESC {
+                self.vim_state.mode = Mode::Normal;
+            } else if key == 0x08 || key == DEL {
+                self.delete_backward();
+            } else if key == 0x0A || key == 0x0D {
+                self.insert_newline();
+            } else if key >= 0x20 && key < 0x80 {
+                let mut s = String::new();
+                s.push(key as char);
+                self.insert(&s);
+            }
+        } else if self.vim_state.mode == Mode::Replace {
+            if key == 0x0A || key == 0x0D {
+                self.delete_forward();
+                self.insert_newline();
+            } else if key >= 0x20 && key < 0x80 {
+                self.delete_forward();
+                let mut s = String::new();
+                s.push(key as char);
+                self.insert(&s);
+            }
+            self.vim_state.mode = Mode::Normal;
+        } else {
+            match key {
+                0x02 => self.do_move(Movement::UpPage, 0),
+                0x06 => self.do_move(Movement::DownPage, 0),
+                0x08 => self.do_move(Movement::Left, 0),
+                0x0A => self.do_move(Movement::Down, 0),
+                0x0D => {
+                    self.do_move(Movement::Down, 0);
+                    self.do_move(Movement::LeftOfLine, 0);
+                }
+                b'$' => self.do_move(Movement::EndOfParagraph, 0),
+                b'0' => self.do_move(Movement::StartOfParagraph, 0),
+                b'A' => {
+                    self.do_move(Movement::EndOfParagraph, 0);
+                    self.vim_state.mode = Mode::Insert;
+                }
+                b'O' => {
+                    self.do_move(Movement::LeftOfLine, 0);
+                    self.insert_newline();  // TODO: needs to be "after cursor" priority
+                    self.vim_state.mode = Mode::Insert;
+                }
+                b'a' => {
+                    self.do_move(Movement::Right, 0);
+                    self.vim_state.mode = Mode::Insert;
+                }
+                b'b' => self.do_move(Movement::LeftWord, 0),
+                b'h' => self.do_move(Movement::Left, 0),
+                b'i' => self.vim_state.mode = Mode::Insert,
+                b'j' => self.do_move(Movement::Down, 0),
+                b'k' => self.do_move(Movement::Up, 0),
+                b'l' => self.do_move(Movement::Right, 0),
+                b'o' => {
+                    self.do_move(Movement::RightOfLine, 0);
+                    self.insert_newline();
+                    self.vim_state.mode = Mode::Insert;
+                }
+                b'r' => self.vim_state.mode = Mode::Replace,
+                b'u' => self.do_undo(),
+                b'b' => self.do_move(Movement::RightWord, 0),
+                b'x' => self.delete_forward(),
+                DEL => self.do_move(Movement::Left, 0),
+                _ => (),
+            }
+        }
+    }
 }

@@ -118,6 +118,7 @@ pub enum EditCommand<'a> {
     Copy,
     DebugRewrap,
     DebugTestFgSpans,
+    VimKey { key: u64 },
 }
 
 
@@ -283,6 +284,8 @@ impl<'a> EditCommand<'a> {
             "copy" => Ok(Copy),
             "debug_rewrap" => Ok(DebugRewrap),
             "debug_test_fg_spans" => Ok(DebugTestFgSpans),
+            "vim_key" => params["key"].as_u64().map(|key| VimKey { key })
+                .ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
 
             _ => Err(UnknownEditMethod(method.to_string())),
         }
