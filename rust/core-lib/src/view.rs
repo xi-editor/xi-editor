@@ -76,9 +76,9 @@ pub struct View {
 }
 
 impl View {
-    pub fn new<S: AsRef<str>>(view_id: S) -> View {
+    pub fn new(view_id: &ViewIdentifier) -> View {
         View {
-            view_id: view_id.as_ref().to_owned(),
+            view_id: view_id.to_owned(),
             sel_start: 0,
             sel_end: 0,
             // used to maintain preferred hpos during vertical movement
