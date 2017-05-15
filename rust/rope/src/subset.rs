@@ -22,7 +22,7 @@ use interval::Interval;
 use std::slice;
 
 // Internally, a sorted list of (begin, end) ranges.
-#[derive(Clone, Default, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq, Debug)]
 pub struct Subset(Vec<(usize, usize)>);
 
 #[derive(Default)]

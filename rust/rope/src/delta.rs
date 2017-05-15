@@ -21,6 +21,7 @@ use tree::{Node, NodeInfo, TreeBuilder};
 use subset::{Subset, SubsetBuilder};
 use std::cmp::min;
 use std::ops::Deref;
+use std::fmt;
 
 #[derive(Clone)]
 enum DeltaElement<N: NodeInfo> {
@@ -230,6 +231,24 @@ impl<N: NodeInfo> Delta<N> {
                 DeltaElement::Insert(ref n) => n.len()
             }
         )
+    }
+}
+
+impl<N: NodeInfo> fmt::Debug for Delta<N> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        try!(write!(f, "Delta("));
+        for el in &self.els {
+            match *el {
+                DeltaElement::Copy(beg,end) => {
+                    try!(write!(f, "[{},{}) ", beg, end));
+                }
+                DeltaElement::Insert(ref node) => {
+                    try!(write!(f, "<ins:{}> ", node.len()));
+                }
+            }
+        }
+        try!(write!(f, ")"));
+        Ok(())
     }
 }
 
