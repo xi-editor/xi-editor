@@ -50,7 +50,7 @@ pub struct View {
     pub sel_end: usize,
     cursor_col: usize,
 
-    /// The selection state for this view.
+    /// The selection state for this view. Invariant: non-empty.
     selection: Selection,
 
     first_line: usize,  // vertical scroll position
@@ -77,13 +77,20 @@ pub struct View {
 
 impl View {
     pub fn new(view_id: &ViewIdentifier) -> View {
+        let mut selection = Selection::new();
+        selection.add_region(SelRegion {
+            start: 0,
+            end: 0,
+            horiz: None,
+            affinity: Affinity::default(),
+        });
         View {
             view_id: view_id.to_owned(),
             sel_start: 0,
             sel_end: 0,
             // used to maintain preferred hpos during vertical movement
             cursor_col: 0,
-            selection: Selection::new(),
+            selection: selection,
             first_line: 0,
             height: 10,
             breaks: None,
@@ -158,7 +165,7 @@ impl View {
 
     /// Set the selection to a new value. Return value is the offset of a
     /// point that should be scrolled into view.
-    fn set_selection(&mut self, text: &Rope, sel: Selection) -> Option<usize> {
+    pub fn set_selection(&mut self, text: &Rope, sel: Selection) -> Option<usize> {
         self.selection = sel;
         // We somewhat arbitrarily choose the last region for setting the old-style
         // selection state, and for scrolling it into view if needed. This choice can
@@ -174,9 +181,32 @@ impl View {
         Some(region.end)
     }
 
+    /// Select entire buffer.
+    ///
+    /// Note: unlike movement based selection, this does not scroll.
+    pub fn select_all(&mut self, len: usize) {
+        let mut selection = Selection::new();
+        selection.add_region(SelRegion {
+            start: 0,
+            end: len,
+            horiz: None,
+            affinity: Default::default(),
+        });
+        self.selection = selection;
+        self.sel_dirty = true;
+        self.sel_start = 0;
+        self.sel_end = len;
+    }
+
     /// Returns the regions of the current selection.
     pub fn sel_regions(&self) -> &[SelRegion] {
         &self.selection
+    }
+
+    /// Determines whether the offset is in any selection (counting carets and
+    /// selection edges).
+    pub fn is_point_in_selection(&self, offset: usize) -> bool {
+        !self.selection.regions_in_range(offset, offset).is_empty()
     }
 
     // Render a single line, and advance cursors to next line.
