@@ -499,32 +499,12 @@ impl<N: NodeInfo> Builder<N> {
 
 #[cfg(test)]
 mod tests {
-    use rope::{Rope, RopeInfo};
+    use rope::Rope;
     use delta::{Delta};
     use interval::Interval;
-    use subset::{Subset, SubsetBuilder};
+    use test_helpers::{find_deletions};
 
     const TEST_STR: &'static str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-
-    // TODO: a clean way of avoiding code duplication without making too much public?
-    fn mk_subset(substr: &str, s: &str) -> Subset {
-        let mut sb = SubsetBuilder::new();
-        let mut j = 0;
-        for i in 0..s.len() {
-            if j < substr.len() && substr.as_bytes()[j] == s.as_bytes()[i] {
-                j += 1;
-            } else {
-                sb.add_range(i, i + 1);
-            }
-        }
-        sb.build()
-    }
-
-    impl Delta<RopeInfo> {
-        fn apply_to_string(&self, s: &str) -> String {
-            String::from(self.apply(&Rope::from(s)))
-        }
-    }
 
     #[test]
     fn simple() {
@@ -564,7 +544,7 @@ mod tests {
     #[test]
     fn transform_expand() {
         let str1 = "01259DGJKNQTUVWXYcdefghkmopqrstvwxy";
-        let s1 = mk_subset(str1, TEST_STR);
+        let s1 = find_deletions(str1, TEST_STR);
         let d = Delta::simple_edit(Interval::new_closed_open(10, 12), Rope::from("+"), str1.len());
         assert_eq!("01259DGJKN+UVWXYcdefghkmopqrstvwxy", d.apply_to_string(str1));
         let (d2, _ss) = d.factor();
@@ -582,12 +562,12 @@ mod tests {
         assert_eq!("0123456789+ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", d2.apply_to_string(TEST_STR));
 
         let str1 = "0345678BCxyz";
-        let s1 = mk_subset(str1, TEST_STR);
+        let s1 = find_deletions(str1, TEST_STR);
         let d3 = d2.transform_shrink(&s1);
         assert_eq!("0345678+BCxyz", d3.apply_to_string(str1));
 
         let str2 = "356789ABCx";
-        let s2 = mk_subset(str2, TEST_STR);
+        let s2 = find_deletions(str2, TEST_STR);
         let d4 = d2.transform_shrink(&s2);
         assert_eq!("356789+ABCx", d4.apply_to_string(str2));
     }

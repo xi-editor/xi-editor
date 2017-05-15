@@ -362,22 +362,10 @@ impl<'a> Mapper<'a> {
 
 #[cfg(test)]
 mod tests {
-    use subset::{Subset, SubsetBuilder};
+    use subset::{SubsetBuilder};
+    use test_helpers::find_deletions;
 
     const TEST_STR: &'static str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-
-    fn find_deletions(substr: &str, s: &str) -> Subset {
-        let mut sb = SubsetBuilder::new();
-        let mut j = 0;
-        for i in 0..s.len() {
-            if j < substr.len() && substr.as_bytes()[j] == s.as_bytes()[i] {
-                j += 1;
-            } else {
-                sb.add_range(i, i + 1);
-            }
-        }
-        sb.build()
-    }
 
     #[test]
     fn test_apply() {

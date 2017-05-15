@@ -26,6 +26,8 @@ pub mod spans;
 pub mod subset;
 pub mod engine;
 pub mod find;
+#[cfg(test)]
+mod test_helpers;
 
 // TODO: "pub use" the types we want to export publicly
 
