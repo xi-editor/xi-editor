@@ -14,21 +14,10 @@
 
 //! Structured representation of a plugin's features and capabilities.
 
-use std::io::{BufReader, Write};
 use std::env;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-use std::thread;
-use std::process::{Command, Stdio};
 
-use serde_json::Value;
-
-use xi_rpc::RpcLoop;
-
-use tabs::ViewIdentifier;
 use syntax::SyntaxDefinition;
-use super::PluginManagerRef;
-use super::{Plugin, PluginRef};
 
 // optional environment variable for debug plugin executables
 static PLUGIN_DIR: &'static str = "XI_PLUGIN_DIR";
@@ -110,43 +99,4 @@ impl PluginDescription {
             activations: activations,
         }
     }
-
-    /// Starts the executable described in this `PluginDescription`.
-    //TODO: make this a free function, & move out of manifest
-    pub fn launch<W, C>(&self, manager_ref: &PluginManagerRef<W>,
-                        view_id: &ViewIdentifier, completion: C)
-        where W: Write + Send + 'static,
-              C: FnOnce(Result<PluginRef<W>, &'static str>) + Send + 'static
-              // TODO: a real result type
-    {
-        let path = self.exec_path.clone();
-        let view_id = view_id.to_owned();
-        let manager_ref = manager_ref.to_weak();
-        let description = self.clone();
-
-        thread::spawn(move || {
-            print_err!("starting plugin at path {:?}", path);
-            let mut child = Command::new(&path)
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .spawn()
-                .expect("plugin failed to start");
-            let child_stdin = child.stdin.take().unwrap();
-            let child_stdout = child.stdout.take().unwrap();
-            let mut looper = RpcLoop::new(child_stdin);
-            let peer = looper.get_peer();
-            peer.send_rpc_notification("ping", &Value::Array(Vec::new()));
-            let plugin = Plugin {
-                peer: peer,
-                process: child,
-                manager: manager_ref,
-                description: description,
-                view_id: view_id,
-            };
-            let mut plugin_ref = PluginRef(Arc::new(Mutex::new(plugin)));
-            completion(Ok(plugin_ref.clone()));
-            looper.mainloop(|| BufReader::new(child_stdout), &mut plugin_ref);
-        });
-    }
 }
-
