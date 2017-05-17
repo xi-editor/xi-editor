@@ -118,8 +118,8 @@ impl Engine {
     }
 
     /// Get text of head revision.
-    pub fn get_head(&self) -> Rope {
-        self.text.clone()
+    pub fn get_head(&self) -> &Rope {
+        &self.text
     }
 
     /// Get text of a given revision, if it can be found.

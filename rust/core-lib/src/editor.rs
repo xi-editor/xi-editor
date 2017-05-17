@@ -111,7 +111,7 @@ impl<W: Write + Send + 'static> Editor<W> {
     pub fn with_text(doc_ctx: DocumentCtx<W>, initial_view_id: &ViewIdentifier, text: String) -> Editor<W> {
 
         let engine = Engine::new(Rope::from(text));
-        let buffer = engine.get_head();
+        let buffer = engine.get_head().clone();
         let last_rev_id = engine.get_head_rev_id();
 
         let editor = Editor {
@@ -285,7 +285,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.last_edit_type = self.this_edit_type;
         let priority = 0x10000;
         self.engine.edit_rev(priority, undo_group, head_rev_id, delta);
-        self.text = self.engine.get_head();
+        self.text = self.engine.get_head().clone();
     }
 
     /// Commits the current delta, updating views, plugins, and other invariants as needed.
@@ -308,7 +308,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         let prev_head_rev_id = self.engine.get_head_rev_id();
         //self.engine.edit_rev(0x100000, undo_group, edit.rev as usize, delta);
         self.engine.edit_rev(edit.priority as usize, undo_group, edit.rev as usize, delta);
-        self.text = self.engine.get_head();
+        self.text = self.engine.get_head().clone();
 
         // adjust cursor position so that the cursor is not moved by the plugin edit
         let (changed_interval, _) = self.engine.delta_rev_head(prev_head_rev_id).summary();
@@ -322,7 +322,7 @@ impl<W: Write + Send + 'static> Editor<W> {
 
     fn update_undos(&mut self) {
         self.engine.undo(self.undos.clone());
-        self.text = self.engine.get_head();
+        self.text = self.engine.get_head().clone();
         self.update_after_revision(None);
     }
 
