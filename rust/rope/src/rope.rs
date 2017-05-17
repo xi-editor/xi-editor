@@ -19,6 +19,7 @@ use std::cmp::{min,max};
 use std::borrow::Cow;
 use std::str::FromStr;
 use std::string::ParseError;
+use std::fmt;
 
 use tree::{Leaf, Node, NodeInfo, Metric, TreeBuilder, Cursor};
 use interval::Interval;
@@ -411,6 +412,12 @@ impl From<Rope> for String {
 impl<'a> From<&'a Rope> for String {
     fn from(r: &Rope) -> String {
         r.slice_to_string(0, r.len())
+    }
+}
+
+impl fmt::Debug for Rope {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Rope({:?})", String::from(self))
     }
 }
 

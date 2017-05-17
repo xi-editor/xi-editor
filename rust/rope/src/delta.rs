@@ -21,7 +21,9 @@ use tree::{Node, NodeInfo, TreeBuilder};
 use subset::{Subset, SubsetBuilder};
 use std::cmp::min;
 use std::ops::Deref;
+use std::fmt;
 
+#[derive(Clone)]
 enum DeltaElement<N: NodeInfo> {
     /// Represents a range of text in the base document. Includes beginning, excludes end.
     Copy(usize, usize),  // note: for now, we lose open/closed info at interval endpoints
@@ -35,6 +37,7 @@ enum DeltaElement<N: NodeInfo> {
 ///
 /// For example, Editing "abcd" into "acde" could be represented as:
 /// `[Copy(0,1),Copy(2,4),Insert("e")]`
+#[derive(Clone)]
 pub struct Delta<N: NodeInfo> {
     els: Vec<DeltaElement<N>>,
     base_len: usize,
@@ -59,7 +62,7 @@ impl<N: NodeInfo> Delta<N> {
     /// Apply the delta to the given rope. May not work well if the length of the rope
     /// is not compatible with the construction of the delta.
     pub fn apply(&self, base: &Node<N>) -> Node<N> {
-        debug_assert_eq!(base.len(), self.base_len);
+        debug_assert_eq!(base.len(), self.base_len, "must apply Delta to Node of correct length");
         let mut b = TreeBuilder::new();
         for elem in &self.els {
             match *elem {
@@ -75,11 +78,16 @@ impl<N: NodeInfo> Delta<N> {
     /// Factor the delta into an insert-only delta and a subset representing deletions.
     /// Applying the insert then the delete yields the same result as the original delta:
     ///
-    /// `let (d1, ss) = d.factor();`
-    ///
-    /// ss2 = ss.transform_expand(&d1.reverse_insert())
-    ///
-    /// `ss2.apply_to_string(d1.apply_to_string(s)) == d.apply_to_string(s)`
+    /// ```no_run
+    /// # use xi_rope::rope::{Rope, RopeInfo};
+    /// # use xi_rope::delta::Delta;
+    /// # use std::str::FromStr;
+    /// fn test_factor(d : &Delta<RopeInfo>, r : &Rope) {
+    ///     let (ins, del) = d.clone().factor();
+    ///     let del2 = del.transform_expand(&ins.inserted_subset());
+    ///     assert_eq!(String::from(del2.delete_from(&ins.apply(r))), String::from(d.apply(r)));
+    /// }
+    /// ```
     pub fn factor(self) -> (InsertDelta<N>, Subset) {
         let mut ins = Vec::new();
         let mut sb = SubsetBuilder::new();
@@ -107,28 +115,50 @@ impl<N: NodeInfo> Delta<N> {
         (InsertDelta(Delta { els: ins, base_len: self.base_len }), sb.build())
     }
 
-    /// Synthesize a delta from a "union string" and two subsets, one representing
-    /// insertions and the other representing deletions. This is basically the inverse
-    /// of `factor`.
-    pub fn synthesize(s: &Node<N>, ins: &Subset, del: &Subset) -> Delta<N> {
-        let base_len = ins.len_after_delete(s.len());
+    /// Synthesize a delta from a "union string" and two subsets, an old set
+    /// of deletions and a new set of deletions from the union. The Delta is
+    /// from text to text, not union to union; anything in both subsets will
+    /// be assumed to be missing from the Delta base and the new text. You can
+    /// also think of these as a set of insertions and one of deletions, with
+    /// overlap doing nothing. This is basically the inverse of `factor`.
+    ///
+    /// ```no_run
+    /// # use xi_rope::rope::{Rope, RopeInfo};
+    /// # use xi_rope::delta::Delta;
+    /// # use std::str::FromStr;
+    /// fn test_synthesize(d : &Delta<RopeInfo>, r : &Rope) {
+    ///     let (ins_d, del) = d.clone().factor();
+    ///     let ins = ins_d.inserted_subset();
+    ///     let del2 = del.transform_expand(&ins);
+    ///     let r2 = ins_d.apply(&r);
+    ///     let d2 = Delta::synthesize(&r2, &ins, &del);
+    ///     assert_eq!(String::from(d2.apply(r)), String::from(d.apply(r)));
+    /// }
+    /// ```
+    pub fn synthesize(s: &Node<N>, old_dels: &Subset, new_dels: &Subset) -> Delta<N> {
+        let base_len = old_dels.len_after_delete(s.len());
         let mut els = Vec::new();
         let mut x = 0;
-        let mut ins_ranges = ins.complement_iter(s.len());
-        let mut last_ins = ins_ranges.next();
-        for (b, e) in del.complement_iter(s.len()) {
+        let mut old_ranges = old_dels.complement_iter(s.len());
+        let mut last_old = old_ranges.next();
+        // For each segment of the new text
+        for (b, e) in new_dels.complement_iter(s.len()) {
+            // Fill the whole segment
             let mut beg = b;
             while beg < e {
-                while let Some((ib, ie)) = last_ins {
+                // Skip over ranges in old text until one overlaps where we want to fill
+                while let Some((ib, ie)) = last_old {
                     if ie > beg {
                         break;
                     }
                     x += ie - ib;
-                    last_ins = ins_ranges.next();
+                    last_old = old_ranges.next();
                 }
-                if last_ins.is_some() && last_ins.unwrap().0 <= beg {
-                    let (ib, ie) = last_ins.unwrap();
+                // If we have a range in the old text with the character at beg, then we Copy
+                if last_old.is_some() && last_old.unwrap().0 <= beg {
+                    let (ib, ie) = last_old.unwrap();
                     let end = min(e, ie);
+                    // Try to merge contiguous Copys in the output
                     let xbeg = beg + x - ib;  // "beg - ib + x" better for overflow?
                     let xend = end + x - ib;  // ditto
                     let merged = if let Some(&mut DeltaElement::Copy(_, ref mut le)) = els.last_mut() {
@@ -145,9 +175,10 @@ impl<N: NodeInfo> Delta<N> {
                         els.push(DeltaElement::Copy(xbeg, xend));
                     }
                     beg = end;
-                } else {
+                } else { // if the character at beg isn't in the old text, then we Insert
+                    // Insert up until the next old range we could Copy from, or the end of this segment
                     let mut end = e;
-                    if let Some((ib, _)) = last_ins {
+                    if let Some((ib, _)) = last_old {
                         end = min(end, ib)
                     }
                     // Note: could try to aggregate insertions, but not sure of the win.
@@ -182,21 +213,42 @@ impl<N: NodeInfo> Delta<N> {
                 els = init;
             }
         }
-        (Interval::new_closed_open(iv_start, iv_end), Delta::new_document_len(els))
+        (Interval::new_closed_open(iv_start, iv_end), Delta::total_element_len(els))
     }
 
-    /// Returns the length of the new document given the internal
-    /// representation of it. In other words, the length of the transformed
-    /// string after this Delta is applied.
+    /// Returns the length of the new document. In other words, the length of
+    /// the transformed string after this Delta is applied.
     ///
-    /// d.apply(r).len() == new_document_len(d.els)
-    fn new_document_len(els: &[DeltaElement<N>]) -> usize {
+    /// `d.apply(r).len() == d.new_document_len()`
+    pub fn new_document_len(&self) -> usize {
+        Delta::total_element_len(self.els.as_slice())
+    }
+
+    fn total_element_len(els: &[DeltaElement<N>]) -> usize {
         els.iter().fold(0, |sum, el|
             sum + match *el {
                 DeltaElement::Copy(beg, end) => end - beg,
                 DeltaElement::Insert(ref n) => n.len()
             }
         )
+    }
+}
+
+impl<N: NodeInfo> fmt::Debug for Delta<N> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        try!(write!(f, "Delta("));
+        for el in &self.els {
+            match *el {
+                DeltaElement::Copy(beg,end) => {
+                    try!(write!(f, "[{},{}) ", beg, end));
+                }
+                DeltaElement::Insert(ref node) => {
+                    try!(write!(f, "<ins:{}> ", node.len()));
+                }
+            }
+        }
+        try!(write!(f, ")"));
+        Ok(())
     }
 }
 
@@ -260,6 +312,30 @@ impl<N: NodeInfo> InsertDelta<N> {
             els.push(DeltaElement::Copy(b1, y));
         }
         InsertDelta(Delta { els: els, base_len: l })
+    }
+
+    // TODO: it is plausible this method also works on Deltas with deletes
+    /// Shrink a delta through a deletion of some of its copied regions with
+    /// the same base. For example, if `self` applies to a union string, and
+    /// `xform` is the deletions from that union, the resulting Delta will
+    /// apply to the text.
+    ///
+    /// **Note:** this is similar to `Subset::transform_shrink` but *the argument
+    /// order is reversed* due to this being a method on `InsertDelta`.
+    pub fn transform_shrink(&self, xform: &Subset) -> InsertDelta<N> {
+        let compl = xform.complement(self.base_len);
+        let mut m = compl.mapper();
+        let els = self.0.els.iter().map(|elem| {
+            match *elem {
+                DeltaElement::Copy(b, e) => {
+                    DeltaElement::Copy(m.doc_index_to_subset(b), m.doc_index_to_subset(e))
+                }
+                DeltaElement::Insert(ref n) => {
+                    DeltaElement::Insert(n.clone())
+                }
+            }
+        }).collect();
+        InsertDelta(Delta { els: els, base_len: xform.len_after_delete(self.base_len)})
     }
 
     /// Return a Subset containing the inserted ranges.
@@ -423,37 +499,18 @@ impl<N: NodeInfo> Builder<N> {
 
 #[cfg(test)]
 mod tests {
-    use rope::{Rope, RopeInfo};
+    use rope::Rope;
     use delta::{Delta};
     use interval::Interval;
-    use subset::{Subset, SubsetBuilder};
+    use test_helpers::find_deletions;
 
     const TEST_STR: &'static str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-
-    // TODO: a clean way of avoiding code duplication without making too much public?
-    fn mk_subset(substr: &str, s: &str) -> Subset {
-        let mut sb = SubsetBuilder::new();
-        let mut j = 0;
-        for i in 0..s.len() {
-            if j < substr.len() && substr.as_bytes()[j] == s.as_bytes()[i] {
-                j += 1;
-            } else {
-                sb.add_range(i, i + 1);
-            }
-        }
-        sb.build()
-    }
-
-    impl Delta<RopeInfo> {
-        fn apply_to_string(&self, s: &str) -> String {
-            String::from(self.apply(&Rope::from(s)))
-        }
-    }
 
     #[test]
     fn simple() {
         let d = Delta::simple_edit(Interval::new_closed_open(1, 9), Rope::from("era"), 11);
         assert_eq!("herald", d.apply_to_string("hello world"));
+        assert_eq!(6, d.new_document_len());
     }
 
     #[test]
@@ -487,7 +544,7 @@ mod tests {
     #[test]
     fn transform_expand() {
         let str1 = "01259DGJKNQTUVWXYcdefghkmopqrstvwxy";
-        let s1 = mk_subset(str1, TEST_STR);
+        let s1 = find_deletions(str1, TEST_STR);
         let d = Delta::simple_edit(Interval::new_closed_open(10, 12), Rope::from("+"), str1.len());
         assert_eq!("01259DGJKN+UVWXYcdefghkmopqrstvwxy", d.apply_to_string(str1));
         let (d2, _ss) = d.factor();
@@ -496,5 +553,22 @@ mod tests {
         assert_eq!("0123456789ABCDEFGHIJKLMN+OPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", d3.apply_to_string(TEST_STR));
         let d4 = d2.transform_expand(&s1, TEST_STR.len(), true);
         assert_eq!("0123456789ABCDEFGHIJKLMNOP+QRSTUVWXYZabcdefghijklmnopqrstuvwxyz", d4.apply_to_string(TEST_STR));
+    }
+
+    #[test]
+    fn transform_shrink() {
+        let d = Delta::simple_edit(Interval::new_closed_open(10, 12), Rope::from("+"), TEST_STR.len());
+        let (d2, _ss) = d.factor();
+        assert_eq!("0123456789+ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", d2.apply_to_string(TEST_STR));
+
+        let str1 = "0345678BCxyz";
+        let s1 = find_deletions(str1, TEST_STR);
+        let d3 = d2.transform_shrink(&s1);
+        assert_eq!("0345678+BCxyz", d3.apply_to_string(str1));
+
+        let str2 = "356789ABCx";
+        let s2 = find_deletions(str2, TEST_STR);
+        let d4 = d2.transform_shrink(&s2);
+        assert_eq!("356789+ABCx", d4.apply_to_string(str2));
     }
 }

@@ -19,9 +19,10 @@ use std::cmp::{max};
 // These two imports are for the `apply` method only.
 use tree::{Node, NodeInfo, TreeBuilder};
 use interval::Interval;
+use std::slice;
 
 // Internally, a sorted list of (begin, end) ranges.
-#[derive(Clone, Default, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq, Debug)]
 pub struct Subset(Vec<(usize, usize)>);
 
 #[derive(Default)]
@@ -250,16 +251,33 @@ impl Subset {
     /// often be easier to work with if the raw ranges are deletions.
     pub fn complement_iter(&self, base_len: usize) -> ComplementIter {
         ComplementIter {
-            deletions: &self.0,
+            ranges: &self.0,
             base_len: base_len,
             i: 0,
             last: 0,
         }
     }
+
+    /// Find the complement of this Subset, every element in the subset will
+    /// be excluded and vice versa.
+    pub fn complement(&self, base_len: usize) -> Subset {
+        Subset(self.complement_iter(base_len).collect())
+    }
+
+    /// Return a `Mapper` that can be use to map coordinates in the document to coordinates
+    /// in this `Subset`, but only in non-decreasing order for performance reasons.
+    pub fn mapper(&self) -> Mapper {
+        Mapper {
+            range_iter: self.0.iter(),
+            last_i: 0, // indices only need to be in non-decreasing order, not increasing
+            cur_range: (0,0), // will immediately try to consume next range
+            subset_amount_consumed: 0,
+        }
+    }
 }
 
 pub struct ComplementIter<'a> {
-    deletions: &'a [(usize, usize)],
+    ranges: &'a [(usize, usize)],
     base_len: usize,
     i: usize,
     last: usize,
@@ -270,7 +288,7 @@ impl<'a> Iterator for ComplementIter<'a> {
 
     fn next(&mut self) -> Option<(usize, usize)> {
         loop {
-            if self.i == self.deletions.len() {
+            if self.i == self.ranges.len() {
                 if self.base_len > self.last {
                     let beg = self.last;
                     self.last = self.base_len;
@@ -280,7 +298,7 @@ impl<'a> Iterator for ComplementIter<'a> {
                 }
             } else {
                 let beg = self.last;
-                let (end, last) = self.deletions[self.i];
+                let (end, last) = self.ranges[self.i];
                 self.last = last;
                 self.i += 1;
                 if end > beg {
@@ -291,24 +309,63 @@ impl<'a> Iterator for ComplementIter<'a> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use subset::{Subset, SubsetBuilder};
+pub struct Mapper<'a> {
+    range_iter: slice::Iter<'a, (usize,usize)>,
+    // Not actually necessary for computation, just for dynamic checking of invariant
+    last_i: usize,
+    cur_range: (usize,usize),
+    subset_amount_consumed: usize,
+}
 
-    const TEST_STR: &'static str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+impl<'a> Mapper<'a> {
+    /// Map a coordinate in the document this subset corresponds to, to a
+    /// coordinate in the subset. For example, if the Subset is a set of
+    /// deletions, this would map indices in the union string to indices in
+    /// the tombstones string.
+    ///
+    /// Will return the closest coordinate in the subset if the index is not
+    /// in the subset. If the coordinate is past the end of the subset it will
+    /// return one more than the largest index in the subset (i.e the length).
+    /// This behaviour is suitable for mapping closed-open intervals in a
+    /// string to intervals in a subset of the string.
+    ///
+    /// In order to guarantee good performance, this method must be called
+    /// with `i` values in non-decreasing order or it will panic. This allows
+    /// the total cost to be O(n) where `n = max(calls,ranges)` over all times
+    /// called on a single `Mapper`.
+    #[inline]
+    pub fn doc_index_to_subset(&mut self, i: usize) -> usize {
+        assert!(i >= self.last_i, "method must be called with i in non-decreasing order. i={}<{}=last_i", i, self.last_i);
+        self.last_i = i;
 
-    fn mk_subset(substr: &str, s: &str) -> Subset {
-        let mut sb = SubsetBuilder::new();
-        let mut j = 0;
-        for i in 0..s.len() {
-            if j < substr.len() && substr.as_bytes()[j] == s.as_bytes()[i] {
-                j += 1;
-            } else {
-                sb.add_range(i, i + 1);
+        while i >= self.cur_range.1 {
+            self.subset_amount_consumed += self.cur_range.1 - self.cur_range.0;
+            self.cur_range = match self.range_iter.next() {
+                Some(range) => range.clone(),
+                // past the end of the subset
+                None => {
+                    // ensure we don't try to consume any more
+                    self.cur_range = (usize::max_value(), usize::max_value());
+                    return self.subset_amount_consumed
+                }
             }
         }
-        sb.build()
+
+        if i >= self.cur_range.0 {
+            let dist_in_range = i - self.cur_range.0;
+            dist_in_range + self.subset_amount_consumed
+        } else { // not in the subset
+            self.subset_amount_consumed
+        }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use subset::{SubsetBuilder};
+    use test_helpers::find_deletions;
+
+    const TEST_STR: &'static str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
     #[test]
     fn test_apply() {
@@ -328,23 +385,63 @@ mod tests {
     }
 
     #[test]
-    fn test_mk_subset() {
+    fn test_find_deletions() {
         let substr = "015ABDFHJOPQVYdfgloprsuvz";
-        let s = mk_subset(substr, TEST_STR);
+        let s = find_deletions(substr, TEST_STR);
         assert_eq!(substr, s.delete_from_string(TEST_STR));
         assert!(!s.is_empty())
     }
 
     #[test]
+    fn test_complement() {
+        let substr = "0456789DEFGHIJKLMNOPQRSTUVWXYZdefghijklmnopqrstuvw";
+        let s = find_deletions(substr, TEST_STR);
+        let c = s.complement(TEST_STR.len());
+        // deleting the complement of the deletions we found should yield the deletions
+        assert_eq!("123ABCabcxyz", c.delete_from_string(TEST_STR));
+    }
+
+    #[test]
+    fn test_mapper() {
+        let substr = "469ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwz";
+        let s = find_deletions(substr, TEST_STR);
+        let mut m = s.mapper();
+        // subset is {0123 5 78 xy}
+        assert_eq!(0, m.doc_index_to_subset(0));
+        assert_eq!(2, m.doc_index_to_subset(2));
+        assert_eq!(2, m.doc_index_to_subset(2));
+        assert_eq!(3, m.doc_index_to_subset(3));
+        assert_eq!(4, m.doc_index_to_subset(4)); // not in subset
+        assert_eq!(4, m.doc_index_to_subset(5));
+        assert_eq!(5, m.doc_index_to_subset(7));
+        assert_eq!(6, m.doc_index_to_subset(8));
+        assert_eq!(6, m.doc_index_to_subset(8));
+        assert_eq!(8, m.doc_index_to_subset(60));
+        assert_eq!(9, m.doc_index_to_subset(61)); // not in subset
+        assert_eq!(9, m.doc_index_to_subset(62)); // not in subset
+    }
+
+    #[test]
+    #[should_panic(expected = "non-decreasing")]
+    fn test_mapper_requires_non_decreasing() {
+        let substr = "469ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvw";
+        let s = find_deletions(substr, TEST_STR);
+        let mut m = s.mapper();
+        m.doc_index_to_subset(0);
+        m.doc_index_to_subset(2);
+        m.doc_index_to_subset(1);
+    }
+
+    #[test]
     fn union() {
-        let s1 = mk_subset("024AEGHJKNQTUWXYZabcfgikqrvy", TEST_STR);
-        let s2 = mk_subset("14589DEFGIKMOPQRUXZabcdefglnpsuxyz", TEST_STR);
+        let s1 = find_deletions("024AEGHJKNQTUWXYZabcfgikqrvy", TEST_STR);
+        let s2 = find_deletions("14589DEFGIKMOPQRUXZabcdefglnpsuxyz", TEST_STR);
         assert_eq!("4EGKQUXZabcfgy", s1.union(&s2).delete_from_string(TEST_STR));
     }
 
     fn transform_case(str1: &str, str2: &str, result: &str) {
-        let s1 = mk_subset(str1, TEST_STR);
-        let s2 = mk_subset(str2, str1);
+        let s1 = find_deletions(str1, TEST_STR);
+        let s2 = find_deletions(str2, str1);
         let s3 = s2.transform_expand(&s1);
         let str3 = s3.delete_from_string(TEST_STR);
         assert_eq!(result, str3);
