@@ -118,7 +118,6 @@ impl Engine {
         self.find_rev(rev).map(|rev_index| self.rev_content_for_index(rev_index))
     }
 
-    // TODO: doesn't this totally break in the presence of Undo currently?
     /// A delta that, when applied to `base_rev`, results in the current head. Panics
     /// if there is not at least one edit.
     pub fn delta_rev_head(&self, base_rev: usize) -> Delta<RopeInfo> {

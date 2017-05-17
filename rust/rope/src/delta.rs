@@ -158,7 +158,7 @@ impl<N: NodeInfo> Delta<N> {
                 if last_old.is_some() && last_old.unwrap().0 <= beg {
                     let (ib, ie) = last_old.unwrap();
                     let end = min(e, ie);
-                    // Try to merge contigous Copys in the output
+                    // Try to merge contiguous Copys in the output
                     let xbeg = beg + x - ib;  // "beg - ib + x" better for overflow?
                     let xend = end + x - ib;  // ditto
                     let merged = if let Some(&mut DeltaElement::Copy(_, ref mut le)) = els.last_mut() {
@@ -502,7 +502,7 @@ mod tests {
     use rope::Rope;
     use delta::{Delta};
     use interval::Interval;
-    use test_helpers::{find_deletions};
+    use test_helpers::find_deletions;
 
     const TEST_STR: &'static str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
