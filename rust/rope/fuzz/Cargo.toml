@@ -22,3 +22,7 @@ members = ["."]
 [[bin]]
 name = "fuzzer_script_1"
 path = "fuzzers/fuzzer_script_1.rs"
+
+[[bin]]
+name = "op_seq"
+path = "fuzzers/op_seq.rs"

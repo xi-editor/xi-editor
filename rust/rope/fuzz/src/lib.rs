@@ -4,6 +4,7 @@ use xi_rope::rope::{Rope, RopeInfo};
 use xi_rope::delta::{Delta, Builder};
 use xi_rope::interval::{Interval};
 use std::cmp::min;
+use std::collections::BTreeSet;
 
 #[derive(Debug)]
 pub enum ParseError {
@@ -111,9 +112,40 @@ pub fn gen_delta(s: &mut Source, base_len: usize) -> Result<Delta<RopeInfo>,Pars
     Ok(b.build())
 }
 
+#[derive(Debug)]
+pub enum EngineOp {
+    Edit(Delta<RopeInfo>),
+    Undo(BTreeSet<usize>),
+}
+
+pub fn gen_op_seq(s: &mut Source, base_len: usize) -> Result<Vec<EngineOp>,ParseError> {
+    let mut v = Vec::new();
+    let mut cur_len = base_len;
+    let mut num_edits = 0;
+    while !s.check_end() {
+        match s.gen_ascii_char()? {
+            'e' => {
+                let d = gen_delta(s, cur_len)?;
+                cur_len = d.new_document_len();
+                v.push(EngineOp::Edit(d));
+                num_edits += 1;
+            }
+            'u' => {
+                let mut groups = BTreeSet::new();
+                while num_edits > groups.len() && !s.check_end() {
+                    groups.insert(s.gen_u8_bounded(num_edits)? as usize);
+                }
+                v.push(EngineOp::Undo(groups));
+            }
+            _ => return Err(ParseError::InvalidData)
+        }
+    }
+    Ok(v)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{Source,gen_delta};
+    use super::*;
     use xi_rope::rope::{Rope};
 
     #[test]
@@ -123,5 +155,20 @@ mod tests {
         let res = String::from(d.apply(&Rope::from("1234")));
         // println!("{:?}", d);
         assert_eq!("abc1234", res);
+    }
+
+    #[test]
+    fn test_gen_op_seq() {
+        let mut s = Source::new("eiabc$$es\x01d\x01iz$$u\x00$".as_bytes());
+        let seq = gen_op_seq(&mut s, 4).unwrap();
+
+        let mut r = Rope::from("1234");
+        for op in &seq {
+            if let &EngineOp::Edit(ref d) = op {
+                r = d.apply(&r);
+            }
+        }
+        // println!("{:?}", d);
+        assert_eq!("abz234", String::from(&r));
     }
 }
