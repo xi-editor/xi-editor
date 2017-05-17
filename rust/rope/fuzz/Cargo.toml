@@ -1,0 +1,24 @@
+[package]
+name = "xi-rope-fuzz"
+version = "0.0.1"
+authors = ["Raph Levien <raph@google.com>"]
+description = "Fuzzers for xi-rope"
+license = "Apache-2.0"
+repository = "https://github.com/google/xi-editor"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies.xi-rope]
+path = ".."
+[dependencies.libfuzzer-sys]
+git = "https://github.com/rust-fuzz/libfuzzer-sys.git"
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "fuzzer_script_1"
+path = "fuzzers/fuzzer_script_1.rs"
