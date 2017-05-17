@@ -16,6 +16,9 @@
 
 use std::path::PathBuf;
 
+use serde_json::{self, Value};
+use serde::Serialize;
+
 use syntax::SyntaxDefinition;
 
 // optional environment variable for debug plugin executables
@@ -42,13 +45,17 @@ pub fn debug_plugins() -> Vec<PluginDescription> {
 
     vec![
         PluginDescription::new("syntect", "0.0", BufferLocal, make_path("xi-syntect-plugin"),
-        vec![Autorun]),
+        vec![Autorun], Vec::new()),
         PluginDescription::new("braces", "0.0", BufferLocal, make_path("bracket_example.py"),
-        Vec::new()),
+        Vec::new(), Vec::new()),
         PluginDescription::new("spellcheck", "0.0", BufferLocal, make_path("spellcheck.py"),
-        Vec::new()),
+        Vec::new(), Vec::new()),
         PluginDescription::new("shouty", "0.0", BufferLocal, make_path("shouty.py"),
-        Vec::new()),
+        Vec::new(), Vec::new()),
+        PluginDescription::new("cmd_test", "0.0", BufferLocal, make_path("cmd_test.py"),
+        Vec::new(), vec![Command::new(
+            "Count Lines", "Print the number of lines in the active buffer",
+            PlaceholderRpc::new("cmd_test.count_lines", None), None)]),
     ].iter()
         .filter(|desc|{
             if !desc.exec_path.exists() {
@@ -80,6 +87,7 @@ pub struct PluginDescription {
     pub exec_path: PathBuf,
     /// Events that cause this plugin to run
     pub activations: Vec<PluginActivation>,
+    pub commands: Vec<Command>,
 }
 
 /// `PluginActivation`s represent events that trigger running a plugin.
@@ -107,10 +115,82 @@ pub enum PluginScope {
     SingleInvocation,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Command {
+    pub title: String,
+    pub description: String,
+    pub rpc_cmd: PlaceholderRpc,
+    pub args: Vec<CommandArgument>,
+}
+
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommandArgument {
+    pub tag: String,
+    pub arg_type: ArgumentType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub options: Option<Vec<ArgumentOption>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum ArgumentType {
+    Number, Int, PosInt, Bool, String, Choice,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArgumentOption {
+    pub title: String,
+    pub value: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlaceholderRpc {
+    pub method: String,
+    pub params: Value,
+}
+
+impl Command {
+    pub fn new<S, V>(title: S, description: S, rpc_cmd: PlaceholderRpc, args: V) -> Self
+    where S: AsRef<str>,
+          V: Into<Option<Vec<CommandArgument>>> {
+        let title = title.as_ref().to_owned();
+        let description = description.as_ref().to_owned();
+        let args = args.into().unwrap_or(Vec::new());
+        Command { title, description, rpc_cmd, args }
+    }
+}
+
+impl CommandArgument {
+    pub fn new<S: AsRef<str>>(tag: S, arg_type: ArgumentType,
+                              options: Option<Vec<ArgumentOption>>) -> Self {
+        let tag = tag.as_ref().to_owned();
+        CommandArgument { tag, arg_type, options }
+    }
+}
+
+impl ArgumentOption {
+    pub fn new<S: AsRef<str>, V: Serialize>(title: S, value: V) -> Self {
+        let title = title.as_ref().to_owned();
+        let value = serde_json::to_value(value).unwrap();
+        ArgumentOption { title, value }
+    }
+}
+
+impl PlaceholderRpc {
+    pub fn new<S, V>(method: S, params: V) -> Self 
+        where S: AsRef<str>,
+              V: Into<Option<Value>> {
+        PlaceholderRpc {
+            method: method.as_ref().to_owned(),
+            params: params.into().unwrap_or(json!({})),
+        }
+    }
+}
+
 impl PluginDescription {
     #[cfg(not(target_os = "fuchsia"))]
     fn new<S, P>(name: S, version: S, scope: PluginScope, exec_path: P,
-                 activations: Vec<PluginActivation>) -> Self
+                 activations: Vec<PluginActivation>, commands: Vec<Command>) -> Self
         where S: Into<String>, P: Into<PathBuf>
     {
         PluginDescription {
@@ -119,6 +199,7 @@ impl PluginDescription {
             version: version.into(),
             exec_path: exec_path.into(),
             activations: activations,
+            commands: commands,
         }
     }
 
@@ -128,5 +209,46 @@ impl PluginDescription {
             PluginScope::Global => true,
             _ => false,
         }
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json;
+
+    #[test]
+    fn test_serde_command() {
+        let json = r#"
+        {
+        "title": "Test Command",
+        "description": "Passes the current test",
+        "rpc_cmd": {
+            "method": "test.cmd",
+            "params": {
+                "this_works": "{this_works}",
+                "a_choice": "{choice_tag}"
+            }
+        },
+        "args": [
+            {"tag": "this_works", "arg_type": "Bool"},
+            {
+                "tag": "choice_tag",
+                "arg_type": "Choice",
+                "options": [
+                    {"title": "First Choice", "value": 5},
+                    {"title": "Second Choice", "value": 10}
+                ]
+            }
+        ]
+        }
+        "#;
+
+        let command: Command = serde_json::from_str(&json).unwrap();
+        assert_eq!(command.title, "Test Command");
+        assert_eq!(command.args[0].arg_type, ArgumentType::Bool);
+        assert_eq!(command.rpc_cmd.params["this_works"], "{this_works}");
+        assert_eq!(command.args[1].options.clone().unwrap()[1].value, json!(10));
     }
 }
