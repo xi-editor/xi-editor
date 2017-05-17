@@ -19,13 +19,14 @@ mod manager;
 mod manifest;
 
 use std::sync::{Arc, Mutex, mpsc};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::process::{ChildStdin, Child, Command, Stdio};
 use std::io::{self, BufReader, Write};
 
 use serde_json::{self, Value};
 
-use xi_rpc::{RpcPeer, RpcCtx, RpcLoop, Handler, Error};
+use xi_rpc::{self, RpcPeer, RpcCtx, RpcLoop, Handler};
 use tabs::ViewIdentifier;
 
 pub use self::manager::{PluginManagerRef, WeakPluginManagerRef};
@@ -51,11 +52,13 @@ pub struct Plugin<W: Write> {
 /// A convenience wrapper for passing around a reference to a plugin.
 ///
 /// Note: A plugin is always owned by and used through a `PluginRef`.
-pub struct PluginRef<W: Write>(Arc<Mutex<Plugin<W>>>);
+///
+/// The second field is used to flag dead plugins for cleanup.
+pub struct PluginRef<W: Write>(Arc<Mutex<Plugin<W>>>, Arc<AtomicBool>);
 
 impl<W: Write> Clone for PluginRef<W> {
     fn clone(&self) -> Self {
-        PluginRef(self.0.clone())
+        PluginRef(self.0.clone(), self.1.clone())
     }
 }
 
@@ -101,9 +104,15 @@ impl<W: Write + Send + 'static> PluginRef<W> {
 
     /// Update message sent to the plugin.
     pub fn update<F>(&self, update: &PluginUpdate, callback: F)
-            where F: FnOnce(Result<Value, Error>) + Send + 'static {
+            where F: FnOnce(Result<Value, xi_rpc::Error>) + Send + 'static {
         let params = serde_json::to_value(update).expect("PluginUpdate invalid");
-        self.0.lock().unwrap().peer.send_rpc_request_async("update", &params, callback);
+        match self.0.lock() {
+            Ok(plugin) => plugin.peer.send_rpc_request_async("update", &params, callback),
+            Err(err) => { 
+                print_err!("plugin update failed {:?}", err);
+                callback(Err(xi_rpc::Error::PeerDisconnect));
+            }
+        }
     }
 
     /// Termination message sent to the plugin.
@@ -125,6 +134,16 @@ impl<W: Write + Send + 'static> PluginRef<W> {
             Err(_) => print_err!("plugin mutex poisoned"),
         }
     }
+
+    /// Returns `true` if this plugin has crashed.
+    pub fn is_dead(&self) -> bool {
+        self.1.load(Ordering::SeqCst)
+    }
+
+    /// Marks this plugin as having crashed.
+    pub fn declare_dead(&mut self) {
+        self.1.store(true, Ordering::SeqCst);
+    }
 }
 
 
@@ -142,14 +161,14 @@ impl<W: Write + Send + 'static> PluginRef<W> {
 /// which forwards them to interested plugins.
 pub fn start_update_thread<W: Write + Send + 'static>(
     rx: mpsc::Receiver<(ViewIdentifier, PluginUpdate, usize)>,
-    plugins_ref: &PluginManagerRef<W>)
+    manager_ref: &PluginManagerRef<W>)
 {
-    let plugins_ref = plugins_ref.clone();
+    let manager_ref = manager_ref.clone();
     thread::spawn(move ||{
         loop {
             match rx.recv() {
                 Ok((view_id, update, undo_group)) => {
-                    plugins_ref.lock().update(&view_id, update, undo_group);
+                    manager_ref.update_plugins(&view_id, update, undo_group);
                 }
                 Err(_) => break,
             }
@@ -191,7 +210,9 @@ pub fn start_plugin<W, C>(manager_ref: &PluginManagerRef<W>,
                     description: plugin_desc,
                     view_id: view_id,
                 };
-                let mut plugin_ref = PluginRef(Arc::new(Mutex::new(plugin)));
+                let mut plugin_ref = PluginRef(
+                    Arc::new(Mutex::new(plugin)),
+                    Arc::new(AtomicBool::new(false)));
                 completion(Ok(plugin_ref.clone()));
                 looper.mainloop(|| BufReader::new(child_stdout), &mut plugin_ref);
             }

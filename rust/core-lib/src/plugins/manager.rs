@@ -80,30 +80,50 @@ impl <W: Write + Send + 'static>PluginManager<W> {
     }
 
     /// Passes an update from a buffer to all registered plugins.
-    pub fn update(&mut self, view_id: &ViewIdentifier, update: PluginUpdate,
-                  undo_group: usize) {
+    pub fn update(&mut self, view_id: &ViewIdentifier,
+                  update: PluginUpdate, undo_group: usize) {
         // find all running plugins for this buffer, and send them the update
         let buffer_id = self.buffer_for_view(view_id);
-        for (_, plugin) in self.running.iter().filter(|kv| (kv.0).0 == buffer_id) {
+        let mut dead_plugins = Vec::new();
+
+        for (key, plugin) in self.running.iter().filter(|kv| &(kv.0).0 == &buffer_id) {
+            // check to see if plugins have crashed
+            if plugin.is_dead() {
+                dead_plugins.push(key.to_owned());
+                continue
+            }
             self.buffers.lock().editor_for_view_mut(view_id)
                 .unwrap().increment_revs_in_flight();
+
             let view_id = view_id.to_owned();
             let buffers = self.buffers.clone().to_weak();
+            let mut plugin_ref = plugin.clone();
             plugin.update(&update, move |response| {
                 if let Some(buffers) = buffers.upgrade() {
-                    let response = response.expect("bad plugin response");
-                    match serde_json::from_value::<UpdateResponse>(response) {
-                        Ok(UpdateResponse::Edit(edit)) => {
+                    match response.map(|v| serde_json::from_value::<UpdateResponse>(v)) {
+                        Ok(Ok(UpdateResponse::Edit(edit))) => {
                             buffers.lock().editor_for_view_mut(&view_id).unwrap()
                                 .apply_plugin_edit(edit, undo_group);
                         }
-                        Ok(UpdateResponse::Ack(_)) => (),
-                        Err(err) => { print_err!("plugin response json err: {:?}", err); }
+                        Ok(Ok(UpdateResponse::Ack(_))) => (),
+                        Ok(Err(err)) => print_err!("plugin response json err: {:?}", err),
+                        Err(err) => {
+                            print_err!("plugin process dead? {:?}", err);
+                            //TODO: do we have a retry policy?
+                            plugin_ref.declare_dead();
+                        }
                     }
                     buffers.lock().editor_for_view_mut(&view_id)
                         .unwrap().dec_revs_in_flight();
                 }
-            })
+            });
+        }
+
+        for key in dead_plugins {
+            self.running.remove(&key);
+            self.buffers.lock().editor_for_view(&view_id).map(|ed|{
+                ed.plugin_stopped(&view_id, &key.1, 1);
+            });
         }
         self.buffers.lock().editor_for_view_mut(view_id).unwrap().dec_revs_in_flight();
     }
@@ -294,6 +314,12 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
     /// Terminates and cleans up the named plugin.
     pub fn stop_plugin(&self, view_id: &ViewIdentifier, plugin_name: &str) {
         self.lock().stop_plugin(view_id, plugin_name);
+    }
+
+    /// Forward an update from a view to registered plugins.
+    pub fn update_plugins(&self, view_id: &ViewIdentifier,
+                          update: PluginUpdate, undo_group: usize) {
+        self.lock().update(view_id, update, undo_group)
     }
 
     // ====================================================================
