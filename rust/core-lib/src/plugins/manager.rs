@@ -44,8 +44,12 @@ impl <W: Write + Send + 'static>PluginManager<W> {
 
     /// Returns plugins available to this view.
     pub fn available_plugins(&self, view_id: &ViewIdentifier) -> Vec<ClientPluginInfo> {
+        let buffer_id = match self.buffer_for_view(view_id) {
+            Some(id) => id,
+            None => { print_err!("no buffer for view"); return Vec::new() }
+        };
+
         self.catalog.iter().map(|p| {
-            let buffer_id = self.buffer_for_view(view_id);
             let key = (buffer_id, p.name.clone());
             let running = self.running.contains_key(&key);
             let name = key.1;
@@ -81,10 +85,13 @@ impl <W: Write + Send + 'static>PluginManager<W> {
     }
 
     /// Passes an update from a buffer to all registered plugins.
-    pub fn update(&mut self, view_id: &ViewIdentifier,
+    fn update(&mut self, view_id: &ViewIdentifier,
                   update: PluginUpdate, undo_group: usize) {
         // find all running plugins for this buffer, and send them the update
-        let buffer_id = self.buffer_for_view(view_id);
+        let buffer_id = match self.buffer_for_view(view_id) {
+            Some(id) => id,
+            None => { print_err!("no buffer for view"); return }
+        };
         let mut dead_plugins = Vec::new();
 
         for (key, plugin) in self.running.iter().filter(|kv| &(kv.0).0 == &buffer_id) {
@@ -132,12 +139,11 @@ impl <W: Write + Send + 'static>PluginManager<W> {
     }
 
     /// Launches and initializes the named plugin.
-    pub fn start_plugin(&mut self, self_ref: &PluginManagerRef<W>,
+    fn start_plugin(&mut self, self_ref: &PluginManagerRef<W>,
                           view_id: &ViewIdentifier, plugin_name: &str, init_info: PluginBufferInfo) {
         //TODO: error handling: this should maybe have a completion callback with a Result
         let plugin_id = self.next_plugin_id();
-        let buffer_id = self.buffers.buffer_for_view(view_id);
-        if let Some(buffer_id) = buffer_id {
+        if let Some(buffer_id) = self.buffer_for_view(view_id) {
             let key = (buffer_id.to_owned(), plugin_name.to_owned());
             if self.running.contains_key(&key) {
                 return print_err!("plugin {} already running for buffer {}", plugin_name, key.0);
@@ -176,7 +182,7 @@ impl <W: Write + Send + 'static>PluginManager<W> {
     }
 
     fn stop_plugin(&mut self, view_id: &ViewIdentifier, plugin_name: &str) {
-        if let Some(buffer_id) = self.buffers.buffer_for_view(view_id) {
+        if let Some(buffer_id) = self.buffer_for_view(view_id) {
             let key = (buffer_id.to_owned(), plugin_name.to_owned());
             match self.running.remove(&key) {
                 Some(plugin) => {
@@ -193,10 +199,8 @@ impl <W: Write + Send + 'static>PluginManager<W> {
         }
     }
 
-    fn buffer_for_view(&self, view_id: &ViewIdentifier) -> BufferIdentifier {
-        let buffer_id = self.buffers.buffer_for_view(view_id);
-        if buffer_id.is_none() { print_err!("no buffer for view {}", view_id) }
-        buffer_id.unwrap_or(BufferIdentifier::from("null-id"))
+    fn buffer_for_view(&self, view_id: &ViewIdentifier) -> Option<BufferIdentifier> {
+        self.buffers.buffer_for_view(view_id).map(|id| id.to_owned())
     }
 
     fn next_plugin_id(&mut self) -> PluginPid {
@@ -275,7 +279,11 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
 
     /// Called when a buffer is closed.
     pub fn document_close(&mut self, view_id: &ViewIdentifier) {
-        let buffer_id = self.lock().buffer_for_view(view_id);
+        let buffer_id = match self.lock().buffer_for_view(view_id) {
+            Some(id) => id,
+            None => return,
+        };
+
         let to_stop = self.lock().running.keys()
             .filter(|k| k.0 == buffer_id)
             .map(|k| k.1.to_owned())
@@ -289,7 +297,11 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
     /// Called when a document's syntax definition has changed.
     pub fn document_syntax_changed(&mut self, view_id: &ViewIdentifier) {
         print_err!("document_syntax_changed {}", view_id);
-        let buffer_id = self.lock().buffer_for_view(view_id);
+        //TODO: this should be a macro or something
+        let buffer_id = match self.lock().buffer_for_view(view_id) {
+            Some(id) => id,
+            None => return,
+        };
 
         let start_keys = self.activatable_plugins(view_id)
             .iter()
