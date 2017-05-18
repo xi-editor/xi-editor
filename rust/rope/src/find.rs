@@ -18,7 +18,7 @@ use std::cmp::min;
 
 use memchr::{memchr, memchr2, memchr3};
 
-use rope::{len_utf8_from_first_byte, RopeInfo};
+use rope::{BaseMetric, RopeInfo};
 use tree::Cursor;
 
 /// The result of a [`find`][find] operation.
@@ -82,8 +82,7 @@ pub fn find_progress(cursor: &mut Cursor<RopeInfo>, cm: CaseMatching, pat: &str,
             let b = pat.as_bytes()[0];
             let scanner = |s: &str| memchr(b, s.as_bytes());
             let matcher = compare_cursor_str;
-            let cl = len_utf8_from_first_byte(b);
-            find_progress_iter(cursor, pat, &scanner, &matcher, num_steps, cl)
+            find_progress_iter(cursor, pat, &scanner, &matcher, num_steps)
         }
         CaseMatching::CaseInsensitive => {
             let pat_lower = pat.to_lowercase();
@@ -92,22 +91,21 @@ pub fn find_progress(cursor: &mut Cursor<RopeInfo>, cm: CaseMatching, pat: &str,
             if b == b'i' {
                 // 0xC4 is first utf-8 byte of 'İ'
                 let scanner = |s: &str| memchr3(b'i', b'I', 0xC4, s.as_bytes());
-                find_progress_iter(cursor, &pat_lower, &scanner, &matcher, num_steps, 1)
+                find_progress_iter(cursor, &pat_lower, &scanner, &matcher, num_steps)
             } else if b == b'k' {
                 // 0xE2 is first utf-8 byte of u+212A (kelvin sign)
                 let scanner = |s: &str| memchr3(b'k', b'K', 0xE2, s.as_bytes());
-                find_progress_iter(cursor, &pat_lower, &scanner, &matcher, num_steps, 1)
+                find_progress_iter(cursor, &pat_lower, &scanner, &matcher, num_steps)
             } else if b >= b'a' && b <= b'z' {
                 let scanner = |s: &str| memchr2(b, b - 0x20, s.as_bytes());
-                find_progress_iter(cursor, &pat_lower, &scanner, &matcher, num_steps, 1)
+                find_progress_iter(cursor, &pat_lower, &scanner, &matcher, num_steps)
             } else if b < 0x80 {
                 let scanner = |s: &str| memchr(b, s.as_bytes());
-                find_progress_iter(cursor, &pat_lower, &scanner, &matcher, num_steps, 1)
+                find_progress_iter(cursor, &pat_lower, &scanner, &matcher, num_steps)
             } else {
                 let c = pat.chars().next().unwrap();
-                let cl = c.len_utf8();
                 let scanner = |s: &str| scan_lowercase(c, s);
-                find_progress_iter(cursor, &pat_lower, &scanner, &matcher, num_steps, cl)
+                find_progress_iter(cursor, &pat_lower, &scanner, &matcher, num_steps)
             }
         }
     }
@@ -117,12 +115,11 @@ pub fn find_progress(cursor: &mut Cursor<RopeInfo>, cm: CaseMatching, pat: &str,
 fn find_progress_iter(cursor: &mut Cursor<RopeInfo>, pat: &str,
         scanner: &Fn(&str) -> Option<usize>,
         matcher: &Fn(&mut Cursor<RopeInfo>, &str) -> bool,
-        num_steps: usize,
-        first_cp_len: usize
+        num_steps: usize
     ) -> FindResult
 {
     for _ in 0..num_steps {
-        match find_core(cursor, pat, scanner, matcher, first_cp_len) {
+        match find_core(cursor, pat, scanner, matcher) {
             FindResult::TryAgain => (),
             result => return result,
         }
@@ -136,8 +133,7 @@ fn find_progress_iter(cursor: &mut Cursor<RopeInfo>, pat: &str,
 // in the full rope.
 fn find_core(cursor: &mut Cursor<RopeInfo>, pat: &str,
         scanner: &Fn(&str) -> Option<usize>,
-        matcher: &Fn(&mut Cursor<RopeInfo>, &str) -> bool,
-        first_cp_len: usize
+        matcher: &Fn(&mut Cursor<RopeInfo>, &str) -> bool
     ) -> FindResult
 {
     let orig_pos = cursor.pos();
@@ -148,7 +144,10 @@ fn find_core(cursor: &mut Cursor<RopeInfo>, pat: &str,
             if matcher(cursor, pat) {
                 return FindResult::Found(candidate_pos);
             } else {
-                cursor.set(candidate_pos + first_cp_len);
+                // Advance cursor to next codepoint.
+                // Note: could be optimized in some cases but general case is sometimes needed.
+                cursor.set(candidate_pos);
+                cursor.next::<BaseMetric>();
             }
         } else {
             let _ = cursor.next_leaf();
@@ -316,6 +315,13 @@ mod tests {
         let a = Rope::from("k");
         let mut c = Cursor::new(&a, 0);
         assert_eq!(find(&mut c, CaseInsensitive, "\u{212A}"), Some(0));
+    }
+
+    #[test]
+    fn find_casei_0xc4() {
+        let a = Rope::from("\u{0100}I");
+        let mut c = Cursor::new(&a, 0);
+        assert_eq!(find(&mut c, CaseInsensitive, "i"), Some(2));
     }
 
     #[test]
