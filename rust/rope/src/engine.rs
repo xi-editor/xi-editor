@@ -22,7 +22,7 @@ use std::collections::BTreeSet;
 use std;
 
 use rope::{Rope, RopeInfo};
-use subset::Subset;
+use multiset::Subset;
 use delta::Delta;
 
 #[derive(Debug)]
@@ -60,7 +60,7 @@ impl Engine {
     pub fn new(initial_contents: Rope) -> Engine {
         let rev = Revision {
             rev_id: 0,
-            deletes_from_union: Subset::default(),
+            deletes_from_union: Subset::new(initial_contents.len()),
             union_str_len: initial_contents.len(),
             edit: Undo { groups: BTreeSet::default() },
         };
@@ -94,7 +94,7 @@ impl Engine {
     fn rev_content_for_index(&self, rev_index: usize) -> Rope {
         let old_deletes_from_union = self.deletes_from_union_for_index(rev_index);
         let head_rev = &self.revs.last().unwrap();
-        let delta = Delta::synthesize(&self.tombstones, head_rev.union_str_len,
+        let delta = Delta::synthesize(&self.tombstones,
             &head_rev.deletes_from_union, &old_deletes_from_union);
         delta.apply(&self.text)
     }
@@ -150,7 +150,7 @@ impl Engine {
         let head_rev = &self.revs.last().unwrap();
         // TODO: this does 3 calls to Delta::synthesize and 2 to apply, this should definitely be better.
         let old_tombstones = Engine::shuffle_tombstones(&self.text, &self.tombstones, &head_rev.deletes_from_union, &prev_from_union);
-        Delta::synthesize(&old_tombstones, head_rev.union_str_len, &prev_from_union, &head_rev.deletes_from_union)
+        Delta::synthesize(&old_tombstones, &prev_from_union, &head_rev.deletes_from_union)
     }
 
     // TODO: don't construct transform if subsets are empty
@@ -218,10 +218,8 @@ impl Engine {
             old_deletes_from_union: &Subset, new_deletes_from_union: &Subset) -> Rope {
         // Taking the complement of deletes_from_union leads to an interleaving valid for swapped text and tombstones,
         // allowing us to use the same method to insert the text into the tombstones.
-        let union_len = text.len() + tombstones.len();
-        let inverse_tombstones_map = old_deletes_from_union.complement(union_len);
-        let move_delta = Delta::synthesize(text, union_len,
-            &inverse_tombstones_map, &new_deletes_from_union.complement(union_len));
+        let inverse_tombstones_map = old_deletes_from_union.complement();
+        let move_delta = Delta::synthesize(text, &inverse_tombstones_map, &new_deletes_from_union.complement());
         move_delta.apply(tombstones)
     }
 
@@ -229,9 +227,8 @@ impl Engine {
     /// Returns a tuple of a new text `Rope` and a new `Tombstones` rope described by `new_deletes_from_union`.
     fn shuffle(text: &Rope, tombstones: &Rope,
             old_deletes_from_union: &Subset, new_deletes_from_union: &Subset) -> (Rope,Rope) {
-        let union_len = text.len() + tombstones.len();
         // Delta that deletes the right bits from the text
-        let del_delta = Delta::synthesize(tombstones, union_len, old_deletes_from_union, new_deletes_from_union);
+        let del_delta = Delta::synthesize(tombstones, old_deletes_from_union, new_deletes_from_union);
         let new_text = del_delta.apply(text);
         // println!("shuffle: old={:?} new={:?} old_text={:?} new_text={:?} old_tombstones={:?}",
         //     old_deletes_from_union, new_deletes_from_union, text, new_text, tombstones);
@@ -247,11 +244,24 @@ impl Engine {
         self.tombstones = new_tombstones;
     }
 
+    // since undo and gc replay history with transforms, we need an empty set
+    // of the union string length *before* the first revision.
+    fn empty_subset_before_first_rev(&self) -> Subset {
+        let first_rev = &self.revs.first().unwrap();
+        let mut empty = Subset::new(first_rev.union_str_len);
+        // since later we actually transform it by the first insert set, we actually want
+        // the deletions *before* the first edit.
+        if let Edit { ref inserts, .. } = first_rev.edit {
+            empty = inserts.transform_shrink(&empty)
+        }
+        empty
+    }
+
     // This computes undo all the way from the beginning. An optimization would be to not
     // recompute the prefix up to where the history diverges, but it's not clear that's
     // even worth the code complexity.
     fn compute_undo(&self, groups: BTreeSet<usize>) -> Revision {
-        let mut deletes_from_union = Subset::default();
+        let mut deletes_from_union = self.empty_subset_before_first_rev();
         for rev in &self.revs {
             if let Edit { ref undo_group, ref inserts, ref deletes, .. } = rev.edit {
                 if groups.contains(undo_group) {
@@ -309,7 +319,7 @@ impl Engine {
     // Thus, it's easiest to defer gc to when all plugins quiesce, but it's certainly
     // possible to fix it so that's not necessary.
     pub fn gc(&mut self, gc_groups: &BTreeSet<usize>) {
-        let mut gc_dels = Subset::default();
+        let mut gc_dels = self.empty_subset_before_first_rev();
         // TODO: want to let caller retain more rev_id's.
         let mut retain_revs = BTreeSet::new();
         if let Some(last) = self.revs.last() {
@@ -340,7 +350,7 @@ impl Engine {
         }
         if !gc_dels.is_empty() {
             let head_rev = &self.revs.last().unwrap();
-            let not_in_tombstones = head_rev.deletes_from_union.complement(head_rev.union_str_len);
+            let not_in_tombstones = head_rev.deletes_from_union.complement();
             let dels_from_tombstones = not_in_tombstones.transform_shrink(&gc_dels);
             self.tombstones = dels_from_tombstones.delete_from(&self.tombstones);
         }
@@ -360,7 +370,7 @@ impl Engine {
                             (gc_dels.transform_shrink(&inserts),
                                 gc_dels.transform_shrink(&deletes),
                                 gc_dels.transform_shrink(&rev.deletes_from_union),
-                                gc_dels.len_after_delete(rev.union_str_len))
+                                gc_dels.len_after_delete())
                         };
                         self.revs.push(Revision {
                             rev_id: rev.rev_id,
@@ -386,7 +396,7 @@ impl Engine {
                             (rev.deletes_from_union, rev.union_str_len)
                         } else {
                             (gc_dels.transform_shrink(&rev.deletes_from_union),
-                                gc_dels.len_after_delete(rev.union_str_len))
+                                gc_dels.len_after_delete())
                         };
                         self.revs.push(Revision {
                             rev_id: rev.rev_id,
@@ -524,9 +534,10 @@ mod tests {
         engine.edit_rev(1, 0, 0, d1.clone());
         engine.undo([0].iter().cloned().collect());
         let d2 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("a"), TEST_STR.len()+1);
-        engine.edit_rev(1, 1, 1, d2);
-        let d3 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("b"), TEST_STR.len()+2);
-        engine.edit_rev(1, 2, 2, d3);
+        engine.edit_rev(1, 1, 1, d2); // note this is based on d1 before, not the undo
+        let new_head = engine.get_head_rev_id();
+        let d3 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("b"), TEST_STR.len()+1);
+        engine.edit_rev(1, 2, new_head, d3);
         engine.undo([0,2].iter().cloned().collect());
         assert_eq!("a0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", String::from(engine.get_head()));
     }
@@ -541,7 +552,7 @@ mod tests {
         engine.edit_rev(1, 1, 1, d2);
         let gc : BTreeSet<usize> = [0].iter().cloned().collect();
         engine.gc(&gc);
-        let d3 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("b"), TEST_STR.len()+2);
+        let d3 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("b"), TEST_STR.len()+1);
         let new_head = engine.get_head_rev_id();
         engine.edit_rev(1, 2, new_head, d3);
         engine.undo([2].iter().cloned().collect());
