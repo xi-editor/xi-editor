@@ -443,7 +443,8 @@ impl<W: Write + Send + 'static> Documents<W> {
             Start { view_id, plugin_name } => {
                 let buffer_info = self.buffers.lock().editor_for_view(&view_id).unwrap()
                     .plugin_init_info();
-                self.plugins.start_plugin(&view_id, &plugin_name, &buffer_info);
+                //TODO: report this error to client?
+                let _ = self.plugins.start_plugin(&view_id, &plugin_name, &buffer_info);
                 None
             }
             Stop { view_id, plugin_name } => {
@@ -577,7 +578,7 @@ mod tests {
         let container_ref = BufferContainerRef::new();
         assert!(!container_ref.has_open_file("a fake file, for sure"));
         let view_id_1 = ViewIdentifier::from("view-id-1");
-        let buf_id_1 = BufferIdentifier::from("buf-id-1");
+        let buf_id_1 = BufferIdentifier(1);
         let path_1 = PathBuf::from("a_path");
         let path_2 = PathBuf::from("a_different_path");
         let editor = Editor::new(mock_doc_ctx(view_id_1.as_str()), &view_id_1);
@@ -602,7 +603,7 @@ mod tests {
 
         // reopen the original file:
         let view_id_2 = ViewIdentifier::from("view-id-2");
-        let buf_id_2 = BufferIdentifier::from("buf-id-2");
+        let buf_id_2 = BufferIdentifier(2);
         let editor = Editor::new(mock_doc_ctx(view_id_2.as_str()), &view_id_2);
         container_ref.add_editor(&view_id_2, &buf_id_2, editor);
         container_ref.set_path(&path_1, &view_id_2);

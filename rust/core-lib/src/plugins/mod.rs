@@ -179,7 +179,10 @@ pub fn start_update_thread<W: Write + Send + 'static>(
         loop {
             match rx.recv() {
                 Ok((view_id, update, undo_group)) => {
-                    manager_ref.update_plugins(&view_id, update, undo_group);
+                    if let Some(err) = manager_ref.update_plugins(
+                        &view_id, update, undo_group).err() {
+                        print_err!("error updating plugins {:?}", err);
+                    }
                 }
                 Err(_) => break,
             }
@@ -188,7 +191,7 @@ pub fn start_update_thread<W: Write + Send + 'static>(
 }
 
 /// Launches a plugin, associating it with a given view.
-pub fn start_plugin<W, C>(manager_ref: &PluginManagerRef<W>,
+pub fn start_plugin_process<W, C>(manager_ref: &PluginManagerRef<W>,
                           plugin_desc: &PluginDescription,
                           identifier: PluginPid,
                           view_id: &ViewIdentifier,
