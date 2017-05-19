@@ -176,6 +176,20 @@ impl <W: Write + Send + 'static>PluginManager<W> {
         }
     }
 
+    /// Sends a custom command to a running plugin
+    fn dispatch_command(&self, view_id: &ViewIdentifier, receiver: &str,
+                        method: &str, params: &Value) {
+        let plugin_ref = match self.running_for_view(view_id) {
+            Ok(running) => running.get(receiver),
+            Err(_) => None,
+        };
+        if let Some(plugin_ref) = plugin_ref {
+            plugin_ref.command(method, params);
+        } else {
+            print_err!("missing plugin {} for command {}", receiver, method);
+        }
+    }
+
     /// Launches and initializes the named plugin.
     fn start_plugin(&mut self,
                     self_ref: &PluginManagerRef<W>,
@@ -478,6 +492,13 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
     pub fn update_plugins(&self, view_id: &ViewIdentifier,
                           update: PluginUpdate, undo_group: usize) -> Result<(), Error> {
         self.lock().update_plugins(view_id, update, undo_group)
+    }
+
+    /// Dispatch a generic command to the relevant plugin.
+    pub fn dispatch_command(&self, view_id: &ViewIdentifier, receiver: &str,
+                            method: &str, params: &Value) {
+        //TODO: handle the (future) case where this plugin is not running.
+        self.lock().dispatch_command(view_id, receiver, method, params);
     }
 
     // ====================================================================

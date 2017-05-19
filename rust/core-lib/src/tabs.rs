@@ -491,6 +491,11 @@ impl<W: Write + Send + 'static> Documents<W> {
                 self.plugins.stop_plugin(&view_id, &plugin_name);
                 None
             }
+            Other { view_id, receiver, method, params } => {
+                //TODO: this only currently works with notifications.
+                self.plugins.dispatch_command(&view_id, &receiver, &method, &params);
+                None
+            }
         }
     }
 
