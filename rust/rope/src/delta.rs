@@ -330,9 +330,6 @@ impl<N: NodeInfo> InsertDelta<N> {
     /// the same base. For example, if `self` applies to a union string, and
     /// `xform` is the deletions from that union, the resulting Delta will
     /// apply to the text.
-    ///
-    /// **Note:** this is similar to `Subset::transform_shrink` but *the argument
-    /// order is reversed* due to this being a method on `InsertDelta`.
     pub fn transform_shrink(&self, xform: &Subset) -> InsertDelta<N> {
         let mut m = xform.mapper(CountMatcher::Zero);
         let els = self.0.els.iter().map(|elem| {

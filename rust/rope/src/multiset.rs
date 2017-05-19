@@ -231,13 +231,12 @@ impl Subset {
     ///
     /// C = A.transform_expand(B)
     ///
-    /// C.transform_shrink(B).delete_from_string(C.delete_from_string(s)) =
+    /// B.transform_shrink(C).delete_from_string(C.delete_from_string(s)) =
     ///   A.delete_from_string(B.delete_from_string(s))
     pub fn transform_shrink(&self, other: &Subset) -> Subset {
         let mut sb = SubsetBuilder::new();
         // discard ZipSegments where the shrinking set has positive count
-        // TODO: this argument order seems wrong, maybe swap these in a refactor
-        for zseg in other.zip(self) {
+        for zseg in self.zip(other) {
             // TODO: should this actually do something like subtract counts?
             if zseg.b_count == 0 {
                 sb.push_segment(zseg.len, zseg.a_count);
@@ -513,7 +512,7 @@ mod tests {
         let s3 = s2.transform_expand(&s1);
         let str3 = s3.delete_from_string(TEST_STR);
         assert_eq!(result, str3);
-        assert_eq!(str2, s3.transform_shrink(&s1).delete_from_string(&str3));
+        assert_eq!(str2, s1.transform_shrink(&s3).delete_from_string(&str3));
         assert_eq!(str2, s2.transform_union(&s1).delete_from_string(TEST_STR));
     }
 
