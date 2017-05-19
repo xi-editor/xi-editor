@@ -543,10 +543,24 @@ mod tests {
     }
 
     #[test]
+    fn undo_5() {
+        let mut engine = Engine::new(Rope::from(TEST_STR));
+        let d1 = Delta::simple_edit(Interval::new_closed_open(0,10), Rope::from(""), TEST_STR.len());
+        engine.edit_rev(1, 0, 0, d1.clone());
+        engine.edit_rev(1, 1, 0, d1.clone());
+        engine.undo([0].iter().cloned().collect());
+        assert_eq!("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", String::from(engine.get_head()));
+        engine.undo([0,1].iter().cloned().collect());
+        assert_eq!(TEST_STR, String::from(engine.get_head()));
+        engine.undo([].iter().cloned().collect());
+        assert_eq!("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", String::from(engine.get_head()));
+    }
+
+    #[test]
     fn gc() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
-        let d1 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("a"), TEST_STR.len());
-        engine.edit_rev(1, 0, 0, d1.clone());
+        let d1 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("c"), TEST_STR.len());
+        engine.edit_rev(1, 0, 0, d1);
         engine.undo([0].iter().cloned().collect());
         let d2 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("a"), TEST_STR.len()+1);
         engine.edit_rev(1, 1, 1, d2);
@@ -614,5 +628,18 @@ mod tests {
     fn gc_3() {
         // original values this test was created/found with in the UI:
         gc_scenario(35,20);
+    }
+
+    #[test]
+    fn gc_4() {
+        let mut engine = Engine::new(Rope::from(TEST_STR));
+        let d1 = Delta::simple_edit(Interval::new_closed_open(0,10), Rope::from(""), TEST_STR.len());
+        engine.edit_rev(1, 0, 0, d1.clone());
+        engine.edit_rev(1, 1, 0, d1.clone());
+        let gc : BTreeSet<usize> = [0].iter().cloned().collect();
+        engine.gc(&gc);
+        // shouldn't do anything since it was double-deleted and one was GC'd
+        engine.undo([0,1].iter().cloned().collect());
+        assert_eq!("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", String::from(engine.get_head()));
     }
 }

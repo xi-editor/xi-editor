@@ -1,4 +1,4 @@
-// Copyright 2016 Google Inc. All rights reserved.
+// Copyright 2017 Google Inc. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A data structure for representing subsets of sequences (typically strings).
+//! A data structure for representing multi-subsets of sequences (typically strings).
 
 use std::cmp;
 
@@ -27,9 +27,16 @@ struct Segment {
     count: usize,
 }
 
-// Internally, a sorted list of (begin, end) ranges.
+/// Represents a multi-subset of a string, that is a subset where elements can
+/// be included multiple times. This is represented as each element of the
+/// string having a "count" which is the number of times that element is
+/// included in the set.
+///
+/// Internally, this is stored as a list of "segments" with a length and a count.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Subset {
+    /// Invariant, maintained by `SubsetBuilder`: all `Segment`s have non-zero
+    /// length, and no `Segment` has the same count as the one before it.
     segments: Vec<Segment>,
 }
 
@@ -91,6 +98,8 @@ impl SubsetBuilder {
         self.total_len = end;
     }
 
+    /// Assign `count` to the next `len` elements in the string.
+    /// Will panic if called with `len==0`.
     pub fn push_segment(&mut self, len: usize, count: usize) {
         assert!(len > 0, "can't push empty segment");
 
@@ -112,6 +121,8 @@ impl SubsetBuilder {
     }
 }
 
+/// Determines which elements of a `Subset` a method applies to
+/// based on the count of the element.
 #[derive(Clone, Copy, Debug)]
 pub enum CountMatcher {
     Zero,
@@ -198,7 +209,7 @@ impl Subset {
             if oseg.count > 0 {
                 sb.push_segment(oseg.len, if union { oseg.count } else { 0 });
             } else {
-                // fill as much as possible with segments from self.
+                // fill 0-region with segments from self.
                 let mut to_be_consumed = oseg.len;
                 while to_be_consumed > 0 {
                     if cur_seg.len == 0 {
@@ -393,9 +404,10 @@ pub struct Mapper<'a> {
 
 impl<'a> Mapper<'a> {
     /// Map a coordinate in the document this subset corresponds to, to a
-    /// coordinate in the subset. For example, if the Subset is a set of
-    /// deletions, this would map indices in the union string to indices in
-    /// the tombstones string.
+    /// coordinate in the subset matched by the `CountMatcher`. For example,
+    /// if the Subset is a set of deletions and the matcher is
+    /// `CountMatcher::NonZero`, this would map indices in the union string to
+    /// indices in the tombstones string.
     ///
     /// Will return the closest coordinate in the subset if the index is not
     /// in the subset. If the coordinate is past the end of the subset it will
