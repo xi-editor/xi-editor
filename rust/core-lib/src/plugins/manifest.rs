@@ -52,10 +52,6 @@ pub fn debug_plugins() -> Vec<PluginDescription> {
         Vec::new(), Vec::new()),
         PluginDescription::new("shouty", "0.0", BufferLocal, make_path("shouty.py"),
         Vec::new(), Vec::new()),
-        PluginDescription::new("cmd_test", "0.0", BufferLocal, make_path("cmd_test.py"),
-        Vec::new(), vec![Command::new(
-            "Count Lines", "Print the number of lines in the active buffer",
-            PlaceholderRpc::new("cmd_test.count_lines", None), None)]),
     ].iter()
         .filter(|desc|{
             if !desc.exec_path.exists() {
@@ -116,19 +112,26 @@ pub enum PluginScope {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Represents a custom command provided by a plugin.
 pub struct Command {
+    /// Human readable title, for display in (for example) a menu.
     pub title: String,
+    /// A short description of the command.
     pub description: String,
+    /// Template of the command RPC as it should be sent to the plugin.
     pub rpc_cmd: PlaceholderRpc,
+    /// A list of `CommandArgument`s, which the client should use to build the RPC.
     pub args: Vec<CommandArgument>,
 }
 
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// A user provided argument to a plugin command.
 pub struct CommandArgument {
     pub tag: String,
     pub arg_type: ArgumentType,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// If `arg_type` is `Choice`, `options` must contain a list of options.
     pub options: Option<Vec<ArgumentOption>>,
 }
 
@@ -138,12 +141,14 @@ pub enum ArgumentType {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Represents a user-selectable an option for a user-selectable argument.
 pub struct ArgumentOption {
     pub title: String,
     pub value: Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// A placeholder type which can represent a generic RPC.
 pub struct PlaceholderRpc {
     pub method: String,
     pub params: Value,
