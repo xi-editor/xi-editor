@@ -17,6 +17,10 @@
 extern crate bytecount;
 extern crate memchr;
 
+#[cfg(test)]
+#[macro_use]
+extern crate quickcheck;
+
 pub mod tree;
 pub mod breaks;
 pub mod interval;
