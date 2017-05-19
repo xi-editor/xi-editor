@@ -23,7 +23,6 @@ pub mod interval;
 pub mod delta;
 pub mod rope;
 pub mod spans;
-pub mod subset;
 pub mod multiset;
 pub mod engine;
 pub mod find;
