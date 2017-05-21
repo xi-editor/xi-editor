@@ -186,6 +186,7 @@ that takes a "movement" enum as a parameter.
 
 ```
 delete_backward
+delete_forward
 insert_newline
 move_up
 move_up_and_modify_selection
