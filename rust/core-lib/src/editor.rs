@@ -68,10 +68,6 @@ pub struct Editor<W: Write> {
     this_edit_type: EditType,
     last_edit_type: EditType,
 
-    // update to cursor, to be committed atomically with delta
-    // Note: this will go away by the time the multi-selection work is done.
-    new_cursor: Option<(usize, usize)>,
-
     scroll_to: Option<usize>,
 
     style_spans: Spans<Style>,
@@ -82,7 +78,6 @@ pub struct Editor<W: Write> {
 #[derive(PartialEq, Eq, Clone, Copy)]
 enum EditType {
     Other,
-    Select,
     InsertChars,
     Delete,
     Undo,
@@ -130,7 +125,6 @@ impl<W: Write + Send + 'static> Editor<W> {
             gc_undos: BTreeSet::new(),
             last_edit_type: EditType::Other,
             this_edit_type: EditType::Other,
-            new_cursor: None,
             scroll_to: Some(0),
             style_spans: Spans::default(),
             doc_ctx: doc_ctx,
@@ -224,21 +218,15 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     /// Sets the position of the cursor to `offset`, as part of an edit operation.
-    /// If this cursor position's horizontal component was chosen implicitly
-    /// (e.g. if the user moved up from the end of a long line to a shorter line)
-    /// then `hard` is false. In all other cases, `hard` is true.
-    fn set_cursor(&mut self, offset: usize, hard: bool) {
-        if self.this_edit_type != EditType::Select {
-            self.view.sel_start = offset;
-        }
-        self.view.sel_end = offset;
-        if hard {
-            let new_col = self.view.offset_to_line_col(&self.text, offset).1;
-            self.view.set_cursor_col(new_col);
-            self.scroll_to = Some(offset);
-        }
-        self.view.scroll_to_cursor(&self.text);
-        self.view.set_old_sel_dirty();
+
+    // TODO: add affinity.
+    fn set_cursor(&mut self, offset: usize) {
+        self.set_sel_single_region(SelRegion {
+            start: offset,
+            end: offset,
+            horiz: None,
+            affinity: Affinity::default(),
+        });
     }
 
     /// Sets the selection to a single region, and scrolls the end of that
@@ -266,7 +254,6 @@ impl<W: Write + Send + 'static> Editor<W> {
 
         if self.this_edit_type == self.last_edit_type &&
             self.this_edit_type != EditType::Other &&
-            self.this_edit_type != EditType::Select &&
             !self.live_undos.is_empty() {
 
             undo_group = *self.live_undos.last().unwrap();
@@ -292,10 +279,6 @@ impl<W: Write + Send + 'static> Editor<W> {
     fn commit_delta(&mut self, author: Option<&str>) {
         if self.engine.get_head_rev_id() != self.last_rev_id {
             self.update_after_revision(author);
-            if let Some((start, end)) = self.new_cursor.take() {
-                self.set_cursor(end, true);
-                self.view.sel_start = start;
-            }
         }
     }
 
@@ -667,7 +650,7 @@ impl<W: Write + Send + 'static> Editor<W> {
     /// Sets the cursor and scrolls to the beginning of the given line.
     fn do_goto_line(&mut self, line: u64) {
         let line = self.view.line_col_to_offset(&self.text, line as usize, 0);
-        self.set_cursor(line, true);
+        self.set_cursor(line);
     }
 
     fn do_request_lines(&mut self, first: i64, last: i64) {
@@ -726,7 +709,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             return;
         }
         self.view.start_drag(offset, offset, offset);
-        self.set_cursor(offset, true);
+        self.set_cursor(offset);
     }
 
     fn do_drag(&mut self, line: u64, col: u64, _flags: u64) {
