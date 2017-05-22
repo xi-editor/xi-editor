@@ -10,6 +10,9 @@ version = "0.2.0"
 bytecount = "0.1.2"
 memchr = "1.0"
 
+[dev-dependencies]
+quickcheck = "0.4"
+
 [features]
 avx-accel = ["bytecount/avx-accel"]
 simd-accel = ["bytecount/simd-accel"]

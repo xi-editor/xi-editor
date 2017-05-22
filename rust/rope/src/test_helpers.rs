@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use subset::{SubsetBuilder, Subset};
+use multiset::{SubsetBuilder, Subset};
 use delta::Delta;
 use rope::{Rope, RopeInfo};
 
@@ -26,9 +26,10 @@ pub fn find_deletions(substr: &str, s: &str) -> Subset {
         if j < substr.len() && substr.as_bytes()[j] == s.as_bytes()[i] {
             j += 1;
         } else {
-            sb.add_range(i, i + 1);
+            sb.add_range(i, i + 1, 1);
         }
     }
+    sb.pad_to_len(s.len());
     sb.build()
 }
 

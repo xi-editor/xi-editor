@@ -18,7 +18,7 @@
 
 use interval::Interval;
 use tree::{Node, NodeInfo, TreeBuilder};
-use subset::{Subset, SubsetBuilder};
+use multiset::{Subset, SubsetBuilder, CountMatcher};
 use std::cmp::min;
 use std::ops::Deref;
 use std::fmt;
@@ -96,7 +96,7 @@ impl<N: NodeInfo> Delta<N> {
         for elem in self.els {
             match elem {
                 DeltaElement::Copy(b, e) => {
-                    sb.add_range(e1, b);
+                    sb.add_range(e1, b, 1);
                     e1 = e;
                 }
                 DeltaElement::Insert(n) => {
@@ -111,7 +111,8 @@ impl<N: NodeInfo> Delta<N> {
         if b1 < self.base_len {
             ins.push(DeltaElement::Copy(b1, self.base_len));
         }
-        sb.add_range(e1, self.base_len);
+        sb.add_range(e1, self.base_len, 1);
+        sb.pad_to_len(self.base_len);
         (InsertDelta(Delta { els: ins, base_len: self.base_len }), sb.build())
     }
 
@@ -137,20 +138,20 @@ impl<N: NodeInfo> Delta<N> {
     ///     let ins = ins_d.inserted_subset();
     ///     let del2 = del.transform_expand(&ins);
     ///     let r2 = ins_d.apply(&r);
-    ///     let tombstones = ins.complement(r2.len()).delete_from(&r2);
-    ///     let d2 = Delta::synthesize(&tombstones, r2.len(), &ins, &del);
+    ///     let tombstones = ins.complement().delete_from(&r2);
+    ///     let d2 = Delta::synthesize(&tombstones, &ins, &del);
     ///     assert_eq!(String::from(d2.apply(r)), String::from(d.apply(r)));
     /// }
     /// ```
-    pub fn synthesize(tombstones: &Node<N>, union_len: usize, from_dels: &Subset, to_dels: &Subset) -> Delta<N> {
-        let base_len = from_dels.len_after_delete(union_len);
+    pub fn synthesize(tombstones: &Node<N>, from_dels: &Subset, to_dels: &Subset) -> Delta<N> {
+        let base_len = from_dels.len_after_delete();
         let mut els = Vec::new();
         let mut x = 0;
-        let mut old_ranges = from_dels.complement_iter(union_len);
+        let mut old_ranges = from_dels.complement_iter();
         let mut last_old = old_ranges.next();
-        let mut m = from_dels.mapper();
+        let mut m = from_dels.mapper(CountMatcher::NonZero);
         // For each segment of the new text
-        for (b, e) in to_dels.complement_iter(union_len) {
+        for (b, e) in to_dels.complement_iter() {
             // Fill the whole segment
             let mut beg = b;
             while beg < e {
@@ -276,7 +277,7 @@ impl<N: NodeInfo> InsertDelta<N> {
         let mut y = 0;  // coordinate within xform
         let mut i = 0;  // index into self.els
         let mut b1 = 0;
-        let mut xform_ranges = xform.complement_iter(l);
+        let mut xform_ranges = xform.complement_iter();
         let mut last_xform = xform_ranges.next();
         while y < l || i < cur_els.len() {
             let next_iv_beg = if let Some((xb, _)) = last_xform { xb } else { l };
@@ -333,8 +334,7 @@ impl<N: NodeInfo> InsertDelta<N> {
     /// **Note:** this is similar to `Subset::transform_shrink` but *the argument
     /// order is reversed* due to this being a method on `InsertDelta`.
     pub fn transform_shrink(&self, xform: &Subset) -> InsertDelta<N> {
-        let compl = xform.complement(self.base_len);
-        let mut m = compl.mapper();
+        let mut m = xform.mapper(CountMatcher::Zero);
         let els = self.0.els.iter().map(|elem| {
             match *elem {
                 DeltaElement::Copy(b, e) => {
@@ -345,7 +345,7 @@ impl<N: NodeInfo> InsertDelta<N> {
                 }
             }
         }).collect();
-        InsertDelta(Delta { els: els, base_len: xform.len_after_delete(self.base_len)})
+        InsertDelta(Delta { els: els, base_len: xform.len_after_delete()})
     }
 
     /// Return a Subset containing the inserted ranges.
@@ -353,15 +353,13 @@ impl<N: NodeInfo> InsertDelta<N> {
     /// `d.inserted_subset().delete_from_string(d.apply_to_string(s)) == s`
     pub fn inserted_subset(&self) -> Subset {
         let mut sb = SubsetBuilder::new();
-        let mut x = 0;
         for elem in &self.0.els {
             match *elem {
                 DeltaElement::Copy(b, e) => {
-                    x += e - b;
+                    sb.push_segment(e - b, 0);
                 }
                 DeltaElement::Insert(ref n) => {
-                    sb.add_range(x, x + n.len());
-                    x += n.len();
+                    sb.push_segment(n.len(), 1);
                 }
             }
         }
@@ -538,12 +536,11 @@ mod tests {
         let ins = d1.inserted_subset();
         let del = del.transform_expand(&ins);
         let union_str = d1.apply_to_string("hello world");
-        let union_len = union_str.len();
-        let tombstones = ins.complement(union_len).delete_from_string(&union_str);
-        let new_d = Delta::synthesize(&Rope::from(&tombstones), union_len, &ins, &del);
+        let tombstones = ins.complement().delete_from_string(&union_str);
+        let new_d = Delta::synthesize(&Rope::from(&tombstones), &ins, &del);
         assert_eq!("herald", new_d.apply_to_string("hello world"));
-        let text = del.complement(union_len).delete_from_string(&union_str);
-        let inv_d = Delta::synthesize(&Rope::from(&text), union_len, &del, &ins);
+        let text = del.complement().delete_from_string(&union_str);
+        let inv_d = Delta::synthesize(&Rope::from(&text), &del, &ins);
         assert_eq!("hello world", inv_d.apply_to_string("herald"));
     }
 

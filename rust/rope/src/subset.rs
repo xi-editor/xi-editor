@@ -362,10 +362,25 @@ impl<'a> Mapper<'a> {
 
 #[cfg(test)]
 mod tests {
-    use subset::{SubsetBuilder};
-    use test_helpers::find_deletions;
+    use subset::{Subset, SubsetBuilder};
 
     const TEST_STR: &'static str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+    /// Creates a `Subset` of `s` by scanning through `substr` and finding which
+    /// characters of `s` are missing from it in order. Returns a `Subset` which
+    /// when deleted from `s` yields `substr`.
+    pub fn find_deletions(substr: &str, s: &str) -> Subset {
+        let mut sb = SubsetBuilder::new();
+        let mut j = 0;
+        for i in 0..s.len() {
+            if j < substr.len() && substr.as_bytes()[j] == s.as_bytes()[i] {
+                j += 1;
+            } else {
+                sb.add_range(i, i + 1);
+            }
+        }
+        sb.build()
+    }
 
     #[test]
     fn test_apply() {
