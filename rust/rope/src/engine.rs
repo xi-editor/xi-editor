@@ -252,7 +252,7 @@ impl Engine {
         // since later we actually transform it by the first insert set, we actually want
         // the deletions *before* the first edit.
         if let Edit { ref inserts, .. } = first_rev.edit {
-            empty = inserts.transform_shrink(&empty)
+            empty = empty.transform_shrink(&inserts)
         }
         empty
     }
@@ -351,7 +351,7 @@ impl Engine {
         if !gc_dels.is_empty() {
             let head_rev = &self.revs.last().unwrap();
             let not_in_tombstones = head_rev.deletes_from_union.complement();
-            let dels_from_tombstones = not_in_tombstones.transform_shrink(&gc_dels);
+            let dels_from_tombstones = gc_dels.transform_shrink(&not_in_tombstones);
             self.tombstones = dels_from_tombstones.delete_from(&self.tombstones);
         }
         let old_revs = std::mem::replace(&mut self.revs, Vec::new());
@@ -361,15 +361,15 @@ impl Engine {
                     let new_gc_dels = if inserts.is_empty() {
                         None
                     } else {
-                        Some(inserts.transform_shrink(&gc_dels))
+                        Some(gc_dels.transform_shrink(&inserts))
                     };
                     if retain_revs.contains(&rev.rev_id) || !gc_groups.contains(&undo_group) {
                         let (inserts, deletes, deletes_from_union, len) = if gc_dels.is_empty() {
                             (inserts, deletes, rev.deletes_from_union, rev.union_str_len)
                         } else {
-                            (gc_dels.transform_shrink(&inserts),
-                                gc_dels.transform_shrink(&deletes),
-                                gc_dels.transform_shrink(&rev.deletes_from_union),
+                            (inserts.transform_shrink(&gc_dels),
+                                deletes.transform_shrink(&gc_dels),
+                                rev.deletes_from_union.transform_shrink(&gc_dels),
                                 gc_dels.len_after_delete())
                         };
                         self.revs.push(Revision {
@@ -395,7 +395,7 @@ impl Engine {
                         let (deletes_from_union, len) = if gc_dels.is_empty() {
                             (rev.deletes_from_union, rev.union_str_len)
                         } else {
-                            (gc_dels.transform_shrink(&rev.deletes_from_union),
+                            (rev.deletes_from_union.transform_shrink(&gc_dels),
                                 gc_dels.len_after_delete())
                         };
                         self.revs.push(Revision {
