@@ -55,65 +55,46 @@ impl SubsetBuilder {
     /// `Subset` corresponds to the document length.
     pub fn pad_to_len(&mut self, total_len: usize) {
         if total_len > self.total_len {
-            // might be able to extend last segment
-            if let Some(last) = self.segments.last_mut() {
-                if last.count == 0 {
-                    last.len += total_len - self.total_len;
-                    self.total_len = total_len;
-                    return;
-                }
-            }
-
-            self.segments.push(Segment {len: total_len - self.total_len, count: 0});
-            self.total_len = total_len;
+            let cur_len = self.total_len;
+            self.push_segment(total_len - cur_len, 0);
         }
     }
 
     /// Sets the count for a given range. This method must be called with a
-    /// non-empty range with beg not before the largest range or segment added
+    /// non-empty range with `begin` not before the largest range or segment added
     /// so far. Gaps will be filled with a 0-count segment.
-    pub fn add_range(&mut self, beg: usize, end: usize, count: usize) {
-        assert!(beg >= self.total_len, "ranges must be added in non-decreasing order");
-        // assert!(beg < end, "ranges added must be non-empty: [{},{})", beg, end);
-        if beg >= end {
+    pub fn add_range(&mut self, begin: usize, end: usize, count: usize) {
+        assert!(begin >= self.total_len, "ranges must be added in non-decreasing order");
+        // assert!(begin < end, "ranges added must be non-empty: [{},{})", begin, end);
+        if begin >= end {
             return;
         }
-        let len = end-beg;
-
-        // merge into previous segment if possible
-        if let Some(last) = self.segments.last_mut() {
-            if last.count == count && self.total_len == beg {
-                last.len += len;
-                self.total_len += len;
-                return;
-            }
-        }
+        let len = end-begin;
+        let cur_total_len = self.total_len;
 
         // add 0-count segment to fill any gap
-        if beg > self.total_len {
-            self.segments.push(Segment {len: beg - self.total_len, count: 0});
+        if begin > self.total_len {
+            self.push_segment(begin - cur_total_len, 0);
         }
 
-        self.segments.push(Segment {len, count});
-        self.total_len = end;
+        self.push_segment(len, count);
     }
 
     /// Assign `count` to the next `len` elements in the string.
     /// Will panic if called with `len==0`.
     pub fn push_segment(&mut self, len: usize, count: usize) {
         assert!(len > 0, "can't push empty segment");
+        self.total_len += len;
 
         // merge into previous segment if possible
         if let Some(last) = self.segments.last_mut() {
             if last.count == count {
                 last.len += len;
-                self.total_len += len;
                 return;
             }
         }
 
         self.segments.push(Segment {len, count});
-        self.total_len += len;
     }
 
     pub fn build(self) -> Subset {
@@ -285,8 +266,7 @@ impl Subset {
     /// the count for both self and other in that range. The two `Subset`s
     /// must have the same total length.
     ///
-    /// Each returned `ZipSegment` will be have a differing count iff
-    /// both input `Subset`s change count at every `Segment` boundary.
+    /// Each returned `ZipSegment` will differ in at least one count.
     pub fn zip<'a>(&'a self, other: &'a Subset) -> ZipIter<'a> {
         ZipIter {
             a_segs: self.segments.as_slice(),
@@ -420,7 +400,8 @@ impl<'a> Mapper<'a> {
     /// the total cost to be O(n) where `n = max(calls,ranges)` over all times
     /// called on a single `Mapper`.
     pub fn doc_index_to_subset(&mut self, i: usize) -> usize {
-        assert!(i >= self.last_i, "method must be called with i in non-decreasing order. i={}<{}=last_i", i, self.last_i);
+        assert!(i >= self.last_i,
+            "method must be called with i in non-decreasing order. i={}<{}=last_i", i, self.last_i);
         self.last_i = i;
 
         while i >= self.cur_range.1 {
