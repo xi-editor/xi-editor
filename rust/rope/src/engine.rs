@@ -22,7 +22,7 @@ use std::collections::BTreeSet;
 use std;
 
 use rope::{Rope, RopeInfo};
-use multiset::Subset;
+use multiset::{Subset, CountMatcher};
 use delta::Delta;
 
 #[derive(Debug)]
@@ -37,7 +37,6 @@ pub struct Engine {
 struct Revision {
     rev_id: usize,
     deletes_from_union: Subset,
-    union_str_len: usize,
     edit: Contents,
 }
 
@@ -61,7 +60,6 @@ impl Engine {
         let rev = Revision {
             rev_id: 0,
             deletes_from_union: Subset::new(initial_contents.len()),
-            union_str_len: initial_contents.len(),
             edit: Undo { groups: BTreeSet::default() },
         };
         Engine {
@@ -148,7 +146,7 @@ impl Engine {
         }
 
         let head_rev = &self.revs.last().unwrap();
-        // TODO: this does 3 calls to Delta::synthesize and 2 to apply, this should definitely be better.
+        // TODO: this does 2 calls to Delta::synthesize and 1 to apply, this probably could be better.
         let old_tombstones = Engine::shuffle_tombstones(&self.text, &self.tombstones, &head_rev.deletes_from_union, &prev_from_union);
         Delta::synthesize(&old_tombstones, &prev_from_union, &head_rev.deletes_from_union)
     }
@@ -203,7 +201,6 @@ impl Engine {
         (Revision {
             rev_id: self.rev_id_counter,
             deletes_from_union: new_deletes_from_union,
-            union_str_len: union_ins_delta.new_document_len(),
             edit: Edit {
                 priority: new_priority,
                 undo_group: undo_group,
@@ -248,13 +245,13 @@ impl Engine {
     // of the union string length *before* the first revision.
     fn empty_subset_before_first_rev(&self) -> Subset {
         let first_rev = &self.revs.first().unwrap();
-        let mut empty = Subset::new(first_rev.union_str_len);
-        // since later we actually transform it by the first insert set, we actually want
-        // the deletions *before* the first edit.
-        if let Edit { ref inserts, .. } = first_rev.edit {
-            empty = empty.transform_shrink(&inserts)
-        }
-        empty
+        // it will be immediately transform_expanded by inserts if it is an Edit, so length must be before
+        let len = if let Edit { ref inserts, .. } = first_rev.edit {
+            inserts.count(CountMatcher::Zero)
+        } else {
+            first_rev.deletes_from_union.count(CountMatcher::All)
+        };
+        Subset::new(len)
     }
 
     // This computes undo all the way from the beginning. An optimization would be to not
@@ -278,11 +275,9 @@ impl Engine {
                 }
             }
         }
-        let head_rev = &self.revs.last().unwrap();
         Revision {
             rev_id: self.rev_id_counter,
             deletes_from_union: deletes_from_union,
-            union_str_len: head_rev.union_str_len,
             edit: Undo {
                 groups: groups
             }
@@ -364,18 +359,16 @@ impl Engine {
                         Some(gc_dels.transform_shrink(&inserts))
                     };
                     if retain_revs.contains(&rev.rev_id) || !gc_groups.contains(&undo_group) {
-                        let (inserts, deletes, deletes_from_union, len) = if gc_dels.is_empty() {
-                            (inserts, deletes, rev.deletes_from_union, rev.union_str_len)
+                        let (inserts, deletes, deletes_from_union) = if gc_dels.is_empty() {
+                            (inserts, deletes, rev.deletes_from_union)
                         } else {
                             (inserts.transform_shrink(&gc_dels),
                                 deletes.transform_shrink(&gc_dels),
-                                rev.deletes_from_union.transform_shrink(&gc_dels),
-                                gc_dels.len_after_delete())
+                                rev.deletes_from_union.transform_shrink(&gc_dels))
                         };
                         self.revs.push(Revision {
                             rev_id: rev.rev_id,
                             deletes_from_union: deletes_from_union,
-                            union_str_len: len,
                             edit: Edit {
                                 priority: priority,
                                 undo_group: undo_group,
@@ -392,16 +385,14 @@ impl Engine {
                     // We're super-aggressive about dropping these; after gc, the history
                     // of which undos were used to compute deletes_from_union in edits may be lost.
                     if retain_revs.contains(&rev.rev_id) {
-                        let (deletes_from_union, len) = if gc_dels.is_empty() {
-                            (rev.deletes_from_union, rev.union_str_len)
+                        let deletes_from_union = if gc_dels.is_empty() {
+                            rev.deletes_from_union
                         } else {
-                            (rev.deletes_from_union.transform_shrink(&gc_dels),
-                                gc_dels.len_after_delete())
+                            rev.deletes_from_union.transform_shrink(&gc_dels)
                         };
                         self.revs.push(Revision {
                             rev_id: rev.rev_id,
                             deletes_from_union: deletes_from_union,
-                            union_str_len: len,
                             edit: Undo {
                                 groups: &groups - gc_groups,
                             }
