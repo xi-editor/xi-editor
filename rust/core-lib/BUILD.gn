@@ -1,0 +1,9 @@
+import("//build/rust/rust_library.gni")
+
+rust_library("xi_core_lib") {
+    deps = [
+        "//rust/xi-editor/rust/rpc:xi_rpc",
+        "//rust/xi-editor/rust/rope:xi_rope",
+        "//rust/xi-editor/rust/unicode:xi_unicode",
+    ]
+}

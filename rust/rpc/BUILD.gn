@@ -1,0 +1,5 @@
+import("//build/rust/rust_library.gni")
+
+rust_library("xi_rpc") {
+
+}
