@@ -270,7 +270,7 @@ impl<N: NodeInfo> InsertDelta<N> {
     //
     // TODO: write accurate equations
     // TODO: can we infer l from the other inputs?
-    pub fn transform_expand(&self, xform: &Subset, l: usize, after: bool) -> InsertDelta<N> {
+    pub fn transform_expand(&self, xform: &Subset, after: bool) -> InsertDelta<N> {
         let cur_els = &self.0.els;
         let mut els = Vec::new();
         let mut x = 0;  // coordinate within self
@@ -279,6 +279,7 @@ impl<N: NodeInfo> InsertDelta<N> {
         let mut b1 = 0;
         let mut xform_ranges = xform.complement_iter();
         let mut last_xform = xform_ranges.next();
+        let l = xform.count(CountMatcher::All);
         while y < l || i < cur_els.len() {
             let next_iv_beg = if let Some((xb, _)) = last_xform { xb } else { l };
             if after && y < next_iv_beg {
@@ -556,9 +557,9 @@ mod tests {
         assert_eq!("01259DGJKN+UVWXYcdefghkmopqrstvwxy", d.apply_to_string(str1));
         let (d2, _ss) = d.factor();
         assert_eq!("01259DGJKN+QTUVWXYcdefghkmopqrstvwxy", d2.apply_to_string(str1));
-        let d3 = d2.transform_expand(&s1, TEST_STR.len(), false);
+        let d3 = d2.transform_expand(&s1, false);
         assert_eq!("0123456789ABCDEFGHIJKLMN+OPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", d3.apply_to_string(TEST_STR));
-        let d4 = d2.transform_expand(&s1, TEST_STR.len(), true);
+        let d4 = d2.transform_expand(&s1, true);
         assert_eq!("0123456789ABCDEFGHIJKLMNOP+QRSTUVWXYZabcdefghijklmnopqrstuvwxyz", d4.apply_to_string(TEST_STR));
     }
 

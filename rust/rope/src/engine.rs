@@ -163,7 +163,7 @@ impl Engine {
         let (ins_delta, deletes) = delta.factor();
 
         // rebase delta to be on the base_rev union instead of the text
-        let mut union_ins_delta = ins_delta.transform_expand(&rev.deletes_from_union, rev.union_str_len, true);
+        let mut union_ins_delta = ins_delta.transform_expand(&rev.deletes_from_union, true);
         let mut new_deletes = deletes.transform_expand(&rev.deletes_from_union);
 
         // rebase the delta to be on the head union instead of the base_rev union
@@ -171,7 +171,7 @@ impl Engine {
             if let Edit { priority, ref inserts, .. } = r.edit {
                 if !inserts.is_empty() {
                     let after = new_priority >= priority;  // should never be ==
-                    union_ins_delta = union_ins_delta.transform_expand(inserts, r.union_str_len, after);
+                    union_ins_delta = union_ins_delta.transform_expand(inserts, after);
                     new_deletes = new_deletes.transform_expand(inserts);
                 }
             }
