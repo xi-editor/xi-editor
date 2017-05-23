@@ -91,16 +91,32 @@ impl Engine {
         None
     }
 
+    fn deletes_from_union_for_index(&self, rev_index: usize) -> Cow<Subset> {
+        let mut deletes_from_union = Cow::Borrowed(&self.revs.last().unwrap().deletes_from_union);
+
+        // invert the changes to deletes_from_union starting in the present and working backwards
+        for rev in self.revs[rev_index + 1..].iter().rev() {
+            deletes_from_union = match rev.edit {
+                Edit { ref inserts, ref deletes, .. } => {
+                    let un_deleted = deletes_from_union.subtract(deletes);
+                    Cow::Owned(un_deleted.transform_shrink(inserts))
+                }
+                Undo { .. } => panic!("Undo not yet supported"),
+            }
+        }
+        deletes_from_union
+    }
+
     /// Get the contents of the document at a given revision number
     fn rev_content_for_index(&self, rev_index: usize) -> Rope {
-        let old_deletes_from_union = self.deletes_from_union_for_index(rev_index);
+        let old_deletes_from_union = self.deletes_from_cur_union_for_index(rev_index);
         let delta = Delta::synthesize(&self.tombstones,
             &self.deletes_from_union, &old_deletes_from_union);
         delta.apply(&self.text)
     }
 
     /// Get the Subset to delete from the current union string in order to obtain a revision's content
-    fn deletes_from_union_for_index(&self, rev_index: usize) -> Cow<Subset> {
+    fn deletes_from_cur_union_for_index(&self, rev_index: usize) -> Cow<Subset> {
         let mut deletes_from_union = Cow::Borrowed(&self.revs[rev_index].deletes_from_union);
         for rev in &self.revs[rev_index + 1..] {
             if let Edit { ref inserts, .. } = rev.edit {
@@ -158,12 +174,12 @@ impl Engine {
     fn mk_new_rev(&self, new_priority: usize, undo_group: usize,
             base_rev: usize, delta: Delta<RopeInfo>) -> (Revision, Rope, Rope, Subset) {
         let ix = self.find_rev(base_rev).expect("base revision not found");
-        let rev = &self.revs[ix];
         let (ins_delta, deletes) = delta.factor();
 
         // rebase delta to be on the base_rev union instead of the text
-        let mut union_ins_delta = ins_delta.transform_expand(&rev.deletes_from_union, true);
-        let mut new_deletes = deletes.transform_expand(&rev.deletes_from_union);
+        let deletes_at_rev = self.deletes_from_union_for_index(ix);
+        let mut union_ins_delta = ins_delta.transform_expand(&deletes_at_rev, true);
+        let mut new_deletes = deletes.transform_expand(&deletes_at_rev);
 
         // rebase the delta to be on the head union instead of the base_rev union
         for r in &self.revs[ix + 1..] {
@@ -301,8 +317,8 @@ impl Engine {
     }
 
     pub fn is_equivalent_revision(&self, base_rev: usize, other_rev: usize) -> bool {
-        let base_subset = self.find_rev(base_rev).map(|rev_index| self.deletes_from_union_for_index(rev_index));
-        let other_subset = self.find_rev(other_rev).map(|rev_index| self.deletes_from_union_for_index(rev_index));
+        let base_subset = self.find_rev(base_rev).map(|rev_index| self.deletes_from_cur_union_for_index(rev_index));
+        let other_subset = self.find_rev(other_rev).map(|rev_index| self.deletes_from_cur_union_for_index(rev_index));
 
         base_subset.is_some() && base_subset == other_subset
     }

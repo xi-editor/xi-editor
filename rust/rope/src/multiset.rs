@@ -180,6 +180,16 @@ impl Subset {
         sb.build()
     }
 
+    /// Compute the difference of two subsets. The count of an element in the
+    /// result is the subtraction of the counts of other from self.
+    pub fn subtract(&self, other: &Subset) -> Subset {
+        let mut sb = SubsetBuilder::new();
+        for zseg in self.zip(other) {
+            sb.push_segment(zseg.len, zseg.a_count - zseg.b_count);
+        }
+        sb.build()
+    }
+
     /// Map the contents of `self` into the 0-regions of `other`.
     /// Precondition: `self.count(CountMatcher::All) == other.count(CountMatcher::Zero)`
     fn transform(&self, other: &Subset, union: bool) -> Subset {
