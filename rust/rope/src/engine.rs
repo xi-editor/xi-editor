@@ -92,14 +92,21 @@ impl Engine {
         None
     }
 
+    // TODO: does Cow really help much here? It certainly won't after making Subsets a rope.
     /// Find what the `deletes_from_union` field in Engine would have been at the time
     /// of a certain `rev_index`. In other words, the deletes from the union string at that time.
     fn deletes_from_union_for_index(&self, rev_index: usize) -> Cow<Subset> {
+        self.deletes_from_union_before_index(rev_index + 1, true)
+    }
+
+    /// Garbage collection means undo can sometimes need to replay the very first
+    /// revision, and so needs a way to get the deletion set before then.
+    fn deletes_from_union_before_index(&self, rev_index: usize, invert_undos: bool) -> Cow<Subset> {
         let mut deletes_from_union = Cow::Borrowed(&self.deletes_from_union);
         let mut undone_groups = Cow::Borrowed(&self.undone_groups);
 
         // invert the changes to deletes_from_union starting in the present and working backwards
-        for rev in self.revs[rev_index + 1..].iter().rev() {
+        for rev in self.revs[rev_index..].iter().rev() {
             deletes_from_union = match rev.edit {
                 Edit { ref inserts, ref deletes, ref undo_group, .. } => {
                     let undone = undone_groups.contains(undo_group);
@@ -108,9 +115,13 @@ impl Engine {
                     Cow::Owned(un_deleted.transform_shrink(inserts))
                 }
                 Undo { ref toggled_groups, ref deletes_bitxor } => {
-                    let new_undone = undone_groups.symmetric_difference(toggled_groups).cloned().collect();
-                    undone_groups = Cow::Owned(new_undone);
-                    Cow::Owned(deletes_from_union.bitxor(deletes_bitxor))
+                    if invert_undos {
+                        let new_undone = undone_groups.symmetric_difference(toggled_groups).cloned().collect();
+                        undone_groups = Cow::Owned(new_undone);
+                        Cow::Owned(deletes_from_union.bitxor(deletes_bitxor))
+                    } else {
+                        deletes_from_union
+                    }
                 }
             }
         }
@@ -282,12 +293,31 @@ impl Engine {
         Subset::new(len)
     }
 
+    /// Find the first revision that could be affected by toggling a set of undo groups
+    fn find_first_undo_candidate_index(&self, toggled_groups: &BTreeSet<usize>) -> usize {
+        // find the lowest toggled undo group number
+        if let Some(lowest_group) = toggled_groups.iter().cloned().next() {
+            for (i,rev) in self.revs.iter().enumerate().rev() {
+                if rev.max_undo_so_far < lowest_group {
+                    return i + 1; // +1 since we know the one we just found doesn't have it
+                }
+            }
+            return 0;
+        } else { // no toggled groups, return past end
+            return self.revs.len();
+        }
+    }
+
     // This computes undo all the way from the beginning. An optimization would be to not
     // recompute the prefix up to where the history diverges, but it's not clear that's
     // even worth the code complexity.
     fn compute_undo(&self, groups: &BTreeSet<usize>) -> (Revision, Subset) {
-        let mut deletes_from_union = self.empty_subset_before_first_rev();
-        for rev in &self.revs {
+        let toggled_groups = self.undone_groups.symmetric_difference(&groups).cloned().collect();
+        let first_candidate = self.find_first_undo_candidate_index(&toggled_groups);
+        // the `false` below: don't invert undos since our first_candidate is based on the current undo set, not past
+        let mut deletes_from_union = self.deletes_from_union_before_index(first_candidate, false).into_owned();
+
+        for rev in &self.revs[first_candidate..] {
             if let Edit { ref undo_group, ref inserts, ref deletes, .. } = rev.edit {
                 if groups.contains(undo_group) {
                     if !inserts.is_empty() {
@@ -304,7 +334,6 @@ impl Engine {
             }
         }
 
-        let toggled_groups = self.undone_groups.symmetric_difference(&groups).cloned().collect();
         let deletes_bitxor = self.deletes_from_union.bitxor(&deletes_from_union);
         let max_undo_so_far = self.revs.last().unwrap().max_undo_so_far;
         (Revision {
