@@ -625,7 +625,7 @@ mod tests {
             let (s2, m2) = make_both(&sizes2, first_one2, Some(total_len));
 
             let s3 = s2.transform_shrink(&s);
-            let m3 = m2.transform_shrink(&m);
+            let m3 = m.transform_shrink(&m2);
 
             let shrunk_len = m3.count(CountMatcher::All);
             check_same_deletion(shrunk_len, &s3, &m3)
