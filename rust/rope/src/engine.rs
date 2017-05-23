@@ -31,6 +31,7 @@ pub struct Engine {
     text: Rope,
     tombstones: Rope,
     deletes_from_union: Subset,
+    // TODO: switch to a persistent Set representation to avoid O(n) copying
     undone_groups: BTreeSet<usize>,  // set of undo_group id's
     revs: Vec<Revision>,
 }
@@ -140,15 +141,22 @@ impl Engine {
 
     fn deletes_from_union_for_index(&self, rev_index: usize) -> Cow<Subset> {
         let mut deletes_from_union = Cow::Borrowed(&self.revs.last().unwrap().deletes_from_union);
+        let mut undone_groups = Cow::Borrowed(&self.undone_groups);
 
         // invert the changes to deletes_from_union starting in the present and working backwards
         for rev in self.revs[rev_index + 1..].iter().rev() {
             deletes_from_union = match rev.edit {
-                Edit { ref inserts, ref deletes, .. } => {
-                    let un_deleted = deletes_from_union.subtract(deletes);
+                Edit { ref inserts, ref deletes, ref undo_group, .. } => {
+                    let undone = undone_groups.contains(undo_group);
+                    let deleted = if undone { inserts } else { deletes };
+                    let un_deleted = deletes_from_union.subtract(deleted);
                     Cow::Owned(un_deleted.transform_shrink(inserts))
                 }
-                Undo { .. } => panic!("Undo not yet supported"),
+                Undo { ref delta, ref deletes_bitxor } => {
+                    let undone_mut = undone_groups.to_mut();
+                    delta.invert(undone_mut);
+                    Cow::Owned(deletes_from_union.bitxor(deletes_bitxor))
+                }
             }
         }
         deletes_from_union
