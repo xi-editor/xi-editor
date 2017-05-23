@@ -54,57 +54,12 @@ enum Contents {
         deletes: Subset,
     },
     Undo {
-        delta: SetDelta<usize>,  // set of undo_group id's
+        /// The set of groups toggled between undone and done.
+        /// Just the `symmetric_difference` (XOR) of the two sets.
+        toggled_groups: BTreeSet<usize>,  // set of undo_group id's
         /// Used to store a reversible difference between the old
         /// and new deletes_from_union
         deletes_bitxor: Subset,
-    }
-}
-
-// TODO: maybe represent this as a single set that is the symmetric_difference.
-// Doing so loses the dynamic checking but would be more efficient.
-#[derive(Debug)]
-struct SetDelta<T> {
-    pub ins: BTreeSet<T>,
-    pub del: BTreeSet<T>,
-}
-
-impl<T: Clone + Ord> SetDelta<T> {
-    fn new() -> SetDelta<T> {
-        SetDelta { ins: BTreeSet::new(), del: BTreeSet::new() }
-    }
-
-    fn compute(from: &BTreeSet<T>, to: &BTreeSet<T>) -> SetDelta<T> {
-        SetDelta {
-            ins: to.difference(from).cloned().collect(),
-            del: from.difference(to).cloned().collect(),
-        }
-    }
-
-    fn apply(&self, set: &mut BTreeSet<T>) {
-        for to_add in self.ins.iter().cloned() {
-            assert!(set.insert(to_add), "element to add was already in set, so delta isn't reversible");
-        }
-        for to_remove in self.del.iter() {
-            assert!(set.remove(to_remove), "element to delete was not in set");
-        }
-    }
-
-    fn invert(&self, set: &mut BTreeSet<T>) {
-        for to_add in self.del.iter().cloned() {
-            assert!(set.insert(to_add), "element to un-delete was already in set");
-        }
-        for to_remove in self.ins.iter() {
-            assert!(set.remove(to_remove), "element to un-insert was not in set");
-        }
-    }
-
-    /// used to remove references to garbage collected groups
-    fn without(&self, remove: &BTreeSet<T>) -> SetDelta<T> {
-        SetDelta {
-            ins: &self.ins - remove,
-            del: &self.del - remove,
-        }
     }
 }
 
@@ -114,7 +69,7 @@ impl Engine {
         let rev = Revision {
             rev_id: 0,
             deletes_from_union: deletes_from_union.clone(),
-            edit: Undo { delta: SetDelta::new(), deletes_bitxor: deletes_from_union.clone() },
+            edit: Undo { toggled_groups: BTreeSet::new(), deletes_bitxor: deletes_from_union.clone() },
         };
         Engine {
             rev_id_counter: 1,
@@ -124,10 +79,6 @@ impl Engine {
             undone_groups: BTreeSet::new(),
             revs: vec![rev],
         }
-    }
-
-    fn get_current_undo(&self) -> &BTreeSet<usize> {
-        &self.undone_groups
     }
 
     fn find_rev(&self, rev_id: usize) -> Option<usize> {
@@ -152,9 +103,9 @@ impl Engine {
                     let un_deleted = deletes_from_union.subtract(deleted);
                     Cow::Owned(un_deleted.transform_shrink(inserts))
                 }
-                Undo { ref delta, ref deletes_bitxor } => {
-                    let undone_mut = undone_groups.to_mut();
-                    delta.invert(undone_mut);
+                Undo { ref toggled_groups, ref deletes_bitxor } => {
+                    let new_undone = undone_groups.symmetric_difference(toggled_groups).cloned().collect();
+                    undone_groups = Cow::Owned(new_undone);
                     Cow::Owned(deletes_from_union.bitxor(deletes_bitxor))
                 }
             }
@@ -260,7 +211,7 @@ impl Engine {
         let rebased_deletes_from_union = cur_deletes_from_union.transform_expand(&new_inserts);
 
         // is the new edit in an undo group that was already undone due to concurrency?
-        let undone = self.get_current_undo().contains(&undo_group);
+        let undone = self.undone_groups.contains(&undo_group);
         let new_deletes_from_union = {
             let to_delete = if undone { &new_inserts } else { &new_deletes };
             rebased_deletes_from_union.union(to_delete)
@@ -350,16 +301,16 @@ impl Engine {
             }
         }
 
-        let delta = SetDelta::compute(&self.undone_groups, &groups);
+        let toggled_groups = self.undone_groups.symmetric_difference(&groups).cloned().collect();
         let deletes_bitxor = self.deletes_from_union.bitxor(&deletes_from_union);
         (Revision {
             rev_id: self.rev_id_counter,
             deletes_from_union: deletes_from_union.clone(),
-            edit: Undo { delta, deletes_bitxor }
+            edit: Undo { toggled_groups, deletes_bitxor }
         }, deletes_from_union)
     }
 
-    // TODO: maybe refactor this API to take a SetDelta<usize>
+    // TODO: maybe refactor this API to take a toggle set
     pub fn undo(&mut self, groups: BTreeSet<usize>) {
         let (new_rev, new_deletes_from_union) = self.compute_undo(&groups);
 
@@ -397,11 +348,10 @@ impl Engine {
             retain_revs.insert(last.rev_id);
         }
         {
-            let cur_undo = self.get_current_undo();
             for rev in &self.revs {
                 if let Edit { ref undo_group, ref inserts, ref deletes, .. } = rev.edit {
                     if !retain_revs.contains(&rev.rev_id) && gc_groups.contains(undo_group) {
-                        if cur_undo.contains(undo_group) {
+                        if self.undone_groups.contains(undo_group) {
                             if !inserts.is_empty() {
                                 gc_dels = gc_dels.transform_union(inserts);
                             }
@@ -457,7 +407,7 @@ impl Engine {
                         gc_dels = new_gc_dels;
                     }
                 }
-                Undo { delta, deletes_bitxor } => {
+                Undo { toggled_groups, deletes_bitxor } => {
                     // We're super-aggressive about dropping these; after gc, the history
                     // of which undos were used to compute deletes_from_union in edits may be lost.
                     if retain_revs.contains(&rev.rev_id) {
@@ -471,7 +421,7 @@ impl Engine {
                             rev_id: rev.rev_id,
                             deletes_from_union: deletes_from_union,
                             edit: Undo {
-                                delta: delta.without(&gc_groups),
+                                toggled_groups: &toggled_groups - &gc_groups,
                                 deletes_bitxor: new_deletes_bitxor,
                             }
                         })
