@@ -39,7 +39,9 @@ pub struct Engine {
 #[derive(Debug)]
 struct Revision {
     rev_id: usize,
-    deletes_from_union: Subset,
+    /// Deprecated. Will be removed soon in favour of
+    /// Engine::deletes_from_union and Engine::deletes_from_union_for_index
+    deletes_from_union_old: Subset,
     edit: Contents,
 }
 
@@ -68,7 +70,7 @@ impl Engine {
         let deletes_from_union = Subset::new(initial_contents.len());
         let rev = Revision {
             rev_id: 0,
-            deletes_from_union: deletes_from_union.clone(),
+            deletes_from_union_old: deletes_from_union.clone(),
             edit: Undo { toggled_groups: BTreeSet::new(), deletes_bitxor: deletes_from_union.clone() },
         };
         Engine {
@@ -90,8 +92,10 @@ impl Engine {
         None
     }
 
+    /// Find what the `deletes_from_union` field in Engine would have been at the time
+    /// of a certain `rev_index`. In other words, the deletes from the union string at that time.
     fn deletes_from_union_for_index(&self, rev_index: usize) -> Cow<Subset> {
-        let mut deletes_from_union = Cow::Borrowed(&self.revs.last().unwrap().deletes_from_union);
+        let mut deletes_from_union = Cow::Borrowed(&self.deletes_from_union);
         let mut undone_groups = Cow::Borrowed(&self.undone_groups);
 
         // invert the changes to deletes_from_union starting in the present and working backwards
@@ -123,7 +127,7 @@ impl Engine {
 
     /// Get the Subset to delete from the current union string in order to obtain a revision's content
     fn deletes_from_cur_union_for_index(&self, rev_index: usize) -> Cow<Subset> {
-        let mut deletes_from_union = Cow::Borrowed(&self.revs[rev_index].deletes_from_union);
+        let mut deletes_from_union = self.deletes_from_union_for_index(rev_index);
         for rev in &self.revs[rev_index + 1..] {
             if let Edit { ref inserts, .. } = rev.edit {
                 if !inserts.is_empty() {
@@ -153,14 +157,13 @@ impl Engine {
     /// if there is not at least one edit.
     pub fn delta_rev_head(&self, base_rev: usize) -> Delta<RopeInfo> {
         let ix = self.find_rev(base_rev).expect("base revision not found");
-        let rev = &self.revs[ix];
 
         // Delta::synthesize will add inserts for everything that is in
         // prev_from_union (old deletes) but not in
         // head_rev.deletes_from_union (new deletes). So we add all inserts
         // since base_rev to prev_from_union so that they will be inserted in
         // the Delta if they weren't also deleted.
-        let mut prev_from_union = Cow::Borrowed(&rev.deletes_from_union);
+        let mut prev_from_union = self.deletes_from_union_for_index(ix);
         for r in &self.revs[ix + 1..] {
             if let Edit { ref inserts, .. } = r.edit {
                 if !inserts.is_empty() {
@@ -223,7 +226,7 @@ impl Engine {
 
         (Revision {
             rev_id: self.rev_id_counter,
-            deletes_from_union: new_deletes_from_union.clone(),
+            deletes_from_union_old: new_deletes_from_union.clone(),
             edit: Edit {
                 priority: new_priority,
                 undo_group: undo_group,
@@ -273,8 +276,7 @@ impl Engine {
         // it will be immediately transform_expanded by inserts if it is an Edit, so length must be before
         let len = match first_rev.edit {
             Edit { ref inserts, .. } => inserts.count(CountMatcher::Zero),
-            // TODO: replace this with count of flipped_deletes in Undo case
-            Undo { .. } => first_rev.deletes_from_union.count(CountMatcher::All),
+            Undo { ref deletes_bitxor, .. } => deletes_bitxor.count(CountMatcher::All),
         };
         Subset::new(len)
     }
@@ -305,7 +307,7 @@ impl Engine {
         let deletes_bitxor = self.deletes_from_union.bitxor(&deletes_from_union);
         (Revision {
             rev_id: self.rev_id_counter,
-            deletes_from_union: deletes_from_union.clone(),
+            deletes_from_union_old: deletes_from_union.clone(),
             edit: Undo { toggled_groups, deletes_bitxor }
         }, deletes_from_union)
     }
@@ -370,8 +372,7 @@ impl Engine {
             }
         }
         if !gc_dels.is_empty() {
-            let head_rev = &self.revs.last().unwrap();
-            let not_in_tombstones = head_rev.deletes_from_union.complement();
+            let not_in_tombstones = self.deletes_from_union.complement();
             let dels_from_tombstones = gc_dels.transform_shrink(&not_in_tombstones);
             self.tombstones = dels_from_tombstones.delete_from(&self.tombstones);
         }
@@ -386,15 +387,15 @@ impl Engine {
                     };
                     if retain_revs.contains(&rev.rev_id) || !gc_groups.contains(&undo_group) {
                         let (inserts, deletes, deletes_from_union) = if gc_dels.is_empty() {
-                            (inserts, deletes, rev.deletes_from_union)
+                            (inserts, deletes, rev.deletes_from_union_old)
                         } else {
                             (inserts.transform_shrink(&gc_dels),
                                 deletes.transform_shrink(&gc_dels),
-                                rev.deletes_from_union.transform_shrink(&gc_dels))
+                                rev.deletes_from_union_old.transform_shrink(&gc_dels))
                         };
                         self.revs.push(Revision {
                             rev_id: rev.rev_id,
-                            deletes_from_union: deletes_from_union,
+                            deletes_from_union_old: deletes_from_union,
                             edit: Edit {
                                 priority: priority,
                                 undo_group: undo_group,
@@ -412,14 +413,14 @@ impl Engine {
                     // of which undos were used to compute deletes_from_union in edits may be lost.
                     if retain_revs.contains(&rev.rev_id) {
                         let (deletes_from_union, new_deletes_bitxor) = if gc_dels.is_empty() {
-                            (rev.deletes_from_union, deletes_bitxor)
+                            (rev.deletes_from_union_old, deletes_bitxor)
                         } else {
-                            (rev.deletes_from_union.transform_shrink(&gc_dels),
+                            (rev.deletes_from_union_old.transform_shrink(&gc_dels),
                                 deletes_bitxor.transform_shrink(&gc_dels))
                         };
                         self.revs.push(Revision {
                             rev_id: rev.rev_id,
-                            deletes_from_union: deletes_from_union,
+                            deletes_from_union_old: deletes_from_union,
                             edit: Undo {
                                 toggled_groups: &toggled_groups - &gc_groups,
                                 deletes_bitxor: new_deletes_bitxor,
@@ -430,7 +431,7 @@ impl Engine {
             }
         }
         self.revs.reverse();
-        self.deletes_from_union = self.revs.last().unwrap().deletes_from_union.clone();
+        self.deletes_from_union = self.revs.last().unwrap().deletes_from_union_old.clone();
     }
 }
 
