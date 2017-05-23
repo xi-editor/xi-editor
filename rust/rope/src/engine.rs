@@ -39,6 +39,9 @@ pub struct Engine {
 #[derive(Debug)]
 struct Revision {
     rev_id: usize,
+    /// The largest undo group number of any edit in the history up to this
+    /// point. Used to optimize undo to not look further back.
+    max_undo_so_far: usize,
     edit: Contents,
 }
 
@@ -68,6 +71,7 @@ impl Engine {
         let rev = Revision {
             rev_id: 0,
             edit: Undo { toggled_groups: BTreeSet::new(), deletes_bitxor: deletes_from_union.clone() },
+            max_undo_so_far: 0,
         };
         Engine {
             rev_id_counter: 1,
@@ -220,8 +224,10 @@ impl Engine {
         let (new_text, new_tombstones) = Engine::shuffle(&text_with_inserts, &self.tombstones,
             &rebased_deletes_from_union, &new_deletes_from_union);
 
+        let head_rev = &self.revs.last().unwrap();
         (Revision {
             rev_id: self.rev_id_counter,
+            max_undo_so_far: std::cmp::max(undo_group, head_rev.max_undo_so_far),
             edit: Edit {
                 priority: new_priority,
                 undo_group: undo_group,
@@ -300,8 +306,10 @@ impl Engine {
 
         let toggled_groups = self.undone_groups.symmetric_difference(&groups).cloned().collect();
         let deletes_bitxor = self.deletes_from_union.bitxor(&deletes_from_union);
+        let max_undo_so_far = self.revs.last().unwrap().max_undo_so_far;
         (Revision {
             rev_id: self.rev_id_counter,
+            max_undo_so_far,
             edit: Undo { toggled_groups, deletes_bitxor }
         }, deletes_from_union)
     }
@@ -389,6 +397,7 @@ impl Engine {
                         };
                         self.revs.push(Revision {
                             rev_id: rev.rev_id,
+                            max_undo_so_far: rev.max_undo_so_far,
                             edit: Edit {
                                 priority: priority,
                                 undo_group: undo_group,
@@ -412,6 +421,7 @@ impl Engine {
                         };
                         self.revs.push(Revision {
                             rev_id: rev.rev_id,
+                            max_undo_so_far: rev.max_undo_so_far,
                             edit: Undo {
                                 toggled_groups: &toggled_groups - &gc_groups,
                                 deletes_bitxor: new_deletes_bitxor,
