@@ -24,12 +24,12 @@ use serde_json::Value;
 use xi_rope::rope::{LinesMetric, Rope, RopeInfo};
 use xi_rope::interval::Interval;
 use xi_rope::delta::{self, Delta, Transformer};
-use xi_rope::tree::Cursor;
 use xi_rope::engine::Engine;
 use xi_rope::spans::{Spans, SpansBuilder};
 use view::{Style, View};
 use word_boundaries::WordCursor;
-use movement::Movement;
+use movement::{Movement, region_movement};
+use selection::{Affinity, Selection, SelRegion};
 
 use tabs::{ViewIdentifier, DocumentCtx};
 use rpc::{EditCommand, GestureType};
@@ -241,12 +241,12 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.view.set_old_sel_dirty();
     }
 
-    /// Applies a simple edit to the text, and updates undo state.
-    ///
-    /// See `add_delta` for more details.
-    fn add_simple_edit(&mut self, iv: Interval, new: Rope) {
-        let delta = Delta::simple_edit(iv, new, self.text.len());
-        self.add_delta(delta);
+    /// Sets the selection to a single region, and scrolls the end of that
+    /// region into view.
+    fn set_sel_single_region(&mut self, region: SelRegion) {
+        let mut sel = Selection::new();
+        sel.add_region(region);
+        self.scroll_to = self.view.set_selection(&self.text, sel);
     }
 
     /// Applies a delta to the text, and updates undo state.
@@ -305,16 +305,19 @@ impl<W: Write + Send + 'static> Editor<W> {
         let text = Rope::from(&edit.text);
         let rev_len = self.engine.get_rev(edit.rev as usize).unwrap().len();
         let delta = Delta::simple_edit(interval, text, rev_len);
-        let prev_head_rev_id = self.engine.get_head_rev_id();
-        //self.engine.edit_rev(0x100000, undo_group, edit.rev as usize, delta);
+        //let prev_head_rev_id = self.engine.get_head_rev_id();
         self.engine.edit_rev(edit.priority as usize, undo_group, edit.rev as usize, delta);
         self.text = self.engine.get_head().clone();
 
+        // TODO: actually implement priority, which makes the need for the following
+        // logic go away.
+        /*
         // adjust cursor position so that the cursor is not moved by the plugin edit
         let (changed_interval, _) = self.engine.delta_rev_head(prev_head_rev_id).summary();
         if edit.after_cursor && (changed_interval.start() as usize) == self.view.sel_end {
             self.new_cursor = Some((self.view.sel_start, self.view.sel_end));
         }
+        */
 
         self.commit_delta(Some(&edit.author));
         self.render();
@@ -386,31 +389,16 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     fn delete_forward(&mut self) {
-        if self.view.sel_start == self.view.sel_end {
-            let offset =
-                if let Some(pos) = self.text.next_grapheme_offset(self.view.sel_end) {
-                    pos
-                } else {
-                    return;
-                };
-
-            self.set_cursor(offset, true);
-        }
-
-        self.delete();
-    }
-
-    fn delete_backward(&mut self) {
-        self.delete();
+        self.delete_by_movement(Movement::Right, false);
     }
 
     fn delete_to_beginning_of_line(&mut self) {
-        self.move_to_left_end_of_line(FLAG_SELECT);
-
-        self.delete();
+        self.delete_by_movement(Movement::LeftOfLine, false);
     }
 
-    fn delete(&mut self) {
+    fn delete_backward(&mut self) {
+        // TODO: this function is workable but probably overall code complexity
+        // could be improved by implementing a "backspace" movement instead.
         let mut builder = delta::Builder::new(self.text.len());
         for region in self.view.sel_regions() {
             let start = if !region.is_caret() {
@@ -431,18 +419,90 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
     }
 
+    /// Common logic for a number of delete methods. For each region in the selection,
+    /// if the selection is a caret, delete the region between the caret and the
+    /// movement applied to the caret, otherwise delete the region.
+    ///
+    /// If `save` is set, save the deleted text into the kill ring.
+    fn delete_by_movement(&mut self, movement: Movement, save: bool) {
+        // We compute deletions as a selection because the merge logic is convenient.
+        // Another possibility would be to make the delta builder be able to handle
+        // overlapping deletions (using union semantics).
+        let mut deletions = Selection::new();
+        for r in self.view.sel_regions() {
+            if r.is_caret() {
+                let (offset, horiz) = region_movement(movement, r, &self.view, &self.text, true);
+                let new_region = SelRegion {
+                    start: r.start,
+                    end: offset,
+                    horiz: horiz,
+                    affinity: Affinity::default(),
+                };
+                deletions.add_region(new_region);
+            } else {
+                deletions.add_region(r.clone());
+            }
+        }
+        if save {
+            let saved = self.extract_sel_regions(&deletions).unwrap_or(String::new());
+            self.doc_ctx.set_kill_ring(Rope::from(saved));
+        }
+        self.delete_sel_regions(&deletions);
+    }
+
+    /// Deletes the given regions.
+    fn delete_sel_regions(&mut self, sel_regions: &[SelRegion]) {
+        let mut builder = delta::Builder::new(self.text.len());
+        for region in sel_regions {
+            let iv = Interval::new_closed_open(region.min(), region.max());
+            if !iv.is_empty() {
+                builder.delete(iv);
+            }
+        }
+        if !builder.is_empty() {
+            self.this_edit_type = EditType::Delete;
+            self.add_delta(builder.build());
+        }
+    }
+
+    /// Extracts non-caret selection regions into a string, joining multiple regions
+    /// with newlines.
+    fn extract_sel_regions(&self, sel_regions: &[SelRegion]) -> Option<String> {
+        let mut saved = None;
+        for region in sel_regions {
+            if !region.is_caret() {
+                let val = self.text.slice_to_string(region.min(), region.max());
+                match saved {
+                    None => saved = Some(val),
+                    Some(ref mut s) => {
+                        s.push('\n');
+                        s.push_str(&val);
+                    }
+                }
+            }
+        }
+        saved
+    }
+
     fn insert_newline(&mut self) {
         self.this_edit_type = EditType::InsertChars;
         self.insert("\n");
     }
 
     fn insert_tab(&mut self) {
-        self.this_edit_type = EditType::InsertChars;
-        if self.view.sel_start == self.view.sel_end {
-            let (_, col) = self.view.offset_to_line_col(&self.text, self.view.sel_end);
+        let mut builder = delta::Builder::new(self.text.len());
+        for region in self.view.sel_regions() {
+            let iv = Interval::new_closed_open(region.min(), region.max());
+            let (_, col) = self.view.offset_to_line_col(&self.text, region.start);
             let n = TAB_SIZE - (col % TAB_SIZE);
-            self.insert(n_spaces(n));
-        } else {
+            builder.replace(iv, Rope::from(n_spaces(n)));
+        }
+        self.this_edit_type = EditType::InsertChars;
+        self.add_delta(builder.build());
+
+        // What follows is old indent code, retained because it will be useful for
+        // indent action (Sublime no longer does indent on non-caret selections).
+        /*
             let (first_line, _) = self.view.offset_to_line_col(&self.text, self.view.sel_min());
             let (last_line, last_col) =
                 self.view.offset_to_line_col(&self.text, self.view.sel_max());
@@ -456,7 +516,7 @@ impl<W: Write + Send + 'static> Editor<W> {
                 let iv = Interval::new_closed_open(offset, offset);
                 self.add_simple_edit(iv, Rope::from(n_spaces(TAB_SIZE)));
             }
-        }
+        */
     }
 
     fn modify_selection(&mut self) {
@@ -513,26 +573,6 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.do_move(Movement::EndOfParagraph, flags);
     }
 
-    fn end_of_paragraph_offset(&mut self) -> usize {
-        let current = self.view.sel_max();
-        let rope = self.text.clone();
-        let mut cursor = Cursor::new(&rope, current);
-        match cursor.next::<LinesMetric>() {
-            None => current,
-            Some(offset) => {
-                if cursor.is_boundary::<LinesMetric>() {
-                    if let Some(new) = rope.prev_grapheme_offset(offset) {
-                        new
-                    } else {
-                        offset
-                    }
-                } else {
-                    offset
-                }
-            }
-        }
-    }
-
     fn move_to_beginning_of_document(&mut self, flags: u64) {
         self.do_move(Movement::StartOfDocument, flags);
     }
@@ -550,9 +590,7 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     fn select_all(&mut self) {
-        self.view.sel_start = 0;
-        self.view.sel_end = self.text.len();
-        self.view.set_old_sel_dirty();
+        self.view.select_all(self.text.len());
     }
 
     fn do_key(&mut self, chars: &str, flags: u64) {
@@ -641,24 +679,51 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     fn do_click(&mut self, line: u64, col: u64, flags: u64, click_count: u64) {
+        // TODO: calculate affinity
         let offset = self.view.line_col_to_offset(&self.text, line as usize, col as usize);
         if (flags & FLAG_SELECT) != 0 {
-            self.modify_selection();
+            if !self.view.is_point_in_selection(offset) {
+                let sel = {
+                    let (last, rest) = self.view.sel_regions().split_last().unwrap();
+                    let mut sel = Selection::new();
+                    for region in rest {
+                        sel.add_region(region.clone());
+                    }
+                    // TODO: small nit, merged region should be backward if end < start.
+                    // This could be done by explicitly overriding, or by tweaking the
+                    // merge logic.
+                    sel.add_region(SelRegion {
+                        start: last.start,
+                        end: offset,
+                        horiz: None,
+                        affinity: Affinity::default(),
+                    });
+                    sel
+                };
+                self.scroll_to = self.view.set_selection(&self.text, sel);
+                return;
+            }
         } else if click_count == 2 {
             let (start, end) = {
                 let mut word_cursor = WordCursor::new(&self.text, offset);
                 word_cursor.select_word()
             };
-            self.view.sel_start = start;
-            self.modify_selection();
-            self.set_cursor(end, false);
+            self.set_sel_single_region(SelRegion{
+                start: start,
+                end: end,
+                horiz: None,
+                affinity: Affinity::default(),
+            });
             return;
         } else if click_count == 3 {
             let start = self.view.line_col_to_offset(&self.text, line as usize, 0);
             let end = self.view.line_col_to_offset(&self.text, line as usize + 1, 0);
-            self.view.sel_start = start;
-            self.modify_selection();
-            self.set_cursor(end, false);
+            self.set_sel_single_region(SelRegion{
+                start: start,
+                end: end,
+                horiz: None,
+                affinity: Affinity::default(),
+            });
             return;
         }
         self.set_cursor(offset, true);
@@ -693,20 +758,15 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     fn do_cut(&mut self) -> Value {
-        let min = self.view.sel_min();
-        if min != self.view.sel_max() {
-            let val = self.text.slice_to_string(min, self.view.sel_max());
-            let del_interval = Interval::new_closed_open(min, self.view.sel_max());
-            self.add_simple_edit(del_interval, Rope::from(""));
-            Value::String(val)
-        } else {
-            Value::Null
-        }
+        let result = self.do_copy();
+        // This copy is just to make the borrow checker happy, could be optimized.
+        let deletions = self.view.sel_regions().to_vec();
+        self.delete_sel_regions(&deletions);
+        result
     }
 
-    fn do_copy(&mut self) -> Value {
-        if self.view.sel_start != self.view.sel_end {
-            let val = self.text.slice_to_string(self.view.sel_min(), self.view.sel_max());
+    fn do_copy(&self) -> Value {
+        if let Some(val) = self.extract_sel_regions(self.view.sel_regions()) {
             Value::String(val)
         } else {
             Value::Null
@@ -732,44 +792,40 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     fn do_transpose(&mut self) {
-        let end_opt = self.text.next_grapheme_offset(self.view.sel_end);
-        let start_opt = self.text.prev_grapheme_offset(self.view.sel_end);
-
-        let end = end_opt.unwrap_or(self.view.sel_end);
-        let (start, middle) = if end_opt.is_none() && start_opt.is_some() {
-            // if at the very end, swap previous TWO characters (instead of ONE)
-            let middle = start_opt.unwrap();
-            let start = self.text.prev_grapheme_offset(middle).unwrap_or(middle);
-            (start, middle)
-        } else {
-            (start_opt.unwrap_or(self.view.sel_end), self.view.sel_end)
-        };
-
-        let interval = Interval::new_closed_open(start, end);
-        let swapped = self.text.slice_to_string(middle, end) +
-                      &self.text.slice_to_string(start, middle);
-        self.add_simple_edit(interval, Rope::from(swapped));
+        let mut builder = delta::Builder::new(self.text.len());
+        let mut last = 0;
+        for region in self.view.sel_regions() {
+            if region.is_caret() {
+                let middle = region.end;
+                let start = self.text.prev_grapheme_offset(middle).unwrap_or(0);
+                // Note: this matches Sublime's behavior. Cocoa would swap last
+                // two characters of line if at end of line.
+                if let Some(end) = self.text.next_grapheme_offset(middle) {
+                    if start >= last {
+                        let interval = Interval::new_closed_open(start, end);
+                        let swapped = self.text.slice_to_string(middle, end) +
+                                      &self.text.slice_to_string(start, middle);
+                        builder.replace(interval, Rope::from(swapped));
+                        last = end;
+                    }
+                }
+            }
+            // TODO: handle else case by rotating non-caret regions.
+        }
+        if !builder.is_empty() {
+            self.this_edit_type = EditType::Other;
+            self.add_delta(builder.build());
+        }
     }
 
     fn delete_to_end_of_paragraph(&mut self) {
-        let current = self.view.sel_max();
-        let offset = self.end_of_paragraph_offset();
-        let mut val = String::from("");
-
-        if current != offset {
-            val = self.text.slice_to_string(current, offset);
-            let del_interval = Interval::new_closed_open(current, offset);
-            self.add_simple_edit(del_interval, Rope::from(""));
-        } else if let Some(grapheme_offset) = self.text.next_grapheme_offset(self.view.sel_end) {
-            val = self.text.slice_to_string(current, grapheme_offset);
-            let del_interval = Interval::new_closed_open(current, grapheme_offset);
-            self.add_simple_edit(del_interval, Rope::from(""));
-        }
-
-        self.doc_ctx.set_kill_ring(Rope::from(val));
+        self.delete_by_movement(Movement::EndOfParagraphKill, true);
     }
 
     fn yank(&mut self) {
+        // TODO: if there are multiple cursors and the number of newlines
+        // is one less than the number of cursors, split and distribute one
+        // line per cursor.
         let kill_ring_string = self.doc_ctx.get_kill_ring();
         self.insert(&*String::from(kill_ring_string));
     }

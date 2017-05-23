@@ -49,6 +49,8 @@ pub enum Movement {
     StartOfParagraph,
     /// Move to the end of the text line.
     EndOfParagraph,
+    /// Move to the end of the text line, or next line if already at end.
+    EndOfParagraphKill,
     /// Move to the start of the document.
     StartOfDocument,
     /// Move to the end of the document
@@ -105,7 +107,7 @@ fn scroll_height(view: &View) -> isize {
 }
 
 /// Compute the result of movement on one selection region.
-fn region_movement(m: Movement, r: &SelRegion, view: &View, text: &Rope, modify: bool)
+pub fn region_movement(m: Movement, r: &SelRegion, view: &View, text: &Rope, modify: bool)
     -> (usize, Option<HorizPos>)
 {
     match m {
@@ -178,6 +180,22 @@ fn region_movement(m: Movement, r: &SelRegion, view: &View, text: &Rope, modify:
                     }
                 } else if cursor.pos() == text.len() {
                     offset = text.len();
+                }
+            }
+            (offset, None)
+        }
+        Movement::EndOfParagraphKill => {
+            // Note: TextEdit would start at modify ? r.end : r.max()
+            let mut offset = r.end;
+            let mut cursor = Cursor::new(&text, offset);
+            if let Some(next_para_offset) = cursor.next::<LinesMetric>() {
+                offset = next_para_offset;
+                if cursor.is_boundary::<LinesMetric>() {
+                    if let Some(eol) = text.prev_grapheme_offset(next_para_offset) {
+                        if eol != r.end {
+                            offset = eol;
+                        }
+                    }
                 }
             }
             (offset, None)
