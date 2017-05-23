@@ -39,9 +39,6 @@ pub struct Engine {
 #[derive(Debug)]
 struct Revision {
     rev_id: usize,
-    /// Deprecated. Will be removed soon in favour of
-    /// Engine::deletes_from_union and Engine::deletes_from_union_for_index
-    deletes_from_union_old: Subset,
     edit: Contents,
 }
 
@@ -70,7 +67,6 @@ impl Engine {
         let deletes_from_union = Subset::new(initial_contents.len());
         let rev = Revision {
             rev_id: 0,
-            deletes_from_union_old: deletes_from_union.clone(),
             edit: Undo { toggled_groups: BTreeSet::new(), deletes_bitxor: deletes_from_union.clone() },
         };
         Engine {
@@ -226,7 +222,6 @@ impl Engine {
 
         (Revision {
             rev_id: self.rev_id_counter,
-            deletes_from_union_old: new_deletes_from_union.clone(),
             edit: Edit {
                 priority: new_priority,
                 undo_group: undo_group,
@@ -307,7 +302,6 @@ impl Engine {
         let deletes_bitxor = self.deletes_from_union.bitxor(&deletes_from_union);
         (Revision {
             rev_id: self.rev_id_counter,
-            deletes_from_union_old: deletes_from_union.clone(),
             edit: Undo { toggled_groups, deletes_bitxor }
         }, deletes_from_union)
     }
@@ -375,6 +369,7 @@ impl Engine {
             let not_in_tombstones = self.deletes_from_union.complement();
             let dels_from_tombstones = gc_dels.transform_shrink(&not_in_tombstones);
             self.tombstones = dels_from_tombstones.delete_from(&self.tombstones);
+            self.deletes_from_union = self.deletes_from_union.transform_shrink(&gc_dels);
         }
         let old_revs = std::mem::replace(&mut self.revs, Vec::new());
         for rev in old_revs.into_iter().rev() {
@@ -386,16 +381,14 @@ impl Engine {
                         Some(gc_dels.transform_shrink(&inserts))
                     };
                     if retain_revs.contains(&rev.rev_id) || !gc_groups.contains(&undo_group) {
-                        let (inserts, deletes, deletes_from_union) = if gc_dels.is_empty() {
-                            (inserts, deletes, rev.deletes_from_union_old)
+                        let (inserts, deletes) = if gc_dels.is_empty() {
+                            (inserts, deletes)
                         } else {
                             (inserts.transform_shrink(&gc_dels),
-                                deletes.transform_shrink(&gc_dels),
-                                rev.deletes_from_union_old.transform_shrink(&gc_dels))
+                                deletes.transform_shrink(&gc_dels))
                         };
                         self.revs.push(Revision {
                             rev_id: rev.rev_id,
-                            deletes_from_union_old: deletes_from_union,
                             edit: Edit {
                                 priority: priority,
                                 undo_group: undo_group,
@@ -412,15 +405,13 @@ impl Engine {
                     // We're super-aggressive about dropping these; after gc, the history
                     // of which undos were used to compute deletes_from_union in edits may be lost.
                     if retain_revs.contains(&rev.rev_id) {
-                        let (deletes_from_union, new_deletes_bitxor) = if gc_dels.is_empty() {
-                            (rev.deletes_from_union_old, deletes_bitxor)
+                        let new_deletes_bitxor = if gc_dels.is_empty() {
+                            deletes_bitxor
                         } else {
-                            (rev.deletes_from_union_old.transform_shrink(&gc_dels),
-                                deletes_bitxor.transform_shrink(&gc_dels))
+                            deletes_bitxor.transform_shrink(&gc_dels)
                         };
                         self.revs.push(Revision {
                             rev_id: rev.rev_id,
-                            deletes_from_union_old: deletes_from_union,
                             edit: Undo {
                                 toggled_groups: &toggled_groups - &gc_groups,
                                 deletes_bitxor: new_deletes_bitxor,
@@ -431,7 +422,6 @@ impl Engine {
             }
         }
         self.revs.reverse();
-        self.deletes_from_union = self.revs.last().unwrap().deletes_from_union_old.clone();
     }
 }
 
