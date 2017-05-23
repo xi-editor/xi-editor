@@ -31,6 +31,7 @@ pub struct Engine {
     text: Rope,
     tombstones: Rope,
     deletes_from_union: Subset,
+    undone_groups: BTreeSet<usize>,  // set of undo_group id's
     revs: Vec<Revision>,
 }
 
@@ -52,7 +53,52 @@ enum Contents {
         deletes: Subset,
     },
     Undo {
-        groups: BTreeSet<usize>,  // set of undo_group id's
+        delta: SetDelta<usize>,  // set of undo_group id's
+    }
+}
+
+#[derive(Debug)]
+struct SetDelta<T> {
+    pub ins: BTreeSet<T>,
+    pub del: BTreeSet<T>,
+}
+
+impl<T: Clone + Ord> SetDelta<T> {
+    fn new() -> SetDelta<T> {
+        SetDelta { ins: BTreeSet::new(), del: BTreeSet::new() }
+    }
+
+    fn compute(from: &BTreeSet<T>, to: &BTreeSet<T>) -> SetDelta<T> {
+        SetDelta {
+            ins: to.difference(from).cloned().collect(),
+            del: from.difference(to).cloned().collect(),
+        }
+    }
+
+    fn apply(&self, set: &mut BTreeSet<T>) {
+        for to_add in self.ins.iter().cloned() {
+            assert!(set.insert(to_add), "element to add was already in set, so delta isn't reversible");
+        }
+        for to_remove in self.del.iter() {
+            assert!(set.remove(to_remove), "element to delete was not in set");
+        }
+    }
+
+    fn invert(&self, set: &mut BTreeSet<T>) {
+        for to_add in self.del.iter().cloned() {
+            assert!(set.insert(to_add), "element to un-delete was already in set");
+        }
+        for to_remove in self.ins.iter() {
+            assert!(set.remove(to_remove), "element to un-insert was not in set");
+        }
+    }
+
+    /// used to remove references to garbage collected groups
+    fn without(&self, remove: &BTreeSet<T>) -> SetDelta<T> {
+        SetDelta {
+            ins: &self.ins - remove,
+            del: &self.del - remove,
+        }
     }
 }
 
@@ -62,24 +108,20 @@ impl Engine {
         let rev = Revision {
             rev_id: 0,
             deletes_from_union: deletes_from_union.clone(),
-            edit: Undo { groups: BTreeSet::default() },
+            edit: Undo { delta: SetDelta::new() },
         };
         Engine {
             rev_id_counter: 1,
             text: initial_contents,
             tombstones: Rope::default(),
             deletes_from_union,
+            undone_groups: BTreeSet::new(),
             revs: vec![rev],
         }
     }
 
-    fn get_current_undo(&self) -> Option<&BTreeSet<usize>> {
-        for rev in self.revs.iter().rev() {
-            if let Undo { ref groups } = rev.edit {
-                return Some(groups);
-            }
-        }
-        None
+    fn get_current_undo(&self) -> &BTreeSet<usize> {
+        &self.undone_groups
     }
 
     fn find_rev(&self, rev_id: usize) -> Option<usize> {
@@ -205,7 +247,7 @@ impl Engine {
         let rebased_deletes_from_union = cur_deletes_from_union.transform_expand(&new_inserts);
 
         // is the new edit in an undo group that was already undone due to concurrency?
-        let undone = self.get_current_undo().map_or(false, |undos| undos.contains(&undo_group));
+        let undone = self.get_current_undo().contains(&undo_group);
         let new_deletes_from_union = {
             let to_delete = if undone { &new_inserts } else { &new_deletes };
             rebased_deletes_from_union.union(to_delete)
@@ -276,7 +318,7 @@ impl Engine {
     // This computes undo all the way from the beginning. An optimization would be to not
     // recompute the prefix up to where the history diverges, but it's not clear that's
     // even worth the code complexity.
-    fn compute_undo(&self, groups: BTreeSet<usize>) -> (Revision, Subset) {
+    fn compute_undo(&self, groups: &BTreeSet<usize>) -> (Revision, Subset) {
         let mut deletes_from_union = self.empty_subset_before_first_rev();
         for rev in &self.revs {
             if let Edit { ref undo_group, ref inserts, ref deletes, .. } = rev.edit {
@@ -294,17 +336,18 @@ impl Engine {
                 }
             }
         }
+
+        let delta = SetDelta::compute(&self.undone_groups, &groups);
         (Revision {
             rev_id: self.rev_id_counter,
             deletes_from_union: deletes_from_union.clone(),
-            edit: Undo {
-                groups: groups
-            }
+            edit: Undo { delta }
         }, deletes_from_union)
     }
 
+    // TODO: maybe refactor this API to take a SetDelta<usize>
     pub fn undo(&mut self, groups: BTreeSet<usize>) {
-        let (new_rev, new_deletes_from_union) = self.compute_undo(groups);
+        let (new_rev, new_deletes_from_union) = self.compute_undo(&groups);
 
         let (new_text, new_tombstones) =
             Engine::shuffle(&self.text, &self.tombstones, &self.deletes_from_union, &new_deletes_from_union);
@@ -312,6 +355,7 @@ impl Engine {
         self.text = new_text;
         self.tombstones = new_tombstones;
         self.deletes_from_union = new_deletes_from_union;
+        self.undone_groups = groups;
         self.revs.push(new_rev);
         self.rev_id_counter += 1;
     }
@@ -343,7 +387,7 @@ impl Engine {
             for rev in &self.revs {
                 if let Edit { ref undo_group, ref inserts, ref deletes, .. } = rev.edit {
                     if !retain_revs.contains(&rev.rev_id) && gc_groups.contains(undo_group) {
-                        if cur_undo.map_or(false, |undos| undos.contains(undo_group)) {
+                        if cur_undo.contains(undo_group) {
                             if !inserts.is_empty() {
                                 gc_dels = gc_dels.transform_union(inserts);
                             }
@@ -399,7 +443,7 @@ impl Engine {
                         gc_dels = new_gc_dels;
                     }
                 }
-                Undo { groups } => {
+                Undo { delta } => {
                     // We're super-aggressive about dropping these; after gc, the history
                     // of which undos were used to compute deletes_from_union in edits may be lost.
                     if retain_revs.contains(&rev.rev_id) {
@@ -412,7 +456,7 @@ impl Engine {
                             rev_id: rev.rev_id,
                             deletes_from_union: deletes_from_union,
                             edit: Undo {
-                                groups: &groups - gc_groups,
+                                delta: delta.without(&gc_groups),
                             }
                         })
                     }
