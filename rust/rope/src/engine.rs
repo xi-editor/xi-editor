@@ -117,16 +117,6 @@ impl Engine {
         deletes_from_union
     }
 
-    /// Test that the result of the new method of finding deletes_from_union for a revision
-    /// produces the same result as the stored version.
-    pub fn check_integrity(&self) {
-        for (i,rev) in self.revs.iter().enumerate() {
-            let new_dels = self.deletes_from_union_for_index(i);
-            let new_dels_ref: &Subset = &new_dels;
-            assert_eq!(&rev.deletes_from_union_old, new_dels_ref);
-        }
-    }
-
     /// Get the contents of the document at a given revision number
     fn rev_content_for_index(&self, rev_index: usize) -> Rope {
         let old_deletes_from_union = self.deletes_from_cur_union_for_index(rev_index);
@@ -479,7 +469,6 @@ mod tests {
         let mut engine = Engine::new(Rope::from(TEST_STR));
         engine.edit_rev(0, 0, 0, build_delta_1());
         assert_eq!("0123456789abcDEEFghijklmnopqr999stuvz", String::from(engine.get_head()));
-        engine.check_integrity();
     }
 
     #[test]
@@ -488,7 +477,6 @@ mod tests {
         engine.edit_rev(1, 0, 0, build_delta_1());
         engine.edit_rev(0, 1, 0, build_delta_2());
         assert_eq!("0!3456789abcDEEFGIjklmnopqr888999stuvHIz", String::from(engine.get_head()));
-        engine.check_integrity();
     }
 
     fn undo_test(before: bool, undos : BTreeSet<usize>, output: &str) {
@@ -502,7 +490,6 @@ mod tests {
             engine.undo(undos);
         }
         assert_eq!(output, String::from(engine.get_head()));
-        engine.check_integrity();
     }
 
     #[test]
@@ -574,7 +561,6 @@ mod tests {
         engine.edit_rev(1, 2, new_head, d3);
         engine.undo([0,2].iter().cloned().collect());
         assert_eq!("a0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", String::from(engine.get_head()));
-        engine.check_integrity();
     }
 
     #[test]
@@ -589,7 +575,6 @@ mod tests {
         assert_eq!(TEST_STR, String::from(engine.get_head()));
         engine.undo([].iter().cloned().collect());
         assert_eq!("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", String::from(engine.get_head()));
-        engine.check_integrity();
     }
 
     #[test]
@@ -607,7 +592,6 @@ mod tests {
         engine.edit_rev(1, 2, new_head, d3);
         engine.undo([2].iter().cloned().collect());
         assert_eq!("a0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", String::from(engine.get_head()));
-        engine.check_integrity();
     }
 
     /// This case is a regression test reproducing a panic I found while using the UI.
@@ -653,7 +637,6 @@ mod tests {
         }
         soln.push('f');
         assert_eq!(soln, String::from(engine.get_head()));
-        engine.check_integrity();
     }
 
     #[test]
@@ -679,6 +662,5 @@ mod tests {
         // shouldn't do anything since it was double-deleted and one was GC'd
         engine.undo([0,1].iter().cloned().collect());
         assert_eq!("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", String::from(engine.get_head()));
-        engine.check_integrity();
     }
 }
