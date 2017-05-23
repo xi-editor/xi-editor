@@ -114,7 +114,7 @@ impl PluginState {
 const LINES_PER_RPC: usize = 50;
 
 impl caching_plugin::Handler for PluginState {
-    fn init_buf(&mut self, ctx: PluginCtx, _buf_size: usize) {
+    fn initialize(&mut self, ctx: PluginCtx, _buf_size: usize) {
         self.do_highlighting(ctx);
     }
 
