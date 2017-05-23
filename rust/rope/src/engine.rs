@@ -54,9 +54,14 @@ enum Contents {
     },
     Undo {
         delta: SetDelta<usize>,  // set of undo_group id's
+        /// Used to store a reversible difference between the old
+        /// and new deletes_from_union
+        deletes_bitxor: Subset,
     }
 }
 
+// TODO: maybe represent this as a single set that is the symmetric_difference.
+// Doing so loses the dynamic checking but would be more efficient.
 #[derive(Debug)]
 struct SetDelta<T> {
     pub ins: BTreeSet<T>,
@@ -108,7 +113,7 @@ impl Engine {
         let rev = Revision {
             rev_id: 0,
             deletes_from_union: deletes_from_union.clone(),
-            edit: Undo { delta: SetDelta::new() },
+            edit: Undo { delta: SetDelta::new(), deletes_bitxor: deletes_from_union.clone() },
         };
         Engine {
             rev_id_counter: 1,
@@ -338,10 +343,11 @@ impl Engine {
         }
 
         let delta = SetDelta::compute(&self.undone_groups, &groups);
+        let deletes_bitxor = self.deletes_from_union.bitxor(&deletes_from_union);
         (Revision {
             rev_id: self.rev_id_counter,
             deletes_from_union: deletes_from_union.clone(),
-            edit: Undo { delta }
+            edit: Undo { delta, deletes_bitxor }
         }, deletes_from_union)
     }
 
@@ -443,20 +449,22 @@ impl Engine {
                         gc_dels = new_gc_dels;
                     }
                 }
-                Undo { delta } => {
+                Undo { delta, deletes_bitxor } => {
                     // We're super-aggressive about dropping these; after gc, the history
                     // of which undos were used to compute deletes_from_union in edits may be lost.
                     if retain_revs.contains(&rev.rev_id) {
-                        let deletes_from_union = if gc_dels.is_empty() {
-                            rev.deletes_from_union
+                        let (deletes_from_union, new_deletes_bitxor) = if gc_dels.is_empty() {
+                            (rev.deletes_from_union, deletes_bitxor)
                         } else {
-                            rev.deletes_from_union.transform_shrink(&gc_dels)
+                            (rev.deletes_from_union.transform_shrink(&gc_dels),
+                                deletes_bitxor.transform_shrink(&gc_dels))
                         };
                         self.revs.push(Revision {
                             rev_id: rev.rev_id,
                             deletes_from_union: deletes_from_union,
                             edit: Undo {
                                 delta: delta.without(&gc_groups),
+                                deletes_bitxor: new_deletes_bitxor,
                             }
                         })
                     }

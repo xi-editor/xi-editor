@@ -185,7 +185,19 @@ impl Subset {
     pub fn subtract(&self, other: &Subset) -> Subset {
         let mut sb = SubsetBuilder::new();
         for zseg in self.zip(other) {
+            assert!(zseg.a_count >= zseg.b_count, "can't subtract {} from {}", zseg.a_count, zseg.b_count);
             sb.push_segment(zseg.len, zseg.a_count - zseg.b_count);
+        }
+        sb.build()
+    }
+
+    /// Compute the bitwise xor of two subsets, useful as a symmetric
+    /// difference. The count of an element in the result is the bitwise xor
+    /// of the counts of the inputs. Unchanged segments will be 0.
+    pub fn bitxor(&self, other: &Subset) -> Subset {
+        let mut sb = SubsetBuilder::new();
+        for zseg in self.zip(other) {
+            sb.push_segment(zseg.len, zseg.a_count ^ zseg.b_count);
         }
         sb.build()
     }
