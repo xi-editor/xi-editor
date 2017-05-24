@@ -293,6 +293,9 @@ impl View {
         first_line: usize, last_line: usize)
     {
         let dirty = self.dirty || self.sel_dirty;
+        if dirty {
+            self.valid_lines.clear();
+        }
         let height = self.offset_to_line_col(text, text.len()).0 + 1;
         let last_line = min(last_line, height);
         let mut ops = Vec::new();
@@ -418,7 +421,6 @@ impl View {
 
     // TODO: finer grained tracking
     pub fn set_dirty(&mut self) {
-        self.valid_lines.clear();
         self.dirty = true;
     }
 
