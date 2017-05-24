@@ -38,3 +38,9 @@ impl Delta<RopeInfo> {
         String::from(self.apply(&Rope::from(s)))
     }
 }
+
+impl PartialEq for Rope {
+    fn eq(&self, other: &Rope) -> bool {
+        String::from(self) == String::from(other)
+    }
+}

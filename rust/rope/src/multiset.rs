@@ -21,7 +21,7 @@ use tree::{Node, NodeInfo, TreeBuilder};
 use interval::Interval;
 use std::slice;
 
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 struct Segment {
     len: usize,
     count: usize,
@@ -33,7 +33,7 @@ struct Segment {
 /// included in the set.
 ///
 /// Internally, this is stored as a list of "segments" with a length and a count.
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 pub struct Subset {
     /// Invariant, maintained by `SubsetBuilder`: all `Segment`s have non-zero
     /// length, and no `Segment` has the same count as the one before it.

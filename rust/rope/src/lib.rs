@@ -16,6 +16,9 @@
 
 extern crate bytecount;
 extern crate memchr;
+extern crate serde;
+#[macro_use] extern crate serde_derive;
+#[cfg(test)] extern crate serde_test;
 
 pub mod tree;
 pub mod breaks;

@@ -20,12 +20,15 @@ use std::borrow::Cow;
 use std::str::FromStr;
 use std::string::ParseError;
 use std::fmt;
+use std::str;
 
 use tree::{Leaf, Node, NodeInfo, Metric, TreeBuilder, Cursor};
 use interval::Interval;
 
 use bytecount;
 use memchr::memchr;
+use serde::ser::{Serialize, Serializer};
+use serde::de::{Deserialize, Deserializer};
 
 const MIN_LEAF: usize = 511;
 const MAX_LEAF: usize = 1024;
@@ -225,6 +228,23 @@ impl FromStr for Rope {
         let mut b = TreeBuilder::new();
         b.push_str(s);
         Ok(b.build())
+    }
+}
+
+impl Serialize for Rope {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where S: Serializer
+    {
+        serializer.serialize_str(&String::from(self))
+    }
+}
+
+impl<'de> Deserialize<'de> for Rope {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(Rope::from(s))
     }
 }
 
@@ -526,6 +546,7 @@ impl<'a> Iterator for Lines<'a> {
 #[cfg(test)]
 mod tests {
     use rope::Rope;
+    use serde_test::{Token, assert_tokens};
 
     #[test]
     fn replace_small() {
@@ -568,4 +589,17 @@ mod tests {
         */
     }
 
+    #[test]
+    fn test_ser_de() {
+        let rope = Rope::from("a\u{00A1}\u{4E00}\u{1F4A9}");
+        assert_tokens(&rope, &[
+            Token::Str("a\u{00A1}\u{4E00}\u{1F4A9}"),
+        ]);
+        assert_tokens(&rope, &[
+            Token::String("a\u{00A1}\u{4E00}\u{1F4A9}"),
+        ]);
+        assert_tokens(&rope, &[
+            Token::BorrowedStr("a\u{00A1}\u{4E00}\u{1F4A9}"),
+        ]);
+    }
 }
