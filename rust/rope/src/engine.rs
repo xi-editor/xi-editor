@@ -22,7 +22,7 @@ use std::collections::BTreeSet;
 use std;
 
 use rope::{Rope, RopeInfo};
-use multiset::Subset;
+use multiset::{Subset, CountMatcher};
 use delta::Delta;
 
 #[derive(Debug)]
@@ -30,14 +30,15 @@ pub struct Engine {
     rev_id_counter: usize,
     text: Rope,
     tombstones: Rope,
+    deletes_from_union: Subset,
+    // TODO: switch to a persistent Set representation to avoid O(n) copying
+    undone_groups: BTreeSet<usize>,  // set of undo_group id's
     revs: Vec<Revision>,
 }
 
 #[derive(Debug)]
 struct Revision {
     rev_id: usize,
-    deletes_from_union: Subset,
-    union_str_len: usize,
     edit: Contents,
 }
 
@@ -52,33 +53,30 @@ enum Contents {
         deletes: Subset,
     },
     Undo {
-        groups: BTreeSet<usize>,  // set of undo_group id's
+        /// The set of groups toggled between undone and done.
+        /// Just the `symmetric_difference` (XOR) of the two sets.
+        toggled_groups: BTreeSet<usize>,  // set of undo_group id's
+        /// Used to store a reversible difference between the old
+        /// and new deletes_from_union
+        deletes_bitxor: Subset,
     }
 }
 
 impl Engine {
     pub fn new(initial_contents: Rope) -> Engine {
+        let deletes_from_union = Subset::new(initial_contents.len());
         let rev = Revision {
             rev_id: 0,
-            deletes_from_union: Subset::new(initial_contents.len()),
-            union_str_len: initial_contents.len(),
-            edit: Undo { groups: BTreeSet::default() },
+            edit: Undo { toggled_groups: BTreeSet::new(), deletes_bitxor: deletes_from_union.clone() },
         };
         Engine {
             rev_id_counter: 1,
             text: initial_contents,
             tombstones: Rope::default(),
+            deletes_from_union,
+            undone_groups: BTreeSet::new(),
             revs: vec![rev],
         }
-    }
-
-    fn get_current_undo(&self) -> Option<&BTreeSet<usize>> {
-        for rev in self.revs.iter().rev() {
-            if let Undo { ref groups } = rev.edit {
-                return Some(groups);
-            }
-        }
-        None
     }
 
     fn find_rev(&self, rev_id: usize) -> Option<usize> {
@@ -90,18 +88,42 @@ impl Engine {
         None
     }
 
+    /// Find what the `deletes_from_union` field in Engine would have been at the time
+    /// of a certain `rev_index`. In other words, the deletes from the union string at that time.
+    fn deletes_from_union_for_index(&self, rev_index: usize) -> Cow<Subset> {
+        let mut deletes_from_union = Cow::Borrowed(&self.deletes_from_union);
+        let mut undone_groups = Cow::Borrowed(&self.undone_groups);
+
+        // invert the changes to deletes_from_union starting in the present and working backwards
+        for rev in self.revs[rev_index + 1..].iter().rev() {
+            deletes_from_union = match rev.edit {
+                Edit { ref inserts, ref deletes, ref undo_group, .. } => {
+                    let undone = undone_groups.contains(undo_group);
+                    let deleted = if undone { inserts } else { deletes };
+                    let un_deleted = deletes_from_union.subtract(deleted);
+                    Cow::Owned(un_deleted.transform_shrink(inserts))
+                }
+                Undo { ref toggled_groups, ref deletes_bitxor } => {
+                    let new_undone = undone_groups.symmetric_difference(toggled_groups).cloned().collect();
+                    undone_groups = Cow::Owned(new_undone);
+                    Cow::Owned(deletes_from_union.bitxor(deletes_bitxor))
+                }
+            }
+        }
+        deletes_from_union
+    }
+
     /// Get the contents of the document at a given revision number
     fn rev_content_for_index(&self, rev_index: usize) -> Rope {
-        let old_deletes_from_union = self.deletes_from_union_for_index(rev_index);
-        let head_rev = &self.revs.last().unwrap();
+        let old_deletes_from_union = self.deletes_from_cur_union_for_index(rev_index);
         let delta = Delta::synthesize(&self.tombstones,
-            &head_rev.deletes_from_union, &old_deletes_from_union);
+            &self.deletes_from_union, &old_deletes_from_union);
         delta.apply(&self.text)
     }
 
     /// Get the Subset to delete from the current union string in order to obtain a revision's content
-    fn deletes_from_union_for_index(&self, rev_index: usize) -> Cow<Subset> {
-        let mut deletes_from_union = Cow::Borrowed(&self.revs[rev_index].deletes_from_union);
+    fn deletes_from_cur_union_for_index(&self, rev_index: usize) -> Cow<Subset> {
+        let mut deletes_from_union = self.deletes_from_union_for_index(rev_index);
         for rev in &self.revs[rev_index + 1..] {
             if let Edit { ref inserts, .. } = rev.edit {
                 if !inserts.is_empty() {
@@ -131,14 +153,13 @@ impl Engine {
     /// if there is not at least one edit.
     pub fn delta_rev_head(&self, base_rev: usize) -> Delta<RopeInfo> {
         let ix = self.find_rev(base_rev).expect("base revision not found");
-        let rev = &self.revs[ix];
 
         // Delta::synthesize will add inserts for everything that is in
         // prev_from_union (old deletes) but not in
         // head_rev.deletes_from_union (new deletes). So we add all inserts
         // since base_rev to prev_from_union so that they will be inserted in
         // the Delta if they weren't also deleted.
-        let mut prev_from_union = Cow::Borrowed(&rev.deletes_from_union);
+        let mut prev_from_union = self.deletes_from_union_for_index(ix);
         for r in &self.revs[ix + 1..] {
             if let Edit { ref inserts, .. } = r.edit {
                 if !inserts.is_empty() {
@@ -147,31 +168,30 @@ impl Engine {
             }
         }
 
-        let head_rev = &self.revs.last().unwrap();
-        // TODO: this does 3 calls to Delta::synthesize and 2 to apply, this should definitely be better.
-        let old_tombstones = Engine::shuffle_tombstones(&self.text, &self.tombstones, &head_rev.deletes_from_union, &prev_from_union);
-        Delta::synthesize(&old_tombstones, &prev_from_union, &head_rev.deletes_from_union)
+        // TODO: this does 2 calls to Delta::synthesize and 1 to apply, this probably could be better.
+        let old_tombstones = Engine::shuffle_tombstones(&self.text, &self.tombstones, &self.deletes_from_union, &prev_from_union);
+        Delta::synthesize(&old_tombstones, &prev_from_union, &self.deletes_from_union)
     }
 
     // TODO: don't construct transform if subsets are empty
     /// Retuns a tuple of a new `Revision` representing the edit based on the
-    /// current head, a new text `Rope`, and a new tombstones `Rope`.
+    /// current head, a new text `Rope`, a new tombstones `Rope` and a new `deletes_from_union`.
     fn mk_new_rev(&self, new_priority: usize, undo_group: usize,
-            base_rev: usize, delta: Delta<RopeInfo>) -> (Revision, Rope, Rope) {
+            base_rev: usize, delta: Delta<RopeInfo>) -> (Revision, Rope, Rope, Subset) {
         let ix = self.find_rev(base_rev).expect("base revision not found");
-        let rev = &self.revs[ix];
         let (ins_delta, deletes) = delta.factor();
 
         // rebase delta to be on the base_rev union instead of the text
-        let mut union_ins_delta = ins_delta.transform_expand(&rev.deletes_from_union, rev.union_str_len, true);
-        let mut new_deletes = deletes.transform_expand(&rev.deletes_from_union);
+        let deletes_at_rev = self.deletes_from_union_for_index(ix);
+        let mut union_ins_delta = ins_delta.transform_expand(&deletes_at_rev, true);
+        let mut new_deletes = deletes.transform_expand(&deletes_at_rev);
 
         // rebase the delta to be on the head union instead of the base_rev union
         for r in &self.revs[ix + 1..] {
             if let Edit { priority, ref inserts, .. } = r.edit {
                 if !inserts.is_empty() {
                     let after = new_priority >= priority;  // should never be ==
-                    union_ins_delta = union_ins_delta.transform_expand(inserts, r.union_str_len, after);
+                    union_ins_delta = union_ins_delta.transform_expand(inserts, after);
                     new_deletes = new_deletes.transform_expand(inserts);
                 }
             }
@@ -184,13 +204,13 @@ impl Engine {
         }
 
         // rebase insertions on text and apply
-        let cur_deletes_from_union = &self.revs.last().unwrap().deletes_from_union;
+        let cur_deletes_from_union = &self.deletes_from_union;
         let text_ins_delta = union_ins_delta.transform_shrink(cur_deletes_from_union);
         let text_with_inserts = text_ins_delta.apply(&self.text);
         let rebased_deletes_from_union = cur_deletes_from_union.transform_expand(&new_inserts);
 
         // is the new edit in an undo group that was already undone due to concurrency?
-        let undone = self.get_current_undo().map_or(false, |undos| undos.contains(&undo_group));
+        let undone = self.undone_groups.contains(&undo_group);
         let new_deletes_from_union = {
             let to_delete = if undone { &new_inserts } else { &new_deletes };
             rebased_deletes_from_union.union(to_delete)
@@ -202,15 +222,13 @@ impl Engine {
 
         (Revision {
             rev_id: self.rev_id_counter,
-            deletes_from_union: new_deletes_from_union,
-            union_str_len: union_ins_delta.new_document_len(),
             edit: Edit {
                 priority: new_priority,
                 undo_group: undo_group,
                 inserts: new_inserts,
                 deletes: new_deletes,
             }
-        }, new_text, new_tombstones)
+        }, new_text, new_tombstones, new_deletes_from_union)
     }
 
     /// Move sections from text to tombstones and out of tombstones based on a new and old set of deletions
@@ -237,30 +255,31 @@ impl Engine {
 
     pub fn edit_rev(&mut self, priority: usize, undo_group: usize,
             base_rev: usize, delta: Delta<RopeInfo>) {
-        let (new_rev, new_text, new_tombstones) = self.mk_new_rev(priority, undo_group, base_rev, delta);
+        let (new_rev, new_text, new_tombstones, new_deletes_from_union) =
+            self.mk_new_rev(priority, undo_group, base_rev, delta);
         self.rev_id_counter += 1;
         self.revs.push(new_rev);
         self.text = new_text;
         self.tombstones = new_tombstones;
+        self.deletes_from_union = new_deletes_from_union;
     }
 
     // since undo and gc replay history with transforms, we need an empty set
     // of the union string length *before* the first revision.
     fn empty_subset_before_first_rev(&self) -> Subset {
         let first_rev = &self.revs.first().unwrap();
-        let mut empty = Subset::new(first_rev.union_str_len);
-        // since later we actually transform it by the first insert set, we actually want
-        // the deletions *before* the first edit.
-        if let Edit { ref inserts, .. } = first_rev.edit {
-            empty = empty.transform_shrink(&inserts)
-        }
-        empty
+        // it will be immediately transform_expanded by inserts if it is an Edit, so length must be before
+        let len = match first_rev.edit {
+            Edit { ref inserts, .. } => inserts.count(CountMatcher::Zero),
+            Undo { ref deletes_bitxor, .. } => deletes_bitxor.count(CountMatcher::All),
+        };
+        Subset::new(len)
     }
 
     // This computes undo all the way from the beginning. An optimization would be to not
     // recompute the prefix up to where the history diverges, but it's not clear that's
     // even worth the code complexity.
-    fn compute_undo(&self, groups: BTreeSet<usize>) -> Revision {
+    fn compute_undo(&self, groups: &BTreeSet<usize>) -> (Revision, Subset) {
         let mut deletes_from_union = self.empty_subset_before_first_rev();
         for rev in &self.revs {
             if let Edit { ref undo_group, ref inserts, ref deletes, .. } = rev.edit {
@@ -278,34 +297,33 @@ impl Engine {
                 }
             }
         }
-        let head_rev = &self.revs.last().unwrap();
-        Revision {
+
+        let toggled_groups = self.undone_groups.symmetric_difference(&groups).cloned().collect();
+        let deletes_bitxor = self.deletes_from_union.bitxor(&deletes_from_union);
+        (Revision {
             rev_id: self.rev_id_counter,
-            deletes_from_union: deletes_from_union,
-            union_str_len: head_rev.union_str_len,
-            edit: Undo {
-                groups: groups
-            }
-        }
+            edit: Undo { toggled_groups, deletes_bitxor }
+        }, deletes_from_union)
     }
 
+    // TODO: maybe refactor this API to take a toggle set
     pub fn undo(&mut self, groups: BTreeSet<usize>) {
-        let new_rev = self.compute_undo(groups);
+        let (new_rev, new_deletes_from_union) = self.compute_undo(&groups);
 
-        let (new_text, new_tombstones) = {
-            let cur_deletes_from_union = &self.revs.last().unwrap().deletes_from_union;
-            Engine::shuffle(&self.text, &self.tombstones, cur_deletes_from_union, &new_rev.deletes_from_union)
-        };
+        let (new_text, new_tombstones) =
+            Engine::shuffle(&self.text, &self.tombstones, &self.deletes_from_union, &new_deletes_from_union);
 
         self.text = new_text;
         self.tombstones = new_tombstones;
+        self.deletes_from_union = new_deletes_from_union;
+        self.undone_groups = groups;
         self.revs.push(new_rev);
         self.rev_id_counter += 1;
     }
 
     pub fn is_equivalent_revision(&self, base_rev: usize, other_rev: usize) -> bool {
-        let base_subset = self.find_rev(base_rev).map(|rev_index| self.deletes_from_union_for_index(rev_index));
-        let other_subset = self.find_rev(other_rev).map(|rev_index| self.deletes_from_union_for_index(rev_index));
+        let base_subset = self.find_rev(base_rev).map(|rev_index| self.deletes_from_cur_union_for_index(rev_index));
+        let other_subset = self.find_rev(other_rev).map(|rev_index| self.deletes_from_cur_union_for_index(rev_index));
 
         base_subset.is_some() && base_subset == other_subset
     }
@@ -326,11 +344,10 @@ impl Engine {
             retain_revs.insert(last.rev_id);
         }
         {
-            let cur_undo = self.get_current_undo();
             for rev in &self.revs {
                 if let Edit { ref undo_group, ref inserts, ref deletes, .. } = rev.edit {
                     if !retain_revs.contains(&rev.rev_id) && gc_groups.contains(undo_group) {
-                        if cur_undo.map_or(false, |undos| undos.contains(undo_group)) {
+                        if self.undone_groups.contains(undo_group) {
                             if !inserts.is_empty() {
                                 gc_dels = gc_dels.transform_union(inserts);
                             }
@@ -349,10 +366,10 @@ impl Engine {
             }
         }
         if !gc_dels.is_empty() {
-            let head_rev = &self.revs.last().unwrap();
-            let not_in_tombstones = head_rev.deletes_from_union.complement();
+            let not_in_tombstones = self.deletes_from_union.complement();
             let dels_from_tombstones = gc_dels.transform_shrink(&not_in_tombstones);
             self.tombstones = dels_from_tombstones.delete_from(&self.tombstones);
+            self.deletes_from_union = self.deletes_from_union.transform_shrink(&gc_dels);
         }
         let old_revs = std::mem::replace(&mut self.revs, Vec::new());
         for rev in old_revs.into_iter().rev() {
@@ -364,18 +381,14 @@ impl Engine {
                         Some(gc_dels.transform_shrink(&inserts))
                     };
                     if retain_revs.contains(&rev.rev_id) || !gc_groups.contains(&undo_group) {
-                        let (inserts, deletes, deletes_from_union, len) = if gc_dels.is_empty() {
-                            (inserts, deletes, rev.deletes_from_union, rev.union_str_len)
+                        let (inserts, deletes) = if gc_dels.is_empty() {
+                            (inserts, deletes)
                         } else {
                             (inserts.transform_shrink(&gc_dels),
-                                deletes.transform_shrink(&gc_dels),
-                                rev.deletes_from_union.transform_shrink(&gc_dels),
-                                gc_dels.len_after_delete())
+                                deletes.transform_shrink(&gc_dels))
                         };
                         self.revs.push(Revision {
                             rev_id: rev.rev_id,
-                            deletes_from_union: deletes_from_union,
-                            union_str_len: len,
                             edit: Edit {
                                 priority: priority,
                                 undo_group: undo_group,
@@ -388,22 +401,20 @@ impl Engine {
                         gc_dels = new_gc_dels;
                     }
                 }
-                Undo { groups } => {
+                Undo { toggled_groups, deletes_bitxor } => {
                     // We're super-aggressive about dropping these; after gc, the history
                     // of which undos were used to compute deletes_from_union in edits may be lost.
                     if retain_revs.contains(&rev.rev_id) {
-                        let (deletes_from_union, len) = if gc_dels.is_empty() {
-                            (rev.deletes_from_union, rev.union_str_len)
+                        let new_deletes_bitxor = if gc_dels.is_empty() {
+                            deletes_bitxor
                         } else {
-                            (rev.deletes_from_union.transform_shrink(&gc_dels),
-                                gc_dels.len_after_delete())
+                            deletes_bitxor.transform_shrink(&gc_dels)
                         };
                         self.revs.push(Revision {
                             rev_id: rev.rev_id,
-                            deletes_from_union: deletes_from_union,
-                            union_str_len: len,
                             edit: Undo {
-                                groups: &groups - gc_groups,
+                                toggled_groups: &toggled_groups - &gc_groups,
+                                deletes_bitxor: new_deletes_bitxor,
                             }
                         })
                     }
