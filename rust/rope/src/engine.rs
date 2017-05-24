@@ -175,7 +175,7 @@ impl Engine {
 
     // TODO: don't construct transform if subsets are empty
     /// Retuns a tuple of a new `Revision` representing the edit based on the
-    /// current head, a new text `Rope`, and a new tombstones `Rope`.
+    /// current head, a new text `Rope`, a new tombstones `Rope` and a new `deletes_from_union`.
     fn mk_new_rev(&self, new_priority: usize, undo_group: usize,
             base_rev: usize, delta: Delta<RopeInfo>) -> (Revision, Rope, Rope, Subset) {
         let ix = self.find_rev(base_rev).expect("base revision not found");

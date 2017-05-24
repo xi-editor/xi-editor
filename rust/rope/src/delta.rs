@@ -269,7 +269,6 @@ impl<N: NodeInfo> InsertDelta<N> {
     /// coordinate transform.
     //
     // TODO: write accurate equations
-    // TODO: can we infer l from the other inputs?
     pub fn transform_expand(&self, xform: &Subset, after: bool) -> InsertDelta<N> {
         let cur_els = &self.0.els;
         let mut els = Vec::new();

@@ -191,9 +191,12 @@ impl Subset {
         sb.build()
     }
 
-    /// Compute the bitwise xor of two subsets, useful as a symmetric
+    /// Compute the bitwise xor of two subsets, useful as a reversible
     /// difference. The count of an element in the result is the bitwise xor
     /// of the counts of the inputs. Unchanged segments will be 0.
+    ///
+    /// This works like set symmetric difference when all counts are 0 or 1
+    /// but it extends nicely to the case of larger counts.
     pub fn bitxor(&self, other: &Subset) -> Subset {
         let mut sb = SubsetBuilder::new();
         for zseg in self.zip(other) {
