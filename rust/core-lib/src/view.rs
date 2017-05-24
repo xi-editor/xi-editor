@@ -292,11 +292,15 @@ impl View {
     pub fn send_update<W: Write>(&mut self, text: &Rope, tab_ctx: &DocumentCtx<W>, style_spans: &Spans<Style>,
         first_line: usize, last_line: usize)
     {
+        let dirty = self.dirty || self.sel_dirty;
+        if dirty {
+            self.valid_lines.clear();
+        }
         let height = self.offset_to_line_col(text, text.len()).0 + 1;
         let last_line = min(last_line, height);
         let mut ops = Vec::new();
         if first_line > 0 {
-            let op = if self.dirty { "invalidate" } else { "copy" };
+            let op = if dirty { "invalidate" } else { "copy" };
             ops.push(self.build_update_op(op, None, first_line));
         }
         let first_line_offset = self.offset_of_line(text, first_line);
@@ -312,10 +316,10 @@ impl View {
         }
         ops.push(self.build_update_op("ins", Some(rendered_lines), last_line - first_line));
         if last_line < height {
-            if !self.dirty {
+            if !dirty {
                 ops.push(self.build_update_op("skip", None, last_line - first_line));
             }
-            let op = if self.dirty { "invalidate" } else { "copy" };
+            let op = if dirty { "invalidate" } else { "copy" };
             ops.push(self.build_update_op(op, None, height - last_line));
         }
         let params = json!({
@@ -417,7 +421,6 @@ impl View {
 
     // TODO: finer grained tracking
     pub fn set_dirty(&mut self) {
-        self.valid_lines.clear();
         self.dirty = true;
     }
 
