@@ -25,7 +25,7 @@ use rope::{Rope, RopeInfo};
 use multiset::{Subset, CountMatcher};
 use delta::Delta;
 
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Engine {
     rev_id_counter: usize,
     text: Rope,
@@ -36,7 +36,7 @@ pub struct Engine {
     revs: Vec<Revision>,
 }
 
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 struct Revision {
     rev_id: usize,
     edit: Contents,
@@ -44,7 +44,7 @@ struct Revision {
 
 use self::Contents::*;
 
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 enum Contents {
     Edit {
         priority: usize,
