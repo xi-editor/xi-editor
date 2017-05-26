@@ -20,7 +20,7 @@
 
 use std::collections::HashMap;
 
-use syntect::parsing::{Scope, ScopeStack};
+use syntect::parsing::Scope;
 
 
 #[derive(Debug, Default)]
