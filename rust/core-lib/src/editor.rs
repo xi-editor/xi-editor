@@ -431,13 +431,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         let mut deletions = Selection::new();
         for r in self.view.sel_regions() {
             if r.is_caret() {
-                let (offset, horiz) = region_movement(movement, r, &self.view, &self.text, true);
-                let new_region = SelRegion {
-                    start: r.start,
-                    end: offset,
-                    horiz: horiz,
-                    affinity: Affinity::default(),
-                };
+                let new_region = region_movement(movement, r, &self.view, &self.text, true);
                 deletions.add_region(new_region);
             } else {
                 deletions.add_region(r.clone());

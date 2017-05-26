@@ -108,9 +108,9 @@ fn scroll_height(view: &View) -> isize {
 
 /// Compute the result of movement on one selection region.
 pub fn region_movement(m: Movement, r: &SelRegion, view: &View, text: &Rope, modify: bool)
-    -> (usize, Option<HorizPos>)
+    -> SelRegion
 {
-    match m {
+    let (offset, horiz) = match m {
         Movement::Left => {
             if r.is_caret() || modify {
                 if let Some(offset) = text.prev_grapheme_offset(r.end) {
@@ -204,6 +204,12 @@ pub fn region_movement(m: Movement, r: &SelRegion, view: &View, text: &Rope, mod
         Movement::DownPage => vertical_motion(r, view, text, scroll_height(view), modify),
         Movement::StartOfDocument => (0, None),
         Movement::EndOfDocument => (text.len(), None),
+    };
+    SelRegion {
+        start: if modify { r.start } else { offset },
+        end: offset,
+        horiz: horiz,
+        affinity: Affinity::default(),
     }
 }
 
@@ -219,13 +225,7 @@ pub fn selection_movement(m: Movement, s: &Selection, view: &View, text: &Rope,
 {
     let mut result = Selection::new();
     for r in s.iter() {
-        let (offset, horiz) = region_movement(m, r, view, text, modify);
-        let new_region = SelRegion {
-            start: if modify { r.start } else { offset },
-            end: offset,
-            horiz: horiz,
-            affinity: Affinity::default(),
-        };
+        let new_region = region_movement(m, r, view, text, modify);
         result.add_region(new_region);
     }
     result
