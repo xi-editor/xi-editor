@@ -587,6 +587,16 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.view.select_all(self.text.len());
     }
 
+    fn add_selection_by_movement(&mut self, movement: Movement) {
+        let mut sel = Selection::new();
+        for region in self.view.sel_regions() {
+            sel.add_region(region.clone());
+            let new_region = region_movement(movement, region, &self.view, &self.text, false);
+            sel.add_region(new_region);
+        }
+        self.scroll_to = self.view.set_selection(&self.text, sel);
+    }
+
     fn do_key(&mut self, chars: &str, flags: u64) {
         match chars {
             "\r" => self.insert_newline(),
@@ -875,6 +885,8 @@ impl<W: Write + Send + 'static> Editor<W> {
                 async(self.scroll_page_down(FLAG_SELECT))
             }
             SelectAll => async(self.select_all()),
+            AddSelectionAbove => async(self.add_selection_by_movement(Movement::Up)),
+            AddSelectionBelow => async(self.add_selection_by_movement(Movement::Down)),
             Scroll { first, last } => async(self.do_scroll(first, last)),
             GotoLine { line } => async(self.do_goto_line(line)),
             RequestLines { first, last } => async(self.do_request_lines(first, last)),
