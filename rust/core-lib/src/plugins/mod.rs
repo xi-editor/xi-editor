@@ -86,8 +86,10 @@ impl<W: Write + Send + 'static> PluginRef<W> {
             let cmd = serde_json::from_value::<PluginCommand>(params.to_owned())
                 .expect(&format!("failed to parse plugin rpc {}, params {:?}",
                         method, params));
+            //TODO: replace plugin name with a process-unique value identifier
+            let name = self.0.lock().unwrap().description.name.clone();
             let result = plugin_manager.lock().handle_plugin_cmd(
-                cmd, &self.0.lock().unwrap().view_id);
+                cmd, &self.0.lock().unwrap().view_id, &name);
         result
         } else {
             None

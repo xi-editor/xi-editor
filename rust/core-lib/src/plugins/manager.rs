@@ -53,7 +53,8 @@ impl <W: Write + Send + 'static>PluginManager<W> {
     }
 
     /// Handle a request from a plugin.
-    pub fn handle_plugin_cmd(&self, cmd: PluginCommand, view_id: &ViewIdentifier) -> Option<Value> {
+    pub fn handle_plugin_cmd(&self, cmd: PluginCommand, view_id: &ViewIdentifier,
+                             plugin_id: &str) -> Option<Value> {
         use self::PluginCommand::*;
         match cmd {
             LineCount => {
@@ -66,6 +67,18 @@ impl <W: Write + Send + 'static>PluginManager<W> {
                     .plugin_set_fg_spans(start, len, spans, rev);
                 None
             }
+            AddScopes { scopes } => {
+                self.buffers.lock().editor_for_view_mut(view_id).unwrap()
+                    .plugin_add_scopes(plugin_id, &scopes);
+                None
+            }
+            UpdateSpans { start, len, spans, rev } => {
+                self.buffers.lock().editor_for_view_mut(view_id).unwrap()
+                    .plugin_update_spans(start, len, spans, rev);
+                None
+            }
+            AddSpans { .. } => { print_err!("add_spans not implemented"); None }
+            DefStyles { .. } => { print_err!("def_styles not implemented"); None }
             GetData { offset, max_size, rev } => {
                 self.buffers.lock().editor_for_view(view_id).unwrap()
                 .plugin_get_data(offset, max_size, rev)

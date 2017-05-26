@@ -34,7 +34,7 @@ use selection::{Affinity, Selection, SelRegion};
 use tabs::{ViewIdentifier, DocumentCtx};
 use rpc::{EditCommand, GestureType};
 use syntax::SyntaxDefinition;
-use plugins::rpc_types::{PluginUpdate, PluginEdit, Span, PluginBufferInfo};
+use plugins::rpc_types::{PluginUpdate, PluginEdit, StyleSpan, ScopeSpan, PluginBufferInfo};
 
 const FLAG_SELECT: u64 = 2;
 
@@ -913,7 +913,8 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.text.measure::<LinesMetric>() + 1
     }
 
-    pub fn plugin_set_fg_spans(&mut self, start: usize, len: usize, spans: Vec<Span>, rev: usize) {
+    // NOTE: directly setting styles is deprecated and will be removed.
+    pub fn plugin_set_fg_spans(&mut self, start: usize, len: usize, spans: Vec<StyleSpan>, rev: usize) {
         // TODO: more protection against invalid input
         let mut start = start;
         let mut end_offset = start + len;
@@ -936,6 +937,19 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.style_spans.edit(Interval::new_closed_closed(start, end_offset), spans);
         self.view.set_dirty();
         self.render();
+    }
+
+    pub fn plugin_add_scopes(&mut self, plugin: &str, scopes: &[String]) {
+        //TODO: find appropriate layer, convert scopes to `ScopeStack`s, add to lookup table
+        print_err!("add scopes called by {}, scopes: \n {}",
+                   plugin, scopes.join("\n"));
+    }
+
+    pub fn plugin_update_spans(&mut self, plugin: &str, start: usize, end: usize,
+                               spans: Vec<ScopeSpan>, rev: usize) {
+        //TODO: find appropriate layer, update spans in place
+        print_err!("update spans called in ({}, {}), rev {}, spans:\n{:?}",
+        start, end, rev, spans);
     }
 
     pub fn plugin_get_data(&self, offset: usize, max_size: usize, rev: usize) -> Option<String> {
