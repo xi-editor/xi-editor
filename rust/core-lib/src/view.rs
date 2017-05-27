@@ -158,6 +158,7 @@ impl View {
         if !self.selection.regions_in_range(offset, offset).is_empty() {
             self.selection.delete_range(offset, offset);
             if !self.selection.is_empty() {
+                self.drag_state = None;
                 return;
             }
         }
