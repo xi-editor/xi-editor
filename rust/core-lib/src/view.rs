@@ -53,6 +53,8 @@ pub struct View {
     /// The selection state for this view. Invariant: non-empty.
     selection: Selection,
 
+    drag_state: Option<DragState>,
+
     first_line: usize,  // vertical scroll position
     height: usize,  // height of visible portion
     breaks: Option<Breaks>,
@@ -75,6 +77,22 @@ pub struct View {
     pristine: bool,
 }
 
+/// State required to resolve a drag gesture into a selection.
+struct DragState {
+    /// All the selection regions other than the one being dragged.
+    base_sel: Selection,
+
+    /// Offset of the point where the drag started.
+    offset: usize,
+
+    /// Start of the region selected when drag was started (region is
+    /// assumed to be forward).
+    min: usize,
+
+    /// End of the region selected when drag was started.
+    max: usize,
+}
+
 impl View {
     pub fn new(view_id: &ViewIdentifier) -> View {
         let mut selection = Selection::new();
@@ -91,6 +109,7 @@ impl View {
             // used to maintain preferred hpos during vertical movement
             cursor_col: 0,
             selection: selection,
+            drag_state: None,
             first_line: 0,
             height: 10,
             breaks: None,
@@ -142,6 +161,12 @@ impl View {
                 return;
             }
         }
+        self.drag_state = Some(DragState {
+            base_sel: self.selection.clone(),
+            offset: offset,
+            min: offset,
+            max: offset,
+        });
         let region = SelRegion {
             start: offset,
             end: offset,
@@ -159,6 +184,7 @@ impl View {
     pub fn do_move(&mut self, text: &Rope, movement: Movement, modify: bool)
         -> Option<usize>
     {
+        self.drag_state = None;
         let new_sel = selection_movement(movement, &self.selection, self, text, modify);
         self.set_selection(text, new_sel)
     }
@@ -196,6 +222,30 @@ impl View {
         self.sel_dirty = true;
         self.sel_start = 0;
         self.sel_end = len;
+    }
+
+    /// Starts a drag operation.
+    pub fn start_drag(&mut self, offset: usize, min: usize, max: usize) {
+        let base_sel = Selection::new();
+        self.drag_state = Some(DragState { base_sel, offset, min, max });
+    }
+
+    /// Does a drag gesture, setting the selection from a combination of the drag
+    /// state and new offset.
+    pub fn do_drag(&mut self, text: &Rope, offset: usize, affinity: Affinity) -> Option<usize> {
+        let new_sel = self.drag_state.as_ref().map(|drag_state| {
+            let mut sel = drag_state.base_sel.clone();
+            // TODO: on double or triple click, quantize offset to requested granularity.
+            let (start, end) = if offset < drag_state.offset {
+                (drag_state.max, min(offset, drag_state.min))
+            } else {
+                (drag_state.min, max(offset, drag_state.max))
+            };
+            let horiz = None;
+            sel.add_region(SelRegion { start, end, horiz, affinity });
+            sel
+        });
+        new_sel.and_then(|new_sel| self.set_selection(text, new_sel))
     }
 
     /// Returns the regions of the current selection.
@@ -506,6 +556,9 @@ impl View {
         }
         self.pristine = pristine;
         self.dirty = true;
+        // Any edit cancels a drag. This is good behavior for edits initiated through
+        // the front-end, but perhaps not for async edits.
+        self.drag_state = None;
         // Note: for committing plugin edits, we probably want to know the priority
         // of the delta so we can set the cursor before or after the edit, as needed.
         let new_sel = self.selection.apply_delta(delta, true);

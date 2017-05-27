@@ -519,10 +519,6 @@ impl<W: Write + Send + 'static> Editor<W> {
         */
     }
 
-    fn modify_selection(&mut self) {
-        self.this_edit_type = EditType::Select;
-    }
-
     /// Apply a movement, also setting the scroll to the point requested by
     /// the movement.
     ///
@@ -700,6 +696,7 @@ impl<W: Write + Send + 'static> Editor<W> {
                     });
                     sel
                 };
+                self.view.start_drag(offset, offset, offset);
                 self.scroll_to = self.view.set_selection(&self.text, sel);
                 return;
             }
@@ -714,6 +711,7 @@ impl<W: Write + Send + 'static> Editor<W> {
                 horiz: None,
                 affinity: Affinity::default(),
             });
+            self.view.start_drag(offset, start, end);
             return;
         } else if click_count == 3 {
             let start = self.view.line_col_to_offset(&self.text, line as usize, 0);
@@ -724,15 +722,16 @@ impl<W: Write + Send + 'static> Editor<W> {
                 horiz: None,
                 affinity: Affinity::default(),
             });
+            self.view.start_drag(offset, start, end);
             return;
         }
+        self.view.start_drag(offset, offset, offset);
         self.set_cursor(offset, true);
     }
 
     fn do_drag(&mut self, line: u64, col: u64, _flags: u64) {
         let offset = self.view.line_col_to_offset(&self.text, line as usize, col as usize);
-        self.modify_selection();
-        self.set_cursor(offset, true);
+        self.scroll_to = self.view.do_drag(&self.text, offset, Affinity::default());
     }
 
     fn do_gesture(&mut self, line: u64, col: u64, ty: GestureType) {
