@@ -43,13 +43,6 @@ pub struct Style {
 pub struct View {
     pub view_id: ViewIdentifier,
 
-    // The following 3 fields are the old (single selection) cursor state.
-    // They will go away soon, but are kept for a gradual transition to the
-    // new multi-select version.
-    pub sel_start: usize,
-    pub sel_end: usize,
-    cursor_col: usize,
-
     /// The selection state for this view. Invariant: non-empty.
     selection: Selection,
 
@@ -65,8 +58,6 @@ pub struct View {
     // TODO: separate tracking of text, cursors, and styles
     valid_lines: IndexSet,
 
-    // The old selection (single cursor) selection state was updated.
-    old_sel_dirty: bool,
     // The selection state was updated.
     sel_dirty: bool,
 
@@ -104,10 +95,6 @@ impl View {
         });
         View {
             view_id: view_id.to_owned(),
-            sel_start: 0,
-            sel_end: 0,
-            // used to maintain preferred hpos during vertical movement
-            cursor_col: 0,
             selection: selection,
             drag_state: None,
             first_line: 0,
@@ -115,7 +102,6 @@ impl View {
             breaks: None,
             wrap_col: 0,
             valid_lines: IndexSet::new(),
-            old_sel_dirty: true,
             sel_dirty: true,
             dirty: true,
             pristine: true,
@@ -131,25 +117,14 @@ impl View {
         self.height
     }
 
-    pub fn sel_min(&self) -> usize {
-        min(self.sel_start, self.sel_end)
-    }
-
-    pub fn sel_max(&self) -> usize {
-        max(self.sel_start, self.sel_end)
-    }
-
     pub fn scroll_to_cursor(&mut self, text: &Rope) {
-        let (line, _) = self.offset_to_line_col(text, self.sel_end);
+        let end = self.sel_regions().last().unwrap().end;
+        let (line, _) = self.offset_to_line_col(text, end);
         if line < self.first_line {
             self.first_line = line;
         } else if self.first_line + self.height <= line {
             self.first_line = line - (self.height - 1);
         }
-    }
-
-    pub fn set_cursor_col(&mut self, col: usize) {
-        self.cursor_col = col;
     }
 
     /// Toggles a caret at the given offset.
@@ -198,11 +173,6 @@ impl View {
         // selection state, and for scrolling it into view if needed. This choice can
         // likely be improved.
         let region = self.selection.last().unwrap().clone();
-        self.sel_start = region.start;
-        self.sel_end = region.end;
-        if let Some(horiz) = region.horiz {
-            self.cursor_col = horiz;
-        }
         self.sel_dirty = true;
         self.scroll_to_cursor(text);
         Some(region.end)
@@ -221,8 +191,6 @@ impl View {
         });
         self.selection = selection;
         self.sel_dirty = true;
-        self.sel_start = 0;
-        self.sel_end = len;
     }
 
     /// Starts a drag operation.
@@ -442,25 +410,8 @@ impl View {
         update
     }
 
-    // If old-style selection is dirty, then copy it to (new) selection field.
-    fn propagate_old_sel(&mut self) {
-        if self.old_sel_dirty {
-            self.selection.clear();
-            let region = SelRegion {
-                start: self.sel_start,
-                end: self.sel_end,
-                horiz: None,
-                affinity: Affinity::default(),
-            };
-            self.selection.add_region(region);
-            self.old_sel_dirty = false;
-            self.sel_dirty = true;
-        }
-    }
-
     // Update front-end with any changes to view since the last time sent.
     pub fn render_if_dirty<W: Write>(&mut self, text: &Rope, tab_ctx: &DocumentCtx<W>, style_spans: &Spans<Style>) {
-        self.propagate_old_sel();
         if self.sel_dirty || self.dirty {
             let first_line = max(self.first_line, SCROLL_SLOP) - SCROLL_SLOP;
             let last_line = self.first_line + self.height + SCROLL_SLOP;
@@ -473,10 +424,6 @@ impl View {
     // TODO: finer grained tracking
     pub fn set_dirty(&mut self) {
         self.dirty = true;
-    }
-
-    pub fn set_old_sel_dirty(&mut self) {
-        self.old_sel_dirty = true;
     }
 
     // How should we count "column"? Valid choices include:
