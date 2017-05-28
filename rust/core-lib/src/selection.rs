@@ -27,7 +27,7 @@ use xi_rope::rope::RopeInfo;
 pub type HorizPos = usize;
 
 /// A set of zero or more selection regions, representing a selection state.
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct Selection {
     // an invariant: regions[i].max() <= regions[i+1].min()
     // and < if either is_caret()
