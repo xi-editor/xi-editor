@@ -105,6 +105,8 @@ pub enum EditCommand<'a> {
     ScrollPageDown,
     PageDownAndModifySelection,
     SelectAll,
+    AddSelectionAbove,
+    AddSelectionBelow,
     Scroll { first: i64, last: i64 },
     GotoLine { line: u64 },
     RequestLines { first: i64, last: i64 },
@@ -228,6 +230,8 @@ impl<'a> EditCommand<'a> {
             "page_down" => Ok(ScrollPageDown),
             "page_down_and_modify_selection" => Ok(PageDownAndModifySelection),
             "select_all" => Ok(SelectAll),
+            "add_selection_above" => Ok(AddSelectionAbove),
+            "add_selection_below" => Ok(AddSelectionBelow),
 
             "scroll" => params.as_array().and_then(|arr| {
                 if let (Some(first), Some(last)) =
