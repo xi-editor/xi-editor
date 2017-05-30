@@ -76,9 +76,9 @@ impl<'a> PluginState<'a> {
         }
 
         //print_err!("\n\nline {}\napplying ops {:?}", &line, &ops);
-        let mut span_start = 0;
+        let mut prev_cursor = 0;
         for (cursor, batch) in ops {
-            if self.scope_state.len() > 0 && cursor > span_start {
+            if self.scope_state.len() > 0 {
                 let scope_ident = self.stack_idents.get_value(self.scope_state.as_slice());
                 //print_err!("scope ident: {:?}", scope_ident);
                 let scope_ident = match scope_ident {
@@ -91,11 +91,13 @@ impl<'a> PluginState<'a> {
                         id
                     }
                 };
-                self.spans.push(ScopeSpan::new(self.offset + span_start,
-                                               self.offset + cursor,
-                                               scope_ident))
+
+                let start = self.offset - self.spans_start + prev_cursor;
+                let end = start + (cursor - prev_cursor);
+                let span = ScopeSpan::new(start, end, scope_ident);
+                self.spans.push(span);
             }
-            span_start = cursor;
+            prev_cursor = cursor;
             self.scope_state.apply(&batch);
         }
 
