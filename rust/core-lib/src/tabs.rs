@@ -578,6 +578,7 @@ mod tests {
             kill_ring: Arc::new(Mutex::new(Rope::from(""))),
             rpc_peer: mock_peer.clone(),
             style_map: Arc::new(Mutex::new(StyleMap::new())),
+            theme_set: Arc::new(Mutex::new(ThemeSet::load_defaults())),
             update_channel: update_tx,
         }
     }
