@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! StackMap is a simple nested map type used to map `StackScope`s to
+//! StackMap is a simple nested map type (a trie) used to map `StackScope`s to
 //! u32s so they can be efficiently sent to xi-core.
 //!
 //! For discussion of this approach, see [this
