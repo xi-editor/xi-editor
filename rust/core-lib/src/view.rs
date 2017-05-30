@@ -16,6 +16,8 @@ use std::cmp::{min,max};
 use std::io::Write;
 
 use serde_json::value::Value;
+use syntect::highlighting::Style as SynStyle;
+use syntect::highlighting::Color;
 
 use xi_rope::rope::{Rope, LinesMetric, RopeInfo};
 use xi_rope::delta::Delta;
@@ -34,10 +36,22 @@ use linewrap;
 
 const SCROLL_SLOP: usize = 2;
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Copy, Debug)]
 pub struct Style {
     pub fg: u32,
     pub font_style: u8,  // same as syntect, 1 = bold, 2 = underline, 4 = italic
+}
+
+impl Style {
+    /// Create a new Style from a syntect Style.
+    pub fn from_syntect_style(style: &SynStyle) -> Self {
+        let fg = {
+            let Color { r, g, b, a } = style.foreground;
+            ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
+        };
+        let font_style = style.font_style.bits();
+        Style { fg, font_style }
+    }
 }
 
 pub struct View {

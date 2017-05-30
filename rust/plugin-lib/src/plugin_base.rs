@@ -104,7 +104,7 @@ impl<'a> PluginCtx<'a> {
         }
     }
 
-    pub fn add_scopes(&self, scopes: &[String]) {
+    pub fn add_scopes(&self, scopes: &Vec<Vec<String>>) {
         let params = json!({
             "scopes": scopes,
         });

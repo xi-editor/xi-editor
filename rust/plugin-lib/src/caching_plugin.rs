@@ -181,7 +181,7 @@ impl<'a> PluginCtx<'a> {
         }
     }
 
-    pub fn add_scopes(&self, scopes: &[String]) {
+    pub fn add_scopes(&self, scopes: &Vec<Vec<String>>) {
         self.peer.add_scopes(scopes)
     }
 

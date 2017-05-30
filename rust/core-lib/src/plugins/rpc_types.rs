@@ -153,7 +153,7 @@ pub enum PluginCommand {
     // deprecated
     SetFgSpans {start: usize, len: usize, spans: Vec<StyleSpan>, rev: usize },
     DefStyles { styles: Vec<StyleDef> },
-    AddScopes { scopes: Vec<String> },
+    AddScopes { scopes: Vec<Vec<String>> },
     UpdateSpans { start: usize, len: usize, spans: Vec<ScopeSpan>, rev: usize },
     AddSpans { spans: Vec<ScopeSpan> },
     GetData { offset: usize, max_size: usize, rev: usize },

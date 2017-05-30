@@ -62,19 +62,18 @@ impl <W: Write + Send + 'static>PluginManager<W> {
                     .plugin_n_lines() as u64;
                 Some(serde_json::to_value(n_lines).unwrap())
             },
-            SetFgSpans { start, len, spans, rev } => {
-                self.buffers.lock().editor_for_view_mut(view_id).unwrap()
-                    .plugin_set_fg_spans(start, len, spans, rev);
+            SetFgSpans { .. } => {
+                print_err!("set_fg_spans has been removed; use update_spans.");
                 None
             }
             AddScopes { scopes } => {
                 self.buffers.lock().editor_for_view_mut(view_id).unwrap()
-                    .plugin_add_scopes(plugin_id, &scopes);
+                    .plugin_add_scopes(plugin_id, scopes);
                 None
             }
             UpdateSpans { start, len, spans, rev } => {
                 self.buffers.lock().editor_for_view_mut(view_id).unwrap()
-                    .plugin_update_spans(start, len, spans, rev);
+                    .plugin_update_spans(plugin_id, start, len, spans, rev);
                 None
             }
             AddSpans { .. } => { print_err!("add_spans not implemented"); None }

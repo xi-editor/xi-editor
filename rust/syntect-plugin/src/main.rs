@@ -37,7 +37,7 @@ struct PluginState<'a> {
     spans_start: usize,
     // unflushed spans
     spans: Vec<ScopeSpan>,
-    new_scopes: Vec<String>,
+    new_scopes: Vec<Vec<String>>,
     syntax_name: String,
 }
 
@@ -86,14 +86,14 @@ impl<'a> PluginState<'a> {
                     LookupResult::New(id) => {
                         let stack_strings = self.scope_state.as_slice().iter()
                             .map(|slice| slice.build_string())
-                            .collect::<Vec<_>>()
-                            .as_slice()
-                            .join(" ");
+                            .collect::<Vec<_>>();
                         self.new_scopes.push(stack_strings);
                         id
                     }
                 };
-                self.spans.push(ScopeSpan::new(span_start, cursor, scope_ident))
+                self.spans.push(ScopeSpan::new(self.offset + span_start,
+                                               self.offset + cursor,
+                                               scope_ident))
             }
             span_start = cursor;
             self.scope_state.apply(&batch);

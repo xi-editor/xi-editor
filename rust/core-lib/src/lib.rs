@@ -20,6 +20,7 @@ extern crate serde_json;
 #[macro_use]
 extern crate serde_derive;
 extern crate time;
+extern crate syntect;
 
 use std::io::Write;
 
@@ -47,6 +48,7 @@ pub mod internal {
     pub mod selection;
     pub mod movement;
     pub mod syntax;
+    pub mod layers;
 }
 
 use internal::tabs;
@@ -60,6 +62,7 @@ use internal::index_set;
 use internal::selection;
 use internal::movement;
 use internal::syntax;
+use internal::layers;
 
 use tabs::Documents;
 use rpc::Request;

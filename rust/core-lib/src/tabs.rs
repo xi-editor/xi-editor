@@ -22,6 +22,7 @@ use std::fs::File;
 use std::sync::{Arc, Mutex, MutexGuard, Weak, mpsc};
 
 use serde_json::value::Value;
+use syntect::highlighting::ThemeSet;
 
 use xi_rope::rope::Rope;
 use editor::Editor;
@@ -248,6 +249,8 @@ pub struct Documents<W: Write> {
     buffers: BufferContainerRef<W>,
     id_counter: usize,
     kill_ring: Arc<Mutex<Rope>>,
+    //TODO: theme handling should be part of the (eventual) preferences system
+    theme_set: Arc<Mutex<ThemeSet>>,
     style_map: Arc<Mutex<StyleMap>>,
     plugins: PluginManagerRef<W>,
     /// A tx channel used to propagate plugin updates from all `Editor`s.
@@ -259,6 +262,7 @@ pub struct Documents<W: Write> {
 pub struct DocumentCtx<W: Write> {
     kill_ring: Arc<Mutex<Rope>>,
     rpc_peer: MainPeer<W>,
+    pub theme_set: Arc<Mutex<ThemeSet>>,
     style_map: Arc<Mutex<StyleMap>>,
     update_channel: mpsc::Sender<(ViewIdentifier, PluginUpdate, usize)>
 }
@@ -276,6 +280,7 @@ impl<W: Write + Send + 'static> Documents<W> {
             buffers: buffers,
             id_counter: 0,
             kill_ring: Arc::new(Mutex::new(Rope::from(""))),
+            theme_set: Arc::new(Mutex::new(ThemeSet::load_defaults())),
             style_map: Arc::new(Mutex::new(StyleMap::new())),
             plugins: plugin_manager,
             update_channel: update_tx,
@@ -286,6 +291,7 @@ impl<W: Write + Send + 'static> Documents<W> {
         DocumentCtx {
             kill_ring: self.kill_ring.clone(),
             rpc_peer: peer.clone(),
+            theme_set: self.theme_set.clone(),
             style_map: self.style_map.clone(),
             update_channel: self.update_channel.clone(),
         }
