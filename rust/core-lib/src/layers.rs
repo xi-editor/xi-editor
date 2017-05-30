@@ -23,7 +23,7 @@
 
 use std::collections::BTreeMap;
 use std::io::Write;
-use syntect::parsing::{ScopeStack, Scope};
+use syntect::parsing::Scope;
 use syntect::highlighting::Highlighter;
 
 use xi_rope::interval::Interval;
@@ -38,7 +38,7 @@ pub struct Scopes {
 
 /// A collection of scope spans from a single source.
 pub struct ScopeLayer {
-    stack_lookup: Vec<ScopeStack>,
+    stack_lookup: Vec<Vec<Scope>>,
     style_lookup: Vec<Style>,
     /// Human readable scope names, for debugging
     name_lookup: Vec<Vec<String>>,
@@ -133,17 +133,17 @@ impl ScopeLayer {
         for stack in scopes {
             let scopes = stack.iter().map(|s| Scope::new(&s))
                 .filter(|result| match *result {
-                   Err(ref err) => {
-                       print_err!("failed to resolve scope {}\nErr: {:?}",
-                                  &stack.join(" "),
-                                  err);
-                       false
-                       }
-                   _ => true
+                    Err(ref err) => {
+                        print_err!("failed to resolve scope {}\nErr: {:?}",
+                                   &stack.join(" "),
+                                   err);
+                        false
+                    }
+                    _ => true
                 })
-            .map(|s| s.unwrap())
-            .collect::<Vec<_>>();
-            stacks.push(ScopeStack::from_vec(scopes));
+                .map(|s| s.unwrap())
+                .collect::<Vec<_>>();
+            stacks.push(scopes);
             self.name_lookup.push(stack);
         }
 
@@ -155,7 +155,7 @@ impl ScopeLayer {
 
         let mut new_styles = Vec::new();
         for stack in &stacks {
-            let style = highlighter.style_for_stack(&stack);
+            let style = highlighter.style_for_stack(stack);
             //print_err!("new style: {:?}", style);
             let style = Style::from_syntect_style(&style);
             new_styles.push(style);

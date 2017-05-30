@@ -76,8 +76,6 @@ impl <W: Write + Send + 'static>PluginManager<W> {
                     .plugin_update_spans(plugin_id, start, len, spans, rev);
                 None
             }
-            AddSpans { .. } => { print_err!("add_spans not implemented"); None }
-            DefStyles { .. } => { print_err!("def_styles not implemented"); None }
             GetData { offset, max_size, rev } => {
                 self.buffers.lock().editor_for_view(view_id).unwrap()
                 .plugin_get_data(offset, max_size, rev)

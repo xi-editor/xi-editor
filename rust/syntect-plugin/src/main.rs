@@ -23,7 +23,7 @@ mod stackmap;
 
 use xi_plugin_lib::caching_plugin::{self, PluginCtx};
 use xi_plugin_lib::plugin_base::ScopeSpan;
-use syntect::parsing::{ParseState, ScopeStack, SyntaxSet};
+use syntect::parsing::{ParseState, ScopeStack, SyntaxSet, SCOPE_REPO};
 use stackmap::{StackMap, LookupResult};
 
 
@@ -75,8 +75,8 @@ impl<'a> PluginState<'a> {
             self.spans_start = self.offset;
         }
 
-        //print_err!("\n\nline {}\napplying ops {:?}", &line, &ops);
         let mut prev_cursor = 0;
+        let repo = SCOPE_REPO.lock().unwrap();
         for (cursor, batch) in ops {
             if self.scope_state.len() > 0 {
                 let scope_ident = self.stack_idents.get_value(self.scope_state.as_slice());
@@ -85,7 +85,7 @@ impl<'a> PluginState<'a> {
                     LookupResult::Existing(id) => id,
                     LookupResult::New(id) => {
                         let stack_strings = self.scope_state.as_slice().iter()
-                            .map(|slice| slice.build_string())
+                            .map(|slice| repo.to_string(*slice))
                             .collect::<Vec<_>>();
                         self.new_scopes.push(stack_strings);
                         id

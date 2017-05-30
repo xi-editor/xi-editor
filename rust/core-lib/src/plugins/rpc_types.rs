@@ -134,28 +134,13 @@ pub struct ScopeSpan {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Style {
-    pub fg: u32,
-    #[serde(rename = "font")]
-    pub font_style: u8,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct StyleDef {
-    pub style: Style,
-    pub scope: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
 #[serde(untagged)]
 /// RPC commands sent from plugins.
 pub enum PluginCommand {
     // deprecated
     SetFgSpans {start: usize, len: usize, spans: Vec<StyleSpan>, rev: usize },
-    DefStyles { styles: Vec<StyleDef> },
     AddScopes { scopes: Vec<Vec<String>> },
     UpdateSpans { start: usize, len: usize, spans: Vec<ScopeSpan>, rev: usize },
-    AddSpans { spans: Vec<ScopeSpan> },
     GetData { offset: usize, max_size: usize, rev: usize },
     Alert { msg: String },
     LineCount,

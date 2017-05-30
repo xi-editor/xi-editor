@@ -345,7 +345,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         let empty_spans = SpansBuilder::new(new_len).build();
         self.style_scopes.update_all(iv.clone(), empty_spans);
 
-        //TODO: style_spans should just live in style_scopesa,
+        //TODO: style_spans should just live in style_scopes
         // or maybe just be removed or something
         let empty_spans = SpansBuilder::new(new_len).build();
         self.style_spans.edit(iv, empty_spans);
@@ -930,6 +930,8 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.text.measure::<LinesMetric>() + 1
     }
 
+    //TODO: plugins should optionally be able to provide a layer id
+    // so a single plugin can maintain multiple layers
     pub fn plugin_add_scopes(&mut self, plugin: &str, scopes: Vec<Vec<String>>) {
         self.style_scopes.add_scopes(plugin, scopes, &self.doc_ctx);
     }

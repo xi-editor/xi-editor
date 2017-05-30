@@ -5,7 +5,7 @@ dependencies = [
  "serde 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_derive 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "syntect 1.4.0 (git+https://github.com/cmyr/syntect?branch=add-hash)",
+ "syntect 1.4.0 (git+https://github.com/cmyr/syntect?branch=style-stack)",
  "xi-plugin-lib 0.1.0",
 ]
 
@@ -271,7 +271,7 @@ dependencies = [
 [[package]]
 name = "syntect"
 version = "1.4.0"
-source = "git+https://github.com/cmyr/syntect?branch=add-hash#77be6c2a200589fa5c570f71b95ddaee19be90e6"
+source = "git+https://github.com/cmyr/syntect?branch=style-stack#924c0039708258b7d28e2a4734854c4d572ca2b8"
 dependencies = [
  "bincode 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "bitflags 0.8.2 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -392,7 +392,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum serde_json 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)" = "1c62115693d0a9ed8c32d1c760f0fdbe7d4b05cb13c135b9b54137ac0d59fccb"
 "checksum syn 0.11.11 (registry+https://github.com/rust-lang/crates.io-index)" = "d3b891b9015c88c576343b9b3e41c2c11a51c219ef067b264bd9c8aa9b441dad"
 "checksum synom 0.11.3 (registry+https://github.com/rust-lang/crates.io-index)" = "a393066ed9010ebaed60b9eafa373d4b1baac186dd7e008555b0f702b51945b6"
-"checksum syntect 1.4.0 (git+https://github.com/cmyr/syntect?branch=add-hash)" = "<none>"
+"checksum syntect 1.4.0 (git+https://github.com/cmyr/syntect?branch=style-stack)" = "<none>"
 "checksum time 0.1.36 (registry+https://github.com/rust-lang/crates.io-index)" = "211b63c112206356ef1ff9b19355f43740fc3f85960c598a93d3a3d3ba7beade"
 "checksum unicode-xid 0.0.4 (registry+https://github.com/rust-lang/crates.io-index)" = "8c1f860d7d29cf02cb2f3f359fd35991af3d30bac52c57d265a3c461074cb4dc"
 "checksum walkdir 1.0.7 (registry+https://github.com/rust-lang/crates.io-index)" = "bb08f9e670fab86099470b97cd2b252d6527f0b3cc1401acdb595ffc9dd288ff"
