@@ -119,6 +119,7 @@ pub enum EditCommand<'a> {
     Copy,
     DebugRewrap,
     DebugTestFgSpans,
+    DebugPrintSpans,
 }
 
 
@@ -284,6 +285,7 @@ impl<'a> EditCommand<'a> {
             "copy" => Ok(Copy),
             "debug_rewrap" => Ok(DebugRewrap),
             "debug_test_fg_spans" => Ok(DebugTestFgSpans),
+            "debug_print_spans" => Ok(DebugPrintSpans),
 
             _ => Err(UnknownEditMethod(method.to_string())),
         }

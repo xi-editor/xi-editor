@@ -40,6 +40,8 @@ pub struct Scopes {
 pub struct ScopeLayer {
     stack_lookup: Vec<ScopeStack>,
     style_lookup: Vec<Style>,
+    /// Human readable scope names, for debugging
+    name_lookup: Vec<Vec<String>>,
     pub spans: Spans<u32>,
 }
 
@@ -77,7 +79,6 @@ impl Scopes {
 
     /// For a given Interval, generates styles from scopes, resolving conflicts.
     pub fn resolve_styles(&self, iv: Interval) -> Spans<Style> {
-        print_err!("resolve styles called");
         if self.layers.is_empty() {
             return SpansBuilder::new(iv.size()).build()
         }
@@ -89,6 +90,16 @@ impl Scopes {
             sb.add_span(iv, style);
         }
         sb.build()
+    }
+
+    pub fn debug_print_spans(&self, iv: Interval) {
+        for (id, layer) in self.layers.iter() {
+            let spans = layer.spans.subseq(iv);
+            print_err!("Spans for layer {}:", id);
+            for (iv, val) in spans.iter() {
+                print_err!("{}: {:?}", iv, layer.name_lookup[*val as usize])
+            }
+        }
     }
 
     fn create_if_missing(&mut self, layer_id: &str) {
@@ -109,6 +120,7 @@ impl Default for ScopeLayer {
         ScopeLayer {
             stack_lookup: Vec::new(),
             style_lookup: Vec::new(),
+            name_lookup: Vec::new(),
             spans: Spans::default(),
         }
     }
@@ -131,7 +143,8 @@ impl ScopeLayer {
                 })
             .map(|s| s.unwrap())
             .collect::<Vec<_>>();
-            stacks.push(ScopeStack::from_vec(scopes))
+            stacks.push(ScopeStack::from_vec(scopes));
+            self.name_lookup.push(stack);
         }
 
         // compute styles for each new stack

@@ -766,6 +766,13 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.view.set_dirty();
     }
 
+    fn debug_print_spans(&self) {
+        // get last sel region
+        let last_sel = self.view.sel_regions().last().unwrap();
+        let iv = Interval::new_closed_open(last_sel.min(), last_sel.max());
+        self.style_scopes.debug_print_spans(iv);
+    }
+
     fn do_cut(&mut self) -> Value {
         let result = self.do_copy();
         // This copy is just to make the borrow checker happy, could be optimized.
@@ -906,6 +913,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             Copy => Some(self.do_copy()),
             DebugRewrap => async(self.debug_rewrap()),
             DebugTestFgSpans => async(self.debug_test_fg_spans()),
+            DebugPrintSpans => async(self.debug_print_spans()),
         };
 
         // TODO: could defer this until input quiesces - will this help?
