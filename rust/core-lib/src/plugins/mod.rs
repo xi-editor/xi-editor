@@ -36,15 +36,21 @@ use self::manifest::PluginDescription;
 
 
 pub type PluginPeer = RpcPeer<ChildStdin>;
+/// A process-unique identifier for a running plugin.
+///
+/// Note: two instances of the same executable will have different identifiers.
+/// Note: this identifier is distinct from the OS's process id.
+#[derive(Debug, Clone, Copy)]
+pub struct PluginPid(usize);
 
 /// A running plugin.
-#[allow(dead_code)]
 pub struct Plugin<W: Write> {
     peer: PluginPeer,
     /// The plugin's process
     process: Child,
     manager: WeakPluginManagerRef<W>,
     description: PluginDescription,
+    identifier: PluginPid,
     //TODO: temporary, eventually ids (view ids?) should be passed back and forth with RPCs
     view_id: ViewIdentifier,
 }
@@ -144,6 +150,11 @@ impl<W: Write + Send + 'static> PluginRef<W> {
     pub fn declare_dead(&mut self) {
         self.1.store(true, Ordering::SeqCst);
     }
+
+    /// Returns this plugin instance's unique identifier.
+    pub fn get_identifier(&self) -> PluginPid {
+        self.0.lock().unwrap().identifier
+    }
 }
 
 
@@ -179,6 +190,7 @@ pub fn start_update_thread<W: Write + Send + 'static>(
 /// Launches a plugin, associating it with a given view.
 pub fn start_plugin<W, C>(manager_ref: &PluginManagerRef<W>,
                           plugin_desc: &PluginDescription,
+                          identifier: PluginPid,
                           view_id: &ViewIdentifier,
                           completion: C)
     where W: Write + Send + 'static,
@@ -208,6 +220,7 @@ pub fn start_plugin<W, C>(manager_ref: &PluginManagerRef<W>,
                     process: child,
                     manager: manager_ref,
                     description: plugin_desc,
+                    identifier: identifier,
                     view_id: view_id,
                 };
                 let mut plugin_ref = PluginRef(
