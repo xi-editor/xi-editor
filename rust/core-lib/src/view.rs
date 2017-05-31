@@ -362,6 +362,7 @@ impl View {
 
         let mut ops = Vec::new();
         let mut line = 0;
+        let mut valid_ranges = Vec::new();
         for (start, end) in self.valid_lines.minus_one_range(first_line, last_line) {
             // TODO: this has some duplication with send_update in the non-dirty case.
             if start > line {
@@ -380,6 +381,7 @@ impl View {
             }
             ops.push(self.build_update_op("ins", Some(rendered_lines), end - start));
             ops.push(self.build_update_op("skip", None, end - start));
+            valid_ranges.push((start, end));
             line = end;
         }
         if line == 0 {
@@ -394,7 +396,9 @@ impl View {
             "pristine": self.pristine,
         });
         tab_ctx.update_view(&self.view_id, &params);
-        self.valid_lines.union_one_range(first_line, last_line);
+        for range in valid_ranges {
+            self.valid_lines.union_one_range(range.0, range.1);
+        }
     }
 
     fn build_update_op(&self, op: &str, lines: Option<Vec<Value>>, n: usize) -> Value {
