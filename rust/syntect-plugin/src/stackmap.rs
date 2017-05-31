@@ -103,6 +103,7 @@ impl LookupResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use syntect::parsing::ScopeStack;
     use std::str::FromStr;
 
     #[test]

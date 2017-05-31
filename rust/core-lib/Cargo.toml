@@ -17,9 +17,7 @@ xi-unicode = { path = "../unicode", version = "0.1.0" }
 xi-rpc = { path = "../rpc", version = "0.2.0" }
 
 [dependencies.syntect]
-git = "https://github.com/cmyr/syntect.git"
-branch = "style-stack"
-version = "1.4"
+version = "1.5"
 default-features = false
 features = ["assets"]
 
