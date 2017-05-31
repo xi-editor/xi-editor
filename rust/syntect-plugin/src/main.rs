@@ -71,16 +71,12 @@ impl<'a> PluginState<'a> {
         }
         let line = line.unwrap();
         let ops = self.parse_state.as_mut().unwrap().parse_line(&line);
-        if self.spans.is_empty() {
-            self.spans_start = self.offset;
-        }
 
         let mut prev_cursor = 0;
         let repo = SCOPE_REPO.lock().unwrap();
         for (cursor, batch) in ops {
             if self.scope_state.len() > 0 {
                 let scope_ident = self.stack_idents.get_value(self.scope_state.as_slice());
-                //print_err!("scope ident: {:?}", scope_ident);
                 let scope_ident = match scope_ident {
                     LookupResult::Existing(id) => id,
                     LookupResult::New(id) => {
@@ -109,11 +105,14 @@ impl<'a> PluginState<'a> {
     fn flush_spans(&mut self, ctx: &mut PluginCtx) {
         if !self.new_scopes.is_empty() {
             ctx.add_scopes(&self.new_scopes);
+            self.new_scopes.clear();
         }
         if !self.spans.is_empty() {
             ctx.update_spans(self.spans_start, self.offset - self.spans_start,
                              self.spans.as_slice());
+            self.spans.clear();
         }
+        self.spans_start = self.offset;
     }
 
     fn do_highlighting(&mut self, mut ctx: PluginCtx) {
@@ -134,6 +133,7 @@ impl<'a> PluginState<'a> {
         self.new_scopes = Vec::new();
         self.line_num = 0;
         self.offset = 0;
+        self.spans_start = 0;
         ctx.schedule_idle(0);
     }
 }
@@ -150,7 +150,7 @@ impl<'a> caching_plugin::Handler for PluginState<'a> {
     }
 
     fn idle(&mut self, mut ctx: PluginCtx, _token: usize) {
-        print_err!("idle task at line {}", self.line_num);
+        //print_err!("idle task at line {}", self.line_num);
         for _ in 0..LINES_PER_RPC {
             if !self.highlight_one_line(&mut ctx) {
                 self.flush_spans(&mut ctx);
