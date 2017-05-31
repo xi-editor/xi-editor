@@ -149,7 +149,7 @@ impl View {
     pub fn toggle_sel(&mut self, offset: usize) {
         self.sel_dirty = true;
         if !self.selection.regions_in_range(offset, offset).is_empty() {
-            self.selection.delete_range(offset, offset);
+            self.selection.delete_range(offset, offset, true);
             if !self.selection.is_empty() {
                 self.drag_state = None;
                 return;
@@ -554,11 +554,29 @@ impl View {
         self.drag_state = None;
 
         // Update search highlights for changed regions
-        // TODO: Incremental search instead of re-doing search completely
         if self.search_string.is_some() {
-            self.valid_search.clear();
-            self.occurrences = None;
-            self.hls_dirty = true;
+            self.valid_search = self.valid_search.apply_delta(delta);
+            let mut occurrences = self.occurrences.take().unwrap_or_else(|| Selection::new());
+
+            // invalidate occurrences around deletion positions
+            for (bo, bn, l) in delta.iter_deletions() {
+                self.valid_search.delete_range(bn, bn+l);
+                occurrences.delete_range(bo, bo+l, false);
+            }
+
+            occurrences = occurrences.apply_delta(delta, false);
+
+            // invalidate occurrences around insert positions
+            for (_, b, l) in delta.iter_inserts() {
+                self.valid_search.delete_range(b, b+l);
+                occurrences.delete_range(b, b+l, false);
+            }
+
+            self.occurrences = Some(occurrences);
+            
+            // update find for for the whole delta (only updates invalid regions)
+            let (iv, _) = delta.summary();
+            self.update_find(text, iv.start(), iv.end(), true, false);
         }
 
         // Note: for committing plugin edits, we probably want to know the priority
@@ -618,11 +636,13 @@ impl View {
             return;
         }
 
+        let text_len = text.len();
         // extend the search by twice the string length (twice, because case matching may increase
         // the length of an occurrence)
         let slop = if include_slop { self.search_string.as_ref().unwrap().len() * 2 } else { 0 };
         let mut occurrences = self.occurrences.take().unwrap_or_else(|| Selection::new());
         let mut searched_until = end;
+        let mut invalidate_from = None;
         
         for (start, end) in self.valid_search.minus_one_range(start, end) {
             let search_string = self.search_string.as_ref().unwrap();
@@ -639,6 +659,43 @@ impl View {
                 match find(&mut cursor, self.case_matching, &search_string) {
                     Some(start) => {
                         let end = start + len;
+
+                        // TODO: since `add_region` below will also search for regions at the start
+                        // and end position, the following functionality may therefore somehow be
+                        // merged with the `add_region` functionality
+                        let mut ix = occurrences.search(start);
+                        if ix < occurrences.len() && occurrences[ix].max() == start {
+                            ix += 1;
+                        }
+                        if ix < occurrences.len() {
+                            // in case of ambiguous search results (e.g. search "aba" in "ababa"),
+                            // the search result closer to the beginning of the file wins
+                            let occ = &occurrences[ix];
+                            let is_eq = occ.min() == start && occ.max() == end;
+                            let is_intersect_before = start >= occ.min() && occ.max() > start;
+                            if is_eq || is_intersect_before {
+                                // Skip the search result and keep the occurrence that is closer to
+                                // the beginning of the file. Re-align the cursor to the kept
+                                // occurrence
+                                cursor.set(occ.max());
+                                continue;
+                            }
+                        }
+
+                        let prev_len = occurrences.len();
+                        // Since the occurrence closer to the beginning of the file wins, possible
+                        // ranges that intersect with this find result are removed. (prevents
+                        // merging, which is the default behaviour of the Selection type, of ranges)
+                        occurrences.delete_range(start, end, false);
+                        // TODO: checking the length feels like a workaround, i.e., add a better
+                        // way of knowing that something has been deleted
+                        if occurrences.len() != prev_len {
+                            // In case there was an ambigious occurrence after this search result,
+                            // all existing occurrences fomr this point are removed.
+                            invalidate_from = Some(end);
+                            occurrences.delete_range(end, text_len, false);
+                        }
+                        
                         let region = SelRegion {
                             start: start,
                             end: end,
@@ -646,6 +703,10 @@ impl View {
                             affinity: Affinity::default(),
                         };
                         occurrences.add_region(region);
+
+                        if invalidate_from.is_some() {
+                            break;
+                        }
                         
                         if stop_on_found {
                             searched_until = end;
@@ -657,8 +718,16 @@ impl View {
             }
         }
         self.occurrences = Some(occurrences);
-        self.valid_search.union_one_range(start, searched_until);
-        self.hls_dirty = true;
+        if let Some(invalidate_from) = invalidate_from {
+            self.valid_search.union_one_range(start, invalidate_from);
+            // invalidate all search results from the point of the ambigious search result
+            self.valid_search.delete_range(invalidate_from, text_len);
+            // continue with the find for the current region
+            self.update_find(text, invalidate_from, end, false, false);
+        } else {
+            self.valid_search.union_one_range(start, searched_until);
+            self.hls_dirty = true;
+        }
     }
 
     /// Select the next occurrence relative to the last cursor. `reverse` determines whether the

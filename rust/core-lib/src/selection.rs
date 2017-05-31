@@ -109,11 +109,18 @@ impl Selection {
         &self.regions[first..last]
     }
 
-    /// Deletes all the regions that intersect or touch the given range.
-    pub fn delete_range(&mut self, start: usize, end: usize) {
-        let first = self.search(start);
+    /// Deletes all the regions that intersect or (if delete_adjacent = true) touch the given range.
+    pub fn delete_range(&mut self, start: usize, end: usize, delete_adjacent: bool) {
+        let mut first = self.search(start);
         let mut last = self.search(end);
-        if last < self.regions.len() && self.regions[last].min() <= end {
+        if first >= self.regions.len() {
+            return;
+        }
+        if !delete_adjacent && self.regions[first].max() == start {
+            first += 1;
+        }
+        if last < self.regions.len() && ((delete_adjacent && self.regions[last].min() <= end)
+           || (!delete_adjacent && self.regions[last].min() < end)) {
             last += 1;
         }
         remove_n_at(&mut self.regions, first, last - first);
@@ -267,6 +274,37 @@ mod tests {
         s.add_region(r(3, 5));
         assert!(!s.is_empty());
         assert_eq!(s.deref(), &[r(3, 5)]);
+    }
+
+    #[test]
+    fn delete_range() {
+        let mut s = Selection::new();
+        s.add_region(r(3, 5));
+        s.delete_range(1, 2, true);
+        assert_eq!(s.deref(), &[r(3, 5)]);
+        s.delete_range(1, 3, false);
+        assert_eq!(s.deref(), &[r(3, 5)]);
+        s.delete_range(1, 3, true);
+        assert_eq!(s.deref(), &[]);
+
+        let mut s = Selection::new();
+        s.add_region(r(3, 5));
+        s.delete_range(5, 6, false);
+        assert_eq!(s.deref(), &[r(3, 5)]);
+        s.delete_range(5, 6, true);
+        assert_eq!(s.deref(), &[]);
+
+        let mut s = Selection::new();
+        s.add_region(r(3, 5));
+        s.delete_range(2, 4, false);
+        assert_eq!(s.deref(), &[]);
+        assert_eq!(s.deref(), &[]);
+
+        let mut s = Selection::new();
+        s.add_region(r(3, 5));
+        s.add_region(r(7, 8));
+        s.delete_range(2, 10, false);
+        assert_eq!(s.deref(), &[]);
     }
 
     #[test]

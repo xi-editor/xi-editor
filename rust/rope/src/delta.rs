@@ -22,6 +22,7 @@ use multiset::{Subset, SubsetBuilder, CountMatcher};
 use std::cmp::min;
 use std::ops::Deref;
 use std::fmt;
+use std::slice;
 
 #[derive(Clone)]
 enum DeltaElement<N: NodeInfo> {
@@ -242,6 +243,31 @@ impl<N: NodeInfo> Delta<N> {
                 DeltaElement::Insert(ref n) => n.len()
             }
         )
+    }
+
+    /// Iterates over all the inserts of the delta. Each insert is represented by a tuple of
+    /// three elements, where the first element represents the position of the insertion relative
+    /// to the old document, the second element the position relative to the new document and the
+    /// third element the length of the insertion.
+    pub fn iter_inserts(&self) -> InsertsIter<N> {
+        InsertsIter {
+            pos: 0,
+            last_end: 0,
+            els_iter: self.els.iter(),
+        }
+    }
+
+    /// Iterates over all the deletions of the delta. Each deletion is represented by a tuple of
+    /// three elements, where the first element represents the position of the deletion relative
+    /// to the old document, the second element the position relative to the new document and the
+    /// third element the length of the deletion.
+    pub fn iter_deletions(&self) -> DeletionsIter<N> {
+        DeletionsIter {
+            pos: 0,
+            last_end: 0,
+            base_len: self.base_len,
+            els_iter: self.els.iter(),
+        }
     }
 }
 
@@ -502,10 +528,77 @@ impl<N: NodeInfo> Builder<N> {
     }
 }
 
+pub struct InsertsIter<'a, N: NodeInfo + 'a> {
+    pos: usize,
+    last_end: usize,
+    els_iter: slice::Iter<'a, DeltaElement<N>>,
+}
+
+impl<'a, N: NodeInfo> Iterator for InsertsIter<'a, N> {
+    type Item = (usize, usize, usize);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut result = None;
+        while let Some(elem) = self.els_iter.next() {
+            match elem {
+                &DeltaElement::Copy(b, e) => {
+                    self.pos += e - b;
+                    self.last_end = e;
+                }
+                &DeltaElement::Insert(ref n) => {
+                    result = Some((self.last_end, self.pos, n.len()));
+                    self.pos += n.len();
+                    self.last_end += n.len();
+                    break;
+                }
+            }
+        }
+        result
+    }
+}
+
+pub struct DeletionsIter<'a, N: NodeInfo + 'a> {
+    pos: usize,
+    last_end: usize,
+    base_len: usize,
+    els_iter: slice::Iter<'a, DeltaElement<N>>,
+}
+
+impl<'a, N: NodeInfo> Iterator for DeletionsIter<'a, N> {
+    type Item = (usize, usize, usize);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut result = None;
+        while let Some(elem) = self.els_iter.next() {
+            match elem {
+                &DeltaElement::Copy(b, e) => {
+                    if b > self.last_end {
+                        result = Some((self.last_end, self.pos, b - self.last_end));
+                    }
+                    self.pos += e - b;
+                    self.last_end = e;
+                    if result.is_some() {
+                        break;
+                    }
+                }
+                &DeltaElement::Insert(ref n) => {
+                    self.pos += n.len();
+                    self.last_end += n.len();
+                }
+            }
+        }
+        if result.is_none() && self.last_end < self.base_len {
+            result = Some((self.last_end, self.pos, self.base_len - self.last_end));
+            self.last_end = self.base_len;
+        }
+        result
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rope::Rope;
-    use delta::{Delta};
+    use delta::{Delta, Builder};
     use interval::Interval;
     use test_helpers::find_deletions;
 
@@ -577,5 +670,38 @@ mod tests {
         let s2 = find_deletions(str2, TEST_STR);
         let d4 = d2.transform_shrink(&s2);
         assert_eq!("356789+ABCx", d4.apply_to_string(str2));
+    }
+
+    #[test]
+    fn iter_inserts() {
+        let mut builder = Builder::new(10);
+        builder.replace(Interval::new_closed_open(2, 2), Rope::from("a"));
+        builder.delete(Interval::new_closed_open(3, 5));
+        builder.replace(Interval::new_closed_open(6, 8), Rope::from("b"));
+        let delta = builder.build();
+
+        assert_eq!("01a25b89", delta.apply_to_string("0123456789"));
+        
+        let mut iter = delta.iter_inserts();
+        assert_eq!(Some((2, 2, 1)), iter.next());
+        assert_eq!(Some((6, 5, 1)), iter.next());
+        assert_eq!(None, iter.next());
+    }
+
+    #[test]
+    fn iter_deletions() {
+        let mut builder = Builder::new(10);
+        builder.delete(Interval::new_closed_open(0, 2));
+        builder.delete(Interval::new_closed_open(4, 6));
+        builder.delete(Interval::new_closed_open(8, 10));
+        let delta = builder.build();
+
+        assert_eq!("2367", delta.apply_to_string("0123456789"));
+        
+        let mut iter = delta.iter_deletions();
+        assert_eq!(Some((0, 0, 2)), iter.next());
+        assert_eq!(Some((4, 2, 2)), iter.next());
+        assert_eq!(Some((8, 4, 2)), iter.next());
+        assert_eq!(None, iter.next());
     }
 }
