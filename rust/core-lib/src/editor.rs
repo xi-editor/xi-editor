@@ -816,8 +816,46 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.insert(&*String::from(kill_ring_string));
     }
 
-    pub fn do_rpc(&mut self, view_id: &ViewIdentifier, cmd: EditCommand) -> Option<Value> {
+    pub fn do_find(&mut self, chars: Option<&str>, case_sensitive: bool) -> Option<Value> {
+        let mut from_sel = false;
+        let search_string = chars.map(String::from).or_else(|| {
+            // if the search string is not provided, use the string of the last selection for find
+            self.view.sel_regions().last().and_then(|region| {
+                if region.is_caret() {
+                    None
+                } else {
+                    from_sel = true;
+                    Some(self.text.slice_to_string(region.min(), region.max()))
+                }
+            })
+        });
 
+        if search_string.is_none() {
+            self.view.unset_find();
+            return Some(Value::Null);
+        }
+
+        let search_string = search_string.unwrap();
+        if search_string.len() == 0 {
+            self.view.unset_find();
+            return Some(Value::Null);
+        }
+
+        self.view.set_find(&search_string, case_sensitive);
+
+        Some(Value::String(search_string.to_string()))
+    }
+
+    fn do_find_next(&mut self, reverse: bool, wrap_around: bool) {
+        self.scroll_to = self.view.select_next_occurrence(&self.text, reverse, false, true);
+
+        if self.scroll_to.is_none() && wrap_around {
+            // nothing found, search past end of file
+            self.scroll_to = self.view.select_next_occurrence(&self.text, reverse, true, true);
+        }
+    }
+
+    pub fn do_rpc(&mut self, view_id: &ViewIdentifier, cmd: EditCommand) -> Option<Value> {
         use rpc::EditCommand::*;
 
         // if the rpc's originating view is different from current self.view, swap it in
@@ -883,6 +921,9 @@ impl<W: Write + Send + 'static> Editor<W> {
             Redo => async(self.do_redo()),
             Cut => Some(self.do_cut()),
             Copy => Some(self.do_copy()),
+            Find { chars, case_sensitive } => self.do_find(chars, case_sensitive),
+            FindNext { wrap_around } => async(self.do_find_next(false, wrap_around)),
+            FindPrevious { wrap_around } => async(self.do_find_next(true, wrap_around)),
             DebugRewrap => async(self.debug_rewrap()),
             DebugTestFgSpans => async(self.debug_test_fg_spans()),
         };

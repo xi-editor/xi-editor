@@ -393,6 +393,10 @@ pub fn dict_get_string<'a>(dict: &'a serde_json::Map<String, Value>, key: &str) 
     dict.get(key).and_then(Value::as_str)
 }
 
+pub fn dict_get_bool<'a>(dict: &'a serde_json::Map<String, Value>, key: &str) -> Option<bool> {
+    dict.get(key).and_then(Value::as_bool)
+}
+
 pub fn arr_get_u64(arr: &[Value], idx: usize) -> Option<u64> {
     arr.get(idx).and_then(Value::as_u64)
 }

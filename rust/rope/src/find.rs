@@ -37,6 +37,7 @@ pub enum FindResult {
 /// A policy for case matching. There may be more choices in the future (for
 /// example, an even more forgiving mode that ignores accents, or possibly
 /// handling Unicode normalization).
+#[derive(Clone, Copy, PartialEq)]
 pub enum CaseMatching {
     /// Require an exact codepoint-for-codepoint match (implies case sensitivity).
     Exact,
