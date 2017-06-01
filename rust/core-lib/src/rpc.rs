@@ -120,7 +120,7 @@ pub enum EditCommand<'a> {
     Cut,
     Copy,
     Find { chars: Option<&'a str>, case_sensitive: bool },
-    FindNext { wrap_around: bool },
+    FindNext { wrap_around: bool, allow_same: bool },
     FindPrevious { wrap_around: bool },
     DebugRewrap,
     DebugTestFgSpans,
@@ -293,11 +293,12 @@ impl<'a> EditCommand<'a> {
             "find" => params.as_object().map(|dict| {
                 let chars = dict_get_string(dict, "chars");
                 let case_sensitive = dict_get_bool(dict, "case_sensitive").unwrap_or(false);
-                Find { chars: chars, case_sensitive: case_sensitive}
+                Find { chars: chars, case_sensitive: case_sensitive }
             }).ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
             "find_next" =>  params.as_object().map(|dict| {
                 let wrap_around = dict_get_bool(dict, "wrap_around").unwrap_or(false);
-                FindNext { wrap_around: wrap_around }
+                let allow_same = dict_get_bool(dict, "allow_same").unwrap_or(false);
+                FindNext { wrap_around: wrap_around, allow_same: allow_same }
             }).ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
             "find_previous" =>  params.as_object().map(|dict| {
                 let wrap_around = dict_get_bool(dict, "wrap_around").unwrap_or(false);

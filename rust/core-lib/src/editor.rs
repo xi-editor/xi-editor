@@ -846,12 +846,12 @@ impl<W: Write + Send + 'static> Editor<W> {
         Some(Value::String(search_string.to_string()))
     }
 
-    fn do_find_next(&mut self, reverse: bool, wrap_around: bool) {
-        self.scroll_to = self.view.select_next_occurrence(&self.text, reverse, false, true);
+    fn do_find_next(&mut self, reverse: bool, wrap_around: bool, allow_same: bool) {
+        self.scroll_to = self.view.select_next_occurrence(&self.text, reverse, false, true, allow_same);
 
         if self.scroll_to.is_none() && wrap_around {
             // nothing found, search past end of file
-            self.scroll_to = self.view.select_next_occurrence(&self.text, reverse, true, true);
+            self.scroll_to = self.view.select_next_occurrence(&self.text, reverse, true, true, allow_same);
         }
     }
 
@@ -922,8 +922,8 @@ impl<W: Write + Send + 'static> Editor<W> {
             Cut => Some(self.do_cut()),
             Copy => Some(self.do_copy()),
             Find { chars, case_sensitive } => self.do_find(chars, case_sensitive),
-            FindNext { wrap_around } => async(self.do_find_next(false, wrap_around)),
-            FindPrevious { wrap_around } => async(self.do_find_next(true, wrap_around)),
+            FindNext { wrap_around, allow_same } => async(self.do_find_next(false, wrap_around, allow_same)),
+            FindPrevious { wrap_around } => async(self.do_find_next(true, wrap_around, true)),
             DebugRewrap => async(self.debug_rewrap()),
             DebugTestFgSpans => async(self.debug_test_fg_spans()),
         };

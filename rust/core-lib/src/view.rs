@@ -665,9 +665,10 @@ impl View {
     /// next occurrence before (`true`) or after (`false`) the last cursor is selected. `wrapped`
     /// indicates a search for the next occurrence past the end of the file. `stop_on_found`
     /// determines whether the search should stop at the first found occurrence (does only apply
-    /// to forward search (i.e. reverse = false).
+    /// to forward searc, i.e. reverse = false). If `allow_same` is set to `true` the current
+    /// selection is considered a valid next occurrence.
     pub fn select_next_occurrence(&mut self, text: &Rope, reverse: bool, wrapped: bool,
-                                  stop_on_found: bool) -> Option<usize>
+                                  stop_on_found: bool, allow_same: bool) -> Option<usize>
     {
         if self.search_string.is_none() {
             return None;
@@ -700,7 +701,7 @@ impl View {
                         occurrences.get(ix).and_then(|oc| {
                             // if possible, the current selection should be extended, instead of
                             // jumping to the next occurrence
-                            if oc.end == sel.1 {
+                            if oc.end == sel.1 && !allow_same {
                                 occurrences.get(ix+1)
                             } else {
                                 Some(oc)
