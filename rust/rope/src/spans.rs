@@ -359,4 +359,53 @@ mod tests {
 
        assert!(merged_iter.next().is_none());
     }
+
+    #[test]
+    fn test_merge_2() {
+        // 1 1 1   4 4
+        //   2 2 2 2     8 9
+        let mut sb = SpansBuilder::new(9);
+        sb.add_span(Interval::new_open_closed(0, 3), 1);
+        sb.add_span(Interval::new_open_closed(4, 6), 4);
+        let blue = sb.build();
+
+        let mut sb = SpansBuilder::new(9);
+        sb.add_span(Interval::new_open_closed(1, 5), 2);
+        sb.add_span(Interval::new_open_closed(7, 8), 8);
+        sb.add_span(Interval::new_open_closed(8, 9), 9);
+        let red = sb.build();
+
+       let merged = red.merge(&blue, |r, b| b.map(|b| b + r).unwrap_or(*r));
+
+       let mut merged_iter = merged.iter();
+       let (iv, val) = merged_iter.next().unwrap();
+       assert_eq!(iv, Interval::new_open_closed(0, 1));
+       assert_eq!(*val, 1);
+
+       let (iv, val) = merged_iter.next().unwrap();
+       assert_eq!(iv, Interval::new_open_closed(1, 3));
+       assert_eq!(*val, 3);
+
+       let (iv, val) = merged_iter.next().unwrap();
+       assert_eq!(iv, Interval::new_open_closed(3, 4));
+       assert_eq!(*val, 2);
+
+       let (iv, val) = merged_iter.next().unwrap();
+       assert_eq!(iv, Interval::new_open_closed(4, 5));
+       assert_eq!(*val, 6);
+
+       let (iv, val) = merged_iter.next().unwrap();
+       assert_eq!(iv, Interval::new_open_closed(5, 6));
+       assert_eq!(*val, 4);
+
+       let (iv, val) = merged_iter.next().unwrap();
+       assert_eq!(iv, Interval::new_open_closed(7, 8));
+       assert_eq!(*val, 8);
+
+       let (iv, val) = merged_iter.next().unwrap();
+       assert_eq!(iv, Interval::new_open_closed(8, 9));
+       assert_eq!(*val, 9);
+
+       assert!(merged_iter.next().is_none());
+    }
 }
