@@ -19,7 +19,7 @@ use serde_json::value::Value;
 
 use xi_rope::rope::{Rope, LinesMetric, RopeInfo};
 use xi_rope::delta::Delta;
-use xi_rope::tree::Cursor;
+use xi_rope::tree::{Cursor, Metric};
 use xi_rope::breaks::{Breaks, BreaksInfo, BreaksMetric, BreaksBaseMetric};
 use xi_rope::interval::Interval;
 use xi_rope::spans::Spans;
@@ -573,7 +573,7 @@ impl View {
             }
 
             self.occurrences = Some(occurrences);
-            
+
             // update find for for the whole delta (only updates invalid regions)
             let (iv, _) = delta.summary();
             self.update_find(text, iv.start(), iv.end(), true, false);
@@ -643,11 +643,11 @@ impl View {
         let mut occurrences = self.occurrences.take().unwrap_or_else(|| Selection::new());
         let mut searched_until = end;
         let mut invalidate_from = None;
-        
+
         for (start, end) in self.valid_search.minus_one_range(start, end) {
             let search_string = self.search_string.as_ref().unwrap();
             let len = search_string.len();
-        
+
             // expand region to be able to find occurrences around the region's edges
             let from = max(start, slop) - slop;
             let to = min(end + slop, text.len());
@@ -695,7 +695,7 @@ impl View {
                             invalidate_from = Some(end);
                             occurrences.delete_range(end, text_len, false);
                         }
-                        
+
                         let region = SelRegion {
                             start: start,
                             end: end,
@@ -707,7 +707,7 @@ impl View {
                         if invalidate_from.is_some() {
                             break;
                         }
-                        
+
                         if stop_on_found {
                             searched_until = end;
                             break;
@@ -720,8 +720,22 @@ impl View {
         self.occurrences = Some(occurrences);
         if let Some(invalidate_from) = invalidate_from {
             self.valid_search.union_one_range(start, invalidate_from);
-            // invalidate all search results from the point of the ambigious search result
-            self.valid_search.delete_range(invalidate_from, text_len);
+
+            // test whether the search string contains newlines
+            let is_multi_line = LinesMetric::next(self.search_string.as_ref().unwrap(), 0).is_some();
+            if is_multi_line {
+                // invalidate all search results from the point of the ambigious search result until
+                // the end of the file
+                self.valid_search.delete_range(invalidate_from, text_len);
+            } else {
+                // find end of line
+                let mut cursor = Cursor::new(&text, invalidate_from);
+                if let Some(end_of_line) = cursor.next::<LinesMetric>() {
+                    // invalidate until end of line
+                    self.valid_search.delete_range(invalidate_from, end_of_line);
+                }
+            }
+
             // continue with the find for the current region
             self.update_find(text, invalidate_from, end, false, false);
         } else {
@@ -747,7 +761,7 @@ impl View {
             Some(sel) => (sel.min(), sel.max()),
             None => return None
         };
-        
+
         let (from, to) = if reverse != wrapped { (0, sel.0) } else { (sel.0, text.len()) };
         let mut next_occurrence;
 
@@ -756,7 +770,7 @@ impl View {
                 if occurrences.len() == 0 {
                     return None;
                 }
-                if wrapped { // wrap around file boundaries 
+                if wrapped { // wrap around file boundaries
                     if reverse {
                         occurrences.last()
                     } else {
@@ -779,7 +793,7 @@ impl View {
                     }
                 }
             }).map(|o| o.clone());
-            
+
             let region = {
                 let mut unsearched = self.valid_search.minus_one_range(from, to);
                 if reverse { unsearched.next_back() } else { unsearched.next() }
@@ -790,7 +804,7 @@ impl View {
                         break;
                     }
                 }
-                
+
                 if !reverse {
                     self.update_find(text, b, e, false, stop_on_found);
                 } else {
