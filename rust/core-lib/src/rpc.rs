@@ -17,7 +17,7 @@
 use std::error;
 use std::fmt;
 use serde_json::{self, Value};
-use xi_rpc::{dict_get_u64, dict_get_string, arr_get_u64, arr_get_i64};
+use xi_rpc::{dict_get_u64, dict_get_string, dict_get_bool, arr_get_u64, arr_get_i64};
 use tabs::ViewIdentifier;
 
 // =============================================================================
@@ -119,6 +119,9 @@ pub enum EditCommand<'a> {
     Redo,
     Cut,
     Copy,
+    Find { chars: Option<&'a str>, case_sensitive: bool },
+    FindNext { wrap_around: bool, allow_same: bool },
+    FindPrevious { wrap_around: bool },
     DebugRewrap,
     DebugTestFgSpans,
 }
@@ -150,7 +153,7 @@ impl<'a> CoreCommand<'a> {
             "new_view" => params.as_object()
                 .map(|dict| NewView { file_path: dict_get_string(dict, "file_path") }) // optional
                 .ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
-                
+
             "save" => params.as_object().and_then(|dict| {
                 dict_get_string(dict, "view_id").and_then(|view_id| {
                     dict_get_string(dict, "file_path").map(|file_path| {
@@ -286,6 +289,22 @@ impl<'a> EditCommand<'a> {
             "redo" => Ok(Redo),
             "cut" => Ok(Cut),
             "copy" => Ok(Copy),
+
+            "find" => params.as_object().map(|dict| {
+                let chars = dict_get_string(dict, "chars");
+                let case_sensitive = dict_get_bool(dict, "case_sensitive").unwrap_or(false);
+                Find { chars: chars, case_sensitive: case_sensitive }
+            }).ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
+            "find_next" =>  params.as_object().map(|dict| {
+                let wrap_around = dict_get_bool(dict, "wrap_around").unwrap_or(false);
+                let allow_same = dict_get_bool(dict, "allow_same").unwrap_or(false);
+                FindNext { wrap_around: wrap_around, allow_same: allow_same }
+            }).ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
+            "find_previous" =>  params.as_object().map(|dict| {
+                let wrap_around = dict_get_bool(dict, "wrap_around").unwrap_or(false);
+                FindPrevious { wrap_around: wrap_around }
+            }).ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
+
             "debug_rewrap" => Ok(DebugRewrap),
             "debug_test_fg_spans" => Ok(DebugTestFgSpans),
 

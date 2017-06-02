@@ -119,6 +119,26 @@ impl<'a> Iterator for MinusIter<'a> {
     }
 }
 
+impl<'a> DoubleEndedIterator for MinusIter<'a> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        while self.start < self.end {
+            if self.ranges.is_empty() || self.ranges[self.ranges.len() - 1].1 <= self.start {
+                let result = (self.start, self.end);
+                self.start = self.end;
+                return Some(result);
+            }
+            let last_ix = self.ranges.len() - 1;
+            let result = (self.ranges[last_ix].1, self.end);
+            self.end = self.ranges[last_ix].0;
+            self.ranges = &self.ranges[..last_ix];
+            if result.1 > result.0 {
+                return Some(result);
+            }
+        }
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::IndexSet;
@@ -156,6 +176,30 @@ mod tests {
         assert_eq!(e.minus_one_range(5, 10).collect::<Vec<_>>(), vec![(5, 7), (9, 10)]);
         assert_eq!(e.minus_one_range(8, 10).collect::<Vec<_>>(), vec![(9, 10)]);
         assert_eq!(e.minus_one_range(0, 10).collect::<Vec<_>>(), vec![(0, 3), (5, 7), (9, 10)]);
+    }
+
+    #[test]
+    fn minus_one_range_double_ended_iter() {
+        let mut e = IndexSet::new();
+        e.union_one_range(3, 5);
+        e.union_one_range(7, 9);
+        e.union_one_range(12, 15);
+
+        let mut iter = e.minus_one_range(4, 13);
+        assert_eq!(iter.next(), Some((5, 7)));
+        assert_eq!(iter.next(), Some((9, 12)));
+        assert_eq!(iter.next(), None);
+
+        let mut iter = e.minus_one_range(4, 13);
+        assert_eq!(iter.next_back(), Some((9, 12)));
+        assert_eq!(iter.next_back(), Some((5, 7)));
+        assert_eq!(iter.next_back(), None);
+
+        let mut iter = e.minus_one_range(4, 13);
+        assert_eq!(iter.next_back(), Some((9, 12)));
+        assert_eq!(iter.next(), Some((5, 7)));
+        assert_eq!(iter.next_back(), None);
+        assert_eq!(iter.next(), None);
     }
 
     #[test]

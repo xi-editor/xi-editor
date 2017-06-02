@@ -661,6 +661,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
         if let Some(leaf) = self.leaf {
             self.position = self.offset_of_leaf + leaf.len();
         } else {
+            self.leaf = None;
             return None;
         }
         for i in 0..CURSOR_CACHE_SIZE {
@@ -693,6 +694,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
     // same return as get_leaf, moves to beginning of prev leaf
     pub fn prev_leaf(&mut self) -> Option<(&'a N::L, usize)> {
         if self.offset_of_leaf == 0 || Some(self.leaf).is_none() {
+            self.leaf = None;
             return None;
         }
         for i in 0..CURSOR_CACHE_SIZE {

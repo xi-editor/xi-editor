@@ -47,7 +47,7 @@ impl Selection {
 
     // The smallest index so that offset > region.max() for all preceding
     // regions.
-    fn search(&self, offset: usize) -> usize {
+    pub fn search(&self, offset: usize) -> usize {
         if self.regions.is_empty() || offset > self.regions.last().unwrap().max() {
             return self.regions.len();
         }

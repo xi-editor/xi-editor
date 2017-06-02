@@ -23,6 +23,7 @@ use xi_rope::tree::Cursor;
 use xi_rope::breaks::{Breaks, BreaksInfo, BreaksMetric, BreaksBaseMetric};
 use xi_rope::interval::Interval;
 use xi_rope::spans::Spans;
+use xi_rope::find::{find, CaseMatching};
 
 use tabs::{ViewIdentifier, DocumentCtx};
 use styles;
@@ -33,6 +34,7 @@ use movement::{Movement, selection_movement};
 use linewrap;
 
 const SCROLL_SLOP: usize = 2;
+const BACKWARDS_FIND_CHUNK_SIZE: usize = 32_768;
 
 #[derive(Default, Clone)]
 pub struct Style {
@@ -60,12 +62,23 @@ pub struct View {
 
     // The selection state was updated.
     sel_dirty: bool,
+    // The occurrences, which determine the highlights, have been updated.
+    hls_dirty: bool,
 
     // TODO: much finer grained tracking of dirty state
     dirty: bool,
 
     /// Tracks whether or not the view has unsaved changes.
     pristine: bool,
+
+    /// The currently active search string
+    search_string: Option<String>,
+    /// The case matching setting for the currently active search
+    case_matching: CaseMatching,
+    /// The set of all known find occurrences (highlights)
+    occurrences: Option<Selection>,
+    /// Set of ranges that have already been searched for the currently active search string
+    valid_search: IndexSet,
 }
 
 /// State required to resolve a drag gesture into a selection.
@@ -103,8 +116,13 @@ impl View {
             wrap_col: 0,
             valid_lines: IndexSet::new(),
             sel_dirty: true,
+            hls_dirty: true,
             dirty: true,
             pristine: true,
+            search_string: None,
+            case_matching: CaseMatching::CaseInsensitive,
+            occurrences: None,
+            valid_search: IndexSet::new(),
         }
     }
 
@@ -263,7 +281,18 @@ impl View {
             }
         }
 
-        let styles = self.render_styles(tab_ctx, start_pos, pos, &selections, style_spans);
+        let mut hls = Vec::new();
+        if let Some(ref occurrences) = self.occurrences {
+            for region in occurrences.regions_in_range(start_pos, pos) {
+                let sel_start_ix = clamp(region.min(), start_pos, pos) - start_pos;
+                let sel_end_ix = clamp(region.max(), start_pos, pos) - start_pos;
+                if sel_end_ix > sel_start_ix {
+                    hls.push((sel_start_ix, sel_end_ix));
+                }
+            }
+        }
+
+        let styles = self.render_styles(tab_ctx, start_pos, pos, &selections, &hls, style_spans);
 
         let mut result = json!({
             "text": &l_str,
@@ -277,7 +306,7 @@ impl View {
     }
 
     pub fn render_styles<W: Write>(&self, tab_ctx: &DocumentCtx<W>, start: usize, end: usize,
-        sel: &[(usize, usize)], style_spans: &Spans<Style>) -> Vec<isize>
+        sel: &[(usize, usize)], hls: &[(usize, usize)], style_spans: &Spans<Style>) -> Vec<isize>
     {
         let mut rendered_styles = Vec::new();
         let style_spans = style_spans.subseq(Interval::new_closed_open(start, end));
@@ -287,6 +316,12 @@ impl View {
             rendered_styles.push((sel_start as isize) - ix);
             rendered_styles.push(sel_end as isize - sel_start as isize);
             rendered_styles.push(0);
+            ix = sel_end as isize;
+        }
+        for &(sel_start, sel_end) in hls {
+            rendered_styles.push((sel_start as isize) - ix);
+            rendered_styles.push(sel_end as isize - sel_start as isize);
+            rendered_styles.push(1);
             ix = sel_end as isize;
         }
         for (iv, style) in style_spans.iter() {
@@ -317,6 +352,12 @@ impl View {
         }
         let height = self.offset_to_line_col(text, text.len()).0 + 1;
         let last_line = min(last_line, height);
+
+        // update find for given region
+        if self.hls_dirty {
+            self.update_find_for_lines(text, first_line, last_line);
+        }
+
         let mut ops = Vec::new();
         if first_line > 0 {
             let op = if dirty { "invalidate" } else { "copy" };
@@ -359,6 +400,9 @@ impl View {
         let last_line = last_line + SCROLL_SLOP;
         let height = self.offset_to_line_col(text, text.len()).0 + 1;
         let last_line = min(last_line, height);
+
+        // update find for given region
+        self.update_find_for_lines(text, first_line, last_line);
 
         let mut ops = Vec::new();
         let mut line = 0;
@@ -412,11 +456,12 @@ impl View {
 
     // Update front-end with any changes to view since the last time sent.
     pub fn render_if_dirty<W: Write>(&mut self, text: &Rope, tab_ctx: &DocumentCtx<W>, style_spans: &Spans<Style>) {
-        if self.sel_dirty || self.dirty {
+        if self.sel_dirty || self.hls_dirty || self.dirty {
             let first_line = max(self.first_line, SCROLL_SLOP) - SCROLL_SLOP;
             let last_line = self.first_line + self.height + SCROLL_SLOP;
             self.send_update(text, tab_ctx, style_spans, first_line, last_line);
             self.sel_dirty = false;
+            self.hls_dirty = false;
             self.dirty = false;
         }
     }
@@ -507,6 +552,15 @@ impl View {
         // Any edit cancels a drag. This is good behavior for edits initiated through
         // the front-end, but perhaps not for async edits.
         self.drag_state = None;
+
+        // Update search highlights for changed regions
+        // TODO: Incremental search instead of re-doing search completely
+        if self.search_string.is_some() {
+            self.valid_search.clear();
+            self.occurrences = None;
+            self.hls_dirty = true;
+        }
+
         // Note: for committing plugin edits, we probably want to know the priority
         // of the delta so we can set the cursor before or after the edit, as needed.
         let new_sel = self.selection.apply_delta(delta, true);
@@ -516,6 +570,182 @@ impl View {
     /// Call to mark view as pristine. Used after a buffer is saved.
     pub fn set_pristine(&mut self) {
         self.pristine = true;
+    }
+
+    /// Unsets the search and removes all highlights from the view.
+    pub fn unset_find(&mut self) {
+        self.search_string = None;
+        self.occurrences = None;
+        self.hls_dirty = true;
+        self.valid_search.clear();
+    }
+
+    /// Sets find for the view, highlights occurrences in the current viewport and selects the first
+    /// occurrence relative to the last cursor.
+    pub fn set_find(&mut self, search_string: &str, case_sensitive: bool) {
+        let case_matching = if case_sensitive {
+            CaseMatching::Exact
+        } else {
+            CaseMatching::CaseInsensitive
+        };
+
+        if let Some(ref s) = self.search_string {
+            if s == search_string && case_matching == self.case_matching {
+                // search parameters did not change
+                return;
+            }
+        }
+
+        self.unset_find();
+
+        self.search_string = Some(search_string.to_string());
+        self.case_matching = case_matching;
+    }
+
+    fn update_find_for_lines(&mut self, text: &Rope, first_line: usize, last_line: usize) {
+        if self.search_string.is_none() {
+            return;
+        }
+        let start = self.offset_of_line(text, first_line);
+        let end = self.offset_of_line(text, last_line);
+        self.update_find(text, start, end, true, false);
+    }
+
+    fn update_find(&mut self, text: &Rope, start: usize, end: usize, include_slop: bool,
+                   stop_on_found: bool)
+    {
+        if self.search_string.is_none() {
+            return;
+        }
+
+        // extend the search by twice the string length (twice, because case matching may increase
+        // the length of an occurrence)
+        let slop = if include_slop { self.search_string.as_ref().unwrap().len() * 2 } else { 0 };
+        let mut occurrences = self.occurrences.take().unwrap_or_else(|| Selection::new());
+        let mut searched_until = end;
+        
+        for (start, end) in self.valid_search.minus_one_range(start, end) {
+            let search_string = self.search_string.as_ref().unwrap();
+            let len = search_string.len();
+        
+            // expand region to be able to find occurrences around the region's edges
+            let from = max(start, slop) - slop;
+            let to = min(end + slop, text.len());
+
+            let text = text.subseq(Interval::new_closed_open(0, to));
+            let mut cursor = Cursor::new(&text, from);
+
+            loop {
+                match find(&mut cursor, self.case_matching, &search_string) {
+                    Some(start) => {
+                        let end = start + len;
+                        let region = SelRegion {
+                            start: start,
+                            end: end,
+                            horiz: None,
+                            affinity: Affinity::default(),
+                        };
+                        occurrences.add_region(region);
+                        
+                        if stop_on_found {
+                            searched_until = end;
+                            break;
+                        }
+                    }
+                    None => break,
+                }
+            }
+        }
+        self.occurrences = Some(occurrences);
+        self.valid_search.union_one_range(start, searched_until);
+        self.hls_dirty = true;
+    }
+
+    /// Select the next occurrence relative to the last cursor. `reverse` determines whether the
+    /// next occurrence before (`true`) or after (`false`) the last cursor is selected. `wrapped`
+    /// indicates a search for the next occurrence past the end of the file. `stop_on_found`
+    /// determines whether the search should stop at the first found occurrence (does only apply
+    /// to forward searc, i.e. reverse = false). If `allow_same` is set to `true` the current
+    /// selection is considered a valid next occurrence.
+    pub fn select_next_occurrence(&mut self, text: &Rope, reverse: bool, wrapped: bool,
+                                  stop_on_found: bool, allow_same: bool) -> Option<usize>
+    {
+        if self.search_string.is_none() {
+            return None;
+        }
+
+        let sel = match self.sel_regions().last() {
+            Some(sel) => (sel.min(), sel.max()),
+            None => return None
+        };
+        
+        let (from, to) = if reverse != wrapped { (0, sel.0) } else { (sel.0, text.len()) };
+        let mut next_occurrence;
+
+        loop {
+            next_occurrence = self.occurrences.as_ref().and_then(|occurrences| {
+                if occurrences.len() == 0 {
+                    return None;
+                }
+                if wrapped { // wrap around file boundaries 
+                    if reverse {
+                        occurrences.last()
+                    } else {
+                        occurrences.first()
+                    }
+                } else {
+                    let ix = occurrences.search(sel.0);
+                    if reverse {
+                        ix.checked_sub(1).and_then(|i| occurrences.get(i))
+                    } else {
+                        occurrences.get(ix).and_then(|oc| {
+                            // if possible, the current selection should be extended, instead of
+                            // jumping to the next occurrence
+                            if oc.end == sel.1 && !allow_same {
+                                occurrences.get(ix+1)
+                            } else {
+                                Some(oc)
+                            }
+                        })
+                    }
+                }
+            }).map(|o| o.clone());
+            
+            let region = {
+                let mut unsearched = self.valid_search.minus_one_range(from, to);
+                if reverse { unsearched.next_back() } else { unsearched.next() }
+            };
+            if let Some((b, e)) = region {
+                if let Some(ref occurrence) = next_occurrence {
+                    if (reverse && occurrence.start >= e) || (!reverse && occurrence.end <= b) {
+                        break;
+                    }
+                }
+                
+                if !reverse {
+                    self.update_find(text, b, e, false, stop_on_found);
+                } else {
+                    // when searching backward, the actual search isn't executed backwards, which is
+                    // why the search is executed in chunks
+                    let start = if e - b > BACKWARDS_FIND_CHUNK_SIZE {
+                        e - BACKWARDS_FIND_CHUNK_SIZE
+                    } else {
+                        b
+                    };
+                    self.update_find(text, start, e, false, false);
+                }
+            } else {
+                break;
+            }
+        }
+
+        if let Some(occurrence) = next_occurrence {
+            let mut selection = Selection::new();
+            selection.add_region(occurrence);
+            self.set_selection(text, selection)
+        } else {
+            None
+        }
     }
 }
 
