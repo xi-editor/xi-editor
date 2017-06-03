@@ -88,7 +88,7 @@ Returns an initial list of plugins available for this view.
 
 `start {"view_id": "view-id-1", "plugin_name": "syntect"}`
 
-Starts the named given for the given view.
+Starts the named plugin for the given view.
 
 
 #### stop
