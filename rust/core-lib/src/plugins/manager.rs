@@ -22,7 +22,7 @@ use serde_json::{self, Value};
 
 use tabs::{BufferIdentifier, ViewIdentifier, BufferContainerRef};
 
-use super::{PluginDescription, PluginRef, start_plugin};
+use super::{PluginDescription, PluginRef, start_plugin, PluginPid};
 use super::rpc_types::{PluginCommand, PluginUpdate, UpdateResponse, ClientPluginInfo, PluginBufferInfo};
 use super::manifest::{PluginActivation, debug_plugins};
 
@@ -33,6 +33,7 @@ pub struct PluginManager<W: Write> {
     catalog: Vec<PluginDescription>,
     running: BTreeMap<(BufferIdentifier, PluginName), PluginRef<W>>,
     buffers: BufferContainerRef<W>,
+    next_id: usize,
 }
 
 // Note: In general I have adopted the pattern of putting non-threadsafe
@@ -122,7 +123,9 @@ impl <W: Write + Send + 'static>PluginManager<W> {
         for key in dead_plugins {
             self.running.remove(&key);
             self.buffers.lock().editor_for_view(&view_id).map(|ed|{
-                ed.plugin_stopped(&view_id, &key.1, 1);
+                //TODO: define exit codes, put them in an enum somewhere
+                let abnormal_exit_code = 1;
+                ed.plugin_stopped(&view_id, &key.1, abnormal_exit_code);
             });
         }
         self.buffers.lock().editor_for_view_mut(view_id).unwrap().dec_revs_in_flight();
@@ -132,6 +135,7 @@ impl <W: Write + Send + 'static>PluginManager<W> {
     pub fn start_plugin(&mut self, self_ref: &PluginManagerRef<W>,
                           view_id: &ViewIdentifier, plugin_name: &str, init_info: PluginBufferInfo) {
         //TODO: error handling: this should maybe have a completion callback with a Result
+        let plugin_id = self.next_plugin_id();
         let buffer_id = self.buffers.buffer_for_view(view_id);
         if let Some(buffer_id) = buffer_id {
             let key = (buffer_id.to_owned(), plugin_name.to_owned());
@@ -145,7 +149,7 @@ impl <W: Write + Send + 'static>PluginManager<W> {
             let me = self_ref.clone();
             let view_id2 = view_id.to_owned();
 
-            start_plugin(self_ref, &plugin, &view_id, move |result| {
+            start_plugin(self_ref, &plugin, plugin_id, &view_id, move |result| {
                 match result {
                     Ok(plugin_ref) => {
                         plugin_ref.initialize(&init_info);
@@ -194,6 +198,11 @@ impl <W: Write + Send + 'static>PluginManager<W> {
         if buffer_id.is_none() { print_err!("no buffer for view {}", view_id) }
         buffer_id.unwrap_or(BufferIdentifier::from("null-id"))
     }
+
+    fn next_plugin_id(&mut self) -> PluginPid {
+        self.next_id += 1;
+        PluginPid(self.next_id)
+    }
 }
 
 /// Wrapper around a `Arc<Mutex<PluginManager<W>>>`.
@@ -228,6 +237,7 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
             catalog: debug_plugins(),
             running: BTreeMap::new(),
             buffers: buffers,
+            next_id: 0,
         })))
     }
 
