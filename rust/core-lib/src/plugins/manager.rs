@@ -96,59 +96,49 @@ impl <W: Write + Send + 'static>PluginManager<W> {
     fn update_plugins(&mut self, view_id: &ViewIdentifier,
                   update: PluginUpdate, undo_group: usize) -> Result<(), Error> {
 
-        let dead_plugins = {
-            let running = match self.running_for_view(view_id) {
-                Ok(plugins) => plugins,
-                Err(err) => return Err(err),
-            };
+        // find all running plugins for this buffer, and send them the update
+        let mut dead_plugins = Vec::new();
 
-            // find all running plugins for this buffer, and send them the update
-            let mut dead_plugins = Vec::new();
-
+        if let Ok(running) = self.running_for_view(view_id) {
             for (name, plugin) in running.iter() {
                 // check to see if plugins have crashed
                 if plugin.is_dead() {
                     dead_plugins.push(name.to_owned());
-                    continue
+                    continue;
                 }
+
                 self.buffers.lock().editor_for_view_mut(view_id)
                     .unwrap().increment_revs_in_flight();
 
                 let view_id = view_id.to_owned();
                 let buffers = self.buffers.clone().to_weak();
                 let mut plugin_ref = plugin.clone();
+
                 plugin.update(&update, move |response| {
-                    if let Some(buffers) = buffers.upgrade() {
-                        match response.map(serde_json::from_value::<UpdateResponse>) {
-                            Ok(Ok(UpdateResponse::Edit(edit))) => {
-                                buffers.lock().editor_for_view_mut(&view_id).unwrap()
-                                    .apply_plugin_edit(edit, undo_group);
-                            }
-                            Ok(Ok(UpdateResponse::Ack(_))) => (),
-                            Ok(Err(err)) => print_err!("plugin response json err: {:?}", err),
-                            Err(err) => {
-                                print_err!("plugin process dead? {:?}", err);
-                                //TODO: do we have a retry policy?
-                                plugin_ref.declare_dead();
-                            }
+                    let buffers = match buffers.upgrade() {
+                        Some(b) => b,
+                        None => return,
+                    };
+
+                    match response.map(serde_json::from_value::<UpdateResponse>) {
+                        Ok(Ok(UpdateResponse::Edit(edit))) => {
+                            buffers.lock().editor_for_view_mut(&view_id).unwrap()
+                                .apply_plugin_edit(edit, undo_group);
                         }
-                        buffers.lock().editor_for_view_mut(&view_id)
-                            .unwrap().dec_revs_in_flight();
+                        Ok(Ok(UpdateResponse::Ack(_))) => (),
+                        Ok(Err(err)) => print_err!("plugin response json err: {:?}", err),
+                        Err(err) => {
+                            print_err!("plugin process dead? {:?}", err);
+                            //TODO: do we have a retry policy?
+                            plugin_ref.declare_dead();
+                        }
                     }
+                    buffers.lock().editor_for_view_mut(&view_id)
+                        .unwrap().dec_revs_in_flight();
                 });
             }
-            dead_plugins
         };
-
-        for name in dead_plugins {
-            let _ = self.running_for_view_mut(view_id)
-                .map(|running| running.remove(&name));
-            self.buffers.lock().editor_for_view(&view_id).map(|ed|{
-                //TODO: define exit codes, put them in an enum somewhere
-                let abnormal_exit_code = 1;
-                ed.plugin_stopped(&view_id, &name, abnormal_exit_code);
-            });
-        }
+        self.cleanup_dead(view_id, &dead_plugins);
         self.buffers.lock().editor_for_view_mut(view_id).unwrap().dec_revs_in_flight();
         Ok(())
     }
@@ -213,6 +203,22 @@ impl <W: Write + Send + 'static>PluginManager<W> {
             if let Some(editor) = self.buffers.lock().editor_for_view(view_id) {
                 editor.plugin_stopped(view_id, plugin_name, 0);
             }
+        }
+    }
+
+    /// Remove dead plugins, notifying editors as needed.
+    //TODO: this currently only runs after trying to update a plugin that has crashed
+    // during a previous update: that is, if a plugin crashes it isn't cleaned up
+    // immediately. If this is a problem, we should store crashes, and clean up in idle().
+    fn cleanup_dead(&mut self, view_id: &ViewIdentifier, plugins: &[PluginName]) {
+        for name in plugins.iter() {
+            let _ = self.running_for_view_mut(&view_id)
+                .map(|running| running.remove(name));
+            self.buffers.lock().editor_for_view(view_id).map(|ed|{
+                //TODO: define exit codes, put them in an enum somewhere
+                let abnormal_exit_code = 1;
+                ed.plugin_stopped(&view_id, &name, abnormal_exit_code);
+            });
         }
     }
 
