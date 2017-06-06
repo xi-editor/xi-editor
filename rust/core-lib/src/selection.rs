@@ -126,6 +126,46 @@ impl Selection {
         remove_n_at(&mut self.regions, first, last - first);
     }
 
+    /// Add a region to the selection. This method does not merge regions and does not allow
+    /// ambiguous regions (regions that overlap).
+    ///
+    /// On ambiguous regions, the regions closer to the left (to the file beginning) wins. That is,
+    /// in such a case, the new region is either not added at all, because there is an ambiguous
+    /// region closer to the left, or existing regions that intersect with the new region, but do
+    /// not start before the new region, are deleted.
+    pub fn add_range_distinct(&mut self, region: SelRegion) -> (usize, usize) {
+        let mut ix = self.search(region.min());
+
+        if ix < self.regions.len() && self.regions[ix].max() == region.min() {
+            ix += 1;
+        }
+
+        if ix < self.regions.len() {
+            // in case of ambiguous regions the region closer to the left wins
+            let occ = &self.regions[ix];
+            let is_eq = occ.min() == region.min() && occ.max() == region.max();
+            let is_intersect_before = region.min() >= occ.min() && occ.max() > region.min();
+            if is_eq || is_intersect_before {
+                return (occ.min(), occ.max());
+            }
+        }
+
+        // delete ambiguous regions to the right
+        let mut last = self.search(region.max());
+        if last < self.regions.len() && self.regions[last].min() < region.max() {
+            last += 1;
+        }
+        remove_n_at(&mut self.regions, ix, last - ix);
+
+        if ix == self.regions.len() {
+            self.regions.push(region);
+        } else {
+            self.regions.insert(ix, region);
+        }
+
+        (self.regions[ix].min(), self.regions[ix].max())
+    }
+
     /// Computes a new selection based on applying a delta to the old selection.
     ///
     /// When new text is inserted at a caret, the new caret can be either before

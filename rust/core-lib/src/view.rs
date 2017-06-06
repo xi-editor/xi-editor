@@ -574,7 +574,7 @@ impl View {
 
             self.occurrences = Some(occurrences);
 
-            // update find for for the whole delta (only updates invalid regions)
+            // update find for the whole delta (is going to only update invalid regions)
             let (iv, _) = delta.summary();
             self.update_find(text, iv.start(), iv.end(), true, false);
         }
@@ -660,51 +660,30 @@ impl View {
                     Some(start) => {
                         let end = start + len;
 
-                        // TODO: since `add_region` below will also search for regions at the start
-                        // and end position, the following functionality may therefore somehow be
-                        // merged with the `add_region` functionality
-                        let mut ix = occurrences.search(start);
-                        if ix < occurrences.len() && occurrences[ix].max() == start {
-                            ix += 1;
-                        }
-                        if ix < occurrences.len() {
-                            // in case of ambiguous search results (e.g. search "aba" in "ababa"),
-                            // the search result closer to the beginning of the file wins
-                            let occ = &occurrences[ix];
-                            let is_eq = occ.min() == start && occ.max() == end;
-                            let is_intersect_before = start >= occ.min() && occ.max() > start;
-                            if is_eq || is_intersect_before {
-                                // Skip the search result and keep the occurrence that is closer to
-                                // the beginning of the file. Re-align the cursor to the kept
-                                // occurrence
-                                cursor.set(occ.max());
-                                continue;
-                            }
-                        }
-
-                        let prev_len = occurrences.len();
-                        // Since the occurrence closer to the beginning of the file wins, possible
-                        // ranges that intersect with this find result are removed. (prevents
-                        // merging, which is the default behaviour of the Selection type, of ranges)
-                        occurrences.delete_range(start, end, false);
-                        // TODO: checking the length feels like a workaround, i.e., add a better
-                        // way of knowing that something has been deleted
-                        if occurrences.len() != prev_len {
-                            // In case there was an ambigious occurrence after this search result,
-                            // all existing occurrences fomr this point are removed.
-                            invalidate_from = Some(end);
-                            occurrences.delete_range(end, text_len, false);
-                        }
-
                         let region = SelRegion {
                             start: start,
                             end: end,
                             horiz: None,
                             affinity: Affinity::default(),
                         };
-                        occurrences.add_region(region);
+                        let prev_len = occurrences.len();
+                        let (_, e) = occurrences.add_range_distinct(region);
+                        // in case of ambiguous search results (e.g. search "aba" in "ababa"),
+                        // the search result closer to the beginning of the file wins
+                        if e != end {
+                            // Skip the search result and keep the occurrence that is closer to
+                            // the beginning of the file. Re-align the cursor to the kept
+                            // occurrence
+                            cursor.set(e);
+                            continue;
+                        }
 
-                        if invalidate_from.is_some() {
+                        // add_range_distinct() above removes ambiguous regions after the added
+                        // region, if something has been deleted, everything thereafter is
+                        // invalidated
+                        if occurrences.len() != prev_len + 1 {
+                            invalidate_from = Some(end);
+                            occurrences.delete_range(end, text_len, false);
                             break;
                         }
 
@@ -721,17 +700,15 @@ impl View {
         if let Some(invalidate_from) = invalidate_from {
             self.valid_search.union_one_range(start, invalidate_from);
 
-            // test whether the search string contains newlines
+            // invalidate all search results from the point of the ambiguous search result until ...
             let is_multi_line = LinesMetric::next(self.search_string.as_ref().unwrap(), 0).is_some();
             if is_multi_line {
-                // invalidate all search results from the point of the ambigious search result until
-                // the end of the file
+                // ... the end of the file
                 self.valid_search.delete_range(invalidate_from, text_len);
             } else {
-                // find end of line
+                // ... the end of the line
                 let mut cursor = Cursor::new(&text, invalidate_from);
                 if let Some(end_of_line) = cursor.next::<LinesMetric>() {
-                    // invalidate until end of line
                     self.valid_search.delete_range(invalidate_from, end_of_line);
                 }
             }
@@ -748,7 +725,7 @@ impl View {
     /// next occurrence before (`true`) or after (`false`) the last cursor is selected. `wrapped`
     /// indicates a search for the next occurrence past the end of the file. `stop_on_found`
     /// determines whether the search should stop at the first found occurrence (does only apply
-    /// to forward searc, i.e. reverse = false). If `allow_same` is set to `true` the current
+    /// to forward search, i.e. reverse = false). If `allow_same` is set to `true` the current
     /// selection is considered a valid next occurrence.
     pub fn select_next_occurrence(&mut self, text: &Rope, reverse: bool, wrapped: bool,
                                   stop_on_found: bool, allow_same: bool) -> Option<usize>
