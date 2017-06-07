@@ -25,6 +25,7 @@ static PLUGIN_DIR: &'static str = "XI_PLUGIN_DIR";
 // example plugins. Eventually these should be loaded from disk.
 pub fn debug_plugins() -> Vec<PluginDescription> {
     use self::PluginActivation::*;
+    use self::PluginScope::*;
     let plugin_dir = match env::var(PLUGIN_DIR).map(PathBuf::from) {
         Ok(p) => p,
         Err(_) => env::current_exe().unwrap().parent().unwrap().to_owned(),
@@ -38,13 +39,13 @@ pub fn debug_plugins() -> Vec<PluginDescription> {
     };
 
     vec![
-        PluginDescription::new("syntect", "0.0", make_path("xi-syntect-plugin"),
+        PluginDescription::new("syntect", "0.0", BufferLocal, make_path("xi-syntect-plugin"),
         vec![Autorun]),
-        PluginDescription::new("braces", "0.0", make_path("bracket_example.py"),
+        PluginDescription::new("braces", "0.0", BufferLocal, make_path("bracket_example.py"),
         Vec::new()),
-        PluginDescription::new("spellcheck", "0.0", make_path("spellcheck.py"),
+        PluginDescription::new("spellcheck", "0.0", BufferLocal, make_path("spellcheck.py"),
         Vec::new()),
-        PluginDescription::new("shouty", "0.0", make_path("shouty.py"),
+        PluginDescription::new("shouty", "0.0", BufferLocal, make_path("shouty.py"),
         Vec::new()),
     ].iter()
         .filter(|desc|{ 
@@ -66,7 +67,7 @@ pub fn debug_plugins() -> Vec<PluginDescription> {
 pub struct PluginDescription {
     pub name: String,
     pub version: String,
-    //scope: PluginScope,
+    pub scope: PluginScope,
     // more metadata ...
     /// path to plugin executable
     pub exec_path: PathBuf,
@@ -87,13 +88,26 @@ pub enum PluginActivation {
     OnCommand,
 }
 
+#[derive(Debug, Clone)]
+/// Describes the scope of events a plugin receives.
+pub enum PluginScope {
+    /// The plugin receives events from multiple buffers.
+    Global,
+    /// The plugin receives events for a single buffer.
+    BufferLocal,
+    /// The plugin is launched in response to a command, and receives no
+    /// further updates.
+    SingleInvocation,
+}
+
 impl PluginDescription {
-    fn new<S, P>(name: S, version: S, exec_path: P,
+    fn new<S, P>(name: S, version: S, scope: PluginScope, exec_path: P,
                  activations: Vec<PluginActivation>) -> Self
         where S: Into<String>, P: Into<PathBuf>
     {
         PluginDescription {
             name: name.into(),
+            scope: scope,
             version: version.into(),
             exec_path: exec_path.into(),
             activations: activations,
