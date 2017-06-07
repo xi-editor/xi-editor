@@ -245,10 +245,7 @@ impl<N: NodeInfo> Delta<N> {
         )
     }
 
-    /// Iterates over all the inserts of the delta. Each insert is represented by a tuple of
-    /// three elements, where the first element represents the position of the insertion relative
-    /// to the old document, the second element the position relative to the new document and the
-    /// third element the length of the insertion.
+    /// Iterates over all the inserts of the delta.
     pub fn iter_inserts(&self) -> InsertsIter<N> {
         InsertsIter {
             pos: 0,
@@ -257,10 +254,7 @@ impl<N: NodeInfo> Delta<N> {
         }
     }
 
-    /// Iterates over all the deletions of the delta. Each deletion is represented by a tuple of
-    /// three elements, where the first element represents the position of the deletion relative
-    /// to the old document, the second element the position relative to the new document and the
-    /// third element the length of the deletion.
+    /// Iterates over all the deletions of the delta.
     pub fn iter_deletions(&self) -> DeletionsIter<N> {
         DeletionsIter {
             pos: 0,
@@ -534,8 +528,21 @@ pub struct InsertsIter<'a, N: NodeInfo + 'a> {
     els_iter: slice::Iter<'a, DeltaElement<N>>,
 }
 
+#[derive(Debug, PartialEq)]
+pub struct DeltaRegion {
+    pub old_offset: usize,
+    pub new_offset: usize,
+    pub len: usize,
+}
+
+impl DeltaRegion {
+    fn new(old_offset: usize, new_offset: usize, len: usize) -> Self {
+        DeltaRegion{ old_offset, new_offset, len }
+    }
+}
+
 impl<'a, N: NodeInfo> Iterator for InsertsIter<'a, N> {
-    type Item = (usize, usize, usize);
+    type Item = DeltaRegion;
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut result = None;
@@ -546,7 +553,7 @@ impl<'a, N: NodeInfo> Iterator for InsertsIter<'a, N> {
                     self.last_end = e;
                 }
                 &DeltaElement::Insert(ref n) => {
-                    result = Some((self.last_end, self.pos, n.len()));
+                    result = Some(DeltaRegion::new(self.last_end, self.pos, n.len()));
                     self.pos += n.len();
                     self.last_end += n.len();
                     break;
@@ -565,7 +572,7 @@ pub struct DeletionsIter<'a, N: NodeInfo + 'a> {
 }
 
 impl<'a, N: NodeInfo> Iterator for DeletionsIter<'a, N> {
-    type Item = (usize, usize, usize);
+    type Item = DeltaRegion;
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut result = None;
@@ -573,7 +580,7 @@ impl<'a, N: NodeInfo> Iterator for DeletionsIter<'a, N> {
             match elem {
                 &DeltaElement::Copy(b, e) => {
                     if b > self.last_end {
-                        result = Some((self.last_end, self.pos, b - self.last_end));
+                        result = Some(DeltaRegion::new(self.last_end, self.pos, b - self.last_end));
                     }
                     self.pos += e - b;
                     self.last_end = e;
@@ -588,7 +595,7 @@ impl<'a, N: NodeInfo> Iterator for DeletionsIter<'a, N> {
             }
         }
         if result.is_none() && self.last_end < self.base_len {
-            result = Some((self.last_end, self.pos, self.base_len - self.last_end));
+            result = Some(DeltaRegion::new(self.last_end, self.pos, self.base_len - self.last_end));
             self.last_end = self.base_len;
         }
         result
@@ -598,7 +605,7 @@ impl<'a, N: NodeInfo> Iterator for DeletionsIter<'a, N> {
 #[cfg(test)]
 mod tests {
     use rope::Rope;
-    use delta::{Delta, Builder};
+    use delta::{Delta, Builder, DeltaRegion};
     use interval::Interval;
     use test_helpers::find_deletions;
 
@@ -681,10 +688,10 @@ mod tests {
         let delta = builder.build();
 
         assert_eq!("01a25b89", delta.apply_to_string("0123456789"));
-        
+
         let mut iter = delta.iter_inserts();
-        assert_eq!(Some((2, 2, 1)), iter.next());
-        assert_eq!(Some((6, 5, 1)), iter.next());
+        assert_eq!(Some(DeltaRegion::new(2, 2, 1)), iter.next());
+        assert_eq!(Some(DeltaRegion::new(6, 5, 1)), iter.next());
         assert_eq!(None, iter.next());
     }
 
@@ -697,11 +704,11 @@ mod tests {
         let delta = builder.build();
 
         assert_eq!("2367", delta.apply_to_string("0123456789"));
-        
+
         let mut iter = delta.iter_deletions();
-        assert_eq!(Some((0, 0, 2)), iter.next());
-        assert_eq!(Some((4, 2, 2)), iter.next());
-        assert_eq!(Some((8, 4, 2)), iter.next());
+        assert_eq!(Some(DeltaRegion::new(0, 0, 2)), iter.next());
+        assert_eq!(Some(DeltaRegion::new(4, 2, 2)), iter.next());
+        assert_eq!(Some(DeltaRegion::new(8, 4, 2)), iter.next());
         assert_eq!(None, iter.next());
     }
 }

@@ -124,7 +124,8 @@ impl IndexSet {
         }
     }
 
-    /// Computes a new set based on applying a delta to the old set.
+    /// Computes a new set based on applying a delta to the old set. Collapsed regions are removed
+    /// and contiguous regions are combined.
     pub fn apply_delta(&self, delta: &Delta<RopeInfo>) -> IndexSet {
         let mut ranges: Vec<(usize, usize)> = Vec::new();
         let mut transformer = Transformer::new(delta);
@@ -330,7 +331,7 @@ mod tests {
         let mut e = IndexSet::new();
         e.union_one_range(1, 3);
         e.union_one_range(5, 9);
-        
+
         let d = Delta::simple_edit(Interval::new_closed_open(2, 2), Rope::from("..."), 10);
         let s = e.apply_delta(&d);
         assert_eq!(s.get_ranges(), &[(1, 6), (8, 12)]);

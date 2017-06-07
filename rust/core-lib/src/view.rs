@@ -18,7 +18,7 @@ use std::io::Write;
 use serde_json::value::Value;
 
 use xi_rope::rope::{Rope, LinesMetric, RopeInfo};
-use xi_rope::delta::Delta;
+use xi_rope::delta::{Delta, DeltaRegion};
 use xi_rope::tree::{Cursor, Metric};
 use xi_rope::breaks::{Breaks, BreaksInfo, BreaksMetric, BreaksBaseMetric};
 use xi_rope::interval::Interval;
@@ -559,17 +559,17 @@ impl View {
             let mut occurrences = self.occurrences.take().unwrap_or_else(|| Selection::new());
 
             // invalidate occurrences around deletion positions
-            for (bo, bn, l) in delta.iter_deletions() {
-                self.valid_search.delete_range(bn, bn+l);
-                occurrences.delete_range(bo, bo+l, false);
+            for DeltaRegion{ old_offset, new_offset, len } in delta.iter_deletions() {
+                self.valid_search.delete_range(new_offset, new_offset + len);
+                occurrences.delete_range(old_offset, old_offset + len, false);
             }
 
             occurrences = occurrences.apply_delta(delta, false);
 
             // invalidate occurrences around insert positions
-            for (_, b, l) in delta.iter_inserts() {
-                self.valid_search.delete_range(b, b+l);
-                occurrences.delete_range(b, b+l, false);
+            for DeltaRegion{ new_offset, len, .. } in delta.iter_inserts() {
+                self.valid_search.delete_range(new_offset, new_offset + len);
+                occurrences.delete_range(new_offset, new_offset + len, false);
             }
 
             self.occurrences = Some(occurrences);

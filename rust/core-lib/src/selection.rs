@@ -129,9 +129,9 @@ impl Selection {
     /// Add a region to the selection. This method does not merge regions and does not allow
     /// ambiguous regions (regions that overlap).
     ///
-    /// On ambiguous regions, the regions closer to the left (to the file beginning) wins. That is,
-    /// in such a case, the new region is either not added at all, because there is an ambiguous
-    /// region closer to the left, or existing regions that intersect with the new region, but do
+    /// On ambiguous regions, the region with the lower start position wins. That is, in such a
+    /// case, the new region is either not added at all, because there is an ambiguous region with
+    /// a lower start position, or existing regions that intersect with the new region but do
     /// not start before the new region, are deleted.
     pub fn add_range_distinct(&mut self, region: SelRegion) -> (usize, usize) {
         let mut ix = self.search(region.min());
