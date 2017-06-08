@@ -169,23 +169,30 @@ impl <W: Write + Send + 'static>PluginManager<W> {
             match result {
                 Ok(plugin_ref) => {
                     plugin_ref.initialize(&init_info);
-                    let mut inner = me.lock();
-                    let mut running = false;
-
-                    if let Some(ed) = inner.buffers.lock().editor_for_view(&view_id) {
-                        ed.plugin_started(&view_id, &plugin_name);
-                        running = true;
-                    }
-                    if running {
-                        let _ = inner.running_for_view_mut(&view_id).map(|running| {
-                            running.insert(plugin_name, plugin_ref);
-                        });
-                    }
+                    me.lock().on_plugin_launch(&view_id, &plugin_name, plugin_ref);
                 }
                 Err(_) => print_err!("failed to start plugin {}", plugin_name),
             }
         });
         Ok(())
+    }
+
+    /// Callback used to register a successfully launched plugin
+    fn on_plugin_launch(&mut self, view_id: &ViewIdentifier,
+                        name: &str, plugin_ref: PluginRef<W>) {
+        if match self.buffers.lock().editor_for_view(view_id) {
+            Some(ed) => {
+                ed.plugin_started(view_id, &name);
+                true
+            }
+            None => false,
+        } {
+            let _ = self.running_for_view_mut(&view_id)
+                .map(|running| running.insert(name.to_owned(), plugin_ref));
+        } else {
+            print_err!("launch of plugin {} failed, no buffer for view {}", name, view_id);
+            plugin_ref.shutdown();
+        }
     }
 
     fn stop_plugin(&mut self, view_id: &ViewIdentifier, plugin_name: &str) {
