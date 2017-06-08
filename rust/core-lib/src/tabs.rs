@@ -38,8 +38,8 @@ use plugins::rpc_types::PluginUpdate;
 pub struct ViewIdentifier(String);
 
 /// BufferIdentifiers uniquely identify open buffers.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct BufferIdentifier(String);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct BufferIdentifier(usize);
 
 impl fmt::Display for ViewIdentifier {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -62,13 +62,13 @@ impl ViewIdentifier {
 
 impl fmt::Display for BufferIdentifier {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0) 
+        write!(f, "buffer-id-{}", self.0) 
     }
 }
 
-impl<T: AsRef<str>> From<T> for BufferIdentifier {
-    fn from(s: T) -> Self {
-        BufferIdentifier(String::from(s.as_ref()))
+impl BufferIdentifier {
+    pub fn new(val: usize) -> Self {
+        BufferIdentifier(val)
     }
 }
 
@@ -76,7 +76,7 @@ impl<T: AsRef<str>> From<T> for BufferIdentifier {
 pub struct BufferContainer<W: Write> {
     /// associates open file paths to buffers
     open_files: BTreeMap<PathBuf, BufferIdentifier>,
-    /// maps buffer identifiers (filenames) to editor instances
+    /// maps buffer identifiers to editor instances
     editors: BTreeMap<BufferIdentifier, Editor<W>>,
     /// maps view identifiers to buffer identifiers. All actions originate in a view;
     /// this lets us route messages correctly when multiple views share a buffer.
@@ -104,8 +104,6 @@ pub struct WeakBufferContainerRef<W: Write>(Weak<Mutex<BufferContainer<W>>>);
 
 impl<W:Write> BufferContainer<W> {
     /// Returns a reference to the `Editor` instance owning `view_id`'s view.
-    ///
-    /// Panics if no buffer is associated with `view_id`.
     pub fn editor_for_view(&self, view_id: &ViewIdentifier) -> Option<&Editor<W>> {
         match self.views.get(view_id) {
             Some(id) => self.editors.get(id),
@@ -117,8 +115,6 @@ impl<W:Write> BufferContainer<W> {
     }
 
     /// Returns a mutable reference to the `Editor` instance owning `view_id`'s view.
-    ///
-    /// Panics if no buffer is associated with `view_id`.
     pub fn editor_for_view_mut(&mut self, view_id: &ViewIdentifier) -> Option<&mut Editor<W>> {
         match self.views.get(view_id) {
             Some(id) => self.editors.get_mut(id),
@@ -298,7 +294,7 @@ impl<W: Write + Send + 'static> Documents<W> {
 
     fn next_buffer_id(&mut self) -> BufferIdentifier {
         self.id_counter += 1;
-        BufferIdentifier::from(format!("buffer-id-{}", self.id_counter))
+        BufferIdentifier(self.id_counter)
     }
 
     pub fn do_rpc(&mut self, cmd: CoreCommand, rpc_peer: &MainPeer<W>) -> Option<Value> {
@@ -447,7 +443,8 @@ impl<W: Write + Send + 'static> Documents<W> {
             Start { view_id, plugin_name } => {
                 let buffer_info = self.buffers.lock().editor_for_view(&view_id).unwrap()
                     .plugin_init_info();
-                self.plugins.start_plugin(&view_id, &plugin_name, &buffer_info);
+                //TODO: report this error to client?
+                let _ = self.plugins.start_plugin(&view_id, &plugin_name, &buffer_info);
                 None
             }
             Stop { view_id, plugin_name } => {
@@ -581,7 +578,7 @@ mod tests {
         let container_ref = BufferContainerRef::new();
         assert!(!container_ref.has_open_file("a fake file, for sure"));
         let view_id_1 = ViewIdentifier::from("view-id-1");
-        let buf_id_1 = BufferIdentifier::from("buf-id-1");
+        let buf_id_1 = BufferIdentifier(1);
         let path_1 = PathBuf::from("a_path");
         let path_2 = PathBuf::from("a_different_path");
         let editor = Editor::new(mock_doc_ctx(view_id_1.as_str()), &view_id_1);
@@ -606,7 +603,7 @@ mod tests {
 
         // reopen the original file:
         let view_id_2 = ViewIdentifier::from("view-id-2");
-        let buf_id_2 = BufferIdentifier::from("buf-id-2");
+        let buf_id_2 = BufferIdentifier(2);
         let editor = Editor::new(mock_doc_ctx(view_id_2.as_str()), &view_id_2);
         container_ref.add_editor(&view_id_2, &buf_id_2, editor);
         container_ref.set_path(&path_1, &view_id_2);
