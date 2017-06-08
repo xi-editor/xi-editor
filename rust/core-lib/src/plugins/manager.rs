@@ -173,11 +173,10 @@ impl <W: Write + Send + 'static>PluginManager<W> {
                     let mut inner = me.lock();
                     let mut running = false;
 
-                    if let Some(ed) = inner.buffers.lock()
-                        .editor_for_view(&view_id) {
-                            ed.plugin_started(&view_id, &plugin_name);
-                            running = true;
-                        }
+                    if let Some(ed) = inner.buffers.lock().editor_for_view(&view_id) {
+                        ed.plugin_started(&view_id, &plugin_name);
+                        running = true;
+                    }
                     if running {
                         let _ = inner.running_for_view_mut(&view_id).map(|running| {
                             running.insert(plugin_name, plugin_ref);
@@ -242,15 +241,13 @@ impl <W: Write + Send + 'static>PluginManager<W> {
             .unwrap_or_default()
     }
 
-    fn running_for_view(
-        &self, view_id: &ViewIdentifier) -> Result<&BufferPlugins<W>, Error> {
+    fn running_for_view(&self, view_id: &ViewIdentifier) -> Result<&BufferPlugins<W>, Error> {
         self.buffer_for_view(view_id)
             .and_then(|id| self.running.get(&id))
             .ok_or(Error::EditorMissing)
     }
 
-    fn running_for_view_mut(&mut self, view_id: &ViewIdentifier)
-        -> Result<&mut BufferPlugins<W>, Error> {
+    fn running_for_view_mut(&mut self, view_id: &ViewIdentifier) -> Result<&mut BufferPlugins<W>, Error> {
         let buffer_id = match self.buffer_for_view(view_id) {
             Some(id) => Ok(id),
             None => Err(Error::EditorMissing),
