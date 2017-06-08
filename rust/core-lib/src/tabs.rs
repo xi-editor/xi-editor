@@ -356,7 +356,7 @@ impl<W: Write + Send + 'static> Documents<W> {
 
     fn new_empty_view(&mut self, rpc_peer: &MainPeer<W>, view_id: &ViewIdentifier,
                       buffer_id: BufferIdentifier) {
-        let editor = Editor::new(self.new_tab_ctx(rpc_peer), view_id);
+        let editor = Editor::new(self.new_tab_ctx(rpc_peer), buffer_id, view_id);
         self.add_editor(view_id, &buffer_id, editor, None);
         self.plugins.document_new(view_id);
     }
@@ -365,12 +365,13 @@ impl<W: Write + Send + 'static> Documents<W> {
                           buffer_id: BufferIdentifier, path: &Path) {
         match self.read_file(&path) {
             Ok(contents) => {
-                let ed = Editor::with_text(self.new_tab_ctx(rpc_peer), view_id, contents);
+                let ed = Editor::with_text(self.new_tab_ctx(rpc_peer),
+                                           buffer_id, view_id, contents);
                 self.add_editor(view_id, &buffer_id, ed, Some(path));
                 self.plugins.document_open(view_id);
             }
             Err(err) => {
-                let ed = Editor::new(self.new_tab_ctx(rpc_peer), view_id);
+                let ed = Editor::new(self.new_tab_ctx(rpc_peer), buffer_id, view_id);
                 if path.exists() {
                     // if this is a read error of an actual file, we don't set path
                     // TODO: we should be reporting errors to the client
@@ -581,7 +582,7 @@ mod tests {
         let buf_id_1 = BufferIdentifier(1);
         let path_1 = PathBuf::from("a_path");
         let path_2 = PathBuf::from("a_different_path");
-        let editor = Editor::new(mock_doc_ctx(view_id_1.as_str()), &view_id_1);
+        let editor = Editor::new(mock_doc_ctx(view_id_1.as_str()), buf_id_1, &view_id_1);
         container_ref.add_editor(&view_id_1, &buf_id_1, editor);
         assert_eq!(container_ref.lock().editors.len(), 1);
 
@@ -604,7 +605,7 @@ mod tests {
         // reopen the original file:
         let view_id_2 = ViewIdentifier::from("view-id-2");
         let buf_id_2 = BufferIdentifier(2);
-        let editor = Editor::new(mock_doc_ctx(view_id_2.as_str()), &view_id_2);
+        let editor = Editor::new(mock_doc_ctx(view_id_2.as_str()), buf_id_2, &view_id_2);
         container_ref.add_editor(&view_id_2, &buf_id_2, editor);
         container_ref.set_path(&path_1, &view_id_2);
         assert_eq!(container_ref.lock().editors.len(), 2);

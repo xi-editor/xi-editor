@@ -66,26 +66,26 @@ impl <W: Write + Send + 'static>PluginManager<W> {
     }
 
     /// Handle a request from a plugin.
-    pub fn handle_plugin_cmd(&self, cmd: PluginCommand, view_id: &ViewIdentifier) -> Option<Value> {
+    pub fn handle_plugin_cmd(&self, cmd: PluginCommand) -> Option<Value> {
         use self::PluginCommand::*;
         match cmd {
-            LineCount => {
-                let n_lines = self.buffers.lock().editor_for_view(view_id).unwrap()
+            LineCount { view_id } => {
+                let n_lines = self.buffers.lock().editor_for_view(&view_id).unwrap()
                     .plugin_n_lines() as u64;
                 Some(serde_json::to_value(n_lines).unwrap())
             },
-            SetFgSpans { start, len, spans, rev } => {
-                self.buffers.lock().editor_for_view_mut(view_id).unwrap()
+            SetFgSpans { view_id, start, len, spans, rev } => {
+                self.buffers.lock().editor_for_view_mut(&view_id).unwrap()
                     .plugin_set_fg_spans(start, len, spans, rev);
                 None
             }
-            GetData { offset, max_size, rev } => {
-                self.buffers.lock().editor_for_view(view_id).unwrap()
+            GetData { view_id, offset, max_size, rev } => {
+                self.buffers.lock().editor_for_view(&view_id).unwrap()
                 .plugin_get_data(offset, max_size, rev)
                 .map(|data| Value::String(data))
             }
-            Alert { msg } => {
-                self.buffers.lock().editor_for_view(view_id).unwrap()
+            Alert { view_id, msg } => {
+                self.buffers.lock().editor_for_view(&view_id).unwrap()
                 .plugin_alert(&msg);
                 None
             }
@@ -162,11 +162,10 @@ impl <W: Write + Send + 'static>PluginManager<W> {
             .ok_or(Error::Other(format!("no plugin found with name {}", plugin_name)))?;
 
         let me = self_ref.clone();
-        let view_id2 = view_id.to_owned();
+        let view_id = view_id.to_owned();
         let plugin_name = plugin_name.to_owned();
 
-        start_plugin_process(self_ref, &plugin, plugin_id, &view_id, move |result| {
-            let view_id = view_id2;
+        start_plugin_process(self_ref, &plugin, plugin_id, move |result| {
             match result {
                 Ok(plugin_ref) => {
                     plugin_ref.initialize(&init_info);

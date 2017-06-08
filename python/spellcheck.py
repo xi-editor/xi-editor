@@ -55,7 +55,7 @@ class Spellcheck(Plugin):
                           'end': len(prev_word),
                           'fg': style.color_for_rgba_float(1.0, 0, 0),
                           'font': style.BOLD | style.UNDERLINE}]
-                peer.set_fg_spans(end-len(prev_word), len(prev_word), spans, rev)
+                peer.set_fg_spans(self.view_id, end-len(prev_word), len(prev_word), spans, rev)
         return 0
 
 

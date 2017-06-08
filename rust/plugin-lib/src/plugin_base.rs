@@ -98,8 +98,10 @@ impl<'a> PluginCtx<'a> {
     }
     */
 
-    pub fn get_data(&self, offset: usize, max_size: usize, rev: usize) -> Result<String, Error> {
+    pub fn get_data(&self, view_id: &str, offset: usize,
+                    max_size: usize, rev: usize) -> Result<String, Error> {
         let params = json!({
+            "view_id": view_id,
             "offset": offset,
             "max_size": max_size,
             "rev": rev,
@@ -112,8 +114,10 @@ impl<'a> PluginCtx<'a> {
         }
     }
 
-    pub fn set_fg_spans(&self, start: usize, len: usize, spans: Spans, rev: usize) {
+    pub fn set_fg_spans(&self, view_id: &str, start: usize,
+                        len: usize, spans: Spans, rev: usize) {
         let params = json!({
+            "view_id": view_id,
             "start": start,
             "len": len,
             "spans": spans,
@@ -183,6 +187,8 @@ pub enum PluginRequest<'a> {
 /// Buffer information sent on plugin init.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PluginBufferInfo {
+    pub buffer_id: usize,
+    pub views: Vec<String>,
     pub rev: usize,
     pub buf_size: usize,
     pub nb_lines: usize,

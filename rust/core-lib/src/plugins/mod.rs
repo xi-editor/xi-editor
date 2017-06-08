@@ -51,8 +51,6 @@ pub struct Plugin<W: Write> {
     manager: WeakPluginManagerRef<W>,
     description: PluginDescription,
     identifier: PluginPid,
-    //TODO: temporary, eventually ids (view ids?) should be passed back and forth with RPCs
-    view_id: ViewIdentifier,
 }
 
 /// A convenience wrapper for passing around a reference to a plugin.
@@ -89,12 +87,13 @@ impl<W: Write + Send + 'static> PluginRef<W> {
         };
 
         if let Some(plugin_manager) = plugin_manager {
-            let cmd = serde_json::from_value::<PluginCommand>(params.to_owned())
-                .expect(&format!("failed to parse plugin rpc {}, params {:?}",
-                        method, params));
-            let result = plugin_manager.lock().handle_plugin_cmd(
-                cmd, &self.0.lock().unwrap().view_id);
-        result
+            let cmd = serde_json::from_value::<PluginCommand>(params.to_owned());
+            if cmd.is_err() {
+                print_err!("failed to parse plugin rpc {}, params {:?}",
+                           method, params);
+                return None
+            }
+            plugin_manager.lock().handle_plugin_cmd(cmd.unwrap())
         } else {
             None
         }
@@ -194,14 +193,12 @@ pub fn start_update_thread<W: Write + Send + 'static>(
 pub fn start_plugin_process<W, C>(manager_ref: &PluginManagerRef<W>,
                           plugin_desc: &PluginDescription,
                           identifier: PluginPid,
-                          view_id: &ViewIdentifier,
                           completion: C)
     where W: Write + Send + 'static,
           C: FnOnce(Result<PluginRef<W>, io::Error>) + Send + 'static
 {
 
     let manager_ref = manager_ref.to_weak();
-    let view_id = view_id.to_owned();
     let plugin_desc = plugin_desc.to_owned();
 
     thread::spawn(move || {
@@ -224,7 +221,6 @@ pub fn start_plugin_process<W, C>(manager_ref: &PluginManagerRef<W>,
                     manager: manager_ref,
                     description: plugin_desc,
                     identifier: identifier,
-                    view_id: view_id,
                 };
                 let mut plugin_ref = PluginRef(
                     Arc::new(Mutex::new(plugin)),

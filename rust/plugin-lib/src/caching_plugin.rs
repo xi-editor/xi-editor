@@ -36,6 +36,7 @@ pub trait Handler {
 #[derive(Default)]
 struct State {
     buf_size: usize,
+    view_id: String,
     rev: usize,
     cache: Option<String>,
     cache_offset: usize,
@@ -71,6 +72,8 @@ impl<'a, H: Handler> plugin_base::Handler for MyHandler<'a, H> {
             }
             PluginRequest::Initialize(ref init_info) => {
                 ctx.state.buf_size = init_info.buf_size;
+                assert_eq!(init_info.views.len(), 1);
+                ctx.state.view_id = init_info.views[0].clone();
                 ctx.state.rev = init_info.rev;
                 ctx.state.syntax = init_info.syntax.clone();
                 ctx.state.path = init_info.path.clone().map(|p| PathBuf::from(p));
@@ -135,7 +138,7 @@ impl<'a> PluginCtx<'a> {
         if self.state.cache.is_none() || offset_of_line < self.state.cache_offset ||
                 offset_of_line >= self.state.cache_offset +
                     self.state.cache.as_ref().unwrap().len() {
-            self.state.cache = Some(self.peer.get_data(offset_of_line, CHUNK_SIZE,
+            self.state.cache = Some(self.peer.get_data(&self.state.view_id, offset_of_line, CHUNK_SIZE,
                 self.state.rev)?);
             self.state.cache_offset = offset_of_line;
         }
@@ -154,7 +157,7 @@ impl<'a> PluginCtx<'a> {
                     }
                     // fetch next chunk
                     let next_offset = self.state.cache_offset + cache_len;
-                    let next_chunk = self.peer.get_data(next_offset, CHUNK_SIZE,
+                    let next_chunk = self.peer.get_data(&self.state.view_id, next_offset, CHUNK_SIZE,
                             self.state.rev)?;
                     self.state.cache_offset = offset_of_line;
                     let mut new_cache = String::with_capacity(cache_len - offset_in_cache +
@@ -184,7 +187,7 @@ impl<'a> PluginCtx<'a> {
     /// Send style spans to the core. Note: these are based on the revision as of the
     /// current state of the cache (the revision is sent to the core).
     pub fn set_fg_spans(&self, start: usize, len: usize, spans: Spans) {
-        self.peer.set_fg_spans(start, len, spans, self.state.rev);
+        self.peer.set_fg_spans(&self.state.view_id, start, len, spans, self.state.rev);
     }
 
     /// Determines whether an incoming request (or notification) is pending. This

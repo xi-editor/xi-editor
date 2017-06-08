@@ -31,7 +31,7 @@ use word_boundaries::WordCursor;
 use movement::{Movement, region_movement};
 use selection::{Affinity, Selection, SelRegion};
 
-use tabs::{ViewIdentifier, DocumentCtx};
+use tabs::{BufferIdentifier, ViewIdentifier, DocumentCtx};
 use rpc::{EditCommand, GestureType};
 use syntax::SyntaxDefinition;
 use plugins::rpc_types::{PluginUpdate, PluginEdit, Span, PluginBufferInfo};
@@ -49,6 +49,7 @@ pub struct Editor<W: Write> {
     text: Rope,
 
     path: Option<PathBuf>,
+    buffer_id: BufferIdentifier,
     syntax: SyntaxDefinition,
 
     /// A collection of non-primary views attached to this buffer.
@@ -98,12 +99,14 @@ impl EditType {
 
 impl<W: Write + Send + 'static> Editor<W> {
     /// Creates a new `Editor` with a new empty buffer.
-    pub fn new(doc_ctx: DocumentCtx<W>, initial_view_id: &ViewIdentifier) -> Editor<W> {
-        Self::with_text(doc_ctx, initial_view_id, "".to_owned())
+    pub fn new(doc_ctx: DocumentCtx<W>, buffer_id: BufferIdentifier,
+               initial_view_id: &ViewIdentifier) -> Editor<W> {
+        Self::with_text(doc_ctx, buffer_id, initial_view_id, "".to_owned())
     }
 
     /// Creates a new `Editor`, loading text into a new buffer.
-    pub fn with_text(doc_ctx: DocumentCtx<W>, initial_view_id: &ViewIdentifier, text: String) -> Editor<W> {
+    pub fn with_text(doc_ctx: DocumentCtx<W>, buffer_id: BufferIdentifier,
+                     initial_view_id: &ViewIdentifier, text: String) -> Editor<W> {
 
         let engine = Engine::new(Rope::from(text));
         let buffer = engine.get_head().clone();
@@ -111,6 +114,7 @@ impl<W: Write + Send + 'static> Editor<W> {
 
         let editor = Editor {
             text: buffer,
+            buffer_id: buffer_id,
             path: None,
             syntax: SyntaxDefinition::default(),
             views: BTreeMap::new(),
@@ -203,8 +207,13 @@ impl<W: Write + Send + 'static> Editor<W> {
     /// Returns buffer information used to initialize plugins.
     pub fn plugin_init_info(&self) -> PluginBufferInfo {
         let nb_lines = self.text.measure::<LinesMetric>() + 1;
-        PluginBufferInfo::new(self.engine.get_head_rev_id(), self.text.len(),
-        nb_lines, self.path.clone(), self.syntax.clone())
+        let mut views = self.views.keys()
+            .map(|s| s.to_owned())
+            .collect::<Vec<_>>();
+        views.push(self.view.view_id.to_owned());
+        PluginBufferInfo::new(self.buffer_id, &views,
+                              self.engine.get_head_rev_id(), self.text.len(),
+                              nb_lines, self.path.clone(), self.syntax.clone())
     }
 
     fn insert(&mut self, s: &str) {
