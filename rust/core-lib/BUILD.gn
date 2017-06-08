@@ -2,6 +2,11 @@ import("//build/rust/rust_library.gni")
 
 rust_library("xi_core_lib") {
     deps = [
+        "//apps/ledger/services/public:public_rust_library",
+        "//lib/fidl/rust/fidl",
+        "//rust/magenta-rs:magenta",
+        "//rust/magenta-rs/magenta-sys",
+        "//rust/mxruntime",
         "//third_party/xi-editor/rust/rpc:xi_rpc",
         "//third_party/xi-editor/rust/rope:xi_rope",
         "//third_party/xi-editor/rust/unicode:xi_unicode",

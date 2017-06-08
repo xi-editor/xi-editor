@@ -34,6 +34,9 @@ use syntax::SyntaxDefinition;
 use plugins::{self, PluginManagerRef};
 use plugins::rpc_types::PluginUpdate;
 
+#[cfg(target_os = "fuchsia")]
+use apps_ledger_services_public::{Ledger_Proxy};
+
 /// ViewIdentifiers are the primary means of routing messages between xi-core and a client view.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ViewIdentifier(String);
@@ -134,6 +137,11 @@ impl<W:Write> BufferContainer<W> {
     /// Returns a mutable iterator over all active `Editor`s.
     pub fn iter_editors_mut<'a>(&'a mut self) -> Box<Iterator<Item=&'a mut Editor<W>> + 'a> {
         Box::new(self.editors.values_mut())
+    }
+
+    /// Returns a mutable reference to the `Editor` instance with `id`
+    pub fn editor_for_buffer_mut(&mut self, id: &BufferIdentifier) -> Option<&mut Editor<W>> {
+        self.editors.get_mut(id)
     }
 }
 
@@ -260,7 +268,9 @@ pub struct Documents<W: Write> {
     style_map: Arc<Mutex<StyleMap>>,
     plugins: PluginManagerRef<W>,
     /// A tx channel used to propagate plugin updates from all `Editor`s.
-    update_channel: mpsc::Sender<(ViewIdentifier, PluginUpdate, usize)>
+    update_channel: mpsc::Sender<(ViewIdentifier, PluginUpdate, usize)>,
+    #[allow(dead_code)]
+    sync_repo: Option<SyncRepo>,
 }
 
 #[derive(Clone)]
@@ -290,6 +300,7 @@ impl<W: Write + Send + 'static> Documents<W> {
             style_map: Arc::new(Mutex::new(StyleMap::new())),
             plugins: plugin_manager,
             update_channel: update_tx,
+            sync_repo: None,
         }
     }
 
@@ -405,12 +416,18 @@ impl<W: Write + Send + 'static> Documents<W> {
     /// Adds a new editor, associating it with the provided identifiers.
     ///
     /// This is called once each time a new editor is created.
-    fn add_editor(&self, view_id: &ViewIdentifier, buffer_id: &BufferIdentifier,
-                  editor: Editor<W>, path: Option<&Path>) {
+    fn add_editor(&mut self, view_id: &ViewIdentifier, buffer_id: &BufferIdentifier,
+                  mut editor: Editor<W>, path: Option<&Path>) {
+        self.initialize_sync(&mut editor, path, buffer_id);
         self.buffers.add_editor(view_id, buffer_id, editor);
         if let Some(path) = path {
             self.buffers.set_path(path, view_id);
         }
+    }
+
+    #[cfg(not(target_os = "fuchsia"))]
+    fn initialize_sync(&mut self, _editor: &mut Editor<W>, _path_opt: Option<&Path>, _buffer_id: &BufferIdentifier) {
+        // not implemented yet on OSs other than Fuchsia
     }
 
     /// Adds a new view to an existing editor instance.
@@ -482,6 +499,17 @@ impl<W: Write + Send + 'static> Documents<W> {
     pub fn handle_idle(&self) {
         for editor in self.buffers.lock().editors.values_mut() {
             editor.render();
+        }
+    }
+}
+
+#[cfg(target_os = "fuchsia")]
+impl<W: Write> Drop for Documents<W> {
+    fn drop(&mut self) {
+        use std::mem;
+        if let Some(repo) = mem::replace(&mut self.sync_repo, None) {
+            repo.tx.send(SyncMsg::Stop).unwrap();
+            repo.updater_handle.join().unwrap();
         }
     }
 }
@@ -568,6 +596,58 @@ impl<W: Write> DocumentCtx<W> {
     pub fn update_plugins(&self, view_id: ViewIdentifier,
                           update: PluginUpdate, undo_group: usize) {
         self.update_channel.send((view_id, update, undo_group)).unwrap();
+    }
+}
+
+// =============== Fuchsia-specific synchronization plumbing
+// We can't move this elsewhere since it requires access to private fields
+
+#[cfg(not(target_os = "fuchsia"))]
+pub struct SyncRepo;
+
+#[cfg(target_os = "fuchsia")]
+use std::sync::mpsc::{channel, Sender};
+#[cfg(target_os = "fuchsia")]
+use std::thread;
+#[cfg(target_os = "fuchsia")]
+use fuchsia::sync::{SyncStore, SyncMsg, SyncUpdater};
+
+#[cfg(target_os = "fuchsia")]
+pub struct SyncRepo {
+    ledger: Ledger_Proxy,
+    tx: Sender<SyncMsg>,
+    updater_handle: thread::JoinHandle<()>,
+}
+
+#[cfg(target_os = "fuchsia")]
+impl<W: Write + Send + 'static> Documents<W> {
+    pub fn set_ledger(&mut self, ledger: Ledger_Proxy) {
+
+        let (tx, rx) = channel();
+        let updater = SyncUpdater::new(self.buffers.clone(), rx);
+        let updater_handle = thread::spawn(move|| updater.work().unwrap() );
+
+        self.sync_repo = Some(SyncRepo { ledger, tx, updater_handle });
+    }
+
+    fn initialize_sync(&mut self, editor: &mut Editor<W>, path_opt: Option<&Path>, buffer_id: &BufferIdentifier) {
+        use apps_ledger_services_public::*;
+        use fuchsia::ledger::{ledger_crash_callback, gen_page_id};
+
+        if let (Some(path), Some(repo)) = (path_opt, self.sync_repo.as_mut()) {
+            // create the sync ID based on the path
+            // TODO: maybe make sync-id orthogonal to path
+            let path_str = path.to_string_lossy();
+            let path_bytes: &[u8] = path_str.as_bytes();
+            let sync_id = gen_page_id(path_bytes);
+            // get the page
+            let (page, page_request) = Page_new_pair();
+            repo.ledger.get_page(Some(sync_id.clone()), page_request).with(ledger_crash_callback);
+            // create the SyncStore
+            let sync_store = SyncStore::new(page, vec![0], repo.tx.clone(), buffer_id.clone());
+            // set the SyncStore for the Editor
+            editor.set_sync_store(sync_store);
+        }
     }
 }
 

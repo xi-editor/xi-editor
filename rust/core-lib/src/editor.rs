@@ -38,6 +38,12 @@ use plugins::rpc_types::{PluginUpdate, PluginEdit, ScopeSpan, PluginBufferInfo};
 use plugins::PluginPid;
 use layers::Scopes;
 
+
+#[cfg(not(target_os = "fuchsia"))]
+pub struct SyncStore;
+#[cfg(target_os = "fuchsia")]
+use fuchsia::sync::SyncStore;
+
 const FLAG_SELECT: u64 = 2;
 
 const MAX_UNDOS: usize = 20;
@@ -77,6 +83,12 @@ pub struct Editor<W: Write> {
     style_scopes: Scopes,
     doc_ctx: DocumentCtx<W>,
     revs_in_flight: usize,
+
+    /// Used only on Fuchsia for syncing
+    #[allow(dead_code)]
+    sync_store: Option<SyncStore>,
+    #[allow(dead_code)]
+    last_synced_rev: usize,
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
@@ -137,6 +149,8 @@ impl<W: Write + Send + 'static> Editor<W> {
             style_scopes: Scopes::default(),
             doc_ctx: doc_ctx,
             revs_in_flight: 0,
+            sync_store: None,
+            last_synced_rev: last_rev_id,
         };
         editor
     }
@@ -354,23 +368,27 @@ impl<W: Write + Send + 'static> Editor<W> {
         // plugins get updated. This ensures that gc runs.
         self.increment_revs_in_flight();
 
-        let author = author.unwrap_or(&self.view.view_id.as_str());
-        let text = match new_len < MAX_SIZE_LIMIT {
-            true => Some(self.text.slice_to_string(iv.start(), iv.start() + new_len)),
-            false => None
-        };
+        {
+            let author = author.unwrap_or(&self.view.view_id.as_str());
+            let text = match new_len < MAX_SIZE_LIMIT {
+                true => Some(self.text.slice_to_string(iv.start(), iv.start() + new_len)),
+                false => None
+            };
 
-        let update = PluginUpdate::new(
-            iv.start(), iv.end(), new_len,
-            self.engine.get_head_rev_id(), text,
-            self.this_edit_type.json_string().to_owned(),
-            author.to_owned());
+            let update = PluginUpdate::new(
+                iv.start(), iv.end(), new_len,
+                self.engine.get_head_rev_id(), text,
+                self.this_edit_type.json_string().to_owned(),
+                author.to_owned());
 
-        let undo_group = *self.live_undos.last().unwrap_or(&0);
-        let view_id = self.view.view_id.clone();
-        self.doc_ctx.update_plugins(view_id, update, undo_group);
+            let undo_group = *self.live_undos.last().unwrap_or(&0);
+            let view_id = self.view.view_id.clone();
+            self.doc_ctx.update_plugins(view_id, update, undo_group);
+        }
+
 
         self.last_rev_id = self.engine.get_head_rev_id();
+        self.sync_state_changed();
     }
 
     fn gc_undos(&mut self) {
@@ -392,6 +410,42 @@ impl<W: Write + Send + 'static> Editor<W> {
             let (line, col) = self.view.offset_to_line_col(&self.text, scrollto);
             self.doc_ctx.scroll_to(&self.view.view_id, line, col);
             self.scroll_to = None;
+        }
+    }
+
+    pub fn merge_new_state(&mut self, new_engine: Engine) {
+        // TODO: CRDT merge
+        self.engine = new_engine;
+        self.text = self.engine.get_head().clone();
+        self.last_synced_rev = self.engine.get_head_rev_id();
+        self.commit_delta(None);
+        self.render();
+    }
+
+    #[cfg(target_os = "fuchsia")]
+    pub fn set_sync_store(&mut self, sync_store: SyncStore) {
+        self.sync_store = Some(sync_store);
+    }
+
+    #[cfg(not(target_os = "fuchsia"))]
+    pub fn sync_state_changed(&mut self) {
+    }
+
+    #[cfg(target_os = "fuchsia")]
+    pub fn sync_state_changed(&mut self) {
+        if let Some(sync_store) = self.sync_store.as_mut() {
+            // we don't want to sync right after recieving a new merge
+            if self.last_synced_rev != self.engine.get_head_rev_id() {
+                self.last_synced_rev = self.engine.get_head_rev_id();
+                sync_store.state_changed();
+            }
+        }
+    }
+
+    #[cfg(target_os = "fuchsia")]
+    pub fn transaction_ready(&mut self) {
+        if let Some(sync_store) = self.sync_store.as_mut() {
+            sync_store.commit_transaction(&self.engine);
         }
     }
 
