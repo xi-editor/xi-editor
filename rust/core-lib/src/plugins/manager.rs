@@ -27,12 +27,13 @@ use super::rpc_types::{PluginCommand, PluginUpdate, UpdateResponse, ClientPlugin
 use super::manifest::{PluginActivation, debug_plugins};
 
 type PluginName = String;
-type BufferPlugins<W> = BTreeMap<PluginName, PluginRef<W>>;
+type PluginGroup<W> = BTreeMap<PluginName, PluginRef<W>>;
 
 /// Manages plugin loading, activation, lifecycle, and dispatch.
 pub struct PluginManager<W: Write> {
     catalog: Vec<PluginDescription>,
-    running: BTreeMap<BufferIdentifier, BufferPlugins<W>>,
+    /// Buffer-scoped plugins, by buffer
+    buffer_plugins: BTreeMap<BufferIdentifier, PluginGroup<W>>,
     buffers: BufferContainerRef<W>,
     next_id: usize,
 }
@@ -57,9 +58,7 @@ impl <W: Write + Send + 'static>PluginManager<W> {
     /// Returns plugins available to this view.
     pub fn available_plugins(&self, view_id: &ViewIdentifier) -> Vec<ClientPluginInfo> {
         self.catalog.iter().map(|p| {
-            let running = self.running_for_view(view_id)
-                .map(|plugins| plugins.contains_key(&p.name))
-                .unwrap_or_default();
+            let running = self.plugin_is_running(view_id, &p.name);
             let name = p.name.clone();
             ClientPluginInfo { name, running }
         }).collect::<Vec<_>>()
@@ -148,13 +147,11 @@ impl <W: Write + Send + 'static>PluginManager<W> {
                     view_id: &ViewIdentifier, plugin_name: &str,
                     init_info: PluginBufferInfo) -> Result<(), Error> {
 
-        let _ = match self.running_for_view(view_id) {
-            Ok(plugins) if plugins.contains_key(plugin_name) => {
-                Err(Error::Other(format!("{} already running", plugin_name)))
-            }
-            Err(err) => Err(err),
-            Ok(_) => Ok(()),
-        }?;
+        // verify that this view_id is valid
+         let _ = self.running_for_view(view_id)?;
+         if self.plugin_is_running(view_id, plugin_name) {
+             return Err(Error::Other(format!("{} already running", plugin_name)));
+         }
 
         let plugin_id = self.next_plugin_id();
         let plugin = self.catalog.iter()
@@ -240,25 +237,25 @@ impl <W: Write + Send + 'static>PluginManager<W> {
         PluginPid(self.next_id)
     }
 
-    fn plugin_is_running(&self, view_id: &ViewIdentifier, plugin_name: &PluginName) -> bool {
+    fn plugin_is_running(&self, view_id: &ViewIdentifier, plugin_name: &str) -> bool {
         self.buffer_for_view(view_id)
-            .and_then(|id| self.running.get(&id))
+            .and_then(|id| self.buffer_plugins.get(&id))
             .map(|plugins| plugins.contains_key(plugin_name))
             .unwrap_or_default()
     }
 
-    fn running_for_view(&self, view_id: &ViewIdentifier) -> Result<&BufferPlugins<W>, Error> {
+    fn running_for_view(&self, view_id: &ViewIdentifier) -> Result<&PluginGroup<W>, Error> {
         self.buffer_for_view(view_id)
-            .and_then(|id| self.running.get(&id))
+            .and_then(|id| self.buffer_plugins.get(&id))
             .ok_or(Error::EditorMissing)
     }
 
-    fn running_for_view_mut(&mut self, view_id: &ViewIdentifier) -> Result<&mut BufferPlugins<W>, Error> {
+    fn running_for_view_mut(&mut self, view_id: &ViewIdentifier) -> Result<&mut PluginGroup<W>, Error> {
         let buffer_id = match self.buffer_for_view(view_id) {
             Some(id) => Ok(id),
             None => Err(Error::EditorMissing),
         }?;
-        self.running.get_mut(&buffer_id)
+        self.buffer_plugins.get_mut(&buffer_id)
             .ok_or(Error::EditorMissing)
     }
 }
@@ -293,7 +290,7 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
         PluginManager {
             // TODO: actually parse these from manifest files
             catalog: debug_plugins(),
-            running: BTreeMap::new(),
+            buffer_plugins: BTreeMap::new(),
             buffers: buffers,
             next_id: 0,
         })))
@@ -402,7 +399,7 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
         assert!(self.lock().running_for_view(view_id).is_err());
         let buffer_id = self.lock().buffer_for_view(view_id)
             .expect("document new expects buffer");
-        self.lock().running.insert(buffer_id, BufferPlugins::new());
+        self.lock().buffer_plugins.insert(buffer_id, PluginGroup::new());
     }
 
     /// Returns the plugins which want to activate for this view.
