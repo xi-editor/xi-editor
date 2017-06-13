@@ -22,16 +22,16 @@ use serde_json::{self, Value};
 
 use tabs::{BufferIdentifier, ViewIdentifier, BufferContainerRef};
 
-use super::{PluginDescription, PluginRef, start_plugin_process, PluginPid};
+use super::{PluginCatalog, PluginRef, start_plugin_process, PluginPid};
 use super::rpc_types::{PluginCommand, PluginUpdate, UpdateResponse, ClientPluginInfo, PluginBufferInfo};
-use super::manifest::{PluginActivation, debug_plugins};
+use super::manifest::PluginActivation;
 
-type PluginName = String;
+pub type PluginName = String;
 type PluginGroup<W> = BTreeMap<PluginName, PluginRef<W>>;
 
 /// Manages plugin loading, activation, lifecycle, and dispatch.
 pub struct PluginManager<W: Write> {
-    catalog: Vec<PluginDescription>,
+    catalog: PluginCatalog,
     /// Buffer-scoped plugins, by buffer
     buffer_plugins: BTreeMap<BufferIdentifier, PluginGroup<W>>,
     buffers: BufferContainerRef<W>,
@@ -57,9 +57,9 @@ impl <W: Write + Send + 'static>PluginManager<W> {
 
     /// Returns plugins available to this view.
     pub fn available_plugins(&self, view_id: &ViewIdentifier) -> Vec<ClientPluginInfo> {
-        self.catalog.iter().map(|p| {
-            let running = self.plugin_is_running(view_id, &p.name);
-            let name = p.name.clone();
+        self.catalog.iter_names().map(|name| {
+            let running = self.plugin_is_running(view_id, &name);
+            let name = name.clone();
             ClientPluginInfo { name, running }
         }).collect::<Vec<_>>()
     }
@@ -154,8 +154,7 @@ impl <W: Write + Send + 'static>PluginManager<W> {
          }
 
         let plugin_id = self.next_plugin_id();
-        let plugin = self.catalog.iter()
-            .find(|desc| desc.name == plugin_name)
+        let plugin = self.catalog.get_named(plugin_name)
             .ok_or(Error::Other(format!("no plugin found with name {}", plugin_name)))?;
 
         let me = self_ref.clone();
@@ -289,7 +288,7 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
         PluginManagerRef(Arc::new(Mutex::new(
         PluginManager {
             // TODO: actually parse these from manifest files
-            catalog: debug_plugins(),
+            catalog: PluginCatalog::debug(),
             buffer_plugins: BTreeMap::new(),
             buffers: buffers,
             next_id: 0,
@@ -414,18 +413,18 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
             .get_syntax()
             .to_owned();
 
-        inner.catalog.iter()
-            .filter(|plug_desc|{
-                plug_desc.activations.iter().any(|act|{
-                    match *act {
-                        PluginActivation::Autorun => true,
-                        PluginActivation::OnSyntax(ref other) if *other == syntax => true,
-                        _ => false,
-                    }
-                })
+        inner.catalog.filter(|plug_desc|{
+            plug_desc.activations.iter().any(|act|{
+                match *act {
+                    PluginActivation::Autorun => true,
+                    PluginActivation::OnSyntax(ref other) if *other == syntax => true,
+                    _ => false,
+                }
             })
+        })
+        .iter()
         .map(|desc| desc.name.to_owned())
-            .collect::<Vec<_>>()
+        .collect::<Vec<_>>()
     }
 
     /// Batch run a group of plugins (as on creating a new view, for instance)

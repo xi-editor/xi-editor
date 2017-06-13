@@ -17,6 +17,7 @@
 pub mod rpc_types;
 mod manager;
 mod manifest;
+mod catalog;
 
 use std::sync::{Arc, Mutex, mpsc};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -33,6 +34,8 @@ pub use self::manager::{PluginManagerRef, WeakPluginManagerRef};
 
 use self::rpc_types::{PluginUpdate, PluginCommand, PluginBufferInfo};
 use self::manifest::PluginDescription;
+use self::manager::PluginName;
+use self::catalog::PluginCatalog;
 
 
 pub type PluginPeer = RpcPeer<ChildStdin>;
