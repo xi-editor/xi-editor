@@ -137,7 +137,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             engine: engine,
             last_rev_id: last_rev_id,
             pristine_rev_id: last_rev_id,
-            undo_group_id: 0,
+            undo_group_id: 1,
             live_undos: Vec::new(),
             cur_undo: 0,
             undos: BTreeSet::new(),

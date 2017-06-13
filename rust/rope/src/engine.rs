@@ -24,6 +24,7 @@ use std;
 use rope::{Rope, RopeInfo};
 use multiset::{Subset, CountMatcher};
 use delta::Delta;
+use interval::Interval;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Engine {
@@ -66,8 +67,22 @@ enum Contents {
 }
 
 impl Engine {
+    /// Create a new Engine with a single edit that inserts `initial_contents`
+    /// if it is non-empty. It needs to be a separate commit rather than just
+    /// part of the initial contents since any two `Engine`s need a common
+    /// ancestor in order to be mergeable.
     pub fn new(initial_contents: Rope) -> Engine {
-        let deletes_from_union = Subset::new(initial_contents.len());
+        let mut engine = Engine::empty();
+        if initial_contents.len() > 0 {
+            let first_rev = engine.get_head_rev_id();
+            let delta = Delta::simple_edit(Interval::new_closed_closed(0,0), initial_contents, 0);
+            engine.edit_rev(0, 0, first_rev, delta);
+        }
+        engine
+    }
+
+    pub fn empty() -> Engine {
+        let deletes_from_union = Subset::new(0);
         let rev = Revision {
             rev_id: 0,
             edit: Undo { toggled_groups: BTreeSet::new(), deletes_bitxor: deletes_from_union.clone() },
@@ -75,7 +90,7 @@ impl Engine {
         };
         Engine {
             rev_id_counter: 1,
-            text: initial_contents,
+            text: Rope::default(),
             tombstones: Rope::default(),
             deletes_from_union,
             undone_groups: BTreeSet::new(),
@@ -496,25 +511,28 @@ mod tests {
     #[test]
     fn edit_rev_simple() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
-        engine.edit_rev(0, 0, 0, build_delta_1());
+        let first_rev = engine.get_head_rev_id();
+        engine.edit_rev(0, 1, first_rev, build_delta_1());
         assert_eq!("0123456789abcDEEFghijklmnopqr999stuvz", String::from(engine.get_head()));
     }
 
     #[test]
     fn edit_rev_concurrent() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
-        engine.edit_rev(1, 0, 0, build_delta_1());
-        engine.edit_rev(0, 1, 0, build_delta_2());
+        let first_rev = engine.get_head_rev_id();
+        engine.edit_rev(1, 1, first_rev, build_delta_1());
+        engine.edit_rev(0, 2, first_rev, build_delta_2());
         assert_eq!("0!3456789abcDEEFGIjklmnopqr888999stuvHIz", String::from(engine.get_head()));
     }
 
     fn undo_test(before: bool, undos : BTreeSet<usize>, output: &str) {
         let mut engine = Engine::new(Rope::from(TEST_STR));
+        let first_rev = engine.get_head_rev_id();
         if before {
             engine.undo(undos.clone());
         }
-        engine.edit_rev(1, 0, 0, build_delta_1());
-        engine.edit_rev(0, 1, 0, build_delta_2());
+        engine.edit_rev(1, 1, first_rev, build_delta_1());
+        engine.edit_rev(0, 2, first_rev, build_delta_2());
         if !before {
             engine.undo(undos);
         }
@@ -523,72 +541,78 @@ mod tests {
 
     #[test]
     fn edit_rev_undo() {
-        undo_test(true, [0,1].iter().cloned().collect(), TEST_STR);
+        undo_test(true, [1,2].iter().cloned().collect(), TEST_STR);
     }
 
     #[test]
     fn edit_rev_undo_2() {
-        undo_test(true, [1].iter().cloned().collect(), "0123456789abcDEEFghijklmnopqr999stuvz");
+        undo_test(true, [2].iter().cloned().collect(), "0123456789abcDEEFghijklmnopqr999stuvz");
     }
 
     #[test]
     fn edit_rev_undo_3() {
-        undo_test(true, [0].iter().cloned().collect(), "0!3456789abcdefGIjklmnopqr888stuvwHIyz");
+        undo_test(true, [1].iter().cloned().collect(), "0!3456789abcdefGIjklmnopqr888stuvwHIyz");
     }
 
     #[test]
     fn delta_rev_head() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
-        engine.edit_rev(1, 0, 0, build_delta_1());
-        let d = engine.delta_rev_head(0);
+        let first_rev = engine.get_head_rev_id();
+        engine.edit_rev(1, 1, first_rev, build_delta_1());
+        let d = engine.delta_rev_head(first_rev);
         assert_eq!(String::from(engine.get_head()), d.apply_to_string(TEST_STR));
     }
 
     #[test]
     fn delta_rev_head_2() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
-        engine.edit_rev(1, 0, 0, build_delta_1());
-        engine.edit_rev(0, 1, 0, build_delta_2());
-        let d = engine.delta_rev_head(0);
+        let first_rev = engine.get_head_rev_id();
+        engine.edit_rev(1, 1, first_rev, build_delta_1());
+        engine.edit_rev(0, 2, first_rev, build_delta_2());
+        let d = engine.delta_rev_head(first_rev);
         assert_eq!(String::from(engine.get_head()), d.apply_to_string(TEST_STR));
     }
 
     #[test]
     fn delta_rev_head_3() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
-        engine.edit_rev(1, 0, 0, build_delta_1());
-        engine.edit_rev(0, 1, 0, build_delta_2());
-        let d = engine.delta_rev_head(1);
+        let first_rev = engine.get_head_rev_id();
+        engine.edit_rev(1, 1, first_rev, build_delta_1());
+        let after_first_edit = engine.get_head_rev_id();
+        engine.edit_rev(0, 2, first_rev, build_delta_2());
+        let d = engine.delta_rev_head(after_first_edit);
         assert_eq!(String::from(engine.get_head()), d.apply_to_string("0123456789abcDEEFghijklmnopqr999stuvz"));
     }
 
     #[test]
     fn undo() {
-        undo_test(false, [0,1].iter().cloned().collect(), TEST_STR);
+        undo_test(false, [1,2].iter().cloned().collect(), TEST_STR);
     }
 
     #[test]
     fn undo_2() {
-        undo_test(false, [1].iter().cloned().collect(), "0123456789abcDEEFghijklmnopqr999stuvz");
+        undo_test(false, [2].iter().cloned().collect(), "0123456789abcDEEFghijklmnopqr999stuvz");
     }
 
     #[test]
     fn undo_3() {
-        undo_test(false, [0].iter().cloned().collect(), "0!3456789abcdefGIjklmnopqr888stuvwHIyz");
+        undo_test(false, [1].iter().cloned().collect(), "0!3456789abcdefGIjklmnopqr888stuvwHIyz");
     }
 
     #[test]
     fn undo_4() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
         let d1 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("a"), TEST_STR.len());
-        engine.edit_rev(1, 0, 0, d1.clone());
-        engine.undo([0].iter().cloned().collect());
-        let d2 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("a"), TEST_STR.len()+1);
-        engine.edit_rev(1, 1, 1, d2); // note this is based on d1 before, not the undo
+        let first_rev = engine.get_head_rev_id();
+        engine.edit_rev(1, 1, first_rev, d1.clone());
         let new_head = engine.get_head_rev_id();
+        engine.undo([1].iter().cloned().collect());
+        let d2 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("a"), TEST_STR.len()+1);
+        engine.edit_rev(1, 2, new_head, d2); // note this is based on d1 before, not the undo
+        let new_head_2 = engine.get_head_rev_id();
         let d3 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("b"), TEST_STR.len()+1);
-        engine.edit_rev(1, 2, new_head, d3);
-        engine.undo([0,2].iter().cloned().collect());
+        engine.edit_rev(1, 3, new_head_2, d3);
+        engine.undo([1,3].iter().cloned().collect());
         assert_eq!("a0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", String::from(engine.get_head()));
     }
 
@@ -596,11 +620,12 @@ mod tests {
     fn undo_5() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
         let d1 = Delta::simple_edit(Interval::new_closed_open(0,10), Rope::from(""), TEST_STR.len());
-        engine.edit_rev(1, 0, 0, d1.clone());
-        engine.edit_rev(1, 1, 0, d1.clone());
-        engine.undo([0].iter().cloned().collect());
+        let first_rev = engine.get_head_rev_id();
+        engine.edit_rev(1, 1, first_rev, d1.clone());
+        engine.edit_rev(1, 2, first_rev, d1.clone());
+        engine.undo([1].iter().cloned().collect());
         assert_eq!("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", String::from(engine.get_head()));
-        engine.undo([0,1].iter().cloned().collect());
+        engine.undo([1,2].iter().cloned().collect());
         assert_eq!(TEST_STR, String::from(engine.get_head()));
         engine.undo([].iter().cloned().collect());
         assert_eq!("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", String::from(engine.get_head()));
@@ -610,16 +635,18 @@ mod tests {
     fn gc() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
         let d1 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("c"), TEST_STR.len());
-        engine.edit_rev(1, 0, 0, d1);
-        engine.undo([0].iter().cloned().collect());
+        let first_rev = engine.get_head_rev_id();
+        engine.edit_rev(1, 1, first_rev, d1);
+        let new_head = engine.get_head_rev_id();
+        engine.undo([1].iter().cloned().collect());
         let d2 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("a"), TEST_STR.len()+1);
-        engine.edit_rev(1, 1, 1, d2);
-        let gc : BTreeSet<usize> = [0].iter().cloned().collect();
+        engine.edit_rev(1, 2, new_head, d2);
+        let gc : BTreeSet<usize> = [1].iter().cloned().collect();
         engine.gc(&gc);
         let d3 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("b"), TEST_STR.len()+1);
-        let new_head = engine.get_head_rev_id();
-        engine.edit_rev(1, 2, new_head, d3);
-        engine.undo([2].iter().cloned().collect());
+        let new_head_2 = engine.get_head_rev_id();
+        engine.edit_rev(1, 3, new_head_2, d3);
+        engine.undo([3].iter().cloned().collect());
         assert_eq!("a0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", String::from(engine.get_head()));
     }
 
@@ -632,7 +659,7 @@ mod tests {
         for i in 0..edits {
             let d = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("b"), i);
             let head = engine.get_head_rev_id();
-            engine.edit_rev(1, i, head, d);
+            engine.edit_rev(1, i+1, head, d);
             if i >= max_undos {
                 let to_gc : BTreeSet<usize> = [i-max_undos].iter().cloned().collect();
                 engine.gc(&to_gc)
@@ -642,14 +669,14 @@ mod tests {
         // spam cmd+z until the available undo history is exhausted
         let mut to_undo = BTreeSet::new();
         for i in ((edits-max_undos)..edits).rev() {
-            to_undo.insert(i);
+            to_undo.insert(i+1);
             engine.undo(to_undo.clone());
         }
 
         // insert a character at the beginning
         let d1 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("h"), engine.get_head().len());
         let head = engine.get_head_rev_id();
-        engine.edit_rev(1, edits, head, d1);
+        engine.edit_rev(1, edits+1, head, d1);
 
         // since character was inserted after gc, editor gcs all undone things
         engine.gc(&to_undo);
@@ -658,7 +685,7 @@ mod tests {
         let chars_left = (edits-max_undos)+1;
         let d2 = Delta::simple_edit(Interval::new_closed_open(chars_left, chars_left), Rope::from("f"), engine.get_head().len());
         let head2 = engine.get_head_rev_id();
-        engine.edit_rev(1, edits, head2, d2);
+        engine.edit_rev(1, edits+1, head2, d2);
 
         let mut soln = String::from("h");
         for _ in 0..(edits-max_undos) {
@@ -684,12 +711,13 @@ mod tests {
     fn gc_4() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
         let d1 = Delta::simple_edit(Interval::new_closed_open(0,10), Rope::from(""), TEST_STR.len());
-        engine.edit_rev(1, 0, 0, d1.clone());
-        engine.edit_rev(1, 1, 0, d1.clone());
-        let gc : BTreeSet<usize> = [0].iter().cloned().collect();
+        let first_rev = engine.get_head_rev_id();
+        engine.edit_rev(1, 1, first_rev, d1.clone());
+        engine.edit_rev(1, 2, first_rev, d1.clone());
+        let gc : BTreeSet<usize> = [1].iter().cloned().collect();
         engine.gc(&gc);
         // shouldn't do anything since it was double-deleted and one was GC'd
-        engine.undo([0,1].iter().cloned().collect());
+        engine.undo([1,2].iter().cloned().collect());
         assert_eq!("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", String::from(engine.get_head()));
     }
 }
