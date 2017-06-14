@@ -59,7 +59,7 @@ class Plugin(object):
         self.__last_method = method
 
         if method == "initialize":
-            params = params['buffer_info']
+            params = params['buffer_info'][0]
             self._initialize(peer, **params)
         if method == "update":
             self._update(peer, params)

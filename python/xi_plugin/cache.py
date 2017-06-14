@@ -134,7 +134,7 @@ class LineCache(object):
 
     def get_data(self, peer, to_offset):
         while to_offset > self.offsets[-1]:
-            raw_data = peer.get_data(self.view, self.offsets[-1], self.revision)
+            raw_data = peer.get_data(self.view_id, self.offsets[-1], self.revision)
             raw_lines = raw_data.splitlines(True)
 
             # if current last line does not contain newline, append first new line directly

@@ -199,7 +199,7 @@ pub struct PluginBufferInfo {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct BufferInfoWrapper {
-    pub buffer_info: PluginBufferInfo,
+    pub buffer_info: Vec<PluginBufferInfo>,
 }
 
 enum InternalError {
@@ -222,7 +222,9 @@ fn parse_plugin_request<'a>(method: &str, params: &'a Value) ->
         "ping" => Ok(PluginRequest::Ping),
         "initialize" => {
             match serde_json::from_value::<BufferInfoWrapper>(params.to_owned()) {
-                Ok(BufferInfoWrapper { buffer_info }) => Ok(PluginRequest::Initialize(buffer_info)),
+                //TODO: this can return multiple values but we assume only one.
+                // global plugins will need to correct this assumption.
+                Ok(BufferInfoWrapper { mut buffer_info }) => Ok(PluginRequest::Initialize(buffer_info.remove(0))),
                 Err(_) => {
                     print_err!("bad params? {:?}", params);
                     Err(InternalError::InvalidParams)
