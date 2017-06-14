@@ -23,7 +23,7 @@ use serde_json::{self, Value};
 use tabs::{BufferIdentifier, ViewIdentifier, BufferContainerRef};
 
 use super::{PluginCatalog, PluginRef, start_plugin_process, PluginPid};
-use super::rpc_types::{PluginCommand, PluginUpdate, UpdateResponse, ClientPluginInfo, PluginBufferInfo};
+use super::rpc_types::{PluginCommand, PluginUpdate, UpdateResponse, ClientPluginInfo};
 use super::manifest::PluginActivation;
 
 pub type PluginName = String;
@@ -34,6 +34,7 @@ pub struct PluginManager<W: Write> {
     catalog: PluginCatalog,
     /// Buffer-scoped plugins, by buffer
     buffer_plugins: BTreeMap<BufferIdentifier, PluginGroup<W>>,
+    global_plugins: PluginGroup<W>,
     buffers: BufferContainerRef<W>,
     next_id: usize,
 }
@@ -42,7 +43,7 @@ pub struct PluginManager<W: Write> {
 /// The error type for plugin operations.
 pub enum Error {
     /// There was an error finding the buffer associated with a given view.
-    /// This probably means the buffer was destroyed while an RPC was in flight. 
+    /// This probably means the buffer was destroyed while an RPC was in flight.
     EditorMissing,
     /// An error launching or communicating with a plugin process.
     IoError(io::Error),
@@ -99,7 +100,7 @@ impl <W: Write + Send + 'static>PluginManager<W> {
         let mut dead_plugins = Vec::new();
 
         if let Ok(running) = self.running_for_view(view_id) {
-            for (name, plugin) in running.iter() {
+            for (name, plugin) in running.iter().chain(self.global_plugins.iter()) {
                 // check to see if plugins have crashed
                 if plugin.is_dead() {
                     dead_plugins.push(name.to_owned());
@@ -143,9 +144,10 @@ impl <W: Write + Send + 'static>PluginManager<W> {
     }
 
     /// Launches and initializes the named plugin.
-    fn start_plugin(&mut self, self_ref: &PluginManagerRef<W>,
-                    view_id: &ViewIdentifier, plugin_name: &str,
-                    init_info: PluginBufferInfo) -> Result<(), Error> {
+    fn start_plugin(&mut self,
+                    self_ref: &PluginManagerRef<W>,
+                    view_id: &ViewIdentifier,
+                    plugin_name: &str, ) -> Result<(), Error> {
 
         // verify that this view_id is valid
          let _ = self.running_for_view(view_id)?;
@@ -154,14 +156,27 @@ impl <W: Write + Send + 'static>PluginManager<W> {
          }
 
         let plugin_id = self.next_plugin_id();
-        let plugin = self.catalog.get_named(plugin_name)
+        let plugin_desc = self.catalog.get_named(plugin_name)
             .ok_or(Error::Other(format!("no plugin found with name {}", plugin_name)))?;
+
+        let init_info = if plugin_desc.is_global() {
+            let buffers = self.buffers.lock();
+            let info = buffers.iter_editors()
+                .map(|ed| ed.plugin_init_info().to_owned())
+                .collect::<Vec<_>>();
+            info
+        } else {
+            match self.buffers.lock().editor_for_view(view_id) {
+                Some(ed) => vec![ed.plugin_init_info()],
+                None => return Err(Error::EditorMissing),
+            }
+        };
 
         let me = self_ref.clone();
         let view_id = view_id.to_owned();
         let plugin_name = plugin_name.to_owned();
 
-        start_plugin_process(self_ref, &plugin, plugin_id, move |result| {
+        start_plugin_process(self_ref, &plugin_desc, plugin_id, move |result| {
             match result {
                 Ok(plugin_ref) => {
                     plugin_ref.initialize(&init_info);
@@ -175,23 +190,49 @@ impl <W: Write + Send + 'static>PluginManager<W> {
 
     /// Callback used to register a successfully launched plugin
     fn on_plugin_launch(&mut self, view_id: &ViewIdentifier,
-                        name: &str, plugin_ref: PluginRef<W>) {
-        if match self.buffers.lock().editor_for_view(view_id) {
-            Some(ed) => {
-                ed.plugin_started(view_id, &name);
-                true
+                        plugin_name: &str, plugin_ref: PluginRef<W>) {
+        let is_global = self.catalog.get_named(plugin_name).unwrap().is_global();
+        if is_global {
+            {
+                let buffers = self.buffers.lock();
+                for ed in buffers.iter_editors() {
+                    ed.plugin_started(view_id, plugin_name);
+                }
             }
-            None => false,
-        } {
-            let _ = self.running_for_view_mut(&view_id)
-                .map(|running| running.insert(name.to_owned(), plugin_ref));
+            self.global_plugins.insert(plugin_name.to_owned(), plugin_ref);
+
         } else {
-            print_err!("launch of plugin {} failed, no buffer for view {}", name, view_id);
-            plugin_ref.shutdown();
+            // only add to our 'running' collection if the editor still exists
+            let is_running = match self.buffers.lock().editor_for_view(view_id) {
+                Some(ed) => {
+                    ed.plugin_started(view_id, &plugin_name);
+                    true
+                }
+                None => false,
+            };
+            if is_running {
+                let _ = self.running_for_view_mut(&view_id)
+                    .map(|running| running.insert(plugin_name.to_owned(), plugin_ref));
+            } else {
+                print_err!("launch of plugin {} failed, no buffer for view {}",
+                           plugin_name, view_id);
+                plugin_ref.shutdown();
+            }
         }
     }
 
     fn stop_plugin(&mut self, view_id: &ViewIdentifier, plugin_name: &str) {
+        let is_global = self.catalog.get_named(plugin_name).unwrap().is_global();
+        if is_global {
+            let plugin_ref = self.global_plugins.remove(plugin_name);
+            if let Some(plugin_ref) = plugin_ref {
+                plugin_ref.shutdown();
+                let buffers = self.buffers.lock();
+                for ed in buffers.iter_editors() {
+                    ed.plugin_stopped(None, plugin_name, 0);
+                }
+            }
+        }
         let plugin_ref = match self.running_for_view_mut(view_id) {
             Ok(running) => running.remove(plugin_name),
             Err(_) => None,
@@ -212,14 +253,26 @@ impl <W: Write + Send + 'static>PluginManager<W> {
     // during a previous update: that is, if a plugin crashes it isn't cleaned up
     // immediately. If this is a problem, we should store crashes, and clean up in idle().
     fn cleanup_dead(&mut self, view_id: &ViewIdentifier, plugins: &[PluginName]) {
+        //TODO: define exit codes, put them in an enum somewhere
+        let abnormal_exit_code = 1;
         for name in plugins.iter() {
-            let _ = self.running_for_view_mut(&view_id)
-                .map(|running| running.remove(name));
-            self.buffers.lock().editor_for_view(view_id).map(|ed|{
-                //TODO: define exit codes, put them in an enum somewhere
-                let abnormal_exit_code = 1;
-                ed.plugin_stopped(&view_id, &name, abnormal_exit_code);
-            });
+            let is_global = self.catalog.get_named(name).unwrap().is_global();
+            if is_global {
+                {
+                    self.global_plugins.remove(name);
+                }
+                let buffers = self.buffers.lock();
+                for ed in buffers.iter_editors() {
+                    ed.plugin_stopped(None, name,abnormal_exit_code);
+                }
+
+            } else {
+                let _ = self.running_for_view_mut(&view_id)
+                    .map(|running| running.remove(name));
+                self.buffers.lock().editor_for_view(view_id).map(|ed|{
+                    ed.plugin_stopped(view_id, &name, abnormal_exit_code);
+                });
+            }
         }
     }
 
@@ -240,7 +293,7 @@ impl <W: Write + Send + 'static>PluginManager<W> {
         self.buffer_for_view(view_id)
             .and_then(|id| self.buffer_plugins.get(&id))
             .map(|plugins| plugins.contains_key(plugin_name))
-            .unwrap_or_default()
+            .unwrap_or_default() || self.global_plugins.contains_key(plugin_name)
     }
 
     fn running_for_view(&self, view_id: &ViewIdentifier) -> Result<&PluginGroup<W>, Error> {
@@ -290,6 +343,7 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
             // TODO: actually parse these from manifest files
             catalog: PluginCatalog::debug(),
             buffer_plugins: BTreeMap::new(),
+            global_plugins: PluginGroup::new(),
             buffers: buffers,
             next_id: 0,
         })))
@@ -373,9 +427,9 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
     }
 
     /// Launches and initializes the named plugin.
-    pub fn start_plugin(&self, view_id: &ViewIdentifier, plugin_name: &str,
-                        init_info: &PluginBufferInfo) -> Result<(), Error> {
-        self.lock().start_plugin(self, view_id, plugin_name, init_info.to_owned())
+    pub fn start_plugin(&self, view_id: &ViewIdentifier,
+                        plugin_name: &str) -> Result<(), Error> {
+        self.lock().start_plugin(self, view_id, plugin_name)
     }
 
     /// Terminates and cleans up the named plugin.
@@ -430,25 +484,12 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
     /// Batch run a group of plugins (as on creating a new view, for instance)
     fn start_plugins(&mut self, view_id: &ViewIdentifier, plugin_names: &Vec<String>) {
         print_err!("starting plugins for {}", view_id);
-
-        let init_info = {
-            let inner = self.lock();
-            let init_info = inner.buffers.lock()
-                .editor_for_view(view_id)
-                .map(|ed| ed.plugin_init_info());
-            init_info
-        };
-
-        if let Some(init_info) = init_info {
-            for plugin_name in plugin_names.iter() {
-                match self.start_plugin(view_id, &plugin_name, &init_info) {
-                    Ok(_) => print_err!("starting plugin {}", &plugin_name),
-                    Err(err) => print_err!("unable to start plugin {}, err: {:?}",
-                                           &plugin_name, err),
-                }
+        for plugin_name in plugin_names.iter() {
+            match self.start_plugin(view_id, &plugin_name) {
+                Ok(_) => print_err!("starting plugin {}", &plugin_name),
+                Err(err) => print_err!("unable to start plugin {}, err: {:?}",
+                                       &plugin_name, err),
             }
-        } else {
-            print_err!("no editor for view {}", view_id)
         }
     }
 }

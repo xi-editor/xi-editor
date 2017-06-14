@@ -103,7 +103,7 @@ impl<W: Write + Send + 'static> PluginRef<W> {
     }
 
     /// Initialize the plugin.
-    pub fn initialize(&self, init: &PluginBufferInfo) {
+    pub fn initialize(&self, init: &[PluginBufferInfo]) {
         self.0.lock().unwrap().peer
             .send_rpc_notification("initialize", &json!({
                 "buffer_info": init,

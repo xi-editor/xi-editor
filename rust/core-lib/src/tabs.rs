@@ -43,7 +43,7 @@ pub struct BufferIdentifier(usize);
 
 impl fmt::Display for ViewIdentifier {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0) 
+        write!(f, "{}", self.0)
     }
 }
 
@@ -62,7 +62,7 @@ impl ViewIdentifier {
 
 impl fmt::Display for BufferIdentifier {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "buffer-id-{}", self.0) 
+        write!(f, "buffer-id-{}", self.0)
     }
 }
 
@@ -123,6 +123,11 @@ impl<W:Write> BufferContainer<W> {
                 None
             }
         }
+    }
+
+    /// Returns an iterator over all active `Editor`s.
+    pub fn iter_editors<'a>(&'a self) -> Box<Iterator<Item=&'a Editor<W>> + 'a> {
+        Box::new(self.editors.values())
     }
 }
 
@@ -398,7 +403,7 @@ impl<W: Write + Send + 'static> Documents<W> {
     }
 
     /// Adds a new view to an existing editor instance.
-    #[allow(unreachable_code, unused_variables, dead_code)] 
+    #[allow(unreachable_code, unused_variables, dead_code)]
     fn add_view(&mut self, view_id: &ViewIdentifier, buffer_id: BufferIdentifier) {
         panic!("add_view should not currently be accessible");
         self.buffers.add_view(view_id, &buffer_id);
@@ -435,17 +440,15 @@ impl<W: Write + Send + 'static> Documents<W> {
         self.buffers.lock().editor_for_view_mut(view_id).unwrap().do_rpc(view_id, cmd)
     }
 
-    #[allow(unused_variables)]
+    /// Handles a plugin related command from a client
     fn do_plugin_cmd(&mut self, cmd: PluginCommand) -> Option<Value> {
         use self::PluginCommand::*;
         match cmd {
             InitialPlugins { view_id } => Some(json!(
                     self.plugins.lock().available_plugins(&view_id))),
             Start { view_id, plugin_name } => {
-                let buffer_info = self.buffers.lock().editor_for_view(&view_id).unwrap()
-                    .plugin_init_info();
                 //TODO: report this error to client?
-                let _ = self.plugins.start_plugin(&view_id, &plugin_name, &buffer_info);
+                let _ = self.plugins.start_plugin(&view_id, &plugin_name);
                 None
             }
             Stop { view_id, plugin_name } => {
@@ -643,7 +646,7 @@ mod tests {
          "view": "a-view",
          "flag": 42
         }"#;
-        
+
         let result: TestStruct = serde_json::from_str(json).unwrap();
         assert_eq!(result.view.as_str(), "a-view");
     }
