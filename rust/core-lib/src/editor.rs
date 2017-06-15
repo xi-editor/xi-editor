@@ -192,6 +192,11 @@ impl<W: Write + Send + 'static> Editor<W> {
         &self.syntax
     }
 
+    /// Returns this `Editor`'s `BufferIdentifier`.
+    pub fn get_identifier(&self) -> BufferIdentifier {
+        self.buffer_id
+    }
+
     // each outstanding plugin edit represents a rev_in_flight.
     pub fn increment_revs_in_flight(&mut self) {
         self.revs_in_flight += 1;
@@ -1006,6 +1011,11 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     /// Notifies the client that the named plugin has started.
+    ///
+    /// Note: there is no current conception of a plugin which is only active
+    /// for a particular view; plugins are active at the editor/buffer level.
+    /// Some `view_id` is needed, however, to route to the correct client view.
+    //TODO: revisit this after implementing multiview
     pub fn plugin_started<'a, T>(&'a self, view_id: T, plugin: &str)
         where T: Into<Option<&'a ViewIdentifier>> {
         let view_id = view_id.into().unwrap_or(&self.view.view_id);

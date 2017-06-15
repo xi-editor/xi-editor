@@ -21,7 +21,7 @@ use std::fmt;
 pub enum SyntaxDefinition {
     Plaintext, Markdown, Python, Rust, C, Go, Dart, Swift, Toml,
     Json, Yaml, Cpp, Objc, Shell, Ruby, Javascript, Java, Php,
-    Perl, 
+    Perl,
 }
 
 impl Default for SyntaxDefinition {

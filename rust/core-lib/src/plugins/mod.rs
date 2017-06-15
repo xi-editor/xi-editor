@@ -102,6 +102,11 @@ impl<W: Write + Send + 'static> PluginRef<W> {
         }
     }
 
+    /// Send an arbitrary RPC notification to the plugin.
+    pub fn notify(&self, method: &str, params: &Value) {
+        self.0.lock().unwrap().peer.send_rpc_notification(method, params);
+    }
+
     /// Initialize the plugin.
     pub fn initialize(&self, init: &[PluginBufferInfo]) {
         self.0.lock().unwrap().peer
@@ -116,7 +121,7 @@ impl<W: Write + Send + 'static> PluginRef<W> {
         let params = serde_json::to_value(update).expect("PluginUpdate invalid");
         match self.0.lock() {
             Ok(plugin) => plugin.peer.send_rpc_request_async("update", &params, callback),
-            Err(err) => { 
+            Err(err) => {
                 print_err!("plugin update failed {:?}", err);
                 callback(Err(xi_rpc::Error::PeerDisconnect));
             }

@@ -31,15 +31,15 @@ use tabs::{BufferIdentifier, ViewIdentifier};
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PluginBufferInfo {
     /// The buffer's unique identifier.
-    buffer_id: BufferIdentifier,
+    pub buffer_id: BufferIdentifier,
     /// The buffer's current views.
-    views: Vec<ViewIdentifier>,
-    rev: usize,
-    buf_size: usize,
-    nb_lines: usize,
+    pub views: Vec<ViewIdentifier>,
+    pub rev: usize,
+    pub buf_size: usize,
+    pub nb_lines: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
-    path: Option<String>,
-    syntax: SyntaxDefinition,
+    pub path: Option<String>,
+    pub syntax: SyntaxDefinition,
 }
 
 //TODO: very likely this should be merged with PluginDescription
@@ -145,7 +145,7 @@ impl PluginUpdate {
 mod tests {
     use super::*;
     use serde_json;
-    
+
     #[test]
     fn test_plugin_update() {
         let json = r#"{

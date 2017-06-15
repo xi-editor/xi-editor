@@ -17,13 +17,16 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, Write};
 use std::sync::{Arc, Mutex, Weak, MutexGuard};
+use std::path::Path;
+use std::fmt::Debug;
 
+use serde::Serialize;
 use serde_json::{self, Value};
 
 use tabs::{BufferIdentifier, ViewIdentifier, BufferContainerRef};
 
 use super::{PluginCatalog, PluginRef, start_plugin_process, PluginPid};
-use super::rpc_types::{PluginCommand, PluginUpdate, UpdateResponse, ClientPluginInfo};
+use super::rpc_types::{PluginCommand, PluginUpdate, UpdateResponse, PluginBufferInfo, ClientPluginInfo};
 use super::manifest::PluginActivation;
 
 pub type PluginName = String;
@@ -143,10 +146,31 @@ impl <W: Write + Send + 'static>PluginManager<W> {
         Ok(())
     }
 
+    /// Sends a notification to groups of plugins.
+    fn notify_plugins<V>(&self, view_id: &ViewIdentifier,
+                         only_globals: bool, method: &str, params: &V)
+        where V: Serialize + Debug
+    {
+        let params = serde_json::to_value(params)
+            .expect(&format!("bad notif params.\nmethod: {}\nparams: {:?}",
+                             method, params));
+        for (_, plugin) in self.global_plugins.iter() {
+            plugin.notify(method, &params);
+        }
+        if !only_globals {
+            if let Ok(locals) = self.running_for_view(view_id) {
+                for (_, plugin) in locals {
+                    plugin.notify(method, &params);
+                }
+            }
+        }
+    }
+
     /// Launches and initializes the named plugin.
     fn start_plugin(&mut self,
                     self_ref: &PluginManagerRef<W>,
                     view_id: &ViewIdentifier,
+                    init_info: &PluginBufferInfo,
                     plugin_name: &str, ) -> Result<(), Error> {
 
         // verify that this view_id is valid
@@ -166,10 +190,7 @@ impl <W: Write + Send + 'static>PluginManager<W> {
                 .collect::<Vec<_>>();
             info
         } else {
-            match self.buffers.lock().editor_for_view(view_id) {
-                Some(ed) => vec![ed.plugin_init_info()],
-                None => return Err(Error::EditorMissing),
-            }
+            vec![init_info.to_owned()]
         };
 
         let me = self_ref.clone();
@@ -196,7 +217,7 @@ impl <W: Write + Send + 'static>PluginManager<W> {
             {
                 let buffers = self.buffers.lock();
                 for ed in buffers.iter_editors() {
-                    ed.plugin_started(view_id, plugin_name);
+                    ed.plugin_started(None, plugin_name);
                 }
             }
             self.global_plugins.insert(plugin_name.to_owned(), plugin_ref);
@@ -205,7 +226,7 @@ impl <W: Write + Send + 'static>PluginManager<W> {
             // only add to our 'running' collection if the editor still exists
             let is_running = match self.buffers.lock().editor_for_view(view_id) {
                 Some(ed) => {
-                    ed.plugin_started(view_id, &plugin_name);
+                    ed.plugin_started(view_id, plugin_name);
                     true
                 }
                 None => false,
@@ -252,9 +273,10 @@ impl <W: Write + Send + 'static>PluginManager<W> {
     //TODO: this currently only runs after trying to update a plugin that has crashed
     // during a previous update: that is, if a plugin crashes it isn't cleaned up
     // immediately. If this is a problem, we should store crashes, and clean up in idle().
+    #[allow(non_snake_case)]
     fn cleanup_dead(&mut self, view_id: &ViewIdentifier, plugins: &[PluginName]) {
         //TODO: define exit codes, put them in an enum somewhere
-        let abnormal_exit_code = 1;
+        let ABNORMAL_EXIT_CODE = 1;
         for name in plugins.iter() {
             let is_global = self.catalog.get_named(name).unwrap().is_global();
             if is_global {
@@ -263,14 +285,14 @@ impl <W: Write + Send + 'static>PluginManager<W> {
                 }
                 let buffers = self.buffers.lock();
                 for ed in buffers.iter_editors() {
-                    ed.plugin_stopped(None, name,abnormal_exit_code);
+                    ed.plugin_stopped(None, name, ABNORMAL_EXIT_CODE);
                 }
 
             } else {
                 let _ = self.running_for_view_mut(&view_id)
                     .map(|running| running.remove(name));
                 self.buffers.lock().editor_for_view(view_id).map(|ed|{
-                    ed.plugin_stopped(view_id, &name, abnormal_exit_code);
+                    ed.plugin_stopped(view_id, name, ABNORMAL_EXIT_CODE);
                 });
             }
         }
@@ -296,6 +318,11 @@ impl <W: Write + Send + 'static>PluginManager<W> {
             .unwrap_or_default() || self.global_plugins.contains_key(plugin_name)
     }
 
+    // TODO: we have a bunch of boilerplate around handling the rare case
+    // where we receive a command for some buffer which no longer exists.
+    // Maybe these two functions should return a Box<Iterator> of plugins,
+    // and if the buffer is missing just print a debug message and return
+    // an empty Iterator?
     fn running_for_view(&self, view_id: &ViewIdentifier) -> Result<&PluginGroup<W>, Error> {
         self.buffer_for_view(view_id)
             .and_then(|id| self.buffer_plugins.get(&id))
@@ -360,27 +387,21 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
     }
 
 
-    /// Called when a new empty buffer is created.
-    pub fn document_new(&mut self, view_id: &ViewIdentifier) {
-        print_err!("document new {}", view_id);
+    /// Called when a new buffer is created.
+    pub fn document_new(&mut self, view_id: &ViewIdentifier, init_info: PluginBufferInfo) {
         self.add_running_collection(view_id);
         let to_start = self.activatable_plugins(view_id);
-        self.start_plugins(view_id, &to_start);
-        //TODO: send lifecycle notification
-    }
-
-    /// Called when an existing file is loaded into a buffer.
-    pub fn document_open(&mut self, view_id: &ViewIdentifier) {
-        print_err!("document open {}", view_id);
-        self.add_running_collection(view_id);
-        let to_start = self.activatable_plugins(view_id);
-        self.start_plugins(view_id, &to_start);
-        //TODO: send lifecycle notification
+        self.start_plugins(view_id, &init_info, &to_start);
+        self.lock().notify_plugins(view_id, true, "initialize", &json!({
+            "buffer_info": vec![&init_info],
+           }));
     }
 
     /// Called when a buffer is saved to a file.
-    pub fn document_did_save(&mut self, view_id: &ViewIdentifier) {
-        print_err!("document_did_save {}", view_id);
+    pub fn document_did_save(&mut self, view_id: &ViewIdentifier, path: &Path) {
+        self.lock().notify_plugins(view_id, false, "did_save", &json!({
+            "path": path,
+        }));
     }
 
     /// Called when a buffer is closed.
@@ -396,11 +417,11 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
         for plugin_name in to_stop {
             self.stop_plugin(view_id, &plugin_name);
         }
-        //TODO: send lifecycle notification
+        self.lock().notify_plugins(view_id, true, "did_close", &json!({}));
     }
 
     /// Called when a document's syntax definition has changed.
-    pub fn document_syntax_changed(&mut self, view_id: &ViewIdentifier) {
+    pub fn document_syntax_changed(&mut self, view_id: &ViewIdentifier, init_info: PluginBufferInfo) {
         print_err!("document_syntax_changed {}", view_id);
 
         let start_keys = self.activatable_plugins(view_id).iter()
@@ -409,27 +430,29 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
 
         // stop currently running plugins that aren't on list
         // TODO: don't stop plugins that weren't started by a syntax activation
-        let to_stop = self.lock().running_for_view(view_id)
-            .unwrap().keys()
-            .filter(|k| !start_keys.contains(*k))
-            .map(|k| k.to_owned())
-            .collect::<Vec<String>>();
+        for plugin_name in self.lock().running_for_view(view_id)
+            .unwrap()
+            .keys()
+            .filter(|k| !start_keys.contains(*k)) {
+                self.stop_plugin(&view_id, &plugin_name);
+            }
+
+        //TODO: send syntax_changed notification before starting new plugins
 
         let to_run = start_keys.iter()
             .filter(|k| !self.lock().plugin_is_running(view_id, k))
             .map(|k| k.clone().to_owned())
             .collect::<Vec<String>>();
 
-        for plugin_name in to_stop {
-            self.stop_plugin(&view_id, &plugin_name);
-        }
-        self.start_plugins(view_id, &to_run);
+        self.start_plugins(view_id, &init_info, &to_run);
     }
 
     /// Launches and initializes the named plugin.
-    pub fn start_plugin(&self, view_id: &ViewIdentifier,
+    pub fn start_plugin(&self,
+                        view_id: &ViewIdentifier,
+                        init_info: &PluginBufferInfo,
                         plugin_name: &str) -> Result<(), Error> {
-        self.lock().start_plugin(self, view_id, plugin_name)
+        self.lock().start_plugin(self, view_id, init_info, plugin_name)
     }
 
     /// Terminates and cleans up the named plugin.
@@ -482,13 +505,14 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
     }
 
     /// Batch run a group of plugins (as on creating a new view, for instance)
-    fn start_plugins(&mut self, view_id: &ViewIdentifier, plugin_names: &Vec<String>) {
+    fn start_plugins(&mut self, view_id: &ViewIdentifier,
+                     init_info: &PluginBufferInfo, plugin_names: &Vec<String>) {
         print_err!("starting plugins for {}", view_id);
         for plugin_name in plugin_names.iter() {
-            match self.start_plugin(view_id, &plugin_name) {
-                Ok(_) => print_err!("starting plugin {}", &plugin_name),
+            match self.start_plugin(view_id, init_info, plugin_name) {
+                Ok(_) => print_err!("starting plugin {}", plugin_name),
                 Err(err) => print_err!("unable to start plugin {}, err: {:?}",
-                                       &plugin_name, err),
+                                       plugin_name, err),
             }
         }
     }

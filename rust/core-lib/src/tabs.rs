@@ -344,13 +344,16 @@ impl<W: Write + Send + 'static> Documents<W> {
             } else {
                 // not open: create new buffer_id and open file
                 let buffer_id = self.next_buffer_id();
-                self.new_view_with_file(rpc_peer, &view_id, buffer_id.clone(), &file_path);
+                self.new_view_with_file(rpc_peer, &view_id, buffer_id, &file_path);
             }
         } else {
             // file_path was nil: create a new empty buffer.
             let buffer_id = self.next_buffer_id();
             self.new_empty_view(rpc_peer, &view_id, buffer_id);
         }
+        let init_info = self.buffers.lock().editor_for_view(&view_id)
+            .unwrap().plugin_init_info();
+        self.plugins.document_new(&view_id, init_info);
         json!(view_id)
     }
 
@@ -363,7 +366,6 @@ impl<W: Write + Send + 'static> Documents<W> {
                       buffer_id: BufferIdentifier) {
         let editor = Editor::new(self.new_tab_ctx(rpc_peer), buffer_id, view_id);
         self.add_editor(view_id, &buffer_id, editor, None);
-        self.plugins.document_new(view_id);
     }
 
     fn new_view_with_file(&mut self, rpc_peer: &MainPeer<W>, view_id: &ViewIdentifier,
@@ -373,7 +375,6 @@ impl<W: Write + Send + 'static> Documents<W> {
                 let ed = Editor::with_text(self.new_tab_ctx(rpc_peer),
                                            buffer_id, view_id, contents);
                 self.add_editor(view_id, &buffer_id, ed, Some(path));
-                self.plugins.document_open(view_id);
             }
             Err(err) => {
                 let ed = Editor::new(self.new_tab_ctx(rpc_peer), buffer_id, view_id);
@@ -386,7 +387,6 @@ impl<W: Write + Send + 'static> Documents<W> {
                     // if a path that doesn't exist, create a new empty buffer + set path
                     self.add_editor(view_id, &buffer_id, ed, Some(path));
                 }
-                self.plugins.document_new(view_id);
             }
         }
     }
@@ -429,10 +429,12 @@ impl<W: Write + Send + 'static> Documents<W> {
         self.buffers.lock().editor_for_view_mut(view_id)
             .unwrap().do_save(file_path);
         self.buffers.set_path(file_path, view_id);
+        let init_info = self.buffers.lock().editor_for_view(view_id)
+            .unwrap().plugin_init_info();
         if prev_syntax != SyntaxDefinition::new(file_path.to_str()) {
-                self.plugins.document_syntax_changed(view_id);
+            self.plugins.document_syntax_changed(view_id, init_info);
         }
-        self.plugins.document_did_save(&view_id);
+        self.plugins.document_did_save(&view_id, file_path);
         None
     }
 
@@ -448,7 +450,14 @@ impl<W: Write + Send + 'static> Documents<W> {
                     self.plugins.lock().available_plugins(&view_id))),
             Start { view_id, plugin_name } => {
                 //TODO: report this error to client?
-                let _ = self.plugins.start_plugin(&view_id, &plugin_name);
+                let info = self.buffers.lock().editor_for_view(&view_id)
+                    .map(|ed| ed.plugin_init_info());
+                match info {
+                    Some(info) => {
+                        let _ = self.plugins.start_plugin(&view_id, &info, &plugin_name);
+                    },
+                    None => (),
+                }
                 None
             }
             Stop { view_id, plugin_name } => {
