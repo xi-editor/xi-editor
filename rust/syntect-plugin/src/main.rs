@@ -140,6 +140,10 @@ impl<'a> caching_plugin::Handler for PluginState<'a> {
         self.do_highlighting(ctx);
     }
 
+    fn did_save(&mut self, ctx: PluginCtx) {
+        self.do_highlighting(ctx);
+    }
+
     fn idle(&mut self, mut ctx: PluginCtx, _token: usize) {
         print_err!("idle task at line {}", self.line_num);
         for _ in 0..LINES_PER_RPC {

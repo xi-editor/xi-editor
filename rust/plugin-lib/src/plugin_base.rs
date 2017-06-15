@@ -16,6 +16,7 @@
 
 use std::io;
 use std::fmt;
+use std::path::PathBuf;
 
 use serde_json::{self, Value};
 
@@ -179,6 +180,9 @@ pub enum PluginRequest<'a> {
         author: &'a str,
         text: Option<&'a str>,
     },
+    DidSave {
+        path: PathBuf,
+    }
 }
 
 //TODO: this is just copy-paste from core-lib::plugins::rpc_types
@@ -202,6 +206,11 @@ pub struct BufferInfoWrapper {
     pub buffer_info: Vec<PluginBufferInfo>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SaveWrapper {
+    pub path: PathBuf,
+}
+
 enum InternalError {
     InvalidParams,
     UnknownMethod(String),
@@ -218,13 +227,23 @@ impl fmt::Display for InternalError {
 
 fn parse_plugin_request<'a>(method: &str, params: &'a Value) ->
         Result<PluginRequest<'a>, InternalError> {
+            use self::PluginRequest::*;
     match method {
-        "ping" => Ok(PluginRequest::Ping),
+        "ping" => Ok(Ping),
         "initialize" => {
             match serde_json::from_value::<BufferInfoWrapper>(params.to_owned()) {
                 //TODO: this can return multiple values but we assume only one.
                 // global plugins will need to correct this assumption.
-                Ok(BufferInfoWrapper { mut buffer_info }) => Ok(PluginRequest::Initialize(buffer_info.remove(0))),
+                Ok(BufferInfoWrapper { mut buffer_info }) => Ok(Initialize(buffer_info.remove(0))),
+                Err(_) => {
+                    print_err!("bad params? {:?}", params);
+                    Err(InternalError::InvalidParams)
+                }
+            }
+        }
+        "did_save" => {
+            match serde_json::from_value::<SaveWrapper>(params.to_owned()) {
+                Ok(SaveWrapper { path }) => Ok(DidSave { path }),
                 Err(_) => {
                     print_err!("bad params? {:?}", params);
                     Err(InternalError::InvalidParams)

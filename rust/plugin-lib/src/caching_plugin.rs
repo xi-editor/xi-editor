@@ -28,6 +28,7 @@ const CHUNK_SIZE: usize = 1024 * 1024;
 pub trait Handler {
     fn initialize(&mut self, ctx: PluginCtx, buf_size: usize);
     fn update(&mut self, ctx: PluginCtx);
+    fn did_save(&mut self, ctx: PluginCtx);
     #[allow(unused_variables)]
     fn idle(&mut self, ctx: PluginCtx, token: usize) {}
 }
@@ -80,7 +81,7 @@ impl<'a, H: Handler> plugin_base::Handler for MyHandler<'a, H> {
                 self.handler.initialize(ctx, init_info.buf_size);
                 None
             }
-            PluginRequest::Update { start, end, new_len, rev, edit_type, author, text } => {
+            PluginRequest::Update { start, end, new_len, rev, text, .. } => {
                 //print_err!("got update notification {:?}", edit_type);
                 ctx.state.buf_size = ctx.state.buf_size - (end - start) + new_len;
                 ctx.state.rev = rev;
@@ -105,6 +106,16 @@ impl<'a, H: Handler> plugin_base::Handler for MyHandler<'a, H> {
                 self.handler.update(ctx);
                 Some(Value::from(0i32))
             }
+            PluginRequest::DidSave { ref path } => {
+                let new_path = Some(path.to_owned());
+                if ctx.state.path != new_path {
+                    ctx.state.line_num = 0;
+                    ctx.state.offset_of_line = 0;
+                }
+                ctx.state.path = Some(path.to_owned());
+                self.handler.did_save(ctx);
+                None
+            }
         }
     }
 
@@ -128,7 +139,8 @@ pub fn mainloop<H: Handler>(handler: &mut H) {
 impl<'a> PluginCtx<'a> {
     pub fn get_line(&mut self, line_num: usize) -> Result<Option<String>, Error> {
         if line_num != self.state.line_num {
-            print_err!("can't handle non-sequential line numbers yet");
+            print_err!("can't handle non-sequential line numbers yet. self: {}, other {}",
+                       self.state.line_num, line_num);
             return Ok(None);
         }
         let offset_of_line = self.state.offset_of_line;
