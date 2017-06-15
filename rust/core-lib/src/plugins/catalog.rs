@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{HashMap, hash_map};
+use std::collections::HashMap;
 
 use super::{PluginName, PluginDescription};
 use super::manifest::debug_plugins;
@@ -41,14 +41,18 @@ impl <'a>PluginCatalog {
         PluginCatalog { items }
     }
 
-    pub fn iter(&'a self) -> hash_map::Values<PluginName, PluginDescription> {
-       self.items.values()
+    /// Returns an iterator over all plugins in the catalog, in arbitrary order.
+    pub fn iter(&'a self) -> Box<Iterator<Item=&'a PluginDescription> + 'a> {
+       Box::new(self.items.values())
     }
 
-    pub fn iter_names(&'a self) -> hash_map::Keys<PluginName, PluginDescription> {
-        self.items.keys()
+    /// Returns an iterator over all plugin names in the catalog,
+    /// in arbitrary order.
+    pub fn iter_names(&'a self) -> Box<Iterator<Item=&'a PluginName> + 'a> {
+        Box::new(self.items.keys())
     }
 
+    /// Returns a reference to the named plugin if it exists in the catalog.
     pub fn get_named(&self, plugin_name: &str) -> Option<&PluginDescription> {
         self.items.get(plugin_name)
     }
