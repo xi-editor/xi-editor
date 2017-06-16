@@ -164,6 +164,11 @@ impl Engine {
         deletes_from_union
     }
 
+    /// Returns the largest undo group ID used so far
+    pub fn max_undo_group_id(&self) -> usize {
+        self.revs.last().unwrap().max_undo_so_far
+    }
+
     /// Get revision id of head revision.
     pub fn get_head_rev_id(&self) -> usize {
         self.revs.last().unwrap().rev_id

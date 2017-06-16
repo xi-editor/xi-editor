@@ -391,12 +391,19 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.sync_state_changed();
     }
 
+    #[cfg(not(target_os = "fuchsia"))]
     fn gc_undos(&mut self) {
         if self.revs_in_flight == 0 && !self.gc_undos.is_empty() {
             self.engine.gc(&self.gc_undos);
             self.undos = &self.undos - &self.gc_undos;
             self.gc_undos.clear();
         }
+    }
+
+    #[cfg(target_os = "fuchsia")]
+    fn gc_undos(&mut self) {
+        // Never run GC on Fuchsia so that peers don't invalidate our
+        // last_rev_id and so that merge will work.
     }
 
     fn is_pristine(&self) -> bool {
@@ -417,6 +424,8 @@ impl<W: Write + Send + 'static> Editor<W> {
         // TODO: CRDT merge
         self.engine = new_engine;
         self.text = self.engine.get_head().clone();
+        // TODO: better undo semantics. This only implements separate undo histories for low concurrency.
+        self.undo_group_id = self.engine.max_undo_group_id() + 1;
         self.last_synced_rev = self.engine.get_head_rev_id();
         self.commit_delta(None);
         self.render();
