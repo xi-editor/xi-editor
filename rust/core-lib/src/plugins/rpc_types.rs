@@ -17,6 +17,7 @@
 use std::path::PathBuf;
 
 use syntax::SyntaxDefinition;
+use tabs::{BufferIdentifier, ViewIdentifier};
 
 //TODO: At the moment (May 08, 2017) this is all very much in flux.
 // At some point, it will be stabalized and then perhaps will live in another crate,
@@ -29,23 +30,17 @@ use syntax::SyntaxDefinition;
 /// Buffer information sent on plugin init.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PluginBufferInfo {
-    rev: usize,
-    buf_size: usize,
-    nb_lines: usize,
+    /// The buffer's unique identifier.
+    pub buffer_id: BufferIdentifier,
+    /// The buffer's current views.
+    pub views: Vec<ViewIdentifier>,
+    pub rev: usize,
+    pub buf_size: usize,
+    pub nb_lines: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
-    path: Option<String>,
-    syntax: SyntaxDefinition,
+    pub path: Option<String>,
+    pub syntax: SyntaxDefinition,
 }
-
-impl PluginBufferInfo {
-    pub fn new(rev: usize, buf_size: usize, nb_lines: usize,
-               path: Option<PathBuf>, syntax: SyntaxDefinition) -> Self {
-        //TODO: do make any current assertions about paths being valid utf-8? do we want to?
-        let path = path.map(|p| p.to_str().unwrap().to_owned());
-        PluginBufferInfo { rev, buf_size, nb_lines, path, syntax }
-    }
-}
-
 
 //TODO: very likely this should be merged with PluginDescription
 //TODO: also this does not belong here.
@@ -69,21 +64,6 @@ pub struct PluginUpdate {
     author: String,
 }
 
-impl PluginUpdate {
-    pub fn new(start: usize, end: usize, new_len: usize, rev: usize,
-               text: Option<String>, edit_type: String, author: String) -> Self {
-        PluginUpdate {
-            start: start,
-            end: end,
-            new_len: new_len,
-            text: text,
-            rev: rev,
-            edit_type: edit_type,
-            author: author
-        }
-    }
-}
-
 /// A response to an `update` RPC sent to a plugin.
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(untagged)]
@@ -93,7 +73,6 @@ pub enum UpdateResponse {
     /// An acknowledgement with no action. A response cannot be Null, so we send a uint.
     Ack(u64),
 }
-
 
 // ====================================================================
 // plugin -> core RPC method types
@@ -116,7 +95,7 @@ pub struct PluginEdit {
     pub author: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 /// A text range and style information.
 pub struct StyleSpan {
     pub start: usize,
@@ -126,31 +105,57 @@ pub struct StyleSpan {
     pub font_style: u8,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub struct ScopeSpan {
     pub start: usize,
     pub end: usize,
     pub scope_id: u32,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(untagged)]
 /// RPC commands sent from plugins.
 pub enum PluginCommand {
     // deprecated
-    SetFgSpans {start: usize, len: usize, spans: Vec<StyleSpan>, rev: usize },
-    AddScopes { scopes: Vec<Vec<String>> },
-    UpdateSpans { start: usize, len: usize, spans: Vec<ScopeSpan>, rev: usize },
-    GetData { offset: usize, max_size: usize, rev: usize },
-    Alert { msg: String },
-    LineCount,
+    SetFgSpans { view_id: ViewIdentifier, start: usize, len: usize, spans: Vec<StyleSpan>, rev: usize },
+    AddScopes { view_id: ViewIdentifier, scopes: Vec<Vec<String>> },
+    UpdateSpans { view_id: ViewIdentifier, start: usize, len: usize, spans: Vec<ScopeSpan>, rev: usize },
+    GetData { view_id: ViewIdentifier, offset: usize, max_size: usize, rev: usize },
+    Alert { view_id: ViewIdentifier, msg: String },
+    LineCount { view_id: ViewIdentifier },
+}
+
+impl PluginBufferInfo {
+    pub fn new(buffer_id: BufferIdentifier, views: &[ViewIdentifier],
+               rev: usize, buf_size: usize, nb_lines: usize,
+               path: Option<PathBuf>, syntax: SyntaxDefinition) -> Self {
+        //TODO: do make any current assertions about paths being valid utf-8? do we want to?
+        let path = path.map(|p| p.to_str().unwrap().to_owned());
+        let views = views.to_owned();
+        PluginBufferInfo { buffer_id, views, rev, buf_size, nb_lines, path, syntax }
+    }
+}
+
+impl PluginUpdate {
+    pub fn new(start: usize, end: usize, new_len: usize, rev: usize,
+               text: Option<String>, edit_type: String, author: String) -> Self {
+        PluginUpdate {
+            start: start,
+            end: end,
+            new_len: new_len,
+            text: text,
+            rev: rev,
+            edit_type: edit_type,
+            author: author
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json;
-    
+
     #[test]
     fn test_plugin_update() {
         let json = r#"{
@@ -173,7 +178,9 @@ mod tests {
     #[test]
     fn test_deserde_init() {
         let json = r#"
-            {"rev": 1,
+            {"buffer_id": 42,
+             "views": ["view-id-4"],
+             "rev": 1,
              "buf_size": 20,
              "nb_lines": 5,
              "path": "some_path",

@@ -17,6 +17,7 @@
 pub mod rpc_types;
 mod manager;
 mod manifest;
+mod catalog;
 
 use std::sync::{Arc, Mutex, mpsc};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -33,6 +34,8 @@ pub use self::manager::{PluginManagerRef, WeakPluginManagerRef};
 
 use self::rpc_types::{PluginUpdate, PluginCommand, PluginBufferInfo};
 use self::manifest::PluginDescription;
+use self::manager::PluginName;
+use self::catalog::PluginCatalog;
 
 
 pub type PluginPeer = RpcPeer<ChildStdin>;
@@ -40,7 +43,7 @@ pub type PluginPeer = RpcPeer<ChildStdin>;
 ///
 /// Note: two instances of the same executable will have different identifiers.
 /// Note: this identifier is distinct from the OS's process id.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PluginPid(usize);
 
 /// A running plugin.
@@ -51,8 +54,6 @@ pub struct Plugin<W: Write> {
     manager: WeakPluginManagerRef<W>,
     description: PluginDescription,
     identifier: PluginPid,
-    //TODO: temporary, eventually ids (view ids?) should be passed back and forth with RPCs
-    view_id: ViewIdentifier,
 }
 
 /// A convenience wrapper for passing around a reference to a plugin.
@@ -89,21 +90,26 @@ impl<W: Write + Send + 'static> PluginRef<W> {
         };
 
         if let Some(plugin_manager) = plugin_manager {
-            let cmd = serde_json::from_value::<PluginCommand>(params.to_owned())
-                .expect(&format!("failed to parse plugin rpc {}, params {:?}",
-                        method, params));
-            //TODO: replace plugin name with a process-unique value identifier
-            let name = self.0.lock().unwrap().description.name.clone();
-            let result = plugin_manager.lock().handle_plugin_cmd(
-                cmd, &self.0.lock().unwrap().view_id, &name);
-        result
+            let cmd = serde_json::from_value::<PluginCommand>(params.to_owned());
+            if cmd.is_err() {
+                print_err!("failed to parse plugin rpc {}, params {:?}",
+                           method, params);
+                return None
+            }
+            let pid = self.get_identifier();
+            plugin_manager.lock().handle_plugin_cmd(cmd.unwrap(), pid)
         } else {
             None
         }
     }
 
+    /// Send an arbitrary RPC notification to the plugin.
+    pub fn notify(&self, method: &str, params: &Value) {
+        self.0.lock().unwrap().peer.send_rpc_notification(method, params);
+    }
+
     /// Initialize the plugin.
-    pub fn initialize(&self, init: &PluginBufferInfo) {
+    pub fn initialize(&self, init: &[PluginBufferInfo]) {
         self.0.lock().unwrap().peer
             .send_rpc_notification("initialize", &json!({
                 "buffer_info": init,
@@ -116,7 +122,7 @@ impl<W: Write + Send + 'static> PluginRef<W> {
         let params = serde_json::to_value(update).expect("PluginUpdate invalid");
         match self.0.lock() {
             Ok(plugin) => plugin.peer.send_rpc_request_async("update", &params, callback),
-            Err(err) => { 
+            Err(err) => {
                 print_err!("plugin update failed {:?}", err);
                 callback(Err(xi_rpc::Error::PeerDisconnect));
             }
@@ -196,14 +202,12 @@ pub fn start_update_thread<W: Write + Send + 'static>(
 pub fn start_plugin_process<W, C>(manager_ref: &PluginManagerRef<W>,
                           plugin_desc: &PluginDescription,
                           identifier: PluginPid,
-                          view_id: &ViewIdentifier,
                           completion: C)
     where W: Write + Send + 'static,
           C: FnOnce(Result<PluginRef<W>, io::Error>) + Send + 'static
 {
 
     let manager_ref = manager_ref.to_weak();
-    let view_id = view_id.to_owned();
     let plugin_desc = plugin_desc.to_owned();
 
     thread::spawn(move || {
@@ -226,7 +230,6 @@ pub fn start_plugin_process<W, C>(manager_ref: &PluginManagerRef<W>,
                     manager: manager_ref,
                     description: plugin_desc,
                     identifier: identifier,
-                    view_id: view_id,
                 };
                 let mut plugin_ref = PluginRef(
                     Arc::new(Mutex::new(plugin)),

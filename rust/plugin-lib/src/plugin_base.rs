@@ -16,6 +16,7 @@
 
 use std::io;
 use std::fmt;
+use std::path::PathBuf;
 
 use serde_json::{self, Value};
 
@@ -90,8 +91,10 @@ impl<'a> PluginCtx<'a> {
     }
     */
 
-    pub fn get_data(&self, offset: usize, max_size: usize, rev: usize) -> Result<String, Error> {
+    pub fn get_data(&self, view_id: &str, offset: usize,
+                    max_size: usize, rev: usize) -> Result<String, Error> {
         let params = json!({
+            "view_id": view_id,
             "offset": offset,
             "max_size": max_size,
             "rev": rev,
@@ -104,15 +107,17 @@ impl<'a> PluginCtx<'a> {
         }
     }
 
-    pub fn add_scopes(&self, scopes: &Vec<Vec<String>>) {
+    pub fn add_scopes(&self, view_id: &str, scopes: &Vec<Vec<String>>) {
         let params = json!({
+            "view_id": view_id,
             "scopes": scopes,
         });
         self.send_rpc_notification("add_scopes", &params);
     }
 
-    pub fn update_spans(&self, start: usize, len: usize, rev: usize, spans: &[ScopeSpan]) {
+    pub fn update_spans(&self, view_id: &str, start: usize, len: usize, rev: usize, spans: &[ScopeSpan]) {
         let params = json!({
+            "view_id": view_id,
             "start": start,
             "len": len,
             "rev": rev,
@@ -174,6 +179,9 @@ pub enum PluginRequest<'a> {
         author: &'a str,
         text: Option<&'a str>,
     },
+    DidSave {
+        path: PathBuf,
+    }
 }
 
 //TODO: this is just copy-paste from core-lib::plugins::rpc_types
@@ -182,6 +190,8 @@ pub enum PluginRequest<'a> {
 /// Buffer information sent on plugin init.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PluginBufferInfo {
+    pub buffer_id: usize,
+    pub views: Vec<String>,
     pub rev: usize,
     pub buf_size: usize,
     pub nb_lines: usize,
@@ -192,7 +202,12 @@ pub struct PluginBufferInfo {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct BufferInfoWrapper {
-    pub buffer_info: PluginBufferInfo,
+    pub buffer_info: Vec<PluginBufferInfo>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SaveWrapper {
+    pub path: PathBuf,
 }
 
 enum InternalError {
@@ -211,11 +226,23 @@ impl fmt::Display for InternalError {
 
 fn parse_plugin_request<'a>(method: &str, params: &'a Value) ->
         Result<PluginRequest<'a>, InternalError> {
+            use self::PluginRequest::*;
     match method {
-        "ping" => Ok(PluginRequest::Ping),
+        "ping" => Ok(Ping),
         "initialize" => {
             match serde_json::from_value::<BufferInfoWrapper>(params.to_owned()) {
-                Ok(BufferInfoWrapper { buffer_info }) => Ok(PluginRequest::Initialize(buffer_info)),
+                //TODO: this can return multiple values but we assume only one.
+                // global plugins will need to correct this assumption.
+                Ok(BufferInfoWrapper { mut buffer_info }) => Ok(Initialize(buffer_info.remove(0))),
+                Err(_) => {
+                    print_err!("bad params? {:?}", params);
+                    Err(InternalError::InvalidParams)
+                }
+            }
+        }
+        "did_save" => {
+            match serde_json::from_value::<SaveWrapper>(params.to_owned()) {
+                Ok(SaveWrapper { path }) => Ok(DidSave { path }),
                 Err(_) => {
                     print_err!("bad params? {:?}", params);
                     Err(InternalError::InvalidParams)

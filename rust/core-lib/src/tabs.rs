@@ -44,7 +44,7 @@ pub struct BufferIdentifier(usize);
 
 impl fmt::Display for ViewIdentifier {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0) 
+        write!(f, "{}", self.0)
     }
 }
 
@@ -63,7 +63,7 @@ impl ViewIdentifier {
 
 impl fmt::Display for BufferIdentifier {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "buffer-id-{}", self.0) 
+        write!(f, "buffer-id-{}", self.0)
     }
 }
 
@@ -124,6 +124,11 @@ impl<W:Write> BufferContainer<W> {
                 None
             }
         }
+    }
+
+    /// Returns an iterator over all active `Editor`s.
+    pub fn iter_editors<'a>(&'a self) -> Box<Iterator<Item=&'a Editor<W>> + 'a> {
+        Box::new(self.editors.values())
     }
 }
 
@@ -345,13 +350,16 @@ impl<W: Write + Send + 'static> Documents<W> {
             } else {
                 // not open: create new buffer_id and open file
                 let buffer_id = self.next_buffer_id();
-                self.new_view_with_file(rpc_peer, &view_id, buffer_id.clone(), &file_path);
+                self.new_view_with_file(rpc_peer, &view_id, buffer_id, &file_path);
             }
         } else {
             // file_path was nil: create a new empty buffer.
             let buffer_id = self.next_buffer_id();
             self.new_empty_view(rpc_peer, &view_id, buffer_id);
         }
+        let init_info = self.buffers.lock().editor_for_view(&view_id)
+            .unwrap().plugin_init_info();
+        self.plugins.document_new(&view_id, init_info);
         json!(view_id)
     }
 
@@ -362,21 +370,20 @@ impl<W: Write + Send + 'static> Documents<W> {
 
     fn new_empty_view(&mut self, rpc_peer: &MainPeer<W>, view_id: &ViewIdentifier,
                       buffer_id: BufferIdentifier) {
-        let editor = Editor::new(self.new_tab_ctx(rpc_peer), view_id);
+        let editor = Editor::new(self.new_tab_ctx(rpc_peer), buffer_id, view_id);
         self.add_editor(view_id, &buffer_id, editor, None);
-        self.plugins.document_new(view_id);
     }
 
     fn new_view_with_file(&mut self, rpc_peer: &MainPeer<W>, view_id: &ViewIdentifier,
                           buffer_id: BufferIdentifier, path: &Path) {
         match self.read_file(&path) {
             Ok(contents) => {
-                let ed = Editor::with_text(self.new_tab_ctx(rpc_peer), view_id, contents);
+                let ed = Editor::with_text(self.new_tab_ctx(rpc_peer),
+                                           buffer_id, view_id, contents);
                 self.add_editor(view_id, &buffer_id, ed, Some(path));
-                self.plugins.document_open(view_id);
             }
             Err(err) => {
-                let ed = Editor::new(self.new_tab_ctx(rpc_peer), view_id);
+                let ed = Editor::new(self.new_tab_ctx(rpc_peer), buffer_id, view_id);
                 if path.exists() {
                     // if this is a read error of an actual file, we don't set path
                     // TODO: we should be reporting errors to the client
@@ -386,7 +393,6 @@ impl<W: Write + Send + 'static> Documents<W> {
                     // if a path that doesn't exist, create a new empty buffer + set path
                     self.add_editor(view_id, &buffer_id, ed, Some(path));
                 }
-                self.plugins.document_new(view_id);
             }
         }
     }
@@ -403,7 +409,7 @@ impl<W: Write + Send + 'static> Documents<W> {
     }
 
     /// Adds a new view to an existing editor instance.
-    #[allow(unreachable_code, unused_variables, dead_code)] 
+    #[allow(unreachable_code, unused_variables, dead_code)]
     fn add_view(&mut self, view_id: &ViewIdentifier, buffer_id: BufferIdentifier) {
         panic!("add_view should not currently be accessible");
         self.buffers.add_view(view_id, &buffer_id);
@@ -429,10 +435,12 @@ impl<W: Write + Send + 'static> Documents<W> {
         self.buffers.lock().editor_for_view_mut(view_id)
             .unwrap().do_save(file_path);
         self.buffers.set_path(file_path, view_id);
+        let init_info = self.buffers.lock().editor_for_view(view_id)
+            .unwrap().plugin_init_info();
         if prev_syntax != SyntaxDefinition::new(file_path.to_str()) {
-                self.plugins.document_syntax_changed(view_id);
+            self.plugins.document_syntax_changed(view_id, init_info);
         }
-        self.plugins.document_did_save(&view_id);
+        self.plugins.document_did_save(&view_id, file_path);
         None
     }
 
@@ -440,17 +448,22 @@ impl<W: Write + Send + 'static> Documents<W> {
         self.buffers.lock().editor_for_view_mut(view_id).unwrap().do_rpc(view_id, cmd)
     }
 
-    #[allow(unused_variables)]
+    /// Handles a plugin related command from a client
     fn do_plugin_cmd(&mut self, cmd: PluginCommand) -> Option<Value> {
         use self::PluginCommand::*;
         match cmd {
             InitialPlugins { view_id } => Some(json!(
                     self.plugins.lock().available_plugins(&view_id))),
             Start { view_id, plugin_name } => {
-                let buffer_info = self.buffers.lock().editor_for_view(&view_id).unwrap()
-                    .plugin_init_info();
                 //TODO: report this error to client?
-                let _ = self.plugins.start_plugin(&view_id, &plugin_name, &buffer_info);
+                let info = self.buffers.lock().editor_for_view(&view_id)
+                    .map(|ed| ed.plugin_init_info());
+                match info {
+                    Some(info) => {
+                        let _ = self.plugins.start_plugin(&view_id, &info, &plugin_name);
+                    },
+                    None => (),
+                }
                 None
             }
             Stop { view_id, plugin_name } => {
@@ -588,7 +601,7 @@ mod tests {
         let buf_id_1 = BufferIdentifier(1);
         let path_1 = PathBuf::from("a_path");
         let path_2 = PathBuf::from("a_different_path");
-        let editor = Editor::new(mock_doc_ctx(view_id_1.as_str()), &view_id_1);
+        let editor = Editor::new(mock_doc_ctx(view_id_1.as_str()), buf_id_1, &view_id_1);
         container_ref.add_editor(&view_id_1, &buf_id_1, editor);
         assert_eq!(container_ref.lock().editors.len(), 1);
 
@@ -611,7 +624,7 @@ mod tests {
         // reopen the original file:
         let view_id_2 = ViewIdentifier::from("view-id-2");
         let buf_id_2 = BufferIdentifier(2);
-        let editor = Editor::new(mock_doc_ctx(view_id_2.as_str()), &view_id_2);
+        let editor = Editor::new(mock_doc_ctx(view_id_2.as_str()), buf_id_2, &view_id_2);
         container_ref.add_editor(&view_id_2, &buf_id_2, editor);
         container_ref.set_path(&path_1, &view_id_2);
         assert_eq!(container_ref.lock().editors.len(), 2);
@@ -649,7 +662,7 @@ mod tests {
          "view": "a-view",
          "flag": 42
         }"#;
-        
+
         let result: TestStruct = serde_json::from_str(json).unwrap();
         assert_eq!(result.view.as_str(), "a-view");
     }

@@ -30,10 +30,11 @@ use xi_rope::interval::Interval;
 use xi_rope::spans::{Spans, SpansBuilder};
 use tabs::DocumentCtx;
 use view::Style;
+use plugins::PluginPid;
 
 /// A collection of layers containing scope information.
 pub struct Scopes {
-    layers: BTreeMap<String, ScopeLayer>,
+    layers: BTreeMap<PluginPid, ScopeLayer>,
 }
 
 /// A collection of scope spans from a single source.
@@ -52,10 +53,10 @@ impl Scopes {
     }
 
     /// Adds the provided scopes to the layer's lookup table.
-    pub fn add_scopes<W: Write>(&mut self, layer: &str, scopes: Vec<Vec<String>>,
+    pub fn add_scopes<W: Write>(&mut self, layer: PluginPid, scopes: Vec<Vec<String>>,
                                 doc_ctx: &DocumentCtx<W>) {
         self.create_if_missing(layer);
-        self.layers.get_mut(layer).unwrap().add_scopes(scopes, doc_ctx);
+        self.layers.get_mut(&layer).unwrap().add_scopes(scopes, doc_ctx);
     }
 
     /// Updates spans on all layers. Useful for clearing all, or OT.
@@ -66,15 +67,15 @@ impl Scopes {
     }
 
     /// Updates the scope spans for a given layer.
-    pub fn update_layer(&mut self, layer: &str, iv: Interval, spans: Spans<u32>) {
+    pub fn update_layer(&mut self, layer: PluginPid, iv: Interval, spans: Spans<u32>) {
         self.create_if_missing(layer);
-        self.layers.get_mut(layer).unwrap().update_spans(iv, spans);
+        self.layers.get_mut(&layer).unwrap().update_spans(iv, spans);
     }
 
     /// Removes a given layer. This will remove all styles derived from
     /// that layer's scopes.
-    pub fn remove_layer(&mut self, layer: &str) -> Option<ScopeLayer> {
-        self.layers.remove(layer)
+    pub fn remove_layer(&mut self, layer: PluginPid) -> Option<ScopeLayer> {
+        self.layers.remove(&layer)
     }
 
     /// For a given Interval, generates styles from scopes, resolving conflicts.
@@ -95,16 +96,16 @@ impl Scopes {
     pub fn debug_print_spans(&self, iv: Interval) {
         for (id, layer) in self.layers.iter() {
             let spans = layer.spans.subseq(iv);
-            print_err!("Spans for layer {}:", id);
+            print_err!("Spans for layer {:?}:", id);
             for (iv, val) in spans.iter() {
                 print_err!("{}: {:?}", iv, layer.name_lookup[*val as usize])
             }
         }
     }
 
-    fn create_if_missing(&mut self, layer_id: &str) {
-        if !self.layers.contains_key(layer_id) {
-            self.layers.insert(layer_id.to_owned(), ScopeLayer::default());
+    fn create_if_missing(&mut self, layer_id: PluginPid) {
+        if !self.layers.contains_key(&layer_id) {
+            self.layers.insert(layer_id, ScopeLayer::default());
         }
     }
 }

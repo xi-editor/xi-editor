@@ -25,19 +25,21 @@ MAX_FETCH_SIZE = 1024*1024
 class PluginPeer(RpcPeer):
     """A proxy object which wraps RPC methods implemented in xi-core."""
 
-    def update_spans(self, start, length, spans, rev):
-        self.send_rpc('update_spans', {'start': start,
+    def update_spans(self, view_id, start, length, spans, rev):
+        self.send_rpc('update_spans', {'view_id': view_id,
+                                       'start': start,
                                        'len': length,
                                        'spans': spans,
                                        'rev': rev})
 
-    def add_scopes(self, scopes):
-        self.send_rpc('add_scopes', {'scopes': scopes})
+    def add_scopes(self, view_id, scopes):
+        self.send_rpc('add_scopes', {'view_id': view_id, 'scopes': scopes})
 
-    def get_data(self, from_offset, rev, max_size=MAX_FETCH_SIZE):
-        return self.send_rpc_sync('get_data', {'offset': from_offset,
-                                               "max_size": max_size,
-                                               "rev": rev})
+    def get_data(self, view_id, from_offset, rev, max_size=MAX_FETCH_SIZE):
+        return self.send_rpc_sync('get_data', {'view_id': view_id,
+                                               'offset': from_offset,
+                                               'max_size': max_size,
+                                               'rev': rev})
 
 
 
@@ -59,7 +61,7 @@ class Plugin(object):
         self.__last_method = method
 
         if method == "initialize":
-            params = params['buffer_info']
+            params = params['buffer_info'][0]
             self._initialize(peer, **params)
         if method == "update":
             self._update(peer, params)
@@ -73,16 +75,20 @@ class Plugin(object):
         sys.stderr.flush()
 
     def new_edit(self, rev, edit_range, new_text,
-                  priority=edit.EDIT_PRIORITY_NORMAL, after_cursor=False):
+                 priority=edit.EDIT_PRIORITY_NORMAL, after_cursor=False):
         return edit.Edit(rev, edit_range, new_text, self.identifier, priority, after_cursor)
 
     def ping(self, peer, **kwargs):
         self.print_err("ping")
 
-    def _initialize(self, peer, rev, buf_size, nb_lines, syntax, path=None):
+    def _initialize(self, peer, buffer_id, views, rev, buf_size,
+                    nb_lines, syntax, path=None):
         # fetch an initial chunk (this isn't great: we don't know
         # where the cursor is)
-        self.lines = LineCache(buf_size, peer, rev)
+        self.buffer_id = buffer_id
+        assert len(views) == 1
+        self.view_id = views[0]
+        self.lines = LineCache(self.view_id, buf_size, peer, rev)
         self.path = path
         self.syntax = syntax
 

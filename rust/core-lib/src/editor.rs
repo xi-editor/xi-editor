@@ -31,10 +31,11 @@ use word_boundaries::WordCursor;
 use movement::{Movement, region_movement};
 use selection::{Affinity, Selection, SelRegion};
 
-use tabs::{ViewIdentifier, DocumentCtx};
+use tabs::{BufferIdentifier, ViewIdentifier, DocumentCtx};
 use rpc::{EditCommand, GestureType};
 use syntax::SyntaxDefinition;
 use plugins::rpc_types::{PluginUpdate, PluginEdit, ScopeSpan, PluginBufferInfo};
+use plugins::PluginPid;
 use layers::Scopes;
 
 const FLAG_SELECT: u64 = 2;
@@ -50,6 +51,7 @@ pub struct Editor<W: Write> {
     text: Rope,
 
     path: Option<PathBuf>,
+    buffer_id: BufferIdentifier,
     syntax: SyntaxDefinition,
 
     /// A collection of non-primary views attached to this buffer.
@@ -100,12 +102,14 @@ impl EditType {
 
 impl<W: Write + Send + 'static> Editor<W> {
     /// Creates a new `Editor` with a new empty buffer.
-    pub fn new(doc_ctx: DocumentCtx<W>, initial_view_id: &ViewIdentifier) -> Editor<W> {
-        Self::with_text(doc_ctx, initial_view_id, "".to_owned())
+    pub fn new(doc_ctx: DocumentCtx<W>, buffer_id: BufferIdentifier,
+               initial_view_id: &ViewIdentifier) -> Editor<W> {
+        Self::with_text(doc_ctx, buffer_id, initial_view_id, "".to_owned())
     }
 
     /// Creates a new `Editor`, loading text into a new buffer.
-    pub fn with_text(doc_ctx: DocumentCtx<W>, initial_view_id: &ViewIdentifier, text: String) -> Editor<W> {
+    pub fn with_text(doc_ctx: DocumentCtx<W>, buffer_id: BufferIdentifier,
+                     initial_view_id: &ViewIdentifier, text: String) -> Editor<W> {
 
         let engine = Engine::new(Rope::from(text));
         let buffer = engine.get_head().clone();
@@ -113,6 +117,7 @@ impl<W: Write + Send + 'static> Editor<W> {
 
         let editor = Editor {
             text: buffer,
+            buffer_id: buffer_id,
             path: None,
             syntax: SyntaxDefinition::default(),
             views: BTreeMap::new(),
@@ -191,6 +196,11 @@ impl<W: Write + Send + 'static> Editor<W> {
         &self.syntax
     }
 
+    /// Returns this `Editor`'s `BufferIdentifier`.
+    pub fn get_identifier(&self) -> BufferIdentifier {
+        self.buffer_id
+    }
+
     // each outstanding plugin edit represents a rev_in_flight.
     pub fn increment_revs_in_flight(&mut self) {
         self.revs_in_flight += 1;
@@ -206,8 +216,13 @@ impl<W: Write + Send + 'static> Editor<W> {
     /// Returns buffer information used to initialize plugins.
     pub fn plugin_init_info(&self) -> PluginBufferInfo {
         let nb_lines = self.text.measure::<LinesMetric>() + 1;
-        PluginBufferInfo::new(self.engine.get_head_rev_id(), self.text.len(),
-        nb_lines, self.path.clone(), self.syntax.clone())
+        let mut views = self.views.keys()
+            .map(|s| s.to_owned())
+            .collect::<Vec<_>>();
+        views.push(self.view.view_id.to_owned());
+        PluginBufferInfo::new(self.buffer_id, &views,
+                              self.engine.get_head_rev_id(), self.text.len(),
+                              nb_lines, self.path.clone(), self.syntax.clone())
     }
 
     fn insert(&mut self, s: &str) {
@@ -961,11 +976,11 @@ impl<W: Write + Send + 'static> Editor<W> {
 
     //TODO: plugins should optionally be able to provide a layer id
     // so a single plugin can maintain multiple layers
-    pub fn plugin_add_scopes(&mut self, plugin: &str, scopes: Vec<Vec<String>>) {
+    pub fn plugin_add_scopes(&mut self, plugin: PluginPid, scopes: Vec<Vec<String>>) {
         self.style_scopes.add_scopes(plugin, scopes, &self.doc_ctx);
     }
 
-    pub fn plugin_update_spans(&mut self, plugin: &str, start: usize, len: usize,
+    pub fn plugin_update_spans(&mut self, plugin: PluginPid, start: usize, len: usize,
                                spans: Vec<ScopeSpan>, rev: usize) {
         // TODO: more protection against invalid input
         let mut start = start;
@@ -1024,14 +1039,23 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     /// Notifies the client that the named plugin has started.
-    pub fn plugin_started(&self, view_id: &ViewIdentifier, plugin: &str) {
+    ///
+    /// Note: there is no current conception of a plugin which is only active
+    /// for a particular view; plugins are active at the editor/buffer level.
+    /// Some `view_id` is needed, however, to route to the correct client view.
+    //TODO: revisit this after implementing multiview
+    pub fn plugin_started<'a, T>(&'a self, view_id: T, plugin: &str)
+        where T: Into<Option<&'a ViewIdentifier>> {
+        let view_id = view_id.into().unwrap_or(&self.view.view_id);
         self.doc_ctx.plugin_started(view_id, plugin);
     }
 
     /// Notifies client that the named plugin has stopped.
     ///
     /// `code` is reserved for future use.
-    pub fn plugin_stopped(&self, view_id: &ViewIdentifier, plugin: &str, code: i32) {
+    pub fn plugin_stopped<'a, T>(&'a self, view_id: T, plugin: &str, code: i32)
+        where T: Into<Option<&'a ViewIdentifier>> {
+        let view_id = view_id.into().unwrap_or(&self.view.view_id);
         self.doc_ctx.plugin_stopped(view_id, plugin, code);
     }
 }

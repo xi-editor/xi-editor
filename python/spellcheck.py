@@ -39,7 +39,7 @@ class Spellcheck(Plugin):
     def update(self, peer, author, rev, start, end,
                new_len, edit_type, text=None):
         if not self.has_sent_scopes:
-            peer.add_scopes([['invalid.illegal.spellcheck']])
+            peer.add_scopes(self.view_id, [['invalid.illegal.spellcheck']])
             self.has_sent_scopes = True
 
         if author == self.identifier:
@@ -59,7 +59,7 @@ class Spellcheck(Plugin):
                 spans = [{'start': 0,
                           'end': len(prev_word),
                           'scope_id': 0}]
-                peer.update_spans(end-len(prev_word), len(prev_word), spans, rev)
+                peer.update_spans(self.view_id, end-len(prev_word), len(prev_word), spans, rev)
         return 0
 
 

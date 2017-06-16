@@ -28,6 +28,7 @@ const CHUNK_SIZE: usize = 1024 * 1024;
 pub trait Handler {
     fn initialize(&mut self, ctx: PluginCtx, buf_size: usize);
     fn update(&mut self, ctx: PluginCtx);
+    fn did_save(&mut self, ctx: PluginCtx);
     #[allow(unused_variables)]
     fn idle(&mut self, ctx: PluginCtx, token: usize) {}
 }
@@ -36,6 +37,7 @@ pub trait Handler {
 #[derive(Default)]
 struct State {
     buf_size: usize,
+    view_id: String,
     rev: usize,
     cache: Option<String>,
     cache_offset: usize,
@@ -71,13 +73,15 @@ impl<'a, H: Handler> plugin_base::Handler for MyHandler<'a, H> {
             }
             PluginRequest::Initialize(ref init_info) => {
                 ctx.state.buf_size = init_info.buf_size;
+                assert_eq!(init_info.views.len(), 1);
+                ctx.state.view_id = init_info.views[0].clone();
                 ctx.state.rev = init_info.rev;
                 ctx.state.syntax = init_info.syntax.clone();
                 ctx.state.path = init_info.path.clone().map(|p| PathBuf::from(p));
                 self.handler.initialize(ctx, init_info.buf_size);
                 None
             }
-            PluginRequest::Update { start, end, new_len, rev, edit_type, author, text } => {
+            PluginRequest::Update { start, end, new_len, rev, text, .. } => {
                 //print_err!("got update notification {:?}", edit_type);
                 ctx.state.buf_size = ctx.state.buf_size - (end - start) + new_len;
                 ctx.state.rev = rev;
@@ -102,6 +106,16 @@ impl<'a, H: Handler> plugin_base::Handler for MyHandler<'a, H> {
                 self.handler.update(ctx);
                 Some(Value::from(0i32))
             }
+            PluginRequest::DidSave { ref path } => {
+                let new_path = Some(path.to_owned());
+                if ctx.state.path != new_path {
+                    ctx.state.line_num = 0;
+                    ctx.state.offset_of_line = 0;
+                }
+                ctx.state.path = Some(path.to_owned());
+                self.handler.did_save(ctx);
+                None
+            }
         }
     }
 
@@ -125,7 +139,8 @@ pub fn mainloop<H: Handler>(handler: &mut H) {
 impl<'a> PluginCtx<'a> {
     pub fn get_line(&mut self, line_num: usize) -> Result<Option<String>, Error> {
         if line_num != self.state.line_num {
-            print_err!("can't handle non-sequential line numbers yet");
+            print_err!("can't handle non-sequential line numbers yet. self: {}, other {}",
+                       self.state.line_num, line_num);
             return Ok(None);
         }
         let offset_of_line = self.state.offset_of_line;
@@ -135,7 +150,7 @@ impl<'a> PluginCtx<'a> {
         if self.state.cache.is_none() || offset_of_line < self.state.cache_offset ||
                 offset_of_line >= self.state.cache_offset +
                     self.state.cache.as_ref().unwrap().len() {
-            self.state.cache = Some(self.peer.get_data(offset_of_line, CHUNK_SIZE,
+            self.state.cache = Some(self.peer.get_data(&self.state.view_id, offset_of_line, CHUNK_SIZE,
                 self.state.rev)?);
             self.state.cache_offset = offset_of_line;
         }
@@ -154,7 +169,7 @@ impl<'a> PluginCtx<'a> {
                     }
                     // fetch next chunk
                     let next_offset = self.state.cache_offset + cache_len;
-                    let next_chunk = self.peer.get_data(next_offset, CHUNK_SIZE,
+                    let next_chunk = self.peer.get_data(&self.state.view_id, next_offset, CHUNK_SIZE,
                             self.state.rev)?;
                     self.state.cache_offset = offset_of_line;
                     let mut new_cache = String::with_capacity(cache_len - offset_in_cache +
@@ -182,11 +197,11 @@ impl<'a> PluginCtx<'a> {
     }
 
     pub fn add_scopes(&self, scopes: &Vec<Vec<String>>) {
-        self.peer.add_scopes(scopes)
+        self.peer.add_scopes(&self.state.view_id, scopes)
     }
 
     pub fn update_spans(&self, start: usize, len: usize, spans: &[ScopeSpan]) {
-        self.peer.update_spans(start, len, self.state.rev, spans)
+        self.peer.update_spans(&self.state.view_id, start, len, self.state.rev, spans)
     }
 
     /// Determines whether an incoming request (or notification) is pending. This
