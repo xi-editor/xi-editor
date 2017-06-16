@@ -22,7 +22,7 @@ default-features = false
 features = ["assets"]
 
 [target."cfg(target_os = \"fuchsia\")".dependencies]
-sha2 = "^0.5"
+sha2 = "0.5"
 
 [features]
 avx-accel = ["xi-rope/avx-accel"]

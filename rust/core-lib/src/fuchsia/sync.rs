@@ -15,26 +15,26 @@
 //! Architecture for synchronizing a CRDT with the ledger. Separated into a
 //! module so that it is easier to add other sync stores later.
 
-use magenta::{Channel, ChannelOpts};
-use fuchsia::read_entire_vmo;
-use super::ledger::{ledger_crash_callback, self};
-use apps_ledger_services_public::*;
-use std::sync::mpsc::{Sender, Receiver, RecvError};
 use std::io::Write;
-use fidl::{Promise, Future, self};
-use magenta::HandleBase;
+use std::sync::mpsc::{Sender, Receiver, RecvError};
 
+use apps_ledger_services_public::*;
+use fuchsia::read_entire_vmo;
+use fidl::{Promise, Future, self};
+use magenta::{Channel, ChannelOpts, HandleBase};
+use serde_json;
+
+use super::ledger::{ledger_crash_callback, self};
 use tabs::{BufferIdentifier, BufferContainerRef};
 use xi_rope::engine::Engine;
-use serde_json;
 
 // TODO switch these to bincode
 fn state_to_buf(state: &Engine) -> Vec<u8> {
     serde_json::to_vec(state).unwrap()
 }
 
-fn buf_to_state(buf: &[u8]) -> Option<Engine> {
-    serde_json::from_slice(buf).ok()
+fn buf_to_state(buf: &[u8]) -> Result<Engine, serde_json::Error> {
+    serde_json::from_slice(buf)
 }
 
 /// Stores state needed by the container to perform synchronization.
@@ -72,10 +72,13 @@ impl SyncStore {
         let initial_state_chan = updates.clone();
         let initial_buffer = buffer.clone();
         snap.get(key.clone()).with(move |raw_res| {
-            let res = raw_res.expect("fidl failed on initial state response");
-            let value_opt = ledger::value_result(res).expect("failed to read value for key");
-            if let Some(buf) = value_opt {
-                initial_state_chan.send(SyncMsg::NewState { buffer: initial_buffer, new_buf: buf, done: None }).unwrap();
+            match raw_res.map(|res| ledger::value_result(res)) {
+                Ok(Ok(Some(buf))) => {
+                    initial_state_chan.send(SyncMsg::NewState { buffer: initial_buffer, new_buf: buf, done: None }).unwrap();
+                },
+                Ok(Ok(None)) => (), // No initial state saved yet
+                Err(err) => print_err!("FIDL failed on initial response: {:?}", err),
+                Ok(Err(err)) => print_err!("Ledger failed to retrieve key: {:?}", err),
             }
         });
 
@@ -93,8 +96,13 @@ impl SyncStore {
             let done_chan = self.updates.clone();
             let buffer = self.buffer.clone();
             ready_future.with(move |res| {
-                assert_eq!(Status_Ok, res.unwrap(), "failed to start transaction");
-                done_chan.send(SyncMsg::TransactionReady { buffer }).unwrap();
+                match res {
+                    Ok(ledger::OK) => {
+                        done_chan.send(SyncMsg::TransactionReady { buffer }).unwrap();
+                    },
+                    Ok(err_status) => print_err!("Ledger failed to start transaction: {:?}", err_status),
+                    Err(err) => print_err!("FIDL failed on starting transaction: {:?}", err),
+                }
             });
         }
     }
@@ -144,16 +152,22 @@ impl<W: Write + Send + 'static> SyncUpdater<W> {
                 SyncMsg::Stop => return Ok(()),
                 SyncMsg::TransactionReady { buffer }=> {
                     let mut container = self.container_ref.lock();
-                    let mut editor = container.editor_for_buffer_mut(&buffer).unwrap();
-                    editor.transaction_ready();
+                    // if the buffer was closed, hopefully the page connection was as well, which I hope aborts transactions
+                    if let Some(mut editor) = container.editor_for_buffer_mut(&buffer) {
+                        editor.transaction_ready();
+                    }
                 }
                 SyncMsg::NewState { new_buf, done, buffer } => {
-                    let new = buf_to_state(&new_buf).expect("ledger was set to invalid state");
                     let mut container = self.container_ref.lock();
-                    let mut editor = container.editor_for_buffer_mut(&buffer).unwrap();
-                    editor.merge_new_state(new);
-                    if let Some(promise) = done {
-                        promise.set_ok(None);
+                    match (container.editor_for_buffer_mut(&buffer), buf_to_state(&new_buf)) {
+                        (Some(mut editor), Ok(new_state)) => {
+                            editor.merge_new_state(new_state);
+                            if let Some(promise) = done {
+                                promise.set_ok(None);
+                            }
+                        }
+                        (None, _) => (), // buffer was closed
+                        (_, Err(err)) => print_err!("Ledger was set to invalid state: {:?}", err),
                     }
                 }
             }
@@ -170,11 +184,15 @@ impl PageWatcher for PageWatcherServer {
     fn on_change(&mut self, page_change: PageChange, result_state: ResultState) -> Future<Option<PageSnapshot_Server>, fidl::Error> {
         let (future, done) = Future::make_promise();
 
-        assert_eq!(ResultState_Completed, result_state, "example is for single-key pages");
-        assert_eq!(page_change.changes.len(), 1, "example is for single-key pages");
-        let value_vmo = page_change.changes[0].value.as_ref().expect("example is for single-key pages");
-        let new_buf = read_entire_vmo(value_vmo).expect("failed to read key Vmo");
-        self.updates.send(SyncMsg::NewState { buffer: self.buffer.clone(), new_buf, done: Some(done) }).unwrap();
+        let value_opt = page_change.changes.get(0).and_then(|c| c.value.as_ref());
+        if let (ledger::RESULT_COMPLETED, Some(value_vmo)) = (result_state, value_opt) {
+            let new_buf = read_entire_vmo(value_vmo).expect("failed to read key Vmo");
+            self.updates.send(SyncMsg::NewState { buffer: self.buffer.clone(), new_buf, done: Some(done) }).unwrap();
+        } else {
+            print_err!("Xi state corrupted, should have one key but has multiple.");
+            // I don't think this should be a FIDL-level error, so set okay
+            done.set_ok(None);
+        }
 
         future
     }

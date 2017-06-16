@@ -21,6 +21,12 @@ use fidl::Error;
 use magenta::{Vmo, self};
 use sha2::{Sha256, Digest};
 
+// Rust emits a warning if matched-on constants aren't all-caps
+pub const OK: Status = Status_Ok;
+pub const KEY_NOT_FOUND: Status = Status_KeyNotFound;
+pub const NEEDS_FETCH: Status = Status_NeedsFetch;
+pub const RESULT_COMPLETED: ResultState = ResultState_Completed;
+
 pub fn ledger_crash_callback(res: Result<Status, Error>) {
     let status = res.expect("ledger call failed to respond with a status");
     assert_eq!(status, Status_Ok, "ledger call failed");
@@ -36,10 +42,6 @@ pub enum ValueError {
 /// Convert the low level result of getting a key from the ledger into a
 /// higher level Rust representation.
 pub fn value_result(res: (Status, Option<Vmo>)) -> Result<Option<Vec<u8>>, ValueError> {
-    // Rust emits a warning if matched-on constants aren't all-caps
-    const OK: Status = Status_Ok;
-    const KEY_NOT_FOUND: Status = Status_KeyNotFound;
-    const NEEDS_FETCH: Status = Status_NeedsFetch;
     match res {
         (OK, Some(vmo)) => {
             let buffer = read_entire_vmo(&vmo).map_err(ValueError::Vmo)?;
