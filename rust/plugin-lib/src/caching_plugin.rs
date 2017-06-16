@@ -20,7 +20,7 @@ use serde_json::Value;
 use plugin_base;
 use plugin_base::PluginRequest;
 
-pub use plugin_base::{Error, Spans, SpansBuilder};
+pub use plugin_base::{Error, ScopeSpan};
 
 const CHUNK_SIZE: usize = 1024 * 1024;
 
@@ -196,10 +196,12 @@ impl<'a> PluginCtx<'a> {
         }
     }
 
-    /// Send style spans to the core. Note: these are based on the revision as of the
-    /// current state of the cache (the revision is sent to the core).
-    pub fn set_fg_spans(&self, start: usize, len: usize, spans: Spans) {
-        self.peer.set_fg_spans(&self.state.view_id, start, len, spans, self.state.rev);
+    pub fn add_scopes(&self, scopes: &Vec<Vec<String>>) {
+        self.peer.add_scopes(&self.state.view_id, scopes)
+    }
+
+    pub fn update_spans(&self, start: usize, len: usize, spans: &[ScopeSpan]) {
+        self.peer.update_spans(&self.state.view_id, start, len, self.state.rev, spans)
     }
 
     /// Determines whether an incoming request (or notification) is pending. This

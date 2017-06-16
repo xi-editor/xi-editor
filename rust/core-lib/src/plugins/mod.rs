@@ -43,7 +43,7 @@ pub type PluginPeer = RpcPeer<ChildStdin>;
 ///
 /// Note: two instances of the same executable will have different identifiers.
 /// Note: this identifier is distinct from the OS's process id.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PluginPid(usize);
 
 /// A running plugin.
@@ -96,7 +96,8 @@ impl<W: Write + Send + 'static> PluginRef<W> {
                            method, params);
                 return None
             }
-            plugin_manager.lock().handle_plugin_cmd(cmd.unwrap())
+            let pid = self.get_identifier();
+            plugin_manager.lock().handle_plugin_cmd(cmd.unwrap(), pid)
         } else {
             None
         }

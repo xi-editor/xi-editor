@@ -97,7 +97,7 @@ pub struct PluginEdit {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 /// A text range and style information.
-pub struct Span {
+pub struct StyleSpan {
     pub start: usize,
     pub end: usize,
     pub fg: u32,
@@ -105,11 +105,21 @@ pub struct Span {
     pub font_style: u8,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+pub struct ScopeSpan {
+    pub start: usize,
+    pub end: usize,
+    pub scope_id: u32,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(untagged)]
 /// RPC commands sent from plugins.
 pub enum PluginCommand {
-    SetFgSpans { view_id: ViewIdentifier, start: usize, len: usize, spans: Vec<Span>, rev: usize },
+    // deprecated
+    SetFgSpans { view_id: ViewIdentifier, start: usize, len: usize, spans: Vec<StyleSpan>, rev: usize },
+    AddScopes { view_id: ViewIdentifier, scopes: Vec<Vec<String>> },
+    UpdateSpans { view_id: ViewIdentifier, start: usize, len: usize, spans: Vec<ScopeSpan>, rev: usize },
     GetData { view_id: ViewIdentifier, offset: usize, max_size: usize, rev: usize },
     Alert { view_id: ViewIdentifier, msg: String },
     LineCount { view_id: ViewIdentifier },

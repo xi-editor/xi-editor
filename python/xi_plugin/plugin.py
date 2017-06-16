@@ -25,20 +25,22 @@ MAX_FETCH_SIZE = 1024*1024
 class PluginPeer(RpcPeer):
     """A proxy object which wraps RPC methods implemented in xi-core."""
 
-    def set_fg_spans(self, view_id, start, length, spans, rev):
-        params = {'view_id': view_id,
-                  'start': start,
-                  'len': length,
-                  'spans': spans,
-                  'rev': rev}
-        self.send_rpc('set_fg_spans', params)
+    def update_spans(self, view_id, start, length, spans, rev):
+        self.send_rpc('update_spans', {'view_id': view_id,
+                                       'start': start,
+                                       'len': length,
+                                       'spans': spans,
+                                       'rev': rev})
+
+    def add_scopes(self, view_id, scopes):
+        self.send_rpc('add_scopes', {'view_id': view_id, 'scopes': scopes})
 
     def get_data(self, view_id, from_offset, rev, max_size=MAX_FETCH_SIZE):
-        params = {'view_id': view_id,
-                  'offset': from_offset,
-                  'max_size': max_size,
-                  'rev': rev}
-        return self.send_rpc_sync('get_data', params)
+        return self.send_rpc_sync('get_data', {'view_id': view_id,
+                                               'offset': from_offset,
+                                               'max_size': max_size,
+                                               'rev': rev})
+
 
 
 class Plugin(object):

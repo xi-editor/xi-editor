@@ -16,6 +16,11 @@ xi-rope = { path = "../rope", version = "0.2" }
 xi-unicode = { path = "../unicode", version = "0.1.0" }
 xi-rpc = { path = "../rpc", version = "0.2.0" }
 
+[dependencies.syntect]
+version = "1.5"
+default-features = false
+features = ["assets"]
+
 [features]
 avx-accel = ["xi-rope/avx-accel"]
 simd-accel = ["xi-rope/simd-accel"]
