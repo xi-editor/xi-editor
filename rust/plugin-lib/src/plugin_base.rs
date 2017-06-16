@@ -49,26 +49,18 @@ pub trait Handler {
     fn idle(&mut self, ctx: PluginCtx, token: usize) {}
 }
 
-pub struct SpansBuilder(Vec<Value>);
-pub type Spans = Value;
+//TODO: share this between core and plugin lib
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ScopeSpan {
+    pub start: usize,
+    pub end: usize,
+    pub scope_id: u32,
+}
 
-impl SpansBuilder {
-    pub fn new() -> Self {
-        SpansBuilder(Vec::new())
-    }
-
-    pub fn add_style_span(&mut self, start: usize, end: usize, fg: u32, font_style: u8) {
-        self.0.push(json!({
-            "start": start,
-            "end": end,
-            "fg": fg,
-            "font": font_style,
-        }));
-    }
-
-    pub fn build(self) -> Spans {
-        Value::Array(self.0)
-    }
+impl ScopeSpan {
+	pub fn new(start: usize, end: usize, scope_id: u32) -> Self {
+		ScopeSpan { start, end, scope_id }
+	}
 }
 
 pub struct PluginCtx<'a>(RpcCtx<'a, io::Stdout>);
@@ -112,14 +104,21 @@ impl<'a> PluginCtx<'a> {
         }
     }
 
-    pub fn set_fg_spans(&self, start: usize, len: usize, spans: Spans, rev: usize) {
+    pub fn add_scopes(&self, scopes: &Vec<Vec<String>>) {
+        let params = json!({
+            "scopes": scopes,
+        });
+        self.send_rpc_notification("add_scopes", &params);
+    }
+
+    pub fn update_spans(&self, start: usize, len: usize, rev: usize, spans: &[ScopeSpan]) {
         let params = json!({
             "start": start,
             "len": len,
-            "spans": spans,
             "rev": rev,
+            "spans": spans,
         });
-        self.send_rpc_notification("set_fg_spans", &params);
+        self.send_rpc_notification("update_spans", &params);
     }
 
     fn send_rpc_notification(&self, method: &str, params: &Value) {

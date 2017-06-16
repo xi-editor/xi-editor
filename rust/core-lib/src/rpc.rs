@@ -124,6 +124,7 @@ pub enum EditCommand<'a> {
     FindPrevious { wrap_around: bool },
     DebugRewrap,
     DebugTestFgSpans,
+    DebugPrintSpans,
 }
 
 
@@ -307,6 +308,7 @@ impl<'a> EditCommand<'a> {
 
             "debug_rewrap" => Ok(DebugRewrap),
             "debug_test_fg_spans" => Ok(DebugTestFgSpans),
+            "debug_print_spans" => Ok(DebugPrintSpans),
 
             _ => Err(UnknownEditMethod(method.to_string())),
         }

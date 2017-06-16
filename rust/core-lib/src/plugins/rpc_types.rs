@@ -118,7 +118,7 @@ pub struct PluginEdit {
 
 #[derive(Serialize, Deserialize, Debug)]
 /// A text range and style information.
-pub struct Span {
+pub struct StyleSpan {
     pub start: usize,
     pub end: usize,
     pub fg: u32,
@@ -127,10 +127,20 @@ pub struct Span {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+pub struct ScopeSpan {
+    pub start: usize,
+    pub end: usize,
+    pub scope_id: u32,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(untagged)]
 /// RPC commands sent from plugins.
 pub enum PluginCommand {
-    SetFgSpans {start: usize, len: usize, spans: Vec<Span>, rev: usize },
+    // deprecated
+    SetFgSpans {start: usize, len: usize, spans: Vec<StyleSpan>, rev: usize },
+    AddScopes { scopes: Vec<Vec<String>> },
+    UpdateSpans { start: usize, len: usize, spans: Vec<ScopeSpan>, rev: usize },
     GetData { offset: usize, max_size: usize, rev: usize },
     Alert { msg: String },
     LineCount,

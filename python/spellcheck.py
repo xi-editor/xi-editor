@@ -15,7 +15,7 @@
 # limitations under the License.
 
 import os
-from xi_plugin import start_plugin, Plugin, style
+from xi_plugin import start_plugin, Plugin
 
 try:
     import enchant
@@ -34,9 +34,14 @@ class Spellcheck(Plugin):
         self.dictionary = enchant.Dict(lang)
         self.print_err("loaded dictionary for {}".format(lang))
         self.in_word = False
+        self.has_sent_scopes = False
 
     def update(self, peer, author, rev, start, end,
                new_len, edit_type, text=None):
+        if not self.has_sent_scopes:
+            peer.add_scopes([['invalid.illegal.spellcheck']])
+            self.has_sent_scopes = True
+
         if author == self.identifier:
             pass
         elif not self.in_word and text.isalpha():
@@ -53,9 +58,8 @@ class Spellcheck(Plugin):
                 # A span within a group is offset relative to group's start offset.
                 spans = [{'start': 0,
                           'end': len(prev_word),
-                          'fg': style.color_for_rgba_float(1.0, 0, 0),
-                          'font': style.BOLD | style.UNDERLINE}]
-                peer.set_fg_spans(end-len(prev_word), len(prev_word), spans, rev)
+                          'scope_id': 0}]
+                peer.update_spans(end-len(prev_word), len(prev_word), spans, rev)
         return 0
 
 

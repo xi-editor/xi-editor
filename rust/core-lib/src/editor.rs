@@ -34,7 +34,8 @@ use selection::{Affinity, Selection, SelRegion};
 use tabs::{ViewIdentifier, DocumentCtx};
 use rpc::{EditCommand, GestureType};
 use syntax::SyntaxDefinition;
-use plugins::rpc_types::{PluginUpdate, PluginEdit, Span, PluginBufferInfo};
+use plugins::rpc_types::{PluginUpdate, PluginEdit, ScopeSpan, PluginBufferInfo};
+use layers::Scopes;
 
 const FLAG_SELECT: u64 = 2;
 
@@ -71,6 +72,7 @@ pub struct Editor<W: Write> {
     scroll_to: Option<usize>,
 
     style_spans: Spans<Style>,
+    style_scopes: Scopes,
     doc_ctx: DocumentCtx<W>,
     revs_in_flight: usize,
 }
@@ -127,6 +129,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             this_edit_type: EditType::Other,
             scroll_to: Some(0),
             style_spans: Spans::default(),
+            style_scopes: Scopes::default(),
             doc_ctx: doc_ctx,
             revs_in_flight: 0,
         };
@@ -323,7 +326,13 @@ impl<W: Write + Send + 'static> Editor<W> {
         // Currently it breaks any such span in half and applies no spans to the inserted
         // text. That's ok for syntax highlighting but not ideal for rich text.
         let empty_spans = SpansBuilder::new(new_len).build();
+        self.style_scopes.update_all(iv.clone(), empty_spans);
+
+        //TODO: style_spans should just live in style_scopes
+        // or maybe just be removed or something
+        let empty_spans = SpansBuilder::new(new_len).build();
         self.style_spans.edit(iv, empty_spans);
+
 
         // We increment revs in flight once here, and we decrement once
         // after sending plugin updates, regardless of whether or not any actual
@@ -743,6 +752,13 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.view.set_dirty();
     }
 
+    fn debug_print_spans(&self) {
+        // get last sel region
+        let last_sel = self.view.sel_regions().last().unwrap();
+        let iv = Interval::new_closed_open(last_sel.min(), last_sel.max());
+        self.style_scopes.debug_print_spans(iv);
+    }
+
     fn do_cut(&mut self) -> Value {
         let result = self.do_copy();
         // This copy is just to make the borrow checker happy, could be optimized.
@@ -926,6 +942,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             FindPrevious { wrap_around } => async(self.do_find_next(true, wrap_around, true)),
             DebugRewrap => async(self.debug_rewrap()),
             DebugTestFgSpans => async(self.debug_test_fg_spans()),
+            DebugPrintSpans => async(self.debug_print_spans()),
         };
 
         // TODO: could defer this until input quiesces - will this help?
@@ -942,27 +959,37 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.text.measure::<LinesMetric>() + 1
     }
 
-    pub fn plugin_set_fg_spans(&mut self, start: usize, len: usize, spans: Vec<Span>, rev: usize) {
+    //TODO: plugins should optionally be able to provide a layer id
+    // so a single plugin can maintain multiple layers
+    pub fn plugin_add_scopes(&mut self, plugin: &str, scopes: Vec<Vec<String>>) {
+        self.style_scopes.add_scopes(plugin, scopes, &self.doc_ctx);
+    }
+
+    pub fn plugin_update_spans(&mut self, plugin: &str, start: usize, len: usize,
+                               spans: Vec<ScopeSpan>, rev: usize) {
         // TODO: more protection against invalid input
         let mut start = start;
         let mut end_offset = start + len;
         let mut sb = SpansBuilder::new(len);
         for span in spans {
-            let style = Style { fg: span.fg, font_style: span.font_style };
-            sb.add_span(Interval::new_open_open(span.start, span.end), style);
+            sb.add_span(Interval::new_open_open(span.start, span.end), span.scope_id);
         }
         let mut spans = sb.build();
         if rev != self.engine.get_head_rev_id() {
             let delta = self.engine.delta_rev_head(rev);
             let mut transformer = Transformer::new(&delta);
             let new_start = transformer.transform(start, false);
-            if !transformer.interval_untouched(Interval::new_closed_closed(start, end_offset)) {
+            if !transformer.interval_untouched(
+                Interval::new_closed_closed(start, end_offset)) {
                 spans = spans.transform(start, end_offset, &mut transformer);
             }
             start = new_start;
             end_offset = transformer.transform(end_offset, true);
         }
-        self.style_spans.edit(Interval::new_closed_closed(start, end_offset), spans);
+        let iv = Interval::new_closed_closed(start, end_offset);
+        self.style_scopes.update_layer(plugin, iv, spans);
+        let updated_styles = self.style_scopes.resolve_styles(iv);
+        self.style_spans.edit(iv, updated_styles);
         self.view.set_dirty();
         self.render();
     }

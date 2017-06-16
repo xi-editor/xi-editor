@@ -7,7 +7,10 @@ repository = "https://github.com/google/xi-editor"
 description = "A syntax highlighting plugin based on syntect."
 
 [dependencies]
-syntect = "1.0"
+syntect = "1.5"
+serde = "1.0"
+serde_derive = "1.0"
+serde_json = "1.0"
 
 [dependencies.xi-plugin-lib]
 path = "../plugin-lib"
