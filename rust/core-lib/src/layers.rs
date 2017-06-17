@@ -24,12 +24,12 @@
 use std::collections::BTreeMap;
 use std::io::Write;
 use syntect::parsing::Scope;
-use syntect::highlighting::Highlighter;
+use syntect::highlighting::{Highlighter, StyleModifier};
 
 use xi_rope::interval::Interval;
 use xi_rope::spans::{Spans, SpansBuilder};
 use tabs::DocumentCtx;
-use view::Style;
+use styles::Style;
 use plugins::PluginPid;
 
 /// A collection of layers containing scope information.
@@ -79,15 +79,24 @@ impl Scopes {
     }
 
     /// For a given Interval, generates styles from scopes, resolving conflicts.
-    pub fn resolve_styles(&self, iv: Interval) -> Spans<Style> {
+    pub fn resolve_styles<W: Write>(&self,
+                                    iv: Interval,
+                                    doc_ctx: &DocumentCtx<W>) -> Spans<Style> {
         if self.layers.is_empty() {
             return SpansBuilder::new(iv.size()).build()
         }
-        //TODO: implement layer merging.
+        //TODO: Theme and StyleSet should live together somewhere,
+        //and we should put the style in the style set (and resovle the id) here.
+
+        let themes = doc_ctx.theme_set.lock().unwrap();
+        let theme = themes.themes.get("InspiredGitHub").expect("missing theme");
+        let default_style = Style::default_for_theme(theme);
+
+        //TODO: implement _actual_ layer merging.
         let mut sb = SpansBuilder::new(iv.size());
         let layer = self.layers.values().next().unwrap();
         for (iv, val) in layer.spans.subseq(iv).iter() {
-            let style = layer.style_lookup[*val as usize];
+            let style = default_style.merge(&layer.style_lookup[*val as usize]);
             sb.add_span(iv, style);
         }
         sb.build()
@@ -157,8 +166,14 @@ impl ScopeLayer {
         let mut new_styles = Vec::new();
         for stack in &stacks {
             let style = highlighter.style_for_stack(stack);
-            //print_err!("new style: {:?}", style);
-            let style = Style::from_syntect_style(&style);
+            //FIXME: temporarily create stylemod from a style while we wait for upstream
+            let style = StyleModifier {
+                foreground: Some(style.foreground),
+                background: Some(style.background),
+                font_style: Some(style.font_style),
+            };
+
+            let style = Style::from_syntect_style_mod(&style);
             new_styles.push(style);
         }
         //print_err!("added styles: {:?}", &new_styles);

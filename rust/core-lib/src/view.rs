@@ -16,8 +16,6 @@ use std::cmp::{min,max};
 use std::io::Write;
 
 use serde_json::value::Value;
-use syntect::highlighting::Style as SynStyle;
-use syntect::highlighting::Color;
 
 use xi_rope::rope::{Rope, LinesMetric, RopeInfo};
 use xi_rope::delta::Delta;
@@ -28,7 +26,7 @@ use xi_rope::spans::Spans;
 use xi_rope::find::{find, CaseMatching};
 
 use tabs::{ViewIdentifier, DocumentCtx};
-use styles;
+use styles::Style;
 use index_set::IndexSet;
 use selection::{Affinity, Selection, SelRegion};
 use movement::{Movement, selection_movement};
@@ -37,24 +35,6 @@ use linewrap;
 
 const SCROLL_SLOP: usize = 2;
 const BACKWARDS_FIND_CHUNK_SIZE: usize = 32_768;
-
-#[derive(Default, Clone, Copy, Debug)]
-pub struct Style {
-    pub fg: u32,
-    pub font_style: u8,  // same as syntect, 1 = bold, 2 = underline, 4 = italic
-}
-
-impl Style {
-    /// Create a new Style from a syntect Style.
-    pub fn from_syntect_style(style: &SynStyle) -> Self {
-        let fg = {
-            let Color { r, g, b, a } = style.foreground;
-            ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
-        };
-        let font_style = style.font_style.bits();
-        Style { fg, font_style }
-    }
-}
 
 pub struct View {
     pub view_id: ViewIdentifier,
@@ -339,16 +319,7 @@ impl View {
             ix = sel_end as isize;
         }
         for (iv, style) in style_spans.iter() {
-            // This conversion will move because we'll store style id's in the spans
-            // data structure. But we're changing things one piece at a time.
-            let new_style = styles::Style {
-                fg: style.fg,
-                bg: 0,
-                weight: if (style.font_style & 1) != 0 { 700 } else { 400},
-                underline: (style.font_style & 2) != 0,
-                italic: (style.font_style & 4) != 0,
-            };
-            let style_id = tab_ctx.get_style_id(&new_style);
+            let style_id = tab_ctx.get_style_id(&style);
             rendered_styles.push((iv.start() as isize) - ix);
             rendered_styles.push(iv.end() as isize - iv.start() as isize);
             rendered_styles.push(style_id as isize);

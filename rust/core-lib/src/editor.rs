@@ -26,7 +26,7 @@ use xi_rope::interval::Interval;
 use xi_rope::delta::{self, Delta, Transformer};
 use xi_rope::engine::Engine;
 use xi_rope::spans::{Spans, SpansBuilder};
-use view::{Style, View};
+use view::View;
 use word_boundaries::WordCursor;
 use movement::{Movement, region_movement};
 use selection::{Affinity, Selection, SelRegion};
@@ -37,6 +37,7 @@ use syntax::SyntaxDefinition;
 use plugins::rpc_types::{PluginUpdate, PluginEdit, ScopeSpan, PluginBufferInfo};
 use plugins::PluginPid;
 use layers::Scopes;
+use styles::Style;
 
 const FLAG_SELECT: u64 = 2;
 
@@ -949,7 +950,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
         let iv = Interval::new_closed_closed(start, end_offset);
         self.style_scopes.update_layer(plugin, iv, spans);
-        let updated_styles = self.style_scopes.resolve_styles(iv);
+        let updated_styles = self.style_scopes.resolve_styles(iv, &self.doc_ctx);
         self.style_spans.edit(iv, updated_styles);
         self.view.set_dirty();
         self.render();
