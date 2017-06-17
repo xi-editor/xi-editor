@@ -32,6 +32,7 @@ set_style
   bg_color?: number // 32-bit RGBA value, default 0
   weight?: number // 100..900, default 400
   italic?: boolean  // default false
+  underline?: boolean // default false
 ```
 
 It's not hard to imagine more style properties (typeface, size, OpenType features, etc).
