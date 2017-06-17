@@ -70,7 +70,6 @@ impl GestureType {
 /// An enum representing an edit command, parsed from JSON.
 #[derive(Debug, PartialEq, Eq)]
 pub enum EditCommand<'a> {
-    Key { chars: &'a str, flags: u64 },
     Insert { chars: &'a str },
     DeleteForward,
     DeleteBackward,
@@ -123,7 +122,6 @@ pub enum EditCommand<'a> {
     FindNext { wrap_around: bool, allow_same: bool },
     FindPrevious { wrap_around: bool },
     DebugRewrap,
-    DebugTestFgSpans,
     DebugPrintSpans,
 }
 
@@ -188,14 +186,6 @@ impl<'a> EditCommand<'a> {
         use self::Error::*;
 
         match method {
-            "key" => params.as_object().and_then(|dict| {
-                dict_get_string(dict, "chars").and_then(|chars| {
-                    dict_get_u64(dict, "flags").map(|flags| {
-                        Key { chars: chars, flags: flags }
-                    })
-                })
-            }).ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
-
             "insert" => params.as_object().and_then(|dict| {
                 dict_get_string(dict, "chars").map(|chars| Insert { chars: chars })
             }).ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
@@ -307,7 +297,6 @@ impl<'a> EditCommand<'a> {
             }).ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
 
             "debug_rewrap" => Ok(DebugRewrap),
-            "debug_test_fg_spans" => Ok(DebugTestFgSpans),
             "debug_print_spans" => Ok(DebugPrintSpans),
 
             _ => Err(UnknownEditMethod(method.to_string())),

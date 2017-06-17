@@ -72,6 +72,8 @@ note for `new_view`. Errors are not currently reported.
 
 
 ### plugin
+**Note:** plugin commands are in flux, and may change.
+
 `plugin {"method": "start", params: {"view_id": "view-id-1", plugin_name: "syntect"}}`
 
 Dispatches the inner method to the plugin manager.
@@ -107,35 +109,6 @@ inner methods described below:
 
 
 ### Edit methods
-
-#### key
-
-`key {"chars":"k","flags":0,"keycode":40}`
-
-**This method is deprecated, use `insert` and individual action
-methods instead.**
-
-Flags are the Cocoa NSEvent modifier flags shifted right 16 bits
-(ie the device independent part). In particular, shift is 2.
-
-Right now, function keys are sent as NS [function key "unicodes"](https://developer.apple.com/library/mac/documentation/Cocoa/Reference/ApplicationKit/Classes/NSEvent_Class/index.html#//apple_ref/doc/constant_group/Function_Key_Unicodes)
-in the 0xF700 range, and are interpreted by the core. **This will
-change, see some of the discussion in pull request #12.** In the
-near future, such functions will get interpreted by the front-end
-and sent as individual commands, generally following the action
-descriptions in [NSResponder](https://developer.apple.com/library/mac/documentation/Cocoa/Reference/ApplicationKit/Classes/NSResponder_Class/),
-such as "deleteBackward" and "pageDown".
-
-Further, there will be full support for input methods, which among
-other things will support emoji input (issue #21). I anticipate
-implementing [NSTextInputClient](https://developer.apple.com/library/mac/documentation/Cocoa/Reference/NSTextInputClient_Protocol/)
-in the Cocoa front-end. This is quite nontrivial and will require
-lots of messages, and possibly reporting of UTF-16 code unit offsets
-through the protocol. A UTF-16 counting metric will likely be added
-to the rope to support this.
-
-But sending uninterpreted keys was a good simple starting point to
-get something working quickly.
 
 #### insert
 

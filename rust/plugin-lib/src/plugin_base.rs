@@ -67,30 +67,6 @@ impl ScopeSpan {
 pub struct PluginCtx<'a>(RpcCtx<'a, io::Stdout>);
 
 impl<'a> PluginCtx<'a> {
-    /*
-    // Not used.
-    pub fn n_lines(&self) -> Result<usize, Error> {
-        let result = self.send_rpc_request("n_lines", &Value::Array(vec![]));
-        match result {
-            Ok(value) => value.as_u64().map(|value| value as usize).ok_or(Error::WrongReturnType),
-            Err(err) => Err(Error::RpcError(err)),
-        }
-    }
-    */
-
-    /*
-    // Obsolete, superseded by get_data.
-    pub fn get_line(&self, line_num: usize) -> Result<String, Error> {
-        let params = ObjectBuilder::new().insert("line", Value::U64(line_num as u64)).build();
-        let result = self.send_rpc_request("get_line", &params);
-        match result {
-            Ok(Value::String(s)) => Ok(s),
-            Ok(_) => Err(Error::WrongReturnType),
-            Err(err) => Err(Error::RpcError(err)),
-        }
-    }
-    */
-
     pub fn get_data(&self, view_id: &str, offset: usize,
                     max_size: usize, rev: usize) -> Result<String, Error> {
         let params = json!({
