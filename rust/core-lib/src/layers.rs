@@ -24,7 +24,7 @@
 use std::collections::BTreeMap;
 use std::io::Write;
 use syntect::parsing::Scope;
-use syntect::highlighting::{Highlighter, StyleModifier};
+use syntect::highlighting::Highlighter;
 
 use xi_rope::interval::Interval;
 use xi_rope::spans::{Spans, SpansBuilder};
@@ -165,18 +165,10 @@ impl ScopeLayer {
 
         let mut new_styles = Vec::new();
         for stack in &stacks {
-            let style = highlighter.style_for_stack(stack);
-            //FIXME: temporarily create stylemod from a style while we wait for upstream
-            let style = StyleModifier {
-                foreground: Some(style.foreground),
-                background: Some(style.background),
-                font_style: Some(style.font_style),
-            };
-
+            let style = highlighter.style_mod_for_stack(stack);
             let style = Style::from_syntect_style_mod(&style);
             new_styles.push(style);
         }
-        //print_err!("added styles: {:?}", &new_styles);
         self.stack_lookup.append(&mut stacks);
         self.style_lookup.append(&mut new_styles);
     }

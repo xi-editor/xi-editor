@@ -113,8 +113,7 @@ impl Style {
         Style::new(
             p1.priority,
             p1.fg_color.or(p2.fg_color),
-            //FIXME: use bg_color once we've switched to syntect StyleModifiers
-            None,
+            p1.bg_color.or(p2.bg_color),
             p1.weight.or(p2.weight),
             p1.underline.or(p2.underline),
             p1.italic.or(p2.italic),
