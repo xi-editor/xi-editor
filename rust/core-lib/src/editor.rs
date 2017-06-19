@@ -999,8 +999,16 @@ impl<W: Write + Send + 'static> Editor<W> {
     /// Notifies client that the named plugin has stopped.
     ///
     /// `code` is reserved for future use.
-    pub fn plugin_stopped<'a, T>(&'a self, view_id: T, plugin: &str, code: i32)
+    pub fn plugin_stopped<'a, T>(&'a mut self, view_id: T, plugin: &str,
+                                 plugin_id: PluginPid, code: i32)
         where T: Into<Option<&'a ViewIdentifier>> {
+        {
+            self.style_scopes.remove_layer(plugin_id);
+            let iv_all = Interval::new_open_closed(0, self.text.len());
+            self.style_spans = self.style_scopes.resolve_styles(iv_all);
+            self.view.set_dirty();
+            self.render();
+        }
         let view_id = view_id.into().unwrap_or(&self.view.view_id);
         self.doc_ctx.plugin_stopped(view_id, plugin, code);
     }

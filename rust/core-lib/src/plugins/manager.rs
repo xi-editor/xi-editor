@@ -111,7 +111,7 @@ impl <W: Write + Send + 'static>PluginManager<W> {
             for (name, plugin) in running.iter().chain(self.global_plugins.iter()) {
                 // check to see if plugins have crashed
                 if plugin.is_dead() {
-                    dead_plugins.push(name.to_owned());
+                    dead_plugins.push((name.to_owned(), plugin.get_identifier()));
                     continue;
                 }
 
@@ -252,10 +252,11 @@ impl <W: Write + Send + 'static>PluginManager<W> {
         if is_global {
             let plugin_ref = self.global_plugins.remove(plugin_name);
             if let Some(plugin_ref) = plugin_ref {
+                let plugin_id = plugin_ref.get_identifier();
                 plugin_ref.shutdown();
-                let buffers = self.buffers.lock();
-                for ed in buffers.iter_editors() {
-                    ed.plugin_stopped(None, plugin_name, 0);
+                let mut buffers = self.buffers.lock();
+                for ed in buffers.iter_editors_mut() {
+                    ed.plugin_stopped(None, plugin_name, plugin_id, 0);
                 }
             }
         }
@@ -265,11 +266,12 @@ impl <W: Write + Send + 'static>PluginManager<W> {
         };
 
         if let Some(plugin_ref) = plugin_ref {
+            let plugin_id = plugin_ref.get_identifier();
             plugin_ref.shutdown();
             //TODO: should we notify now, or wait until we know this worked?
             //can this fail? (yes.) How do we tell, and when do we kill the proc?
-            if let Some(editor) = self.buffers.lock().editor_for_view(view_id) {
-                editor.plugin_stopped(view_id, plugin_name, 0);
+            if let Some(mut ed) = self.buffers.lock().editor_for_view_mut(view_id) {
+                ed.plugin_stopped(view_id, plugin_name, plugin_id, 0);
             }
         }
     }
@@ -279,25 +281,25 @@ impl <W: Write + Send + 'static>PluginManager<W> {
     // during a previous update: that is, if a plugin crashes it isn't cleaned up
     // immediately. If this is a problem, we should store crashes, and clean up in idle().
     #[allow(non_snake_case)]
-    fn cleanup_dead(&mut self, view_id: &ViewIdentifier, plugins: &[PluginName]) {
+    fn cleanup_dead(&mut self, view_id: &ViewIdentifier, plugins: &[(PluginName, PluginPid)]) {
         //TODO: define exit codes, put them in an enum somewhere
         let ABNORMAL_EXIT_CODE = 1;
-        for name in plugins.iter() {
+        for &(ref name, pid) in plugins.iter() {
             let is_global = self.catalog.get_named(name).unwrap().is_global();
             if is_global {
                 {
                     self.global_plugins.remove(name);
                 }
-                let buffers = self.buffers.lock();
-                for ed in buffers.iter_editors() {
-                    ed.plugin_stopped(None, name, ABNORMAL_EXIT_CODE);
+                let mut buffers = self.buffers.lock();
+                for ed in buffers.iter_editors_mut() {
+                    ed.plugin_stopped(None, name, pid, ABNORMAL_EXIT_CODE);
                 }
 
             } else {
                 let _ = self.running_for_view_mut(&view_id)
                     .map(|running| running.remove(name));
-                self.buffers.lock().editor_for_view(view_id).map(|ed|{
-                    ed.plugin_stopped(view_id, name, ABNORMAL_EXIT_CODE);
+                self.buffers.lock().editor_for_view_mut(view_id).map(|ed|{
+                    ed.plugin_stopped(view_id, name, pid, ABNORMAL_EXIT_CODE);
                 });
             }
         }

@@ -130,6 +130,11 @@ impl<W:Write> BufferContainer<W> {
     pub fn iter_editors<'a>(&'a self) -> Box<Iterator<Item=&'a Editor<W>> + 'a> {
         Box::new(self.editors.values())
     }
+
+    /// Returns a mutable iterator over all active `Editor`s.
+    pub fn iter_editors_mut<'a>(&'a mut self) -> Box<Iterator<Item=&'a mut Editor<W>> + 'a> {
+        Box::new(self.editors.values_mut())
+    }
 }
 
 impl<W: Write + Send + 'static> BufferContainerRef<W> {
