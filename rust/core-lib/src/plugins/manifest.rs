@@ -14,16 +14,18 @@
 
 //! Structured representation of a plugin's features and capabilities.
 
-use std::env;
 use std::path::PathBuf;
 
 use syntax::SyntaxDefinition;
 
 // optional environment variable for debug plugin executables
+#[cfg(not(target_os = "fuchsia"))]
 static PLUGIN_DIR: &'static str = "XI_PLUGIN_DIR";
 
 // example plugins. Eventually these should be loaded from disk.
+#[cfg(not(target_os = "fuchsia"))]
 pub fn debug_plugins() -> Vec<PluginDescription> {
+    use std::env;
     use self::PluginActivation::*;
     use self::PluginScope::*;
     let plugin_dir = match env::var(PLUGIN_DIR).map(PathBuf::from) {
@@ -48,7 +50,7 @@ pub fn debug_plugins() -> Vec<PluginDescription> {
         PluginDescription::new("shouty", "0.0", BufferLocal, make_path("shouty.py"),
         Vec::new()),
     ].iter()
-        .filter(|desc|{ 
+        .filter(|desc|{
             if !desc.exec_path.exists() {
                 print_err!("missing plugin {} at {:?}", desc.name, desc.exec_path);
                 false
@@ -58,6 +60,11 @@ pub fn debug_plugins() -> Vec<PluginDescription> {
         })
         .map(|desc| desc.to_owned())
         .collect::<Vec<_>>()
+}
+
+#[cfg(target_os = "fuchsia")]
+pub fn debug_plugins() -> Vec<PluginDescription> {
+    Vec::new()
 }
 
 /// Describes attributes and capabilities of a plugin.
@@ -100,6 +107,7 @@ pub enum PluginScope {
     SingleInvocation,
 }
 
+#[cfg(not(target_os = "fuchsia"))]
 impl PluginDescription {
     fn new<S, P>(name: S, version: S, scope: PluginScope, exec_path: P,
                  activations: Vec<PluginActivation>) -> Self
