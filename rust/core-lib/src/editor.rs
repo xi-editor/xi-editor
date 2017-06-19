@@ -600,48 +600,6 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.scroll_to = self.view.set_selection(&self.text, sel);
     }
 
-    fn do_key(&mut self, chars: &str, flags: u64) {
-        match chars {
-            "\r" => self.insert_newline(),
-            "\x7f" => {
-                self.delete_backward();
-            }
-            "\u{F700}" => {
-                // up arrow
-                self.move_up(flags);
-            }
-            "\u{F701}" => {
-                // down arrow
-                self.move_down(flags);
-            }
-            "\u{F702}" => {
-                // left arrow
-                self.move_left(flags);
-            }
-            "\u{F703}" => {
-                // right arrow
-                self.move_right(flags);
-            }
-            "\u{F72C}" => {
-                // page up
-                self.scroll_page_up(flags);
-            }
-            "\u{F72D}" => {
-                // page down
-                self.scroll_page_down(flags);
-            }
-            "\u{F704}" => {
-                // F1, but using for debugging
-                self.debug_rewrap();
-            }
-            "\u{F705}" => {
-                // F2, but using for debugging
-                self.debug_test_fg_spans();
-            }
-            _ => self.insert(chars),
-        }
-    }
-
     // TODO: insert from keyboard or input method shouldn't break undo group,
     // but paste should.
     fn do_insert(&mut self, chars: &str) {
@@ -754,16 +712,6 @@ impl<W: Write + Send + 'static> Editor<W> {
 
     fn debug_rewrap(&mut self) {
         self.view.rewrap(&self.text, 72);
-        self.view.set_dirty();
-    }
-
-    fn debug_test_fg_spans(&mut self) {
-        print_err!("setting fg spans");
-        let mut sb = SpansBuilder::new(15);
-        let style = Style { fg: 0xffc00000, font_style: 0 };
-        sb.add_span(Interval::new_closed_open(5, 10), style);
-        self.style_spans = sb.build();
-
         self.view.set_dirty();
     }
 
@@ -899,7 +847,6 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.this_edit_type = EditType::Other;
 
         let result = match cmd {
-            Key { chars, flags } => async(self.do_key(chars, flags)),
             Insert { chars } => async(self.do_insert(chars)),
             DeleteForward => async(self.delete_forward()),
             DeleteBackward => async(self.delete_backward()),
@@ -956,7 +903,6 @@ impl<W: Write + Send + 'static> Editor<W> {
             FindNext { wrap_around, allow_same } => async(self.do_find_next(false, wrap_around, allow_same)),
             FindPrevious { wrap_around } => async(self.do_find_next(true, wrap_around, true)),
             DebugRewrap => async(self.debug_rewrap()),
-            DebugTestFgSpans => async(self.debug_test_fg_spans()),
             DebugPrintSpans => async(self.debug_print_spans()),
         };
 

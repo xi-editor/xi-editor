@@ -77,10 +77,6 @@ impl <W: Write + Send + 'static>PluginManager<W> {
                     .plugin_n_lines() as u64;
                 Some(serde_json::to_value(n_lines).unwrap())
             },
-            SetFgSpans { .. } => {
-                print_err!("set_fg_spans has been removed; use update_spans.");
-                None
-            }
             AddScopes { view_id, scopes } => {
                 self.buffers.lock().editor_for_view_mut(&view_id).unwrap()
                     .plugin_add_scopes(plugin_id, scopes);
