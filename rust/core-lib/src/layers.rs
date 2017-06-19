@@ -24,17 +24,19 @@
 use std::collections::BTreeMap;
 use std::io::Write;
 use syntect::parsing::Scope;
-use syntect::highlighting::Highlighter;
 
 use xi_rope::interval::Interval;
 use xi_rope::spans::{Spans, SpansBuilder};
+
 use tabs::DocumentCtx;
 use styles::Style;
 use plugins::PluginPid;
 
 /// A collection of layers containing scope information.
+#[derive(Default)]
 pub struct Scopes {
     layers: BTreeMap<PluginPid, ScopeLayer>,
+    merged: Spans<Style>,
 }
 
 /// A collection of scope spans from a single source.
@@ -43,13 +45,17 @@ pub struct ScopeLayer {
     style_lookup: Vec<Style>,
     /// Human readable scope names, for debugging
     name_lookup: Vec<Vec<String>>,
-    pub spans: Spans<u32>,
+    pub spans: Spans<Style>,
 }
 
 impl Scopes {
 
     pub fn define_styles() {
         unimplemented!();
+    }
+
+    pub fn get_merged(&self) -> &Spans<Style> {
+        &self.merged
     }
 
     /// Adds the provided scopes to the layer's lookup table.
@@ -59,47 +65,60 @@ impl Scopes {
         self.layers.get_mut(&layer).unwrap().add_scopes(scopes, doc_ctx);
     }
 
-    /// Updates spans on all layers. Useful for clearing all, or OT.
-    pub fn update_all(&mut self, iv: Interval, spans: Spans<u32>) {
+    /// Inserts empty spans at the given interval for all layers.
+    ///
+    /// This is useful for clearing spans, and for updating spans
+    /// as edits occur.
+    pub fn update_all(&mut self, iv: Interval, len: usize) {
+        self.merged.edit(iv, SpansBuilder::new(len).build());
+        let empty_spans = SpansBuilder::new(len).build();
         for layer in self.layers.values_mut() {
-            layer.update_spans(iv, spans.clone());
+            layer.update_spans(iv, &empty_spans);
         }
+        self.resolve_styles(iv);
     }
 
     /// Updates the scope spans for a given layer.
     pub fn update_layer(&mut self, layer: PluginPid, iv: Interval, spans: Spans<u32>) {
         self.create_if_missing(layer);
-        self.layers.get_mut(&layer).unwrap().update_spans(iv, spans);
+        self.layers.get_mut(&layer).unwrap().update_spans(iv, &spans);
+        self.resolve_styles(iv);
     }
 
     /// Removes a given layer. This will remove all styles derived from
     /// that layer's scopes.
     pub fn remove_layer(&mut self, layer: PluginPid) -> Option<ScopeLayer> {
-        self.layers.remove(&layer)
+        let layer = self.layers.remove(&layer);
+        if layer.is_some() {
+            let iv_all = Interval::new_closed_closed(0, self.merged.len());
+            //TODO: should Spans<T> have a clear() method?
+            self.merged = SpansBuilder::new(self.merged.len()).build();
+            self.resolve_styles(iv_all);
+        }
+        layer
     }
 
-    /// For a given Interval, generates styles from scopes, resolving conflicts.
-    pub fn resolve_styles<W: Write>(&self,
-                                    iv: Interval,
-                                    doc_ctx: &DocumentCtx<W>) -> Spans<Style> {
+    /// Resolves styles from all layers for the given interval, updating
+    /// the master style spans.
+    fn resolve_styles(&mut self, iv: Interval) {
         if self.layers.is_empty() {
-            return SpansBuilder::new(iv.size()).build()
+            return
         }
-        //TODO: Theme and StyleSet should live together somewhere,
-        //and we should put the style in the style set (and resovle the id) here.
+        let mut layer_iter = self.layers.values();
+        let mut resolved = layer_iter.next().unwrap().spans.subseq(iv);
 
-        let themes = doc_ctx.theme_set.lock().unwrap();
-        let theme = themes.themes.get("InspiredGitHub").expect("missing theme");
-        let default_style = Style::default_for_theme(theme);
-
-        //TODO: implement _actual_ layer merging.
-        let mut sb = SpansBuilder::new(iv.size());
-        let layer = self.layers.values().next().unwrap();
-        for (iv, val) in layer.spans.subseq(iv).iter() {
-            let style = default_style.merge(&layer.style_lookup[*val as usize]);
-            sb.add_span(iv, style);
+        for other in layer_iter {
+            //print_err!("pass {}, resolved spans\n{:?}\n", i+1, resolved);
+            let spans = other.spans.subseq(iv);
+            assert_eq!(resolved.len(), spans.len());
+            resolved = resolved.merge(&spans, |a, b| {
+                match b {
+                    Some(b) => a.merge(b),
+                    None => a.to_owned(),
+                }
+            });
         }
-        sb.build()
+        self.merged.edit(iv, resolved);
     }
 
     pub fn debug_print_spans(&self, iv: Interval) {
@@ -107,21 +126,17 @@ impl Scopes {
             let spans = layer.spans.subseq(iv);
             print_err!("Spans for layer {:?}:", id);
             for (iv, val) in spans.iter() {
-                print_err!("{}: {:?}", iv, layer.name_lookup[*val as usize])
+                //print_err!("{}: {:?}", iv, layer.name_lookup[*val as usize])
+                print_err!("{}: {:?}", iv, val);
             }
         }
     }
 
+
     fn create_if_missing(&mut self, layer_id: PluginPid) {
         if !self.layers.contains_key(&layer_id) {
-            self.layers.insert(layer_id, ScopeLayer::default());
+            self.layers.insert(layer_id, ScopeLayer::new(self.merged.len()));
         }
-    }
-}
-
-impl Default for Scopes {
-    fn default() -> Self {
-        Scopes { layers: BTreeMap::new() }
     }
 }
 
@@ -137,6 +152,16 @@ impl Default for ScopeLayer {
 }
 
 impl ScopeLayer {
+
+    pub fn new(len: usize) -> Self {
+        ScopeLayer {
+            stack_lookup: Vec::new(),
+            style_lookup: Vec::new(),
+            name_lookup: Vec::new(),
+            spans: SpansBuilder::new(len).build(),
+        }
+    }
+
     fn add_scopes<W: Write>(&mut self, scopes: Vec<Vec<String>>,
                                 doc_ctx: &DocumentCtx<W>) {
         let mut stacks = Vec::with_capacity(scopes.len());
@@ -158,10 +183,8 @@ impl ScopeLayer {
         }
 
         // compute styles for each new stack
-        let themes = doc_ctx.theme_set.lock().unwrap();
-        let theme = themes.themes.get("InspiredGitHub").expect("missing theme");
-        //let theme = themes.themes.get("base16-ocean.dark").expect("missing theme");
-        let highlighter = Highlighter::new(theme);
+        let style_map = doc_ctx.get_style_map().lock().unwrap();
+        let highlighter = style_map.get_highlighter();
 
         let mut new_styles = Vec::new();
         for stack in &stacks {
@@ -173,7 +196,12 @@ impl ScopeLayer {
         self.style_lookup.append(&mut new_styles);
     }
 
-    fn update_spans(&mut self, iv: Interval, spans: Spans<u32>) {
-        self.spans.edit(iv, spans);
+    fn update_spans(&mut self, iv: Interval, spans: &Spans<u32>) {
+        let mut sb = SpansBuilder::new(spans.len());
+        for (iv, val) in spans.iter() {
+            sb.add_span(iv, self.style_lookup[*val as usize].to_owned());
+        }
+        let spans = sb.build();
+        self.spans.edit(iv, spans.to_owned());
     }
 }

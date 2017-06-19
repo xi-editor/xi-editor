@@ -18,7 +18,7 @@ use std::collections::HashMap;
 
 use serde_json::{self, Value};
 use syntect::highlighting::StyleModifier as SynStyleModifier;
-use syntect::highlighting::{Color, Theme, BLACK};
+use syntect::highlighting::{Color, Theme, ThemeSet, Highlighter, BLACK};
 
 const N_RESERVED_STYLES: usize = 2;
 const SYNTAX_PRIORITY_DEFAULT: u16 = 200;
@@ -62,7 +62,9 @@ impl Style {
         Self::new(
             SYNTAX_PRIORITY_DEFAULT,
             style.foreground.map(|c| Self::rgba_from_syntect_color(&c)),
-            style.background.map(|c| Self::rgba_from_syntect_color(&c)),
+            None,
+            //TODO: stop ignoring background color
+            //style.background.map(|c| Self::rgba_from_syntect_color(&c)),
             weight,
             underline,
             italic,
@@ -113,7 +115,8 @@ impl Style {
         Style::new(
             p1.priority,
             p1.fg_color.or(p2.fg_color),
-            p1.bg_color.or(p2.bg_color),
+            //TODO: stop ignoring background color
+            None,
             p1.weight.or(p2.weight),
             p1.underline.or(p2.underline),
             p1.italic.or(p2.italic),
@@ -135,7 +138,12 @@ impl Style {
     }
 }
 
-pub struct StyleMap {
+/// A map from styles to client identifiers for a given `Theme`.
+pub struct ThemeStyleMap {
+    themes: ThemeSet,
+    theme_name: String,
+    theme: Theme,
+    default_style: Style,
     map: HashMap<Style, usize>,
 
     // It's not obvious we actually have to store the style, we seem to only need it
@@ -143,12 +151,33 @@ pub struct StyleMap {
     styles: Vec<Style>,
 }
 
-impl StyleMap {
-    pub fn new() -> StyleMap {
-        StyleMap {
+impl ThemeStyleMap {
+    pub fn new() -> ThemeStyleMap {
+        let themes = ThemeSet::load_defaults();
+        let theme_name = "InspiredGitHub".to_owned();
+        let theme = themes.themes.get(&theme_name).expect("missing theme").to_owned();
+        let default_style = Style::default_for_theme(&theme);
+
+        ThemeStyleMap {
+            themes: themes,
+            theme_name: theme_name,
+            theme: theme,
+            default_style: default_style,
             map: HashMap::new(),
             styles: Vec::new(),
         }
+    }
+
+    pub fn get_default_style(&self) -> &Style {
+        &self.default_style
+    }
+    
+    pub fn get_highlighter<'a>(&'a self) -> Highlighter<'a> {
+        Highlighter::new(&self.theme)
+    }
+
+    pub fn merge_with_default(&self, style: &Style) -> Style {
+        self.default_style.merge(style)
     }
 
     pub fn lookup(&self, style: &Style) -> Option<usize> {

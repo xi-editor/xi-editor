@@ -18,6 +18,7 @@
 
 use std::marker::PhantomData;
 use std::mem;
+use std::fmt;
 
 use tree::{Leaf, Node, NodeInfo, TreeBuilder, Cursor};
 use delta::Transformer;
@@ -289,6 +290,16 @@ impl<T: Clone + Default> Spans<T> {
             cursor: Cursor::new(self, 0),
             ix: 0,
         }
+    }
+}
+
+impl<T: Clone + Default + fmt::Debug> fmt::Debug for Spans<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let strs = self.iter().map(|(iv, val)| {
+            format!("{}: {:?}", iv, val)
+        })
+        .collect::<Vec<String>>();
+        write!(f, "len: {}\nspans:\n\t{}", self.len(), &strs.join("\n\t"))
     }
 }
 

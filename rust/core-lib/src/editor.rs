@@ -25,7 +25,7 @@ use xi_rope::rope::{LinesMetric, Rope, RopeInfo};
 use xi_rope::interval::Interval;
 use xi_rope::delta::{self, Delta, Transformer};
 use xi_rope::engine::Engine;
-use xi_rope::spans::{Spans, SpansBuilder};
+use xi_rope::spans::SpansBuilder;
 use view::View;
 use word_boundaries::WordCursor;
 use movement::{Movement, region_movement};
@@ -37,7 +37,6 @@ use syntax::SyntaxDefinition;
 use plugins::rpc_types::{PluginUpdate, PluginEdit, ScopeSpan, PluginBufferInfo};
 use plugins::PluginPid;
 use layers::Scopes;
-use styles::Style;
 
 const FLAG_SELECT: u64 = 2;
 
@@ -74,8 +73,7 @@ pub struct Editor<W: Write> {
 
     scroll_to: Option<usize>,
 
-    style_spans: Spans<Style>,
-    style_scopes: Scopes,
+    styles: Scopes,
     doc_ctx: DocumentCtx<W>,
     revs_in_flight: usize,
 }
@@ -134,8 +132,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             last_edit_type: EditType::Other,
             this_edit_type: EditType::Other,
             scroll_to: Some(0),
-            style_spans: Spans::default(),
-            style_scopes: Scopes::default(),
+            styles: Scopes::default(),
             doc_ctx: doc_ctx,
             revs_in_flight: 0,
         };
@@ -341,14 +338,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         // TODO: perhaps use different semantics for spans that enclose the edited region.
         // Currently it breaks any such span in half and applies no spans to the inserted
         // text. That's ok for syntax highlighting but not ideal for rich text.
-        let empty_spans = SpansBuilder::new(new_len).build();
-        self.style_scopes.update_all(iv.clone(), empty_spans);
-
-        //TODO: style_spans should just live in style_scopes
-        // or maybe just be removed or something
-        let empty_spans = SpansBuilder::new(new_len).build();
-        self.style_spans.edit(iv, empty_spans);
-
+        self.styles.update_all(iv, new_len);
 
         // We increment revs in flight once here, and we decrement once
         // after sending plugin updates, regardless of whether or not any actual
@@ -388,7 +378,7 @@ impl<W: Write + Send + 'static> Editor<W> {
 
     // render if needed, sending to ui
     pub fn render(&mut self) {
-        self.view.render_if_dirty(&self.text, &self.doc_ctx, &self.style_spans);
+        self.view.render_if_dirty(&self.text, &self.doc_ctx, self.styles.get_merged());
         if let Some(scrollto) = self.scroll_to {
             let (line, col) = self.view.offset_to_line_col(&self.text, scrollto);
             self.doc_ctx.scroll_to(&self.view.view_id, line, col);
@@ -631,7 +621,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         let first = max(first, 0) as usize;
         let last = last as usize;
         self.view.set_scroll(first, last);
-        self.view.send_update_for_scroll(&self.text, &self.doc_ctx, &self.style_spans, first, last);
+        self.view.send_update_for_scroll(&self.text, &self.doc_ctx, self.styles.get_merged(), first, last);
     }
 
     /// Sets the cursor and scrolls to the beginning of the given line.
@@ -641,7 +631,7 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     fn do_request_lines(&mut self, first: i64, last: i64) {
-        self.view.send_update(&self.text, &self.doc_ctx, &self.style_spans, first as usize, last as usize);
+        self.view.send_update(&self.text, &self.doc_ctx, self.styles.get_merged(), first as usize, last as usize);
     }
 
     fn do_click(&mut self, line: u64, col: u64, flags: u64, click_count: u64) {
@@ -720,7 +710,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         // get last sel region
         let last_sel = self.view.sel_regions().last().unwrap();
         let iv = Interval::new_closed_open(last_sel.min(), last_sel.max());
-        self.style_scopes.debug_print_spans(iv);
+        self.styles.debug_print_spans(iv);
     }
 
     fn do_cut(&mut self) -> Value {
@@ -924,7 +914,7 @@ impl<W: Write + Send + 'static> Editor<W> {
     //TODO: plugins should optionally be able to provide a layer id
     // so a single plugin can maintain multiple layers
     pub fn plugin_add_scopes(&mut self, plugin: PluginPid, scopes: Vec<Vec<String>>) {
-        self.style_scopes.add_scopes(plugin, scopes, &self.doc_ctx);
+        self.styles.add_scopes(plugin, scopes, &self.doc_ctx);
     }
 
     pub fn plugin_update_spans(&mut self, plugin: PluginPid, start: usize, len: usize,
@@ -949,9 +939,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             end_offset = transformer.transform(end_offset, true);
         }
         let iv = Interval::new_closed_closed(start, end_offset);
-        self.style_scopes.update_layer(plugin, iv, spans);
-        let updated_styles = self.style_scopes.resolve_styles(iv, &self.doc_ctx);
-        self.style_spans.edit(iv, updated_styles);
+        self.styles.update_layer(plugin, iv, spans);
         self.view.set_dirty();
         self.render();
     }
@@ -1004,9 +992,7 @@ impl<W: Write + Send + 'static> Editor<W> {
                                  plugin_id: PluginPid, code: i32)
         where T: Into<Option<&'a ViewIdentifier>> {
         {
-            self.style_scopes.remove_layer(plugin_id);
-            let iv_all = Interval::new_open_closed(0, self.text.len());
-            self.style_spans = self.style_scopes.resolve_styles(iv_all);
+            self.styles.remove_layer(plugin_id);
             self.view.set_dirty();
             self.render();
         }
