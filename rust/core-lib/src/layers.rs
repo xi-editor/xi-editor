@@ -107,7 +107,6 @@ impl Scopes {
     /// Resolves styles from all layers for the given interval, updating
     /// the master style spans.
     fn resolve_styles(&mut self, iv: Interval) {
-        print_err!("resolving styles");
         if self.layers.is_empty() {
             return
         }
