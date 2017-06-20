@@ -50,6 +50,7 @@ pub enum CoreCommand<'a> {
     NewView { file_path: Option<&'a str> },
     CloseView { view_id: ViewIdentifier },
     Save { view_id: ViewIdentifier, file_path: &'a str },
+    SetTheme { theme_name: &'a str }
 }
 
 /// An enum representing touch and mouse gestures applied to the text.
@@ -136,7 +137,6 @@ pub enum PluginCommand {
     Start { view_id: ViewIdentifier, plugin_name: String },
     #[serde(rename = "stop")]
     Stop { view_id: ViewIdentifier, plugin_name: String },
-    //Other { view_id: String, params: Value },
 }
 
 impl<'a> CoreCommand<'a> {
@@ -152,6 +152,10 @@ impl<'a> CoreCommand<'a> {
             "new_view" => params.as_object()
                 .map(|dict| NewView { file_path: dict_get_string(dict, "file_path") }) // optional
                 .ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
+
+            "set_theme" => params.as_object().and_then(|dict| {
+                dict_get_string(dict, "theme_name").map(|theme_name| SetTheme { theme_name: theme_name })
+            }).ok_or_else(|| MalformedEditParams(method.to_string(), params.clone())),
 
             "save" => params.as_object().and_then(|dict| {
                 dict_get_string(dict, "view_id").and_then(|view_id| {

@@ -34,6 +34,7 @@ use plugins::PluginPid;
 
 /// A collection of layers containing scope information.
 #[derive(Default)]
+//TODO: rename. Probably to `Layers`
 pub struct Scopes {
     layers: BTreeMap<PluginPid, ScopeLayer>,
     merged: Spans<Style>,
@@ -45,14 +46,10 @@ pub struct ScopeLayer {
     style_lookup: Vec<Style>,
     /// Human readable scope names, for debugging
     name_lookup: Vec<Vec<String>>,
-    pub spans: Spans<Style>,
+    pub spans: Spans<u32>,
 }
 
 impl Scopes {
-
-    pub fn define_styles() {
-        unimplemented!();
-    }
 
     pub fn get_merged(&self) -> &Spans<Style> {
         &self.merged
@@ -98,18 +95,31 @@ impl Scopes {
         layer
     }
 
+    pub fn theme_changed<W: Write>(&mut self, doc_ctx: &DocumentCtx<W>) {
+        for layer in self.layers.values_mut() {
+            layer.theme_changed(doc_ctx);
+        }
+        self.merged = SpansBuilder::new(self.merged.len()).build();
+        let iv_all = Interval::new_closed_closed(0, self.merged.len());
+        self.resolve_styles(iv_all);
+    }
+
     /// Resolves styles from all layers for the given interval, updating
     /// the master style spans.
     fn resolve_styles(&mut self, iv: Interval) {
+        print_err!("resolving styles");
         if self.layers.is_empty() {
             return
         }
         let mut layer_iter = self.layers.values();
-        let mut resolved = layer_iter.next().unwrap().spans.subseq(iv);
+        let mut resolved = layer_iter.next().unwrap().subseq_styles(iv);
 
         for other in layer_iter {
-            //print_err!("pass {}, resolved spans\n{:?}\n", i+1, resolved);
-            let spans = other.spans.subseq(iv);
+            //FIXME: this creates a whole lot of unnecessary styles, because
+            // subseq_styles creates a new spans object and a new Style for each
+            // id. Better would be to rewrite Spans::merge to be a bit more like
+            // a reduce/fold operation, and then we could just use &Styles.
+            let spans = other.subseq_styles(iv);
             assert_eq!(resolved.len(), spans.len());
             resolved = resolved.merge(&spans, |a, b| {
                 match b {
@@ -126,8 +136,7 @@ impl Scopes {
             let spans = layer.spans.subseq(iv);
             print_err!("Spans for layer {:?}:", id);
             for (iv, val) in spans.iter() {
-                //print_err!("{}: {:?}", iv, layer.name_lookup[*val as usize])
-                print_err!("{}: {:?}", iv, val);
+                print_err!("{}: {:?}", iv, layer.name_lookup[*val as usize])
             }
         }
     }
@@ -162,6 +171,11 @@ impl ScopeLayer {
         }
     }
 
+    fn theme_changed<W: Write>(&mut self, doc_ctx: &DocumentCtx<W>) {
+        // recompute styles with the new theme
+        self.style_lookup = self.styles_for_stacks(self.stack_lookup.as_slice(), doc_ctx);
+    }
+
     fn add_scopes<W: Write>(&mut self, scopes: Vec<Vec<String>>,
                                 doc_ctx: &DocumentCtx<W>) {
         let mut stacks = Vec::with_capacity(scopes.len());
@@ -182,26 +196,36 @@ impl ScopeLayer {
             self.name_lookup.push(stack);
         }
 
-        // compute styles for each new stack
-        let style_map = doc_ctx.get_style_map().lock().unwrap();
-        let highlighter = style_map.get_highlighter();
-
-        let mut new_styles = Vec::new();
-        for stack in &stacks {
-            let style = highlighter.style_mod_for_stack(stack);
-            let style = Style::from_syntect_style_mod(&style);
-            new_styles.push(style);
-        }
+        let mut new_styles = self.styles_for_stacks(stacks.as_slice(), doc_ctx);
         self.stack_lookup.append(&mut stacks);
         self.style_lookup.append(&mut new_styles);
     }
 
+    fn styles_for_stacks<W: Write>(&self, stacks: &[Vec<Scope>],
+                         doc_ctx: &DocumentCtx<W>) -> Vec<Style> {
+        let style_map = doc_ctx.get_style_map().lock().unwrap();
+        let highlighter = style_map.get_highlighter();
+
+        let mut new_styles = Vec::new();
+        for stack in stacks {
+            let style = highlighter.style_mod_for_stack(stack);
+            let style = Style::from_syntect_style_mod(&style);
+            new_styles.push(style);
+        }
+        new_styles
+    }
+
     fn update_spans(&mut self, iv: Interval, spans: &Spans<u32>) {
+        self.spans.edit(iv, spans.to_owned());
+    }
+
+    /// Creates a Spans<Style> from the given interval of self.spans.
+    fn subseq_styles(&self, iv: Interval) -> Spans<Style> {
+        let spans = self.spans.subseq(iv);
         let mut sb = SpansBuilder::new(spans.len());
         for (iv, val) in spans.iter() {
             sb.add_span(iv, self.style_lookup[*val as usize].to_owned());
         }
-        let spans = sb.build();
-        self.spans.edit(iv, spans.to_owned());
+        sb.build()
     }
 }

@@ -18,7 +18,7 @@ use std::collections::HashMap;
 
 use serde_json::{self, Value};
 use syntect::highlighting::StyleModifier as SynStyleModifier;
-use syntect::highlighting::{Color, Theme, ThemeSet, Highlighter, BLACK};
+use syntect::highlighting::{Color, Theme, ThemeSet, ThemeSettings, Highlighter, BLACK};
 
 const N_RESERVED_STYLES: usize = 2;
 const SYNTAX_PRIORITY_DEFAULT: u16 = 200;
@@ -171,9 +171,30 @@ impl ThemeStyleMap {
     pub fn get_default_style(&self) -> &Style {
         &self.default_style
     }
-    
+
     pub fn get_highlighter<'a>(&'a self) -> Highlighter<'a> {
         Highlighter::new(&self.theme)
+    }
+
+    pub fn get_theme_name<'a>(&'a self) -> &String {
+        &self.theme_name
+    }
+
+    pub fn get_theme_settings<'a>(&'a self) -> &ThemeSettings {
+        &self.theme.settings
+    }
+
+    pub fn set_theme(&mut self, theme_name: &str) -> Result<(), &'static str> {
+        if let Some(new_theme) = self.themes.themes.get(theme_name) {
+            self.theme = new_theme.to_owned();
+            self.theme_name = theme_name.to_owned();
+            self.default_style = Style::default_for_theme(&self.theme);
+            self.map = HashMap::new();
+            self.styles = Vec::new();
+            Ok(())
+        } else {
+        Err("unknown theme")
+        }
     }
 
     pub fn merge_with_default(&self, style: &Style) -> Style {

@@ -904,6 +904,13 @@ impl<W: Write + Send + 'static> Editor<W> {
         result
     }
 
+    pub fn theme_changed(&mut self) {
+        self.styles.theme_changed(&self.doc_ctx);
+        self.view.set_dirty();
+        self.render();
+        self.doc_ctx.theme_changed(&self.view.view_id);
+    }
+
     // Note: the following are placeholders for prototyping, and are not intended to
     // deal with asynchrony or be efficient.
 
