@@ -725,4 +725,37 @@ mod tests {
         engine.undo([1,2].iter().cloned().collect());
         assert_eq!("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", String::from(engine.get_head()));
     }
+
+    #[test]
+    fn gc_5() {
+        let mut engine = Engine::new(Rope::from(TEST_STR));
+        let d1 = Delta::simple_edit(Interval::new_closed_open(0,10), Rope::from(""), TEST_STR.len());
+        let initial_rev = engine.get_head_rev_id();
+        engine.undo([1].iter().cloned().collect());
+        engine.edit_rev(1, 1, initial_rev, d1.clone());
+        engine.edit_rev(1, 2, initial_rev, d1.clone());
+        let gc : BTreeSet<usize> = [1].iter().cloned().collect();
+        engine.gc(&gc);
+        // only one of the deletes was gc'd, the other should still be in effect
+        assert_eq!("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", String::from(engine.get_head()));
+        // since one of the two deletes was gc'd this should undo the one that wasn't
+        engine.undo([2].iter().cloned().collect());
+        assert_eq!(TEST_STR, String::from(engine.get_head()));
+    }
+
+    #[test]
+    fn gc_6() {
+        let mut engine = Engine::new(Rope::from(TEST_STR));
+        let d1 = Delta::simple_edit(Interval::new_closed_open(0,10), Rope::from(""), TEST_STR.len());
+        let initial_rev = engine.get_head_rev_id();
+        engine.edit_rev(1, 1, initial_rev, d1.clone());
+        engine.undo([1,2].iter().cloned().collect());
+        engine.edit_rev(1, 2, initial_rev, d1.clone());
+        let gc : BTreeSet<usize> = [1].iter().cloned().collect();
+        engine.gc(&gc);
+        assert_eq!(TEST_STR, String::from(engine.get_head()));
+        // since one of the two deletes was gc'd this should re-do the one that wasn't
+        engine.undo([].iter().cloned().collect());
+        assert_eq!("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", String::from(engine.get_head()));
+    }
 }
