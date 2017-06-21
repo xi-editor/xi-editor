@@ -321,7 +321,7 @@ impl<W: Write + Send + 'static> Documents<W> {
             Edit { view_id, edit_command } => self.do_edit(&view_id, edit_command),
             Plugin { plugin_command } => self.do_plugin_cmd(plugin_command),
             SetTheme { theme_name, .. } => {
-                self.do_set_theme(theme_name);
+                self.do_set_theme(rpc_peer, theme_name);
                 None
             }
         }
@@ -477,10 +477,20 @@ impl<W: Write + Send + 'static> Documents<W> {
         }
     }
 
-    fn do_set_theme(&self, theme_name: &str) {
+    /// Handle a client set theme RPC
+    fn do_set_theme(&self, rpc_peer: &MainPeer<W>, theme_name: &str) {
         let success = self.style_map.lock().unwrap()
             .set_theme(&theme_name).is_ok();
         if success {
+            let params = {
+                let style_map = self.style_map.lock().unwrap();
+                json!({
+                    "name": style_map.get_theme_name(),
+                    "theme": style_map.get_theme_settings(),
+                })
+            };
+            rpc_peer.send_rpc_notification("theme_changed", &params);
+
             let mut buffers = self.buffers.lock();
             for ed in buffers.iter_editors_mut() {
                 ed.theme_changed();
@@ -549,19 +559,6 @@ impl<W: Write> DocumentCtx<W> {
             &json!({
                 "msg": msg,
             }));
-    }
-
-    /// Notify the client that the theme has changed.
-    pub fn theme_changed(&self, view_id: &ViewIdentifier) {
-        let params = {
-            let style_map = self.style_map.lock().unwrap();
-            json!({
-                "view_id": view_id,
-                "name": style_map.get_theme_name(),
-                "theme": style_map.get_theme_settings(),
-            })
-        };
-        self.rpc_peer.send_rpc_notification("theme_changed", &params);
     }
 
     pub fn get_kill_ring(&self) -> Rope {

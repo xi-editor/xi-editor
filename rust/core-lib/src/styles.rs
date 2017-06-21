@@ -176,7 +176,7 @@ impl ThemeStyleMap {
         Highlighter::new(&self.theme)
     }
 
-    pub fn get_theme_name<'a>(&'a self) -> &String {
+    pub fn get_theme_name(&self) -> &str {
         &self.theme_name
     }
 
@@ -185,6 +185,9 @@ impl ThemeStyleMap {
     }
 
     pub fn set_theme(&mut self, theme_name: &str) -> Result<(), &'static str> {
+        if theme_name == self.theme_name {
+            return Ok(())
+        }
         if let Some(new_theme) = self.themes.themes.get(theme_name) {
             self.theme = new_theme.to_owned();
             self.theme_name = theme_name.to_owned();
