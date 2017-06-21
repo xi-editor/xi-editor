@@ -21,6 +21,9 @@ version = "1.5"
 default-features = false
 features = ["assets"]
 
+[target."cfg(target_os = \"fuchsia\")".dependencies]
+sha2 = "0.5"
+
 [features]
 avx-accel = ["xi-rope/avx-accel"]
 simd-accel = ["xi-rope/simd-accel"]

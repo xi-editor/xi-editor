@@ -22,6 +22,21 @@ extern crate serde_derive;
 extern crate time;
 extern crate syntect;
 
+#[cfg(target_os = "fuchsia")]
+extern crate magenta;
+#[cfg(target_os = "fuchsia")]
+extern crate magenta_sys;
+#[cfg(target_os = "fuchsia")]
+extern crate mxruntime;
+#[cfg(target_os = "fuchsia")]
+#[macro_use]
+extern crate fidl;
+#[cfg(target_os = "fuchsia")]
+extern crate apps_ledger_services_public;
+
+#[cfg(target_os = "fuchsia")]
+extern crate sha2;
+
 use std::io::Write;
 
 use serde_json::Value;
@@ -42,6 +57,8 @@ pub mod internal {
     pub mod view;
     pub mod linewrap;
     pub mod plugins;
+    #[cfg(target_os = "fuchsia")]
+    pub mod fuchsia;
     pub mod styles;
     pub mod word_boundaries;
     pub mod index_set;
@@ -63,9 +80,14 @@ use internal::selection;
 use internal::movement;
 use internal::syntax;
 use internal::layers;
+#[cfg(target_os = "fuchsia")]
+use internal::fuchsia;
 
 use tabs::Documents;
 use rpc::Request;
+
+#[cfg(target_os = "fuchsia")]
+use apps_ledger_services_public::Ledger_Proxy;
 
 extern crate xi_rope;
 extern crate xi_unicode;
@@ -84,6 +106,11 @@ impl<W: Write + Send + 'static> MainState<W> {
         MainState {
             tabs: Documents::new(),
         }
+    }
+
+    #[cfg(target_os = "fuchsia")]
+    pub fn set_ledger(&mut self, ledger: Ledger_Proxy) {
+        self.tabs.set_ledger(ledger);
     }
 }
 
