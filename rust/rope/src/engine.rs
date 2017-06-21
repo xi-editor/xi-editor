@@ -23,8 +23,8 @@ use std;
 
 use rope::{Rope, RopeInfo};
 use multiset::{Subset, CountMatcher};
-use delta::Delta;
 use interval::Interval;
+use delta::{Delta, InsertDelta};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Engine {
@@ -48,7 +48,7 @@ struct Revision {
 
 use self::Contents::*;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 enum Contents {
     Edit {
         priority: usize,
@@ -204,7 +204,7 @@ impl Engine {
         }
 
         // TODO: this does 2 calls to Delta::synthesize and 1 to apply, this probably could be better.
-        let old_tombstones = Engine::shuffle_tombstones(&self.text, &self.tombstones, &self.deletes_from_union, &prev_from_union);
+        let old_tombstones = shuffle_tombstones(&self.text, &self.tombstones, &self.deletes_from_union, &prev_from_union);
         Delta::synthesize(&old_tombstones, &prev_from_union, &self.deletes_from_union)
     }
 
@@ -252,7 +252,7 @@ impl Engine {
         };
 
         // move deleted or undone-inserted things from text to tombstones
-        let (new_text, new_tombstones) = Engine::shuffle(&text_with_inserts, &self.tombstones,
+        let (new_text, new_tombstones) = shuffle(&text_with_inserts, &self.tombstones,
             &rebased_deletes_from_union, &new_deletes_from_union);
 
         let head_rev = &self.revs.last().unwrap();
@@ -266,28 +266,6 @@ impl Engine {
                 deletes: new_deletes,
             }
         }, new_text, new_tombstones, new_deletes_from_union)
-    }
-
-    /// Move sections from text to tombstones and out of tombstones based on a new and old set of deletions
-    fn shuffle_tombstones(text: &Rope, tombstones: &Rope,
-            old_deletes_from_union: &Subset, new_deletes_from_union: &Subset) -> Rope {
-        // Taking the complement of deletes_from_union leads to an interleaving valid for swapped text and tombstones,
-        // allowing us to use the same method to insert the text into the tombstones.
-        let inverse_tombstones_map = old_deletes_from_union.complement();
-        let move_delta = Delta::synthesize(text, &inverse_tombstones_map, &new_deletes_from_union.complement());
-        move_delta.apply(tombstones)
-    }
-
-    /// Move sections from text to tombstones and vice versa based on a new and old set of deletions.
-    /// Returns a tuple of a new text `Rope` and a new `Tombstones` rope described by `new_deletes_from_union`.
-    fn shuffle(text: &Rope, tombstones: &Rope,
-            old_deletes_from_union: &Subset, new_deletes_from_union: &Subset) -> (Rope,Rope) {
-        // Delta that deletes the right bits from the text
-        let del_delta = Delta::synthesize(tombstones, old_deletes_from_union, new_deletes_from_union);
-        let new_text = del_delta.apply(text);
-        // println!("shuffle: old={:?} new={:?} old_text={:?} new_text={:?} old_tombstones={:?}",
-        //     old_deletes_from_union, new_deletes_from_union, text, new_text, tombstones);
-        (new_text, Engine::shuffle_tombstones(text,tombstones,old_deletes_from_union,new_deletes_from_union))
     }
 
     pub fn edit_rev(&mut self, priority: usize, undo_group: usize,
@@ -368,7 +346,7 @@ impl Engine {
         let (new_rev, new_deletes_from_union) = self.compute_undo(&groups);
 
         let (new_text, new_tombstones) =
-            Engine::shuffle(&self.text, &self.tombstones, &self.deletes_from_union, &new_deletes_from_union);
+            shuffle(&self.text, &self.tombstones, &self.deletes_from_union, &new_deletes_from_union);
 
         self.text = new_text;
         self.tombstones = new_tombstones;
@@ -482,15 +460,221 @@ impl Engine {
         }
         self.revs.reverse();
     }
+
+    /// Merge the new content from another Engine into this one with a CRDT merge
+    pub fn merge(&mut self, other: &Engine) {
+        let (mut new_revs, text, tombstones, deletes_from_union) = {
+            let base_index = find_base_index(&self.revs[..], &other.revs[..]);
+            let a_to_merge = &self.revs[base_index..];
+            let b_to_merge = &other.revs[base_index..];
+
+            let common = find_common(a_to_merge, b_to_merge);
+
+            let a_new = rearrange(a_to_merge, &common, self.deletes_from_union.len());
+            let b_new = rearrange(b_to_merge, &common, other.deletes_from_union.len());
+
+            let b_deltas = compute_deltas(&b_new[..], &other.text, &other.tombstones, &other.deletes_from_union);
+
+             rebase(a_new, b_deltas, self.text.clone(), self.tombstones.clone(), self.deletes_from_union.clone())
+        };
+
+        self.text = text;
+        self.tombstones = tombstones;
+        self.deletes_from_union = deletes_from_union;
+        self.revs.append(&mut new_revs);
+    }
+
+    /// Temporary hack until non-colliding ID generation is implemented
+    pub fn _set_rev_id_counter(&mut self, count: usize) {
+        self.rev_id_counter = count;
+    }
 }
+
+// ======== Generic helpers
+
+/// Move sections from text to tombstones and out of tombstones based on a new and old set of deletions
+fn shuffle_tombstones(text: &Rope, tombstones: &Rope,
+        old_deletes_from_union: &Subset, new_deletes_from_union: &Subset) -> Rope {
+    // Taking the complement of deletes_from_union leads to an interleaving valid for swapped text and tombstones,
+    // allowing us to use the same method to insert the text into the tombstones.
+    let inverse_tombstones_map = old_deletes_from_union.complement();
+    let move_delta = Delta::synthesize(text, &inverse_tombstones_map, &new_deletes_from_union.complement());
+    move_delta.apply(tombstones)
+}
+
+/// Move sections from text to tombstones and vice versa based on a new and old set of deletions.
+/// Returns a tuple of a new text `Rope` and a new `Tombstones` rope described by `new_deletes_from_union`.
+fn shuffle(text: &Rope, tombstones: &Rope,
+        old_deletes_from_union: &Subset, new_deletes_from_union: &Subset) -> (Rope,Rope) {
+    // Delta that deletes the right bits from the text
+    let del_delta = Delta::synthesize(tombstones, old_deletes_from_union, new_deletes_from_union);
+    let new_text = del_delta.apply(text);
+    // println!("shuffle: old={:?} new={:?} old_text={:?} new_text={:?} old_tombstones={:?}",
+    //     old_deletes_from_union, new_deletes_from_union, text, new_text, tombstones);
+    (new_text, shuffle_tombstones(text,tombstones,old_deletes_from_union,new_deletes_from_union))
+}
+
+// ======== Merge helpers
+
+/// Find an index before which everything is the same
+fn find_base_index(a: &[Revision], b: &[Revision]) -> usize {
+    assert!(a.len() > 0 && b.len() > 0);
+    assert!(a[0].rev_id == b[0].rev_id);
+    // TODO find the maximum base revision.
+    // this should have the same behavior, but worse performance
+    return 1;
+}
+
+/// Find a set of revisions common to both lists
+fn find_common(a: &[Revision], b: &[Revision]) -> BTreeSet<usize> {
+    // TODO: will the common revs always occur in the same order in both sets,
+    // can we take advantage of that to make this faster?
+    let a_ids: BTreeSet<usize> = a.iter().map(|r| r.rev_id).collect();
+    let b_ids: BTreeSet<usize> = b.iter().map(|r| r.rev_id).collect();
+    a_ids.intersection(&b_ids).cloned().collect()
+}
+
+/// Returns the operations in `revs` that don't have their `rev_id` in
+/// `base_revs`, but modified so that they are in the same order but based on
+/// the `base_revs`. This allows the rest of the merge to operate on
+///
+/// Conceptually, see the diagram below, with `.` being base revs and `n` being
+/// non-base revs, `N` being transformed non-base revs, and rearranges it:
+/// .n..n...nn..  -> ........NNNN -> returns vec![N,N,N,N]
+fn rearrange(revs: &[Revision], base_revs: &BTreeSet<usize>, head_len: usize) -> Vec<Revision> {
+    let mut s = Subset::new(head_len);
+
+    let mut out = Vec::with_capacity(revs.len() - base_revs.len());
+    for rev in revs.iter().rev() {
+        let is_base = base_revs.contains(&rev.rev_id);
+        let contents = match rev.edit {
+            Contents::Edit {priority, undo_group, ref inserts, ref deletes} => {
+                if is_base {
+                    s = inserts.transform_union(&s);
+                    None
+                } else {
+                    let transformed_inserts = inserts.transform_expand(&s);
+                    let transformed_deletes = deletes.transform_expand(&s);
+                    s = s.transform_shrink(&transformed_inserts);
+                    Some(Contents::Edit {
+                        inserts: transformed_inserts,
+                        deletes: transformed_deletes,
+                        priority, undo_group,
+                    })
+                }
+            },
+            Contents::Undo { .. } => panic!("can't merge undo yet"),
+        };
+        if let Some(edit) = contents {
+            out.push(Revision { edit, rev_id: rev.rev_id, max_undo_so_far: rev.max_undo_so_far });
+        }
+    }
+
+    out.as_mut_slice().reverse();
+    out
+}
+
+#[derive(Clone, Debug)]
+struct DeltaOp {
+    rev_id: usize,
+    priority: usize,
+    undo_group: usize,
+    inserts: InsertDelta<RopeInfo>,
+    deletes: Subset,
+}
+
+/// Transform `revs`, which doesn't include information on the actual content of the operations,
+/// into a `InsertDelta`-based representation that does by working backward from the text and tombstones.
+fn compute_deltas(revs: &[Revision], text: &Rope, tombstones: &Rope, deletes_from_union: &Subset) -> Vec<DeltaOp> {
+    let mut out = Vec::with_capacity(revs.len());
+
+    let mut to_head = Subset::new(deletes_from_union.len());
+    let mut cur_deletes_from_union = to_head.clone();
+    for rev in revs.iter().rev() {
+        match rev.edit {
+            Contents::Edit {priority, undo_group, ref inserts, ref deletes} => {
+                let inserts_tr = inserts.transform_expand(&to_head);
+                let older_deletes_from_union = cur_deletes_from_union.union(&inserts_tr);
+
+                // TODO could probably be more efficient by avoiding shuffling from head every time
+                let tombstones_here = shuffle_tombstones(text, tombstones, deletes_from_union, &older_deletes_from_union);
+                let delta = Delta::synthesize(&tombstones_here, &older_deletes_from_union, &cur_deletes_from_union);
+                // TODO create InsertDelta and deletes separately more efficiently instead of factoring
+                let (ins, _) = delta.factor();
+                out.push(DeltaOp {
+                    rev_id: rev.rev_id,
+                    priority, undo_group,
+                    inserts: ins,
+                    deletes: deletes.clone(),
+                });
+
+                to_head = to_head.union(&inserts_tr);
+                cur_deletes_from_union = older_deletes_from_union;
+            },
+            Contents::Undo { .. } => panic!("can't merge undo yet"),
+        }
+    }
+
+    out.as_mut_slice().reverse();
+    out
+}
+
+/// Rebase b_new on top of a_new and return revision contents that can be appended as new
+/// revisions on top of a_new.
+fn rebase(a_new: Vec<Revision>, b_new: Vec<DeltaOp>, mut text: Rope, tombstones: Rope, mut deletes_from_union: Subset)
+    -> (Vec<Revision>, Rope, Rope, Subset) {
+    let mut out = Vec::with_capacity(b_new.len());
+
+    let mut expand_by: Vec<(usize, Subset)> = a_new.into_iter().filter_map(|r| match r.edit {
+        Contents::Edit {priority, inserts, .. } => Some((priority, inserts)),
+        Contents::Undo {..} => None,
+    }).collect();
+    let mut next_expand_by = Vec::with_capacity(expand_by.len());
+    for op in b_new.into_iter() {
+        let DeltaOp { rev_id, priority, undo_group, mut inserts, deletes } = op;
+        // 1. expand by each in expand_by
+        for &(other_priority, ref other_inserts) in &expand_by {
+            let after = priority >= other_priority;  // should never be ==
+            // 1. d-expand by other
+            inserts = inserts.transform_expand(other_inserts, after);
+            // TODO deletes?
+            // 2. trans-expand other by expanded and add to next_expand_by
+            let inserted = inserts.inserted_subset();
+            next_expand_by.push((other_priority, other_inserts.transform_expand(&inserted)));
+        }
+        // 2. apply resulting delta to text&tombstones
+        let text_inserts = inserts.transform_shrink(&deletes_from_union);
+        text = text_inserts.apply(&text);
+        let inserted = inserts.inserted_subset();
+        deletes_from_union = deletes_from_union.transform_expand(&inserted);
+        // TODO move things to tombstones
+        // 3. Create a Revision and add to out
+        out.push(Revision {
+            rev_id,
+            max_undo_so_far: 0, // TODO
+            edit: Contents::Edit {
+                priority, undo_group, deletes,
+                inserts: inserted,
+            }
+        });
+        // 4. Switch over to next iteration
+        expand_by = next_expand_by;
+        next_expand_by = Vec::with_capacity(expand_by.len());
+    }
+
+    (out, text, tombstones, deletes_from_union)
+}
+
 
 #[cfg(test)]
 mod tests {
-    use engine::Engine;
+    use engine::*;
     use rope::{Rope, RopeInfo};
     use delta::{Builder, Delta};
+    use multiset::Subset;
     use interval::Interval;
     use std::collections::BTreeSet;
+    use test_helpers::{parse_subset_list, parse_subset, parse_insert, debug_subsets};
 
     const TEST_STR: &'static str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
@@ -757,5 +941,271 @@ mod tests {
         // since one of the two deletes was gc'd this should re-do the one that wasn't
         engine.undo([].iter().cloned().collect());
         assert_eq!("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", String::from(engine.get_head()));
+    }
+
+    fn basic_insert_ops(inserts: Vec<Subset>, priority: usize) -> Vec<Revision> {
+        inserts.into_iter().enumerate().map(|(i, inserts)| {
+            let deletes = Subset::new(inserts.len());
+            Revision {
+                rev_id: i+1,
+                max_undo_so_far: i+1,
+                edit: Contents::Edit {
+                    priority, inserts, deletes,
+                    undo_group: i+1,
+                }
+            }
+        }).collect()
+    }
+
+    #[test]
+    fn rearrange_1() {
+        let inserts = parse_subset_list("
+        ##
+        -#-
+        #---
+        ---#-
+        -----#
+        #------
+        ");
+        let revs = basic_insert_ops(inserts, 1);
+        let base: BTreeSet<usize> = [3,5].iter().cloned().collect();
+
+        let rearranged = rearrange(&revs, &base, 7);
+        let rearranged_inserts: Vec<Subset> = rearranged.into_iter().map(|c| {
+            match c.edit {
+                Contents::Edit {inserts, ..} => inserts,
+                Contents::Undo { .. } => panic!(),
+            }
+        }).collect();
+
+        debug_subsets(&rearranged_inserts);
+        let correct = parse_subset_list("
+        -##-
+        --#--
+        ---#--
+        #------
+        ");
+        assert_eq!(correct, rearranged_inserts);
+    }
+
+    fn ids_to_fake_revs(ids: &[usize]) -> Vec<Revision> {
+        let contents = Contents::Edit {
+            priority: 0,
+            undo_group: 0,
+            inserts: Subset::new(0),
+            deletes: Subset::new(0),
+        };
+
+        ids.iter().cloned().map(|i| Revision { rev_id: i, max_undo_so_far: i, edit: contents.clone()}).collect()
+    }
+
+    #[test]
+    fn find_common_1() {
+        let a: Vec<Revision> = ids_to_fake_revs(&[0,2,4,6,8,10,12]);
+        let b: Vec<Revision> = ids_to_fake_revs(&[0,1,2,4,5,8,9]);
+        let res = find_common(&a[..], &b[..]);
+
+        let correct: BTreeSet<usize> = [0,2,4,8].iter().cloned().collect();
+        assert_eq!(correct, res);
+    }
+
+
+    #[test]
+    fn find_base_1() {
+        let a: Vec<Revision> = ids_to_fake_revs(&[0,2,4,6,8,10,12]);
+        let b: Vec<Revision> = ids_to_fake_revs(&[0,1,2,4,5,8,9]);
+        let res = find_base_index(&a[..], &b[..]);
+
+        assert_eq!(1, res);
+    }
+
+    #[test]
+    fn compute_deltas_1() {
+        let inserts = parse_subset_list("
+        -##-
+        --#--
+        ---#--
+        #------
+        ");
+        let revs = basic_insert_ops(inserts, 1);
+
+        let text = Rope::from("13456");
+        let tombstones = Rope::from("27");
+        let deletes_from_union = parse_subset("-#----#");
+        let delta_ops = compute_deltas(&revs[..], &text, &tombstones, &deletes_from_union);
+
+        println!("{:#?}", delta_ops);
+
+        let mut r = Rope::from("27");
+        for op in &delta_ops {
+            r = op.inserts.apply(&r);
+        }
+        assert_eq!("1234567", String::from(r));
+    }
+
+
+    #[test]
+    fn rebase_1() {
+        let inserts = parse_subset_list("
+        --#-
+        ----#
+        ");
+        let a_revs = basic_insert_ops(inserts.clone(), 1);
+        let b_revs = basic_insert_ops(inserts, 2);
+
+        let text_b = Rope::from("zpbj");
+        let tombstones_b = Rope::from("a");
+        let deletes_from_union_b = parse_subset("-#---");
+        let b_delta_ops = compute_deltas(&b_revs[..], &text_b, &tombstones_b, &deletes_from_union_b);
+
+        println!("{:#?}", b_delta_ops);
+
+        let text_a = Rope::from("zcbd");
+        let tombstones_a = Rope::from("a");
+        let deletes_from_union_a = parse_subset("-#---");
+
+        let (revs, text_2, tombstones_2, deletes_from_union_2) = rebase(a_revs, b_delta_ops, text_a, tombstones_a, deletes_from_union_a);
+
+        let rebased_inserts: Vec<Subset> = revs.into_iter().map(|c| {
+            match c.edit {
+                Contents::Edit {inserts, ..} => inserts,
+                Contents::Undo { .. } => panic!(),
+            }
+        }).collect();
+
+        debug_subsets(&rebased_inserts);
+        let correct = parse_subset_list("
+        ---#--
+        ------#
+        ");
+        assert_eq!(correct, rebased_inserts);
+
+
+        assert_eq!("zcpbdj", String::from(&text_2));
+        assert_eq!("a", String::from(&tombstones_2));
+        assert_eq!("-#-----", format!("{:#?}", deletes_from_union_2));
+    }
+
+    #[test]
+    fn merge_1() {
+        let mut e1 = Engine::new(Rope::from(""));
+        e1._set_rev_id_counter(1000);
+        let mut e2 = Engine::new(Rope::from(""));
+        e2._set_rev_id_counter(2000);
+        let mut e3 = Engine::new(Rope::from(""));
+        e3._set_rev_id_counter(3000);
+
+        let head = e3.get_head_rev_id();
+        let d = parse_insert("ab");
+        e3.edit_rev(1,1,head,d);
+
+        e1.merge(&e3);
+        e2.merge(&e3);
+
+        assert_eq!("ab", String::from(e1.get_head()));
+        assert_eq!("ab", String::from(e2.get_head()));
+        assert_eq!("ab", String::from(e3.get_head()));
+
+        let head = e1.get_head_rev_id();
+        let d = parse_insert("-c-");
+        e1.edit_rev(3,1,head,d);
+
+        let head = e1.get_head_rev_id();
+        let d = parse_insert("---d");
+        e1.edit_rev(3,1,head,d);
+
+        assert_eq!("acbd", String::from(e1.get_head()));
+
+        let head = e2.get_head_rev_id();
+        let d = parse_insert("-p-");
+        e2.edit_rev(5,1,head,d);
+
+        let head = e2.get_head_rev_id();
+        let d = parse_insert("---j");
+        e2.edit_rev(5,1,head,d);
+
+        assert_eq!("apbj", String::from(e2.get_head()));
+
+        let head = e3.get_head_rev_id();
+        let d = parse_insert("z--");
+        e3.edit_rev(1,1,head,d);
+
+        e1.merge(&e3);
+        e2.merge(&e3);
+
+        assert_eq!("zacbd", String::from(e1.get_head()));
+        assert_eq!("zapbj", String::from(e2.get_head()));
+
+        // the merge in the whiteboard drawing
+        e1.merge(&e2);
+
+        assert_eq!("zacpbdj", String::from(e1.get_head()));
+    }
+
+    #[test]
+    fn merge_2() {
+        let mut e1 = Engine::new(Rope::from(""));
+        e1._set_rev_id_counter(1000);
+        let mut e2 = Engine::new(Rope::from(""));
+        e2._set_rev_id_counter(2000);
+        let mut e3 = Engine::new(Rope::from(""));
+        e3._set_rev_id_counter(3000);
+
+        let head = e3.get_head_rev_id();
+        let d = parse_insert("ab");
+        e3.edit_rev(1,1,head,d);
+
+        e1.merge(&e3);
+        e2.merge(&e3);
+
+        assert_eq!("ab", String::from(e1.get_head()));
+        assert_eq!("ab", String::from(e2.get_head()));
+        assert_eq!("ab", String::from(e3.get_head()));
+
+        let head = e1.get_head_rev_id();
+        let d = parse_insert("-c-");
+        e1.edit_rev(3,1,head,d);
+
+        let head = e1.get_head_rev_id();
+        let d = parse_insert("---d");
+        e1.edit_rev(3,1,head,d);
+
+        assert_eq!("acbd", String::from(e1.get_head()));
+
+        let head = e2.get_head_rev_id();
+        let d = parse_insert("-p-");
+        e2.edit_rev(5,1,head,d);
+
+        assert_eq!("apb", String::from(e2.get_head()));
+
+        let head = e3.get_head_rev_id();
+        let d = parse_insert("-r-");
+        e3.edit_rev(4,1,head,d);
+
+        e1.merge(&e3);
+        e2.merge(&e3);
+
+        assert_eq!("acrbd", String::from(e1.get_head()));
+        assert_eq!("arpb", String::from(e2.get_head()));
+
+        let head = e2.get_head_rev_id();
+        let d = parse_insert("----j");
+        e2.edit_rev(5,1,head,d);
+
+        assert_eq!("arpbj", String::from(e2.get_head()));
+
+        let head = e3.get_head_rev_id();
+        let d = parse_insert("---z");
+        e3.edit_rev(4,1,head,d);
+
+        e1.merge(&e3);
+        e2.merge(&e3);
+
+        assert_eq!("acrbdz", String::from(e1.get_head()));
+        assert_eq!("arpbzj", String::from(e2.get_head()));
+
+        e1.merge(&e2);
+
+        assert_eq!("acrpbdzj", String::from(e1.get_head()));
     }
 }

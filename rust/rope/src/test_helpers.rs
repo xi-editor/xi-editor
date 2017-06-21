@@ -13,8 +13,9 @@
 // limitations under the License.
 
 use multiset::{SubsetBuilder, Subset};
-use delta::Delta;
+use delta::{Delta, self};
 use rope::{Rope, RopeInfo};
+use interval::Interval;
 
 /// Creates a `Subset` of `s` by scanning through `substr` and finding which
 /// characters of `s` are missing from it in order. Returns a `Subset` which
@@ -69,4 +70,21 @@ pub fn debug_subsets(subsets: &[Subset]) {
     for s in subsets {
         println!("{:#?}", s);
     }
+}
+
+pub fn parse_insert(s: &str) -> Delta<RopeInfo> {
+    let base_len = s.chars().filter(|c| *c == '-').count();
+    let mut b = delta::Builder::new(base_len);
+
+    let mut i = 0;
+    for c in s.chars() {
+        if c == '-' {
+            i += 1;
+        } else {
+            let inserted = format!("{}", c);
+            b.replace(Interval::new_closed_open(i,i), Rope::from(inserted));
+        }
+    }
+
+    b.build()
 }

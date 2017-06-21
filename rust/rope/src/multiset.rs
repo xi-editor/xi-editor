@@ -165,6 +165,11 @@ impl Subset {
         self.segments.iter().filter(|seg| matcher.matches(seg)).map(|seg| seg.len).sum()
     }
 
+    /// Convenience alias for `self.count(CountMatcher::All)`
+    pub fn len(&self) -> usize {
+        self.count(CountMatcher::All)
+    }
+
     /// Determine whether the subset is empty.
     /// In this case deleting it would do nothing.
     pub fn is_empty(&self) -> bool {
@@ -327,6 +332,27 @@ impl Subset {
             cur_range: (0,0), // will immediately try to consume next range
             subset_amount_consumed: 0,
         }
+    }
+
+
+    /// Print a debug representation where `#` for count 1, `-` for 0, and
+    /// digits otherwise. Mainly useful for testing with small lengths.
+    pub fn debug_print(&self) {
+        for s in &self.segments {
+            let chr = if s.count == 0 {
+                '-'
+            } else if s.count == 1 {
+                '#'
+            } else if s.count <= 9 {
+                ((s.count as u8) + ('0' as u8)) as char
+            } else {
+                '+'
+            };
+            for _ in 0..s.len {
+                print!("{}", chr);
+            }
+        }
+        println!("");
     }
 }
 

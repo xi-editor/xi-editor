@@ -437,7 +437,11 @@ impl<'a> From<&'a Rope> for String {
 
 impl fmt::Debug for Rope {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Rope({:?})", String::from(self))
+        if f.alternate() {
+            write!(f, "{}", String::from(self))
+        } else {
+            write!(f, "Rope({:?})", String::from(self))
+        }
     }
 }
 
