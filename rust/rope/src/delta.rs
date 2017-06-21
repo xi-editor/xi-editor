@@ -485,7 +485,9 @@ impl<N: NodeInfo> Builder<N> {
     /// is not properly sorted.
     pub fn replace(&mut self, interval: Interval, rope: Node<N>) {
         self.delete(interval);
-        self.delta.els.push(DeltaElement::Insert(rope));
+        if rope.len() > 0 {
+            self.delta.els.push(DeltaElement::Insert(rope));
+        }
     }
 
     /// Determines if delta would be a no-op transformation if built.
