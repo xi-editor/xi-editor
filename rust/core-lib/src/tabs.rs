@@ -320,7 +320,7 @@ impl<W: Write + Send + 'static> Documents<W> {
             Save { view_id, file_path } => self.do_save(&view_id, file_path),
             Edit { view_id, edit_command } => self.do_edit(&view_id, edit_command),
             Plugin { plugin_command } => self.do_plugin_cmd(plugin_command),
-            SetTheme { theme_name, .. } => {
+            SetTheme { theme_name } => {
                 self.do_set_theme(rpc_peer, theme_name);
                 None
             }
