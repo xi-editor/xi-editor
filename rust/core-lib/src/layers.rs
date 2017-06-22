@@ -14,9 +14,6 @@
 
 //! Handles syntax highlighting and other styling.
 //!
-//! NOTE: this documentation is aspirational, e.g. not all functionality is
-//! currently implemented.
-//!
 //! Plugins provide syntax highlighting information in the form of 'scopes'.
 //! Scope information originating from any number of plugins can be resolved
 //! into styles using a theme, augmented with additional style definitions.
@@ -46,7 +43,8 @@ pub struct ScopeLayer {
     style_lookup: Vec<Style>,
     /// Human readable scope names, for debugging
     name_lookup: Vec<Vec<String>>,
-    pub spans: Spans<u32>,
+    scope_spans: Spans<u32>,
+    style_spans: Spans<Style>,
 }
 
 impl Scopes {
@@ -70,7 +68,7 @@ impl Scopes {
         self.merged.edit(iv, SpansBuilder::new(len).build());
         let empty_spans = SpansBuilder::new(len).build();
         for layer in self.layers.values_mut() {
-            layer.update_spans(iv, &empty_spans);
+            layer.update_scopes(iv, &empty_spans);
         }
         self.resolve_styles(iv);
     }
@@ -78,7 +76,7 @@ impl Scopes {
     /// Updates the scope spans for a given layer.
     pub fn update_layer(&mut self, layer: PluginPid, iv: Interval, spans: Spans<u32>) {
         self.create_if_missing(layer);
-        self.layers.get_mut(&layer).unwrap().update_spans(iv, &spans);
+        self.layers.get_mut(&layer).unwrap().update_scopes(iv, &spans);
         self.resolve_styles(iv);
     }
 
@@ -111,14 +109,10 @@ impl Scopes {
             return
         }
         let mut layer_iter = self.layers.values();
-        let mut resolved = layer_iter.next().unwrap().subseq_styles(iv);
+        let mut resolved = layer_iter.next().unwrap().style_spans.subseq(iv);
 
         for other in layer_iter {
-            //FIXME: this creates a whole lot of unnecessary styles, because
-            // subseq_styles creates a new spans object and a new Style for each
-            // id. Better would be to rewrite Spans::merge to be a bit more like
-            // a reduce/fold operation, and then we could just use &Styles.
-            let spans = other.subseq_styles(iv);
+            let spans = other.style_spans.subseq(iv);
             assert_eq!(resolved.len(), spans.len());
             resolved = resolved.merge(&spans, |a, b| {
                 match b {
@@ -130,12 +124,20 @@ impl Scopes {
         self.merged.edit(iv, resolved);
     }
 
+    /// Prints scopes and style information for the given `Interval`.
     pub fn debug_print_spans(&self, iv: Interval) {
         for (id, layer) in self.layers.iter() {
-            let spans = layer.spans.subseq(iv);
-            print_err!("Spans for layer {:?}:", id);
-            for (iv, val) in spans.iter() {
-                print_err!("{}: {:?}", iv, layer.name_lookup[*val as usize])
+            let spans = layer.scope_spans.subseq(iv);
+            let styles = layer.style_spans.subseq(iv);
+            if spans.iter().next().is_some() {
+                print_err!("scopes for layer {:?}:", id);
+                for (iv, val) in spans.iter() {
+                    print_err!("{}: {:?}", iv, layer.name_lookup[*val as usize]);
+                }
+                print_err!("styles:");
+                for (iv, val) in styles.iter() {
+                    print_err!("{}: {:?}", iv, val);
+                }
             }
         }
     }
@@ -154,7 +156,8 @@ impl Default for ScopeLayer {
             stack_lookup: Vec::new(),
             style_lookup: Vec::new(),
             name_lookup: Vec::new(),
-            spans: Spans::default(),
+            scope_spans: Spans::default(),
+            style_spans: Spans::default(),
         }
     }
 }
@@ -166,13 +169,20 @@ impl ScopeLayer {
             stack_lookup: Vec::new(),
             style_lookup: Vec::new(),
             name_lookup: Vec::new(),
-            spans: SpansBuilder::new(len).build(),
+            scope_spans: SpansBuilder::new(len).build(),
+            style_spans: SpansBuilder::new(len).build(),
         }
     }
 
     fn theme_changed<W: Write>(&mut self, doc_ctx: &DocumentCtx<W>) {
         // recompute styles with the new theme
         self.style_lookup = self.styles_for_stacks(self.stack_lookup.as_slice(), doc_ctx);
+        let iv_all = Interval::new_closed_closed(0, self.style_spans.len());
+        self.style_spans = SpansBuilder::new(self.style_spans.len()).build();
+        // this feels unnecessary but we can't pass in a reference to self
+        // and I don't want to get fancy unless there's an actual perf problem
+        let scopes = self.scope_spans.clone();
+        self.update_styles(iv_all, &scopes)
     }
 
     fn add_scopes<W: Write>(&mut self, scopes: Vec<Vec<String>>,
@@ -214,17 +224,41 @@ impl ScopeLayer {
         new_styles
     }
 
-    fn update_spans(&mut self, iv: Interval, spans: &Spans<u32>) {
-        self.spans.edit(iv, spans.to_owned());
+    fn update_scopes(&mut self, iv: Interval, spans: &Spans<u32>) {
+        self.scope_spans.edit(iv, spans.to_owned());
+        self.update_styles(iv, spans);
     }
 
-    /// Creates a Spans<Style> from the given interval of self.spans.
-    fn subseq_styles(&self, iv: Interval) -> Spans<Style> {
-        let spans = self.spans.subseq(iv);
+    /// Updates `self.style_spans`, mapping scopes to styles and combining
+    /// adjacent and equal spans.
+    fn update_styles(&mut self, iv: Interval, spans: &Spans<u32>) {
+
+        // NOTE: This is a tradeoff. Keeping both u32 and Style spans for each
+        // layer makes debugging simpler and reduces the total number of spans
+        // on the wire (because we combine spans that resolve to the same style)
+        // but it does require additional computation + memory up front.
         let mut sb = SpansBuilder::new(spans.len());
-        for (iv, val) in spans.iter() {
-            sb.add_span(iv, self.style_lookup[*val as usize].to_owned());
+        let mut spans_iter = spans.iter();
+        let mut prev = spans_iter.next();
+        {
+        // distinct adjacent scopes can often resolve to the same style,
+        // so we combine them when building the styles.
+        let style_eq = |i1: &u32, i2: &u32| {
+            self.style_lookup[*i1 as usize] == self.style_lookup[*i2 as usize]
+        };
+
+        while let Some((p_iv, p_val)) = prev {
+            match spans_iter.next() {
+                Some((n_iv, n_val)) if n_iv.start() == p_iv.end() && style_eq(p_val, n_val) => {
+                    prev = Some((p_iv.union(n_iv), p_val));
+                }
+                other => {
+                    sb.add_span(p_iv, self.style_lookup[*p_val as usize].to_owned());
+                    prev = other;
+                }
+            }
         }
-        sb.build()
+        }
+        self.style_spans.edit(iv, sb.build());
     }
 }
