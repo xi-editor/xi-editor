@@ -44,3 +44,29 @@ impl PartialEq for Rope {
         String::from(self) == String::from(other)
     }
 }
+
+pub fn parse_subset(s: &str) -> Subset {
+    let mut sb = SubsetBuilder::new();
+
+    for c in s.chars() {
+        if c == '#' {
+            sb.push_segment(1,1);
+        } else if c == 'e' {
+            // do nothing, used for empty subsets
+        } else {
+            sb.push_segment(1,0);
+        }
+    }
+
+    sb.build()
+}
+
+pub fn parse_subset_list(s: &str) -> Vec<Subset> {
+    s.lines().map(|s| s.trim()).filter(|s| !s.is_empty()).map(parse_subset).collect()
+}
+
+pub fn debug_subsets(subsets: &[Subset]) {
+    for s in subsets {
+        println!("{:#?}", s);
+    }
+}
