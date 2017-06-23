@@ -39,7 +39,7 @@ below.
 
 ### Building the core
 
-If you want to experiement, you can build just the core like so:
+If you want to experiment, you can build just the core like so:
 
 ```
 > cd rust
@@ -64,7 +64,7 @@ and might work on other Flutter targets.
 * [xi-win](https://github.com/google/xi-win), an experimental Windows front-end written in Rust.
 
 The following are currently inactive, based on earlier versions of the front-end
-protcol, but perhaps could be revitalized:
+protocol, but perhaps could be revitalized:
 
 * [xi_glium](https://github.com/potocpav/xi_glium), an
 experimental GL-based front-end in Rust.
