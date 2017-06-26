@@ -642,15 +642,15 @@ fn rebase(a_new: Vec<Revision>, b_new: Vec<DeltaOp>, mut text: Rope, tombstones:
     }).collect();
     let mut next_expand_by = Vec::with_capacity(expand_by.len());
     for op in b_new.into_iter() {
-        let DeltaOp { rev_id, priority, undo_group, mut inserts, deletes } = op;
+        let DeltaOp { rev_id, priority, undo_group, mut inserts, mut deletes } = op;
         // 1. expand by each in expand_by
         for &(other_priority, ref other_inserts) in &expand_by {
             let after = priority >= other_priority;  // should never be ==
             // 1. d-expand by other
             inserts = inserts.transform_expand(other_inserts, after);
-            // TODO deletes?
             // 2. trans-expand other by expanded and add to next_expand_by
             let inserted = inserts.inserted_subset();
+            deletes = deletes.transform_expand(&inserted);
             next_expand_by.push((other_priority, other_inserts.transform_expand(&inserted)));
         }
         // 2. apply resulting delta to text&tombstones
@@ -1103,6 +1103,7 @@ mod tests {
     enum MergeTestOp {
         Merge(usize, usize),
         Assert(usize, String),
+        AssertAll(String),
         Edit { ei: usize, p: usize, d: Delta<RopeInfo> },
     }
 
@@ -1138,6 +1139,11 @@ mod tests {
                     let e = &mut self.peers[ei];
                     assert_eq!(correct, &String::from(e.get_head()), "for peer {}", ei);
                 },
+                MergeTestOp::AssertAll(ref correct) => {
+                    for (ei, e) in self.peers.iter().enumerate() {
+                        assert_eq!(correct, &String::from(e.get_head()), "for peer {}", ei);
+                    }
+                },
                 MergeTestOp::Edit { ei, p, d: ref delta } => {
                     let mut e = &mut self.peers[ei];
                     let head = e.get_head_rev_id();
@@ -1147,14 +1153,16 @@ mod tests {
         }
 
         fn run_script(&mut self, script: &[MergeTestOp]) {
-            for op in script.iter() {
+            for (i, op) in script.iter().enumerate() {
+                println!("running {:?} at index {}", op, i);
                 self.run_op(op);
             }
         }
     }
 
+    /// I have a scanned whiteboard diagram of doing this merge by hand, good for reference
     #[test]
-    fn merge_1() {
+    fn merge_whiteboard() {
         use self::MergeTestOp::*;
         let script = vec![
             Edit { ei: 2, p: 1, d: parse_insert("ab") },
@@ -1178,8 +1186,9 @@ mod tests {
         MergeTestState::new(3).run_script(&script[..]);
     }
 
+    /// Tests that priorities are used to break ties correctly
     #[test]
-    fn merge_2() {
+    fn merge_priorities() {
         use self::MergeTestOp::*;
         let script = vec![
             Edit { ei: 2, p: 1, d: parse_insert("ab") },
@@ -1206,5 +1215,56 @@ mod tests {
             Assert(0, "acrpbdzj".to_owned()),
         ];
         MergeTestState::new(3).run_script(&script[..]);
+    }
+
+    /// Tests that merging again when there is no new revisions does nothing
+    #[test]
+    fn merge_idempotent() {
+        use self::MergeTestOp::*;
+        let script = vec![
+            Edit { ei: 2, p: 1, d: parse_insert("ab") },
+            Merge(0,2), Merge(1, 2),
+            Assert(0, "ab".to_owned()),
+            Assert(1, "ab".to_owned()),
+            Assert(2, "ab".to_owned()),
+            Edit { ei: 0, p: 3, d: parse_insert("-c-") },
+            Edit { ei: 0, p: 3, d: parse_insert("---d") },
+            Assert(0, "acbd".to_owned()),
+            Edit { ei: 1, p: 5, d: parse_insert("-p-") },
+            Edit { ei: 1, p: 5, d: parse_insert("---j") },
+            Merge(0,1),
+            Assert(0, "acpbdj".to_owned()),
+            Merge(0,1), Merge(1,0), Merge(0,1), Merge(1,0),
+            Assert(0, "acpbdj".to_owned()),
+            Assert(1, "acpbdj".to_owned()),
+        ];
+        MergeTestState::new(3).run_script(&script[..]);
+    }
+
+    #[test]
+    fn merge_associative() {
+        use self::MergeTestOp::*;
+        let script = vec![
+            Edit { ei: 2, p: 1, d: parse_insert("ab") },
+            Merge(0,2), Merge(1, 2),
+            Edit { ei: 0, p: 3, d: parse_insert("-c-") },
+            Edit { ei: 1, p: 5, d: parse_insert("-p-") },
+            Edit { ei: 2, p: 2, d: parse_insert("z--") },
+            // copy the current state
+            Merge(3, 0), Merge(4, 1), Merge(5, 2),
+            // Do the merge one direction
+            Merge(1,2),
+            Merge(0,1),
+            Assert(0, "zacpb".to_owned()),
+            // Do it the other way on the copy
+            Merge(4,3),
+            Merge(5,4),
+            Assert(5, "zacpb".to_owned()),
+            // Go crazy
+            Merge(0,5), Merge(2,5), Merge(4,5), Merge(1,4),
+            Merge(3,1), Merge(5,3),
+            AssertAll("zacpb".to_owned()),
+        ];
+        MergeTestState::new(6).run_script(&script[..]);
     }
 }
