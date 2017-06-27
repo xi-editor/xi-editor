@@ -72,13 +72,16 @@ pub fn debug_subsets(subsets: &[Subset]) {
     }
 }
 
-pub fn parse_insert(s: &str) -> Delta<RopeInfo> {
-    let base_len = s.chars().filter(|c| *c == '-').count();
+pub fn parse_delta(s: &str) -> Delta<RopeInfo> {
+    let base_len = s.chars().filter(|c| *c == '-' || *c == '!').count();
     let mut b = delta::Builder::new(base_len);
 
     let mut i = 0;
     for c in s.chars() {
         if c == '-' {
+            i += 1;
+        } else if c == '!' {
+            b.delete(Interval::new_closed_open(i,i+1));
             i += 1;
         } else {
             let inserted = format!("{}", c);

@@ -493,6 +493,7 @@ impl<N: NodeInfo> Builder<N> {
 
     /// Deletes the given interval. Panics if interval is not properly sorted.
     pub fn delete(&mut self, interval: Interval) {
+        // TODO: doesn't handle interval types other than closed_open
         let (start, end) = interval.start_end();
         assert!(start >= self.last_offset, "Delta builder: intervals not properly sorted");
         if start > self.last_offset {
