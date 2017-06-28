@@ -646,6 +646,9 @@ fn compute_transforms(revs: Vec<Revision>) -> Vec<(usize, Subset)> {
     let mut last_priority: Option<usize> = None;
     for r in revs.into_iter() {
         if let Contents::Edit {priority, inserts, .. } = r.edit {
+            if inserts.is_empty() {
+                continue;
+            }
             if Some(priority) == last_priority {
                 let last: &mut (usize, Subset) = out.last_mut().unwrap();
                 last.1 = last.1.transform_union(&inserts);
@@ -658,8 +661,8 @@ fn compute_transforms(revs: Vec<Revision>) -> Vec<(usize, Subset)> {
     out
 }
 
-/// Rebase b_new on top of a_new and return revision contents that can be appended as new
-/// revisions on top of a_new.
+/// Rebase `b_new` on top of `expand_by` and return revision contents that can be appended as new
+/// revisions on top of the revisions represented by `expand_by`.
 fn rebase(mut expand_by: Vec<(usize, Subset)>, b_new: Vec<DeltaOp>, mut text: Rope, mut tombstones: Rope,
         mut deletes_from_union: Subset, mut max_undo_so_far: usize) -> (Vec<Revision>, Rope, Rope, Subset) {
     let mut out = Vec::with_capacity(b_new.len());
@@ -1113,11 +1116,16 @@ mod tests {
         ");
         let mut revs = basic_insert_ops(inserts_1, 1);
         let inserts_2 = parse_subset_list("
+        ----
+        ");
+        let mut revs_2 = basic_insert_ops(inserts_2, 4);
+        revs.append(&mut revs_2);
+        let inserts_3 = parse_subset_list("
         ---#--
         #------
         ");
-        let mut revs_2 = basic_insert_ops(inserts_2, 2);
-        revs.append(&mut revs_2);
+        let mut revs_3 = basic_insert_ops(inserts_3, 2);
+        revs.append(&mut revs_3);
 
         let expand_by = compute_transforms(revs);
         assert_eq!(2, expand_by.len());
