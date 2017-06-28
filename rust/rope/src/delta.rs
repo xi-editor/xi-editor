@@ -252,26 +252,26 @@ impl<N: NodeInfo> fmt::Debug for Delta<N> where Node<N>: fmt::Debug {
             for el in &self.els {
                 match *el {
                     DeltaElement::Copy(beg,end) => {
-                        try!(write!(f, "{}", "-".repeat(end-beg)));
+                        write!(f, "{}", "-".repeat(end-beg))?;
                     }
                     DeltaElement::Insert(ref node) => {
-                        try!(node.fmt(f));
+                        node.fmt(f)?;
                     }
                 }
             }
         } else {
-            try!(write!(f, "Delta("));
+            write!(f, "Delta(")?;
             for el in &self.els {
                 match *el {
                     DeltaElement::Copy(beg,end) => {
-                        try!(write!(f, "[{},{}) ", beg, end));
+                        write!(f, "[{},{}) ", beg, end)?;
                     }
                     DeltaElement::Insert(ref node) => {
-                        try!(write!(f, "<ins:{}> ", node.len()));
+                        write!(f, "<ins:{}> ", node.len())?;
                     }
                 }
             }
-            try!(write!(f, ")"));
+            write!(f, ")")?;
         }
         Ok(())
     }

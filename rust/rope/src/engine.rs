@@ -475,7 +475,7 @@ impl Engine {
     /// Merge the new content from another Engine into this one with a CRDT merge
     pub fn merge(&mut self, other: &Engine) {
         let (mut new_revs, text, tombstones, deletes_from_union) = {
-            let base_index = find_base_index(&self.revs[..], &other.revs[..]);
+            let base_index = find_base_index(&self.revs, &other.revs);
             let a_to_merge = &self.revs[base_index..];
             let b_to_merge = &other.revs[base_index..];
 
@@ -484,7 +484,7 @@ impl Engine {
             let a_new = rearrange(a_to_merge, &common, self.deletes_from_union.len());
             let b_new = rearrange(b_to_merge, &common, other.deletes_from_union.len());
 
-            let b_deltas = compute_deltas(&b_new[..], &other.text, &other.tombstones, &other.deletes_from_union);
+            let b_deltas = compute_deltas(&b_new, &other.text, &other.tombstones, &other.deletes_from_union);
 
              rebase(a_new, b_deltas, self.text.clone(), self.tombstones.clone(), self.deletes_from_union.clone())
         };
@@ -538,8 +538,7 @@ fn find_base_index(a: &[Revision], b: &[Revision]) -> usize {
 
 /// Find a set of revisions common to both lists
 fn find_common(a: &[Revision], b: &[Revision]) -> BTreeSet<usize> {
-    // TODO: will the common revs always occur in the same order in both sets,
-    // can we take advantage of that to make this faster?
+    // TODO make this faster somehow?
     let a_ids: BTreeSet<usize> = a.iter().map(|r| r.rev_id).collect();
     let b_ids: BTreeSet<usize> = b.iter().map(|r| r.rev_id).collect();
     a_ids.intersection(&b_ids).cloned().collect()
@@ -1015,7 +1014,7 @@ mod tests {
     fn find_common_1() {
         let a: Vec<Revision> = ids_to_fake_revs(&[0,2,4,6,8,10,12]);
         let b: Vec<Revision> = ids_to_fake_revs(&[0,1,2,4,5,8,9]);
-        let res = find_common(&a[..], &b[..]);
+        let res = find_common(&a, &b);
 
         let correct: BTreeSet<usize> = [0,2,4,8].iter().cloned().collect();
         assert_eq!(correct, res);
@@ -1026,7 +1025,7 @@ mod tests {
     fn find_base_1() {
         let a: Vec<Revision> = ids_to_fake_revs(&[0,2,4,6,8,10,12]);
         let b: Vec<Revision> = ids_to_fake_revs(&[0,1,2,4,5,8,9]);
-        let res = find_base_index(&a[..], &b[..]);
+        let res = find_base_index(&a, &b);
 
         assert_eq!(1, res);
     }
@@ -1044,7 +1043,7 @@ mod tests {
         let text = Rope::from("13456");
         let tombstones = Rope::from("27");
         let deletes_from_union = parse_subset("-#----#");
-        let delta_ops = compute_deltas(&revs[..], &text, &tombstones, &deletes_from_union);
+        let delta_ops = compute_deltas(&revs, &text, &tombstones, &deletes_from_union);
 
         println!("{:#?}", delta_ops);
 
@@ -1068,7 +1067,7 @@ mod tests {
         let text_b = Rope::from("zpbj");
         let tombstones_b = Rope::from("a");
         let deletes_from_union_b = parse_subset("-#---");
-        let b_delta_ops = compute_deltas(&b_revs[..], &text_b, &tombstones_b, &deletes_from_union_b);
+        let b_delta_ops = compute_deltas(&b_revs, &text_b, &tombstones_b, &deletes_from_union_b);
 
         println!("{:#?}", b_delta_ops);
 
