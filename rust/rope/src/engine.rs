@@ -1217,7 +1217,7 @@ mod tests {
         MergeTestState::new(3).run_script(&script[..]);
     }
 
-    /// Tests that merging again when there is no new revisions does nothing
+    /// Tests that merging again when there are no new revisions does nothing
     #[test]
     fn merge_idempotent() {
         use self::MergeTestOp::*;
