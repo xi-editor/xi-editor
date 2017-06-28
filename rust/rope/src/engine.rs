@@ -485,9 +485,10 @@ impl Engine {
             let b_new = rearrange(b_to_merge, &common, other.deletes_from_union.len());
 
             let b_deltas = compute_deltas(&b_new, &other.text, &other.tombstones, &other.deletes_from_union);
+            let expand_by = compute_transforms(a_new);
 
             let max_undo = self.max_undo_group_id();
-            rebase(a_new, b_deltas, self.text.clone(), self.tombstones.clone(), self.deletes_from_union.clone(), max_undo)
+            rebase(expand_by, b_deltas, self.text.clone(), self.tombstones.clone(), self.deletes_from_union.clone(), max_undo)
         };
 
         self.text = text;
@@ -631,16 +632,38 @@ fn compute_deltas(revs: &[Revision], text: &Rope, tombstones: &Rope, deletes_fro
     out
 }
 
+/// Computes a series of priorities and transforms for the deltas on the right
+/// from the new revisions on the left.
+///
+/// Applies an optimization where it combines sequential revisions with the
+/// same priority into one transform to decrease the number of transforms that
+/// have to be considered in `rebase` substantially for normal editing
+/// patterns. Any large runs of typing in the same place by the same user (e.g
+/// typing a paragraph) will be combined into a single segment in a transform
+/// as opposed to thousands of revisions.
+fn compute_transforms(revs: Vec<Revision>) -> Vec<(usize, Subset)> {
+    let mut out = Vec::new();
+    let mut last_priority: Option<usize> = None;
+    for r in revs.into_iter() {
+        if let Contents::Edit {priority, inserts, .. } = r.edit {
+            if Some(priority) == last_priority {
+                let last: &mut (usize, Subset) = out.last_mut().unwrap();
+                last.1 = last.1.transform_union(&inserts);
+            } else {
+                last_priority = Some(priority);
+                out.push((priority, inserts));
+            }
+        }
+    }
+    out
+}
+
 /// Rebase b_new on top of a_new and return revision contents that can be appended as new
 /// revisions on top of a_new.
-fn rebase(a_new: Vec<Revision>, b_new: Vec<DeltaOp>, mut text: Rope, mut tombstones: Rope,
+fn rebase(mut expand_by: Vec<(usize, Subset)>, b_new: Vec<DeltaOp>, mut text: Rope, mut tombstones: Rope,
         mut deletes_from_union: Subset, mut max_undo_so_far: usize) -> (Vec<Revision>, Rope, Rope, Subset) {
     let mut out = Vec::with_capacity(b_new.len());
 
-    let mut expand_by: Vec<(usize, Subset)> = a_new.into_iter().filter_map(|r| match r.edit {
-        Contents::Edit {priority, inserts, .. } => Some((priority, inserts)),
-        Contents::Undo {..} => None,
-    }).collect();
     let mut next_expand_by = Vec::with_capacity(expand_by.len());
     for op in b_new.into_iter() {
         let DeltaOp { rev_id, priority, undo_group, mut inserts, mut deletes } = op;
@@ -1065,6 +1088,47 @@ mod tests {
         assert_eq!("1234567", String::from(r));
     }
 
+    #[test]
+    fn compute_transforms_1() {
+        let inserts = parse_subset_list("
+        -##-
+        --#--
+        ---#--
+        #------
+        ");
+        let revs = basic_insert_ops(inserts, 1);
+
+        let expand_by = compute_transforms(revs);
+        assert_eq!(1, expand_by.len());
+        assert_eq!(1, expand_by[0].0);
+        let subset_str = format!("{:#?}", expand_by[0].1);
+        assert_eq!("#-####-", &subset_str);
+    }
+
+    #[test]
+    fn compute_transforms_2() {
+        let inserts_1 = parse_subset_list("
+        -##-
+        --#--
+        ");
+        let mut revs = basic_insert_ops(inserts_1, 1);
+        let inserts_2 = parse_subset_list("
+        ---#--
+        #------
+        ");
+        let mut revs_2 = basic_insert_ops(inserts_2, 2);
+        revs.append(&mut revs_2);
+
+        let expand_by = compute_transforms(revs);
+        assert_eq!(2, expand_by.len());
+        assert_eq!(1, expand_by[0].0);
+        assert_eq!(2, expand_by[1].0);
+
+        let subset_str = format!("{:#?}", expand_by[0].1);
+        assert_eq!("-###-", &subset_str);
+        let subset_str = format!("{:#?}", expand_by[1].1);
+        assert_eq!("#---#--", &subset_str);
+    }
 
     #[test]
     fn rebase_1() {
@@ -1085,9 +1149,10 @@ mod tests {
         let text_a = Rope::from("zcbd");
         let tombstones_a = Rope::from("a");
         let deletes_from_union_a = parse_subset("-#---");
+        let expand_by = compute_transforms(a_revs);
 
         let (revs, text_2, tombstones_2, deletes_from_union_2) =
-            rebase(a_revs, b_delta_ops, text_a, tombstones_a, deletes_from_union_a, 0);
+            rebase(expand_by, b_delta_ops, text_a, tombstones_a, deletes_from_union_a, 0);
 
         let rebased_inserts: Vec<Subset> = revs.into_iter().map(|c| {
             match c.edit {
