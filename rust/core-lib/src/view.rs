@@ -20,8 +20,8 @@ use syntect::highlighting::Style as SynStyle;
 use syntect::highlighting::Color;
 
 use xi_rope::rope::{Rope, LinesMetric, RopeInfo};
-use xi_rope::delta::Delta;
-use xi_rope::tree::Cursor;
+use xi_rope::delta::{Delta, DeltaRegion};
+use xi_rope::tree::{Cursor, Metric};
 use xi_rope::breaks::{Breaks, BreaksInfo, BreaksMetric, BreaksBaseMetric};
 use xi_rope::interval::Interval;
 use xi_rope::spans::Spans;
@@ -163,7 +163,7 @@ impl View {
     pub fn toggle_sel(&mut self, offset: usize) {
         self.sel_dirty = true;
         if !self.selection.regions_in_range(offset, offset).is_empty() {
-            self.selection.delete_range(offset, offset);
+            self.selection.delete_range(offset, offset, true);
             if !self.selection.is_empty() {
                 self.drag_state = None;
                 return;
@@ -568,11 +568,29 @@ impl View {
         self.drag_state = None;
 
         // Update search highlights for changed regions
-        // TODO: Incremental search instead of re-doing search completely
         if self.search_string.is_some() {
-            self.valid_search.clear();
-            self.occurrences = None;
-            self.hls_dirty = true;
+            self.valid_search = self.valid_search.apply_delta(delta);
+            let mut occurrences = self.occurrences.take().unwrap_or_else(|| Selection::new());
+
+            // invalidate occurrences around deletion positions
+            for DeltaRegion{ old_offset, new_offset, len } in delta.iter_deletions() {
+                self.valid_search.delete_range(new_offset, new_offset + len);
+                occurrences.delete_range(old_offset, old_offset + len, false);
+            }
+
+            occurrences = occurrences.apply_delta(delta, false);
+
+            // invalidate occurrences around insert positions
+            for DeltaRegion{ new_offset, len, .. } in delta.iter_inserts() {
+                self.valid_search.delete_range(new_offset, new_offset + len);
+                occurrences.delete_range(new_offset, new_offset + len, false);
+            }
+
+            self.occurrences = Some(occurrences);
+
+            // update find for the whole delta (is going to only update invalid regions)
+            let (iv, _) = delta.summary();
+            self.update_find(text, iv.start(), iv.end(), true, false);
         }
 
         // Note: for committing plugin edits, we probably want to know the priority
@@ -632,16 +650,18 @@ impl View {
             return;
         }
 
+        let text_len = text.len();
         // extend the search by twice the string length (twice, because case matching may increase
         // the length of an occurrence)
         let slop = if include_slop { self.search_string.as_ref().unwrap().len() * 2 } else { 0 };
         let mut occurrences = self.occurrences.take().unwrap_or_else(|| Selection::new());
         let mut searched_until = end;
-        
+        let mut invalidate_from = None;
+
         for (start, end) in self.valid_search.minus_one_range(start, end) {
             let search_string = self.search_string.as_ref().unwrap();
             let len = search_string.len();
-        
+
             // expand region to be able to find occurrences around the region's edges
             let from = max(start, slop) - slop;
             let to = min(end + slop, text.len());
@@ -653,14 +673,34 @@ impl View {
                 match find(&mut cursor, self.case_matching, &search_string) {
                     Some(start) => {
                         let end = start + len;
+
                         let region = SelRegion {
                             start: start,
                             end: end,
                             horiz: None,
                             affinity: Affinity::default(),
                         };
-                        occurrences.add_region(region);
-                        
+                        let prev_len = occurrences.len();
+                        let (_, e) = occurrences.add_range_distinct(region);
+                        // in case of ambiguous search results (e.g. search "aba" in "ababa"),
+                        // the search result closer to the beginning of the file wins
+                        if e != end {
+                            // Skip the search result and keep the occurrence that is closer to
+                            // the beginning of the file. Re-align the cursor to the kept
+                            // occurrence
+                            cursor.set(e);
+                            continue;
+                        }
+
+                        // add_range_distinct() above removes ambiguous regions after the added
+                        // region, if something has been deleted, everything thereafter is
+                        // invalidated
+                        if occurrences.len() != prev_len + 1 {
+                            invalidate_from = Some(end);
+                            occurrences.delete_range(end, text_len, false);
+                            break;
+                        }
+
                         if stop_on_found {
                             searched_until = end;
                             break;
@@ -671,15 +711,35 @@ impl View {
             }
         }
         self.occurrences = Some(occurrences);
-        self.valid_search.union_one_range(start, searched_until);
-        self.hls_dirty = true;
+        if let Some(invalidate_from) = invalidate_from {
+            self.valid_search.union_one_range(start, invalidate_from);
+
+            // invalidate all search results from the point of the ambiguous search result until ...
+            let is_multi_line = LinesMetric::next(self.search_string.as_ref().unwrap(), 0).is_some();
+            if is_multi_line {
+                // ... the end of the file
+                self.valid_search.delete_range(invalidate_from, text_len);
+            } else {
+                // ... the end of the line
+                let mut cursor = Cursor::new(&text, invalidate_from);
+                if let Some(end_of_line) = cursor.next::<LinesMetric>() {
+                    self.valid_search.delete_range(invalidate_from, end_of_line);
+                }
+            }
+
+            // continue with the find for the current region
+            self.update_find(text, invalidate_from, end, false, false);
+        } else {
+            self.valid_search.union_one_range(start, searched_until);
+            self.hls_dirty = true;
+        }
     }
 
     /// Select the next occurrence relative to the last cursor. `reverse` determines whether the
     /// next occurrence before (`true`) or after (`false`) the last cursor is selected. `wrapped`
     /// indicates a search for the next occurrence past the end of the file. `stop_on_found`
     /// determines whether the search should stop at the first found occurrence (does only apply
-    /// to forward searc, i.e. reverse = false). If `allow_same` is set to `true` the current
+    /// to forward search, i.e. reverse = false). If `allow_same` is set to `true` the current
     /// selection is considered a valid next occurrence.
     pub fn select_next_occurrence(&mut self, text: &Rope, reverse: bool, wrapped: bool,
                                   stop_on_found: bool, allow_same: bool) -> Option<usize>
@@ -692,7 +752,7 @@ impl View {
             Some(sel) => (sel.min(), sel.max()),
             None => return None
         };
-        
+
         let (from, to) = if reverse != wrapped { (0, sel.0) } else { (sel.0, text.len()) };
         let mut next_occurrence;
 
@@ -701,7 +761,7 @@ impl View {
                 if occurrences.len() == 0 {
                     return None;
                 }
-                if wrapped { // wrap around file boundaries 
+                if wrapped { // wrap around file boundaries
                     if reverse {
                         occurrences.last()
                     } else {
@@ -724,7 +784,7 @@ impl View {
                     }
                 }
             }).map(|o| o.clone());
-            
+
             let region = {
                 let mut unsearched = self.valid_search.minus_one_range(from, to);
                 if reverse { unsearched.next_back() } else { unsearched.next() }
@@ -735,7 +795,7 @@ impl View {
                         break;
                     }
                 }
-                
+
                 if !reverse {
                     self.update_find(text, b, e, false, stop_on_found);
                 } else {
