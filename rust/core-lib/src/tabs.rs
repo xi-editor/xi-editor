@@ -22,12 +22,11 @@ use std::fs::File;
 use std::sync::{Arc, Mutex, MutexGuard, Weak, mpsc};
 
 use serde_json::value::Value;
-use syntect::highlighting::ThemeSet;
 
 use xi_rope::rope::Rope;
 use editor::Editor;
 use rpc::{CoreCommand, EditCommand, PluginCommand};
-use styles::{Style, StyleMap};
+use styles::{Style, ThemeStyleMap};
 use MainPeer;
 
 use syntax::SyntaxDefinition;
@@ -263,9 +262,7 @@ pub struct Documents<W: Write> {
     buffers: BufferContainerRef<W>,
     id_counter: usize,
     kill_ring: Arc<Mutex<Rope>>,
-    //TODO: theme handling should be part of the (eventual) preferences system
-    theme_set: Arc<Mutex<ThemeSet>>,
-    style_map: Arc<Mutex<StyleMap>>,
+    style_map: Arc<Mutex<ThemeStyleMap>>,
     plugins: PluginManagerRef<W>,
     /// A tx channel used to propagate plugin updates from all `Editor`s.
     update_channel: mpsc::Sender<(ViewIdentifier, PluginUpdate, usize)>,
@@ -278,8 +275,7 @@ pub struct Documents<W: Write> {
 pub struct DocumentCtx<W: Write> {
     kill_ring: Arc<Mutex<Rope>>,
     rpc_peer: MainPeer<W>,
-    pub theme_set: Arc<Mutex<ThemeSet>>,
-    style_map: Arc<Mutex<StyleMap>>,
+    style_map: Arc<Mutex<ThemeStyleMap>>,
     update_channel: mpsc::Sender<(ViewIdentifier, PluginUpdate, usize)>
 }
 
@@ -296,8 +292,7 @@ impl<W: Write + Send + 'static> Documents<W> {
             buffers: buffers,
             id_counter: 0,
             kill_ring: Arc::new(Mutex::new(Rope::from(""))),
-            theme_set: Arc::new(Mutex::new(ThemeSet::load_defaults())),
-            style_map: Arc::new(Mutex::new(StyleMap::new())),
+            style_map: Arc::new(Mutex::new(ThemeStyleMap::new())),
             plugins: plugin_manager,
             update_channel: update_tx,
             sync_repo: None,
@@ -308,7 +303,6 @@ impl<W: Write + Send + 'static> Documents<W> {
         DocumentCtx {
             kill_ring: self.kill_ring.clone(),
             rpc_peer: peer.clone(),
-            theme_set: self.theme_set.clone(),
             style_map: self.style_map.clone(),
             update_channel: self.update_channel.clone(),
         }
@@ -337,6 +331,10 @@ impl<W: Write + Send + 'static> Documents<W> {
             Save { view_id, file_path } => self.do_save(&view_id, file_path),
             Edit { view_id, edit_command } => self.do_edit(&view_id, edit_command),
             Plugin { plugin_command } => self.do_plugin_cmd(plugin_command),
+            SetTheme { theme_name } => {
+                self.do_set_theme(rpc_peer, theme_name);
+                None
+            }
         }
     }
 
@@ -496,6 +494,29 @@ impl<W: Write + Send + 'static> Documents<W> {
         }
     }
 
+    /// Handle a client set theme RPC
+    fn do_set_theme(&self, rpc_peer: &MainPeer<W>, theme_name: &str) {
+        let success = self.style_map.lock().unwrap()
+            .set_theme(&theme_name).is_ok();
+        if success {
+            let params = {
+                let style_map = self.style_map.lock().unwrap();
+                json!({
+                    "name": style_map.get_theme_name(),
+                    "theme": style_map.get_theme_settings(),
+                })
+            };
+            rpc_peer.send_rpc_notification("theme_changed", &params);
+
+            let mut buffers = self.buffers.lock();
+            for ed in buffers.iter_editors_mut() {
+                ed.theme_changed();
+            }
+        } else {
+            print_err!("no theme named {}", theme_name);
+        }
+    }
+
     pub fn handle_idle(&self) {
         for editor in self.buffers.lock().editors.values_mut() {
             editor.render();
@@ -577,6 +598,10 @@ impl<W: Write> DocumentCtx<W> {
         *kill_ring = val;
     }
 
+    pub fn get_style_map(&self) -> &Arc<Mutex<ThemeStyleMap>> {
+        &self.style_map
+    }
+
 
     // Get the index for a given style. If the style is not in the existing
     // style map, then issues a def_style request to the front end. Intended
@@ -588,6 +613,7 @@ impl<W: Write> DocumentCtx<W> {
             return ix;
         }
         let ix = style_map.add(style);
+        let style = style_map.merge_with_default(style);
         self.rpc_peer.send_rpc_notification("def_style", &style.to_json(ix));
         ix
     }
@@ -672,8 +698,7 @@ mod tests {
         DocumentCtx {
             kill_ring: Arc::new(Mutex::new(Rope::from(""))),
             rpc_peer: mock_peer.clone(),
-            style_map: Arc::new(Mutex::new(StyleMap::new())),
-            theme_set: Arc::new(Mutex::new(ThemeSet::load_defaults())),
+            style_map: Arc::new(Mutex::new(ThemeStyleMap::new())),
             update_channel: update_tx,
         }
     }

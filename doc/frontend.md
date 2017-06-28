@@ -70,6 +70,12 @@ Closes the view associated with this `view_id`.
 Saves the buffer associated with `view_id` to `file_path`. See the
 note for `new_view`. Errors are not currently reported.
 
+### set_theme
+
+`set_theme {"theme_name": "InspiredGitHub"}`
+
+Requests that core change the theme. If the change succeeds the client
+will receive a `theme_changed` notification.
 
 ### plugin
 **Note:** plugin commands are in flux, and may change.
@@ -95,7 +101,6 @@ Starts the named given for the given view.
 
 #### stop
 
-**Not Implemented**
 `stop {"view_id": "view-id-1", "plugin_name": "syntect"}`
 
 Stops the named plugin for the given view.
@@ -226,6 +231,16 @@ contents may have been invalidated and need to be redrawn. The
 evolution of this method will probably include finer grained
 invalidation (including motion of just the cursor), but will broadly
 follow the existing pattern.
+
+#### theme_changed
+
+`theme_changed {"name": "InspiredGitHub", "theme": Theme}`
+
+Notifies the client that the theme has been changed. The client should
+use the new theme to set colors as appropriate.
+The `Theme` object is directly serialized from a 
+[`syntect::highlighting::ThemeSettings`](https://github.com/trishume/syntect/blob/master/src/highlighting/theme.rs#L27) 
+instance.
 
 ### RPCs from front-end to back-end
 
