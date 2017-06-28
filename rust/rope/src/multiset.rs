@@ -333,31 +333,12 @@ impl Subset {
             subset_amount_consumed: 0,
         }
     }
-
-
-    /// Print a debug representation where `#` for count 1, `-` for 0, and
-    /// digits otherwise. Mainly useful for testing with small lengths.
-    pub fn debug_print(&self) {
-        for s in &self.segments {
-            let chr = if s.count == 0 {
-                '-'
-            } else if s.count == 1 {
-                '#'
-            } else if s.count <= 9 {
-                ((s.count as u8) + ('0' as u8)) as char
-            } else {
-                '+'
-            };
-            for _ in 0..s.len {
-                print!("{}", chr);
-            }
-        }
-        println!("");
-    }
 }
 
 impl fmt::Debug for Subset {
     /// Use the alternate flag (`#`) to print a more compact representation
+    /// where each character represents the count of one element:
+    /// '-' is 0, '#' is 1, 2-9 are digits, `+` is >9
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if f.alternate() {
             for s in &self.segments {

@@ -12,10 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! An engine for handling edits (possibly from async sources) and undo. This
-//! module actually implements a mini Conflict-free Replicated Data Type, but
-//! is considerably simpler than the usual CRDT implementation techniques,
-//! because all operations are serialized in this central engine.
+//! An engine for handling edits (possibly from async sources) and undo. It
+//! conceptually represents the current text and all edit history for that
+//! text.
+//!
+//! This module actually implements a mini Conflict-free Replicated Data Type
+//! under `Engine::edit_rev`, which is considerably simpler than the usual
+//! CRDT implementation techniques, because all operations are serialized in
+//! this central engine. It provides the ability to apply edits that depend on
+//! a previously committed version of the text rather than the current text,
+//! which is sufficient for asynchronous plugins that can only have one
+//! pending edit in flight each.
+//!
+//! There is also a full CRDT merge operation implemented under
+//! `Engine::merge`, which is more powerful but considerably more complex.
+//! It enables support for full asynchronous and even peer-to-peer editing.
 
 use std::borrow::Cow;
 use std::collections::BTreeSet;
@@ -536,7 +547,8 @@ fn find_common(a: &[Revision], b: &[Revision]) -> BTreeSet<usize> {
 
 /// Returns the operations in `revs` that don't have their `rev_id` in
 /// `base_revs`, but modified so that they are in the same order but based on
-/// the `base_revs`. This allows the rest of the merge to operate on
+/// the `base_revs`. This allows the rest of the merge to operate on only
+/// revisions not shared by both sides.
 ///
 /// Conceptually, see the diagram below, with `.` being base revs and `n` being
 /// non-base revs, `N` being transformed non-base revs, and rearranges it:
@@ -584,7 +596,7 @@ struct DeltaOp {
 }
 
 /// Transform `revs`, which doesn't include information on the actual content of the operations,
-/// into a `InsertDelta`-based representation that does by working backward from the text and tombstones.
+/// into an `InsertDelta`-based representation that does by working backward from the text and tombstones.
 fn compute_deltas(revs: &[Revision], text: &Rope, tombstones: &Rope, deletes_from_union: &Subset) -> Vec<DeltaOp> {
     let mut out = Vec::with_capacity(revs.len());
 
