@@ -486,7 +486,8 @@ impl Engine {
 
             let b_deltas = compute_deltas(&b_new, &other.text, &other.tombstones, &other.deletes_from_union);
 
-             rebase(a_new, b_deltas, self.text.clone(), self.tombstones.clone(), self.deletes_from_union.clone())
+            let max_undo = self.max_undo_group_id();
+            rebase(a_new, b_deltas, self.text.clone(), self.tombstones.clone(), self.deletes_from_union.clone(), max_undo)
         };
 
         self.text = text;
@@ -632,8 +633,8 @@ fn compute_deltas(revs: &[Revision], text: &Rope, tombstones: &Rope, deletes_fro
 
 /// Rebase b_new on top of a_new and return revision contents that can be appended as new
 /// revisions on top of a_new.
-fn rebase(a_new: Vec<Revision>, b_new: Vec<DeltaOp>, mut text: Rope, tombstones: Rope, mut deletes_from_union: Subset)
-    -> (Vec<Revision>, Rope, Rope, Subset) {
+fn rebase(a_new: Vec<Revision>, b_new: Vec<DeltaOp>, mut text: Rope, mut tombstones: Rope,
+        mut deletes_from_union: Subset, mut max_undo_so_far: usize) -> (Vec<Revision>, Rope, Rope, Subset) {
     let mut out = Vec::with_capacity(b_new.len());
 
     let mut expand_by: Vec<(usize, Subset)> = a_new.into_iter().filter_map(|r| match r.edit {
@@ -646,29 +647,39 @@ fn rebase(a_new: Vec<Revision>, b_new: Vec<DeltaOp>, mut text: Rope, tombstones:
         // 1. expand by each in expand_by
         for &(other_priority, ref other_inserts) in &expand_by {
             let after = priority >= other_priority;  // should never be ==
-            // 1. d-expand by other
+            // d-expand by other
             inserts = inserts.transform_expand(other_inserts, after);
-            // 2. trans-expand other by expanded and add to next_expand_by
+            // trans-expand other by expanded so they have the same context
             let inserted = inserts.inserted_subset();
-            deletes = deletes.transform_expand(&inserted);
-            next_expand_by.push((other_priority, other_inserts.transform_expand(&inserted)));
+            let new_other_inserts = other_inserts.transform_expand(&inserted);
+            // The deletes are already after our inserts, but we need to include the other inserts
+            deletes = deletes.transform_expand(&new_other_inserts);
+            // On the next step we want things in expand_by to have op in the context
+            next_expand_by.push((other_priority, new_other_inserts));
         }
-        // 2. apply resulting delta to text&tombstones
+
         let text_inserts = inserts.transform_shrink(&deletes_from_union);
-        text = text_inserts.apply(&text);
+        let text_with_inserts = text_inserts.apply(&text);
         let inserted = inserts.inserted_subset();
-        deletes_from_union = deletes_from_union.transform_expand(&inserted);
-        // TODO move things to tombstones
-        // 3. Create a Revision and add to out
+
+        let expanded_deletes_from_union = deletes_from_union.transform_expand(&inserted);
+        let new_deletes_from_union = expanded_deletes_from_union.union(&deletes);
+        let (new_text, new_tombstones) =
+            shuffle(&text_with_inserts, &tombstones, &expanded_deletes_from_union, &new_deletes_from_union);
+
+        text = new_text;
+        tombstones = new_tombstones;
+        deletes_from_union = new_deletes_from_union;
+
+        max_undo_so_far = std::cmp::max(max_undo_so_far, undo_group);
         out.push(Revision {
-            rev_id,
-            max_undo_so_far: 0, // TODO
+            rev_id, max_undo_so_far,
             edit: Contents::Edit {
                 priority, undo_group, deletes,
                 inserts: inserted,
             }
         });
-        // 4. Switch over to next iteration
+
         expand_by = next_expand_by;
         next_expand_by = Vec::with_capacity(expand_by.len());
     }
@@ -685,7 +696,7 @@ mod tests {
     use multiset::Subset;
     use interval::Interval;
     use std::collections::BTreeSet;
-    use test_helpers::{parse_subset_list, parse_subset, parse_insert, debug_subsets};
+    use test_helpers::{parse_subset_list, parse_subset, parse_delta, debug_subsets};
 
     const TEST_STR: &'static str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
@@ -1075,7 +1086,8 @@ mod tests {
         let tombstones_a = Rope::from("a");
         let deletes_from_union_a = parse_subset("-#---");
 
-        let (revs, text_2, tombstones_2, deletes_from_union_2) = rebase(a_revs, b_delta_ops, text_a, tombstones_a, deletes_from_union_a);
+        let (revs, text_2, tombstones_2, deletes_from_union_2) =
+            rebase(a_revs, b_delta_ops, text_a, tombstones_a, deletes_from_union_a, 0);
 
         let rebased_inserts: Vec<Subset> = revs.into_iter().map(|c| {
             match c.edit {
@@ -1104,7 +1116,8 @@ mod tests {
         Merge(usize, usize),
         Assert(usize, String),
         AssertAll(String),
-        Edit { ei: usize, p: usize, d: Delta<RopeInfo> },
+        AssertMaxUndoSoFar(usize, usize),
+        Edit { ei: usize, p: usize, u: usize, d: Delta<RopeInfo> },
     }
 
     #[derive(Debug)]
@@ -1139,15 +1152,19 @@ mod tests {
                     let e = &mut self.peers[ei];
                     assert_eq!(correct, &String::from(e.get_head()), "for peer {}", ei);
                 },
+                MergeTestOp::AssertMaxUndoSoFar(ei, correct) => {
+                    let e = &mut self.peers[ei];
+                    assert_eq!(correct, e.max_undo_group_id(), "for peer {}", ei);
+                },
                 MergeTestOp::AssertAll(ref correct) => {
                     for (ei, e) in self.peers.iter().enumerate() {
                         assert_eq!(correct, &String::from(e.get_head()), "for peer {}", ei);
                     }
                 },
-                MergeTestOp::Edit { ei, p, d: ref delta } => {
+                MergeTestOp::Edit { ei, p, u, d: ref delta } => {
                     let mut e = &mut self.peers[ei];
                     let head = e.get_head_rev_id();
-                    e.edit_rev(p, 1, head, delta.clone());
+                    e.edit_rev(p, u, head, delta.clone());
                 },
             }
         }
@@ -1160,23 +1177,23 @@ mod tests {
         }
     }
 
-    /// I have a scanned whiteboard diagram of doing this merge by hand, good for reference
+    /// Like the scanned whiteboard diagram I have, but without deleting 'a'
     #[test]
-    fn merge_whiteboard() {
+    fn merge_insert_only_whiteboard() {
         use self::MergeTestOp::*;
         let script = vec![
-            Edit { ei: 2, p: 1, d: parse_insert("ab") },
+            Edit { ei: 2, p: 1, u: 1, d: parse_delta("ab") },
             Merge(0,2), Merge(1, 2),
             Assert(0, "ab".to_owned()),
             Assert(1, "ab".to_owned()),
             Assert(2, "ab".to_owned()),
-            Edit { ei: 0, p: 3, d: parse_insert("-c-") },
-            Edit { ei: 0, p: 3, d: parse_insert("---d") },
+            Edit { ei: 0, p: 3, u: 1, d: parse_delta("-c-") },
+            Edit { ei: 0, p: 3, u: 1, d: parse_delta("---d") },
             Assert(0, "acbd".to_owned()),
-            Edit { ei: 1, p: 5, d: parse_insert("-p-") },
-            Edit { ei: 1, p: 5, d: parse_insert("---j") },
+            Edit { ei: 1, p: 5, u: 1, d: parse_delta("-p-") },
+            Edit { ei: 1, p: 5, u: 1, d: parse_delta("---j") },
             Assert(1, "apbj".to_owned()),
-            Edit { ei: 2, p: 1, d: parse_insert("z--") },
+            Edit { ei: 2, p: 1, u: 1, d: parse_delta("z--") },
             Merge(0,2), Merge(1, 2),
             Assert(0, "zacbd".to_owned()),
             Assert(1, "zapbj".to_owned()),
@@ -1191,23 +1208,23 @@ mod tests {
     fn merge_priorities() {
         use self::MergeTestOp::*;
         let script = vec![
-            Edit { ei: 2, p: 1, d: parse_insert("ab") },
+            Edit { ei: 2, p: 1, u: 1, d: parse_delta("ab") },
             Merge(0,2), Merge(1, 2),
             Assert(0, "ab".to_owned()),
             Assert(1, "ab".to_owned()),
             Assert(2, "ab".to_owned()),
-            Edit { ei: 0, p: 3, d: parse_insert("-c-") },
-            Edit { ei: 0, p: 3, d: parse_insert("---d") },
+            Edit { ei: 0, p: 3, u: 1, d: parse_delta("-c-") },
+            Edit { ei: 0, p: 3, u: 1, d: parse_delta("---d") },
             Assert(0, "acbd".to_owned()),
-            Edit { ei: 1, p: 5, d: parse_insert("-p-") },
+            Edit { ei: 1, p: 5, u: 1, d: parse_delta("-p-") },
             Assert(1, "apb".to_owned()),
-            Edit { ei: 2, p: 4, d: parse_insert("-r-") },
+            Edit { ei: 2, p: 4, u: 1, d: parse_delta("-r-") },
             Merge(0,2), Merge(1, 2),
             Assert(0, "acrbd".to_owned()),
             Assert(1, "arpb".to_owned()),
-            Edit { ei: 1, p: 5, d: parse_insert("----j") },
+            Edit { ei: 1, p: 5, u: 1, d: parse_delta("----j") },
             Assert(1, "arpbj".to_owned()),
-            Edit { ei: 2, p: 4, d: parse_insert("---z") },
+            Edit { ei: 2, p: 4, u: 1, d: parse_delta("---z") },
             Merge(0,2), Merge(1, 2),
             Assert(0, "acrbdz".to_owned()),
             Assert(1, "arpbzj".to_owned()),
@@ -1222,16 +1239,16 @@ mod tests {
     fn merge_idempotent() {
         use self::MergeTestOp::*;
         let script = vec![
-            Edit { ei: 2, p: 1, d: parse_insert("ab") },
+            Edit { ei: 2, p: 1, u: 1, d: parse_delta("ab") },
             Merge(0,2), Merge(1, 2),
             Assert(0, "ab".to_owned()),
             Assert(1, "ab".to_owned()),
             Assert(2, "ab".to_owned()),
-            Edit { ei: 0, p: 3, d: parse_insert("-c-") },
-            Edit { ei: 0, p: 3, d: parse_insert("---d") },
+            Edit { ei: 0, p: 3, u: 1, d: parse_delta("-c-") },
+            Edit { ei: 0, p: 3, u: 1, d: parse_delta("---d") },
             Assert(0, "acbd".to_owned()),
-            Edit { ei: 1, p: 5, d: parse_insert("-p-") },
-            Edit { ei: 1, p: 5, d: parse_insert("---j") },
+            Edit { ei: 1, p: 5, u: 1, d: parse_delta("-p-") },
+            Edit { ei: 1, p: 5, u: 1, d: parse_delta("---j") },
             Merge(0,1),
             Assert(0, "acpbdj".to_owned()),
             Merge(0,1), Merge(1,0), Merge(0,1), Merge(1,0),
@@ -1245,11 +1262,11 @@ mod tests {
     fn merge_associative() {
         use self::MergeTestOp::*;
         let script = vec![
-            Edit { ei: 2, p: 1, d: parse_insert("ab") },
+            Edit { ei: 2, p: 1, u: 1, d: parse_delta("ab") },
             Merge(0,2), Merge(1, 2),
-            Edit { ei: 0, p: 3, d: parse_insert("-c-") },
-            Edit { ei: 1, p: 5, d: parse_insert("-p-") },
-            Edit { ei: 2, p: 2, d: parse_insert("z--") },
+            Edit { ei: 0, p: 3, u: 1, d: parse_delta("-c-") },
+            Edit { ei: 1, p: 5, u: 1, d: parse_delta("-p-") },
+            Edit { ei: 2, p: 2, u: 1, d: parse_delta("z--") },
             // copy the current state
             Merge(3, 0), Merge(4, 1), Merge(5, 2),
             // Do the merge one direction
@@ -1266,5 +1283,98 @@ mod tests {
             AssertAll("zacpb".to_owned()),
         ];
         MergeTestState::new(6).run_script(&script[..]);
+    }
+
+    #[test]
+    fn merge_simple_delete_1() {
+        use self::MergeTestOp::*;
+        let script = vec![
+            Edit { ei: 0, p: 1, u: 1, d: parse_delta("abc") },
+            Merge(1,0),
+            Assert(0, "abc".to_owned()),
+            Assert(1, "abc".to_owned()),
+            Edit { ei: 0, p: 1, u: 1, d: parse_delta("!-d-") },
+            Assert(0, "bdc".to_owned()),
+            Edit { ei: 1, p: 3, u: 1, d: parse_delta("--efg!") },
+            Assert(1, "abefg".to_owned()),
+            Merge(1,0),
+            Assert(1, "bdefg".to_owned()),
+        ];
+        MergeTestState::new(2).run_script(&script[..]);
+    }
+
+    #[test]
+    fn merge_simple_delete_2() {
+        use self::MergeTestOp::*;
+        let script = vec![
+            Edit { ei: 0, p: 1, u: 1, d: parse_delta("ab") },
+            Merge(1,0),
+            Assert(0, "ab".to_owned()),
+            Assert(1, "ab".to_owned()),
+            Edit { ei: 0, p: 1, u: 1, d: parse_delta("!-") },
+            Assert(0, "b".to_owned()),
+            Edit { ei: 1, p: 3, u: 1, d: parse_delta("-c-") },
+            Assert(1, "acb".to_owned()),
+            Merge(1,0),
+            Assert(1, "cb".to_owned()),
+        ];
+        MergeTestState::new(2).run_script(&script[..]);
+    }
+
+    /// I have a scanned whiteboard diagram of doing this merge by hand, good for reference
+    #[test]
+    fn merge_whiteboard() {
+        use self::MergeTestOp::*;
+        let script = vec![
+            Edit { ei: 2, p: 1, u: 1, d: parse_delta("ab") },
+            Merge(0,2), Merge(1, 2), Merge(3, 2),
+            Assert(0, "ab".to_owned()),
+            Assert(1, "ab".to_owned()),
+            Assert(2, "ab".to_owned()),
+            Assert(3, "ab".to_owned()),
+            Edit { ei: 2, p: 1, u: 1, d: parse_delta("!-") },
+            Assert(2, "b".to_owned()),
+            Edit { ei: 0, p: 3, u: 1, d: parse_delta("-c-") },
+            Edit { ei: 0, p: 3, u: 1, d: parse_delta("---d") },
+            Assert(0, "acbd".to_owned()),
+            Merge(0,2),
+            Assert(0, "cbd".to_owned()),
+            Edit { ei: 1, p: 5, u: 1, d: parse_delta("-p-") },
+            Merge(1,2),
+            Assert(1, "pb".to_owned()),
+            Edit { ei: 1, p: 5, u: 1, d: parse_delta("--j") },
+            Assert(1, "pbj".to_owned()),
+            // to replicate whiteboard, z must be before a tombstone
+            // which we can do with another peer that inserts before a and merges.
+            Edit { ei: 3, p: 7, u: 1, d: parse_delta("z--") },
+            Merge(2,3),
+            Merge(0,2), Merge(1, 2),
+            Assert(0, "zcbd".to_owned()),
+            Assert(1, "zpbj".to_owned()),
+            Merge(0,1), // the merge from the whiteboard scan
+            Assert(0, "zcpbdj".to_owned()),
+        ];
+        MergeTestState::new(4).run_script(&script[..]);
+    }
+
+    #[test]
+    fn merge_max_undo_so_far() {
+        use self::MergeTestOp::*;
+        let script = vec![
+            Edit { ei: 0, p: 1, u: 1, d: parse_delta("ab") },
+            Merge(1,0), Merge(2,0),
+            AssertMaxUndoSoFar(1,1),
+            Edit { ei: 0, p: 1, u: 2, d: parse_delta("!-") },
+            Edit { ei: 1, p: 3, u: 3, d: parse_delta("-!") },
+            Merge(1,0),
+            AssertMaxUndoSoFar(1,3),
+            AssertMaxUndoSoFar(0,2),
+            Merge(0,1),
+            AssertMaxUndoSoFar(0,3),
+            Edit { ei: 2, p: 1, u: 1, d: parse_delta("!!") },
+            Merge(1,2),
+            AssertMaxUndoSoFar(1,3),
+        ];
+        MergeTestState::new(3).run_script(&script[..]);
     }
 }
