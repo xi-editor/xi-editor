@@ -20,6 +20,7 @@ use std::cmp;
 use tree::{Node, NodeInfo, TreeBuilder};
 use interval::Interval;
 use std::slice;
+use std::fmt;
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 struct Segment {
@@ -33,7 +34,7 @@ struct Segment {
 /// included in the set.
 ///
 /// Internally, this is stored as a list of "segments" with a length and a count.
-#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct Subset {
     /// Invariant, maintained by `SubsetBuilder`: all `Segment`s have non-zero
     /// length, and no `Segment` has the same count as the one before it.
@@ -162,6 +163,11 @@ impl Subset {
     /// Count the total length of all the segments matching `matcher`.
     pub fn count(&self, matcher: CountMatcher) -> usize {
         self.segments.iter().filter(|seg| matcher.matches(seg)).map(|seg| seg.len).sum()
+    }
+
+    /// Convenience alias for `self.count(CountMatcher::All)`
+    pub fn len(&self) -> usize {
+        self.count(CountMatcher::All)
     }
 
     /// Determine whether the subset is empty.
@@ -325,6 +331,35 @@ impl Subset {
             last_i: 0, // indices only need to be in non-decreasing order, not increasing
             cur_range: (0,0), // will immediately try to consume next range
             subset_amount_consumed: 0,
+        }
+    }
+}
+
+impl fmt::Debug for Subset {
+    /// Use the alternate flag (`#`) to print a more compact representation
+    /// where each character represents the count of one element:
+    /// '-' is 0, '#' is 1, 2-9 are digits, `+` is >9
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if f.alternate() {
+            for s in &self.segments {
+                let chr = if s.count == 0 {
+                    '-'
+                } else if s.count == 1 {
+                    '#'
+                } else if s.count <= 9 {
+                    ((s.count as u8) + ('0' as u8)) as char
+                } else {
+                    '+'
+                };
+                for _ in 0..s.len {
+                    try!(write!(f, "{}", chr));
+                }
+            }
+            Ok(())
+        } else {
+            f.debug_tuple("Subset")
+                .field(&self.segments)
+                .finish()
         }
     }
 }

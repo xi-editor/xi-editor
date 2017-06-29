@@ -47,6 +47,7 @@ pub struct Delta<N: NodeInfo> {
 /// A struct marking that a Delta contains only insertions. That is, it copies
 /// all of the old document in the same order. It has a `Deref` impl so all
 /// normal `Delta` methods can also be used on it.
+#[derive(Clone)]
 pub struct InsertDelta<N: NodeInfo>(Delta<N>);
 
 impl<N: NodeInfo> Delta<N> {
@@ -265,21 +266,40 @@ impl<N: NodeInfo> Delta<N> {
     }
 }
 
-impl<N: NodeInfo> fmt::Debug for Delta<N> {
+impl<N: NodeInfo> fmt::Debug for Delta<N> where Node<N>: fmt::Debug {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        try!(write!(f, "Delta("));
-        for el in &self.els {
-            match *el {
-                DeltaElement::Copy(beg,end) => {
-                    try!(write!(f, "[{},{}) ", beg, end));
-                }
-                DeltaElement::Insert(ref node) => {
-                    try!(write!(f, "<ins:{}> ", node.len()));
+        if f.alternate() {
+            for el in &self.els {
+                match *el {
+                    DeltaElement::Copy(beg,end) => {
+                        write!(f, "{}", "-".repeat(end-beg))?;
+                    }
+                    DeltaElement::Insert(ref node) => {
+                        node.fmt(f)?;
+                    }
                 }
             }
+        } else {
+            write!(f, "Delta(")?;
+            for el in &self.els {
+                match *el {
+                    DeltaElement::Copy(beg,end) => {
+                        write!(f, "[{},{}) ", beg, end)?;
+                    }
+                    DeltaElement::Insert(ref node) => {
+                        write!(f, "<ins:{}> ", node.len())?;
+                    }
+                }
+            }
+            write!(f, ")")?;
         }
-        try!(write!(f, ")"));
         Ok(())
+    }
+}
+
+impl<N: NodeInfo> fmt::Debug for InsertDelta<N> where Node<N>: fmt::Debug {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
     }
 }
 
