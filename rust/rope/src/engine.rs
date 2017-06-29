@@ -642,15 +642,15 @@ fn rebase(a_new: Vec<Revision>, b_new: Vec<DeltaOp>, mut text: Rope, tombstones:
     }).collect();
     let mut next_expand_by = Vec::with_capacity(expand_by.len());
     for op in b_new.into_iter() {
-        let DeltaOp { rev_id, priority, undo_group, mut inserts, deletes } = op;
+        let DeltaOp { rev_id, priority, undo_group, mut inserts, mut deletes } = op;
         // 1. expand by each in expand_by
         for &(other_priority, ref other_inserts) in &expand_by {
             let after = priority >= other_priority;  // should never be ==
             // 1. d-expand by other
             inserts = inserts.transform_expand(other_inserts, after);
-            // TODO deletes?
             // 2. trans-expand other by expanded and add to next_expand_by
             let inserted = inserts.inserted_subset();
+            deletes = deletes.transform_expand(&inserted);
             next_expand_by.push((other_priority, other_inserts.transform_expand(&inserted)));
         }
         // 2. apply resulting delta to text&tombstones
@@ -1097,126 +1097,174 @@ mod tests {
         assert_eq!("-#-----", format!("{:#?}", deletes_from_union_2));
     }
 
+    // ============== Merge script tests
+
+    #[derive(Clone, Debug)]
+    enum MergeTestOp {
+        Merge(usize, usize),
+        Assert(usize, String),
+        AssertAll(String),
+        Edit { ei: usize, p: usize, d: Delta<RopeInfo> },
+    }
+
+    #[derive(Debug)]
+    struct MergeTestState {
+        peers: Vec<Engine>,
+    }
+
+    impl MergeTestState {
+        fn new(count: usize) -> MergeTestState {
+            let mut peers = Vec::with_capacity(count);
+            for i in 0..count {
+                let mut peer = Engine::new(Rope::from(""));
+                peer._set_rev_id_counter(i*1000);
+                peers.push(peer);
+            }
+            MergeTestState { peers }
+        }
+
+        fn run_op(&mut self, op: &MergeTestOp) {
+            match *op {
+                MergeTestOp::Merge(ai, bi) => {
+                    let (start, end) = self.peers.split_at_mut(ai);
+                    let (mut a, rest) = end.split_first_mut().unwrap();
+                    let b = if bi < ai {
+                        &mut start[bi]
+                    } else {
+                        &mut rest[bi - ai - 1]
+                    };
+                    a.merge(b);
+                },
+                MergeTestOp::Assert(ei, ref correct) => {
+                    let e = &mut self.peers[ei];
+                    assert_eq!(correct, &String::from(e.get_head()), "for peer {}", ei);
+                },
+                MergeTestOp::AssertAll(ref correct) => {
+                    for (ei, e) in self.peers.iter().enumerate() {
+                        assert_eq!(correct, &String::from(e.get_head()), "for peer {}", ei);
+                    }
+                },
+                MergeTestOp::Edit { ei, p, d: ref delta } => {
+                    let mut e = &mut self.peers[ei];
+                    let head = e.get_head_rev_id();
+                    e.edit_rev(p, 1, head, delta.clone());
+                },
+            }
+        }
+
+        fn run_script(&mut self, script: &[MergeTestOp]) {
+            for (i, op) in script.iter().enumerate() {
+                println!("running {:?} at index {}", op, i);
+                self.run_op(op);
+            }
+        }
+    }
+
+    /// I have a scanned whiteboard diagram of doing this merge by hand, good for reference
     #[test]
-    fn merge_1() {
-        let mut e1 = Engine::new(Rope::from(""));
-        e1._set_rev_id_counter(1000);
-        let mut e2 = Engine::new(Rope::from(""));
-        e2._set_rev_id_counter(2000);
-        let mut e3 = Engine::new(Rope::from(""));
-        e3._set_rev_id_counter(3000);
+    fn merge_whiteboard() {
+        use self::MergeTestOp::*;
+        let script = vec![
+            Edit { ei: 2, p: 1, d: parse_insert("ab") },
+            Merge(0,2), Merge(1, 2),
+            Assert(0, "ab".to_owned()),
+            Assert(1, "ab".to_owned()),
+            Assert(2, "ab".to_owned()),
+            Edit { ei: 0, p: 3, d: parse_insert("-c-") },
+            Edit { ei: 0, p: 3, d: parse_insert("---d") },
+            Assert(0, "acbd".to_owned()),
+            Edit { ei: 1, p: 5, d: parse_insert("-p-") },
+            Edit { ei: 1, p: 5, d: parse_insert("---j") },
+            Assert(1, "apbj".to_owned()),
+            Edit { ei: 2, p: 1, d: parse_insert("z--") },
+            Merge(0,2), Merge(1, 2),
+            Assert(0, "zacbd".to_owned()),
+            Assert(1, "zapbj".to_owned()),
+            Merge(0,1),
+            Assert(0, "zacpbdj".to_owned()),
+        ];
+        MergeTestState::new(3).run_script(&script[..]);
+    }
 
-        let head = e3.get_head_rev_id();
-        let d = parse_insert("ab");
-        e3.edit_rev(1,1,head,d);
+    /// Tests that priorities are used to break ties correctly
+    #[test]
+    fn merge_priorities() {
+        use self::MergeTestOp::*;
+        let script = vec![
+            Edit { ei: 2, p: 1, d: parse_insert("ab") },
+            Merge(0,2), Merge(1, 2),
+            Assert(0, "ab".to_owned()),
+            Assert(1, "ab".to_owned()),
+            Assert(2, "ab".to_owned()),
+            Edit { ei: 0, p: 3, d: parse_insert("-c-") },
+            Edit { ei: 0, p: 3, d: parse_insert("---d") },
+            Assert(0, "acbd".to_owned()),
+            Edit { ei: 1, p: 5, d: parse_insert("-p-") },
+            Assert(1, "apb".to_owned()),
+            Edit { ei: 2, p: 4, d: parse_insert("-r-") },
+            Merge(0,2), Merge(1, 2),
+            Assert(0, "acrbd".to_owned()),
+            Assert(1, "arpb".to_owned()),
+            Edit { ei: 1, p: 5, d: parse_insert("----j") },
+            Assert(1, "arpbj".to_owned()),
+            Edit { ei: 2, p: 4, d: parse_insert("---z") },
+            Merge(0,2), Merge(1, 2),
+            Assert(0, "acrbdz".to_owned()),
+            Assert(1, "arpbzj".to_owned()),
+            Merge(0,1),
+            Assert(0, "acrpbdzj".to_owned()),
+        ];
+        MergeTestState::new(3).run_script(&script[..]);
+    }
 
-        e1.merge(&e3);
-        e2.merge(&e3);
-
-        assert_eq!("ab", String::from(e1.get_head()));
-        assert_eq!("ab", String::from(e2.get_head()));
-        assert_eq!("ab", String::from(e3.get_head()));
-
-        let head = e1.get_head_rev_id();
-        let d = parse_insert("-c-");
-        e1.edit_rev(3,1,head,d);
-
-        let head = e1.get_head_rev_id();
-        let d = parse_insert("---d");
-        e1.edit_rev(3,1,head,d);
-
-        assert_eq!("acbd", String::from(e1.get_head()));
-
-        let head = e2.get_head_rev_id();
-        let d = parse_insert("-p-");
-        e2.edit_rev(5,1,head,d);
-
-        let head = e2.get_head_rev_id();
-        let d = parse_insert("---j");
-        e2.edit_rev(5,1,head,d);
-
-        assert_eq!("apbj", String::from(e2.get_head()));
-
-        let head = e3.get_head_rev_id();
-        let d = parse_insert("z--");
-        e3.edit_rev(1,1,head,d);
-
-        e1.merge(&e3);
-        e2.merge(&e3);
-
-        assert_eq!("zacbd", String::from(e1.get_head()));
-        assert_eq!("zapbj", String::from(e2.get_head()));
-
-        // the merge in the whiteboard drawing
-        e1.merge(&e2);
-
-        assert_eq!("zacpbdj", String::from(e1.get_head()));
+    /// Tests that merging again when there are no new revisions does nothing
+    #[test]
+    fn merge_idempotent() {
+        use self::MergeTestOp::*;
+        let script = vec![
+            Edit { ei: 2, p: 1, d: parse_insert("ab") },
+            Merge(0,2), Merge(1, 2),
+            Assert(0, "ab".to_owned()),
+            Assert(1, "ab".to_owned()),
+            Assert(2, "ab".to_owned()),
+            Edit { ei: 0, p: 3, d: parse_insert("-c-") },
+            Edit { ei: 0, p: 3, d: parse_insert("---d") },
+            Assert(0, "acbd".to_owned()),
+            Edit { ei: 1, p: 5, d: parse_insert("-p-") },
+            Edit { ei: 1, p: 5, d: parse_insert("---j") },
+            Merge(0,1),
+            Assert(0, "acpbdj".to_owned()),
+            Merge(0,1), Merge(1,0), Merge(0,1), Merge(1,0),
+            Assert(0, "acpbdj".to_owned()),
+            Assert(1, "acpbdj".to_owned()),
+        ];
+        MergeTestState::new(3).run_script(&script[..]);
     }
 
     #[test]
-    fn merge_2() {
-        let mut e1 = Engine::new(Rope::from(""));
-        e1._set_rev_id_counter(1000);
-        let mut e2 = Engine::new(Rope::from(""));
-        e2._set_rev_id_counter(2000);
-        let mut e3 = Engine::new(Rope::from(""));
-        e3._set_rev_id_counter(3000);
-
-        let head = e3.get_head_rev_id();
-        let d = parse_insert("ab");
-        e3.edit_rev(1,1,head,d);
-
-        e1.merge(&e3);
-        e2.merge(&e3);
-
-        assert_eq!("ab", String::from(e1.get_head()));
-        assert_eq!("ab", String::from(e2.get_head()));
-        assert_eq!("ab", String::from(e3.get_head()));
-
-        let head = e1.get_head_rev_id();
-        let d = parse_insert("-c-");
-        e1.edit_rev(3,1,head,d);
-
-        let head = e1.get_head_rev_id();
-        let d = parse_insert("---d");
-        e1.edit_rev(3,1,head,d);
-
-        assert_eq!("acbd", String::from(e1.get_head()));
-
-        let head = e2.get_head_rev_id();
-        let d = parse_insert("-p-");
-        e2.edit_rev(5,1,head,d);
-
-        assert_eq!("apb", String::from(e2.get_head()));
-
-        let head = e3.get_head_rev_id();
-        let d = parse_insert("-r-");
-        e3.edit_rev(4,1,head,d);
-
-        e1.merge(&e3);
-        e2.merge(&e3);
-
-        assert_eq!("acrbd", String::from(e1.get_head()));
-        assert_eq!("arpb", String::from(e2.get_head()));
-
-        let head = e2.get_head_rev_id();
-        let d = parse_insert("----j");
-        e2.edit_rev(5,1,head,d);
-
-        assert_eq!("arpbj", String::from(e2.get_head()));
-
-        let head = e3.get_head_rev_id();
-        let d = parse_insert("---z");
-        e3.edit_rev(4,1,head,d);
-
-        e1.merge(&e3);
-        e2.merge(&e3);
-
-        assert_eq!("acrbdz", String::from(e1.get_head()));
-        assert_eq!("arpbzj", String::from(e2.get_head()));
-
-        e1.merge(&e2);
-
-        assert_eq!("acrpbdzj", String::from(e1.get_head()));
+    fn merge_associative() {
+        use self::MergeTestOp::*;
+        let script = vec![
+            Edit { ei: 2, p: 1, d: parse_insert("ab") },
+            Merge(0,2), Merge(1, 2),
+            Edit { ei: 0, p: 3, d: parse_insert("-c-") },
+            Edit { ei: 1, p: 5, d: parse_insert("-p-") },
+            Edit { ei: 2, p: 2, d: parse_insert("z--") },
+            // copy the current state
+            Merge(3, 0), Merge(4, 1), Merge(5, 2),
+            // Do the merge one direction
+            Merge(1,2),
+            Merge(0,1),
+            Assert(0, "zacpb".to_owned()),
+            // Do it the other way on the copy
+            Merge(4,3),
+            Merge(5,4),
+            Assert(5, "zacpb".to_owned()),
+            // Go crazy
+            Merge(0,5), Merge(2,5), Merge(4,5), Merge(1,4),
+            Merge(3,1), Merge(5,3),
+            AssertAll("zacpb".to_owned()),
+        ];
+        MergeTestState::new(6).run_script(&script[..]);
     }
 }
