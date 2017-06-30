@@ -107,8 +107,8 @@ pub enum PluginScope {
     SingleInvocation,
 }
 
-#[cfg(not(target_os = "fuchsia"))]
 impl PluginDescription {
+    #[cfg(not(target_os = "fuchsia"))]
     fn new<S, P>(name: S, version: S, scope: PluginScope, exec_path: P,
                  activations: Vec<PluginActivation>) -> Self
         where S: Into<String>, P: Into<PathBuf>
