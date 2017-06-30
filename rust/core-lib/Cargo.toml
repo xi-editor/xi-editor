@@ -17,9 +17,9 @@ xi-unicode = { path = "../unicode", version = "0.1.0" }
 xi-rpc = { path = "../rpc", version = "0.2.0" }
 
 [dependencies.syntect]
-version = "1.6"
+version = "1.7"
 default-features = false
-features = ["assets"]
+features = ["assets","dump-load-rs"]
 
 [target."cfg(target_os = \"fuchsia\")".dependencies]
 sha2 = "0.5"
