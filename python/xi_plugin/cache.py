@@ -22,16 +22,17 @@ class LineCache(object):
     with the lines[idx] syntax. If a line is not present in the cache,
     it will be fetched, blocking the caller until it arrives.
     """
-    def __init__(self, view_id, total_bytes, peer, revision, test_data=None):
-        self.total_bytes = total_bytes
+    def __init__(self, peer, buffer_id, views, buf_size, nb_lines, rev, syntax,
+                 *, test_data=None, path=None):
+        self.total_bytes = buf_size
+        self.nb_lines = nb_lines
         # keep ends to make calculating offsets simple
-        self.revision = revision
+        self.revision = rev
+        self.path = path
+        self.syntax = syntax
+        self.view_id = views[0]
         self.peer = peer
-        self.view_id = view_id
-
-        raw_data = test_data
-        if raw_data is None:
-            raw_data = peer.get_data(self.view_id, 0, self.revision)
+        raw_data = test_data or peer.get_data(self.view_id, 0, self.revision)
         self.raw_lines = raw_data.splitlines(True) or ['']  # handle empty buffer
         self._recalculate_offsets()
 

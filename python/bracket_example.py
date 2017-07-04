@@ -14,8 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import time
-
 from xi_plugin import start_plugin, Plugin, edit
 
 MATCHES = {"{": "}", "[": "]", "(": ")"}
@@ -24,7 +22,7 @@ MATCHES = {"{": "}", "[": "]", "(": ")"}
 class BracketCloser(Plugin):
     """Naively closes opened brackets, parens, & braces."""
 
-    def update(self, peer, author, rev, start, end,
+    def update(self, view, author, rev, start, end,
                new_len, edit_type, text=None):
         resp = 0
         close_char = MATCHES.get(text)
@@ -36,8 +34,6 @@ class BracketCloser(Plugin):
             # applied after concurrent edits.
             resp = self.new_edit(rev, (new_cursor, new_cursor), close_char,
                                  after_cursor=True, priority=edit.EDIT_PRIORITY_HIGH)
-        # self.print_err("update response: {}".format(resp))
-        # time.sleep(0.2)
         return resp
 
 

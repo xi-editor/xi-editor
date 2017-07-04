@@ -73,8 +73,8 @@ class RpcPeer(object):
     def handle(self, data):
         req_id = data.get('id', None)
         method = data['method']
-        params = data['params']
-        result = self.handler(method, params, self)
+        params = data['params'] or {}
+        result = getattr(self.handler, method)(self, **params)
 
         if result is not None:
             if req_id is None:
@@ -84,7 +84,7 @@ class RpcPeer(object):
             resp = {'result': result, 'id': req_id}
             self.send(resp)
         elif req_id is not None:
-            raise Exception('expected return value on method ' + method + ' id ' + str(id))
+            raise Exception('expected return value for method: ' + method + ' id: ' + str(req_id))
 
     def send(self, data):
         self.stdout.write(json.dumps(data))

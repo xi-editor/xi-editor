@@ -36,10 +36,10 @@ class Spellcheck(Plugin):
         self.in_word = False
         self.has_sent_scopes = False
 
-    def update(self, peer, author, rev, start, end,
+    def update(self, view, author, rev, start, end,
                new_len, edit_type, text=None):
         if not self.has_sent_scopes:
-            peer.add_scopes(self.view_id, [['invalid.illegal.spellcheck']])
+            view.add_scopes([['invalid.illegal.spellcheck']])
             self.has_sent_scopes = True
 
         if author == self.identifier:
@@ -49,8 +49,8 @@ class Spellcheck(Plugin):
             # punctuation not exhaustive, this is a demo ;)
         elif self.in_word and (text.isspace() or text in ["!", ",", ".", ":", ";", "?"]):
             self.in_word = False
-            line, col = self.lines.linecol_for_offset(end)
-            prev_word = self.lines.previous_word(end)
+            line, col = view.lines.linecol_for_offset(end)
+            prev_word = view.lines.previous_word(end)
             # TODO: libs should provide some "Text" object, which represents some string,
             # and provides convenience methods for getting relevant offsets, setting styles, etc
             if prev_word and not self.dictionary.check(prev_word):
@@ -59,7 +59,7 @@ class Spellcheck(Plugin):
                 spans = [{'start': 0,
                           'end': len(prev_word),
                           'scope_id': 0}]
-                peer.update_spans(self.view_id, end-len(prev_word), len(prev_word), spans, rev)
+                view.update_spans(end-len(prev_word), len(prev_word), spans, rev)
         return 0
 
 

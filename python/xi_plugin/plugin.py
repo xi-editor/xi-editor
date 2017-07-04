@@ -15,60 +15,13 @@
 import sys
 
 from . import edit
-from .rpc import RpcPeer
-from .cache import LineCache
 
-# max bytes of buffer per request
-MAX_FETCH_SIZE = 1024*1024
-
-
-class PluginPeer(RpcPeer):
-    """A proxy object which wraps RPC methods implemented in xi-core."""
-
-    def update_spans(self, view_id, start, length, spans, rev):
-        self.send_rpc('update_spans', {'view_id': view_id,
-                                       'start': start,
-                                       'len': length,
-                                       'spans': spans,
-                                       'rev': rev})
-
-    def add_scopes(self, view_id, scopes):
-        self.send_rpc('add_scopes', {'view_id': view_id, 'scopes': scopes})
-
-    def get_data(self, view_id, from_offset, rev, max_size=MAX_FETCH_SIZE):
-        return self.send_rpc_sync('get_data', {'view_id': view_id,
-                                               'offset': from_offset,
-                                               'max_size': max_size,
-                                               'rev': rev})
-
+PLUGIN_ACK_OK = 1
 
 
 class Plugin(object):
-    """Base class for python plugins.
-
-    RPC requests are converted to methods with the same same signature.
-    A cache of the open buffer is available at `self.lines`.
-    """
     def __init__(self):
-        self.cache = None
         self.identifier = type(self).__name__
-        self.path = None,
-        self.syntax = "plaintext"
-
-    def __call__(self, method, params, peer):
-        params = params or {}
-        # intercept these to do bookkeeping, so subclasses don't have to call super
-        self.__last_method = method
-
-        if method == "initialize":
-            params = params['buffer_info'][0]
-            self._initialize(peer, **params)
-        if method == "update":
-            self._update(peer, params)
-        if method == "shutdown":
-            peer.done = True
-
-        return getattr(self, method, self.noop)(peer, **params)
 
     def print_err(self, err):
         print("PLUGIN.PY {}>>> {}".format(self.identifier, err), file=sys.stderr)
@@ -76,33 +29,36 @@ class Plugin(object):
 
     def new_edit(self, rev, edit_range, new_text,
                  priority=edit.EDIT_PRIORITY_NORMAL, after_cursor=False):
-        return edit.Edit(rev, edit_range, new_text, self.identifier, priority, after_cursor)
+        return edit.Edit(rev, edit_range, new_text,
+                         self.identifier, priority, after_cursor)
 
-    def ping(self, peer, **kwargs):
-        self.print_err("ping")
+    def initialize(self, view):
+        self.print_err("initialize: {}".format(view.view_id))
+        pass
 
-    def _initialize(self, peer, buffer_id, views, rev, buf_size,
-                    nb_lines, syntax, path=None):
-        # fetch an initial chunk (this isn't great: we don't know
-        # where the cursor is)
-        self.buffer_id = buffer_id
-        assert len(views) == 1
-        self.view_id = views[0]
-        self.lines = LineCache(self.view_id, buf_size, peer, rev)
-        self.path = path
-        self.syntax = syntax
+    def did_save(self, view, old_path):
+        self.print_err("did_save: {}".format(view.view_id))
+        pass
 
-    def _update(self, peer, params):
-        self.lines.apply_update(peer, **params)
+    # TODO: some better internal representation of a delta
+    # Maybe an 'Update' type or a 'Text' type or both
+    def update(self, view, start, end, new_len, rev, edit_type, author, text):
+        self.print_err("update: {}".format(view.view_id))
+        return PLUGIN_ACK_OK
 
-    def noop(self, *args, **kwargs):
-        """Default responder for unimplemented RPC methods."""
-        return self.print_err("{} not implemented".format(self.__last_method))
+    def shutdown(self):
+        self.print_err("shutdown")
+        pass
 
 
-def start_plugin(plugin):
-    """Opens an RPC connection and runs indefinitely."""
-    # this doesn't need to be exported
-    peer = PluginPeer(plugin)
-    peer.mainloop()
-    plugin.print_err("ended main loop")
+class GlobalPlugin(Plugin):
+
+    def initialize(self, views):
+        view_ids = ', '.join(v.view_id for v in views)
+        self.print_err("initialize global: {}".format(view_ids))
+
+    def new_buffer(self, view):
+        self.print_err("new_buffer: {}".format(view.view_id))
+
+    def did_close(self, view_id):
+        self.print_err("did_close: {}".format(view_id))

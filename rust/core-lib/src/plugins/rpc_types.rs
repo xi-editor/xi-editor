@@ -54,6 +54,7 @@ pub struct ClientPluginInfo {
 /// A simple update, sent to a plugin.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct PluginUpdate {
+    view_id: ViewIdentifier,
     start: usize,
     end: usize,
     new_len: usize,
@@ -125,9 +126,11 @@ impl PluginBufferInfo {
 }
 
 impl PluginUpdate {
-    pub fn new(start: usize, end: usize, new_len: usize, rev: usize,
-               text: Option<String>, edit_type: String, author: String) -> Self {
+    pub fn new(view_id: ViewIdentifier, start: usize, end: usize,
+               new_len: usize, rev: usize, text: Option<String>,
+               edit_type: String, author: String) -> Self {
         PluginUpdate {
+            view_id: view_id,
             start: start,
             end: end,
             new_len: new_len,
@@ -147,6 +150,7 @@ mod tests {
     #[test]
     fn test_plugin_update() {
         let json = r#"{
+            "view_id": "view-id-42",
             "start": 1,
             "end": 5,
             "new_len": 2,
