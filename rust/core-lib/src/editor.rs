@@ -46,6 +46,8 @@ use fuchsia::sync::SyncStore;
 
 const FLAG_SELECT: u64 = 2;
 
+// TODO This could go much higher without issue but while developing it is
+// better to keep it low to expose bugs in the GC during casual testing.
 const MAX_UNDOS: usize = 20;
 
 const TAB_SIZE: usize = 4;
@@ -137,8 +139,11 @@ impl<W: Write + Send + 'static> Editor<W> {
             last_rev_id: last_rev_id,
             pristine_rev_id: last_rev_id,
             undo_group_id: 1,
-            live_undos: Vec::new(),
-            cur_undo: 0,
+            // GC only works on undone edits or prefixes of the visible edits,
+            // but initial file loading can create an edit with undo group 0,
+            // so we want to collect that as part of the prefix.
+            live_undos: vec![0],
+            cur_undo: 1,
             undos: BTreeSet::new(),
             gc_undos: BTreeSet::new(),
             last_edit_type: EditType::Other,
