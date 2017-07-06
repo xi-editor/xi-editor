@@ -68,7 +68,7 @@ pub struct PluginCtx<'a>(RpcCtx<'a, io::Stdout>);
 
 impl<'a> PluginCtx<'a> {
     pub fn get_data(&self, view_id: &str, offset: usize,
-                    max_size: usize, rev: usize) -> Result<String, Error> {
+                    max_size: usize, rev: u64) -> Result<String, Error> {
         let params = json!({
             "view_id": view_id,
             "offset": offset,
@@ -91,7 +91,7 @@ impl<'a> PluginCtx<'a> {
         self.send_rpc_notification("add_scopes", &params);
     }
 
-    pub fn update_spans(&self, view_id: &str, start: usize, len: usize, rev: usize, spans: &[ScopeSpan]) {
+    pub fn update_spans(&self, view_id: &str, start: usize, len: usize, rev: u64, spans: &[ScopeSpan]) {
         let params = json!({
             "view_id": view_id,
             "start": start,
@@ -150,7 +150,7 @@ pub enum PluginRequest<'a> {
         start: usize,
         end: usize,
         new_len: usize,
-        rev: usize,
+        rev: u64,
         edit_type: EditType,
         author: &'a str,
         text: Option<&'a str>,
@@ -168,7 +168,7 @@ pub enum PluginRequest<'a> {
 pub struct PluginBufferInfo {
     pub buffer_id: usize,
     pub views: Vec<String>,
-    pub rev: usize,
+    pub rev: u64,
     pub buf_size: usize,
     pub nb_lines: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -235,7 +235,7 @@ fn parse_plugin_request<'a>(method: &str, params: &'a Value) ->
                             start: start as usize,
                             end: end as usize,
                             new_len: new_len as usize,
-                            rev: rev as usize,
+                            rev: rev,
                             edit_type: EditType::from_str(edit_type),
                             author: author,
                             text: dict_get_string(dict, "text"),

@@ -30,6 +30,7 @@
 
 use std::borrow::Cow;
 use std::collections::BTreeSet;
+use std::collections::hash_map::DefaultHasher;
 use std;
 
 use rope::{Rope, RopeInfo};
@@ -39,7 +40,9 @@ use delta::{Delta, InsertDelta};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Engine {
-    rev_id_counter: usize,
+    #[serde(default = "default_device", skip_serializing)]
+    device: u64,
+    rev_id_counter: u64,
     text: Rope,
     tombstones: Rope,
     deletes_from_union: Subset,
@@ -48,14 +51,30 @@ pub struct Engine {
     revs: Vec<Revision>,
 }
 
+// The advantage of using a device ID over random numbers is that it can be
+// easily delta-compressed later.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
+pub struct RevId {
+    // 64 bits has a 10^(-15) chance of collision with 190 devices and 10^(-12) with 6100.
+    // `device==0` is reserved for initialization which is the same on all devices.
+    device: u64,
+    // this could probably be 32 bits for all reasonable documents, but
+    // alignment means it wouldn't save space in memory and delta encoding
+    // means it won't save space on the wire.
+    num: u64,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 struct Revision {
-    rev_id: usize,
+    rev_id: RevId,
     /// The largest undo group number of any edit in the history up to this
     /// point. Used to optimize undo to not look further back.
     max_undo_so_far: usize,
     edit: Contents,
 }
+
+/// Valid and non-colliding within this process
+pub type RevToken = u64;
 
 use self::Contents::*;
 
@@ -77,6 +96,24 @@ enum Contents {
     }
 }
 
+/// for single user cases, used by serde and ::empty
+fn default_device() -> u64 {
+    1
+}
+
+impl RevId {
+    /// Returns a u64 that will be equal for equivalent revision IDs and
+    /// should be as unlikely to collide as two random u64s.
+    pub fn token(&self) -> RevToken {
+        use std::hash::{Hash, Hasher};
+        /// Rust is unlikely to break the property that this hash is strongly collision-resistant
+        /// and it only needs to be consistent over one execution.
+        let mut hasher = DefaultHasher::new();
+        self.hash(&mut hasher);
+        hasher.finish()
+    }
+}
+
 impl Engine {
     /// Create a new Engine with a single edit that inserts `initial_contents`
     /// if it is non-empty. It needs to be a separate commit rather than just
@@ -85,7 +122,7 @@ impl Engine {
     pub fn new(initial_contents: Rope) -> Engine {
         let mut engine = Engine::empty();
         if initial_contents.len() > 0 {
-            let first_rev = engine.get_head_rev_id();
+            let first_rev = engine.get_head_rev_id().token();
             let delta = Delta::simple_edit(Interval::new_closed_closed(0,0), initial_contents, 0);
             engine.edit_rev(0, 0, first_rev, delta);
         }
@@ -95,11 +132,12 @@ impl Engine {
     pub fn empty() -> Engine {
         let deletes_from_union = Subset::new(0);
         let rev = Revision {
-            rev_id: 0,
+            rev_id: RevId { device: 0, num: 0 },
             edit: Undo { toggled_groups: BTreeSet::new(), deletes_bitxor: deletes_from_union.clone() },
             max_undo_so_far: 0,
         };
         Engine {
+            device: default_device(),
             rev_id_counter: 1,
             text: Rope::default(),
             tombstones: Rope::default(),
@@ -109,14 +147,18 @@ impl Engine {
         }
     }
 
-    fn find_rev(&self, rev_id: usize) -> Option<usize> {
-        for (i, rev) in self.revs.iter().enumerate().rev() {
-            if rev.rev_id == rev_id {
-                return Some(i)
-            }
-        }
-        None
+    fn find_rev(&self, rev_id: RevId) -> Option<usize> {
+        self.revs.iter().enumerate().rev()
+            .find(|&(_, ref rev)| rev.rev_id == rev_id)
+            .map(|(i, _)| i)
     }
+
+    fn find_rev_token(&self, rev_token: RevToken) -> Option<usize> {
+        self.revs.iter().enumerate().rev()
+            .find(|&(_, ref rev)| rev.rev_id.token() == rev_token)
+            .map(|(i, _)| i)
+    }
+
 
     // TODO: does Cow really help much here? It certainly won't after making Subsets a rope.
     /// Find what the `deletes_from_union` field in Engine would have been at the time
@@ -181,7 +223,7 @@ impl Engine {
     }
 
     /// Get revision id of head revision.
-    pub fn get_head_rev_id(&self) -> usize {
+    pub fn get_head_rev_id(&self) -> RevId {
         self.revs.last().unwrap().rev_id
     }
 
@@ -191,14 +233,14 @@ impl Engine {
     }
 
     /// Get text of a given revision, if it can be found.
-    pub fn get_rev(&self, rev: usize) -> Option<Rope> {
-        self.find_rev(rev).map(|rev_index| self.rev_content_for_index(rev_index))
+    pub fn get_rev(&self, rev: RevToken) -> Option<Rope> {
+        self.find_rev_token(rev).map(|rev_index| self.rev_content_for_index(rev_index))
     }
 
     /// A delta that, when applied to `base_rev`, results in the current head. Panics
     /// if there is not at least one edit.
-    pub fn delta_rev_head(&self, base_rev: usize) -> Delta<RopeInfo> {
-        let ix = self.find_rev(base_rev).expect("base revision not found");
+    pub fn delta_rev_head(&self, base_rev: RevToken) -> Delta<RopeInfo> {
+        let ix = self.find_rev_token(base_rev).expect("base revision not found");
 
         // Delta::synthesize will add inserts for everything that is in
         // prev_from_union (old deletes) but not in
@@ -220,11 +262,12 @@ impl Engine {
     }
 
     // TODO: don't construct transform if subsets are empty
+    // TODO: maybe switch to using a revision index for `base_rev` once we disable GC
     /// Retuns a tuple of a new `Revision` representing the edit based on the
     /// current head, a new text `Rope`, a new tombstones `Rope` and a new `deletes_from_union`.
     fn mk_new_rev(&self, new_priority: usize, undo_group: usize,
-            base_rev: usize, delta: Delta<RopeInfo>) -> (Revision, Rope, Rope, Subset) {
-        let ix = self.find_rev(base_rev).expect("base revision not found");
+            base_rev: RevToken, delta: Delta<RopeInfo>) -> (Revision, Rope, Rope, Subset) {
+        let ix = self.find_rev_token(base_rev).expect("base revision not found");
         let (ins_delta, deletes) = delta.factor();
 
         // rebase delta to be on the base_rev union instead of the text
@@ -268,7 +311,7 @@ impl Engine {
 
         let head_rev = &self.revs.last().unwrap();
         (Revision {
-            rev_id: self.rev_id_counter,
+            rev_id: RevId { device: self.device, num: self.rev_id_counter },
             max_undo_so_far: std::cmp::max(undo_group, head_rev.max_undo_so_far),
             edit: Edit {
                 priority: new_priority,
@@ -279,8 +322,10 @@ impl Engine {
         }, new_text, new_tombstones, new_deletes_from_union)
     }
 
+    // TODO: have `base_rev` be an index so that it can be used maximally efficiently with the
+    // head revision, a token or a revision ID. Efficiency loss of token is negligible but unfortunate.
     pub fn edit_rev(&mut self, priority: usize, undo_group: usize,
-            base_rev: usize, delta: Delta<RopeInfo>) {
+            base_rev: RevToken, delta: Delta<RopeInfo>) {
         let (new_rev, new_text, new_tombstones, new_deletes_from_union) =
             self.mk_new_rev(priority, undo_group, base_rev, delta);
         self.rev_id_counter += 1;
@@ -346,7 +391,7 @@ impl Engine {
         let deletes_bitxor = self.deletes_from_union.bitxor(&deletes_from_union);
         let max_undo_so_far = self.revs.last().unwrap().max_undo_so_far;
         (Revision {
-            rev_id: self.rev_id_counter,
+            rev_id: RevId { device: self.device, num: self.rev_id_counter },
             max_undo_so_far,
             edit: Undo { toggled_groups, deletes_bitxor }
         }, deletes_from_union)
@@ -367,7 +412,7 @@ impl Engine {
         self.rev_id_counter += 1;
     }
 
-    pub fn is_equivalent_revision(&self, base_rev: usize, other_rev: usize) -> bool {
+    pub fn is_equivalent_revision(&self, base_rev: RevId, other_rev: RevId) -> bool {
         let base_subset = self.find_rev(base_rev).map(|rev_index| self.deletes_from_cur_union_for_index(rev_index));
         let other_subset = self.find_rev(other_rev).map(|rev_index| self.deletes_from_cur_union_for_index(rev_index));
 
@@ -497,9 +542,10 @@ impl Engine {
         self.revs.append(&mut new_revs);
     }
 
-    /// Temporary hack until non-colliding ID generation is implemented
-    pub fn _set_rev_id_counter(&mut self, count: usize) {
-        self.rev_id_counter = count;
+    /// When merging between multiple concurrently-editing devices, each device should have a unique ID
+    /// so that the revisions they create don't have colliding IDs.
+    pub fn set_device_id(&mut self, device: u64) {
+        self.device = device;
     }
 }
 
@@ -539,10 +585,10 @@ fn find_base_index(a: &[Revision], b: &[Revision]) -> usize {
 }
 
 /// Find a set of revisions common to both lists
-fn find_common(a: &[Revision], b: &[Revision]) -> BTreeSet<usize> {
+fn find_common(a: &[Revision], b: &[Revision]) -> BTreeSet<RevId> {
     // TODO make this faster somehow?
-    let a_ids: BTreeSet<usize> = a.iter().map(|r| r.rev_id).collect();
-    let b_ids: BTreeSet<usize> = b.iter().map(|r| r.rev_id).collect();
+    let a_ids: BTreeSet<RevId> = a.iter().map(|r| r.rev_id).collect();
+    let b_ids: BTreeSet<RevId> = b.iter().map(|r| r.rev_id).collect();
     a_ids.intersection(&b_ids).cloned().collect()
 }
 
@@ -554,7 +600,7 @@ fn find_common(a: &[Revision], b: &[Revision]) -> BTreeSet<usize> {
 /// Conceptually, see the diagram below, with `.` being base revs and `n` being
 /// non-base revs, `N` being transformed non-base revs, and rearranges it:
 /// .n..n...nn..  -> ........NNNN -> returns vec![N,N,N,N]
-fn rearrange(revs: &[Revision], base_revs: &BTreeSet<usize>, head_len: usize) -> Vec<Revision> {
+fn rearrange(revs: &[Revision], base_revs: &BTreeSet<RevId>, head_len: usize) -> Vec<Revision> {
     let mut s = Subset::new(head_len);
 
     let mut out = Vec::with_capacity(revs.len() - base_revs.len());
@@ -589,7 +635,7 @@ fn rearrange(revs: &[Revision], base_revs: &BTreeSet<usize>, head_len: usize) ->
 
 #[derive(Clone, Debug)]
 struct DeltaOp {
-    rev_id: usize,
+    rev_id: RevId,
     priority: usize,
     undo_group: usize,
     inserts: InsertDelta<RopeInfo>,
@@ -748,7 +794,7 @@ mod tests {
     #[test]
     fn edit_rev_simple() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
-        let first_rev = engine.get_head_rev_id();
+        let first_rev = engine.get_head_rev_id().token();
         engine.edit_rev(0, 1, first_rev, build_delta_1());
         assert_eq!("0123456789abcDEEFghijklmnopqr999stuvz", String::from(engine.get_head()));
     }
@@ -756,7 +802,7 @@ mod tests {
     #[test]
     fn edit_rev_concurrent() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
-        let first_rev = engine.get_head_rev_id();
+        let first_rev = engine.get_head_rev_id().token();
         engine.edit_rev(1, 1, first_rev, build_delta_1());
         engine.edit_rev(0, 2, first_rev, build_delta_2());
         assert_eq!("0!3456789abcDEEFGIjklmnopqr888999stuvHIz", String::from(engine.get_head()));
@@ -764,7 +810,7 @@ mod tests {
 
     fn undo_test(before: bool, undos : BTreeSet<usize>, output: &str) {
         let mut engine = Engine::new(Rope::from(TEST_STR));
-        let first_rev = engine.get_head_rev_id();
+        let first_rev = engine.get_head_rev_id().token();
         if before {
             engine.undo(undos.clone());
         }
@@ -794,7 +840,7 @@ mod tests {
     #[test]
     fn delta_rev_head() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
-        let first_rev = engine.get_head_rev_id();
+        let first_rev = engine.get_head_rev_id().token();
         engine.edit_rev(1, 1, first_rev, build_delta_1());
         let d = engine.delta_rev_head(first_rev);
         assert_eq!(String::from(engine.get_head()), d.apply_to_string(TEST_STR));
@@ -803,7 +849,7 @@ mod tests {
     #[test]
     fn delta_rev_head_2() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
-        let first_rev = engine.get_head_rev_id();
+        let first_rev = engine.get_head_rev_id().token();
         engine.edit_rev(1, 1, first_rev, build_delta_1());
         engine.edit_rev(0, 2, first_rev, build_delta_2());
         let d = engine.delta_rev_head(first_rev);
@@ -813,9 +859,9 @@ mod tests {
     #[test]
     fn delta_rev_head_3() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
-        let first_rev = engine.get_head_rev_id();
+        let first_rev = engine.get_head_rev_id().token();
         engine.edit_rev(1, 1, first_rev, build_delta_1());
-        let after_first_edit = engine.get_head_rev_id();
+        let after_first_edit = engine.get_head_rev_id().token();
         engine.edit_rev(0, 2, first_rev, build_delta_2());
         let d = engine.delta_rev_head(after_first_edit);
         assert_eq!(String::from(engine.get_head()), d.apply_to_string("0123456789abcDEEFghijklmnopqr999stuvz"));
@@ -840,13 +886,13 @@ mod tests {
     fn undo_4() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
         let d1 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("a"), TEST_STR.len());
-        let first_rev = engine.get_head_rev_id();
+        let first_rev = engine.get_head_rev_id().token();
         engine.edit_rev(1, 1, first_rev, d1.clone());
-        let new_head = engine.get_head_rev_id();
+        let new_head = engine.get_head_rev_id().token();
         engine.undo([1].iter().cloned().collect());
         let d2 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("a"), TEST_STR.len()+1);
         engine.edit_rev(1, 2, new_head, d2); // note this is based on d1 before, not the undo
-        let new_head_2 = engine.get_head_rev_id();
+        let new_head_2 = engine.get_head_rev_id().token();
         let d3 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("b"), TEST_STR.len()+1);
         engine.edit_rev(1, 3, new_head_2, d3);
         engine.undo([1,3].iter().cloned().collect());
@@ -857,7 +903,7 @@ mod tests {
     fn undo_5() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
         let d1 = Delta::simple_edit(Interval::new_closed_open(0,10), Rope::from(""), TEST_STR.len());
-        let first_rev = engine.get_head_rev_id();
+        let first_rev = engine.get_head_rev_id().token();
         engine.edit_rev(1, 1, first_rev, d1.clone());
         engine.edit_rev(1, 2, first_rev, d1.clone());
         engine.undo([1].iter().cloned().collect());
@@ -872,16 +918,16 @@ mod tests {
     fn gc() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
         let d1 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("c"), TEST_STR.len());
-        let first_rev = engine.get_head_rev_id();
+        let first_rev = engine.get_head_rev_id().token();
         engine.edit_rev(1, 1, first_rev, d1);
-        let new_head = engine.get_head_rev_id();
+        let new_head = engine.get_head_rev_id().token();
         engine.undo([1].iter().cloned().collect());
         let d2 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("a"), TEST_STR.len()+1);
         engine.edit_rev(1, 2, new_head, d2);
         let gc : BTreeSet<usize> = [1].iter().cloned().collect();
         engine.gc(&gc);
         let d3 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("b"), TEST_STR.len()+1);
-        let new_head_2 = engine.get_head_rev_id();
+        let new_head_2 = engine.get_head_rev_id().token();
         engine.edit_rev(1, 3, new_head_2, d3);
         engine.undo([3].iter().cloned().collect());
         assert_eq!("a0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", String::from(engine.get_head()));
@@ -895,7 +941,7 @@ mod tests {
         // insert `edits` letter "b"s in separate undo groups
         for i in 0..edits {
             let d = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("b"), i);
-            let head = engine.get_head_rev_id();
+            let head = engine.get_head_rev_id().token();
             engine.edit_rev(1, i+1, head, d);
             if i >= max_undos {
                 let to_gc : BTreeSet<usize> = [i-max_undos].iter().cloned().collect();
@@ -912,7 +958,7 @@ mod tests {
 
         // insert a character at the beginning
         let d1 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("h"), engine.get_head().len());
-        let head = engine.get_head_rev_id();
+        let head = engine.get_head_rev_id().token();
         engine.edit_rev(1, edits+1, head, d1);
 
         // since character was inserted after gc, editor gcs all undone things
@@ -921,7 +967,7 @@ mod tests {
         // insert character at end, when this test was added, it panic'd here
         let chars_left = (edits-max_undos)+1;
         let d2 = Delta::simple_edit(Interval::new_closed_open(chars_left, chars_left), Rope::from("f"), engine.get_head().len());
-        let head2 = engine.get_head_rev_id();
+        let head2 = engine.get_head_rev_id().token();
         engine.edit_rev(1, edits+1, head2, d2);
 
         let mut soln = String::from("h");
@@ -948,7 +994,7 @@ mod tests {
     fn gc_4() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
         let d1 = Delta::simple_edit(Interval::new_closed_open(0,10), Rope::from(""), TEST_STR.len());
-        let first_rev = engine.get_head_rev_id();
+        let first_rev = engine.get_head_rev_id().token();
         engine.edit_rev(1, 1, first_rev, d1.clone());
         engine.edit_rev(1, 2, first_rev, d1.clone());
         let gc : BTreeSet<usize> = [1].iter().cloned().collect();
@@ -962,7 +1008,7 @@ mod tests {
     fn gc_5() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
         let d1 = Delta::simple_edit(Interval::new_closed_open(0,10), Rope::from(""), TEST_STR.len());
-        let initial_rev = engine.get_head_rev_id();
+        let initial_rev = engine.get_head_rev_id().token();
         engine.undo([1].iter().cloned().collect());
         engine.edit_rev(1, 1, initial_rev, d1.clone());
         engine.edit_rev(1, 2, initial_rev, d1.clone());
@@ -979,7 +1025,7 @@ mod tests {
     fn gc_6() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
         let d1 = Delta::simple_edit(Interval::new_closed_open(0,10), Rope::from(""), TEST_STR.len());
-        let initial_rev = engine.get_head_rev_id();
+        let initial_rev = engine.get_head_rev_id().token();
         engine.edit_rev(1, 1, initial_rev, d1.clone());
         engine.undo([1,2].iter().cloned().collect());
         engine.edit_rev(1, 2, initial_rev, d1.clone());
@@ -991,11 +1037,15 @@ mod tests {
         assert_eq!("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", String::from(engine.get_head()));
     }
 
+    fn basic_rev(i: usize) -> RevId {
+        RevId { device: 1, num: i as u64 }
+    }
+
     fn basic_insert_ops(inserts: Vec<Subset>, priority: usize) -> Vec<Revision> {
         inserts.into_iter().enumerate().map(|(i, inserts)| {
             let deletes = Subset::new(inserts.len());
             Revision {
-                rev_id: i+1,
+                rev_id: basic_rev(i+1),
                 max_undo_so_far: i+1,
                 edit: Contents::Edit {
                     priority, inserts, deletes,
@@ -1016,7 +1066,7 @@ mod tests {
         #------
         ");
         let revs = basic_insert_ops(inserts, 1);
-        let base: BTreeSet<usize> = [3,5].iter().cloned().collect();
+        let base: BTreeSet<RevId> = [3,5].iter().cloned().map(basic_rev).collect();
 
         let rearranged = rearrange(&revs, &base, 7);
         let rearranged_inserts: Vec<Subset> = rearranged.into_iter().map(|c| {
@@ -1044,7 +1094,13 @@ mod tests {
             deletes: Subset::new(0),
         };
 
-        ids.iter().cloned().map(|i| Revision { rev_id: i, max_undo_so_far: i, edit: contents.clone()}).collect()
+        ids.iter().cloned().map(|i| {
+            Revision {
+                rev_id: basic_rev(i),
+                max_undo_so_far: i,
+                edit: contents.clone()
+            }
+        }).collect()
     }
 
     #[test]
@@ -1053,7 +1109,7 @@ mod tests {
         let b: Vec<Revision> = ids_to_fake_revs(&[0,1,2,4,5,8,9]);
         let res = find_common(&a, &b);
 
-        let correct: BTreeSet<usize> = [0,2,4,8].iter().cloned().collect();
+        let correct: BTreeSet<RevId> = [0,2,4,8].iter().cloned().map(basic_rev).collect();
         assert_eq!(correct, res);
     }
 
@@ -1203,7 +1259,7 @@ mod tests {
             let mut peers = Vec::with_capacity(count);
             for i in 0..count {
                 let mut peer = Engine::new(Rope::from(""));
-                peer._set_rev_id_counter(i*1000);
+                peer.set_device_id((i*1000) as u64);
                 peers.push(peer);
             }
             MergeTestState { peers }
@@ -1236,7 +1292,7 @@ mod tests {
                 },
                 MergeTestOp::Edit { ei, p, u, d: ref delta } => {
                     let mut e = &mut self.peers[ei];
-                    let head = e.get_head_rev_id();
+                    let head = e.get_head_rev_id().token();
                     e.edit_rev(p, u, head, delta.clone());
                 },
             }

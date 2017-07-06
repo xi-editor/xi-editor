@@ -34,7 +34,7 @@ pub struct PluginBufferInfo {
     pub buffer_id: BufferIdentifier,
     /// The buffer's current views.
     pub views: Vec<ViewIdentifier>,
-    pub rev: usize,
+    pub rev: u64,
     pub buf_size: usize,
     pub nb_lines: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -60,7 +60,7 @@ pub struct PluginUpdate {
     new_len: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     text: Option<String>,
-    rev: usize,
+    rev: u64,
     edit_type: String,
     author: String,
 }
@@ -108,15 +108,15 @@ pub struct ScopeSpan {
 /// RPC commands sent from plugins.
 pub enum PluginCommand {
     AddScopes { view_id: ViewIdentifier, scopes: Vec<Vec<String>> },
-    UpdateSpans { view_id: ViewIdentifier, start: usize, len: usize, spans: Vec<ScopeSpan>, rev: usize },
-    GetData { view_id: ViewIdentifier, offset: usize, max_size: usize, rev: usize },
+    UpdateSpans { view_id: ViewIdentifier, start: usize, len: usize, spans: Vec<ScopeSpan>, rev: u64 },
+    GetData { view_id: ViewIdentifier, offset: usize, max_size: usize, rev: u64 },
     Alert { view_id: ViewIdentifier, msg: String },
     LineCount { view_id: ViewIdentifier },
 }
 
 impl PluginBufferInfo {
     pub fn new(buffer_id: BufferIdentifier, views: &[ViewIdentifier],
-               rev: usize, buf_size: usize, nb_lines: usize,
+               rev: u64, buf_size: usize, nb_lines: usize,
                path: Option<PathBuf>, syntax: SyntaxDefinition) -> Self {
         //TODO: do make any current assertions about paths being valid utf-8? do we want to?
         let path = path.map(|p| p.to_str().unwrap().to_owned());
@@ -127,9 +127,8 @@ impl PluginBufferInfo {
 
 impl PluginUpdate {
     pub fn new(view_id: ViewIdentifier, start: usize, end: usize,
-               new_len: usize, rev: usize, text: Option<String>,
+               new_len: usize, rev: u64, text: Option<String>,
                edit_type: String, author: String) -> Self {
-        PluginUpdate {
             view_id: view_id,
             start: start,
             end: end,
