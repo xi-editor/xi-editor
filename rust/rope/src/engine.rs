@@ -40,9 +40,10 @@ use delta::{Delta, InsertDelta};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Engine {
-    #[serde(default = "default_device", skip_serializing)]
-    device: u64,
-    rev_id_counter: u64,
+    #[serde(default = "default_session", skip_serializing)]
+    session: u64,
+    #[serde(default = "initial_revision_counter", skip_serializing)]
+    rev_id_counter: u32,
     text: Rope,
     tombstones: Rope,
     deletes_from_union: Subset,
@@ -51,17 +52,20 @@ pub struct Engine {
     revs: Vec<Revision>,
 }
 
-// The advantage of using a device ID over random numbers is that it can be
+// The advantage of using a session ID over random numbers is that it can be
 // easily delta-compressed later.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub struct RevId {
-    // 64 bits has a 10^(-15) chance of collision with 190 devices and 10^(-12) with 6100.
-    // `device==0` is reserved for initialization which is the same on all devices.
-    device: u64,
-    // this could probably be 32 bits for all reasonable documents, but
-    // alignment means it wouldn't save space in memory and delta encoding
-    // means it won't save space on the wire.
-    num: u64,
+    // 64 bits has a 10^(-12) chance of collision with 6100 sessions and 10^(-6) with 6 million.
+    // `session==0` is reserved for initialization which is the same on all sessions.
+    // A colliding session will break merge invariants and the document will start crashing Xi.
+    // If those odds aren't good enough we could add another `u32`.
+    session: u64,
+    // There will probably never be a document with more than 4 billion edits
+    // in a single session. Using a u32 doesn't save any space in the struct
+    // (because of alignment padding) but it leaves room to add more session
+    // ID without increasing size (see above).
+    num: u32,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -97,7 +101,12 @@ enum Contents {
 }
 
 /// for single user cases, used by serde and ::empty
-fn default_device() -> u64 {
+fn default_session() -> u64 {
+    1
+}
+
+/// Revision 0 is always an Undo of the empty set of groups
+fn initial_revision_counter() -> u32 {
     1
 }
 
@@ -132,12 +141,12 @@ impl Engine {
     pub fn empty() -> Engine {
         let deletes_from_union = Subset::new(0);
         let rev = Revision {
-            rev_id: RevId { device: 0, num: 0 },
+            rev_id: RevId { session: 0, num: 0 },
             edit: Undo { toggled_groups: BTreeSet::new(), deletes_bitxor: deletes_from_union.clone() },
             max_undo_so_far: 0,
         };
         Engine {
-            device: default_device(),
+            session: default_session(),
             rev_id_counter: 1,
             text: Rope::default(),
             tombstones: Rope::default(),
@@ -311,7 +320,7 @@ impl Engine {
 
         let head_rev = &self.revs.last().unwrap();
         (Revision {
-            rev_id: RevId { device: self.device, num: self.rev_id_counter },
+            rev_id: RevId { session: self.session, num: self.rev_id_counter },
             max_undo_so_far: std::cmp::max(undo_group, head_rev.max_undo_so_far),
             edit: Edit {
                 priority: new_priority,
@@ -391,7 +400,7 @@ impl Engine {
         let deletes_bitxor = self.deletes_from_union.bitxor(&deletes_from_union);
         let max_undo_so_far = self.revs.last().unwrap().max_undo_so_far;
         (Revision {
-            rev_id: RevId { device: self.device, num: self.rev_id_counter },
+            rev_id: RevId { session: self.session, num: self.rev_id_counter },
             max_undo_so_far,
             edit: Undo { toggled_groups, deletes_bitxor }
         }, deletes_from_union)
@@ -542,10 +551,10 @@ impl Engine {
         self.revs.append(&mut new_revs);
     }
 
-    /// When merging between multiple concurrently-editing devices, each device should have a unique ID
-    /// so that the revisions they create don't have colliding IDs.
-    pub fn set_device_id(&mut self, device: u64) {
-        self.device = device;
+    /// When merging between multiple concurrently-editing sessions, each session should have a unique ID
+    /// set with this function, which will make the revisions they create not have colliding IDs.
+    pub fn set_session_id(&mut self, session: u64) {
+        self.session = session;
     }
 }
 
@@ -1038,7 +1047,7 @@ mod tests {
     }
 
     fn basic_rev(i: usize) -> RevId {
-        RevId { device: 1, num: i as u64 }
+        RevId { session: 1, num: i as u32 }
     }
 
     fn basic_insert_ops(inserts: Vec<Subset>, priority: usize) -> Vec<Revision> {
@@ -1259,7 +1268,7 @@ mod tests {
             let mut peers = Vec::with_capacity(count);
             for i in 0..count {
                 let mut peer = Engine::new(Rope::from(""));
-                peer.set_device_id((i*1000) as u64);
+                peer.set_session_id((i*1000) as u64);
                 peers.push(peer);
             }
             MergeTestState { peers }
