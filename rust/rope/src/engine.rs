@@ -41,7 +41,7 @@ use delta::{Delta, InsertDelta};
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Engine {
     #[serde(default = "default_session", skip_serializing)]
-    session: u64,
+    session: (u64, u32),
     #[serde(default = "initial_revision_counter", skip_serializing)]
     rev_id_counter: u32,
     text: Rope,
@@ -56,15 +56,14 @@ pub struct Engine {
 // easily delta-compressed later.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub struct RevId {
-    // 64 bits has a 10^(-12) chance of collision with 6100 sessions and 10^(-6) with 6 million.
-    // `session==0` is reserved for initialization which is the same on all sessions.
+    // 96 bits has a 10^(-12) chance of collision with 400 million sessions and 10^(-6) with 100 billion.
+    // `session1==session2==0` is reserved for initialization which is the same on all sessions.
     // A colliding session will break merge invariants and the document will start crashing Xi.
-    // If those odds aren't good enough we could add another `u32`.
-    session: u64,
+    session1: u64,
+    // if this was a tuple field instead of two fields, alignment padding would double RevId's size.
+    session2: u32,
     // There will probably never be a document with more than 4 billion edits
-    // in a single session. Using a u32 doesn't save any space in the struct
-    // (because of alignment padding) but it leaves room to add more session
-    // ID without increasing size (see above).
+    // in a single session.
     num: u32,
 }
 
@@ -101,8 +100,8 @@ enum Contents {
 }
 
 /// for single user cases, used by serde and ::empty
-fn default_session() -> u64 {
-    1
+fn default_session() -> (u64,u32) {
+    (1, 0)
 }
 
 /// Revision 0 is always an Undo of the empty set of groups
@@ -141,7 +140,7 @@ impl Engine {
     pub fn empty() -> Engine {
         let deletes_from_union = Subset::new(0);
         let rev = Revision {
-            rev_id: RevId { session: 0, num: 0 },
+            rev_id: RevId { session1: 0, session2: 0, num: 0 },
             edit: Undo { toggled_groups: BTreeSet::new(), deletes_bitxor: deletes_from_union.clone() },
             max_undo_so_far: 0,
         };
@@ -154,6 +153,10 @@ impl Engine {
             undone_groups: BTreeSet::new(),
             revs: vec![rev],
         }
+    }
+
+    fn next_rev_id(&self) -> RevId {
+        RevId { session1: self.session.0, session2: self.session.1, num: self.rev_id_counter }
     }
 
     fn find_rev(&self, rev_id: RevId) -> Option<usize> {
@@ -320,7 +323,7 @@ impl Engine {
 
         let head_rev = &self.revs.last().unwrap();
         (Revision {
-            rev_id: RevId { session: self.session, num: self.rev_id_counter },
+            rev_id: self.next_rev_id(),
             max_undo_so_far: std::cmp::max(undo_group, head_rev.max_undo_so_far),
             edit: Edit {
                 priority: new_priority,
@@ -400,7 +403,7 @@ impl Engine {
         let deletes_bitxor = self.deletes_from_union.bitxor(&deletes_from_union);
         let max_undo_so_far = self.revs.last().unwrap().max_undo_so_far;
         (Revision {
-            rev_id: RevId { session: self.session, num: self.rev_id_counter },
+            rev_id: self.next_rev_id(),
             max_undo_so_far,
             edit: Undo { toggled_groups, deletes_bitxor }
         }, deletes_from_union)
@@ -553,7 +556,10 @@ impl Engine {
 
     /// When merging between multiple concurrently-editing sessions, each session should have a unique ID
     /// set with this function, which will make the revisions they create not have colliding IDs.
-    pub fn set_session_id(&mut self, session: u64) {
+    ///
+    /// Merge may panic or return incorrect results if session IDs collide, which is why they can be
+    /// 96 bits which is more than sufficient for this to never happen.
+    pub fn set_session_id(&mut self, session: (u64,u32)) {
         self.session = session;
     }
 }
@@ -1047,7 +1053,7 @@ mod tests {
     }
 
     fn basic_rev(i: usize) -> RevId {
-        RevId { session: 1, num: i as u32 }
+        RevId { session1: 1, session2: 0, num: i as u32 }
     }
 
     fn basic_insert_ops(inserts: Vec<Subset>, priority: usize) -> Vec<Revision> {
@@ -1268,7 +1274,7 @@ mod tests {
             let mut peers = Vec::with_capacity(count);
             for i in 0..count {
                 let mut peer = Engine::new(Rope::from(""));
-                peer.set_session_id((i*1000) as u64);
+                peer.set_session_id(((i*1000) as u64, 0));
                 peers.push(peer);
             }
             MergeTestState { peers }
