@@ -31,6 +31,7 @@ use xi_rpc::{self, RpcPeer, RpcCtx, RpcLoop, Handler};
 use tabs::ViewIdentifier;
 
 pub use self::manager::{PluginManagerRef, WeakPluginManagerRef};
+pub use self::manifest::PlaceholderRpc;
 
 use self::rpc_types::{PluginUpdate, PluginCommand, PluginBufferInfo};
 use self::manifest::PluginDescription;
@@ -110,8 +111,22 @@ impl<W: Write + Send + 'static> PluginRef<W> {
     }
 
     /// Send an arbitrary RPC notification to the plugin.
-    pub fn notify(&self, method: &str, params: &Value) {
+    pub fn rpc_notification(&self, method: &str, params: &Value) {
         self.0.lock().unwrap().peer.send_rpc_notification(method, params);
+    }
+
+    /// Send an arbitrary RPC request to the plugin.
+    pub fn rpc_request(&self, method: &str, params: &Value) -> Value {
+        //TODO: the core RPC handler isn't set up to send RPC errors,
+        //so this will be sent as a 'result'; when we add error support
+        //this function will return a Result<Value>.
+        self.0.lock().unwrap().peer.send_rpc_request(method, params)
+            .unwrap_or_else(|err| {
+                json!({"error": {
+                    "code": 520,
+                    "message": format!("{:?}", err)
+                }})
+            })
     }
 
     /// Initialize the plugin.

@@ -19,6 +19,7 @@ use std::fmt;
 use serde_json::{self, Value};
 use xi_rpc::{dict_get_u64, dict_get_string, dict_get_bool, arr_get_u64, arr_get_i64};
 use tabs::ViewIdentifier;
+use plugins::PlaceholderRpc;
 
 // =============================================================================
 //  Request handling
@@ -137,7 +138,7 @@ pub enum PluginCommand {
     InitialPlugins { view_id: ViewIdentifier },
     Start { view_id: ViewIdentifier, plugin_name: String },
     Stop { view_id: ViewIdentifier, plugin_name: String },
-    Other { view_id: ViewIdentifier, receiver: String, method: String, params: Value },
+    PluginRpc { view_id: ViewIdentifier, receiver: String, rpc: PlaceholderRpc },
 }
 
 impl<'a> CoreCommand<'a> {

@@ -165,28 +165,40 @@ impl <W: Write + Send + 'static>PluginManager<W> {
             .expect(&format!("bad notif params.\nmethod: {}\nparams: {:?}",
                              method, params));
         for (_, plugin) in self.global_plugins.iter() {
-            plugin.notify(method, &params);
+            plugin.rpc_notification(method, &params);
         }
         if !only_globals {
             if let Ok(locals) = self.running_for_view(view_id) {
                 for (_, plugin) in locals {
-                    plugin.notify(method, &params);
+                    plugin.rpc_notification(method, &params);
                 }
             }
         }
     }
 
-    /// Sends a custom command to a running plugin
-    fn dispatch_command(&self, view_id: &ViewIdentifier, receiver: &str,
-                        method: &str, params: &Value) {
-        let plugin_ref = match self.running_for_view(view_id) {
-            Ok(running) => running.get(receiver),
-            Err(_) => None,
-        };
-        if let Some(plugin_ref) = plugin_ref {
-            plugin_ref.command(method, params);
-        } else {
-            print_err!("missing plugin {} for command {}", receiver, method);
+    fn dispatch_common(&self, view_id: &ViewIdentifier, receiver: &str,
+                       method: &str, params: &Value,
+                       request: bool) -> Option<Value> {
+        let plugin_ref = self.running_for_view(view_id)
+            .ok()
+            .and_then(|r| r.get(receiver));
+
+        match plugin_ref {
+            Some(plug) => {
+                if request {
+                    Some(plug.rpc_request(method, params))
+                } else {
+                    plug.rpc_notification(method, params);
+                    None
+                }
+            }
+            None => {
+                print_err!("missing plugin {} for command {}", receiver, method);
+                Some(json!({"error": {
+                    "code": 404,
+                    "message": "Plugin not found.",
+                }}))
+            }
         }
     }
 
@@ -494,12 +506,23 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
         self.lock().update_plugins(view_id, update, undo_group)
     }
 
-    /// Dispatch a generic command to the relevant plugin.
-    pub fn dispatch_command(&self, view_id: &ViewIdentifier, receiver: &str,
-                            method: &str, params: &Value) {
-        //TODO: handle the (future) case where this plugin is not running.
-        self.lock().dispatch_command(view_id, receiver, method, params);
+    /// Sends a custom notification to a running plugin
+    pub fn dispatch_notification(&self, view_id: &ViewIdentifier, receiver: &str,
+                             method: &str, params: &Value) {
+        self.lock().dispatch_common(view_id, receiver, method, params, false);
     }
+
+
+    /// Sends a custom request to a running plugin
+    pub fn dispatch_request(&self, view_id: &ViewIdentifier, receiver: &str,
+                        method: &str, params: &Value) -> Value {
+        //TODO: our RPC error story is sort of non-existent. This should
+        //probably return a Result<T> with some error type that can go on
+        //the wire?
+        self.lock().dispatch_common(view_id, receiver, method, params, true)
+            .unwrap_or_else(|| json!({}))
+    }
+
 
     // ====================================================================
     // implementation details

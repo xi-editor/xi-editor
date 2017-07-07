@@ -32,6 +32,7 @@ use MainPeer;
 use syntax::SyntaxDefinition;
 use plugins::{self, PluginManagerRef};
 use plugins::rpc_types::PluginUpdate;
+use plugins::PlaceholderRpc;
 
 #[cfg(target_os = "fuchsia")]
 use apps_ledger_services_public::{Ledger_Proxy};
@@ -491,10 +492,26 @@ impl<W: Write + Send + 'static> Documents<W> {
                 self.plugins.stop_plugin(&view_id, &plugin_name);
                 None
             }
-            Other { view_id, receiver, method, params } => {
-                //TODO: this only currently works with notifications.
-                self.plugins.dispatch_command(&view_id, &receiver, &method, &params);
-                None
+            PluginRpc  { view_id, receiver, mut rpc } => {
+                // inserting view_id into params here because the plugin needs
+                // to know where this command originates. This feels a bit
+                // clumbsy though. At the very least we should use some obscure
+                // key so we don't collide with any possible user-supplied keys?
+                // Or we could validate keys on plugin load or something.
+                assert!(rpc.params_ref().is_object(), "params must be an object");
+                rpc.params_ref_mut().as_object_mut()
+                    .map(|p| p.insert("view_id".to_owned(), json!(view_id)));
+                match rpc {
+                    PlaceholderRpc::Notification { ref method, ref params } => {
+                        self.plugins.dispatch_notification(&view_id, &receiver,
+                                                           method, params);
+                        None
+                    }
+                    PlaceholderRpc::Request { ref method, ref params } => {
+                        Some(self.plugins.dispatch_request(&view_id, &receiver,
+                                                           method, params))
+                    }
+                }
             }
         }
     }

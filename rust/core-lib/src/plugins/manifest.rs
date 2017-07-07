@@ -141,21 +141,27 @@ pub enum ArgumentType {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-/// Represents a user-selectable an option for a user-selectable argument.
+/// Represents an option for a user-selectable argument.
 pub struct ArgumentOption {
     pub title: String,
     pub value: Value,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type")]
+#[serde(rename_all = "snake_case")]
 /// A placeholder type which can represent a generic RPC.
-pub struct PlaceholderRpc {
-    pub method: String,
-    pub params: Value,
+///
+/// This is the type used for custom plugin commands, which may have arbitrary
+/// method names and parameters.
+pub enum PlaceholderRpc {
+    Notification { method: String, params: Value },
+    Request { method: String, params: Value },
 }
 
 impl Command {
-    pub fn new<S, V>(title: S, description: S, rpc_cmd: PlaceholderRpc, args: V) -> Self
+    pub fn new<S, V>(title: S, description: S,
+                     rpc_cmd: PlaceholderRpc, args: V) -> Self
     where S: AsRef<str>,
           V: Into<Option<Vec<CommandArgument>>> {
         let title = title.as_ref().to_owned();
@@ -182,12 +188,40 @@ impl ArgumentOption {
 }
 
 impl PlaceholderRpc {
-    pub fn new<S, V>(method: S, params: V) -> Self 
+    pub fn new<S, V>(method: S, params: V, request: bool) -> Self
         where S: AsRef<str>,
-              V: Into<Option<Value>> {
-        PlaceholderRpc {
-            method: method.as_ref().to_owned(),
-            params: params.into().unwrap_or(json!({})),
+              V: Into<Option<Value>>
+    {
+        let method = method.as_ref().to_owned();
+        let params = params.into().unwrap_or(json!({}));
+
+        match request {
+            true => PlaceholderRpc::Request { method, params },
+            false => PlaceholderRpc::Notification { method, params },
+        }
+    }
+
+    /// Returns a reference to the placeholder's params.
+    pub fn params_ref(&self) -> &Value {
+        match self {
+            &PlaceholderRpc::Request { ref params, .. } => params,
+            &PlaceholderRpc::Notification { ref params, .. } => params,
+        }
+    }
+
+    /// Returns a mutable reference to the placeholder's params.
+    pub fn params_ref_mut(&mut self) -> &mut Value {
+        match self {
+            &mut PlaceholderRpc::Request { ref mut params, .. } => params,
+            &mut PlaceholderRpc::Notification { ref mut params, .. } => params,
+        }
+    }
+
+    /// Returns a reference to the placeholder's method.
+    pub fn method_ref<'a>(&'a self) -> &'a str {
+        match self {
+            &PlaceholderRpc::Request { ref method, .. } => method,
+            &PlaceholderRpc::Notification { ref method, .. } => method,
         }
     }
 }
@@ -230,6 +264,7 @@ mod tests {
         "title": "Test Command",
         "description": "Passes the current test",
         "rpc_cmd": {
+            "type": "notification",
             "method": "test.cmd",
             "params": {
                 "this_works": "{this_works}",
@@ -253,7 +288,7 @@ mod tests {
         let command: Command = serde_json::from_str(&json).unwrap();
         assert_eq!(command.title, "Test Command");
         assert_eq!(command.args[0].arg_type, ArgumentType::Bool);
-        assert_eq!(command.rpc_cmd.params["this_works"], "{this_works}");
+        assert_eq!(command.rpc_cmd.params_ref()["this_works"], "{this_works}");
         assert_eq!(command.args[1].options.clone().unwrap()[1].value, json!(10));
     }
 }
