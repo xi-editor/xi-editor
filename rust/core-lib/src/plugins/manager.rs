@@ -399,7 +399,7 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
         self.add_running_collection(view_id);
         let to_start = self.activatable_plugins(view_id);
         self.start_plugins(view_id, &init_info, &to_start);
-        self.lock().notify_plugins(view_id, true, "initialize", &json!({
+        self.lock().notify_plugins(view_id, true, "new_buffer", &json!({
             "buffer_info": vec![&init_info],
            }));
     }
@@ -407,6 +407,7 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
     /// Called when a buffer is saved to a file.
     pub fn document_did_save(&mut self, view_id: &ViewIdentifier, path: &Path) {
         self.lock().notify_plugins(view_id, false, "did_save", &json!({
+            "view_id": view_id,
             "path": path,
         }));
     }
@@ -424,7 +425,8 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
         for plugin_name in to_stop {
             self.stop_plugin(view_id, &plugin_name);
         }
-        self.lock().notify_plugins(view_id, true, "did_close", &json!({}));
+        self.lock().notify_plugins(view_id, true, "did_close", &json!({
+            "view_id": view_id}));
     }
 
     /// Called when a document's syntax definition has changed.

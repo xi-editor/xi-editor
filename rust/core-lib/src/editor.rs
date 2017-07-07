@@ -233,10 +233,11 @@ impl<W: Write + Send + 'static> Editor<W> {
     /// Returns buffer information used to initialize plugins.
     pub fn plugin_init_info(&self) -> PluginBufferInfo {
         let nb_lines = self.text.measure::<LinesMetric>() + 1;
-        let mut views = self.views.keys()
-            .map(|s| s.to_owned())
-            .collect::<Vec<_>>();
-        views.push(self.view.view_id.to_owned());
+        let mut views = vec![self.view.view_id.to_owned()];
+        for v in self.views.keys() {
+            views.push(v.to_owned());
+        }
+        
         PluginBufferInfo::new(self.buffer_id, &views,
                               self.engine.get_head_rev_id(), self.text.len(),
                               nb_lines, self.path.clone(), self.syntax.clone())
@@ -372,6 +373,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             };
 
             let update = PluginUpdate::new(
+                self.view.view_id.clone(),
                 iv.start(), iv.end(), new_len,
                 self.engine.get_head_rev_id(), text,
                 self.this_edit_type.json_string().to_owned(),

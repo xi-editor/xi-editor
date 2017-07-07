@@ -12,8 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .plugin import Plugin, GlobalPlugin
-from .view import View
-from .host import start_plugin
-from .edit import Edit
-from . import style
+
+class View(object):
+    """Represents a view into a buffer."""
+    def __init__(self, view_id, lines):
+        self.view_id = view_id
+        self.lines = lines
+
+    @property
+    def path(self):
+        return self.lines.path
+
+    @property
+    def syntax(self):
+        return self.lines.syntax
+
+    def update_spans(self, *args, **kwargs):
+        self.lines.peer.update_spans(self.view_id, *args, **kwargs)
+
+    def add_scopes(self, *args, **kwargs):
+        self.lines.peer.add_scopes(self.view_id, *args, **kwargs)
