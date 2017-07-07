@@ -129,6 +129,7 @@ impl PluginUpdate {
     pub fn new(view_id: ViewIdentifier, start: usize, end: usize,
                new_len: usize, rev: u64, text: Option<String>,
                edit_type: String, author: String) -> Self {
+        PluginUpdate {
             view_id: view_id,
             start: start,
             end: end,

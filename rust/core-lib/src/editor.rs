@@ -429,6 +429,11 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.render();
     }
 
+    /// See `Engine::set_session_id` only useful when using Fuchsia sync functionality.
+    pub fn set_session_id(&mut self, session: (u64,u32)) {
+        self.engine.set_session_id(session);
+    }
+
     #[cfg(target_os = "fuchsia")]
     pub fn set_sync_store(&mut self, sync_store: SyncStore) {
         self.sync_store = Some(sync_store);

@@ -556,10 +556,12 @@ impl Engine {
 
     /// When merging between multiple concurrently-editing sessions, each session should have a unique ID
     /// set with this function, which will make the revisions they create not have colliding IDs.
+    /// For safety, this will panic if any revisions have already been added to the Engine.
     ///
     /// Merge may panic or return incorrect results if session IDs collide, which is why they can be
     /// 96 bits which is more than sufficient for this to never happen.
     pub fn set_session_id(&mut self, session: (u64,u32)) {
+        assert_eq!(1, self.revs.len(), "Revisions were added to an Engine before set_session_id, these may collide.");
         self.session = session;
     }
 }

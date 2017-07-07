@@ -643,17 +643,18 @@ pub struct SyncRepo {
     ledger: Ledger_Proxy,
     tx: Sender<SyncMsg>,
     updater_handle: thread::JoinHandle<()>,
+    session_id: (u64,u32),
 }
 
 #[cfg(target_os = "fuchsia")]
 impl<W: Write + Send + 'static> Documents<W> {
-    pub fn set_ledger(&mut self, ledger: Ledger_Proxy) {
+    pub fn setup_ledger(&mut self, ledger: Ledger_Proxy, session_id: (u64,u32)) {
 
         let (tx, rx) = channel();
         let updater = SyncUpdater::new(self.buffers.clone(), rx);
         let updater_handle = thread::spawn(move|| updater.work().unwrap() );
 
-        self.sync_repo = Some(SyncRepo { ledger, tx, updater_handle });
+        self.sync_repo = Some(SyncRepo { ledger, tx, updater_handle, session_id });
     }
 
     fn initialize_sync(&mut self, editor: &mut Editor<W>, path_opt: Option<&Path>, buffer_id: &BufferIdentifier) {
@@ -661,6 +662,10 @@ impl<W: Write + Send + 'static> Documents<W> {
         use fuchsia::ledger::{ledger_crash_callback, gen_page_id};
 
         if let (Some(path), Some(repo)) = (path_opt, self.sync_repo.as_mut()) {
+            // TODO this will panic when loading a file with initial contents.
+            // We haven't figured out what that even means in a multi-device
+            // context so it's not clear we can do anything better.
+            editor.set_session_id(repo.session_id);
             // create the sync ID based on the path
             // TODO: maybe make sync-id orthogonal to path
             let path_str = path.to_string_lossy();
