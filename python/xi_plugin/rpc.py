@@ -74,7 +74,11 @@ class RpcPeer(object):
         req_id = data.get('id', None)
         method = data['method']
         params = data['params'] or {}
-        result = getattr(self.handler, method)(self, **params)
+        f = getattr(self.handler, method, None)
+        if f is not None:
+            result = f(self, **params)
+        else:
+            result = self.handler.other_cmd(self, method, params)
 
         if result is not None:
             if req_id is None:

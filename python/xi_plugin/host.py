@@ -64,7 +64,6 @@ class PluginHost(object):
 
         else:
             assert len(buffer_info) == 1
-            print(buffer_info, file=sys.stderr)
             first_view = buffer_info[0]["views"][0]
             self.plugin.initialize(self.views[first_view])
 
@@ -101,6 +100,17 @@ class PluginHost(object):
     def shutdown(self, peer, **params):
         peer.done = True
         self.plugin.shutdown()
+
+    def other_cmd(self, peer, method, params):
+        '''Unknown RPC, presumably a custom command provided by the plugin.'''
+        view_id = params.pop("view_id")
+        if view_id:
+            view = self.views.get(view_id)
+            if view is None:
+                print("plugin {} missing view for id {}",
+                      self.plugin.identifier, view_id)
+            params["view"] = view
+        return getattr(self.plugin, method)(**params)
 
     def _initialize_buffers(self, peer, buffer_info):
         for buf in buffer_info:
