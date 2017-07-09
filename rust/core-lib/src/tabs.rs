@@ -30,7 +30,7 @@ use styles::{Style, ThemeStyleMap};
 use MainPeer;
 
 use syntax::SyntaxDefinition;
-use plugins::{self, PluginManagerRef};
+use plugins::{self, PluginManagerRef, Command};
 use plugins::rpc_types::PluginUpdate;
 use plugins::PlaceholderRpc;
 
@@ -601,6 +601,16 @@ impl<W: Write> DocumentCtx<W> {
                                                 "view_id": view_id,
                                                 "plugin": plugin,
                                                 "code": code,
+                                            }));
+    }
+
+    pub fn update_cmds(&self, view_id: &ViewIdentifier,
+                       plugin: &str, cmds: &[Command]) {
+        self.rpc_peer.send_rpc_notification("update_cmds",
+                                            &json!({
+                                                "view_id": view_id,
+                                                "plugin": plugin,
+                                                "cmds": cmds,
                                             }));
     }
 

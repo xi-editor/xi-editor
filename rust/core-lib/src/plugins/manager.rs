@@ -27,7 +27,7 @@ use tabs::{BufferIdentifier, ViewIdentifier, BufferContainerRef};
 
 use super::{PluginCatalog, PluginRef, start_plugin_process, PluginPid};
 use super::rpc_types::{PluginCommand, PluginUpdate, UpdateResponse, PluginBufferInfo, ClientPluginInfo};
-use super::manifest::PluginActivation;
+use super::manifest::{PluginActivation, Command};
 
 pub type PluginName = String;
 type PluginGroup<W> = BTreeMap<PluginName, PluginRef<W>>;
@@ -219,7 +219,9 @@ impl <W: Write + Send + 'static>PluginManager<W> {
         let plugin_desc = self.catalog.get_named(plugin_name)
             .ok_or(Error::Other(format!("no plugin found with name {}", plugin_name)))?;
 
-        let init_info = if plugin_desc.is_global() {
+        let is_global = plugin_desc.is_global();
+        let commands = plugin_desc.commands.clone();
+        let init_info = if is_global {
             let buffers = self.buffers.lock();
             let info = buffers.iter_editors()
                 .map(|ed| ed.plugin_init_info().to_owned())
@@ -237,7 +239,13 @@ impl <W: Write + Send + 'static>PluginManager<W> {
             match result {
                 Ok(plugin_ref) => {
                     plugin_ref.initialize(&init_info);
-                    me.lock().on_plugin_launch(&view_id, &plugin_name, plugin_ref);
+                    if is_global {
+                        me.lock().on_plugin_connect_global(&plugin_name, plugin_ref,
+                                                           commands);
+                    } else {
+                        me.lock().on_plugin_connect_local(&view_id, &plugin_name,
+                                                          plugin_ref, commands);
+                    }
                 }
                 Err(_) => print_err!("failed to start plugin {}", plugin_name),
             }
@@ -245,37 +253,38 @@ impl <W: Write + Send + 'static>PluginManager<W> {
         Ok(())
     }
 
-    /// Callback used to register a successfully launched plugin
-    fn on_plugin_launch(&mut self, view_id: &ViewIdentifier,
-                        plugin_name: &str, plugin_ref: PluginRef<W>) {
-        let is_global = self.catalog.get_named(plugin_name).unwrap().is_global();
-        if is_global {
-            {
-                let buffers = self.buffers.lock();
-                for ed in buffers.iter_editors() {
-                    ed.plugin_started(None, plugin_name);
-                }
+    /// Callback used to register a successfully launched local plugin.
+    fn on_plugin_connect_local(&mut self, view_id: &ViewIdentifier,
+                              plugin_name: &str, plugin_ref: PluginRef<W>,
+                              commands: Vec<Command>) {
+        // only add to our 'running' collection if the editor still exists
+        let is_running = match self.buffers.lock().editor_for_view(view_id) {
+            Some(ed) => {
+                ed.plugin_started(view_id, plugin_name, &commands);
+                true
             }
-            self.global_plugins.insert(plugin_name.to_owned(), plugin_ref);
-
+            None => false,
+        };
+        if is_running {
+            let _ = self.running_for_view_mut(&view_id)
+                .map(|running| running.insert(plugin_name.to_owned(), plugin_ref));
         } else {
-            // only add to our 'running' collection if the editor still exists
-            let is_running = match self.buffers.lock().editor_for_view(view_id) {
-                Some(ed) => {
-                    ed.plugin_started(view_id, plugin_name);
-                    true
-                }
-                None => false,
-            };
-            if is_running {
-                let _ = self.running_for_view_mut(&view_id)
-                    .map(|running| running.insert(plugin_name.to_owned(), plugin_ref));
-            } else {
-                print_err!("launch of plugin {} failed, no buffer for view {}",
-                           plugin_name, view_id);
-                plugin_ref.shutdown();
+            print_err!("launch of plugin {} failed, no buffer for view {}",
+                       plugin_name, view_id);
+            plugin_ref.shutdown();
+        }
+    }
+
+    /// Callback used to register a successfully launched global plugin.
+    fn on_plugin_connect_global(&mut self, plugin_name: &str,
+                                plugin_ref: PluginRef<W>, commands: Vec<Command>) {
+        {
+            let buffers = self.buffers.lock();
+            for ed in buffers.iter_editors() {
+                ed.plugin_started(None, plugin_name, &commands);
             }
         }
+        self.global_plugins.insert(plugin_name.to_owned(), plugin_ref);
     }
 
     fn stop_plugin(&mut self, view_id: &ViewIdentifier, plugin_name: &str) {
