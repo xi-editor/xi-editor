@@ -38,7 +38,7 @@ pub trait Handler {
 struct State {
     buf_size: usize,
     view_id: String,
-    rev: usize,
+    rev: u64,
     cache: Option<String>,
     cache_offset: usize,
 

@@ -24,7 +24,7 @@ use serde_json::Value;
 use xi_rope::rope::{LinesMetric, Rope, RopeInfo};
 use xi_rope::interval::Interval;
 use xi_rope::delta::{self, Delta, Transformer};
-use xi_rope::engine::Engine;
+use xi_rope::engine::{Engine, RevId, RevToken};
 use xi_rope::spans::SpansBuilder;
 use view::View;
 use word_boundaries::WordCursor;
@@ -68,8 +68,8 @@ pub struct Editor<W: Write> {
     /// different views arrive.
     view: View,
     engine: Engine,
-    last_rev_id: usize,
-    pristine_rev_id: usize,
+    last_rev_id: RevId,
+    pristine_rev_id: RevId,
     undo_group_id: usize,
     live_undos: Vec<usize>, //  undo groups that may still be toggled
     cur_undo: usize, // index to live_undos, ones after this are undone
@@ -89,7 +89,7 @@ pub struct Editor<W: Write> {
     #[allow(dead_code)]
     sync_store: Option<SyncStore>,
     #[allow(dead_code)]
-    last_synced_rev: usize,
+    last_synced_rev: RevId,
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
@@ -239,7 +239,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
         
         PluginBufferInfo::new(self.buffer_id, &views,
-                              self.engine.get_head_rev_id(), self.text.len(),
+                              self.engine.get_head_rev_id().token(), self.text.len(),
                               nb_lines, self.path.clone(), self.syntax.clone())
     }
 
@@ -307,7 +307,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
         self.last_edit_type = self.this_edit_type;
         let priority = 0x10000;
-        self.engine.edit_rev(priority, undo_group, head_rev_id, delta);
+        self.engine.edit_rev(priority, undo_group, head_rev_id.token(), delta);
         self.text = self.engine.get_head().clone();
     }
 
@@ -322,10 +322,10 @@ impl<W: Write + Send + 'static> Editor<W> {
     pub fn apply_plugin_edit(&mut self, edit: PluginEdit, undo_group: usize) {
         let interval = Interval::new_closed_open(edit.start as usize, edit.end as usize);
         let text = Rope::from(&edit.text);
-        let rev_len = self.engine.get_rev(edit.rev as usize).unwrap().len();
+        let rev_len = self.engine.get_rev(edit.rev).unwrap().len();
         let delta = Delta::simple_edit(interval, text, rev_len);
         //let prev_head_rev_id = self.engine.get_head_rev_id();
-        self.engine.edit_rev(edit.priority as usize, undo_group, edit.rev as usize, delta);
+        self.engine.edit_rev(edit.priority as usize, undo_group, edit.rev, delta);
         self.text = self.engine.get_head().clone();
 
         // TODO: actually implement priority, which makes the need for the following
@@ -349,7 +349,7 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     fn update_after_revision(&mut self, author: Option<&str>) {
-        let delta = self.engine.delta_rev_head(self.last_rev_id);
+        let delta = self.engine.delta_rev_head(self.last_rev_id.token());
         let is_pristine = self.is_pristine();
         self.scroll_to = self.view.after_edit(&self.text, &delta, is_pristine);
         let (iv, new_len) = delta.summary();
@@ -375,7 +375,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             let update = PluginUpdate::new(
                 self.view.view_id.clone(),
                 iv.start(), iv.end(), new_len,
-                self.engine.get_head_rev_id(), text,
+                self.engine.get_head_rev_id().token(), text,
                 self.this_edit_type.json_string().to_owned(),
                 author.to_owned());
 
@@ -427,6 +427,11 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.last_synced_rev = self.engine.get_head_rev_id();
         self.commit_delta(None);
         self.render();
+    }
+
+    /// See `Engine::set_session_id` only useful when using Fuchsia sync functionality.
+    pub fn set_session_id(&mut self, session: (u64,u32)) {
+        self.engine.set_session_id(session);
     }
 
     #[cfg(target_os = "fuchsia")]
@@ -1004,7 +1009,7 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     pub fn plugin_update_spans(&mut self, plugin: PluginPid, start: usize, len: usize,
-                               spans: Vec<ScopeSpan>, rev: usize) {
+                               spans: Vec<ScopeSpan>, rev: RevToken) {
         // TODO: more protection against invalid input
         let mut start = start;
         let mut end_offset = start + len;
@@ -1013,7 +1018,7 @@ impl<W: Write + Send + 'static> Editor<W> {
             sb.add_span(Interval::new_open_open(span.start, span.end), span.scope_id);
         }
         let mut spans = sb.build();
-        if rev != self.engine.get_head_rev_id() {
+        if rev != self.engine.get_head_rev_id().token() {
             let delta = self.engine.delta_rev_head(rev);
             let mut transformer = Transformer::new(&delta);
             let new_start = transformer.transform(start, false);
@@ -1030,8 +1035,8 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.render();
     }
 
-    pub fn plugin_get_data(&self, offset: usize, max_size: usize, rev: usize) -> Option<String> {
-        let text_cow = if rev == self.engine.get_head_rev_id() {
+    pub fn plugin_get_data(&self, offset: usize, max_size: usize, rev: RevToken) -> Option<String> {
+        let text_cow = if rev == self.engine.get_head_rev_id().token() {
             Cow::Borrowed(&self.text)
         } else {
             match self.engine.get_rev(rev) {

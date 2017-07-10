@@ -109,8 +109,8 @@ impl<W: Write + Send + 'static> MainState<W> {
     }
 
     #[cfg(target_os = "fuchsia")]
-    pub fn set_ledger(&mut self, ledger: Ledger_Proxy) {
-        self.tabs.set_ledger(ledger);
+    pub fn set_ledger(&mut self, ledger: Ledger_Proxy, session_id: (u64, u32)) {
+        self.tabs.setup_ledger(ledger, session_id);
     }
 }
 
