@@ -456,6 +456,14 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
     }
 
+    fn delete_word_forward(&mut self) {
+        self.delete_by_movement(Movement::RightWord, false);
+    }
+
+    fn delete_word_backward(&mut self) {
+        self.delete_by_movement(Movement::LeftWord, false);
+    }
+
     fn delete_forward(&mut self) {
         self.delete_by_movement(Movement::Right, false);
     }
@@ -911,6 +919,8 @@ impl<W: Write + Send + 'static> Editor<W> {
             Insert { chars } => async(self.do_insert(chars)),
             DeleteForward => async(self.delete_forward()),
             DeleteBackward => async(self.delete_backward()),
+            DeleteWordForward => async(self.delete_word_forward()),
+            DeleteWordBackward => async(self.delete_word_backward()),
             DeleteToEndOfParagraph => async(self.delete_to_end_of_paragraph()),
             DeleteToBeginningOfLine => async(self.delete_to_beginning_of_line()),
             InsertNewline => async(self.insert_newline()),

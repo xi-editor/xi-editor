@@ -74,6 +74,8 @@ pub enum EditCommand<'a> {
     Insert { chars: &'a str },
     DeleteForward,
     DeleteBackward,
+    DeleteWordForward,
+    DeleteWordBackward,
     DeleteToEndOfParagraph,
     DeleteToBeginningOfLine,
     InsertNewline,
@@ -196,6 +198,8 @@ impl<'a> EditCommand<'a> {
 
             "delete_forward" => Ok(DeleteForward),
             "delete_backward" => Ok(DeleteBackward),
+            "delete_word_forward" => Ok(DeleteWordForward),
+            "delete_word_backward" => Ok(DeleteWordBackward),
             "delete_to_end_of_paragraph" => Ok(DeleteToEndOfParagraph),
             "delete_to_beginning_of_line" => Ok(DeleteToBeginningOfLine),
             "insert_newline" => Ok(InsertNewline),
