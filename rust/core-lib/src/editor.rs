@@ -237,7 +237,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         for v in self.views.keys() {
             views.push(v.to_owned());
         }
-        
+
         PluginBufferInfo::new(self.buffer_id, &views,
                               self.engine.get_head_rev_id().token(), self.text.len(),
                               nb_lines, self.path.clone(), self.syntax.clone())
@@ -419,8 +419,7 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     pub fn merge_new_state(&mut self, new_engine: Engine) {
-        // TODO: CRDT merge
-        self.engine = new_engine;
+        self.engine.merge(&new_engine);
         self.text = self.engine.get_head().clone();
         // TODO: better undo semantics. This only implements separate undo histories for low concurrency.
         self.undo_group_id = self.engine.max_undo_group_id() + 1;
