@@ -34,7 +34,8 @@ use selection::{Affinity, Selection, SelRegion};
 use tabs::{BufferIdentifier, ViewIdentifier, DocumentCtx};
 use rpc::{EditCommand, GestureType};
 use syntax::SyntaxDefinition;
-use plugins::rpc_types::{PluginUpdate, PluginEdit, ScopeSpan, PluginBufferInfo};
+use plugins::rpc_types::{PluginUpdate, PluginEdit, ScopeSpan, PluginBufferInfo,
+ClientPluginInfo};
 use plugins::{PluginPid, Command};
 use layers::Scopes;
 
@@ -1073,6 +1074,12 @@ impl<W: Write + Send + 'static> Editor<W> {
     // should have its own reference.
     pub fn plugin_alert(&self, msg: &str) {
         self.doc_ctx.alert(msg);
+    }
+
+    /// Notifies the client of the currently available plugins.
+    pub fn available_plugins(&self, view_id: &ViewIdentifier,
+                             plugins: &[ClientPluginInfo]) {
+        self.doc_ctx.available_plugins(view_id, plugins);
     }
 
     /// Notifies the client that the named plugin has started.

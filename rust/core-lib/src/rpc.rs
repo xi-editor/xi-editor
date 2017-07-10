@@ -135,7 +135,6 @@ pub enum EditCommand<'a> {
 #[serde(tag = "command")]
 #[serde(rename_all = "snake_case")]
 pub enum PluginCommand {
-    InitialPlugins { view_id: ViewIdentifier },
     Start { view_id: ViewIdentifier, plugin_name: String },
     Stop { view_id: ViewIdentifier, plugin_name: String },
     PluginRpc { view_id: ViewIdentifier, receiver: String, rpc: PlaceholderRpc },

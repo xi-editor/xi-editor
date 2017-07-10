@@ -17,6 +17,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, Write};
 use std::sync::{Arc, Mutex, Weak, MutexGuard};
+
 use std::path::Path;
 use std::fmt::Debug;
 
@@ -60,7 +61,7 @@ pub enum Error {
 impl <W: Write + Send + 'static>PluginManager<W> {
 
     /// Returns plugins available to this view.
-    pub fn available_plugins(&self, view_id: &ViewIdentifier) -> Vec<ClientPluginInfo> {
+    pub fn get_available_plugins(&self, view_id: &ViewIdentifier) -> Vec<ClientPluginInfo> {
         self.catalog.iter_names().map(|name| {
             let running = self.plugin_is_running(view_id, &name);
             let name = name.clone();
@@ -386,7 +387,7 @@ impl <W: Write + Send + 'static>PluginManager<W> {
     }
 }
 
-/// Wrapper around a `Arc<Mutex<PluginManager<W>>>`.
+/// Wrapper around an `Arc<Mutex<PluginManager<W>>>`.
 pub struct PluginManagerRef<W: Write>(Arc<Mutex<PluginManager<W>>>);
 
 impl<W: Write> Clone for PluginManagerRef<W> {
@@ -404,7 +405,9 @@ impl <W: Write>WeakPluginManagerRef<W> {
     /// Returns `None` if the inner value has been deallocated.
     pub fn upgrade(&self) -> Option<PluginManagerRef<W>> {
         match self.0.upgrade() {
-            Some(inner) => Some(PluginManagerRef(inner)),
+            Some(inner) => {
+                Some(PluginManagerRef(inner))
+            }
             None => None
         }
     }
@@ -412,15 +415,17 @@ impl <W: Write>WeakPluginManagerRef<W> {
 
 impl<W: Write + Send + 'static> PluginManagerRef<W> {
     pub fn new(buffers: BufferContainerRef<W>) -> Self {
-        PluginManagerRef(Arc::new(Mutex::new(
-        PluginManager {
-            // TODO: actually parse these from manifest files
-            catalog: PluginCatalog::debug(),
-            buffer_plugins: BTreeMap::new(),
-            global_plugins: PluginGroup::new(),
-            buffers: buffers,
-            next_id: 0,
-        })))
+        PluginManagerRef(
+            Arc::new(Mutex::new(
+                PluginManager {
+                    // TODO: actually parse these from manifest files
+                    catalog: PluginCatalog::debug(),
+                    buffer_plugins: BTreeMap::new(),
+                    global_plugins: PluginGroup::new(),
+                    buffers: buffers,
+                    next_id: 0,
+                })),
+        )
     }
 
     pub fn lock(&self) -> MutexGuard<PluginManager<W>> {
@@ -429,13 +434,22 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
 
     /// Creates a new `WeakPluginManagerRef<W>`.
     pub fn to_weak(&self) -> WeakPluginManagerRef<W> {
-        let weak_inner = Arc::downgrade(&self.0);
-        WeakPluginManagerRef(weak_inner)
+        WeakPluginManagerRef(
+            Arc::downgrade(&self.0),
+        )
     }
 
 
     /// Called when a new buffer is created.
-    pub fn document_new(&mut self, view_id: &ViewIdentifier, init_info: PluginBufferInfo) {
+    pub fn document_new(&self, view_id: &ViewIdentifier, init_info: &PluginBufferInfo) {
+        let available = self.lock().get_available_plugins(view_id);
+        {
+            let inner = self.lock();
+            let buffers = inner.buffers.lock();
+            buffers.editor_for_view(view_id)
+                .map(|ed| { ed.available_plugins(view_id, &available) });
+        }
+
         self.add_running_collection(view_id);
         let to_start = self.activatable_plugins(view_id);
         self.start_plugins(view_id, &init_info, &to_start);
@@ -445,7 +459,7 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
     }
 
     /// Called when a buffer is saved to a file.
-    pub fn document_did_save(&mut self, view_id: &ViewIdentifier, path: &Path) {
+    pub fn document_did_save(&self, view_id: &ViewIdentifier, path: &Path) {
         self.lock().notify_plugins(view_id, false, "did_save", &json!({
             "view_id": view_id,
             "path": path,
@@ -453,7 +467,7 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
     }
 
     /// Called when a buffer is closed.
-    pub fn document_close(&mut self, view_id: &ViewIdentifier) {
+    pub fn document_close(&self, view_id: &ViewIdentifier) {
         let to_stop = self.lock().running_for_view(view_id)
             .map(|running| {
                 running.keys()
@@ -470,7 +484,7 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
     }
 
     /// Called when a document's syntax definition has changed.
-    pub fn document_syntax_changed(&mut self, view_id: &ViewIdentifier, init_info: PluginBufferInfo) {
+    pub fn document_syntax_changed(&self, view_id: &ViewIdentifier, init_info: PluginBufferInfo) {
         print_err!("document_syntax_changed {}", view_id);
 
         let start_keys = self.activatable_plugins(view_id).iter()
@@ -521,8 +535,7 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
         self.lock().dispatch_common(view_id, receiver, method, params, false);
     }
 
-
-    /// Sends a custom request to a running plugin
+	/// Sends a custom request to a running plugin
     pub fn dispatch_request(&self, view_id: &ViewIdentifier, receiver: &str,
                         method: &str, params: &Value) -> Value {
         //TODO: our RPC error story is sort of non-existent. This should
@@ -572,7 +585,7 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
     }
 
     /// Batch run a group of plugins (as on creating a new view, for instance)
-    fn start_plugins(&mut self, view_id: &ViewIdentifier,
+    fn start_plugins(&self, view_id: &ViewIdentifier,
                      init_info: &PluginBufferInfo, plugin_names: &Vec<String>) {
         print_err!("starting plugins for {}", view_id);
         for plugin_name in plugin_names.iter() {

@@ -86,12 +86,6 @@ Dispatches the inner method to the plugin manager.
 
 ### Plugin methods
 
-#### initial_plugins
-
-`initial_plugins {"view_id": "view-id-1"}` -> `[plugin_name]`
-
-Returns an initial list of plugins available for this view.
-
 #### start
 
 `start {"view_id": "view-id-1", "plugin_name": "syntect"}`
@@ -241,6 +235,71 @@ use the new theme to set colors as appropriate.
 The `Theme` object is directly serialized from a 
 [`syntect::highlighting::ThemeSettings`](https://github.com/trishume/syntect/blob/master/src/highlighting/theme.rs#L27) 
 instance.
+
+### plugins
+
+#### available_plugins
+
+`available_plugins {"view_id": "view-id-1", "plugins": [{"name": "syntect",
+"running": true]}`
+
+Notifies the client of the plugins available to the given view.
+
+#### plugin_started
+
+`plugin_started {"view_id": "view-id-1", "plugin": "syntect"}`
+
+Notifies the client that the named plugin is running.
+
+#### plugin_stopped
+
+`plugin_stopped {"view_id": "view-id-1", "plugin": "syntect", "code" 101}`
+
+Notifies the client that the named plugin has stopped. The `code` field is an
+integer exit code; currently 0 indicates a user-initiated exit and 1 indicates
+an abnormal exit, i.e. a plugin crash.
+
+#### update_cmds
+
+`update_cmds {"view_id": "view-id-1", "plugin", "syntect", "cmds": [Command]}`
+
+Notifies the client of a change in the available commands for a given plugin.
+The `cmds` field is a list of all commands currently available to this plugin.
+Clients should store commands on a per-plugin basis; when the `cmds` argument is
+an empty list it means that this plugin is providing no commands; any previously
+available commands should be disabled.
+
+The format for describing a `Command` is in flux. The best place to look for
+a working example is in the tests in core-lib/src/plugins/manifest.rs. As of
+this writing, the following is valid json for a `Command` object:
+
+```json
+    {
+    "title": "Test Command",
+    "description": "Passes the current test",
+    "rpc_cmd": {
+        "type": "notification",
+        "method": "test.cmd",
+        "params": {
+            "this_works": "some value",
+            "a_choice": "some value"
+        }
+    },
+    "args": [
+        {"title": "This Works", "description": "Indicates something", "key": "this_works", "arg_type": "Bool"},
+        {
+            "title": "Favourite Number",
+            "description": "A number used in a test.",
+            "key": "a_choice",
+            "arg_type": "Choice",
+            "options": [
+                {"title": "Five", "value": 5},
+                {"title": "Ten", "value": 10}
+            ]
+        }
+    ]
+    }
+```
 
 ### RPCs from front-end to back-end
 

@@ -24,6 +24,8 @@ use std::sync::{Arc, Mutex, MutexGuard, Weak, mpsc};
 use serde_json::value::Value;
 
 use xi_rope::rope::Rope;
+use xi_rpc::RpcCtx;
+
 use editor::Editor;
 use rpc::{CoreCommand, EditCommand, PluginCommand};
 use styles::{Style, ThemeStyleMap};
@@ -31,7 +33,7 @@ use MainPeer;
 
 use syntax::SyntaxDefinition;
 use plugins::{self, PluginManagerRef, Command};
-use plugins::rpc_types::PluginUpdate;
+use plugins::rpc_types::{PluginUpdate, ClientPluginInfo};
 use plugins::PlaceholderRpc;
 
 #[cfg(target_os = "fuchsia")]
@@ -252,6 +254,17 @@ impl<W: Write> Clone for BufferContainerRef<W> {
     }
 }
 
+/// A trait for closure types which are callable with a `Documents` instance.
+trait IdleProc<W: Write>: Send {
+    fn call(self: Box<Self>, docs: &mut Documents<W>);
+}
+
+impl<W: Write, F: Send + FnOnce(&mut Documents<W>)> IdleProc<W> for F {
+    fn call(self: Box<F>, docs: &mut Documents<W>) {
+        (*self)(docs)
+    }
+}
+
 /// A container for all open documents.
 ///
 /// `Documents` is effectively the apex of the xi's model graph. It keeps references
@@ -267,6 +280,8 @@ pub struct Documents<W: Write> {
     plugins: PluginManagerRef<W>,
     /// A tx channel used to propagate plugin updates from all `Editor`s.
     update_channel: mpsc::Sender<(ViewIdentifier, PluginUpdate, usize)>,
+    /// A queue of closures to be executed on the next idle runloop pass.
+    idle_queue: Vec<Box<IdleProc<W>>>,
     #[allow(dead_code)]
     sync_repo: Option<SyncRepo>,
 }
@@ -296,6 +311,7 @@ impl<W: Write + Send + 'static> Documents<W> {
             style_map: Arc::new(Mutex::new(ThemeStyleMap::new())),
             plugins: plugin_manager,
             update_channel: update_tx,
+            idle_queue: Vec::new(),
             sync_repo: None,
         }
     }
@@ -319,7 +335,7 @@ impl<W: Write + Send + 'static> Documents<W> {
         BufferIdentifier(self.id_counter)
     }
 
-    pub fn do_rpc(&mut self, cmd: CoreCommand, rpc_peer: &MainPeer<W>) -> Option<Value> {
+    pub fn do_rpc<'a>(&mut self, cmd: CoreCommand, rpc_ctx: &mut RpcCtx<'a, W>) -> Option<Value> {
         use rpc::CoreCommand::*;
 
         match cmd {
@@ -328,12 +344,18 @@ impl<W: Write + Send + 'static> Documents<W> {
                 None
             },
 
-            NewView { file_path } => Some(self.do_new_view(rpc_peer, file_path)),
+            NewView { file_path } => {
+                let result = Some(self.do_new_view(rpc_ctx.get_peer(), file_path));
+                // schedule idle handler after creating views; this is used to
+                // send cursors for empty views, and to initialize plugins.
+                rpc_ctx.schedule_idle(0);
+                result
+            }
             Save { view_id, file_path } => self.do_save(&view_id, file_path),
             Edit { view_id, edit_command } => self.do_edit(&view_id, edit_command),
             Plugin { plugin_command } => self.do_plugin_cmd(plugin_command),
             SetTheme { theme_name } => {
-                self.do_set_theme(rpc_peer, theme_name);
+                self.do_set_theme(rpc_ctx.get_peer(), theme_name);
                 None
             }
         }
@@ -372,9 +394,22 @@ impl<W: Write + Send + 'static> Documents<W> {
             let buffer_id = self.next_buffer_id();
             self.new_empty_view(rpc_peer, &view_id, buffer_id);
         }
+
+        // closure to handle post-creation work on next idle runloop
+        let view_id2 = view_id.clone();
         let init_info = self.buffers.lock().editor_for_view(&view_id)
             .unwrap().plugin_init_info();
-        self.plugins.document_new(&view_id, init_info);
+
+        let on_idle = Box::new(move |self_ref: &mut Documents<W>| {
+            self_ref.plugins.document_new(&view_id2, &init_info);
+            {
+                let mut editors = self_ref.buffers.lock();
+                for editor in editors.iter_editors_mut() {
+                    editor.render();
+                }
+            }
+        });
+        self.idle_queue.push(on_idle);
         json!(view_id)
     }
 
@@ -450,8 +485,8 @@ impl<W: Write + Send + 'static> Documents<W> {
         let prev_syntax = self.buffers.lock().editor_for_view(view_id)
             .unwrap().get_syntax().to_owned();
         // notify of syntax change before notify of file_save
-        //FIXME: this doesn't tell us if the syntax _will_ change, for instance if syntax was a user
-        //selection. (we don't handle this case right now)
+        //FIXME: this doesn't tell us if the syntax _will_ change, for instance
+        //if syntax was a user selection. (we don't handle this case right now)
 
         self.buffers.lock().editor_for_view_mut(view_id)
             .unwrap().do_save(file_path);
@@ -473,8 +508,6 @@ impl<W: Write + Send + 'static> Documents<W> {
     fn do_plugin_cmd(&mut self, cmd: PluginCommand) -> Option<Value> {
         use self::PluginCommand::*;
         match cmd {
-            InitialPlugins { view_id } => Some(json!(
-                    self.plugins.lock().available_plugins(&view_id))),
             Start { view_id, plugin_name } => {
                 //TODO: report this error to client?
                 let info = self.buffers.lock().editor_for_view(&view_id)
@@ -539,9 +572,9 @@ impl<W: Write + Send + 'static> Documents<W> {
         }
     }
 
-    pub fn handle_idle(&self) {
-        for editor in self.buffers.lock().editors.values_mut() {
-            editor.render();
+    pub fn handle_idle(&mut self) {
+        while let Some(f) = self.idle_queue.pop() {
+            f.call(self);
         }
     }
 }
@@ -575,14 +608,6 @@ impl<W: Write> DocumentCtx<W> {
             }));
     }
 
-    /// Notify the client of the available plugins.
-    pub fn available_plugins(&self, view_id: &ViewIdentifier, plugins: Vec<&str>) {
-        self.rpc_peer.send_rpc_notification("available_plugins",
-                                            &json!({
-                                                "view_id": view_id,
-                                                "plugins": plugins }));
-    }
-
     /// Notify the client that a plugin ha started.
     pub fn plugin_started(&self, view_id: &ViewIdentifier, plugin: &str) {
         self.rpc_peer.send_rpc_notification("plugin_started",
@@ -602,6 +627,15 @@ impl<W: Write> DocumentCtx<W> {
                                                 "plugin": plugin,
                                                 "code": code,
                                             }));
+    }
+
+    /// Notify the client of the available plugins.
+    pub fn available_plugins(&self, view_id: &ViewIdentifier,
+                             plugins: &[ClientPluginInfo]) {
+        self.rpc_peer.send_rpc_notification("available_plugins",
+                                            &json!({
+                                                "view_id": view_id,
+                                                "plugins": plugins }));
     }
 
     pub fn update_cmds(&self, view_id: &ViewIdentifier,

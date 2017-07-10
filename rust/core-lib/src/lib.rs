@@ -115,10 +115,10 @@ impl<W: Write + Send + 'static> MainState<W> {
 }
 
 impl<W: Write + Send + 'static> Handler<W> for MainState<W> {
-    fn handle_notification(&mut self, ctx: RpcCtx<W>, method: &str, params: &Value) {
+    fn handle_notification(&mut self, mut ctx: RpcCtx<W>, method: &str, params: &Value) {
         match Request::from_json(method, params) {
             Ok(req) => {
-                if let Some(_) = self.handle_req(req, ctx.get_peer()) {
+                if let Some(_) = self.handle_req(req, &mut ctx) {
                     print_err!("Unexpected return value for notification {}", method)
                 }
             }
@@ -130,15 +130,12 @@ impl<W: Write + Send + 'static> Handler<W> for MainState<W> {
         Result<Value, Value> {
         match Request::from_json(method, params) {
             Ok(req) => {
-                let result = self.handle_req(req, ctx.get_peer());
-                // Schedule the idle handler to send the render the cursor for new
-                // empty buffers. TODO: move this into the new_tab logic.
-                ctx.schedule_idle(0);
-                result.ok_or_else(|| Value::String("return value missing".to_string()))
+                let result = self.handle_req(req, &mut ctx);
+                result.ok_or_else(|| json!("return value missing"))
             }
             Err(e) => {
                 print_err!("Error {} decoding RPC request {}", e, method);
-                Err(Value::String("error decoding request".to_string()))
+                Err(json!("error decoding request"))
             }
         }
     }
@@ -149,10 +146,10 @@ impl<W: Write + Send + 'static> Handler<W> for MainState<W> {
 }
 
 impl<W: Write + Send + 'static> MainState<W> {
-    fn handle_req(&mut self, request: Request, rpc_peer: &MainPeer<W>) ->
+    fn handle_req(&mut self, request: Request, rpc_ctx: &mut RpcCtx<W>) ->
         Option<Value> {
         match request {
-            Request::CoreCommand { core_command } => self.tabs.do_rpc(core_command, rpc_peer)
+            Request::CoreCommand { core_command } => self.tabs.do_rpc(core_command, rpc_ctx)
         }
     }
 }
