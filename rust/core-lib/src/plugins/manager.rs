@@ -87,6 +87,11 @@ impl <W: Write + Send + 'static>PluginManager<W> {
                     .plugin_update_spans(plugin_id, start, len, spans, rev);
                 None
             }
+            Edit { view_id, edit } => {
+                self.buffers.lock().editor_for_view_mut(&view_id).unwrap()
+                    .plugin_edit(&edit);
+                None
+            }
             GetData { view_id, offset, max_size, rev } => {
                 self.buffers.lock().editor_for_view(&view_id).unwrap()
                 .plugin_get_data(offset, max_size, rev)
@@ -131,7 +136,7 @@ impl <W: Write + Send + 'static>PluginManager<W> {
                     match response.map(serde_json::from_value::<UpdateResponse>) {
                         Ok(Ok(UpdateResponse::Edit(edit))) => {
                             buffers.lock().editor_for_view_mut(&view_id).unwrap()
-                                .apply_plugin_edit(edit, undo_group);
+                                .apply_plugin_edit(&edit, Some(undo_group));
                         }
                         Ok(Ok(UpdateResponse::Ack(_))) => (),
                         Ok(Err(err)) => print_err!("plugin response json err: {:?}", err),
@@ -208,7 +213,8 @@ impl <W: Write + Send + 'static>PluginManager<W> {
                     plugin_ref.initialize(&init_info);
                     me.lock().on_plugin_launch(&view_id, &plugin_name, plugin_ref);
                 }
-                Err(_) => print_err!("failed to start plugin {}", plugin_name),
+                Err(err) => print_err!("failed to start plugin {}:\n {:?}",
+                                     plugin_name, err),
             }
         });
         Ok(())

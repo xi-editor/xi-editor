@@ -32,3 +32,6 @@ class View(object):
 
     def add_scopes(self, *args, **kwargs):
         self.lines.peer.add_scopes(self.view_id, *args, **kwargs)
+
+    def edit(self, *args, **kwargs):
+        self.lines.peer.edit(self.view_id, *args, **kwargs)
