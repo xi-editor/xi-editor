@@ -128,19 +128,23 @@ pub struct Command {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// A user provided argument to a plugin command.
 pub struct CommandArgument {
-    pub tag: String,
+    /// A human readable name for this argument, for use as placeholder
+    /// text or equivelant.
+    pub title: String,
+    /// A short (single sentence) description of this argument's use.
+    pub description: String,
+    pub key: String,
     pub arg_type: ArgumentType,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    /// If `arg_type` is `Choice`, `options` must contain a list of options.
-    pub options: Option<Vec<ArgumentOption>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type_name")]
 pub enum ArgumentType {
-    Number, Int, PosInt, Bool, String, Choice,
+    Number, Int, PosInt, Bool, String,
+    Choice { options: Vec<ArgumentOption> },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 /// Represents an option for a user-selectable argument.
 pub struct ArgumentOption {
     pub title: String,
@@ -148,15 +152,22 @@ pub struct ArgumentOption {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
 /// A placeholder type which can represent a generic RPC.
 ///
 /// This is the type used for custom plugin commands, which may have arbitrary
 /// method names and parameters.
-pub enum PlaceholderRpc {
-    Notification { method: String, params: Value },
-    Request { method: String, params: Value },
+pub struct PlaceholderRpc {
+    pub method: String,
+    pub params: Value,
+    #[serde(rename = "type")]
+    pub rpc_type: RpcType,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum RpcType {
+    Notification, Request
 }
 
 impl Command {
@@ -172,10 +183,12 @@ impl Command {
 }
 
 impl CommandArgument {
-    pub fn new<S: AsRef<str>>(tag: S, arg_type: ArgumentType,
-                              options: Option<Vec<ArgumentOption>>) -> Self {
-        let tag = tag.as_ref().to_owned();
-        CommandArgument { tag, arg_type, options }
+    pub fn new<S: AsRef<str>>(title: S, description: S, key: S,
+                              arg_type: ArgumentType) -> Self {
+        let key = key.as_ref().to_owned();
+        let title = title.as_ref().to_owned();
+        let description = description.as_ref().to_owned();
+        CommandArgument { title, description, key, arg_type }
     }
 }
 
@@ -194,35 +207,28 @@ impl PlaceholderRpc {
     {
         let method = method.as_ref().to_owned();
         let params = params.into().unwrap_or(json!({}));
+        let rpc_type = if request { RpcType::Request } else { RpcType::Notification };
 
-        match request {
-            true => PlaceholderRpc::Request { method, params },
-            false => PlaceholderRpc::Notification { method, params },
-        }
+        PlaceholderRpc { method, params, rpc_type }
+    }
+
+    pub fn is_request(&self) -> bool {
+        self.rpc_type == RpcType::Request
     }
 
     /// Returns a reference to the placeholder's params.
     pub fn params_ref(&self) -> &Value {
-        match self {
-            &PlaceholderRpc::Request { ref params, .. } => params,
-            &PlaceholderRpc::Notification { ref params, .. } => params,
-        }
+        &self.params
     }
 
     /// Returns a mutable reference to the placeholder's params.
     pub fn params_ref_mut(&mut self) -> &mut Value {
-        match self {
-            &mut PlaceholderRpc::Request { ref mut params, .. } => params,
-            &mut PlaceholderRpc::Notification { ref mut params, .. } => params,
-        }
+        &mut self.params
     }
 
     /// Returns a reference to the placeholder's method.
     pub fn method_ref<'a>(&'a self) -> &'a str {
-        match self {
-            &PlaceholderRpc::Request { ref method, .. } => method,
-            &PlaceholderRpc::Notification { ref method, .. } => method,
-        }
+        &self.method
     }
 }
 
@@ -267,19 +273,29 @@ mod tests {
             "type": "notification",
             "method": "test.cmd",
             "params": {
-                "this_works": "{this_works}",
-                "a_choice": "{choice_tag}"
+                "view": "",
+                "this_works": "some value",
+                "a_choice": "some value"
             }
         },
         "args": [
-            {"tag": "this_works", "arg_type": "Bool"},
             {
-                "tag": "choice_tag",
-                "arg_type": "Choice",
-                "options": [
-                    {"title": "First Choice", "value": 5},
-                    {"title": "Second Choice", "value": 10}
-                ]
+                "title": "This Works",
+                "description": "Indicates something",
+                "key": "this_works",
+                "arg_type": {"type_name": "Bool"}
+            },
+            {
+                "title": "Favourite Number",
+                "description": "A number used in a test.",
+                "key": "a_choice",
+                "arg_type": {
+                    "type_name": "Choice",
+                    "options": [
+                        {"title": "Five", "value": 5},
+                        {"title": "Ten", "value": 10}
+                    ]
+                }
             }
         ]
         }
@@ -288,7 +304,12 @@ mod tests {
         let command: Command = serde_json::from_str(&json).unwrap();
         assert_eq!(command.title, "Test Command");
         assert_eq!(command.args[0].arg_type, ArgumentType::Bool);
-        assert_eq!(command.rpc_cmd.params_ref()["this_works"], "{this_works}");
-        assert_eq!(command.args[1].options.clone().unwrap()[1].value, json!(10));
+        assert_eq!(command.rpc_cmd.params_ref()["this_works"], "some value");
+        assert_eq!(command.args[1].arg_type,
+                   ArgumentType::Choice {
+                       options: vec![
+                           ArgumentOption::new("Five", 5),
+                           ArgumentOption::new("Ten", 10)]
+                   });
     }
 }

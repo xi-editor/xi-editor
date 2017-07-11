@@ -101,15 +101,11 @@ class PluginHost(object):
         peer.done = True
         self.plugin.shutdown()
 
-    def other_cmd(self, peer, method, params):
-        '''Unknown RPC, presumably a custom command provided by the plugin.'''
-        view_id = params.pop("view_id")
-        if view_id:
-            view = self.views.get(view_id)
-            if view is None:
-                print("plugin {} missing view for id {}",
-                      self.plugin.identifier, view_id)
-            params["view"] = view
+    def custom_command(self, peer, method, params):
+        '''Custom command provided by the plugin.'''
+        if params.get('view'):
+            view = self.views.get(params['view'])
+            params['view'] = view
         return getattr(self.plugin, method)(**params)
 
     def _initialize_buffers(self, peer, buffer_info):

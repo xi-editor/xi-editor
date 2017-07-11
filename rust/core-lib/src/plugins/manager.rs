@@ -177,28 +177,19 @@ impl <W: Write + Send + 'static>PluginManager<W> {
         }
     }
 
-    fn dispatch_common(&self, view_id: &ViewIdentifier, receiver: &str,
-                       method: &str, params: &Value,
-                       request: bool) -> Option<Value> {
+    fn dispatch_command(&self, view_id: &ViewIdentifier, receiver: &str,
+                        method: &str, params: &Value) {
         let plugin_ref = self.running_for_view(view_id)
             .ok()
             .and_then(|r| r.get(receiver));
 
         match plugin_ref {
             Some(plug) => {
-                if request {
-                    Some(plug.rpc_request(method, params))
-                } else {
-                    plug.rpc_notification(method, params);
-                    None
-                }
+                let inner = json!({"method": method, "params": params});
+                plug.rpc_notification("custom_command", &inner);
             }
             None => {
                 print_err!("missing plugin {} for command {}", receiver, method);
-                Some(json!({"error": {
-                    "code": 404,
-                    "message": "Plugin not found.",
-                }}))
             }
         }
     }
@@ -530,21 +521,10 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
     }
 
     /// Sends a custom notification to a running plugin
-    pub fn dispatch_notification(&self, view_id: &ViewIdentifier, receiver: &str,
+    pub fn dispatch_command(&self, view_id: &ViewIdentifier, receiver: &str,
                              method: &str, params: &Value) {
-        self.lock().dispatch_common(view_id, receiver, method, params, false);
+        self.lock().dispatch_command(view_id, receiver, method, params);
     }
-
-	/// Sends a custom request to a running plugin
-    pub fn dispatch_request(&self, view_id: &ViewIdentifier, receiver: &str,
-                        method: &str, params: &Value) -> Value {
-        //TODO: our RPC error story is sort of non-existent. This should
-        //probably return a Result<T> with some error type that can go on
-        //the wire?
-        self.lock().dispatch_common(view_id, receiver, method, params, true)
-            .unwrap_or_else(|| json!({}))
-    }
-
 
     // ====================================================================
     // implementation details

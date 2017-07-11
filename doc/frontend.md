@@ -99,6 +99,19 @@ Starts the named given for the given view.
 
 Stops the named plugin for the given view.
 
+#### plugin_rpc
+
+```
+plugin_rpc {"view_id": "view-id-1", "receiver": "syntect",
+            "notification": {
+                "method": "custom_method",
+                "params": {"foo": "bar"},
+            }}
+ ```
+
+Sends a custom rpc command to the named receiver. This may be a notification
+or a request.
+
 ### edit
 `edit {"method": "insert", "params": {"chars": "A"}, "view_id":
 "view-id-4"}`
@@ -231,9 +244,8 @@ follow the existing pattern.
 `theme_changed {"name": "InspiredGitHub", "theme": Theme}`
 
 Notifies the client that the theme has been changed. The client should
-use the new theme to set colors as appropriate.
-The `Theme` object is directly serialized from a 
-[`syntect::highlighting::ThemeSettings`](https://github.com/trishume/syntect/blob/master/src/highlighting/theme.rs#L27) 
+use the new theme to set colors as appropriate. The `Theme` object is
+directly serialized from a [`syntect::highlighting::ThemeSettings`](https://github.com/trishume/syntect/blob/master/src/highlighting/theme.rs#L27)
 instance.
 
 ### plugins

@@ -149,10 +149,6 @@ impl<W: Write + Send + 'static> PluginRef<W> {
         }
     }
 
-    pub fn command(&self, method: &str, params: &Value) {
-        self.0.lock().unwrap().peer.send_rpc_notification(method, params);
-    }
-
     /// Termination message sent to the plugin.
     ///
     /// The plugin is expected to clean up and close the pipe.

@@ -34,7 +34,6 @@ use MainPeer;
 use syntax::SyntaxDefinition;
 use plugins::{self, PluginManagerRef, Command};
 use plugins::rpc_types::{PluginUpdate, ClientPluginInfo};
-use plugins::PlaceholderRpc;
 
 #[cfg(target_os = "fuchsia")]
 use apps_ledger_services_public::{Ledger_Proxy};
@@ -525,26 +524,12 @@ impl<W: Write + Send + 'static> Documents<W> {
                 self.plugins.stop_plugin(&view_id, &plugin_name);
                 None
             }
-            PluginRpc  { view_id, receiver, mut rpc } => {
-                // inserting view_id into params here because the plugin needs
-                // to know where this command originates. This feels a bit
-                // clumbsy though. At the very least we should use some obscure
-                // key so we don't collide with any possible user-supplied keys?
-                // Or we could validate keys on plugin load or something.
+            PluginRpc  { view_id, receiver, rpc } => {
                 assert!(rpc.params_ref().is_object(), "params must be an object");
-                rpc.params_ref_mut().as_object_mut()
-                    .map(|p| p.insert("view_id".to_owned(), json!(view_id)));
-                match rpc {
-                    PlaceholderRpc::Notification { ref method, ref params } => {
-                        self.plugins.dispatch_notification(&view_id, &receiver,
-                                                           method, params);
-                        None
-                    }
-                    PlaceholderRpc::Request { ref method, ref params } => {
-                        Some(self.plugins.dispatch_request(&view_id, &receiver,
-                                                           method, params))
-                    }
-                }
+                assert!(!rpc.is_request(), "client->plugin rpc is notification only");
+                self.plugins.dispatch_command(&view_id, &receiver,
+                                              &rpc.method, &rpc.params);
+                None
             }
         }
     }
