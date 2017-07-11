@@ -202,3 +202,104 @@ impl PageWatcher_Stub for PageWatcherServer {
     // Use default dispatching, but we could override it here.
 }
 impl_fidl_stub!(PageWatcherServer: PageWatcher_Stub);
+
+// ============= Conflict resolution
+
+pub fn start_conflict_resolver_factory(ledger: &mut Ledger_Proxy, key: Vec<u8>) {
+    let (s1, s2) = Channel::create(ChannelOpts::Normal).unwrap();
+    let resolver_client = ConflictResolverFactory_Client::from_handle(s1.into_handle());
+    let resolver_client_ptr = ::fidl::InterfacePtr {
+        inner: resolver_client,
+        version: ConflictResolverFactory_Metadata::VERSION,
+    };
+
+    let _ = fidl::Server::new(ConflictResolverFactoryServer { key }, s2).spawn();
+
+    ledger.set_conflict_resolver_factory(Some(resolver_client_ptr)).with(ledger_crash_callback);
+}
+
+struct ConflictResolverFactoryServer {
+    key: Vec<u8>,
+}
+
+impl ConflictResolverFactory for ConflictResolverFactoryServer {
+    fn get_policy(&mut self, page_id: Vec<u8>) -> Future<MergePolicy, ::fidl::Error> {
+        Future::done(Ok(MergePolicy_Custom))
+    }
+
+    /// Our resolvers are the same for every page
+    fn new_conflict_resolver(&mut self, _page_id: Vec<u8>, resolver: ConflictResolver_Server) {
+        let _ = fidl::Server::new(ConflictResolverServer { key: self.key.clone() }, resolver.into_channel()).spawn();
+    }
+}
+
+impl ConflictResolverFactory_Stub for ConflictResolverFactoryServer {
+    // Use default dispatching, but we could override it here.
+}
+impl_fidl_stub!(ConflictResolverFactoryServer: ConflictResolverFactory_Stub);
+
+fn state_from_snapshot<F>(snapshot: ::fidl::InterfacePtr<PageSnapshot_Client>, key: Vec<u8>, done: F)
+        where F: Send + FnOnce(Result<Option<Engine>,()>) + 'static {
+    assert_eq!(PageSnapshot_Metadata::VERSION, snapshot.version);
+    let snapshot_proxy = PageSnapshot_new_Proxy(snapshot.inner);
+    // TODO get a reference when too big
+    snapshot_proxy.get(key).with(move |raw_res| {
+        let state = match raw_res.map(|res| ledger::value_result(res)) {
+            Ok(Ok(Some(buf))) => Ok(buf_to_state(&buf))
+            Ok(Ok(None)) => { print_err!("No state in conflicting page"); Ok(None) },
+            Err(err) => { print_err!("FIDL failed on initial response: {:?}", err); Err(()) },
+            Ok(Err(err)) => { print_err!("Ledger failed to retrieve key: {:?}", err); Err(()) },
+        };
+        done(state);
+    });
+}
+
+struct ConflictResolverServer {
+    key: Vec<u8>,
+}
+
+impl ConflictResolver for ConflictResolverServer {
+    fn resolve(&mut self,
+        left: ::fidl::InterfacePtr<PageSnapshot_Client>,
+        right: ::fidl::InterfacePtr<PageSnapshot_Client>,
+        _common_version: Option<::fidl::InterfacePtr<PageSnapshot_Client>>,
+        result_provider: ::fidl::InterfacePtr<MergeResultProvider_Client>) {
+        // TODO in the futures-rs future, do this in parallel with Future combinators
+        let key2 = self.key.clone();
+        state_from_snapshot(left, self.key.clone(), move |e1_opt| {
+            let key3 = key2.clone();
+            state_from_snapshot(right, key2, move |e2_opt| {
+                let result_opt = match (e1_opt, e2_opt) {
+                    (Ok(Some(e1)), Ok(Some(e2))) => {
+                        e1.merge(&e2);
+                        Some(e1)
+                    },
+                    // one engine didn't exist yet, I'm not sure if Ledger actually generates a conflict in this case
+                    (Ok(Some(e)), Ok(None)) | (Ok(None), Ok(Some(e))) => Some(e),
+                    // failed to get one of the engines, we can't do the merge properly
+                    (Err(()), _) | (_, Err(())) => None,
+                };
+                if let Some(out_state) = result_opt {
+                    let buf = state_to_buf(&out_state);
+                    // TODO use a reference here when buf is too big
+                    let new_value = Some(Box::new(BytesOrReference::Bytes(buf)));
+                    let merged = MergedValue {
+                        key: key3,
+                        source: ValueSource_New,
+                        new_value,
+                        priority: Priority_Eager,
+                    };
+                    assert_eq!(MergeResultProvider_Metadata::VERSION, result_provider.version);
+                    let result_provider_proxy = MergeResultProvider_new_Proxy(result_provider.inner);
+                    result_provider_proxy.merge(vec![merged]);
+                    result_provider_proxy.done().with(ledger_crash_callback);
+                }
+            });
+        });
+    }
+}
+
+impl ConflictResolver_Stub for ConflictResolverServer {
+    // Use default dispatching, but we could override it here.
+}
+impl_fidl_stub!(ConflictResolverServer: ConflictResolver_Stub);
