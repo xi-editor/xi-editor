@@ -104,7 +104,7 @@ pub struct ScopeSpan {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(untagged)]
+#[serde(rename_all = "snake_case")]
 /// RPC commands sent from plugins.
 pub enum PluginCommand {
     AddScopes { view_id: ViewIdentifier, scopes: Vec<Vec<String>> },
@@ -112,6 +112,7 @@ pub enum PluginCommand {
     GetData { view_id: ViewIdentifier, offset: usize, max_size: usize, rev: u64 },
     Alert { view_id: ViewIdentifier, msg: String },
     LineCount { view_id: ViewIdentifier },
+    GetSelections { view_id: ViewIdentifier },
 }
 
 impl PluginBufferInfo {
