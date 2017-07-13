@@ -90,10 +90,16 @@ impl<W: Write + Send + 'static> PluginRef<W> {
         };
 
         if let Some(plugin_manager) = plugin_manager {
-            let cmd = serde_json::from_value::<PluginCommand>(params.to_owned());
+            //FIXME: @cmyr: because rpcs arrive with the method already extracted,
+            //we can't currently rely on serde to deserialize. As a temporary
+            //solution we create a new json blob that conforms with serde's
+            //'Externally tagged' enum representation. This will be fixed by
+            //an upcoming PR introducing a typed RPC system.
+            let temp = json!({method: params});
+            let cmd = serde_json::from_value::<PluginCommand>(temp);
             if cmd.is_err() {
-                print_err!("failed to parse plugin rpc {}, params {:?}",
-                           method, params);
+                print_err!("failed to parse plugin rpc {:?}",
+                           &json!({method: params}));
                 return None
             }
             let pid = self.get_identifier();

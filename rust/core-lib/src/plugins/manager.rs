@@ -72,6 +72,7 @@ impl <W: Write + Send + 'static>PluginManager<W> {
     pub fn handle_plugin_cmd(&self, cmd: PluginCommand, plugin_id: PluginPid) -> Option<Value> {
         use self::PluginCommand::*;
         match cmd {
+            //TODO: these should not be unwraps
             LineCount { view_id } => {
                 let n_lines = self.buffers.lock().editor_for_view(&view_id).unwrap()
                     .plugin_n_lines() as u64;
@@ -91,6 +92,10 @@ impl <W: Write + Send + 'static>PluginManager<W> {
                 self.buffers.lock().editor_for_view(&view_id).unwrap()
                 .plugin_get_data(offset, max_size, rev)
                 .map(|data| Value::String(data))
+            }
+            GetSelections { view_id } => {
+                Some(self.buffers.lock().editor_for_view(&view_id).unwrap()
+                     .plugin_get_selections(&view_id))
             }
             Alert { view_id, msg } => {
                 self.buffers.lock().editor_for_view(&view_id).unwrap()

@@ -43,6 +43,9 @@ class PluginPeer(RpcPeer):
                                                'max_size': max_size,
                                                'rev': rev})
 
+    def get_selections(self, view_id):
+        return self.send_rpc_sync('get_selections', {'view_id': view_id})
+
 
 class PluginHost(object):
     """Handles raw RPC calls, updating state and calling plugin methods

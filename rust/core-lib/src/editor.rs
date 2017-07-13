@@ -1058,6 +1058,17 @@ impl<W: Write + Send + 'static> Editor<W> {
         Some(text.slice_to_string(offset, end_off))
     }
 
+    pub fn plugin_get_selections(&self, view_id: &ViewIdentifier) -> Value {
+        //TODO: multiview support
+        assert_eq!(view_id, &self.view.view_id);
+        let sels: Vec<(usize, usize)> = self.view.sel_regions()
+            .iter()
+            .map(|s| { (s.start, s.end) })
+            .collect();
+
+        json!({"selections": sels})
+    }
+
     // Note: currently we route up through Editor to DocumentCtx, but perhaps the plugin
     // should have its own reference.
     pub fn plugin_alert(&self, msg: &str) {
