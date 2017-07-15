@@ -22,21 +22,13 @@ In a CRDT framework, the user action of deleting a character doesn't remove it f
 
 A deleted character is known as a "tombstone", and these have also been used to patch up operational transformations to fix the failure to achieve eventual consistency (this is known in the literature as the TP2 puzzle and is well explained in the tombstone paper referenced below). Retaining tombstones doubly makes sense in an editor because there is a chance the deletion will be undone, so retaining it guarantees that its order relative to its context is preserved.
 
-In xi, rather than retaining a deleted state for each individual character, we will represent deletions as _intervals._ This still fits well into the CRDT model; the delete state is a set of intervals, and the merge operation is simple set union (also obviously a monotonic semilattice).
-
-An interval is defined as a start point and an end point. Each point is either _before_ or _after_ a given character. In the example above, if the document is "AB", then "after A" and "before B" initially refer to the same cursor location, but would become different after insertion between the two.
-
-A consequence of the interval approach is that some inserts can get lost. For example, if the document is "AB", user 1 deletes "AB", and user 2 concurrently inserts "X" between A and B, then the resulting document is empty. In the CRDT view, the characters are A, B, and X, the ordering edges are A < B, A < X, and X < B, and the deleted interval set is {(before A, after B)}. This is a different state than would be the case in WOOT, which would mark A and B as deleted but retain X, but I think quite reasonable semantically.
-
-Also note that the interval approach is strictly more general; if the per-character granularity of deletion is desired, it can be simulated by creating a (before C, after C) interval for each character to be deleted.
-
 ### Undo
 
 Defining the semantics of undo is tricky, especially in the face of concurrent edits, and a lot of ink has been spilled on the subject. Here we present a simple but general model again based on CRDT.
 
 Each editing operation is assigned an "undo group." Several edits may be in the same group. For example, if the user types `"`, then a smart-quote plugin may revise that to '“'. If the smart-quote revision is assigned the same undo group (because it is a consequence of the same user action), then a single undo would zorch both edits. Note, incidentally, that TextEdit on MacOS X does not exhibit this behavior. The first undo leaves the buffer with '"' (and selected), and it requires a second undo to return to the initial contents.
 
-Each edit has _two_ sets intervals, one for deletions (as above), but also for insertions. The set of characters covered by the insertion intervals should be exactly the set of new characters introduced by the edit. In normal editing, the insertion intervals are ignored. However, when an undo group goes into an undone state, the insertion and deletion intervals are swapped. Note that if a character is both inserted and deleted by edits in the same undo group (as is the case for the poor dumb quote above), its state does not change.
+Each edit has _two_ sets characters, one for deletions (as above), but also for insertions. In normal editing, the insertion set is ignored. However, when an undo group goes into an undone state, the insertion and deletion sets are swapped. Note that if a character is both inserted and deleted by edits in the same undo group (as is the case for the poor dumb quote above), its state does not change.
 
 Note that the mechanism allows for selective undo of any undo group. We probably won't expose this generality through the UI, but rather provide the familiar ctrl-z, shift-ctrl-z keybindings. However, undoing complex edits interleaved with others (because of slow plugins) will call upon this generality.
 
@@ -56,9 +48,9 @@ The CRDT state is:
 
   - An undo group id.
 
-  - A set of delete intervals.
+  - A set of deleted characters.
 
-  - A set of insert intervals.
+  - A set of inserted characters.
 
 These are all basically sets, so the CRDT merge operation is just set union of each of these components.
 
@@ -68,9 +60,9 @@ To reconstruct the buffer:
 
 * Decide for each edit group whether it is in an undo state, either centrally or by taking the parity of its associated counter.
 
-* For each edit, if its edit group is in an undone state, add its insert intervals, otherwise add its delete intervals.
+* For each edit, if its edit group is in an undone state, add its inserted characters, otherwise add its deleted characters.
 
-* Take the union of all intervals from the previous step, and delete those from the sequence.
+* Take the union of all characters from the previous step, and delete those from the sequence.
 
 Et voila!
 

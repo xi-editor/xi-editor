@@ -38,17 +38,38 @@ use multiset::{Subset, CountMatcher};
 use interval::Interval;
 use delta::{Delta, InsertDelta};
 
+/// Represents the current state of a document and all of its history
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Engine {
+    /// The session ID used to create new `RevId`s for edits made on this device
     #[serde(default = "default_session", skip_serializing)]
     session: SessionId,
+    /// The incrementing revision number counter for this session used for `RevId`s
     #[serde(default = "initial_revision_counter", skip_serializing)]
     rev_id_counter: u32,
+    /// The current contents of the document as would be displayed on screen
     text: Rope,
+    /// Storage for all the characters that have been deleted  but could
+    /// return if a delete is un-done or an insert is re- done.
     tombstones: Rope,
+    /// Imagine a "union string" that contained all the characters ever
+    /// inserted, including the ones that were later deleted, in the locations
+    /// they would be if they hadn't been deleted.
+    ///
+    /// This is a `Subset` of the "union string" representing the characters
+    /// that are currently deleted, and thus in `tombstones` rather than
+    /// `text`. The count of a character in `deletes_from_union` represents
+    /// how many times it has been deleted, so if a character is deleted twice
+    /// concurrently it will have count `2` so that undoing one delete but not
+    /// the other doesn't make it re-appear.
+    ///
+    /// You could construct the "union string" from `text`, `tombstones` and
+    /// `deletes_from_union` by splicing a segment of `tombstones` into `text`
+    /// wherever there's a non-zero-count segment in `deletes_from_union`.
     deletes_from_union: Subset,
     // TODO: switch to a persistent Set representation to avoid O(n) copying
     undone_groups: BTreeSet<usize>,  // set of undo_group id's
+    /// The revision history of the document
     revs: Vec<Revision>,
 }
 
@@ -69,6 +90,8 @@ pub struct RevId {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Revision {
+    /// This uniquely represents the identity of this revision and it stays
+    /// the same even it is rebased or merged between devices.
     rev_id: RevId,
     /// The largest undo group number of any edit in the history up to this
     /// point. Used to optimize undo to not look further back.
@@ -93,9 +116,18 @@ use self::Contents::*;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 enum Contents {
     Edit {
+        /// Used to order concurrent inserts, for example auto-indentation
+        /// should go before typed text.
         priority: usize,
+        /// Groups related edits together so that they are undone and re-done
+        /// together. For example, an auto-indent insertion would be un-done
+        /// along with the newline that triggered it.
         undo_group: usize,
+        /// The subset of the characters of the union string from after this
+        /// revision that were added by this revision.
         inserts: Subset,
+        /// The subset of the characters of the union string from after this
+        /// revision that were deleted by this revision.
         deletes: Subset,
     },
     Undo {
@@ -266,21 +298,7 @@ impl Engine {
     /// if there is not at least one edit.
     pub fn delta_rev_head(&self, base_rev: RevToken) -> Delta<RopeInfo> {
         let ix = self.find_rev_token(base_rev).expect("base revision not found");
-
-        // Delta::synthesize will add inserts for everything that is in
-        // prev_from_union (old deletes) but not in
-        // head_rev.deletes_from_union (new deletes). So we add all inserts
-        // since base_rev to prev_from_union so that they will be inserted in
-        // the Delta if they weren't also deleted.
-        let mut prev_from_union = self.deletes_from_union_for_index(ix);
-        for r in &self.revs[ix + 1..] {
-            if let Edit { ref inserts, .. } = r.edit {
-                if !inserts.is_empty() {
-                    prev_from_union = Cow::Owned(prev_from_union.transform_union(inserts));
-                }
-            }
-        }
-
+        let prev_from_union = self.deletes_from_cur_union_for_index(ix);
         // TODO: this does 2 calls to Delta::synthesize and 1 to apply, this probably could be better.
         let old_tombstones = shuffle_tombstones(&self.text, &self.tombstones, &self.deletes_from_union, &prev_from_union);
         Delta::synthesize(&old_tombstones, &prev_from_union, &self.deletes_from_union)
