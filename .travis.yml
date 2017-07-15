@@ -23,3 +23,8 @@ script:
   - cargo build || exit
   - cargo build --manifest-path syntect-plugin/Cargo.toml || exit
   - for MANIFEST in Cargo.toml */Cargo.toml; do cargo test --manifest-path $MANIFEST || exit; done
+
+language: python
+python:
+  - "3.5"
+script: pytest python/tests

@@ -1,0 +1,10 @@
+Metadata-Version: 1.0
+Name: xi-plugin
+Version: 0.1
+Summary: Xi editor plugin development, testing, and prototyping.
+Home-page: https://github.com/google/xi-editor
+Author: The Xi Editor Authors
+Author-email: UNKNOWN
+License: Apache
+Description: UNKNOWN
+Platform: UNKNOWN
