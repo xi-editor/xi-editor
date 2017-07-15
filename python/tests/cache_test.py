@@ -32,10 +32,10 @@ class MockPeer(object):
 
 
 def test_linebuffer_init():
-    testdata = "this\nhas\nsome\nlines\nin it"
+    testdata = "this\nhas\nsome\nlines\ninside"
     cache = LineCache(len(testdata), None, 0, testdata)
     assert cache[0] == "this"
-    assert cache[4] == "in it", "%s" % cache.raw_lines
+    assert cache[4] == "inside", "%s" % cache.raw_lines
     assert len(cache) == 5
     try:
         cache[5]
