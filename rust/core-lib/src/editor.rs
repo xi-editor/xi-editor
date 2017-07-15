@@ -318,25 +318,23 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
     }
 
-    // generates a delta from a plugin's response and applies it to the buffer.
-    pub fn apply_plugin_edit(&mut self, edit: PluginEdit, undo_group: usize) {
+    //TODO: plugin edits should be represented by real Deltas.
+    /// generates a delta from a plugin's response and applies it to the buffer.
+    pub fn apply_plugin_edit(&mut self, edit: &PluginEdit, undo_group: Option<usize>) {
         let interval = Interval::new_closed_open(edit.start as usize, edit.end as usize);
         let text = Rope::from(&edit.text);
         let rev_len = self.engine.get_rev(edit.rev).unwrap().len();
         let delta = Delta::simple_edit(interval, text, rev_len);
-        //let prev_head_rev_id = self.engine.get_head_rev_id();
-        self.engine.edit_rev(edit.priority as usize, undo_group, edit.rev, delta);
-        self.text = self.engine.get_head().clone();
 
-        // TODO: actually implement priority, which makes the need for the following
-        // logic go away.
-        /*
-        // adjust cursor position so that the cursor is not moved by the plugin edit
-        let (changed_interval, _) = self.engine.delta_rev_head(prev_head_rev_id).summary();
-        if edit.after_cursor && (changed_interval.start() as usize) == self.view.sel_end {
-            self.new_cursor = Some((self.view.sel_start, self.view.sel_end));
+        if let Some(undo_group) = undo_group {
+            // non-async edits modify their associated revision
+            //TODO: get priority working, so that plugin edits don't necessarily move cursor
+            self.engine.edit_rev(edit.priority as usize, undo_group, edit.rev, delta);
+            self.text = self.engine.get_head().clone();
         }
-        */
+        else {
+            self.add_delta(delta);
+        }
 
         self.commit_delta(Some(&edit.author));
         self.render();
@@ -997,6 +995,12 @@ impl<W: Write + Send + 'static> Editor<W> {
 
     // Note: the following are placeholders for prototyping, and are not intended to
     // deal with asynchrony or be efficient.
+
+    /// Applies an async edit from a plugin.
+    pub fn plugin_edit(&mut self, edit: &PluginEdit) {
+        self.this_edit_type = EditType::Other;
+        self.apply_plugin_edit(edit, None)
+    }
 
     pub fn plugin_n_lines(&self) -> usize {
         self.text.measure::<LinesMetric>() + 1

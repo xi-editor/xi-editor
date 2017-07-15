@@ -27,6 +27,9 @@ MAX_FETCH_SIZE = 1024*1024
 class PluginPeer(RpcPeer):
     """A proxy object which wraps RPC methods implemented in xi-core."""
 
+    def edit(self, view_id, edit):
+        self.send_rpc('edit', {'view_id': view_id, 'edit': edit.to_dict()})
+
     def update_spans(self, view_id, start, length, spans, rev):
         self.send_rpc('update_spans', {'view_id': view_id,
                                        'start': start,

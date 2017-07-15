@@ -81,7 +81,7 @@ pub enum UpdateResponse {
 
 
 /// An simple edit, received from a plugin.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PluginEdit {
     pub start: u64,
     pub end: u64,
@@ -110,6 +110,7 @@ pub enum PluginCommand {
     AddScopes { view_id: ViewIdentifier, scopes: Vec<Vec<String>> },
     UpdateSpans { view_id: ViewIdentifier, start: usize, len: usize, spans: Vec<ScopeSpan>, rev: u64 },
     GetData { view_id: ViewIdentifier, offset: usize, max_size: usize, rev: u64 },
+    Edit { view_id: ViewIdentifier, edit: PluginEdit },
     Alert { view_id: ViewIdentifier, msg: String },
     LineCount { view_id: ViewIdentifier },
     GetSelections { view_id: ViewIdentifier },
