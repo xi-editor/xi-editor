@@ -81,7 +81,7 @@ pub struct RevId {
     // `session1==session2==0` is reserved for initialization which is the same on all sessions.
     // A colliding session will break merge invariants and the document will start crashing Xi.
     session1: u64,
-    // if this was a tuple field instead of two fields, alignment padding would double RevId's size.
+    // if this was a tuple field instead of two fields, alignment padding would add 8 more bytes.
     session2: u32,
     // There will probably never be a document with more than 4 billion edits
     // in a single session.
@@ -99,7 +99,9 @@ struct Revision {
     edit: Contents,
 }
 
-/// Valid and non-colliding within this process
+/// Valid within a session. If there's a collision the most recent matching
+/// commit will be used, which means only the (small) set of concurrent edits
+/// could trigger incorrect behavior if they collide, so u64 is safe.
 pub type RevToken = u64;
 
 /// the session ID component of a `RevId`
@@ -234,10 +236,13 @@ impl Engine {
         for rev in self.revs[rev_index..].iter().rev() {
             deletes_from_union = match rev.edit {
                 Edit { ref inserts, ref deletes, ref undo_group, .. } => {
-                    let undone = undone_groups.contains(undo_group);
-                    let deleted = if undone { inserts } else { deletes };
-                    let un_deleted = deletes_from_union.subtract(deleted);
-                    Cow::Owned(un_deleted.transform_shrink(inserts))
+                    if undone_groups.contains(undo_group) {
+                        // no need to un-delete undone inserts since we'll just shrink them out
+                        Cow::Owned(deletes_from_union.transform_shrink(inserts))
+                    } else {
+                        let un_deleted = deletes_from_union.subtract(deletes);
+                        Cow::Owned(un_deleted.transform_shrink(inserts))
+                    }
                 }
                 Undo { ref toggled_groups, ref deletes_bitxor } => {
                     if invert_undos {
