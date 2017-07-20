@@ -114,20 +114,6 @@ impl<W: Write + Send + 'static> PluginRef<W> {
         self.0.lock().unwrap().peer.send_rpc_notification(method, params);
     }
 
-    /// Send an arbitrary RPC request to the plugin.
-    pub fn rpc_request(&self, method: &str, params: &Value) -> Value {
-        //TODO: the core RPC handler isn't set up to send RPC errors,
-        //so this will be sent as a 'result'; when we add error support
-        //this function will return a Result<Value>.
-        self.0.lock().unwrap().peer.send_rpc_request(method, params)
-            .unwrap_or_else(|err| {
-                json!({"error": {
-                    "code": 520,
-                    "message": format!("{:?}", err)
-                }})
-            })
-    }
-
     /// Initialize the plugin.
     pub fn initialize(&self, init: &[PluginBufferInfo]) {
         self.0.lock().unwrap().peer

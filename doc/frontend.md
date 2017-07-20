@@ -287,29 +287,36 @@ this writing, the following is valid json for a `Command` object:
 
 ```json
     {
-    "title": "Test Command",
-    "description": "Passes the current test",
-    "rpc_cmd": {
-        "type": "notification",
-        "method": "test.cmd",
-        "params": {
-            "this_works": "some value",
-            "a_choice": "some value"
-        }
-    },
-    "args": [
-        {"title": "This Works", "description": "Indicates something", "key": "this_works", "arg_type": "Bool"},
-        {
-            "title": "Favourite Number",
-            "description": "A number used in a test.",
-            "key": "a_choice",
-            "arg_type": "Choice",
-            "options": [
-                {"title": "Five", "value": 5},
-                {"title": "Ten", "value": 10}
-            ]
-        }
-    ]
+        "title": "Test Command",
+        "description": "Passes the current test",
+        "rpc_cmd": {
+            "rpc_type": "notification",
+            "method": "test.cmd",
+            "params": {
+                "view": "",
+                "non_arg": "plugin supplied value",
+                "arg_one": "",
+                "arg_two": ""
+            }
+        },
+        "args": [
+            {
+                "title": "First argument",
+                "description": "Indicates something",
+                "key": "arg_one",
+                "arg_type": "Bool"
+            },
+            {
+                "title": "Favourite Number",
+                "description": "A number used in a test.",
+                "key": "arg_two",
+                "arg_type": "Choice",
+                "options": [
+                    {"title": "Five", "value": 5},
+                    {"title": "Ten", "value": 10}
+                ]
+            }
+        ]
     }
 ```
 

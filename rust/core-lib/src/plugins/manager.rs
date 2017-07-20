@@ -396,9 +396,7 @@ impl <W: Write>WeakPluginManagerRef<W> {
     /// Returns `None` if the inner value has been deallocated.
     pub fn upgrade(&self) -> Option<PluginManagerRef<W>> {
         match self.0.upgrade() {
-            Some(inner) => {
-                Some(PluginManagerRef(inner))
-            }
+            Some(inner) => Some(PluginManagerRef(inner)),
             None => None
         }
     }
@@ -406,17 +404,16 @@ impl <W: Write>WeakPluginManagerRef<W> {
 
 impl<W: Write + Send + 'static> PluginManagerRef<W> {
     pub fn new(buffers: BufferContainerRef<W>) -> Self {
-        PluginManagerRef(
-            Arc::new(Mutex::new(
-                PluginManager {
-                    // TODO: actually parse these from manifest files
-                    catalog: PluginCatalog::debug(),
-                    buffer_plugins: BTreeMap::new(),
-                    global_plugins: PluginGroup::new(),
-                    buffers: buffers,
-                    next_id: 0,
-                })),
-        )
+        PluginManagerRef(Arc::new(Mutex::new(
+            PluginManager {
+                // TODO: actually parse these from manifest files
+                catalog: PluginCatalog::debug(),
+                buffer_plugins: BTreeMap::new(),
+                global_plugins: PluginGroup::new(),
+                buffers: buffers,
+                next_id: 0,
+            }
+        )))
     }
 
     pub fn lock(&self) -> MutexGuard<PluginManager<W>> {
@@ -425,9 +422,7 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
 
     /// Creates a new `WeakPluginManagerRef<W>`.
     pub fn to_weak(&self) -> WeakPluginManagerRef<W> {
-        WeakPluginManagerRef(
-            Arc::downgrade(&self.0),
-        )
+        WeakPluginManagerRef(Arc::downgrade(&self.0))
     }
 
 

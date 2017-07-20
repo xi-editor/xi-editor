@@ -135,13 +135,14 @@ pub struct CommandArgument {
     pub description: String,
     pub key: String,
     pub arg_type: ArgumentType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    /// If `arg_type` is `Choice`, `options` must contain a list of options.
+    pub options: Option<Vec<ArgumentOption>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "type_name")]
 pub enum ArgumentType {
-    Number, Int, PosInt, Bool, String,
-    Choice { options: Vec<ArgumentOption> },
+    Number, Int, PosInt, Bool, String, Choice
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -160,7 +161,6 @@ pub struct ArgumentOption {
 pub struct PlaceholderRpc {
     pub method: String,
     pub params: Value,
-    #[serde(rename = "type")]
     pub rpc_type: RpcType,
 }
 
@@ -184,11 +184,13 @@ impl Command {
 
 impl CommandArgument {
     pub fn new<S: AsRef<str>>(title: S, description: S, key: S,
-                              arg_type: ArgumentType) -> Self {
+                              arg_type: ArgumentType,
+                              options: Option<Vec<ArgumentOption>>) -> Self {
         let key = key.as_ref().to_owned();
         let title = title.as_ref().to_owned();
         let description = description.as_ref().to_owned();
-        CommandArgument { title, description, key, arg_type }
+        if arg_type == ArgumentType::Choice { assert!(options.is_some()) }
+        CommandArgument { title, description, key, arg_type, options }
     }
 }
 
@@ -266,50 +268,44 @@ mod tests {
     #[test]
     fn test_serde_command() {
         let json = r#"
-        {
+    {
         "title": "Test Command",
         "description": "Passes the current test",
         "rpc_cmd": {
-            "type": "notification",
+            "rpc_type": "notification",
             "method": "test.cmd",
             "params": {
                 "view": "",
-                "this_works": "some value",
-                "a_choice": "some value"
+                "non_arg": "plugin supplied value",
+                "arg_one": "",
+                "arg_two": ""
             }
         },
         "args": [
             {
-                "title": "This Works",
+                "title": "First argument",
                 "description": "Indicates something",
-                "key": "this_works",
-                "arg_type": {"type_name": "Bool"}
+                "key": "arg_one",
+                "arg_type": "Bool"
             },
             {
                 "title": "Favourite Number",
                 "description": "A number used in a test.",
-                "key": "a_choice",
-                "arg_type": {
-                    "type_name": "Choice",
-                    "options": [
-                        {"title": "Five", "value": 5},
-                        {"title": "Ten", "value": 10}
-                    ]
-                }
+                "key": "arg_two",
+                "arg_type": "Choice",
+                "options": [
+                    {"title": "Five", "value": 5},
+                    {"title": "Ten", "value": 10}
+                ]
             }
         ]
-        }
+    }
         "#;
 
         let command: Command = serde_json::from_str(&json).unwrap();
         assert_eq!(command.title, "Test Command");
         assert_eq!(command.args[0].arg_type, ArgumentType::Bool);
-        assert_eq!(command.rpc_cmd.params_ref()["this_works"], "some value");
-        assert_eq!(command.args[1].arg_type,
-                   ArgumentType::Choice {
-                       options: vec![
-                           ArgumentOption::new("Five", 5),
-                           ArgumentOption::new("Ten", 10)]
-                   });
+        assert_eq!(command.rpc_cmd.params_ref()["non_arg"], "plugin supplied value");
+        assert_eq!(command.args[1].options.clone().unwrap()[1].value, json!(10));
     }
 }
