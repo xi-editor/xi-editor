@@ -74,7 +74,13 @@ class RpcPeer(object):
         req_id = data.get('id', None)
         method = data['method']
         params = data['params'] or {}
-        result = getattr(self.handler, method)(self, **params)
+        f = getattr(self.handler, method, None)
+        if f is None:
+            print("python plugin handler has no method for {}".format(method),
+                  file=sys.stderr)
+            return
+
+        result = f(self, **params)
 
         if result is not None:
             if req_id is None:

@@ -67,7 +67,6 @@ class PluginHost(object):
 
         else:
             assert len(buffer_info) == 1
-            print(buffer_info, file=sys.stderr)
             first_view = buffer_info[0]["views"][0]
             self.plugin.initialize(self.views[first_view])
 
@@ -104,6 +103,13 @@ class PluginHost(object):
     def shutdown(self, peer, **params):
         peer.done = True
         self.plugin.shutdown()
+
+    def custom_command(self, peer, method, params):
+        '''Custom command provided by the plugin.'''
+        if params.get('view'):
+            view = self.views.get(params['view'])
+            params['view'] = view
+        return getattr(self.plugin, method)(**params)
 
     def _initialize_buffers(self, peer, buffer_info):
         for buf in buffer_info:

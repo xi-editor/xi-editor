@@ -19,6 +19,7 @@ use std::fmt;
 use serde_json::{self, Value};
 use xi_rpc::{dict_get_u64, dict_get_string, dict_get_bool, arr_get_u64, arr_get_i64};
 use tabs::ViewIdentifier;
+use plugins::PlaceholderRpc;
 
 // =============================================================================
 //  Request handling
@@ -41,7 +42,7 @@ pub enum Request<'a> {
 }
 
 /// An enum representing a core command, parsed from JSON.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub enum CoreCommand<'a> {
     Edit { view_id: ViewIdentifier, edit_command: EditCommand<'a> },
     /// A command from the client to a plugin.
@@ -130,15 +131,13 @@ pub enum EditCommand<'a> {
 
 
 //TODO: just prototyping, these should be borrows
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(tag = "command")]
+#[serde(rename_all = "snake_case")]
 pub enum PluginCommand {
-    #[serde(rename = "initial_plugins")]
-    InitialPlugins { view_id: ViewIdentifier },
-    #[serde(rename = "start")]
     Start { view_id: ViewIdentifier, plugin_name: String },
-    #[serde(rename = "stop")]
     Stop { view_id: ViewIdentifier, plugin_name: String },
+    PluginRpc { view_id: ViewIdentifier, receiver: String, rpc: PlaceholderRpc },
 }
 
 impl<'a> CoreCommand<'a> {

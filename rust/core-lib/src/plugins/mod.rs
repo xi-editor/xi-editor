@@ -22,7 +22,7 @@ mod catalog;
 use std::sync::{Arc, Mutex, mpsc};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
-use std::process::{ChildStdin, Child, Command, Stdio};
+use std::process::{ChildStdin, Child, Command as ProcCommand, Stdio};
 use std::io::{self, BufReader, Write};
 
 use serde_json::{self, Value};
@@ -31,9 +31,9 @@ use xi_rpc::{self, RpcPeer, RpcCtx, RpcLoop, Handler};
 use tabs::ViewIdentifier;
 
 pub use self::manager::{PluginManagerRef, WeakPluginManagerRef};
+pub use self::manifest::{PluginDescription, Command, PlaceholderRpc};
 
 use self::rpc_types::{PluginUpdate, PluginCommand, PluginBufferInfo};
-use self::manifest::PluginDescription;
 use self::manager::PluginName;
 use self::catalog::PluginCatalog;
 
@@ -110,7 +110,7 @@ impl<W: Write + Send + 'static> PluginRef<W> {
     }
 
     /// Send an arbitrary RPC notification to the plugin.
-    pub fn notify(&self, method: &str, params: &Value) {
+    pub fn rpc_notification(&self, method: &str, params: &Value) {
         self.0.lock().unwrap().peer.send_rpc_notification(method, params);
     }
 
@@ -218,7 +218,7 @@ pub fn start_plugin_process<W, C>(manager_ref: &PluginManagerRef<W>,
 
     thread::spawn(move || {
         print_err!("starting plugin at path {:?}", &plugin_desc.exec_path);
-        let child = Command::new(&plugin_desc.exec_path)
+        let child = ProcCommand::new(&plugin_desc.exec_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn();

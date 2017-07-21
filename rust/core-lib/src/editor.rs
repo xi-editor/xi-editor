@@ -34,8 +34,9 @@ use selection::{Affinity, Selection, SelRegion};
 use tabs::{BufferIdentifier, ViewIdentifier, DocumentCtx};
 use rpc::{EditCommand, GestureType};
 use syntax::SyntaxDefinition;
-use plugins::rpc_types::{PluginUpdate, PluginEdit, ScopeSpan, PluginBufferInfo};
-use plugins::PluginPid;
+use plugins::rpc_types::{PluginUpdate, PluginEdit, ScopeSpan, PluginBufferInfo,
+ClientPluginInfo};
+use plugins::{PluginPid, Command};
 use layers::Scopes;
 
 
@@ -1079,16 +1080,24 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.doc_ctx.alert(msg);
     }
 
+    /// Notifies the client of the currently available plugins.
+    pub fn available_plugins(&self, view_id: &ViewIdentifier,
+                             plugins: &[ClientPluginInfo]) {
+        self.doc_ctx.available_plugins(view_id, plugins);
+    }
+
     /// Notifies the client that the named plugin has started.
     ///
     /// Note: there is no current conception of a plugin which is only active
     /// for a particular view; plugins are active at the editor/buffer level.
     /// Some `view_id` is needed, however, to route to the correct client view.
     //TODO: revisit this after implementing multiview
-    pub fn plugin_started<'a, T>(&'a self, view_id: T, plugin: &str)
+    pub fn plugin_started<'a, T>(&'a self, view_id: T, plugin: &str,
+                                 cmds: &[Command])
         where T: Into<Option<&'a ViewIdentifier>> {
         let view_id = view_id.into().unwrap_or(&self.view.view_id);
         self.doc_ctx.plugin_started(view_id, plugin);
+        self.doc_ctx.update_cmds(view_id, plugin, cmds);
     }
 
     /// Notifies client that the named plugin has stopped.
@@ -1104,6 +1113,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
         let view_id = view_id.into().unwrap_or(&self.view.view_id);
         self.doc_ctx.plugin_stopped(view_id, plugin, code);
+        self.doc_ctx.update_cmds(view_id, plugin, &Vec::new());
     }
 }
 
