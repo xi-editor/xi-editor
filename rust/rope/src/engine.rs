@@ -311,7 +311,7 @@ impl Engine {
 
     // TODO: don't construct transform if subsets are empty
     // TODO: maybe switch to using a revision index for `base_rev` once we disable GC
-    /// Retuns a tuple of a new `Revision` representing the edit based on the
+    /// Returns a tuple of a new `Revision` representing the edit based on the
     /// current head, a new text `Rope`, a new tombstones `Rope` and a new `deletes_from_union`.
     fn mk_new_rev(&self, new_priority: usize, undo_group: usize,
             base_rev: RevToken, delta: Delta<RopeInfo>) -> (Revision, Rope, Rope, Subset) {
@@ -656,6 +656,7 @@ fn find_common(a: &[Revision], b: &[Revision]) -> BTreeSet<RevId> {
 /// non-base revs, `N` being transformed non-base revs, and rearranges it:
 /// .n..n...nn..  -> ........NNNN -> returns vec![N,N,N,N]
 fn rearrange(revs: &[Revision], base_revs: &BTreeSet<RevId>, head_len: usize) -> Vec<Revision> {
+    // transform representing the characters added by common revisions after a point.
     let mut s = Subset::new(head_len);
 
     let mut out = Vec::with_capacity(revs.len() - base_revs.len());
@@ -667,8 +668,10 @@ fn rearrange(revs: &[Revision], base_revs: &BTreeSet<RevId>, head_len: usize) ->
                     s = inserts.transform_union(&s);
                     None
                 } else {
+                    // fast-forward this revision over all common ones after it
                     let transformed_inserts = inserts.transform_expand(&s);
                     let transformed_deletes = deletes.transform_expand(&s);
+                    // we don't want new revisions before this to be transformed after us
                     s = s.transform_shrink(&transformed_inserts);
                     Some(Contents::Edit {
                         inserts: transformed_inserts,
@@ -702,18 +705,16 @@ struct DeltaOp {
 fn compute_deltas(revs: &[Revision], text: &Rope, tombstones: &Rope, deletes_from_union: &Subset) -> Vec<DeltaOp> {
     let mut out = Vec::with_capacity(revs.len());
 
-    let mut to_head = Subset::new(deletes_from_union.len());
-    let mut cur_deletes_from_union = to_head.clone();
+    let mut cur_all_inserts = Subset::new(deletes_from_union.len());
     for rev in revs.iter().rev() {
         match rev.edit {
             Contents::Edit {priority, undo_group, ref inserts, ref deletes} => {
-                let inserts_tr = inserts.transform_expand(&to_head);
-                let older_deletes_from_union = cur_deletes_from_union.union(&inserts_tr);
+                let older_all_inserts = inserts.transform_union(&cur_all_inserts);
 
                 // TODO could probably be more efficient by avoiding shuffling from head every time
-                let tombstones_here = shuffle_tombstones(text, tombstones, deletes_from_union, &older_deletes_from_union);
-                let delta = Delta::synthesize(&tombstones_here, &older_deletes_from_union, &cur_deletes_from_union);
-                // TODO create InsertDelta and deletes separately more efficiently instead of factoring
+                let tombstones_here = shuffle_tombstones(text, tombstones, deletes_from_union, &older_all_inserts);
+                let delta = Delta::synthesize(&tombstones_here, &older_all_inserts, &cur_all_inserts);
+                // TODO create InsertDelta directly and more efficiently instead of factoring
                 let (ins, _) = delta.factor();
                 out.push(DeltaOp {
                     rev_id: rev.rev_id,
@@ -722,8 +723,7 @@ fn compute_deltas(revs: &[Revision], text: &Rope, tombstones: &Rope, deletes_fro
                     deletes: deletes.clone(),
                 });
 
-                to_head = to_head.union(&inserts_tr);
-                cur_deletes_from_union = older_deletes_from_union;
+                cur_all_inserts = older_all_inserts;
             },
             Contents::Undo { .. } => panic!("can't merge undo yet"),
         }
