@@ -817,3 +817,11 @@ fn compute_deltas(revs: &[Revision], text: &Rope, tombstones: &Rope, deletes_fro
     out
 }
 ```
+
+#### Computing Transforms
+
+Now we have a list of `DeltaOp`s from `other` and a list of new `Revision`s from `self`. Keeping in mind the goal of appending the changes from other, we need to transform the `DeltaOp`s to be based on top of the new `Revision`s from `self`. This really just involves figuring out the correct indices in the union string that includes the new inserted characters from `self`.
+
+In order to do this we need the new `inserts` from `self`, but in order to resolve the order of concurrent inserts, we also need the "priority" of the edits. So we have a helper called `compute_transforms` that returns a list of `(priority, inserts)` tuples.
+
+This helper does one other important thing, which is combine sequential edits by the same peer with the same priority into one transform. This is important because the next stage does a lot of work per-transform. Without this optimization a paragraph of typed inserted characters would be hundreds of transforms, but with the optimization it is one transform.
