@@ -3,6 +3,8 @@
   <a href="https://github.com/google/xi-editor">Xi Editor</a>
 </h1>
 
+<p align="center"><em>(pronounced "Zigh")</em></p>
+
 <h4 align="center">A modern editor with a backend written in Rust.</h4>
 
 The xi editor project is an attempt to build a high quality text editor,
