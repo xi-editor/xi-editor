@@ -188,7 +188,7 @@ pub type RevToken = u64;
 /// Represents the current state of a document and all of its history
 pub struct Engine {
     /// The session ID used to create new `RevId`s for edits made on this device
-    session: (u64, u32),
+    session: SessionId,
     /// The incrementing revision number counter for this session used for `RevId`s
     rev_id_counter: u32,
     /// The current contents of the document as would be displayed on screen
@@ -215,6 +215,9 @@ pub struct Engine {
     /// The revision history of the document
     revs: Vec<Revision>,
 }
+
+/// the session ID component of a `RevId`
+pub type SessionId = (u64, u32);
 ```
 
 <!-- TODO diagram of text tombstones and union string -->
@@ -468,7 +471,7 @@ This operation has a number of stages:
 1. Transform the delta to be based on the current head revision's union string instead of `base_rev`'s union string.
     - This is done by looping over every `Edit` `Revision` since `base_rev` and `transform_expand`-ing both the `ins_delta` and `deletes` by the inserted characters.
     - But again we have the problem of whether we put the `ins_delta` inserts before or after inserts in the same place since then. For this we use the `priority` field of `Revision`. The `priority` of the incoming edit we're transforming is compared with the `priority` of the inserts we're transforming it by, and they're ordered in ascending order of priority.
-    - Each concurrent plugin has a different `priority` and they are useful for expressing what we expect concurrent edits to do. For example inserted auto-indentation should come before new user edits, but matched brackets should come after concurrent user edits, we can set the `priority` of the plugins to get this behavior.
+    - Each concurrent plugin has a different `priority` and they are useful for expressing what we expect concurrent edits to do. For example inserted auto-indentation should come before new user edits, but matched brackets should come after concurrent user edits, we can set the `priority` of the plugins to get this behavior. In the case of concurrent edits by the same plugin on different synced devices we break ties by session ID.
 1. `Subset::transform_expand` the `deletes` to apply to the head union string after `ins_delta` is applied instead of before. This matches the meaning of `inserts` and `deletes` in `Revision`, whereas `Delta::factor` gives them to use based on the same string. How can we `transform_expand` a `Subset` by an `InsertDelta`, by using the `InsertDelta::inserted_subset` helper to get a `Subset` of the post-insert string designating which characters were inserted.
 1. Transform the `ins_delta` to be based on the head `text` instead of the union string. Now that we've done all the transformation, we can commit it, and since inserts can only affect the `text` we can use `Subset::transform_shrink` and know that only `Copy` regions of the `InsertDelta` will be collapsed so that the indices of inserted segments can be applied to `text`.
 1. Apply the `ins_delta` to `text` using `Delta::apply` and also `transform_expand` `deletes_from_union` to include the newly inserted characters.
@@ -495,10 +498,12 @@ fn mk_new_rev(&self, new_priority: usize, undo_group: usize,
     let mut new_deletes = deletes.transform_expand(&deletes_at_rev);
 
     // 4. rebase the delta to be on the head union instead of the base_rev union
+    let new_full_priority = FullPriority { priority: new_priority, session_id: self.session };
     for r in &self.revs[ix + 1..] {
         if let Edit { priority, ref inserts, .. } = r.edit {
             if !inserts.is_empty() {
-                let after = new_priority >= priority;  // should never be ==
+                let full_priority = FullPriority { priority, session_id: r.rev_id.session_id() };
+                let after = new_full_priority >= full_priority;  // should never be ==
                 union_ins_delta = union_ins_delta.transform_expand(inserts, after);
                 new_deletes = new_deletes.transform_expand(inserts);
             }
@@ -825,3 +830,39 @@ Now we have a list of `DeltaOp`s from `other` and a list of new `Revision`s from
 In order to do this we need the new `inserts` from `self`, but in order to resolve the order of concurrent inserts, we also need the "priority" of the edits. So we have a helper called `compute_transforms` that returns a list of `(priority, inserts)` tuples.
 
 This helper does one other important thing, which is combine sequential edits by the same peer with the same priority into one transform. This is important because the next stage does a lot of work per-transform. Without this optimization a paragraph of typed inserted characters would be hundreds of transforms, but with the optimization it is one transform.
+
+```rust
+/// Computes a series of priorities and transforms for the deltas on the right
+/// from the new revisions on the left.
+///
+/// Applies an optimization where it combines sequential revisions with the
+/// same priority into one transform to decrease the number of transforms that
+/// have to be considered in `rebase` substantially for normal editing
+/// patterns. Any large runs of typing in the same place by the same user (e.g
+/// typing a paragraph) will be combined into a single segment in a transform
+/// as opposed to thousands of revisions.
+fn compute_transforms(revs: Vec<Revision>) -> Vec<(FullPriority, Subset)> {
+    let mut out = Vec::new();
+    let mut last_priority: Option<usize> = None;
+    for r in revs.into_iter() {
+        if let Contents::Edit {priority, inserts, .. } = r.edit {
+            if inserts.is_empty() {
+                continue;
+            }
+            if Some(priority) == last_priority {
+                let last: &mut (FullPriority, Subset) = out.last_mut().unwrap();
+                last.1 = last.1.transform_union(&inserts);
+            } else {
+                last_priority = Some(priority);
+                let prio = FullPriority { priority, session_id: r.rev_id.session_id() };
+                out.push((prio, inserts));
+            }
+        }
+    }
+    out
+}
+```
+
+#### Rebasing
+
+Now that we have the `DeltaOp`s and transforms, we just need to forward the `DeltaOp`s through the transforms. The helper for this is named `rebase` since it's analogous to a `git rebase`.
