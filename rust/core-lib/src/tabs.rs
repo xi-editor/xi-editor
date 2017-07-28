@@ -687,7 +687,7 @@ use std::sync::mpsc::{channel, Sender};
 #[cfg(target_os = "fuchsia")]
 use std::thread;
 #[cfg(target_os = "fuchsia")]
-use fuchsia::sync::{SyncStore, SyncMsg, SyncUpdater};
+use fuchsia::sync::{SyncStore, SyncMsg, SyncUpdater, start_conflict_resolver_factory};
 
 #[cfg(target_os = "fuchsia")]
 pub struct SyncRepo {
@@ -700,6 +700,8 @@ pub struct SyncRepo {
 #[cfg(target_os = "fuchsia")]
 impl<W: Write + Send + 'static> Documents<W> {
     pub fn setup_ledger(&mut self, ledger: Ledger_Proxy, session_id: (u64,u32)) {
+        let key = vec![0];
+        start_conflict_resolver_factory(&mut ledger, key);
 
         let (tx, rx) = channel();
         let updater = SyncUpdater::new(self.buffers.clone(), rx);
