@@ -41,7 +41,7 @@ use delta::{Delta, InsertDelta};
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Engine {
     #[serde(default = "default_session", skip_serializing)]
-    session: (u64, u32),
+    session: SessionId,
     #[serde(default = "initial_revision_counter", skip_serializing)]
     rev_id_counter: u32,
     text: Rope,
@@ -78,6 +78,15 @@ struct Revision {
 
 /// Valid and non-colliding within this process
 pub type RevToken = u64;
+
+/// the session ID component of a `RevId`
+pub type SessionId = (u64, u32);
+
+#[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq)]
+struct FullPriority {
+    priority: usize,
+    session_id: SessionId,
+}
 
 use self::Contents::*;
 
@@ -119,6 +128,10 @@ impl RevId {
         let mut hasher = DefaultHasher::new();
         self.hash(&mut hasher);
         hasher.finish()
+    }
+
+    pub fn session_id(&self) -> SessionId {
+        (self.session1, self.session2)
     }
 }
 
@@ -288,10 +301,12 @@ impl Engine {
         let mut new_deletes = deletes.transform_expand(&deletes_at_rev);
 
         // rebase the delta to be on the head union instead of the base_rev union
+        let new_full_priority = FullPriority { priority: new_priority, session_id: self.session };
         for r in &self.revs[ix + 1..] {
             if let Edit { priority, ref inserts, .. } = r.edit {
                 if !inserts.is_empty() {
-                    let after = new_priority >= priority;  // should never be ==
+                    let full_priority = FullPriority { priority, session_id: r.rev_id.session_id() };
+                    let after = new_full_priority >= full_priority;  // should never be ==
                     union_ins_delta = union_ins_delta.transform_expand(inserts, after);
                     new_deletes = new_deletes.transform_expand(inserts);
                 }
@@ -560,7 +575,7 @@ impl Engine {
     ///
     /// Merge may panic or return incorrect results if session IDs collide, which is why they can be
     /// 96 bits which is more than sufficient for this to never happen.
-    pub fn set_session_id(&mut self, session: (u64,u32)) {
+    pub fn set_session_id(&mut self, session: SessionId) {
         assert_eq!(1, self.revs.len(), "Revisions were added to an Engine before set_session_id, these may collide.");
         self.session = session;
     }
@@ -704,7 +719,7 @@ fn compute_deltas(revs: &[Revision], text: &Rope, tombstones: &Rope, deletes_fro
 /// patterns. Any large runs of typing in the same place by the same user (e.g
 /// typing a paragraph) will be combined into a single segment in a transform
 /// as opposed to thousands of revisions.
-fn compute_transforms(revs: Vec<Revision>) -> Vec<(usize, Subset)> {
+fn compute_transforms(revs: Vec<Revision>) -> Vec<(FullPriority, Subset)> {
     let mut out = Vec::new();
     let mut last_priority: Option<usize> = None;
     for r in revs.into_iter() {
@@ -713,11 +728,12 @@ fn compute_transforms(revs: Vec<Revision>) -> Vec<(usize, Subset)> {
                 continue;
             }
             if Some(priority) == last_priority {
-                let last: &mut (usize, Subset) = out.last_mut().unwrap();
+                let last: &mut (FullPriority, Subset) = out.last_mut().unwrap();
                 last.1 = last.1.transform_union(&inserts);
             } else {
                 last_priority = Some(priority);
-                out.push((priority, inserts));
+                let prio = FullPriority { priority, session_id: r.rev_id.session_id() };
+                out.push((prio, inserts));
             }
         }
     }
@@ -726,16 +742,17 @@ fn compute_transforms(revs: Vec<Revision>) -> Vec<(usize, Subset)> {
 
 /// Rebase `b_new` on top of `expand_by` and return revision contents that can be appended as new
 /// revisions on top of the revisions represented by `expand_by`.
-fn rebase(mut expand_by: Vec<(usize, Subset)>, b_new: Vec<DeltaOp>, mut text: Rope, mut tombstones: Rope,
+fn rebase(mut expand_by: Vec<(FullPriority, Subset)>, b_new: Vec<DeltaOp>, mut text: Rope, mut tombstones: Rope,
         mut deletes_from_union: Subset, mut max_undo_so_far: usize) -> (Vec<Revision>, Rope, Rope, Subset) {
     let mut out = Vec::with_capacity(b_new.len());
 
     let mut next_expand_by = Vec::with_capacity(expand_by.len());
     for op in b_new.into_iter() {
         let DeltaOp { rev_id, priority, undo_group, mut inserts, mut deletes } = op;
+        let full_priority = FullPriority { priority, session_id: rev_id.session_id() };
         // 1. expand by each in expand_by
         for &(other_priority, ref other_inserts) in &expand_by {
-            let after = priority >= other_priority;  // should never be ==
+            let after = full_priority >= other_priority;  // should never be ==
             // d-expand by other
             inserts = inserts.transform_expand(other_inserts, after);
             // trans-expand other by expanded so they have the same context
@@ -1176,7 +1193,7 @@ mod tests {
 
         let expand_by = compute_transforms(revs);
         assert_eq!(1, expand_by.len());
-        assert_eq!(1, expand_by[0].0);
+        assert_eq!(1, expand_by[0].0.priority);
         let subset_str = format!("{:#?}", expand_by[0].1);
         assert_eq!("#-####-", &subset_str);
     }
@@ -1202,8 +1219,8 @@ mod tests {
 
         let expand_by = compute_transforms(revs);
         assert_eq!(2, expand_by.len());
-        assert_eq!(1, expand_by[0].0);
-        assert_eq!(2, expand_by[1].0);
+        assert_eq!(1, expand_by[0].0.priority);
+        assert_eq!(2, expand_by[1].0.priority);
 
         let subset_str = format!("{:#?}", expand_by[0].1);
         assert_eq!("-###-", &subset_str);
@@ -1520,6 +1537,31 @@ mod tests {
             Edit { ei: 2, p: 1, u: 1, d: parse_delta("!!") },
             Merge(1,2),
             AssertMaxUndoSoFar(1,3),
+        ];
+        MergeTestState::new(3).run_script(&script[..]);
+    }
+
+    /// This is a regression test to ensure that session IDs are used to break
+    /// ties in edit priorities. Otherwise the results may be inconsistent.
+    #[test]
+    fn merge_session_priorities() {
+        use self::MergeTestOp::*;
+        let script = vec![
+            Edit { ei: 0, p: 1, u: 1, d: parse_delta("ac") },
+            Merge(1,0),
+            Merge(2,0),
+            AssertAll("ac".to_owned()),
+            Edit { ei: 0, p: 1, u: 1, d: parse_delta("-d-") },
+            Assert(0, "adc".to_owned()),
+            Edit { ei: 1, p: 1, u: 1, d: parse_delta("-f-") },
+            Merge(2,1),
+            Assert(1, "afc".to_owned()),
+            Assert(2, "afc".to_owned()),
+            Merge(2,0),
+            Merge(0,1),
+            // These two will be different without using session IDs
+            Assert(2, "adfc".to_owned()),
+            Assert(0, "adfc".to_owned()),
         ];
         MergeTestState::new(3).run_script(&script[..]);
     }
