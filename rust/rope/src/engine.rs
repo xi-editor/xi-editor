@@ -773,18 +773,18 @@ fn rebase(mut expand_by: Vec<(FullPriority, Subset)>, b_new: Vec<DeltaOp>, mut t
     for op in b_new.into_iter() {
         let DeltaOp { rev_id, priority, undo_group, mut inserts, mut deletes } = op;
         let full_priority = FullPriority { priority, session_id: rev_id.session_id() };
-        // 1. expand by each in expand_by
-        for &(other_priority, ref other_inserts) in &expand_by {
-            let after = full_priority >= other_priority;  // should never be ==
+        // expand by each in expand_by
+        for &(trans_priority, ref trans_inserts) in &expand_by {
+            let after = full_priority >= trans_priority;  // should never be ==
             // d-expand by other
-            inserts = inserts.transform_expand(other_inserts, after);
+            inserts = inserts.transform_expand(trans_inserts, after);
             // trans-expand other by expanded so they have the same context
             let inserted = inserts.inserted_subset();
-            let new_other_inserts = other_inserts.transform_expand(&inserted);
+            let new_trans_inserts = trans_inserts.transform_expand(&inserted);
             // The deletes are already after our inserts, but we need to include the other inserts
-            deletes = deletes.transform_expand(&new_other_inserts);
+            deletes = deletes.transform_expand(&new_trans_inserts);
             // On the next step we want things in expand_by to have op in the context
-            next_expand_by.push((other_priority, new_other_inserts));
+            next_expand_by.push((trans_priority, new_trans_inserts));
         }
 
         let text_inserts = inserts.transform_shrink(&deletes_from_union);

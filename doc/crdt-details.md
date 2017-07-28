@@ -224,6 +224,8 @@ pub type SessionId = (u64, u32);
 
 `Engine` is the top-level container of text state for the CRDT. It stores the current state of the document and all the `Revision`s that lead up to it. This allows operations that require knowledge of history to walk apply `Revision`s in reverse from the current state to find the state at a point in the past, without having to store the state at every point in history. Be sure to read the code in this case, all the fields are described by doc comments.
 
+**SUPER IMPORTANT INSIGHT:** Because the union string preserves the textual ordering of inserted characters, indices in the union string only depend on the set of inserted characters and not what order they were added in the history. This means that the correct representation of a `Revision` for a given edit depends only on the *set* of `Revision`s before it in the history and not their order.
+
 ### Example
 
 Bringing it all together, here's a sketch of how a simple editing scenario would be represented this way.
@@ -866,3 +868,73 @@ fn compute_transforms(revs: Vec<Revision>) -> Vec<(FullPriority, Subset)> {
 #### Rebasing
 
 Now that we have the `DeltaOp`s and transforms, we just need to forward the `DeltaOp`s through the transforms. The helper for this is named `rebase` since it's analogous to a `git rebase`.
+
+Basically, for every `DeltaOp` from `other`, we:
+
+1. `Delta::transform_expand` it by each transform from `self`.
+1. Update the transforms for the next round so they include they include the `DeltaOp`s inserts, and so effectively they become part of the base for both sides.
+1. Apply the `DeltaOp` to the `text` and `tombstones`
+1. Create a `Revision` from it and append it to the history.
+
+This procedure works iteratively starting with the results of `compute_transforms` and `compute_deltas`. Every iteration it takes the first `DeltaOp`, transforms it and applies it to the text, and updates all the transforms so that it is effectively in the base of both sides. See the diagrams below of an initial state, the operations performed in the first iteration, and the state after the first iteration. You can refer to the code further below to see how they align.
+
+![CRDT merge rebase initial state](img/merge-rebase-initial.png)
+![CRDT merge rebase trace](img/merge-rebase-trace.png)
+![CRDT merge rebase state after](img/merge-rebase-after.png)
+
+```rust
+/// Rebase `b_new` on top of `expand_by` and return revision contents that can be appended as new
+/// revisions on top of the revisions represented by `expand_by`.
+fn rebase(mut expand_by: Vec<(FullPriority, Subset)>, b_new: Vec<DeltaOp>, mut text: Rope, mut tombstones: Rope,
+        mut deletes_from_union: Subset, mut max_undo_so_far: usize) -> (Vec<Revision>, Rope, Rope, Subset) {
+    let mut out = Vec::with_capacity(b_new.len());
+
+    let mut next_expand_by = Vec::with_capacity(expand_by.len());
+    for op in b_new.into_iter() {
+        let DeltaOp { rev_id, priority, undo_group, mut inserts, mut deletes } = op;
+        let full_priority = FullPriority { priority, session_id: rev_id.session_id() };
+        // (1) (2) (3) expand by each in expand_by
+        for &(trans_priority, ref trans_inserts) in &expand_by {
+            let after = full_priority >= trans_priority;  // should never be ==
+            // d-expand by other
+            inserts = inserts.transform_expand(trans_inserts, after);
+            // trans-expand other by expanded so they have the same context
+            let inserted = inserts.inserted_subset();
+            let new_trans_inserts = trans_inserts.transform_expand(&inserted);
+            // The deletes are already after our inserts, but we need to include the other inserts
+            deletes = deletes.transform_expand(&new_trans_inserts);
+            // (6) On the next step we want things in expand_by to have op in the context
+            next_expand_by.push((trans_priority, new_trans_inserts));
+        }
+
+        // (4) Update the text and tombstones
+        let text_inserts = inserts.transform_shrink(&deletes_from_union);
+        let text_with_inserts = text_inserts.apply(&text);
+        let inserted = inserts.inserted_subset();
+
+        let expanded_deletes_from_union = deletes_from_union.transform_expand(&inserted);
+        let new_deletes_from_union = expanded_deletes_from_union.union(&deletes);
+        let (new_text, new_tombstones) =
+            shuffle(&text_with_inserts, &tombstones, &expanded_deletes_from_union, &new_deletes_from_union);
+
+        text = new_text;
+        tombstones = new_tombstones;
+        deletes_from_union = new_deletes_from_union;
+
+        // (5) Build a revision and append it to the history
+        max_undo_so_far = std::cmp::max(max_undo_so_far, undo_group);
+        out.push(Revision {
+            rev_id, max_undo_so_far,
+            edit: Contents::Edit {
+                priority, undo_group, deletes,
+                inserts: inserted,
+            }
+        });
+
+        expand_by = next_expand_by;
+        next_expand_by = Vec::with_capacity(expand_by.len());
+    }
+
+    (out, text, tombstones, deletes_from_union)
+}
+```
