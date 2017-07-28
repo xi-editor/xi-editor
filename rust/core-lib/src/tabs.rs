@@ -649,7 +649,8 @@ pub struct SyncRepo {
 #[cfg(target_os = "fuchsia")]
 impl<W: Write + Send + 'static> Documents<W> {
     pub fn setup_ledger(&mut self, ledger: Ledger_Proxy, session_id: (u64,u32)) {
-        start_conflict_resolver_factory(&mut ledger, vec![0]);
+        let key = vec![0];
+        start_conflict_resolver_factory(&mut ledger, key);
 
         let (tx, rx) = channel();
         let updater = SyncUpdater::new(self.buffers.clone(), rx);
