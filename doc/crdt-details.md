@@ -280,7 +280,18 @@ Takes two `Subset`s and produces a new `Subset` of the same string where each ch
 
 We can do this by "expanding" the indices in a `Subset` after each insert by the size of that insert, where the inserted characters are the "transform". Conceptually if a `Subset` represents the set of characters in a string that were inserted by an edit, then it can be used as a transform from the coordinate space before that edit to after that edit by mapping a `Subset` of the string before the insertion onto the 0-count regions of the transform `Subset`.
 
-<!-- TODO pictures -->
+The actual procedure works by iterating over the segments of the transform:
+
+- When it encounters a 0-count segment it keeps putting (potentially partial) segments from `self` into the output until it fills its size.
+- When it encounters a non-0-count transform segment it outputs a 0-count segment of the same size.
+
+The `SubsetBuilder` used for the output automatically merges consecutive segments that have the same count. See the diagram below for how this plays out:
+
+![transform_expand workings](img/trans-expand-1.png)
+
+One example of how this can be used is to find the characters that were inserted by a past `Revision` in the coordinates of the current union string instead of the past one:
+
+![transform_expand usage](img/trans-expand-2.png)
 
 #### Subset::transform_union
 
@@ -664,8 +675,6 @@ It does this by finding changes which the other `Engine` has but it doesn't and 
 
 The fact that, even in a merge, `Revision`s are only ever appended leads to the interesting fact that two peers (Separate devices/engines that share state my merging) can have `Engine`s that represent the same document contents and history, but where the `Revision`s are in a totally different order. This is fine though because the `Revision` ids allow us to compare the identity of two `Revision`s even if their indices are different due to transforms, and undo groups allow us to maintain and manipulate undo history order separately from CRDT history order.
 
-<!-- TODO diagram of criss-cross merge -->
-
 In practice the order of the `Revision` history will tend to be very similar between peers. Any edit that occurs while another edit is visible on screen (present in this peer's `Engine`) will never be re-ordered before that visible edit. Thus if there are no concurrent edits made on devices that sync with each other by merging, the devices will end up with the same `Revision` history.
 
 **Note:** As of the time this was written, Xi's `merge` implementation does not support undo operations, and will panic if one is encountered. We plan to fix this and expect that the structure of the merge operation will stay the same, just with more cases. So for the rest of this description, presume `Edit`s are the only type of `Revision`.
@@ -684,7 +693,7 @@ An important part of merging is figuring out which revisions the two sides have 
 
 If you're wondering how you can end up with common revisions not in the base, and in different positions and ordering, that's because it's rare. Common revisions not in the base is possible when the merges aren't serialized by a central server, and different orders are possible with three peers. See the example below.
 
-![CRDT merge common in different order](img/merge-common-diff-2.png)
+![CRDT merge common in different order](img/merge-common-diff-3.png)
 
 The first two steps of the `merge` operation are to find the base index and common revision set.
 As of writing these are both the easiest possible correct representations, and not the fastest ones, but we plan on optimizing soon.
@@ -938,3 +947,38 @@ fn rebase(mut expand_by: Vec<(FullPriority, Subset)>, b_new: Vec<DeltaOp>, mut t
     (out, text, tombstones, deletes_from_union)
 }
 ```
+
+#### That's it!
+
+After all those stages are complete, the merge is done. The `rebase` has appended the transformed versions of all the new `Revision`s from `other` and updated the `text`, `tombstones` and `deletes_from_union`. The actual `Engine::merge` function just ties all these helpers together:
+
+```rust
+/// Merge the new content from another Engine into this one with a CRDT merge
+pub fn merge(&mut self, other: &Engine) {
+    let (mut new_revs, text, tombstones, deletes_from_union) = {
+        let base_index = find_base_index(&self.revs, &other.revs);
+        let a_to_merge = &self.revs[base_index..];
+        let b_to_merge = &other.revs[base_index..];
+
+        let common = find_common(a_to_merge, b_to_merge);
+
+        let a_new = rearrange(a_to_merge, &common, self.deletes_from_union.len());
+        let b_new = rearrange(b_to_merge, &common, other.deletes_from_union.len());
+
+        let b_deltas = compute_deltas(&b_new, &other.text, &other.tombstones, &other.deletes_from_union);
+        let expand_by = compute_transforms(a_new);
+
+        let max_undo = self.max_undo_group_id();
+        rebase(expand_by, b_deltas, self.text.clone(), self.tombstones.clone(), self.deletes_from_union.clone(), max_undo)
+    };
+
+    self.text = text;
+    self.tombstones = tombstones;
+    self.deletes_from_union = deletes_from_union;
+    self.revs.append(&mut new_revs);
+}
+```
+
+#### Testing
+
+Every operation is tested in the `tests` module of `engine.rs`. The `Engine::merge` function is tested using a facility for creating and running "merge scripts" that describe a sequence of operations on multiple engines, merges between them, and assertions about their contents. This makes building complex merge scenarios to test much easier.
