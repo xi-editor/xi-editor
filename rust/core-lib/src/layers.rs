@@ -129,13 +129,13 @@ impl Scopes {
             let spans = layer.scope_spans.subseq(iv);
             let styles = layer.style_spans.subseq(iv);
             if spans.iter().next().is_some() {
-                print_err!("scopes for layer {:?}:", id);
+                eprintln!("scopes for layer {:?}:", id);
                 for (iv, val) in spans.iter() {
-                    print_err!("{}: {:?}", iv, layer.name_lookup[*val as usize]);
+                    eprintln!("{}: {:?}", iv, layer.name_lookup[*val as usize]);
                 }
-                print_err!("styles:");
+                eprintln!("styles:");
                 for (iv, val) in styles.iter() {
-                    print_err!("{}: {:?}", iv, val);
+                    eprintln!("{}: {:?}", iv, val);
                 }
             }
         }
@@ -191,7 +191,7 @@ impl ScopeLayer {
             let scopes = stack.iter().map(|s| Scope::new(&s))
                 .filter(|result| match *result {
                     Err(ref err) => {
-                        print_err!("failed to resolve scope {}\nErr: {:?}",
+                        eprintln!("failed to resolve scope {}\nErr: {:?}",
                                    &stack.join(" "),
                                    err);
                         false

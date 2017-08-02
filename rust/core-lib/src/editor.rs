@@ -701,12 +701,12 @@ impl Editor {
             Ok(mut f) => {
                 for chunk in self.text.iter_chunks(0, self.text.len()) {
                     if let Err(e) = f.write_all(chunk.as_bytes()) {
-                        print_err!("write error {}", e);
+                        eprintln!("write error {}", e);
                         break;
                     }
                 }
             }
-            Err(e) => print_err!("create error {}", e),
+            Err(e) => eprintln!("create error {}", e),
         }
 
         self.pristine_rev_id = self.last_rev_id;

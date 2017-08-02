@@ -150,9 +150,9 @@ impl PluginManager {
                                 .apply_plugin_edit(&edit, Some(undo_group));
                         }
                         Ok(Ok(UpdateResponse::Ack(_))) => (),
-                        Ok(Err(err)) => print_err!("plugin response json err: {:?}", err),
+                        Ok(Err(err)) => eprintln!("plugin response json err: {:?}", err),
                         Err(err) => {
-                            print_err!("plugin process dead? {:?}", err);
+                            eprintln!("plugin process dead? {:?}", err);
                             //TODO: do we have a retry policy?
                             plugin_ref.declare_dead();
                         }
@@ -199,7 +199,7 @@ impl PluginManager {
                 plug.rpc_notification("custom_command", &inner);
             }
             None => {
-                print_err!("missing plugin {} for command {}", receiver, method);
+                eprintln!("missing plugin {} for command {}", receiver, method);
             }
         }
     }
@@ -249,7 +249,7 @@ impl PluginManager {
                                                           plugin_ref, commands);
                     }
                 }
-                Err(err) => print_err!("failed to start plugin {}:\n {:?}",
+                Err(err) => eprintln!("failed to start plugin {}:\n {:?}",
                                      plugin_name, err),
             }
         });
@@ -272,7 +272,7 @@ impl PluginManager {
             let _ = self.running_for_view_mut(&view_id)
                 .map(|running| running.insert(plugin_name.to_owned(), plugin_ref));
         } else {
-            print_err!("launch of plugin {} failed, no buffer for view {}",
+            eprintln!("launch of plugin {} failed, no buffer for view {}",
                        plugin_name, view_id);
             plugin_ref.shutdown();
         }
@@ -483,7 +483,7 @@ impl PluginManagerRef {
 
     /// Called when a document's syntax definition has changed.
     pub fn document_syntax_changed(&self, view_id: &ViewIdentifier, init_info: PluginBufferInfo) {
-        print_err!("document_syntax_changed {}", view_id);
+        eprintln!("document_syntax_changed {}", view_id);
 
         let start_keys = self.activatable_plugins(view_id).iter()
             .map(|p| p.to_owned())
@@ -582,11 +582,11 @@ impl PluginManagerRef {
     /// Batch run a group of plugins (as on creating a new view, for instance)
     fn start_plugins(&self, view_id: &ViewIdentifier,
                      init_info: &PluginBufferInfo, plugin_names: &Vec<String>) {
-        print_err!("starting plugins for {}", view_id);
+        eprintln!("starting plugins for {}", view_id);
         for plugin_name in plugin_names.iter() {
             match self.start_plugin(view_id, init_info, plugin_name) {
-                Ok(_) => print_err!("starting plugin {}", plugin_name),
-                Err(err) => print_err!("unable to start plugin {}, err: {:?}",
+                Ok(_) => eprintln!("starting plugin {}", plugin_name),
+                Err(err) => eprintln!("unable to start plugin {}, err: {:?}",
                                        plugin_name, err),
             }
         }

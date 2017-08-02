@@ -60,7 +60,7 @@ impl PluginState {
     fn highlight_one_line(&mut self, ctx: &mut PluginCtx) -> bool {
         let line = ctx.get_line(self.line_num);
         if let Err(err) = line {
-            print_err!("Error: {:?}", err);
+            eprintln!("Error: {:?}", err);
             return false;
         }
         let line = line.unwrap();
@@ -123,14 +123,14 @@ impl caching_plugin::Handler for PluginState {
     }
 
     fn idle(&mut self, mut ctx: PluginCtx, _token: usize) {
-        print_err!("idle task at line {}", self.line_num);
+        eprintln!("idle task at line {}", self.line_num);
         for _ in 0..LINES_PER_RPC {
             if !self.highlight_one_line(&mut ctx) {
                 self.flush_spans(&mut ctx);
                 return;
             }
             if ctx.request_is_pending() {
-                print_err!("request pending at line {}", self.line_num);
+                eprintln!("request pending at line {}", self.line_num);
                 break;
             }
         }

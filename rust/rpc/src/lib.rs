@@ -29,8 +29,6 @@ extern crate serde_derive;
 extern crate serde;
 extern crate crossbeam;
 
-#[macro_use]
-mod macros;
 mod parse;
 mod error;
 
@@ -238,7 +236,7 @@ impl<W: Write + Send> RpcLoop<W> {
                                 self.peer.handle_response(id, resp);
                             }
                             Err(msg) => {
-                                print_err!("failed to parse response: {}", msg);
+                                eprintln!("failed to parse response: {}", msg);
                                 self.peer.handle_response(
                                     id, Err(Error::InvalidResponse));
                             }
@@ -313,7 +311,7 @@ impl<W: Write + Send + 'static> Peer for RawPeer<W> {
             "method": method,
             "params": params,
         })) {
-            print_err!("send error on send_rpc_notification method {}: {}",
+            eprintln!("send error on send_rpc_notification method {}: {}",
                        method, e);
         }
     }
@@ -357,7 +355,7 @@ impl<W:Write> RawPeer<W> {
             Err(error) => response["error"] = json!(error),
         };
         if let Err(e) = self.send(&response) {
-            print_err!("error {} sending response to RPC {:?}", e, id);
+            eprintln!("error {} sending response to RPC {:?}", e, id);
         }
     }
 
@@ -388,7 +386,7 @@ impl<W:Write> RawPeer<W> {
         };
         match handler {
             Some(responsehandler) => responsehandler.invoke(resp),
-            None => print_err!("id {} not found in pending", id)
+            None => eprintln!("id {} not found in pending", id)
         }
     }
 

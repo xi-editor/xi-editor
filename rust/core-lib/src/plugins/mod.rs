@@ -121,7 +121,7 @@ impl PluginRef {
             Ok(plugin) => plugin.peer.send_rpc_request_async("update", &params,
                                                              Box::new(callback)),
             Err(err) => {
-                print_err!("plugin update failed {:?}", err);
+                eprintln!("plugin update failed {:?}", err);
                 callback(Err(xi_rpc::Error::PeerDisconnect));
             }
         }
@@ -139,11 +139,11 @@ impl PluginRef {
                 if inner.description.name == "syntect" {
                     let _ = inner.process.kill();
                 }
-                print_err!("waiting on process {}", inner.process.id());
+                eprintln!("waiting on process {}", inner.process.id());
                 let exit_status = inner.process.wait();
-                print_err!("process ended {:?}", exit_status);
+                eprintln!("process ended {:?}", exit_status);
             }
-            Err(_) => print_err!("plugin mutex poisoned"),
+            Err(_) => eprintln!("plugin mutex poisoned"),
         }
     }
 
@@ -187,7 +187,7 @@ pub fn start_update_thread(
                 Ok((view_id, update, undo_group)) => {
                     if let Some(err) = manager_ref.update_plugins(
                         &view_id, update, undo_group).err() {
-                        print_err!("error updating plugins {:?}", err);
+                        eprintln!("error updating plugins {:?}", err);
                     }
                 }
                 Err(_) => break,
@@ -208,7 +208,7 @@ pub fn start_plugin_process<C>(manager_ref: &PluginManagerRef,
     let plugin_desc = plugin_desc.to_owned();
 
     thread::spawn(move || {
-        print_err!("starting plugin at path {:?}", &plugin_desc.exec_path);
+        eprintln!("starting plugin at path {:?}", &plugin_desc.exec_path);
         let child = ProcCommand::new(&plugin_desc.exec_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

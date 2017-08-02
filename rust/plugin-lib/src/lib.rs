@@ -22,8 +22,5 @@ extern crate serde_derive;
 extern crate bytecount;
 extern crate rand;
 
-#[macro_use]
-mod macros;
-
 pub mod plugin_base;
 pub mod state_cache;

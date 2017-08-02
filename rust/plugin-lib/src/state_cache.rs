@@ -89,7 +89,7 @@ impl<'a, P: Plugin> plugin_base::Handler for CacheHandler<'a, P> {
         };
         match *req {
             PluginRequest::Ping => {
-                print_err!("got ping");
+                eprintln!("got ping");
                 None
             }
             PluginRequest::Initialize(ref init_info) => ctx.do_initialize(init_info, self.handler),
@@ -140,7 +140,7 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
     fn do_update<P: Plugin<State = S>>(mut self, start: usize, end: usize, new_len: usize, rev: u64,
         text: Option<&str>, handler: &mut P) -> Option<Value>
     {
-        //print_err!("got update notification {:?}", edit_type);
+        //eprintln!("got update notification {:?}", edit_type);
         self.state.buf_size = self.state.buf_size - (end - start) + new_len;
         self.state.rev = rev;
         if let Some(text) = text {
