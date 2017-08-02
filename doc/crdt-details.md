@@ -4,8 +4,29 @@ This document contains a detailed description of Xi's text Conflict-free Replica
 
 ## Table of Contents
 
+- [Motivation](#motivation): Why Xi's CRDT is the way it is.
 - [Representation](#representation): Describes the representation Xi uses to implement the CRDT in a memory and time efficient way.
 - [Operations](#operations): Describes all the operations implemented on the representation to allow it to support undo, asynchronous edits, distributed synchronization and more.
+
+## Motivation
+
+The Xi CRDT attempts to have a number of properties that many other asynchronous text editing solutions don't:
+
+- Usable without a central server: Even though the Fuchsia Ledger does sync to a cloud server, it can't actually inspect the data or perform operations, so conflict resolution must be possible on every device independently.
+- Support large documents: The memory complexity of the representation and the time complexity of common operations should be low enough to support very large text documents like books or long code files.
+- Support long histories: Similarly, documents that have gone through many edits should be efficient to edit both in time and memory.
+
+As of the time this document was written, it satisfies all of these properties to some extent, but some operations and representations are not as memory and time efficient as we'd like. However, everything has been designed with a few more key optimizations in mind. Those optimizations should bring the memory and time complexity down to where we want.
+
+### Transform Property 2 (TP2) and Operational Transforms
+
+Operational Transformation (OT) is a common way to implement asynchronous text editing. It works by sending *operations* like inserts and deletes between peers and transforming them to apply to the current text. Unfortunately many implementations of OT have a problem where they don't always preserve ordering when text is deleted. For example see the following diagram showing 3 peers sending edits between each other ending up in an inconsistent state:
+
+![TP2 Problem](img/tp2.png)
+
+Acting consistently in cases like this is called having "Transform Property 2". The difficulty of solving this with Operational Transformation can be solved by having a central server do all the transformation so that although the order over deletes is not preserved at least the result can be made consistent. This is what Google Docs and many other collaborative editing systems do.
+
+Xi avoids this problem by using "tombstones", which leave deleted characters in the representation so that ordering can be preserved. This will be described in detail later.
 
 ## Representation
 
@@ -230,7 +251,9 @@ pub type SessionId = (u64, u32);
 
 Bringing it all together, here's a sketch of how a simple editing scenario would be represented this way.
 
-Shown below is a history of `Edit` `Revision`s. At each point, the `inserts` and `deletes` `Subset`s of the `Revision` that was just added are shown. Below that is what the contents of `Engine` would be immediately after that `Revision` was added to it.
+![Representation example](img/representation-overview.png)
+
+Shown below is a longer history of `Edit` `Revision`s. At each point, the `inserts` and `deletes` `Subset`s of the `Revision` that was just added are shown. Below that is what the contents of `Engine` would be immediately after that `Revision` was added to it.
 
 Also included is a "Concepts" section that includes things that aren't actually stored but are useful for understanding the representation. This includes the "union" string that all indices are based on. It also includes `back_computed_deletions_from_6_union`, which is like `deletes_from_union` except instead of being based on the union at the time of the edit, it is based on the union of `Revision` 6. This shows that since we never throw away information, we can represent the `text` at any past `Revision` as a set of deletions from the union string of any later revision.
 
