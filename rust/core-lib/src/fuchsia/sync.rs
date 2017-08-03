@@ -223,7 +223,7 @@ struct ConflictResolverFactoryServer {
 }
 
 impl ConflictResolverFactory for ConflictResolverFactoryServer {
-    fn get_policy(&mut self, page_id: Vec<u8>) -> Future<MergePolicy, ::fidl::Error> {
+    fn get_policy(&mut self, _page_id: Vec<u8>) -> Future<MergePolicy, ::fidl::Error> {
         Future::done(Ok(MergePolicy_Custom))
     }
 
@@ -241,11 +241,13 @@ impl_fidl_stub!(ConflictResolverFactoryServer: ConflictResolverFactory_Stub);
 fn state_from_snapshot<F>(snapshot: ::fidl::InterfacePtr<PageSnapshot_Client>, key: Vec<u8>, done: F)
         where F: Send + FnOnce(Result<Option<Engine>,()>) + 'static {
     assert_eq!(PageSnapshot_Metadata::VERSION, snapshot.version);
-    let snapshot_proxy = PageSnapshot_new_Proxy(snapshot.inner);
+    let mut snapshot_proxy = PageSnapshot_new_Proxy(snapshot.inner);
     // TODO get a reference when too big
     snapshot_proxy.get(key).with(move |raw_res| {
         let state = match raw_res.map(|res| ledger::value_result(res)) {
-            Ok(Ok(Some(buf))) => Ok(buf_to_state(&buf))
+            // the .ok() has the behavior of acting like invalid state is empty
+            // and thus deleting invalid state and overwriting it with good state
+            Ok(Ok(Some(buf))) => Ok(buf_to_state(&buf).ok()),
             Ok(Ok(None)) => { print_err!("No state in conflicting page"); Ok(None) },
             Err(err) => { print_err!("FIDL failed on initial response: {:?}", err); Err(()) },
             Ok(Err(err)) => { print_err!("Ledger failed to retrieve key: {:?}", err); Err(()) },
@@ -270,7 +272,7 @@ impl ConflictResolver for ConflictResolverServer {
             let key3 = key2.clone();
             state_from_snapshot(right, key2, move |e2_opt| {
                 let result_opt = match (e1_opt, e2_opt) {
-                    (Ok(Some(e1)), Ok(Some(e2))) => {
+                    (Ok(Some(mut e1)), Ok(Some(e2))) => {
                         e1.merge(&e2);
                         Some(e1)
                     },
@@ -278,6 +280,8 @@ impl ConflictResolver for ConflictResolverServer {
                     (Ok(Some(e)), Ok(None)) | (Ok(None), Ok(Some(e))) => Some(e),
                     // failed to get one of the engines, we can't do the merge properly
                     (Err(()), _) | (_, Err(())) => None,
+                    // if state is invalid or missing on both sides, can't merge
+                    (Ok(None), Ok(None)) => None,
                 };
                 if let Some(out_state) = result_opt {
                     let buf = state_to_buf(&out_state);
@@ -290,7 +294,7 @@ impl ConflictResolver for ConflictResolverServer {
                         priority: Priority_Eager,
                     };
                     assert_eq!(MergeResultProvider_Metadata::VERSION, result_provider.version);
-                    let result_provider_proxy = MergeResultProvider_new_Proxy(result_provider.inner);
+                    let mut result_provider_proxy = MergeResultProvider_new_Proxy(result_provider.inner);
                     result_provider_proxy.merge(vec![merged]);
                     result_provider_proxy.done().with(ledger_crash_callback);
                 }
