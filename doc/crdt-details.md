@@ -2,7 +2,13 @@
 
 <!-- See https://www.figma.com/file/UGOAcpKR5WIP81t3DGPIP2dR/CRDT-Merge-Diagrams for the source of the diagrams -->
 
-This document contains a detailed description of Xi's text Conflict-free Replicated Data Type (CRDT) as implemented in the `xi-rope` crate. It describes the actual Rust data structures and algorithms used, because the primary novelty and difficulty of this CRDT is in the optimized representation that allows for better time and memory complexity. If you want an overview of the motivation behind using a CRDT and a conceptual description of what the CRDT does see [`crdt.md`](crdt.md).
+This document contains a detailed description of the data structures and operations Xi uses for text. These data structures and the `merge` operation also form a Conflict-free Replicated Data Type (CRDT). It being a CRDT allows Xi to be used for concurrent editing of text on multiple devices, it can merge edits, including those made offline, between multiple devices and converge on a consistent document that includes all changes.
+
+Beyond synchronizing text, these data structures and operations allow Xi to handle asynchronous editing of the text from plugins, support undo and redo, and allow incremental updating of editor state and the view based on differences between revisions.
+
+Many of these data structures and operations have been in Xi for a while but they've recently been heavily overhauled and extended as part of [a project](https://github.com/google/xi-editor/issues/250) that added multi-device syncing support via the CRDT merge operation. This was done for [use on the Fuchsia operating system](https://fuchsia.googlesource.com/xi/), where it uses [Ledger](https://fuchsia.googlesource.com/ledger/) to synchronize documents between devices.
+
+What follows is both a description of a data structure for text and a code tour of the `xi-rope` crate. It describes the actual Rust data structures and algorithms used, because the primary novelty and difficulty of this CRDT is in the optimized representation that allows for better time and memory complexity. If you want an overview of the motivation behind using a CRDT and a conceptual description of what the CRDT does see [`crdt.md`](crdt.md). The intended audience is anyone interested in implementing CRDTs, anyone who wants to work on Xi, or just anyone curious enough.
 
 ## Table of Contents
 
@@ -23,7 +29,9 @@ As of the time this document was written, it satisfies all of these properties t
 
 ### Transform Property 2 (TP2) and Operational Transforms
 
-[Operational Transformation (OT)](https://en.wikipedia.org/wiki/Operational_transformation) is a common way to implement asynchronous text editing. It works by sending *operations* like inserts and deletes between peers and transforming them to apply to the current text. Unfortunately many implementations of OT have a problem where they don't always preserve ordering when text is deleted. For example see the following diagram showing 3 peers sending edits between each other ending up in an inconsistent state:
+[Operational Transformation (OT)](https://en.wikipedia.org/wiki/Operational_transformation) is a common way to implement asynchronous text editing. It works by sending *operations* like inserts and deletes between peers and transforming them to apply to the current text. Unfortunately many implementations of OT have a problem where they don't always preserve ordering when text is deleted.
+
+For example see the following diagram showing 3 peers sending edits between each other ending up in an inconsistent state. The arrows represent operations being sent asynchronously between devices in a peer-to-peer editing system based on OT, with time progressing downward. Whenever an edit is made the operation is sent to all other peers, but due to asynchronous communication they can be arbitrarily delayed. When an operation arrives at a peer it is transformed and applied to the current text. For clarity, not all arrows are shown, but you can imagine that the arrival of missing sends just got delayed past the end of the diagram.
 
 ![TP2 Problem](img/tp2.png)
 
@@ -34,7 +42,7 @@ Xi avoids this problem by using "tombstones" (see [Tombstone Transformation Func
 
 ## Representation
 
-The conceptual representation described in [`crdt.md`](crdt.md) would be very inefficient to use directly. If we had to store an ID and ordering edges for each character and reconstruct the current text via topological sort every time we wanted to know what the current text, Xi would be incredibly slow and use tons of memory.
+The conceptual representation described in [`crdt.md`](crdt.md) would be very inefficient to use directly. If we had to store an ID and ordering edges for each character and reconstruct the current text via topological sort every time we wanted to know what the current text is, Xi would be incredibly slow and would use much more memory than is necessary.
 
 Instead, we use a representation that allows all the operations we care about to be fast. We also take advantage of the typical patterns of text document usage to make the representation more memory efficient for common cases.
 
@@ -72,7 +80,9 @@ When representing potentially large amounts of text, Xi avoids using `String`s a
 - Inserting one piece of text in the middle of another producing a new piece of text
 - Deleting an interval from a piece of text, producing a new piece of text
 
-Behind the scenes, `Rope` is an immutable balanced tree structure using Rust's atomic reference counting smart pointer (`Arc`) to share data, so "copying" any sub-tree is a very fast `O(1)` operation. The leaves of the tree are chunks of text with a maximum size. For example, deleting an interval of a `Rope` only requires creating a few new nodes that reference the sub-tree to the right of the deleted interval and to the left, and creating up to two new leaves if the deleted interval doesn't lie on a chunk boundary.
+Behind the scenes, `Rope` is an immutable balanced tree structure using Rust's atomic reference counting smart pointer (`Arc`) to share data, so "copying" any sub-tree is a very fast `O(1)` operation. The leaves of the tree are chunks of text with a maximum size.
+
+An example of a `O(log n)` operation is deleting an interval of a `Rope`, which only requires creating a few new nodes that reference the sub-trees to the right and left of the deleted interval, and creating up to two new leaves if the deleted interval doesn't lie on chunk boundaries.
 
 Obviously `Rope`s will be slower and take more memory than small `Strings` but they have an asymptotic advantage when working with large documents.
 
@@ -93,11 +103,11 @@ pub struct Subset {
 }
 ```
 
-The `Subset` structure in `multiset.rs` represents a multi-subset of a string, meaning that every character in the string has a count (often `0`) representing how many times it is in the `Subset`. Most of the time this structure is used to represent plain-old subsets and the counts are only ever `0` for something not in the set or `1` for a character in the set.
+The `Subset` structure in `multiset.rs` represents a multi-subset of a string, meaning that every character in the string has a count (often `0`) representing how many times it is in the `Subset`. Most of the time this structure is used to represent plain-old subsets and the counts are only ever `0` for something not in the set or `1` for a character in the set. It is primarily used to efficiently represent inserted and deleted regions of a document.
 
 **Note:** The exact nature of the characters is not central to the CRDT algorithm. It's most convenient for indices to match the representation, so throughout this document "characters" are actually counting UTF-8 code units, so for example an emoji would be multiple "characters" in this sense.
 
-It stores this information compactly as a list of consecutive `Segment`s with a `length` and a `count`. This way a `Subset` representing 1000 consecutive characters in the middle of a string will only require 3 segments (a 0-count one at the start, a 1-count one in the middle, and another 0-count one at the end).
+It stores this information compactly as a list of consecutive `Segment`s with a `length` and a `count`. This way a `Subset` representing 1000 consecutive characters in the middle of a string will only require 3 segments (a 0-count one at the start, a 1-count one in the middle, and another 0-count one at the end). So as `(len, count)` tuples this would look like: `(n, 0), (1000, 1), (m, 0)`.
 
 The primary reason that `Subset`s can have counts greater than `1` is to represent concurrent deletes, for example if two concurrent edits delete the same character, and one of them is undone, subtracting one of the deletes from the `Subset` of deleted characters should still leave the character deleted once. For this reason, the `Subset`s of deleted characters which are described later have counts that represent how many times each character has been deleted.
 
@@ -121,26 +131,45 @@ pub struct Delta {
 pub struct InsertDelta(Delta);
 ```
 
-Delta represents the difference between one string (*A*) and another (*B*). It stores this as a list of intervals copied from the *A* string and new inserted sections. All the indices of the copied intervals are non-decreasing. So a deletion is represented as a section of the *A* string which isn't copied to the *B* string, and insertions are represented as inserted sections in between copied sections.
+A `Delta` represents the difference between one string (*A*) and another (*B*). It stores this as a list of intervals copied from the *A* string and new inserted sections. All the indices of the copied intervals are non-decreasing. So a deletion is represented as a section of the *A* string which isn't copied to the *B* string, and insertions are represented as inserted sections in between copied sections. `Delta` is the data structure the text editor interface creates when the user or a plugin edits the document, these are then applied to the document by the `Engine::edit_rev` operation described later.
 
 There is also a type `InsertDelta` that is just a wrapper around a `Delta` but represents a guarantee that the `Delta` only inserts, that is, the entire *A* string is copied by the `Copy` intervals.
 
-### The "union string"
+### Text, tombstones and the "union string"
 
-A super important part of being able to provide the properties we desire in our CRDT is that we never throw useful information away. This means that when you delete text in Xi, or undo an insert, the text doesn't actually get thrown away, just marked as deleted. You can think of this as if there is a "union string" that contains all the characters that have ever been inserted.
+A super important part of being able to provide the properties we desire in our CRDT is that we never throw useful information away. This means that when you delete text in Xi, or undo an insert, the text doesn't actually get thrown away, just marked as deleted. You can think of this as if there is a "union string" that contains all the characters that have ever been inserted, with some marked as deleted.
 
 When we delete or undo, we don't touch the union string, we just change a `Subset` (`deletes_from_union`, more on that later) which marks which characters of the union string are deleted. These deleted characters are sometimes called "tombstones" both within Xi and the academic CRDT literature.
 
-If we wanted to go from the "union string" to the current text of the document, you'd delete the characters marked in `deletes_from_union` from the union string. The problem is you want to get the current text really often, so this would be an inefficient way to actually store the text.
+If we wanted to go from the "union string" to the current text of the document, you'd delete the characters marked in `deletes_from_union` from the union string. The problem is, Xi access the current text **very often**, so this would be an inefficient way to actually store the text for large documents.
 
-Thus, the "union string" isn't really a structure in Xi, although it used to be, it's just a concept that could theoretically be created from the information we do have. However, the union string is still used for most indices as a coordinate space for `Subset`s. You'll see later how we actually store the current text, but you'll notice that most associated data still has its indices based on the union string.
+Instead, the "union string" isn't really stored in Xi, we store it as two separate parts called the `text` and `tombstones`. The `text` stores the current visible document contents, so it is really fast to access, and `tombstones` stores all the characters that are currently in the `deletes_from_union` set. We still store the `deletes_from_union` set to mark deleted characters. Note that the union string is still used for most indices as a coordinate space for `Subset`s like `deletes_from_union`.
+
+Here's an example of what this looks like:
+
+```
+union string:       abcdefgh
+deletes_from_union: -+---+-+
+text:               acdeg
+tombstones:         bfh
+```
+
+We can now also look at `deletes_from_union` as describing the interleaving of characters from `text` and `tombstones`:
+
+```
+text:               a cde g
+deletes_from_union: -+---+-+
+tombstones:          b   f h
+```
+
+The union string is still an important and useful concept because it makes a lot of the operations easier to implement and understand. Almost all explanations will be in terms of the union string, if you want you can largely ignore that fact that it's actually stored as two separate parts. Most operations are done in terms of the union string and then at the very end they shuffle some things around between the current `text` and `tombstones`.
 
 ### Revision
 
 ```rust
 struct Revision {
     /// This uniquely represents the identity of this revision and it stays
-    /// the same even it is rebased or merged between devices.
+    /// the same even if it is rebased or merged between devices.
     rev_id: RevId,
     /// The largest undo group number of any edit in the history up to this
     /// point. Used to optimize undo to not look further back.
@@ -179,9 +208,9 @@ enum Contents {
 
 They can also represent more complex things like selecting multiple ranges of text using multiple cursors (which Xi supports) and then pasting. This would result in a `Contents::Edit` with an `inserts` subset containing multiple separate segments of pasted characters, and a `deletes` subset containing the multiple ranges of previous text that were replaced.
 
-Note that the `inserts` and `deletes` `Subset`s are based on the union string described above, this allows insertions and deletions to maintain their position easily in the face of concurrency and undo. For example, say I have the text "ac" and I change it to "abc", but then undo the first edit leaving "b". If I re-do the first edit, Xi needs to know that the "b" goes between the two deleted characters. You might be able to think of ways to do this with other coordinates, but it's much easier and less fraught when coordinates only change on insertions instead of insertions, deletions and undo.
+Note that the `inserts` and `deletes` `Subset`s are based on the union string from after the `Revision` is applied. The fact that the union string includes deleted characters allows insertions and deletions to maintain their position easily in the face of concurrency and undo. For example, say I have the text "ac" and I change it to "abc", but then undo the first edit leaving "b". If I re-do the first edit, Xi needs to know that the "b" goes between the two deleted characters. You might be able to think of ways to do this with other coordinates, but it's much easier and less fraught when coordinates only change on insertions instead of insertions, deletions and undo.
 
-A key property of `Revision`s is that they contain all the necessary information to apply them as well as reverse them. This is important both for undo and also for some operations we'll get to later. This is why `Contents::undo` stores the set of toggled groups rather than the new set of undone groups. It's also as why it stores a reversible set of changes to the deleted characters (more on those later), this could be found by replaying all of history using the new set of undo groups, but then it would be inefficient to apply and reverse (because it would be proportional to the length of history).
+A key property of `Revision`s is that they contain all the necessary information to apply them as well as reverse them. This is important both for undo and also for some operations we'll get to later. This is why `Contents::undo` stores the set of toggled groups rather than the new set of undone groups. It's also why it stores a reversible set of changes to the deleted characters (more on those later), this could be found by replaying all of history using the new set of undo groups, but then it would be inefficient to apply and reverse (because it would be proportional to the length of history).
 
 ### RevId & RevToken
 
@@ -199,7 +228,7 @@ pub struct RevId {
 }
 
 /// Valid within a session. If there's a collision the most recent matching
-/// commit will be used, which means only the (small) set of concurrent edits
+/// Revision will be used, which means only the (small) set of concurrent edits
 /// could trigger incorrect behavior if they collide, so u64 is safe.
 pub type RevToken = u64;
 ```
@@ -249,7 +278,7 @@ pub type SessionId = (u64, u32);
 
 `Engine` is the top-level container of text state for the CRDT. It stores the current state of the document and all the `Revision`s that lead up to it. This allows operations that require knowledge of history to apply `Revision`s in reverse from the current state to find the state at a point in the past, without having to store the state at every point in history. Be sure to read the code in this case, all the fields are described by doc comments.
 
-**SUPER IMPORTANT INSIGHT:** Because the union string preserves the textual ordering of inserted characters, indices in the union string only depend on the set of inserted characters and not what order they were added in the history. This means that the correct representation of a `Revision` for a given edit depends only on the *set* of `Revision`s before it in the history and not their order.
+**SUPER IMPORTANT INSIGHT:** Because the union string preserves the textual ordering of inserted characters, indices in the union string only depend on the set of inserted characters and not what order they were added in the history. This means that the correct representation of a `Revision` for a given edit *doesn't depend on the order* of `Revision`s before it in the history, only what *set* of `Revision`s is before it.
 
 ### Example History
 
@@ -303,7 +332,8 @@ Takes two `Subset`s and produces a new `Subset` of the same string where each ch
 
 `Subset::transform_expand` takes a `Subset` and another "transform" `Subset` and transforms the first `Subset` through the coordinate transform represented by the "transform". Now what does this mean:
 
-`Revision`s are never modified even when the union string expands with newly inserted characters. We can deal with this by treating `Subset`s of inserted characters as coordinate transforms. The only difference to the union string is the inserted characters, so if we can modify the coordinates of a `Subset` from being based on one union string to another, we can work with edits from multiple `Revision`s together.
+
+`Revision`s are never modified, and their `Edit`s always refer to the union string that existed when they were created. For operations on multiple `Revision`s, have to be able to map coordinates in one's union string to coordinates in another's. We can deal with this by treating `Subset`s of inserted characters as coordinate transforms. The only difference to the union string is the inserted characters, so if we can modify the coordinates of a `Subset` from being based on one union string to another, we can work with edits from multiple `Revision`s together.
 
 We can do this by "expanding" the indices in a `Subset` after each insert by the size of that insert, where the inserted characters are the "transform". Conceptually if a `Subset` represents the set of characters in a string that were inserted by an edit, then it can be used as a transform from the coordinate space before that edit to after that edit by mapping a `Subset` of the string before the insertion onto the 0-count regions of the transform `Subset`.
 
@@ -425,11 +455,11 @@ fn rev_content_for_index(&self, rev_index: usize) -> Rope {
 
 #### Engine::deletes_from_cur_union_for_index
 
-If you look back at the [example history scenario](#example-history), you'll see `back_computed_deletions_from_6_union`, which shows that for any past `Revision` we can find a set of deletions from the current union string that result in the past text. This helper is what computes deletion sets like `back_computed_deletions_from_6_union`.
+If you look back at the [example history scenario](#example-history), you'll see `back_computed_deletions_from_6_union`, which shows that for any past `Revision` we can find a set of deletions from the current union string that result in the past text. This helper is what computes deletion sets like [`back_computed_deletions_from_6_union`](#example-history).
 
 We can find an `old_deletes_from_cur_union` by taking our current `deletes_from_union` and walking backwards through our list of `Revision`s undoing the changes they have made since the old revision.
 
-There's a problem with this though, the `inserts` and `deletes` subsets use indices in the coordinate space of the union string at the time the `Revision` was created, which may be smaller than our current union string.
+There's a problem with this though, the `inserts` and `deletes` subsets for a `Revision` use indices in the coordinate space of the union string at the time the `Revision` was created, which may be smaller than our current union string.
 
 We could keep track of the transform and account for it, but it's easier to use a helper we need anyway elsewhere that computes what the `deletes_from_union` actually would have been at that previous point in time, that is, relative to the old union string not the current one like we want. This helper is called `Engine::deletes_from_union_for_index` and it performs the work of un-deleting and un-undoing everything after the old revision.
 

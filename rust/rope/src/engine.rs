@@ -91,7 +91,7 @@ pub struct RevId {
 #[derive(Serialize, Deserialize, Debug)]
 struct Revision {
     /// This uniquely represents the identity of this revision and it stays
-    /// the same even it is rebased or merged between devices.
+    /// the same even if it is rebased or merged between devices.
     rev_id: RevId,
     /// The largest undo group number of any edit in the history up to this
     /// point. Used to optimize undo to not look further back.
@@ -100,7 +100,7 @@ struct Revision {
 }
 
 /// Valid within a session. If there's a collision the most recent matching
-/// commit will be used, which means only the (small) set of concurrent edits
+/// Revision will be used, which means only the (small) set of concurrent edits
 /// could trigger incorrect behavior if they collide, so u64 is safe.
 pub type RevToken = u64;
 
