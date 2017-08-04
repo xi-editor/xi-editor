@@ -1,12 +1,15 @@
 # The Xi Text Engine CRDT
 
-This document contains a detailed description of Xi's text Conflict-free Replicated Data Type (CRDT) as implemented in the `xi-rope` crate. It describes the actual Rust data structures and algorithms used, because the primary novelty and difficulty of this CRDT is in the optimized representation that allows for better time and memory complexity. If you want an overview of the motivation behind using a CRDT and a conceptual description of what the CRDT does see `crdt.md`.
+<!-- See https://www.figma.com/file/UGOAcpKR5WIP81t3DGPIP2dR/CRDT-Merge-Diagrams for the source of the diagrams -->
+
+This document contains a detailed description of Xi's text Conflict-free Replicated Data Type (CRDT) as implemented in the `xi-rope` crate. It describes the actual Rust data structures and algorithms used, because the primary novelty and difficulty of this CRDT is in the optimized representation that allows for better time and memory complexity. If you want an overview of the motivation behind using a CRDT and a conceptual description of what the CRDT does see [`crdt.md`](crdt.md).
 
 ## Table of Contents
 
 - [Motivation](#motivation): Why Xi's CRDT is the way it is.
 - [Representation](#representation): Describes the representation Xi uses to implement the CRDT in a memory and time efficient way.
 - [Operations](#operations): Describes all the operations implemented on the representation to allow it to support undo, asynchronous edits, distributed synchronization and more.
+    - [Engine::merge](#enginemerge): Description of the CRDT merge operation used for multi-device syncing.
 
 ## Motivation
 
@@ -20,23 +23,24 @@ As of the time this document was written, it satisfies all of these properties t
 
 ### Transform Property 2 (TP2) and Operational Transforms
 
-Operational Transformation (OT) is a common way to implement asynchronous text editing. It works by sending *operations* like inserts and deletes between peers and transforming them to apply to the current text. Unfortunately many implementations of OT have a problem where they don't always preserve ordering when text is deleted. For example see the following diagram showing 3 peers sending edits between each other ending up in an inconsistent state:
+[Operational Transformation (OT)](https://en.wikipedia.org/wiki/Operational_transformation) is a common way to implement asynchronous text editing. It works by sending *operations* like inserts and deletes between peers and transforming them to apply to the current text. Unfortunately many implementations of OT have a problem where they don't always preserve ordering when text is deleted. For example see the following diagram showing 3 peers sending edits between each other ending up in an inconsistent state:
 
 ![TP2 Problem](img/tp2.png)
 
-Acting consistently in cases like this is called having "Transform Property 2". The difficulty of solving this with Operational Transformation can be solved by having a central server do all the transformation so that although the order over deletes is not preserved at least the result can be made consistent. This is what Google Docs and many other collaborative editing systems do.
+Acting consistently in cases like this is called having "Transform Property 2" (see [Operational Transformation in Real-Time Group Editors:
+Issues, Algorithms, and Achievements](http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.53.933&rep=rep1&type=pdf) by Sun & Ellis, 1998). One approach to the problem is to serialize all edits through a central server which does all the transformation. With this approach, the ordering relative to deleted text may not be preserved, but at least all clients will converge to the same state. This is what Google Docs and many other collaborative editing systems do.
 
-Xi avoids this problem by using "tombstones", which leave deleted characters in the representation so that ordering can be preserved. This will be described in detail later.
+Xi avoids this problem by using "tombstones" (see [Tombstone Transformation Functions for Ensuring Consistency in Collaborative Editing Systems](http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.103.2679&rep=rep1&type=pdf)), which leave deleted characters in the representation so that ordering can be preserved. This will be described in detail later.
 
 ## Representation
 
-The conceptual representation described in `crdt.md` would be very inefficient to use directly. If we had to store an ID and ordering edges for each character and reconstruct the current text via topological sort every time we wanted to know what the current text, Xi would be incredibly slow and use tons of memory.
+The conceptual representation described in [`crdt.md`](crdt.md) would be very inefficient to use directly. If we had to store an ID and ordering edges for each character and reconstruct the current text via topological sort every time we wanted to know what the current text, Xi would be incredibly slow and use tons of memory.
 
-Instead, we use a representation that allows all the operations we care about to be fast. We also take advantaged of the typical patterns of text document usage to make the representation more memory efficient for common cases.
+Instead, we use a representation that allows all the operations we care about to be fast. We also take advantage of the typical patterns of text document usage to make the representation more memory efficient for common cases.
 
 The key optimization that shapes everything else is to avoid using IDs for characters or storing ordering edges explicitly. Instead, we represent the identity of characters implicitly by their position in the current text. But then how do we reference them in our revision history? If we use indices into the current text, they will get outdated by changes. We could rewrite all the indices in the history every time we made an edit, but that would be terribly inefficient. Instead the set of inserted characters in every revision is treated as a *coordinate transform* for the older revisions. In order to find the character referred to by an older revision you have to transform the indices it uses based on the insertions made after it. This allows us to make our history append-only, leaving the indices referring to the text at the time of the revision.
 
-That description is almost certainly too vague to be understandable at this point, but don't worry, there will be a full description with diagrams later in the document.
+That description is almost certainly too vague to be understandable at this point, but don't worry, there will be a full description with diagrams later on.
 
 Starting from the basic building blocks and proceeding towards the top level CRDT `Engine`, here are all the structures:
 
@@ -90,6 +94,8 @@ pub struct Subset {
 ```
 
 The `Subset` structure in `multiset.rs` represents a multi-subset of a string, meaning that every character in the string has a count (often `0`) representing how many times it is in the `Subset`. Most of the time this structure is used to represent plain-old subsets and the counts are only ever `0` for something not in the set or `1` for a character in the set.
+
+**Note:** The exact nature of the characters is not central to the CRDT algorithm. It's most convenient for indices to match the representation, so throughout this document "characters" are actually counting UTF-8 code units, so for example an emoji would be multiple "characters" in this sense.
 
 It stores this information compactly as a list of consecutive `Segment`s with a `length` and a `count`. This way a `Subset` representing 1000 consecutive characters in the middle of a string will only require 3 segments (a 0-count one at the start, a 1-count one in the middle, and another 0-count one at the end).
 
@@ -175,7 +181,7 @@ They can also represent more complex things like selecting multiple ranges of te
 
 Note that the `inserts` and `deletes` `Subset`s are based on the union string described above, this allows insertions and deletions to maintain their position easily in the face of concurrency and undo. For example, say I have the text "ac" and I change it to "abc", but then undo the first edit leaving "b". If I re-do the first edit, Xi needs to know that the "b" goes between the two deleted characters. You might be able to think of ways to do this with other coordinates, but it's much easier and less fraught when coordinates only change on insertions instead of insertions, deletions and undo.
 
-A key property of `Revision`s is that they contain all the necessary information to apply them as well as reverse them. This is important both for undo and also for some CRDT operations we'll get to later. This is why `Contents::undo` stores the set of toggled groups rather than the new set of undone groups. It's also as why it stores a reversible set of changes to the deleted characters (more on those later), this could be found by replaying all of history using the new set of undo groups, but then it would be inefficient to apply and reverse (because it would be proportional to the length of history).
+A key property of `Revision`s is that they contain all the necessary information to apply them as well as reverse them. This is important both for undo and also for some operations we'll get to later. This is why `Contents::undo` stores the set of toggled groups rather than the new set of undone groups. It's also as why it stores a reversible set of changes to the deleted characters (more on those later), this could be found by replaying all of history using the new set of undo groups, but then it would be inefficient to apply and reverse (because it would be proportional to the length of history).
 
 ### RevId & RevToken
 
@@ -241,13 +247,11 @@ pub struct Engine {
 pub type SessionId = (u64, u32);
 ```
 
-<!-- TODO diagram of text tombstones and union string -->
-
-`Engine` is the top-level container of text state for the CRDT. It stores the current state of the document and all the `Revision`s that lead up to it. This allows operations that require knowledge of history to walk apply `Revision`s in reverse from the current state to find the state at a point in the past, without having to store the state at every point in history. Be sure to read the code in this case, all the fields are described by doc comments.
+`Engine` is the top-level container of text state for the CRDT. It stores the current state of the document and all the `Revision`s that lead up to it. This allows operations that require knowledge of history to apply `Revision`s in reverse from the current state to find the state at a point in the past, without having to store the state at every point in history. Be sure to read the code in this case, all the fields are described by doc comments.
 
 **SUPER IMPORTANT INSIGHT:** Because the union string preserves the textual ordering of inserted characters, indices in the union string only depend on the set of inserted characters and not what order they were added in the history. This means that the correct representation of a `Revision` for a given edit depends only on the *set* of `Revision`s before it in the history and not their order.
 
-### Example
+### Example History
 
 Bringing it all together, here's a sketch of how a simple editing scenario would be represented this way.
 
@@ -316,9 +320,52 @@ One example of how this can be used is to find the characters that were inserted
 
 ![transform_expand usage](img/trans-expand-2.png)
 
+```rust
+/// Map the contents of `self` into the 0-regions of `other`.
+/// Precondition: `self.count(CountMatcher::All) == other.count(CountMatcher::Zero)`
+fn transform(&self, other: &Subset, union: bool) -> Subset {
+    let mut sb = SubsetBuilder::new();
+    let mut seg_iter = self.segments.iter();
+    let mut cur_seg = Segment {len: 0, count: 0};
+    for oseg in &other.segments {
+        if oseg.count > 0 {
+            sb.push_segment(oseg.len, if union { oseg.count } else { 0 });
+        } else {
+            // fill 0-region with segments from self.
+            let mut to_be_consumed = oseg.len;
+            while to_be_consumed > 0 {
+                if cur_seg.len == 0 {
+                    cur_seg = seg_iter.next().expect("self must cover all 0-regions of other").clone();
+                }
+                // consume as much of the segment as possible and necessary
+                let to_consume = cmp::min(cur_seg.len,to_be_consumed);
+                sb.push_segment(to_consume,cur_seg.count);
+                to_be_consumed -= to_consume;
+                cur_seg.len -= to_consume;
+            }
+        }
+    }
+    assert_eq!(cur_seg.len, 0, "the 0-regions of other must be the size of self");
+    assert_eq!(seg_iter.next(), None, "the 0-regions of other must be the size of self");
+    sb.build()
+}
+
+/// Transform through coordinate transform represented by other.
+/// The equation satisfied is as follows:
+///
+/// s1 = other.delete_from_string(s0)
+///
+/// s2 = self.delete_from_string(s1)
+///
+/// element in self.transform_expand(other).delete_from_string(s0) if (not in s1) or in s2
+pub fn transform_expand(&self, other: &Subset) -> Subset {
+    self.transform(other, false)
+}
+```
+
 #### Subset::transform_union
 
-Like `transform_expand` except it preserves the non-zero segments of the transform instead of mapping them to 0-segments. This is the same as `transform_expand`ing and then taking the `union` with the transform. So:
+Like `transform_expand` except it preserves the non-zero segments of the transform instead of mapping them to 0-segments. This is the same as `transform_expand`ing and then taking the `union` with the transform, but more efficient. So:
 
 ```rust
 a.transform_union(&b) == a.transform_expand(&b).union(&b)
@@ -378,7 +425,7 @@ fn rev_content_for_index(&self, rev_index: usize) -> Rope {
 
 #### Engine::deletes_from_cur_union_for_index
 
-If you look back at the [example history scenario](TODO), you'll see `back_computed_deletions_from_6_union`, which shows that for any past `Revision` we can find a set of deletions from the current union string that result in the past text. This helper is what computes deletion sets like `back_computed_deletions_from_6_union`.
+If you look back at the [example history scenario](#example-history), you'll see `back_computed_deletions_from_6_union`, which shows that for any past `Revision` we can find a set of deletions from the current union string that result in the past text. This helper is what computes deletion sets like `back_computed_deletions_from_6_union`.
 
 We can find an `old_deletes_from_cur_union` by taking our current `deletes_from_union` and walking backwards through our list of `Revision`s undoing the changes they have made since the old revision.
 
@@ -473,7 +520,7 @@ pub fn synthesize(tombstones: &Node<N>, from_dels: &Subset, to_dels: &Subset) ->
 
 This operation is similar to `Engine::get_head` except it returns a `Delta` from the text at a specified revision to the current head text. This is useful for things like updating the position of cursors and rich text spans when edits are made.
 
-Like `Engine::get_head` it starts by calling `Engine::deletes_from_cur_union_for_index` to get a `Subset` describing the state of the text at the old revision relative to the current union string. Now we can just use `Delta::synthesize` to create a `Delta` from the old to the new `deletes_from_union`. The problem is, `Delta::synthesize` expects the tombstones `Rope` you give it to correspond to `from_dels`, but we have one for `to_dels`. To fix this, we can use a helper called `shuffle_tombstones` to get shuffle things to get an `old_tombstones` corresponding to `from_dels`.
+Like `Engine::get_head` it starts by calling `Engine::deletes_from_cur_union_for_index` to get a `Subset` describing the state of the text at the old revision relative to the current union string. Now we can just use `Delta::synthesize` to create a `Delta` from the old to the new `deletes_from_union`. The problem is, `Delta::synthesize` expects the tombstones `Rope` you give it to correspond to `from_dels`, but we have one for `to_dels`. To fix this, we can use a helper called `shuffle_tombstones` to shuffle things to get an `old_tombstones` corresponding to `from_dels`.
 
 #### shuffle_tombstones
 
@@ -696,7 +743,7 @@ This is the operation you were (maybe) waiting for! The CRDT merge operation tha
 
 It does this by finding changes which the other `Engine` has but it doesn't and doing a whole bunch of transformation so that those edits can be appended directly on to the end of `self`'s list of `revs`. The append-only nature of merge preserves the ability for operations like `Engine::delta_rev_head` to work, and allows future optimizations of how things are persisted.
 
-The fact that, even in a merge, `Revision`s are only ever appended leads to the interesting fact that two peers (Separate devices/engines that share state my merging) can have `Engine`s that represent the same document contents and history, but where the `Revision`s are in a totally different order. This is fine though because the `Revision` ids allow us to compare the identity of two `Revision`s even if their indices are different due to transforms, and undo groups allow us to maintain and manipulate undo history order separately from CRDT history order.
+The fact that, even in a merge, `Revision`s are only ever appended leads to the interesting fact that two peers (Separate devices/engines that share state my merging) can have `Engine`s that represent the same document contents and history, but where the `Revision`s are in a totally different order. This is fine though because the `Revision` ids allow us to compare the identity of two `Revision`s even if their `Subset`s are different due to transforms, and undo groups allow us to maintain and manipulate undo history order separately from CRDT history order.
 
 In practice the order of the `Revision` history will tend to be very similar between peers. Any edit that occurs while another edit is visible on screen (present in this peer's `Engine`) will never be re-ordered before that visible edit. Thus if there are no concurrent edits made on devices that sync with each other by merging, the devices will end up with the same `Revision` history.
 
@@ -714,7 +761,7 @@ An important part of merging is figuring out which revisions the two sides have 
 
 ![CRDT Merge Flow Example](img/merge-intro.png)
 
-If you're wondering how you can end up with common revisions not in the base, and in different positions and ordering, that's because it's rare. Common revisions not in the base is possible when the merges aren't serialized by a central server, and different orders are possible with three peers. See the example below.
+If you're wondering how you can end up with common revisions not in the base, and in different positions and ordering, that's because it's rare. But these cases can occur even with only two peers. See the example below.
 
 ![CRDT merge common in different order](img/merge-common-diff-3.png)
 
