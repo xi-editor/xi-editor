@@ -54,4 +54,4 @@ script:
   - for MANIFEST in Cargo.toml */Cargo.toml; do cargo test --manifest-path $MANIFEST || exit; done
   - cd ../python
   - python3 setup.py install
-  - python3 -m pytest python/tests
+  - python3 -m pytest tests
