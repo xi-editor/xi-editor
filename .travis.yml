@@ -21,29 +21,25 @@ before_install: |
     brew install python3
     brew outdated pyenv || brew upgrade pyenv
     brew install pyenv-virtualenv
-    pyenv install 3.6.0
     export PYENV_VERSION=3.6
     export PATH="/Users/travis/.pyenv/shims:${PATH}"
     eval "$(pyenv init -)"
     eval "$(pyenv virtualenv-init -)"
-    pyenv-virtualenv venv
-    source venv/bin/activate
+    sudo pyenv install 3.6.0
+    sudo pyenv virtualenv 3.6.0 general
+    sudo pyenv global general
 
   else
-    curl -L https://raw.githubusercontent.com/pyenv/pyenv-installer/master/bin/pyenv-installer | bash
+    sudo curl -L https://raw.githubusercontent.com/pyenv/pyenv-installer/master/bin/pyenv-installer | bash
     sudo apt-get update
     export PATH="~/.pyenv/bin:$PATH"
     eval "$(pyenv init -)"
     eval "$(pyenv virtualenv-init -)"
-    exec $SHELL
-    pyenv install 3.6.0
-    pyenv virtualenv 3.6.0 general
-    pyenv global general
-    pyenv-virtualenv venv
-    source venv/bin/activate
+    sudo pyenv install 3.6.0
+    sudo pyenv virtualenv 3.6.0 general
+    sudo pyenv global general
     sudo apt-get -y install python3-pip python-dev
     sudo pip3 install -U setuptools
-    sudo pip3 install -U virtualenvwrapper
   fi
 
 install:
