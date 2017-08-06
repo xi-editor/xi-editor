@@ -21,13 +21,12 @@ before_install: |
     brew install python3
     brew outdated pyenv || brew upgrade pyenv
     brew install pyenv-virtualenv
-    export PYENV_VERSION=3.6.0
-    export PATH="/Users/travis/.pyenv/shims:${PATH}"
     eval "$(pyenv init -)"
     eval "$(pyenv virtualenv-init -)"
     sudo pyenv install 3.6.0
     sudo pyenv virtualenv 3.6.0 general
     sudo pyenv global general
+    sudo pip3 install -U setuptools
 
   else
     sudo curl -L https://raw.githubusercontent.com/pyenv/pyenv-installer/master/bin/pyenv-installer | bash
@@ -52,5 +51,5 @@ script:
   - cargo build --manifest-path syntect-plugin/Cargo.toml || exit
   - for MANIFEST in Cargo.toml */Cargo.toml; do cargo test --manifest-path $MANIFEST || exit; done
   - cd ../python
-  - python3 setup.py install
-  - python3 -m pytest tests
+  - sudo python3 setup.py install
+  - sudo python3 -m pytest tests
