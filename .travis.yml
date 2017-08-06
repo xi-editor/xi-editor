@@ -21,7 +21,7 @@ before_install: |
     brew install python3
     brew outdated pyenv || brew upgrade pyenv
     brew install pyenv-virtualenv
-    export PYENV_VERSION=3.6
+    export PYENV_VERSION=3.6.0
     export PATH="/Users/travis/.pyenv/shims:${PATH}"
     eval "$(pyenv init -)"
     eval "$(pyenv virtualenv-init -)"
