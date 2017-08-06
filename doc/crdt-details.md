@@ -143,7 +143,7 @@ When we delete or undo, we don't touch the union string, we just change a `Subse
 
 If we wanted to go from the "union string" to the current text of the document, you'd delete the characters marked in `deletes_from_union` from the union string. The problem is, Xi access the current text **very often**, so this would be an inefficient way to actually store the text for large documents.
 
-Instead, the "union string" isn't really stored in Xi, we store it as two separate parts called the `text` and `tombstones`. The `text` stores the current visible document contents, so it is really fast to access, and `tombstones` stores all the characters that are currently in the `deletes_from_union` set. We still store the `deletes_from_union` set to mark deleted characters. Note that the union string is still used for most indices as a coordinate space for `Subset`s like `deletes_from_union`.
+As an optimization, we store the union string as two separate parts: `text` and `tombstones`. The `text` stores the current visible document contents, so it is really fast to access, and `tombstones` stores all the characters that are currently in the `deletes_from_union` set. We still store the `deletes_from_union` set to mark deleted characters. Note that the union string is still used for most indices as a coordinate space for `Subset`s like `deletes_from_union`.
 
 Here's an example of what this looks like:
 
@@ -333,7 +333,7 @@ Takes two `Subset`s and produces a new `Subset` of the same string where each ch
 `Subset::transform_expand` takes a `Subset` and another "transform" `Subset` and transforms the first `Subset` through the coordinate transform represented by the "transform". Now what does this mean:
 
 
-`Revision`s are never modified, and their `Edit`s always refer to the union string that existed when they were created. For operations on multiple `Revision`s, have to be able to map coordinates in one's union string to coordinates in another's. We can deal with this by treating `Subset`s of inserted characters as coordinate transforms. The only difference to the union string is the inserted characters, so if we can modify the coordinates of a `Subset` from being based on one union string to another, we can work with edits from multiple `Revision`s together.
+`Revision`s are never modified, and their `Edit`s always refer to the union string that existed when they were created. For operations on multiple `Revision`s, we have to be able to map coordinates in one's union string to coordinates in another's. We can deal with this by treating `Subset`s of inserted characters as coordinate transforms. Since the only difference to the union string is the inserted characters, if we can map the coordinates of a `Subset` from one union string to another, we can work with edits from multiple `Revision`s together.
 
 We can do this by "expanding" the indices in a `Subset` after each insert by the size of that insert, where the inserted characters are the "transform". Conceptually if a `Subset` represents the set of characters in a string that were inserted by an edit, then it can be used as a transform from the coordinate space before that edit to after that edit by mapping a `Subset` of the string before the insertion onto the 0-count regions of the transform `Subset`.
 
@@ -395,7 +395,7 @@ pub fn transform_expand(&self, other: &Subset) -> Subset {
 
 #### Subset::transform_union
 
-Like `transform_expand` except it preserves the non-zero segments of the transform instead of mapping them to 0-segments. This is the same as `transform_expand`ing and then taking the `union` with the transform, but more efficient. So:
+Like `transform_expand` except it preserves the non-zero segments of the transform instead of mapping them to 0-segments. This is the same as `transform_expand`ing and then taking the `union` with the transform, but more efficient. These two operations are frequently chained so a shortcut is useful, for example to transform a set of deletions to the coordinate space including some new characters, while also adding those insertions to the deleted set. So:
 
 ```rust
 a.transform_union(&b) == a.transform_expand(&b).union(&b)
@@ -482,7 +482,7 @@ fn deletes_from_cur_union_for_index(&self, rev_index: usize) -> Cow<Subset> {
 
 #### Engine::deletes_from_union_for_index
 
-This function uses the property that each `Revision` contains the information necessary to reverse it to work backwards from the current state of `deletes_from_union` to the past state. For every `Edit` revision it `subtract`s the `deletes` (meaning if something was deleted twice, this will only reverse one), but only if they weren't undone, and then uses `transform_shrink` to reverse the coordinate transform of the `inserts` so that the indices in the intermediate `old_deletes_from_union` refer to the previous union string. `Undo` edits store the symmetric differences of the `deletes_from_union` and the currently undone groups, so those are just reversed.
+This function uses the property that each `Revision` contains the information necessary to reverse it, in order to work backwards from the current state of `deletes_from_union` to the past state. For every `Edit` revision it `subtract`s the `deletes` (meaning if something was deleted twice, this will only reverse one), but only if they weren't undone, and then uses `transform_shrink` to reverse the coordinate transform of the `inserts` so that the indices in the intermediate `old_deletes_from_union` refer to the previous union string. `Undo` edits store the symmetric differences of the `deletes_from_union` and the currently undone groups, so those are just reversed.
 
 ```rust
 /// Find what the `deletes_from_union` field in Engine would have been at the time
@@ -550,7 +550,7 @@ pub fn synthesize(tombstones: &Node<N>, from_dels: &Subset, to_dels: &Subset) ->
 
 This operation is similar to `Engine::get_head` except it returns a `Delta` from the text at a specified revision to the current head text. This is useful for things like updating the position of cursors and rich text spans when edits are made.
 
-Like `Engine::get_head` it starts by calling `Engine::deletes_from_cur_union_for_index` to get a `Subset` describing the state of the text at the old revision relative to the current union string. Now we can just use `Delta::synthesize` to create a `Delta` from the old to the new `deletes_from_union`. The problem is, `Delta::synthesize` expects the tombstones `Rope` you give it to correspond to `from_dels`, but we have one for `to_dels`. To fix this, we can use a helper called `shuffle_tombstones` to shuffle things to get an `old_tombstones` corresponding to `from_dels`.
+Like `Engine::get_head` it starts by calling `Engine::deletes_from_cur_union_for_index` to get a `Subset` describing the state of the text at the old revision relative to the current union string. Now we can just use `Delta::synthesize` to create a `Delta` from the old to the new `deletes_from_union`. The problem is, `Delta::synthesize` expects the tombstones `Rope` you give it to correspond to `from_dels`, but we have one for `to_dels`. To fix this, we can use a helper called `shuffle_tombstones` to move characters in and out of the tombstones to get an `old_tombstones` corresponding to `from_dels`.
 
 #### shuffle_tombstones
 
@@ -580,12 +580,14 @@ This operation has a number of stages:
 1. Use `Engine::deletes_from_union_for_index` to work backwards from the present to find the `deletes_from_union` at the time of the base revision: `deletes_at_rev`.
 1. Transform the delta to be based on the union string at the time of `base_rev` rather than the `text` at the time of `base_rev`. This makes later transformations easier.
     - The `deletes` are transformed using `Subset::transform_expand` to expand the indices to include the characters that weren't in the text the `deletes` was based on.
-    - `ins_delta` is transformed using the similar `InsertDelta::transform_expand` helper. The thing is, with inserts it is ambigous if deleted characters between the same two characters in `text` should be placed before or after characters inserted in the same place. In this case we put the inserts after the deletes.
+    - `ins_delta` is transformed using the similar `InsertDelta::transform_expand` helper. The thing is, with inserts it is ambigous if deleted characters between the same two characters in `text` should be placed before or after characters inserted in the same place.
+
+        This comes into play with arbitrary undo, where if we have "abc", we delete "b", and then insert to get "azc", then undo the deletion of "b", should we get "abzc" or "azbc"? We decided to put the inserts after the deletes, so we would get "abzc", but it's not important.
 1. Transform the delta to be based on the current head revision's union string instead of `base_rev`'s union string.
     - This is done by looping over every `Edit` `Revision` since `base_rev` and `transform_expand`-ing both the `ins_delta` and `deletes` by the inserted characters.
     - But again we have the problem of whether we put the `ins_delta` inserts before or after inserts in the same place since then. For this we use the `priority` field of `Revision`. The `priority` of the incoming edit we're transforming is compared with the `priority` of the inserts we're transforming it by, and they're ordered in ascending order of priority.
     - Each concurrent plugin has a different `priority` and they are useful for expressing what we expect concurrent edits to do. For example inserted auto-indentation should come before new user edits, but matched brackets should come after concurrent user edits, we can set the `priority` of the plugins to get this behavior. In the case of concurrent edits by the same plugin on different synced devices we break ties by session ID.
-1. `Subset::transform_expand` the `deletes` to apply to the head union string after `ins_delta` is applied instead of before. This matches the meaning of `inserts` and `deletes` in `Revision`, whereas `Delta::factor` gives them to use based on the same string. How can we `transform_expand` a `Subset` by an `InsertDelta`, by using the `InsertDelta::inserted_subset` helper to get a `Subset` of the post-insert string designating which characters were inserted.
+1. `Subset::transform_expand` the `deletes` to apply to the head union string after `ins_delta` is applied instead of before. This matches the meaning of `inserts` and `deletes` in `Revision`, whereas `Delta::factor` gives them to us based on the same string. We `transform_expand` a `Subset` by an `InsertDelta` by first using the `InsertDelta::inserted_subset` helper to get a `Subset` of the post-insert string designating which characters were inserted.
 1. Transform the `ins_delta` to be based on the head `text` instead of the union string. Now that we've done all the transformation, we can commit it, and since inserts can only affect the `text` we can use `Subset::transform_shrink` and know that only `Copy` regions of the `InsertDelta` will be collapsed so that the indices of inserted segments can be applied to `text`.
 1. Apply the `ins_delta` to `text` using `Delta::apply` and also `transform_expand` `deletes_from_union` to include the newly inserted characters.
 1. Now that we've applied the inserts, we just need to apply the deletions. But wait! What if the undo group of this edit was undone between `base_rev` and now? The edit might already be undone, in which case the `deletes` shouldn't apply and the inserted characters should be deleted.
