@@ -21,8 +21,8 @@ before_install: |
     brew install python3
     brew outdated pyenv || brew upgrade pyenv
     brew install pyenv-virtualenv
-    pyenv install 3.5
-    export PYENV_VERSION=3.5
+    pyenv install 3.6.0
+    export PYENV_VERSION=3.6
     export PATH="/Users/travis/.pyenv/shims:${PATH}"
     pyenv-virtualenv venv
     source venv/bin/activate
@@ -52,5 +52,6 @@ script:
   - cargo build || exit
   - cargo build --manifest-path syntect-plugin/Cargo.toml || exit
   - for MANIFEST in Cargo.toml */Cargo.toml; do cargo test --manifest-path $MANIFEST || exit; done
+  - cd ../python
   - python3 setup.py install
   - python3 -m pytest python/tests
