@@ -27,7 +27,7 @@ use serde_json::{self, Value};
 use tabs::{BufferIdentifier, ViewIdentifier, BufferContainerRef};
 
 use super::{PluginCatalog, PluginRef, start_plugin_process, PluginPid};
-use super::rpc_types::{PluginCommand, PluginUpdate, UpdateResponse, PluginBufferInfo, ClientPluginInfo};
+use super::rpc_types::{PluginNotification, PluginRequest, PluginUpdate, UpdateResponse, PluginBufferInfo, ClientPluginInfo};
 use super::manifest::{PluginActivation, Command};
 
 pub type PluginName = String;
@@ -70,43 +70,47 @@ impl PluginManager {
     }
 
     /// Handle a request from a plugin.
-    pub fn handle_plugin_cmd(&self, cmd: PluginCommand, plugin_id: PluginPid) -> Option<Value> {
-        use self::PluginCommand::*;
+    pub fn handle_plugin_notification(&self, cmd: PluginNotification, plugin_id: PluginPid) {
+        use self::PluginNotification::*;
+        match cmd {
+            //TODO: these should not be unwraps
+            AddScopes { view_id, scopes } => {
+                self.buffers.lock().editor_for_view_mut(&view_id).unwrap()
+                    .plugin_add_scopes(plugin_id, scopes);
+            }
+            UpdateSpans { view_id, start, len, spans, rev } => {
+                self.buffers.lock().editor_for_view_mut(&view_id).unwrap()
+                    .plugin_update_spans(plugin_id, start, len, spans, rev);
+            }
+            Edit { view_id, edit } => {
+                self.buffers.lock().editor_for_view_mut(&view_id).unwrap()
+                    .plugin_edit(&edit);
+            }
+            Alert { view_id, msg } => {
+                self.buffers.lock().editor_for_view(&view_id).unwrap()
+                .plugin_alert(&msg);
+            }
+        }
+    }
+
+    /// Handle a request from a plugin.
+    pub fn handle_plugin_request(&self, cmd: PluginRequest, plugin_id: PluginPid) -> Value {
+        use self::PluginRequest::*;
         match cmd {
             //TODO: these should not be unwraps
             LineCount { view_id } => {
                 let n_lines = self.buffers.lock().editor_for_view(&view_id).unwrap()
                     .plugin_n_lines() as u64;
-                Some(serde_json::to_value(n_lines).unwrap())
-            },
-            AddScopes { view_id, scopes } => {
-                self.buffers.lock().editor_for_view_mut(&view_id).unwrap()
-                    .plugin_add_scopes(plugin_id, scopes);
-                None
-            }
-            UpdateSpans { view_id, start, len, spans, rev } => {
-                self.buffers.lock().editor_for_view_mut(&view_id).unwrap()
-                    .plugin_update_spans(plugin_id, start, len, spans, rev);
-                None
-            }
-            Edit { view_id, edit } => {
-                self.buffers.lock().editor_for_view_mut(&view_id).unwrap()
-                    .plugin_edit(&edit);
-                None
+                serde_json::to_value(n_lines).unwrap()
             }
             GetData { view_id, offset, max_size, rev } => {
                 self.buffers.lock().editor_for_view(&view_id).unwrap()
                 .plugin_get_data(offset, max_size, rev)
-                .map(|data| Value::String(data))
+                .map(|data| Value::String(data)).unwrap()
             }
             GetSelections { view_id } => {
-                Some(self.buffers.lock().editor_for_view(&view_id).unwrap()
-                     .plugin_get_selections(&view_id))
-            }
-            Alert { view_id, msg } => {
                 self.buffers.lock().editor_for_view(&view_id).unwrap()
-                .plugin_alert(&msg);
-                None
+                    .plugin_get_selections(&view_id)
             }
         }
     }

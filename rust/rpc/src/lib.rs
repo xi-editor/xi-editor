@@ -22,9 +22,11 @@
 //! Because these changes make the protocol not fully compliant with the spec,
 //! the `"jsonrpc"` member is omitted from request and response objects.
 
-extern crate serde;
 #[macro_use]
 extern crate serde_json;
+#[macro_use]
+extern crate serde_derive;
+extern crate serde;
 extern crate crossbeam;
 
 #[macro_use]
@@ -37,7 +39,8 @@ use std::sync::{Arc, Mutex, Condvar};
 use std::sync::mpsc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use serde_json::value::Value;
+use serde_json::{Value, Error as JsonError};
+use serde::de::DeserializeOwned;
 
 #[derive(Debug)]
 pub enum Error {
@@ -93,13 +96,82 @@ pub struct RpcCtx<'a> {
     idle: &'a mut VecDeque<usize>,
 }
 
-pub trait Handler {
-    fn handle_notification(&mut self, ctx: RpcCtx, method: &str, params: &Value);
-    fn handle_request(&mut self, ctx: RpcCtx, method: &str, params: &Value) ->
+#[derive(Debug, Clone, Serialize, Deserialize)]
+/// An Rpc command.
+///
+/// This type is used as a placeholder in various places, and can be
+/// used by clients as a catchall type for implementing `MethodHandler`.
+pub struct RpcCall {
+    pub method: String,
+    pub params: Value,
+}
+
+/// A trait for types which can handle Rpcs.
+///
+/// Types which implement `MethodHandler` are also responsible for implementing
+/// `Parser`; `Parser` is provided when Self::Notification and Self::Request
+/// can be used with serde::DeserializeOwned.
+pub trait MethodHandler {
+    type Notification;
+    type Request;
+    fn handle_notification(&mut self, ctx: RpcCtx, rpc: Self::Notification);
+    fn handle_request(&mut self, ctx: RpcCtx, rpc: Self::Request) ->
         Result<Value, Value>;
     #[allow(unused_variables)]
     fn idle(&mut self, ctx: RpcCtx, token: usize) {}
 }
+
+/// A unique identifier attached to request Rpcs.
+pub type RequestId = Value;
+
+/// Represents a successfully parsed Rpc.
+pub enum ParseResult<N, R> {
+    /// An id and an Rpc Request
+    Request(RequestId, R),
+    /// An Rpc Notification
+    Notification(N),
+    /// An id was found, but the request was malformed.
+    /// The peer will receive an error response.
+    MalformedRequest(RequestId, JsonError),
+}
+
+/// Responsible for parsing a `Value` into a given Rpc type.
+///
+/// Note:
+///
+/// This trait exists so that Handler::Notification and Handler::Request
+/// don't have to be `Deserialize`. This may be overkill?
+///
+/// If we went that route, we could implement all the parsing in
+/// RpcLoop::parse_json (generic over N and R) and we could expand
+/// `ParseResult` to include Responses and the general error case.
+pub trait Parser: MethodHandler {
+    fn parse_json(&self, json: Value) -> Result<ParseResult<Self::Notification, Self::Request>, JsonError>;
+}
+
+pub trait Handler: MethodHandler + Parser {}
+
+impl<H: MethodHandler + Parser> Handler for H {}
+
+impl<N, R, H> Parser for H
+where N: DeserializeOwned,
+      R: DeserializeOwned,
+      H: MethodHandler<Notification = N, Request = R>,
+{
+    fn parse_json(&self, mut json: Value) -> Result<ParseResult<Self::Notification, Self::Request>, JsonError> {
+        let id = json.as_object_mut()
+            .and_then(|obj| obj.remove("id"));
+        if let Some(id) = id {
+            match serde_json::from_value::<R>(json) {
+                Ok(val) => Ok(ParseResult::Request(id, val)),
+                Err(err) => Ok(ParseResult::MalformedRequest(id, err)),
+            }
+        } else {
+            Ok(ParseResult::Notification(serde_json::from_value::<N>(json)?))
+        }
+    }
+}
+
 
 pub trait Callback: Send {
     fn call(self: Box<Self>, result: Result<Value, Error>);
@@ -151,17 +223,6 @@ pub struct RpcLoop<W: Write + 'static> {
     peer: RawPeer<W>,
 }
 
-fn parse_rpc_request(json: &Value) -> Option<(Option<&Value>, &str, &Value)> {
-    json.as_object().and_then(|req| {
-        if let (Some(method), Some(params)) =
-            (dict_get_string(req, "method"), req.get("params")) {
-                let id = req.get("id");
-                Some((id, method, params))
-            }
-        else { None }
-    })
-}
-
 impl<W: Write + Send> RpcLoop<W> {
     /// Creates a new `RpcLoop` with the given output stream (which is used for
     /// sending requests and notifications, as well as responses).
@@ -210,9 +271,12 @@ impl<W: Write + Send> RpcLoop<W> {
     /// incoming request to be outstanding.
     ///
     /// This method returns when the input channel is closed.
-    pub fn mainloop<R: BufRead, RF: Send + FnOnce() -> R>(&mut self,
-            rf: RF,
-            handler: &mut Handler) {
+    pub fn mainloop<'a, R, RF, H>(&mut self, rf: RF, handler: &mut H)
+    where R: BufRead,
+          RF: Send + FnOnce() -> R,
+          H: Handler,
+    {
+
         crossbeam::scope(|scope| {
             let peer = self.get_raw_peer();
             scope.spawn(move|| {
@@ -255,25 +319,37 @@ impl<W: Write + Send> RpcLoop<W> {
                     break;
                 }
                 //print_err!("to core: {:?}", json);
-                match parse_rpc_request(&json) {
-                    Some((id, method, params)) => {
-                        let ctx = RpcCtx {
-                            peer: Box::new(peer.clone()),
-                            idle: &mut idle,
-                        };
-                        if let Some(id) = id {
-                            let result = handler.handle_request(ctx, method, params);
-                            peer.respond(result, id);
-                        } else {
-                            handler.handle_notification(ctx, method, params);
-                        }
+                let ctx = RpcCtx {
+                    peer: Box::new(peer.clone()),
+                    idle: &mut idle,
+                };
+
+                match handler.parse_json(json) {
+                    Ok(ParseResult::Request(id, req)) => {
+                        let result = handler.handle_request(ctx, req);
+                        peer.respond(result, &id);
                     }
-                    None => print_err!("invalid RPC request")
+                    Ok(ParseResult::Notification(notif)) => {
+                        handler.handle_notification(ctx, notif);
+                    }
+                    Ok(ParseResult::MalformedRequest(id, err)) => {
+                        // code / message borrowed from jsonrpc spec
+                        let response = json!({
+                            "code": -32600,
+                            "message": "Invalid Request",
+                            "data": {
+                                "error": format!("{:?}", err)
+                            }
+                        });
+                        peer.respond(Err(response), &id);
+                    }
+                    Err(err) => eprintln!("Error parsing json: {:?}", err),
                 }
             }
         });
     }
 }
+
 
 impl<'a> RpcCtx<'a> {
     pub fn get_peer(&self) -> &RpcPeer {
@@ -329,7 +405,7 @@ impl<W:Write> RawPeer<W> {
     fn respond(&self, result: Result<Value, Value>, id: &Value) {
         let mut response = json!({"id": id});
         match result {
-            Ok(result) => response["result"] = json!(result), 
+            Ok(result) => response["result"] = json!(result),
             Err(error) => response["error"] = json!(error),
         };
         if let Err(e) = self.send(&response) {
