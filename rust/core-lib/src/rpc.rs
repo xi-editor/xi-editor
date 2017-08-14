@@ -51,7 +51,8 @@ pub enum CoreCommand<'a> {
     NewView { file_path: Option<&'a str> },
     CloseView { view_id: ViewIdentifier },
     Save { view_id: ViewIdentifier, file_path: &'a str },
-    SetTheme { theme_name: &'a str }
+    SetTheme { theme_name: &'a str },
+    ClientInit
 }
 
 /// An enum representing touch and mouse gestures applied to the text.
