@@ -52,7 +52,7 @@ pub enum CoreCommand<'a> {
     CloseView { view_id: ViewIdentifier },
     Save { view_id: ViewIdentifier, file_path: &'a str },
     SetTheme { theme_name: &'a str },
-    ClientInit
+    ClientStarted
 }
 
 /// An enum representing touch and mouse gestures applied to the text.
@@ -176,9 +176,11 @@ impl<'a> CoreCommand<'a> {
                                 .map(|cmd| Edit { view_id: ViewIdentifier::from(view_id), edit_command: cmd })
                         } else { Err(MalformedCoreParams(method.to_string(), params.clone())) }
                 }),
-                "plugin" => serde_json::from_value::<PluginCommand>(params.clone())
-                    .map(|cmd| Plugin { plugin_command: cmd })
-                    .map_err(|_| MalformedPluginParams(method.to_string(), params.clone())),
+            "plugin" => serde_json::from_value::<PluginCommand>(params.clone())
+                .map(|cmd| Plugin { plugin_command: cmd })
+                .map_err(|_| MalformedPluginParams(method.to_string(), params.clone())),
+
+            "client_started" => Ok(ClientStarted{}),
 
             _ => Err(UnknownCoreMethod(method.to_string()))
         }

@@ -357,7 +357,7 @@ impl<W: Write + Send + 'static> Documents<W> {
                 self.do_set_theme(rpc_ctx.get_peer(), theme_name);
                 None
             },
-            ClientInit => {
+            ClientStarted => {
                 self.do_client_init(rpc_ctx.get_peer());
                 None
             }
@@ -547,7 +547,7 @@ impl<W: Write + Send + 'static> Documents<W> {
             })
         };
 
-        rpc_peer.send_rpc_notification("server_init_response", &params);
+        rpc_peer.send_rpc_notification("client_init_response", &params);
     }
 
     /// Handle a client set theme RPC
