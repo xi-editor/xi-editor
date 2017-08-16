@@ -14,7 +14,6 @@
 
 //! Management of styles.
 
-use std::collections::BTreeMap;
 use std::collections::HashMap;
 
 use serde_json::{self, Value};
@@ -185,8 +184,8 @@ impl ThemeStyleMap {
         &self.theme.settings
     }
 
-    pub fn get_theme_names(&self) -> &BTreeMap<String, Theme>  {
-        &self.themes.themes
+    pub fn get_theme_names(&self) -> Vec<String>  {
+        self.themes.themes.keys().cloned().collect()
     }
 
     pub fn set_theme(&mut self, theme_name: &str) -> Result<(), &'static str> {

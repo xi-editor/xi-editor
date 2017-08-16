@@ -541,13 +541,10 @@ impl<W: Write + Send + 'static> Documents<W> {
     fn do_client_init(&self, rpc_peer: &MainPeer<W>) {
         let params = {
             let style_map = self.style_map.lock().unwrap();
-            let theme_names : Vec<_> = style_map.get_theme_names().keys().collect();
-            json!({
-                "themes": theme_names
-            })
+            json!(style_map.get_theme_names())
         };
 
-        rpc_peer.send_rpc_notification("client_init_response", &params);
+        rpc_peer.send_rpc_notification("available_themes", &params);
     }
 
     /// Handle a client set theme RPC
