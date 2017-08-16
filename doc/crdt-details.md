@@ -691,7 +691,7 @@ pub fn transform_expand(&self, xform: &Subset, after: bool) -> InsertDelta<N> {
 
 #### shuffle
 
-This helper is used in many different operations that use the pattern of computing how `deletes_from_union` should change and then using that to fix up the `text` and `tombstones` to correspond to that.
+This helper is used in many different operations that use the pattern of computing how `deletes_from_union` should change and then updating `text` and `tombstones` to reflect that new state.
 
 ```rust
 /// Move sections from text to tombstones and vice versa based on a new and old set of deletions.
@@ -707,7 +707,7 @@ fn shuffle(text: &Rope, tombstones: &Rope,
 
 ### Engine::undo
 
-Undo works conceptually by rewinding to the earliest point the toggled undo group appears, and replaying history from there but with the correct undone groups not applied.
+Undo works conceptually by rewinding to the earliest point in history that a toggled undo group appears, and replaying history from there but with revisions in the new `undone_groups` not applied.
 
 1. First, it uses the `max_undo_so_far` field on every `Revision` as well as the set of changed undo groups to find the latest point before any of the changed groups were used.
 1. Next it uses `Engine::deletes_from_union_before_index` to find the `deletes_from_union` before that earliest revision. The earliest revision might have been the very first one so that's why we need to get it from *before* the revision and not *at* the previous revision.
@@ -773,7 +773,7 @@ This is a large function that is only used in the single-device case to limit th
 
 This is the operation you were (maybe) waiting for! The CRDT merge operation that allows peer-to-peer syncing of edits in a conflict-free eventually-consistent way. It takes `self` and another instance of `Engine` and incorporates any changes which that `Engine` has into `self`.
 
-It does this by finding changes which the other `Engine` has but it doesn't and doing a whole bunch of transformation so that those edits can be appended directly on to the end of `self`'s list of `revs`. The append-only nature of merge preserves the ability for operations like `Engine::delta_rev_head` to work, and allows future optimizations of how things are persisted.
+It does this by finding changes which the other `Engine` has but `self` doesn't and doing a whole bunch of transformations so that those edits can be appended directly on to the end of `self`'s list of `revs`. The append-only nature of merge preserves the ability for operations like `Engine::delta_rev_head` to work, and allows future optimizations of how things are persisted.
 
 The fact that, even in a merge, `Revision`s are only ever appended leads to the interesting fact that two peers (Separate devices/engines that share state my merging) can have `Engine`s that represent the same document contents and history, but where the `Revision`s are in a totally different order. This is fine though because the `Revision` ids allow us to compare the identity of two `Revision`s even if their `Subset`s are different due to transforms, and undo groups allow us to maintain and manipulate undo history order separately from CRDT history order.
 
@@ -787,13 +787,18 @@ An important part of merging is figuring out which revisions the two sides have 
 
 1. The "base": A prefix of the same length of both histories such that the set of revisions in both prefixes is the same.
     - Note that they aren't necessarily in the same order, just all shared. That's because all indices are relative to the union string, which is the same regardless of the order of the revisions that created it.
-    - We ignore everything in this prefix, so the longer it is the faster the merge runs, but a length of 0 is perfectly fine and in fact at the time this was written, that's what Xi uses. However, we plan on finding the maximal such prefix as an important optimization.
+    - We ignore everything in this prefix, so the longer it is the faster the merge runs, but a length of 0 is perfectly fine and in fact at the time this was written, that's what Xi uses.
+    - Ideally this should be the longest prefix length such that the set of revisions in the prefix is equal in both histories, and we plan on using this later as an important optimization.
 1. The "common" revisions: After the base, some revisions on each side will be shared by both sides. The common revisions are the intersection of the two revision sets after the base.
     - Note that the common revisions aren't necessarily in the same positions or order on each side.
 
 ![CRDT Merge Flow Example](img/merge-intro.png)
 
-If you're wondering how you can end up with common revisions not in the base, and in different positions and ordering, that's because it's rare. But these cases can occur even with only two peers. See the example below.
+If you're wondering how you can end up with common revisions not in the base, and in different positions and ordering, it's rare, but it can happen under high levels of asynchrony. These cases can occur even with only two peers.
+
+See the example sequence below, where the boxes represent revisions, and the arrows represent merges. The red arrow with its two sides illustrated below it, shows such a tricky merge.
+
+This example isn't meant to show a networking scenario, just a legal sequence of applying operations on two CRDT instances. These scenarios can be caused by asynchrony of the network, but exactly how depends on the syncing topology and ordering guarantees, some ways of using `merge` may require 3 peers to trigger a case like this in real use.
 
 ![CRDT merge common in different order](img/merge-common-diff-3.png)
 
@@ -823,13 +828,13 @@ fn find_common(a: &[Revision], b: &[Revision]) -> BTreeSet<RevId> {
 
 To make the rest of the algorithm easier, it would be nice if we didn't have to worry about any of the common revisions and could just work with the new revisions on each side. We can realize this by transforming and reordering all the new revisions on each side after all of the common revisions.
 
-We can safely use transforms to reorder two revisions if neither of the revisions depends on the other. A revision depends on all the revisions that were in the `Engine` at the time `Engine::edit_rev` was called. We know that a new revision can't depend on common revision after it, because the append-only nature means that ordering couldn't occur. Furthermore, the common revision can't depend on the new revision, because by definitions the other peer has the common revision but not the new revision, and merges never merge a revision but not its dependencies. Thus, even without explicit dependency information, we know we can reorder all the new revisions on each side after all the common revisions.
+We can safely use transforms to reorder two revisions if neither of the revisions depends on the other. A revision depends on all the revisions that were in the `Engine` at the time `Engine::edit_rev` was called. We know that a new revision can't depend on a common revision after it, because the append-only nature means that ordering couldn't occur. Furthermore, the common revision can't depend on the new revision, because by definitions the other peer has the common revision but not the new revision, and merges never merge a revision but not its dependencies. Thus, even without explicit dependency information, we know we can reorder all the new revisions on each side after all the common revisions.
 
-Note that though it's nice to think about it as reordering the histories, really we just need to compute the transformed new revisions, transforming each new revision to be based on all common revisions after it. See the "computed" and "taken to next step" annotations of the diagram below, note that transformed operations are marked with a prime tick but they maintain their ID.
+Note that though it's nice to think about it as reordering the histories, really we just need to compute the transformed new revisions, transforming each new revision to be based on all common revisions after it. See the "computed" and "taken to next step" annotations of the diagram below, they are what `rearrange` returns, note that transformed operations are marked with a prime tick but they maintain their ID.
 
 ![CRDT merge rearrange](img/merge-rearrange.png)
 
-We do the rearranging by working from the end of the list of revisions to the beginning. We build up a `Subset` representing all the characters that were added to the union string by the common revisions after a point. Starting with the identity transformation (an entirely 0-count `Subset`), whenever we encounter a common revision we add the characters it inserts to the transform. When we encounter a new revision we `transform_expand` its inserts and deletes by the transform `Subset` and add it to the output `Vec`. Then we `transform_shrink` the transform `Subset` by the characters inserted in the new revision, because we only want to fast-forward new revisions over common revisions after them, not new revisions after them.
+We do the rearranging by working from the end of the list of revisions to the beginning. We build up a `Subset` representing all the characters that were added to the union string by the common revisions after each point. Starting with the identity transformation (an entirely 0-count `Subset`), whenever we encounter a common revision we add the characters it inserts to the transform. When we encounter a new revision we `transform_expand` its inserts and deletes by the transform `Subset` and add it to the output `Vec`. Then we `transform_shrink` the transform `Subset` by the characters inserted in the new revision, because we only want to fast-forward new revisions over common revisions after them, not new revisions after them.
 
 That was likely too imprecise and hard to follow, so here's an example diagram and the code:
 
@@ -888,7 +893,7 @@ Merging the changes from `other` into `self` doesn't just involve appending the 
 
 There's two possible approaches:
 
-1. Transform the new revisions from `other` and append them, using a newly written equivalent of `Delta::transform_expand` for `Subset`s. Then work through the resulting histories to figure out what characters we need to add to the `text` and `tombstones`, and where. This approach has some desirable properties, and we plan on switching eventually, but for now it's not what we chose first.
+1. Transform the new revisions from `other` and append them, using a newly written equivalent of `Delta::transform_expand` for `Subset`s. Then work through the resulting histories to figure out what characters we need to add to the `text` and `tombstones`, and where. We think it may be easier to support undo and incremental Ledger updating with this approach, and we plan on switching eventually, but for now it's not what we chose first.
 2. Create some `Delta`s! We can turn the new revisions from `other` into a different representation that encodes the `inserts` as an `InsertDelta` so that we can transform them using `Delta::transform_expand` and eventually apply them to the `text` of `self`.
 
 We can create these `DeltaOp`s by working backwards from the end of the `rearrange`d new revisions from `other` and keeping track of all the characters they insert in a `Subset` using `Subset::transform_union`. Then for each revision we can use `shuffle_tombstones` to extract a `Rope` of all the inserted characters, and then use `Delta::synthesize` to create a `Delta` from our `Subset` of inserts to the inserts `Subset` from the previous iteration (one step forward in time since we're iterating backwards). This gives us a `Delta` inserting the new characters from this `Revision`, which we can bundle into a `DeltaOp`.
@@ -938,7 +943,7 @@ fn compute_deltas(revs: &[Revision], text: &Rope, tombstones: &Rope, deletes_fro
 
 #### Computing Transforms
 
-Now we have a list of `DeltaOp`s from `other` and a list of new `Revision`s from `self`. Keeping in mind the goal of appending the changes from other, we need to transform the `DeltaOp`s to be based on top of the new `Revision`s from `self`. This really just involves figuring out the correct indices in the union string that includes the new inserted characters from `self`.
+Now we have a list of `DeltaOp`s from `other` and a list of new `Revision`s from `self`. Keeping in mind the goal of appending the changes from other, we need to transform the `DeltaOp`s to be based on top of the new `Revision`s from `self`. This really just involves figuring out the correct indices in the union string that includes the newly inserted characters from `self`.
 
 In order to do this we need the new `inserts` from `self`, but in order to resolve the order of concurrent inserts, we also need the "priority" of the edits. So we have a helper called `compute_transforms` that returns a list of `(priority, inserts)` tuples.
 
@@ -983,7 +988,7 @@ Now that we have the `DeltaOp`s and transforms, we just need to forward the `Del
 Basically, for every `DeltaOp` from `other`, we:
 
 1. `Delta::transform_expand` it by each transform from `self`.
-1. Update the transforms for the next round so they include they include the `DeltaOp`s inserts, and so effectively they become part of the base for both sides.
+1. Update the transforms for the next round so they include the `DeltaOp`s inserts, and so effectively they become part of the base for both sides.
 1. Apply the `DeltaOp` to the `text` and `tombstones`
 1. Create a `Revision` from it and append it to the history.
 
