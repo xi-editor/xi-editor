@@ -118,7 +118,7 @@ impl<N: NodeInfo> Delta<N> {
         (InsertDelta(Delta { els: ins, base_len: self.base_len }), sb.build())
     }
 
-    /// Synthesize a delta from a "union string" and two subsets, an old set
+    /// Synthesize a delta from a "union string" and two subsets: an old set
     /// of deletions and a new set of deletions from the union. The Delta is
     /// from text to text, not union to union; anything in both subsets will
     /// be assumed to be missing from the Delta base and the new text. You can

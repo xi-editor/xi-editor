@@ -38,17 +38,38 @@ use multiset::{Subset, CountMatcher};
 use interval::Interval;
 use delta::{Delta, InsertDelta};
 
+/// Represents the current state of a document and all of its history
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Engine {
+    /// The session ID used to create new `RevId`s for edits made on this device
     #[serde(default = "default_session", skip_serializing)]
     session: SessionId,
+    /// The incrementing revision number counter for this session used for `RevId`s
     #[serde(default = "initial_revision_counter", skip_serializing)]
     rev_id_counter: u32,
+    /// The current contents of the document as would be displayed on screen
     text: Rope,
+    /// Storage for all the characters that have been deleted  but could
+    /// return if a delete is un-done or an insert is re- done.
     tombstones: Rope,
+    /// Imagine a "union string" that contained all the characters ever
+    /// inserted, including the ones that were later deleted, in the locations
+    /// they would be if they hadn't been deleted.
+    ///
+    /// This is a `Subset` of the "union string" representing the characters
+    /// that are currently deleted, and thus in `tombstones` rather than
+    /// `text`. The count of a character in `deletes_from_union` represents
+    /// how many times it has been deleted, so if a character is deleted twice
+    /// concurrently it will have count `2` so that undoing one delete but not
+    /// the other doesn't make it re-appear.
+    ///
+    /// You could construct the "union string" from `text`, `tombstones` and
+    /// `deletes_from_union` by splicing a segment of `tombstones` into `text`
+    /// wherever there's a non-zero-count segment in `deletes_from_union`.
     deletes_from_union: Subset,
     // TODO: switch to a persistent Set representation to avoid O(n) copying
     undone_groups: BTreeSet<usize>,  // set of undo_group id's
+    /// The revision history of the document
     revs: Vec<Revision>,
 }
 
@@ -60,7 +81,7 @@ pub struct RevId {
     // `session1==session2==0` is reserved for initialization which is the same on all sessions.
     // A colliding session will break merge invariants and the document will start crashing Xi.
     session1: u64,
-    // if this was a tuple field instead of two fields, alignment padding would double RevId's size.
+    // if this was a tuple field instead of two fields, alignment padding would add 8 more bytes.
     session2: u32,
     // There will probably never be a document with more than 4 billion edits
     // in a single session.
@@ -69,6 +90,8 @@ pub struct RevId {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Revision {
+    /// This uniquely represents the identity of this revision and it stays
+    /// the same even if it is rebased or merged between devices.
     rev_id: RevId,
     /// The largest undo group number of any edit in the history up to this
     /// point. Used to optimize undo to not look further back.
@@ -76,7 +99,9 @@ struct Revision {
     edit: Contents,
 }
 
-/// Valid and non-colliding within this process
+/// Valid within a session. If there's a collision the most recent matching
+/// Revision will be used, which means only the (small) set of concurrent edits
+/// could trigger incorrect behavior if they collide, so u64 is safe.
 pub type RevToken = u64;
 
 /// the session ID component of a `RevId`
@@ -93,9 +118,18 @@ use self::Contents::*;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 enum Contents {
     Edit {
+        /// Used to order concurrent inserts, for example auto-indentation
+        /// should go before typed text.
         priority: usize,
+        /// Groups related edits together so that they are undone and re-done
+        /// together. For example, an auto-indent insertion would be un-done
+        /// along with the newline that triggered it.
         undo_group: usize,
+        /// The subset of the characters of the union string from after this
+        /// revision that were added by this revision.
         inserts: Subset,
+        /// The subset of the characters of the union string from after this
+        /// revision that were deleted by this revision.
         deletes: Subset,
     },
     Undo {
@@ -202,10 +236,13 @@ impl Engine {
         for rev in self.revs[rev_index..].iter().rev() {
             deletes_from_union = match rev.edit {
                 Edit { ref inserts, ref deletes, ref undo_group, .. } => {
-                    let undone = undone_groups.contains(undo_group);
-                    let deleted = if undone { inserts } else { deletes };
-                    let un_deleted = deletes_from_union.subtract(deleted);
-                    Cow::Owned(un_deleted.transform_shrink(inserts))
+                    if undone_groups.contains(undo_group) {
+                        // no need to un-delete undone inserts since we'll just shrink them out
+                        Cow::Owned(deletes_from_union.transform_shrink(inserts))
+                    } else {
+                        let un_deleted = deletes_from_union.subtract(deletes);
+                        Cow::Owned(un_deleted.transform_shrink(inserts))
+                    }
                 }
                 Undo { ref toggled_groups, ref deletes_bitxor } => {
                     if invert_undos {
@@ -266,21 +303,7 @@ impl Engine {
     /// if there is not at least one edit.
     pub fn delta_rev_head(&self, base_rev: RevToken) -> Delta<RopeInfo> {
         let ix = self.find_rev_token(base_rev).expect("base revision not found");
-
-        // Delta::synthesize will add inserts for everything that is in
-        // prev_from_union (old deletes) but not in
-        // head_rev.deletes_from_union (new deletes). So we add all inserts
-        // since base_rev to prev_from_union so that they will be inserted in
-        // the Delta if they weren't also deleted.
-        let mut prev_from_union = self.deletes_from_union_for_index(ix);
-        for r in &self.revs[ix + 1..] {
-            if let Edit { ref inserts, .. } = r.edit {
-                if !inserts.is_empty() {
-                    prev_from_union = Cow::Owned(prev_from_union.transform_union(inserts));
-                }
-            }
-        }
-
+        let prev_from_union = self.deletes_from_cur_union_for_index(ix);
         // TODO: this does 2 calls to Delta::synthesize and 1 to apply, this probably could be better.
         let old_tombstones = shuffle_tombstones(&self.text, &self.tombstones, &self.deletes_from_union, &prev_from_union);
         Delta::synthesize(&old_tombstones, &prev_from_union, &self.deletes_from_union)
@@ -288,7 +311,7 @@ impl Engine {
 
     // TODO: don't construct transform if subsets are empty
     // TODO: maybe switch to using a revision index for `base_rev` once we disable GC
-    /// Retuns a tuple of a new `Revision` representing the edit based on the
+    /// Returns a tuple of a new `Revision` representing the edit based on the
     /// current head, a new text `Rope`, a new tombstones `Rope` and a new `deletes_from_union`.
     fn mk_new_rev(&self, new_priority: usize, undo_group: usize,
             base_rev: RevToken, delta: Delta<RopeInfo>) -> (Revision, Rope, Rope, Subset) {
@@ -633,6 +656,7 @@ fn find_common(a: &[Revision], b: &[Revision]) -> BTreeSet<RevId> {
 /// non-base revs, `N` being transformed non-base revs, and rearranges it:
 /// .n..n...nn..  -> ........NNNN -> returns vec![N,N,N,N]
 fn rearrange(revs: &[Revision], base_revs: &BTreeSet<RevId>, head_len: usize) -> Vec<Revision> {
+    // transform representing the characters added by common revisions after a point.
     let mut s = Subset::new(head_len);
 
     let mut out = Vec::with_capacity(revs.len() - base_revs.len());
@@ -644,8 +668,10 @@ fn rearrange(revs: &[Revision], base_revs: &BTreeSet<RevId>, head_len: usize) ->
                     s = inserts.transform_union(&s);
                     None
                 } else {
+                    // fast-forward this revision over all common ones after it
                     let transformed_inserts = inserts.transform_expand(&s);
                     let transformed_deletes = deletes.transform_expand(&s);
+                    // we don't want new revisions before this to be transformed after us
                     s = s.transform_shrink(&transformed_inserts);
                     Some(Contents::Edit {
                         inserts: transformed_inserts,
@@ -679,18 +705,16 @@ struct DeltaOp {
 fn compute_deltas(revs: &[Revision], text: &Rope, tombstones: &Rope, deletes_from_union: &Subset) -> Vec<DeltaOp> {
     let mut out = Vec::with_capacity(revs.len());
 
-    let mut to_head = Subset::new(deletes_from_union.len());
-    let mut cur_deletes_from_union = to_head.clone();
+    let mut cur_all_inserts = Subset::new(deletes_from_union.len());
     for rev in revs.iter().rev() {
         match rev.edit {
             Contents::Edit {priority, undo_group, ref inserts, ref deletes} => {
-                let inserts_tr = inserts.transform_expand(&to_head);
-                let older_deletes_from_union = cur_deletes_from_union.union(&inserts_tr);
+                let older_all_inserts = inserts.transform_union(&cur_all_inserts);
 
                 // TODO could probably be more efficient by avoiding shuffling from head every time
-                let tombstones_here = shuffle_tombstones(text, tombstones, deletes_from_union, &older_deletes_from_union);
-                let delta = Delta::synthesize(&tombstones_here, &older_deletes_from_union, &cur_deletes_from_union);
-                // TODO create InsertDelta and deletes separately more efficiently instead of factoring
+                let tombstones_here = shuffle_tombstones(text, tombstones, deletes_from_union, &older_all_inserts);
+                let delta = Delta::synthesize(&tombstones_here, &older_all_inserts, &cur_all_inserts);
+                // TODO create InsertDelta directly and more efficiently instead of factoring
                 let (ins, _) = delta.factor();
                 out.push(DeltaOp {
                     rev_id: rev.rev_id,
@@ -699,8 +723,7 @@ fn compute_deltas(revs: &[Revision], text: &Rope, tombstones: &Rope, deletes_fro
                     deletes: deletes.clone(),
                 });
 
-                to_head = to_head.union(&inserts_tr);
-                cur_deletes_from_union = older_deletes_from_union;
+                cur_all_inserts = older_all_inserts;
             },
             Contents::Undo { .. } => panic!("can't merge undo yet"),
         }
@@ -750,18 +773,18 @@ fn rebase(mut expand_by: Vec<(FullPriority, Subset)>, b_new: Vec<DeltaOp>, mut t
     for op in b_new.into_iter() {
         let DeltaOp { rev_id, priority, undo_group, mut inserts, mut deletes } = op;
         let full_priority = FullPriority { priority, session_id: rev_id.session_id() };
-        // 1. expand by each in expand_by
-        for &(other_priority, ref other_inserts) in &expand_by {
-            let after = full_priority >= other_priority;  // should never be ==
+        // expand by each in expand_by
+        for &(trans_priority, ref trans_inserts) in &expand_by {
+            let after = full_priority >= trans_priority;  // should never be ==
             // d-expand by other
-            inserts = inserts.transform_expand(other_inserts, after);
+            inserts = inserts.transform_expand(trans_inserts, after);
             // trans-expand other by expanded so they have the same context
             let inserted = inserts.inserted_subset();
-            let new_other_inserts = other_inserts.transform_expand(&inserted);
+            let new_trans_inserts = trans_inserts.transform_expand(&inserted);
             // The deletes are already after our inserts, but we need to include the other inserts
-            deletes = deletes.transform_expand(&new_other_inserts);
+            deletes = deletes.transform_expand(&new_trans_inserts);
             // On the next step we want things in expand_by to have op in the context
-            next_expand_by.push((other_priority, new_other_inserts));
+            next_expand_by.push((trans_priority, new_trans_inserts));
         }
 
         let text_inserts = inserts.transform_shrink(&deletes_from_union);
