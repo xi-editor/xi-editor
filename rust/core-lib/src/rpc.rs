@@ -180,7 +180,7 @@ impl<'a> CoreCommand<'a> {
                 .map(|cmd| Plugin { plugin_command: cmd })
                 .map_err(|_| MalformedPluginParams(method.to_string(), params.clone())),
 
-            "client_started" => Ok(ClientStarted{}),
+            "client_started" => Ok(ClientStarted),
 
             _ => Err(UnknownCoreMethod(method.to_string()))
         }
