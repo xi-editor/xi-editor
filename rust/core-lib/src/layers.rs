@@ -19,7 +19,6 @@
 //! into styles using a theme, augmented with additional style definitions.
 
 use std::collections::BTreeMap;
-use std::io::Write;
 use syntect::parsing::Scope;
 
 use xi_rope::interval::Interval;
@@ -54,8 +53,8 @@ impl Scopes {
     }
 
     /// Adds the provided scopes to the layer's lookup table.
-    pub fn add_scopes<W: Write>(&mut self, layer: PluginPid, scopes: Vec<Vec<String>>,
-                                doc_ctx: &DocumentCtx<W>) {
+    pub fn add_scopes(&mut self, layer: PluginPid, scopes: Vec<Vec<String>>,
+                                doc_ctx: &DocumentCtx) {
         self.create_if_missing(layer);
         self.layers.get_mut(&layer).unwrap().add_scopes(scopes, doc_ctx);
     }
@@ -93,7 +92,7 @@ impl Scopes {
         layer
     }
 
-    pub fn theme_changed<W: Write>(&mut self, doc_ctx: &DocumentCtx<W>) {
+    pub fn theme_changed(&mut self, doc_ctx: &DocumentCtx) {
         for layer in self.layers.values_mut() {
             layer.theme_changed(doc_ctx);
         }
@@ -174,7 +173,7 @@ impl ScopeLayer {
         }
     }
 
-    fn theme_changed<W: Write>(&mut self, doc_ctx: &DocumentCtx<W>) {
+    fn theme_changed(&mut self, doc_ctx: &DocumentCtx) {
         // recompute styles with the new theme
         self.style_lookup = self.styles_for_stacks(self.stack_lookup.as_slice(), doc_ctx);
         let iv_all = Interval::new_closed_closed(0, self.style_spans.len());
@@ -185,8 +184,8 @@ impl ScopeLayer {
         self.update_styles(iv_all, &scopes)
     }
 
-    fn add_scopes<W: Write>(&mut self, scopes: Vec<Vec<String>>,
-                                doc_ctx: &DocumentCtx<W>) {
+    fn add_scopes(&mut self, scopes: Vec<Vec<String>>,
+                                doc_ctx: &DocumentCtx) {
         let mut stacks = Vec::with_capacity(scopes.len());
         for stack in scopes {
             let scopes = stack.iter().map(|s| Scope::new(&s))
@@ -210,8 +209,8 @@ impl ScopeLayer {
         self.style_lookup.append(&mut new_styles);
     }
 
-    fn styles_for_stacks<W: Write>(&self, stacks: &[Vec<Scope>],
-                         doc_ctx: &DocumentCtx<W>) -> Vec<Style> {
+    fn styles_for_stacks(&self, stacks: &[Vec<Scope>],
+                         doc_ctx: &DocumentCtx) -> Vec<Style> {
         let style_map = doc_ctx.get_style_map().lock().unwrap();
         let highlighter = style_map.get_highlighter();
 

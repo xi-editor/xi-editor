@@ -56,7 +56,7 @@ const TAB_SIZE: usize = 4;
 // Maximum returned result from plugin get_data RPC.
 const MAX_SIZE_LIMIT: usize = 1024 * 1024;
 
-pub struct Editor<W: Write> {
+pub struct Editor {
     text: Rope,
 
     path: Option<PathBuf>,
@@ -83,7 +83,7 @@ pub struct Editor<W: Write> {
     scroll_to: Option<usize>,
 
     styles: Scopes,
-    doc_ctx: DocumentCtx<W>,
+    doc_ctx: DocumentCtx,
     revs_in_flight: usize,
 
     /// Used only on Fuchsia for syncing
@@ -114,16 +114,16 @@ impl EditType {
     }
 }
 
-impl<W: Write + Send + 'static> Editor<W> {
+impl Editor {
     /// Creates a new `Editor` with a new empty buffer.
-    pub fn new(doc_ctx: DocumentCtx<W>, buffer_id: BufferIdentifier,
-               initial_view_id: &ViewIdentifier) -> Editor<W> {
+    pub fn new(doc_ctx: DocumentCtx, buffer_id: BufferIdentifier,
+               initial_view_id: &ViewIdentifier) -> Editor {
         Self::with_text(doc_ctx, buffer_id, initial_view_id, "".to_owned())
     }
 
     /// Creates a new `Editor`, loading text into a new buffer.
-    pub fn with_text(doc_ctx: DocumentCtx<W>, buffer_id: BufferIdentifier,
-                     initial_view_id: &ViewIdentifier, text: String) -> Editor<W> {
+    pub fn with_text(doc_ctx: DocumentCtx, buffer_id: BufferIdentifier,
+                     initial_view_id: &ViewIdentifier, text: String) -> Editor {
 
         let engine = Engine::new(Rope::from(text));
         let buffer = engine.get_head().clone();

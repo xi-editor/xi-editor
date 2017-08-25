@@ -37,8 +37,6 @@ extern crate apps_ledger_services_public;
 #[cfg(target_os = "fuchsia")]
 extern crate sha2;
 
-use std::io::Write;
-
 use serde_json::Value;
 
 #[macro_use]
@@ -95,13 +93,13 @@ extern crate xi_rpc;
 
 use xi_rpc::{RpcPeer, RpcCtx, Handler};
 
-pub type MainPeer<W> = RpcPeer<W>;
+pub type MainPeer = RpcPeer;
 
-pub struct MainState<W: Write> {
-    tabs: Documents<W>,
+pub struct MainState {
+    tabs: Documents,
 }
 
-impl<W: Write + Send + 'static> MainState<W> {
+impl MainState {
     pub fn new() -> Self {
         MainState {
             tabs: Documents::new(),
@@ -114,8 +112,8 @@ impl<W: Write + Send + 'static> MainState<W> {
     }
 }
 
-impl<W: Write + Send + 'static> Handler<W> for MainState<W> {
-    fn handle_notification(&mut self, mut ctx: RpcCtx<W>, method: &str, params: &Value) {
+impl Handler for MainState {
+    fn handle_notification(&mut self, mut ctx: RpcCtx, method: &str, params: &Value) {
         match Request::from_json(method, params) {
             Ok(req) => {
                 if let Some(_) = self.handle_req(req, &mut ctx) {
@@ -126,7 +124,7 @@ impl<W: Write + Send + 'static> Handler<W> for MainState<W> {
         }
     }
 
-    fn handle_request(&mut self, mut ctx: RpcCtx<W>, method: &str, params: &Value) ->
+    fn handle_request(&mut self, mut ctx: RpcCtx, method: &str, params: &Value) ->
         Result<Value, Value> {
         match Request::from_json(method, params) {
             Ok(req) => {
@@ -140,13 +138,13 @@ impl<W: Write + Send + 'static> Handler<W> for MainState<W> {
         }
     }
 
-    fn idle(&mut self, _ctx: RpcCtx<W>, _token: usize) {
+    fn idle(&mut self, _ctx: RpcCtx, _token: usize) {
         self.tabs.handle_idle();
     }
 }
 
-impl<W: Write + Send + 'static> MainState<W> {
-    fn handle_req(&mut self, request: Request, rpc_ctx: &mut RpcCtx<W>) ->
+impl MainState {
+    fn handle_req(&mut self, request: Request, rpc_ctx: &mut RpcCtx) ->
         Option<Value> {
         match request {
             Request::CoreCommand { core_command } => self.tabs.do_rpc(core_command, rpc_ctx)
