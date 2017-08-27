@@ -15,7 +15,7 @@
 //! `PluginManager` handles launching, monitoring, and communicating with plugins.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::{self, Write};
+use std::io;
 use std::sync::{Arc, Mutex, Weak, MutexGuard};
 
 use std::path::Path;
@@ -31,15 +31,15 @@ use super::rpc_types::{PluginCommand, PluginUpdate, UpdateResponse, PluginBuffer
 use super::manifest::{PluginActivation, Command};
 
 pub type PluginName = String;
-type PluginGroup<W> = BTreeMap<PluginName, PluginRef<W>>;
+type PluginGroup = BTreeMap<PluginName, PluginRef>;
 
 /// Manages plugin loading, activation, lifecycle, and dispatch.
-pub struct PluginManager<W: Write> {
+pub struct PluginManager {
     catalog: PluginCatalog,
     /// Buffer-scoped plugins, by buffer
-    buffer_plugins: BTreeMap<BufferIdentifier, PluginGroup<W>>,
-    global_plugins: PluginGroup<W>,
-    buffers: BufferContainerRef<W>,
+    buffer_plugins: BTreeMap<BufferIdentifier, PluginGroup>,
+    global_plugins: PluginGroup,
+    buffers: BufferContainerRef,
     next_id: usize,
 }
 
@@ -58,7 +58,7 @@ pub enum Error {
 // API in the 'inner' type of types with a ___Ref variant. Methods on the
 // Ref variant should be minimal, and provide a threadsafe interface.
 
-impl <W: Write + Send + 'static>PluginManager<W> {
+impl PluginManager {
 
     /// Returns plugins available to this view.
     pub fn get_available_plugins(&self, view_id: &ViewIdentifier) -> Vec<ClientPluginInfo> {
@@ -201,7 +201,7 @@ impl <W: Write + Send + 'static>PluginManager<W> {
 
     /// Launches and initializes the named plugin.
     fn start_plugin(&mut self,
-                    self_ref: &PluginManagerRef<W>,
+                    self_ref: &PluginManagerRef,
                     view_id: &ViewIdentifier,
                     init_info: &PluginBufferInfo,
                     plugin_name: &str, ) -> Result<(), Error> {
@@ -253,7 +253,7 @@ impl <W: Write + Send + 'static>PluginManager<W> {
 
     /// Callback used to register a successfully launched local plugin.
     fn on_plugin_connect_local(&mut self, view_id: &ViewIdentifier,
-                              plugin_name: &str, plugin_ref: PluginRef<W>,
+                              plugin_name: &str, plugin_ref: PluginRef,
                               commands: Vec<Command>) {
         // only add to our 'running' collection if the editor still exists
         let is_running = match self.buffers.lock().editor_for_view(view_id) {
@@ -275,7 +275,7 @@ impl <W: Write + Send + 'static>PluginManager<W> {
 
     /// Callback used to register a successfully launched global plugin.
     fn on_plugin_connect_global(&mut self, plugin_name: &str,
-                                plugin_ref: PluginRef<W>, commands: Vec<Command>) {
+                                plugin_ref: PluginRef, commands: Vec<Command>) {
         {
             let buffers = self.buffers.lock();
             for ed in buffers.iter_editors() {
@@ -368,13 +368,13 @@ impl <W: Write + Send + 'static>PluginManager<W> {
     // Maybe these two functions should return a Box<Iterator> of plugins,
     // and if the buffer is missing just print a debug message and return
     // an empty Iterator?
-    fn running_for_view(&self, view_id: &ViewIdentifier) -> Result<&PluginGroup<W>, Error> {
+    fn running_for_view(&self, view_id: &ViewIdentifier) -> Result<&PluginGroup, Error> {
         self.buffer_for_view(view_id)
             .and_then(|id| self.buffer_plugins.get(&id))
             .ok_or(Error::EditorMissing)
     }
 
-    fn running_for_view_mut(&mut self, view_id: &ViewIdentifier) -> Result<&mut PluginGroup<W>, Error> {
+    fn running_for_view_mut(&mut self, view_id: &ViewIdentifier) -> Result<&mut PluginGroup, Error> {
         let buffer_id = match self.buffer_for_view(view_id) {
             Some(id) => Ok(id),
             None => Err(Error::EditorMissing),
@@ -384,23 +384,23 @@ impl <W: Write + Send + 'static>PluginManager<W> {
     }
 }
 
-/// Wrapper around an `Arc<Mutex<PluginManager<W>>>`.
-pub struct PluginManagerRef<W: Write>(Arc<Mutex<PluginManager<W>>>);
+/// Wrapper around an `Arc<Mutex<PluginManager>>`.
+pub struct PluginManagerRef(Arc<Mutex<PluginManager>>);
 
-impl<W: Write> Clone for PluginManagerRef<W> {
+impl Clone for PluginManagerRef {
     fn clone(&self) -> Self {
         PluginManagerRef(self.0.clone())
     }
 }
 
-/// Wrapper around a `Weak<Mutex<PluginManager<W>>>`
-pub struct WeakPluginManagerRef<W: Write>(Weak<Mutex<PluginManager<W>>>);
+/// Wrapper around a `Weak<Mutex<PluginManager>>`
+pub struct WeakPluginManagerRef(Weak<Mutex<PluginManager>>);
 
-impl <W: Write>WeakPluginManagerRef<W> {
+impl WeakPluginManagerRef {
     /// Upgrades the weak reference to an Arc, if possible.
     ///
     /// Returns `None` if the inner value has been deallocated.
-    pub fn upgrade(&self) -> Option<PluginManagerRef<W>> {
+    pub fn upgrade(&self) -> Option<PluginManagerRef> {
         match self.0.upgrade() {
             Some(inner) => Some(PluginManagerRef(inner)),
             None => None
@@ -408,8 +408,8 @@ impl <W: Write>WeakPluginManagerRef<W> {
     }
 }
 
-impl<W: Write + Send + 'static> PluginManagerRef<W> {
-    pub fn new(buffers: BufferContainerRef<W>) -> Self {
+impl PluginManagerRef {
+    pub fn new(buffers: BufferContainerRef) -> Self {
         PluginManagerRef(Arc::new(Mutex::new(
             PluginManager {
                 // TODO: actually parse these from manifest files
@@ -422,12 +422,12 @@ impl<W: Write + Send + 'static> PluginManagerRef<W> {
         )))
     }
 
-    pub fn lock(&self) -> MutexGuard<PluginManager<W>> {
+    pub fn lock(&self) -> MutexGuard<PluginManager> {
         self.0.lock().unwrap()
     }
 
-    /// Creates a new `WeakPluginManagerRef<W>`.
-    pub fn to_weak(&self) -> WeakPluginManagerRef<W> {
+    /// Creates a new `WeakPluginManagerRef`.
+    pub fn to_weak(&self) -> WeakPluginManagerRef {
         WeakPluginManagerRef(Arc::downgrade(&self.0))
     }
 

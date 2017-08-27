@@ -55,29 +55,57 @@ pub enum Error {
 /// An interface to access the other side of the RPC channel. The main purpose
 /// is to send RPC requests and notifications to the peer.
 ///
-/// The concrete type may change; if the `RpcLoop` were to start a separate
-/// writer thread, as opposed to writes being synchronous, then the peer would
-/// not need to take the writer type as a parameter.
-pub struct RpcPeer<W: Write>(Arc<RpcState<W>>);
+/// A single shared `RawPeer` exists for each `RpcLoop`; a reference can
+/// be taken with `RpcLoop::get_peer()`.
+///
+/// In general, `RawPeer` shouldn't be used directly, but behind a pointer as
+/// the `Peer` trait object.
+pub struct RawPeer<W: Write + 'static>(Arc<RpcState<W>>);
 
-pub struct RpcCtx<'a, W: 'a + Write> {
-    peer: &'a RpcPeer<W>,
+/// The `Peer` trait represents the interface for the other side of the RPC
+/// channel. It is intended to be used behind a pointer, a trait object.
+pub trait Peer: Send + 'static {
+    /// Used to implement `clone` in an object-safe way.
+    /// For an explanation on this approach, see this thread:
+    /// https://users.rust-lang.org/t/solved-is-it-possible-to-clone-a-boxed-trait-object/1714/6
+    fn box_clone(&self) -> Box<Peer>;
+    /// Sends a notification (asynchronous rpc) to the peer.
+    fn send_rpc_notification(&self, method: &str, params: &Value);
+    /// Sends a request asynchronously, and the supplied callback will be called when
+    /// the response arrives.
+    ///
+    /// `Callback` is an alias for FnOnce(Result<Value, Error>); it must be boxed
+    /// because trait objects cannot use generic paramaters.
+    fn send_rpc_request_async(&self, method: &str, params: &Value,
+                                 f: Box<Callback>);
+    /// Sends a request (synchronous rpc) to the peer, and waits for the result.
+    fn send_rpc_request(&self, method: &str, params: &Value) -> Result<Value, Error>;
+    /// Determines whether an incoming request (or notification) is pending. This
+    /// is intended to reduce latency for bulk operations done in the background.
+    fn request_is_pending(&self) -> bool;
+}
+
+/// The `Peer` trait object.
+pub type RpcPeer = Box<Peer>;
+
+pub struct RpcCtx<'a> {
+    peer: RpcPeer,
     idle: &'a mut VecDeque<usize>,
 }
 
-pub trait Handler<W: Write> {
-    fn handle_notification(&mut self, ctx: RpcCtx<W>, method: &str, params: &Value);
-    fn handle_request(&mut self, ctx: RpcCtx<W>, method: &str, params: &Value) ->
+pub trait Handler {
+    fn handle_notification(&mut self, ctx: RpcCtx, method: &str, params: &Value);
+    fn handle_request(&mut self, ctx: RpcCtx, method: &str, params: &Value) ->
         Result<Value, Value>;
     #[allow(unused_variables)]
-    fn idle(&mut self, ctx: RpcCtx<W>, token: usize) {}
+    fn idle(&mut self, ctx: RpcCtx, token: usize) {}
 }
 
-trait Callback: Send {
+pub trait Callback: Send {
     fn call(self: Box<Self>, result: Result<Value, Error>);
 }
 
-impl<F:Send + FnOnce(Result<Value, Error>)> Callback for F {
+impl<F: Send + FnOnce(Result<Value, Error>)> Callback for F {
     fn call(self: Box<F>, result: Result<Value, Error>) {
         (*self)(result)
     }
@@ -117,10 +145,10 @@ struct RpcState<W: Write> {
     pending: Mutex<BTreeMap<usize, ResponseHandler>>,
 }
 
-/// A structure holding the state of a main loop for handing RPC's.
-pub struct RpcLoop<W: Write> {
+/// A structure holding the state of a main loop for handling RPC's.
+pub struct RpcLoop<W: Write + 'static> {
     buf: String,
-    peer: RpcPeer<W>,
+    peer: RawPeer<W>,
 }
 
 fn parse_rpc_request(json: &Value) -> Option<(Option<&Value>, &str, &Value)> {
@@ -134,11 +162,11 @@ fn parse_rpc_request(json: &Value) -> Option<(Option<&Value>, &str, &Value)> {
     })
 }
 
-impl<W:Write + Send> RpcLoop<W> {
+impl<W: Write + Send> RpcLoop<W> {
     /// Creates a new `RpcLoop` with the given output stream (which is used for
     /// sending requests and notifications, as well as responses).
     pub fn new(writer: W) -> Self {
-        let rpc_peer = RpcPeer(Arc::new(RpcState {
+        let rpc_peer = RawPeer(Arc::new(RpcState {
             rx_queue: Mutex::new(VecDeque::new()),
             rx_cvar: Condvar::new(),
             writer: Mutex::new(writer),
@@ -152,7 +180,7 @@ impl<W:Write + Send> RpcLoop<W> {
     }
 
     /// Gets a reference to the peer.
-    pub fn get_peer(&self) -> RpcPeer<W> {
+    pub fn get_raw_peer(&self) -> RawPeer<W> {
         self.peer.clone()
     }
 
@@ -184,9 +212,9 @@ impl<W:Write + Send> RpcLoop<W> {
     /// This method returns when the input channel is closed.
     pub fn mainloop<R: BufRead, RF: Send + FnOnce() -> R>(&mut self,
             rf: RF,
-            handler: &mut Handler<W>) {
+            handler: &mut Handler) {
         crossbeam::scope(|scope| {
-            let peer = self.get_peer();
+            let peer = self.get_raw_peer();
             scope.spawn(move|| {
                 let mut reader = rf();
                 while let Some(json_result) = self.read_json(&mut reader) {
@@ -214,7 +242,7 @@ impl<W:Write + Send> RpcLoop<W> {
                     } else {
                         let token = idle.pop_front().unwrap();
                         let ctx = RpcCtx {
-                            peer: &peer,
+                            peer: Box::new(peer.clone()),
                             idle: &mut idle,
                         };
                         handler.idle(ctx, token);
@@ -230,7 +258,7 @@ impl<W:Write + Send> RpcLoop<W> {
                 match parse_rpc_request(&json) {
                     Some((id, method, params)) => {
                         let ctx = RpcCtx {
-                            peer: &peer,
+                            peer: Box::new(peer.clone()),
                             idle: &mut idle,
                         };
                         if let Some(id) = id {
@@ -247,9 +275,9 @@ impl<W:Write + Send> RpcLoop<W> {
     }
 }
 
-impl<'a, W: Write> RpcCtx<'a, W> {
-    pub fn get_peer(&self) -> &RpcPeer<W> {
-        self.peer
+impl<'a> RpcCtx<'a> {
+    pub fn get_peer(&self) -> &RpcPeer {
+        &self.peer
     }
 
     /// Schedule the idle handler to be run when there are no requests pending.
@@ -258,7 +286,38 @@ impl<'a, W: Write> RpcCtx<'a, W> {
     }
 }
 
-impl<W:Write> RpcPeer<W> {
+impl<W: Write + Send + 'static> Peer for RawPeer<W> {
+
+    fn box_clone(&self) -> Box<Peer> {
+        Box::new((*self).clone())
+    }
+
+    fn send_rpc_notification(&self, method: &str, params: &Value) {
+        if let Err(e) = self.send(&json!({
+            "method": method,
+            "params": params,
+        })) {
+            print_err!("send error on send_rpc_notification method {}: {}", method, e);
+        }
+    }
+
+    fn send_rpc_request_async(&self, method: &str, params: &Value, f: Box<Callback>) {
+        self.send_rpc_request_common(method, params, ResponseHandler::Callback(f));
+    }
+
+    fn send_rpc_request(&self, method: &str, params: &Value) -> Result<Value, Error> {
+        let (tx, rx) = mpsc::channel();
+        self.send_rpc_request_common(method, params, ResponseHandler::Chan(tx));
+        rx.recv().unwrap_or(Err(Error::PeerDisconnect))
+    }
+
+    fn request_is_pending(&self) -> bool {
+        let queue = self.0.rx_queue.lock().unwrap();
+        !queue.is_empty()
+    }
+}
+
+impl<W:Write> RawPeer<W> {
     fn send(&self, v: &Value) -> Result<(), io::Error> {
         let mut s = serde_json::to_string(v).unwrap();
         s.push('\n');
@@ -278,16 +337,6 @@ impl<W:Write> RpcPeer<W> {
         }
     }
 
-    /// Sends a notification (asynchronous rpc) to the peer.
-    pub fn send_rpc_notification(&self, method: &str, params: &Value) {
-        if let Err(e) = self.send(&json!({
-            "method": method,
-            "params": params,
-        })) {
-            print_err!("send error on send_rpc_notification method {}: {}", method, e);
-        }
-    }
-
     fn send_rpc_request_common(&self, method: &str, params: &Value, rh: ResponseHandler) {
         let id = self.0.id.fetch_add(1, Ordering::Relaxed);
         {
@@ -304,20 +353,6 @@ impl<W:Write> RpcPeer<W> {
                 rh.invoke(Err(Error::IoError(e)));
             }
         }
-    }
-
-    /// Sends a request asynchronously, and the supplied callback will be called when
-    /// the response arrives.
-    pub fn send_rpc_request_async<F>(&self, method: &str, params: &Value, f: F)
-        where F: FnOnce(Result<Value, Error>) + Send + 'static {
-        self.send_rpc_request_common(method, params, ResponseHandler::Callback(Box::new(f)));
-    }
-
-    /// Sends a request (synchronous rpc) to the peer, and waits for the result.
-    pub fn send_rpc_request(&self, method: &str, params: &Value) -> Result<Value, Error> {
-        let (tx, rx) = mpsc::channel();
-        self.send_rpc_request_common(method, params, ResponseHandler::Chan(tx));
-        rx.recv().unwrap_or(Err(Error::PeerDisconnect))
     }
 
     fn handle_response(&self, mut response: Value) {
@@ -365,19 +400,18 @@ impl<W:Write> RpcPeer<W> {
         queue.push_back(json);
         self.0.rx_cvar.notify_one();
     }
+}
 
-    /// Determines whether an incoming request (or notification) is pending. This
-    /// is intended to reduce latency for bulk operations done in the background;
-    /// the handler can do this work, periodically check
-    pub fn request_is_pending(&self) -> bool {
-        let queue = self.0.rx_queue.lock().unwrap();
-        !queue.is_empty()
+impl Clone for Box<Peer>
+{
+    fn clone(&self) -> Box<Peer> {
+        self.box_clone()
     }
 }
 
-impl<W:Write> Clone for RpcPeer<W> {
+impl<W: Write> Clone for RawPeer<W> {
     fn clone(&self) -> Self {
-        RpcPeer(self.0.clone())
+        RawPeer(self.0.clone())
     }
 }
 

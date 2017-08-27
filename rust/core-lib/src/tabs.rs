@@ -16,7 +16,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
-use std::io::{self, Read, Write};
+use std::io::{self, Read};
 use std::path::{PathBuf, Path};
 use std::fs::File;
 use std::sync::{Arc, Mutex, MutexGuard, Weak, mpsc};
@@ -78,11 +78,11 @@ impl BufferIdentifier {
 }
 
 /// Tracks open buffers, and relationships between buffers and views.
-pub struct BufferContainer<W: Write> {
+pub struct BufferContainer {
     /// associates open file paths to buffers
     open_files: BTreeMap<PathBuf, BufferIdentifier>,
     /// maps buffer identifiers to editor instances
-    editors: BTreeMap<BufferIdentifier, Editor<W>>,
+    editors: BTreeMap<BufferIdentifier, Editor>,
     /// maps view identifiers to buffer identifiers. All actions originate in a view;
     /// this lets us route messages correctly when multiple views share a buffer.
     views: BTreeMap<ViewIdentifier, BufferIdentifier>,
@@ -97,19 +97,19 @@ pub struct BufferContainer<W: Write> {
 /// via `BufferContainer::lock`.
 ///
 /// [BufferContainer]: struct.BufferContainer.html
-pub struct BufferContainerRef<W: Write>(Arc<Mutex<BufferContainer<W>>>);
+pub struct BufferContainerRef(Arc<Mutex<BufferContainer>>);
 
-/// Wrapper around a `Weak<Mutex<BufferContainer<W>>>`
+/// Wrapper around a `Weak<Mutex<BufferContainer>>`
 ///
 /// `WeakBufferContaienrRef` provides a more ergonomic way of storing a `Weak`
 /// reference to a [`BufferContainer`][BufferContainer].
 ///
 /// [BufferContainer]: struct.BufferContainer.html
-pub struct WeakBufferContainerRef<W: Write>(Weak<Mutex<BufferContainer<W>>>);
+pub struct WeakBufferContainerRef(Weak<Mutex<BufferContainer>>);
 
-impl<W:Write> BufferContainer<W> {
+impl BufferContainer {
     /// Returns a reference to the `Editor` instance owning `view_id`'s view.
-    pub fn editor_for_view(&self, view_id: &ViewIdentifier) -> Option<&Editor<W>> {
+    pub fn editor_for_view(&self, view_id: &ViewIdentifier) -> Option<&Editor> {
         match self.views.get(view_id) {
             Some(id) => self.editors.get(id),
             None => {
@@ -120,7 +120,7 @@ impl<W:Write> BufferContainer<W> {
     }
 
     /// Returns a mutable reference to the `Editor` instance owning `view_id`'s view.
-    pub fn editor_for_view_mut(&mut self, view_id: &ViewIdentifier) -> Option<&mut Editor<W>> {
+    pub fn editor_for_view_mut(&mut self, view_id: &ViewIdentifier) -> Option<&mut Editor> {
         match self.views.get(view_id) {
             Some(id) => self.editors.get_mut(id),
             None => {
@@ -131,22 +131,22 @@ impl<W:Write> BufferContainer<W> {
     }
 
     /// Returns an iterator over all active `Editor`s.
-    pub fn iter_editors<'a>(&'a self) -> Box<Iterator<Item=&'a Editor<W>> + 'a> {
+    pub fn iter_editors<'a>(&'a self) -> Box<Iterator<Item=&'a Editor> + 'a> {
         Box::new(self.editors.values())
     }
 
     /// Returns a mutable iterator over all active `Editor`s.
-    pub fn iter_editors_mut<'a>(&'a mut self) -> Box<Iterator<Item=&'a mut Editor<W>> + 'a> {
+    pub fn iter_editors_mut<'a>(&'a mut self) -> Box<Iterator<Item=&'a mut Editor> + 'a> {
         Box::new(self.editors.values_mut())
     }
 
     /// Returns a mutable reference to the `Editor` instance with `id`
-    pub fn editor_for_buffer_mut(&mut self, id: &BufferIdentifier) -> Option<&mut Editor<W>> {
+    pub fn editor_for_buffer_mut(&mut self, id: &BufferIdentifier) -> Option<&mut Editor> {
         self.editors.get_mut(id)
     }
 }
 
-impl<W: Write + Send + 'static> BufferContainerRef<W> {
+impl BufferContainerRef {
     pub fn new() -> Self {
         BufferContainerRef(Arc::new(Mutex::new(
                     BufferContainer {
@@ -157,12 +157,12 @@ impl<W: Write + Send + 'static> BufferContainerRef<W> {
     }
 
     /// Returns a handle to the inner `MutexGuard`.
-    pub fn lock(&self) -> MutexGuard<BufferContainer<W>> {
+    pub fn lock(&self) -> MutexGuard<BufferContainer> {
         self.0.lock().unwrap()
     }
 
-    /// Creates a new `WeakBufferContainerRef<W>`.
-    pub fn to_weak(&self) -> WeakBufferContainerRef<W> {
+    /// Creates a new `WeakBufferContainerRef`.
+    pub fn to_weak(&self) -> WeakBufferContainerRef {
         let weak_inner = Arc::downgrade(&self.0);
         WeakBufferContainerRef(weak_inner)
     }
@@ -179,7 +179,7 @@ impl<W: Write + Send + 'static> BufferContainerRef<W> {
 
     /// Adds a new editor, associating it with the provided identifiers.
     pub fn add_editor(&self, view_id: &ViewIdentifier, buffer_id: &BufferIdentifier,
-                      editor: Editor<W>) {
+                      editor: Editor) {
         let mut inner = self.lock();
         inner.views.insert(view_id.to_owned(), buffer_id.to_owned());
         inner.editors.insert(buffer_id.to_owned(), editor);
@@ -235,11 +235,11 @@ impl<W: Write + Send + 'static> BufferContainerRef<W> {
     }
 }
 
-impl <W: Write>WeakBufferContainerRef<W> {
+impl WeakBufferContainerRef {
     /// Upgrades the weak reference to an Arc, if possible.
     ///
     /// Returns `None` if the inner value has been deallocated.
-    pub fn upgrade(&self) -> Option<BufferContainerRef<W>> {
+    pub fn upgrade(&self) -> Option<BufferContainerRef> {
         match self.0.upgrade() {
             Some(inner) => Some(BufferContainerRef(inner)),
             None => None
@@ -247,19 +247,19 @@ impl <W: Write>WeakBufferContainerRef<W> {
     }
 }
 
-impl<W: Write> Clone for BufferContainerRef<W> {
+impl Clone for BufferContainerRef {
     fn clone(&self) -> Self {
         BufferContainerRef(self.0.clone())
     }
 }
 
 /// A trait for closure types which are callable with a `Documents` instance.
-trait IdleProc<W: Write>: Send {
-    fn call(self: Box<Self>, docs: &mut Documents<W>);
+trait IdleProc: Send {
+    fn call(self: Box<Self>, docs: &mut Documents);
 }
 
-impl<W: Write, F: Send + FnOnce(&mut Documents<W>)> IdleProc<W> for F {
-    fn call(self: Box<F>, docs: &mut Documents<W>) {
+impl<F: Send + FnOnce(&mut Documents)> IdleProc for F {
+    fn call(self: Box<F>, docs: &mut Documents) {
         (*self)(docs)
     }
 }
@@ -270,33 +270,33 @@ impl<W: Write, F: Send + FnOnce(&mut Documents<W>)> IdleProc<W> for F {
 /// to all active `Editor ` instances (through a `BufferContainerRef` instance),
 /// and handles dispatch of RPC methods between client views and `Editor`
 /// instances, as well as between `Editor` instances and Plugins.
-pub struct Documents<W: Write> {
+pub struct Documents {
     /// keeps track of buffer/view state.
-    buffers: BufferContainerRef<W>,
+    buffers: BufferContainerRef,
     id_counter: usize,
     kill_ring: Arc<Mutex<Rope>>,
     style_map: Arc<Mutex<ThemeStyleMap>>,
-    plugins: PluginManagerRef<W>,
+    plugins: PluginManagerRef,
     /// A tx channel used to propagate plugin updates from all `Editor`s.
     update_channel: mpsc::Sender<(ViewIdentifier, PluginUpdate, usize)>,
     /// A queue of closures to be executed on the next idle runloop pass.
-    idle_queue: Vec<Box<IdleProc<W>>>,
+    idle_queue: Vec<Box<IdleProc>>,
     #[allow(dead_code)]
     sync_repo: Option<SyncRepo>,
 }
 
 #[derive(Clone)]
 /// A container for state shared between `Editor` instances.
-pub struct DocumentCtx<W: Write> {
+pub struct DocumentCtx {
     kill_ring: Arc<Mutex<Rope>>,
-    rpc_peer: MainPeer<W>,
+    rpc_peer: MainPeer,
     style_map: Arc<Mutex<ThemeStyleMap>>,
     update_channel: mpsc::Sender<(ViewIdentifier, PluginUpdate, usize)>
 }
 
 
-impl<W: Write + Send + 'static> Documents<W> {
-    pub fn new() -> Documents<W> {
+impl Documents {
+    pub fn new() -> Documents {
         let buffers = BufferContainerRef::new();
         let plugin_manager = PluginManagerRef::new(buffers.clone());
         let (update_tx, update_rx) = mpsc::channel();
@@ -315,7 +315,7 @@ impl<W: Write + Send + 'static> Documents<W> {
         }
     }
 
-    fn new_tab_ctx(&self, peer: &MainPeer<W>) -> DocumentCtx<W> {
+    fn new_tab_ctx(&self, peer: &MainPeer) -> DocumentCtx {
         DocumentCtx {
             kill_ring: self.kill_ring.clone(),
             rpc_peer: peer.clone(),
@@ -334,7 +334,7 @@ impl<W: Write + Send + 'static> Documents<W> {
         BufferIdentifier(self.id_counter)
     }
 
-    pub fn do_rpc<'a>(&mut self, cmd: CoreCommand, rpc_ctx: &mut RpcCtx<'a, W>) -> Option<Value> {
+    pub fn do_rpc<'a>(&mut self, cmd: CoreCommand, rpc_ctx: &mut RpcCtx<'a>) -> Option<Value> {
         use rpc::CoreCommand::*;
 
         match cmd {
@@ -376,7 +376,7 @@ impl<W: Write + Send + 'static> Documents<W> {
     /// existing buffer. If `file_path` is given and that file _isn't_ open,
     /// we load that file into a new buffer. If `file_path` is not given,
     /// we create a new empty buffer.
-    fn do_new_view(&mut self, rpc_peer: &MainPeer<W>, file_path: Option<&str>) -> Value {
+    fn do_new_view(&mut self, rpc_peer: &MainPeer, file_path: Option<&str>) -> Value {
         // three code paths: new buffer, open file, and new view into existing buffer
         let view_id = self.next_view_id();
         if let Some(file_path) = file_path.map(PathBuf::from) {
@@ -403,7 +403,7 @@ impl<W: Write + Send + 'static> Documents<W> {
         let init_info = self.buffers.lock().editor_for_view(&view_id)
             .unwrap().plugin_init_info();
 
-        let on_idle = Box::new(move |self_ref: &mut Documents<W>| {
+        let on_idle = Box::new(move |self_ref: &mut Documents| {
             self_ref.plugins.document_new(&view_id2, &init_info);
             {
                 let mut editors = self_ref.buffers.lock();
@@ -421,13 +421,13 @@ impl<W: Write + Send + 'static> Documents<W> {
         self.buffers.close_view(view_id);
     }
 
-    fn new_empty_view(&mut self, rpc_peer: &MainPeer<W>, view_id: &ViewIdentifier,
+    fn new_empty_view(&mut self, rpc_peer: &MainPeer, view_id: &ViewIdentifier,
                       buffer_id: BufferIdentifier) {
         let editor = Editor::new(self.new_tab_ctx(rpc_peer), buffer_id, view_id);
         self.add_editor(view_id, &buffer_id, editor, None);
     }
 
-    fn new_view_with_file(&mut self, rpc_peer: &MainPeer<W>, view_id: &ViewIdentifier,
+    fn new_view_with_file(&mut self, rpc_peer: &MainPeer, view_id: &ViewIdentifier,
                           buffer_id: BufferIdentifier, path: &Path) {
         match self.read_file(&path) {
             Ok(contents) => {
@@ -454,7 +454,7 @@ impl<W: Write + Send + 'static> Documents<W> {
     ///
     /// This is called once each time a new editor is created.
     fn add_editor(&mut self, view_id: &ViewIdentifier, buffer_id: &BufferIdentifier,
-                  mut editor: Editor<W>, path: Option<&Path>) {
+                  mut editor: Editor, path: Option<&Path>) {
         self.initialize_sync(&mut editor, path, buffer_id);
         self.buffers.add_editor(view_id, buffer_id, editor);
         if let Some(path) = path {
@@ -463,7 +463,7 @@ impl<W: Write + Send + 'static> Documents<W> {
     }
 
     #[cfg(not(target_os = "fuchsia"))]
-    fn initialize_sync(&mut self, _editor: &mut Editor<W>, _path_opt: Option<&Path>, _buffer_id: &BufferIdentifier) {
+    fn initialize_sync(&mut self, _editor: &mut Editor, _path_opt: Option<&Path>, _buffer_id: &BufferIdentifier) {
         // not implemented yet on OSs other than Fuchsia
     }
 
@@ -550,7 +550,7 @@ impl<W: Write + Send + 'static> Documents<W> {
     }
 
     /// Handle a client set theme RPC
-    fn do_set_theme(&self, rpc_peer: &MainPeer<W>, theme_name: &str) {
+    fn do_set_theme(&self, rpc_peer: &MainPeer, theme_name: &str) {
         let success = self.style_map.lock().unwrap()
             .set_theme(&theme_name).is_ok();
         if success {
@@ -580,7 +580,7 @@ impl<W: Write + Send + 'static> Documents<W> {
 }
 
 #[cfg(target_os = "fuchsia")]
-impl<W: Write> Drop for Documents<W> {
+impl Drop for Documents {
     fn drop(&mut self) {
         use std::mem;
         if let Some(repo) = mem::replace(&mut self.sync_repo, None) {
@@ -590,7 +590,7 @@ impl<W: Write> Drop for Documents<W> {
     }
 }
 
-impl<W: Write> DocumentCtx<W> {
+impl DocumentCtx {
     pub fn update_view(&self, view_id: &ViewIdentifier, update: &Value) {
         self.rpc_peer.send_rpc_notification("update",
             &json!({
@@ -713,7 +713,7 @@ pub struct SyncRepo {
 }
 
 #[cfg(target_os = "fuchsia")]
-impl<W: Write + Send + 'static> Documents<W> {
+impl Documents {
     pub fn setup_ledger(&mut self, mut ledger: Ledger_Proxy, session_id: (u64,u32)) {
         let key = vec![0];
         start_conflict_resolver_factory(&mut ledger, key);
@@ -725,7 +725,7 @@ impl<W: Write + Send + 'static> Documents<W> {
         self.sync_repo = Some(SyncRepo { ledger, tx, updater_handle, session_id });
     }
 
-    fn initialize_sync(&mut self, editor: &mut Editor<W>, path_opt: Option<&Path>, buffer_id: &BufferIdentifier) {
+    fn initialize_sync(&mut self, editor: &mut Editor, path_opt: Option<&Path>, buffer_id: &BufferIdentifier) {
         use apps_ledger_services_public::*;
         use fuchsia::ledger::{ledger_crash_callback, gen_page_id};
 
@@ -759,18 +759,18 @@ mod tests {
     use serde_json;
 
     // a bit of gymnastics to let us instantiate an Editor instance
-    fn mock_doc_ctx(tempfile: &str) -> DocumentCtx<File> {
+    fn mock_doc_ctx(tempfile: &str) -> DocumentCtx {
         let mut dir = env::temp_dir();
         dir.push(tempfile);
         let f = File::create(dir).unwrap();
 
         let mock_loop = RpcLoop::new(f);
-        let mock_peer = mock_loop.get_peer();
+        let mock_peer = mock_loop.get_raw_peer();
         let (update_tx, _) = mpsc::channel();
 
         DocumentCtx {
             kill_ring: Arc::new(Mutex::new(Rope::from(""))),
-            rpc_peer: mock_peer.clone(),
+            rpc_peer: Box::new(mock_peer.clone()),
             style_map: Arc::new(Mutex::new(ThemeStyleMap::new())),
             update_channel: update_tx,
         }

@@ -64,7 +64,7 @@ impl ScopeSpan {
 	}
 }
 
-pub struct PluginCtx<'a>(RpcCtx<'a, io::Stdout>);
+pub struct PluginCtx<'a>(RpcCtx<'a>);
 
 impl<'a> PluginCtx<'a> {
     pub fn get_data(&self, view_id: &str, offset: usize,
@@ -249,8 +249,8 @@ fn parse_plugin_request<'a>(method: &str, params: &'a Value) ->
 
 struct MyHandler<'a, H: 'a>(&'a mut H);
 
-impl<'a, H: Handler> xi_rpc::Handler<io::Stdout> for MyHandler<'a, H> {
-    fn handle_notification(&mut self, ctx: RpcCtx<io::Stdout>, method: &str, params: &Value) {
+impl<'a, H: Handler> xi_rpc::Handler for MyHandler<'a, H> {
+    fn handle_notification(&mut self, ctx: RpcCtx, method: &str, params: &Value) {
         match parse_plugin_request(method, params) {
             Ok(req) => {
                 if let Some(_) = self.0.call(&req, PluginCtx(ctx)) {
@@ -261,7 +261,7 @@ impl<'a, H: Handler> xi_rpc::Handler<io::Stdout> for MyHandler<'a, H> {
         }
     }
 
-    fn handle_request(&mut self, ctx: RpcCtx<io::Stdout>, method: &str, params: &Value) ->
+    fn handle_request(&mut self, ctx: RpcCtx, method: &str, params: &Value) ->
         Result<Value, Value> {
         match parse_plugin_request(method, params) {
             Ok(req) => {
@@ -275,7 +275,7 @@ impl<'a, H: Handler> xi_rpc::Handler<io::Stdout> for MyHandler<'a, H> {
         }
     }
 
-    fn idle(&mut self, ctx: RpcCtx<io::Stdout>, token: usize) {
+    fn idle(&mut self, ctx: RpcCtx, token: usize) {
         self.0.idle(PluginCtx(ctx), token);
     }
 }

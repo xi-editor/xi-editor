@@ -22,8 +22,8 @@ mod catalog;
 use std::sync::{Arc, Mutex, mpsc};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
-use std::process::{ChildStdin, Child, Command as ProcCommand, Stdio};
-use std::io::{self, BufReader, Write};
+use std::process::{Child, Command as ProcCommand, Stdio};
+use std::io::{self, BufReader};
 
 use serde_json::{self, Value};
 
@@ -38,7 +38,7 @@ use self::manager::PluginName;
 use self::catalog::PluginCatalog;
 
 
-pub type PluginPeer = RpcPeer<ChildStdin>;
+pub type PluginPeer = RpcPeer;
 /// A process-unique identifier for a running plugin.
 ///
 /// Note: two instances of the same executable will have different identifiers.
@@ -47,11 +47,11 @@ pub type PluginPeer = RpcPeer<ChildStdin>;
 pub struct PluginPid(usize);
 
 /// A running plugin.
-pub struct Plugin<W: Write> {
+pub struct Plugin {
     peer: PluginPeer,
     /// The plugin's process
     process: Child,
-    manager: WeakPluginManagerRef<W>,
+    manager: WeakPluginManagerRef,
     description: PluginDescription,
     identifier: PluginPid,
 }
@@ -61,29 +61,29 @@ pub struct Plugin<W: Write> {
 /// Note: A plugin is always owned by and used through a `PluginRef`.
 ///
 /// The second field is used to flag dead plugins for cleanup.
-pub struct PluginRef<W: Write>(Arc<Mutex<Plugin<W>>>, Arc<AtomicBool>);
+pub struct PluginRef(Arc<Mutex<Plugin>>, Arc<AtomicBool>);
 
-impl<W: Write> Clone for PluginRef<W> {
+impl Clone for PluginRef {
     fn clone(&self) -> Self {
         PluginRef(self.0.clone(), self.1.clone())
     }
 }
 
-impl<W: Write + Send + 'static> Handler<ChildStdin> for PluginRef<W> {
-    fn handle_notification(&mut self, _ctx: RpcCtx<ChildStdin>, method: &str, params: &Value) {
+impl Handler for PluginRef {
+    fn handle_notification(&mut self, _ctx: RpcCtx, method: &str, params: &Value) {
         if let Some(_) = self.rpc_handler(method, params) {
             print_err!("Unexpected return value for notification {}", method)
         }
     }
 
-    fn handle_request(&mut self, _ctx: RpcCtx<ChildStdin>, method: &str, params: &Value) ->
+    fn handle_request(&mut self, _ctx: RpcCtx, method: &str, params: &Value) ->
         Result<Value, Value> {
         let result = self.rpc_handler(method, params);
         result.ok_or_else(|| Value::String("missing return value".to_string()))
     }
 }
 
-impl<W: Write + Send + 'static> PluginRef<W> {
+impl PluginRef {
     fn rpc_handler(&self, method: &str, params: &Value) -> Option<Value> {
         let plugin_manager = {
             self.0.lock().unwrap().manager.upgrade()
@@ -127,7 +127,8 @@ impl<W: Write + Send + 'static> PluginRef<W> {
             where F: FnOnce(Result<Value, xi_rpc::Error>) + Send + 'static {
         let params = serde_json::to_value(update).expect("PluginUpdate invalid");
         match self.0.lock() {
-            Ok(plugin) => plugin.peer.send_rpc_request_async("update", &params, callback),
+            Ok(plugin) => plugin.peer.send_rpc_request_async("update", &params,
+                                                             Box::new(callback)),
             Err(err) => {
                 print_err!("plugin update failed {:?}", err);
                 callback(Err(xi_rpc::Error::PeerDisconnect));
@@ -184,9 +185,9 @@ impl<W: Write + Send + 'static> PluginRef<W> {
 /// `Editor` a tx end of an `mpsc::channel`. As plugin updates are generated,
 /// they are sent over this channel to a receiver running in another thread,
 /// which forwards them to interested plugins.
-pub fn start_update_thread<W: Write + Send + 'static>(
+pub fn start_update_thread(
     rx: mpsc::Receiver<(ViewIdentifier, PluginUpdate, usize)>,
-    manager_ref: &PluginManagerRef<W>)
+    manager_ref: &PluginManagerRef)
 {
     let manager_ref = manager_ref.clone();
     thread::spawn(move ||{
@@ -205,12 +206,11 @@ pub fn start_update_thread<W: Write + Send + 'static>(
 }
 
 /// Launches a plugin, associating it with a given view.
-pub fn start_plugin_process<W, C>(manager_ref: &PluginManagerRef<W>,
+pub fn start_plugin_process<C>(manager_ref: &PluginManagerRef,
                           plugin_desc: &PluginDescription,
                           identifier: PluginPid,
                           completion: C)
-    where W: Write + Send + 'static,
-          C: FnOnce(Result<PluginRef<W>, io::Error>) + Send + 'static
+    where C: FnOnce(Result<PluginRef, io::Error>) + Send + 'static
 {
 
     let manager_ref = manager_ref.to_weak();
@@ -228,7 +228,7 @@ pub fn start_plugin_process<W, C>(manager_ref: &PluginManagerRef<W>,
                 let child_stdin = child.stdin.take().unwrap();
                 let child_stdout = child.stdout.take().unwrap();
                 let mut looper = RpcLoop::new(child_stdin);
-                let peer = looper.get_peer();
+                let peer: RpcPeer = Box::new(looper.get_raw_peer());
                 peer.send_rpc_notification("ping", &Value::Array(Vec::new()));
                 let plugin = Plugin {
                     peer: peer,

@@ -13,7 +13,6 @@
 // limitations under the License.
 
 use std::cmp::{min,max};
-use std::io::Write;
 
 use serde_json::value::Value;
 
@@ -241,7 +240,7 @@ impl View {
     }
 
     // Render a single line, and advance cursors to next line.
-    fn render_line<W: Write>(&self, tab_ctx: &DocumentCtx<W>, text: &Rope,
+    fn render_line(&self, tab_ctx: &DocumentCtx, text: &Rope,
         start_of_line: &mut Cursor<RopeInfo>, soft_breaks: Option<&mut Cursor<BreaksInfo>>, style_spans: &Spans<Style>,
         line_num: usize) -> Value
     {
@@ -299,7 +298,7 @@ impl View {
         result
     }
 
-    pub fn render_styles<W: Write>(&self, tab_ctx: &DocumentCtx<W>, start: usize, end: usize,
+    pub fn render_styles(&self, tab_ctx: &DocumentCtx, start: usize, end: usize,
         sel: &[(usize, usize)], hls: &[(usize, usize)], style_spans: &Spans<Style>) -> Vec<isize>
     {
         let mut rendered_styles = Vec::new();
@@ -328,7 +327,7 @@ impl View {
         rendered_styles
     }
 
-    pub fn send_update<W: Write>(&mut self, text: &Rope, tab_ctx: &DocumentCtx<W>, style_spans: &Spans<Style>,
+    pub fn send_update(&mut self, text: &Rope, tab_ctx: &DocumentCtx, style_spans: &Spans<Style>,
         first_line: usize, last_line: usize)
     {
         let dirty = self.dirty || self.sel_dirty;
@@ -378,7 +377,7 @@ impl View {
 
     /// Send lines within given region (plus slop) that the front-end does not already
     /// have.
-    pub fn send_update_for_scroll<W: Write>(&mut self, text: &Rope, tab_ctx: &DocumentCtx<W>, style_spans: &Spans<Style>,
+    pub fn send_update_for_scroll(&mut self, text: &Rope, tab_ctx: &DocumentCtx, style_spans: &Spans<Style>,
         first_line: usize, last_line: usize)
     {
         let first_line = max(first_line, SCROLL_SLOP) - SCROLL_SLOP;
@@ -440,7 +439,7 @@ impl View {
     }
 
     // Update front-end with any changes to view since the last time sent.
-    pub fn render_if_dirty<W: Write>(&mut self, text: &Rope, tab_ctx: &DocumentCtx<W>, style_spans: &Spans<Style>) {
+    pub fn render_if_dirty(&mut self, text: &Rope, tab_ctx: &DocumentCtx, style_spans: &Spans<Style>) {
         if self.sel_dirty || self.hls_dirty || self.dirty {
             let first_line = max(self.first_line, SCROLL_SLOP) - SCROLL_SLOP;
             let last_line = self.first_line + self.height + SCROLL_SLOP;
