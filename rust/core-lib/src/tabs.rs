@@ -356,6 +356,10 @@ impl<W: Write + Send + 'static> Documents<W> {
             SetTheme { theme_name } => {
                 self.do_set_theme(rpc_ctx.get_peer(), theme_name);
                 None
+            },
+            ClientStarted => {
+                self.do_client_init(rpc_ctx.get_peer());
+                None
             }
         }
     }
@@ -532,6 +536,17 @@ impl<W: Write + Send + 'static> Documents<W> {
                 None
             }
         }
+    }
+
+    fn do_client_init(&self, rpc_peer: &MainPeer<W>) {
+        let params = {
+            let style_map = self.style_map.lock().unwrap();
+            json!({
+                "themes": style_map.get_theme_names()
+            })
+        };
+
+        rpc_peer.send_rpc_notification("available_themes", &params);
     }
 
     /// Handle a client set theme RPC

@@ -184,6 +184,10 @@ impl ThemeStyleMap {
         &self.theme.settings
     }
 
+    pub fn get_theme_names(&self) -> Vec<String>  {
+        self.themes.themes.keys().cloned().collect()
+    }
+
     pub fn set_theme(&mut self, theme_name: &str) -> Result<(), &'static str> {
         if theme_name == self.theme_name {
             return Ok(())
