@@ -65,6 +65,8 @@ and might work on other Flutter targets.
 
 * [xi-win](https://github.com/google/xi-win), an experimental Windows front-end written in Rust.
 
+* [kod](https://github.com/linde12/kod), a terminal frontend written in Golang.
+
 The following are currently inactive, based on earlier versions of the front-end
 protocol, but perhaps could be revitalized:
 
