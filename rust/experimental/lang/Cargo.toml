@@ -13,4 +13,4 @@ nom = { version = "2.1", optional = true }
 combine = { version = "2.2.2", optional = true }
 
 [dependencies.xi-plugin-lib]
-path = "../plugin-lib"
+path = "../../plugin-lib"
