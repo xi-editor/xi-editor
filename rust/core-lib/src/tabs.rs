@@ -24,10 +24,11 @@ use std::sync::{Arc, Mutex, MutexGuard, Weak, mpsc};
 use serde_json::value::Value;
 
 use xi_rope::rope::Rope;
-use xi_rpc::RpcCtx;
+use xi_rpc::{RpcCtx, RemoteError};
 
 use editor::Editor;
-use rpc::{CoreCommand, EditCommand, PluginCommand};
+
+use rpc;
 use styles::{Style, ThemeStyleMap};
 use MainPeer;
 
@@ -347,32 +348,44 @@ impl Documents {
         BufferIdentifier(self.id_counter)
     }
 
-    pub fn do_rpc<'a>(&mut self, cmd: CoreCommand, rpc_ctx: &mut RpcCtx<'a>) -> Option<Value> {
-        use rpc::CoreCommand::*;
-
+    pub fn handle_notification<'a>(&mut self, cmd: rpc::CoreNotification,
+                               rpc_ctx: &mut RpcCtx<'a>) {
+        use rpc::CoreNotification::*;
         match cmd {
-            CloseView { view_id } => {
-                self.do_close_view(&view_id);
-                None
-            },
+            ClientStarted(..) => self.do_client_init(rpc_ctx.get_peer()),
+            SetTheme { theme_name } => self.do_set_theme(rpc_ctx.get_peer(),
+                                                         &theme_name),
+            Save { view_id, file_path } => self.do_save(&view_id, file_path),
+            CloseView { view_id } => self.do_close_view(&view_id),
+            Edit(rpc::EditCommand { view_id, cmd }) => {
+                self.buffers.lock().editor_for_view_mut(&view_id)
+                    .map(|ed| ed.handle_notification(&view_id, cmd));
+                }
+            Plugin(cmd) => self.do_plugin_cmd(cmd),
+        }
+    }
 
+    pub fn handle_request<'a>(&mut self, cmd: rpc::CoreRequest,
+                              rpc_ctx: &mut RpcCtx<'a>) -> Result<Value, RemoteError> {
+        use rpc::CoreRequest::*;
+        match cmd {
             NewView { file_path } => {
-                let result = Some(self.do_new_view(rpc_ctx.get_peer(), file_path));
+                let result = self.do_new_view(rpc_ctx.get_peer(), file_path);
                 // schedule idle handler after creating views; this is used to
                 // send cursors for empty views, and to initialize plugins.
                 rpc_ctx.schedule_idle(0);
-                result
+                Ok(result)
             }
-            Save { view_id, file_path } => self.do_save(&view_id, file_path),
-            Edit { view_id, edit_command } => self.do_edit(&view_id, edit_command),
-            Plugin { plugin_command } => self.do_plugin_cmd(plugin_command),
-            SetTheme { theme_name } => {
-                self.do_set_theme(rpc_ctx.get_peer(), theme_name);
-                None
-            },
-            ClientStarted => {
-                self.do_client_init(rpc_ctx.get_peer());
-                None
+            Edit(rpc::EditCommand { view_id, cmd }) => {
+                let result = self.buffers.lock().editor_for_view_mut(&view_id)
+                    .map(|ed| ed.handle_request(&view_id, cmd));
+                match result {
+                    None => {
+                        let msg = format!("No editor for view_id: {}", view_id);
+                        Err(RemoteError::custom(2, msg, None))
+                    }
+                    Some(result) => result,
+                }
             }
         }
     }
@@ -389,7 +402,7 @@ impl Documents {
     /// existing buffer. If `file_path` is given and that file _isn't_ open,
     /// we load that file into a new buffer. If `file_path` is not given,
     /// we create a new empty buffer.
-    fn do_new_view(&mut self, rpc_peer: &MainPeer, file_path: Option<&str>) -> Value {
+    fn do_new_view(&mut self, rpc_peer: &MainPeer, file_path: Option<String>) -> Value {
         // three code paths: new buffer, open file, and new view into existing buffer
         let view_id = self.next_view_id();
         if let Some(file_path) = file_path.map(PathBuf::from) {
@@ -495,7 +508,7 @@ impl Documents {
     }
 
     fn do_save<P: AsRef<Path>>(&mut self, view_id: &ViewIdentifier,
-                               file_path: P) -> Option<Value> {
+                               file_path: P) {
         //TODO: handle & report errors
         let file_path = file_path.as_ref();
         let prev_syntax = self.buffers.lock().editor_for_view(view_id)
@@ -513,16 +526,11 @@ impl Documents {
             self.plugins.document_syntax_changed(view_id, init_info);
         }
         self.plugins.document_did_save(&view_id, file_path);
-        None
-    }
-
-    fn do_edit(&mut self, view_id: &ViewIdentifier, cmd: EditCommand) -> Option<Value> {
-        self.buffers.lock().editor_for_view_mut(view_id).unwrap().do_rpc(view_id, cmd)
     }
 
     /// Handles a plugin related command from a client
-    fn do_plugin_cmd(&mut self, cmd: PluginCommand) -> Option<Value> {
-        use self::PluginCommand::*;
+    fn do_plugin_cmd(&mut self, cmd: rpc::PluginNotification) {
+        use rpc::PluginNotification::*;
         match cmd {
             Start { view_id, plugin_name } => {
                 //TODO: report this error to client?
@@ -534,19 +542,16 @@ impl Documents {
                     },
                     None => (),
                 }
-                None
             }
             Stop { view_id, plugin_name } => {
                 print_err!("stop plugin rpc {}", plugin_name);
                 self.plugins.stop_plugin(&view_id, &plugin_name);
-                None
             }
             PluginRpc  { view_id, receiver, rpc } => {
                 assert!(rpc.params_ref().is_object(), "params must be an object");
                 assert!(!rpc.is_request(), "client->plugin rpc is notification only");
                 self.plugins.dispatch_command(&view_id, &receiver,
                                               &rpc.method, &rpc.params);
-                None
             }
         }
     }

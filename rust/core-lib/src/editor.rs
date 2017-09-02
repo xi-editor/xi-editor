@@ -26,13 +26,15 @@ use xi_rope::interval::Interval;
 use xi_rope::delta::{self, Delta, Transformer};
 use xi_rope::engine::{Engine, RevId, RevToken};
 use xi_rope::spans::SpansBuilder;
+use xi_rpc::RemoteError;
+
 use view::View;
 use word_boundaries::WordCursor;
 use movement::{Movement, region_movement};
 use selection::{Affinity, Selection, SelRegion};
 
 use tabs::{BufferIdentifier, ViewIdentifier, DocumentCtx};
-use rpc::{EditCommand, GestureType};
+use rpc::{self, GestureType};
 use syntax::SyntaxDefinition;
 use plugins::rpc_types::{PluginUpdate, PluginEdit, ScopeSpan, PluginBufferInfo,
 ClientPluginInfo};
@@ -867,10 +869,11 @@ impl Editor {
         self.insert(&*String::from(kill_ring_string));
     }
 
-    pub fn do_find(&mut self, chars: Option<&str>, case_sensitive: bool) -> Option<Value> {
+    pub fn do_find(&mut self, chars: Option<String>, case_sensitive: bool) -> Value {
         let mut from_sel = false;
-        let search_string = chars.map(String::from).or_else(|| {
-            // if the search string is not provided, use the string of the last selection for find
+        let search_string = if chars.is_some() {
+            chars
+        } else {
             self.view.sel_regions().last().and_then(|region| {
                 if region.is_caret() {
                     None
@@ -879,22 +882,22 @@ impl Editor {
                     Some(self.text.slice_to_string(region.min(), region.max()))
                 }
             })
-        });
+        };
 
         if search_string.is_none() {
             self.view.unset_find();
-            return Some(Value::Null);
+            return Value::Null;
         }
 
         let search_string = search_string.unwrap();
         if search_string.len() == 0 {
             self.view.unset_find();
-            return Some(Value::Null);
+            return Value::Null;
         }
 
         self.view.set_find(&search_string, case_sensitive);
 
-        Some(Value::String(search_string.to_string()))
+        Value::String(search_string.to_string())
     }
 
     fn do_find_next(&mut self, reverse: bool, wrap_around: bool, allow_same: bool) {
@@ -906,85 +909,107 @@ impl Editor {
         }
     }
 
-    pub fn do_rpc(&mut self, view_id: &ViewIdentifier, cmd: EditCommand) -> Option<Value> {
-        use rpc::EditCommand::*;
-
+    fn cmd_prelude(&mut self, view_id: &ViewIdentifier) {
+        self.this_edit_type = EditType::Other;
         // if the rpc's originating view is different from current self.view, swap it in
         if self.view.view_id != *view_id {
-            let mut temp = self.views.remove(view_id).expect("no view for provided view_id");
+            let mut temp = self.views.remove(view_id)
+                .expect("no view for provided view_id");
             mem::swap(&mut temp, &mut self.view);
             self.views.insert(temp.view_id.clone(), temp);
         }
+    }
 
-        self.this_edit_type = EditType::Other;
-
-        let result = match cmd {
-            Insert { chars } => async(self.do_insert(chars)),
-            DeleteForward => async(self.delete_forward()),
-            DeleteBackward => async(self.delete_backward()),
-            DeleteWordForward => async(self.delete_word_forward()),
-            DeleteWordBackward => async(self.delete_word_backward()),
-            DeleteToEndOfParagraph => async(self.delete_to_end_of_paragraph()),
-            DeleteToBeginningOfLine => async(self.delete_to_beginning_of_line()),
-            InsertNewline => async(self.insert_newline()),
-            InsertTab => async(self.insert_tab()),
-            MoveUp => async(self.move_up(0)),
-            MoveUpAndModifySelection => async(self.move_up(FLAG_SELECT)),
-            MoveDown => async(self.move_down(0)),
-            MoveDownAndModifySelection => async(self.move_down(FLAG_SELECT)),
-            MoveLeft => async(self.move_left(0)),
-            MoveLeftAndModifySelection => async(self.move_left(FLAG_SELECT)),
-            MoveRight => async(self.move_right(0)),
-            MoveRightAndModifySelection => async(self.move_right(FLAG_SELECT)),
-            MoveWordLeft => async(self.move_word_left(0)),
-            MoveWordLeftAndModifySelection => async(self.move_word_left(FLAG_SELECT)),
-            MoveWordRight => async(self.move_word_right(0)),
-            MoveWordRightAndModifySelection => async(self.move_word_right(FLAG_SELECT)),
-            MoveToBeginningOfParagraph => async(self.move_to_beginning_of_paragraph(0)),
-            MoveToEndOfParagraph => async(self.move_to_end_of_paragraph(0)),
-            MoveToLeftEndOfLine => async(self.move_to_left_end_of_line(0)),
-            MoveToLeftEndOfLineAndModifySelection => async(self.move_to_left_end_of_line(FLAG_SELECT)),
-            MoveToRightEndOfLine => async(self.move_to_right_end_of_line(0)),
-            MoveToRightEndOfLineAndModifySelection => async(self.move_to_right_end_of_line(FLAG_SELECT)),
-            MoveToBeginningOfDocument => async(self.move_to_beginning_of_document(0)),
-            MoveToBeginningOfDocumentAndModifySelection => async(self.move_to_beginning_of_document(FLAG_SELECT)),
-            MoveToEndOfDocument => async(self.move_to_end_of_document(0)),
-            MoveToEndOfDocumentAndModifySelection => async(self.move_to_end_of_document(FLAG_SELECT)),
-            ScrollPageUp => async(self.scroll_page_up(0)),
-            PageUpAndModifySelection => async(self.scroll_page_up(FLAG_SELECT)),
-            ScrollPageDown => async(self.scroll_page_down(0)),
-            PageDownAndModifySelection => {
-                async(self.scroll_page_down(FLAG_SELECT))
-            }
-            SelectAll => async(self.select_all()),
-            AddSelectionAbove => async(self.add_selection_by_movement(Movement::Up)),
-            AddSelectionBelow => async(self.add_selection_by_movement(Movement::Down)),
-            Scroll { first, last } => async(self.do_scroll(first, last)),
-            GotoLine { line } => async(self.do_goto_line(line)),
-            RequestLines { first, last } => async(self.do_request_lines(first, last)),
-            Yank => async(self.yank()),
-            Transpose => async(self.do_transpose()),
-            Click { line, column, flags, click_count } => {
-                async(self.do_click(line, column, flags, click_count))
-            }
-            Drag { line, column, flags } => async(self.do_drag(line, column, flags)),
-            Gesture { line, column, ty } => async(self.do_gesture(line, column, ty)),
-            Undo => async(self.do_undo()),
-            Redo => async(self.do_redo()),
-            Cut => Some(self.do_cut()),
-            Copy => Some(self.do_copy()),
-            Find { chars, case_sensitive } => self.do_find(chars, case_sensitive),
-            FindNext { wrap_around, allow_same } => async(self.do_find_next(false, wrap_around, allow_same)),
-            FindPrevious { wrap_around } => async(self.do_find_next(true, wrap_around, true)),
-            DebugRewrap => async(self.debug_rewrap()),
-            DebugPrintSpans => async(self.debug_print_spans()),
-        };
-
+    fn cmd_postlude(&mut self) {
         // TODO: could defer this until input quiesces - will this help?
         self.commit_delta(None);
         self.render();
         self.last_edit_type = self.this_edit_type;
-        result
+    }
+
+    pub fn handle_notification(&mut self, view_id: &ViewIdentifier,
+                               cmd: rpc::EditNotification) {
+        use rpc::EditNotification::*;
+        use rpc::{LineRange, MouseAction};
+        self.cmd_prelude(view_id);
+
+        match cmd {
+            Insert { chars } => self.do_insert(&chars),
+            DeleteForward => self.delete_forward(),
+            DeleteBackward => self.delete_backward(),
+            DeleteWordForward => self.delete_word_forward(),
+            DeleteWordBackward => self.delete_word_backward(),
+            DeleteToEndOfParagraph => self.delete_to_end_of_paragraph(),
+            DeleteToBeginningOfLine => self.delete_to_beginning_of_line(),
+            InsertNewline => self.insert_newline(),
+            InsertTab => self.insert_tab(),
+            MoveUp => self.move_up(0),
+            MoveUpAndModifySelection => self.move_up(FLAG_SELECT),
+            MoveDown => self.move_down(0),
+            MoveDownAndModifySelection => self.move_down(FLAG_SELECT),
+            MoveLeft | MoveBackward => self.move_left(0),
+            MoveLeftAndModifySelection => self.move_left(FLAG_SELECT),
+            MoveRight | MoveForward => self.move_right(0),
+            MoveRightAndModifySelection => self.move_right(FLAG_SELECT),
+            MoveWordLeft => self.move_word_left(0),
+            MoveWordLeftAndModifySelection => self.move_word_left(FLAG_SELECT),
+            MoveWordRight => self.move_word_right(0),
+            MoveWordRightAndModifySelection => self.move_word_right(FLAG_SELECT),
+            MoveToBeginningOfParagraph => self.move_to_beginning_of_paragraph(0),
+            MoveToEndOfParagraph => self.move_to_end_of_paragraph(0),
+            MoveToLeftEndOfLine => self.move_to_left_end_of_line(0),
+            MoveToLeftEndOfLineAndModifySelection => self.move_to_left_end_of_line(FLAG_SELECT),
+            MoveToRightEndOfLine => self.move_to_right_end_of_line(0),
+            MoveToRightEndOfLineAndModifySelection => self.move_to_right_end_of_line(FLAG_SELECT),
+            MoveToBeginningOfDocument => self.move_to_beginning_of_document(0),
+            MoveToBeginningOfDocumentAndModifySelection => self.move_to_beginning_of_document(FLAG_SELECT),
+            MoveToEndOfDocument => self.move_to_end_of_document(0),
+            MoveToEndOfDocumentAndModifySelection => self.move_to_end_of_document(FLAG_SELECT),
+            ScrollPageUp => self.scroll_page_up(0),
+            PageUpAndModifySelection => self.scroll_page_up(FLAG_SELECT),
+            ScrollPageDown => self.scroll_page_down(0),
+            PageDownAndModifySelection => {
+                self.scroll_page_down(FLAG_SELECT)
+            }
+            SelectAll => self.select_all(),
+            AddSelectionAbove => self.add_selection_by_movement(Movement::Up),
+            AddSelectionBelow => self.add_selection_by_movement(Movement::Down),
+            Scroll(LineRange { first, last }) => self.do_scroll(first, last),
+            GotoLine { line } => self.do_goto_line(line),
+            RequestLines(LineRange { first, last }) => self.do_request_lines(first, last),
+            Yank => self.yank(),
+            Transpose => self.do_transpose(),
+            Click(MouseAction {line, column, flags, click_count} ) => {
+                self.do_click(line, column, flags, click_count.unwrap())
+            }
+            Drag (MouseAction {line, column, flags, ..}) => {
+                self.do_drag(line, column, flags);
+            }
+            Gesture { line, column, ty } => self.do_gesture(line, column, ty),
+            Undo => self.do_undo(),
+            Redo => self.do_redo(),
+            FindNext { wrap_around, allow_same } => self.do_find_next(false, wrap_around.unwrap_or(false), allow_same.unwrap_or(false)),
+            FindPrevious { wrap_around } => self.do_find_next(true, wrap_around.unwrap_or(false), true),
+            DebugRewrap => self.debug_rewrap(),
+            DebugPrintSpans => self.debug_print_spans(),
+        };
+
+        self.cmd_postlude();
+    }
+
+    pub fn handle_request(&mut self, view_id: &ViewIdentifier,
+                          cmd: rpc::EditRequest) -> Result<Value, RemoteError> {
+        use rpc::EditRequest::*;
+        self.cmd_prelude(&view_id);
+
+        let result = match cmd {
+            Cut => self.do_cut(),
+            Copy => self.do_copy(),
+            Find { chars, case_sensitive } => self.do_find(chars, case_sensitive),
+        };
+
+        self.cmd_postlude();
+        Ok(result)
     }
 
     pub fn theme_changed(&mut self) {
@@ -1114,11 +1139,6 @@ impl Editor {
         self.doc_ctx.plugin_stopped(view_id, plugin, code);
         self.doc_ctx.update_cmds(view_id, plugin, &Vec::new());
     }
-}
-
-// wrapper so async methods don't have to return None themselves
-fn async(_: ()) -> Option<Value> {
-    None
 }
 
 fn n_spaces(n: usize) -> &'static str {

@@ -82,7 +82,7 @@ use internal::layers;
 use internal::fuchsia;
 
 use tabs::{Documents, BufferContainerRef};
-use rpc::Request;
+use rpc::{CoreNotification, CoreRequest};
 
 #[cfg(target_os = "fuchsia")]
 use apps_ledger_services_public::Ledger_Proxy;
@@ -91,7 +91,7 @@ extern crate xi_rope;
 extern crate xi_unicode;
 extern crate xi_rpc;
 
-use xi_rpc::{RpcPeer, RpcCtx, RpcCall, Handler, RemoteError};
+use xi_rpc::{RpcPeer, RpcCtx, Handler, RemoteError};
 
 pub type MainPeer = RpcPeer;
 
@@ -121,43 +121,19 @@ impl MainState {
 }
 
 impl Handler for MainState {
-    type Notification = RpcCall;
-    type Request = RpcCall;
+    type Notification = CoreNotification;
+    type Request = CoreRequest;
+
     fn handle_notification(&mut self, mut ctx: RpcCtx, rpc: Self::Notification) {
-        match Request::from_json(&rpc.method, &rpc.params) {
-            Ok(req) => {
-                if let Some(_) = self.handle_req(req, &mut ctx) {
-                    print_err!("Unexpected return value for notification {}", &rpc.method)
-                }
-            }
-            Err(e) => print_err!("Error {} decoding RPC request {}", e, &rpc.method)
-        }
+        self.tabs.handle_notification(rpc, &mut ctx)
     }
 
-    fn handle_request(&mut self, mut ctx: RpcCtx, rpc: Self::Request) ->
-       Result<Value, RemoteError> {
-        match Request::from_json(&rpc.method, &rpc.params) {
-            Ok(req) => {
-                let result = self.handle_req(req, &mut ctx);
-                Ok(result.expect("missing return value"))
-            }
-            Err(e) => {
-                print_err!("Error {} decoding RPC request {}", e, &rpc.method);
-                Err(RemoteError::InvalidRequest(Some(json!(e.to_string()))))
-            }
-        }
+    fn handle_request(&mut self, mut ctx: RpcCtx, rpc: Self::Request)
+                      -> Result<Value, RemoteError> {
+        self.tabs.handle_request(rpc, &mut ctx)
     }
 
     fn idle(&mut self, _ctx: RpcCtx, _token: usize) {
         self.tabs.handle_idle();
-    }
-}
-
-impl MainState {
-    fn handle_req(&mut self, request: Request, rpc_ctx: &mut RpcCtx) ->
-        Option<Value> {
-        match request {
-            Request::CoreCommand { core_command } => self.tabs.do_rpc(core_command, rpc_ctx)
-        }
     }
 }
