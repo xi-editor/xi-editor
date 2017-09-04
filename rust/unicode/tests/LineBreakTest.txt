@@ -1,25 +1,28 @@
-# LineBreakTest-9.0.0.txt
-# Date: 2016-06-18, 00:42:06 GMT
-# © 2016 Unicode®, Inc.
+# LineBreakTest-10.0.0.txt
+# Date: 2017-04-14, 05:40:30 GMT
+# © 2017 Unicode®, Inc.
 # Unicode and the Unicode Logo are registered trademarks of Unicode, Inc. in the U.S. and other countries.
 # For terms of use, see http://www.unicode.org/terms_of_use.html
 #
 # Unicode Character Database
 #   For documentation, see http://www.unicode.org/reports/tr44/
 #
-# Default Line Break Test
+# Default Line_Break Test
 #
 # Format:
-# <string> (# <comment>)? 
-#  <string> contains hex Unicode code points, with 
-#	÷ wherever there is a break opportunity, and 
+# <string> (# <comment>)?
+#  <string> contains hex Unicode code points, with
+#	÷ wherever there is a break opportunity, and
 #	× wherever there is not.
 #  <comment> the format can change, but currently it shows:
 #	- the sample character name
 #	- (x) the Line_Break property value for the sample character
-#	- [x] the rule that determines whether there is a break or not
-# Note: The Line Break tests use tailoring of numbers described in Example 7 of Section 8.2 Examples of Customization.
-# They also differ from the results produced by a pair table implementation in sequences like: ZW SP CL.
+#	- [x] the rule that determines whether there is a break or not,
+#	   as listed in the Rules section of LineBreakTest.html
+#
+# Note:
+#  The Line_Break tests use tailoring of numbers described in
+#  Example 7 of Section 8.2, "Examples of Customization" of UAX #14.
 #
 # These samples may be extended or changed in the future.
 #
