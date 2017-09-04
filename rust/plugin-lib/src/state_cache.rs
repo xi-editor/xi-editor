@@ -48,12 +48,6 @@ struct MyState<S> {
     buf_size: usize,
     view_id: String,
     rev: u64,
-    cache: Option<String>,
-    cache_offset: usize,
-
-    // line iteration state
-    line_num: usize,
-    offset_of_line: usize,
 
     /// A chunk of the document.
     chunk: String,
@@ -63,6 +57,9 @@ struct MyState<S> {
     // cache of per-line state
     // Note: this doesn't store the 0 state, that's assumed
     state_cache: Vec<CacheEntry<S>>,
+
+    /// The frontier, represented as a sorted list of line numbers.
+    frontier: Vec<usize>,
 
     syntax: String,
     path: Option<PathBuf>,
@@ -80,7 +77,7 @@ struct MyHandler<'a, H: Handler + 'a> {
 
 impl<'a, H: Handler> plugin_base::Handler for MyHandler<'a, H> {
     fn call(&mut self, req: &PluginRequest, peer: plugin_base::PluginCtx) -> Option<Value> {
-        let ctx = PluginCtx {
+        let mut ctx = PluginCtx {
             state: &mut self.state,
             peer: peer,
         };
@@ -96,6 +93,7 @@ impl<'a, H: Handler> plugin_base::Handler for MyHandler<'a, H> {
                 ctx.state.rev = init_info.rev;
                 ctx.state.syntax = init_info.syntax.clone();
                 ctx.state.path = init_info.path.clone().map(|p| PathBuf::from(p));
+                ctx.truncate_frontier(0);
                 self.handler.initialize(ctx, init_info.buf_size);
                 None
             }
@@ -103,33 +101,37 @@ impl<'a, H: Handler> plugin_base::Handler for MyHandler<'a, H> {
                 //print_err!("got update notification {:?}", edit_type);
                 ctx.state.buf_size = ctx.state.buf_size - (end - start) + new_len;
                 ctx.state.rev = rev;
-                if let (Some(text), Some(mut cache)) = (text, ctx.state.cache.take()) {
-                    let off = ctx.state.cache_offset;
-                    if start >= off && start <= off + cache.len() {
-                        let tail = if end < off + cache.len() {
-                            Some(cache[end - off ..].to_string())
+                if let Some(text) = text {
+                    let off = ctx.state.chunk_offset;
+                    if start >= off && start <= off + ctx.state.chunk.len() {
+                        let tail = if end < off + ctx.state.chunk.len() {
+                            Some(ctx.state.chunk[end - off ..].to_string())
                         } else {
                             None
                         };
-                        cache.truncate(start - off);
-                        cache.push_str(text);
+                        ctx.state.chunk.truncate(start - off);
+                        ctx.state.chunk.push_str(text);
                         if let Some(tail) = tail {
-                            cache.push_str(&tail);
+                            ctx.state.chunk.push_str(&tail);
                         }
-                        ctx.state.cache = Some(cache);
+                        // TODO: this can be a lot more precise; instead of
+                        // truncating, fix up line numbers (if needed) and delete
+                        // user state in interior of changed region.
+                        ctx.truncate_cache(start);
+                    } else {
+                        ctx.state.chunk.clear();
+                        ctx.state.chunk_offset = 0;
+                        ctx.truncate_cache(start);
                     }
+                } else {
+                    ctx.state.chunk.clear();
+                    ctx.state.chunk_offset = 0;
+                    ctx.truncate_cache(start);
                 }
-                ctx.state.line_num = 0;
-                ctx.state.offset_of_line = 0;
                 self.handler.update(ctx);
                 Some(Value::from(0i32))
             }
             PluginRequest::DidSave { ref path } => {
-                let new_path = Some(path.to_owned());
-                if ctx.state.path != new_path {
-                    ctx.state.line_num = 0;
-                    ctx.state.offset_of_line = 0;
-                }
                 ctx.state.path = Some(path.to_owned());
                 self.handler.did_save(ctx);
                 None
@@ -189,7 +191,13 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
         self.state.state_cache.binary_search_by(|probe| probe.line_num.cmp(&line_num))
     }
 
-    /// Get state at or before given line number.
+    /// Find an entry in the cache by offset. Similar to `find_line`.
+    fn find_offset(&self, offset: usize) -> Result<usize, usize> {
+        self.state.state_cache.binary_search_by(|probe| probe.offset.cmp(&offset))
+    }
+
+    /// Get state at or before given line number. Returns line number, offset,
+    /// and user state.
     pub fn get_prev(&self, line_num: usize) -> (usize, usize, S) {
         if line_num > 0 {
             let mut ix = match self.find_line(line_num) {
@@ -218,7 +226,12 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
     fn get_entry(&mut self, line_num: usize) -> &mut CacheEntry<S> {
         match self.find_line(line_num) {
             Ok(ix) => &mut self.state.state_cache[ix],
-            Err(ix) => unimplemented!(),
+            Err(_ix) => {
+                // TODO: could get rid of redundant binary search
+                let (offset, _ix) = self.get_offset_ix_of_line(line_num).expect("TODO return result");
+                let new_ix = self.insert_entry(line_num, offset, None);
+                &mut self.state.state_cache[new_ix]
+            }
         }
     }
 
@@ -226,7 +239,7 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
     fn insert_entry(&mut self, line_num: usize, offset: usize, user_state: Option<S>) -> usize {
         match self.find_line(line_num) {
             // TODO: evict if full
-            Ok(ix) => panic!("entry already exists"),
+            Ok(_ix) => panic!("entry already exists"),
             Err(ix) => {
                 self.state.state_cache.insert(ix, CacheEntry {
                     line_num, offset, user_state
@@ -247,8 +260,8 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
             let chunk_start = self.state.chunk_offset;
             let chunk_end = chunk_start + self.state.chunk.len();
             if start >= chunk_start && start < chunk_end {
-                // At least the first codepoint at start is in the chunk
-                if end < chunk_end || end == self.state.buf_size {
+                // At least the first codepoint at start is in the chunk.
+                if end < chunk_end || chunk_end == self.state.buf_size {
                     return Ok(&self.state.chunk[start - chunk_start ..]);
                 }
                 let new_chunk = self.fetch_chunk(chunk_end)?;
@@ -292,7 +305,6 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
                         end = offset + chunk.len();
                     }
                 }
-                unimplemented!()
             }
         }
     }
@@ -324,6 +336,55 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
         Ok(&chunk[start .. start + len])
     }
 
+    /// Release all state _after_ the given offset.
+    fn truncate_cache(&mut self, offset: usize) {
+        let (line_num, ix) = match self.find_offset(offset) {
+            Ok(ix) => (self.state.state_cache[ix].line_num, ix + 1),
+            Err(ix) => (
+                if ix == 0 { 0 } else {
+                    self.state.state_cache[ix - 1].line_num
+                },
+                ix
+            ),
+        };
+        self.truncate_frontier(line_num);
+        self.state.state_cache.truncate(ix);
+    }
+
+    fn truncate_frontier(&mut self, line_num: usize) {
+        match self.state.frontier.binary_search(&line_num) {
+            Ok(ix) => self.state.frontier.truncate(ix + 1),
+            Err(ix) => {
+                self.state.frontier.truncate(ix);
+                self.state.frontier.push(line_num);
+            }
+        }
+    }
+
+    /// The frontier keeps track of work needing to be done. A typical
+    /// user will call `get_frontier` to get a line number, do the work
+    /// on that line, insert state for the next line, and then call either
+    /// `update_frontier` or `close_frontier` depending on whether there
+    /// is more work to be done at that location.
+    pub fn get_frontier(&self) -> Option<usize> {
+        self.state.frontier.first().cloned()
+    }
+
+    /// Updates the frontier. This can go backward, but most typically
+    /// goes forward by 1 line (compared to the `get_frontier` result).
+    pub fn update_frontier(&mut self, new_frontier: usize) {
+        if self.state.frontier.get(1) == Some(&new_frontier) {
+            self.state.frontier.remove(0);
+        } else {
+            self.state.frontier[0] = new_frontier;
+        }
+    }
+
+    /// Closes the current frontier. This is the correct choice to handle
+    /// EOF.
+    pub fn close_frontier(&mut self) {
+        self.state.frontier.remove(0);
+    }
 }
 
 // TODO: use burntsushi memchr, or import this from xi_rope
