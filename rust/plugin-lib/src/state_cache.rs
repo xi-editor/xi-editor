@@ -259,7 +259,7 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
         loop {
             let chunk_start = self.state.chunk_offset;
             let chunk_end = chunk_start + self.state.chunk.len();
-            if start >= chunk_start && start < chunk_end {
+            if start >= chunk_start && (start < chunk_end || chunk_end == self.state.buf_size) {
                 // At least the first codepoint at start is in the chunk.
                 if end < chunk_end || chunk_end == self.state.buf_size {
                     return Ok(&self.state.chunk[start - chunk_start ..]);
@@ -294,6 +294,9 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
                 };
                 let mut end = offset;
                 loop {
+                    if end == self.state.buf_size {
+                        return Ok((end, ix));
+                    }
                     let chunk = self.get_chunk(offset, end)?;
                     if let Some(pos) = memchr(b'\n', chunk.as_bytes()) {
                         offset += pos + 1;
@@ -333,7 +336,7 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
         // TODO: this will pull in the first codepoint of the next line, which
         // is not necessary.
         let chunk = self.get_chunk(start, start + len)?;
-        Ok(&chunk[start .. start + len])
+        Ok(&chunk[..len])
     }
 
     /// Release all state _after_ the given offset.

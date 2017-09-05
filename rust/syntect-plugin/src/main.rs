@@ -14,14 +14,13 @@
 
 //! A syntax highlighting plugin based on syntect.
 
-extern crate serde;
 extern crate syntect;
 #[macro_use]
 extern crate xi_plugin_lib;
 
 mod stackmap;
 
-use xi_plugin_lib::caching_plugin::{self, PluginCtx};
+use xi_plugin_lib::state_cache::{self, PluginCtx};
 use xi_plugin_lib::plugin_base::ScopeSpan;
 use syntect::parsing::{ParseState, ScopeStack, SyntaxSet, SCOPE_REPO};
 use stackmap::{StackMap, LookupResult};
@@ -59,17 +58,16 @@ impl<'a> PluginState<'a> {
     }
 
     // Return true if there's more to do.
-    fn highlight_one_line(&mut self, ctx: &mut PluginCtx) -> bool {
+    fn highlight_one_line(&mut self, ctx: &mut PluginCtx<State>) -> bool {
         let line = ctx.get_line(self.line_num);
         if let Err(err) = line {
             print_err!("Error: {:?}", err);
             return false;
         }
         let line = line.unwrap();
-        if line.is_none() {
+        if line.is_empty() {
             return false;
         }
-        let line = line.unwrap();
         let ops = self.parse_state.as_mut().unwrap().parse_line(&line);
 
         let mut prev_cursor = 0;
@@ -102,7 +100,7 @@ impl<'a> PluginState<'a> {
         true
     }
 
-    fn flush_spans(&mut self, ctx: &mut PluginCtx) {
+    fn flush_spans(&mut self, ctx: &mut PluginCtx<State>) {
         if !self.new_scopes.is_empty() {
             ctx.add_scopes(&self.new_scopes);
             self.new_scopes.clear();
@@ -115,7 +113,7 @@ impl<'a> PluginState<'a> {
         self.spans_start = self.offset;
     }
 
-    fn do_highlighting(&mut self, mut ctx: PluginCtx) {
+    fn do_highlighting(&mut self, mut ctx: PluginCtx<State>) {
         let syntax = match ctx.get_path() {
             Some(ref path) => self.syntax_set.find_syntax_for_file(path).unwrap()
                 .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text()),
@@ -140,20 +138,24 @@ impl<'a> PluginState<'a> {
 
 const LINES_PER_RPC: usize = 50;
 
-impl<'a> caching_plugin::Handler for PluginState<'a> {
-    fn initialize(&mut self, ctx: PluginCtx, _buf_size: usize) {
+type State = usize;
+
+impl<'a> state_cache::Handler for PluginState<'a> {
+    type State = State;
+
+    fn initialize(&mut self, ctx: PluginCtx<State>, _buf_size: usize) {
         self.do_highlighting(ctx);
     }
 
-    fn update(&mut self, ctx: PluginCtx) {
+    fn update(&mut self, ctx: PluginCtx<State>) {
         self.do_highlighting(ctx);
     }
 
-    fn did_save(&mut self, ctx: PluginCtx) {
+    fn did_save(&mut self, ctx: PluginCtx<State>) {
         self.do_highlighting(ctx);
     }
 
-    fn idle(&mut self, mut ctx: PluginCtx, _token: usize) {
+    fn idle(&mut self, mut ctx: PluginCtx<State>, _token: usize) {
         //print_err!("idle task at line {}", self.line_num);
         for _ in 0..LINES_PER_RPC {
             if !self.highlight_one_line(&mut ctx) {
@@ -174,5 +176,5 @@ fn main() {
     let syntax_set = SyntaxSet::load_defaults_newlines();
     let mut state = PluginState::new(&syntax_set);
 
-    caching_plugin::mainloop(&mut state);
+    state_cache::mainloop(&mut state);
 }
