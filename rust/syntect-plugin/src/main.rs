@@ -31,6 +31,7 @@ struct PluginState<'a> {
     stack_idents: StackMap,
     line_num: usize,
     offset: usize,
+    initial_state: Option<ParseState>,
     parse_state: Option<ParseState>,
     scope_state: ScopeStack,
     spans_start: usize,
@@ -48,6 +49,7 @@ impl<'a> PluginState<'a> {
             stack_idents: StackMap::default(),
             line_num: 0,
             offset: 0,
+            initial_state: None,
             parse_state: None,
             scope_state: ScopeStack::new(),
             spans_start: 0,
@@ -57,18 +59,10 @@ impl<'a> PluginState<'a> {
         }
     }
 
-    // Return true if there's more to do.
-    fn highlight_one_line(&mut self, ctx: &mut PluginCtx<State>) -> bool {
-        let line = ctx.get_line(self.line_num);
-        if let Err(err) = line {
-            print_err!("Error: {:?}", err);
-            return false;
-        }
-        let line = line.unwrap();
-        if line.is_empty() {
-            return false;
-        }
-        let ops = self.parse_state.as_mut().unwrap().parse_line(&line);
+    // compute syntax for one line, also accumulating the style spans
+    fn compute_syntax(&mut self, line: &str, state: State) -> State {
+        let mut parse_state = state.or_else(|| self.initial_state.clone()).unwrap();
+        let ops = parse_state.parse_line(&line);
 
         let mut prev_cursor = 0;
         let repo = SCOPE_REPO.lock().unwrap();
@@ -94,10 +88,37 @@ impl<'a> PluginState<'a> {
             prev_cursor = cursor;
             self.scope_state.apply(&batch);
         }
+        Some(parse_state)
+    }
 
-        self.line_num += 1;
-        self.offset += line.len();
-        true
+    #[allow(unused)]
+    // Return true if there's any more work to be done.
+    fn highlight_one_line(&mut self, ctx: &mut PluginCtx<State>) -> bool {
+        if let Some(line_num) = ctx.get_frontier() {
+            let (line_num, offset, state) = ctx.get_prev(line_num);
+            if offset != self.offset {
+                self.flush_spans(ctx);
+                self.offset = offset;
+                self.spans_start = offset;
+            }
+            let new_frontier = match ctx.get_line(line_num) {
+                Ok("") => None,
+                Ok(s) => {
+                    let new_state = self.compute_syntax(s, state);
+                    self.offset += s.len();
+                    Some((new_state, line_num + 1))
+                }
+                Err(_) => None,
+            };
+            if let Some((new_state, new_frontier)) = new_frontier {
+                ctx.set(new_frontier, new_state);
+                ctx.update_frontier(new_frontier);
+                return true;
+            } else {
+                ctx.close_frontier();
+            }
+        }
+        false
     }
 
     fn flush_spans(&mut self, ctx: &mut PluginCtx<State>) {
@@ -125,7 +146,8 @@ impl<'a> PluginState<'a> {
             print_err!("syntect using {}", syntax.name);
         }
 
-        self.parse_state = Some(ParseState::new(syntax));
+        self.initial_state = Some(ParseState::new(syntax));
+        self.parse_state = self.initial_state.clone();
         self.scope_state = ScopeStack::new();
         self.spans = Vec::new();
         self.new_scopes = Vec::new();
@@ -138,7 +160,10 @@ impl<'a> PluginState<'a> {
 
 const LINES_PER_RPC: usize = 50;
 
-type State = usize;
+// TODO: this needs to be option because the caching layer relies on Default.
+// We can't implement that because the actual initial state depends on the
+// syntax. There are other ways to handle this, but this will do for now.
+type State = Option<ParseState>;
 
 impl<'a> state_cache::Handler for PluginState<'a> {
     type State = State;
