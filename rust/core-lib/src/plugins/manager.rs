@@ -94,7 +94,7 @@ impl PluginManager {
     }
 
     /// Handle a request from a plugin.
-    pub fn handle_plugin_request(&self, cmd: PluginRequest, plugin_id: PluginPid) -> Value {
+    pub fn handle_plugin_request(&self, cmd: PluginRequest, _: PluginPid) -> Value {
         use self::PluginRequest::*;
         match cmd {
             //TODO: these should not be unwraps

@@ -27,7 +27,7 @@ use std::io::{self, BufReader};
 
 use serde_json::{self, Value};
 
-use xi_rpc::{self, RpcPeer, RpcCtx, RpcLoop, MethodHandler};
+use xi_rpc::{self, RpcPeer, RpcCtx, RpcLoop, Handler, RemoteError};
 use tabs::ViewIdentifier;
 
 pub use self::manager::{PluginManagerRef, WeakPluginManagerRef};
@@ -71,7 +71,7 @@ impl Clone for PluginRef {
     }
 }
 
-impl MethodHandler for PluginRef {
+impl Handler for PluginRef {
     type Notification = PluginNotification;
     type Request = PluginRequest;
     fn handle_notification(&mut self, _ctx: RpcCtx, rpc: Self::Notification) {
@@ -85,7 +85,7 @@ impl MethodHandler for PluginRef {
     }
 
     fn handle_request(&mut self, _ctx: RpcCtx, rpc: Self::Request) ->
-        Result<Value, Value> {
+        Result<Value, RemoteError> {
         let plugin_manager = {
             self.0.lock().unwrap().manager.upgrade()
         };
@@ -93,7 +93,7 @@ impl MethodHandler for PluginRef {
             let pid = self.get_identifier();
             Ok(plugin_manager.lock().handle_plugin_request(rpc, pid))
         } else {
-            Err(json!({"code": 88, "description": "plugin manager missing"}))
+            Err(RemoteError::custom(88, "Plugin manager missing", None))
         }
     }
 }

@@ -21,7 +21,7 @@ use std::path::PathBuf;
 use serde_json::{self, Value};
 
 use xi_rpc;
-use xi_rpc::{RpcLoop, RpcCtx, RpcCall, dict_get_u64, dict_get_string};
+use xi_rpc::{RpcLoop, RpcCtx, RpcCall, RemoteError, dict_get_u64, dict_get_string};
 
 // TODO: avoid duplicating this in every crate
 macro_rules! print_err {
@@ -249,7 +249,7 @@ fn parse_plugin_request<'a>(method: &str, params: &'a Value) ->
 
 struct MyHandler<'a, H: 'a>(&'a mut H);
 
-impl<'a, H: Handler> xi_rpc::MethodHandler for MyHandler<'a, H> {
+impl<'a, H: Handler> xi_rpc::Handler for MyHandler<'a, H> {
     type Notification = RpcCall;
     type Request = RpcCall;
     fn handle_notification(&mut self, ctx: RpcCtx, rpc: Self::Notification) {
@@ -263,16 +263,16 @@ impl<'a, H: Handler> xi_rpc::MethodHandler for MyHandler<'a, H> {
         }
     }
 
-    fn handle_request(&mut self, mut ctx: RpcCtx, rpc: Self::Request) ->
-        Result<Value, Value> {
+    fn handle_request(&mut self, ctx: RpcCtx, rpc: Self::Request) ->
+        Result<Value, RemoteError> {
         match parse_plugin_request(&rpc.method, &rpc.params) {
             Ok(req) => {
                 let result = self.0.call(&req, PluginCtx(ctx));
-                result.ok_or_else(|| Value::String("return value missing".to_string()))
+                Ok(result.expect("return value missing"))
             }
             Err(err) => {
                 print_err!("Error {} decoding RPC request {}", err, &rpc.method);
-                Err(Value::String("error decoding request".to_string()))
+                Err(RemoteError::Parse(Some(Value::String(err.to_string()))))
             }
         }
     }
