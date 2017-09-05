@@ -34,6 +34,9 @@ mod macros;
 mod parse;
 mod error;
 
+#[cfg(test)]
+pub mod test_utils;
+
 use std::collections::{BTreeMap, VecDeque};
 use std::io::{self, BufRead, Write};
 use std::sync::{Arc, Mutex, Condvar};
@@ -236,7 +239,7 @@ impl<W: Write + Send> RpcLoop<W> {
                         Ok(json) => json,
                         Err(err) => {
                             // if parsing fails, we print the error and exit.
-                            print_err!("{:?}", err);
+                            print_err!("Error reading stream: {:?}", err);
                             break
                         }
                     };
@@ -479,6 +482,7 @@ pub fn arr_get_i64(arr: &[Value], idx: usize) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test_utils::{EchoHandler, DummyRemote};
 
     #[test]
     fn test_dict_get_u64() {
@@ -486,5 +490,49 @@ mod tests {
         let dict = dict.as_object().unwrap();
         assert_eq!(dict_get_u64(&dict, "life_meaning"), Some(42));
         assert_eq!(dict_get_u64(&dict, "tea"), None);
+    }
+
+    #[test]
+    fn test_recv_notif() {
+        // we should not reply to a well formed notification
+        let n = json!({"method": "hullo", "params": {"words": "plz"}});
+        let remote = DummyRemote::new(move || EchoHandler);
+        let resp = remote.send_notification(&n);
+        assert!(resp.is_ok());
+        let resp = remote.send_notification(&n);
+        assert!(resp.is_ok());
+    }
+
+    #[test]
+    fn test_recv_resp() {
+        // we should reply to a well formed request
+        let n = json!({"method": "hullo", "params": {"words": "plz"}});
+        let mut remote = DummyRemote::new(move || EchoHandler);
+        let resp = remote.send_request(&n).unwrap();
+        let v: RpcObject = serde_json::from_str::<Value>(&resp).unwrap().into();
+        assert!(v.is_response());
+        let v = v.into_response().unwrap().unwrap();
+        assert_eq!(v["words"], json!("plz"));
+        // do it again
+        let n = json!({"method": "hullo", "params": {"words": "yay"}});
+        let resp = remote.send_request(&n).unwrap();
+        let v: RpcObject = serde_json::from_str::<Value>(&resp).unwrap().into();
+        assert!(v.is_response());
+        let v = v.into_response().unwrap().unwrap();
+        assert_eq!(v["words"], json!("yay"));
+    }
+
+    #[test]
+    fn test_recv_error() {
+        // a malformed request containing an ID should receive an error
+        let n = json!({
+            "method": "hullo",
+            "args": {"args": "should", "be": "params"}});
+        let mut remote = DummyRemote::new(move || EchoHandler);
+        let resp = remote.send_request(&n).unwrap();
+        let v: RpcObject = serde_json::from_str::<Value>(&resp).unwrap().into();
+        assert!(v.is_response());
+        let v = v.into_response().unwrap();
+        assert!(v.is_err(), "{:?}", v);
     }
 }
