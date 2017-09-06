@@ -217,20 +217,30 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
         (0, 0, S::default())
     }
 
-    /// Set the state at the given line number.
+    /// Set the state at the given line number. Note: has no effect if line_num
+    /// references the end of the partial line at EOF.
     pub fn set(&mut self, line_num: usize, s: S) {
-        self.get_entry(line_num).user_state = Some(s);
+        if let Some(entry) = self.get_entry(line_num) {
+            entry.user_state = Some(s);
+        }
     }
 
     /// Get the cache entry at the given line number, creating it if necessary.
-    fn get_entry(&mut self, line_num: usize) -> &mut CacheEntry<S> {
+    /// Returns None if line_num > number of newlines in doc (ie if it references
+    /// the end of the partial line at EOF).
+    fn get_entry(&mut self, line_num: usize) -> Option<&mut CacheEntry<S>> {
         match self.find_line(line_num) {
-            Ok(ix) => &mut self.state.state_cache[ix],
+            Ok(ix) => Some(&mut self.state.state_cache[ix]),
             Err(_ix) => {
                 // TODO: could get rid of redundant binary search
-                let (offset, _ix) = self.get_offset_ix_of_line(line_num).expect("TODO return result");
-                let new_ix = self.insert_entry(line_num, offset, None);
-                &mut self.state.state_cache[new_ix]
+                let (offset, _ix, partial) = self.get_offset_ix_of_line(line_num)
+                    .expect("TODO return result");
+                if partial {
+                    None
+                } else {
+                    let new_ix = self.insert_entry(line_num, offset, None);
+                    Some(&mut self.state.state_cache[new_ix])
+                }
             }
         }
     }
@@ -281,12 +291,14 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
         }
     }
 
-    fn get_offset_ix_of_line(&mut self, line_num: usize) -> Result<(usize, usize), Error> {
+    /// Returns the offset, the index in the cache, and a bool indicating whether it's a
+    /// partial line at EOF.
+    fn get_offset_ix_of_line(&mut self, line_num: usize) -> Result<(usize, usize, bool), Error> {
         if line_num == 0 {
-            return Ok((0, 0));
+            return Ok((0, 0, false));
         }
         match self.find_line(line_num) {
-            Ok(ix) => Ok((self.state.state_cache[ix].offset, ix)),
+            Ok(ix) => Ok((self.state.state_cache[ix].offset, ix, false)),
             Err(ix) => {
                 let (mut l, mut offset) = if ix == 0 { (0, 0) } else {
                     let item = &self.state.state_cache[ix - 1];
@@ -295,14 +307,14 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
                 let mut end = offset;
                 loop {
                     if end == self.state.buf_size {
-                        return Ok((end, ix));
+                        return Ok((end, ix, true));
                     }
                     let chunk = self.get_chunk(offset, end)?;
                     if let Some(pos) = memchr(b'\n', chunk.as_bytes()) {
                         offset += pos + 1;
                         l += 1;
                         if l == line_num {
-                            return Ok((offset, ix));
+                            return Ok((offset, ix, false));
                         }
                     } else {
                         end = offset + chunk.len();
@@ -329,8 +341,9 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
         }
     }
 
+    /// Get the line at the given line. Returns empty string if at EOF.
     pub fn get_line(&mut self, line_num: usize) -> Result<&str, Error> {
-        let (start, _ix) = self.get_offset_ix_of_line(line_num)?;
+        let (start, _ix, _partial) = self.get_offset_ix_of_line(line_num)?;
         // TODO: if cache entry at ix + 1 has line_num + 1, then we know line len
         let len = self.get_line_len(start)?;
         // TODO: this will pull in the first codepoint of the next line, which
@@ -362,6 +375,11 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
                 self.state.frontier.push(line_num);
             }
         }
+    }
+
+    /// Clear all state and reset frontier to start.
+    pub fn reset(&mut self) {
+        self.truncate_cache(0);
     }
 
     /// The frontier keeps track of work needing to be done. A typical

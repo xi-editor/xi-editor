@@ -29,11 +29,8 @@ use stackmap::{StackMap, LookupResult};
 struct PluginState<'a> {
     syntax_set: &'a SyntaxSet,
     stack_idents: StackMap,
-    line_num: usize,
     offset: usize,
-    initial_state: Option<ParseState>,
-    parse_state: Option<ParseState>,
-    scope_state: ScopeStack,
+    initial_state: Option<(ParseState, ScopeStack)>,
     spans_start: usize,
     // unflushed spans
     spans: Vec<ScopeSpan>,
@@ -47,11 +44,8 @@ impl<'a> PluginState<'a> {
         PluginState {
             syntax_set: syntax_set,
             stack_idents: StackMap::default(),
-            line_num: 0,
             offset: 0,
             initial_state: None,
-            parse_state: None,
-            scope_state: ScopeStack::new(),
             spans_start: 0,
             spans: Vec::new(),
             new_scopes: Vec::new(),
@@ -61,18 +55,18 @@ impl<'a> PluginState<'a> {
 
     // compute syntax for one line, also accumulating the style spans
     fn compute_syntax(&mut self, line: &str, state: State) -> State {
-        let mut parse_state = state.or_else(|| self.initial_state.clone()).unwrap();
+        let (mut parse_state, mut scope_state) = state.or_else(|| self.initial_state.clone()).unwrap();
         let ops = parse_state.parse_line(&line);
 
         let mut prev_cursor = 0;
         let repo = SCOPE_REPO.lock().unwrap();
         for (cursor, batch) in ops {
-            if self.scope_state.len() > 0 {
-                let scope_ident = self.stack_idents.get_value(self.scope_state.as_slice());
+            if scope_state.len() > 0 {
+                let scope_ident = self.stack_idents.get_value(scope_state.as_slice());
                 let scope_ident = match scope_ident {
                     LookupResult::Existing(id) => id,
                     LookupResult::New(id) => {
-                        let stack_strings = self.scope_state.as_slice().iter()
+                        let stack_strings = scope_state.as_slice().iter()
                             .map(|slice| repo.to_string(*slice))
                             .collect::<Vec<_>>();
                         self.new_scopes.push(stack_strings);
@@ -86,9 +80,9 @@ impl<'a> PluginState<'a> {
                 self.spans.push(span);
             }
             prev_cursor = cursor;
-            self.scope_state.apply(&batch);
+            scope_state.apply(&batch);
         }
-        Some(parse_state)
+        Some((parse_state, scope_state))
     }
 
     #[allow(unused)]
@@ -106,7 +100,11 @@ impl<'a> PluginState<'a> {
                 Ok(s) => {
                     let new_state = self.compute_syntax(s, state);
                     self.offset += s.len();
-                    Some((new_state, line_num + 1))
+                    if s.as_bytes().last() == Some(&b'\n') {
+                        Some((new_state, line_num + 1))
+                    } else {
+                        None
+                    }
                 }
                 Err(_) => None,
             };
@@ -126,7 +124,7 @@ impl<'a> PluginState<'a> {
             ctx.add_scopes(&self.new_scopes);
             self.new_scopes.clear();
         }
-        if !self.spans.is_empty() {
+        if self.spans_start != self.offset {
             ctx.update_spans(self.spans_start, self.offset - self.spans_start,
                              self.spans.as_slice());
             self.spans.clear();
@@ -146,14 +144,12 @@ impl<'a> PluginState<'a> {
             print_err!("syntect using {}", syntax.name);
         }
 
-        self.initial_state = Some(ParseState::new(syntax));
-        self.parse_state = self.initial_state.clone();
-        self.scope_state = ScopeStack::new();
+        self.initial_state = Some((ParseState::new(syntax), ScopeStack::new()));
         self.spans = Vec::new();
         self.new_scopes = Vec::new();
-        self.line_num = 0;
         self.offset = 0;
         self.spans_start = 0;
+        ctx.reset();
         ctx.schedule_idle(0);
     }
 }
@@ -163,7 +159,7 @@ const LINES_PER_RPC: usize = 50;
 // TODO: this needs to be option because the caching layer relies on Default.
 // We can't implement that because the actual initial state depends on the
 // syntax. There are other ways to handle this, but this will do for now.
-type State = Option<ParseState>;
+type State = Option<(ParseState, ScopeStack)>;
 
 impl<'a> state_cache::Handler for PluginState<'a> {
     type State = State;
@@ -172,23 +168,24 @@ impl<'a> state_cache::Handler for PluginState<'a> {
         self.do_highlighting(ctx);
     }
 
-    fn update(&mut self, ctx: PluginCtx<State>) {
-        self.do_highlighting(ctx);
+    fn update(&mut self, mut ctx: PluginCtx<State>) {
+        ctx.schedule_idle(0);
     }
 
     fn did_save(&mut self, ctx: PluginCtx<State>) {
+        // TODO: use smarter logic to figure out whether we need to re-highlight the whole file
         self.do_highlighting(ctx);
     }
 
     fn idle(&mut self, mut ctx: PluginCtx<State>, _token: usize) {
-        //print_err!("idle task at line {}", self.line_num);
+        //print_err!("idle task at offset {}", self.offset);
         for _ in 0..LINES_PER_RPC {
             if !self.highlight_one_line(&mut ctx) {
                 self.flush_spans(&mut ctx);
                 return;
             }
             if ctx.request_is_pending() {
-                print_err!("request pending at line {}", self.line_num);
+                print_err!("request pending at offset {}", self.offset);
                 break;
             }
         }
