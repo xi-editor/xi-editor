@@ -76,8 +76,10 @@ impl<'a> PluginState<'a> {
 
                 let start = self.offset - self.spans_start + prev_cursor;
                 let end = start + (cursor - prev_cursor);
-                let span = ScopeSpan::new(start, end, scope_ident);
-                self.spans.push(span);
+                if start != end {
+                    let span = ScopeSpan::new(start, end, scope_ident);
+                    self.spans.push(span);
+                }
             }
             prev_cursor = cursor;
             scope_state.apply(&batch);
@@ -89,6 +91,7 @@ impl<'a> PluginState<'a> {
     // Return true if there's any more work to be done.
     fn highlight_one_line(&mut self, ctx: &mut PluginCtx<State>) -> bool {
         if let Some(line_num) = ctx.get_frontier() {
+            print_err!("highlighting {}", line_num);
             let (line_num, offset, state) = ctx.get_prev(line_num);
             if offset != self.offset {
                 self.flush_spans(ctx);
@@ -108,13 +111,20 @@ impl<'a> PluginState<'a> {
                 }
                 Err(_) => None,
             };
-            if let Some((new_state, new_frontier)) = new_frontier {
-                ctx.set(new_frontier, new_state);
-                ctx.update_frontier(new_frontier);
-                return true;
-            } else {
-                ctx.close_frontier();
+            let mut converged = false;
+            if let Some((ref new_state, new_line_num)) = new_frontier {
+                if let Some(old_state) = ctx.get(new_line_num) {
+                    converged = old_state.as_ref().unwrap().0 == new_state.as_ref().unwrap().0;
+                }
             }
+            if !converged {
+                if let Some((new_state, new_line_num)) = new_frontier {
+                    ctx.set(new_line_num, new_state);
+                    ctx.update_frontier(new_line_num);
+                    return true;
+                }
+            }
+            ctx.close_frontier();
         }
         false
     }
@@ -126,7 +136,7 @@ impl<'a> PluginState<'a> {
         }
         if self.spans_start != self.offset {
             ctx.update_spans(self.spans_start, self.offset - self.spans_start,
-                             self.spans.as_slice());
+                             &self.spans);
             self.spans.clear();
         }
         self.spans_start = self.offset;

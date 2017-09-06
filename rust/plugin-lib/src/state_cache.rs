@@ -16,6 +16,7 @@
 
 use std::path::PathBuf;
 use serde_json::Value;
+use bytecount;
 
 use plugin_base;
 use plugin_base::PluginRequest;
@@ -104,20 +105,23 @@ impl<'a, H: Handler> plugin_base::Handler for MyHandler<'a, H> {
                 if let Some(text) = text {
                     let off = ctx.state.chunk_offset;
                     if start >= off && start <= off + ctx.state.chunk.len() {
-                        let tail = if end < off + ctx.state.chunk.len() {
-                            Some(ctx.state.chunk[end - off ..].to_string())
+                        let nlc_tail = if end <= off + ctx.state.chunk.len() {
+                            let nlc = count_newlines(&ctx.state.chunk[start - off .. end - off]);
+                            let tail = ctx.state.chunk[end - off ..].to_string();
+                            Some((nlc, tail))
                         } else {
                             None
                         };
                         ctx.state.chunk.truncate(start - off);
                         ctx.state.chunk.push_str(text);
-                        if let Some(tail) = tail {
+                        if let Some((newline_count, tail)) = nlc_tail {
                             ctx.state.chunk.push_str(&tail);
+                            let new_nl_count = count_newlines(&text);
+                            let nl_delta = new_nl_count.wrapping_sub(newline_count) as isize;
+                            ctx.apply_delta(start, end, new_len, nl_delta);
+                        } else {
+                            ctx.truncate_cache(start);
                         }
-                        // TODO: this can be a lot more precise; instead of
-                        // truncating, fix up line numbers (if needed) and delete
-                        // user state in interior of changed region.
-                        ctx.truncate_cache(start);
                     } else {
                         ctx.state.chunk.clear();
                         ctx.state.chunk_offset = 0;
@@ -215,6 +219,15 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
             }
         }
         (0, 0, S::default())
+    }
+
+    /// Get the state at the given line number, if it exists in the cache.
+    pub fn get(&self, line_num: usize) -> Option<&S> {
+        if let Ok(ix) = self.find_line(line_num) {
+            self.state.state_cache[ix].user_state.as_ref()
+        } else {
+            None
+        }
     }
 
     /// Set the state at the given line number. Note: has no effect if line_num
@@ -377,6 +390,53 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
         }
     }
 
+    /// The contents between `start` and `end` have been replaced with
+    /// new content of size `new_bytes`. Clears all state in the interior
+    /// of that region, fixes up line and offset info, and sets a frontier
+    /// at the beginning of the region.
+    fn apply_delta(&mut self, start: usize, end: usize, new_bytes: usize,
+        nl_count_delta: isize)
+    {
+        let ix = match self.find_offset(start) {
+            Ok(ix) => ix + 1,
+            Err(ix) => ix,
+        };
+        // Note: the "<=" can be tightened to "<" in some circumstances, but the logic
+        // is complicated.
+        while ix < self.state.state_cache.len() && self.state.state_cache[ix].offset <= end {
+            self.state.state_cache.remove(ix);
+        }
+        let off_delta = (start + new_bytes).wrapping_sub(end);
+        if off_delta != 0 || nl_count_delta != 0 {
+            for entry in &mut self.state.state_cache[ix..] {
+                entry.line_num = entry.line_num.wrapping_add(nl_count_delta as usize);
+                entry.offset = entry.offset.wrapping_add(off_delta);
+            }
+        }
+        let line_num = if ix == 0 { 0 } else { self.state.state_cache[ix - 1].line_num };
+        let mut new_frontier = Vec::new();
+        let mut need_push = true;
+        for old_ln in &self.state.frontier {
+            if *old_ln < line_num {
+                new_frontier.push(*old_ln);
+            } else {
+                if need_push {
+                    new_frontier.push(line_num);
+                    need_push = false;
+                    if let Some(ref entry) = self.state.state_cache.get(ix) {
+                        if *old_ln >= entry.line_num {
+                            new_frontier.push(old_ln.wrapping_add(nl_count_delta as usize));
+                        }
+                    }
+                }
+            }
+        }
+        if need_push {
+            new_frontier.push(line_num);
+        }
+        self.state.frontier = new_frontier;
+    }
+
     /// Clear all state and reset frontier to start.
     pub fn reset(&mut self) {
         self.truncate_cache(0);
@@ -411,4 +471,8 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
 // TODO: use burntsushi memchr, or import this from xi_rope
 fn memchr(needle: u8, haystack: &[u8]) -> Option<usize> {
     haystack.iter().position(|&b| b == needle)
+}
+
+fn count_newlines(s: &str) -> usize {
+    bytecount::count(s.as_bytes(), b'\n')
 }
