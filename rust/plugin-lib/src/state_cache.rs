@@ -17,6 +17,7 @@
 use std::path::PathBuf;
 use serde_json::Value;
 use bytecount;
+use rand::{thread_rng, Rng};
 
 use plugin_base;
 use plugin_base::PluginRequest;
@@ -24,6 +25,10 @@ use plugin_base::PluginRequest;
 pub use plugin_base::{Error, ScopeSpan};
 
 const CHUNK_SIZE: usize = 1024 * 1024;
+const CACHE_SIZE: usize = 1024;
+
+/// Number of probes for eviction logic.
+const NUM_PROBES: usize = 5;
 
 /// A handler that the plugin needs to instantiate.
 pub trait Handler {
@@ -260,8 +265,10 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
 
     /// Insert a new entry into the cache, returning its index.
     fn insert_entry(&mut self, line_num: usize, offset: usize, user_state: Option<S>) -> usize {
+        if self.state.state_cache.len() >= CACHE_SIZE {
+            self.evict();
+        }
         match self.find_line(line_num) {
-            // TODO: evict if full
             Ok(_ix) => panic!("entry already exists"),
             Err(ix) => {
                 self.state.state_cache.insert(ix, CacheEntry {
@@ -270,6 +277,36 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
                 ix
             }
         }
+    }
+
+    /// Evict one cache entry.
+    fn evict(&mut self) {
+        let ix = self.choose_victim();
+        self.state.state_cache.remove(ix);
+    }
+
+    fn choose_victim(&self) -> usize {
+        let mut best = None;
+        let mut rng = thread_rng();
+        for _ in 0..NUM_PROBES {
+            let ix = rng.gen_range(0, self.state.state_cache.len());
+            let gap = self.compute_gap(ix);
+            if best.map(|(last_gap, _)| gap < last_gap).unwrap_or(true) {
+                best = Some((gap, ix));
+            }
+        }
+        best.unwrap().1
+    }
+
+    /// Compute the gap that would result after deleting the given entry.
+    fn compute_gap(&self, ix: usize) -> usize {
+        let before = if ix == 0 { 0 } else { self.state.state_cache[ix - 1].offset };
+        let after = if let Some(item) = self.state.state_cache.get(ix + 1) {
+            item.offset
+        } else {
+            self.state.buf_size
+        };
+        after - before
     }
 
     fn fetch_chunk(&mut self, start: usize) -> Result<String, Error> {
@@ -359,6 +396,8 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
         let (start, _ix, _partial) = self.get_offset_ix_of_line(line_num)?;
         // TODO: if cache entry at ix + 1 has line_num + 1, then we know line len
         let len = self.get_line_len(start)?;
+        // TODO: should store offset of next line, to avoid re-scanning
+
         // TODO: this will pull in the first codepoint of the next line, which
         // is not necessary.
         let chunk = self.get_chunk(start, start + len)?;

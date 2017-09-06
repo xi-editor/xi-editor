@@ -91,7 +91,7 @@ impl<'a> PluginState<'a> {
     // Return true if there's any more work to be done.
     fn highlight_one_line(&mut self, ctx: &mut PluginCtx<State>) -> bool {
         if let Some(line_num) = ctx.get_frontier() {
-            print_err!("highlighting {}", line_num);
+            //print_err!("highlighting {}", line_num);
             let (line_num, offset, state) = ctx.get_prev(line_num);
             if offset != self.offset {
                 self.flush_spans(ctx);
