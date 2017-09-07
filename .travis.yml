@@ -23,10 +23,6 @@ before_install: |
     brew install pyenv-virtualenv
     eval "$(pyenv init -)"
     eval "$(pyenv virtualenv-init -)"
-    sudo pyenv install 3.6.0
-    sudo pyenv virtualenv 3.6.0 general
-    sudo pyenv global general
-    sudo pip3 install -U setuptools
 
   else
     sudo curl -L https://raw.githubusercontent.com/pyenv/pyenv-installer/master/bin/pyenv-installer | bash
