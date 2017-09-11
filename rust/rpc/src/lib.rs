@@ -43,8 +43,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use serde_json::Value;
 use serde::de::DeserializeOwned;
 
-use parse::{ParseResult, Response};
-pub use error::{Error, RemoteError};
+use parse::{Call, Response, RpcObject};
+pub use error::{Error, ReadError, RemoteError};
 
 /// An interface to access the other side of the RPC channel. The main purpose
 /// is to send RPC requests and notifications to the peer.
@@ -150,7 +150,7 @@ impl ResponseHandler {
 }
 
 struct RpcState<W: Write> {
-    rx_queue: Mutex<VecDeque<Result<String, ()>>>,
+    rx_queue: Mutex<VecDeque<Option<RpcObject>>>,
     rx_cvar: Condvar,
     writer: Mutex<W>,
     id: AtomicUsize,
@@ -185,13 +185,25 @@ impl<W: Write + Send> RpcLoop<W> {
         self.peer.clone()
     }
 
-    /// Reads raw json from the input stream.
-    fn read_json<R: BufRead>(&mut self, reader: &mut R) -> Option<String> {
+    /// Reads a line of JSON from the input stream, returning a `Value`.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if there is an underlying
+    /// I/O error, if the stream is closed, or if the message is not
+    /// a valid JSON object.
+    fn read_json<R: BufRead>(&mut self, reader: &mut R) -> Result<RpcObject, ReadError> {
         self.buf.clear();
-        let result = reader.read_line(&mut self.buf).is_ok();
-        match result {
-            true if !self.buf.is_empty() => Some(self.buf.clone()),
-            _ => None
+        let _ = reader.read_line(&mut self.buf)?;
+        if self.buf.is_empty() {
+            Err(ReadError::Disconnect)
+        } else {
+            let val = serde_json::from_str::<Value>(&self.buf)?;
+            if !val.is_object() {
+                Err(ReadError::NotObject)
+            } else {
+                Ok(val.into())
+            }
         }
     }
 
@@ -217,10 +229,31 @@ impl<W: Write + Send> RpcLoop<W> {
             let peer = self.get_raw_peer();
             scope.spawn(move|| {
                 let mut reader = rf();
-                while let Some(json) = self.read_json(&mut reader) {
-                    self.peer.put_rx(Ok(json));
+                loop {
+                    let json = match self.read_json(&mut reader) {
+                        Ok(json) => json,
+                        Err(err) => {
+                            // if parsing fails, we print the error and exit.
+                            print_err!("{:?}", err);
+                            break
+                        }
+                    };
+                    if json.is_response() {
+                        let id = json.get_id().unwrap();
+                        match json.into_response() {
+                            Ok(resp) => {
+                                let resp = resp.map_err(Error::from);
+                                self.peer.handle_response(id, resp);
+                            }
+                            Err(msg) => {
+                                print_err!("failed to parse response: {}", msg);
+                                break
+                            }
+                        }
+                    } else {
+                        self.peer.put_rx(Some(json));
+                    }
                 }
-                self.peer.put_rx(Err(()));
             });
 
             let mut idle = VecDeque::<usize>::new();
@@ -243,38 +276,26 @@ impl<W: Write + Send> RpcLoop<W> {
                 };
 
                 let json = match json {
-                    Ok(j) => j,
-                    Err(_) => break, // disconnect
+                    Some(json) => json,
+                    None => break,
                 };
+
                 let ctx = RpcCtx {
                     peer: Box::new(peer.clone()),
                     idle: &mut idle,
                 };
 
-                use ParseResult::*;
-
-                let parsed: ParseResult<H::Notification, H::Request> = serde_json::from_str(&json)
-                    .expect("ParseResult should handle errors internally");
-
+                let parsed = json.into_rpc::<H::Notification, H::Request>();
                 match parsed {
-                    Request(id, cmd) => {
+                    Ok(Call::Request(id, cmd)) => {
                         let result = handler.handle_request(ctx, cmd);
-                        peer.respond(result, Some(id));
+                        peer.respond(result, id);
                     }
-                    Notification(cmd) => handler.handle_notification(ctx, cmd),
-                    Response(id, resp) => {
-                        peer.handle_response(id, resp.map_err(Error::from));
-                    }
-                    InvalidRequest(id, msg) => {
-                        let response = RemoteError::InvalidRequest(
-                            Some(json!(msg)));
-                        peer.respond(Err(response), id);
-                    }
-                    InvalidResponse(id) => {
-                        peer.handle_response(id, Err(Error::InvalidResponse))
-                    }
-                    OtherError(msg) => { 
-                        print_err!("error parsing json: {}\n{}", msg, &json)
+                    Ok(Call::Notification(cmd)) => handler.handle_notification(ctx, cmd),
+                    Ok(Call::InvalidRequest(id, err)) => peer.respond(Err(err), id),
+                    Err(e) => {
+                        print_err!("Failed to parse RPC: {:?}", e);
+                        break
                     }
                 }
             }
@@ -334,8 +355,7 @@ impl<W:Write> RawPeer<W> {
         // Technically, maybe we should flush here, but doesn't seem to be required.
     }
 
-    fn respond(&self, result: Response, id: Option<u64>) {
-        let id = id.map(Value::from).unwrap_or(Value::Null);
+    fn respond(&self, result: Response, id: u64) {
         let mut response = json!({"id": id});
         match result {
             Ok(result) => response["result"] = result,
@@ -376,14 +396,14 @@ impl<W:Write> RawPeer<W> {
         }
     }
 
-    // Get a message from the receive queue if available.
-    fn try_get_rx(&self) -> Option<Result<String, ()>> {
+    /// Get a message from the receive queue if available.
+    fn try_get_rx(&self) -> Option<Option<RpcObject>> {
         let mut queue = self.0.rx_queue.lock().unwrap();
         queue.pop_front()
     }
 
-    // Get a message from the receive queue, blocking until available.
-    fn get_rx(&self) -> Result<String, ()> {
+    /// Get a message from the receive queue, blocking until available.
+    fn get_rx(&self) -> Option<RpcObject> {
         let mut queue = self.0.rx_queue.lock().unwrap();
         while queue.is_empty() {
             queue = self.0.rx_cvar.wait(queue).unwrap();
@@ -391,7 +411,9 @@ impl<W:Write> RawPeer<W> {
         queue.pop_front().unwrap()
     }
 
-    fn put_rx(&self, json: Result<String, ()>) {
+    /// Adds a message to the receive queue. The message should only
+    /// be `None` if the read thread is exiting.
+    fn put_rx(&self, json: Option<RpcObject>) {
         let mut queue = self.0.rx_queue.lock().unwrap();
         queue.push_back(json);
         self.0.rx_cvar.notify_one();

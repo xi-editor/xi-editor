@@ -13,9 +13,10 @@
 // limitations under the License.
 
 use std::io;
+use std::fmt;
 
 use serde_json::{Value, Error as JsonError};
-use serde::de::{self, Deserializer, Deserialize};
+use serde::de::{Deserializer, Deserialize};
 use serde::ser::{Serializer, Serialize};
 
 /// Errors that can occur when sending an RPC.
@@ -27,11 +28,49 @@ pub enum Error {
     RemoteError(RemoteError),
     /// The peer closed its connection.
     PeerDisconnect,
-    /// The peer sent a response containing the id, but was malformed according
-    /// to the json-rpc spec.
+    /// The peer sent a response containing the id, but was malformed.
     InvalidResponse,
 }
 
+/// Errors that can occur when attemping to read a message.
+#[derive(Debug)]
+pub enum ReadError {
+    /// An error occured in the underlying stream
+    Io(io::Error),
+    /// The message was not valid JSON.
+    Json(JsonError),
+    /// The message was not a JSON object.
+    NotObject,
+    /// The peer closed the connection.
+    Disconnect,
+}
+
+impl fmt::Display for ReadError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            ReadError::Io(ref err) => write!(f, "I/O Error: {:?}", err),
+            ReadError::Json(ref err) => write!(f, "JSON Error: {:?}", err),
+            ReadError::NotObject => write!(f, "JSON message was not an object."),
+            ReadError::Disconnect => write!(f, "Peer closd the connection."),
+        }
+    }
+}
+
+impl From<JsonError> for ReadError {
+    fn from(err: JsonError) -> ReadError {
+        ReadError::Json(err)
+    }
+}
+
+impl From<io::Error> for ReadError {
+    fn from(err: io::Error) -> ReadError {
+        ReadError::Io(err)
+    }
+}
+
+//TODO: code review discussion: do we want, in general, to support these
+//parsing-related error codes (borrowed from the JSON-RPC spec) or do
+//we prefer to crash?
 /// Errors that can occur in the process of receiving an RPC.
 ///
 /// These errors are based off the errors defined in the JSON-RPC spec,
@@ -54,6 +93,8 @@ pub enum RemoteError {
     Parse(Option<Value>),
     /// A custom error.
     Custom { code: i64, message: String, data: Option<Value> },
+    /// An error was received, but it was not a recognizeable Error object
+    Unknown(Value),
 }
 
 impl RemoteError {
@@ -93,7 +134,12 @@ impl<'de> Deserialize<'de> for RemoteError
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
         where D: Deserializer<'de>
     {
-        let resp = ErrorHelper::deserialize(deserializer).map_err(de::Error::custom)?;
+        let v = Value::deserialize(deserializer)?;
+        let resp = match ErrorHelper::deserialize(&v) {
+            Ok(resp) => resp,
+            Err(_) => return Ok(RemoteError::Unknown(v)),
+        };
+
         Ok(match resp.code {
             -32700 => RemoteError::Parse(resp.data),
             -32600 => RemoteError::InvalidRequest(resp.data),
@@ -114,7 +160,11 @@ impl Serialize for RemoteError
              RemoteError::InvalidRequest(ref d) => (-32600, "Invalid request", d),
              RemoteError::MethodNotFound(ref d) => (-32601, "Method not found", d),
              RemoteError::InvalidParams(ref d) => (-32602, "Invalid params", d),
-             RemoteError::Custom { code, ref message, ref data } => (code, message.as_ref(), data),
+             RemoteError::Custom { code, ref message, ref data } => {
+                 (code, message.as_ref(), data)
+             }
+             RemoteError::Unknown(_) => panic!("The 'Unknown' error variant is\
+                                               not intended for client use."),
         };
         let message = message.to_owned();
         let data = data.to_owned();
