@@ -38,7 +38,7 @@ before_install: |
     pyenv virtualenv 3.6.0 general
     pyenv global general
     sudo apt-get -y install python3-pip python-dev
-    sudo pip3 install -U setuptools
+    sudo pip3 install -U setuptools    
   fi
 
 install:
