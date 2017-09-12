@@ -20,7 +20,7 @@ use std::time::Duration;
 use std::io::{self, BufReader, Read, Write, Cursor};
 
 use serde_json::{self, Value};
-use super::{RpcLoop, Handler, RpcCall, RpcCtx, RemoteError};
+use super::{RpcLoop, Handler, RpcCall, RpcCtx, RemoteError, RpcObject, Response};
 
 /// Simulates a remote connection to a Handler.
 pub struct DummyRemote {
@@ -97,7 +97,7 @@ impl DummyRemote {
         let mut s = serde_json::to_string(v).unwrap();
         s.push('\n');
         self.tx.send(s).unwrap();
-        match self.rx.recv_timeout(Duration::from_millis(500)) {
+        match self.rx.recv_timeout(Duration::from_millis(100)) {
             Ok(msg) => Some(msg),
             Err(_) => None
         }
@@ -114,13 +114,20 @@ impl DummyRemote {
 
     /// Sends a request and waits for a response. If none is received, returns
     /// an error.
-    pub fn send_request(&mut self, v: &Value) -> Result<String, ()> {
+    pub fn send_request(&mut self, v: &Value) -> Response {
         let mut v = v.to_owned();
         v["id"] = json!(self.id);
         self.id += 1;
         match self.send_common(&v) {
-            None => Err(()),
-            Some(msg) => Ok(msg),
+            None => panic!("no response for request\n{}",
+                           serde_json::to_string_pretty(&v).unwrap()),
+            Some(msg) => {
+                let resp: RpcObject = serde_json::from_str::<Value>(&msg)
+                    .expect("response is invalid JSON")
+                    .into();
+                resp.into_response()
+                    .expect("response was invalid response object")
+            }
         }
     }
 }

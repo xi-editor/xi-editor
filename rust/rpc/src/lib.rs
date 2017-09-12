@@ -35,7 +35,7 @@ mod parse;
 mod error;
 
 #[cfg(test)]
-pub mod test_utils;
+mod test_utils;
 
 use std::collections::{BTreeMap, VecDeque};
 use std::io::{self, BufRead, Write};
@@ -483,6 +483,12 @@ pub fn arr_get_i64(arr: &[Value], idx: usize) -> Option<i64> {
 mod tests {
     use super::*;
     use test_utils::{EchoHandler, DummyRemote};
+    use std::io::{Cursor, sink};
+
+    fn make_reader(v: &str) -> Cursor<Vec<u8>> {
+        let vec = v.as_bytes().to_vec();
+        Cursor::new(vec)
+    }
 
     #[test]
     fn test_dict_get_u64() {
@@ -509,17 +515,11 @@ mod tests {
         let n = json!({"method": "hullo", "params": {"words": "plz"}});
         let mut remote = DummyRemote::new(move || EchoHandler);
         let resp = remote.send_request(&n).unwrap();
-        let v: RpcObject = serde_json::from_str::<Value>(&resp).unwrap().into();
-        assert!(v.is_response());
-        let v = v.into_response().unwrap().unwrap();
-        assert_eq!(v["words"], json!("plz"));
+        assert_eq!(resp["words"], json!("plz"));
         // do it again
         let n = json!({"method": "hullo", "params": {"words": "yay"}});
         let resp = remote.send_request(&n).unwrap();
-        let v: RpcObject = serde_json::from_str::<Value>(&resp).unwrap().into();
-        assert!(v.is_response());
-        let v = v.into_response().unwrap().unwrap();
-        assert_eq!(v["words"], json!("yay"));
+        assert_eq!(resp["words"], json!("yay"));
     }
 
     #[test]
@@ -529,10 +529,53 @@ mod tests {
             "method": "hullo",
             "args": {"args": "should", "be": "params"}});
         let mut remote = DummyRemote::new(move || EchoHandler);
-        let resp = remote.send_request(&n).unwrap();
-        let v: RpcObject = serde_json::from_str::<Value>(&resp).unwrap().into();
-        assert!(v.is_response());
-        let v = v.into_response().unwrap();
-        assert!(v.is_err(), "{:?}", v);
+        let resp = remote.send_request(&n);
+        assert!(resp.is_err(), "{:?}", resp);
+    }
+
+    #[test]
+    fn test_parse_notif() {
+        let mut runloop = RpcLoop::new(sink());
+        let mut r = make_reader(r#"{"method": "hi", "params": {"words": "plz"}}"#);
+        let json = runloop.read_json(&mut r).unwrap();
+        assert!(!json.is_response());
+        let rpc = json.into_rpc::<Value, Value>().unwrap();
+        match rpc {
+            Call::Notification(_) => (),
+            _ => panic!("parse failed"),
+        }
+    }
+
+    #[test]
+    fn test_parse_req() {
+        let mut runloop = RpcLoop::new(sink());
+        let mut r = make_reader(r#"{"id": 5, "method": "hi", "params": {"words": "plz"}}"#);
+        let json = runloop.read_json(&mut r).unwrap();
+        assert!(!json.is_response());
+        let rpc = json.into_rpc::<Value, Value>().unwrap();
+        match rpc {
+            Call::Request(..) => (),
+            _ => panic!("parse failed"),
+        }
+    }
+
+    #[test]
+    fn test_parse_bad_json() {
+        let mut runloop = RpcLoop::new(sink());
+        // missing "" around params
+        let mut r = make_reader(r#"{"id": 5, "method": "hi", params: {"words": "plz"}}"#);
+        let json = runloop.read_json(&mut r).err().unwrap();
+        match json {
+            ReadError::Json(..) => (),
+            _ => panic!("parse failed"),
+        }
+        // not an object
+        let mut r = make_reader(r#"[5, "hi", {"arg": "val"}]"#);
+        let json = runloop.read_json(&mut r).err().unwrap();
+
+        match json {
+            ReadError::NotObject => (),
+            _ => panic!("parse failed"),
+        }
     }
 }
