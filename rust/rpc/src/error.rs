@@ -51,7 +51,7 @@ impl fmt::Display for ReadError {
             ReadError::Io(ref err) => write!(f, "I/O Error: {:?}", err),
             ReadError::Json(ref err) => write!(f, "JSON Error: {:?}", err),
             ReadError::NotObject => write!(f, "JSON message was not an object."),
-            ReadError::Disconnect => write!(f, "Peer closd the connection."),
+            ReadError::Disconnect => write!(f, "Peer closed the connection."),
         }
     }
 }
@@ -145,7 +145,11 @@ impl<'de> Deserialize<'de> for RemoteError
             -32600 => RemoteError::InvalidRequest(resp.data),
             -32601 => RemoteError::MethodNotFound(resp.data),
             -32602 => RemoteError::InvalidParams(resp.data),
-            _ => RemoteError::Custom { code: resp.code, message: resp.message, data: resp.data },
+            _ => RemoteError::Custom {
+                code: resp.code,
+                message: resp.message,
+                data: resp.data
+            },
         })
     }
 }
@@ -163,7 +167,7 @@ impl Serialize for RemoteError
              RemoteError::Custom { code, ref message, ref data } => {
                  (code, message.as_ref(), data)
              }
-             RemoteError::Unknown(_) => panic!("The 'Unknown' error variant is\
+             RemoteError::Unknown(_) => panic!("The 'Unknown' error variant is \
                                                not intended for client use."),
         };
         let message = message.to_owned();

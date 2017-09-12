@@ -71,9 +71,10 @@ pub trait Peer: Send + 'static {
     /// `Callback` is an alias for FnOnce(Result<Value, Error>); it must
     /// be boxed because trait objects cannot use generic paramaters.
     fn send_rpc_request_async(&self, method: &str, params: &Value,
-                                 f: Box<Callback>);
+                              f: Box<Callback>);
     /// Sends a request (synchronous RPC) to the peer, and waits for the result.
-    fn send_rpc_request(&self, method: &str, params: &Value) -> Result<Value, Error>;
+    fn send_rpc_request(&self, method: &str, params: &Value)
+                        -> Result<Value, Error>;
     /// Determines whether an incoming request (or notification) is
     /// pending. This is intended to reduce latency for bulk operations
     /// done in the background.
@@ -107,8 +108,8 @@ pub trait Handler {
     type Notification: DeserializeOwned;
     type Request: DeserializeOwned;
     fn handle_notification(&mut self, ctx: RpcCtx, rpc: Self::Notification);
-    fn handle_request(&mut self, ctx: RpcCtx, rpc: Self::Request) ->
-        Result<Value, RemoteError>;
+    fn handle_request(&mut self, ctx: RpcCtx, rpc: Self::Request)
+                      -> Result<Value, RemoteError>;
     #[allow(unused_variables)]
     fn idle(&mut self, ctx: RpcCtx, token: usize) {}
 }
@@ -192,7 +193,8 @@ impl<W: Write + Send> RpcLoop<W> {
     /// This function will return an error if there is an underlying
     /// I/O error, if the stream is closed, or if the message is not
     /// a valid JSON object.
-    fn read_json<R: BufRead>(&mut self, reader: &mut R) -> Result<RpcObject, ReadError> {
+    fn read_json<R: BufRead>(&mut self, reader: &mut R)
+                             -> Result<RpcObject, ReadError> {
         self.buf.clear();
         let _ = reader.read_line(&mut self.buf)?;
         if self.buf.is_empty() {
@@ -258,7 +260,7 @@ impl<W: Write + Send> RpcLoop<W> {
 
             let mut idle = VecDeque::<usize>::new();
             loop {
-                // only do idle work if no pending messages
+                // pending messages take priority over idle work
                 let json = if !idle.is_empty() {
                     if let Some(json) = peer.try_get_rx() {
                         json
@@ -327,15 +329,19 @@ impl<W: Write + Send + 'static> Peer for RawPeer<W> {
             "method": method,
             "params": params,
         })) {
-            print_err!("send error on send_rpc_notification method {}: {}", method, e);
+            print_err!("send error on send_rpc_notification method {}: {}",
+                       method, e);
         }
     }
 
-    fn send_rpc_request_async(&self, method: &str, params: &Value, f: Box<Callback>) {
-        self.send_rpc_request_common(method, params, ResponseHandler::Callback(f));
+    fn send_rpc_request_async(&self, method: &str, params: &Value,
+                              f: Box<Callback>) {
+        self.send_rpc_request_common(method, params,
+                                     ResponseHandler::Callback(f));
     }
 
-    fn send_rpc_request(&self, method: &str, params: &Value) -> Result<Value, Error> {
+    fn send_rpc_request(&self, method: &str, params: &Value)
+                        -> Result<Value, Error> {
         let (tx, rx) = mpsc::channel();
         self.send_rpc_request_common(method, params, ResponseHandler::Chan(tx));
         rx.recv().unwrap_or(Err(Error::PeerDisconnect))
@@ -366,7 +372,8 @@ impl<W:Write> RawPeer<W> {
         }
     }
 
-    fn send_rpc_request_common(&self, method: &str, params: &Value, rh: ResponseHandler) {
+    fn send_rpc_request_common(&self, method: &str,
+                               params: &Value, rh: ResponseHandler) {
         let id = self.0.id.fetch_add(1, Ordering::Relaxed);
         {
             let mut pending = self.0.pending.lock().unwrap();
