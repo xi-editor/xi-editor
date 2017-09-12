@@ -19,20 +19,20 @@ use serde_json::{Value, Error as JsonError};
 use serde::de::{Deserializer, Deserialize};
 use serde::ser::{Serializer, Serialize};
 
-/// Errors that can occur when sending an RPC.
+/// The possible error outcomes when attempting to send a message.
 #[derive(Debug)]
 pub enum Error {
     /// An IO error occurred on the underlying communication channel.
-    IoError(io::Error),
+    Io(io::Error),
     /// The peer returned an error.
     RemoteError(RemoteError),
-    /// The peer closed its connection.
+    /// The peer closed the connection.
     PeerDisconnect,
     /// The peer sent a response containing the id, but was malformed.
     InvalidResponse,
 }
 
-/// Errors that can occur when attemping to read a message.
+/// The possible error outcomes when attempting to read a message.
 #[derive(Debug)]
 pub enum ReadError {
     /// An error occured in the underlying stream
@@ -43,6 +43,87 @@ pub enum ReadError {
     NotObject,
     /// The peer closed the connection.
     Disconnect,
+}
+
+/// Errors that can be received from the other side of the RPC channel.
+///
+/// This type is intended to go over the wire. And by convention
+/// should `Serialize` as a JSON object with "code", "message",
+/// and optionally "data" fields.
+///
+/// The xi RPC protocol defines one error: `RemoteError::InvalidRequest`,
+/// represented by error code `-32600`; however codes in the range
+/// `-32700 ... -32000` (inclusive) are reserved for compatability with
+/// the JSON-RPC spec.
+///
+/// # Examples
+///
+/// An invalid request:
+///
+/// ```
+/// # extern crate xi_rpc;
+/// # extern crate serde_json;
+/// # fn main() {
+/// use xi_rpc::RemoteError;
+/// use serde_json::Value;
+///
+/// let json = r#"{
+///     "code": -32600,
+///     "message": "Invalid request",
+///     "data": "Additional details"
+///     }"#;
+///
+/// let err = serde_json::from_str::<RemoteError>(&json).unwrap();
+/// assert_eq!(err,
+///            RemoteError::InvalidRequest(
+///                Some(Value::String("Additional details".into()))));
+/// # }
+/// ```
+///
+/// A custom error:
+///
+/// ```
+/// # extern crate xi_rpc;
+/// # extern crate serde_json;
+/// # fn main() {
+/// use xi_rpc::RemoteError;
+/// use serde_json::Value;
+///
+/// let json = r#"{
+///     "code": 404,
+///     "message": "Not Found"
+///     }"#;
+///
+/// let err = serde_json::from_str::<RemoteError>(&json).unwrap();
+/// assert_eq!(err, RemoteError::custom(404, "Not Found", None));
+/// # }
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub enum RemoteError {
+    /// The JSON was valid, but was not a correctly formed request.
+    ///
+    /// This Error is used internally, and should not be returned by
+    /// clients.
+    InvalidRequest(Option<Value>),
+    /// A custom error, defined by the client.
+    Custom { code: i64, message: String, data: Option<Value> },
+    /// An error that cannot be represented by an error object.
+    ///
+    /// This error is intended to accomodate clients that return arbitrary
+    /// error values. It should not be used for new errors.
+    Unknown(Value),
+}
+
+impl RemoteError {
+    /// Creates a new custom error.
+    pub fn custom<S, V>(code: i64, message: S, data: V) -> Self
+        where S: AsRef<str>,
+              V: Into<Option<Value>>,
+    {
+        let message = message.as_ref().into();
+        let data = data.into();
+        RemoteError::Custom { code, message, data }
+    }
 }
 
 impl fmt::Display for ReadError {
@@ -68,50 +149,9 @@ impl From<io::Error> for ReadError {
     }
 }
 
-//TODO: code review discussion: do we want, in general, to support these
-//parsing-related error codes (borrowed from the JSON-RPC spec) or do
-//we prefer to crash?
-/// Errors that can occur in the process of receiving an RPC.
-///
-/// These errors are based off the errors defined in the JSON-RPC spec,
-/// and are intended to go over the wire. Serialized, they are an
-/// object with three fields: 'code', 'message', and optionally 'data'.
-///
-/// The first four members represent message parsing errors.
-/// The last member represents application logic errors.
-#[derive(Debug, Clone, PartialEq)]
-pub enum RemoteError {
-    /// The JSON was valid, but was not a correctly formed request.
-    InvalidRequest(Option<Value>),
-    /// The called method is not handled.
-    MethodNotFound(Option<Value>),
-    /// The params were not valid for the method.
-    InvalidParams(Option<Value>),
-    /// The message could not be parsed.
-    ///
-    /// This is a catch-all. Where possible, use a more specific error.
-    Parse(Option<Value>),
-    /// A custom error.
-    Custom { code: i64, message: String, data: Option<Value> },
-    /// An error was received, but it was not a recognizeable Error object
-    Unknown(Value),
-}
-
-impl RemoteError {
-    /// Creates a new custom error.
-    pub fn custom<S, V>(code: i64, message: S, data: V) -> Self
-        where S: AsRef<str>,
-              V: Into<Option<Value>>,
-    {
-        let message = message.as_ref().into();
-        let data = data.into();
-        RemoteError::Custom { code, message, data }
-    }
-}
-
 impl From<JsonError> for RemoteError {
     fn from(err: JsonError) -> RemoteError {
-        RemoteError::Parse(Some(json!(err.to_string())))
+        RemoteError::InvalidRequest(Some(json!(err.to_string())))
     }
 }
 
@@ -141,10 +181,7 @@ impl<'de> Deserialize<'de> for RemoteError
         };
 
         Ok(match resp.code {
-            -32700 => RemoteError::Parse(resp.data),
             -32600 => RemoteError::InvalidRequest(resp.data),
-            -32601 => RemoteError::MethodNotFound(resp.data),
-            -32602 => RemoteError::InvalidParams(resp.data),
             _ => RemoteError::Custom {
                 code: resp.code,
                 message: resp.message,
@@ -160,10 +197,7 @@ impl Serialize for RemoteError
         where S: Serializer
     {
         let (code, message, data) = match *self {
-             RemoteError::Parse(ref d) => (-32700, "Parse error", d),
              RemoteError::InvalidRequest(ref d) => (-32600, "Invalid request", d),
-             RemoteError::MethodNotFound(ref d) => (-32601, "Method not found", d),
-             RemoteError::InvalidParams(ref d) => (-32602, "Invalid params", d),
              RemoteError::Custom { code, ref message, ref data } => {
                  (code, message.as_ref(), data)
              }
@@ -176,4 +210,3 @@ impl Serialize for RemoteError
         err.serialize(serializer)
     }
 }
-

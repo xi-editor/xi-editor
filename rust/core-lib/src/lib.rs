@@ -135,7 +135,7 @@ impl Handler for MainState {
             }
             Err(e) => {
                 print_err!("Error {} decoding RPC request {}", e, &rpc.method);
-                Err(RemoteError::Parse(Some(json!(e.to_string()))))
+                Err(RemoteError::InvalidRequest(Some(json!(e.to_string()))))
             }
         }
     }

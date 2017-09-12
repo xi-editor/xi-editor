@@ -249,7 +249,8 @@ impl<W: Write + Send> RpcLoop<W> {
                             }
                             Err(msg) => {
                                 print_err!("failed to parse response: {}", msg);
-                                break
+                                self.peer.handle_response(
+                                    id, Err(Error::InvalidResponse));
                             }
                         }
                     } else {
@@ -386,7 +387,7 @@ impl<W:Write> RawPeer<W> {
         })) {
             let mut pending = self.0.pending.lock().unwrap();
             if let Some(rh) = pending.remove(&id) {
-                rh.invoke(Err(Error::IoError(e)));
+                rh.invoke(Err(Error::Io(e)));
             }
         }
     }

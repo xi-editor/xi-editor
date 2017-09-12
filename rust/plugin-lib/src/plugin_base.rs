@@ -272,7 +272,7 @@ impl<'a, H: Handler> xi_rpc::Handler for MyHandler<'a, H> {
             }
             Err(err) => {
                 print_err!("Error {} decoding RPC request {}", err, &rpc.method);
-                Err(RemoteError::Parse(Some(Value::String(err.to_string()))))
+                Err(RemoteError::InvalidRequest(Some(Value::String(err.to_string()))))
             }
         }
     }
