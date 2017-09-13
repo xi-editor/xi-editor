@@ -22,35 +22,29 @@
 //! Because these changes make the protocol not fully compliant with the spec,
 //! the `"jsonrpc"` member is omitted from request and response objects.
 
-extern crate serde;
 #[macro_use]
 extern crate serde_json;
+#[macro_use]
+extern crate serde_derive;
+extern crate serde;
 extern crate crossbeam;
 
 #[macro_use]
 mod macros;
+mod parse;
+mod error;
 
 use std::collections::{BTreeMap, VecDeque};
-use std::io;
-use std::io::{BufRead, Write};
+use std::io::{self, BufRead, Write};
 use std::sync::{Arc, Mutex, Condvar};
 use std::sync::mpsc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use serde_json::value::Value;
+use serde_json::Value;
+use serde::de::DeserializeOwned;
 
-#[derive(Debug)]
-pub enum Error {
-    /// An IO error occurred on the underlying communication channel.
-    IoError(io::Error),
-    /// The peer closed its connection.
-    PeerDisconnect,
-    /// The remote method returned an error.
-    RemoteError(Value),
-    /// The peer sent a response containing the id, but was malformed according
-    /// to the json-rpc spec.
-    MalformedResponse,
-}
+use parse::{Call, Response, RpcObject};
+pub use error::{Error, ReadError, RemoteError};
 
 /// An interface to access the other side of the RPC channel. The main purpose
 /// is to send RPC requests and notifications to the peer.
@@ -69,19 +63,21 @@ pub trait Peer: Send + 'static {
     /// For an explanation on this approach, see this thread:
     /// https://users.rust-lang.org/t/solved-is-it-possible-to-clone-a-boxed-trait-object/1714/6
     fn box_clone(&self) -> Box<Peer>;
-    /// Sends a notification (asynchronous rpc) to the peer.
+    /// Sends a notification (asynchronous RPC) to the peer.
     fn send_rpc_notification(&self, method: &str, params: &Value);
-    /// Sends a request asynchronously, and the supplied callback will be called when
-    /// the response arrives.
+    /// Sends a request asynchronously, and the supplied callback will
+    /// be called when the response arrives.
     ///
-    /// `Callback` is an alias for FnOnce(Result<Value, Error>); it must be boxed
-    /// because trait objects cannot use generic paramaters.
+    /// `Callback` is an alias for FnOnce(Result<Value, Error>); it must
+    /// be boxed because trait objects cannot use generic paramaters.
     fn send_rpc_request_async(&self, method: &str, params: &Value,
-                                 f: Box<Callback>);
-    /// Sends a request (synchronous rpc) to the peer, and waits for the result.
-    fn send_rpc_request(&self, method: &str, params: &Value) -> Result<Value, Error>;
-    /// Determines whether an incoming request (or notification) is pending. This
-    /// is intended to reduce latency for bulk operations done in the background.
+                              f: Box<Callback>);
+    /// Sends a request (synchronous RPC) to the peer, and waits for the result.
+    fn send_rpc_request(&self, method: &str, params: &Value)
+                        -> Result<Value, Error>;
+    /// Determines whether an incoming request (or notification) is
+    /// pending. This is intended to reduce latency for bulk operations
+    /// done in the background.
     fn request_is_pending(&self) -> bool;
 }
 
@@ -93,10 +89,27 @@ pub struct RpcCtx<'a> {
     idle: &'a mut VecDeque<usize>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+/// An RPC command.
+///
+/// This type is used as a placeholder in various places, and can be
+/// used by clients as a catchall type for implementing `MethodHandler`.
+pub struct RpcCall {
+    pub method: String,
+    pub params: Value,
+}
+
+/// A trait for types which can handle RPCs.
+///
+/// Types which implement `MethodHandler` are also responsible for implementing
+/// `Parser`; `Parser` is provided when Self::Notification and Self::Request
+/// can be used with serde::DeserializeOwned.
 pub trait Handler {
-    fn handle_notification(&mut self, ctx: RpcCtx, method: &str, params: &Value);
-    fn handle_request(&mut self, ctx: RpcCtx, method: &str, params: &Value) ->
-        Result<Value, Value>;
+    type Notification: DeserializeOwned;
+    type Request: DeserializeOwned;
+    fn handle_notification(&mut self, ctx: RpcCtx, rpc: Self::Notification);
+    fn handle_request(&mut self, ctx: RpcCtx, rpc: Self::Request)
+                      -> Result<Value, RemoteError>;
     #[allow(unused_variables)]
     fn idle(&mut self, ctx: RpcCtx, token: usize) {}
 }
@@ -138,7 +151,7 @@ impl ResponseHandler {
 }
 
 struct RpcState<W: Write> {
-    rx_queue: Mutex<VecDeque<Value>>,
+    rx_queue: Mutex<VecDeque<Option<RpcObject>>>,
     rx_cvar: Condvar,
     writer: Mutex<W>,
     id: AtomicUsize,
@@ -149,17 +162,6 @@ struct RpcState<W: Write> {
 pub struct RpcLoop<W: Write + 'static> {
     buf: String,
     peer: RawPeer<W>,
-}
-
-fn parse_rpc_request(json: &Value) -> Option<(Option<&Value>, &str, &Value)> {
-    json.as_object().and_then(|req| {
-        if let (Some(method), Some(params)) =
-            (dict_get_string(req, "method"), req.get("params")) {
-                let id = req.get("id");
-                Some((id, method, params))
-            }
-        else { None }
-    })
 }
 
 impl<W: Write + Send> RpcLoop<W> {
@@ -184,58 +186,82 @@ impl<W: Write + Send> RpcLoop<W> {
         self.peer.clone()
     }
 
-    // Reads raw json from the input stream.
+    /// Reads a line of JSON from the input stream, returning a `Value`.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if there is an underlying
+    /// I/O error, if the stream is closed, or if the message is not
+    /// a valid JSON object.
     fn read_json<R: BufRead>(&mut self, reader: &mut R)
-            -> Option<serde_json::error::Result<Value>> {
+                             -> Result<RpcObject, ReadError> {
         self.buf.clear();
-        if reader.read_line(&mut self.buf).is_ok() {
-            if self.buf.is_empty() {
-                return None;
+        let _ = reader.read_line(&mut self.buf)?;
+        if self.buf.is_empty() {
+            Err(ReadError::Disconnect)
+        } else {
+            let val = serde_json::from_str::<Value>(&self.buf)?;
+            if !val.is_object() {
+                Err(ReadError::NotObject)
+            } else {
+                Ok(val.into())
             }
-            return Some(serde_json::from_str::<Value>(&self.buf));
         }
-        None
     }
 
-    /// Starts a main loop. The reader is supplied via a closure, as basically
-    /// a workaround so that the reader doesn't have to be `Send`. Internally, the
-    /// main loop starts a separate thread for I/O, and at startup that thread calls
-    /// the given closure.
+    /// Starts a main loop. The reader is supplied via a closure, as
+    /// basically a workaround so that the reader doesn't have to be
+    /// `Send`. Internally, the main loop starts a separate thread for
+    /// I/O, and at startup that thread calls the given closure.
     ///
-    /// Calls to the handler (the second closure) happen on the caller's thread, so
-    /// that closure need not be `Send`.
+    /// Calls to the handler happen on the caller's thread.
     ///
-    /// Calls to the handler are guaranteed to preserve the order as they appear on
-    /// on the channel. At the moment, there is no way for there to be more than one
-    /// incoming request to be outstanding.
+    /// Calls to the handler are guaranteed to preserve the order as
+    /// they appear on on the channel. At the moment, there is no way
+    /// for there to be more than one incoming request to be outstanding.
     ///
     /// This method returns when the input channel is closed.
-    pub fn mainloop<R: BufRead, RF: Send + FnOnce() -> R>(&mut self,
-            rf: RF,
-            handler: &mut Handler) {
+    pub fn mainloop<'a, R, RF, H>(&mut self, rf: RF, handler: &mut H)
+    where R: BufRead,
+          RF: Send + FnOnce() -> R,
+          H: Handler,
+    {
+
         crossbeam::scope(|scope| {
             let peer = self.get_raw_peer();
             scope.spawn(move|| {
                 let mut reader = rf();
-                while let Some(json_result) = self.read_json(&mut reader) {
-                    match json_result {
-                        Ok(json) => {
-                            let is_method = json.as_object().map_or(false, |dict|
-                                dict.contains_key("method"));
-                            if is_method {
-                                self.peer.put_rx(json);
-                            } else {
-                                self.peer.handle_response(json);
+                loop {
+                    let json = match self.read_json(&mut reader) {
+                        Ok(json) => json,
+                        Err(err) => {
+                            // if parsing fails, we print the error and exit.
+                            print_err!("{:?}", err);
+                            break
+                        }
+                    };
+                    if json.is_response() {
+                        let id = json.get_id().unwrap();
+                        match json.into_response() {
+                            Ok(resp) => {
+                                let resp = resp.map_err(Error::from);
+                                self.peer.handle_response(id, resp);
+                            }
+                            Err(msg) => {
+                                print_err!("failed to parse response: {}", msg);
+                                self.peer.handle_response(
+                                    id, Err(Error::InvalidResponse));
                             }
                         }
-                        Err(err) => print_err!("Error decoding json: {:?}", err)
+                    } else {
+                        self.peer.put_rx(Some(json));
                     }
                 }
-                self.peer.put_rx(Value::Null);
-                // TODO: send disconnect error to all pending
             });
+
             let mut idle = VecDeque::<usize>::new();
             loop {
+                // pending messages take priority over idle work
                 let json = if !idle.is_empty() {
                     if let Some(json) = peer.try_get_rx() {
                         json
@@ -251,29 +277,36 @@ impl<W: Write + Send> RpcLoop<W> {
                 } else {
                     peer.get_rx()
                 };
-                if json == Value::Null {
-                    break;
-                }
-                //print_err!("to core: {:?}", json);
-                match parse_rpc_request(&json) {
-                    Some((id, method, params)) => {
-                        let ctx = RpcCtx {
-                            peer: Box::new(peer.clone()),
-                            idle: &mut idle,
-                        };
-                        if let Some(id) = id {
-                            let result = handler.handle_request(ctx, method, params);
-                            peer.respond(result, id);
-                        } else {
-                            handler.handle_notification(ctx, method, params);
-                        }
+
+                let json = match json {
+                    Some(json) => json,
+                    None => break,
+                };
+
+                let ctx = RpcCtx {
+                    peer: Box::new(peer.clone()),
+                    idle: &mut idle,
+                };
+
+                let parsed = json.into_rpc::<H::Notification, H::Request>();
+                match parsed {
+                    Ok(Call::Request(id, cmd)) => {
+                        let result = handler.handle_request(ctx, cmd);
+                        peer.respond(result, id);
                     }
-                    None => print_err!("invalid RPC request")
+                    Ok(Call::Notification(cmd)) => handler.handle_notification(ctx, cmd),
+                    Ok(Call::InvalidRequest(id, err)) => peer.respond(Err(err), id),
+                    Err(e) => {
+                        print_err!("Failed to parse RPC: {:?}", e);
+                        break
+                    }
                 }
             }
+            peer.disconnect();
         });
     }
 }
+
 
 impl<'a> RpcCtx<'a> {
     pub fn get_peer(&self) -> &RpcPeer {
@@ -297,15 +330,19 @@ impl<W: Write + Send + 'static> Peer for RawPeer<W> {
             "method": method,
             "params": params,
         })) {
-            print_err!("send error on send_rpc_notification method {}: {}", method, e);
+            print_err!("send error on send_rpc_notification method {}: {}",
+                       method, e);
         }
     }
 
-    fn send_rpc_request_async(&self, method: &str, params: &Value, f: Box<Callback>) {
-        self.send_rpc_request_common(method, params, ResponseHandler::Callback(f));
+    fn send_rpc_request_async(&self, method: &str, params: &Value,
+                              f: Box<Callback>) {
+        self.send_rpc_request_common(method, params,
+                                     ResponseHandler::Callback(f));
     }
 
-    fn send_rpc_request(&self, method: &str, params: &Value) -> Result<Value, Error> {
+    fn send_rpc_request(&self, method: &str, params: &Value)
+                        -> Result<Value, Error> {
         let (tx, rx) = mpsc::channel();
         self.send_rpc_request_common(method, params, ResponseHandler::Chan(tx));
         rx.recv().unwrap_or(Err(Error::PeerDisconnect))
@@ -321,15 +358,14 @@ impl<W:Write> RawPeer<W> {
     fn send(&self, v: &Value) -> Result<(), io::Error> {
         let mut s = serde_json::to_string(v).unwrap();
         s.push('\n');
-        //print_err!("from core: {}", s);
         self.0.writer.lock().unwrap().write_all(s.as_bytes())
         // Technically, maybe we should flush here, but doesn't seem to be required.
     }
 
-    fn respond(&self, result: Result<Value, Value>, id: &Value) {
+    fn respond(&self, result: Response, id: u64) {
         let mut response = json!({"id": id});
         match result {
-            Ok(result) => response["result"] = json!(result), 
+            Ok(result) => response["result"] = result,
             Err(error) => response["error"] = json!(error),
         };
         if let Err(e) = self.send(&response) {
@@ -337,7 +373,8 @@ impl<W:Write> RawPeer<W> {
         }
     }
 
-    fn send_rpc_request_common(&self, method: &str, params: &Value, rh: ResponseHandler) {
+    fn send_rpc_request_common(&self, method: &str,
+                               params: &Value, rh: ResponseHandler) {
         let id = self.0.id.fetch_add(1, Ordering::Relaxed);
         {
             let mut pending = self.0.pending.lock().unwrap();
@@ -350,44 +387,31 @@ impl<W:Write> RawPeer<W> {
         })) {
             let mut pending = self.0.pending.lock().unwrap();
             if let Some(rh) = pending.remove(&id) {
-                rh.invoke(Err(Error::IoError(e)));
+                rh.invoke(Err(Error::Io(e)));
             }
         }
     }
 
-    fn handle_response(&self, mut response: Value) {
-        let mut dict = response.as_object_mut().unwrap();
-        let id = dict.get("id").and_then(Value::as_u64);
-        if id.is_none() {
-            print_err!("id missing from response, or is not u64");
-            return;
-        }
-        let id = id.unwrap() as usize;
-        let result = dict.remove("result");
-        let error = dict.remove("error");
-        let result = match (result, error) {
-            (Some(result), None) => Ok(result),
-            (None, Some(err)) => Err(Error::RemoteError(err)),
-            _ => Err(Error::MalformedResponse)
-        };
+    fn handle_response(&self, id: u64, resp: Result<Value, Error>) {
+        let id = id as usize;
         let handler = {
             let mut pending = self.0.pending.lock().unwrap();
             pending.remove(&id)
         };
         match handler {
-            Some(responsehandler) => responsehandler.invoke(result),
+            Some(responsehandler) => responsehandler.invoke(resp),
             None => print_err!("id {} not found in pending", id)
         }
     }
 
-    // Get a message from the receive queue if available.
-    fn try_get_rx(&self) -> Option<Value> {
+    /// Get a message from the receive queue if available.
+    fn try_get_rx(&self) -> Option<Option<RpcObject>> {
         let mut queue = self.0.rx_queue.lock().unwrap();
         queue.pop_front()
     }
 
-    // Get a message from the receive queue, blocking until available.
-    fn get_rx(&self) -> Value {
+    /// Get a message from the receive queue, blocking until available.
+    fn get_rx(&self) -> Option<RpcObject> {
         let mut queue = self.0.rx_queue.lock().unwrap();
         while queue.is_empty() {
             queue = self.0.rx_cvar.wait(queue).unwrap();
@@ -395,10 +419,22 @@ impl<W:Write> RawPeer<W> {
         queue.pop_front().unwrap()
     }
 
-    fn put_rx(&self, json: Value) {
+    /// Adds a message to the receive queue. The message should only
+    /// be `None` if the read thread is exiting.
+    fn put_rx(&self, json: Option<RpcObject>) {
         let mut queue = self.0.rx_queue.lock().unwrap();
         queue.push_back(json);
         self.0.rx_cvar.notify_one();
+    }
+
+    /// send disconnect error to pending requests.
+    fn disconnect(&self) {
+        let mut pending = self.0.pending.lock().unwrap();
+        let ids = pending.keys().map(|id| *id).collect::<Vec<_>>();
+        for id in ids.iter() {
+            let callback = pending.remove(id).unwrap();
+            callback.invoke(Err(Error::PeerDisconnect));
+        }
     }
 }
 
@@ -419,6 +455,7 @@ impl<W: Write> Clone for RawPeer<W> {
 //  Helper functions for value manipulation
 // =============================================================================
 
+//TODO: delete after finishing migration
 pub fn dict_get_u64(dict: &serde_json::Map<String, Value>, key: &str) -> Option<u64> {
     dict.get(key).and_then(Value::as_u64)
 }

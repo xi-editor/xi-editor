@@ -9,4 +9,5 @@ description = "Utilities for building peers (both client and server side) for xi
 [dependencies]
 serde = "1.0"
 serde_json = "1.0"
+serde_derive = "1.0"
 crossbeam = "0.2.9"
