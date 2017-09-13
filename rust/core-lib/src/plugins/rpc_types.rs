@@ -81,6 +81,7 @@ pub enum UpdateResponse {
 
 
 /// An simple edit, received from a plugin.
+//TODO: use a real delta here
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PluginEdit {
     pub start: u64,
@@ -105,15 +106,23 @@ pub struct ScopeSpan {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
-/// RPC commands sent from plugins.
-pub enum PluginCommand {
-    AddScopes { view_id: ViewIdentifier, scopes: Vec<Vec<String>> },
-    UpdateSpans { view_id: ViewIdentifier, start: usize, len: usize, spans: Vec<ScopeSpan>, rev: u64 },
+#[serde(tag = "method", content = "params")]
+/// RPC requests sent from plugins.
+pub enum PluginRequest {
     GetData { view_id: ViewIdentifier, offset: usize, max_size: usize, rev: u64 },
-    Edit { view_id: ViewIdentifier, edit: PluginEdit },
-    Alert { view_id: ViewIdentifier, msg: String },
     LineCount { view_id: ViewIdentifier },
     GetSelections { view_id: ViewIdentifier },
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "method", content = "params")]
+/// RPC commands sent from plugins.
+pub enum PluginNotification {
+    AddScopes { view_id: ViewIdentifier, scopes: Vec<Vec<String>> },
+    UpdateSpans { view_id: ViewIdentifier, start: usize, len: usize, spans: Vec<ScopeSpan>, rev: u64 },
+    Edit { view_id: ViewIdentifier, edit: PluginEdit },
+    Alert { view_id: ViewIdentifier, msg: String },
 }
 
 impl PluginBufferInfo {

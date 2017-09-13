@@ -21,7 +21,7 @@ use std::path::PathBuf;
 use serde_json::{self, Value};
 
 use xi_rpc;
-use xi_rpc::{RpcLoop, RpcCtx, dict_get_u64, dict_get_string};
+use xi_rpc::{RpcLoop, RpcCtx, RpcCall, RemoteError, dict_get_u64, dict_get_string};
 
 // TODO: avoid duplicating this in every crate
 macro_rules! print_err {
@@ -250,27 +250,29 @@ fn parse_plugin_request<'a>(method: &str, params: &'a Value) ->
 struct MyHandler<'a, H: 'a>(&'a mut H);
 
 impl<'a, H: Handler> xi_rpc::Handler for MyHandler<'a, H> {
-    fn handle_notification(&mut self, ctx: RpcCtx, method: &str, params: &Value) {
-        match parse_plugin_request(method, params) {
+    type Notification = RpcCall;
+    type Request = RpcCall;
+    fn handle_notification(&mut self, ctx: RpcCtx, rpc: Self::Notification) {
+        match parse_plugin_request(&rpc.method, &rpc.params) {
             Ok(req) => {
                 if let Some(_) = self.0.call(&req, PluginCtx(ctx)) {
-                    print_err!("Unexpected return value for notification {}", method)
+                    print_err!("Unexpected return value for notification {}", &rpc.method)
                 }
             }
             Err(err) => print_err!("error: {}", err)
         }
     }
 
-    fn handle_request(&mut self, ctx: RpcCtx, method: &str, params: &Value) ->
-        Result<Value, Value> {
-        match parse_plugin_request(method, params) {
+    fn handle_request(&mut self, ctx: RpcCtx, rpc: Self::Request) ->
+        Result<Value, RemoteError> {
+        match parse_plugin_request(&rpc.method, &rpc.params) {
             Ok(req) => {
                 let result = self.0.call(&req, PluginCtx(ctx));
-                result.ok_or_else(|| Value::String("return value missing".to_string()))
+                Ok(result.expect("return value missing"))
             }
             Err(err) => {
-                print_err!("Error {} decoding RPC request {}", err, method);
-                Err(Value::String("error decoding request".to_string()))
+                print_err!("Error {} decoding RPC request {}", err, &rpc.method);
+                Err(RemoteError::InvalidRequest(Some(Value::String(err.to_string()))))
             }
         }
     }

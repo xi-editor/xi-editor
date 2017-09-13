@@ -27,13 +27,15 @@ use std::io::{self, BufReader};
 
 use serde_json::{self, Value};
 
-use xi_rpc::{self, RpcPeer, RpcCtx, RpcLoop, Handler};
+use xi_rpc::{self, RpcPeer, RpcCtx, RpcLoop, Handler, RemoteError};
 use tabs::ViewIdentifier;
 
 pub use self::manager::{PluginManagerRef, WeakPluginManagerRef};
 pub use self::manifest::{PluginDescription, Command, PlaceholderRpc};
 
-use self::rpc_types::{PluginUpdate, PluginCommand, PluginBufferInfo};
+use self::rpc_types::{PluginUpdate, PluginNotification, PluginRequest,
+PluginBufferInfo};
+
 use self::manager::PluginName;
 use self::catalog::PluginCatalog;
 
@@ -70,45 +72,34 @@ impl Clone for PluginRef {
 }
 
 impl Handler for PluginRef {
-    fn handle_notification(&mut self, _ctx: RpcCtx, method: &str, params: &Value) {
-        if let Some(_) = self.rpc_handler(method, params) {
-            print_err!("Unexpected return value for notification {}", method)
-        }
-    }
-
-    fn handle_request(&mut self, _ctx: RpcCtx, method: &str, params: &Value) ->
-        Result<Value, Value> {
-        let result = self.rpc_handler(method, params);
-        result.ok_or_else(|| Value::String("missing return value".to_string()))
-    }
-}
-
-impl PluginRef {
-    fn rpc_handler(&self, method: &str, params: &Value) -> Option<Value> {
+    type Notification = PluginNotification;
+    type Request = PluginRequest;
+    fn handle_notification(&mut self, _ctx: RpcCtx, rpc: Self::Notification) {
         let plugin_manager = {
             self.0.lock().unwrap().manager.upgrade()
         };
-
         if let Some(plugin_manager) = plugin_manager {
-            //FIXME: @cmyr: because rpcs arrive with the method already extracted,
-            //we can't currently rely on serde to deserialize. As a temporary
-            //solution we create a new json blob that conforms with serde's
-            //'Externally tagged' enum representation. This will be fixed by
-            //an upcoming PR introducing a typed RPC system.
-            let temp = json!({method: params});
-            let cmd = serde_json::from_value::<PluginCommand>(temp);
-            if cmd.is_err() {
-                print_err!("failed to parse plugin rpc {:?}",
-                           &json!({method: params}));
-                return None
-            }
             let pid = self.get_identifier();
-            plugin_manager.lock().handle_plugin_cmd(cmd.unwrap(), pid)
-        } else {
-            None
+            plugin_manager.lock().handle_plugin_notification(rpc, pid)
         }
     }
 
+    fn handle_request(&mut self, _ctx: RpcCtx, rpc: Self::Request) ->
+        Result<Value, RemoteError> {
+        let plugin_manager = {
+            self.0.lock().unwrap().manager.upgrade()
+        };
+        if let Some(plugin_manager) = plugin_manager {
+            let pid = self.get_identifier();
+            Ok(plugin_manager.lock().handle_plugin_request(rpc, pid))
+        } else {
+            Err(RemoteError::custom(88, "Plugin manager missing", None))
+        }
+    }
+}
+
+
+impl PluginRef {
     /// Send an arbitrary RPC notification to the plugin.
     pub fn rpc_notification(&self, method: &str, params: &Value) {
         self.0.lock().unwrap().peer.send_rpc_notification(method, params);

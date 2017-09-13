@@ -91,7 +91,7 @@ extern crate xi_rope;
 extern crate xi_unicode;
 extern crate xi_rpc;
 
-use xi_rpc::{RpcPeer, RpcCtx, Handler};
+use xi_rpc::{RpcPeer, RpcCtx, RpcCall, Handler, RemoteError};
 
 pub type MainPeer = RpcPeer;
 
@@ -113,27 +113,29 @@ impl MainState {
 }
 
 impl Handler for MainState {
-    fn handle_notification(&mut self, mut ctx: RpcCtx, method: &str, params: &Value) {
-        match Request::from_json(method, params) {
+    type Notification = RpcCall;
+    type Request = RpcCall;
+    fn handle_notification(&mut self, mut ctx: RpcCtx, rpc: Self::Notification) {
+        match Request::from_json(&rpc.method, &rpc.params) {
             Ok(req) => {
                 if let Some(_) = self.handle_req(req, &mut ctx) {
-                    print_err!("Unexpected return value for notification {}", method)
+                    print_err!("Unexpected return value for notification {}", &rpc.method)
                 }
             }
-            Err(e) => print_err!("Error {} decoding RPC request {}", e, method)
+            Err(e) => print_err!("Error {} decoding RPC request {}", e, &rpc.method)
         }
     }
 
-    fn handle_request(&mut self, mut ctx: RpcCtx, method: &str, params: &Value) ->
-        Result<Value, Value> {
-        match Request::from_json(method, params) {
+    fn handle_request(&mut self, mut ctx: RpcCtx, rpc: Self::Request) ->
+       Result<Value, RemoteError> {
+        match Request::from_json(&rpc.method, &rpc.params) {
             Ok(req) => {
                 let result = self.handle_req(req, &mut ctx);
-                result.ok_or_else(|| json!("return value missing"))
+                Ok(result.expect("missing return value"))
             }
             Err(e) => {
-                print_err!("Error {} decoding RPC request {}", e, method);
-                Err(json!("error decoding request"))
+                print_err!("Error {} decoding RPC request {}", e, &rpc.method);
+                Err(RemoteError::InvalidRequest(Some(json!(e.to_string()))))
             }
         }
     }
