@@ -34,7 +34,7 @@ mod macros;
 mod parse;
 mod error;
 
-mod test_utils;
+pub mod test_utils;
 
 use std::collections::{BTreeMap, VecDeque};
 use std::io::{self, BufRead, Write};
@@ -45,9 +45,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use serde_json::Value;
 use serde::de::DeserializeOwned;
 
-use parse::{Call, Response, RpcObject};
+use parse::{Call, Response, RpcObject, MessageReader};
 pub use error::{Error, ReadError, RemoteError};
-pub use test_utils::DummyRemote;
 
 /// An interface to access the other side of the RPC channel. The main purpose
 /// is to send RPC requests and notifications to the peer.
@@ -163,7 +162,7 @@ struct RpcState<W: Write> {
 
 /// A structure holding the state of a main loop for handling RPC's.
 pub struct RpcLoop<W: Write + 'static> {
-    buf: String,
+    reader: MessageReader,
     peer: RawPeer<W>,
 }
 
@@ -179,7 +178,7 @@ impl<W: Write + Send> RpcLoop<W> {
             pending: Mutex::new(BTreeMap::new()),
         }));
         RpcLoop {
-            buf: String::new(),
+            reader: MessageReader::default(),
             peer: rpc_peer,
         }
     }
@@ -187,29 +186,6 @@ impl<W: Write + Send> RpcLoop<W> {
     /// Gets a reference to the peer.
     pub fn get_raw_peer(&self) -> RawPeer<W> {
         self.peer.clone()
-    }
-
-    /// Reads a line of JSON from the input stream, returning a `Value`.
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if there is an underlying
-    /// I/O error, if the stream is closed, or if the message is not
-    /// a valid JSON object.
-    fn read_json<R: BufRead>(&mut self, reader: &mut R)
-                             -> Result<RpcObject, ReadError> {
-        self.buf.clear();
-        let _ = reader.read_line(&mut self.buf)?;
-        if self.buf.is_empty() {
-            Err(ReadError::Disconnect)
-        } else {
-            let val = serde_json::from_str::<Value>(&self.buf)?;
-            if !val.is_object() {
-                Err(ReadError::NotObject)
-            } else {
-                Ok(val.into())
-            }
-        }
     }
 
     /// Starts a main loop. The reader is supplied via a closure, as
@@ -233,9 +209,9 @@ impl<W: Write + Send> RpcLoop<W> {
         crossbeam::scope(|scope| {
             let peer = self.get_raw_peer();
             scope.spawn(move|| {
-                let mut reader = rf();
+                let mut stream = rf();
                 loop {
-                    let json = match self.read_json(&mut reader) {
+                    let json = match self.reader.next(&mut stream) {
                         Ok(json) => json,
                         Err(err) => {
                             // if parsing fails, we print the error and exit.
@@ -260,6 +236,7 @@ impl<W: Write + Send> RpcLoop<W> {
                         self.peer.put_rx(Some(json));
                     }
                 }
+                self.peer.put_rx(None);
             });
 
             let mut idle = VecDeque::<usize>::new();
@@ -309,7 +286,6 @@ impl<W: Write + Send> RpcLoop<W> {
         });
     }
 }
-
 
 impl<'a> RpcCtx<'a> {
     pub fn get_peer(&self) -> &RpcPeer {
@@ -482,12 +458,6 @@ pub fn arr_get_i64(arr: &[Value], idx: usize) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::{Cursor, sink};
-
-    fn make_reader(v: &str) -> Cursor<Vec<u8>> {
-        let vec = v.as_bytes().to_vec();
-        Cursor::new(vec)
-    }
 
     #[test]
     fn test_dict_get_u64() {
@@ -499,9 +469,9 @@ mod tests {
 
     #[test]
     fn test_parse_notif() {
-        let mut runloop = RpcLoop::new(sink());
-        let mut r = make_reader(r#"{"method": "hi", "params": {"words": "plz"}}"#);
-        let json = runloop.read_json(&mut r).unwrap();
+        let reader = MessageReader::default();
+        let json = reader.parse(
+            r#"{"method": "hi", "params": {"words": "plz"}}"#).unwrap();
         assert!(!json.is_response());
         let rpc = json.into_rpc::<Value, Value>().unwrap();
         match rpc {
@@ -512,9 +482,9 @@ mod tests {
 
     #[test]
     fn test_parse_req() {
-        let mut runloop = RpcLoop::new(sink());
-        let mut r = make_reader(r#"{"id": 5, "method": "hi", "params": {"words": "plz"}}"#);
-        let json = runloop.read_json(&mut r).unwrap();
+        let reader = MessageReader::default();
+        let json = reader.parse(
+            r#"{"id": 5, "method": "hi", "params": {"words": "plz"}}"#).unwrap();
         assert!(!json.is_response());
         let rpc = json.into_rpc::<Value, Value>().unwrap();
         match rpc {
@@ -525,17 +495,18 @@ mod tests {
 
     #[test]
     fn test_parse_bad_json() {
-        let mut runloop = RpcLoop::new(sink());
         // missing "" around params
-        let mut r = make_reader(r#"{"id": 5, "method": "hi", params: {"words": "plz"}}"#);
-        let json = runloop.read_json(&mut r).err().unwrap();
+        let reader = MessageReader::default();
+        let json = reader.parse(
+            r#"{"id": 5, "method": "hi", params: {"words": "plz"}}"#)
+            .err().unwrap();
+
         match json {
             ReadError::Json(..) => (),
             _ => panic!("parse failed"),
         }
         // not an object
-        let mut r = make_reader(r#"[5, "hi", {"arg": "val"}]"#);
-        let json = runloop.read_json(&mut r).err().unwrap();
+        let json = reader.parse(r#"[5, "hi", {"arg": "val"}]"#).err().unwrap();
 
         match json {
             ReadError::NotObject => (),

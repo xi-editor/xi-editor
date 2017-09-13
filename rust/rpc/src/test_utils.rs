@@ -14,44 +14,64 @@
 
 //! Types and helpers used for testing.
 
-use std::thread;
 use std::sync::mpsc::{channel, Sender, Receiver};
 use std::time::Duration;
-use std::io::{self, BufReader, Read, Write, Cursor};
+use std::io::{self, Write, Cursor};
 
-use serde_json::{self, Value};
-use super::{RpcLoop, Handler, RpcObject, Response};
+use super::{MessageReader, RpcObject, Response, ReadError};
 
-/// Simulates a remote connection to a Handler.
-pub struct DummyRemote {
-    tx: Sender<String>,
-    rx: Receiver<String>,
-    id: u64,
+/// Wraps an instance of `mpsc::Sender`, implementing `Write`.
+///
+/// This lets the tx side of an mpsc::channel serve as the destination
+/// stream for an RPC loop.
+pub struct DummyWriter(Sender<String>);
+
+
+/// Wraps an instance of `mpsc::Receiver`, providing convenience methods
+/// for parsing received messages.
+pub struct DummyReader(MessageReader, Receiver<String>);
+
+/// Returns a `(DummyWriter, DummyReader)` pair.
+pub fn test_channel() -> (DummyWriter, DummyReader) {
+    let (tx, rx) = channel();
+    (DummyWriter(tx), DummyReader(MessageReader::default(), rx))
 }
 
-struct DummyReader(Receiver<String>, Cursor<String>);
-struct DummyWriter(Sender<String>);
-
-impl Read for DummyReader {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let is_empty = self.1.get_ref().is_empty();
-        if is_empty {
-            match self.0.recv() {
-                Ok(msg) => self.1 = Cursor::new(msg),
-                Err(_) => return Ok(0),
-            };
-        }
-        let n = self.1.read(buf);
-        if self.1.position() == self.1.get_ref().len() as u64 {
-            self.1.get_mut().clear();
-        }
-        n
-    }
+/// Given a string type, returns a `Cursor<Vec<u8>>`, which implements
+/// `BufRead`.
+pub fn make_reader<S: AsRef<str>>(s: S) -> Cursor<Vec<u8>> {
+    Cursor::new(s.as_ref().as_bytes().to_vec())
 }
 
 impl DummyReader {
-    fn new(recv: Receiver<String>) -> DummyReader {
-        DummyReader(recv, Cursor::new(String::new()))
+    /// Attempts to read a message, returning `None` if the wait exceeds
+    /// `timeout`.
+    ///
+    /// This method makes no assumptions about the contents of the
+    /// message, and does no error handling.
+    pub fn next_timeout(&mut self, timeout: Duration)
+                        -> Option<Result<RpcObject, ReadError>> {
+        self.1.recv_timeout(timeout)
+            .ok()
+            .map(|s| self.0.parse(&s))
+    }
+
+    /// Reads and parses a response object.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a non-response message is received, or if no message
+    /// is received after a reasonable time.
+    pub fn expect_response(&mut self) -> Response {
+        let resp = self.next_timeout(Duration::from_secs(1))
+            .expect("response should be received")
+            .map_err(|e| e.to_string())
+            .and_then(|r| r.into_response());
+
+        match resp {
+            Err(msg) => panic!("Error waiting for response: {}", msg),
+            Ok(resp) => resp
+        }
     }
 }
 
@@ -59,75 +79,13 @@ impl Write for DummyWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let s = String::from_utf8(buf.to_vec()).unwrap();
         self.0.send(s)
-            .map_err(|_| io::Error::new(io::ErrorKind::Other, "test error"))
+            .map_err(|err| {
+                io::Error::new(io::ErrorKind::Other, format!("{:?}", err))
+            })
             .map(|_| buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
         Ok(())
-    }
-}
-
-impl DummyRemote {
-    /// Starts a new runloop in a new thread. Messages sent to the runloop
-    /// will be passed to the Handler returned from the closure.
-    pub fn new<H, HF>(hf: HF) -> Self
-    where H: Handler,
-          HF: 'static + Send + FnOnce() -> H
-    {
-        let (local_tx, remote_rx) = channel();
-        let (remote_tx, local_rx) = channel();
-
-        thread::spawn(move || {
-            let mut looper = RpcLoop::new(DummyWriter(remote_tx));
-            let mut handler = hf();
-            let reader = DummyReader::new(remote_rx);
-            looper.mainloop(move || BufReader::new(reader), &mut handler);
-        });
-
-        DummyRemote {
-            tx: local_tx,
-            rx: local_rx,
-            id: 0,
-        }
-    }
-
-    /// Sends a message, and blocks with a reasonable timeout on the response.
-    fn send_common(&self, v: &Value) -> Option<String> {
-        let mut s = serde_json::to_string(v).unwrap();
-        s.push('\n');
-        self.tx.send(s).unwrap();
-        match self.rx.recv_timeout(Duration::from_millis(100)) {
-            Ok(msg) => Some(msg),
-            Err(_) => None
-        }
-    }
-
-    /// Sends a notification and checks for a response. If a response is
-    /// received, it is returned in the error.
-    pub fn send_notification(&self, v: &Value) -> Result<(), String> {
-        match self.send_common(v) {
-            None => Ok(()),
-            Some(msg) => Err(msg)
-        }
-    }
-
-    /// Sends a request and waits for a response. If none is received,
-    /// returns an error.
-    pub fn send_request(&mut self, v: &Value) -> Response {
-        let mut v = v.to_owned();
-        v["id"] = json!(self.id);
-        self.id += 1;
-        match self.send_common(&v) {
-            None => panic!("no response for request\n{}",
-                           serde_json::to_string_pretty(&v).unwrap()),
-            Some(msg) => {
-                let resp: RpcObject = serde_json::from_str::<Value>(&msg)
-                    .expect("response is invalid JSON")
-                    .into();
-                resp.into_response()
-                    .expect("response was invalid response object")
-            }
-        }
     }
 }

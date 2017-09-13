@@ -16,8 +16,11 @@
 extern crate serde_json;
 extern crate xi_rpc;
 
+use std::time::Duration;
+
 use serde_json::Value;
-use xi_rpc::{DummyRemote, Handler, RpcCtx, RpcCall, RemoteError};
+use xi_rpc::{Handler, RpcLoop, RpcCtx, RpcCall, RemoteError};
+use xi_rpc::test_utils::{test_channel, make_reader};
 
 /// Handler that responds to requests with whatever params they sent.
 pub struct EchoHandler;
@@ -36,34 +39,41 @@ impl Handler for EchoHandler {
 #[test]
 fn test_recv_notif() {
     // we should not reply to a well formed notification
-    let n = json!({"method": "hullo", "params": {"words": "plz"}});
-    let remote = DummyRemote::new(move || EchoHandler);
-    let resp = remote.send_notification(&n);
-    assert!(resp.is_ok());
-    let resp = remote.send_notification(&n);
-    assert!(resp.is_ok());
+    let mut handler = EchoHandler;
+    let (tx, mut rx) = test_channel();
+    let mut rpc_looper = RpcLoop::new(tx);
+    let r = make_reader(r#"{"method": "hullo", "params": {"words": "plz"}}"#);
+    rpc_looper.mainloop(|| r, &mut handler);
+    let resp = rx.next_timeout(Duration::from_millis(100));
+    assert!(resp.is_none());
 }
 
 #[test]
 fn test_recv_resp() {
     // we should reply to a well formed request
-    let n = json!({"method": "hullo", "params": {"words": "plz"}});
-    let mut remote = DummyRemote::new(move || EchoHandler);
-    let resp = remote.send_request(&n).unwrap();
+    let mut handler = EchoHandler;
+    let (tx, mut rx) = test_channel();
+    let mut rpc_looper = RpcLoop::new(tx);
+    let r = make_reader(r#"{"id": 1, "method": "hullo", "params": {"words": "plz"}}"#);
+    rpc_looper.mainloop(|| r, &mut handler);
+    let resp = rx.expect_response().unwrap();
     assert_eq!(resp["words"], json!("plz"));
     // do it again
-    let n = json!({"method": "hullo", "params": {"words": "yay"}});
-    let resp = remote.send_request(&n).unwrap();
+    let r = make_reader(r#"{"id": 0, "method": "hullo", "params": {"words": "yay"}}"#);
+    rpc_looper.mainloop(|| r, &mut handler);
+    let resp = rx.expect_response().unwrap();
     assert_eq!(resp["words"], json!("yay"));
 }
 
 #[test]
 fn test_recv_error() {
     // a malformed request containing an ID should receive an error
-    let n = json!({
-        "method": "hullo",
-        "args": {"args": "should", "be": "params"}});
-    let mut remote = DummyRemote::new(move || EchoHandler);
-    let resp = remote.send_request(&n);
+    let mut handler = EchoHandler;
+    let (tx, mut rx) = test_channel();
+    let mut rpc_looper = RpcLoop::new(tx);
+    let r = make_reader(
+        r#"{"id": 0, "method": "hullo","args": {"args": "should", "be": "params"}}"#);
+    rpc_looper.mainloop(|| r, &mut handler);
+    let resp = rx.expect_response();
     assert!(resp.is_err(), "{:?}", resp);
 }
