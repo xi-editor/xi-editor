@@ -157,8 +157,8 @@ impl RevId {
     /// should be as unlikely to collide as two random u64s.
     pub fn token(&self) -> RevToken {
         use std::hash::{Hash, Hasher};
-        /// Rust is unlikely to break the property that this hash is strongly collision-resistant
-        /// and it only needs to be consistent over one execution.
+        // Rust is unlikely to break the property that this hash is strongly collision-resistant
+        // and it only needs to be consistent over one execution.
         let mut hasher = DefaultHasher::new();
         self.hash(&mut hasher);
         hasher.finish()
