@@ -312,7 +312,7 @@ impl PluginManager {
             plugin_ref.shutdown();
             //TODO: should we notify now, or wait until we know this worked?
             //can this fail? (yes.) How do we tell, and when do we kill the proc?
-            if let Some(mut ed) = self.buffers.lock().editor_for_view_mut(view_id) {
+            if let Some(ed) = self.buffers.lock().editor_for_view_mut(view_id) {
                 ed.plugin_stopped(view_id, plugin_name, plugin_id, 0);
             }
         }
