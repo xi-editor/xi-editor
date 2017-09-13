@@ -22,7 +22,6 @@
 //! Because these changes make the protocol not fully compliant with the spec,
 //! the `"jsonrpc"` member is omitted from request and response objects.
 
-extern crate serde;
 #[macro_use]
 extern crate serde_json;
 extern crate crossbeam;
