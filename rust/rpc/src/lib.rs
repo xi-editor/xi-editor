@@ -34,7 +34,6 @@ mod macros;
 mod parse;
 mod error;
 
-#[cfg(test)]
 mod test_utils;
 
 use std::collections::{BTreeMap, VecDeque};
@@ -48,6 +47,7 @@ use serde::de::DeserializeOwned;
 
 use parse::{Call, Response, RpcObject};
 pub use error::{Error, ReadError, RemoteError};
+pub use test_utils::DummyRemote;
 
 /// An interface to access the other side of the RPC channel. The main purpose
 /// is to send RPC requests and notifications to the peer.
@@ -482,7 +482,6 @@ pub fn arr_get_i64(arr: &[Value], idx: usize) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use test_utils::{EchoHandler, DummyRemote};
     use std::io::{Cursor, sink};
 
     fn make_reader(v: &str) -> Cursor<Vec<u8>> {
@@ -496,41 +495,6 @@ mod tests {
         let dict = dict.as_object().unwrap();
         assert_eq!(dict_get_u64(&dict, "life_meaning"), Some(42));
         assert_eq!(dict_get_u64(&dict, "tea"), None);
-    }
-
-    #[test]
-    fn test_recv_notif() {
-        // we should not reply to a well formed notification
-        let n = json!({"method": "hullo", "params": {"words": "plz"}});
-        let remote = DummyRemote::new(move || EchoHandler);
-        let resp = remote.send_notification(&n);
-        assert!(resp.is_ok());
-        let resp = remote.send_notification(&n);
-        assert!(resp.is_ok());
-    }
-
-    #[test]
-    fn test_recv_resp() {
-        // we should reply to a well formed request
-        let n = json!({"method": "hullo", "params": {"words": "plz"}});
-        let mut remote = DummyRemote::new(move || EchoHandler);
-        let resp = remote.send_request(&n).unwrap();
-        assert_eq!(resp["words"], json!("plz"));
-        // do it again
-        let n = json!({"method": "hullo", "params": {"words": "yay"}});
-        let resp = remote.send_request(&n).unwrap();
-        assert_eq!(resp["words"], json!("yay"));
-    }
-
-    #[test]
-    fn test_recv_error() {
-        // a malformed request containing an ID should receive an error
-        let n = json!({
-            "method": "hullo",
-            "args": {"args": "should", "be": "params"}});
-        let mut remote = DummyRemote::new(move || EchoHandler);
-        let resp = remote.send_request(&n);
-        assert!(resp.is_err(), "{:?}", resp);
     }
 
     #[test]

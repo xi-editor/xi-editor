@@ -20,7 +20,7 @@ use std::time::Duration;
 use std::io::{self, BufReader, Read, Write, Cursor};
 
 use serde_json::{self, Value};
-use super::{RpcLoop, Handler, RpcCall, RpcCtx, RemoteError, RpcObject, Response};
+use super::{RpcLoop, Handler, RpcObject, Response};
 
 /// Simulates a remote connection to a Handler.
 pub struct DummyRemote {
@@ -103,8 +103,8 @@ impl DummyRemote {
         }
     }
 
-    /// Sends a notification and checks for a response. If a response is received,
-    /// it is returned in the error.
+    /// Sends a notification and checks for a response. If a response is
+    /// received, it is returned in the error.
     pub fn send_notification(&self, v: &Value) -> Result<(), String> {
         match self.send_common(v) {
             None => Ok(()),
@@ -112,8 +112,8 @@ impl DummyRemote {
         }
     }
 
-    /// Sends a request and waits for a response. If none is received, returns
-    /// an error.
+    /// Sends a request and waits for a response. If none is received,
+    /// returns an error.
     pub fn send_request(&mut self, v: &Value) -> Response {
         let mut v = v.to_owned();
         v["id"] = json!(self.id);
@@ -129,22 +129,5 @@ impl DummyRemote {
                     .expect("response was invalid response object")
             }
         }
-    }
-}
-
-/// Handler that responds to requests with whatever params they sent.
-pub struct EchoHandler;
-
-#[allow(unused)]
-impl Handler for EchoHandler {
-    type Notification = RpcCall;
-    type Request = RpcCall;
-    fn handle_notification(&mut self, ctx: RpcCtx, rpc: Self::Notification) {
-        // chill
-    }
-
-    fn handle_request(&mut self, ctx: RpcCtx, rpc: Self::Request) ->
-        Result<Value, RemoteError> {
-            return Ok(rpc.params)
     }
 }
