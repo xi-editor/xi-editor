@@ -41,7 +41,8 @@ below.
 
 ### Building the core
 
-If you want to experiment, you can build just the core like so:
+Building the xi editor requires Rust 1.18 or later. If you want to experiment,
+you can build just the core like so:
 
 ```
 > cd rust
