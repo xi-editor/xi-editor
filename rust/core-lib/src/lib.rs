@@ -81,7 +81,7 @@ use internal::layers;
 #[cfg(target_os = "fuchsia")]
 use internal::fuchsia;
 
-use tabs::Documents;
+use tabs::{Documents, BufferContainerRef};
 use rpc::Request;
 
 #[cfg(target_os = "fuchsia")]
@@ -104,6 +104,14 @@ impl MainState {
         MainState {
             tabs: Documents::new(),
         }
+    }
+
+    /// Returns a copy of the `BufferContainerRef`.
+    ///
+    /// This is exposed for testing purposes only.
+    #[doc(hidden)]
+    pub fn _get_buffers(&self) -> BufferContainerRef {
+        self.tabs._get_buffers()
     }
 
     #[cfg(target_os = "fuchsia")]

@@ -52,9 +52,15 @@ impl fmt::Display for ViewIdentifier {
     }
 }
 
-impl<T: AsRef<str>> From<T> for ViewIdentifier {
-    fn from(s: T) -> Self {
-        ViewIdentifier(String::from(s.as_ref()))
+impl<'a> From<&'a str> for ViewIdentifier {
+    fn from(s: &'a str) -> Self {
+        ViewIdentifier(String::from(s))
+    }
+}
+
+impl From<String> for ViewIdentifier {
+    fn from(s: String) -> Self {
+        ViewIdentifier(s)
     }
 }
 
@@ -215,21 +221,23 @@ impl BufferContainerRef {
     /// If this is the last view open onto the underlying buffer, also cleans up
     /// the `Editor` instance.
     pub fn close_view(&self, view_id: &ViewIdentifier) {
-        let path_to_remove = {
+        let (remove, path) = {
             let mut inner = self.lock();
             let editor = inner.editor_for_view_mut(view_id).unwrap();
             editor.remove_view(view_id);
             if !editor.has_views() {
-                editor.get_path().map(PathBuf::from)
+                (true, editor.get_path().map(PathBuf::from))
             } else {
-                None
+                (false, None)
             }
         };
 
-        if let Some(path) = path_to_remove {
+        if remove {
             let mut inner = self.lock();
             let buffer_id = inner.views.remove(view_id).unwrap();
-            inner.open_files.remove(&path);
+            if let Some(path) = path {
+                inner.open_files.remove(&path);
+            }
             inner.editors.remove(&buffer_id);
         }
     }
@@ -315,6 +323,11 @@ impl Documents {
         }
     }
 
+    #[doc(hidden)]
+    pub fn _get_buffers(&self) -> BufferContainerRef {
+        self.buffers.clone()
+    }
+
     fn new_tab_ctx(&self, peer: &MainPeer) -> DocumentCtx {
         DocumentCtx {
             kill_ring: self.kill_ring.clone(),
@@ -326,7 +339,7 @@ impl Documents {
 
     fn next_view_id(&mut self) -> ViewIdentifier {
         self.id_counter += 1;
-        ViewIdentifier::from(format!("view-id-{}", self.id_counter))
+        format!("view-id-{}", self.id_counter).into()
     }
 
     fn next_buffer_id(&mut self) -> BufferIdentifier {

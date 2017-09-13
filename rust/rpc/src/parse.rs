@@ -94,6 +94,11 @@ impl RpcObject {
         self.0.get("id").and_then(Value::as_u64)
     }
 
+    /// Returns the 'method' field of the underlying object, if present.
+    pub fn get_method<'a>(&'a self) -> Option<&'a str> {
+        self.0.get("method").and_then(Value::as_str)
+    }
+
     /// Returns `true` if this object looks like an RPC response;
     /// that is, if it has an 'id' field and does _not_ have a 'method'
     /// field.

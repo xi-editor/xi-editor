@@ -26,7 +26,6 @@ use super::{MessageReader, RpcObject, Response, ReadError};
 /// stream for an RPC loop.
 pub struct DummyWriter(Sender<String>);
 
-
 /// Wraps an instance of `mpsc::Receiver`, providing convenience methods
 /// for parsing received messages.
 pub struct DummyReader(MessageReader, Receiver<String>);
@@ -72,6 +71,12 @@ impl DummyReader {
             Err(msg) => panic!("Error waiting for response: {}", msg),
             Ok(resp) => resp
         }
+    }
+
+    pub fn expect_object(&mut self) -> RpcObject {
+        self.next_timeout(Duration::from_secs(1))
+            .expect("response should be received")
+            .unwrap()
     }
 }
 

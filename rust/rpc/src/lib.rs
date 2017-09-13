@@ -48,6 +48,7 @@ use serde::de::DeserializeOwned;
 use parse::{Call, Response, RpcObject, MessageReader};
 pub use error::{Error, ReadError, RemoteError};
 
+
 /// An interface to access the other side of the RPC channel. The main purpose
 /// is to send RPC requests and notifications to the peer.
 ///
@@ -213,6 +214,7 @@ impl<W: Write + Send> RpcLoop<W> {
                 loop {
                     let json = match self.reader.next(&mut stream) {
                         Ok(json) => json,
+                        Err(ref err) if err.is_disconnect() => break,
                         Err(err) => {
                             // if parsing fails, we print the error and exit.
                             print_err!("Error reading stream: {:?}", err);
