@@ -249,7 +249,7 @@ impl<N: NodeInfo> Node<N> {
             return Node::from_nodes(vec![rope1, rope2]);
         }
         match {
-            let mut node1 = Arc::make_mut(&mut rope1.0);
+            let node1 = Arc::make_mut(&mut rope1.0);
             let leaf2 = rope2.get_leaf();
             if let NodeVal::Leaf(ref mut leaf1) = node1.val {
                 let leaf2_iv = Interval::new_closed_closed(0, leaf2.len());
