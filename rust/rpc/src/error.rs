@@ -41,6 +41,8 @@ pub enum ReadError {
     Json(JsonError),
     /// The message was not a JSON object.
     NotObject,
+    /// The the method and params were not recognized by the handler.
+    UnknownRequest(JsonError),
     /// The peer closed the connection.
     Disconnect,
 }
@@ -142,6 +144,7 @@ impl fmt::Display for ReadError {
             ReadError::Io(ref err) => write!(f, "I/O Error: {:?}", err),
             ReadError::Json(ref err) => write!(f, "JSON Error: {:?}", err),
             ReadError::NotObject => write!(f, "JSON message was not an object."),
+            ReadError::UnknownRequest(ref err) => write!(f, "Unknown request: {:?}", err),
             ReadError::Disconnect => write!(f, "Peer closed the connection."),
         }
     }

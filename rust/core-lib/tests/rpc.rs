@@ -20,7 +20,7 @@ extern crate xi_core_lib;
 
 use std::io;
 
-use xi_rpc::RpcLoop;
+use xi_rpc::{RpcLoop, ReadError};
 use xi_rpc::test_utils::{make_reader, test_channel};
 use xi_core_lib::MainState;
 
@@ -31,12 +31,12 @@ fn test_startup() {
     let mut rpc_looper = RpcLoop::new(tx);
     let json = make_reader(r#"{"method":"client_started","params":{}}
 {"method":"set_theme","params":{"theme_name":"InspiredGitHub"}}"#);
-    rpc_looper.mainloop(|| json, &mut state);
+    assert!(rpc_looper.mainloop(|| json, &mut state).is_ok());
     assert_eq!(rx.expect_object().get_method(), Some("available_themes"));
     assert_eq!(rx.expect_object().get_method(), Some("theme_changed"));
 
     let json = make_reader(r#"{"id":0,"method":"new_view","params":{}}"#);
-    rpc_looper.mainloop(|| json, &mut state);
+    assert!(rpc_looper.mainloop(|| json, &mut state).is_ok());
     assert_eq!(rx.expect_response(), Ok(json!("view-id-1")));
 }
 
@@ -47,11 +47,11 @@ fn test_state() {
     let buffers = state._get_buffers();
 
     let write = io::sink();
-    let read = make_reader(r#"{"method":"client_started","params":{}}
+    let json = make_reader(r#"{"method":"client_started","params":{}}
 {"method":"set_theme","params":{"theme_name":"InspiredGitHub"}}
 {"id":0,"method":"new_view","params":{}}"#);
     let mut rpc_looper = RpcLoop::new(write);
-    rpc_looper.mainloop(|| read, &mut state);
+    assert!(rpc_looper.mainloop(|| json, &mut state).is_ok());
 
     {
         let buffers = buffers.lock();
@@ -59,19 +59,19 @@ fn test_state() {
     }
     assert!(buffers.buffer_for_view(&"view-id-1".into()).is_some());
 
-    let read = make_reader(
+    let json = make_reader(
         r#"{"method":"close_view","params":{"view_id":"view-id-1"}}"#);
-    rpc_looper.mainloop(|| read, &mut state);
+    assert!(rpc_looper.mainloop(|| json, &mut state).is_ok());
     {
         let buffers = buffers.lock();
         assert_eq!(buffers.iter_editors().count(), 0);
     }
 
-    let read = make_reader(r#"{"id":1,"method":"new_view","params":{}}
+    let json = make_reader(r#"{"id":1,"method":"new_view","params":{}}
 {"id":2,"method":"new_view","params":{}}
 {"id":3,"method":"new_view","params":{}}"#);
 
-    rpc_looper.mainloop(|| read, &mut state);
+    assert!(rpc_looper.mainloop(|| json, &mut state).is_ok());
     {
         let buffers = buffers.lock();
         assert_eq!(buffers.iter_editors().count(), 3);
@@ -86,8 +86,11 @@ fn test_malformed_json() {
     // malformed json, no id: should not receive a response, and connection should close.
     let read = make_reader(r#"{method:"client_started","params":{}}
 {"id":0,"method":"new_view","params":{}}"#);
-    rpc_looper.mainloop(|| read, &mut state);
-
+    match rpc_looper.mainloop(|| read, &mut state).err()
+        .expect("malformed json exits with error") {
+            ReadError::Json(_) => (), // expected
+            err => panic!("Unexpected error: {:?}", err),
+    }
     // read should have ended after first item
     {
         let buffers = state._get_buffers();

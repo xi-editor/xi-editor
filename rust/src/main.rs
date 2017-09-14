@@ -29,5 +29,8 @@ fn main() {
     let stdout = io::stdout();
     let mut rpc_looper = RpcLoop::new(stdout);
 
-    rpc_looper.mainloop(|| stdin.lock(), &mut state);
+    match rpc_looper.mainloop(|| stdin.lock(), &mut state) {
+        Ok(_) => (),
+        Err(err) => print_err!("xi-core exited with error:\n{:?}", err),
+    }
 }
