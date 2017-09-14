@@ -14,10 +14,12 @@
 
 //! Parsing of raw JSON messages into RPC objects.
 
+use std::io::BufRead;
+
 use serde_json::{self, Value, Error as JsonError};
 use serde::de::DeserializeOwned;
 
-use error::RemoteError;
+use error::{RemoteError, ReadError};
 
 
 /// A unique identifier attached to request RPCs.
@@ -26,12 +28,18 @@ type RequestId = u64;
 /// An RPC response, received from the peer.
 pub type Response = Result<Value, RemoteError>;
 
+/// Reads and parses RPC messages from a stream, maintaining an
+/// internal buffer.
+#[derive(Debug, Default)]
+pub struct MessageReader(String);
+
 /// An internal type used during initial JSON parsing.
 ///
 /// Wraps an arbitrary JSON object, which may be any valid or invalid
 /// RPC message. This allows initial parsing and response handling to
 /// occur on the read thread. If the message looks like a request, it
 /// is passed to the main thread for handling.
+#[derive(Debug, Clone)]
 pub struct RpcObject(Value);
 
 #[derive(Debug, Clone, PartialEq)]
@@ -46,10 +54,49 @@ pub enum Call<N, R> {
     InvalidRequest(RequestId, RemoteError),
 }
 
+impl MessageReader {
+    /// Attempts to read the next line from the stream and parse it as
+    /// an RPC object.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if there is an underlying
+    /// I/O error, if the stream is closed, or if the message is not
+    /// a valid JSON object.
+    pub fn next<R: BufRead>(&mut self, reader: &mut R)
+                        -> Result<RpcObject, ReadError> {
+        self.0.clear();
+        let _ = reader.read_line(&mut self.0)?;
+        if self.0.is_empty() {
+            Err(ReadError::Disconnect)
+        } else {
+            self.parse(&self.0)
+        }
+    }
+
+    /// Attempts to parse a &str as an RPC Object.
+    ///
+    /// This should not be called directly unless you are writing tests.
+    #[doc(hidden)]
+    pub fn parse(&self, s: &str) -> Result<RpcObject, ReadError> {
+        let val = serde_json::from_str::<Value>(&s)?;
+        if !val.is_object() {
+            Err(ReadError::NotObject)
+        } else {
+            Ok(val.into())
+        }
+    }
+}
+
 impl RpcObject {
     /// Returns the 'id' of the underlying object, if present.
     pub fn get_id(&self) -> Option<RequestId> {
         self.0.get("id").and_then(Value::as_u64)
+    }
+
+    /// Returns the 'method' field of the underlying object, if present.
+    pub fn get_method<'a>(&'a self) -> Option<&'a str> {
+        self.0.get("method").and_then(Value::as_str)
     }
 
     /// Returns `true` if this object looks like an RPC response;
