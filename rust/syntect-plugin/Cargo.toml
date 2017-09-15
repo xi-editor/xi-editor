@@ -7,7 +7,7 @@ repository = "https://github.com/google/xi-editor"
 description = "A syntax highlighting plugin based on syntect."
 
 [dependencies]
-syntect = { git = "https://github.com/raphlinus/syntect" }
+syntect = "1.7.3"
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
