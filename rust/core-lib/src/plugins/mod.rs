@@ -14,7 +14,7 @@
 
 //! Plugins and related functionality.
 
-pub mod rpc_types;
+pub mod rpc;
 mod manager;
 mod manifest;
 mod catalog;
@@ -33,7 +33,7 @@ use tabs::ViewIdentifier;
 pub use self::manager::{PluginManagerRef, WeakPluginManagerRef};
 pub use self::manifest::{PluginDescription, Command, PlaceholderRpc};
 
-use self::rpc_types::{PluginUpdate, PluginBufferInfo};
+use self::rpc::{PluginUpdate, PluginBufferInfo};
 
 use self::manager::PluginName;
 use self::catalog::PluginCatalog;

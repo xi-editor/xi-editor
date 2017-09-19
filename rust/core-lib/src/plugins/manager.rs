@@ -30,7 +30,7 @@ use xi_rpc::{RpcCtx, Handler, RemoteError};
 use tabs::{BufferIdentifier, ViewIdentifier, BufferContainerRef};
 
 use super::{PluginCatalog, PluginRef, start_plugin_process, PluginPid};
-use super::rpc_types::{PluginNotification, PluginRequest, PluginCommand,
+use super::rpc::{PluginNotification, PluginRequest, PluginCommand,
 PluginUpdate, UpdateResponse, PluginBufferInfo, ClientPluginInfo};
 use super::manifest::{PluginActivation, Command};
 

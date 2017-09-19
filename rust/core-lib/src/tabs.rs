@@ -35,7 +35,7 @@ use MainPeer;
 use syntax::SyntaxDefinition;
 use prefs::ConfigManager;
 use plugins::{self, PluginManagerRef, Command};
-use plugins::rpc_types::{PluginUpdate, ClientPluginInfo};
+use plugins::rpc::{PluginUpdate, ClientPluginInfo};
 
 #[cfg(target_os = "fuchsia")]
 use apps_ledger_services_public::{Ledger_Proxy};

@@ -36,7 +36,7 @@ use selection::{Affinity, Selection, SelRegion};
 use tabs::{BufferIdentifier, ViewIdentifier, DocumentCtx};
 use rpc::{self, GestureType};
 use syntax::SyntaxDefinition;
-use plugins::rpc_types::{PluginUpdate, PluginEdit, ScopeSpan, PluginBufferInfo,
+use plugins::rpc::{PluginUpdate, PluginEdit, ScopeSpan, PluginBufferInfo,
 ClientPluginInfo};
 use plugins::{PluginPid, Command};
 use layers::Scopes;

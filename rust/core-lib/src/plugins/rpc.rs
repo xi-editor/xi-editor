@@ -271,7 +271,7 @@ mod tests {
     #[test]
     fn test_de_plugin_rpc() {
         let json = r#"{"method": "alert", "params": {"view_id": "view-id-1", "plugin_id": 42, "msg": "ahhh!"}}"#;
-        let de: PluginNotificationRpc = serde_json::from_str(json).unwrap();
+        let de: PluginCommand<PluginNotification> = serde_json::from_str(json).unwrap();
         assert_eq!(de.view_id, "view-id-1".into());
         assert_eq!(de.plugin_id, PluginPid(42));
         match de.cmd {
