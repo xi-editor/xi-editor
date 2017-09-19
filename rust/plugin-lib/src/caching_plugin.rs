@@ -36,6 +36,7 @@ pub trait Handler {
 /// The caching state
 #[derive(Default)]
 struct State {
+    plugin_id: usize,
     buf_size: usize,
     view_id: String,
     rev: u64,
@@ -71,7 +72,8 @@ impl<'a, H: Handler> plugin_base::Handler for MyHandler<'a, H> {
                 print_err!("got ping");
                 None
             }
-            PluginRequest::Initialize(ref init_info) => {
+            PluginRequest::Initialize(plugin_id, ref init_info) => {
+                ctx.state.plugin_id = plugin_id;
                 ctx.state.buf_size = init_info.buf_size;
                 assert_eq!(init_info.views.len(), 1);
                 ctx.state.view_id = init_info.views[0].clone();
@@ -150,8 +152,8 @@ impl<'a> PluginCtx<'a> {
         if self.state.cache.is_none() || offset_of_line < self.state.cache_offset ||
                 offset_of_line >= self.state.cache_offset +
                     self.state.cache.as_ref().unwrap().len() {
-            self.state.cache = Some(self.peer.get_data(&self.state.view_id, offset_of_line, CHUNK_SIZE,
-                self.state.rev)?);
+            self.state.cache = Some(self.peer.get_data(self.state.plugin_id, &self.state.view_id,
+                                                       offset_of_line, CHUNK_SIZE, self.state.rev)?);
             self.state.cache_offset = offset_of_line;
         }
         loop {
@@ -169,8 +171,8 @@ impl<'a> PluginCtx<'a> {
                     }
                     // fetch next chunk
                     let next_offset = self.state.cache_offset + cache_len;
-                    let next_chunk = self.peer.get_data(&self.state.view_id, next_offset, CHUNK_SIZE,
-                            self.state.rev)?;
+                    let next_chunk = self.peer.get_data(self.state.plugin_id, &self.state.view_id,
+                                                        next_offset, CHUNK_SIZE, self.state.rev)?;
                     self.state.cache_offset = offset_of_line;
                     let mut new_cache = String::with_capacity(cache_len - offset_in_cache +
                             next_chunk.len());
@@ -197,11 +199,12 @@ impl<'a> PluginCtx<'a> {
     }
 
     pub fn add_scopes(&self, scopes: &Vec<Vec<String>>) {
-        self.peer.add_scopes(&self.state.view_id, scopes)
+        self.peer.add_scopes(self.state.plugin_id, &self.state.view_id, scopes)
     }
 
     pub fn update_spans(&self, start: usize, len: usize, spans: &[ScopeSpan]) {
-        self.peer.update_spans(&self.state.view_id, start, len, self.state.rev, spans)
+        self.peer.update_spans(self.state.plugin_id, &self.state.view_id,
+                               start, len, self.state.rev, spans)
     }
 
     /// Determines whether an incoming request (or notification) is pending. This

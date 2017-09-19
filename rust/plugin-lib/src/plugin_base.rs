@@ -67,9 +67,10 @@ impl ScopeSpan {
 pub struct PluginCtx<'a>(RpcCtx<'a>);
 
 impl<'a> PluginCtx<'a> {
-    pub fn get_data(&self, view_id: &str, offset: usize,
+    pub fn get_data(&self, plugin_id: usize, view_id: &str, offset: usize,
                     max_size: usize, rev: u64) -> Result<String, Error> {
         let params = json!({
+            "plugin_id": plugin_id,
             "view_id": view_id,
             "offset": offset,
             "max_size": max_size,
@@ -83,16 +84,18 @@ impl<'a> PluginCtx<'a> {
         }
     }
 
-    pub fn add_scopes(&self, view_id: &str, scopes: &Vec<Vec<String>>) {
+    pub fn add_scopes(&self, plugin_id: usize, view_id: &str, scopes: &Vec<Vec<String>>) {
         let params = json!({
+            "plugin_id": plugin_id,
             "view_id": view_id,
             "scopes": scopes,
         });
         self.send_rpc_notification("add_scopes", &params);
     }
 
-    pub fn update_spans(&self, view_id: &str, start: usize, len: usize, rev: u64, spans: &[ScopeSpan]) {
+    pub fn update_spans(&self, plugin_id: usize, view_id: &str, start: usize, len: usize, rev: u64, spans: &[ScopeSpan]) {
         let params = json!({
+            "plugin_id": plugin_id,
             "view_id": view_id,
             "start": start,
             "len": len,
@@ -145,7 +148,7 @@ impl EditType {
 
 pub enum PluginRequest<'a> {
     Ping,
-    Initialize(PluginBufferInfo),
+    Initialize(usize, PluginBufferInfo),
     Update {
         start: usize,
         end: usize,
@@ -178,6 +181,7 @@ pub struct PluginBufferInfo {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct BufferInfoWrapper {
+    pub plugin_id: usize,
     pub buffer_info: Vec<PluginBufferInfo>,
 }
 
@@ -209,7 +213,7 @@ fn parse_plugin_request<'a>(method: &str, params: &'a Value) ->
             match serde_json::from_value::<BufferInfoWrapper>(params.to_owned()) {
                 //TODO: this can return multiple values but we assume only one.
                 // global plugins will need to correct this assumption.
-                Ok(BufferInfoWrapper { mut buffer_info }) => Ok(Initialize(buffer_info.remove(0))),
+                Ok(BufferInfoWrapper { plugin_id, mut buffer_info }) => Ok(Initialize(plugin_id, buffer_info.remove(0))),
                 Err(_) => {
                     print_err!("bad params? {:?}", params);
                     Err(InternalError::InvalidParams)
