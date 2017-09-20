@@ -17,11 +17,12 @@
 extern crate syntect;
 #[macro_use]
 extern crate xi_plugin_lib;
+extern crate xi_core_lib;
 
 mod stackmap;
 
 use xi_plugin_lib::state_cache::{self, PluginCtx};
-use xi_plugin_lib::plugin_base::ScopeSpan;
+use xi_core_lib::plugin_rpc::ScopeSpan;
 use syntect::parsing::{ParseState, ScopeStack, SyntaxSet, SCOPE_REPO};
 use stackmap::{StackMap, LookupResult};
 
@@ -71,8 +72,8 @@ impl<'a> PluginState<'a> {
         let repo = SCOPE_REPO.lock().unwrap();
         for (cursor, batch) in ops {
             if scope_state.len() > 0 {
-                let scope_ident = self.stack_idents.get_value(scope_state.as_slice());
-                let scope_ident = match scope_ident {
+                let scope_id = self.stack_idents.get_value(scope_state.as_slice());
+                let scope_id = match scope_id {
                     LookupResult::Existing(id) => id,
                     LookupResult::New(id) => {
                         let stack_strings = scope_state.as_slice().iter()
@@ -86,7 +87,7 @@ impl<'a> PluginState<'a> {
                 let start = self.offset - self.spans_start + prev_cursor;
                 let end = start + (cursor - prev_cursor);
                 if start != end {
-                    let span = ScopeSpan::new(start, end, scope_ident);
+                    let span = ScopeSpan { start, end, scope_id };
                     self.spans.push(span);
                 }
             }

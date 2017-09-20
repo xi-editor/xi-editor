@@ -44,7 +44,7 @@ pub type PluginPeer = RpcPeer;
 ///
 /// Note: two instances of the same executable will have different identifiers.
 /// Note: this identifier is distinct from the OS's process id.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Serialize, Deserialize, Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PluginPid(usize);
 
 /// A running plugin.

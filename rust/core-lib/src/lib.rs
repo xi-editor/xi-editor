@@ -69,6 +69,11 @@ pub mod internal {
     pub mod prefs;
 }
 
+pub use plugins::rpc as plugin_rpc;
+pub use plugins::PluginPid;
+pub use tabs::ViewIdentifier;
+pub use syntax::SyntaxDefinition;
+
 use internal::tabs;
 use internal::editor;
 use internal::view;

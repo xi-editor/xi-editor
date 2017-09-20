@@ -17,14 +17,13 @@
 use std::path::PathBuf;
 use serde_json::Value;
 
-use plugin_base;
-use plugin_base::PluginRequest;
+use xi_core::{PluginPid, SyntaxDefinition, ViewIdentifier, plugin_rpc};
+use xi_rpc::RemoteError;
 
-pub use plugin_base::{Error, ScopeSpan};
+use plugin_base::{self, Error};
 
 const CHUNK_SIZE: usize = 1024 * 1024;
 
-/// A handler that the plugin needs to instantiate.
 pub trait Handler {
     fn initialize(&mut self, ctx: PluginCtx, buf_size: usize);
     fn update(&mut self, ctx: PluginCtx);
@@ -36,9 +35,9 @@ pub trait Handler {
 /// The caching state
 #[derive(Default)]
 struct State {
-    plugin_id: usize,
+    plugin_id: PluginPid,
     buf_size: usize,
-    view_id: String,
+    view_id: ViewIdentifier,
     rev: u64,
     cache: Option<String>,
     cache_offset: usize,
@@ -47,7 +46,7 @@ struct State {
     line_num: usize,
     offset_of_line: usize,
 
-    syntax: String,
+    syntax: SyntaxDefinition,
     path: Option<PathBuf>,
 }
 
@@ -61,54 +60,61 @@ struct MyHandler<'a, H: 'a> {
     state: State,
 }
 
+impl State {
+    fn initialize(&mut self, plugin_id: PluginPid,
+                  init_info: &plugin_rpc::PluginBufferInfo) {
+        self.plugin_id = plugin_id;
+        self.buf_size = init_info.buf_size;
+        assert_eq!(init_info.views.len(), 1);
+        self.view_id = init_info.views[0].clone();
+        self.rev = init_info.rev;
+        self.syntax = init_info.syntax.clone();
+        self.path = init_info.path.clone().map(PathBuf::from);
+    }
+
+    fn update(&mut self, update: plugin_rpc::PluginUpdate) {
+        let plugin_rpc::PluginUpdate { start, end, new_len, text, rev, .. } = update;
+        self.buf_size = self.buf_size - (end - start) + new_len;
+        self.rev = rev;
+        if let (Some(text), Some(mut cache)) = (text, self.cache.take()) {
+            let off = self.cache_offset;
+            if start >= off && start <= off + cache.len() {
+                let tail = if end < off + cache.len() {
+                    Some(cache[end - off ..].to_string())
+                } else {
+                    None
+                };
+                cache.truncate(start - off);
+                cache.push_str(&text);
+                if let Some(tail) = tail {
+                    cache.push_str(&tail);
+                }
+                self.cache = Some(cache);
+            }
+        }
+        self.line_num = 0;
+        self.offset_of_line = 0;
+    }
+}
+
 impl<'a, H: Handler> plugin_base::Handler for MyHandler<'a, H> {
-    fn call(&mut self, req: &PluginRequest, peer: plugin_base::PluginCtx) -> Option<Value> {
+    fn handle_notification(&mut self, ctx: plugin_base::PluginCtx,
+                           rpc: plugin_rpc::HostNotification) {
+        use self::plugin_rpc::HostNotification::*;
         let ctx = PluginCtx {
             state: &mut self.state,
-            peer: peer,
+            peer: ctx,
         };
-        match *req {
-            PluginRequest::Ping => {
-                print_err!("got ping");
-                None
+
+        match rpc {
+            Ping( .. ) => (),
+            Initialize { plugin_id, ref buffer_info } => {
+                let info = buffer_info.first()
+                    .expect("buffer_info always contains at least one item");
+                ctx.state.initialize(plugin_id, info);
+                self.handler.initialize(ctx, info.buf_size);
             }
-            PluginRequest::Initialize(plugin_id, ref init_info) => {
-                ctx.state.plugin_id = plugin_id;
-                ctx.state.buf_size = init_info.buf_size;
-                assert_eq!(init_info.views.len(), 1);
-                ctx.state.view_id = init_info.views[0].clone();
-                ctx.state.rev = init_info.rev;
-                ctx.state.syntax = init_info.syntax.clone();
-                ctx.state.path = init_info.path.clone().map(|p| PathBuf::from(p));
-                self.handler.initialize(ctx, init_info.buf_size);
-                None
-            }
-            PluginRequest::Update { start, end, new_len, rev, text, .. } => {
-                //print_err!("got update notification {:?}", edit_type);
-                ctx.state.buf_size = ctx.state.buf_size - (end - start) + new_len;
-                ctx.state.rev = rev;
-                if let (Some(text), Some(mut cache)) = (text, ctx.state.cache.take()) {
-                    let off = ctx.state.cache_offset;
-                    if start >= off && start <= off + cache.len() {
-                        let tail = if end < off + cache.len() {
-                            Some(cache[end - off ..].to_string())
-                        } else {
-                            None
-                        };
-                        cache.truncate(start - off);
-                        cache.push_str(text);
-                        if let Some(tail) = tail {
-                            cache.push_str(&tail);
-                        }
-                        ctx.state.cache = Some(cache);
-                    }
-                }
-                ctx.state.line_num = 0;
-                ctx.state.offset_of_line = 0;
-                self.handler.update(ctx);
-                Some(Value::from(0i32))
-            }
-            PluginRequest::DidSave { ref path } => {
+            DidSave { ref path, .. } => {
                 let new_path = Some(path.to_owned());
                 if ctx.state.path != new_path {
                     ctx.state.line_num = 0;
@@ -116,7 +122,27 @@ impl<'a, H: Handler> plugin_base::Handler for MyHandler<'a, H> {
                 }
                 ctx.state.path = Some(path.to_owned());
                 self.handler.did_save(ctx);
-                None
+            }
+            NewBuffer { .. } | DidClose { .. } => panic!("Rust plugin \
+            lib does not support global plugins"),
+            //TODO: figure out shutdown
+            Shutdown( .. ) => (),
+        }
+    }
+
+    fn handle_request(&mut self, ctx: plugin_base::PluginCtx,
+                      rpc: plugin_rpc::HostRequest)
+                      -> Result<Value, RemoteError> {
+        use self::plugin_rpc::HostRequest::*;
+        let ctx = PluginCtx {
+            state: &mut self.state,
+            peer: ctx,
+        };
+        match rpc {
+            Update(params) => {
+                ctx.state.update(params);
+                self.handler.update(ctx);
+                Ok(Value::from(0i32))
             }
         }
     }
@@ -202,7 +228,7 @@ impl<'a> PluginCtx<'a> {
         self.peer.add_scopes(self.state.plugin_id, &self.state.view_id, scopes)
     }
 
-    pub fn update_spans(&self, start: usize, len: usize, spans: &[ScopeSpan]) {
+    pub fn update_spans(&self, start: usize, len: usize, spans: &[plugin_rpc::ScopeSpan]) {
         self.peer.update_spans(self.state.plugin_id, &self.state.view_id,
                                start, len, self.state.rev, spans)
     }

@@ -15,3 +15,6 @@ rand = "0.3"
 
 [dependencies.xi-rpc]
 path = "../rpc"
+
+[dependencies.xi-core-lib]
+path = "../core-lib"

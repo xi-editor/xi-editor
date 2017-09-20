@@ -41,7 +41,7 @@ use plugins::rpc::{PluginUpdate, ClientPluginInfo};
 use apps_ledger_services_public::{Ledger_Proxy};
 
 /// ViewIdentifiers are the primary means of routing messages between xi-core and a client view.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ViewIdentifier(String);
 
 /// BufferIdentifiers uniquely identify open buffers.

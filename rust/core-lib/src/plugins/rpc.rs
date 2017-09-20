@@ -59,15 +59,15 @@ pub struct ClientPluginInfo {
 /// A simple update, sent to a plugin.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PluginUpdate {
-    view_id: ViewIdentifier,
-    start: usize,
-    end: usize,
-    new_len: usize,
+    pub view_id: ViewIdentifier,
+    pub start: usize,
+    pub end: usize,
+    pub new_len: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
-    text: Option<String>,
-    rev: u64,
-    edit_type: String,
-    author: String,
+    pub text: Option<String>,
+    pub rev: u64,
+    pub edit_type: String,
+    pub author: String,
 }
 
 /// A response to an `update` RPC sent to a plugin.
@@ -76,10 +76,13 @@ pub struct PluginUpdate {
 pub enum UpdateResponse {
     /// An edit to the buffer.
     Edit(PluginEdit),
-    /// An acknowledgement with no action. A response cannot be Null, so we send a uint.
+    /// An acknowledgement with no action. A response cannot be Null,
+    ///gso we send a uint.
     Ack(u64),
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmptyStruct {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -94,12 +97,12 @@ pub enum HostRequest {
 #[serde(tag = "method", content = "params")]
 /// RPC Notifications sent from the host
 pub enum HostNotification {
-    Ping,
+    Ping(EmptyStruct),
     Initialize { plugin_id: PluginPid, buffer_info: Vec<PluginBufferInfo> },
     DidSave { view_id: ViewIdentifier, path: PathBuf },
     NewBuffer { buffer_info: Vec<PluginBufferInfo> },
     DidClose { view_id: ViewIdentifier },
-    Shutdown,
+    Shutdown(EmptyStruct),
 }
 
 

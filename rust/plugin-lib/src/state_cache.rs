@@ -19,10 +19,11 @@ use serde_json::Value;
 use bytecount;
 use rand::{thread_rng, Rng};
 
-use plugin_base;
-use plugin_base::{PluginBufferInfo, PluginRequest};
+use xi_core::{PluginPid, ViewIdentifier, SyntaxDefinition, plugin_rpc};
+use xi_rpc::RemoteError;
 
-pub use plugin_base::{Error, ScopeSpan};
+use plugin_base;
+pub use plugin_base::Error;
 
 const CHUNK_SIZE: usize = 1024 * 1024;
 const CACHE_SIZE: usize = 1024;
@@ -50,9 +51,10 @@ struct CacheEntry<S> {
 /// The caching state
 #[derive(Default)]
 struct CacheState<S> {
+    plugin_id: PluginPid,
     /// The length of the document in bytes.
     buf_size: usize,
-    view_id: String,
+    view_id: ViewIdentifier,
     rev: u64,
 
     /// A chunk of the document.
@@ -67,7 +69,7 @@ struct CacheState<S> {
     /// The frontier, represented as a sorted list of line numbers.
     frontier: Vec<usize>,
 
-    syntax: String,
+    syntax: SyntaxDefinition,
     path: Option<PathBuf>,
 }
 
@@ -82,22 +84,57 @@ struct CacheHandler<'a, P: Plugin + 'a> {
 }
 
 impl<'a, P: Plugin> plugin_base::Handler for CacheHandler<'a, P> {
-    fn call(&mut self, req: &PluginRequest, peer: plugin_base::PluginCtx) -> Option<Value> {
+    fn handle_notification(&mut self, ctx: plugin_base::PluginCtx,
+                           rpc: plugin_rpc::HostNotification) {
+        use self::plugin_rpc::HostNotification::*;
         let ctx = PluginCtx {
             state: &mut self.state,
-            peer: peer,
+            peer: ctx,
         };
-        match *req {
-            PluginRequest::Ping => {
-                print_err!("got ping");
-                None
+        match rpc {
+            Ping( .. ) => (),
+            Initialize { plugin_id, ref buffer_info } => {
+                let info = buffer_info.first()
+                    .expect("buffer_info always contains at least one item");
+                ctx.do_initialize(info, plugin_id, self.handler);
             }
-            PluginRequest::Initialize(ref init_info) => ctx.do_initialize(init_info, self.handler),
-            PluginRequest::Update { start, end, new_len, rev, text, .. } =>
-                ctx.do_update(start, end, new_len, rev, text, self.handler),
-            PluginRequest::DidSave { ref path } => ctx.do_did_save(path, self.handler),
+            DidSave { ref path, .. } => ctx.do_did_save(path, self.handler),
+            NewBuffer { .. } | DidClose { .. } => print_err!("Rust plugin lib \
+            does not support global plugins"),
+            //TODO: figure out shutdown
+            Shutdown( .. ) => (),
         }
     }
+
+    fn handle_request(&mut self, ctx: plugin_base::PluginCtx,
+                      rpc: plugin_rpc::HostRequest)
+                      -> Result<Value, RemoteError> {
+        use self::plugin_rpc::HostRequest::*;
+        let ctx = PluginCtx {
+            state: &mut self.state,
+            peer: ctx,
+        };
+        match rpc {
+            Update(params) => Ok(ctx.do_update(params, self.handler)),
+        }
+    }
+
+    //fn call(&mut self, req: &PluginRequest, peer: plugin_base::PluginCtx) -> Option<Value> {
+        //let ctx = PluginCtx {
+            //state: &mut self.state,
+            //peer: peer,
+        //};
+        //match *req {
+            //PluginRequest::Ping => {
+                //print_err!("got ping");
+                //None
+            //}
+            //PluginRequest::Initialize(ref init_info) => ctx.do_initialize(init_info, self.handler),
+            //PluginRequest::Update { start, end, new_len, rev, text, .. } =>
+                //ctx.do_update(start, end, new_len, rev, text, self.handler),
+            //PluginRequest::DidSave { ref path } => ctx.do_did_save(path, self.handler),
+        //}
+    //}
 
     fn idle(&mut self, peer: plugin_base::PluginCtx, token: usize) {
         let ctx = PluginCtx {
@@ -117,9 +154,11 @@ pub fn mainloop<P: Plugin>(handler: &mut P) {
 }
 
 impl<'a, S: Default + Clone> PluginCtx<'a, S> {
-    fn do_initialize<P: Plugin<State = S>>(mut self, init_info: &PluginBufferInfo, handler: &mut P)
-        -> Option<Value>
+    fn do_initialize<P>(mut self, init_info: &plugin_rpc::PluginBufferInfo,
+                        plugin_id: PluginPid, handler: &mut P)
+        where P: Plugin<State = S>
     {
+        self.state.plugin_id = plugin_id;
         self.state.buf_size = init_info.buf_size;
         assert_eq!(init_info.views.len(), 1);
         self.state.view_id = init_info.views[0].clone();
@@ -128,18 +167,17 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
         self.state.path = init_info.path.clone().map(|p| PathBuf::from(p));
         self.truncate_frontier(0);
         handler.initialize(self, init_info.buf_size);
-        None
     }
 
-    fn do_did_save<P: Plugin<State = S>>(self, path: &PathBuf, handler: &mut P) -> Option<Value> {
+    fn do_did_save<P: Plugin<State = S>>(self, path: &PathBuf, handler: &mut P) {
         self.state.path = Some(path.to_owned());
         handler.did_save(self);
-        None
     }
 
-    fn do_update<P: Plugin<State = S>>(mut self, start: usize, end: usize, new_len: usize, rev: u64,
-        text: Option<&str>, handler: &mut P) -> Option<Value>
+    fn do_update<P>(mut self, update: plugin_rpc::PluginUpdate, handler: &mut P) -> Value
+        where P: Plugin<State = S>
     {
+        let plugin_rpc::PluginUpdate { start, end, new_len, text, rev, .. } = update;
         //print_err!("got update notification {:?}", edit_type);
         self.state.buf_size = self.state.buf_size - (end - start) + new_len;
         self.state.rev = rev;
@@ -154,7 +192,7 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
                     None
                 };
                 self.state.chunk.truncate(start - off);
-                self.state.chunk.push_str(text);
+                self.state.chunk.push_str(&text);
                 if let Some((newline_count, tail)) = nlc_tail {
                     self.state.chunk.push_str(&tail);
                     let new_nl_count = count_newlines(&text);
@@ -174,8 +212,7 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
             self.truncate_cache(start);
         }
         handler.update(self);
-        Some(Value::from(0i32))
-
+        Value::from(0i32)
     }
 
     pub fn get_path(&self) -> Option<&PathBuf> {
@@ -186,11 +223,13 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
     }
 
     pub fn add_scopes(&self, scopes: &Vec<Vec<String>>) {
-        self.peer.add_scopes(&self.state.view_id, scopes)
+        self.peer.add_scopes(self.state.plugin_id, &self.state.view_id, scopes)
     }
 
-    pub fn update_spans(&self, start: usize, len: usize, spans: &[ScopeSpan]) {
-        self.peer.update_spans(&self.state.view_id, start, len, self.state.rev, spans)
+    pub fn update_spans(&self, start: usize, len: usize,
+                        spans: &[plugin_rpc::ScopeSpan]) {
+        self.peer.update_spans(self.state.plugin_id, &self.state.view_id,
+                               start, len, self.state.rev, spans)
     }
 
     /// Determines whether an incoming request (or notification) is pending. This
@@ -318,7 +357,8 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
     }
 
     fn fetch_chunk(&mut self, start: usize) -> Result<String, Error> {
-        self.peer.get_data(&self.state.view_id, start, CHUNK_SIZE, self.state.rev)
+        self.peer.get_data(self.state.plugin_id, &self.state.view_id,
+                           start, CHUNK_SIZE, self.state.rev)
     }
 
     /// Get a slice of the document, containing at least the given interval
