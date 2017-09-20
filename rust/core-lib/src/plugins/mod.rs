@@ -232,7 +232,9 @@ pub fn start_plugin_process<C>(manager_ref: &PluginManagerRef,
                     Arc::new(Mutex::new(plugin)),
                     Arc::new(AtomicBool::new(false)));
                 completion(Ok(plugin_ref.clone()));
-                looper.mainloop(|| BufReader::new(child_stdout), &mut plugin_ref);
+                //TODO: we could be logging plugin exit results
+                let _ = looper.mainloop(|| BufReader::new(child_stdout),
+                                        &mut plugin_ref);
             }
             Err(err) => completion(Err(err)),
         }
