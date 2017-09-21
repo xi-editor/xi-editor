@@ -82,14 +82,14 @@ pub trait Peer: Send + 'static {
     /// pending. This is intended to reduce latency for bulk operations
     /// done in the background.
     fn request_is_pending(&self) -> bool;
+    fn schedule_idle(&self, token: usize);
 }
 
 /// The `Peer` trait object.
 pub type RpcPeer = Box<Peer>;
 
-pub struct RpcCtx<'a> {
+pub struct RpcCtx {
     peer: RpcPeer,
-    idle: &'a mut VecDeque<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -110,11 +110,11 @@ pub struct RpcCall {
 pub trait Handler {
     type Notification: DeserializeOwned;
     type Request: DeserializeOwned;
-    fn handle_notification(&mut self, ctx: RpcCtx, rpc: Self::Notification);
-    fn handle_request(&mut self, ctx: RpcCtx, rpc: Self::Request)
+    fn handle_notification(&mut self, ctx: &RpcCtx, rpc: Self::Notification);
+    fn handle_request(&mut self, ctx: &RpcCtx, rpc: Self::Request)
                       -> Result<Value, RemoteError>;
     #[allow(unused_variables)]
-    fn idle(&mut self, ctx: RpcCtx, token: usize) {}
+    fn idle(&mut self, ctx: &RpcCtx, token: usize) {}
 }
 
 pub trait Callback: Send {
@@ -159,6 +159,7 @@ struct RpcState<W: Write> {
     writer: Mutex<W>,
     id: AtomicUsize,
     pending: Mutex<BTreeMap<usize, ResponseHandler>>,
+    idle_queue: Mutex<VecDeque<usize>>,
 }
 
 /// A structure holding the state of a main loop for handling RPC's.
@@ -177,6 +178,7 @@ impl<W: Write + Send> RpcLoop<W> {
             writer: Mutex::new(writer),
             id: AtomicUsize::new(0),
             pending: Mutex::new(BTreeMap::new()),
+            idle_queue: Mutex::new(VecDeque::new()),
         }));
         RpcLoop {
             reader: MessageReader::default(),
@@ -215,6 +217,9 @@ impl<W: Write + Send> RpcLoop<W> {
 
         let exit = crossbeam::scope(|scope| {
             let peer = self.get_raw_peer();
+            let ctx = RpcCtx {
+                peer: Box::new(peer.clone()),
+            };
             scope.spawn(move|| {
                 let mut stream = rf();
                 loop {
@@ -244,26 +249,19 @@ impl<W: Write + Send> RpcLoop<W> {
                 }
             });
 
-            let mut idle = VecDeque::<usize>::new();
             loop {
-                // pending messages take priority over idle work
-                let json = if !idle.is_empty() {
-                    if let Some(json) = peer.try_get_rx() {
-                        json
-                    } else {
-                        let token = idle.pop_front().unwrap();
-                        let ctx = RpcCtx {
-                            peer: Box::new(peer.clone()),
-                            idle: &mut idle,
-                        };
-                        handler.idle(ctx, token);
-                        continue;
+                let read_result = match peer.try_get_rx() {
+                    Some(r) => r,
+                    None => match peer.try_get_idle() {
+                        Some(idle_token) => {
+                            handler.idle(&ctx, idle_token);
+                            continue;
+                        }
+                        None => peer.get_rx(),
                     }
-                } else {
-                    peer.get_rx()
                 };
 
-                let json = match json {
+                let json = match read_result {
                     Ok(json) => json,
                     Err(err) => {
                         peer.disconnect();
@@ -271,18 +269,12 @@ impl<W: Write + Send> RpcLoop<W> {
                     }
                 };
 
-                let ctx = RpcCtx {
-                    peer: Box::new(peer.clone()),
-                    idle: &mut idle,
-                };
-
-                let parsed = json.into_rpc::<H::Notification, H::Request>();
-                match parsed {
+                match json.into_rpc::<H::Notification, H::Request>() {
                     Ok(Call::Request(id, cmd)) => {
-                        let result = handler.handle_request(ctx, cmd);
+                        let result = handler.handle_request(&ctx, cmd);
                         peer.respond(result, id);
                     }
-                    Ok(Call::Notification(cmd)) => handler.handle_notification(ctx, cmd),
+                    Ok(Call::Notification(cmd)) => handler.handle_notification(&ctx, cmd),
                     Ok(Call::InvalidRequest(id, err)) => peer.respond(Err(err), id),
                     Err(err) => {
                         peer.disconnect();
@@ -299,14 +291,14 @@ impl<W: Write + Send> RpcLoop<W> {
     }
 }
 
-impl<'a> RpcCtx<'a> {
+impl RpcCtx {
     pub fn get_peer(&self) -> &RpcPeer {
         &self.peer
     }
 
     /// Schedule the idle handler to be run when there are no requests pending.
-    pub fn schedule_idle(&mut self, token: usize) {
-        self.idle.push_back(token);
+    pub fn schedule_idle(&self, token: usize) {
+        self.peer.schedule_idle(token)
     }
 }
 
@@ -343,6 +335,11 @@ impl<W: Write + Send + 'static> Peer for RawPeer<W> {
         let queue = self.0.rx_queue.lock().unwrap();
         !queue.is_empty()
     }
+
+    fn schedule_idle(&self, token: usize) {
+        self.0.idle_queue.lock().unwrap().push_back(token);
+    }
+
 }
 
 impl<W:Write> RawPeer<W> {
@@ -416,6 +413,10 @@ impl<W:Write> RawPeer<W> {
         let mut queue = self.0.rx_queue.lock().unwrap();
         queue.push_back(json);
         self.0.rx_cvar.notify_one();
+    }
+
+    fn try_get_idle(&self) -> Option<usize> {
+        self.0.idle_queue.lock().unwrap().pop_front()
     }
 
     /// send disconnect error to pending requests.

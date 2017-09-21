@@ -128,16 +128,16 @@ impl Handler for MainState {
     type Notification = CoreNotification;
     type Request = CoreRequest;
 
-    fn handle_notification(&mut self, mut ctx: RpcCtx, rpc: Self::Notification) {
-        self.tabs.handle_notification(rpc, &mut ctx)
+    fn handle_notification(&mut self, ctx: &RpcCtx, rpc: Self::Notification) {
+        self.tabs.handle_notification(rpc, ctx)
     }
 
-    fn handle_request(&mut self, mut ctx: RpcCtx, rpc: Self::Request)
+    fn handle_request(&mut self, ctx: &RpcCtx, rpc: Self::Request)
                       -> Result<Value, RemoteError> {
-        self.tabs.handle_request(rpc, &mut ctx)
+        self.tabs.handle_request(rpc, ctx)
     }
 
-    fn idle(&mut self, _ctx: RpcCtx, _token: usize) {
+    fn idle(&mut self, _ctx: &RpcCtx, _token: usize) {
         self.tabs.handle_idle();
     }
 }
