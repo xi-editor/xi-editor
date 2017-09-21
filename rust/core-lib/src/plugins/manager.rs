@@ -446,12 +446,13 @@ impl PluginManagerRef {
                 .map(|ed| { ed.available_plugins(view_id, &available) });
         }
 
-        self.add_running_collection(view_id);
-        let to_start = self.activatable_plugins(view_id);
-        self.start_plugins(view_id, &init_info, &to_start);
-        self.lock().notify_plugins(view_id, true, "new_buffer", &json!({
-            "buffer_info": vec![&init_info],
-           }));
+        if self.add_running_collection(view_id).is_ok() {
+            let to_start = self.activatable_plugins(view_id);
+            self.start_plugins(view_id, &init_info, &to_start);
+            self.lock().notify_plugins(view_id, true, "new_buffer", &json!({
+                "buffer_info": vec![&init_info],
+            }));
+        }
     }
 
     /// Called when a buffer is saved to a file.
@@ -535,12 +536,20 @@ impl PluginManagerRef {
     // implementation details
     // ====================================================================
 
-    /// Performs new buffer setup
-    fn add_running_collection(&self, view_id: &ViewIdentifier) {
+    /// Performs new buffer setup.
+    ///
+    /// Returns an error if `view_id` does not have an associated buffer,
+    /// which is possible if it was closed immediately after creation.
+    fn add_running_collection(&self, view_id: &ViewIdentifier) -> Result<(),()> {
         assert!(self.lock().running_for_view(view_id).is_err());
-        let buffer_id = self.lock().buffer_for_view(view_id)
-            .expect("document new expects buffer");
-        self.lock().buffer_plugins.insert(buffer_id, PluginGroup::new());
+        let buf_id = self.lock().buffer_for_view(view_id);
+        match buf_id {
+            Some(buf_id) => {
+                self.lock().buffer_plugins.insert(buf_id, PluginGroup::new());
+                Ok(())
+            }
+            None => Err(())
+        }
     }
 
     /// Returns the plugins which want to activate for this view.
