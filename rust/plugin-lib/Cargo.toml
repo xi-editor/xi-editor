@@ -10,6 +10,8 @@ description = "The library base for implementing xi-editor plugins."
 serde = "1.0"
 serde_json = "1.0"
 serde_derive = "1.0"
+bytecount = "0.1.2"
+rand = "0.3"
 
 [dependencies.xi-rpc]
 path = "../rpc"
