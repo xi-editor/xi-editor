@@ -25,7 +25,7 @@ use xi_plugin_lib::plugin_base::ScopeSpan;
 use syntect::parsing::{ParseState, ScopeStack, SyntaxSet, SCOPE_REPO};
 use stackmap::{StackMap, LookupResult};
 
-
+/// The state for syntax highlighting of one file.
 struct PluginState<'a> {
     syntax_set: &'a SyntaxSet,
     stack_idents: StackMap,
@@ -37,6 +37,15 @@ struct PluginState<'a> {
     new_scopes: Vec<Vec<String>>,
     syntax_name: String,
 }
+
+const LINES_PER_RPC: usize = 50;
+
+/// The syntax highlighting state corresponding to the beginning of a line
+/// (as stored in the state cache).
+// Note: this needs to be option because the caching layer relies on Default.
+// We can't implement that because the actual initial state depends on the
+// syntax. There are other ways to handle this, but this will do for now.
+type State = Option<(ParseState, ScopeStack)>;
 
 
 impl<'a> PluginState<'a> {
@@ -164,14 +173,7 @@ impl<'a> PluginState<'a> {
     }
 }
 
-const LINES_PER_RPC: usize = 50;
-
-// TODO: this needs to be option because the caching layer relies on Default.
-// We can't implement that because the actual initial state depends on the
-// syntax. There are other ways to handle this, but this will do for now.
-type State = Option<(ParseState, ScopeStack)>;
-
-impl<'a> state_cache::Handler for PluginState<'a> {
+impl<'a> state_cache::Plugin for PluginState<'a> {
     type State = State;
 
     fn initialize(&mut self, ctx: PluginCtx<State>, _buf_size: usize) {

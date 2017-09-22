@@ -20,7 +20,7 @@ use bytecount;
 use rand::{thread_rng, Rng};
 
 use plugin_base;
-use plugin_base::PluginRequest;
+use plugin_base::{PluginBufferInfo, PluginRequest};
 
 pub use plugin_base::{Error, ScopeSpan};
 
@@ -31,7 +31,7 @@ const CACHE_SIZE: usize = 1024;
 const NUM_PROBES: usize = 5;
 
 /// A handler that the plugin needs to instantiate.
-pub trait Handler {
+pub trait Plugin {
     type State: Default + Clone;
 
     fn initialize(&mut self, ctx: PluginCtx<Self::State>, buf_size: usize);
@@ -49,7 +49,7 @@ struct CacheEntry<S> {
 
 /// The caching state
 #[derive(Default)]
-struct MyState<S> {
+struct CacheState<S> {
     /// The length of the document in bytes.
     buf_size: usize,
     view_id: String,
@@ -72,18 +72,18 @@ struct MyState<S> {
 }
 
 pub struct PluginCtx<'a, S: 'a> {
-    state: &'a mut MyState<S>,
+    state: &'a mut CacheState<S>,
     peer: plugin_base::PluginCtx<'a>,
 }
 
-struct MyHandler<'a, H: Handler + 'a> {
-    handler: &'a mut H,
-    state: MyState<H::State>,
+struct CacheHandler<'a, P: Plugin + 'a> {
+    handler: &'a mut P,
+    state: CacheState<P::State>,
 }
 
-impl<'a, H: Handler> plugin_base::Handler for MyHandler<'a, H> {
+impl<'a, P: Plugin> plugin_base::Handler for CacheHandler<'a, P> {
     fn call(&mut self, req: &PluginRequest, peer: plugin_base::PluginCtx) -> Option<Value> {
-        let mut ctx = PluginCtx {
+        let ctx = PluginCtx {
             state: &mut self.state,
             peer: peer,
         };
@@ -92,59 +92,10 @@ impl<'a, H: Handler> plugin_base::Handler for MyHandler<'a, H> {
                 print_err!("got ping");
                 None
             }
-            PluginRequest::Initialize(ref init_info) => {
-                ctx.state.buf_size = init_info.buf_size;
-                assert_eq!(init_info.views.len(), 1);
-                ctx.state.view_id = init_info.views[0].clone();
-                ctx.state.rev = init_info.rev;
-                ctx.state.syntax = init_info.syntax.clone();
-                ctx.state.path = init_info.path.clone().map(|p| PathBuf::from(p));
-                ctx.truncate_frontier(0);
-                self.handler.initialize(ctx, init_info.buf_size);
-                None
-            }
-            PluginRequest::Update { start, end, new_len, rev, text, .. } => {
-                //print_err!("got update notification {:?}", edit_type);
-                ctx.state.buf_size = ctx.state.buf_size - (end - start) + new_len;
-                ctx.state.rev = rev;
-                if let Some(text) = text {
-                    let off = ctx.state.chunk_offset;
-                    if start >= off && start <= off + ctx.state.chunk.len() {
-                        let nlc_tail = if end <= off + ctx.state.chunk.len() {
-                            let nlc = count_newlines(&ctx.state.chunk[start - off .. end - off]);
-                            let tail = ctx.state.chunk[end - off ..].to_string();
-                            Some((nlc, tail))
-                        } else {
-                            None
-                        };
-                        ctx.state.chunk.truncate(start - off);
-                        ctx.state.chunk.push_str(text);
-                        if let Some((newline_count, tail)) = nlc_tail {
-                            ctx.state.chunk.push_str(&tail);
-                            let new_nl_count = count_newlines(&text);
-                            let nl_delta = new_nl_count.wrapping_sub(newline_count) as isize;
-                            ctx.apply_delta(start, end, new_len, nl_delta);
-                        } else {
-                            ctx.truncate_cache(start);
-                        }
-                    } else {
-                        ctx.state.chunk.clear();
-                        ctx.state.chunk_offset = 0;
-                        ctx.truncate_cache(start);
-                    }
-                } else {
-                    ctx.state.chunk.clear();
-                    ctx.state.chunk_offset = 0;
-                    ctx.truncate_cache(start);
-                }
-                self.handler.update(ctx);
-                Some(Value::from(0i32))
-            }
-            PluginRequest::DidSave { ref path } => {
-                ctx.state.path = Some(path.to_owned());
-                self.handler.did_save(ctx);
-                None
-            }
+            PluginRequest::Initialize(ref init_info) => ctx.do_initialize(init_info, self.handler),
+            PluginRequest::Update { start, end, new_len, rev, text, .. } =>
+                ctx.do_update(start, end, new_len, rev, text, self.handler),
+            PluginRequest::DidSave { ref path } => ctx.do_did_save(path, self.handler),
         }
     }
 
@@ -157,15 +108,75 @@ impl<'a, H: Handler> plugin_base::Handler for MyHandler<'a, H> {
     }
 }
 
-pub fn mainloop<H: Handler>(handler: &mut H) {
-    let mut my_handler = MyHandler {
+pub fn mainloop<P: Plugin>(handler: &mut P) {
+    let mut my_handler = CacheHandler {
         handler: handler,
-        state: MyState::default(),
+        state: CacheState::default(),
     };
     plugin_base::mainloop(&mut my_handler);
 }
 
 impl<'a, S: Default + Clone> PluginCtx<'a, S> {
+    fn do_initialize<P: Plugin<State = S>>(mut self, init_info: &PluginBufferInfo, handler: &mut P)
+        -> Option<Value>
+    {
+        self.state.buf_size = init_info.buf_size;
+        assert_eq!(init_info.views.len(), 1);
+        self.state.view_id = init_info.views[0].clone();
+        self.state.rev = init_info.rev;
+        self.state.syntax = init_info.syntax.clone();
+        self.state.path = init_info.path.clone().map(|p| PathBuf::from(p));
+        self.truncate_frontier(0);
+        handler.initialize(self, init_info.buf_size);
+        None
+    }
+
+    fn do_did_save<P: Plugin<State = S>>(self, path: &PathBuf, handler: &mut P) -> Option<Value> {
+        self.state.path = Some(path.to_owned());
+        handler.did_save(self);
+        None
+    }
+
+    fn do_update<P: Plugin<State = S>>(mut self, start: usize, end: usize, new_len: usize, rev: u64,
+        text: Option<&str>, handler: &mut P) -> Option<Value>
+    {
+        //print_err!("got update notification {:?}", edit_type);
+        self.state.buf_size = self.state.buf_size - (end - start) + new_len;
+        self.state.rev = rev;
+        if let Some(text) = text {
+            let off = self.state.chunk_offset;
+            if start >= off && start <= off + self.state.chunk.len() {
+                let nlc_tail = if end <= off + self.state.chunk.len() {
+                    let nlc = count_newlines(&self.state.chunk[start - off .. end - off]);
+                    let tail = self.state.chunk[end - off ..].to_string();
+                    Some((nlc, tail))
+                } else {
+                    None
+                };
+                self.state.chunk.truncate(start - off);
+                self.state.chunk.push_str(text);
+                if let Some((newline_count, tail)) = nlc_tail {
+                    self.state.chunk.push_str(&tail);
+                    let new_nl_count = count_newlines(&text);
+                    let nl_delta = new_nl_count.wrapping_sub(newline_count) as isize;
+                    self.apply_delta(start, end, new_len, nl_delta);
+                } else {
+                    self.truncate_cache(start);
+                }
+            } else {
+                self.state.chunk.clear();
+                self.state.chunk_offset = 0;
+                self.truncate_cache(start);
+            }
+        } else {
+            self.state.chunk.clear();
+            self.state.chunk_offset = 0;
+            self.truncate_cache(start);
+        }
+        handler.update(self);
+        Some(Value::from(0i32))
+
+    }
 
     pub fn get_path(&self) -> Option<&PathBuf> {
         match self.state.path {
@@ -205,8 +216,8 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
         self.state.state_cache.binary_search_by(|probe| probe.offset.cmp(&offset))
     }
 
-    /// Get state at or before given line number. Returns line number, offset,
-    /// and user state.
+    /// Get the state from the nearest cache entry at or before given line number.
+    /// Returns line number, offset, and user state.
     pub fn get_prev(&self, line_num: usize) -> (usize, usize, S) {
         if line_num > 0 {
             let mut ix = match self.find_line(line_num) {
@@ -228,11 +239,8 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
 
     /// Get the state at the given line number, if it exists in the cache.
     pub fn get(&self, line_num: usize) -> Option<&S> {
-        if let Ok(ix) = self.find_line(line_num) {
-            self.state.state_cache[ix].user_state.as_ref()
-        } else {
-            None
-        }
+        self.find_line(line_num).ok()
+            .and_then(|ix| self.state.state_cache[ix].user_state.as_ref())
     }
 
     /// Set the state at the given line number. Note: has no effect if line_num
