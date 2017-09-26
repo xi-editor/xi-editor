@@ -985,7 +985,7 @@ impl Editor {
             Drag (MouseAction {line, column, flags, ..}) => {
                 self.do_drag(line, column, flags);
             }
-            Gesture { line, column, ty } => self.do_gesture(line, column, ty),
+            Gesture { line, col, ty } => self.do_gesture(line, col, ty),
             Undo => self.do_undo(),
             Redo => self.do_redo(),
             FindNext { wrap_around, allow_same } => self.do_find_next(false, wrap_around.unwrap_or(false), allow_same.unwrap_or(false)),

@@ -347,7 +347,7 @@ pub enum EditNotification {
     Transpose,
     Click(MouseAction),
     Drag(MouseAction),
-    Gesture { line: u64, column: u64, ty: GestureType},
+    Gesture { line: u64, col: u64, ty: GestureType},
     Undo,
     Redo,
     FindNext { wrap_around: Option<bool>, allow_same: Option<bool> },
