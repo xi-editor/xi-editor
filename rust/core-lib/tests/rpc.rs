@@ -210,6 +210,7 @@ const OTHER_EDIT_RPCS: &str = r#"{"method":"edit","params":{"view_id":"view-id-1
 {"method":"edit","params":{"view_id":"view-id-1","method":"request_lines","params":[0,1]}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"click","params":[6,0,0,1]}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"drag","params":[17,15,0]}}
+{"method":"edit","params":{"view_id":"view-id-1","method":"gesture","params":{"line": 1, "col": 2, "ty": "toggle_sel"}}}
 {"id":4,"method":"edit","params":{"view_id":"view-id-1","method":"find","params":{"case_sensitive":false,"chars":"m"}}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"find_next","params":{"wrap_around":true}}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"find_previous","params":{"wrap_around":true}}}
