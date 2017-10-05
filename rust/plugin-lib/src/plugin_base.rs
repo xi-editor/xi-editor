@@ -15,9 +15,8 @@
 //! A base for xi plugins. Will be split out into its own crate once it's a bit more stable.
 
 use std::io;
-use std::path::PathBuf;
 
-use serde_json::{self, Value};
+use serde_json::Value;
 
 use xi_core::{ViewIdentifier, PluginPid, plugin_rpc};
 use xi_rpc::{self, RpcLoop, RpcCtx, RemoteError};
@@ -138,5 +137,8 @@ pub fn mainloop<H: Handler>(handler: &mut H) {
     let mut rpc_looper = RpcLoop::new(stdout);
     let mut my_handler = MyHandler(handler);
 
-    rpc_looper.mainloop(|| stdin.lock(), &mut my_handler);
+    match rpc_looper.mainloop(|| stdin.lock(), &mut my_handler) {
+        Ok(_) => (),
+        Err(err) => print_err!("plugin exited with error:\n{:?}", err),
+    }
 }

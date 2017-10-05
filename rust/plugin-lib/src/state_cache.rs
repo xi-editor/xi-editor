@@ -119,23 +119,6 @@ impl<'a, P: Plugin> plugin_base::Handler for CacheHandler<'a, P> {
         }
     }
 
-    //fn call(&mut self, req: &PluginRequest, peer: plugin_base::PluginCtx) -> Option<Value> {
-        //let ctx = PluginCtx {
-            //state: &mut self.state,
-            //peer: peer,
-        //};
-        //match *req {
-            //PluginRequest::Ping => {
-                //print_err!("got ping");
-                //None
-            //}
-            //PluginRequest::Initialize(ref init_info) => ctx.do_initialize(init_info, self.handler),
-            //PluginRequest::Update { start, end, new_len, rev, text, .. } =>
-                //ctx.do_update(start, end, new_len, rev, text, self.handler),
-            //PluginRequest::DidSave { ref path } => ctx.do_did_save(path, self.handler),
-        //}
-    //}
-
     fn idle(&mut self, peer: plugin_base::PluginCtx, token: usize) {
         let ctx = PluginCtx {
             state: &mut self.state,
