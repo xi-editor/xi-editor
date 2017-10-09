@@ -64,6 +64,7 @@ pub mod internal {
     pub mod movement;
     pub mod syntax;
     pub mod layers;
+    pub mod prefs;
 }
 
 use internal::tabs;
@@ -78,6 +79,7 @@ use internal::selection;
 use internal::movement;
 use internal::syntax;
 use internal::layers;
+use internal::prefs;
 #[cfg(target_os = "fuchsia")]
 use internal::fuchsia;
 
