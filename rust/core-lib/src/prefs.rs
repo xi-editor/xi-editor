@@ -12,24 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{env, fs, io, fmt};
-use std::io::Read;
+use std::env;
 use std::path::{PathBuf, Path};
 use std::collections::HashMap;
-use std::rc::Rc;
 
-use toml;
-use toml::value::{Value, Table};
+use config::{self, Source, Value, ConfigError};
 
-use syntax::SyntaxDefinition;
 
 static XI_CONFIG_DIR: &'static str = "XI_CONFIG_DIR";
-static XI_CONFIG_FILE: &'static str = "preferences.xiconfig";
 static XDG_CONFIG_HOME: &'static str = "XDG_CONFIG_HOME";
+static XI_CONFIG_FILE_NAME: &'static str = "preferences.xiconfig";
 
+/// Namespace for various default settings.
 mod defaults {
     pub const BASE: &'static str = include_str!("../assets/defaults.toml");
 }
+
+pub type Table = HashMap<String, Value>;
 
 /// Returns the location of the active config directory.
 ///
@@ -58,134 +57,91 @@ fn get_config_dir() -> PathBuf {
                     xdg_var.as_ref().map(String::as_ref))
 }
 
-
-fn init_config() -> ConfigSources {
-    let config_dir = get_config_dir();
-    if !config_dir.exists() {
-        fs::create_dir(&config_dir);
-    }
-    let base_conf: Table = toml::from_str(defaults::BASE).unwrap();
-    ConfigSources::new(base_conf, &config_dir)
+pub struct ConfigManager {
+    /// The default config
+    base: Table,
+    /// The user's custom config
+    user: Table,
+    /// A cache of the merged configs
+    cache: Table,
 }
 
-fn load_config(path: &Path) -> Result<Table, ConfigError> {
-    let mut file = fs::File::open(&path)?;
-    let mut contents = String::new();
-    file.read_to_string(&mut contents)?;
-    let config: Table = toml::from_str(&contents)?;
-    Ok(config)
-}
+pub struct Config(Table);
 
-fn load_syntax_configs(path: &Path) -> Vec<(PathBuf, Table)> {
-    let mut result = Vec::new();
-    let contents = match path.read_dir() {
-        Ok(contents) => contents,
-        Err(err) => {
-            print_err!("Error reading config directory: {:?}", err);
-            return result
-        }
-    };
+impl ConfigManager {
+    fn new(config_dir: &Path) -> Self {
+        let base_config = config::File::from_str(&defaults::BASE,
+                                                 config::FileFormat::Toml)
+            .collect()
+            .expect("base configuration settings must load.");
+        let config_path = config_dir.join(XI_CONFIG_FILE_NAME);
+        let user_config: config::File<_> = config_path.into();
+        let user_config = user_config
+            .collect()
+            .map_err(|e| print_err!("Error reading config: {:?}", e))
+            .unwrap_or_default();
 
-    for item in contents {
-        if let Ok(item) = item {
-            let path = item.path();
-            let skip = path.extension().map(|ext| ext != "xiconfig")
-                .unwrap_or(true)
-                || path.file_stem().map(|stem| stem == "preferences")
-                .unwrap_or(true);
-            if skip { continue }
-
-            match load_config(&path) {
-                Ok(prefs) => result.push((path, prefs)),
-                Err(err) => print_err!("Error reading config file {:?}", &path),
-            }
-        }
-    }
-    result
-}
-
-#[derive(Debug)]
-enum ConfigError {
-    FileMissing,
-    IoError(io::Error),
-    Parse(toml::de::Error),
-}
-
-impl From<io::Error> for ConfigError {
-    fn from(err: io::Error) -> ConfigError {
-        ConfigError::IoError(err)
-    }
-}
-
-impl From<toml::de::Error> for ConfigError {
-    fn from(err: toml::de::Error) -> ConfigError {
-        ConfigError::Parse(err)
-    }
-}
-
-impl fmt::Display for ConfigError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            ConfigError::FileMissing => write!(f, "File missing"),
-            ConfigError::IoError(ref err) => write!(f, "IO Error: {:?}", err),
-            ConfigError::Parse(ref err) => write!(f, "TOML Error: {:?}", err),
-        }
-    }
-}
-
-pub struct ConfigSources {
-    base: Rc<Table>,
-    syntax: HashMap<SyntaxDefinition, Rc<Table>>,
-    user: Rc<Table>,
-    user_syntax: HashMap<SyntaxDefinition, Rc<Table>>,
-}
-
-pub struct ConfigSet {
-    sources: Vec<Rc<Table>>
-}
-
-impl ConfigSources {
-    fn new(base: Table, config_dir: &Path) -> Self {
-        let user_pref_path = config_dir.join(XI_CONFIG_FILE);
-        let user_prefs = match load_config(&user_pref_path) {
-            Ok(prefs) => prefs,
-            Err(err) => {
-                print_err!("Error loading user prefs: {:?}", err);
-                Table::new()
-            }
+        let mut conf = ConfigManager {
+            base: base_config,
+            user: user_config,
+            cache: Table::default(),
         };
-
-        let user_syntax = HashMap::new();
-        let syntax_prefs = load_syntax_configs(&config_dir);
-        if !syntax_prefs.is_empty() {
-            panic!("actually using user syntax preferences is not implemented")
-        }
-
-        //TODO: keep a files-to-watch list
-
-        ConfigSources {
-            base: Rc::new(base),
-            syntax: HashMap::new(),
-            user: Rc::new(user_prefs),
-            user_syntax: user_syntax,
-        }
+        conf.rebuild();
+        conf
     }
 
-    fn get_config(&self, syntax: SyntaxDefinition) -> ConfigSet {
-        let mut sources = vec![self.base.clone(), self.user.clone()];
-        if let Some(syntax_specific) = self.syntax.get(&syntax) {
-            sources.push(syntax_specific.clone());
+    fn rebuild(&mut self) {
+        let mut cache = self.base.clone();
+        for (k, v) in self.user.iter() {
+            cache.insert(k.to_owned(), v.clone());
         }
+        self.cache = cache;
+    }
 
-        if let Some(syntax_specific) = self.user_syntax.get(&syntax) {
-            sources.push(syntax_specific.clone());
-        }
-
-        sources.reverse();
-        ConfigSet { sources }
+    //TODO: this should accept a 'syntax' argument eventually
+    pub fn get_config(&self) -> Config {
+        Config(self.cache.clone())
     }
 }
 
+impl Default for ConfigManager {
+    fn default() -> ConfigManager {
+        let path = get_config_dir();
+        ConfigManager::new(&path)
+    }
+}
+
+impl Config {
+    fn get(&self, key: &str) -> Result<Value, ConfigError> {
+        self.0.get(key).map(|v| v.clone())
+            .ok_or(ConfigError::NotFound(key.to_owned()))
+    }
+
+    pub fn get_str(&self, key: &str) -> Result<String, ConfigError> {
+        self.get(key).and_then(Value::into_str)
+    }
+
+    pub fn get_int(&self, key: &str) -> Result<i64, ConfigError> {
+        self.get(key).and_then(Value::into_int)
+    }
+
+    pub fn get_float(&self, key: &str) -> Result<f64, ConfigError> {
+        self.get(key).and_then(Value::into_float)
+    }
+
+    pub fn get_bool(&self, key: &str) -> Result<bool, ConfigError> {
+        self.get(key).and_then(Value::into_bool)
+    }
+
+    pub fn get_table(&self, key: &str)
+        -> Result<HashMap<String, Value>, ConfigError> {
+        self.get(key).and_then(Value::into_table)
+    }
+
+    pub fn get_array(&self, key: &str) -> Result<Vec<Value>, ConfigError> {
+        self.get(key).and_then(Value::into_array)
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -193,19 +149,29 @@ mod tests {
 
     #[test]
     fn get_config() {
-       let p = _get_config_dir(Some("custom/xi/conf"), None);
+       let p = config_dir_impl(Some("custom/xi/conf"), None);
        assert_eq!(p, PathBuf::from("custom/xi/conf"));
 
-       let p = _get_config_dir(Some("custom/xi/conf"), Some("/me/config"));
+       let p = config_dir_impl(Some("custom/xi/conf"), Some("/me/config"));
        assert_eq!(p, PathBuf::from("custom/xi/conf"));
 
-       let p = _get_config_dir(None, Some("/me/config"));
+       let p = config_dir_impl(None, Some("/me/config"));
        assert_eq!(p, PathBuf::from("/me/config/xi"));
 
-       let p = _get_config_dir(None, None);
+       let p = config_dir_impl(None, None);
        let exp = env::var("HOME").map(PathBuf::from)
            .map(|mut p| { p.push(".config/xi"); p })
            .unwrap();
        assert_eq!(p, exp);
+    }
+
+    #[test]
+    fn test_defaults() {
+        let manager = ConfigManager::default();
+        let config = manager.get_config();
+        assert_eq!(config.get_int("tab_size").unwrap(), 4);
+        assert!(config.get_int("font_face").is_err());
+        let plug_path = config.get_array("plugin_search_path").unwrap();
+        assert_eq!(plug_path.len(), 1);
     }
 }
