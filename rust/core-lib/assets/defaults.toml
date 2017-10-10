@@ -1,0 +1,7 @@
+theme = "base16-ocean.light"
+font_face = "InconsolataGo"
+font_size = 14
+
+tab_size = 4
+translate_tabs_to_spaces = false
+plugin_search_path = ["plugins"]

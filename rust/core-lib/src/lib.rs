@@ -21,6 +21,7 @@ extern crate serde_json;
 extern crate serde_derive;
 extern crate time;
 extern crate syntect;
+extern crate toml;
 
 #[cfg(target_os = "fuchsia")]
 extern crate magenta;

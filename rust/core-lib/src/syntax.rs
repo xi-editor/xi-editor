@@ -16,7 +16,7 @@
 
 use std::fmt;
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum SyntaxDefinition {
     Plaintext, Markdown, Python, Rust, C, Go, Dart, Swift, Toml,
