@@ -311,7 +311,7 @@ impl Documents {
     pub fn new() -> Documents {
         let buffers = BufferContainerRef::new();
         let config_manager = ConfigManager::default();
-        let plugin_path = config_manager.get_config().plugin_search_path();
+        let plugin_path = config_manager.get_config().plugin_search_path;
         let plugin_manager = PluginManagerRef::new(buffers.clone(), plugin_path);
         let (update_tx, update_rx) = mpsc::channel();
 

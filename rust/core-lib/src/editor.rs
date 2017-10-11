@@ -572,16 +572,14 @@ impl Editor {
         let mut builder = delta::Builder::new(self.text.len());
         for region in self.view.sel_regions() {
             let iv = Interval::new_closed_open(region.min(), region.max());
-            let tab_text = match self.config.get_bool("translate_tabs_to_spaces")
-                .unwrap() {
-                    true => {
-                        let (_, col) = self.view.offset_to_line_col(&self.text, region.start);
-                        let tab_size = self.config.get_int("tab_size").unwrap() as usize;
-                        let n = tab_size - (col % tab_size);
-                        n_spaces(n)
-                    }
-                    false => "\t",
-                };
+            let tab_text = if self.config.translate_tabs_to_spaces {
+                    let (_, col) = self.view.offset_to_line_col(&self.text, region.start);
+                    let tab_size = self.config.tab_size;
+                    let n = tab_size - (col % tab_size);
+                    n_spaces(n)
+            } else {
+                "\t"
+            };
             builder.replace(iv, Rope::from(tab_text));
         }
         self.this_edit_type = EditType::InsertChars;
