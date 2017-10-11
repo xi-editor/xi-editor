@@ -21,73 +21,29 @@ use serde::Serialize;
 
 use syntax::SyntaxDefinition;
 
-// optional environment variable for debug plugin executables
-#[cfg(not(target_os = "fuchsia"))]
-static PLUGIN_DIR: &'static str = "XI_PLUGIN_DIR";
-
-// example plugins. Eventually these should be loaded from disk.
-#[cfg(not(target_os = "fuchsia"))]
-pub fn debug_plugins() -> Vec<PluginDescription> {
-    use std::env;
-    use self::PluginActivation::*;
-    use self::PluginScope::*;
-    let plugin_dir = match env::var(PLUGIN_DIR).map(PathBuf::from) {
-        Ok(p) => p,
-        Err(_) => env::current_exe().unwrap().parent().unwrap().to_owned(),
-    };
-    print_err!("looking for debug plugins in {:?}", plugin_dir);
-
-    let make_path = |p: &str| -> PathBuf {
-        let mut pb = plugin_dir.clone();
-        pb.push(p);
-        pb
-    };
-
-    vec![
-        PluginDescription::new("syntect", "0.0", BufferLocal, make_path("xi-syntect-plugin"),
-        vec![Autorun], Vec::new()),
-        PluginDescription::new("braces", "0.0", BufferLocal, make_path("bracket_example.py"),
-        Vec::new(), Vec::new()),
-        PluginDescription::new("spellcheck", "0.0", BufferLocal, make_path("spellcheck.py"),
-        Vec::new(), Vec::new()),
-        PluginDescription::new("shouty", "0.0", BufferLocal, make_path("shouty.py"),
-        Vec::new(), Vec::new()),
-    ].iter()
-        .filter(|desc|{
-            if !desc.exec_path.exists() {
-                print_err!("missing plugin {} at {:?}", desc.name, desc.exec_path);
-                false
-            } else {
-                true
-            }
-        })
-        .map(|desc| desc.to_owned())
-        .collect::<Vec<_>>()
-}
-
-#[cfg(target_os = "fuchsia")]
-pub fn debug_plugins() -> Vec<PluginDescription> {
-    Vec::new()
-}
-
 /// Describes attributes and capabilities of a plugin.
 ///
 /// Note: - these will eventually be loaded from manifest files.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub struct PluginDescription {
     pub name: String,
     pub version: String,
+    #[serde(default)]
     pub scope: PluginScope,
     // more metadata ...
     /// path to plugin executable
     pub exec_path: PathBuf,
     /// Events that cause this plugin to run
+    #[serde(default)]
     pub activations: Vec<PluginActivation>,
+    #[serde(default)]
     pub commands: Vec<Command>,
 }
 
 /// `PluginActivation`s represent events that trigger running a plugin.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum PluginActivation {
     /// Always run this plugin, when available.
     Autorun,
@@ -99,8 +55,9 @@ pub enum PluginActivation {
     OnCommand,
 }
 
-#[derive(Debug, Clone)]
 /// Describes the scope of events a plugin receives.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum PluginScope {
     /// The plugin receives events from multiple buffers.
     Global,
@@ -235,21 +192,6 @@ impl PlaceholderRpc {
 }
 
 impl PluginDescription {
-    #[cfg(not(target_os = "fuchsia"))]
-    fn new<S, P>(name: S, version: S, scope: PluginScope, exec_path: P,
-                 activations: Vec<PluginActivation>, commands: Vec<Command>) -> Self
-        where S: Into<String>, P: Into<PathBuf>
-    {
-        PluginDescription {
-            name: name.into(),
-            scope: scope,
-            version: version.into(),
-            exec_path: exec_path.into(),
-            activations: activations,
-            commands: commands,
-        }
-    }
-
     /// Returns `true` if this plugin is globally scoped, else `false`.
     pub fn is_global(&self) -> bool {
         match self.scope {
@@ -259,6 +201,11 @@ impl PluginDescription {
     }
 }
 
+impl Default for PluginScope {
+    fn default() -> Self {
+        PluginScope::BufferLocal
+    }
+}
 
 #[cfg(test)]
 mod tests {

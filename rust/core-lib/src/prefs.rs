@@ -21,6 +21,8 @@ use config::{self, Source, Value, ConfigError};
 
 static XI_CONFIG_DIR: &'static str = "XI_CONFIG_DIR";
 static XDG_CONFIG_HOME: &'static str = "XDG_CONFIG_HOME";
+/// A client can use this to pass a path to bundled plugins
+static XI_SYS_PLUGIN_PATH: &'static str = "XI_SYS_PLUGIN_PATH";
 static XI_CONFIG_FILE_NAME: &'static str = "preferences.xiconfig";
 
 /// Namespace for various default settings.
@@ -58,6 +60,7 @@ fn get_config_dir() -> PathBuf {
 }
 
 pub struct ConfigManager {
+    config_dir: PathBuf,
     /// The default config
     base: Table,
     /// The user's custom config
@@ -66,7 +69,7 @@ pub struct ConfigManager {
     cache: Table,
 }
 
-pub struct Config(Table);
+pub struct Config(Table, PathBuf);
 
 impl ConfigManager {
     fn new(config_dir: &Path) -> Self {
@@ -82,6 +85,7 @@ impl ConfigManager {
             .unwrap_or_default();
 
         let mut conf = ConfigManager {
+            config_dir: config_dir.to_owned(),
             base: base_config,
             user: user_config,
             cache: Table::default(),
@@ -100,7 +104,7 @@ impl ConfigManager {
 
     //TODO: this should accept a 'syntax' argument eventually
     pub fn get_config(&self) -> Config {
-        Config(self.cache.clone())
+        Config(self.cache.clone(), self.config_dir.clone())
     }
 }
 
@@ -133,13 +137,28 @@ impl Config {
         self.get(key).and_then(Value::into_bool)
     }
 
-    pub fn get_table(&self, key: &str)
-        -> Result<HashMap<String, Value>, ConfigError> {
+    pub fn get_table(&self, key: &str) -> Result<Table, ConfigError> {
         self.get(key).and_then(Value::into_table)
     }
 
     pub fn get_array(&self, key: &str) -> Result<Vec<Value>, ConfigError> {
         self.get(key).and_then(Value::into_array)
+    }
+
+    pub fn plugin_search_path(&self) -> Vec<PathBuf> {
+        let mut search_path: Vec<PathBuf> = self.get("plugin_search_path")
+            .and_then(Value::try_into::<Vec<PathBuf>>)
+            .unwrap_or_default()
+            .iter()
+            // relative paths should be relative to the config directory
+            .map(|p| self.1.join(p))
+            .collect();
+
+            if let Ok(sys_path) = env::var(XI_SYS_PLUGIN_PATH) {
+                print_err!("including client bundled plugins from {}", &sys_path);
+                search_path.push(sys_path.into());
+            }
+        search_path
     }
 }
 
@@ -168,10 +187,10 @@ mod tests {
     #[test]
     fn test_defaults() {
         let manager = ConfigManager::default();
-        let config = manager.get_config();
+        let mut config = manager.get_config();
         assert_eq!(config.get_int("tab_size").unwrap(), 4);
         assert!(config.get_int("font_face").is_err());
-        let plug_path = config.get_array("plugin_search_path").unwrap();
-        assert_eq!(plug_path.len(), 1);
+        config.1 = "BASE_PATH".into();
+        assert_eq!(config.plugin_search_paths(), vec![PathBuf::from("BASE_PATH/plugins")])
     }
 }

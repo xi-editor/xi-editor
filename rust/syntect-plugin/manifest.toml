@@ -1,0 +1,4 @@
+name = "syntect"
+version = "0.1"
+exec_path = "./bin/xi-syntect-plugin"
+activations = ["autorun"]

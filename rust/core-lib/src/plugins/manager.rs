@@ -16,6 +16,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, Weak, MutexGuard};
 
 use std::path::Path;
@@ -413,11 +414,11 @@ impl WeakPluginManagerRef {
 }
 
 impl PluginManagerRef {
-    pub fn new(buffers: BufferContainerRef) -> Self {
+    pub fn new(buffers: BufferContainerRef, paths: Vec<PathBuf>) -> Self {
         PluginManagerRef(Arc::new(Mutex::new(
             PluginManager {
                 // TODO: actually parse these from manifest files
-                catalog: PluginCatalog::debug(),
+                catalog: PluginCatalog::from_paths(paths),
                 buffer_plugins: BTreeMap::new(),
                 global_plugins: PluginGroup::new(),
                 buffers: buffers,

@@ -33,6 +33,7 @@ use styles::{Style, ThemeStyleMap};
 use MainPeer;
 
 use syntax::SyntaxDefinition;
+use prefs::ConfigManager;
 use plugins::{self, PluginManagerRef, Command};
 use plugins::rpc_types::{PluginUpdate, ClientPluginInfo};
 
@@ -286,6 +287,8 @@ pub struct Documents {
     kill_ring: Arc<Mutex<Rope>>,
     style_map: Arc<Mutex<ThemeStyleMap>>,
     plugins: PluginManagerRef,
+    #[allow(dead_code)]
+    config_manager: ConfigManager,
     /// A tx channel used to propagate plugin updates from all `Editor`s.
     update_channel: mpsc::Sender<(ViewIdentifier, PluginUpdate, usize)>,
     /// A queue of closures to be executed on the next idle runloop pass.
@@ -307,7 +310,9 @@ pub struct DocumentCtx {
 impl Documents {
     pub fn new() -> Documents {
         let buffers = BufferContainerRef::new();
-        let plugin_manager = PluginManagerRef::new(buffers.clone());
+        let config_manager = ConfigManager::default();
+        let plugin_path = config_manager.get_config().plugin_search_path();
+        let plugin_manager = PluginManagerRef::new(buffers.clone(), plugin_path);
         let (update_tx, update_rx) = mpsc::channel();
 
         plugins::start_update_thread(update_rx, &plugin_manager);
@@ -318,6 +323,7 @@ impl Documents {
             kill_ring: Arc::new(Mutex::new(Rope::from(""))),
             style_map: Arc::new(Mutex::new(ThemeStyleMap::new())),
             plugins: plugin_manager,
+            config_manager: config_manager,
             update_channel: update_tx,
             idle_queue: Vec::new(),
             sync_repo: None,
