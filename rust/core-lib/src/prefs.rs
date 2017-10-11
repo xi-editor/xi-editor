@@ -16,7 +16,7 @@ use std::env;
 use std::path::{PathBuf, Path};
 use std::collections::HashMap;
 
-use config::{self, Source, Value, ConfigError};
+use config::{self, Source, Value, ConfigError, FileFormat};
 
 
 static XI_CONFIG_DIR: &'static str = "XI_CONFIG_DIR";
@@ -69,6 +69,7 @@ pub struct ConfigManager {
     cache: Table,
 }
 
+#[derive(Debug, Clone)]
 pub struct Config(Table, PathBuf);
 
 impl ConfigManager {
@@ -80,6 +81,7 @@ impl ConfigManager {
         let config_path = config_dir.join(XI_CONFIG_FILE_NAME);
         let user_config: config::File<_> = config_path.into();
         let user_config = user_config
+            .format(FileFormat::Toml)
             .collect()
             .map_err(|e| print_err!("Error reading config: {:?}", e))
             .unwrap_or_default();
@@ -191,6 +193,6 @@ mod tests {
         assert_eq!(config.get_int("tab_size").unwrap(), 4);
         assert!(config.get_int("font_face").is_err());
         config.1 = "BASE_PATH".into();
-        assert_eq!(config.plugin_search_paths(), vec![PathBuf::from("BASE_PATH/plugins")])
+        assert_eq!(config.plugin_search_path(), vec![PathBuf::from("BASE_PATH/plugins")])
     }
 }
