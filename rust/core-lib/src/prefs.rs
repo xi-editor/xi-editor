@@ -26,8 +26,33 @@ static XI_SYS_PLUGIN_PATH: &'static str = "XI_SYS_PLUGIN_PATH";
 static XI_CONFIG_FILE_NAME: &'static str = "preferences.xiconfig";
 
 /// Namespace for various default settings.
+#[allow(unused)]
 mod defaults {
+    use super::*;
     pub const BASE: &'static str = include_str!("../assets/defaults.toml");
+    pub const WINDOWS: &'static str = include_str!("../assets/windows.toml");
+
+    fn platform_overrides() -> Option<Table> {
+        #[cfg(target_os = "windows")]
+        { return Some(load(WINDOWS)) }
+        None
+    }
+
+    pub fn platform_defaults() -> Table {
+        let mut base = load(BASE);
+        if let Some(mut overrides) = platform_overrides() {
+            for (k, v) in overrides.drain() {
+                base.insert(k, v);
+            }
+        }
+        base
+    }
+
+    fn load(default: &str) -> Table {
+        config::File::from_str(default, config::FileFormat::Toml)
+            .collect()
+            .expect("default configs must load")
+    }
 }
 
 pub type Table = HashMap<String, Value>;
@@ -45,6 +70,7 @@ pub struct ConfigManager {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// A container for all user-modifiable settings.
 pub struct Config {
+    pub newline: String,
     pub tab_size: usize,
     pub translate_tabs_to_spaces: bool,
     pub plugin_search_path: Vec<PathBuf>,
@@ -52,10 +78,7 @@ pub struct Config {
 
 impl ConfigManager {
     fn new<P: AsRef<Path>>(config_dir: P, user_config: Table) -> Self {
-        let base_config = config::File::from_str(&defaults::BASE,
-                                                 config::FileFormat::Toml)
-            .collect()
-            .expect("base configuration settings must load.");
+        let base_config = defaults::platform_defaults();
         let mut conf = ConfigManager {
             config_dir: config_dir.as_ref().to_owned(),
             base: base_config,

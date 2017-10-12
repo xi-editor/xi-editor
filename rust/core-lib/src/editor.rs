@@ -565,7 +565,8 @@ impl Editor {
 
     fn insert_newline(&mut self) {
         self.this_edit_type = EditType::InsertChars;
-        self.insert("\n");
+        let text = self.config.newline.clone();
+        self.insert(&text);
     }
 
     fn insert_tab(&mut self) {
