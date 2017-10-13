@@ -15,13 +15,14 @@
 //! Very basic syntax detection.
 
 use std::fmt;
+use serde_json;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum SyntaxDefinition {
     Plaintext, Markdown, Python, Rust, C, Go, Dart, Swift, Toml,
     Json, Yaml, Cpp, Objc, Shell, Ruby, Javascript, Java, Php,
-    Perl,
+    Perl, Makefile,
 }
 
 impl Default for SyntaxDefinition {
@@ -30,66 +31,44 @@ impl Default for SyntaxDefinition {
     }
 }
 
-// TODO: these should also serialize as strings, probably using this as a guide:
-
+//FIXME: this should be Into<SyntaxDefinition> for AsRef<Path>, or something
 impl SyntaxDefinition {
     pub fn new<'a, S: Into<Option<&'a str>>>(s: S) -> Self {
         use self::SyntaxDefinition::*;
-        if let Some(s) = s.into() {
-            match &*s.split('.').rev().nth(0).unwrap_or("").to_lowercase() {
-                "rs" => Rust,
-                "md" | "mdown" => Markdown,
-                "py" => Python,
-                "c" | "h" => C,
-                "go" => Go,
-                "dart" => Dart,
-                "swift" => Swift,
-                "toml" => Toml,
-                "json" => Json,
-                "yaml" => Yaml,
-                "cc" => Cpp,
-                "m" => Objc,
-                "sh" | "zsh" => Shell,
-                "rb" => Ruby,
-                "js" => Javascript,
-                "java" | "jav" => Java,
-                "php" => Php,
-                "pl" => Perl,
-                _ => Plaintext,
-            }
-        } else {
-            Plaintext
+        let s = s.into().unwrap_or("").to_lowercase();
+        if s == "makefile" { return Makefile }
+
+        match &*s.split('.').rev().nth(0).unwrap_or("") {
+            "rs" => Rust,
+            "md" | "mdown" => Markdown,
+            "py" => Python,
+            "c" | "h" => C,
+            "go" => Go,
+            "dart" => Dart,
+            "swift" => Swift,
+            "toml" => Toml,
+            "json" => Json,
+            "yaml" => Yaml,
+            "cc" => Cpp,
+            "m" => Objc,
+            "sh" | "zsh" => Shell,
+            "rb" => Ruby,
+            "js" => Javascript,
+            "java" | "jav" => Java,
+            "php" => Php,
+            "pl" => Perl,
+            _ => Plaintext,
         }
     }
 
-    //TODO: this is not currently used.
-    //We might want it for language server interop?
-    /// Canonical language identifiers, used for serialization.
-    /// https://code.visualstudio.com/docs/languages/identifiers
-    pub fn identifier(&self) -> &str {
-        use self::SyntaxDefinition::*;
-        match *self {
-            Rust => "rust",
-            Markdown => "markdown",
-            //TODO: :|
-            Python => "python3",
-            C => "c" ,
-            Go => "go",
-            Dart => "dart",
-            Swift => "swift",
-            Toml => "toml",
-            Json => "json",
-            Yaml => "yaml",
-            Cpp => "cpp",
-            Objc => "objective-c",
-            Shell => "shellscript",
-            Ruby => "ruby",
-            Javascript => "javascript",
-            Java => "java",
-            Php => "php",
-            Perl => "perl",
-            Plaintext => "plaintext",
-        }
+    /// Attempt to parse a name into a `SyntaxDefinition`.
+    ///
+    /// Note:
+    /// This uses serde deserialization under the hood; this governs what
+    /// names are expected to work.
+    pub fn try_from_name<S: AsRef<str>>(name: S) -> Option<Self> {
+        serde_json::from_str(&format!("\"{}\"", name.as_ref()))
+            .ok()
     }
 }
 
@@ -101,10 +80,9 @@ impl<S: AsRef<str>> From<S> for SyntaxDefinition {
 
 impl fmt::Display for SyntaxDefinition {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.identifier())
+        write!(f, "{}", serde_json::to_string(self).unwrap())
     }
 }
-
 
 #[cfg(test)]
 mod tests {

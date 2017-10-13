@@ -215,6 +215,10 @@ impl Editor {
         }
     }
 
+    pub fn set_config(&mut self, conf: Config) {
+        self.config = conf;
+    }
+
     /// Returns this `Editor`'s active `SyntaxDefinition`.
     pub fn get_syntax(&self) -> &SyntaxDefinition {
         &self.syntax
