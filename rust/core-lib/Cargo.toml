@@ -11,10 +11,16 @@ serde = "1.0"
 serde_json = "1.0"
 serde_derive = "1.0"
 time = "0.1"
+toml = "0.4"
 
 xi-rope = { path = "../rope", version = "0.2" }
 xi-unicode = { path = "../unicode", version = "0.1.0" }
 xi-rpc = { path = "../rpc", version = "0.2.0" }
+
+[dependencies.config]
+version = "0.7"
+default-features = false
+features = ["toml"]
 
 [dependencies.syntect]
 version = "1.7"

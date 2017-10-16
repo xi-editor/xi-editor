@@ -44,7 +44,7 @@ pub struct EmptyStruct {}
 /// # Note
 ///
 /// For serialization, all identifiers are converted to "snake_case".
-/// 
+///
 /// # Examples
 ///
 /// The `close_view` command:

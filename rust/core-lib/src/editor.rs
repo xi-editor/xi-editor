@@ -40,6 +40,7 @@ use plugins::rpc_types::{PluginUpdate, PluginEdit, ScopeSpan, PluginBufferInfo,
 ClientPluginInfo};
 use plugins::{PluginPid, Command};
 use layers::Scopes;
+use prefs::Config;
 
 
 #[cfg(not(target_os = "fuchsia"))]
@@ -52,8 +53,6 @@ const FLAG_SELECT: u64 = 2;
 // TODO This could go much higher without issue but while developing it is
 // better to keep it low to expose bugs in the GC during casual testing.
 const MAX_UNDOS: usize = 20;
-
-const TAB_SIZE: usize = 4;
 
 // Maximum returned result from plugin get_data RPC.
 const MAX_SIZE_LIMIT: usize = 1024 * 1024;
@@ -86,6 +85,7 @@ pub struct Editor {
 
     styles: Scopes,
     doc_ctx: DocumentCtx,
+    config: Config,
     revs_in_flight: usize,
 
     /// Used only on Fuchsia for syncing
@@ -118,13 +118,16 @@ impl EditType {
 
 impl Editor {
     /// Creates a new `Editor` with a new empty buffer.
-    pub fn new(doc_ctx: DocumentCtx, buffer_id: BufferIdentifier,
+    pub fn new(doc_ctx: DocumentCtx, config: Config,
+               buffer_id: BufferIdentifier,
                initial_view_id: &ViewIdentifier) -> Editor {
-        Self::with_text(doc_ctx, buffer_id, initial_view_id, "".to_owned())
+        Self::with_text(doc_ctx, config, buffer_id,
+                        initial_view_id, "".to_owned())
     }
 
     /// Creates a new `Editor`, loading text into a new buffer.
-    pub fn with_text(doc_ctx: DocumentCtx, buffer_id: BufferIdentifier,
+    pub fn with_text(doc_ctx: DocumentCtx, config: Config,
+                     buffer_id: BufferIdentifier,
                      initial_view_id: &ViewIdentifier, text: String) -> Editor {
 
         let engine = Engine::new(Rope::from(text));
@@ -154,6 +157,7 @@ impl Editor {
             scroll_to: Some(0),
             styles: Scopes::default(),
             doc_ctx: doc_ctx,
+            config: config,
             revs_in_flight: 0,
             sync_store: None,
             last_synced_rev: last_rev_id,
@@ -568,9 +572,15 @@ impl Editor {
         let mut builder = delta::Builder::new(self.text.len());
         for region in self.view.sel_regions() {
             let iv = Interval::new_closed_open(region.min(), region.max());
-            let (_, col) = self.view.offset_to_line_col(&self.text, region.start);
-            let n = TAB_SIZE - (col % TAB_SIZE);
-            builder.replace(iv, Rope::from(n_spaces(n)));
+            let tab_text = if self.config.translate_tabs_to_spaces {
+                    let (_, col) = self.view.offset_to_line_col(&self.text, region.start);
+                    let tab_size = self.config.tab_size;
+                    let n = tab_size - (col % tab_size);
+                    n_spaces(n)
+            } else {
+                "\t"
+            };
+            builder.replace(iv, Rope::from(tab_text));
         }
         self.this_edit_type = EditType::InsertChars;
         self.add_delta(builder.build());
