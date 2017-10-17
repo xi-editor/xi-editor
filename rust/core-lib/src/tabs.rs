@@ -21,7 +21,9 @@ use std::path::{PathBuf, Path};
 use std::fs::File;
 use std::sync::{Arc, Mutex, MutexGuard, Weak, mpsc};
 
+use serde::de::Deserialize;
 use serde_json::value::Value;
+use config::Value as ConfigValue;
 
 use xi_rope::rope::Rope;
 use xi_rpc::{RpcCtx, RemoteError};
@@ -361,6 +363,23 @@ impl Documents {
             ClientStarted(..) => self.do_client_init(rpc_ctx.get_peer()),
             SetTheme { theme_name } => self.do_set_theme(rpc_ctx.get_peer(),
                                                          &theme_name),
+            DebugOverrideSetting { view_id, key, value } => {
+                //TODO: when we have more ways for settings to change,
+                //we need to move this into some independent function.
+                //And maybe do diffs or something, so we can act on specific
+                //changes...?
+                if let Some(buffer_id) = self.buffers.buffer_for_view(&view_id) {
+                    let syntax = self.buffers.lock().editor_for_view(&view_id)
+                        .map(|ed| ed.get_syntax().to_owned())
+                        .unwrap_or_default();
+                    let value = ConfigValue::deserialize(&value)
+                        .expect("config value should already be validated");
+                    self.config_manager.set_override(key, value, buffer_id, true);
+                    let new_conf = self.config_manager.get_config(syntax, buffer_id);
+                    self.buffers.lock().editor_for_view_mut(&view_id)
+                        .map(|ed| ed.set_config(new_conf));
+                }
+            }
             Save { view_id, file_path } => self.do_save(&view_id, file_path),
             CloseView { view_id } => self.do_close_view(&view_id),
             Edit(rpc::EditCommand { view_id, cmd }) => {

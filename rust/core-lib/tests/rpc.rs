@@ -119,9 +119,9 @@ fn test_movement_cmds() {
 {"method":"set_theme","params":{"theme_name":"InspiredGitHub"}}
 {"id":0,"method":"new_view","params":{}}"#);
     assert!(rpc_looper.mainloop(|| json, &mut state).is_ok());
-    
+
     let json = make_reader(MOVEMENT_RPCS);
-    assert!(rpc_looper.mainloop(|| json, &mut state).is_ok());
+    rpc_looper.mainloop(|| json, &mut state).unwrap();
 }
 
 #[test]
@@ -136,9 +136,9 @@ fn test_text_commands() {
 {"method":"set_theme","params":{"theme_name":"InspiredGitHub"}}
 {"id":0,"method":"new_view","params":{}}"#);
     assert!(rpc_looper.mainloop(|| json, &mut state).is_ok());
-    
+
     let json = make_reader(TEXT_EDIT_RPCS);
-    assert!(rpc_looper.mainloop(|| json, &mut state).is_ok());
+    rpc_looper.mainloop(|| json, &mut state).unwrap();
 }
 
 #[test]
@@ -151,10 +151,27 @@ fn test_other_edit_commands() {
 {"method":"set_theme","params":{"theme_name":"InspiredGitHub"}}
 {"id":0,"method":"new_view","params":{}}"#);
     assert!(rpc_looper.mainloop(|| json, &mut state).is_ok());
-    
+
     let json = make_reader(OTHER_EDIT_RPCS);
-    assert!(rpc_looper.mainloop(|| json, &mut state).is_ok());
+    rpc_looper.mainloop(|| json, &mut state).unwrap();
 }
+
+
+#[test]
+fn test_settings_commands() {
+    let mut state = MainState::new();
+    let write = io::sink();
+    let mut rpc_looper = RpcLoop::new(write);
+    // init a new view
+    let json = make_reader(r#"{"method":"client_started","params":{}}
+{"method":"set_theme","params":{"theme_name":"InspiredGitHub"}}
+{"id":0,"method":"new_view","params":{}}"#);
+    assert!(rpc_looper.mainloop(|| json, &mut state).is_ok());
+    let json = make_reader(r#"{"method":"debug_override_setting","params":{"view_id":"view-id-1","key":"tab_size","value":15}}"#);
+    rpc_looper.mainloop(|| json, &mut state).unwrap();
+}
+
+
 
 //TODO: test saving rpc
 //TODO: test plugin rpc
