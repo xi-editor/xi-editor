@@ -1,3 +1,5 @@
+# Makefile for installing syntect plugin on macOS and Linux
+
 XDG_CONFIG_HOME ?= $(HOME)/.config
 XI_CONFIG_DIR ?= $(XDG_CONFIG_HOME)/xi
 XI_PLUGIN_DIR ?= $(XI_CONFIG_DIR)/plugins
