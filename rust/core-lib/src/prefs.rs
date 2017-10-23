@@ -18,6 +18,7 @@ use std::collections::{HashMap, HashSet};
 
 use config::{self, Source, Value, FileFormat};
 use syntax::SyntaxDefinition;
+use tabs::BufferIdentifier;
 
 
 static XI_CONFIG_DIR: &'static str = "XI_CONFIG_DIR";
@@ -85,6 +86,8 @@ pub struct ConfigManager {
     defaults: ConfigPair,
     /// default per-syntax configs
     syntax_specific: HashMap<SyntaxDefinition, ConfigPair>,
+    /// per-session overrides
+    overrides: HashMap<BufferIdentifier, ConfigPair>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -104,10 +107,12 @@ impl ConfigPair {
         let base = base.into();
         let user = user.into();
         let cache = Table::new();
-        ConfigPair { base, user, cache }.rebuild()
+        let mut conf = ConfigPair { base, user, cache };
+        conf.rebuild();
+        conf
     }
 
-    fn rebuild(mut self) -> Self {
+    fn rebuild(&mut self) {
         let mut cache = self.base.clone().unwrap_or_default();
         if let Some(ref user) = self.user {
             for (k, v) in user.iter() {
@@ -115,16 +120,34 @@ impl ConfigPair {
             }
         }
         self.cache = cache;
-        self
     }
 
-    /// Returns a new `Table`, with the values of `other.cache`
+    /// Manually sets a key/value pair in one of `base` or `user`.
+    ///
+    /// Note: this is only intended to be used internally, when handling
+    /// overrides.
+    fn set_override<K, V>(&mut self, key: K, value: V, from_user: bool)
+        where K: AsRef<str>,
+              V: Into<Value>,
+    {
+        let key: String = key.as_ref().to_owned();
+        let value = value.into();
+        {
+            let mut table = if from_user {
+                self.user.get_or_insert(Table::new())
+            } else {
+                self.base.get_or_insert(Table::new())
+            };
+            table.insert(key, value);
+        }
+        self.rebuild();
+    }
+
+    /// Returns a new `Table`, with the values of `other`
     /// inserted into a copy of `self.cache`.
     fn merged_with(&self, other: &ConfigPair) -> Table {
         let mut result = self.cache.clone();
-        for (k, v) in other.cache.iter() {
-            result.insert(k.to_owned(), v.clone());
-        }
+        merge_tables(&mut result, &other.cache);
         result
     }
 }
@@ -152,19 +175,27 @@ impl ConfigManager {
                 (def.to_owned(), pair)
             })
             .collect::<HashMap<SyntaxDefinition, ConfigPair>>();
+        let overrides = HashMap::new();
 
-        ConfigManager { config_dir, defaults, syntax_specific }
+        ConfigManager { config_dir, defaults, syntax_specific, overrides }
     }
 
     /// Generates a snapshot of the current configuration for `syntax`.
-    pub fn get_config<S>(&self, syntax: S) -> Config
-        where S: Into<Option<SyntaxDefinition>>
+    pub fn get_config<S, V>(&self, syntax: S, buf_id: V) -> Config
+        where S: Into<Option<SyntaxDefinition>>,
+              V: Into<Option<BufferIdentifier>>
     {
         let syntax = syntax.into().unwrap_or_default();
-        let settings: Value = match self.syntax_specific.get(&syntax) {
+        let buf_id = buf_id.into();
+        let mut settings = match self.syntax_specific.get(&syntax) {
             Some(ref syntax_config) => self.defaults.merged_with(syntax_config),
             None => self.defaults.cache.clone(),
-        }.into();
+        };
+
+        if let Some(overrides) = buf_id.and_then(|v| self.overrides.get(&v)) {
+            merge_tables(&mut settings, &overrides.cache);
+        }
+        let settings: Value = settings.into();
         let mut settings: Config = settings.try_into().unwrap();
         // relative entries in plugin search path should be relative to
         // the config directory.
@@ -178,6 +209,23 @@ impl ConfigManager {
             settings.plugin_search_path.push(sys_path.into());
         }
         settings
+    }
+
+    /// Sets a session-specific, buffer-specific override. The `from_user`
+    /// flag indicates whether this override is coming via RPC (true) or
+    /// from xi-core (false).
+    pub fn set_override<K, V>(&mut self, key: K, value: V,
+                              buf_id: BufferIdentifier, from_user: bool)
+        where K: AsRef<str>,
+              V: Into<Value>,
+    {
+        if !self.overrides.contains_key(&buf_id) {
+            let conf_pair = ConfigPair::new(None, None);
+            self.overrides.insert(buf_id.to_owned(), conf_pair);
+        }
+        self.overrides.get_mut(&buf_id)
+            .unwrap()
+            .set_override(key, value, from_user);
     }
 }
 
@@ -257,6 +305,13 @@ fn get_config_dir() -> PathBuf {
                     xdg_var.as_ref().map(String::as_ref))
 }
 
+/// Updates `base` with values in `other`.
+fn merge_tables(base: &mut Table, other: &Table) {
+    for (k, v) in other.iter() {
+        base.insert(k.to_owned(), v.clone());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -283,7 +338,7 @@ mod tests {
     fn test_defaults() {
         let manager = ConfigManager::new("BASE_PATH", Table::default(),
                                          HashMap::new());
-        let config = manager.get_config(None);
+        let config = manager.get_config(None, None);
         assert_eq!(config.tab_size, 4);
         assert_eq!(config.plugin_search_path, vec![PathBuf::from("BASE_PATH/plugins")])
     }
@@ -294,8 +349,33 @@ mod tests {
         let user_config = config::File::from_str(user_config, FileFormat::Toml)
             .collect()
             .unwrap();
-        let manager = ConfigManager::new("", user_config, HashMap::new());
-        let config = manager.get_config(None);
+        let rust_config = r#"tab_size = 31"#;
+        let rust_config = config::File::from_str(rust_config, FileFormat::Toml)
+            .collect()
+            .unwrap();
+
+        let mut user_syntax = HashMap::new();
+        user_syntax.insert(SyntaxDefinition::Rust, rust_config);
+
+        let mut manager = ConfigManager::new("", user_config, user_syntax);
+        let buf_id = BufferIdentifier::new(1);
+        manager.set_override("tab_size", 67, buf_id.clone(), false);
+
+        let config = manager.get_config(None, None);
         assert_eq!(config.tab_size, 42);
+        let config = manager.get_config(SyntaxDefinition::Yaml, None);
+        assert_eq!(config.tab_size, 2);
+        let config = manager.get_config(SyntaxDefinition::Yaml, buf_id.clone());
+        assert_eq!(config.tab_size, 67);
+
+        let config = manager.get_config(SyntaxDefinition::Rust, None);
+        assert_eq!(config.tab_size, 31);
+        let config = manager.get_config(SyntaxDefinition::Rust, buf_id.clone());
+        assert_eq!(config.tab_size, 67);
+
+        // user override trumps everything
+        manager.set_override("tab_size", 85, buf_id.clone(), true);
+        let config = manager.get_config(SyntaxDefinition::Rust, buf_id.clone());
+        assert_eq!(config.tab_size, 85);
     }
 }

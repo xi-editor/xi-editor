@@ -178,6 +178,8 @@ pub enum CoreNotification {
     Save { view_id: ViewIdentifier, file_path: String },
     /// Tells `xi-core` to set the theme.
     SetTheme { theme_name: String },
+    /// Overrides an editor setting for the given buffer.
+    DebugOverrideSetting { view_id: ViewIdentifier, key: String, value: Value },
     /// Notifies `xi-core` that the client has started.
     //TODO: this should be a unit, but we have a minor issue with serde.
     //see https://github.com/google/xi-editor/issues/400
