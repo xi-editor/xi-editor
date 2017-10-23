@@ -133,7 +133,7 @@ impl ConfigPair {
         let key: String = key.as_ref().to_owned();
         let value = value.into();
         {
-            let mut table = if from_user {
+            let table = if from_user {
                 self.user.get_or_insert(Table::new())
             } else {
                 self.base.get_or_insert(Table::new())
