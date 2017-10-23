@@ -32,6 +32,7 @@ body {
 <div>
     <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" 
         width='600px' height='600px' id="svg">
+        <rect x="10" y="10" width="200" height="540" fill="none" stroke="#004"/>
     </svg>
 </div>
 
@@ -84,7 +85,7 @@ body {
         if (isFound(linenum, ix)) return;
         const r = document.createElementNS(NS,"rect");
         r.setAttribute("x", 10);
-        r.setAttribute("y", linenum * cacheElHeight);
+        r.setAttribute("y", 10 + linenum * cacheElHeight);
         r.setAttribute("width", 200);
         r.setAttribute("height", 2);
         svgEl.appendChild(r);
@@ -106,7 +107,7 @@ body {
         let i = 0;
         const r = document.createElementNS(NS,"rect");
         r.setAttribute("x", 10);
-        r.setAttribute("y", linenum * cacheElHeight);
+        r.setAttribute("y", 10 + linenum * cacheElHeight);
         r.setAttribute("width", 250);
         r.setAttribute("height", 1);
         svgEl.appendChild(r);
@@ -133,7 +134,7 @@ body {
         }
     }
     function process(linenum) {
-        if (linenum >= maxLine) return;
+        if (linenum < 0 || linenum >= maxLine) return;
         processLine(linenum);
         if (timeoutId) {
             window.clearInterval(timeoutId);
@@ -201,7 +202,7 @@ body {
         }
     }
     function cacheMouseDown(event) {
-        const linenum = Math.floor(event.offsetY / cacheElHeight);
+        const linenum = Math.floor((event.offsetY - 10) / cacheElHeight);
         process(linenum);
         down = true;
         return false;
@@ -212,7 +213,7 @@ body {
     }
     function cacheMouseMove(event) {
         if (down) {
-            let linenum = Math.floor(event.offsetY / cacheElHeight);
+            let linenum = Math.floor((event.offsetY - 10) / cacheElHeight);
             process(linenum);
         }
         return false;
