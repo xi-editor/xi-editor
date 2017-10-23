@@ -215,6 +215,10 @@ impl Editor {
         }
     }
 
+    pub fn set_config(&mut self, conf: Config) {
+        self.config = conf;
+    }
+
     /// Returns this `Editor`'s active `SyntaxDefinition`.
     pub fn get_syntax(&self) -> &SyntaxDefinition {
         &self.syntax
@@ -565,7 +569,8 @@ impl Editor {
 
     fn insert_newline(&mut self) {
         self.this_edit_type = EditType::InsertChars;
-        self.insert("\n");
+        let text = self.config.newline.clone();
+        self.insert(&text);
     }
 
     fn insert_tab(&mut self) {

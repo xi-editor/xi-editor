@@ -14,9 +14,10 @@
 
 use std::env;
 use std::path::{PathBuf, Path};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use config::{self, Source, Value, FileFormat};
+use syntax::SyntaxDefinition;
 
 
 static XI_CONFIG_DIR: &'static str = "XI_CONFIG_DIR";
@@ -26,57 +27,144 @@ static XI_SYS_PLUGIN_PATH: &'static str = "XI_SYS_PLUGIN_PATH";
 static XI_CONFIG_FILE_NAME: &'static str = "preferences.xiconfig";
 
 /// Namespace for various default settings.
+#[allow(unused)]
 mod defaults {
+    use super::*;
     pub const BASE: &'static str = include_str!("../assets/defaults.toml");
+    pub const WINDOWS: &'static str = include_str!("../assets/windows.toml");
+    pub const YAML: &'static str = include_str!("../assets/yaml.toml");
+    pub const MAKEFILE: &'static str = include_str!("../assets/makefile.toml");
+
+    pub fn platform_defaults() -> Table {
+        let mut base = load(BASE);
+        if let Some(mut overrides) = platform_overrides() {
+            for (k, v) in overrides.drain() {
+                base.insert(k, v);
+            }
+        }
+        base
+    }
+
+    pub fn syntax_defaults() -> HashMap<SyntaxDefinition, Table>  {
+        let mut configs = HashMap::new();
+        configs.insert(SyntaxDefinition::Yaml, load(YAML));
+        configs.insert(SyntaxDefinition::Makefile, load(MAKEFILE));
+        configs
+    }
+
+    fn platform_overrides() -> Option<Table> {
+        #[cfg(target_os = "windows")]
+        { return Some(load(WINDOWS)) }
+        None
+    }
+
+    fn load(default: &str) -> Table {
+        config::File::from_str(default, config::FileFormat::Toml)
+            .collect()
+            .expect("default configs must load")
+    }
 }
 
 pub type Table = HashMap<String, Value>;
 
+/// Represents the common pattern of default settings masked by
+/// user settings.
+pub struct ConfigPair {
+    /// A static default configuration, which will never change.
+    base: Option<Table>,
+    /// A variable, user provided configuration. Items here take
+    /// precedence over items in `base`.
+    user: Option<Table>,
+    /// A snapshot of base + user.
+    cache: Table,
+}
+
 pub struct ConfigManager {
     config_dir: PathBuf,
-    /// The default config
-    base: Table,
-    /// The user's custom config
-    user: Table,
-    /// A cache of the merged configs
-    cache: Table,
+    /// The defaults, and any base user overrides
+    defaults: ConfigPair,
+    /// default per-syntax configs
+    syntax_specific: HashMap<SyntaxDefinition, ConfigPair>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// A container for all user-modifiable settings.
 pub struct Config {
+    pub newline: String,
     pub tab_size: usize,
     pub translate_tabs_to_spaces: bool,
     pub plugin_search_path: Vec<PathBuf>,
 }
 
-impl ConfigManager {
-    fn new<P: AsRef<Path>>(config_dir: P, user_config: Table) -> Self {
-        let base_config = config::File::from_str(&defaults::BASE,
-                                                 config::FileFormat::Toml)
-            .collect()
-            .expect("base configuration settings must load.");
-        let mut conf = ConfigManager {
-            config_dir: config_dir.as_ref().to_owned(),
-            base: base_config,
-            user: user_config,
-            cache: Table::default(),
-        };
-        conf.rebuild();
-        conf
+impl ConfigPair {
+    fn new<T1, T2>(base: T1, user: T2) -> Self
+        where T1: Into<Option<Table>>,
+              T2: Into<Option<Table>>,
+    {
+        let base = base.into();
+        let user = user.into();
+        let cache = Table::new();
+        ConfigPair { base, user, cache }.rebuild()
     }
 
-    fn rebuild(&mut self) {
-        let mut cache = self.base.clone();
-        for (k, v) in self.user.iter() {
-            cache.insert(k.to_owned(), v.clone());
+    fn rebuild(mut self) -> Self {
+        let mut cache = self.base.clone().unwrap_or_default();
+        if let Some(ref user) = self.user {
+            for (k, v) in user.iter() {
+                cache.insert(k.to_owned(), v.clone());
+            }
         }
         self.cache = cache;
+        self
     }
 
-    /// Generates a snapshot of the currently loaded configuration.
-    pub fn get_config(&self) -> Config {
-        let settings: Value = self.cache.clone().into();
+    /// Returns a new `Table`, with the values of `other.cache`
+    /// inserted into a copy of `self.cache`.
+    fn merged_with(&self, other: &ConfigPair) -> Table {
+        let mut result = self.cache.clone();
+        for (k, v) in other.cache.iter() {
+            result.insert(k.to_owned(), v.clone());
+        }
+        result
+    }
+}
+
+impl ConfigManager {
+    fn new<P>(config_dir: P, user_config: Table,
+              mut user_syntax: HashMap<SyntaxDefinition, Table>) -> Self
+        where P: AsRef<Path>
+    {
+        let config_dir = config_dir.as_ref().to_owned();
+        let defaults = ConfigPair::new(defaults::platform_defaults(),
+                                       user_config);
+
+        let mut syntax_defaults = defaults::syntax_defaults();
+        // all syntaxes that have system and/or user settings
+        let union_syntax_defs = syntax_defaults.keys()
+            .chain(user_syntax.keys())
+            .cloned()
+            .collect::<HashSet<_>>();
+
+        let syntax_specific = union_syntax_defs.iter()
+            .map(|def| {
+                let pair = ConfigPair::new(syntax_defaults.remove(def),
+                                           user_syntax.remove(def));
+                (def.to_owned(), pair)
+            })
+            .collect::<HashMap<SyntaxDefinition, ConfigPair>>();
+
+        ConfigManager { config_dir, defaults, syntax_specific }
+    }
+
+    /// Generates a snapshot of the current configuration for `syntax`.
+    pub fn get_config<S>(&self, syntax: S) -> Config
+        where S: Into<Option<SyntaxDefinition>>
+    {
+        let syntax = syntax.into().unwrap_or_default();
+        let settings: Value = match self.syntax_specific.get(&syntax) {
+            Some(ref syntax_config) => self.defaults.merged_with(syntax_config),
+            None => self.defaults.cache.clone(),
+        }.into();
         let mut settings: Config = settings.try_into().unwrap();
         // relative entries in plugin search path should be relative to
         // the config directory.
@@ -95,17 +183,51 @@ impl ConfigManager {
 
 impl Default for ConfigManager {
     fn default() -> ConfigManager {
-        let path = get_config_dir();
-        let config_path = path.join(XI_CONFIG_FILE_NAME);
-        let user_config: config::File<_> = config_path.into();
-        let user_config = user_config
-            .format(FileFormat::Toml)
-            .collect()
-            .map_err(|e| print_err!("Error reading config: {:?}", e))
-            .unwrap_or_default();
-
-        ConfigManager::new(&path, user_config)
+        let config_dir = get_config_dir();
+        let user_config_path = config_dir.join(XI_CONFIG_FILE_NAME);
+        let user_config = load_config(&user_config_path).unwrap_or_default();
+        let syntax_specific = load_syntax_configs(&config_dir);
+        ConfigManager::new(&config_dir, user_config, syntax_specific)
     }
+}
+
+fn load_config(path: &Path) -> Result<Table, ()> {
+    let conf: config::File<_> = path.into();
+    conf.format(FileFormat::Toml)
+        .collect()
+        .map_err(|e| print_err!("Error reading config: {:?}", e))
+}
+
+/// Loads all of the syntax-specific config files in the target directory.
+fn load_syntax_configs(config_dir: &Path) -> HashMap<SyntaxDefinition, Table> {
+    let contents = config_dir.read_dir()
+        .map(|dir| {
+            dir.flat_map(Result::ok)
+                .map(|p| p.path())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    let mut result = HashMap::new();
+    for config_path in contents {
+        // config is invalid if path isn't utf-8; lossy gives better errors
+        let file_name = config_path.file_name().unwrap().to_string_lossy();
+        if !file_name.ends_with(".xiconfig") || file_name == XI_CONFIG_FILE_NAME {
+            continue
+        }
+
+        let file_stem = config_path.file_stem().unwrap().to_string_lossy();
+        let syntax = SyntaxDefinition::try_from_name(&file_stem);
+        let conf = load_config(&config_path);
+        match (syntax, conf) {
+            (Some(s), Ok(c)) => { result.insert(s, c); }
+            (None, _) => print_err!("unrecognized syntax name: {:?}",
+                                           &file_stem),
+            (_, Err(err)) => print_err!("Error parsing config {:?}\n{:?}",
+                                        &config_path, err),
+        }
+    }
+    result
 }
 
 /// Returns the location of the active config directory.
@@ -159,8 +281,9 @@ mod tests {
 
     #[test]
     fn test_defaults() {
-        let manager = ConfigManager::new("BASE_PATH", Table::default());
-        let config = manager.get_config();
+        let manager = ConfigManager::new("BASE_PATH", Table::default(),
+                                         HashMap::new());
+        let config = manager.get_config(None);
         assert_eq!(config.tab_size, 4);
         assert_eq!(config.plugin_search_path, vec![PathBuf::from("BASE_PATH/plugins")])
     }
@@ -171,8 +294,8 @@ mod tests {
         let user_config = config::File::from_str(user_config, FileFormat::Toml)
             .collect()
             .unwrap();
-        let manager = ConfigManager::new("", user_config);
-        let config = manager.get_config();
+        let manager = ConfigManager::new("", user_config, HashMap::new());
+        let config = manager.get_config(None);
         assert_eq!(config.tab_size, 42);
     }
 }
