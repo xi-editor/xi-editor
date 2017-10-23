@@ -17,6 +17,8 @@
 use std::path::PathBuf;
 use serde_json::Value;
 
+use xi_rpc::ReadError;
+
 use plugin_base;
 use plugin_base::PluginRequest;
 
@@ -128,12 +130,12 @@ impl<'a, H: Handler> plugin_base::Handler for MyHandler<'a, H> {
     }
 }
 
-pub fn mainloop<H: Handler>(handler: &mut H) {
+pub fn mainloop<H: Handler>(handler: &mut H) -> Result<(), ReadError> {
     let mut my_handler = MyHandler {
         handler: handler,
         state: State::default(),
     };
-    plugin_base::mainloop(&mut my_handler);
+    plugin_base::mainloop(&mut my_handler)
 }
 
 impl<'a> PluginCtx<'a> {

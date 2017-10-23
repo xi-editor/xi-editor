@@ -354,8 +354,8 @@ impl Documents {
         BufferIdentifier(self.id_counter)
     }
 
-    pub fn handle_notification<'a>(&mut self, cmd: rpc::CoreNotification,
-                               rpc_ctx: &mut RpcCtx<'a>) {
+    pub fn handle_notification(&mut self, cmd: rpc::CoreNotification,
+                               rpc_ctx: &RpcCtx) {
         use rpc::CoreNotification::*;
         match cmd {
             ClientStarted(..) => self.do_client_init(rpc_ctx.get_peer()),
@@ -371,8 +371,8 @@ impl Documents {
         }
     }
 
-    pub fn handle_request<'a>(&mut self, cmd: rpc::CoreRequest,
-                              rpc_ctx: &mut RpcCtx<'a>) -> Result<Value, RemoteError> {
+    pub fn handle_request(&mut self, cmd: rpc::CoreRequest,
+                          rpc_ctx: &RpcCtx) -> Result<Value, RemoteError> {
         use rpc::CoreRequest::*;
         match cmd {
             NewView { file_path } => {

@@ -74,7 +74,7 @@ impl Clone for PluginRef {
 impl Handler for PluginRef {
     type Notification = PluginNotification;
     type Request = PluginRequest;
-    fn handle_notification(&mut self, _ctx: RpcCtx, rpc: Self::Notification) {
+    fn handle_notification(&mut self, _ctx: &RpcCtx, rpc: Self::Notification) {
         let plugin_manager = {
             self.0.lock().unwrap().manager.upgrade()
         };
@@ -84,7 +84,7 @@ impl Handler for PluginRef {
         }
     }
 
-    fn handle_request(&mut self, _ctx: RpcCtx, rpc: Self::Request) ->
+    fn handle_request(&mut self, _ctx: &RpcCtx, rpc: Self::Request) ->
         Result<Value, RemoteError> {
         let plugin_manager = {
             self.0.lock().unwrap().manager.upgrade()

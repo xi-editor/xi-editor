@@ -21,7 +21,7 @@ use std::path::PathBuf;
 use serde_json::{self, Value};
 
 use xi_rpc;
-use xi_rpc::{RpcLoop, RpcCtx, RpcCall, RemoteError, dict_get_u64, dict_get_string};
+use xi_rpc::{RpcLoop, RpcCtx, RpcCall, RemoteError, ReadError, dict_get_u64, dict_get_string};
 
 // TODO: avoid duplicating this in every crate
 macro_rules! print_err {
@@ -64,7 +64,7 @@ impl ScopeSpan {
 	}
 }
 
-pub struct PluginCtx<'a>(RpcCtx<'a>);
+pub struct PluginCtx<'a>(&'a RpcCtx);
 
 impl<'a> PluginCtx<'a> {
     pub fn get_data(&self, view_id: &str, offset: usize,
@@ -252,7 +252,7 @@ struct MyHandler<'a, H: 'a>(&'a mut H);
 impl<'a, H: Handler> xi_rpc::Handler for MyHandler<'a, H> {
     type Notification = RpcCall;
     type Request = RpcCall;
-    fn handle_notification(&mut self, ctx: RpcCtx, rpc: Self::Notification) {
+    fn handle_notification(&mut self, ctx: &RpcCtx, rpc: Self::Notification) {
         match parse_plugin_request(&rpc.method, &rpc.params) {
             Ok(req) => {
                 if let Some(_) = self.0.call(&req, PluginCtx(ctx)) {
@@ -263,7 +263,7 @@ impl<'a, H: Handler> xi_rpc::Handler for MyHandler<'a, H> {
         }
     }
 
-    fn handle_request(&mut self, ctx: RpcCtx, rpc: Self::Request) ->
+    fn handle_request(&mut self, ctx: &RpcCtx, rpc: Self::Request) ->
         Result<Value, RemoteError> {
         match parse_plugin_request(&rpc.method, &rpc.params) {
             Ok(req) => {
@@ -277,16 +277,16 @@ impl<'a, H: Handler> xi_rpc::Handler for MyHandler<'a, H> {
         }
     }
 
-    fn idle(&mut self, ctx: RpcCtx, token: usize) {
+    fn idle(&mut self, ctx: &RpcCtx, token: usize) {
         self.0.idle(PluginCtx(ctx), token);
     }
 }
 
-pub fn mainloop<H: Handler>(handler: &mut H) {
+pub fn mainloop<H: Handler>(handler: &mut H) -> Result<(), ReadError> {
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut rpc_looper = RpcLoop::new(stdout);
     let mut my_handler = MyHandler(handler);
 
-    rpc_looper.mainloop(|| stdin.lock(), &mut my_handler);
+    rpc_looper.mainloop(|| stdin.lock(), &mut my_handler)
 }
