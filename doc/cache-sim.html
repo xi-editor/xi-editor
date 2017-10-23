@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html>
+    
+<head>
+<title>Syntax highlighting cache simulator</title>
+<link href="https://fonts.googleapis.com/css?family=Lato:400,400i,700" rel="stylesheet">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body {
+    width: 87.5%;
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 12.5%;
+    max-width: 1400px;
+    font-family: 'Lato', sans-serif;
+    line-height: 1.3;
+}
+
+</style>
+<h1>Syntax highlighting cache simulator</h1>
+
+<div>
+    Eviction policy:
+    <input id="radioLru" type="radio" name="evict" value="lru"><label for="radioLRU">LRU</label>
+    <input id="radioRand" type="radio" name="evict" value="rand"><label for="radioRand">Random</label>
+    <input id="radioGap" type="radio" name="evict" value="leastgap"><label for="radioGap">Least Gap</label>
+    <input id="radioKgap" type="radio" name="evict" value="kgap" checked><label for="radiokGap">kGap</label>
+</div>
+<div>Ripple: <input id="ripple" type="checkbox">
+</div>
+
+<div>
+    <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" 
+        width='600px' height='600px' id="svg">
+        <rect x="10" y="10" width="200" height="540" fill="none" stroke="#004"/>
+    </svg>
+</div>
+
+<script>
+// Copyright 2017 Google Inc. All rights reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+    "use strict";
+    const NS="http://www.w3.org/2000/svg";
+
+    let svgEl = document.getElementById("svg");
+    let cache = []; // cache element has "linenum" and "el" fields
+    const cacheElHeight = 3;
+    let cacheMax = 30;
+    let maxLine = 180;
+    let policy = "kgap";
+    let down = false;
+    let ts = 0;
+    let ripple = false;
+    let frontier = [];
+    let frontierEl = null;
+    let timeoutId = null;
+    var rippleInterval = 10;  // in ms
+    // return index (if found) or where to insert (if not)
+    function findLine(linenum) {
+        // TODO: binary search
+        for (var i = 0; i < cache.length; i++) {
+            if (cache[i].linenum >= linenum) {
+                return i;
+            }
+        }
+        return cache.length;
+    }
+    function isFound(linenum, ix) {
+        return ix < cache.length && cache[ix].linenum == linenum;
+    }
+    function insert(linenum) {
+        const ix = findLine(linenum);
+        if (isFound(linenum, ix)) return;
+        const r = document.createElementNS(NS,"rect");
+        r.setAttribute("x", 10);
+        r.setAttribute("y", 10 + linenum * cacheElHeight);
+        r.setAttribute("width", 200);
+        r.setAttribute("height", 2);
+        svgEl.appendChild(r);
+        let entry = {"linenum": linenum, "el": r, "ts": ts};
+        ts++;
+        cache.splice(ix, 0, entry);
+    }
+    function evict(ix) {
+        const entry = cache.splice(ix, 1)[0];
+        svgEl.removeChild(entry.el);
+    }
+    function removeFrontier() {
+        if (frontierEl) {
+            svgEl.removeChild(frontierEl);
+            frontierEl = null;
+        }
+    }
+    function insertFrontier(linenum) {
+        let i = 0;
+        const r = document.createElementNS(NS,"rect");
+        r.setAttribute("x", 10);
+        r.setAttribute("y", 10 + linenum * cacheElHeight);
+        r.setAttribute("width", 250);
+        r.setAttribute("height", 1);
+        svgEl.appendChild(r);
+        frontierEl = r;
+        for (; i < frontier.length; i++) {
+            if (frontier[i] == linenum) {
+                return;
+            } else if (frontier[i] > linenum) {
+                break;
+            }
+        }
+        frontier.splice(i, 0, linenum);
+    }
+    function timeoutHandler() {
+        //console.log(frontier);
+        let linenum = frontier.splice(0, 1)[0] + 1;
+        removeFrontier();
+        if (linenum < maxLine) {
+            processLine(linenum);
+            insertFrontier(linenum);
+        } else {
+            window.clearInterval(timeoutId);
+            timeoutId = null;
+        }
+    }
+    function process(linenum) {
+        if (linenum < 0 || linenum >= maxLine) return;
+        processLine(linenum);
+        if (timeoutId) {
+            window.clearInterval(timeoutId);
+        }
+        if (ripple) {
+            removeFrontier();
+            insertFrontier(linenum);
+            timeoutId = window.setInterval(timeoutHandler, rippleInterval);
+        }
+    }
+    function processLine(linenum) {
+        const ix = findLine(linenum);
+        if (isFound(linenum, ix)) {
+            cache[ix].ts = ts;
+            ts++;
+            return;
+        }
+        if (cache.length >= cacheMax) {
+            let victim = chooseVictim();
+            evict(victim);
+        }
+        insert(linenum);
+    }
+    function calcGap(ix) {
+        const lo = ix > 0 ? cache[ix - 1].linenum : 0;
+        const hi = ix + 1 < cache.length ? cache[ix + 1].linenum : maxLine;
+        return hi - lo;
+    }
+    function chooseVictim() {
+        if (policy == "rand") {
+            return Math.floor(Math.random() * cache.length);
+        } else if (policy == "lru") {
+            let oldest = 0;
+            for (var i = 1; i < cache.length; i++) {
+                if (cache[i].ts < cache[oldest].ts) {
+                    oldest = i;
+                }
+            }
+            return oldest;
+        } else if (policy == "kgap") {
+            let k = 5;
+            let best = null;
+            let bestGap = 0;
+            for (var i = 0; i < k; i++) {
+                const cand = Math.floor(Math.random() * cache.length);
+                const gap = calcGap(cand);
+                if (i == 0 || gap < bestGap) {
+                    best = cand;
+                    bestGap = gap;
+                }
+            }
+            return best;
+        } else if (policy == "leastgap") {
+            let best = null;
+            let bestGap = 0;
+            for (var i = 0; i < cache.length; i++) {
+                const cand = i;
+                const gap = calcGap(cand);
+                if (i == 0 || gap < bestGap) {
+                    best = cand;
+                    bestGap = gap;
+                }
+            }
+            return best;
+        }
+    }
+    function cacheMouseDown(event) {
+        const linenum = Math.floor((event.offsetY - 10) / cacheElHeight);
+        process(linenum);
+        down = true;
+        return false;
+    }
+    function cacheMouseUp(event) {
+        down = false;
+        return false;
+    }
+    function cacheMouseMove(event) {
+        if (down) {
+            let linenum = Math.floor((event.offsetY - 10) / cacheElHeight);
+            process(linenum);
+        }
+        return false;
+    }
+    svgEl.onmousedown = cacheMouseDown;
+    svgEl.onmouseup = cacheMouseUp;
+    svgEl.onmousemove = cacheMouseMove;
+    function setEvict(button) {
+        button.onchange = function (ev) {
+            policy = ev.srcElement.value;
+            console.log(policy);
+        }
+    }
+    setEvict(document.getElementById("radioLru"));
+    setEvict(document.getElementById("radioRand"));
+    setEvict(document.getElementById("radioGap"));
+    setEvict(document.getElementById("radioKgap"));
+    document.getElementById("ripple").onchange = function (ev) {
+        ripple = ev.srcElement.checked;
+        if (!ripple && timeoutId) {
+            window.clearInterval(timeoutId);
+            removeFrontier();
+            timeoutId = null;
+        }
+    }
+</script>
