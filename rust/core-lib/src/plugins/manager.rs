@@ -554,7 +554,7 @@ impl Handler for PluginManagerRef {
     type Notification = PluginCommand<PluginNotification>;
     type Request = PluginCommand<PluginRequest>;
 
-    fn handle_notification(&mut self, _ctx: RpcCtx, rpc: Self::Notification) {
+    fn handle_notification(&mut self, _ctx: &RpcCtx, rpc: Self::Notification) {
         use self::PluginNotification::*;
         let PluginCommand { view_id, plugin_id, cmd } = rpc;
         let inner = self.lock();
@@ -572,7 +572,7 @@ impl Handler for PluginManagerRef {
         };
     }
 
-    fn handle_request(&mut self, _ctx: RpcCtx, rpc: Self::Request) -> Result<Value, RemoteError> {
+    fn handle_request(&mut self, _ctx: &RpcCtx, rpc: Self::Request) -> Result<Value, RemoteError> {
         use self::PluginRequest::*;
         let PluginCommand { view_id, cmd, .. } = rpc;
         let inner = self.lock();

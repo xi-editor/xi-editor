@@ -20,7 +20,7 @@ use bytecount;
 use rand::{thread_rng, Rng};
 
 use xi_core::{PluginPid, ViewIdentifier, SyntaxDefinition, plugin_rpc};
-use xi_rpc::RemoteError;
+use xi_rpc::{RemoteError, ReadError};
 
 use plugin_base;
 pub use plugin_base::Error;
@@ -128,12 +128,12 @@ impl<'a, P: Plugin> plugin_base::Handler for CacheHandler<'a, P> {
     }
 }
 
-pub fn mainloop<P: Plugin>(handler: &mut P) {
+pub fn mainloop<P: Plugin>(handler: &mut P) -> Result<(), ReadError>  {
     let mut my_handler = CacheHandler {
         handler: handler,
         state: CacheState::default(),
     };
-    plugin_base::mainloop(&mut my_handler);
+    plugin_base::mainloop(&mut my_handler)
 }
 
 impl<'a, S: Default + Clone> PluginCtx<'a, S> {

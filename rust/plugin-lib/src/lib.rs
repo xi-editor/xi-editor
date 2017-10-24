@@ -25,5 +25,4 @@ extern crate rand;
 mod macros;
 
 pub mod plugin_base;
-pub mod caching_plugin;
 pub mod state_cache;

@@ -30,8 +30,8 @@ pub struct EchoHandler;
 impl Handler for EchoHandler {
     type Notification = RpcCall;
     type Request = RpcCall;
-    fn handle_notification(&mut self, ctx: RpcCtx, rpc: Self::Notification) {}
-    fn handle_request(&mut self, ctx: RpcCtx, rpc: Self::Request)
+    fn handle_notification(&mut self, ctx: &RpcCtx, rpc: Self::Notification) {}
+    fn handle_request(&mut self, ctx: &RpcCtx, rpc: Self::Request)
                       -> Result<Value, RemoteError> {
         Ok(rpc.params)
     }

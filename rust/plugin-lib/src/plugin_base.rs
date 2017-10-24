@@ -19,7 +19,7 @@ use std::io;
 use serde_json::Value;
 
 use xi_core::{ViewIdentifier, PluginPid, plugin_rpc};
-use xi_rpc::{self, RpcLoop, RpcCtx, RemoteError};
+use xi_rpc::{self, RpcLoop, RpcCtx, RemoteError, ReadError};
 
 // TODO: avoid duplicating this in every crate
 macro_rules! print_err {
@@ -50,7 +50,7 @@ pub trait Handler {
     fn idle(&mut self, ctx: PluginCtx, token: usize) {}
 }
 
-pub struct PluginCtx<'a>(RpcCtx<'a>);
+pub struct PluginCtx<'a>(&'a RpcCtx);
 
 impl<'a> PluginCtx<'a> {
     pub fn get_data(&self, plugin_id: PluginPid, view_id: &ViewIdentifier, offset: usize,
@@ -116,29 +116,26 @@ struct MyHandler<'a, H: 'a>(&'a mut H);
 impl<'a, H: Handler> xi_rpc::Handler for MyHandler<'a, H> {
     type Notification = plugin_rpc::HostNotification;
     type Request = plugin_rpc::HostRequest;
-    fn handle_notification(&mut self, ctx: RpcCtx, rpc: Self::Notification) {
+    fn handle_notification(&mut self, ctx: &RpcCtx, rpc: Self::Notification) {
         self.0.handle_notification(PluginCtx(ctx), rpc)
     }
 
-    fn handle_request(&mut self, ctx: RpcCtx, rpc: Self::Request)
+    fn handle_request(&mut self, ctx: &RpcCtx, rpc: Self::Request)
                       -> Result<Value, RemoteError> {
 
         self.0.handle_request(PluginCtx(ctx), rpc)
     }
 
-    fn idle(&mut self, ctx: RpcCtx, token: usize) {
+    fn idle(&mut self, ctx: &RpcCtx, token: usize) {
         self.0.idle(PluginCtx(ctx), token);
     }
 }
 
-pub fn mainloop<H: Handler>(handler: &mut H) {
+pub fn mainloop<H: Handler>(handler: &mut H) -> Result<(), ReadError> {
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut rpc_looper = RpcLoop::new(stdout);
     let mut my_handler = MyHandler(handler);
 
-    match rpc_looper.mainloop(|| stdin.lock(), &mut my_handler) {
-        Ok(_) => (),
-        Err(err) => print_err!("plugin exited with error:\n{:?}", err),
-    }
+    rpc_looper.mainloop(|| stdin.lock(), &mut my_handler)
 }

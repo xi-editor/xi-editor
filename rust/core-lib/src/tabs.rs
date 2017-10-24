@@ -21,7 +21,9 @@ use std::path::{PathBuf, Path};
 use std::fs::File;
 use std::sync::{Arc, Mutex, MutexGuard, Weak, mpsc};
 
+use serde::de::Deserialize;
 use serde_json::value::Value;
+use config::Value as ConfigValue;
 
 use xi_rope::rope::Rope;
 use xi_rpc::{RpcCtx, RemoteError};
@@ -45,7 +47,7 @@ use apps_ledger_services_public::{Ledger_Proxy};
 pub struct ViewIdentifier(String);
 
 /// BufferIdentifiers uniquely identify open buffers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Hash)]
 pub struct BufferIdentifier(usize);
 
 impl fmt::Display for ViewIdentifier {
@@ -311,7 +313,7 @@ impl Documents {
     pub fn new() -> Documents {
         let buffers = BufferContainerRef::new();
         let config_manager = ConfigManager::default();
-        let plugin_path = config_manager.get_config().plugin_search_path;
+        let plugin_path = config_manager.get_config(None, None).plugin_search_path;
         let plugin_manager = PluginManagerRef::new(buffers.clone(), plugin_path);
         let (update_tx, update_rx) = mpsc::channel();
 
@@ -354,13 +356,30 @@ impl Documents {
         BufferIdentifier(self.id_counter)
     }
 
-    pub fn handle_notification<'a>(&mut self, cmd: rpc::CoreNotification,
-                               rpc_ctx: &mut RpcCtx<'a>) {
+    pub fn handle_notification(&mut self, cmd: rpc::CoreNotification,
+                               rpc_ctx: &RpcCtx) {
         use rpc::CoreNotification::*;
         match cmd {
             ClientStarted(..) => self.do_client_init(rpc_ctx.get_peer()),
             SetTheme { theme_name } => self.do_set_theme(rpc_ctx.get_peer(),
                                                          &theme_name),
+            DebugOverrideSetting { view_id, key, value } => {
+                //TODO: when we have more ways for settings to change,
+                //we need to move this into some independent function.
+                //And maybe do diffs or something, so we can act on specific
+                //changes...?
+                if let Some(buffer_id) = self.buffers.buffer_for_view(&view_id) {
+                    let syntax = self.buffers.lock().editor_for_view(&view_id)
+                        .map(|ed| ed.get_syntax().to_owned())
+                        .unwrap_or_default();
+                    let value = ConfigValue::deserialize(&value)
+                        .expect("config value should already be validated");
+                    self.config_manager.set_override(key, value, buffer_id, true);
+                    let new_conf = self.config_manager.get_config(syntax, buffer_id);
+                    self.buffers.lock().editor_for_view_mut(&view_id)
+                        .map(|ed| ed.set_config(new_conf));
+                }
+            }
             Save { view_id, file_path } => self.do_save(&view_id, file_path),
             CloseView { view_id } => self.do_close_view(&view_id),
             Edit(rpc::EditCommand { view_id, cmd }) => {
@@ -371,8 +390,8 @@ impl Documents {
         }
     }
 
-    pub fn handle_request<'a>(&mut self, cmd: rpc::CoreRequest,
-                              rpc_ctx: &mut RpcCtx<'a>) -> Result<Value, RemoteError> {
+    pub fn handle_request(&mut self, cmd: rpc::CoreRequest,
+                          rpc_ctx: &RpcCtx) -> Result<Value, RemoteError> {
         use rpc::CoreRequest::*;
         match cmd {
             NewView { file_path } => {
@@ -456,7 +475,7 @@ impl Documents {
     fn new_empty_view(&mut self, rpc_peer: &MainPeer, view_id: &ViewIdentifier,
                       buffer_id: BufferIdentifier) {
         let editor = Editor::new(self.new_tab_ctx(rpc_peer),
-                                 self.config_manager.get_config(),
+                                 self.config_manager.get_config(None, None),
                                  buffer_id, view_id);
         self.add_editor(view_id, &buffer_id, editor, None);
     }
@@ -465,14 +484,15 @@ impl Documents {
                           buffer_id: BufferIdentifier, path: &Path) {
         match self.read_file(&path) {
             Ok(contents) => {
-                let ed = Editor::with_text(self.new_tab_ctx(rpc_peer),
-                                           self.config_manager.get_config(),
+                let syntax = SyntaxDefinition::new(path.to_str());
+                let config = self.config_manager.get_config(syntax, buffer_id);
+                let ed = Editor::with_text(self.new_tab_ctx(rpc_peer), config,
                                            buffer_id, view_id, contents);
                 self.add_editor(view_id, &buffer_id, ed, Some(path));
             }
             Err(err) => {
                 let ed = Editor::new(self.new_tab_ctx(rpc_peer),
-                                     self.config_manager.get_config(),
+                                     self.config_manager.get_config(None, None),
                                      buffer_id, view_id);
                 if path.exists() {
                     // if this is a read error of an actual file, we don't set path
@@ -524,6 +544,7 @@ impl Documents {
         let file_path = file_path.as_ref();
         let prev_syntax = self.buffers.lock().editor_for_view(view_id)
             .unwrap().get_syntax().to_owned();
+        let new_syntax = SyntaxDefinition::new(file_path.to_str());
         // notify of syntax change before notify of file_save
         //FIXME: this doesn't tell us if the syntax _will_ change, for instance
         //if syntax was a user selection. (we don't handle this case right now)
@@ -533,8 +554,15 @@ impl Documents {
         self.buffers.set_path(file_path, view_id);
         let init_info = self.buffers.lock().editor_for_view(view_id)
             .unwrap().plugin_init_info();
-        if prev_syntax != SyntaxDefinition::new(file_path.to_str()) {
+
+        if prev_syntax != new_syntax {
             self.plugins.document_syntax_changed(view_id, init_info);
+            let buffer_id = self.buffers.buffer_for_view(view_id)
+                .expect("buffer should be present while saving");
+            let new_config = self.config_manager.get_config(new_syntax,
+                                                            buffer_id);
+            self.buffers.lock().editor_for_view_mut(view_id)
+                .unwrap().set_config(new_config);
         }
         self.plugins.document_did_save(&view_id, file_path);
     }
@@ -808,7 +836,7 @@ mod tests {
     #[test]
     fn test_save_as() {
         let container_ref = BufferContainerRef::new();
-        let config = ConfigManager::default().get_config();
+        let config = ConfigManager::default().get_config(None, None);
         assert!(!container_ref.has_open_file("a fake file, for sure"));
         let view_id_1 = ViewIdentifier::from("view-id-1");
         let buf_id_1 = BufferIdentifier(1);

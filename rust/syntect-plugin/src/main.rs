@@ -21,9 +21,10 @@ extern crate xi_core_lib;
 
 mod stackmap;
 
+use std::sync::MutexGuard;
 use xi_plugin_lib::state_cache::{self, PluginCtx};
 use xi_core_lib::plugin_rpc::ScopeSpan;
-use syntect::parsing::{ParseState, ScopeStack, SyntaxSet, SCOPE_REPO};
+use syntect::parsing::{ParseState, ScopeStack, SyntaxSet, SCOPE_REPO, ScopeRepository};
 use stackmap::{StackMap, LookupResult};
 
 /// The state for syntax highlighting of one file.
@@ -40,6 +41,8 @@ struct PluginState<'a> {
 }
 
 const LINES_PER_RPC: usize = 50;
+
+type LockedRepo = MutexGuard<'static, ScopeRepository>;
 
 /// The syntax highlighting state corresponding to the beginning of a line
 /// (as stored in the state cache).
@@ -72,18 +75,7 @@ impl<'a> PluginState<'a> {
         let repo = SCOPE_REPO.lock().unwrap();
         for (cursor, batch) in ops {
             if scope_state.len() > 0 {
-                let scope_id = self.stack_idents.get_value(scope_state.as_slice());
-                let scope_id = match scope_id {
-                    LookupResult::Existing(id) => id,
-                    LookupResult::New(id) => {
-                        let stack_strings = scope_state.as_slice().iter()
-                            .map(|slice| repo.to_string(*slice))
-                            .collect::<Vec<_>>();
-                        self.new_scopes.push(stack_strings);
-                        id
-                    }
-                };
-
+                let scope_id = self.identifier_for_stack(&scope_state, &repo);
                 let start = self.offset - self.spans_start + prev_cursor;
                 let end = start + (cursor - prev_cursor);
                 if start != end {
@@ -94,14 +86,35 @@ impl<'a> PluginState<'a> {
             prev_cursor = cursor;
             scope_state.apply(&batch);
         }
+        // add span for final state
+        let start = self.offset - self.spans_start + prev_cursor;
+        let end = start + (line.len() - prev_cursor);
+        let scope_id = self.identifier_for_stack(&scope_state, &repo);
+        let span = ScopeSpan { start, end, scope_id };
+        self.spans.push(span);
         Some((parse_state, scope_state))
+    }
+
+    /// Returns the unique identifier for this `ScopeStack`. We use identifiers
+    /// so we aren't constantly sending long stack names to the peer.
+    fn identifier_for_stack(&mut self, stack: &ScopeStack, repo: &LockedRepo) -> u32 {
+        let identifier = self.stack_idents.get_value(stack.as_slice());
+        match identifier {
+            LookupResult::Existing(id) => id,
+            LookupResult::New(id) => {
+                let stack_strings = stack.as_slice().iter()
+                    .map(|slice| repo.to_string(*slice))
+                    .collect::<Vec<_>>();
+                self.new_scopes.push(stack_strings);
+                id
+            }
+        }
     }
 
     #[allow(unused)]
     // Return true if there's any more work to be done.
     fn highlight_one_line(&mut self, ctx: &mut PluginCtx<State>) -> bool {
         if let Some(line_num) = ctx.get_frontier() {
-            //print_err!("highlighting {}", line_num);
             let (line_num, offset, state) = ctx.get_prev(line_num);
             if offset != self.offset {
                 self.flush_spans(ctx);
