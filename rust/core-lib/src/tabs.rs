@@ -50,43 +50,6 @@ pub struct ViewIdentifier(String);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Hash)]
 pub struct BufferIdentifier(usize);
 
-impl fmt::Display for ViewIdentifier {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl<'a> From<&'a str> for ViewIdentifier {
-    fn from(s: &'a str) -> Self {
-        ViewIdentifier(String::from(s))
-    }
-}
-
-impl From<String> for ViewIdentifier {
-    fn from(s: String) -> Self {
-        ViewIdentifier(s)
-    }
-}
-
-impl ViewIdentifier {
-    /// Returns a reference to the identifier's String value.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Display for BufferIdentifier {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "buffer-id-{}", self.0)
-    }
-}
-
-impl BufferIdentifier {
-    pub fn new(val: usize) -> Self {
-        BufferIdentifier(val)
-    }
-}
-
 /// Tracks open buffers, and relationships between buffers and views.
 pub struct BufferContainer {
     /// associates open file paths to buffers
@@ -116,6 +79,50 @@ pub struct BufferContainerRef(Arc<Mutex<BufferContainer>>);
 ///
 /// [BufferContainer]: struct.BufferContainer.html
 pub struct WeakBufferContainerRef(Weak<Mutex<BufferContainer>>);
+
+/// A container for all open documents.
+///
+/// `Documents` is effectively the apex of the xi's model graph. It keeps references
+/// to all active `Editor ` instances (through a `BufferContainerRef` instance),
+/// and handles dispatch of RPC methods between client views and `Editor`
+/// instances, as well as between `Editor` instances and Plugins.
+pub struct Documents {
+    /// keeps track of buffer/view state.
+    buffers: BufferContainerRef,
+    id_counter: usize,
+    kill_ring: Arc<Mutex<Rope>>,
+    style_map: Arc<Mutex<ThemeStyleMap>>,
+    plugins: PluginManagerRef,
+    #[allow(dead_code)]
+    config_manager: ConfigManager,
+    /// A tx channel used to propagate plugin updates from all `Editor`s.
+    update_channel: mpsc::Sender<(ViewIdentifier, PluginUpdate, usize)>,
+    /// A queue of closures to be executed on the next idle runloop pass.
+    idle_queue: Vec<Box<IdleProc>>,
+    #[allow(dead_code)]
+    sync_repo: Option<SyncRepo>,
+}
+
+#[derive(Clone)]
+/// A container for state shared between `Editor` instances.
+pub struct DocumentCtx {
+    kill_ring: Arc<Mutex<Rope>>,
+    rpc_peer: MainPeer,
+    style_map: Arc<Mutex<ThemeStyleMap>>,
+    update_channel: mpsc::Sender<(ViewIdentifier, PluginUpdate, usize)>
+}
+
+/// A trait for closure types which are callable with a `Documents` instance.
+trait IdleProc: Send {
+    fn call(self: Box<Self>, docs: &mut Documents);
+}
+
+
+impl<F: Send + FnOnce(&mut Documents)> IdleProc for F {
+    fn call(self: Box<F>, docs: &mut Documents) {
+        (*self)(docs)
+    }
+}
 
 impl BufferContainer {
     /// Returns a reference to the `Editor` instance owning `view_id`'s view.
@@ -264,50 +271,6 @@ impl Clone for BufferContainerRef {
         BufferContainerRef(self.0.clone())
     }
 }
-
-/// A trait for closure types which are callable with a `Documents` instance.
-trait IdleProc: Send {
-    fn call(self: Box<Self>, docs: &mut Documents);
-}
-
-impl<F: Send + FnOnce(&mut Documents)> IdleProc for F {
-    fn call(self: Box<F>, docs: &mut Documents) {
-        (*self)(docs)
-    }
-}
-
-/// A container for all open documents.
-///
-/// `Documents` is effectively the apex of the xi's model graph. It keeps references
-/// to all active `Editor ` instances (through a `BufferContainerRef` instance),
-/// and handles dispatch of RPC methods between client views and `Editor`
-/// instances, as well as between `Editor` instances and Plugins.
-pub struct Documents {
-    /// keeps track of buffer/view state.
-    buffers: BufferContainerRef,
-    id_counter: usize,
-    kill_ring: Arc<Mutex<Rope>>,
-    style_map: Arc<Mutex<ThemeStyleMap>>,
-    plugins: PluginManagerRef,
-    #[allow(dead_code)]
-    config_manager: ConfigManager,
-    /// A tx channel used to propagate plugin updates from all `Editor`s.
-    update_channel: mpsc::Sender<(ViewIdentifier, PluginUpdate, usize)>,
-    /// A queue of closures to be executed on the next idle runloop pass.
-    idle_queue: Vec<Box<IdleProc>>,
-    #[allow(dead_code)]
-    sync_repo: Option<SyncRepo>,
-}
-
-#[derive(Clone)]
-/// A container for state shared between `Editor` instances.
-pub struct DocumentCtx {
-    kill_ring: Arc<Mutex<Rope>>,
-    rpc_peer: MainPeer,
-    style_map: Arc<Mutex<ThemeStyleMap>>,
-    update_channel: mpsc::Sender<(ViewIdentifier, PluginUpdate, usize)>
-}
-
 
 impl Documents {
     pub fn new() -> Documents {
@@ -745,6 +708,43 @@ impl DocumentCtx {
     pub fn update_plugins(&self, view_id: ViewIdentifier,
                           update: PluginUpdate, undo_group: usize) {
         self.update_channel.send((view_id, update, undo_group)).unwrap();
+    }
+}
+
+impl<'a> From<&'a str> for ViewIdentifier {
+    fn from(s: &'a str) -> Self {
+        ViewIdentifier(String::from(s))
+    }
+}
+
+impl From<String> for ViewIdentifier {
+    fn from(s: String) -> Self {
+        ViewIdentifier(s)
+    }
+}
+
+impl ViewIdentifier {
+    /// Returns a reference to the identifier's String value.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for ViewIdentifier {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl fmt::Display for BufferIdentifier {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "buffer-id-{}", self.0)
+    }
+}
+
+impl BufferIdentifier {
+    pub fn new(val: usize) -> Self {
+        BufferIdentifier(val)
     }
 }
 
