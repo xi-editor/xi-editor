@@ -21,7 +21,7 @@ extern crate serde_json;
 extern crate serde_derive;
 extern crate time;
 extern crate syntect;
-extern crate config;
+extern crate config as config_rs;
 extern crate toml;
 
 #[cfg(target_os = "fuchsia")]
@@ -66,7 +66,7 @@ pub mod internal {
     pub mod movement;
     pub mod syntax;
     pub mod layers;
-    pub mod prefs;
+    pub mod config;
 }
 
 use internal::tabs;
@@ -81,7 +81,7 @@ use internal::selection;
 use internal::movement;
 use internal::syntax;
 use internal::layers;
-use internal::prefs;
+use internal::config;
 #[cfg(target_os = "fuchsia")]
 use internal::fuchsia;
 
