@@ -16,7 +16,7 @@ use std::env;
 use std::path::{PathBuf, Path};
 use std::collections::{HashMap, HashSet};
 
-use config::{self, Source, Value, FileFormat};
+use config_rs::{self, Source, Value, FileFormat};
 use syntax::SyntaxDefinition;
 use tabs::BufferIdentifier;
 
@@ -60,7 +60,7 @@ mod defaults {
     }
 
     fn load(default: &str) -> Table {
-        config::File::from_str(default, config::FileFormat::Toml)
+        config_rs::File::from_str(default, config_rs::FileFormat::Toml)
             .collect()
             .expect("default configs must load")
     }
@@ -240,7 +240,7 @@ impl Default for ConfigManager {
 }
 
 fn load_config(path: &Path) -> Result<Table, ()> {
-    let conf: config::File<_> = path.into();
+    let conf: config_rs::File<_> = path.into();
     conf.format(FileFormat::Toml)
         .collect()
         .map_err(|e| print_err!("Error reading config: {:?}", e))
@@ -346,11 +346,11 @@ mod tests {
     #[test]
     fn test_overrides() {
         let user_config = r#"tab_size = 42"#;
-        let user_config = config::File::from_str(user_config, FileFormat::Toml)
+        let user_config = config_rs::File::from_str(user_config, FileFormat::Toml)
             .collect()
             .unwrap();
         let rust_config = r#"tab_size = 31"#;
-        let rust_config = config::File::from_str(rust_config, FileFormat::Toml)
+        let rust_config = config_rs::File::from_str(rust_config, FileFormat::Toml)
             .collect()
             .unwrap();
 

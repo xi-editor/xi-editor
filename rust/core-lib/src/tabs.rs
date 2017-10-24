@@ -23,7 +23,7 @@ use std::sync::{Arc, Mutex, MutexGuard, Weak, mpsc};
 
 use serde::de::Deserialize;
 use serde_json::value::Value;
-use config::Value as ConfigValue;
+use config_rs::Value as ConfigValue;
 
 use xi_rope::rope::Rope;
 use xi_rpc::{RpcCtx, RemoteError};
@@ -35,7 +35,7 @@ use styles::{Style, ThemeStyleMap};
 use MainPeer;
 
 use syntax::SyntaxDefinition;
-use prefs::ConfigManager;
+use config::ConfigManager;
 use plugins::{self, PluginManagerRef, Command};
 use plugins::rpc_types::{PluginUpdate, ClientPluginInfo};
 

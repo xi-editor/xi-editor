@@ -40,7 +40,7 @@ use plugins::rpc_types::{PluginUpdate, PluginEdit, ScopeSpan, PluginBufferInfo,
 ClientPluginInfo};
 use plugins::{PluginPid, Command};
 use layers::Scopes;
-use prefs::Config;
+use config::Config;
 
 
 #[cfg(not(target_os = "fuchsia"))]
