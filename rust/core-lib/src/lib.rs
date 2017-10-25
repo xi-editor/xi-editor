@@ -41,9 +41,6 @@ extern crate sha2;
 
 use serde_json::Value;
 
-#[macro_use]
-mod macros;
-
 pub mod rpc;
 
 /// Internal data structures and logic.

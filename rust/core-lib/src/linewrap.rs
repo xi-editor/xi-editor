@@ -77,14 +77,14 @@ pub fn linewrap(text: &Rope, cols: usize) -> Breaks {
         let word_width = pos - last_pos;
         if width > 0 && width + word_width > cols {
             builder.add_break(width);
-            //print_err!("soft break {}", width);
+            //eprintln!("soft break {}", width);
             last_break_pos += width;
             width = 0;
         }
         width += word_width;
         if hard {
             builder.add_break(width);
-            //print_err!("hard break {}", width);
+            //eprintln!("hard break {}", width);
             last_break_pos += width;
             width = 0;
         }
@@ -94,7 +94,7 @@ pub fn linewrap(text: &Rope, cols: usize) -> Breaks {
     builder.add_no_break(text.len() - last_break_pos);
     let result = builder.build();
     let time_ms = (time::now() - start_time).num_nanoseconds().unwrap() as f64 * 1e-6;
-    print_err!("time to wrap {} bytes: {:.2}ms", text.len(), time_ms);
+    eprintln!("time to wrap {} bytes: {:.2}ms", text.len(), time_ms);
     result
 }
 
@@ -155,7 +155,7 @@ pub fn rewrap(breaks: &mut Breaks, text: &Rope, iv: Interval, newsize: usize, co
         }
         builder.add_no_break(inval_end - last_break_pos);
         let time_ms = (time::now() - start_time).num_nanoseconds().unwrap() as f64 * 1e-6;
-        print_err!("time to wrap {} bytes: {:.2}ms (not counting build+edit)",
+        eprintln!("time to wrap {} bytes: {:.2}ms (not counting build+edit)",
             inval_end - inval_start, time_ms);
         (Interval::new_open_closed(inval_start, inval_end + (end - start) - newsize), builder.build())
     };

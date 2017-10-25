@@ -130,7 +130,7 @@ impl BufferContainer {
         match self.views.get(view_id) {
             Some(id) => self.editors.get(id),
             None => {
-                print_err!("no buffer_id for view {}", view_id);
+                eprintln!("no buffer_id for view {}", view_id);
                 None
             }
         }
@@ -141,7 +141,7 @@ impl BufferContainer {
         match self.views.get(view_id) {
             Some(id) => self.editors.get_mut(id),
             None => {
-                print_err!("no buffer_id for view {}", view_id);
+                eprintln!("no buffer_id for view {}", view_id);
                 None
             }
         }
@@ -460,7 +460,7 @@ impl Documents {
                 if path.exists() {
                     // if this is a read error of an actual file, we don't set path
                     // TODO: we should be reporting errors to the client
-                    print_err!("unable to read file: {}, error: {:?}", buffer_id, err);
+                    eprintln!("unable to read file: {}, error: {:?}", buffer_id, err);
                     self.add_editor(view_id, &buffer_id, ed, None);
                 } else {
                     // if a path that doesn't exist, create a new empty buffer + set path
@@ -546,7 +546,7 @@ impl Documents {
                 }
             }
             Stop { view_id, plugin_name } => {
-                print_err!("stop plugin rpc {}", plugin_name);
+                eprintln!("stop plugin rpc {}", plugin_name);
                 self.plugins.stop_plugin(&view_id, &plugin_name);
             }
             PluginRpc  { view_id, receiver, rpc } => {
@@ -588,7 +588,7 @@ impl Documents {
                 ed.theme_changed();
             }
         } else {
-            print_err!("no theme named {}", theme_name);
+            eprintln!("no theme named {}", theme_name);
         }
     }
 

@@ -13,9 +13,6 @@
 // limitations under the License.
 use std::io;
 
-#[macro_use]
-mod macros;
-
 extern crate xi_core_lib;
 extern crate xi_rpc;
 
@@ -31,6 +28,6 @@ fn main() {
 
     match rpc_looper.mainloop(|| stdin.lock(), &mut state) {
         Ok(_) => (),
-        Err(err) => print_err!("xi-core exited with error:\n{:?}", err),
+        Err(err) => eprintln!("xi-core exited with error:\n{:?}", err),
     }
 }

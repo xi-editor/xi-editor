@@ -205,7 +205,7 @@ impl ConfigManager {
             .collect();
         // If present, append the location of plugins bundled by client
         if let Ok(sys_path) = env::var(XI_SYS_PLUGIN_PATH) {
-            print_err!("including client bundled plugins from {}", &sys_path);
+            eprintln!("including client bundled plugins from {}", &sys_path);
             settings.plugin_search_path.push(sys_path.into());
         }
         settings
@@ -243,7 +243,7 @@ fn load_config(path: &Path) -> Result<Table, ()> {
     let conf: config_rs::File<_> = path.into();
     conf.format(FileFormat::Toml)
         .collect()
-        .map_err(|e| print_err!("Error reading config: {:?}", e))
+        .map_err(|e| eprintln!("Error reading config: {:?}", e))
 }
 
 /// Loads all of the syntax-specific config files in the target directory.
@@ -269,9 +269,9 @@ fn load_syntax_configs(config_dir: &Path) -> HashMap<SyntaxDefinition, Table> {
         let conf = load_config(&config_path);
         match (syntax, conf) {
             (Some(s), Ok(c)) => { result.insert(s, c); }
-            (None, _) => print_err!("unrecognized syntax name: {:?}",
+            (None, _) => eprintln!("unrecognized syntax name: {:?}",
                                            &file_stem),
-            (_, Err(err)) => print_err!("Error parsing config {:?}\n{:?}",
+            (_, Err(err)) => eprintln!("Error parsing config {:?}\n{:?}",
                                         &config_path, err),
         }
     }

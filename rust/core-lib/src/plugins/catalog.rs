@@ -42,7 +42,7 @@ impl <'a>PluginCatalog {
                 match load_plugins(path) {
                     Ok(plugins) => plugins,
                     Err(err) => {
-                        print_err!("error loading plugins from {:?}, error:\n{:?}",
+                        eprintln!("error loading plugins from {:?}, error:\n{:?}",
                                    path, err);
                         Vec::new()
                     }
@@ -56,7 +56,7 @@ impl <'a>PluginCatalog {
         let mut items = HashMap::with_capacity(plugins.len());
         for plugin in plugins {
             if items.contains_key(&plugin.name) {
-                print_err!("Duplicate plugin name.\n 1: {:?}\n 2: {:?}",
+                eprintln!("Duplicate plugin name.\n 1: {:?}\n 2: {:?}",
                            plugin, items.get(&plugin.name));
                 continue
             }
@@ -100,7 +100,7 @@ fn load_plugins(plugin_dir: &Path) -> io::Result<Vec<PluginDescription>> {
         if !manif_path.exists() { continue }
         match load_manifest(&manif_path) {
             Ok(manif) => plugins.push(manif),
-            Err(err) => print_err!("Error reading manifest {:?}, error:\n{:?}",
+            Err(err) => eprintln!("Error reading manifest {:?}, error:\n{:?}",
                                    &manif_path, err),
         }
     }

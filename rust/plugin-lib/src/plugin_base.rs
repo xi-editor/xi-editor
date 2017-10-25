@@ -23,20 +23,6 @@ use serde_json::{self, Value};
 use xi_rpc;
 use xi_rpc::{RpcLoop, RpcCtx, RpcCall, RemoteError, ReadError, dict_get_u64, dict_get_string};
 
-// TODO: avoid duplicating this in every crate
-macro_rules! print_err {
-    ($($arg:tt)*) => (
-        {
-            use std::io::prelude::*;
-            if let Err(e) = write!(&mut ::std::io::stderr(), "{}\n", format_args!($($arg)*)) {
-                panic!("Failed to write to stderr.\
-                    \nOriginal error output: {}\
-                    \nSecondary error writing to stderr: {}", format!($($arg)*), e);
-            }
-        }
-    )
-}
-
 #[derive(Debug)]
 pub enum Error {
     RpcError(xi_rpc::Error),
@@ -211,7 +197,7 @@ fn parse_plugin_request<'a>(method: &str, params: &'a Value) ->
                 // global plugins will need to correct this assumption.
                 Ok(BufferInfoWrapper { mut buffer_info }) => Ok(Initialize(buffer_info.remove(0))),
                 Err(_) => {
-                    print_err!("bad params? {:?}", params);
+                    eprintln!("bad params? {:?}", params);
                     Err(InternalError::InvalidParams)
                 }
             }
@@ -220,7 +206,7 @@ fn parse_plugin_request<'a>(method: &str, params: &'a Value) ->
             match serde_json::from_value::<SaveWrapper>(params.to_owned()) {
                 Ok(SaveWrapper { path }) => Ok(DidSave { path }),
                 Err(_) => {
-                    print_err!("bad params? {:?}", params);
+                    eprintln!("bad params? {:?}", params);
                     Err(InternalError::InvalidParams)
                 }
             }
@@ -256,10 +242,10 @@ impl<'a, H: Handler> xi_rpc::Handler for MyHandler<'a, H> {
         match parse_plugin_request(&rpc.method, &rpc.params) {
             Ok(req) => {
                 if let Some(_) = self.0.call(&req, PluginCtx(ctx)) {
-                    print_err!("Unexpected return value for notification {}", &rpc.method)
+                    eprintln!("Unexpected return value for notification {}", &rpc.method)
                 }
             }
-            Err(err) => print_err!("error: {}", err)
+            Err(err) => eprintln!("error: {}", err)
         }
     }
 
@@ -271,7 +257,7 @@ impl<'a, H: Handler> xi_rpc::Handler for MyHandler<'a, H> {
                 Ok(result.expect("return value missing"))
             }
             Err(err) => {
-                print_err!("Error {} decoding RPC request {}", err, &rpc.method);
+                eprintln!("Error {} decoding RPC request {}", err, &rpc.method);
                 Err(RemoteError::InvalidRequest(Some(Value::String(err.to_string()))))
             }
         }
