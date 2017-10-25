@@ -53,17 +53,17 @@ fn test_state() {
 {"method":"set_theme","params":{"theme_name":"InspiredGitHub"}}
 {"id":0,"method":"new_view","params":{}}"#);
     let mut rpc_looper = RpcLoop::new(write);
-    assert!(rpc_looper.mainloop(|| json, &mut state).is_ok());
+    rpc_looper.mainloop(|| json, &mut state).unwrap();
 
     {
         let buffers = buffers.lock();
         assert_eq!(buffers.iter_editors().count(), 1);
     }
-    assert!(buffers.buffer_for_view(&"view-id-1".into()).is_some());
+    assert!(buffers.buffer_for_view("view-id-1".into()).is_some());
 
     let json = make_reader(
         r#"{"method":"close_view","params":{"view_id":"view-id-1"}}"#);
-    assert!(rpc_looper.mainloop(|| json, &mut state).is_ok());
+    rpc_looper.mainloop(|| json, &mut state).unwrap();
     {
         let buffers = buffers.lock();
         assert_eq!(buffers.iter_editors().count(), 0);
@@ -74,7 +74,7 @@ fn test_state() {
 {"id":3,"method":"new_view","params":{}}"#);
 
 
-    assert!(rpc_looper.mainloop(|| json, &mut state).is_ok());
+    rpc_looper.mainloop(|| json, &mut state).unwrap();
     {
         let buffers = buffers.lock();
         assert_eq!(buffers.iter_editors().count(), 3);

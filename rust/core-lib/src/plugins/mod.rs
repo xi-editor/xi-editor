@@ -186,7 +186,7 @@ pub fn start_update_thread(
             match rx.recv() {
                 Ok((view_id, update, undo_group)) => {
                     if let Some(err) = manager_ref.update_plugins(
-                        &view_id, update, undo_group).err() {
+                        view_id, update, undo_group).err() {
                         eprintln!("error updating plugins {:?}", err);
                     }
                 }
