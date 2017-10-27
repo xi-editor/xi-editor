@@ -14,7 +14,7 @@
 
 use std::env;
 use std::path::{PathBuf, Path};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use config_rs::{self, Source, Value, FileFormat};
 use syntax::SyntaxDefinition;
@@ -70,6 +70,7 @@ pub type Table = HashMap<String, Value>;
 
 /// Represents the common pattern of default settings masked by
 /// user settings.
+#[derive(Debug, Clone, Default)]
 pub struct ConfigPair {
     /// A static default configuration, which will never change.
     base: Option<Table>,
@@ -80,14 +81,16 @@ pub struct ConfigPair {
     cache: Table,
 }
 
+#[derive(Debug)]
 pub struct ConfigManager {
-    config_dir: PathBuf,
     /// The defaults, and any base user overrides
     defaults: ConfigPair,
     /// default per-syntax configs
     syntax_specific: HashMap<SyntaxDefinition, ConfigPair>,
     /// per-session overrides
     overrides: HashMap<BufferIdentifier, ConfigPair>,
+    config_dir: Option<PathBuf>,
+    extras_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -110,6 +113,11 @@ impl ConfigPair {
         let mut conf = ConfigPair { base, user, cache };
         conf.rebuild();
         conf
+    }
+
+    fn set_user(&mut self, user: Table) {
+        self.user = Some(user);
+        self.rebuild();
     }
 
     fn rebuild(&mut self) {
@@ -153,31 +161,41 @@ impl ConfigPair {
 }
 
 impl ConfigManager {
-    fn new<P>(config_dir: P, user_config: Table,
-              mut user_syntax: HashMap<SyntaxDefinition, Table>) -> Self
-        where P: AsRef<Path>
-    {
-        let config_dir = config_dir.as_ref().to_owned();
-        let defaults = ConfigPair::new(defaults::platform_defaults(),
-                                       user_config);
+    pub fn set_config_dir<P: AsRef<Path>>(&mut self, path: P) {
+        let config_dir = path.as_ref().to_owned();
+        let user_config_path = config_dir.join(XI_CONFIG_FILE_NAME);
+        let user_config = load_config(&user_config_path).unwrap_or_default();
+        let syntax_specific = load_syntax_configs(&config_dir);
+        self.config_dir = Some(config_dir);
+        self.set_user_configs(Some(user_config), Some(syntax_specific));
+    }
 
-        let mut syntax_defaults = defaults::syntax_defaults();
-        // all syntaxes that have system and/or user settings
-        let union_syntax_defs = syntax_defaults.keys()
-            .chain(user_syntax.keys())
-            .cloned()
-            .collect::<HashSet<_>>();
+    pub fn set_extras_dir<P: AsRef<Path>>(&mut self, path: P) {
+        self.extras_dir = Some(path.as_ref().to_owned())
+    }
 
-        let syntax_specific = union_syntax_defs.iter()
-            .map(|def| {
-                let pair = ConfigPair::new(syntax_defaults.remove(def),
-                                           user_syntax.remove(def));
-                (def.to_owned(), pair)
-            })
-            .collect::<HashMap<SyntaxDefinition, ConfigPair>>();
-        let overrides = HashMap::new();
+    pub fn set_user_configs(&mut self, defaults: Option<Table>,
+                            syntax: Option<HashMap<SyntaxDefinition, Table>>) {
+        if let Some(mut syntax_settings) = syntax {
+            for (syntax, config) in syntax_settings.drain() {
+                self.set_user_syntax(syntax, config);
+            }
+        }
 
-        ConfigManager { config_dir, defaults, syntax_specific, overrides }
+        if let Some(defaults) = defaults {
+            self.defaults.set_user(defaults);
+        }
+    }
+
+    fn set_user_syntax(&mut self, syntax: SyntaxDefinition, config: Table) {
+        let exists = self.syntax_specific.contains_key(&syntax);
+        if exists {
+            let syntax_pair = self.syntax_specific.get_mut(&syntax).unwrap();
+            syntax_pair.set_user(config);
+        } else {
+            let syntax_pair = ConfigPair::new(None, config);
+            self.syntax_specific.insert(syntax, syntax_pair);
+        }
     }
 
     /// Generates a snapshot of the current configuration for `syntax`.
@@ -199,13 +217,15 @@ impl ConfigManager {
         let mut settings: Config = settings.try_into().unwrap();
         // relative entries in plugin search path should be relative to
         // the config directory.
+        if let Some(ref config_dir) = self.config_dir {
         settings.plugin_search_path = settings.plugin_search_path
             .iter()
-            .map(|p| self.config_dir.join(p))
+            .map(|p| config_dir.join(p))
             .collect();
+        }
         // If present, append the location of plugins bundled by client
-        if let Ok(sys_path) = env::var(XI_SYS_PLUGIN_PATH) {
-            eprintln!("including client bundled plugins from {}", &sys_path);
+        if let Some(ref sys_path) = self.extras_dir {
+            eprintln!("including client bundled plugins from {:?}", &sys_path);
             settings.plugin_search_path.push(sys_path.into());
         }
         settings
@@ -231,11 +251,21 @@ impl ConfigManager {
 
 impl Default for ConfigManager {
     fn default() -> ConfigManager {
-        let config_dir = get_config_dir();
-        let user_config_path = config_dir.join(XI_CONFIG_FILE_NAME);
-        let user_config = load_config(&user_config_path).unwrap_or_default();
-        let syntax_specific = load_syntax_configs(&config_dir);
-        ConfigManager::new(&config_dir, user_config, syntax_specific)
+        let defaults = ConfigPair::new(defaults::platform_defaults(), None);
+        let mut syntax_specific = defaults::syntax_defaults();
+        let syntax_specific = syntax_specific
+            .drain()
+            .map(|(k, v)| {(k.to_owned(), ConfigPair::new(v, None)) })
+            .collect::<HashMap<_, _>>();
+        let extras_dir = env::var(XI_SYS_PLUGIN_PATH).map(PathBuf::from).ok();
+
+        ConfigManager {
+            defaults: defaults,
+            syntax_specific: syntax_specific,
+            overrides: HashMap::new(),
+            config_dir: None,
+            extras_dir: extras_dir,
+        }
     }
 }
 
@@ -298,7 +328,7 @@ fn config_dir_impl(xi_var: Option<&str>, xdg_var: Option<&str>) -> PathBuf {
         })
 }
 
-fn get_config_dir() -> PathBuf {
+pub fn get_config_dir() -> PathBuf {
     let xi_var = env::var(XI_CONFIG_DIR).ok();
     let xdg_var = env::var(XDG_CONFIG_HOME).ok();
     config_dir_impl(xi_var.as_ref().map(String::as_ref),
@@ -336,8 +366,8 @@ mod tests {
 
     #[test]
     fn test_defaults() {
-        let manager = ConfigManager::new("BASE_PATH", Table::default(),
-                                         HashMap::new());
+        let mut manager = ConfigManager::default();
+        manager.set_config_dir("BASE_PATH");
         let config = manager.get_config(None, None);
         assert_eq!(config.tab_size, 4);
         assert_eq!(config.plugin_search_path, vec![PathBuf::from("BASE_PATH/plugins")])
@@ -357,7 +387,8 @@ mod tests {
         let mut user_syntax = HashMap::new();
         user_syntax.insert(SyntaxDefinition::Rust, rust_config);
 
-        let mut manager = ConfigManager::new("", user_config, user_syntax);
+        let mut manager = ConfigManager::default();
+        manager.set_user_configs(Some(user_config), Some(user_syntax));
         let buf_id = BufferIdentifier::new(1);
         manager.set_override("tab_size", 67, buf_id.clone(), false);
 

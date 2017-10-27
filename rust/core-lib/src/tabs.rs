@@ -31,6 +31,7 @@ use xi_rpc::{RpcCtx, RemoteError};
 use editor::Editor;
 
 use rpc;
+use config;
 use styles::{Style, ThemeStyleMap};
 use MainPeer;
 
@@ -323,9 +324,11 @@ impl Documents {
                                rpc_ctx: &RpcCtx) {
         use rpc::CoreNotification::*;
         match cmd {
-            ClientStarted(..) => self.do_client_init(rpc_ctx.get_peer()),
-            SetTheme { theme_name } => self.do_set_theme(rpc_ctx.get_peer(),
-                                                         &theme_name),
+            ClientStarted { config_dir, client_extras_dir } =>
+                self.do_client_init(rpc_ctx.get_peer(), config_dir,
+                                    client_extras_dir),
+            SetTheme { theme_name } =>
+                self.do_set_theme(rpc_ctx.get_peer(), &theme_name),
             DebugOverrideSetting { view_id, key, value } => {
                 //TODO: when we have more ways for settings to change,
                 //we need to move this into some independent function.
@@ -558,7 +561,21 @@ impl Documents {
         }
     }
 
-    fn do_client_init(&self, rpc_peer: &MainPeer) {
+    fn do_client_init(&mut self, rpc_peer: &MainPeer, config_dir: Option<PathBuf>,
+                      client_extras_dir: Option<PathBuf>) {
+        // If no config argument, fallback on environment variable
+        // TODO: if we go this route, deprecate env var approach and remove this
+        let config_dir = config_dir.or(Some(config::get_config_dir()));
+        match config_dir {
+            Some(ref d) => {
+                self.config_manager.set_config_dir(d);
+                if let Some(ref d) = client_extras_dir {
+                    self.config_manager.set_extras_dir(d);
+                }
+                //TODO: watch directory for changes
+            }
+            None => (),
+        }
         let params = {
             let style_map = self.style_map.lock().unwrap();
             json!({
