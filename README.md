@@ -41,8 +41,9 @@ below.
 
 ### Building the core
 
-Building the xi editor requires Rust 1.18 or later. If you want to experiment,
-you can build just the core like so:
+Xi targets 'recent stable Rust'. We recommend installing via [rustup](https://www.rustup.rs). The current minimum supported version is 1.20.
+
+To build the xi editor from the root directory of this repo:
 
 ```
 > cd rust
