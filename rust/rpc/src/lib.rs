@@ -39,6 +39,7 @@ use std::io::{self, BufRead, Write};
 use std::sync::{Arc, Mutex, Condvar};
 use std::sync::mpsc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
 use serde_json::Value;
 use serde::de::DeserializeOwned;
@@ -248,16 +249,7 @@ impl<W: Write + Send> RpcLoop<W> {
             });
 
             loop {
-                let read_result = match peer.try_get_rx() {
-                    Some(r) => r,
-                    None => match peer.try_get_idle() {
-                        Some(idle_token) => {
-                            handler.idle(&ctx, idle_token);
-                            continue;
-                        }
-                        None => peer.get_rx(),
-                    }
-                };
+                let read_result = next_read(&peer, handler, &ctx);
 
                 let json = match read_result {
                     Ok(json) => json,
@@ -285,6 +277,30 @@ impl<W: Write + Send> RpcLoop<W> {
             Ok(())
         } else {
             Err(exit)
+        }
+    }
+}
+
+/// Returns the next read result, checking for idle work when no
+/// result is available.
+fn next_read<W, H>(peer: &RawPeer<W>, handler: &mut H, ctx: &RpcCtx)
+                   -> Result<RpcObject, ReadError>
+    where W: Write + Send,
+          H: Handler,
+{
+    loop {
+        if let Some(result) = peer.try_get_rx() {
+            return result
+        }
+        if let Some(idle_token) = peer.try_get_idle() {
+            handler.idle(ctx, idle_token);
+            continue
+        }
+        // we don't want to block indefinitely if there's no current idle work,
+        // because idle work could be scheduled from another thread.
+        let check_idle_timeout = Duration::from_millis(100);
+        if let Some(result) = peer.get_rx_timeout(check_idle_timeout) {
+            return result
         }
     }
 }
@@ -396,13 +412,14 @@ impl<W:Write> RawPeer<W> {
         queue.pop_front()
     }
 
-    /// Get a message from the receive queue, blocking until available.
-    fn get_rx(&self) -> Result<RpcObject, ReadError> {
+    /// Get a message from the receive queue, waiting for at most `Duration`
+    /// and returning `None` if no message is available.
+    fn get_rx_timeout(&self, dur: Duration)
+                      -> Option<Result<RpcObject, ReadError>> {
         let mut queue = self.0.rx_queue.lock().unwrap();
-        while queue.is_empty() {
-            queue = self.0.rx_cvar.wait(queue).unwrap();
-        }
-        queue.pop_front().unwrap()
+        let result = self.0.rx_cvar.wait_timeout(queue, dur).unwrap();
+        queue = result.0;
+        queue.pop_front()
     }
 
     /// Adds a message to the receive queue. The message should only
