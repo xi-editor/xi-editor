@@ -16,7 +16,9 @@ use std::env;
 use std::path::{PathBuf, Path};
 use std::collections::HashMap;
 
+use notify::DebouncedEvent;
 use config_rs::{self, Source, Value, FileFormat};
+
 use syntax::SyntaxDefinition;
 use tabs::BufferIdentifier;
 
@@ -89,7 +91,11 @@ pub struct ConfigManager {
     syntax_specific: HashMap<SyntaxDefinition, ConfigPair>,
     /// per-session overrides
     overrides: HashMap<BufferIdentifier, ConfigPair>,
+    /// If using file-based config, this is the base config directory
+    /// (perhaps `$HOME/.config/xi`, by default).
     config_dir: Option<PathBuf>,
+    /// An optional client-provided path for bundled resources, such
+    /// as plugins and themes.
     extras_dir: Option<PathBuf>,
 }
 
@@ -161,6 +167,7 @@ impl ConfigPair {
 }
 
 impl ConfigManager {
+    /// Sets `self.config_dir`, and handles loading initial configs.
     pub fn set_config_dir<P: AsRef<Path>>(&mut self, path: P) {
         let config_dir = path.as_ref().to_owned();
         let user_config_path = config_dir.join(XI_CONFIG_FILE_NAME);
@@ -174,8 +181,9 @@ impl ConfigManager {
         self.extras_dir = Some(path.as_ref().to_owned())
     }
 
-    pub fn set_user_configs(&mut self, defaults: Option<Table>,
-                            syntax: Option<HashMap<SyntaxDefinition, Table>>) {
+    /// Bulk apply initial user configs.
+    fn set_user_configs(&mut self, defaults: Option<Table>,
+                        syntax: Option<HashMap<SyntaxDefinition, Table>>) {
         if let Some(mut syntax_settings) = syntax {
             for (syntax, config) in syntax_settings.drain() {
                 self.set_user_syntax(syntax, config);
@@ -184,6 +192,40 @@ impl ConfigManager {
 
         if let Some(defaults) = defaults {
             self.defaults.set_user(defaults);
+        }
+    }
+
+    /// Handle a file system event in `self.config_dir`; mostly this
+    /// means reload a changed configuration.
+    pub fn handle_fs_event(&mut self, event: DebouncedEvent) {
+        use self::DebouncedEvent::*;
+        match event {
+            Create(ref path) | Write(ref path) => {
+                let ext = path.extension()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("");
+                if ext == "xiconfig" {
+                    let file_stem = path.file_stem().unwrap().to_string_lossy();
+                    match load_config(path) {
+                        Ok(config) => self.update_config(&file_stem, config),
+                        Err(e) => eprintln!("error parsing config at path {:?} \
+                                            error:\n{:?}", path, e),
+                    }
+                }
+            }
+            //other => eprintln!("other config fs event:;\n{:?}", &other),
+            _ => (),
+        }
+    }
+
+    /// Replace the user config with the given name with a new config.
+    fn update_config(&mut self, config_name: &str, new_config: Table) {
+        if config_name == "preferences" {
+            self.defaults.set_user(new_config);
+        } else if let Some(s) = SyntaxDefinition::try_from_name(config_name) {
+            self.set_user_syntax(s, new_config);
+        } else {
+            eprintln!("Unknown config name {}", config_name);
         }
     }
 
@@ -225,7 +267,6 @@ impl ConfigManager {
         }
         // If present, append the location of plugins bundled by client
         if let Some(ref sys_path) = self.extras_dir {
-            eprintln!("including client bundled plugins from {:?}", &sys_path);
             settings.plugin_search_path.push(sys_path.into());
         }
         settings

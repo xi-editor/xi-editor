@@ -23,6 +23,7 @@ extern crate time;
 extern crate syntect;
 extern crate config as config_rs;
 extern crate toml;
+extern crate notify;
 
 #[cfg(target_os = "fuchsia")]
 extern crate magenta;
@@ -64,6 +65,7 @@ pub mod internal {
     pub mod syntax;
     pub mod layers;
     pub mod config;
+    pub mod watcher;
 }
 
 use internal::tabs;
@@ -79,6 +81,7 @@ use internal::movement;
 use internal::syntax;
 use internal::layers;
 use internal::config;
+use internal::watcher;
 #[cfg(target_os = "fuchsia")]
 use internal::fuchsia;
 
@@ -134,7 +137,7 @@ impl Handler for MainState {
         self.tabs.handle_request(rpc, ctx)
     }
 
-    fn idle(&mut self, _ctx: &RpcCtx, _token: usize) {
-        self.tabs.handle_idle();
+    fn idle(&mut self, _ctx: &RpcCtx, token: usize) {
+        self.tabs.handle_idle(token);
     }
 }
