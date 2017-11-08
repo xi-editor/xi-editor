@@ -340,7 +340,8 @@ impl Documents {
                 if let Some(buffer_id) = self.buffers.buffer_for_view(&view_id) {
                     let value = ConfigValue::deserialize(&value)
                         .expect("config value should already be validated");
-                    self.config_manager.set_override(key, value, buffer_id, true);
+                    self.config_manager.set_override(&key, value, buffer_id, true)
+                        .expect(&format!("setting override failed for key {}", key));
                     self.after_config_change();
                 }
             }
@@ -626,7 +627,9 @@ impl Documents {
         for (token, event) in events.drain(..) {
             match token {
                 CONFIG_EVENT_TOKEN => {
-                    self.config_manager.handle_fs_event(event);
+                    if let Err(e) = self.config_manager.handle_fs_event(event) {
+                        eprintln!("Error handling config file change: {:?}", e);
+                    }
                     //TODO: we should be more efficient about this update,
                     // with config_manager returning whether it's necessary.
                     // The simplest version of this is blocked on

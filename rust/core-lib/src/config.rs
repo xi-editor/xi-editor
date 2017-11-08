@@ -13,8 +13,10 @@
 // limitations under the License.
 
 use std::env;
+use std::fmt::Debug;
+use std::rc::Rc;
 use std::path::{PathBuf, Path};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use notify::DebouncedEvent;
 use config_rs::{self, Source, Value, FileFormat};
@@ -37,6 +39,17 @@ mod defaults {
     pub const WINDOWS: &'static str = include_str!("../assets/windows.toml");
     pub const YAML: &'static str = include_str!("../assets/yaml.toml");
     pub const MAKEFILE: &'static str = include_str!("../assets/makefile.toml");
+
+    /// config keys that are legal in most config files
+    pub const GENERAL_KEYS: &'static [&'static str] = &[
+        "tab_size",
+        "newline",
+        "translate_tabs_to_spaces",
+    ];
+    /// config keys that are only legal at the top level
+    pub const TOP_LEVEL_KEYS: &'static [&'static str] = &[
+        "plugin_search_path",
+    ];
 
     pub fn platform_defaults() -> Table {
         let mut base = load(BASE);
@@ -70,9 +83,61 @@ mod defaults {
 
 pub type Table = HashMap<String, Value>;
 
+#[derive(Debug, Clone)]
+pub enum ConfigError {
+    IllegalKey(String),
+    IllegalValue,
+    UnknownTable(String),
+    FileParse,
+}
+
+pub trait Validator: Debug {
+    fn validate(&self, key: &str, value: &Value) -> Result<(), ConfigError>;
+    fn validate_table(&self, table: &Table) -> Result<(), ConfigError> {
+        for (key, value) in table.iter() {
+            let _ = self.validate(key, value)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct KeyValidator {
+    keys: HashSet<String>,
+}
+
+impl KeyValidator {
+    pub fn for_syntax_config() -> Rc<Self> {
+        let keys = defaults::GENERAL_KEYS.iter()
+            .map(|s| String::from(*s))
+            .collect();
+        Rc::new(KeyValidator { keys })
+    }
+
+    pub fn for_general_config() -> Rc<Self> {
+        let keys = defaults::GENERAL_KEYS.iter()
+            .chain(defaults::TOP_LEVEL_KEYS.iter())
+            .map(|s| String::from(*s))
+            .collect();
+        Rc::new(KeyValidator { keys })
+
+    }
+}
+
+impl Validator for KeyValidator {
+    fn validate(&self, key: &str, _value: &Value) -> Result<(), ConfigError>
+    {
+        if self.keys.contains(key) {
+            Ok(())
+        } else {
+            Err(ConfigError::IllegalKey(key.to_owned()))
+        }
+    }
+}
+
 /// Represents the common pattern of default settings masked by
 /// user settings.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug)]
 pub struct ConfigPair {
     /// A static default configuration, which will never change.
     base: Option<Table>,
@@ -81,6 +146,7 @@ pub struct ConfigPair {
     user: Option<Table>,
     /// A snapshot of base + user.
     cache: Table,
+    validator: Rc<Validator>,
 }
 
 #[derive(Debug)]
@@ -109,21 +175,28 @@ pub struct Config {
 }
 
 impl ConfigPair {
-    fn new<T1, T2>(base: T1, user: T2) -> Self
+    fn new<T1, T2>(base: T1, user: T2, validator: Rc<Validator>)
+                   -> Result<Self, ConfigError>
         where T1: Into<Option<Table>>,
               T2: Into<Option<Table>>,
     {
         let base = base.into();
         let user = user.into();
+        let _ = user.as_ref()
+            .map(|t| validator.validate_table(t))
+            .unwrap_or(Ok(()))?;
+
         let cache = Table::new();
-        let mut conf = ConfigPair { base, user, cache };
+        let mut conf = ConfigPair { base, user, cache, validator };
         conf.rebuild();
-        conf
+        Ok(conf)
     }
 
-    fn set_user(&mut self, user: Table) {
+    fn set_user(&mut self, user: Table) -> Result<(), ConfigError> {
+        self.validator.validate_table(&user)?;
         self.user = Some(user);
         self.rebuild();
+        Ok(())
     }
 
     fn rebuild(&mut self) {
@@ -141,11 +214,13 @@ impl ConfigPair {
     /// Note: this is only intended to be used internally, when handling
     /// overrides.
     fn set_override<K, V>(&mut self, key: K, value: V, from_user: bool)
+                          -> Result<(), ConfigError>
         where K: AsRef<str>,
               V: Into<Value>,
     {
         let key: String = key.as_ref().to_owned();
         let value = value.into();
+        self.validator.validate(&key, &value)?;
         {
             let table = if from_user {
                 self.user.get_or_insert(Table::new())
@@ -155,6 +230,7 @@ impl ConfigPair {
             table.insert(key, value);
         }
         self.rebuild();
+        Ok(())
     }
 
     /// Returns a new `Table`, with the values of `other`
@@ -186,18 +262,24 @@ impl ConfigManager {
                         syntax: Option<HashMap<SyntaxDefinition, Table>>) {
         if let Some(mut syntax_settings) = syntax {
             for (syntax, config) in syntax_settings.drain() {
-                self.set_user_syntax(syntax, config);
+                if let Err(e) = self.set_user_syntax(syntax.clone(), config) {
+                    eprintln!("malformed config for syntax {:?} error:\n{:?}",
+                              syntax, e);
+                }
             }
         }
 
         if let Some(defaults) = defaults {
-            self.defaults.set_user(defaults);
+            if let Err(e) = self.defaults.set_user(defaults) {
+                eprintln!("malformed preferences: {:?}", e);
+            }
         }
     }
 
     /// Handle a file system event in `self.config_dir`; mostly this
     /// means reload a changed configuration.
-    pub fn handle_fs_event(&mut self, event: DebouncedEvent) {
+    pub fn handle_fs_event(&mut self, event: DebouncedEvent)
+                           -> Result<(), ConfigError> {
         use self::DebouncedEvent::*;
         match event {
             Create(ref path) | Write(ref path) => {
@@ -208,35 +290,41 @@ impl ConfigManager {
                     let file_stem = path.file_stem().unwrap().to_string_lossy();
                     match load_config(path) {
                         Ok(config) => self.update_config(&file_stem, config),
-                        Err(e) => eprintln!("error parsing config at path {:?} \
-                                            error:\n{:?}", path, e),
+                        Err(_) => Err(ConfigError::FileParse),
                     }
+                } else {
+                    Ok(())
                 }
             }
             //other => eprintln!("other config fs event:;\n{:?}", &other),
-            _ => (),
+            _ => Ok(()),
         }
     }
 
     /// Replace the user config with the given name with a new config.
-    fn update_config(&mut self, config_name: &str, new_config: Table) {
+    fn update_config(&mut self, config_name: &str, new_config: Table)
+                    -> Result<(), ConfigError> {
         if config_name == "preferences" {
-            self.defaults.set_user(new_config);
+            self.defaults.set_user(new_config)
         } else if let Some(s) = SyntaxDefinition::try_from_name(config_name) {
-            self.set_user_syntax(s, new_config);
+            self.set_user_syntax(s, new_config)
         } else {
             eprintln!("Unknown config name {}", config_name);
+            Err(ConfigError::UnknownTable(config_name.to_owned()))
         }
     }
 
-    fn set_user_syntax(&mut self, syntax: SyntaxDefinition, config: Table) {
+    fn set_user_syntax(&mut self, syntax: SyntaxDefinition, config: Table)
+                       -> Result<(), ConfigError> {
         let exists = self.syntax_specific.contains_key(&syntax);
         if exists {
             let syntax_pair = self.syntax_specific.get_mut(&syntax).unwrap();
-            syntax_pair.set_user(config);
+            syntax_pair.set_user(config)
         } else {
-            let syntax_pair = ConfigPair::new(None, config);
+            let syntax_pair = ConfigPair::new(None, config,
+                                              KeyValidator::for_syntax_config())?;
             self.syntax_specific.insert(syntax, syntax_pair);
+            Ok(())
         }
     }
 
@@ -277,26 +365,32 @@ impl ConfigManager {
     /// from xi-core (false).
     pub fn set_override<K, V>(&mut self, key: K, value: V,
                               buf_id: BufferIdentifier, from_user: bool)
+                              -> Result<(), ConfigError>
         where K: AsRef<str>,
               V: Into<Value>,
     {
         if !self.overrides.contains_key(&buf_id) {
-            let conf_pair = ConfigPair::new(None, None);
+            let conf_pair = ConfigPair::new(None, None,
+                                            KeyValidator::for_syntax_config())?;
             self.overrides.insert(buf_id.to_owned(), conf_pair);
         }
         self.overrides.get_mut(&buf_id)
             .unwrap()
-            .set_override(key, value, from_user);
+            .set_override(key, value, from_user)
     }
 }
 
 impl Default for ConfigManager {
     fn default() -> ConfigManager {
-        let defaults = ConfigPair::new(defaults::platform_defaults(), None);
+        let defaults = ConfigPair::new(defaults::platform_defaults(), None,
+                                       KeyValidator::for_general_config()).unwrap();
         let mut syntax_specific = defaults::syntax_defaults();
+        let val = KeyValidator::for_syntax_config();
         let syntax_specific = syntax_specific
             .drain()
-            .map(|(k, v)| {(k.to_owned(), ConfigPair::new(v, None)) })
+            .map(|(k, v)| {
+                (k.to_owned(), ConfigPair::new(v, None, val.clone()).unwrap())
+            })
             .collect::<HashMap<_, _>>();
         let extras_dir = env::var(XI_SYS_PLUGIN_PATH).map(PathBuf::from).ok();
 
