@@ -93,10 +93,10 @@ pub enum ConfigDomain {
     /// The general user preferences
     Preferences,
     /// The overrides for a particular syntax.
-    SyntaxSpecific(SyntaxDefinition),
+    Syntax(SyntaxDefinition),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 /// The errors that can occur when managing configs.
 pub enum ConfigError {
     /// The config contains a key that is invalid for its domain.
@@ -249,7 +249,7 @@ impl ConfigManager {
     {
        let result = match domain {
             ConfigDomain::Preferences => self.defaults.set_user(new_config),
-            ConfigDomain::SyntaxSpecific(s) => self.set_user_syntax(s, new_config),
+            ConfigDomain::Syntax(s) => self.set_user_syntax(s, new_config),
         };
 
        if result.is_ok() {
@@ -275,7 +275,9 @@ impl ConfigManager {
 
         path.extension() == Some(OsStr::new("xiconfig")) &&
             ConfigDomain::try_from_path(path).is_ok() &&
-            self.config_dir.as_ref().map(|p| Some(p.borrow()) == path.parent()).unwrap_or(false)
+            self.config_dir.as_ref()
+            .map(|p| Some(p.borrow()) == path.parent())
+            .unwrap_or(false)
     }
 
     fn set_user_syntax(&mut self, syntax: SyntaxDefinition, config: Table)
@@ -286,7 +288,7 @@ impl ConfigManager {
             syntax_pair.set_user(config)
         } else {
             let syntax_pair = ConfigPair::new(None, config,
-                                              KeyValidator::for_syntax_config())?;
+                                              KeyValidator::for_domain(syntax))?;
             self.syntax_specific.insert(syntax, syntax_pair);
             Ok(())
         }
@@ -334,8 +336,9 @@ impl ConfigManager {
               V: Into<Value>,
     {
         if !self.overrides.contains_key(&buf_id) {
-            let conf_pair = ConfigPair::new(None, None,
-                                            KeyValidator::for_syntax_config())?;
+            let conf_pair = ConfigPair::new(
+                None, None,
+                KeyValidator::for_domain(SyntaxDefinition::default()))?;
             self.overrides.insert(buf_id.to_owned(), conf_pair);
         }
         self.overrides.get_mut(&buf_id)
@@ -346,10 +349,13 @@ impl ConfigManager {
 
 impl Default for ConfigManager {
     fn default() -> ConfigManager {
-        let defaults = ConfigPair::new(defaults::platform_defaults(), None,
-                                       KeyValidator::for_general_config()).unwrap();
+        let defaults = ConfigPair::new(
+            defaults::platform_defaults(), None,
+            KeyValidator::for_domain(ConfigDomain::Preferences))
+            .unwrap();
         let mut syntax_specific = defaults::syntax_defaults();
-        let val = KeyValidator::for_syntax_config();
+        let val = KeyValidator::for_domain(
+            ConfigDomain::Syntax(SyntaxDefinition::default()));
         let syntax_specific = syntax_specific
             .drain()
             .map(|(k, v)| {
@@ -377,10 +383,16 @@ impl ConfigDomain {
         if file_stem == "preferences" {
             Ok(ConfigDomain::Preferences)
         } else if let Some(syntax) = SyntaxDefinition::try_from_name(&file_stem) {
-            Ok(ConfigDomain::SyntaxSpecific(syntax))
+            Ok(syntax.into())
         } else {
             Err(ConfigError::UnknownDomain(file_stem.into_owned()))
         }
+    }
+}
+
+impl From<SyntaxDefinition> for ConfigDomain {
+    fn from(src: SyntaxDefinition) -> ConfigDomain {
+        ConfigDomain::Syntax(src)
     }
 }
 
@@ -407,20 +419,18 @@ impl Error for ConfigError {
 }
 
 impl KeyValidator {
-    pub fn for_syntax_config() -> Rc<Self> {
-        let keys = defaults::GENERAL_KEYS.iter()
-            .map(|s| String::from(*s))
-            .collect();
+    /// Create a `KeyValidator` appropriate to the given domain.
+    pub fn for_domain<D: Into<ConfigDomain>>(d: D) -> Rc<Self> {
+        let keys = match d.into() {
+            ConfigDomain::Preferences => defaults::GENERAL_KEYS.iter()
+                .chain(defaults::TOP_LEVEL_KEYS.iter())
+                .map(|s| String::from(*s))
+                .collect(),
+            ConfigDomain::Syntax(_) => defaults::GENERAL_KEYS.iter()
+                .map(|s| String::from(*s))
+                .collect(),
+        };
         Rc::new(KeyValidator { keys })
-    }
-
-    pub fn for_general_config() -> Rc<Self> {
-        let keys = defaults::GENERAL_KEYS.iter()
-            .chain(defaults::TOP_LEVEL_KEYS.iter())
-            .map(|s| String::from(*s))
-            .collect();
-        Rc::new(KeyValidator { keys })
-
     }
 }
 
@@ -531,7 +541,7 @@ mod tests {
             .unwrap();
 
         let mut manager = ConfigManager::default();
-        manager.update_config(ConfigDomain::SyntaxSpecific(SyntaxDefinition::Rust),
+        manager.update_config(ConfigDomain::Syntax(SyntaxDefinition::Rust),
                               rust_config, None).unwrap();
 
         manager.update_config(ConfigDomain::Preferences, user_config, None)
@@ -556,6 +566,33 @@ mod tests {
         manager.set_override("tab_size", 85, buf_id.clone(), true).unwrap();
         let config = manager.get_config(SyntaxDefinition::Rust, buf_id.clone());
         assert_eq!(config.tab_size, 85);
+    }
+
+    #[test]
+    fn test_validation() {
+        let mut manager = ConfigManager::default();
+        let user_config = r#"
+tab_size = 42
+font_frace = "InconsolableMo"
+translate_tabs_to_spaces = true
+"#;
+        let user_config = config_rs::File::from_str(user_config, FileFormat::Toml)
+            .collect()
+            .unwrap();
+        let r = manager.update_config(ConfigDomain::Preferences, user_config, None);
+        assert_eq!(r, Err(ConfigError::IllegalKey("font_frace".into())));
+
+        let syntax_config = r#"
+tab_size = 42
+plugin_search_path = "/some/path"
+translate_tabs_to_spaces = true"#;
+        let syntax_config = config_rs::File::from_str(syntax_config, FileFormat::Toml)
+            .collect()
+            .unwrap();
+        let r = manager.update_config(ConfigDomain::Syntax(SyntaxDefinition::Rust),
+                                      syntax_config, None);
+        // not valid in a syntax config
+        assert_eq!(r, Err(ConfigError::IllegalKey("plugin_search_path".into())));
     }
 
     #[test]

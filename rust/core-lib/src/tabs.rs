@@ -700,7 +700,7 @@ impl Documents {
     {
         if let Err(e) = self.config_manager.update_config(domain, table, path.into()) {
             //TODO: report this error to the peer
-            eprintln!("Error updating config {:?}, error:\n{:?}", domain, e);
+            eprintln!("Error updating config {:?}: {:?}", domain, e);
         }
     }
 
