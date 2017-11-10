@@ -15,6 +15,7 @@
 //! A container for all the documents being edited. Also functions as main dispatch for RPC.
 
 use std::collections::BTreeMap;
+use std::ffi::OsStr;
 use std::fmt;
 use std::io::{self, Read};
 use std::path::{PathBuf, Path};
@@ -24,7 +25,7 @@ use std::sync::{Arc, Mutex, MutexGuard, Weak, mpsc};
 use serde::de::Deserialize;
 use serde_json::value::Value;
 use config_rs::Value as ConfigValue;
-use notify::RecursiveMode;
+use notify::{RecursiveMode, DebouncedEvent};
 
 use xi_rope::rope::Rope;
 use xi_rpc::{RpcCtx, RemoteError};
@@ -38,7 +39,7 @@ use styles::{Style, ThemeStyleMap};
 use MainPeer;
 
 use syntax::SyntaxDefinition;
-use config::ConfigManager;
+use config::{ConfigManager, ConfigDomain, Table};
 use plugins::{self, PluginManagerRef, Command};
 use plugins::rpc_types::{PluginUpdate, ClientPluginInfo};
 
@@ -563,19 +564,21 @@ impl Documents {
     fn do_client_init(&mut self, rpc_peer: &MainPeer, config_dir: Option<PathBuf>,
                       client_extras_dir: Option<PathBuf>) {
         // If no config argument, fallback on environment variable
-        // TODO: if we go this route, deprecate env var approach and remove this
+        // TODO: deprecate env var approach and remove this
         let config_dir = config_dir.or(Some(config::get_config_dir()));
-        match config_dir {
-            Some(ref d) => {
-                self.config_manager.set_config_dir(d);
-                if let Some(ref d) = client_extras_dir {
-                    self.config_manager.set_extras_dir(d);
-                }
-                self.file_watcher.watch(d, RecursiveMode::Recursive,
-                                        CONFIG_EVENT_TOKEN, rpc_peer);
+
+        if let Some(ref d) = config_dir {
+            self.config_manager.set_config_dir(&d);
+            if let Err(e) = self.init_file_based_configs(d, rpc_peer) {
+                eprintln!("Error reading config dir: {:?}", e);
             }
-            None => (),
         }
+
+        if let Some(ref d) = client_extras_dir {
+            //TODO: test setting this when config_dir.is_none()
+            self.config_manager.set_extras_dir(d);
+        }
+
         let params = {
             let style_map = self.style_map.lock().unwrap();
             json!({
@@ -623,21 +626,81 @@ impl Documents {
 
     /// Process file system events, forwarding them to registrees.
     fn handle_fs_events(&mut self) {
-        let mut events = self.file_watcher.events.lock().unwrap();
+        let mut events = {
+            let mut e = self.file_watcher.events.lock().unwrap();
+            let events = e.drain(..).collect::<Vec<_>>();
+            events
+        };
+
+        let mut config_changed = false;
         for (token, event) in events.drain(..) {
             match token {
                 CONFIG_EVENT_TOKEN => {
-                    if let Err(e) = self.config_manager.handle_fs_event(event) {
-                        eprintln!("Error handling config file change: {:?}", e);
-                    }
                     //TODO: we should be more efficient about this update,
                     // with config_manager returning whether it's necessary.
                     // The simplest version of this is blocked on
                     // https://github.com/mehcode/config-rs/issues/51
-                    self.after_config_change();
+                    self.handle_config_fs_event(event);
+                    config_changed = true;
                 }
                 _ => eprintln!("unexpected fs event token {:?}", token),
             }
+        }
+        if config_changed {
+            self.after_config_change();
+        }
+    }
+
+    /// Handles a config related file system event.
+    fn handle_config_fs_event(&mut self, event: DebouncedEvent) {
+        use self::DebouncedEvent::*;
+        match event {
+            Create(ref path) | Write(ref path) => {
+                self.load_file_based_config(path)
+            }
+            Remove(ref path) => self.config_manager.remove_source(path),
+            Rename(ref old, ref new) => {
+                self.config_manager.remove_source(old);
+                let should_load = self.config_manager.should_load_file(new);
+                if should_load { self.load_file_based_config(new) }
+            }
+            _ => (),
+        }
+    }
+
+    /// Checks for existence of config dir, loading config files and registering
+    /// for file system events if the directory exists and can be read.
+    fn init_file_based_configs(&mut self, config_dir: &Path,
+                               rpc_peer: &MainPeer) -> io::Result<()> {
+        let config_files = config::iter_config_files(config_dir)?;
+        config_files.for_each(|p| self.load_file_based_config(&p));
+
+        self.file_watcher.watch_filtered(config_dir, RecursiveMode::Recursive,
+                                         CONFIG_EVENT_TOKEN, rpc_peer,
+                                         |p| {
+                                             p.extension()
+                                                 .and_then(OsStr::to_str)
+                                                 .unwrap_or("") == "xiconfig"
+                                         });
+        Ok(())
+    }
+
+    /// Attempt to load a config file.
+    fn load_file_based_config(&mut self, path: &Path) {
+        match config::try_load_from_file(&path) {
+            Ok((d, t)) => self.update_config(d, t, Some(path.to_owned())),
+            Err(e) => eprintln!("Error loading config file: {:?}", e),
+        }
+    }
+
+    /// Sets (overwriting) the config for a given domain. Will fail if the config
+    /// fails validation.
+    fn update_config<P>(&mut self, domain: ConfigDomain, table: Table, path: P)
+        where P: Into<Option<PathBuf>>
+    {
+        if let Err(e) = self.config_manager.update_config(domain, table, path.into()) {
+            //TODO: report this error to the peer
+            eprintln!("Error updating config {:?}, error:\n{:?}", domain, e);
         }
     }
 
