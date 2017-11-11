@@ -260,10 +260,10 @@ impl ConfigManager {
         // relative entries in plugin search path should be relative to
         // the config directory.
         if let Some(ref config_dir) = self.config_dir {
-        settings.plugin_search_path = settings.plugin_search_path
-            .iter()
-            .map(|p| config_dir.join(p))
-            .collect();
+            settings.plugin_search_path = settings.plugin_search_path
+                .iter()
+                .map(|p| config_dir.join(p))
+                .collect();
         }
         // If present, append the location of plugins bundled by client
         if let Some(ref sys_path) = self.extras_dir {
