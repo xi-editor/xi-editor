@@ -24,6 +24,7 @@ use std::sync::{Arc, Mutex, MutexGuard, Weak, mpsc};
 use serde::de::Deserialize;
 use serde_json::value::Value;
 use config_rs::Value as ConfigValue;
+use notify::RecursiveMode;
 
 use xi_rope::rope::Rope;
 use xi_rpc::{RpcCtx, RemoteError};
@@ -31,6 +32,8 @@ use xi_rpc::{RpcCtx, RemoteError};
 use editor::Editor;
 
 use rpc;
+use config;
+use watcher::{WATCH_IDLE_TOKEN, FsWatcher, EventToken};
 use styles::{Style, ThemeStyleMap};
 use MainPeer;
 
@@ -41,6 +44,10 @@ use plugins::rpc_types::{PluginUpdate, ClientPluginInfo};
 
 #[cfg(target_os = "fuchsia")]
 use apps_ledger_services_public::{Ledger_Proxy};
+
+/// Token for config-related file change events
+const CONFIG_EVENT_TOKEN: EventToken = EventToken(1);
+const NEW_VIEW_IDLE_TOKEN: usize = 1001;
 
 /// ViewIdentifiers are the primary means of routing messages between xi-core and a client view.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -93,8 +100,8 @@ pub struct Documents {
     kill_ring: Arc<Mutex<Rope>>,
     style_map: Arc<Mutex<ThemeStyleMap>>,
     plugins: PluginManagerRef,
-    #[allow(dead_code)]
     config_manager: ConfigManager,
+    file_watcher: FsWatcher,
     /// A tx channel used to propagate plugin updates from all `Editor`s.
     update_channel: mpsc::Sender<(ViewIdentifier, PluginUpdate, usize)>,
     /// A queue of closures to be executed on the next idle runloop pass.
@@ -289,6 +296,7 @@ impl Documents {
             style_map: Arc::new(Mutex::new(ThemeStyleMap::new())),
             plugins: plugin_manager,
             config_manager: config_manager,
+            file_watcher: FsWatcher::default(),
             update_channel: update_tx,
             idle_queue: Vec::new(),
             sync_repo: None,
@@ -323,24 +331,17 @@ impl Documents {
                                rpc_ctx: &RpcCtx) {
         use rpc::CoreNotification::*;
         match cmd {
-            ClientStarted(..) => self.do_client_init(rpc_ctx.get_peer()),
-            SetTheme { theme_name } => self.do_set_theme(rpc_ctx.get_peer(),
-                                                         &theme_name),
+            ClientStarted { config_dir, client_extras_dir } =>
+                self.do_client_init(rpc_ctx.get_peer(), config_dir,
+                                    client_extras_dir),
+            SetTheme { theme_name } =>
+                self.do_set_theme(rpc_ctx.get_peer(), &theme_name),
             DebugOverrideSetting { view_id, key, value } => {
-                //TODO: when we have more ways for settings to change,
-                //we need to move this into some independent function.
-                //And maybe do diffs or something, so we can act on specific
-                //changes...?
                 if let Some(buffer_id) = self.buffers.buffer_for_view(&view_id) {
-                    let syntax = self.buffers.lock().editor_for_view(&view_id)
-                        .map(|ed| ed.get_syntax().to_owned())
-                        .unwrap_or_default();
                     let value = ConfigValue::deserialize(&value)
                         .expect("config value should already be validated");
                     self.config_manager.set_override(key, value, buffer_id, true);
-                    let new_conf = self.config_manager.get_config(syntax, buffer_id);
-                    self.buffers.lock().editor_for_view_mut(&view_id)
-                        .map(|ed| ed.set_config(new_conf));
+                    self.after_config_change();
                 }
             }
             Save { view_id, file_path } => self.do_save(&view_id, file_path),
@@ -361,7 +362,7 @@ impl Documents {
                 let result = self.do_new_view(rpc_ctx.get_peer(), file_path);
                 // schedule idle handler after creating views; this is used to
                 // send cursors for empty views, and to initialize plugins.
-                rpc_ctx.schedule_idle(0);
+                rpc_ctx.schedule_idle(NEW_VIEW_IDLE_TOKEN);
                 Ok(result)
             }
             Edit(rpc::EditCommand { view_id, cmd }) => {
@@ -558,7 +559,22 @@ impl Documents {
         }
     }
 
-    fn do_client_init(&self, rpc_peer: &MainPeer) {
+    fn do_client_init(&mut self, rpc_peer: &MainPeer, config_dir: Option<PathBuf>,
+                      client_extras_dir: Option<PathBuf>) {
+        // If no config argument, fallback on environment variable
+        // TODO: if we go this route, deprecate env var approach and remove this
+        let config_dir = config_dir.or(Some(config::get_config_dir()));
+        match config_dir {
+            Some(ref d) => {
+                self.config_manager.set_config_dir(d);
+                if let Some(ref d) = client_extras_dir {
+                    self.config_manager.set_extras_dir(d);
+                }
+                self.file_watcher.watch(d, RecursiveMode::Recursive,
+                                        CONFIG_EVENT_TOKEN, rpc_peer);
+            }
+            None => (),
+        }
         let params = {
             let style_map = self.style_map.lock().unwrap();
             json!({
@@ -592,9 +608,44 @@ impl Documents {
         }
     }
 
-    pub fn handle_idle(&mut self) {
-        while let Some(f) = self.idle_queue.pop() {
-            f.call(self);
+    pub fn handle_idle(&mut self, token: usize) {
+        match token {
+            WATCH_IDLE_TOKEN => self.handle_fs_events(),
+            NEW_VIEW_IDLE_TOKEN => {
+                while let Some(f) = self.idle_queue.pop() {
+                    f.call(self);
+                }
+            }
+            _ => (),
+        }
+    }
+
+    /// Process file system events, forwarding them to registrees.
+    fn handle_fs_events(&mut self) {
+        let mut events = self.file_watcher.events.lock().unwrap();
+        for (token, event) in events.drain(..) {
+            match token {
+                CONFIG_EVENT_TOKEN => {
+                    self.config_manager.handle_fs_event(event);
+                    //TODO: we should be more efficient about this update,
+                    // with config_manager returning whether it's necessary.
+                    // The simplest version of this is blocked on
+                    // https://github.com/mehcode/config-rs/issues/51
+                    self.after_config_change();
+                }
+                _ => eprintln!("unexpected fs event token {:?}", token),
+            }
+        }
+    }
+
+    /// Notify editors/views/plugins of config changes.
+    fn after_config_change(&self) {
+        let mut editors = self.buffers.lock();
+        for ed in editors.iter_editors_mut() {
+            let syntax = ed.get_syntax().to_owned();
+            let identifier = ed.get_identifier();
+            let new_config = self.config_manager.get_config(syntax, identifier);
+            ed.set_config(new_config)
         }
     }
 }
