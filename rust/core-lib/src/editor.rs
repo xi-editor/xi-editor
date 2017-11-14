@@ -40,7 +40,7 @@ use plugins::rpc_types::{PluginUpdate, PluginEdit, ScopeSpan, PluginBufferInfo,
 ClientPluginInfo};
 use plugins::{PluginPid, Command};
 use layers::Scopes;
-use config::Config;
+use config::BufferConfig;
 
 
 #[cfg(not(target_os = "fuchsia"))]
@@ -85,7 +85,7 @@ pub struct Editor {
 
     styles: Scopes,
     doc_ctx: DocumentCtx,
-    config: Config,
+    config: BufferConfig,
     revs_in_flight: usize,
 
     /// Used only on Fuchsia for syncing
@@ -118,7 +118,7 @@ impl EditType {
 
 impl Editor {
     /// Creates a new `Editor` with a new empty buffer.
-    pub fn new(doc_ctx: DocumentCtx, config: Config,
+    pub fn new(doc_ctx: DocumentCtx, config: BufferConfig,
                buffer_id: BufferIdentifier,
                initial_view_id: ViewIdentifier) -> Editor {
         Self::with_text(doc_ctx, config, buffer_id,
@@ -126,7 +126,7 @@ impl Editor {
     }
 
     /// Creates a new `Editor`, loading text into a new buffer.
-    pub fn with_text(doc_ctx: DocumentCtx, config: Config,
+    pub fn with_text(doc_ctx: DocumentCtx, config: BufferConfig,
                      buffer_id: BufferIdentifier,
                      initial_view_id: ViewIdentifier, text: String) -> Editor {
 
@@ -215,7 +215,7 @@ impl Editor {
         }
     }
 
-    pub fn set_config(&mut self, conf: Config) {
+    pub fn set_config(&mut self, conf: BufferConfig) {
         self.config = conf;
     }
 
@@ -572,7 +572,7 @@ impl Editor {
 
     fn insert_newline(&mut self) {
         self.this_edit_type = EditType::InsertChars;
-        let text = self.config.newline.clone();
+        let text = self.config.items.newline.clone();
         self.insert(&text);
     }
 
@@ -580,9 +580,9 @@ impl Editor {
         let mut builder = delta::Builder::new(self.text.len());
         for region in self.view.sel_regions() {
             let iv = Interval::new_closed_open(region.min(), region.max());
-            let tab_text = if self.config.translate_tabs_to_spaces {
+            let tab_text = if self.config.items.translate_tabs_to_spaces {
                     let (_, col) = self.view.offset_to_line_col(&self.text, region.start);
-                    let tab_size = self.config.tab_size;
+                    let tab_size = self.config.items.tab_size;
                     let n = tab_size - (col % tab_size);
                     n_spaces(n)
             } else {

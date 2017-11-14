@@ -23,6 +23,7 @@ use std::path::{PathBuf, Path};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use serde::de::Deserialize;
 use config_rs::{self, Source, Value, FileFormat};
 
 use syntax::SyntaxDefinition;
@@ -163,17 +164,25 @@ pub struct ConfigManager {
 struct TableStack(Vec<Arc<Table>>);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-/// A container for all user-modifiable settings.
-pub struct Config {
+/// A frozen collection of settings, and their sources.
+pub struct Config<T> {
     /// The underlying set of config tables that contributed to this
     /// `Config` instance. Used for diffing.
     #[serde(skip)]
     source: TableStack,
+    /// The settings themselves, deserialized into some concrete type.
+    pub items: T,
+}
 
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+/// The concrete type for buffer-related settings.
+pub struct BufferItems {
     pub newline: String,
     pub tab_size: usize,
     pub translate_tabs_to_spaces: bool,
 }
+
+pub type BufferConfig = Config<BufferItems>;
 
 impl ConfigPair {
     fn new<T1, T2>(base: T1, user: T2, validator: Rc<Validator>)
@@ -322,7 +331,7 @@ impl ConfigManager {
     }
 
     /// Generates a snapshot of the current configuration for `syntax`.
-    pub fn get_config<S, V>(&self, syntax: S, buf_id: V) -> Config
+    pub fn get_config<S, V>(&self, syntax: S, buf_id: V) -> BufferConfig
         where S: Into<Option<SyntaxDefinition>>,
               V: Into<Option<BufferIdentifier>>
     {
@@ -414,12 +423,12 @@ impl TableStack {
     }
 
     /// Converts the underlying tables into a static `Config` instance.
-    fn into_config(self) -> Config {
+    fn into_config<'de, T: Deserialize<'de>>(self) -> Config<T> {
         let out = self.collate();
         let out: Value = out.into();
-        let mut out: Config = out.try_into().unwrap();
-        out.source = self;
-        out
+        let items: T = out.try_into().unwrap();
+        let source = self;
+        Config { source, items }
     }
 
     /// Walks the tables in priority (reverse) order, returning the first
@@ -445,6 +454,20 @@ impl TableStack {
             }
         }
         out
+    }
+}
+
+impl<'de, T: Deserialize<'de>> Config<T> {
+    /// Returns a `Table` of all the items in `self` which have different
+    /// values than in `other`.
+    pub fn changes_from_other(&self, other: &Config<T>) -> Option<Table> {
+        self.source.diff(&other.source)
+    }
+}
+
+impl<T: PartialEq> PartialEq for Config<T> {
+    fn eq(&self, other: &Config<T>) -> bool {
+        self.items == other.items
     }
 }
 
@@ -591,7 +614,7 @@ mod tests {
         let mut manager = ConfigManager::default();
         manager.set_config_dir("BASE_PATH");
         let config = manager.get_config(None, None);
-        assert_eq!(config.tab_size, 4);
+        assert_eq!(config.items.tab_size, 4);
         assert_eq!(manager.plugin_search_path(), vec![PathBuf::from("BASE_PATH/plugins")])
     }
 
@@ -617,21 +640,21 @@ mod tests {
         manager.set_override("tab_size", 67, buf_id.clone(), false).unwrap();
 
         let config = manager.get_config(None, None);
-        assert_eq!(config.tab_size, 42);
+        assert_eq!(config.items.tab_size, 42);
         let config = manager.get_config(SyntaxDefinition::Yaml, None);
-        assert_eq!(config.tab_size, 2);
+        assert_eq!(config.items.tab_size, 2);
         let config = manager.get_config(SyntaxDefinition::Yaml, buf_id.clone());
-        assert_eq!(config.tab_size, 67);
+        assert_eq!(config.items.tab_size, 67);
 
         let config = manager.get_config(SyntaxDefinition::Rust, None);
-        assert_eq!(config.tab_size, 31);
+        assert_eq!(config.items.tab_size, 31);
         let config = manager.get_config(SyntaxDefinition::Rust, buf_id.clone());
-        assert_eq!(config.tab_size, 67);
+        assert_eq!(config.items.tab_size, 67);
 
         // user override trumps everything
         manager.set_override("tab_size", 85, buf_id.clone(), true).unwrap();
         let config = manager.get_config(SyntaxDefinition::Rust, buf_id.clone());
-        assert_eq!(config.tab_size, 85);
+        assert_eq!(config.items.tab_size, 85);
     }
 
     #[test]
