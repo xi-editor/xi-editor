@@ -13,18 +13,20 @@
 // limitations under the License.
 
 use std::env;
-use std::io;
+use std::io::{self, Read};
 use std::borrow::Borrow;
 use std::error::Error;
 use std::ffi::OsStr;
 use std::fmt;
+use std::fs;
 use std::rc::Rc;
 use std::path::{PathBuf, Path};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use serde::de::Deserialize;
-use config_rs::{self, Source, Value, FileFormat};
+use serde_json::{self, Value};
+use toml;
 
 use syntax::SyntaxDefinition;
 use tabs::BufferIdentifier;
@@ -58,8 +60,8 @@ mod defaults {
     pub fn platform_defaults() -> Table {
         let mut base = load(BASE);
         if let Some(mut overrides) = platform_overrides() {
-            for (k, v) in overrides.drain() {
-                base.insert(k, v);
+            for (k, v) in overrides.iter() {
+                base.insert(k.to_owned(), v.to_owned());
             }
         }
         base
@@ -79,14 +81,13 @@ mod defaults {
     }
 
     fn load(default: &str) -> Table {
-        config_rs::File::from_str(default, config_rs::FileFormat::Toml)
-            .collect()
+        table_from_toml_str(default)
             .expect("default configs must load")
     }
 }
 
 /// A map of config keys to settings
-pub type Table = HashMap<String, Value>;
+pub type Table = serde_json::Map<String, Value>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all="lowercase")]
@@ -98,7 +99,7 @@ pub enum ConfigDomain {
     Syntax(SyntaxDefinition),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 /// The errors that can occur when managing configs.
 pub enum ConfigError {
     /// The config contains a key that is invalid for its domain.
@@ -106,7 +107,9 @@ pub enum ConfigError {
     /// The config domain was not recognized.
     UnknownDomain(String),
     /// A file-based config could not be loaded or parsed.
-    FileParse(PathBuf),
+    Parse(PathBuf, toml::de::Error),
+    /// An Io Error
+    Io(io::Error),
 }
 
 /// A `Validator` is responsible for validating a config table.
@@ -261,8 +264,10 @@ impl ConfigManager {
     // config system at all. For now, I'm treating them as a special case.
     /// Returns the plugin_search_path.
     pub fn plugin_search_path(&self) -> Vec<PathBuf> {
-        let val = self.defaults.cache.get("plugin_search_path").unwrap();
-        let mut search_path: Vec<PathBuf> = val.clone().try_into().unwrap();
+        let val = self.defaults.cache.get("plugin_search_path")
+            .unwrap()
+            .to_owned();
+        let mut search_path: Vec<PathBuf> = serde_json::from_value(val).unwrap();
 
         // relative paths should be relative to the config dir, if present
         if let Some(ref config_dir) = self.config_dir {
@@ -409,7 +414,7 @@ impl TableStack {
     // NOTE: This is fairly expensive; a future optimization would borrow
     // from the underlying collections, but then we couldn't take advantage of
     // config-rs's `try_into` for converting to a `Config`.
-        let mut out = HashMap::new();
+        let mut out = Table::new();
         for table in self.0.iter().rev() {
             for (k, v) in table.iter() {
                 if !out.contains_key(k) {
@@ -423,10 +428,11 @@ impl TableStack {
     }
 
     /// Converts the underlying tables into a static `Config` instance.
-    fn into_config<'de, T: Deserialize<'de>>(self) -> Config<T> {
+    fn into_config<T>(self) -> Config<T>
+        where for<'de> T: Deserialize<'de>
+    {
         let out = self.collate();
-        let out: Value = out.into();
-        let items: T = out.try_into().unwrap();
+        let items: T = serde_json::from_value(out.into()).unwrap();
         let source = self;
         Config { source, items }
     }
@@ -498,7 +504,8 @@ impl fmt::Display for ConfigError {
         match self {
             &IllegalKey(ref s) |
                 &UnknownDomain(ref s) => write!(f, "{}: {}", self, s),
-            &FileParse(ref p) => write!(f, "{}: {:?}", self, p),
+            &Parse(ref p, ref e) => write!(f, "{} ({:?}), {:?}", self, p, e),
+            &Io(ref e) => write!(f, "error loading config: {:?}", e)
         }
     }
 }
@@ -509,10 +516,18 @@ impl Error for ConfigError {
         match *self {
             IllegalKey( .. ) => "illegal key",
             UnknownDomain( .. ) => "unknown domain",
-            FileParse( .. ) => "failed to parse file",
+            Parse( _, ref e ) => e.description(),
+            Io( ref e) => e.description(),
         }
     }
 }
+
+impl From<io::Error> for ConfigError {
+    fn from(src: io::Error) -> ConfigError {
+        ConfigError::Io(src)
+    }
+}
+
 
 impl KeyValidator {
     /// Create a `KeyValidator` appropriate to the given domain.
@@ -553,11 +568,23 @@ pub fn iter_config_files(dir: &Path) -> io::Result<Box<Iterator<Item=PathBuf>>> 
 
 /// Attempts to load a config from a file. The config's domain is determined
 /// by the file name.
-pub fn try_load_from_file(path: &Path) -> Result<(ConfigDomain, Table), Box<Error>> {
+pub fn try_load_from_file(path: &Path) -> Result<(ConfigDomain, Table), ConfigError> {
     let domain = ConfigDomain::try_from_path(path)?;
-    let conf: config_rs::File<_> = path.into();
-    let table = conf.format(FileFormat::Toml).collect()?;
+    let mut file = fs::File::open(&path)?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+    let table = table_from_toml_str(&contents)
+        .map_err(|e| ConfigError::Parse(path.to_owned(), e))?;
+
     Ok((domain, table))
+}
+
+fn table_from_toml_str(s: &str) -> Result<Table, toml::de::Error> {
+    let table = toml::from_str(&s)?;
+    let table = from_toml_value(table).as_object()
+        .unwrap()
+        .to_owned();
+    Ok(table)
 }
 
 /// Returns the location of the active config directory.
@@ -585,6 +612,35 @@ pub fn get_config_dir() -> PathBuf {
     let xdg_var = env::var(XDG_CONFIG_HOME).ok();
     config_dir_impl(xi_var.as_ref().map(String::as_ref),
                     xdg_var.as_ref().map(String::as_ref))
+}
+
+//adapted from https://docs.rs/crate/config/0.7.0/source/src/file/format/toml.rs
+/// Converts between toml (used to write config files) and json
+/// (used to store config values internally).
+fn from_toml_value(value: toml::Value) -> Value {
+    match value {
+        toml::Value::String(value) => value.to_owned().into(),
+        toml::Value::Float(value) => value.into(),
+        toml::Value::Integer(value) => value.into(),
+        toml::Value::Boolean(value) => value.into(),
+        toml::Value::Datetime(value) => value.to_string().into(),
+
+        toml::Value::Table(table) => {
+            let mut m = Table::new();
+            for (key, value) in table {
+                m.insert(key.clone(), from_toml_value(value));
+            }
+            m.into()
+        }
+
+        toml::Value::Array(array) => {
+            let mut l = Vec::new();
+            for value in array {
+                l.push(from_toml_value(value));
+            }
+            l.into()
+        }
+    }
 }
 
 #[cfg(test)]
@@ -620,14 +676,8 @@ mod tests {
 
     #[test]
     fn test_overrides() {
-        let user_config = r#"tab_size = 42"#;
-        let user_config = config_rs::File::from_str(user_config, FileFormat::Toml)
-            .collect()
-            .unwrap();
-        let rust_config = r#"tab_size = 31"#;
-        let rust_config = config_rs::File::from_str(rust_config, FileFormat::Toml)
-            .collect()
-            .unwrap();
+        let user_config = table_from_toml_str(r#"tab_size = 42"#).unwrap();
+        let rust_config = table_from_toml_str(r#"tab_size = 31"#).unwrap();
 
         let mut manager = ConfigManager::default();
         manager.update_config(ConfigDomain::Syntax(SyntaxDefinition::Rust),
@@ -660,22 +710,27 @@ mod tests {
     #[test]
     fn test_validation() {
         let mut manager = ConfigManager::default();
-        let user_config = r#"
-tab_size = 42
+        let user_config = r#"tab_size = 42
 font_frace = "InconsolableMo"
 translate_tabs_to_spaces = true
 "#;
-        let user_config = config_from_toml_string(user_config);
+        let user_config = table_from_toml_str(user_config).unwrap();
         let r = manager.update_config(ConfigDomain::Preferences, user_config, None);
-        assert_eq!(r, Err(ConfigError::IllegalKey("font_frace".into())));
+        match r {
+            Err(ConfigError::IllegalKey(ref key)) if key == "font_frace" => (),
+            other => assert!(false, format!("{:?}", other)),
+        }
 
-        let syntax_config =  config_from_toml_string(r#"tab_size = 42
+        let syntax_config =  table_from_toml_str(r#"tab_size = 42
 plugin_search_path = "/some/path"
-translate_tabs_to_spaces = true"#);
+translate_tabs_to_spaces = true"#).unwrap();
         let r = manager.update_config(ConfigDomain::Syntax(SyntaxDefinition::Rust),
                                       syntax_config, None);
         // not valid in a syntax config
-        assert_eq!(r, Err(ConfigError::IllegalKey("plugin_search_path".into())));
+        match r {
+            Err(ConfigError::IllegalKey(ref key)) if key == "plugin_search_path" => (),
+            other => assert!(false, format!("{:?}", other)),
+        }
     }
 
     #[test]
@@ -705,24 +760,18 @@ translate_tabs_to_spaces = true"#);
 tab_size = 42
 translate_tabs_to_spaces = true
 "#;
-        let conf1 = config_from_toml_string(conf1);
+        let conf1 = table_from_toml_str(conf1).unwrap();
 
         let conf2 = r#"
 tab_size = 6
 translate_tabs_to_spaces = true
 "#;
-        let conf2 = config_from_toml_string(conf2);
+        let conf2 = table_from_toml_str(conf2).unwrap();
 
         let stack1 = TableStack(vec![Arc::new(conf1)]);
         let stack2 = TableStack(vec![Arc::new(conf2)]);
         let diff = stack1.diff(&stack2).unwrap();
         assert!(diff.len() == 1);
-        assert_eq!(diff.get("tab_size"), Some(&Value::new(None, 42)));
-    }
-
-    fn config_from_toml_string(toml: &str) -> Table {
-        config_rs::File::from_str(toml, FileFormat::Toml)
-            .collect()
-            .unwrap()
+        assert_eq!(diff.get("tab_size"), Some(&42.into()));
     }
 }

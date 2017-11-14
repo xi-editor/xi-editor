@@ -25,7 +25,6 @@ use std::sync::{Arc, Mutex, MutexGuard, Weak, mpsc};
 use serde::de::{Deserialize, Deserializer};
 use serde::ser::{Serialize, Serializer};
 use serde_json::value::Value;
-use config_rs::Value as ConfigValue;
 use notify::{RecursiveMode, DebouncedEvent};
 
 use xi_rope::rope::Rope;
@@ -342,8 +341,6 @@ impl Documents {
                 self.do_set_theme(rpc_ctx.get_peer(), &theme_name),
             DebugOverrideSetting { view_id, key, value } => {
                 if let Some(buffer_id) = self.buffers.buffer_for_view(view_id) {
-                    let value = ConfigValue::deserialize(&value)
-                        .expect("config value should already be validated");
                     self.config_manager.set_override(&key, value, buffer_id, true)
                         .expect(&format!("setting override failed for key {}", key));
                     self.after_config_change();
@@ -641,10 +638,8 @@ impl Documents {
         for (token, event) in events.drain(..) {
             match token {
                 CONFIG_EVENT_TOKEN => {
-                    //TODO: we should be more efficient about this update,
+                    //TODO: we should(?) be more efficient about this update,
                     // with config_manager returning whether it's necessary.
-                    // The simplest version of this is blocked on
-                    // https://github.com/mehcode/config-rs/issues/51
                     self.handle_config_fs_event(event);
                     config_changed = true;
                 }
