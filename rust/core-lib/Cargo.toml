@@ -19,6 +19,8 @@ xi-unicode = { path = "../unicode", version = "0.1.0" }
 xi-rpc = { path = "../rpc", version = "0.2.0" }
 
 [dependencies.config]
+git = "https://github.com/cmyr/config-rs.git"
+branch = "partialeq-value"
 version = "0.7"
 default-features = false
 features = ["toml"]
