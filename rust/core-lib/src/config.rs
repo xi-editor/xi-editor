@@ -162,7 +162,6 @@ pub struct Config {
     pub newline: String,
     pub tab_size: usize,
     pub translate_tabs_to_spaces: bool,
-    pub plugin_search_path: Vec<PathBuf>,
 }
 
 impl ConfigPair {
@@ -242,6 +241,31 @@ impl ConfigManager {
         self.extras_dir = Some(path.as_ref().to_owned())
     }
 
+    // NOTE: search paths don't really fit the general config model;
+    // they're never exposed to the client, they can't be overridden on a
+    // per-buffer basis, and they can be appended to from a number of sources.
+    //
+    // There is a reasonable argument that they should not be part of the
+    // config system at all. For now, I'm treating them as a special case.
+    /// Returns the plugin_search_path.
+    pub fn plugin_search_path(&self) -> Vec<PathBuf> {
+        let val = self.defaults.cache.get("plugin_search_path").unwrap();
+        let mut search_path: Vec<PathBuf> = val.clone().try_into().unwrap();
+
+        // relative paths should be relative to the config dir, if present
+        if let Some(ref config_dir) = self.config_dir {
+            search_path = search_path.iter()
+                .map(|p| config_dir.join(p))
+                .collect();
+        }
+
+        // append the client provided extras path, if present
+        if let Some(ref sys_path) = self.extras_dir {
+            search_path.push(sys_path.into());
+        }
+        search_path
+    }
+
     /// Sets the config for the given domain, removing any existing config.
     pub fn update_config<P>(&mut self, domain: ConfigDomain, new_config: Table,
                             path: P) -> Result<(), ConfigError>
@@ -310,19 +334,7 @@ impl ConfigManager {
             merge_tables(&mut settings, &overrides.cache);
         }
         let settings: Value = settings.into();
-        let mut settings: Config = settings.try_into().unwrap();
-        // relative entries in plugin search path should be relative to
-        // the config directory.
-        if let Some(ref config_dir) = self.config_dir {
-            settings.plugin_search_path = settings.plugin_search_path
-                .iter()
-                .map(|p| config_dir.join(p))
-                .collect();
-        }
-        // If present, append the location of plugins bundled by client
-        if let Some(ref sys_path) = self.extras_dir {
-            settings.plugin_search_path.push(sys_path.into());
-        }
+        let settings: Config = settings.try_into().unwrap();
         settings
     }
 

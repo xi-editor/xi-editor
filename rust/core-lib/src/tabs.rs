@@ -288,8 +288,7 @@ impl Documents {
     pub fn new() -> Documents {
         let buffers = BufferContainerRef::new();
         let config_manager = ConfigManager::default();
-        let plugin_path = config_manager.get_config(None, None).plugin_search_path;
-        let plugin_manager = PluginManagerRef::new(buffers.clone(), plugin_path);
+        let plugin_manager = PluginManagerRef::new(buffers.clone());
         let (update_tx, update_rx) = mpsc::channel();
 
         plugins::start_update_thread(update_rx, &plugin_manager);
@@ -590,6 +589,8 @@ impl Documents {
             })
         };
 
+        let plugin_paths = self.config_manager.plugin_search_path();
+        self.plugins.set_plugin_search_path(plugin_paths);
         rpc_peer.send_rpc_notification("available_themes", &params);
     }
 

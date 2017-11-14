@@ -413,11 +413,11 @@ impl WeakPluginManagerRef {
 }
 
 impl PluginManagerRef {
-    pub fn new(buffers: BufferContainerRef, paths: Vec<PathBuf>) -> Self {
+    pub fn new(buffers: BufferContainerRef) -> Self {
         PluginManagerRef(Arc::new(Mutex::new(
             PluginManager {
                 // TODO: actually parse these from manifest files
-                catalog: PluginCatalog::from_paths(paths),
+                catalog: PluginCatalog::from_paths(Vec::new()),
                 buffer_plugins: BTreeMap::new(),
                 global_plugins: PluginGroup::new(),
                 buffers: buffers,
@@ -433,6 +433,16 @@ impl PluginManagerRef {
     /// Creates a new `WeakPluginManagerRef`.
     pub fn to_weak(&self) -> WeakPluginManagerRef {
         WeakPluginManagerRef(Arc::downgrade(&self.0))
+    }
+
+    pub fn set_plugin_search_path(&self, paths: Vec<PathBuf>) {
+        // hacky: we don't handle unloading plugins if the path changes.
+        // this assumes that we only set the path once, when we get
+        // `client_init`.
+        let mut inner = self.lock();
+        assert!(inner.catalog.iter().count() == 0);
+        inner.catalog = PluginCatalog::from_paths(paths);
+
     }
 
 
