@@ -34,8 +34,6 @@ use tabs::BufferIdentifier;
 
 static XI_CONFIG_DIR: &'static str = "XI_CONFIG_DIR";
 static XDG_CONFIG_HOME: &'static str = "XDG_CONFIG_HOME";
-/// A client can use this to pass a path to bundled plugins
-static XI_SYS_PLUGIN_PATH: &'static str = "XI_SYS_PLUGIN_PATH";
 
 /// Namespace for various default settings.
 #[allow(unused)]
@@ -49,8 +47,10 @@ mod defaults {
     /// config keys that are legal in most config files
     pub const GENERAL_KEYS: &'static [&'static str] = &[
         "tab_size",
-        "newline",
+        "line_ending",
         "translate_tabs_to_spaces",
+        "font_face",
+        "font_size",
     ];
     /// config keys that are only legal at the top level
     pub const TOP_LEVEL_KEYS: &'static [&'static str] = &[
@@ -89,9 +89,9 @@ mod defaults {
 /// A map of config keys to settings
 pub type Table = serde_json::Map<String, Value>;
 
+/// A `ConfigDomain` describes a level or category of user settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all="lowercase")]
-/// A `ConfigDomain` describes a level or category of user settings.
 pub enum ConfigDomain {
     /// The general user preferences
     Preferences,
@@ -99,8 +99,8 @@ pub enum ConfigDomain {
     Syntax(SyntaxDefinition),
 }
 
-#[derive(Debug)]
 /// The errors that can occur when managing configs.
+#[derive(Debug)]
 pub enum ConfigError {
     /// The config contains a key that is invalid for its domain.
     IllegalKey(String),
@@ -123,8 +123,8 @@ pub trait Validator: fmt::Debug {
     }
 }
 
-#[derive(Debug, Clone)]
 /// An implementation of `Validator` that checks keys against a whitelist.
+#[derive(Debug, Clone)]
 pub struct KeyValidator {
     keys: HashSet<String>,
 }
@@ -166,8 +166,8 @@ pub struct ConfigManager {
 #[derive(Debug, Clone, Default)]
 struct TableStack(Vec<Arc<Table>>);
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
 /// A frozen collection of settings, and their sources.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config<T> {
     /// The underlying set of config tables that contributed to this
     /// `Config` instance. Used for diffing.
@@ -177,12 +177,14 @@ pub struct Config<T> {
     pub items: T,
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq)]
 /// The concrete type for buffer-related settings.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct BufferItems {
-    pub newline: String,
+    pub line_ending: String,
     pub tab_size: usize,
     pub translate_tabs_to_spaces: bool,
+    pub font_face: String,
+    pub font_size: f32,
 }
 
 pub type BufferConfig = Config<BufferItems>;
@@ -357,6 +359,10 @@ impl ConfigManager {
         stack.into_config()
     }
 
+    pub fn default_config(&self) -> BufferConfig {
+        self.get_config(None, None)
+    }
+
     /// Sets a session-specific, buffer-specific override. The `from_user`
     /// flag indicates whether this override is coming via RPC (true) or
     /// from xi-core (false).
@@ -394,16 +400,13 @@ impl Default for ConfigManager {
             })
             .collect::<HashMap<_, _>>();
 
-        // TODO: remove this when we finish migrating to client_init based setup
-        let extras_dir = env::var(XI_SYS_PLUGIN_PATH).map(PathBuf::from).ok();
-
         ConfigManager {
             defaults: defaults,
             syntax_specific: syntax_specific,
             overrides: HashMap::new(),
             sources: HashMap::new(),
             config_dir: None,
-            extras_dir: extras_dir,
+            extras_dir: None,
         }
     }
 }
@@ -463,11 +466,20 @@ impl TableStack {
     }
 }
 
+impl<T> Config<T> {
+    pub fn to_table(&self) -> Table {
+        self.source.collate()
+    }
+}
+
 impl<'de, T: Deserialize<'de>> Config<T> {
     /// Returns a `Table` of all the items in `self` which have different
     /// values than in `other`.
-    pub fn changes_from_other(&self, other: &Config<T>) -> Option<Table> {
-        self.source.diff(&other.source)
+    pub fn changes_from(&self, other: Option<&Config<T>>) -> Option<Table> {
+        match other {
+            Some(other) => self.source.diff(&other.source),
+            None => self.source.collate().into(),
+        }
     }
 }
 

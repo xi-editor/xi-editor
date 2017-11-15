@@ -216,7 +216,10 @@ impl Editor {
     }
 
     pub fn set_config(&mut self, conf: BufferConfig) {
-        self.config = conf;
+        if let Some(changes) = conf.changes_from(Some(&self.config)) {
+            self.config = conf;
+            self.doc_ctx.config_changed(&self.view.view_id, &changes);
+        }
     }
 
     /// Returns this `Editor`'s active `SyntaxDefinition`.
@@ -252,6 +255,12 @@ impl Editor {
         PluginBufferInfo::new(self.buffer_id, &views,
                               self.engine.get_head_rev_id().token(), self.text.len(),
                               nb_lines, self.path.clone(), self.syntax.clone())
+    }
+
+    /// Send initial config state to the client.
+    pub fn send_config_init(&self) {
+        let config = self.config.to_table();
+        self.doc_ctx.config_changed(&self.view.view_id, &config);
     }
 
     fn insert(&mut self, s: &str) {
@@ -572,7 +581,7 @@ impl Editor {
 
     fn insert_newline(&mut self) {
         self.this_edit_type = EditType::InsertChars;
-        let text = self.config.items.newline.clone();
+        let text = self.config.items.line_ending.clone();
         self.insert(&text);
     }
 

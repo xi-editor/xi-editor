@@ -1,4 +1,6 @@
 tab_size = 4
 translate_tabs_to_spaces = true
 plugin_search_path = ["plugins"]
-newline = "\n"
+line_ending = "\n"
+font_face = "InconsolataGo"
+font_size = 14

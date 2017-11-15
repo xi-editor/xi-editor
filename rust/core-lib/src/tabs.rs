@@ -17,6 +17,7 @@
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fmt;
+use std::env;
 use std::io::{self, Read};
 use std::path::{PathBuf, Path};
 use std::fs::File;
@@ -45,6 +46,9 @@ use plugins::rpc_types::{PluginUpdate, ClientPluginInfo};
 
 #[cfg(target_os = "fuchsia")]
 use apps_ledger_services_public::{Ledger_Proxy};
+
+/// A client can use this to pass a path to bundled plugins
+static XI_SYS_PLUGIN_PATH: &'static str = "XI_SYS_PLUGIN_PATH";
 
 /// Token for config-related file change events
 const CONFIG_EVENT_TOKEN: EventToken = EventToken(1);
@@ -416,14 +420,15 @@ impl Documents {
         }
 
         // closure to handle post-creation work on next idle runloop
-        let view_id2 = view_id.clone();
         let init_info = self.buffers.lock().editor_for_view(view_id)
             .unwrap().plugin_init_info();
 
         let on_idle = Box::new(move |self_ref: &mut Documents| {
-            self_ref.plugins.document_new(view_id2, &init_info);
+            self_ref.plugins.document_new(view_id, &init_info);
             {
                 let mut editors = self_ref.buffers.lock();
+                editors.editor_for_view(view_id)
+                    .map(|ed| ed.send_config_init());
                 for editor in editors.iter_editors_mut() {
                     editor.render();
                 }
@@ -566,6 +571,9 @@ impl Documents {
         // If no config argument, fallback on environment variable
         // TODO: deprecate env var approach and remove this
         let config_dir = config_dir.or(Some(config::get_config_dir()));
+        let client_extras_dir = client_extras_dir
+            .or(env::var(XI_SYS_PLUGIN_PATH).map(PathBuf::from).ok());
+
 
         if let Some(ref d) = config_dir {
             self.config_manager.set_config_dir(&d);
@@ -743,6 +751,14 @@ impl DocumentCtx {
                 "line": line,
                 "col": col,
             }));
+    }
+
+    pub fn config_changed(&self, view_id: &ViewIdentifier, changes: &Table) {
+        self.rpc_peer.send_rpc_notification("config_changed",
+                                            &json!({
+                                                "view_id": view_id,
+                                                "changes": changes,
+                                            }));
     }
 
     /// Notify the client that a plugin ha started.
