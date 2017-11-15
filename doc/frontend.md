@@ -248,6 +248,15 @@ use the new theme to set colors as appropriate. The `Theme` object is
 directly serialized from a [`syntect::highlighting::ThemeSettings`](https://github.com/trishume/syntect/blob/master/src/highlighting/theme.rs#L27)
 instance.
 
+#### config_changed
+
+`config_changed {"view_id": "view-id-1", "changes": {} }`
+
+Notifies the client that the config settings for a view have changed.
+This is called once when a new view is created, with `changes` containing
+all config settings; afterwards `changes` only contains the key/value
+pairs that have new values.
+
 ### plugins
 
 #### available_plugins
