@@ -22,7 +22,8 @@ use std::path::{PathBuf, Path};
 use std::fs::File;
 use std::sync::{Arc, Mutex, MutexGuard, Weak, mpsc};
 
-use serde::de::Deserialize;
+use serde::de::{Deserialize, Deserializer};
+use serde::ser::{Serialize, Serializer};
 use serde_json::value::Value;
 use config_rs::Value as ConfigValue;
 use notify::{RecursiveMode, DebouncedEvent};
@@ -51,8 +52,8 @@ const CONFIG_EVENT_TOKEN: EventToken = EventToken(1);
 const NEW_VIEW_IDLE_TOKEN: usize = 1001;
 
 /// ViewIdentifiers are the primary means of routing messages between xi-core and a client view.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct ViewIdentifier(String);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ViewIdentifier(usize);
 
 /// BufferIdentifiers uniquely identify open buffers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Hash)]
@@ -134,8 +135,8 @@ impl<F: Send + FnOnce(&mut Documents)> IdleProc for F {
 
 impl BufferContainer {
     /// Returns a reference to the `Editor` instance owning `view_id`'s view.
-    pub fn editor_for_view(&self, view_id: &ViewIdentifier) -> Option<&Editor> {
-        match self.views.get(view_id) {
+    pub fn editor_for_view(&self, view_id: ViewIdentifier) -> Option<&Editor> {
+        match self.views.get(&view_id) {
             Some(id) => self.editors.get(id),
             None => {
                 eprintln!("no buffer_id for view {}", view_id);
@@ -144,9 +145,11 @@ impl BufferContainer {
         }
     }
 
-    /// Returns a mutable reference to the `Editor` instance owning `view_id`'s view.
-    pub fn editor_for_view_mut(&mut self, view_id: &ViewIdentifier) -> Option<&mut Editor> {
-        match self.views.get(view_id) {
+    /// Returns a mutable reference to the `Editor` instance owning
+    /// `view_id`'s view.
+    pub fn editor_for_view_mut(&mut self, view_id: ViewIdentifier)
+                               -> Option<&mut Editor> {
+        match self.views.get(&view_id) {
             Some(id) => self.editors.get_mut(id),
             None => {
                 eprintln!("no buffer_id for view {}", view_id);
@@ -166,7 +169,8 @@ impl BufferContainer {
     }
 
     /// Returns a mutable reference to the `Editor` instance with `id`
-    pub fn editor_for_buffer_mut(&mut self, id: &BufferIdentifier) -> Option<&mut Editor> {
+    pub fn editor_for_buffer_mut(&mut self, id: &BufferIdentifier)
+                                 -> Option<&mut Editor> {
         self.editors.get_mut(id)
     }
 }
@@ -198,25 +202,25 @@ impl BufferContainerRef {
     }
 
     /// Returns a copy of the BufferIdentifier associated with a given view.
-    pub fn buffer_for_view(&self, view_id: &ViewIdentifier) -> Option<BufferIdentifier> {
-        self.lock().views.get(view_id).map(|id| id.to_owned())
+    pub fn buffer_for_view(&self, view_id: ViewIdentifier) -> Option<BufferIdentifier> {
+        self.lock().views.get(&view_id).map(|id| id.to_owned())
     }
 
     /// Adds a new editor, associating it with the provided identifiers.
-    pub fn add_editor(&self, view_id: &ViewIdentifier, buffer_id: &BufferIdentifier,
+    pub fn add_editor(&self, view_id: ViewIdentifier, buffer_id: BufferIdentifier,
                       editor: Editor) {
         let mut inner = self.lock();
-        inner.views.insert(view_id.to_owned(), buffer_id.to_owned());
-        inner.editors.insert(buffer_id.to_owned(), editor);
+        inner.views.insert(view_id, buffer_id);
+        inner.editors.insert(buffer_id, editor);
     }
 
     /// Registers `file_path` as an open file, associated with `view_id`'s buffer.
     ///
     /// If an existing path is already associated with this buffer, it is removed.
-    pub fn set_path<P: AsRef<Path>>(&self, file_path: P, view_id: &ViewIdentifier) {
+    pub fn set_path<P: AsRef<Path>>(&self, file_path: P, view_id: ViewIdentifier) {
         let file_path = file_path.as_ref();
         let mut inner = self.lock();
-        let buffer_id = inner.views.get(view_id).unwrap().to_owned();
+        let buffer_id = inner.views.get(&view_id).unwrap().to_owned();
         let prev_path = inner.editor_for_view(view_id).unwrap()
             .get_path().map(Path::to_owned);
         if let Some(prev_path) = prev_path {
@@ -229,7 +233,7 @@ impl BufferContainerRef {
     }
 
     /// Adds a new view to the `Editor` instance owning `buffer_id`.
-    pub fn add_view(&self, view_id: &ViewIdentifier, buffer_id: &BufferIdentifier) {
+    pub fn add_view(&self, view_id: ViewIdentifier, buffer_id: &BufferIdentifier) {
         let mut inner = self.lock();
         inner.views.insert(view_id.to_owned(), buffer_id.to_owned());
         inner.editor_for_view_mut(view_id).unwrap().add_view(view_id);
@@ -239,7 +243,7 @@ impl BufferContainerRef {
     ///
     /// If this is the last view open onto the underlying buffer, also cleans up
     /// the `Editor` instance.
-    pub fn close_view(&self, view_id: &ViewIdentifier) {
+    pub fn close_view(&self, view_id: ViewIdentifier) {
         let (remove, path) = {
             let mut inner = self.lock();
             let editor = inner.editor_for_view_mut(view_id).unwrap();
@@ -253,7 +257,7 @@ impl BufferContainerRef {
 
         if remove {
             let mut inner = self.lock();
-            let buffer_id = inner.views.remove(view_id).unwrap();
+            let buffer_id = inner.views.remove(&view_id).unwrap();
             if let Some(path) = path {
                 inner.open_files.remove(&path);
             }
@@ -338,7 +342,7 @@ impl Documents {
             SetTheme { theme_name } =>
                 self.do_set_theme(rpc_ctx.get_peer(), &theme_name),
             DebugOverrideSetting { view_id, key, value } => {
-                if let Some(buffer_id) = self.buffers.buffer_for_view(&view_id) {
+                if let Some(buffer_id) = self.buffers.buffer_for_view(view_id) {
                     let value = ConfigValue::deserialize(&value)
                         .expect("config value should already be validated");
                     self.config_manager.set_override(&key, value, buffer_id, true)
@@ -346,11 +350,11 @@ impl Documents {
                     self.after_config_change();
                 }
             }
-            Save { view_id, file_path } => self.do_save(&view_id, file_path),
-            CloseView { view_id } => self.do_close_view(&view_id),
+            Save { view_id, file_path } => self.do_save(view_id, file_path),
+            CloseView { view_id } => self.do_close_view(view_id),
             Edit(rpc::EditCommand { view_id, cmd }) => {
-                self.buffers.lock().editor_for_view_mut(&view_id)
-                    .map(|ed| ed.handle_notification(&view_id, cmd));
+                self.buffers.lock().editor_for_view_mut(view_id)
+                    .map(|ed| ed.handle_notification(view_id, cmd));
                 }
             Plugin(cmd) => self.do_plugin_cmd(cmd),
         }
@@ -368,8 +372,8 @@ impl Documents {
                 Ok(result)
             }
             Edit(rpc::EditCommand { view_id, cmd }) => {
-                let result = self.buffers.lock().editor_for_view_mut(&view_id)
-                    .map(|ed| ed.handle_request(&view_id, cmd));
+                let result = self.buffers.lock().editor_for_view_mut(view_id)
+                    .map(|ed| ed.handle_request(view_id, cmd));
                 match result {
                     None => {
                         let msg = format!("No editor for view_id: {}", view_id);
@@ -401,27 +405,27 @@ impl Documents {
             // for the time being, we just create a new empty view.
             if self.buffers.has_open_file(&file_path) {
                 let buffer_id = self.next_buffer_id();
-                self.new_empty_view(rpc_peer, &view_id, buffer_id);
+                self.new_empty_view(rpc_peer, view_id, buffer_id);
                 // let buffer_id = self.open_files.get(&file_path).unwrap().to_owned();
-                //self.add_view(&view_id, buffer_id);
+                //self.add_view(view_id, buffer_id);
             } else {
                 // not open: create new buffer_id and open file
                 let buffer_id = self.next_buffer_id();
-                self.new_view_with_file(rpc_peer, &view_id, buffer_id, &file_path);
+                self.new_view_with_file(rpc_peer, view_id, buffer_id, &file_path);
             }
         } else {
             // file_path was nil: create a new empty buffer.
             let buffer_id = self.next_buffer_id();
-            self.new_empty_view(rpc_peer, &view_id, buffer_id);
+            self.new_empty_view(rpc_peer, view_id, buffer_id);
         }
 
         // closure to handle post-creation work on next idle runloop
         let view_id2 = view_id.clone();
-        let init_info = self.buffers.lock().editor_for_view(&view_id)
+        let init_info = self.buffers.lock().editor_for_view(view_id)
             .unwrap().plugin_init_info();
 
         let on_idle = Box::new(move |self_ref: &mut Documents| {
-            self_ref.plugins.document_new(&view_id2, &init_info);
+            self_ref.plugins.document_new(view_id2, &init_info);
             {
                 let mut editors = self_ref.buffers.lock();
                 for editor in editors.iter_editors_mut() {
@@ -433,20 +437,20 @@ impl Documents {
         json!(view_id)
     }
 
-    fn do_close_view(&mut self, view_id: &ViewIdentifier) {
+    fn do_close_view(&mut self, view_id: ViewIdentifier) {
         self.plugins.document_close(view_id);
         self.buffers.close_view(view_id);
     }
 
-    fn new_empty_view(&mut self, rpc_peer: &MainPeer, view_id: &ViewIdentifier,
+    fn new_empty_view(&mut self, rpc_peer: &MainPeer, view_id: ViewIdentifier,
                       buffer_id: BufferIdentifier) {
         let editor = Editor::new(self.new_tab_ctx(rpc_peer),
                                  self.config_manager.get_config(None, None),
                                  buffer_id, view_id);
-        self.add_editor(view_id, &buffer_id, editor, None);
+        self.add_editor(view_id, buffer_id, editor, None);
     }
 
-    fn new_view_with_file(&mut self, rpc_peer: &MainPeer, view_id: &ViewIdentifier,
+    fn new_view_with_file(&mut self, rpc_peer: &MainPeer, view_id: ViewIdentifier,
                           buffer_id: BufferIdentifier, path: &Path) {
         match self.read_file(&path) {
             Ok(contents) => {
@@ -454,7 +458,7 @@ impl Documents {
                 let config = self.config_manager.get_config(syntax, buffer_id);
                 let ed = Editor::with_text(self.new_tab_ctx(rpc_peer), config,
                                            buffer_id, view_id, contents);
-                self.add_editor(view_id, &buffer_id, ed, Some(path));
+                self.add_editor(view_id, buffer_id, ed, Some(path));
             }
             Err(err) => {
                 let ed = Editor::new(self.new_tab_ctx(rpc_peer),
@@ -464,10 +468,10 @@ impl Documents {
                     // if this is a read error of an actual file, we don't set path
                     // TODO: we should be reporting errors to the client
                     eprintln!("unable to read file: {}, error: {:?}", buffer_id, err);
-                    self.add_editor(view_id, &buffer_id, ed, None);
+                    self.add_editor(view_id, buffer_id, ed, None);
                 } else {
                     // if a path that doesn't exist, create a new empty buffer + set path
-                    self.add_editor(view_id, &buffer_id, ed, Some(path));
+                    self.add_editor(view_id, buffer_id, ed, Some(path));
                 }
             }
         }
@@ -476,7 +480,7 @@ impl Documents {
     /// Adds a new editor, associating it with the provided identifiers.
     ///
     /// This is called once each time a new editor is created.
-    fn add_editor(&mut self, view_id: &ViewIdentifier, buffer_id: &BufferIdentifier,
+    fn add_editor(&mut self, view_id: ViewIdentifier, buffer_id: BufferIdentifier,
                   mut editor: Editor, path: Option<&Path>) {
         self.initialize_sync(&mut editor, path, buffer_id);
         self.buffers.add_editor(view_id, buffer_id, editor);
@@ -486,13 +490,13 @@ impl Documents {
     }
 
     #[cfg(not(target_os = "fuchsia"))]
-    fn initialize_sync(&mut self, _editor: &mut Editor, _path_opt: Option<&Path>, _buffer_id: &BufferIdentifier) {
+    fn initialize_sync(&mut self, _editor: &mut Editor, _path_opt: Option<&Path>, _buffer_id: BufferIdentifier) {
         // not implemented yet on OSs other than Fuchsia
     }
 
     /// Adds a new view to an existing editor instance.
     #[allow(unreachable_code, unused_variables, dead_code)]
-    fn add_view(&mut self, view_id: &ViewIdentifier, buffer_id: BufferIdentifier) {
+    fn add_view(&mut self, view_id: ViewIdentifier, buffer_id: BufferIdentifier) {
         panic!("add_view should not currently be accessible");
         self.buffers.add_view(view_id, &buffer_id);
     }
@@ -504,7 +508,7 @@ impl Documents {
         Ok(s)
     }
 
-    fn do_save<P: AsRef<Path>>(&mut self, view_id: &ViewIdentifier,
+    fn do_save<P: AsRef<Path>>(&mut self, view_id: ViewIdentifier,
                                file_path: P) {
         //TODO: handle & report errors
         let file_path = file_path.as_ref();
@@ -530,7 +534,7 @@ impl Documents {
             self.buffers.lock().editor_for_view_mut(view_id)
                 .unwrap().set_config(new_config);
         }
-        self.plugins.document_did_save(&view_id, file_path);
+        self.plugins.document_did_save(view_id, file_path);
     }
 
     /// Handles a plugin related command from a client
@@ -539,23 +543,23 @@ impl Documents {
         match cmd {
             Start { view_id, plugin_name } => {
                 //TODO: report this error to client?
-                let info = self.buffers.lock().editor_for_view(&view_id)
+                let info = self.buffers.lock().editor_for_view(view_id)
                     .map(|ed| ed.plugin_init_info());
                 match info {
                     Some(info) => {
-                        let _ = self.plugins.start_plugin(&view_id, &info, &plugin_name);
+                        let _ = self.plugins.start_plugin(view_id, &info, &plugin_name);
                     },
                     None => (),
                 }
             }
             Stop { view_id, plugin_name } => {
                 eprintln!("stop plugin rpc {}", plugin_name);
-                self.plugins.stop_plugin(&view_id, &plugin_name);
+                self.plugins.stop_plugin(view_id, &plugin_name);
             }
             PluginRpc  { view_id, receiver, rpc } => {
                 assert!(rpc.params_ref().is_object(), "params must be an object");
                 assert!(!rpc.is_request(), "client->plugin rpc is notification only");
-                self.plugins.dispatch_command(&view_id, &receiver,
+                self.plugins.dispatch_command(view_id, &receiver,
                                               &rpc.method, &rpc.params);
             }
         }
@@ -728,7 +732,7 @@ impl Drop for Documents {
 }
 
 impl DocumentCtx {
-    pub fn update_view(&self, view_id: &ViewIdentifier, update: &Value) {
+    pub fn update_view(&self, view_id: ViewIdentifier, update: &Value) {
         self.rpc_peer.send_rpc_notification("update",
             &json!({
                 "view_id": view_id,
@@ -736,7 +740,7 @@ impl DocumentCtx {
             }));
     }
 
-    pub fn scroll_to(&self, view_id: &ViewIdentifier, line: usize, col: usize) {
+    pub fn scroll_to(&self, view_id: ViewIdentifier, line: usize, col: usize) {
         self.rpc_peer.send_rpc_notification("scroll_to",
             &json!({
                 "view_id": view_id,
@@ -746,7 +750,7 @@ impl DocumentCtx {
     }
 
     /// Notify the client that a plugin ha started.
-    pub fn plugin_started(&self, view_id: &ViewIdentifier, plugin: &str) {
+    pub fn plugin_started(&self, view_id: ViewIdentifier, plugin: &str) {
         self.rpc_peer.send_rpc_notification("plugin_started",
                                             &json!({
                                                 "view_id": view_id,
@@ -757,7 +761,7 @@ impl DocumentCtx {
     /// Notify the client that a plugin ha stopped.
     ///
     /// `code` is not currently used.
-    pub fn plugin_stopped(&self, view_id: &ViewIdentifier, plugin: &str, code: i32) {
+    pub fn plugin_stopped(&self, view_id: ViewIdentifier, plugin: &str, code: i32) {
         self.rpc_peer.send_rpc_notification("plugin_stopped",
                                             &json!({
                                                 "view_id": view_id,
@@ -767,7 +771,7 @@ impl DocumentCtx {
     }
 
     /// Notify the client of the available plugins.
-    pub fn available_plugins(&self, view_id: &ViewIdentifier,
+    pub fn available_plugins(&self, view_id: ViewIdentifier,
                              plugins: &[ClientPluginInfo]) {
         self.rpc_peer.send_rpc_notification("available_plugins",
                                             &json!({
@@ -775,7 +779,7 @@ impl DocumentCtx {
                                                 "plugins": plugins }));
     }
 
-    pub fn update_cmds(&self, view_id: &ViewIdentifier,
+    pub fn update_cmds(&self, view_id: ViewIdentifier,
                        plugin: &str, cmds: &[Command]) {
         self.rpc_peer.send_rpc_notification("update_cmds",
                                             &json!({
@@ -830,26 +834,41 @@ impl DocumentCtx {
 
 impl<'a> From<&'a str> for ViewIdentifier {
     fn from(s: &'a str) -> Self {
-        ViewIdentifier(String::from(s))
+        let ord = s.trim_left_matches("view-id-");
+        let ident = usize::from_str_radix(ord, 10)
+            .expect("ViewIdentifier parsing should never fail");
+        ViewIdentifier(ident)
     }
 }
 
 impl From<String> for ViewIdentifier {
     fn from(s: String) -> Self {
-        ViewIdentifier(s)
-    }
-}
-
-impl ViewIdentifier {
-    /// Returns a reference to the identifier's String value.
-    pub fn as_str(&self) -> &str {
-        &self.0
+        //let s: &str = &s;
+        s.as_str().into()
     }
 }
 
 impl fmt::Display for ViewIdentifier {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "view-id-{}", self.0)
+    }
+}
+
+impl Serialize for ViewIdentifier {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where S: Serializer
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for ViewIdentifier
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where D: Deserializer<'de>
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(s.into())
     }
 }
 
@@ -955,49 +974,49 @@ mod tests {
         let container_ref = BufferContainerRef::new();
         let config = ConfigManager::default().get_config(None, None);
         assert!(!container_ref.has_open_file("a fake file, for sure"));
-        let view_id_1 = ViewIdentifier::from("view-id-1");
+        let view_id_1 = ViewIdentifier(1);
         let buf_id_1 = BufferIdentifier(1);
         let path_1 = PathBuf::from("a_path");
         let path_2 = PathBuf::from("a_different_path");
-        let editor = Editor::new(mock_doc_ctx(view_id_1.as_str()),
+        let editor = Editor::new(mock_doc_ctx(&view_id_1.to_string()),
                                  config.clone(),
-                                 buf_id_1, &view_id_1);
-        container_ref.add_editor(&view_id_1, &buf_id_1, editor);
+                                 buf_id_1, view_id_1);
+        container_ref.add_editor(view_id_1, buf_id_1, editor);
         assert_eq!(container_ref.lock().editors.len(), 1);
 
         // set path (as if on save)
-        container_ref.set_path(&path_1, &view_id_1);
+        container_ref.set_path(&path_1, view_id_1);
         assert_eq!(container_ref.has_open_file(&path_1), true);
         assert_eq!(
-            container_ref.lock().editor_for_view(&view_id_1).unwrap().get_path(),
+            container_ref.lock().editor_for_view(view_id_1).unwrap().get_path(),
             Some(path_1.as_ref()));
 
         // then save somewhere else:
-        container_ref.set_path(&path_2, &view_id_1);
+        container_ref.set_path(&path_2, view_id_1);
         assert_eq!(container_ref.lock().editors.len(), 1);
         assert_eq!(container_ref.has_open_file(&path_1), false);
         assert_eq!(container_ref.has_open_file(&path_2), true);
         assert_eq!(
-            container_ref.lock().editor_for_view(&view_id_1).unwrap().get_path(),
+            container_ref.lock().editor_for_view(view_id_1).unwrap().get_path(),
             Some(path_2.as_ref()));
 
         // reopen the original file:
-        let view_id_2 = ViewIdentifier::from("view-id-2");
+        let view_id_2 = ViewIdentifier(2);
         let buf_id_2 = BufferIdentifier(2);
-        let editor = Editor::new(mock_doc_ctx(view_id_2.as_str()),
-                                 config.clone(), buf_id_2, &view_id_2);
-        container_ref.add_editor(&view_id_2, &buf_id_2, editor);
-        container_ref.set_path(&path_1, &view_id_2);
+        let editor = Editor::new(mock_doc_ctx(&view_id_2.to_string()),
+                                 config.clone(), buf_id_2, view_id_2);
+        container_ref.add_editor(view_id_2, buf_id_2, editor);
+        container_ref.set_path(&path_1, view_id_2);
         assert_eq!(container_ref.lock().editors.len(), 2);
         assert_eq!(container_ref.has_open_file(&path_1), true);
         assert_eq!(container_ref.has_open_file(&path_2), true);
 
-        container_ref.close_view(&view_id_1);
+        container_ref.close_view(view_id_1);
         assert_eq!(container_ref.lock().editors.len(), 1);
         assert_eq!(container_ref.has_open_file(&path_2), false);
         assert_eq!(container_ref.has_open_file(&path_1), true);
 
-        container_ref.close_view(&view_id_2);
+        container_ref.close_view(view_id_2);
         assert_eq!(container_ref.has_open_file(&path_2), false);
         assert_eq!(container_ref.lock().editors.len(), 0);
     }
@@ -1005,9 +1024,9 @@ mod tests {
     #[test]
     fn test_id_serde() {
         // check to see that struct with single string member serializes as string
-        let view_id = ViewIdentifier::from("hello-id-8");
-        let as_val = serde_json::to_value(&view_id).unwrap();
-        assert_eq!(as_val.to_string(), "\"hello-id-8\"");
+        let view_id = ViewIdentifier(8);
+        let as_val = serde_json::to_value(view_id).unwrap();
+        assert_eq!(as_val.to_string(), "\"view-id-8\"");
     }
 
     #[test]
@@ -1020,11 +1039,11 @@ mod tests {
         }
         let json = r#"
         {"name": "victor",
-         "view": "a-view",
+         "view": "view-id-6",
          "flag": 42
         }"#;
 
         let result: TestStruct = serde_json::from_str(json).unwrap();
-        assert_eq!(result.view.as_str(), "a-view");
+        assert_eq!(result.view, ViewIdentifier(6));
     }
 }

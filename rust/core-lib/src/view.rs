@@ -91,7 +91,7 @@ struct DragState {
 }
 
 impl View {
-    pub fn new(view_id: &ViewIdentifier) -> View {
+    pub fn new(view_id: ViewIdentifier) -> View {
         let mut selection = Selection::new();
         selection.add_region(SelRegion {
             start: 0,
@@ -370,7 +370,7 @@ impl View {
             "ops": ops,
             "pristine": self.pristine,
         });
-        tab_ctx.update_view(&self.view_id, &params);
+        tab_ctx.update_view(self.view_id, &params);
         self.valid_lines.union_one_range(first_line, last_line);
     }
 
@@ -421,7 +421,7 @@ impl View {
             "ops": ops,
             "pristine": self.pristine,
         });
-        tab_ctx.update_view(&self.view_id, &params);
+        tab_ctx.update_view(self.view_id, &params);
         self.valid_lines.union_one_range(first_line, last_line);
     }
 
