@@ -17,6 +17,7 @@
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fmt;
+use std::env;
 use std::io::{self, Read};
 use std::path::{PathBuf, Path};
 use std::fs::File;
@@ -25,7 +26,6 @@ use std::sync::{Arc, Mutex, MutexGuard, Weak, mpsc};
 use serde::de::{Deserialize, Deserializer};
 use serde::ser::{Serialize, Serializer};
 use serde_json::value::Value;
-use config_rs::Value as ConfigValue;
 use notify::{RecursiveMode, DebouncedEvent};
 
 use xi_rope::rope::Rope;
@@ -46,6 +46,9 @@ use plugins::rpc_types::{PluginUpdate, ClientPluginInfo};
 
 #[cfg(target_os = "fuchsia")]
 use apps_ledger_services_public::{Ledger_Proxy};
+
+/// A client can use this to pass a path to bundled plugins
+static XI_SYS_PLUGIN_PATH: &'static str = "XI_SYS_PLUGIN_PATH";
 
 /// Token for config-related file change events
 const CONFIG_EVENT_TOKEN: EventToken = EventToken(1);
@@ -288,8 +291,7 @@ impl Documents {
     pub fn new() -> Documents {
         let buffers = BufferContainerRef::new();
         let config_manager = ConfigManager::default();
-        let plugin_path = config_manager.get_config(None, None).plugin_search_path;
-        let plugin_manager = PluginManagerRef::new(buffers.clone(), plugin_path);
+        let plugin_manager = PluginManagerRef::new(buffers.clone());
         let (update_tx, update_rx) = mpsc::channel();
 
         plugins::start_update_thread(update_rx, &plugin_manager);
@@ -343,8 +345,6 @@ impl Documents {
                 self.do_set_theme(rpc_ctx.get_peer(), &theme_name),
             DebugOverrideSetting { view_id, key, value } => {
                 if let Some(buffer_id) = self.buffers.buffer_for_view(view_id) {
-                    let value = ConfigValue::deserialize(&value)
-                        .expect("config value should already be validated");
                     self.config_manager.set_override(&key, value, buffer_id, true)
                         .expect(&format!("setting override failed for key {}", key));
                     self.after_config_change();
@@ -420,14 +420,15 @@ impl Documents {
         }
 
         // closure to handle post-creation work on next idle runloop
-        let view_id2 = view_id.clone();
         let init_info = self.buffers.lock().editor_for_view(view_id)
             .unwrap().plugin_init_info();
 
         let on_idle = Box::new(move |self_ref: &mut Documents| {
-            self_ref.plugins.document_new(view_id2, &init_info);
+            self_ref.plugins.document_new(view_id, &init_info);
             {
                 let mut editors = self_ref.buffers.lock();
+                editors.editor_for_view(view_id)
+                    .map(|ed| ed.send_config_init());
                 for editor in editors.iter_editors_mut() {
                     editor.render();
                 }
@@ -570,6 +571,9 @@ impl Documents {
         // If no config argument, fallback on environment variable
         // TODO: deprecate env var approach and remove this
         let config_dir = config_dir.or(Some(config::get_config_dir()));
+        let client_extras_dir = client_extras_dir
+            .or(env::var(XI_SYS_PLUGIN_PATH).map(PathBuf::from).ok());
+
 
         if let Some(ref d) = config_dir {
             self.config_manager.set_config_dir(&d);
@@ -590,6 +594,8 @@ impl Documents {
             })
         };
 
+        let plugin_paths = self.config_manager.plugin_search_path();
+        self.plugins.set_plugin_search_path(plugin_paths);
         rpc_peer.send_rpc_notification("available_themes", &params);
     }
 
@@ -640,10 +646,8 @@ impl Documents {
         for (token, event) in events.drain(..) {
             match token {
                 CONFIG_EVENT_TOKEN => {
-                    //TODO: we should be more efficient about this update,
+                    //TODO: we should(?) be more efficient about this update,
                     // with config_manager returning whether it's necessary.
-                    // The simplest version of this is blocked on
-                    // https://github.com/mehcode/config-rs/issues/51
                     self.handle_config_fs_event(event);
                     config_changed = true;
                 }
@@ -747,6 +751,14 @@ impl DocumentCtx {
                 "line": line,
                 "col": col,
             }));
+    }
+
+    pub fn config_changed(&self, view_id: &ViewIdentifier, changes: &Table) {
+        self.rpc_peer.send_rpc_notification("config_changed",
+                                            &json!({
+                                                "view_id": view_id,
+                                                "changes": changes,
+                                            }));
     }
 
     /// Notify the client that a plugin ha started.

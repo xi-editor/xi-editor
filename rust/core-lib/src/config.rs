@@ -13,16 +13,20 @@
 // limitations under the License.
 
 use std::env;
-use std::io;
+use std::io::{self, Read};
 use std::borrow::Borrow;
 use std::error::Error;
 use std::ffi::OsStr;
 use std::fmt;
+use std::fs;
 use std::rc::Rc;
 use std::path::{PathBuf, Path};
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
-use config_rs::{self, Source, Value, FileFormat};
+use serde::de::Deserialize;
+use serde_json::{self, Value};
+use toml;
 
 use syntax::SyntaxDefinition;
 use tabs::BufferIdentifier;
@@ -30,8 +34,6 @@ use tabs::BufferIdentifier;
 
 static XI_CONFIG_DIR: &'static str = "XI_CONFIG_DIR";
 static XDG_CONFIG_HOME: &'static str = "XDG_CONFIG_HOME";
-/// A client can use this to pass a path to bundled plugins
-static XI_SYS_PLUGIN_PATH: &'static str = "XI_SYS_PLUGIN_PATH";
 
 /// Namespace for various default settings.
 #[allow(unused)]
@@ -45,8 +47,10 @@ mod defaults {
     /// config keys that are legal in most config files
     pub const GENERAL_KEYS: &'static [&'static str] = &[
         "tab_size",
-        "newline",
+        "line_ending",
         "translate_tabs_to_spaces",
+        "font_face",
+        "font_size",
     ];
     /// config keys that are only legal at the top level
     pub const TOP_LEVEL_KEYS: &'static [&'static str] = &[
@@ -56,8 +60,8 @@ mod defaults {
     pub fn platform_defaults() -> Table {
         let mut base = load(BASE);
         if let Some(mut overrides) = platform_overrides() {
-            for (k, v) in overrides.drain() {
-                base.insert(k, v);
+            for (k, v) in overrides.iter() {
+                base.insert(k.to_owned(), v.to_owned());
             }
         }
         base
@@ -77,18 +81,17 @@ mod defaults {
     }
 
     fn load(default: &str) -> Table {
-        config_rs::File::from_str(default, config_rs::FileFormat::Toml)
-            .collect()
+        table_from_toml_str(default)
             .expect("default configs must load")
     }
 }
 
 /// A map of config keys to settings
-pub type Table = HashMap<String, Value>;
+pub type Table = serde_json::Map<String, Value>;
 
+/// A `ConfigDomain` describes a level or category of user settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all="lowercase")]
-/// A `ConfigDomain` describes a level or category of user settings.
 pub enum ConfigDomain {
     /// The general user preferences
     Preferences,
@@ -96,15 +99,17 @@ pub enum ConfigDomain {
     Syntax(SyntaxDefinition),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
 /// The errors that can occur when managing configs.
+#[derive(Debug)]
 pub enum ConfigError {
     /// The config contains a key that is invalid for its domain.
     IllegalKey(String),
     /// The config domain was not recognized.
     UnknownDomain(String),
     /// A file-based config could not be loaded or parsed.
-    FileParse(PathBuf),
+    Parse(PathBuf, toml::de::Error),
+    /// An Io Error
+    Io(io::Error),
 }
 
 /// A `Validator` is responsible for validating a config table.
@@ -118,8 +123,8 @@ pub trait Validator: fmt::Debug {
     }
 }
 
-#[derive(Debug, Clone)]
 /// An implementation of `Validator` that checks keys against a whitelist.
+#[derive(Debug, Clone)]
 pub struct KeyValidator {
     keys: HashSet<String>,
 }
@@ -134,7 +139,7 @@ pub struct ConfigPair {
     /// precedence over items in `base`.
     user: Option<Table>,
     /// A snapshot of base + user.
-    cache: Table,
+    cache: Arc<Table>,
     validator: Rc<Validator>,
 }
 
@@ -156,14 +161,33 @@ pub struct ConfigManager {
     extras_dir: Option<PathBuf>,
 }
 
+/// A collection of config tables representing a heirarchy, with each
+/// table's keys superceding keys in preceding tables.
+#[derive(Debug, Clone, Default)]
+struct TableStack(Vec<Arc<Table>>);
+
+/// A frozen collection of settings, and their sources.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-/// A container for all user-modifiable settings.
-pub struct Config {
-    pub newline: String,
+pub struct Config<T> {
+    /// The underlying set of config tables that contributed to this
+    /// `Config` instance. Used for diffing.
+    #[serde(skip)]
+    source: TableStack,
+    /// The settings themselves, deserialized into some concrete type.
+    pub items: T,
+}
+
+/// The concrete type for buffer-related settings.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct BufferItems {
+    pub line_ending: String,
     pub tab_size: usize,
     pub translate_tabs_to_spaces: bool,
-    pub plugin_search_path: Vec<PathBuf>,
+    pub font_face: String,
+    pub font_size: f32,
 }
+
+pub type BufferConfig = Config<BufferItems>;
 
 impl ConfigPair {
     fn new<T1, T2>(base: T1, user: T2, validator: Rc<Validator>)
@@ -177,7 +201,7 @@ impl ConfigPair {
             .map(|t| validator.validate_table(t))
             .unwrap_or(Ok(()))?;
 
-        let cache = Table::new();
+        let cache = Arc::new(Table::new());
         let mut conf = ConfigPair { base, user, cache, validator };
         conf.rebuild();
         Ok(conf)
@@ -197,7 +221,7 @@ impl ConfigPair {
                 cache.insert(k.to_owned(), v.clone());
             }
         }
-        self.cache = cache;
+        self.cache = Arc::new(cache);
     }
 
     /// Manually sets a key/value pair in one of `base` or `user`.
@@ -223,14 +247,6 @@ impl ConfigPair {
         self.rebuild();
         Ok(())
     }
-
-    /// Returns a new `Table`, with the values of `other`
-    /// inserted into a copy of `self.cache`.
-    fn merged_with(&self, other: &ConfigPair) -> Table {
-        let mut result = self.cache.clone();
-        merge_tables(&mut result, &other.cache);
-        result
-    }
 }
 
 impl ConfigManager {
@@ -240,6 +256,33 @@ impl ConfigManager {
 
     pub fn set_extras_dir<P: AsRef<Path>>(&mut self, path: P) {
         self.extras_dir = Some(path.as_ref().to_owned())
+    }
+
+    // NOTE: search paths don't really fit the general config model;
+    // they're never exposed to the client, they can't be overridden on a
+    // per-buffer basis, and they can be appended to from a number of sources.
+    //
+    // There is a reasonable argument that they should not be part of the
+    // config system at all. For now, I'm treating them as a special case.
+    /// Returns the plugin_search_path.
+    pub fn plugin_search_path(&self) -> Vec<PathBuf> {
+        let val = self.defaults.cache.get("plugin_search_path")
+            .unwrap()
+            .to_owned();
+        let mut search_path: Vec<PathBuf> = serde_json::from_value(val).unwrap();
+
+        // relative paths should be relative to the config dir, if present
+        if let Some(ref config_dir) = self.config_dir {
+            search_path = search_path.iter()
+                .map(|p| config_dir.join(p))
+                .collect();
+        }
+
+        // append the client provided extras path, if present
+        if let Some(ref sys_path) = self.extras_dir {
+            search_path.push(sys_path.into());
+        }
+        search_path
     }
 
     /// Sets the config for the given domain, removing any existing config.
@@ -295,35 +338,29 @@ impl ConfigManager {
     }
 
     /// Generates a snapshot of the current configuration for `syntax`.
-    pub fn get_config<S, V>(&self, syntax: S, buf_id: V) -> Config
+    pub fn get_config<S, V>(&self, syntax: S, buf_id: V) -> BufferConfig
         where S: Into<Option<SyntaxDefinition>>,
               V: Into<Option<BufferIdentifier>>
     {
         let syntax = syntax.into().unwrap_or_default();
         let buf_id = buf_id.into();
-        let mut settings = match self.syntax_specific.get(&syntax) {
-            Some(ref syntax_config) => self.defaults.merged_with(syntax_config),
-            None => self.defaults.cache.clone(),
-        };
+        let mut configs = Vec::new();
+        configs.push(self.defaults.cache.clone());
+
+        if let Some(syntax_settings) = self.syntax_specific.get(&syntax) {
+            configs.push(syntax_settings.cache.clone());
+        }
 
         if let Some(overrides) = buf_id.and_then(|v| self.overrides.get(&v)) {
-            merge_tables(&mut settings, &overrides.cache);
+            configs.push(overrides.cache.clone());
         }
-        let settings: Value = settings.into();
-        let mut settings: Config = settings.try_into().unwrap();
-        // relative entries in plugin search path should be relative to
-        // the config directory.
-        if let Some(ref config_dir) = self.config_dir {
-            settings.plugin_search_path = settings.plugin_search_path
-                .iter()
-                .map(|p| config_dir.join(p))
-                .collect();
-        }
-        // If present, append the location of plugins bundled by client
-        if let Some(ref sys_path) = self.extras_dir {
-            settings.plugin_search_path.push(sys_path.into());
-        }
-        settings
+
+        let stack = TableStack(configs);
+        stack.into_config()
+    }
+
+    pub fn default_config(&self) -> BufferConfig {
+        self.get_config(None, None)
     }
 
     /// Sets a session-specific, buffer-specific override. The `from_user`
@@ -362,7 +399,6 @@ impl Default for ConfigManager {
                 (k.to_owned(), ConfigPair::new(v, None, val.clone()).unwrap())
             })
             .collect::<HashMap<_, _>>();
-        let extras_dir = env::var(XI_SYS_PLUGIN_PATH).map(PathBuf::from).ok();
 
         ConfigManager {
             defaults: defaults,
@@ -370,8 +406,86 @@ impl Default for ConfigManager {
             overrides: HashMap::new(),
             sources: HashMap::new(),
             config_dir: None,
-            extras_dir: extras_dir,
+            extras_dir: None,
         }
+    }
+}
+
+impl TableStack {
+    /// Create a single table representing the final config values.
+    fn collate(&self) -> Table {
+    // NOTE: This is fairly expensive; a future optimization would borrow
+    // from the underlying collections, but then we couldn't take advantage of
+    // config-rs's `try_into` for converting to a `Config`.
+        let mut out = Table::new();
+        for table in self.0.iter().rev() {
+            for (k, v) in table.iter() {
+                if !out.contains_key(k) {
+                    // cloning these objects feels a bit gross, we could
+                    // improve this by implementing Deserialize for TableStack.
+                    out.insert(k.to_owned(), v.to_owned());
+                }
+            }
+        }
+        out
+    }
+
+    /// Converts the underlying tables into a static `Config` instance.
+    fn into_config<T>(self) -> Config<T>
+        where for<'de> T: Deserialize<'de>
+    {
+        let out = self.collate();
+        let items: T = serde_json::from_value(out.into()).unwrap();
+        let source = self;
+        Config { source, items }
+    }
+
+    /// Walks the tables in priority (reverse) order, returning the first
+    /// occurance of `key`.
+    fn get<S: AsRef<str>>(&self, key: S) -> Option<&Value> {
+        for table in self.0.iter().rev() {
+            if let Some(v) = table.get(key.as_ref()) {
+                return Some(v)
+            }
+        }
+        None
+    }
+
+    /// Returns a new `Table` containing only those keys and values in `self`
+    /// which have changed from `other`.
+    fn diff(&self, other: &TableStack) -> Option<Table> {
+        let mut out: Option<Table> = None;
+        let this = self.collate();
+        for (k, v) in this.iter() {
+            if other.get(k) != Some(v) {
+                let out: &mut Table = out.get_or_insert(Table::new());
+                out.insert(k.to_owned(), v.to_owned());
+            }
+        }
+        out
+    }
+}
+
+impl<T> Config<T> {
+    pub fn to_table(&self) -> Table {
+        self.source.collate()
+    }
+}
+
+impl<'de, T: Deserialize<'de>> Config<T> {
+    /// Returns a `Table` of all the items in `self` which have different
+    /// values than in `other`.
+    pub fn changes_from(&self, other: Option<&Config<T>>) -> Option<Table> {
+        match other {
+            Some(other) => self.source.diff(&other.source),
+            None => self.source.collate().into(),
+        }
+    }
+}
+
+impl<T: PartialEq> PartialEq for Config<T> {
+    fn eq(&self, other: &Config<T>) -> bool {
+        self.items == other.items
     }
 }
 
@@ -402,7 +516,8 @@ impl fmt::Display for ConfigError {
         match self {
             &IllegalKey(ref s) |
                 &UnknownDomain(ref s) => write!(f, "{}: {}", self, s),
-            &FileParse(ref p) => write!(f, "{}: {:?}", self, p),
+            &Parse(ref p, ref e) => write!(f, "{} ({:?}), {:?}", self, p, e),
+            &Io(ref e) => write!(f, "error loading config: {:?}", e)
         }
     }
 }
@@ -413,10 +528,18 @@ impl Error for ConfigError {
         match *self {
             IllegalKey( .. ) => "illegal key",
             UnknownDomain( .. ) => "unknown domain",
-            FileParse( .. ) => "failed to parse file",
+            Parse( _, ref e ) => e.description(),
+            Io( ref e) => e.description(),
         }
     }
 }
+
+impl From<io::Error> for ConfigError {
+    fn from(src: io::Error) -> ConfigError {
+        ConfigError::Io(src)
+    }
+}
+
 
 impl KeyValidator {
     /// Create a `KeyValidator` appropriate to the given domain.
@@ -457,11 +580,23 @@ pub fn iter_config_files(dir: &Path) -> io::Result<Box<Iterator<Item=PathBuf>>> 
 
 /// Attempts to load a config from a file. The config's domain is determined
 /// by the file name.
-pub fn try_load_from_file(path: &Path) -> Result<(ConfigDomain, Table), Box<Error>> {
+pub fn try_load_from_file(path: &Path) -> Result<(ConfigDomain, Table), ConfigError> {
     let domain = ConfigDomain::try_from_path(path)?;
-    let conf: config_rs::File<_> = path.into();
-    let table = conf.format(FileFormat::Toml).collect()?;
+    let mut file = fs::File::open(&path)?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+    let table = table_from_toml_str(&contents)
+        .map_err(|e| ConfigError::Parse(path.to_owned(), e))?;
+
     Ok((domain, table))
+}
+
+fn table_from_toml_str(s: &str) -> Result<Table, toml::de::Error> {
+    let table = toml::from_str(&s)?;
+    let table = from_toml_value(table).as_object()
+        .unwrap()
+        .to_owned();
+    Ok(table)
 }
 
 /// Returns the location of the active config directory.
@@ -491,10 +626,32 @@ pub fn get_config_dir() -> PathBuf {
                     xdg_var.as_ref().map(String::as_ref))
 }
 
-/// Updates `base` with values in `other`.
-fn merge_tables(base: &mut Table, other: &Table) {
-    for (k, v) in other.iter() {
-        base.insert(k.to_owned(), v.clone());
+//adapted from https://docs.rs/crate/config/0.7.0/source/src/file/format/toml.rs
+/// Converts between toml (used to write config files) and json
+/// (used to store config values internally).
+fn from_toml_value(value: toml::Value) -> Value {
+    match value {
+        toml::Value::String(value) => value.to_owned().into(),
+        toml::Value::Float(value) => value.into(),
+        toml::Value::Integer(value) => value.into(),
+        toml::Value::Boolean(value) => value.into(),
+        toml::Value::Datetime(value) => value.to_string().into(),
+
+        toml::Value::Table(table) => {
+            let mut m = Table::new();
+            for (key, value) in table {
+                m.insert(key.clone(), from_toml_value(value));
+            }
+            m.into()
+        }
+
+        toml::Value::Array(array) => {
+            let mut l = Vec::new();
+            for value in array {
+                l.push(from_toml_value(value));
+            }
+            l.into()
+        }
     }
 }
 
@@ -525,20 +682,14 @@ mod tests {
         let mut manager = ConfigManager::default();
         manager.set_config_dir("BASE_PATH");
         let config = manager.get_config(None, None);
-        assert_eq!(config.tab_size, 4);
-        assert_eq!(config.plugin_search_path, vec![PathBuf::from("BASE_PATH/plugins")])
+        assert_eq!(config.items.tab_size, 4);
+        assert_eq!(manager.plugin_search_path(), vec![PathBuf::from("BASE_PATH/plugins")])
     }
 
     #[test]
     fn test_overrides() {
-        let user_config = r#"tab_size = 42"#;
-        let user_config = config_rs::File::from_str(user_config, FileFormat::Toml)
-            .collect()
-            .unwrap();
-        let rust_config = r#"tab_size = 31"#;
-        let rust_config = config_rs::File::from_str(rust_config, FileFormat::Toml)
-            .collect()
-            .unwrap();
+        let user_config = table_from_toml_str(r#"tab_size = 42"#).unwrap();
+        let rust_config = table_from_toml_str(r#"tab_size = 31"#).unwrap();
 
         let mut manager = ConfigManager::default();
         manager.update_config(ConfigDomain::Syntax(SyntaxDefinition::Rust),
@@ -551,48 +702,47 @@ mod tests {
         manager.set_override("tab_size", 67, buf_id.clone(), false).unwrap();
 
         let config = manager.get_config(None, None);
-        assert_eq!(config.tab_size, 42);
+        assert_eq!(config.items.tab_size, 42);
         let config = manager.get_config(SyntaxDefinition::Yaml, None);
-        assert_eq!(config.tab_size, 2);
+        assert_eq!(config.items.tab_size, 2);
         let config = manager.get_config(SyntaxDefinition::Yaml, buf_id.clone());
-        assert_eq!(config.tab_size, 67);
+        assert_eq!(config.items.tab_size, 67);
 
         let config = manager.get_config(SyntaxDefinition::Rust, None);
-        assert_eq!(config.tab_size, 31);
+        assert_eq!(config.items.tab_size, 31);
         let config = manager.get_config(SyntaxDefinition::Rust, buf_id.clone());
-        assert_eq!(config.tab_size, 67);
+        assert_eq!(config.items.tab_size, 67);
 
         // user override trumps everything
         manager.set_override("tab_size", 85, buf_id.clone(), true).unwrap();
         let config = manager.get_config(SyntaxDefinition::Rust, buf_id.clone());
-        assert_eq!(config.tab_size, 85);
+        assert_eq!(config.items.tab_size, 85);
     }
 
     #[test]
     fn test_validation() {
         let mut manager = ConfigManager::default();
-        let user_config = r#"
-tab_size = 42
+        let user_config = r#"tab_size = 42
 font_frace = "InconsolableMo"
 translate_tabs_to_spaces = true
 "#;
-        let user_config = config_rs::File::from_str(user_config, FileFormat::Toml)
-            .collect()
-            .unwrap();
+        let user_config = table_from_toml_str(user_config).unwrap();
         let r = manager.update_config(ConfigDomain::Preferences, user_config, None);
-        assert_eq!(r, Err(ConfigError::IllegalKey("font_frace".into())));
+        match r {
+            Err(ConfigError::IllegalKey(ref key)) if key == "font_frace" => (),
+            other => assert!(false, format!("{:?}", other)),
+        }
 
-        let syntax_config = r#"
-tab_size = 42
+        let syntax_config =  table_from_toml_str(r#"tab_size = 42
 plugin_search_path = "/some/path"
-translate_tabs_to_spaces = true"#;
-        let syntax_config = config_rs::File::from_str(syntax_config, FileFormat::Toml)
-            .collect()
-            .unwrap();
+translate_tabs_to_spaces = true"#).unwrap();
         let r = manager.update_config(ConfigDomain::Syntax(SyntaxDefinition::Rust),
                                       syntax_config, None);
         // not valid in a syntax config
-        assert_eq!(r, Err(ConfigError::IllegalKey("plugin_search_path".into())));
+        match r {
+            Err(ConfigError::IllegalKey(ref key)) if key == "plugin_search_path" => (),
+            other => assert!(false, format!("{:?}", other)),
+        }
     }
 
     #[test]
@@ -614,5 +764,26 @@ translate_tabs_to_spaces = true"#;
         assert!(!manager.should_load_file(&config_dir.join("preferences.toml")));
         assert!(!manager.should_load_file(Path::new("/home/rust.xiconfig")));
         assert!(!manager.should_load_file(Path::new("/home/config/xi/subdir/rust.xiconfig")));
+    }
+
+    #[test]
+    fn test_diff() {
+        let conf1 = r#"
+tab_size = 42
+translate_tabs_to_spaces = true
+"#;
+        let conf1 = table_from_toml_str(conf1).unwrap();
+
+        let conf2 = r#"
+tab_size = 6
+translate_tabs_to_spaces = true
+"#;
+        let conf2 = table_from_toml_str(conf2).unwrap();
+
+        let stack1 = TableStack(vec![Arc::new(conf1)]);
+        let stack2 = TableStack(vec![Arc::new(conf2)]);
+        let diff = stack1.diff(&stack2).unwrap();
+        assert!(diff.len() == 1);
+        assert_eq!(diff.get("tab_size"), Some(&42.into()));
     }
 }
