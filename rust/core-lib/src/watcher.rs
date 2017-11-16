@@ -46,6 +46,16 @@ impl FsWatcher {
                 token: EventToken, peer: &RpcPeer)
         where P: AsRef<Path>,
     {
+        self.watch_filtered(path, recursive_mode, token, peer, |_| { true });
+    }
+
+    /// Like `watch`, but taking a predicate function that filters delivery
+    /// of events based on their path.
+    pub fn watch_filtered<P, F>(&mut self, path: P, recursive_mode: RecursiveMode,
+                                token: EventToken, peer: &RpcPeer, predicate: F)
+        where P: AsRef<Path>,
+              F: Fn(&Path) -> bool + Send + 'static,
+    {
         let path = path.as_ref().to_owned();
         let peer = peer.clone();
         let events = self.events.clone();
@@ -59,8 +69,10 @@ impl FsWatcher {
             loop {
                 match rx.recv() {
                     Ok(event) =>  {
-                        events.lock().unwrap().push_back((token, event));
-                        peer.schedule_idle(WATCH_IDLE_TOKEN);
+                        if apply_filter(&predicate, &event) {
+                            events.lock().unwrap().push_back((token, event));
+                            peer.schedule_idle(WATCH_IDLE_TOKEN);
+                        }
                     },
                     Err(e) => {
                         //TODO: how do we handle unexpected disconnects?
@@ -74,3 +86,25 @@ impl FsWatcher {
     }
     //TODO impl unwatch, when we add in watching of opened files
 }
+
+/// Checks the predicate against the various event cases
+fn apply_filter<F>(filter: &F, event: &DebouncedEvent) -> bool
+    where F: Fn(&Path) -> bool,
+{
+    use self::DebouncedEvent::*;
+    match *event {
+        NoticeWrite(ref p) | NoticeRemove(ref p) | Create(ref p) |
+            Write(ref p) | Chmod(ref p) | Remove(ref p) => {
+                filter(p)
+            }
+        Rename(ref p1, ref p2) => {
+            filter(p1) || filter(p2)
+        }
+        Rescan => false,
+        Error(_, ref opt_p) => {
+            opt_p.as_ref().map(|p| filter(p))
+                .unwrap_or(false)
+        }
+    }
+}
+
