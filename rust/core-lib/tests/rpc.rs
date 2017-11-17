@@ -165,15 +165,46 @@ fn test_other_edit_commands() {
 #[test]
 fn test_settings_commands() {
     let mut state = MainState::new();
-    let write = io::sink();
-    let mut rpc_looper = RpcLoop::new(write);
+    let (tx, mut rx) = test_channel();
+    let mut rpc_looper = RpcLoop::new(tx);
     // init a new view
-    let json = make_reader(r#"{"method":"client_started","params":{}}
+    let json = make_reader(
+    r#"{"method":"client_started","params":{}}
 {"method":"set_theme","params":{"theme_name":"InspiredGitHub"}}
 {"id":0,"method":"new_view","params":{}}"#);
     assert!(rpc_looper.mainloop(|| json, &mut state).is_ok());
-    let json = make_reader(r#"{"method":"debug_override_setting","params":{"view_id":"view-id-1","key":"tab_size","value":15}}"#);
+    rx.expect_rpc("available_themes");
+    rx.expect_rpc("theme_changed");
+    rx.expect_response().unwrap();
+    rx.expect_rpc("available_plugins");
+    rx.expect_rpc("config_changed");
+    rx.expect_rpc("update");
+    rx.expect_rpc("scroll_to");
+
+    let json = make_reader(r#"{"method":"get_config","id":1,"params":{"view_id":"view-id-1"}}"#);
     rpc_looper.mainloop(|| json, &mut state).unwrap();
+    let resp = rx.expect_response().unwrap();
+    assert_eq!(resp["tab_size"], json!(4));
+
+    let json = make_reader(r#"{"method":"modify_user_config","params":{"domain":{"user_override":"view-id-1"},"changes":{"font_face": "Comic Sans"}}}
+{"method":"modify_user_config","params":{"domain":{"syntax":"rust"},"changes":{"font_size":42}}}
+{"method":"modify_user_config","params":{"domain":"general","changes":{"tab_size":13,"font_face":"Papyrus"}}}"#);
+    rpc_looper.mainloop(|| json, &mut state).unwrap();
+    // discard config_changed
+    rx.expect_rpc("config_changed");
+    rx.expect_rpc("config_changed");
+
+    let json = make_reader(r#"{"method":"get_config","id":2,"params":{"view_id":"view-id-1"}}"#);
+    rpc_looper.mainloop(|| json, &mut state).unwrap();
+    let resp = rx.expect_response().unwrap();
+    assert_eq!(resp["tab_size"], json!(13));
+    assert_eq!(resp["font_face"], json!("Comic Sans"));
+
+    // null value should clear entry from this config
+    let json = make_reader(r#"{"method":"modify_user_config","params":{"domain":{"user_override":"view-id-1"},"changes":{"font_face": null}}}"#);
+    rpc_looper.mainloop(|| json, &mut state).unwrap();
+    let resp = rx.expect_rpc("config_changed");
+    assert_eq!(resp.0["params"]["changes"]["font_face"], json!("Papyrus"));
 }
 
 

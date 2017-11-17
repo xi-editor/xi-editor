@@ -222,6 +222,10 @@ impl Editor {
         }
     }
 
+    pub fn get_config(&self) -> &BufferConfig {
+        &self.config
+    }
+
     /// Returns this `Editor`'s active `SyntaxDefinition`.
     pub fn get_syntax(&self) -> &SyntaxDefinition {
         &self.syntax

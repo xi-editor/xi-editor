@@ -343,14 +343,6 @@ impl Documents {
                                     client_extras_dir),
             SetTheme { theme_name } =>
                 self.do_set_theme(rpc_ctx.get_peer(), &theme_name),
-            DebugOverrideSetting { view_id, key, value } => {
-                let changes = json!({key.clone(): value})
-                    .as_object().unwrap().to_owned();
-                let domain = ConfigDomain::UserOverride(view_id);
-                self.config_manager.update_user_config(domain, changes)
-                        .expect(&format!("setting override failed for key {}", key));
-                    self.after_config_change();
-            }
             Save { view_id, file_path } => self.do_save(view_id, file_path),
             CloseView { view_id } => self.do_close_view(view_id),
             Edit(rpc::EditCommand { view_id, cmd }) => {
@@ -358,6 +350,8 @@ impl Documents {
                     .map(|ed| ed.handle_notification(view_id, cmd));
                 }
             Plugin(cmd) => self.do_plugin_cmd(cmd),
+            ModifyUserConfig { domain, changes } =>
+                self.do_modify_user_config(domain, changes)
         }
     }
 
@@ -382,6 +376,14 @@ impl Documents {
                     }
                     Some(result) => result,
                 }
+            },
+            GetConfig { view_id } => {
+                self.do_get_config(view_id)
+                .map(|v| v.into())
+                .map_err(|_| {
+                    let msg = format!("No editor for view_id: {}", view_id);
+                    RemoteError::custom(2, msg, None)
+                })
             }
         }
     }
@@ -621,6 +623,13 @@ impl Documents {
         }
     }
 
+    fn do_get_config(&self, view_id: ViewIdentifier) -> Result<Table, RemoteError> {
+        let view_config = self.buffers.lock().editor_for_view(view_id)
+            .map(|ed| ed.get_config().to_table());
+        view_config.ok_or(
+            RemoteError::custom(2, &format!("No buffer for view {}", view_id), None))
+    }
+
     pub fn handle_idle(&mut self, token: usize) {
         match token {
             WATCH_IDLE_TOKEN => self.handle_fs_events(),
@@ -695,14 +704,14 @@ impl Documents {
     /// Attempt to load a config file.
     fn load_file_based_config(&mut self, path: &Path) {
         match config::try_load_from_file(&path) {
-            Ok((d, t)) => self.update_config(d, t, Some(path.to_owned())),
+            Ok((d, t)) => self.set_config(d, t, Some(path.to_owned())),
             Err(e) => eprintln!("Error loading config file: {:?}", e),
         }
     }
 
     /// Sets (overwriting) the config for a given domain. Will fail if the config
     /// fails validation.
-    fn update_config<P>(&mut self, domain: ConfigDomain, table: Table, path: P)
+    fn set_config<P>(&mut self, domain: ConfigDomain, table: Table, path: P)
         where P: Into<Option<PathBuf>>
     {
         if let Err(e) = self.config_manager.set_user_config(domain, table, path) {
@@ -710,6 +719,15 @@ impl Documents {
             eprintln!("Error updating config {:?}: {:?}", domain, e);
         }
     }
+
+    /// Updates the config for a given domain.
+    fn do_modify_user_config(&mut self, domain: ConfigDomain, changes: Table) {
+        if let Err(e) = self.config_manager.update_user_config(domain, changes) {
+            eprintln!("Error updating config {:?}: {:?}", domain, e);
+        }
+        self.after_config_change();
+    }
+
 
     /// Notify editors/views/plugins of config changes.
     fn after_config_change(&self) {

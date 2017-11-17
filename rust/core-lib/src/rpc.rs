@@ -28,7 +28,7 @@ use serde::ser::{self, Serialize, Serializer};
 
 use tabs::ViewIdentifier;
 use plugins::PlaceholderRpc;
-
+use config::{Table, ConfigDomain};
 
 // =============================================================================
 //  Command types
@@ -180,8 +180,6 @@ pub enum CoreNotification {
     Save { view_id: ViewIdentifier, file_path: String },
     /// Tells `xi-core` to set the theme.
     SetTheme { theme_name: String },
-    /// Overrides an editor setting for the given buffer.
-    DebugOverrideSetting { view_id: ViewIdentifier, key: String, value: Value },
     /// Notifies `xi-core` that the client has started.
     ClientStarted {
         #[serde(default)]
@@ -189,7 +187,17 @@ pub enum CoreNotification {
         /// Path to additional plugins, included by the client.
         #[serde(default)]
         client_extras_dir: Option<PathBuf>,
-    }
+    },
+    /// Updates the user's config for the given domain. Where keys in
+    /// `changes` are `null`, those keys are cleared in the user config
+    /// for that domain; otherwise the config is updated with the new
+    /// value.
+    ///
+    /// Note: If the client is using file-based config, the only valid
+    /// domain argument is `ConfigDomain::UserOverride(_)`, which
+    /// represents non-persistent view-specific settings, such as when
+    /// a user manually changes whitespace settings for a given view.
+    ModifyUserConfig { domain: ConfigDomain, changes: Table },
 }
 
 /// The requests which make up the base of the protocol.
@@ -224,12 +232,14 @@ pub enum CoreRequest {
     /// The 'edit' namespace, for view-specific requests.
     Edit(EditCommand<EditRequest>),
     /// Tells `xi-core` to create a new view. If the `file_path`
-    /// argument is present, `xi-core` should attemp to open the file
+    /// argument is present, `xi-core` should attempt to open the file
     /// at that location.
     ///
     /// Returns the view identifier that should be used to interact
     /// with the newly created view.
     NewView { file_path: Option<String> },
+    /// Returns the current collated config object for the given view.
+    GetConfig { view_id: ViewIdentifier },
 }
 
 /// A helper type, which extracts the `view_id` field from edit

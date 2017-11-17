@@ -96,7 +96,7 @@ pub type Table = serde_json::Map<String, Value>;
 
 /// A `ConfigDomain` describes a level or category of user settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all="lowercase")]
+#[serde(rename_all="snake_case")]
 pub enum ConfigDomain {
     /// The general user preferences
     General,
@@ -748,6 +748,12 @@ translate_tabs_to_spaces = true"#).unwrap();
         assert!(ConfigDomain::try_from_path(Path::new("hi/preferences.xiconfig")).is_ok());
         assert!(ConfigDomain::try_from_path(Path::new("hi/rust.xiconfig")).is_ok());
         assert!(ConfigDomain::try_from_path(Path::new("hi/unknown.xiconfig")).is_err());
+
+        assert_eq!(serde_json::to_string(&ConfigDomain::General).unwrap(), "\"general\"");
+        let d = ConfigDomain::UserOverride(ViewIdentifier::from("view-id-1"));
+        assert_eq!(serde_json::to_string(&d).unwrap(), "{\"user_override\":\"view-id-1\"}");
+        let d = ConfigDomain::Syntax(SyntaxDefinition::Swift);
+        assert_eq!(serde_json::to_string(&d).unwrap(), "{\"syntax\":\"swift\"}");
     }
 
     #[test]
