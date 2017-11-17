@@ -232,6 +232,11 @@ impl Editor {
         self.buffer_id
     }
 
+    /// returns the `ViewIdentifier` of the current view.
+    pub fn get_main_view_id(&self) -> ViewIdentifier {
+        self.view.view_id
+    }
+
     // each outstanding plugin edit represents a rev_in_flight.
     pub fn increment_revs_in_flight(&mut self) {
         self.revs_in_flight += 1;

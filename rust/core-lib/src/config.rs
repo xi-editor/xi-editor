@@ -29,8 +29,7 @@ use serde_json::{self, Value};
 use toml;
 
 use syntax::SyntaxDefinition;
-use tabs::BufferIdentifier;
-
+use tabs::ViewIdentifier;
 
 static XI_CONFIG_DIR: &'static str = "XI_CONFIG_DIR";
 static XDG_CONFIG_HOME: &'static str = "XDG_CONFIG_HOME";
@@ -57,21 +56,27 @@ mod defaults {
         "plugin_search_path",
     ];
 
-    pub fn platform_defaults() -> Table {
-        let mut base = load(BASE);
-        if let Some(mut overrides) = platform_overrides() {
-            for (k, v) in overrides.iter() {
-                base.insert(k.to_owned(), v.to_owned());
+    /// Given a domain, returns the default config for that domain,
+    /// if it exists.
+    pub fn defaults_for_domain<D>(domain: D) -> Option<Table>
+        where D: Into<ConfigDomain>,
+    {
+        match domain.into() {
+            ConfigDomain::General => {
+                let mut base = load(BASE);
+                if let Some(mut overrides) = platform_overrides() {
+                    for (k, v) in overrides.iter() {
+                        base.insert(k.to_owned(), v.to_owned());
+                    }
+                }
+                Some(base)
             }
+            ConfigDomain::Syntax(SyntaxDefinition::Yaml) =>
+                Some(load(YAML)),
+            ConfigDomain::Syntax(SyntaxDefinition::Makefile) =>
+                Some(load(MAKEFILE)),
+            _ => None,
         }
-        base
-    }
-
-    pub fn syntax_defaults() -> HashMap<SyntaxDefinition, Table>  {
-        let mut configs = HashMap::new();
-        configs.insert(SyntaxDefinition::Yaml, load(YAML));
-        configs.insert(SyntaxDefinition::Makefile, load(MAKEFILE));
-        configs
     }
 
     fn platform_overrides() -> Option<Table> {
@@ -94,9 +99,14 @@ pub type Table = serde_json::Map<String, Value>;
 #[serde(rename_all="lowercase")]
 pub enum ConfigDomain {
     /// The general user preferences
-    Preferences,
+    General,
     /// The overrides for a particular syntax.
     Syntax(SyntaxDefinition),
+    /// The user overrides for a particular buffer
+    UserOverride(ViewIdentifier),
+    /// The system's overrides for a particular buffer. Only used internally.
+    #[serde(skip_deserializing)]
+    SysOverride(ViewIdentifier),
 }
 
 /// The errors that can occur when managing configs.
@@ -145,12 +155,8 @@ pub struct ConfigPair {
 
 #[derive(Debug)]
 pub struct ConfigManager {
-    /// The defaults, and any base user overrides
-    defaults: ConfigPair,
-    /// default per-syntax configs
-    syntax_specific: HashMap<SyntaxDefinition, ConfigPair>,
-    /// per-session overrides
-    overrides: HashMap<BufferIdentifier, ConfigPair>,
+    /// A map of `ConfigPairs` (defaults + overrides) for all in-use domains.
+    configs: HashMap<ConfigDomain, ConfigPair>,
     /// A map of paths to file based configs.
     sources: HashMap<PathBuf, ConfigDomain>,
     /// If using file-based config, this is the base config directory
@@ -190,26 +196,36 @@ pub struct BufferItems {
 pub type BufferConfig = Config<BufferItems>;
 
 impl ConfigPair {
-    fn new<T1, T2>(base: T1, user: T2, validator: Rc<Validator>)
-                   -> Result<Self, ConfigError>
-        where T1: Into<Option<Table>>,
-              T2: Into<Option<Table>>,
-    {
-        let base = base.into();
-        let user = user.into();
-        let _ = user.as_ref()
-            .map(|t| validator.validate_table(t))
-            .unwrap_or(Ok(()))?;
-
-        let cache = Arc::new(Table::new());
-        let mut conf = ConfigPair { base, user, cache, validator };
-        conf.rebuild();
-        Ok(conf)
+    /// Creates a new `ConfigPair` suitable for the provided domain.
+    fn for_domain<D: Into<ConfigDomain>>(domain: D) -> Self {
+        let domain = domain.into();
+        let validator = KeyValidator::for_domain(domain);
+        let base = defaults::defaults_for_domain(domain);
+        let user = None;
+        let cache = Arc::new(base.clone().unwrap_or_default());
+        ConfigPair { base, user, cache, validator }
     }
 
-    fn set_user(&mut self, user: Table) -> Result<(), ConfigError> {
+    fn set_table(&mut self, user: Table) -> Result<(), ConfigError> {
         self.validator.validate_table(&user)?;
         self.user = Some(user);
+        self.rebuild();
+        Ok(())
+    }
+
+    fn update_table(&mut self, changes: Table) -> Result<(), ConfigError> {
+        self.validator.validate_table(&changes)?;
+        {
+            let conf = self.user.get_or_insert(Table::new());
+            for (k, v) in changes {
+                //TODO: test/document passing null values to unset keys
+                if v.is_null() {
+                    conf.remove(&k);
+                } else {
+                    conf.insert(k.to_owned(), v.to_owned());
+                }
+            }
+        }
         self.rebuild();
         Ok(())
     }
@@ -222,30 +238,6 @@ impl ConfigPair {
             }
         }
         self.cache = Arc::new(cache);
-    }
-
-    /// Manually sets a key/value pair in one of `base` or `user`.
-    ///
-    /// Note: this is only intended to be used internally, when handling
-    /// overrides.
-    fn set_override<K, V>(&mut self, key: K, value: V, from_user: bool)
-                          -> Result<(), ConfigError>
-        where K: AsRef<str>,
-              V: Into<Value>,
-    {
-        let key: String = key.as_ref().to_owned();
-        let value = value.into();
-        self.validator.validate(&key, &value)?;
-        {
-            let table = if from_user {
-                self.user.get_or_insert(Table::new())
-            } else {
-                self.base.get_or_insert(Table::new())
-            };
-            table.insert(key, value);
-        }
-        self.rebuild();
-        Ok(())
     }
 }
 
@@ -266,7 +258,8 @@ impl ConfigManager {
     // config system at all. For now, I'm treating them as a special case.
     /// Returns the plugin_search_path.
     pub fn plugin_search_path(&self) -> Vec<PathBuf> {
-        let val = self.defaults.cache.get("plugin_search_path")
+        let val = self.configs.get(&ConfigDomain::General).unwrap()
+            .cache.get("plugin_search_path")
             .unwrap()
             .to_owned();
         let mut search_path: Vec<PathBuf> = serde_json::from_value(val).unwrap();
@@ -286,27 +279,33 @@ impl ConfigManager {
     }
 
     /// Sets the config for the given domain, removing any existing config.
-    pub fn update_config<P>(&mut self, domain: ConfigDomain, new_config: Table,
-                            path: P) -> Result<(), ConfigError>
+    pub fn set_user_config<P>(&mut self, domain: ConfigDomain,
+                              new_config: Table, path: P)
+                              -> Result<(), ConfigError>
         where P: Into<Option<PathBuf>>,
     {
-       let result = match domain {
-            ConfigDomain::Preferences => self.defaults.set_user(new_config),
-            ConfigDomain::Syntax(s) => self.set_user_syntax(s, new_config),
-        };
+        let result = self.get_or_insert_config(domain).set_table(new_config);
 
        if result.is_ok() {
-           if let Some(p) = path.into() {
-               self.sources.insert(p, domain);
-           }
+           path.into().map(|p| self.sources.insert(p, domain));
        }
        result
+    }
+
+    /// Updates the config for the given domain. Existing keys which are
+    /// not in `changes` are untouched; existing keys for which `changes`
+    /// contains `Value::Null` are removed.
+    pub fn update_user_config(&mut self, domain: ConfigDomain, changes: Table)
+                          -> Result<(), ConfigError>
+    {
+        let conf = self.get_or_insert_config(domain);
+        Ok(conf.update_table(changes)?)
     }
 
     /// If `path` points to a loaded config file, unloads the associated config.
     pub fn remove_source(&mut self, source: &Path) {
         if let Some(domain) = self.sources.remove(source) {
-            self.update_config(domain, Table::new(), None)
+            self.set_user_config(domain, Table::new(), None)
                 .expect("Empty table is always valid");
         }
     }
@@ -323,87 +322,59 @@ impl ConfigManager {
             .unwrap_or(false)
     }
 
-    fn set_user_syntax(&mut self, syntax: SyntaxDefinition, config: Table)
-                       -> Result<(), ConfigError> {
-        let exists = self.syntax_specific.contains_key(&syntax);
-        if exists {
-            let syntax_pair = self.syntax_specific.get_mut(&syntax).unwrap();
-            syntax_pair.set_user(config)
-        } else {
-            let syntax_pair = ConfigPair::new(None, config,
-                                              KeyValidator::for_domain(syntax))?;
-            self.syntax_specific.insert(syntax, syntax_pair);
-            Ok(())
+    fn get_or_insert_config<D>(&mut self, domain: D) -> &mut ConfigPair
+    where D: Into<ConfigDomain>
+    {
+        let domain = domain.into();
+        if !self.configs.contains_key(&domain) {
+            self.configs.insert(domain, ConfigPair::for_domain(domain));
         }
+        self.configs.get_mut(&domain).unwrap()
     }
 
-    /// Generates a snapshot of the current configuration for `syntax`.
-    pub fn get_config<S, V>(&self, syntax: S, buf_id: V) -> BufferConfig
+    /// Generates a snapshot of the current configuration for a particular
+    /// view.
+    pub fn get_buffer_config<S, V>(&self, syntax: S, view_id: V) -> BufferConfig
         where S: Into<Option<SyntaxDefinition>>,
-              V: Into<Option<BufferIdentifier>>
+              V: Into<Option<ViewIdentifier>>
     {
-        let syntax = syntax.into().unwrap_or_default();
-        let buf_id = buf_id.into();
+        let syntax = syntax.into();
+        let view_id = view_id.into();
         let mut configs = Vec::new();
-        configs.push(self.defaults.cache.clone());
 
-        if let Some(syntax_settings) = self.syntax_specific.get(&syntax) {
-            configs.push(syntax_settings.cache.clone());
-        }
+        configs.push(self.configs.get(&ConfigDomain::General));
+        syntax.map(|s| configs.push(self.configs.get(&s.into())));
+        view_id.map(|v| configs.push(self.configs.get(&ConfigDomain::SysOverride(v))));
+        view_id.map(|v| configs.push(self.configs.get(&ConfigDomain::UserOverride(v))));
 
-        if let Some(overrides) = buf_id.and_then(|v| self.overrides.get(&v)) {
-            configs.push(overrides.cache.clone());
-        }
+        let configs = configs.iter().flat_map(Option::iter)
+            .map(|c| c.cache.clone())
+            .rev()
+            .collect::<Vec<_>>();
 
         let stack = TableStack(configs);
         stack.into_config()
     }
 
-    pub fn default_config(&self) -> BufferConfig {
-        self.get_config(None, None)
-    }
-
-    /// Sets a session-specific, buffer-specific override. The `from_user`
-    /// flag indicates whether this override is coming via RPC (true) or
-    /// from xi-core (false).
-    pub fn set_override<K, V>(&mut self, key: K, value: V,
-                              buf_id: BufferIdentifier, from_user: bool)
-                              -> Result<(), ConfigError>
-        where K: AsRef<str>,
-              V: Into<Value>,
-    {
-        if !self.overrides.contains_key(&buf_id) {
-            let conf_pair = ConfigPair::new(
-                None, None,
-                KeyValidator::for_domain(SyntaxDefinition::default()))?;
-            self.overrides.insert(buf_id.to_owned(), conf_pair);
-        }
-        self.overrides.get_mut(&buf_id)
-            .unwrap()
-            .set_override(key, value, from_user)
+    pub fn default_buffer_config(&self) -> BufferConfig {
+        self.get_buffer_config(None, None)
     }
 }
 
 impl Default for ConfigManager {
     fn default() -> ConfigManager {
-        let defaults = ConfigPair::new(
-            defaults::platform_defaults(), None,
-            KeyValidator::for_domain(ConfigDomain::Preferences))
-            .unwrap();
-        let mut syntax_specific = defaults::syntax_defaults();
-        let val = KeyValidator::for_domain(
-            ConfigDomain::Syntax(SyntaxDefinition::default()));
-        let syntax_specific = syntax_specific
-            .drain()
-            .map(|(k, v)| {
-                (k.to_owned(), ConfigPair::new(v, None, val.clone()).unwrap())
-            })
-            .collect::<HashMap<_, _>>();
+        // the domains for which we include defaults (platform defaults are
+        // rolled into `General` at runtime)
+        let defaults = vec![
+            ConfigDomain::General,
+            ConfigDomain::Syntax(SyntaxDefinition::Yaml),
+            ConfigDomain::Syntax(SyntaxDefinition::Makefile)
+        ].iter()
+        .map(|d| (*d, ConfigPair::for_domain(*d)))
+        .collect::<HashMap<_, _>>();
 
         ConfigManager {
-            defaults: defaults,
-            syntax_specific: syntax_specific,
-            overrides: HashMap::new(),
+            configs: defaults,
             sources: HashMap::new(),
             config_dir: None,
             extras_dir: None,
@@ -415,10 +386,9 @@ impl TableStack {
     /// Create a single table representing the final config values.
     fn collate(&self) -> Table {
     // NOTE: This is fairly expensive; a future optimization would borrow
-    // from the underlying collections, but then we couldn't take advantage of
-    // config-rs's `try_into` for converting to a `Config`.
+    // from the underlying collections.
         let mut out = Table::new();
-        for table in self.0.iter().rev() {
+        for table in self.0.iter() {
             for (k, v) in table.iter() {
                 if !out.contains_key(k) {
                     // cloning these objects feels a bit gross, we could
@@ -440,10 +410,10 @@ impl TableStack {
         Config { source, items }
     }
 
-    /// Walks the tables in priority (reverse) order, returning the first
+    /// Walks the tables in priority order, returning the first
     /// occurance of `key`.
     fn get<S: AsRef<str>>(&self, key: S) -> Option<&Value> {
-        for table in self.0.iter().rev() {
+        for table in self.0.iter() {
             if let Some(v) = table.get(key.as_ref()) {
                 return Some(v)
             }
@@ -495,7 +465,7 @@ impl ConfigDomain {
     pub fn try_from_path(path: &Path) -> Result<Self, ConfigError> {
         let file_stem = path.file_stem().unwrap().to_string_lossy();
         if file_stem == "preferences" {
-            Ok(ConfigDomain::Preferences)
+            Ok(ConfigDomain::General)
         } else if let Some(syntax) = SyntaxDefinition::try_from_name(&file_stem) {
             Ok(syntax.into())
         } else {
@@ -507,6 +477,12 @@ impl ConfigDomain {
 impl From<SyntaxDefinition> for ConfigDomain {
     fn from(src: SyntaxDefinition) -> ConfigDomain {
         ConfigDomain::Syntax(src)
+    }
+}
+
+impl From<ViewIdentifier> for ConfigDomain {
+    fn from(src: ViewIdentifier) -> ConfigDomain {
+        ConfigDomain::UserOverride(src)
     }
 }
 
@@ -545,13 +521,17 @@ impl KeyValidator {
     /// Create a `KeyValidator` appropriate to the given domain.
     pub fn for_domain<D: Into<ConfigDomain>>(d: D) -> Rc<Self> {
         let keys = match d.into() {
-            ConfigDomain::Preferences => defaults::GENERAL_KEYS.iter()
-                .chain(defaults::TOP_LEVEL_KEYS.iter())
-                .map(|s| String::from(*s))
-                .collect(),
-            ConfigDomain::Syntax(_) => defaults::GENERAL_KEYS.iter()
-                .map(|s| String::from(*s))
-                .collect(),
+            ConfigDomain::General =>
+                defaults::GENERAL_KEYS.iter()
+                    .chain(defaults::TOP_LEVEL_KEYS.iter())
+                    .map(|s| String::from(*s))
+                    .collect(),
+            ConfigDomain::Syntax(_) |
+                ConfigDomain::UserOverride(_) |
+                ConfigDomain::SysOverride(_) =>
+                defaults::GENERAL_KEYS.iter()
+                    .map(|s| String::from(*s))
+                    .collect(),
         };
         Rc::new(KeyValidator { keys })
     }
@@ -660,7 +640,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn get_config() {
+    fn get_buffer_config() {
        let p = config_dir_impl(Some("custom/xi/conf"), None);
        assert_eq!(p, PathBuf::from("custom/xi/conf"));
 
@@ -678,12 +658,22 @@ mod tests {
     }
 
     #[test]
-    fn test_defaults() {
+    fn test_prepend_path() {
         let mut manager = ConfigManager::default();
         manager.set_config_dir("BASE_PATH");
-        let config = manager.get_config(None, None);
+        let config = manager.default_buffer_config();
         assert_eq!(config.items.tab_size, 4);
         assert_eq!(manager.plugin_search_path(), vec![PathBuf::from("BASE_PATH/plugins")])
+    }
+
+    #[test]
+    fn test_loading_defaults() {
+        let manager = ConfigManager::default();
+        assert_eq!(manager.configs.len(), 3);
+        let key = SyntaxDefinition::Yaml.into();
+        assert!(manager.configs.contains_key(&key));
+        let yaml = manager.configs.get(&key).unwrap();
+        assert_eq!(yaml.cache.get("tab_size"), Some(&json!(2)));
     }
 
     #[test]
@@ -692,30 +682,37 @@ mod tests {
         let rust_config = table_from_toml_str(r#"tab_size = 31"#).unwrap();
 
         let mut manager = ConfigManager::default();
-        manager.update_config(ConfigDomain::Syntax(SyntaxDefinition::Rust),
-                              rust_config, None).unwrap();
+        manager.set_user_config(ConfigDomain::Syntax(SyntaxDefinition::Rust),
+                                rust_config, None).unwrap();
 
-        manager.update_config(ConfigDomain::Preferences, user_config, None)
+        manager.set_user_config(ConfigDomain::General, user_config, None)
             .unwrap();
 
-        let buf_id = BufferIdentifier::new(1);
-        manager.set_override("tab_size", 67, buf_id.clone(), false).unwrap();
+        let view_id = "view-id-1".into();
+        // system override
+        let changes = json!({"tab_size": 67}).as_object().unwrap().to_owned();
+        manager.update_user_config(ConfigDomain::SysOverride(view_id), changes).unwrap();
 
-        let config = manager.get_config(None, None);
+        let config = manager.default_buffer_config();
+        assert_eq!(config.source.0.len(), 1);
         assert_eq!(config.items.tab_size, 42);
-        let config = manager.get_config(SyntaxDefinition::Yaml, None);
+        // yaml defaults set this to 2
+        let config = manager.get_buffer_config(SyntaxDefinition::Yaml, None);
+        assert_eq!(config.source.0.len(), 2);
         assert_eq!(config.items.tab_size, 2);
-        let config = manager.get_config(SyntaxDefinition::Yaml, buf_id.clone());
+        let config = manager.get_buffer_config(SyntaxDefinition::Yaml, view_id);
+        assert_eq!(config.source.0.len(), 3);
         assert_eq!(config.items.tab_size, 67);
 
-        let config = manager.get_config(SyntaxDefinition::Rust, None);
+        let config = manager.get_buffer_config(SyntaxDefinition::Rust, None);
         assert_eq!(config.items.tab_size, 31);
-        let config = manager.get_config(SyntaxDefinition::Rust, buf_id.clone());
+        let config = manager.get_buffer_config(SyntaxDefinition::Rust, view_id);
         assert_eq!(config.items.tab_size, 67);
 
         // user override trumps everything
-        manager.set_override("tab_size", 85, buf_id.clone(), true).unwrap();
-        let config = manager.get_config(SyntaxDefinition::Rust, buf_id.clone());
+        let changes = json!({"tab_size": 85}).as_object().unwrap().to_owned();
+        manager.update_user_config(ConfigDomain::UserOverride(view_id), changes).unwrap();
+        let config = manager.get_buffer_config(SyntaxDefinition::Rust, view_id);
         assert_eq!(config.items.tab_size, 85);
     }
 
@@ -727,7 +724,7 @@ font_frace = "InconsolableMo"
 translate_tabs_to_spaces = true
 "#;
         let user_config = table_from_toml_str(user_config).unwrap();
-        let r = manager.update_config(ConfigDomain::Preferences, user_config, None);
+        let r = manager.set_user_config(ConfigDomain::General, user_config, None);
         match r {
             Err(ConfigError::IllegalKey(ref key)) if key == "font_frace" => (),
             other => assert!(false, format!("{:?}", other)),
@@ -736,7 +733,7 @@ translate_tabs_to_spaces = true
         let syntax_config =  table_from_toml_str(r#"tab_size = 42
 plugin_search_path = "/some/path"
 translate_tabs_to_spaces = true"#).unwrap();
-        let r = manager.update_config(ConfigDomain::Syntax(SyntaxDefinition::Rust),
+        let r = manager.set_user_config(ConfigDomain::Syntax(SyntaxDefinition::Rust),
                                       syntax_config, None);
         // not valid in a syntax config
         match r {
@@ -785,5 +782,28 @@ translate_tabs_to_spaces = true
         let diff = stack1.diff(&stack2).unwrap();
         assert!(diff.len() == 1);
         assert_eq!(diff.get("tab_size"), Some(&42.into()));
+    }
+
+    #[test]
+    fn test_updating_in_place() {
+        let mut manager = ConfigManager::default();
+        assert_eq!(manager.default_buffer_config().items.font_size, 14.);
+        let changes = json!({"font_size": 69, "font_face": "nice"})
+            .as_object().unwrap().to_owned();
+        manager.update_user_config(ConfigDomain::General, changes).unwrap();
+        assert_eq!(manager.default_buffer_config().items.font_size, 69.);
+
+        // null values in updates removes keys
+        let changes = json!({"font_size": Value::Null})
+            .as_object().unwrap().to_owned();
+        manager.update_user_config(ConfigDomain::General, changes).unwrap();
+        assert_eq!(manager.default_buffer_config().items.font_size, 14.);
+        assert_eq!(manager.default_buffer_config().items.font_face, "nice");
+
+        let changes = json!({"font_face": "Roboto"})
+            .as_object().unwrap().to_owned();
+        manager.update_user_config(SyntaxDefinition::Dart.into(), changes).unwrap();
+        let config = manager.get_buffer_config(SyntaxDefinition::Dart, None);
+        assert_eq!(config.items.font_face, "Roboto");
     }
 }

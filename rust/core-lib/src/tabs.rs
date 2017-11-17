@@ -55,7 +55,7 @@ const CONFIG_EVENT_TOKEN: EventToken = EventToken(1);
 const NEW_VIEW_IDLE_TOKEN: usize = 1001;
 
 /// ViewIdentifiers are the primary means of routing messages between xi-core and a client view.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ViewIdentifier(usize);
 
 /// BufferIdentifiers uniquely identify open buffers.
@@ -344,11 +344,12 @@ impl Documents {
             SetTheme { theme_name } =>
                 self.do_set_theme(rpc_ctx.get_peer(), &theme_name),
             DebugOverrideSetting { view_id, key, value } => {
-                if let Some(buffer_id) = self.buffers.buffer_for_view(view_id) {
-                    self.config_manager.set_override(&key, value, buffer_id, true)
+                let changes = json!({key.clone(): value})
+                    .as_object().unwrap().to_owned();
+                let domain = ConfigDomain::UserOverride(view_id);
+                self.config_manager.update_user_config(domain, changes)
                         .expect(&format!("setting override failed for key {}", key));
                     self.after_config_change();
-                }
             }
             Save { view_id, file_path } => self.do_save(view_id, file_path),
             CloseView { view_id } => self.do_close_view(view_id),
@@ -446,7 +447,7 @@ impl Documents {
     fn new_empty_view(&mut self, rpc_peer: &MainPeer, view_id: ViewIdentifier,
                       buffer_id: BufferIdentifier) {
         let editor = Editor::new(self.new_tab_ctx(rpc_peer),
-                                 self.config_manager.get_config(None, None),
+                                 self.config_manager.default_buffer_config(),
                                  buffer_id, view_id);
         self.add_editor(view_id, buffer_id, editor, None);
     }
@@ -456,14 +457,14 @@ impl Documents {
         match self.read_file(&path) {
             Ok(contents) => {
                 let syntax = SyntaxDefinition::new(path.to_str());
-                let config = self.config_manager.get_config(syntax, buffer_id);
+                let config = self.config_manager.get_buffer_config(syntax, view_id);
                 let ed = Editor::with_text(self.new_tab_ctx(rpc_peer), config,
                                            buffer_id, view_id, contents);
                 self.add_editor(view_id, buffer_id, ed, Some(path));
             }
             Err(err) => {
                 let ed = Editor::new(self.new_tab_ctx(rpc_peer),
-                                     self.config_manager.get_config(None, None),
+                                     self.config_manager.default_buffer_config(),
                                      buffer_id, view_id);
                 if path.exists() {
                     // if this is a read error of an actual file, we don't set path
@@ -528,10 +529,8 @@ impl Documents {
 
         if prev_syntax != new_syntax {
             self.plugins.document_syntax_changed(view_id, init_info);
-            let buffer_id = self.buffers.buffer_for_view(view_id)
-                .expect("buffer should be present while saving");
-            let new_config = self.config_manager.get_config(new_syntax,
-                                                            buffer_id);
+            let new_config = self.config_manager.get_buffer_config(new_syntax,
+                                                                   view_id);
             self.buffers.lock().editor_for_view_mut(view_id)
                 .unwrap().set_config(new_config);
         }
@@ -706,7 +705,7 @@ impl Documents {
     fn update_config<P>(&mut self, domain: ConfigDomain, table: Table, path: P)
         where P: Into<Option<PathBuf>>
     {
-        if let Err(e) = self.config_manager.update_config(domain, table, path.into()) {
+        if let Err(e) = self.config_manager.set_user_config(domain, table, path) {
             //TODO: report this error to the peer
             eprintln!("Error updating config {:?}: {:?}", domain, e);
         }
@@ -717,8 +716,9 @@ impl Documents {
         let mut editors = self.buffers.lock();
         for ed in editors.iter_editors_mut() {
             let syntax = ed.get_syntax().to_owned();
-            let identifier = ed.get_identifier();
-            let new_config = self.config_manager.get_config(syntax, identifier);
+            let identifier = ed.get_main_view_id();
+            let new_config = self.config_manager.get_buffer_config(syntax,
+                                                                   identifier);
             ed.set_config(new_config)
         }
     }
@@ -984,7 +984,7 @@ mod tests {
     #[test]
     fn test_save_as() {
         let container_ref = BufferContainerRef::new();
-        let config = ConfigManager::default().get_config(None, None);
+        let config = ConfigManager::default().default_buffer_config();
         assert!(!container_ref.has_open_file("a fake file, for sure"));
         let view_id_1 = ViewIdentifier(1);
         let buf_id_1 = BufferIdentifier(1);
