@@ -17,7 +17,6 @@
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fmt;
-use std::env;
 use std::io::{self, Read};
 use std::path::{PathBuf, Path};
 use std::fs::File;
@@ -46,9 +45,6 @@ use plugins::rpc_types::{PluginUpdate, ClientPluginInfo};
 
 #[cfg(target_os = "fuchsia")]
 use apps_ledger_services_public::{Ledger_Proxy};
-
-/// A client can use this to pass a path to bundled plugins
-static XI_SYS_PLUGIN_PATH: &'static str = "XI_SYS_PLUGIN_PATH";
 
 /// Token for config-related file change events
 const CONFIG_EVENT_TOKEN: EventToken = EventToken(1);
@@ -569,13 +565,6 @@ impl Documents {
 
     fn do_client_init(&mut self, rpc_peer: &MainPeer, config_dir: Option<PathBuf>,
                       client_extras_dir: Option<PathBuf>) {
-        // If no config argument, fallback on environment variable
-        // TODO: deprecate env var approach and remove this
-        let config_dir = config_dir.or(Some(config::get_config_dir()));
-        let client_extras_dir = client_extras_dir
-            .or(env::var(XI_SYS_PLUGIN_PATH).map(PathBuf::from).ok());
-
-
         if let Some(ref d) = config_dir {
             self.config_manager.set_config_dir(&d);
             if let Err(e) = self.init_file_based_configs(d, rpc_peer) {
