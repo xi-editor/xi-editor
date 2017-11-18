@@ -688,6 +688,9 @@ impl Documents {
     /// for file system events if the directory exists and can be read.
     fn init_file_based_configs(&mut self, config_dir: &Path,
                                rpc_peer: &MainPeer) -> io::Result<()> {
+        if !config_dir.exists() {
+            config::init_config_dir(config_dir)?;
+        }
         let config_files = config::iter_config_files(config_dir)?;
         config_files.for_each(|p| self.load_file_based_config(&p));
 

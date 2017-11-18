@@ -552,6 +552,13 @@ impl Validator for KeyValidator {
     }
 }
 
+/// Creates initial config directory structure
+pub fn init_config_dir(dir: &Path) -> io::Result<()> {
+    let builder = fs::DirBuilder::new();
+    builder.create(dir)?;
+    Ok(builder.create(dir.join("plugins"))?)
+}
+
 pub fn iter_config_files(dir: &Path) -> io::Result<Box<Iterator<Item=PathBuf>>> {
     let contents = dir.read_dir()?;
     let iter = contents.flat_map(Result::ok)
