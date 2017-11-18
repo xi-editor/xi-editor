@@ -258,17 +258,13 @@ impl ConfigManager {
     // config system at all. For now, I'm treating them as a special case.
     /// Returns the plugin_search_path.
     pub fn plugin_search_path(&self) -> Vec<PathBuf> {
-        let val = self.configs.get(&ConfigDomain::General).unwrap()
-            .cache.get("plugin_search_path")
-            .unwrap()
-            .to_owned();
-        let mut search_path: Vec<PathBuf> = serde_json::from_value(val).unwrap();
+        let val = self.get("plugin_search_path", ConfigDomain::General).unwrap();
+        let mut search_path: Vec<PathBuf> = serde_json::from_value(val.clone())
+            .unwrap();
 
-        // relative paths should be relative to the config dir, if present
+        // if there is user config dir, add plugins subdir to search path
         if let Some(ref config_dir) = self.config_dir {
-            search_path = search_path.iter()
-                .map(|p| config_dir.join(p))
-                .collect();
+            search_path.push(config_dir.join("plugins"));
         }
 
         // append the client provided extras path, if present
@@ -358,6 +354,14 @@ impl ConfigManager {
 
     pub fn default_buffer_config(&self) -> BufferConfig {
         self.get_buffer_config(None, None)
+    }
+
+    /// Return the value for `key` in the `ConfigDomain` `domain`.
+    fn get<D>(&self, key: &str, domain: D) -> Option<&Value>
+        where D: Into<ConfigDomain>,
+    {
+        self.configs.get(&domain.into())
+            .and_then(|c| c.cache.get(key))
     }
 }
 
