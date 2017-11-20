@@ -222,6 +222,10 @@ impl Editor {
         }
     }
 
+    pub fn get_config(&self) -> &BufferConfig {
+        &self.config
+    }
+
     /// Returns this `Editor`'s active `SyntaxDefinition`.
     pub fn get_syntax(&self) -> &SyntaxDefinition {
         &self.syntax
@@ -230,6 +234,11 @@ impl Editor {
     /// Returns this `Editor`'s `BufferIdentifier`.
     pub fn get_identifier(&self) -> BufferIdentifier {
         self.buffer_id
+    }
+
+    /// returns the `ViewIdentifier` of the current view.
+    pub fn get_main_view_id(&self) -> ViewIdentifier {
+        self.view.view_id
     }
 
     // each outstanding plugin edit represents a rev_in_flight.

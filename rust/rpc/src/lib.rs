@@ -254,6 +254,11 @@ impl<W: Write + Send> RpcLoop<W> {
                 let json = match read_result {
                     Ok(json) => json,
                     Err(err) => {
+                        // finish idle work before disconnecting;
+                        // this is mostly useful for integration tests.
+                        if let Some(idle_token) = peer.try_get_idle() {
+                            handler.idle(&ctx, idle_token);
+                        }
                         peer.disconnect();
                         return err
                     }
