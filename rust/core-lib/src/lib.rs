@@ -21,7 +21,6 @@ extern crate serde_json;
 extern crate serde_derive;
 extern crate time;
 extern crate syntect;
-extern crate config as config_rs;
 extern crate toml;
 extern crate notify;
 
