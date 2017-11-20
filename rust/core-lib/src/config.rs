@@ -161,8 +161,8 @@ pub struct ConfigManager {
     extras_dir: Option<PathBuf>,
 }
 
-/// A collection of config tables representing a heirarchy, with each
-/// table's keys superceding keys in preceding tables.
+/// A collection of config tables representing a hierarchy, with each
+/// table's keys superseding keys in preceding tables.
 #[derive(Debug, Clone, Default)]
 struct TableStack(Vec<Arc<Table>>);
 
@@ -529,7 +529,7 @@ impl Error for ConfigError {
             IllegalKey( .. ) => "illegal key",
             UnknownDomain( .. ) => "unknown domain",
             Parse( _, ref e ) => e.description(),
-            Io( ref e) => e.description(),
+            Io( ref e ) => e.description(),
         }
     }
 }
