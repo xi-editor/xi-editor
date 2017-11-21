@@ -25,7 +25,7 @@ use std::sync::{Arc, Mutex, MutexGuard, Weak, mpsc};
 use serde::de::{Deserialize, Deserializer};
 use serde::ser::{Serialize, Serializer};
 use serde_json::value::Value;
-use notify::{RecursiveMode, DebouncedEvent};
+use notify::DebouncedEvent;
 
 use xi_rope::rope::Rope;
 use xi_rpc::{RpcCtx, RemoteError};
@@ -34,7 +34,7 @@ use editor::Editor;
 
 use rpc;
 use config;
-use watcher::{WATCH_IDLE_TOKEN, FsWatcher, EventToken};
+use watcher::{WATCH_IDLE_TOKEN, FileWatcher, WatchToken};
 use styles::{Style, ThemeStyleMap};
 use MainPeer;
 
@@ -47,7 +47,7 @@ use plugins::rpc_types::{PluginUpdate, ClientPluginInfo};
 use apps_ledger_services_public::{Ledger_Proxy};
 
 /// Token for config-related file change events
-const CONFIG_EVENT_TOKEN: EventToken = EventToken(1);
+const CONFIG_EVENT_TOKEN: WatchToken = WatchToken(1);
 const NEW_VIEW_IDLE_TOKEN: usize = 1001;
 
 /// ViewIdentifiers are the primary means of routing messages between xi-core and a client view.
@@ -102,7 +102,7 @@ pub struct Documents {
     style_map: Arc<Mutex<ThemeStyleMap>>,
     plugins: PluginManagerRef,
     config_manager: ConfigManager,
-    file_watcher: FsWatcher,
+    file_watcher: Option<FileWatcher>,
     /// A tx channel used to propagate plugin updates from all `Editor`s.
     update_channel: mpsc::Sender<(ViewIdentifier, PluginUpdate, usize)>,
     /// A queue of closures to be executed on the next idle runloop pass.
@@ -284,7 +284,7 @@ impl Documents {
             style_map: Arc::new(Mutex::new(ThemeStyleMap::new())),
             plugins: plugin_manager,
             config_manager: config_manager,
-            file_watcher: FsWatcher::default(),
+            file_watcher: None,
             update_channel: update_tx,
             idle_queue: Vec::new(),
             sync_repo: None,
@@ -541,9 +541,12 @@ impl Documents {
 
     fn do_client_init(&mut self, rpc_peer: &MainPeer, config_dir: Option<PathBuf>,
                       client_extras_dir: Option<PathBuf>) {
+        // we would like to set this in self::new but we need the peer
+        self.file_watcher = Some(FileWatcher::new(rpc_peer.clone()));
+
         if let Some(ref d) = config_dir {
             self.config_manager.set_config_dir(&d);
-            if let Err(e) = self.init_file_based_configs(d, rpc_peer) {
+            if let Err(e) = self.init_file_based_configs(d) {
                 eprintln!("Error reading config dir: {:?}", e);
             }
         }
@@ -609,11 +612,9 @@ impl Documents {
 
     /// Process file system events, forwarding them to registrees.
     fn handle_fs_events(&mut self) {
-        let mut events = {
-            let mut e = self.file_watcher.events.lock().unwrap();
-            let events = e.drain(..).collect::<Vec<_>>();
-            events
-        };
+        let mut events = self.file_watcher.as_ref()
+            .expect("file_watcher is always set before events arrive")
+            .drain_events();
 
         let mut config_changed = false;
         for (token, event) in events.drain(..) {
@@ -651,21 +652,22 @@ impl Documents {
 
     /// Checks for existence of config dir, loading config files and registering
     /// for file system events if the directory exists and can be read.
-    fn init_file_based_configs(&mut self, config_dir: &Path,
-                               rpc_peer: &MainPeer) -> io::Result<()> {
+    fn init_file_based_configs(&mut self, config_dir: &Path)
+                               -> io::Result<()> {
         if !config_dir.exists() {
             config::init_config_dir(config_dir)?;
         }
         let config_files = config::iter_config_files(config_dir)?;
         config_files.for_each(|p| self.load_file_based_config(&p));
 
-        self.file_watcher.watch_filtered(config_dir, RecursiveMode::Recursive,
-                                         CONFIG_EVENT_TOKEN, rpc_peer,
-                                         |p| {
-                                             p.extension()
-                                                 .and_then(OsStr::to_str)
-                                                 .unwrap_or("") == "xiconfig"
-                                         });
+        self.file_watcher.as_ref().unwrap().
+            watch_filtered(config_dir, true,
+                           CONFIG_EVENT_TOKEN,
+                           |p| {
+                               p.extension()
+                                   .and_then(OsStr::to_str)
+                                   .unwrap_or("") == "xiconfig"
+                           });
         Ok(())
     }
 

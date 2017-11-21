@@ -12,99 +12,555 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use notify::{Watcher, RecursiveMode, watcher, DebouncedEvent};
-use std::path::Path;
-use std::sync::mpsc::channel;
+//! Monitoring files and directories.
+//!
+//! This module contains `FileWatcher` and related types, responsible for
+//! monitoring changes to files and directories. Under the hood it is a
+//! thin wrapper around some concrete type provided by the
+//! [`notify`](https://docs.rs/notify) crate; the implementation is
+//! platform dependent, and may be using kqueue, fsevent, or another
+//! low-level monitoring system.
+//!
+//! Our wrapper provides a few useful features:
+//!
+//! - All `watch` calls are associated with a `WatchToken`; this
+//! allows for the same path to be watched multiple times,
+//! presumably by multiple interested parties. events are delivered
+//! once-per token.
+//!
+//! - There is the option (via `FileWatcher::watch_filtered`) to include
+//! a predicate along with a path, to filter paths before delivery.
+//!
+//! - We are integrated with the xi_rpc runloop; events are queued as
+//! they arrive, and an idle task is scheduled.
+
+use notify::{Watcher, RecursiveMode, watcher, DebouncedEvent, RecommendedWatcher};
+use std::path::{Path, PathBuf};
+use std::sync::mpsc::{channel, Sender, Receiver};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::thread;
 use std::collections::VecDeque;
+use std::fmt;
 
 use xi_rpc::RpcPeer;
 
 /// xi_rpc idle Token for watcher related idle scheduling.
 pub const WATCH_IDLE_TOKEN: usize = 1002;
 
-/// Token provided to `FsWatcher`, to associate events with registrees.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EventToken(pub usize);
-
-/// Wrapper around `notify::Watcher`, adding support for the xi_rpc runloop.
-#[derive(Debug, Clone, Default)]
-pub struct FsWatcher {
-    pub events: Arc<Mutex<VecDeque<(EventToken, DebouncedEvent)>>>,
+/// Wrapper around a `notify::Watcher`. It runs the inner watcher
+/// in a separate thread, and communicates with it via an `mpsc::channel`.
+pub struct FileWatcher {
+    tx: Sender<WatcherEvent>,
+    events: EventQueue,
 }
 
-impl FsWatcher {
-    /// Begin watching `path`. As `DebouncedEvent`s (documented in the [notify](https://docs.rs/notify/4.0.2/notify/) crate)
-    /// arrive, they are stored with the associated `token` and a task is
-    /// added to the runloop's idle queue.
+/// Tracks a registered 'that-which-is-watched'.
+#[doc(hidden)]
+struct Watchee {
+    path: PathBuf,
+    recursive: bool,
+    token: WatchToken,
+    filter: Option<Box<PathFilter>>,
+}
+
+/// Token provided to `FileWatcher`, to associate events with
+/// interested parties.
+///
+/// Note: `WatchToken`s are assumed to correspond with an
+/// 'area of interest'; that is, they are used to route delivery
+/// of events.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WatchToken(pub usize);
+
+/// A trait for types which can be notified of new events.
+/// New events are accessible through the `FileWatcher` instance.
+pub trait Notify: Send {
+    fn notify(&self);
+}
+
+/// Events handled in the watching thread.
+///
+/// Note: we combine control events (watching and unwatching some path)
+/// with events themselves into a single enum, so that they can be passed
+/// through an `mpsc::channel` to the watching thread.
+enum WatcherEvent {
+    Register(WatchToken, PathBuf, RecursiveMode, Option<Box<PathFilter>>),
+    Deregister(WatchToken, PathBuf),
+    Event(DebouncedEvent),
+}
+
+pub type EventQueue = Arc<Mutex<VecDeque<(WatchToken, DebouncedEvent)>>>;
+
+pub type PathFilter = Fn(&Path) -> bool + Send + 'static;
+
+impl FileWatcher {
+    pub fn new<T: Notify + 'static>(peer: T) -> Self {
+        let (tx_event, rx_event) = channel();
+        let (tx_ctrl, rx_ctrl) = channel();
+        let tx_event_to_ctrl = tx_ctrl.clone();
+
+        // unfortunately we need to proxy events through an extra thread.
+        // https://github.com/passcod/notify/issues/67
+        // NOTE: Maybe I wrote this too late at night. We could lose one
+        // thread by just holding a reference to the watcher directly?
+        // This would require that the `Vec<Watchee>` be behind a `RwLock`
+        // or similar, but would make other things simpler.
+        thread::spawn(move || {
+            while let Ok(event) = rx_event.recv() {
+                let as_ctrl = WatcherEvent::Event(event);
+                if let Err(_) = tx_event_to_ctrl.send(as_ctrl) {
+                    break
+                }
+            }
+        });
+
+        // consider replacing this with one of crossbeam's lock-free queues?
+        let events = Arc::new(Mutex::new(VecDeque::new()));
+        let events_clone = events.clone();
+
+        thread::spawn(move || {
+            let mut watcher = watcher(tx_event, Duration::from_millis(100))
+                .expect("watcher should spawn");
+            watcher_loop(&mut watcher, events_clone, rx_ctrl, peer);
+        });
+
+        FileWatcher { tx: tx_ctrl, events: events }
+    }
+
+    /// Begin watching `path`. As `DebouncedEvent`s (documented in the
+    /// [notify](https://docs.rs/notify) crate) arrive, they are stored
+    /// with the associated `token` and a task is added to the runloop's
+    /// idle queue.
     ///
     /// Delivery of events then requires that the runloop's handler
     /// correctly forward the `handle_idle` call to the interested party.
-    pub fn watch<P>(&mut self, path: P, recursive_mode: RecursiveMode,
-                token: EventToken, peer: &RpcPeer)
-        where P: AsRef<Path>,
-    {
-        self.watch_filtered(path, recursive_mode, token, peer, |_| { true });
+    pub fn watch(&self, path: &Path, recursive: bool, token: WatchToken) {
+        self.watch_impl(path, recursive, token, None);
     }
 
     /// Like `watch`, but taking a predicate function that filters delivery
     /// of events based on their path.
-    pub fn watch_filtered<P, F>(&mut self, path: P, recursive_mode: RecursiveMode,
-                                token: EventToken, peer: &RpcPeer, predicate: F)
-        where P: AsRef<Path>,
-              F: Fn(&Path) -> bool + Send + 'static,
+    pub fn watch_filtered<F>(&self, path: &Path, recursive: bool,
+                             token: WatchToken, filter: F)
+        where F: Fn(&Path) -> bool + Send + 'static,
     {
-        let path = path.as_ref().to_owned();
-        let peer = peer.clone();
-        let events = self.events.clone();
-        thread::spawn(move || {
+        let filter = Box::new(filter) as Box<PathFilter>;
+        self.watch_impl(path, recursive, token, Some(filter));
+    }
 
-            let (tx, rx) = channel();
-            let mut watcher = watcher(tx, Duration::from_secs(1)).unwrap();
+    fn watch_impl(&self, path: &Path, recursive: bool, token: WatchToken,
+                  filter: Option<Box<PathFilter>>)
+    {
+        let path = match path.canonicalize() {
+            Ok(ref p) if p.exists() => p.to_owned(),
+            _ => return,
+        };
 
-            watcher.watch(&path, recursive_mode).unwrap();
+        let recursive_mode = mode_from_bool(recursive);
+        self.tx.send(WatcherEvent::Register(token,
+                                            path,
+                                            recursive_mode,
+                                            filter))
+            .expect("crashed watcher is unrecoverable");
+        // we could make these recoverable by having a fn spawn(mut self) -> Self {
+        // that restarts the inner thread, and watches all of our watched dirs
+    }
 
-            loop {
-                match rx.recv() {
-                    Ok(event) =>  {
-                        if apply_filter(&predicate, &event) {
-                            events.lock().unwrap().push_back((token, event));
-                            peer.schedule_idle(WATCH_IDLE_TOKEN);
+    /// Removes the provided token/path pair from the watch list.
+    /// Does not stop watching this path, if it is associated with
+    /// other tokens.
+    pub fn unwatch(&self, token: WatchToken, path: &Path) {
+        self.tx.send(WatcherEvent::Deregister(token, path.to_owned()))
+            .expect("crashed watcher is unrecoverable");
+    }
+
+    /// Empties the event queue, returning any contained events.
+    pub fn drain_events(&self) -> Vec<(WatchToken, DebouncedEvent)> {
+        let mut deque = self.events.lock().unwrap();
+        let v = deque.drain(..).collect();
+        v
+    }
+}
+
+fn watcher_loop<T: Notify>(watcher: &mut RecommendedWatcher,
+                               events: EventQueue,
+                               rx: Receiver<WatcherEvent>,
+                               peer: T) {
+    use self::WatcherEvent::*;
+    let mut watchees: Vec<Watchee> = Vec::new();
+
+    while let Ok(event) = rx.recv() {
+        match event {
+
+            Register(token, path, mode, filter) => {
+                let recursive = is_recursive(&mode);
+                let mut erred = false;
+                if !watchees.iter().any(|w| w.path == path) {
+                    if let Err(e) = watcher.watch(&path, mode) {
+                        eprintln!("watching error {:?}", e);
+                        erred = true;
+                    }
+                }
+                if !erred {
+                    // should we add this even if we _do_ err?
+                    // we don't have reasonable error reporting here, so maybe
+                    watchees.push( Watchee { path, token, recursive, filter } );
+                }
+           }
+
+            Deregister(token, path) =>  {
+                let idx = watchees.iter()
+                    .position(|w| w.token == token && w.path == path);
+                if let Some(idx) = idx {
+                    let removed = watchees.remove(idx);
+                    if !watchees.iter().any(|w| w.path == removed.path) {
+                        if let Err(e) = watcher.unwatch(&removed.path) {
+                            eprintln!("unwatching error {:?}", e);
                         }
-                    },
-                    Err(e) => {
-                        //TODO: how do we handle unexpected disconnects?
-                        eprintln!("watcher returned error {:?} for path {:?}, \
-                        token {:?}", e, &path, token);
-                        break
                     }
                 }
             }
-        });
-    }
-    //TODO impl unwatch, when we add in watching of opened files
-}
 
-/// Checks the predicate against the various event cases
-fn apply_filter<F>(filter: &F, event: &DebouncedEvent) -> bool
-    where F: Fn(&Path) -> bool,
-{
-    use self::DebouncedEvent::*;
-    match *event {
-        NoticeWrite(ref p) | NoticeRemove(ref p) | Create(ref p) |
-            Write(ref p) | Chmod(ref p) | Remove(ref p) => {
-                filter(p)
+            Event(event) => {
+                let mut queue = events.lock().expect("failed to acquire lock");
+                watchees.iter()
+                    .filter(|w| w.wants_event(&event))
+                    .map(|w| w.token)
+                    .for_each(|t| queue.push_back((t, clone_event(&event))));
+
+                peer.notify();
             }
-        Rename(ref p1, ref p2) => {
-            filter(p1) || filter(p2)
-        }
-        Rescan => false,
-        Error(_, ref opt_p) => {
-            opt_p.as_ref().map(|p| filter(p))
-                .unwrap_or(false)
         }
     }
 }
 
+impl Watchee {
+    fn wants_event(&self, event: &DebouncedEvent) -> bool {
+        use self::DebouncedEvent::*;
+        match *event {
+            NoticeWrite(ref p) | NoticeRemove(ref p) | Create(ref p) |
+                Write(ref p) | Chmod(ref p) | Remove(ref p) => {
+                    self.applies_to_path(p)
+                }
+            Rename(ref p1, ref p2) => {
+                self.applies_to_path(p1) || self.applies_to_path(p2)
+            }
+            Rescan => false,
+            Error(_, ref opt_p) => {
+                opt_p.as_ref().map(|p| self.applies_to_path(p))
+                    .unwrap_or(false)
+            }
+        }
+    }
+
+    fn applies_to_path(&self, path: &Path) -> bool {
+        let general_case = if path.starts_with(&self.path) {
+            (self.recursive || &self.path == path) ||
+                path.parent() == Some(&self.path)
+        } else {
+            false
+        };
+
+        if let Some(ref filter) = self.filter {
+            general_case && filter(path)
+        } else {
+            general_case
+        }
+    }
+}
+
+impl Notify for Sender<bool> {
+    fn notify(&self) {
+        self.send(true).expect("send shouldn't fail")
+    }
+}
+
+impl Notify for RpcPeer {
+    fn notify(&self) {
+        self.schedule_idle(WATCH_IDLE_TOKEN);
+    }
+}
+
+impl fmt::Debug for Watchee {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Watchee path: {:?}, r {}, t {} f {}",
+               self.path, self.recursive, self.token.0, self.filter.is_some())
+    }
+}
+
+fn mode_from_bool(b: bool) -> RecursiveMode {
+    if b {
+        RecursiveMode::Recursive
+    } else {
+        RecursiveMode::NonRecursive
+    }
+}
+
+fn is_recursive(mode: &RecursiveMode) -> bool {
+    match *mode {
+        RecursiveMode::Recursive => true,
+        RecursiveMode::NonRecursive => false,
+    }
+}
+
+// Debounced event does not implement clone
+// TODO: remove if https://github.com/passcod/notify/pull/133 is merged
+fn clone_event(event: &DebouncedEvent) -> DebouncedEvent {
+    use self::DebouncedEvent::*;
+    use notify::Error::*;
+    match *event {
+        NoticeWrite(ref p) => NoticeWrite(p.to_owned()),
+        NoticeRemove(ref p) => NoticeRemove(p.to_owned()),
+        Create(ref p) => Create(p.to_owned()),
+        Write(ref p) => Write(p.to_owned()),
+        Chmod(ref p) => Chmod(p.to_owned()),
+        Remove(ref p) => Remove(p.to_owned()),
+        Rename(ref p1, ref p2) => Rename(p1.to_owned(), p2.to_owned()),
+        Rescan => Rescan,
+        Error(ref e, ref opt_p) => {
+            let error = match *e {
+                PathNotFound => PathNotFound,
+                WatchNotFound => WatchNotFound,
+                Generic(ref s) => Generic(s.to_owned()),
+                Io(ref e) => Generic(format!("{:?}", e)),
+            };
+            Error(error, opt_p.clone())
+        }
+    }
+}
+
+#[cfg(test)]
+extern crate tempdir;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsStr;
+    use std::thread;
+    use std::fs;
+    use std::sync::mpsc;
+    use std::time::{Duration, Instant};
+    use std::io::Write;
+
+    impl PartialEq<usize> for WatchToken {
+        fn eq(&self, other: &usize) -> bool {
+            self.0 == *other
+        }
+    }
+
+    impl From<usize> for WatchToken {
+        fn from(err: usize) -> WatchToken {
+            WatchToken(err)
+        }
+    }
+
+    // Sleep for `duration` in milliseconds
+    pub fn sleep(duration: u64) {
+        thread::sleep(Duration::from_millis(duration));
+    }
+
+    // Sleep for `duration` in milliseconds if running on OS X
+    pub fn sleep_macos(duration: u64) {
+        if cfg!(target_os = "macos") {
+            thread::sleep(Duration::from_millis(duration));
+        }
+    }
+
+    pub fn recv_all<T>(rx: &Receiver<T>, duration: Duration) -> Vec<T> {
+        let start = Instant::now();
+        let mut events = Vec::new();
+
+        while start.elapsed() < duration {
+            match rx.recv_timeout(Duration::from_millis(50)) {
+                Ok(event) => events.push(event),
+                Err(mpsc::RecvTimeoutError::Timeout) => (),
+                Err(e) => panic!("unexpected channel err: {:?}", e)
+            }
+        }
+        events
+    }
+
+    // from https://github.com/passcod/notify/blob/master/tests/utils/mod.rs
+    pub trait TestHelpers {
+        /// Return path relative to the TempDir. Directory separator must
+        /// be a forward slash, and will be converted to the platform's
+        /// native separator.
+        fn mkpath(&self, p: &str) -> PathBuf;
+        /// Create file or directory. Directories must contain the phrase
+        /// "dir" otherwise they will be interpreted as files.
+        fn create(&self, p: &str);
+        /// Create all files and directories in the `paths` list.
+        /// Directories must contain the phrase "dir" otherwise they
+        /// will be interpreted as files.
+        fn create_all(&self, paths: Vec<&str>);
+        /// Rename file or directory.
+        fn rename(&self, a: &str, b: &str);
+        ///// Toggle "other" rights on linux and os x and "readonly" on windows
+        //fn chmod(&self, p: &str);
+        /// Write some data to a file
+        fn write(&self, p: &str);
+        /// Remove file or directory
+        fn remove(&self, p: &str);
+    }
+
+    impl TestHelpers for tempdir::TempDir {
+        fn mkpath(&self, p: &str) -> PathBuf {
+            let mut path = self.path().canonicalize()
+                .expect("failed to canonalize path").to_owned();
+            for part in p.split('/').collect::<Vec<_>>() {
+                if part != "." {
+                    path.push(part);
+                }
+            }
+            path
+        }
+
+        fn create(&self, p: &str) {
+            let path = self.mkpath(p);
+            if path.components().last().unwrap().as_os_str()
+                .to_str().unwrap().contains("dir") {
+                    fs::create_dir_all(path)
+                        .expect("failed to create directory");
+                } else {
+                    let parent = path.parent()
+                        .expect("failed to get parent directory").to_owned();
+                    if !parent.exists() {
+                        fs::create_dir_all(parent)
+                            .expect("failed to create parent directory");
+                    }
+                    fs::File::create(path).expect("failed to create file");
+                }
+        }
+
+        fn create_all(&self, paths: Vec<&str>) {
+            for p in paths {
+                self.create(p);
+            }
+        }
+
+        fn rename(&self, a: &str, b: &str) {
+            let path_a = self.mkpath(a);
+            let path_b = self.mkpath(b);
+            fs::rename(&path_a, &path_b)
+                .expect("failed to rename file or directory");
+        }
+
+        fn write(&self, p: &str) {
+            let path = self.mkpath(p);
+
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .open(path)
+                .expect("failed to open file");
+
+            file.write(b"some data")
+                .expect("failed to write to file");
+            file.sync_all().expect("failed to sync file");
+        }
+
+        fn remove(&self, p: &str) {
+            let path = self.mkpath(p);
+            if path.is_dir() {
+                fs::remove_dir(path).expect("failed to remove directory");
+            } else {
+                fs::remove_file(path).expect("failed to remove file");
+            }
+        }
+    }
+
+    #[test]
+    fn test_applies_to_path() {
+        let mut w = Watchee {
+            path: PathBuf::from("/hi/there/"),
+            recursive: false,
+            token: WatchToken(1),
+            filter: None,
+        };
+        assert!(w.applies_to_path(&PathBuf::from("/hi/there/friend.txt")));
+        assert!(w.applies_to_path(&PathBuf::from("/hi/there/")));
+        assert!(!w.applies_to_path(&PathBuf::from("/hi/there/dear/friend.txt")));
+        assert!(!w.applies_to_path(&PathBuf::from("/oh/hi/there/")));
+
+        w.recursive = true;
+        assert!(w.applies_to_path(&PathBuf::from("/hi/there/dear/friend.txt")));
+        assert!(w.applies_to_path(&PathBuf::from("/hi/there/friend.txt")));
+        assert!(w.applies_to_path(&PathBuf::from("/hi/there/")));
+
+        w.filter = Some(Box::new(|p| {
+            p.extension().and_then(OsStr::to_str) == Some("txt")
+        }));
+        assert!(w.applies_to_path(&PathBuf::from("/hi/there/dear/friend.txt")));
+        assert!(w.applies_to_path(&PathBuf::from("/hi/there/friend.txt")));
+        assert!(!w.applies_to_path(&PathBuf::from("/hi/there/")));
+        assert!(!w.applies_to_path(&PathBuf::from("/hi/there/friend.exe")));
+        assert!(w.applies_to_path(&PathBuf::from("/hi/there/my/old/sweet/pal.txt")));
+    }
+
+    //https://github.com/passcod/notify/issues/131
+    #[test]
+    fn test_crash_repro() {
+        let (tx, _rx) = channel();
+        let path = PathBuf::from("/usr/local/bin/git");
+        let mut w = watcher(tx, Duration::from_secs(1)).unwrap();
+        w.watch(&path, RecursiveMode::NonRecursive).unwrap();
+        sleep(20);
+        w.watch(&path, RecursiveMode::NonRecursive).unwrap();
+        w.unwatch(&path).unwrap();
+    }
+
+    #[test]
+    fn recurse_with_contained() {
+        let (tx, rx) = channel();
+        let tmp = tempdir::TempDir::new("xi-test").unwrap();
+        let w = FileWatcher::new(tx);
+        tmp.create("adir/dir2/file");
+        sleep_macos(25_000);
+        w.watch(&tmp.mkpath("adir"), true, 1.into());
+        sleep_macos(10);
+        w.watch(&tmp.mkpath("adir/dir2/file"), false,  2.into());
+        sleep_macos(10);
+        w.unwatch(1.into(), &tmp.mkpath("adir"));
+        sleep(10);
+        tmp.write("adir/dir2/file");
+        let _ = recv_all(&rx, Duration::from_millis(1000));
+        let events = w.drain_events();
+        assert_eq!(events, vec![
+                   (2.into(), DebouncedEvent::NoticeWrite(tmp.mkpath("adir/dir2/file"))),
+                   (2.into(), DebouncedEvent::Write(tmp.mkpath("adir/dir2/file"))),
+        ]);
+    }
+
+    #[test]
+    fn two_watchers_one_file() {
+        let (tx, rx) = channel();
+        let tmp = tempdir::TempDir::new("xi-test").unwrap();
+        tmp.create("my_file");
+        sleep_macos(25_000);
+        let w = FileWatcher::new(tx);
+        w.watch(&tmp.mkpath("my_file"), false, 1.into());
+        sleep_macos(10);
+        w.watch(&tmp.mkpath("my_file"), false, 2.into());
+        sleep_macos(10);
+        tmp.remove("my_file");
+
+        let _ = recv_all(&rx, Duration::from_millis(1000));
+        let events = w.drain_events();
+        assert_eq!(events, vec![
+                   (1.into(), DebouncedEvent::NoticeRemove(tmp.mkpath("my_file"))),
+                   (2.into(), DebouncedEvent::NoticeRemove(tmp.mkpath("my_file"))),
+                   (1.into(), DebouncedEvent::Remove(tmp.mkpath("my_file"))),
+                   (2.into(), DebouncedEvent::Remove(tmp.mkpath("my_file"))),
+        ]);
+
+        w.unwatch(1.into(), &tmp.mkpath("my_file"));
+        sleep_macos(10);
+        tmp.create("my_file");
+
+        let _ = recv_all(&rx, Duration::from_millis(1000));
+        let events = w.drain_events();
+        assert_eq!(events, vec![
+                   (2.into(), DebouncedEvent::Create(tmp.mkpath("my_file"))),
+        ]);
+    }
+}
