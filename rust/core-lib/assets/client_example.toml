@@ -1,0 +1,20 @@
+#####################################################################
+# User settings must be in $XI_CONFIG/preferences.xiconfig, where   #
+# '$XI_CONFIG' is the Xi configuration directory for your platform. #
+#                                                                   #
+# These settings can also be overridden for a particular syntax;    #
+# add your overrides in (for example) '$XI_CONFIG/rust.xiconfig'.   #
+#####################################################################
+
+
+# The width of a tab, in spaces.
+tab_size = 4
+# Insert spaces when the tab key is pressed.
+translate_tabs_to_spaces = true
+
+# List of paths to additional plugins
+plugin_search_path = []
+
+font_face = "InconsolataGo"
+# In points
+font_size = 14

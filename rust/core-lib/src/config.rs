@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::env;
 use std::io::{self, Read};
 use std::borrow::Borrow;
 use std::error::Error;
@@ -30,9 +29,6 @@ use toml;
 
 use syntax::SyntaxDefinition;
 use tabs::ViewIdentifier;
-
-static XI_CONFIG_DIR: &'static str = "XI_CONFIG_DIR";
-static XDG_CONFIG_HOME: &'static str = "XDG_CONFIG_HOME";
 
 /// Namespace for various default settings.
 #[allow(unused)]
@@ -258,17 +254,13 @@ impl ConfigManager {
     // config system at all. For now, I'm treating them as a special case.
     /// Returns the plugin_search_path.
     pub fn plugin_search_path(&self) -> Vec<PathBuf> {
-        let val = self.configs.get(&ConfigDomain::General).unwrap()
-            .cache.get("plugin_search_path")
-            .unwrap()
-            .to_owned();
-        let mut search_path: Vec<PathBuf> = serde_json::from_value(val).unwrap();
+        let val = self.get("plugin_search_path", ConfigDomain::General).unwrap();
+        let mut search_path: Vec<PathBuf> = serde_json::from_value(val.clone())
+            .unwrap();
 
-        // relative paths should be relative to the config dir, if present
+        // if there is user config dir, add plugins subdir to search path
         if let Some(ref config_dir) = self.config_dir {
-            search_path = search_path.iter()
-                .map(|p| config_dir.join(p))
-                .collect();
+            search_path.push(config_dir.join("plugins"));
         }
 
         // append the client provided extras path, if present
@@ -358,6 +350,14 @@ impl ConfigManager {
 
     pub fn default_buffer_config(&self) -> BufferConfig {
         self.get_buffer_config(None, None)
+    }
+
+    /// Return the value for `key` in the `ConfigDomain` `domain`.
+    fn get<D>(&self, key: &str, domain: D) -> Option<&Value>
+        where D: Into<ConfigDomain>,
+    {
+        self.configs.get(&domain.into())
+            .and_then(|c| c.cache.get(key))
     }
 }
 
@@ -548,6 +548,13 @@ impl Validator for KeyValidator {
     }
 }
 
+/// Creates initial config directory structure
+pub fn init_config_dir(dir: &Path) -> io::Result<()> {
+    let builder = fs::DirBuilder::new();
+    builder.create(dir)?;
+    Ok(builder.create(dir.join("plugins"))?)
+}
+
 pub fn iter_config_files(dir: &Path) -> io::Result<Box<Iterator<Item=PathBuf>>> {
     let contents = dir.read_dir()?;
     let iter = contents.flat_map(Result::ok)
@@ -577,33 +584,6 @@ fn table_from_toml_str(s: &str) -> Result<Table, toml::de::Error> {
         .unwrap()
         .to_owned();
     Ok(table)
-}
-
-/// Returns the location of the active config directory.
-///
-/// env vars are passed in as Option<&str> for easier testing.
-fn config_dir_impl(xi_var: Option<&str>, xdg_var: Option<&str>) -> PathBuf {
-    xi_var.map(PathBuf::from)
-        .unwrap_or_else(|| {
-            let mut xdg_config = xdg_var.map(PathBuf::from)
-                .unwrap_or_else(|| {
-                    env::var("HOME").map(PathBuf::from)
-                        .map(|mut p| {
-                            p.push(".config");
-                            p
-                        })
-                        .expect("$HOME is required by POSIX")
-                });
-            xdg_config.push("xi");
-            xdg_config
-        })
-}
-
-pub fn get_config_dir() -> PathBuf {
-    let xi_var = env::var(XI_CONFIG_DIR).ok();
-    let xdg_var = env::var(XDG_CONFIG_HOME).ok();
-    config_dir_impl(xi_var.as_ref().map(String::as_ref),
-                    xdg_var.as_ref().map(String::as_ref))
 }
 
 //adapted from https://docs.rs/crate/config/0.7.0/source/src/file/format/toml.rs
@@ -638,24 +618,6 @@ fn from_toml_value(value: toml::Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn get_buffer_config() {
-       let p = config_dir_impl(Some("custom/xi/conf"), None);
-       assert_eq!(p, PathBuf::from("custom/xi/conf"));
-
-       let p = config_dir_impl(Some("custom/xi/conf"), Some("/me/config"));
-       assert_eq!(p, PathBuf::from("custom/xi/conf"));
-
-       let p = config_dir_impl(None, Some("/me/config"));
-       assert_eq!(p, PathBuf::from("/me/config/xi"));
-
-       let p = config_dir_impl(None, None);
-       let exp = env::var("HOME").map(PathBuf::from)
-           .map(|mut p| { p.push(".config/xi"); p })
-           .unwrap();
-       assert_eq!(p, exp);
-    }
 
     #[test]
     fn test_prepend_path() {
