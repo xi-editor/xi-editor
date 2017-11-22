@@ -660,7 +660,7 @@ impl Documents {
         let config_files = config::iter_config_files(config_dir)?;
         config_files.for_each(|p| self.load_file_based_config(&p));
 
-        self.file_watcher.as_ref().unwrap().
+        self.file_watcher.as_mut().unwrap().
             watch_filtered(config_dir, true,
                            CONFIG_EVENT_TOKEN,
                            |p| {

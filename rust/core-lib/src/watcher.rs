@@ -36,7 +36,7 @@
 
 use notify::{Watcher, RecursiveMode, watcher, DebouncedEvent, RecommendedWatcher};
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{channel, Sender, Receiver};
+use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::thread;
@@ -51,8 +51,14 @@ pub const WATCH_IDLE_TOKEN: usize = 1002;
 /// Wrapper around a `notify::Watcher`. It runs the inner watcher
 /// in a separate thread, and communicates with it via an `mpsc::channel`.
 pub struct FileWatcher {
-    tx: Sender<WatcherEvent>,
+    inner: RecommendedWatcher,
+    state: Arc<Mutex<WatcherState>>,
+}
+
+#[derive(Debug, Default)]
+struct WatcherState {
     events: EventQueue,
+    watchees: Vec<Watchee>,
 }
 
 /// Tracks a registered 'that-which-is-watched'.
@@ -79,53 +85,35 @@ pub trait Notify: Send {
     fn notify(&self);
 }
 
-/// Events handled in the watching thread.
-///
-/// Note: we combine control events (watching and unwatching some path)
-/// with events themselves into a single enum, so that they can be passed
-/// through an `mpsc::channel` to the watching thread.
-enum WatcherEvent {
-    Register(WatchToken, PathBuf, RecursiveMode, Option<Box<PathFilter>>),
-    Deregister(WatchToken, PathBuf),
-    Event(DebouncedEvent),
-}
-
-pub type EventQueue = Arc<Mutex<VecDeque<(WatchToken, DebouncedEvent)>>>;
+pub type EventQueue = VecDeque<(WatchToken, DebouncedEvent)>;
 
 pub type PathFilter = Fn(&Path) -> bool + Send + 'static;
 
 impl FileWatcher {
     pub fn new<T: Notify + 'static>(peer: T) -> Self {
         let (tx_event, rx_event) = channel();
-        let (tx_ctrl, rx_ctrl) = channel();
-        let tx_event_to_ctrl = tx_ctrl.clone();
 
-        // unfortunately we need to proxy events through an extra thread.
-        // https://github.com/passcod/notify/issues/67
-        // NOTE: Maybe I wrote this too late at night. We could lose one
-        // thread by just holding a reference to the watcher directly?
-        // This would require that the `Vec<Watchee>` be behind a `RwLock`
-        // or similar, but would make other things simpler.
+        let state = Arc::new(Mutex::new(WatcherState::default()));
+        let state_clone = state.clone();
+
+        let inner = watcher(tx_event, Duration::from_millis(100))
+            .expect("watcher should spawn");
+
         thread::spawn(move || {
             while let Ok(event) = rx_event.recv() {
-                let as_ctrl = WatcherEvent::Event(event);
-                if let Err(_) = tx_event_to_ctrl.send(as_ctrl) {
-                    break
-                }
+                let mut state = state_clone.lock().unwrap();
+                let WatcherState { ref mut events, ref mut watchees } = *state;
+
+                watchees.iter()
+                    .filter(|w| w.wants_event(&event))
+                    .map(|w| w.token)
+                    .for_each(|t| events.push_back((t, clone_event(&event))));
+
+                peer.notify();
             }
         });
 
-        // consider replacing this with one of crossbeam's lock-free queues?
-        let events = Arc::new(Mutex::new(VecDeque::new()));
-        let events_clone = events.clone();
-
-        thread::spawn(move || {
-            let mut watcher = watcher(tx_event, Duration::from_millis(100))
-                .expect("watcher should spawn");
-            watcher_loop(&mut watcher, events_clone, rx_ctrl, peer);
-        });
-
-        FileWatcher { tx: tx_ctrl, events: events }
+        FileWatcher { inner, state }
     }
 
     /// Begin watching `path`. As `DebouncedEvent`s (documented in the
@@ -135,13 +123,13 @@ impl FileWatcher {
     ///
     /// Delivery of events then requires that the runloop's handler
     /// correctly forward the `handle_idle` call to the interested party.
-    pub fn watch(&self, path: &Path, recursive: bool, token: WatchToken) {
+    pub fn watch(&mut self, path: &Path, recursive: bool, token: WatchToken) {
         self.watch_impl(path, recursive, token, None);
     }
 
     /// Like `watch`, but taking a predicate function that filters delivery
     /// of events based on their path.
-    pub fn watch_filtered<F>(&self, path: &Path, recursive: bool,
+    pub fn watch_filtered<F>(&mut self, path: &Path, recursive: bool,
                              token: WatchToken, filter: F)
         where F: Fn(&Path) -> bool + Send + 'static,
     {
@@ -149,7 +137,7 @@ impl FileWatcher {
         self.watch_impl(path, recursive, token, Some(filter));
     }
 
-    fn watch_impl(&self, path: &Path, recursive: bool, token: WatchToken,
+    fn watch_impl(&mut self, path: &Path, recursive: bool, token: WatchToken,
                   filter: Option<Box<PathFilter>>)
     {
         let path = match path.canonicalize() {
@@ -157,81 +145,46 @@ impl FileWatcher {
             _ => return,
         };
 
-        let recursive_mode = mode_from_bool(recursive);
-        self.tx.send(WatcherEvent::Register(token,
-                                            path,
-                                            recursive_mode,
-                                            filter))
-            .expect("crashed watcher is unrecoverable");
-        // we could make these recoverable by having a fn spawn(mut self) -> Self {
-        // that restarts the inner thread, and watches all of our watched dirs
+        let mut state = self.state.lock().unwrap();
+
+        let w = Watchee { path, recursive, token, filter };
+        let mode = mode_from_bool(w.recursive);
+
+        if !state.watchees.iter().any(|w2| w.path == w2.path) {
+            if let Err(e) = self.inner.watch(&w.path, mode) {
+                eprintln!("watching error {:?}", e);
+            }
+        }
+
+        state.watchees.push(w);
+
     }
 
     /// Removes the provided token/path pair from the watch list.
     /// Does not stop watching this path, if it is associated with
     /// other tokens.
-    pub fn unwatch(&self, token: WatchToken, path: &Path) {
-        self.tx.send(WatcherEvent::Deregister(token, path.to_owned()))
-            .expect("crashed watcher is unrecoverable");
+    pub fn unwatch(&mut self, token: WatchToken, path: &Path) {
+        let mut state = self.state.lock().unwrap();
+
+        let idx = state.watchees.iter()
+            .position(|w| w.token == token && w.path == path);
+
+        if let Some(idx) = idx {
+            let removed = state.watchees.remove(idx);
+            if !state.watchees.iter().any(|w| w.path == removed.path) {
+                if let Err(e) = self.inner.unwatch(&removed.path) {
+                    eprintln!("unwatching error {:?}", e);
+                }
+            }
+        }
     }
 
     /// Empties the event queue, returning any contained events.
     pub fn drain_events(&self) -> Vec<(WatchToken, DebouncedEvent)> {
-        let mut deque = self.events.lock().unwrap();
-        let v = deque.drain(..).collect();
+        let mut state = self.state.lock().unwrap();
+        let WatcherState { ref mut events, .. } = *state;
+        let v = events.drain(..).collect();
         v
-    }
-}
-
-fn watcher_loop<T: Notify>(watcher: &mut RecommendedWatcher,
-                               events: EventQueue,
-                               rx: Receiver<WatcherEvent>,
-                               peer: T) {
-    use self::WatcherEvent::*;
-    let mut watchees: Vec<Watchee> = Vec::new();
-
-    while let Ok(event) = rx.recv() {
-        match event {
-
-            Register(token, path, mode, filter) => {
-                let recursive = is_recursive(&mode);
-                let mut erred = false;
-                if !watchees.iter().any(|w| w.path == path) {
-                    if let Err(e) = watcher.watch(&path, mode) {
-                        eprintln!("watching error {:?}", e);
-                        erred = true;
-                    }
-                }
-                if !erred {
-                    // should we add this even if we _do_ err?
-                    // we don't have reasonable error reporting here, so maybe
-                    watchees.push( Watchee { path, token, recursive, filter } );
-                }
-           }
-
-            Deregister(token, path) =>  {
-                let idx = watchees.iter()
-                    .position(|w| w.token == token && w.path == path);
-                if let Some(idx) = idx {
-                    let removed = watchees.remove(idx);
-                    if !watchees.iter().any(|w| w.path == removed.path) {
-                        if let Err(e) = watcher.unwatch(&removed.path) {
-                            eprintln!("unwatching error {:?}", e);
-                        }
-                    }
-                }
-            }
-
-            Event(event) => {
-                let mut queue = events.lock().expect("failed to acquire lock");
-                watchees.iter()
-                    .filter(|w| w.wants_event(&event))
-                    .map(|w| w.token)
-                    .for_each(|t| queue.push_back((t, clone_event(&event))));
-
-                peer.notify();
-            }
-        }
     }
 }
 
@@ -270,12 +223,6 @@ impl Watchee {
     }
 }
 
-impl Notify for Sender<bool> {
-    fn notify(&self) {
-        self.send(true).expect("send shouldn't fail")
-    }
-}
-
 impl Notify for RpcPeer {
     fn notify(&self) {
         self.schedule_idle(WATCH_IDLE_TOKEN);
@@ -294,13 +241,6 @@ fn mode_from_bool(b: bool) -> RecursiveMode {
         RecursiveMode::Recursive
     } else {
         RecursiveMode::NonRecursive
-    }
-}
-
-fn is_recursive(mode: &RecursiveMode) -> bool {
-    match *mode {
-        RecursiveMode::Recursive => true,
-        RecursiveMode::NonRecursive => false,
     }
 }
 
@@ -355,6 +295,12 @@ mod tests {
         }
     }
 
+    impl Notify for mpsc::Sender<bool> {
+        fn notify(&self) {
+            self.send(true).expect("send shouldn't fail")
+        }
+    }
+
     // Sleep for `duration` in milliseconds
     pub fn sleep(duration: u64) {
         thread::sleep(Duration::from_millis(duration));
@@ -367,7 +313,7 @@ mod tests {
         }
     }
 
-    pub fn recv_all<T>(rx: &Receiver<T>, duration: Duration) -> Vec<T> {
+    pub fn recv_all<T>(rx: &mpsc::Receiver<T>, duration: Duration) -> Vec<T> {
         let start = Instant::now();
         let mut events = Vec::new();
 
@@ -513,9 +459,9 @@ mod tests {
     fn recurse_with_contained() {
         let (tx, rx) = channel();
         let tmp = tempdir::TempDir::new("xi-test").unwrap();
-        let w = FileWatcher::new(tx);
+        let mut w = FileWatcher::new(tx);
         tmp.create("adir/dir2/file");
-        sleep_macos(25_000);
+        sleep_macos(35_000);
         w.watch(&tmp.mkpath("adir"), true, 1.into());
         sleep_macos(10);
         w.watch(&tmp.mkpath("adir/dir2/file"), false,  2.into());
@@ -537,7 +483,7 @@ mod tests {
         let tmp = tempdir::TempDir::new("xi-test").unwrap();
         tmp.create("my_file");
         sleep_macos(25_000);
-        let w = FileWatcher::new(tx);
+        let mut w = FileWatcher::new(tx);
         w.watch(&tmp.mkpath("my_file"), false, 1.into());
         sleep_macos(10);
         w.watch(&tmp.mkpath("my_file"), false, 2.into());
