@@ -688,7 +688,7 @@ impl Editor {
 
         self.pristine_rev_id = self.last_rev_id;
         self.view.set_pristine();
-        self.view.set_dirty();
+        self.view.set_dirty(&self.text);
         self.render();
     }
 
@@ -778,7 +778,7 @@ impl Editor {
 
     fn debug_rewrap(&mut self) {
         self.view.rewrap(&self.text, 72);
-        self.view.set_dirty();
+        self.view.set_dirty(&self.text);
     }
 
     fn debug_print_spans(&self) {
@@ -999,7 +999,7 @@ impl Editor {
 
     pub fn theme_changed(&mut self) {
         self.styles.theme_changed(&self.doc_ctx);
-        self.view.set_dirty();
+        self.view.set_dirty(&self.text);
         self.render();
     }
 
@@ -1045,7 +1045,7 @@ impl Editor {
         }
         let iv = Interval::new_closed_closed(start, end_offset);
         self.styles.update_layer(plugin, iv, spans);
-        self.view.set_dirty();
+        self.view.set_dirty(&self.text);
         self.render();
     }
 
@@ -1117,7 +1117,7 @@ impl Editor {
         where T: Into<Option<ViewIdentifier>> {
         {
             self.styles.remove_layer(plugin_id);
-            self.view.set_dirty();
+            self.view.set_dirty(&self.text);
             self.render();
         }
         let view_id = view_id.into().unwrap_or(self.view.view_id);

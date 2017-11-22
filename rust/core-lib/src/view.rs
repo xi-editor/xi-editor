@@ -29,6 +29,7 @@ use styles::Style;
 use index_set::IndexSet;
 use selection::{Affinity, Selection, SelRegion};
 use movement::{Movement, selection_movement};
+use line_cache_shadow::{self, LineCacheShadow, RenderPlan, RenderTactic};
 
 use linewrap;
 
@@ -47,6 +48,10 @@ pub struct View {
     height: usize,  // height of visible portion
     breaks: Option<Breaks>,
     wrap_col: usize,
+
+    /// Front end's line cache state for this view. See the `LineCacheShadow`
+    /// description for the invariant.
+    lc_shadow: LineCacheShadow,
 
     // Ranges of lines held by the line cache in the front-end that are considered
     // valid.
@@ -107,6 +112,7 @@ impl View {
             height: 10,
             breaks: None,
             wrap_col: 0,
+            lc_shadow: LineCacheShadow::default(),
             valid_lines: IndexSet::new(),
             sel_dirty: true,
             hls_dirty: true,
@@ -438,6 +444,70 @@ impl View {
         update
     }
 
+    fn send_update_for_plan(&mut self, text: &Rope, tab_ctx: &DocumentCtx,
+        style_spans: &Spans<Style>, plan: &RenderPlan)
+    {
+        if !self.lc_shadow.needs_render(plan) { return; }
+
+        let mut b = line_cache_shadow::Builder::new();
+        let mut ops = Vec::new();
+        let mut line_num = 0;  // tracks old line cache
+        for seg in self.lc_shadow.iter_with_plan(plan) {
+            match seg.tactic {
+                RenderTactic::Discard => {
+                    ops.push(self.build_update_op("invalidate", None, seg.n));
+                    b.add_span(seg.n, 0, 0);
+                }
+                RenderTactic::Preserve => {
+                    // TODO: in the case where it's ALL_VALID & !CURSOR_VALID, and cursors
+                    // are empty, could send update removing the cursor.
+                    if seg.validity == line_cache_shadow::ALL_VALID {
+                        let n_skip = seg.their_line_num - line_num;
+                        if n_skip > 0 {
+                            ops.push(self.build_update_op("skip", None, n_skip));
+                        }
+                        ops.push(self.build_update_op("copy", None, seg.n));
+                        b.add_span(seg.n, seg.our_line_num, line_cache_shadow::ALL_VALID);
+                        line_num = seg.their_line_num + seg.n;
+                    } else {
+                        ops.push(self.build_update_op("invalidate", None, seg.n));
+                        b.add_span(seg.n, 0, 0);
+                    }
+                }
+                RenderTactic::Render => {
+                    // TODO: update (rather than re-render) in cases of text valid
+                    if seg.validity == line_cache_shadow::ALL_VALID {
+                        let n_skip = seg.their_line_num - line_num;
+                        if n_skip > 0 {
+                            ops.push(self.build_update_op("skip", None, n_skip));
+                        }
+                        ops.push(self.build_update_op("copy", None, seg.n));
+                        b.add_span(seg.n, seg.our_line_num, line_cache_shadow::ALL_VALID);
+                        line_num = seg.their_line_num + seg.n;
+                    } else {
+                        let offset = self.offset_of_line(text, seg.our_line_num);
+                        let mut line_cursor = Cursor::new(text, offset);
+                        let mut soft_breaks = self.breaks.as_ref().map(|breaks|
+                            Cursor::new(breaks, offset));
+                        let mut rendered_lines = Vec::new();
+                        for line_num in seg.our_line_num .. seg.our_line_num + seg.n {
+                            rendered_lines.push(self.render_line(tab_ctx, text,
+                                &mut line_cursor, soft_breaks.as_mut(), style_spans, line_num));
+                        }
+                        ops.push(self.build_update_op("ins", Some(rendered_lines), seg.n));
+                        b.add_span(seg.n, seg.our_line_num, line_cache_shadow::ALL_VALID);
+                    }
+                }
+            }
+        }
+        let params = json!({
+            "ops": ops,
+            "pristine": self.pristine,
+        });
+        tab_ctx.update_view(self.view_id, &params);
+        self.lc_shadow = b.build();
+    }
+
     // Update front-end with any changes to view since the last time sent.
     pub fn render_if_dirty(&mut self, text: &Rope, tab_ctx: &DocumentCtx, style_spans: &Spans<Style>) {
         if self.sel_dirty || self.hls_dirty || self.dirty {
@@ -450,9 +520,17 @@ impl View {
         }
     }
 
-    // TODO: finer grained tracking
-    pub fn set_dirty(&mut self) {
+    /// Invalidates client's entire line cache, forcing a full render at the next update
+    /// cycle. This should be a last resort, updates should generally cause finer grain
+    /// invalidation.
+    pub fn set_dirty(&mut self, text: &Rope) {
         self.dirty = true;
+
+        let height = self.offset_to_line_col(text, text.len()).0 + 1;
+        let mut b = line_cache_shadow::Builder::new();
+        b.add_span(height, 0, 0);
+        b.set_dirty(true);
+        self.lc_shadow = b.build();
     }
 
     // How should we count "column"? Valid choices include:
