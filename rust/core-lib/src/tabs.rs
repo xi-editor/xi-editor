@@ -231,36 +231,21 @@ impl BufferContainerRef {
         inner.editor_for_view_mut(view_id).unwrap()._set_path(file_path);
     }
 
-    /// Adds a new view to the `Editor` instance owning `buffer_id`.
-    pub fn add_view(&self, view_id: ViewIdentifier, buffer_id: &BufferIdentifier) {
-        let mut inner = self.lock();
-        inner.views.insert(view_id.to_owned(), buffer_id.to_owned());
-        inner.editor_for_view_mut(view_id).unwrap().add_view(view_id);
-    }
-
     /// Closes the view with identifier `view_id`.
     ///
     /// If this is the last view open onto the underlying buffer, also cleans up
     /// the `Editor` instance.
     pub fn close_view(&self, view_id: ViewIdentifier) {
-        let (remove, path) = {
-            let mut inner = self.lock();
-            let editor = inner.editor_for_view_mut(view_id).unwrap();
-            editor.remove_view(view_id);
-            if !editor.has_views() {
-                (true, editor.get_path().map(PathBuf::from))
-            } else {
-                (false, None)
-            }
+        let mut inner = self.lock();
+        let buffer_id = inner.views.remove(&view_id);
+        let ed = buffer_id.and_then(|id| inner.editors.remove(&id));
+        let ed = match ed {
+            Some(ed) => ed,
+            None => return,
         };
 
-        if remove {
-            let mut inner = self.lock();
-            let buffer_id = inner.views.remove(&view_id).unwrap();
-            if let Some(path) = path {
-                inner.open_files.remove(&path);
-            }
-            inner.editors.remove(&buffer_id);
+        if let Some(path) = ed.get_path() {
+            inner.open_files.remove(path);
         }
     }
 }
@@ -405,8 +390,6 @@ impl Documents {
             if self.buffers.has_open_file(&file_path) {
                 let buffer_id = self.next_buffer_id();
                 self.new_empty_view(rpc_peer, view_id, buffer_id);
-                // let buffer_id = self.open_files.get(&file_path).unwrap().to_owned();
-                //self.add_view(view_id, buffer_id);
             } else {
                 // not open: create new buffer_id and open file
                 let buffer_id = self.next_buffer_id();
@@ -492,13 +475,6 @@ impl Documents {
     #[cfg(not(target_os = "fuchsia"))]
     fn initialize_sync(&mut self, _editor: &mut Editor, _path_opt: Option<&Path>, _buffer_id: BufferIdentifier) {
         // not implemented yet on OSs other than Fuchsia
-    }
-
-    /// Adds a new view to an existing editor instance.
-    #[allow(unreachable_code, unused_variables, dead_code)]
-    fn add_view(&mut self, view_id: ViewIdentifier, buffer_id: BufferIdentifier) {
-        panic!("add_view should not currently be accessible");
-        self.buffers.add_view(view_id, &buffer_id);
     }
 
     fn read_file<P: AsRef<Path>>(&self, path: P) -> io::Result<String> {
@@ -830,7 +806,6 @@ impl DocumentCtx {
     pub fn get_style_map(&self) -> &Arc<Mutex<ThemeStyleMap>> {
         &self.style_map
     }
-
 
     // Get the index for a given style. If the style is not in the existing
     // style map, then issues a def_style request to the front end. Intended

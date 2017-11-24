@@ -17,8 +17,7 @@ use std::cmp::{min, max};
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::io::Write;
-use std::collections::{BTreeMap, BTreeSet};
-use std::mem;
+use std::collections::BTreeSet;
 use serde_json::Value;
 
 use xi_rope::rope::{LinesMetric, Rope, RopeInfo};
@@ -63,11 +62,6 @@ pub struct Editor {
     path: Option<PathBuf>,
     buffer_id: BufferIdentifier,
     syntax: SyntaxDefinition,
-
-    /// A collection of non-primary views attached to this buffer.
-    views: BTreeMap<ViewIdentifier, View>,
-    /// The currently active view. This property is dynamically modified as events originating in
-    /// different views arrive.
     view: View,
     engine: Engine,
     last_rev_id: RevId,
@@ -139,7 +133,6 @@ impl Editor {
             buffer_id: buffer_id,
             path: None,
             syntax: SyntaxDefinition::default(),
-            views: BTreeMap::new(),
             view: View::new(initial_view_id),
             engine: engine,
             last_rev_id: last_rev_id,
@@ -163,39 +156,6 @@ impl Editor {
             last_synced_rev: last_rev_id,
         };
         editor
-    }
-
-
-    #[allow(unreachable_code, unused_variables)]
-    pub fn add_view(&mut self, view_id: ViewIdentifier) {
-        panic!("multi-view support is not currently implemented");
-        assert!(!self.views.contains_key(&view_id), "view_id already exists");
-        self.views.insert(view_id, View::new(view_id));
-    }
-
-    /// Removes a view from this editor's stack, if this editor has multiple views.
-    ///
-    /// If the editor only has a single view this is a no-op. After removing a view the caller must
-    /// always call Editor::has_views() to determine whether or not the editor should be cleaned up.
-    #[allow(unreachable_code)]
-    pub fn remove_view(&mut self, view_id: ViewIdentifier) {
-        if self.view.view_id == view_id {
-            if self.views.len() > 0 {
-                panic!("multi-view support is not currently implemented");
-                //set some other view as active. This will be reset on the next EditCommand
-                let tempkey = self.views.keys().nth(0).unwrap().clone();
-                let mut temp = self.views.remove(&tempkey).unwrap();
-                mem::swap(&mut temp, &mut self.view);
-                self.views.insert(temp.view_id, temp);
-            }
-        } else {
-            self.views.remove(&view_id).expect("attempt to remove missing view");
-        }
-    }
-
-    /// Returns true if this editor has additional attached views.
-    pub fn has_views(&self) -> bool {
-        self.views.len() > 0
     }
 
     /// should only ever be called from `BufferContainerRef::set_path`
@@ -256,11 +216,7 @@ impl Editor {
     /// Returns buffer information used to initialize plugins.
     pub fn plugin_init_info(&self) -> PluginBufferInfo {
         let nb_lines = self.text.measure::<LinesMetric>() + 1;
-        let mut views = vec![self.view.view_id];
-        for v in self.views.keys() {
-            views.push(*v);
-        }
-
+        let views = vec![self.view.view_id];
         PluginBufferInfo::new(self.buffer_id, &views,
                               self.engine.get_head_rev_id().token(), self.text.len(),
                               nb_lines, self.path.clone(), self.syntax.clone())
@@ -945,15 +901,8 @@ impl Editor {
         }
     }
 
-    fn cmd_prelude(&mut self, view_id: ViewIdentifier) {
+    fn cmd_prelude(&mut self) {
         self.this_edit_type = EditType::Other;
-        // if the rpc's originating view is different from current self.view, swap it in
-        if self.view.view_id != view_id {
-            let mut temp = self.views.remove(&view_id)
-                .expect("no view for provided view_id");
-            mem::swap(&mut temp, &mut self.view);
-            self.views.insert(temp.view_id, temp);
-        }
     }
 
     fn cmd_postlude(&mut self) {
@@ -963,11 +912,11 @@ impl Editor {
         self.last_edit_type = self.this_edit_type;
     }
 
-    pub fn handle_notification(&mut self, view_id: ViewIdentifier,
+    pub fn handle_notification(&mut self, _view_id: ViewIdentifier,
                                cmd: rpc::EditNotification) {
         use rpc::EditNotification::*;
         use rpc::{LineRange, MouseAction};
-        self.cmd_prelude(view_id);
+        self.cmd_prelude();
 
         match cmd {
             Insert { chars } => self.do_insert(&chars),
@@ -1033,10 +982,10 @@ impl Editor {
         self.cmd_postlude();
     }
 
-    pub fn handle_request(&mut self, view_id: ViewIdentifier,
+    pub fn handle_request(&mut self, _view_id: ViewIdentifier,
                           cmd: rpc::EditRequest) -> Result<Value, RemoteError> {
         use rpc::EditRequest::*;
-        self.cmd_prelude(view_id);
+        self.cmd_prelude();
 
         let result = match cmd {
             Cut => self.do_cut(),
