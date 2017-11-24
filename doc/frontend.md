@@ -30,6 +30,26 @@ there are other front-ends developed independently, in which case a
 simple version negotiation at startup will support a small window of
 versions.
 
+### Additional Resources
+
+This document is not always perfectly up to date. For a comprehensive list of
+supported commands, the canonical resource is the source specifically [rust/core-lib/src/rpc.rs](https://github.com/google/xi-editor/blob/master/rust/core-lib/src/rpc.rs).
+
+- The update protocol is explained in more detail in [doc/update.md](https://github.com/google/xi-editor/blob/master/doc/update.md).
+- The config system is explained in more detail in [doc/config.md](https://github.com/google/xi-editor/blob/master/doc/config.md).
+
+
+## Table of Contents
+
+- [API Methods](#methods)
+    - [Backend](#from-front-end-to-back-end)
+        - [Edit Commands](#edit-namespace)
+        - [Plugin Commands](#plugin-namespace)
+    - [Frontend](#from-back-end-to-front-end)
+
+----
+
+
 ## Methods
 
 These are mostly described by example rather than specified in detail.
@@ -41,7 +61,7 @@ to core: {"id":0,"method":"new_view","params":{}}
 from core: {"id":0,"result": "view-id-1"}
 ```
 
-## Top-level methods served by back-end
+## From front-end to back-end
 
 ### new_view
 
@@ -77,42 +97,23 @@ note for `new_view`. Errors are not currently reported.
 Requests that core change the theme. If the change succeeds the client
 will receive a `theme_changed` notification.
 
-### plugin
-**Note:** plugin commands are in flux, and may change.
+### modify_user_config
 
-`plugin {"method": "start", params: {"view_id": "view-id-1", plugin_name: "syntect"}}`
+`modify_user_config { "domain": Domain, "changes": Object }`
 
-Dispatches the inner method to the plugin manager.
+Modifies the user's config settings for the given domain. `Domain` should be
+either the string `"general"` or an object of the form `{"syntax": "rust"}`, or
+`{"user_override": "view-id-1"}`, where `"rust"` is any valid syntax identifier,
+and `"view-id-1"` is the identifier of any open view.
 
-### Plugin methods
+### get_config
 
-#### start
+`get_config {"view_id": "view-id-1"} -> Object`
 
-`start {"view_id": "view-id-1", "plugin_name": "syntect"}`
+Returns the config table for the view associated with this `view_id`.
 
-Starts the named plugin for the given view.
-
-
-#### stop
-
-`stop {"view_id": "view-id-1", "plugin_name": "syntect"}`
-
-Stops the named plugin for the given view.
-
-#### plugin_rpc
-
-```
-plugin_rpc {"view_id": "view-id-1", "receiver": "syntect",
-            "notification": {
-                "method": "custom_method",
-                "params": {"foo": "bar"},
-            }}
- ```
-
-Sends a custom rpc command to the named receiver. This may be a notification
-or a request.
-
-### edit
+### edit namespace
+------
 `edit {"method": "insert", "params": {"chars": "A"}, "view_id":
 "view-id-4"}`
 
@@ -189,7 +190,45 @@ page_down
 page_down_and_modify_selection
 ```
 
-### From back-end to front-end
+### Plugin namespace
+**Note:** plugin commands are in flux, and may change.
+
+**Example**: The following RPC dispatches the inner method to the plugin manager.
+
+`plugin {"method": "start", params: {"view_id": "view-id-1", plugin_name: "syntect"}}`
+
+----
+
+### Plugin methods
+
+#### start
+
+`start {"view_id": "view-id-1", "plugin_name": "syntect"}`
+
+Starts the named plugin for the given view.
+
+
+#### stop
+
+`stop {"view_id": "view-id-1", "plugin_name": "syntect"}`
+
+Stops the named plugin for the given view.
+
+#### plugin_rpc
+
+```
+plugin_rpc {"view_id": "view-id-1", "receiver": "syntect",
+            "notification": {
+                "method": "custom_method",
+                "params": {"foo": "bar"},
+            }}
+ ```
+
+Sends a custom rpc command to the named receiver. This may be a notification
+or a request.
+
+
+## From back-end to front-end
 
 #### update
 **Note**: This document is not entirely up to date: some changes to
@@ -256,8 +295,6 @@ Notifies the client that the config settings for a view have changed.
 This is called once when a new view is created, with `changes` containing
 all config settings; afterwards `changes` only contains the key/value
 pairs that have new values.
-
-### plugins
 
 #### available_plugins
 
@@ -328,16 +365,6 @@ this writing, the following is valid json for a `Command` object:
         ]
     }
 ```
-
-### RPCs from front-end to back-end
-
-#### render_lines
-
-`render_lines {"first_line":45,"last_line":64}` -> *lines*
-
-A request for a "lines" array to cover the given range of formatted
-lines. The response is an array with the same meaning as the
-`lines` field of the `update` method.
 
 ## Other future extensions
 
