@@ -55,9 +55,6 @@ pub struct View {
     // The occurrences, which determine the highlights, have been updated.
     hls_dirty: bool,
 
-    // TODO: much finer grained tracking of dirty state
-    dirty: bool,
-
     /// Tracks whether or not the view has unsaved changes.
     pristine: bool,
 
@@ -106,7 +103,6 @@ impl View {
             wrap_col: 0,
             lc_shadow: LineCacheShadow::default(),
             hls_dirty: true,
-            dirty: true,
             pristine: true,
             search_string: None,
             case_matching: CaseMatching::CaseInsensitive,
@@ -426,12 +422,10 @@ impl View {
         self.send_update_for_plan(text, tab_ctx, style_spans, &plan);
     }
 
-    /// Invalidates client's entire line cache, forcing a full render at the next update
-    /// cycle. This should be a last resort, updates should generally cause finer grain
-    /// invalidation.
+    /// Invalidates front-end's entire line cache, forcing a full render at the next
+    /// update cycle. This should be a last resort, updates should generally cause
+    /// finer grain invalidation.
     pub fn set_dirty(&mut self, text: &Rope) {
-        self.dirty = true;
-
         let height = self.offset_to_line_col(text, text.len()).0 + 1;
         let mut b = line_cache_shadow::Builder::new();
         b.add_span(height, 0, 0);
@@ -516,7 +510,8 @@ impl View {
             linewrap::rewrap(breaks, text, iv, new_len, self.wrap_col);
         }
         self.pristine = pristine;
-        self.dirty = true;
+        // TODO: finer grain invalidation
+        self.set_dirty(text);
         // Any edit cancels a drag. This is good behavior for edits initiated through
         // the front-end, but perhaps not for async edits.
         self.drag_state = None;

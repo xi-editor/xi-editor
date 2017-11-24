@@ -128,7 +128,7 @@ impl Editor {
         let buffer = engine.get_head().clone();
         let last_rev_id = engine.get_head_rev_id();
 
-        let editor = Editor {
+        let mut editor = Editor {
             text: buffer,
             buffer_id: buffer_id,
             path: None,
@@ -155,6 +155,7 @@ impl Editor {
             sync_store: None,
             last_synced_rev: last_rev_id,
         };
+        editor.view.set_dirty(&editor.text);
         editor
     }
 
