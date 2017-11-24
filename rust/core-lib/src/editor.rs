@@ -653,7 +653,7 @@ impl Editor {
     }
 
     fn select_all(&mut self) {
-        self.view.select_all(self.text.len());
+        self.view.select_all(&self.text);
     }
 
     fn add_selection_by_movement(&mut self, movement: Movement) {
@@ -696,7 +696,6 @@ impl Editor {
         let first = max(first, 0) as usize;
         let last = last as usize;
         self.view.set_scroll(first, last);
-        self.view.send_update_for_scroll(&self.text, &self.doc_ctx, self.styles.get_merged(), first, last);
     }
 
     /// Sets the cursor and scrolls to the beginning of the given line.
@@ -706,7 +705,7 @@ impl Editor {
     }
 
     fn do_request_lines(&mut self, first: i64, last: i64) {
-        self.view.send_update(&self.text, &self.doc_ctx, self.styles.get_merged(), first as usize, last as usize);
+        self.view.request_lines(&self.text, &self.doc_ctx, self.styles.get_merged(), first as usize, last as usize);
     }
 
     fn do_click(&mut self, line: u64, col: u64, flags: u64, click_count: u64) {
@@ -772,7 +771,7 @@ impl Editor {
     fn do_gesture(&mut self, line: u64, col: u64, ty: GestureType) {
         let offset = self.view.line_col_to_offset(&self.text, line as usize, col as usize);
         match ty {
-            GestureType::ToggleSel => self.view.toggle_sel(offset),
+            GestureType::ToggleSel => self.view.toggle_sel(&self.text, offset),
         }
     }
 

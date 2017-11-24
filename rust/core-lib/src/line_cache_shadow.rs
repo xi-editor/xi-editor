@@ -64,6 +64,7 @@ pub struct RenderPlan {
     /// Each span is a number of lines and a tactic.
     pub spans: Vec<(usize, RenderTactic)>,
 }
+
 pub struct PlanIterator<'a> {
     lc_shadow: &'a LineCacheShadow,
     plan: &'a RenderPlan,

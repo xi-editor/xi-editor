@@ -33,7 +33,6 @@ use line_cache_shadow::{self, LineCacheShadow, RenderPlan, RenderTactic};
 
 use linewrap;
 
-const SCROLL_SLOP: usize = 2;
 const BACKWARDS_FIND_CHUNK_SIZE: usize = 32_768;
 
 pub struct View {
@@ -53,13 +52,6 @@ pub struct View {
     /// description for the invariant.
     lc_shadow: LineCacheShadow,
 
-    // Ranges of lines held by the line cache in the front-end that are considered
-    // valid.
-    // TODO: separate tracking of text, cursors, and styles
-    valid_lines: IndexSet,
-
-    // The selection state was updated.
-    sel_dirty: bool,
     // The occurrences, which determine the highlights, have been updated.
     hls_dirty: bool,
 
@@ -113,8 +105,6 @@ impl View {
             breaks: None,
             wrap_col: 0,
             lc_shadow: LineCacheShadow::default(),
-            valid_lines: IndexSet::new(),
-            sel_dirty: true,
             hls_dirty: true,
             dirty: true,
             pristine: true,
@@ -145,17 +135,18 @@ impl View {
     }
 
     /// Toggles a caret at the given offset.
-    pub fn toggle_sel(&mut self, offset: usize) {
-        self.sel_dirty = true;
-        if !self.selection.regions_in_range(offset, offset).is_empty() {
-            self.selection.delete_range(offset, offset, true);
-            if !self.selection.is_empty() {
+    pub fn toggle_sel(&mut self, text: &Rope, offset: usize) {
+        // We could probably reduce the cloning of selections by being clever.
+        let mut selection = self.selection.clone();
+        if !selection.regions_in_range(offset, offset).is_empty() {
+            selection.delete_range(offset, offset, true);
+            if !selection.is_empty() {
                 self.drag_state = None;
                 return;
             }
         }
         self.drag_state = Some(DragState {
-            base_sel: self.selection.clone(),
+            base_sel: selection.clone(),
             offset: offset,
             min: offset,
             max: offset,
@@ -166,7 +157,8 @@ impl View {
             horiz: None,
             affinity: Affinity::default(),
         };
-        self.selection.add_region(region);
+        selection.add_region(region);
+        self.set_selection_raw(text, selection);
     }
 
     /// Move the selection by the given movement. Return value is the offset of
@@ -185,29 +177,35 @@ impl View {
     /// Set the selection to a new value. Return value is the offset of a
     /// point that should be scrolled into view.
     pub fn set_selection(&mut self, text: &Rope, sel: Selection) -> Option<usize> {
-        self.selection = sel;
+        self.set_selection_raw(text, sel);
         // We somewhat arbitrarily choose the last region for setting the old-style
         // selection state, and for scrolling it into view if needed. This choice can
         // likely be improved.
         let region = self.selection.last().unwrap().clone();
-        self.sel_dirty = true;
         self.scroll_to_cursor(text);
         Some(region.end)
+    }
+
+    /// Sets the selection to a new value, invalidating the line cache as needed. This
+    /// function does not perform any scrolling.
+    fn set_selection_raw(&mut self, text: &Rope, sel: Selection) {
+        // TODO: fine grained invalidation.
+        self.selection = sel;
+        self.set_dirty(text);
     }
 
     /// Select entire buffer.
     ///
     /// Note: unlike movement based selection, this does not scroll.
-    pub fn select_all(&mut self, len: usize) {
+    pub fn select_all(&mut self, text: &Rope) {
         let mut selection = Selection::new();
         selection.add_region(SelRegion {
             start: 0,
-            end: len,
+            end: text.len(),
             horiz: None,
             affinity: Default::default(),
         });
-        self.selection = selection;
-        self.sel_dirty = true;
+        self.set_selection_raw(text, selection);
     }
 
     /// Starts a drag operation.
@@ -333,104 +331,6 @@ impl View {
         rendered_styles
     }
 
-    pub fn send_update(&mut self, text: &Rope, tab_ctx: &DocumentCtx, style_spans: &Spans<Style>,
-        first_line: usize, last_line: usize)
-    {
-        let dirty = self.dirty || self.sel_dirty;
-        if dirty {
-            self.valid_lines.clear();
-        }
-        let height = self.offset_to_line_col(text, text.len()).0 + 1;
-        let last_line = min(last_line, height);
-
-        // update find for given region
-        if self.hls_dirty {
-            self.update_find_for_lines(text, first_line, last_line);
-        }
-
-        let mut ops = Vec::new();
-        if first_line > 0 {
-            let op = if dirty { "invalidate" } else { "copy" };
-            ops.push(self.build_update_op(op, None, first_line));
-        }
-        let first_line_offset = self.offset_of_line(text, first_line);
-        let mut line_cursor = Cursor::new(text, first_line_offset);
-        let mut soft_breaks = self.breaks.as_ref().map(|breaks|
-            Cursor::new(breaks, first_line_offset)
-        );
-
-        let mut rendered_lines = Vec::new();
-        for line_num in first_line..last_line {
-            rendered_lines.push(self.render_line(tab_ctx, text,
-                &mut line_cursor, soft_breaks.as_mut(), style_spans, line_num));
-        }
-        ops.push(self.build_update_op("ins", Some(rendered_lines), last_line - first_line));
-        if last_line < height {
-            if !dirty {
-                ops.push(self.build_update_op("skip", None, last_line - first_line));
-            }
-            let op = if dirty { "invalidate" } else { "copy" };
-            ops.push(self.build_update_op(op, None, height - last_line));
-        }
-        let params = json!({
-            "ops": ops,
-            "pristine": self.pristine,
-        });
-        tab_ctx.update_view(self.view_id, &params);
-        self.valid_lines.union_one_range(first_line, last_line);
-    }
-
-
-    /// Send lines within given region (plus slop) that the front-end does not already
-    /// have.
-    pub fn send_update_for_scroll(&mut self, text: &Rope, tab_ctx: &DocumentCtx, style_spans: &Spans<Style>,
-        first_line: usize, last_line: usize)
-    {
-        let first_line = max(first_line, SCROLL_SLOP) - SCROLL_SLOP;
-        let last_line = last_line + SCROLL_SLOP;
-        let height = self.offset_to_line_col(text, text.len()).0 + 1;
-        let last_line = min(last_line, height);
-
-        // update find for given region
-        self.update_find_for_lines(text, first_line, last_line);
-
-        let mut ops = Vec::new();
-        let mut line = 0;
-        for (start, end) in self.valid_lines.minus_one_range(first_line, last_line) {
-            // TODO: this has some duplication with send_update in the non-dirty case.
-            if start > line {
-                ops.push(self.build_update_op("copy", None, start - line));
-            }
-            let start_offset = self.offset_of_line(text, start);
-            let mut line_cursor = Cursor::new(text, start_offset);
-            let mut soft_breaks = self.breaks.as_ref().map(|breaks|
-                Cursor::new(breaks, start_offset)
-            );
-            let mut rendered_lines = Vec::new();
-            for line_num in start..end {
-                rendered_lines.push(self.render_line(tab_ctx, text,
-                                                     &mut line_cursor, soft_breaks.as_mut(),
-                                                     style_spans, line_num));
-            }
-            ops.push(self.build_update_op("ins", Some(rendered_lines), end - start));
-            ops.push(self.build_update_op("skip", None, end - start));
-            line = end;
-        }
-        if line == 0 {
-            // Front-end already has all lines, no need to send any more.
-            return;
-        }
-        if line < height {
-            ops.push(self.build_update_op("copy", None, height - line));
-        }
-        let params = json!({
-            "ops": ops,
-            "pristine": self.pristine,
-        });
-        tab_ctx.update_view(self.view_id, &params);
-        self.valid_lines.union_one_range(first_line, last_line);
-    }
-
     fn build_update_op(&self, op: &str, lines: Option<Vec<Value>>, n: usize) -> Value {
         let mut update = json!({
             "op": op,
@@ -509,15 +409,21 @@ impl View {
     }
 
     // Update front-end with any changes to view since the last time sent.
-    pub fn render_if_dirty(&mut self, text: &Rope, tab_ctx: &DocumentCtx, style_spans: &Spans<Style>) {
-        if self.sel_dirty || self.hls_dirty || self.dirty {
-            let first_line = max(self.first_line, SCROLL_SLOP) - SCROLL_SLOP;
-            let last_line = self.first_line + self.height + SCROLL_SLOP;
-            self.send_update(text, tab_ctx, style_spans, first_line, last_line);
-            self.sel_dirty = false;
-            self.hls_dirty = false;
-            self.dirty = false;
-        }
+    pub fn render_if_dirty(&mut self, text: &Rope, tab_ctx: &DocumentCtx,
+        style_spans: &Spans<Style>)
+    {
+        let height = self.offset_to_line_col(text, text.len()).0 + 1;
+        let plan = RenderPlan::create(height, self.first_line, self.height);
+        self.send_update_for_plan(text, tab_ctx, style_spans, &plan);
+    }
+
+    // Send the requested lines even if they're outside the current scroll region.
+    pub fn request_lines(&mut self, text: &Rope, tab_ctx: &DocumentCtx, style_spans: &Spans<Style>,
+        first_line: usize, last_line: usize) {
+        let height = self.offset_to_line_col(text, text.len()).0 + 1;
+        let mut plan = RenderPlan::create(height, self.first_line, self.height);
+        plan.request_lines(first_line, last_line);
+        self.send_update_for_plan(text, tab_ctx, style_spans, &plan);
     }
 
     /// Invalidates client's entire line cache, forcing a full render at the next update
