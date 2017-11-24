@@ -238,24 +238,26 @@ impl RenderPlan {
     /// what to render.
     pub fn create(total_height: usize, first_line: usize, height: usize) -> RenderPlan {
         let mut spans = Vec::new();
+        let mut last = 0;
         if first_line > PRESERVE_EXTENT {
-            spans.push((first_line - PRESERVE_EXTENT, RenderTactic::Discard));
+            last = first_line - PRESERVE_EXTENT;
+            spans.push((last, RenderTactic::Discard));
         }
         if first_line > SCROLL_SLOP {
-            let n = first_line - SCROLL_SLOP - spans.len();
+            let n = first_line - SCROLL_SLOP - last;
             spans.push((n, RenderTactic::Preserve));
+            last += n;
         }
         let render_end = min(first_line + height + SCROLL_SLOP, total_height);
-        let n = render_end - spans.len();
-        spans.push((n, RenderTactic::Render));
+        spans.push((render_end - last, RenderTactic::Render));
+        last = render_end;
         let preserve_end = min(first_line + height + PRESERVE_EXTENT, total_height);
-        if preserve_end > spans.len() {
-            let n = preserve_end - spans.len();
-            spans.push((n, RenderTactic::Preserve));
+        if preserve_end > last {
+            spans.push((preserve_end - last, RenderTactic::Preserve));
+            last = preserve_end;
         }
-        if total_height > spans.len() {
-            let n = total_height - spans.len();
-            spans.push((n, RenderTactic::Discard));
+        if total_height > last {
+            spans.push((total_height - last, RenderTactic::Discard));
         }
         RenderPlan { spans }
     }
