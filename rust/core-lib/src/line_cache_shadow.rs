@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A data structure that tracks the state of the front-end's line cache.
+//! Data structures for tracking the state of the front-end's line cache
+//! and preparing render plans to update it.
 
 use std::cmp::{max, min};
 
