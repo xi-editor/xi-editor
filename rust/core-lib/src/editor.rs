@@ -877,17 +877,17 @@ impl Editor {
         };
 
         if search_string.is_none() {
-            self.view.unset_find();
+            self.view.unset_find(&self.text);
             return Value::Null;
         }
 
         let search_string = search_string.unwrap();
         if search_string.len() == 0 {
-            self.view.unset_find();
+            self.view.unset_find(&self.text);
             return Value::Null;
         }
 
-        self.view.set_find(&search_string, case_sensitive);
+        self.view.set_find(&self.text, &search_string, case_sensitive);
 
         Value::String(search_string.to_string())
     }

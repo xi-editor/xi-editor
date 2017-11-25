@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use std::cmp::{min,max};
+use std::mem;
 
 use serde_json::value::Value;
 
@@ -348,7 +349,11 @@ impl View {
         let mut b = line_cache_shadow::Builder::new();
         let mut ops = Vec::new();
         let mut line_num = 0;  // tracks old line cache
-        for seg in self.lc_shadow.iter_with_plan(plan) {
+
+        // Note: if we weren't doing mutable update_find_for_lines in the loop, we
+        // could just borrow self.lc_shadow instead of doing this.
+        let lc_shadow = mem::replace(&mut self.lc_shadow, LineCacheShadow::default());
+        for seg in lc_shadow.iter_with_plan(plan) {
             match seg.tactic {
                 RenderTactic::Discard => {
                     ops.push(self.build_update_op("invalidate", None, seg.n));
@@ -381,12 +386,17 @@ impl View {
                         b.add_span(seg.n, seg.our_line_num, line_cache_shadow::ALL_VALID);
                         line_num = seg.their_line_num + seg.n;
                     } else {
-                        let offset = self.offset_of_line(text, seg.our_line_num);
+                        let start_line = seg.our_line_num;
+                        let end_line = start_line + seg.n;
+                        if self.hls_dirty {
+                            self.update_find_for_lines(text, start_line, end_line);
+                        }
+                        let offset = self.offset_of_line(text, start_line);
                         let mut line_cursor = Cursor::new(text, offset);
                         let mut soft_breaks = self.breaks.as_ref().map(|breaks|
                             Cursor::new(breaks, offset));
                         let mut rendered_lines = Vec::new();
-                        for line_num in seg.our_line_num .. seg.our_line_num + seg.n {
+                        for line_num in start_line..end_line {
                             rendered_lines.push(self.render_line(tab_ctx, text,
                                 &mut line_cursor, soft_breaks.as_mut(), style_spans, line_num));
                         }
@@ -402,6 +412,7 @@ impl View {
         });
         tab_ctx.update_view(self.view_id, &params);
         self.lc_shadow = b.build();
+        self.hls_dirty = false;
     }
 
     // Update front-end with any changes to view since the last time sent.
@@ -554,16 +565,18 @@ impl View {
     }
 
     /// Unsets the search and removes all highlights from the view.
-    pub fn unset_find(&mut self) {
+    pub fn unset_find(&mut self, text: &Rope) {
         self.search_string = None;
         self.occurrences = None;
         self.hls_dirty = true;
+        // TODO: finer grained invalidation
+        self.set_dirty(text);
         self.valid_search.clear();
     }
 
     /// Sets find for the view, highlights occurrences in the current viewport and selects the first
     /// occurrence relative to the last cursor.
-    pub fn set_find(&mut self, search_string: &str, case_sensitive: bool) {
+    pub fn set_find(&mut self, text: &Rope, search_string: &str, case_sensitive: bool) {
         let case_matching = if case_sensitive {
             CaseMatching::Exact
         } else {
@@ -577,7 +590,7 @@ impl View {
             }
         }
 
-        self.unset_find();
+        self.unset_find(text);
 
         self.search_string = Some(search_string.to_string());
         self.case_matching = case_matching;
@@ -615,6 +628,8 @@ impl View {
             let from = max(start, slop) - slop;
             let to = min(end + slop, text.len());
 
+            // TODO: this interval might cut a unicode codepoint, make sure it is
+            // aligned to codepoint boundaries.
             let text = text.subseq(Interval::new_closed_open(0, to));
             let mut cursor = Cursor::new(&text, from);
 
