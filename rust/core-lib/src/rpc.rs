@@ -373,6 +373,7 @@ pub enum EditNotification {
     DebugRewrap,
     /// Prints the style spans present in the active selection.
     DebugPrintSpans,
+    CancelOperation,
 }
 
 /// The edit related requests.
