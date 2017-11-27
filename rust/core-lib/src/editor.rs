@@ -903,7 +903,7 @@ impl Editor {
 
     fn cancel_operation(&mut self) {
         self.view.unset_find();
-        self.view.collapse_selections();
+        self.view.collapse_selections(&self.text);
     }
 
     fn cmd_prelude(&mut self) {
