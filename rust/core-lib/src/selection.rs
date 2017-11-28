@@ -45,6 +45,12 @@ impl Selection {
         self.regions.clear();
     }
 
+    /// Collapse all selections into a single caret
+    pub fn collapse(&mut self) {
+        self.regions.truncate(1);
+        self.regions[0].start = self.regions[0].end;
+    }
+
     // The smallest index so that offset > region.max() for all preceding
     // regions.
     pub fn search(&self, offset: usize) -> usize {

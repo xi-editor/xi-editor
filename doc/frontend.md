@@ -129,6 +129,12 @@ inner methods described below:
 
 Inserts the `chars` string at the current cursor location.
 
+#### cancel_operation
+
+`cancel_operation`
+
+Currently, this collapses selections and multiple cursors, and dehighlights
+searches.
 
 #### scroll
 

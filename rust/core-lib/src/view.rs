@@ -233,6 +233,13 @@ impl View {
         &self.selection
     }
 
+    /// Collapse all selections in this view into a single caret
+    pub fn collapse_selections(&mut self, text: &Rope) {
+        let mut sel = self.selection.clone();
+        sel.collapse();
+        &self.set_selection(text, sel);
+    }
+
     /// Determines whether the offset is in any selection (counting carets and
     /// selection edges).
     pub fn is_point_in_selection(&self, offset: usize) -> bool {

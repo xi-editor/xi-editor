@@ -901,6 +901,11 @@ impl Editor {
         }
     }
 
+    fn do_cancel_operation(&mut self) {
+        self.view.unset_find();
+        self.view.collapse_selections(&self.text);
+    }
+
     fn cmd_prelude(&mut self) {
         self.this_edit_type = EditType::Other;
     }
@@ -977,6 +982,7 @@ impl Editor {
             FindPrevious { wrap_around } => self.do_find_next(true, wrap_around.unwrap_or(false), true),
             DebugRewrap => self.debug_rewrap(),
             DebugPrintSpans => self.debug_print_spans(),
+            CancelOperation => self.do_cancel_operation(),
         };
 
         self.cmd_postlude();
