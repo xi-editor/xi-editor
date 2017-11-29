@@ -123,7 +123,7 @@ impl View {
 
     pub fn scroll_to_cursor(&mut self, text: &Rope) {
         let end = self.sel_regions().last().unwrap().end;
-        let (line, _) = self.offset_to_line_col(text, end);
+        let line = self.line_of_offset(text, end);
         if line < self.first_line {
             self.first_line = line;
         } else if self.first_line + self.height <= line {
@@ -183,12 +183,49 @@ impl View {
         Some(region.end)
     }
 
+    /// Sets the selection to a new value, without invalidating. Return values is
+    /// the offset of a point that should be scrolled into view.
+    fn set_selection_for_edit(&mut self, text: &Rope, sel: Selection) -> Option<usize> {
+        self.selection = sel;
+        // We somewhat arbitrarily choose the last region for setting the old-style
+        // selection state, and for scrolling it into view if needed. This choice can
+        // likely be improved.
+        let region = self.selection.last().unwrap().clone();
+        self.scroll_to_cursor(text);
+        Some(region.end)
+    }
+
     /// Sets the selection to a new value, invalidating the line cache as needed. This
     /// function does not perform any scrolling.
     fn set_selection_raw(&mut self, text: &Rope, sel: Selection) {
-        // TODO: fine grained invalidation.
+        self.invalidate_selection(text);
         self.selection = sel;
-        self.set_dirty(text);
+        self.invalidate_selection(text);
+    }
+
+    /// Invalidate the current selection. Note that we could be even more fine-grained
+    /// in the case of multiple cursors, but we also want this method to be fast even
+    /// when the selection is large.
+    fn invalidate_selection(&mut self, text: &Rope) {
+        // TODO: refine for upstream (caret appears on prev line)
+        let first_line = self.line_of_offset(text, self.selection.first().unwrap().min());
+        let last_line = self.line_of_offset(text, self.selection.last().unwrap().max()) + 1;
+        let all_caret = self.selection.iter().all(|region| region.is_caret());
+        let invalid = if all_caret {
+            line_cache_shadow::CURSOR_VALID
+        } else {
+            line_cache_shadow::CURSOR_VALID | line_cache_shadow::STYLES_VALID
+        };
+        self.lc_shadow.partial_invalidate(first_line, last_line, invalid);
+    }
+
+    /// Invalidates the styles of the given range (start and end are offsets within
+    /// the text).
+    pub fn invalidate_styles(&mut self, text: &Rope, start: usize, end: usize) {
+        let first_line = self.line_of_offset(text, start);
+        let (mut last_line, last_col) = self.offset_to_line_col(text, end);
+        last_line += if last_col > 0 { 1 } else { 0 };
+        self.lc_shadow.partial_invalidate(first_line, last_line, line_cache_shadow::STYLES_VALID);
     }
 
     /// Select entire buffer.
@@ -426,7 +463,7 @@ impl View {
     pub fn render_if_dirty(&mut self, text: &Rope, tab_ctx: &DocumentCtx,
         style_spans: &Spans<Style>)
     {
-        let height = self.offset_to_line_col(text, text.len()).0 + 1;
+        let height = self.line_of_offset(text, text.len()) + 1;
         let plan = RenderPlan::create(height, self.first_line, self.height);
         self.send_update_for_plan(text, tab_ctx, style_spans, &plan);
     }
@@ -434,7 +471,7 @@ impl View {
     // Send the requested lines even if they're outside the current scroll region.
     pub fn request_lines(&mut self, text: &Rope, tab_ctx: &DocumentCtx, style_spans: &Spans<Style>,
         first_line: usize, last_line: usize) {
-        let height = self.offset_to_line_col(text, text.len()).0 + 1;
+        let height = self.line_of_offset(text, text.len()) + 1;
         let mut plan = RenderPlan::create(height, self.first_line, self.height);
         plan.request_lines(first_line, last_line);
         self.send_update_for_plan(text, tab_ctx, style_spans, &plan);
@@ -444,7 +481,7 @@ impl View {
     /// update cycle. This should be a last resort, updates should generally cause
     /// finer grain invalidation.
     pub fn set_dirty(&mut self, text: &Rope) {
-        let height = self.offset_to_line_col(text, text.len()).0 + 1;
+        let height = self.line_of_offset(text, text.len()) + 1;
         let mut b = line_cache_shadow::Builder::new();
         b.add_span(height, 0, 0);
         b.set_dirty(true);
@@ -520,16 +557,24 @@ impl View {
     /// recomputing line wraps.
     ///
     /// Return value is a location of a point that should be scrolled into view.
-    pub fn after_edit(&mut self, text: &Rope, delta: &Delta<RopeInfo>, pristine: bool)
-        -> Option<usize>
+    pub fn after_edit(&mut self, text: &Rope, last_text: &Rope, delta: &Delta<RopeInfo>,
+        pristine: bool) -> Option<usize>
     {
+        let (iv, new_len) = delta.summary();
         if let Some(breaks) = self.breaks.as_mut() {
-            let (iv, new_len) = delta.summary();
             linewrap::rewrap(breaks, text, iv, new_len, self.wrap_col);
         }
+        if self.breaks.is_some() {
+            // TODO: finer grain invalidation for the line wrapping, needs info
+            // about what wrapped.
+            self.set_dirty(text);
+        } else {
+            let start = self.line_of_offset(last_text, iv.start());
+            let end = self.line_of_offset(last_text, iv.end()) + 1;
+            let new_end = self.line_of_offset(text, iv.start() + new_len) + 1;
+            self.lc_shadow.edit(start, end, new_end - start);
+        }
         self.pristine = pristine;
-        // TODO: finer grain invalidation
-        self.set_dirty(text);
         // Any edit cancels a drag. This is good behavior for edits initiated through
         // the front-end, but perhaps not for async edits.
         self.drag_state = None;
@@ -563,7 +608,7 @@ impl View {
         // Note: for committing plugin edits, we probably want to know the priority
         // of the delta so we can set the cursor before or after the edit, as needed.
         let new_sel = self.selection.apply_delta(delta, true);
-        self.set_selection(text, new_sel)
+        self.set_selection_for_edit(text, new_sel)
     }
 
     /// Call to mark view as pristine. Used after a buffer is saved.
