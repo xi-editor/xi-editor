@@ -65,6 +65,7 @@ pub mod internal {
     pub mod layers;
     pub mod config;
     pub mod watcher;
+    pub mod line_cache_shadow;
 }
 
 use internal::tabs;
@@ -81,6 +82,7 @@ use internal::syntax;
 use internal::layers;
 use internal::config;
 use internal::watcher;
+use internal::line_cache_shadow;
 #[cfg(target_os = "fuchsia")]
 use internal::fuchsia;
 

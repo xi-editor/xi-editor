@@ -128,7 +128,7 @@ impl Editor {
         let buffer = engine.get_head().clone();
         let last_rev_id = engine.get_head_rev_id();
 
-        let editor = Editor {
+        let mut editor = Editor {
             text: buffer,
             buffer_id: buffer_id,
             path: None,
@@ -155,6 +155,7 @@ impl Editor {
             sync_store: None,
             last_synced_rev: last_rev_id,
         };
+        editor.view.set_dirty(&editor.text);
         editor
     }
 
@@ -653,7 +654,7 @@ impl Editor {
     }
 
     fn select_all(&mut self) {
-        self.view.select_all(self.text.len());
+        self.view.select_all(&self.text);
     }
 
     fn add_selection_by_movement(&mut self, movement: Movement) {
@@ -688,7 +689,7 @@ impl Editor {
 
         self.pristine_rev_id = self.last_rev_id;
         self.view.set_pristine();
-        self.view.set_dirty();
+        self.view.set_dirty(&self.text);
         self.render();
     }
 
@@ -696,7 +697,6 @@ impl Editor {
         let first = max(first, 0) as usize;
         let last = last as usize;
         self.view.set_scroll(first, last);
-        self.view.send_update_for_scroll(&self.text, &self.doc_ctx, self.styles.get_merged(), first, last);
     }
 
     /// Sets the cursor and scrolls to the beginning of the given line.
@@ -706,7 +706,7 @@ impl Editor {
     }
 
     fn do_request_lines(&mut self, first: i64, last: i64) {
-        self.view.send_update(&self.text, &self.doc_ctx, self.styles.get_merged(), first as usize, last as usize);
+        self.view.request_lines(&self.text, &self.doc_ctx, self.styles.get_merged(), first as usize, last as usize);
     }
 
     fn do_click(&mut self, line: u64, col: u64, flags: u64, click_count: u64) {
@@ -772,13 +772,13 @@ impl Editor {
     fn do_gesture(&mut self, line: u64, col: u64, ty: GestureType) {
         let offset = self.view.line_col_to_offset(&self.text, line as usize, col as usize);
         match ty {
-            GestureType::ToggleSel => self.view.toggle_sel(offset),
+            GestureType::ToggleSel => self.view.toggle_sel(&self.text, offset),
         }
     }
 
     fn debug_rewrap(&mut self) {
         self.view.rewrap(&self.text, 72);
-        self.view.set_dirty();
+        self.view.set_dirty(&self.text);
     }
 
     fn debug_print_spans(&self) {
@@ -877,17 +877,17 @@ impl Editor {
         };
 
         if search_string.is_none() {
-            self.view.unset_find();
+            self.view.unset_find(&self.text);
             return Value::Null;
         }
 
         let search_string = search_string.unwrap();
         if search_string.len() == 0 {
-            self.view.unset_find();
+            self.view.unset_find(&self.text);
             return Value::Null;
         }
 
-        self.view.set_find(&search_string, case_sensitive);
+        self.view.set_find(&self.text, &search_string, case_sensitive);
 
         Value::String(search_string.to_string())
     }
@@ -1005,7 +1005,7 @@ impl Editor {
 
     pub fn theme_changed(&mut self) {
         self.styles.theme_changed(&self.doc_ctx);
-        self.view.set_dirty();
+        self.view.set_dirty(&self.text);
         self.render();
     }
 
@@ -1051,7 +1051,7 @@ impl Editor {
         }
         let iv = Interval::new_closed_closed(start, end_offset);
         self.styles.update_layer(plugin, iv, spans);
-        self.view.set_dirty();
+        self.view.set_dirty(&self.text);
         self.render();
     }
 
@@ -1123,7 +1123,7 @@ impl Editor {
         where T: Into<Option<ViewIdentifier>> {
         {
             self.styles.remove_layer(plugin_id);
-            self.view.set_dirty();
+            self.view.set_dirty(&self.text);
             self.render();
         }
         let view_id = view_id.into().unwrap_or(self.view.view_id);
