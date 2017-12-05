@@ -333,9 +333,13 @@ impl Editor {
     }
 
     fn update_after_revision(&mut self, author: Option<&str>) {
-        let delta = self.engine.delta_rev_head(self.last_rev_id.token());
+        let last_token = self.last_rev_id.token();
+        let delta = self.engine.delta_rev_head(last_token);
         let is_pristine = self.is_pristine();
-        self.scroll_to = self.view.after_edit(&self.text, &delta, is_pristine);
+        // TODO (performance): it's probably quicker to stash last_text rather than
+        // resynthesize it.
+        let last_text = self.engine.get_rev(last_token).expect("last_rev not found");
+        self.scroll_to = self.view.after_edit(&self.text, &last_text, &delta, is_pristine);
         let (iv, new_len) = delta.summary();
 
         // TODO: maybe more precise editing based on actual delta rather than summary.
@@ -902,7 +906,7 @@ impl Editor {
     }
 
     fn do_cancel_operation(&mut self) {
-        self.view.unset_find();
+        self.view.unset_find(&self.text);
         self.view.collapse_selections(&self.text);
     }
 
@@ -1051,7 +1055,7 @@ impl Editor {
         }
         let iv = Interval::new_closed_closed(start, end_offset);
         self.styles.update_layer(plugin, iv, spans);
-        self.view.set_dirty(&self.text);
+        self.view.invalidate_styles(&self.text, start, end_offset);
         self.render();
     }
 
