@@ -906,7 +906,7 @@ impl Editor {
     }
 
     fn do_cancel_operation(&mut self) {
-        self.view.unset_find();
+        self.view.unset_find(&self.text);
         self.view.collapse_selections(&self.text);
     }
 
