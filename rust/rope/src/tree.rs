@@ -45,12 +45,14 @@ pub trait NodeInfo: Clone {
 
     /// The identity of the monoid. Need not be implemented because it
     /// can be computed from the leaf default.
+    /// 
+    /// TODO: Why have it if it never needs to be overridden?
     fn identity() -> Self {
         Self::compute_info(&Self::L::default())
     }
 
-    /// The interval covered by this node. Will generally be implemented
-    /// in interval trees; the default impl is sufficient for other types.
+    /// The interval covered by this node. The default impl is sufficient for most types,
+    /// but interval trees may need to override it.
     fn interval(&self, len: usize) -> Interval {
         Interval::new_closed_closed(0, len)
     }
@@ -58,24 +60,29 @@ pub trait NodeInfo: Clone {
 
 pub trait Leaf: Sized + Clone + Default {
 
-    // measurement of leaf in base units
+    /// Measurement of leaf in base units.
     fn len(&self) -> usize;
 
-    // generally a minimum size requirement for leaves
+    /// Generally a minimum size requirement for leaves.
     fn is_ok_child(&self) -> bool;
 
-    // Interval is in "base units"
-    // generally implements a maximum size
-    // Invariant: if one or the other input is empty, then no split
-
-    // Invariant: if either input satisfies is_ok_child, then on return self
-    // satisfies this, as does the optional split.
-
+    /// Combine other into self, optionly splitting in two.
+    /// Interval is in "base units".
+    /// Generally implements a maximum size.
+    /// 
+    /// TODO: What does Interval represent?
+    /// 
+    /// Invariants:
+    /// 
+    /// - If one or the other input is empty, then no split.
+    /// - If either input satisfies is_ok_child, then on return self
+    /// satisfies this, as does the optional split.
     fn push_maybe_split(&mut self, other: &Self, iv: Interval) -> Option<Self>;
 
-    // same meaning as push_maybe_split starting from an empty
-    // leaf, but maybe can be implemented more efficiently?
-    // TODO: remove if it doesn't pull its weight
+    /// same meaning as push_maybe_split starting from an empty
+    /// leaf, but maybe can be implemented more efficiently?
+    /// 
+    /// TODO: remove if it doesn't pull its weight
     fn subseq(&self, iv: Interval) -> Self {
         let mut result = Self::default();
         if result.push_maybe_split(self, iv).is_some() {
@@ -116,29 +123,48 @@ enum NodeVal<N: NodeInfo> {
 
 // also consider making Metric a newtype for usize, so type system can
 // help separate metrics
+
+/// A trait for quickly processing attributes of a NodeInfo.
+/// 
+/// For the conceptual background see the 
+/// [blog post, Rope science, part 2: metrics](https://github.com/google/xi-editor/blob/master/doc/rope_science/rope_science_02.md).
 pub trait Metric<N: NodeInfo> {
+    /// Return the number of boundarys in the NodeInfo::Leaf
+    /// 
+    /// TODO: What does the second argument do?
     fn measure(&N, usize) -> usize;
 
+    /// Return a offset in base units forwich self.from_base_units will return the argument.
+    /// 
+    /// TODO: Does it have to be the largest, smallest, or just eny offset?
     fn to_base_units(l: &N::L, in_measured_units: usize) -> usize;
 
+    /// Return the number of boundarys in the NodeInfo::Leaf befor the offset in_base_units.
     fn from_base_units(l: &N::L, in_base_units: usize) -> usize;
 
-    // The next three methods work in base units.
-
-    // These methods must indicate a boundary at the end of a leaf,
-    // if present. A boundary at the beginning of a leaf is optional
-    // (the previous leaf will be queried).
-
+    /// Return whether the offset in base units is a boundary of this metric.
+    /// If a boundary is at end of a leaf then this method must return true.
+    /// However, A boundary at the beginning of a leaf is optional
+    /// (the previous leaf will be queried).
     fn is_boundary(l: &N::L, offset: usize) -> bool;
 
-    // will be called with offset > 0
+    /// Return the largest usize smaller then offset forwich is_boundary will return true.
+    /// will be called with offset > 0.
+    /// 
+    /// TODO: If offset is a boundary can this return offset, or does it have to return a strictly smaller number?
     fn prev(l: &N::L, offset: usize) -> Option<usize>;
 
+    /// Return the smallest usize larger then offset forwich is_boundary will return true.
+    /// will be called with offset > 0.
+    /// 
+    /// TODO: If offset is a boundary can this return offset, or does it have to return a strictly smaller number?
     fn next(l: &N::L, offset: usize) -> Option<usize>;
 
-    // When can_fragment is false, the ends of leaves are always
-    // considered to be boundaries. More formally:
-    // !can_fragment -> to_base_units(measure) = leaf.len
+    /// When can_fragment is false, the ends of leaves are always
+    /// considered to be boundaries. More formally:
+    /// !can_fragment -> to_base_units(measure) = leaf.len
+    /// 
+    /// TODO: What dose this mean?
     fn can_fragment() -> bool;
 }
 
@@ -490,8 +516,9 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
         result
     }
 
-    // return value is leaf (if cursor is valid) and offset within leaf
-    // invariant: offset is at end of leaf iff end of rope
+    /// return value is leaf (if cursor is valid) and offset within leaf
+    ///
+    /// invariant: offset is at end of leaf iff end of rope
     pub fn get_leaf(&self) -> Option<(&'a N::L, usize)> {
         self.leaf.map(|l| (l, self.position - self.offset_of_leaf))
     }
@@ -656,7 +683,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
         None
     }
 
-    // same return as get_leaf, moves to beginning of next leaf
+    /// same return as get_leaf, moves to beginning of next leaf
     pub fn next_leaf(&mut self) -> Option<(&'a N::L, usize)> {
         if let Some(leaf) = self.leaf {
             self.position = self.offset_of_leaf + leaf.len();
@@ -691,7 +718,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
         self.get_leaf()
     }
 
-    // same return as get_leaf, moves to beginning of prev leaf
+    /// same return as get_leaf, moves to beginning of prev leaf
     pub fn prev_leaf(&mut self) -> Option<(&'a N::L, usize)> {
         if self.offset_of_leaf == 0 || Some(self.leaf).is_none() {
             self.leaf = None;
