@@ -20,6 +20,7 @@
 
 use std::collections::BTreeMap;
 use syntect::parsing::Scope;
+use syntect::highlighting::StyleModifier;
 
 use xi_rope::interval::Interval;
 use xi_rope::spans::{Spans, SpansBuilder};
@@ -40,6 +41,11 @@ pub struct Scopes {
 pub struct ScopeLayer {
     stack_lookup: Vec<Vec<Scope>>,
     style_lookup: Vec<Style>,
+    // TODO: this might be efficient (in memory at least) if we use
+    // a prefix tree.
+    /// style state of existing scope spans, so we can more efficiently
+    /// compute styles of child spans.
+    style_cache: BTreeMap<Vec<Scope>, StyleModifier>,
     /// Human readable scope names, for debugging
     name_lookup: Vec<Vec<String>>,
     scope_spans: Spans<u32>,
@@ -155,6 +161,7 @@ impl Default for ScopeLayer {
             stack_lookup: Vec::new(),
             style_lookup: Vec::new(),
             name_lookup: Vec::new(),
+            style_cache: BTreeMap::new(),
             scope_spans: Spans::default(),
             style_spans: Spans::default(),
         }
@@ -168,6 +175,7 @@ impl ScopeLayer {
             stack_lookup: Vec::new(),
             style_lookup: Vec::new(),
             name_lookup: Vec::new(),
+            style_cache: BTreeMap::new(),
             scope_spans: SpansBuilder::new(len).build(),
             style_spans: SpansBuilder::new(len).build(),
         }
@@ -175,7 +183,8 @@ impl ScopeLayer {
 
     fn theme_changed(&mut self, doc_ctx: &DocumentCtx) {
         // recompute styles with the new theme
-        self.style_lookup = self.styles_for_stacks(self.stack_lookup.as_slice(), doc_ctx);
+        let cur_stacks = self.stack_lookup.clone();
+        self.style_lookup = self.styles_for_stacks(&cur_stacks, doc_ctx);
         let iv_all = Interval::new_closed_closed(0, self.style_spans.len());
         self.style_spans = SpansBuilder::new(self.style_spans.len()).build();
         // this feels unnecessary but we can't pass in a reference to self
@@ -209,15 +218,37 @@ impl ScopeLayer {
         self.style_lookup.append(&mut new_styles);
     }
 
-    fn styles_for_stacks(&self, stacks: &[Vec<Scope>],
+    fn styles_for_stacks(&mut self, stacks: &[Vec<Scope>],
                          doc_ctx: &DocumentCtx) -> Vec<Style> {
         let style_map = doc_ctx.get_style_map().lock().unwrap();
         let highlighter = style_map.get_highlighter();
-
         let mut new_styles = Vec::new();
+
         for stack in stacks {
-            let style = highlighter.style_mod_for_stack(stack);
-            let style = Style::from_syntect_style_mod(&style);
+            let mut last_style: Option<StyleModifier> = None;
+            let mut upper_bound_of_last = stack.len() as usize;
+
+            // walk backwards through stack to see if we have an existing
+            // style for any child stacks.
+            for i in 0..stack.len()-1 {
+                let prev_range = 0..stack.len() - (i + 1);
+                if let Some(s) = self.style_cache.get(&stack[prev_range]) {
+                    last_style = Some(*s);
+                    upper_bound_of_last = stack.len() - (i + 1);
+                    break
+                }
+            }
+            let mut base_style_mod = last_style.unwrap_or_default();
+
+            // apply the stack, generating children as needed.
+            for i in upper_bound_of_last..stack.len() {
+                let style_mod = highlighter.get_style(&stack[0..i+1]);
+                base_style_mod = base_style_mod.apply(style_mod);
+            }
+
+            let style = Style::from_syntect_style_mod(&base_style_mod);
+            self.style_cache.insert(stack.clone(), base_style_mod);
+
             new_styles.push(style);
         }
         new_styles
