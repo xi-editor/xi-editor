@@ -47,7 +47,6 @@ pub struct ScopeLayer {
     /// compute styles of child spans.
     style_cache: BTreeMap<Vec<Scope>, StyleModifier>,
     /// Human readable scope names, for debugging
-    name_lookup: Vec<Vec<String>>,
     scope_spans: Spans<u32>,
     style_spans: Spans<Style>,
 }
@@ -137,7 +136,7 @@ impl Scopes {
             if spans.iter().next().is_some() {
                 eprintln!("scopes for layer {:?}:", id);
                 for (iv, val) in spans.iter() {
-                    eprintln!("{}: {:?}", iv, layer.name_lookup[*val as usize]);
+                    eprintln!("{}: {:?}", iv, layer.stack_lookup[*val as usize]);
                 }
                 eprintln!("styles:");
                 for (iv, val) in styles.iter() {
@@ -160,7 +159,6 @@ impl Default for ScopeLayer {
         ScopeLayer {
             stack_lookup: Vec::new(),
             style_lookup: Vec::new(),
-            name_lookup: Vec::new(),
             style_cache: BTreeMap::new(),
             scope_spans: Spans::default(),
             style_spans: Spans::default(),
@@ -174,7 +172,6 @@ impl ScopeLayer {
         ScopeLayer {
             stack_lookup: Vec::new(),
             style_lookup: Vec::new(),
-            name_lookup: Vec::new(),
             style_cache: BTreeMap::new(),
             scope_spans: SpansBuilder::new(len).build(),
             style_spans: SpansBuilder::new(len).build(),
@@ -210,7 +207,6 @@ impl ScopeLayer {
                 .map(|s| s.unwrap())
                 .collect::<Vec<_>>();
             stacks.push(scopes);
-            self.name_lookup.push(stack);
         }
 
         let mut new_styles = self.styles_for_stacks(stacks.as_slice(), doc_ctx);
