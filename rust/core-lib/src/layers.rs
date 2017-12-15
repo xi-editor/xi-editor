@@ -18,7 +18,7 @@
 //! Scope information originating from any number of plugins can be resolved
 //! into styles using a theme, augmented with additional style definitions.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use syntect::parsing::Scope;
 use syntect::highlighting::StyleModifier;
 
@@ -45,7 +45,7 @@ pub struct ScopeLayer {
     // a prefix tree.
     /// style state of existing scope spans, so we can more efficiently
     /// compute styles of child spans.
-    style_cache: BTreeMap<Vec<Scope>, StyleModifier>,
+    style_cache: HashMap<Vec<Scope>, StyleModifier>,
     /// Human readable scope names, for debugging
     scope_spans: Spans<u32>,
     style_spans: Spans<Style>,
@@ -159,7 +159,7 @@ impl Default for ScopeLayer {
         ScopeLayer {
             stack_lookup: Vec::new(),
             style_lookup: Vec::new(),
-            style_cache: BTreeMap::new(),
+            style_cache: HashMap::new(),
             scope_spans: Spans::default(),
             style_spans: Spans::default(),
         }
@@ -172,7 +172,7 @@ impl ScopeLayer {
         ScopeLayer {
             stack_lookup: Vec::new(),
             style_lookup: Vec::new(),
-            style_cache: BTreeMap::new(),
+            style_cache: HashMap::new(),
             scope_spans: SpansBuilder::new(len).build(),
             style_spans: SpansBuilder::new(len).build(),
         }
