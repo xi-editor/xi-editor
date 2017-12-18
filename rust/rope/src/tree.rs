@@ -46,7 +46,7 @@ pub trait NodeInfo: Clone {
     /// The identity of the monoid. Need not be implemented because it
     /// can be computed from the leaf default.
     /// 
-    /// TODO: Why have it if it never needs to be overridden?
+    /// This is hear to demonstrate that this is a monoid.
     fn identity() -> Self {
         Self::compute_info(&Self::L::default())
     }
@@ -61,6 +61,9 @@ pub trait NodeInfo: Clone {
 pub trait Leaf: Sized + Clone + Default {
 
     /// Measurement of leaf in base units.
+    /// A 'base unit' refers to the smallest discrete unit
+    /// by which a given concrete type can be indexed.
+    /// Concretely, for Rust's String type the base unit is the byte.
     fn len(&self) -> usize;
 
     /// Generally a minimum size requirement for leaves.
@@ -131,15 +134,22 @@ enum NodeVal<N: NodeInfo> {
 pub trait Metric<N: NodeInfo> {
     /// Return the number of boundarys in the NodeInfo::Leaf
     /// 
-    /// TODO: What does the second argument do?
+    /// The usize argument is the total size/length of the node, in base units.
     fn measure(&N, usize) -> usize;
 
-    /// Return a offset in base units forwich self.from_base_units will return the argument.
-    /// 
-    /// TODO: Does it have to be the largest, smallest, or just eny offset?
+    /// Returns the smallest offset, in base units, for an offset in measured units.
+    ///
+    /// Invariants:
+    ///
+    /// - `from_base_units(to_base_units(x)) == x` is True for valid `x`
+    /// - `is_boundary(to_base_units(x))` is True for all `x`
     fn to_base_units(l: &N::L, in_measured_units: usize) -> usize;
 
-    /// Return the number of boundarys in the NodeInfo::Leaf befor the offset in_base_units.
+    /// Returns the smallest offset in measured units corresponding to an offset in base units.
+    ///
+    /// Invariants:
+    ///
+    /// - `from_base_units(to_base_units(x)) == x` is True for valid `x`
     fn from_base_units(l: &N::L, in_base_units: usize) -> usize;
 
     /// Return whether the offset in base units is a boundary of this metric.
@@ -148,23 +158,19 @@ pub trait Metric<N: NodeInfo> {
     /// (the previous leaf will be queried).
     fn is_boundary(l: &N::L, offset: usize) -> bool;
 
-    /// Return the largest usize smaller then offset forwich is_boundary will return true.
-    /// will be called with offset > 0.
-    /// 
-    /// TODO: If offset is a boundary can this return offset, or does it have to return a strictly smaller number?
+    /// Returns the index of the boundary directly preceding offset,
+    /// or None if no such boundary exists. Input and result are in base units.
     fn prev(l: &N::L, offset: usize) -> Option<usize>;
 
-    /// Return the smallest usize larger then offset forwich is_boundary will return true.
-    /// will be called with offset > 0.
-    /// 
-    /// TODO: If offset is a boundary can this return offset, or does it have to return a strictly smaller number?
+    /// Returns the index of the first boundary for which index > offset,
+    /// or None if no such boundary exists. Input and result are in base units.
     fn next(l: &N::L, offset: usize) -> Option<usize>;
 
-    /// When can_fragment is false, the ends of leaves are always
-    /// considered to be boundaries. More formally:
-    /// !can_fragment -> to_base_units(measure) = leaf.len
-    /// 
-    /// TODO: What dose this mean?
+    /// Returns true if the measured units in this metric can span multiple leaves.
+    /// As an example, in a metric that measures lines in a rope,
+    /// a line may start in one leaf and end in another;
+    /// however in a metric measuring bytes,
+    /// storage of a single byte cannot extend across leaves.
     fn can_fragment() -> bool;
 }
 
