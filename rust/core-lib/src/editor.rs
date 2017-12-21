@@ -114,6 +114,7 @@ enum EditType {
     Delete,
     Undo,
     Redo,
+    Transpose,
 }
 
 impl EditType {
@@ -123,6 +124,7 @@ impl EditType {
             EditType::Delete => "delete",
             EditType::Undo => "undo",
             EditType::Redo => "redo",
+            EditType::Transpose => "transpose",
             _ => "other",
         }
     }
@@ -316,7 +318,7 @@ impl Editor {
         let undo_group;
 
         if self.this_edit_type == self.last_edit_type &&
-            self.this_edit_type != EditType::Other &&
+            self.this_edit_type != EditType::Other && self.this_edit_type != EditType::Transpose &&
             !self.live_undos.is_empty() {
 
             undo_group = *self.live_undos.last().unwrap();
@@ -374,7 +376,8 @@ impl Editor {
         // TODO (performance): it's probably quicker to stash last_text rather than
         // resynthesize it.
         let last_text = self.engine.get_rev(last_token).expect("last_rev not found");
-        self.scroll_to = self.view.after_edit(&self.text, &last_text, &delta, is_pristine);
+        let keep_selections = self.this_edit_type == EditType::Transpose;
+        self.scroll_to = self.view.after_edit(&self.text, &last_text, &delta, is_pristine, keep_selections);
         let (iv, new_len) = delta.summary();
 
         // TODO: perhaps use different semantics for spans that enclose the
@@ -923,7 +926,7 @@ impl Editor {
             }
         }
         if !builder.is_empty() {
-            self.this_edit_type = EditType::Other;
+            self.this_edit_type = EditType::Transpose;
             self.add_delta(builder.build());
         }
     }
