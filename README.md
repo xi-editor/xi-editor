@@ -41,8 +41,9 @@ below.
 
 ### Building the core
 
-Building the xi editor requires Rust 1.18 or later. If you want to experiment,
-you can build just the core like so:
+Xi targets 'recent stable Rust'. We recommend installing via [rustup](https://www.rustup.rs). The current minimum supported version is 1.20.
+
+To build the xi editor from the root directory of this repo:
 
 ```
 > cd rust
@@ -60,7 +61,7 @@ and might work on other Flutter targets.
 
 * [xi-tui](https://github.com/little-dude/xi-tui), a text UI.
 
-* [`xi-electron`](https://github.com/callodacity/xi-electron), a front-end based on web-technologies.
+* [`xi-electron`](https://github.com/acheronfail/xi-electron), a cross-platform front-end based on web-technologies.
 
 * [`gxi`](https://github.com/bvinc/gxi), a GTK+ front-end written in Rust.
 

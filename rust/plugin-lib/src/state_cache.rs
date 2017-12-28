@@ -99,7 +99,7 @@ impl<'a, P: Plugin> plugin_base::Handler for CacheHandler<'a, P> {
                 ctx.do_initialize(info, plugin_id, self.handler);
             }
             DidSave { ref path, .. } => ctx.do_did_save(path, self.handler),
-            NewBuffer { .. } | DidClose { .. } => print_err!("Rust plugin lib \
+            NewBuffer { .. } | DidClose { .. } => eprintln!("Rust plugin lib \
             does not support global plugins"),
             //TODO: figure out shutdown
             Shutdown( .. ) => (),
@@ -161,7 +161,6 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
         where P: Plugin<State = S>
     {
         let plugin_rpc::PluginUpdate { start, end, new_len, text, rev, .. } = update;
-        //print_err!("got update notification {:?}", edit_type);
         self.state.buf_size = self.state.buf_size - (end - start) + new_len;
         self.state.rev = rev;
         if let Some(text) = text {

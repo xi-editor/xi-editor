@@ -15,7 +15,6 @@
 //! A syntax highlighting plugin based on syntect.
 
 extern crate syntect;
-#[macro_use]
 extern crate xi_plugin_lib;
 extern crate xi_core_lib;
 
@@ -174,7 +173,7 @@ impl<'a> PluginState<'a> {
 
         if syntax.name != self.syntax_name {
             self.syntax_name = syntax.name.clone();
-            print_err!("syntect using {}", syntax.name);
+            eprintln!("syntect using {}", syntax.name);
         }
 
         self.initial_state = Some((ParseState::new(syntax), ScopeStack::new()));
@@ -204,14 +203,14 @@ impl<'a> state_cache::Plugin for PluginState<'a> {
     }
 
     fn idle(&mut self, mut ctx: PluginCtx<State>, _token: usize) {
-        //print_err!("idle task at offset {}", self.offset);
+        //eprintln!("idle task at offset {}", self.offset);
         for _ in 0..LINES_PER_RPC {
             if !self.highlight_one_line(&mut ctx) {
                 self.flush_spans(&mut ctx);
                 return;
             }
             if ctx.request_is_pending() {
-                print_err!("request pending at offset {}", self.offset);
+                eprintln!("request pending at offset {}", self.offset);
                 break;
             }
         }
@@ -224,5 +223,5 @@ fn main() {
     let syntax_set = SyntaxSet::load_defaults_newlines();
     let mut state = PluginState::new(&syntax_set);
 
-    state_cache::mainloop(&mut state);
+    let _ = state_cache::mainloop(&mut state);
 }

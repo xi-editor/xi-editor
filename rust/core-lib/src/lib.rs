@@ -21,8 +21,8 @@ extern crate serde_json;
 extern crate serde_derive;
 extern crate time;
 extern crate syntect;
-extern crate config;
 extern crate toml;
+extern crate notify;
 
 #[cfg(target_os = "fuchsia")]
 extern crate magenta;
@@ -40,9 +40,6 @@ extern crate apps_ledger_services_public;
 extern crate sha2;
 
 use serde_json::Value;
-
-#[macro_use]
-mod macros;
 
 pub mod rpc;
 
@@ -66,7 +63,9 @@ pub mod internal {
     pub mod movement;
     pub mod syntax;
     pub mod layers;
-    pub mod prefs;
+    pub mod config;
+    pub mod watcher;
+    pub mod line_cache_shadow;
 }
 
 pub use plugins::rpc as plugin_rpc;
@@ -86,7 +85,9 @@ use internal::selection;
 use internal::movement;
 use internal::syntax;
 use internal::layers;
-use internal::prefs;
+use internal::config;
+use internal::watcher;
+use internal::line_cache_shadow;
 #[cfg(target_os = "fuchsia")]
 use internal::fuchsia;
 
@@ -142,7 +143,7 @@ impl Handler for MainState {
         self.tabs.handle_request(rpc, ctx)
     }
 
-    fn idle(&mut self, _ctx: &RpcCtx, _token: usize) {
-        self.tabs.handle_idle();
+    fn idle(&mut self, _ctx: &RpcCtx, token: usize) {
+        self.tabs.handle_idle(token);
     }
 }

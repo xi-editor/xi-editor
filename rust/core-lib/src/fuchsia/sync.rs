@@ -77,8 +77,8 @@ impl SyncStore {
                     initial_state_chan.send(SyncMsg::NewState { buffer: initial_buffer, new_buf: buf, done: None }).unwrap();
                 },
                 Ok(Ok(None)) => (), // No initial state saved yet
-                Err(err) => print_err!("FIDL failed on initial response: {:?}", err),
-                Ok(Err(err)) => print_err!("Ledger failed to retrieve key: {:?}", err),
+                Err(err) => eprintln!("FIDL failed on initial response: {:?}", err),
+                Ok(Err(err)) => eprintln!("Ledger failed to retrieve key: {:?}", err),
             }
         });
 
@@ -100,8 +100,8 @@ impl SyncStore {
                     Ok(ledger::OK) => {
                         done_chan.send(SyncMsg::TransactionReady { buffer }).unwrap();
                     },
-                    Ok(err_status) => print_err!("Ledger failed to start transaction: {:?}", err_status),
-                    Err(err) => print_err!("FIDL failed on starting transaction: {:?}", err),
+                    Ok(err_status) => eprintln!("Ledger failed to start transaction: {:?}", err_status),
+                    Err(err) => eprintln!("FIDL failed on starting transaction: {:?}", err),
                 }
             });
         }
@@ -167,7 +167,7 @@ impl<W: Write + Send + 'static> SyncUpdater<W> {
                             }
                         }
                         (None, _) => (), // buffer was closed
-                        (_, Err(err)) => print_err!("Ledger was set to invalid state: {:?}", err),
+                        (_, Err(err)) => eprintln!("Ledger was set to invalid state: {:?}", err),
                     }
                 }
             }
@@ -189,7 +189,7 @@ impl PageWatcher for PageWatcherServer {
             let new_buf = read_entire_vmo(value_vmo).expect("failed to read key Vmo");
             self.updates.send(SyncMsg::NewState { buffer: self.buffer.clone(), new_buf, done: Some(done) }).unwrap();
         } else {
-            print_err!("Xi state corrupted, should have one key but has multiple.");
+            eprintln!("Xi state corrupted, should have one key but has multiple.");
             // I don't think this should be a FIDL-level error, so set okay
             done.set_ok(None);
         }
@@ -248,9 +248,9 @@ fn state_from_snapshot<F>(snapshot: ::fidl::InterfacePtr<PageSnapshot_Client>, k
             // the .ok() has the behavior of acting like invalid state is empty
             // and thus deleting invalid state and overwriting it with good state
             Ok(Ok(Some(buf))) => Ok(buf_to_state(&buf).ok()),
-            Ok(Ok(None)) => { print_err!("No state in conflicting page"); Ok(None) },
-            Err(err) => { print_err!("FIDL failed on initial response: {:?}", err); Err(()) },
-            Ok(Err(err)) => { print_err!("Ledger failed to retrieve key: {:?}", err); Err(()) },
+            Ok(Ok(None)) => { eprintln!("No state in conflicting page"); Ok(None) },
+            Err(err) => { eprintln!("FIDL failed on initial response: {:?}", err); Err(()) },
+            Ok(Err(err)) => { eprintln!("Ledger failed to retrieve key: {:?}", err); Err(()) },
         };
         done(state);
     });

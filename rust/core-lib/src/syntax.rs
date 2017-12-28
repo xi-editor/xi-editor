@@ -15,9 +15,10 @@
 //! Very basic syntax detection.
 
 use std::fmt;
+use serde::de::{value, Deserialize, IntoDeserializer};
 use serde_json;
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum SyntaxDefinition {
     Plaintext, Markdown, Python, Rust, C, Go, Dart, Swift, Toml,
@@ -67,8 +68,9 @@ impl SyntaxDefinition {
     /// This uses serde deserialization under the hood; this governs what
     /// names are expected to work.
     pub fn try_from_name<S: AsRef<str>>(name: S) -> Option<Self> {
-        serde_json::from_str(&format!("\"{}\"", name.as_ref()))
-            .ok()
+        let r: Result<Self, value::Error> = Self::deserialize(
+            name.as_ref().into_deserializer());
+        r.ok()
     }
 }
 

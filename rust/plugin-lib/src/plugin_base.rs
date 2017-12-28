@@ -21,20 +21,6 @@ use serde_json::Value;
 use xi_core::{ViewIdentifier, PluginPid, plugin_rpc};
 use xi_rpc::{self, RpcLoop, RpcCtx, RemoteError, ReadError};
 
-// TODO: avoid duplicating this in every crate
-macro_rules! print_err {
-    ($($arg:tt)*) => (
-        {
-            use std::io::prelude::*;
-            if let Err(e) = write!(&mut ::std::io::stderr(), "{}\n", format_args!($($arg)*)) {
-                panic!("Failed to write to stderr.\
-                    \nOriginal error output: {}\
-                    \nSecondary error writing to stderr: {}", format!($($arg)*), e);
-            }
-        }
-    )
-}
-
 #[derive(Debug)]
 pub enum Error {
     RpcError(xi_rpc::Error),
@@ -110,7 +96,6 @@ impl<'a> PluginCtx<'a> {
         self.0.schedule_idle(token);
     }
 }
-
 struct MyHandler<'a, H: 'a>(&'a mut H);
 
 impl<'a, H: Handler> xi_rpc::Handler for MyHandler<'a, H> {
@@ -122,7 +107,6 @@ impl<'a, H: Handler> xi_rpc::Handler for MyHandler<'a, H> {
 
     fn handle_request(&mut self, ctx: &RpcCtx, rpc: Self::Request)
                       -> Result<Value, RemoteError> {
-
         self.0.handle_request(PluginCtx(ctx), rpc)
     }
 

@@ -20,13 +20,15 @@
 //! [Serde]: https://serde.rs
 
 
+use std::path::PathBuf;
+
 use serde_json::{self, Value};
 use serde::de::{self, Deserialize, Deserializer};
 use serde::ser::{self, Serialize, Serializer};
 
 use tabs::ViewIdentifier;
 use plugins::PlaceholderRpc;
-
+use config::{Table, ConfigDomain};
 
 // =============================================================================
 //  Command types
@@ -36,9 +38,6 @@ use plugins::PlaceholderRpc;
 #[doc(hidden)]
 pub struct EmptyStruct {}
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
-#[serde(tag = "method", content = "params")]
 /// The notifications which make up the base of the protocol.
 ///
 /// # Note
@@ -83,11 +82,14 @@ pub struct EmptyStruct {}
 ///
 /// let cmd: CoreNotification = serde_json::from_str(&json).unwrap();
 /// match cmd {
-///     CoreNotification::ClientStarted( .. )  => (), // expected
+///     CoreNotification::ClientStarted { .. }  => (), // expected
 ///     other => panic!("Unexpected variant"),
 /// }
 /// # }
 /// ```
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "method", content = "params")]
 pub enum CoreNotification {
     /// The 'edit' namespace, for view-specific editor actions.
     ///
@@ -178,17 +180,26 @@ pub enum CoreNotification {
     Save { view_id: ViewIdentifier, file_path: String },
     /// Tells `xi-core` to set the theme.
     SetTheme { theme_name: String },
-    /// Overrides an editor setting for the given buffer.
-    DebugOverrideSetting { view_id: ViewIdentifier, key: String, value: Value },
     /// Notifies `xi-core` that the client has started.
-    //TODO: this should be a unit, but we have a minor issue with serde.
-    //see https://github.com/google/xi-editor/issues/400
-    ClientStarted(EmptyStruct),
+    ClientStarted {
+        #[serde(default)]
+        config_dir: Option<PathBuf>,
+        /// Path to additional plugins, included by the client.
+        #[serde(default)]
+        client_extras_dir: Option<PathBuf>,
+    },
+    /// Updates the user's config for the given domain. Where keys in
+    /// `changes` are `null`, those keys are cleared in the user config
+    /// for that domain; otherwise the config is updated with the new
+    /// value.
+    ///
+    /// Note: If the client is using file-based config, the only valid
+    /// domain argument is `ConfigDomain::UserOverride(_)`, which
+    /// represents non-persistent view-specific settings, such as when
+    /// a user manually changes whitespace settings for a given view.
+    ModifyUserConfig { domain: ConfigDomain, changes: Table },
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
-#[serde(tag = "method", content = "params")]
 /// The requests which make up the base of the protocol.
 ///
 /// All requests expect a response.
@@ -214,19 +225,23 @@ pub enum CoreNotification {
 /// }
 /// # }
 /// ```
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "method", content = "params")]
 pub enum CoreRequest {
     /// The 'edit' namespace, for view-specific requests.
     Edit(EditCommand<EditRequest>),
     /// Tells `xi-core` to create a new view. If the `file_path`
-    /// argument is present, `xi-core` should attemp to open the file
+    /// argument is present, `xi-core` should attempt to open the file
     /// at that location.
     ///
     /// Returns the view identifier that should be used to interact
     /// with the newly created view.
     NewView { file_path: Option<String> },
+    /// Returns the current collated config object for the given view.
+    GetConfig { view_id: ViewIdentifier },
 }
 
-#[derive(Debug, Clone, PartialEq)]
 /// A helper type, which extracts the `view_id` field from edit
 /// requests and notifications.
 ///
@@ -256,6 +271,7 @@ pub enum CoreRequest {
 /// }
 /// # }
 /// ```
+#[derive(Debug, Clone, PartialEq)]
 pub struct EditCommand<T> {
     pub view_id: ViewIdentifier,
     pub cmd: T,
@@ -292,13 +308,13 @@ pub struct MouseAction {
     pub click_count: Option<u64>,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
-#[serde(tag = "method", content = "params")]
 /// The edit-related notifications.
 ///
 /// Alongside the [`EditRequest`] members, these commands constitute
 /// the API for interacting with a particular window and document.
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "method", content = "params")]
 pub enum EditNotification {
     Insert { chars: String },
     DeleteForward,
@@ -357,12 +373,13 @@ pub enum EditNotification {
     DebugRewrap,
     /// Prints the style spans present in the active selection.
     DebugPrintSpans,
+    CancelOperation,
 }
 
+/// The edit related requests.
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "method", content = "params")]
-/// The edit related requests.
 pub enum EditRequest {
     /// Cuts the active selection, returning their contents,
     /// or `Null` if the selection was empty.
@@ -379,10 +396,10 @@ pub enum EditRequest {
 }
 
 
+/// The plugin related notifications.
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(tag = "command")]
 #[serde(rename_all = "snake_case")]
-/// The plugin related notifications.
 pub enum PluginNotification {
     Start { view_id: ViewIdentifier, plugin_name: String },
     Stop { view_id: ViewIdentifier, plugin_name: String },

@@ -18,7 +18,7 @@ use std::collections::HashMap;
 
 use serde_json::{self, Value};
 use syntect::highlighting::StyleModifier as SynStyleModifier;
-use syntect::highlighting::{Color, Theme, ThemeSet, ThemeSettings, Highlighter, BLACK};
+use syntect::highlighting::{Color, Theme, ThemeSet, ThemeSettings, Highlighter};
 
 const N_RESERVED_STYLES: usize = 2;
 const SYNTAX_PRIORITY_DEFAULT: u16 = 200;
@@ -90,7 +90,7 @@ impl Style {
 
     /// Returns the default style for the given `Theme`.
     pub fn default_for_theme(theme: &Theme) -> Self {
-        let fg = theme.settings.foreground.unwrap_or(BLACK);
+        let fg = theme.settings.foreground.unwrap_or(Color::BLACK);
         Style::new(
             SYNTAX_PRIORITY_LOWEST,
             Some(Self::rgba_from_syntect_color(&fg)),

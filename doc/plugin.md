@@ -24,7 +24,7 @@ often be the case for syntax highlighting), there is no fundamental
 conflict and the overall system will eventually converge. (In this
 case, it converges to the same state as running the plugin in batch
 mode over the text input, and this should be taken as a correctness
-criterion for plugins that do incremental comptuation). In xi, I plan
+criterion for plugins that do incremental computation). In xi, I plan
 to address the challenge of parallel edits head-on, using some form
 of operational transforms or differential synchronization. One
 potential advantage of this approach is that it may make collaborative

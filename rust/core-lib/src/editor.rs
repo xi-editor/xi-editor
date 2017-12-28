@@ -17,8 +17,7 @@ use std::cmp::{min, max};
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::io::Write;
-use std::collections::{BTreeMap, BTreeSet};
-use std::mem;
+use std::collections::BTreeSet;
 use serde_json::Value;
 
 use xi_rope::rope::{LinesMetric, Rope, RopeInfo};
@@ -40,7 +39,7 @@ use plugins::rpc::{PluginUpdate, PluginEdit, ScopeSpan, PluginBufferInfo,
 ClientPluginInfo};
 use plugins::{PluginPid, Command};
 use layers::Scopes;
-use prefs::Config;
+use config::BufferConfig;
 
 
 #[cfg(not(target_os = "fuchsia"))]
@@ -63,11 +62,6 @@ pub struct Editor {
     path: Option<PathBuf>,
     buffer_id: BufferIdentifier,
     syntax: SyntaxDefinition,
-
-    /// A collection of non-primary views attached to this buffer.
-    views: BTreeMap<ViewIdentifier, View>,
-    /// The currently active view. This property is dynamically modified as events originating in
-    /// different views arrive.
     view: View,
     engine: Engine,
     last_rev_id: RevId,
@@ -85,7 +79,7 @@ pub struct Editor {
 
     styles: Scopes,
     doc_ctx: DocumentCtx,
-    config: Config,
+    config: BufferConfig,
     revs_in_flight: usize,
 
     /// Used only on Fuchsia for syncing
@@ -118,28 +112,27 @@ impl EditType {
 
 impl Editor {
     /// Creates a new `Editor` with a new empty buffer.
-    pub fn new(doc_ctx: DocumentCtx, config: Config,
+    pub fn new(doc_ctx: DocumentCtx, config: BufferConfig,
                buffer_id: BufferIdentifier,
-               initial_view_id: &ViewIdentifier) -> Editor {
+               initial_view_id: ViewIdentifier) -> Editor {
         Self::with_text(doc_ctx, config, buffer_id,
                         initial_view_id, "".to_owned())
     }
 
     /// Creates a new `Editor`, loading text into a new buffer.
-    pub fn with_text(doc_ctx: DocumentCtx, config: Config,
+    pub fn with_text(doc_ctx: DocumentCtx, config: BufferConfig,
                      buffer_id: BufferIdentifier,
-                     initial_view_id: &ViewIdentifier, text: String) -> Editor {
+                     initial_view_id: ViewIdentifier, text: String) -> Editor {
 
         let engine = Engine::new(Rope::from(text));
         let buffer = engine.get_head().clone();
         let last_rev_id = engine.get_head_rev_id();
 
-        let editor = Editor {
+        let mut editor = Editor {
             text: buffer,
             buffer_id: buffer_id,
             path: None,
             syntax: SyntaxDefinition::default(),
-            views: BTreeMap::new(),
             view: View::new(initial_view_id),
             engine: engine,
             last_rev_id: last_rev_id,
@@ -162,40 +155,8 @@ impl Editor {
             sync_store: None,
             last_synced_rev: last_rev_id,
         };
+        editor.view.set_dirty(&editor.text);
         editor
-    }
-
-
-    #[allow(unreachable_code, unused_variables)]
-    pub fn add_view(&mut self, view_id: &ViewIdentifier) {
-        panic!("multi-view support is not currently implemented");
-        assert!(!self.views.contains_key(view_id), "view_id already exists");
-        self.views.insert(view_id.to_owned(), View::new(view_id));
-    }
-
-    /// Removes a view from this editor's stack, if this editor has multiple views.
-    ///
-    /// If the editor only has a single view this is a no-op. After removing a view the caller must
-    /// always call Editor::has_views() to determine whether or not the editor should be cleaned up.
-    #[allow(unreachable_code)]
-    pub fn remove_view(&mut self, view_id: &ViewIdentifier) {
-        if self.view.view_id == *view_id {
-            if self.views.len() > 0 {
-                panic!("multi-view support is not currently implemented");
-                //set some other view as active. This will be reset on the next EditCommand
-                let tempkey = self.views.keys().nth(0).unwrap().clone();
-                let mut temp = self.views.remove(&tempkey).unwrap();
-                mem::swap(&mut temp, &mut self.view);
-                self.views.insert(temp.view_id.clone(), temp);
-            }
-        } else {
-            self.views.remove(view_id).expect("attempt to remove missing view");
-        }
-    }
-
-    /// Returns true if this editor has additional attached views.
-    pub fn has_views(&self) -> bool {
-        self.views.len() > 0
     }
 
     /// should only ever be called from `BufferContainerRef::set_path`
@@ -215,8 +176,15 @@ impl Editor {
         }
     }
 
-    pub fn set_config(&mut self, conf: Config) {
-        self.config = conf;
+    pub fn set_config(&mut self, conf: BufferConfig) {
+        if let Some(changes) = conf.changes_from(Some(&self.config)) {
+            self.config = conf;
+            self.doc_ctx.config_changed(&self.view.view_id, &changes);
+        }
+    }
+
+    pub fn get_config(&self) -> &BufferConfig {
+        &self.config
     }
 
     /// Returns this `Editor`'s active `SyntaxDefinition`.
@@ -227,6 +195,11 @@ impl Editor {
     /// Returns this `Editor`'s `BufferIdentifier`.
     pub fn get_identifier(&self) -> BufferIdentifier {
         self.buffer_id
+    }
+
+    /// returns the `ViewIdentifier` of the current view.
+    pub fn get_main_view_id(&self) -> ViewIdentifier {
+        self.view.view_id
     }
 
     // each outstanding plugin edit represents a rev_in_flight.
@@ -244,14 +217,16 @@ impl Editor {
     /// Returns buffer information used to initialize plugins.
     pub fn plugin_init_info(&self) -> PluginBufferInfo {
         let nb_lines = self.text.measure::<LinesMetric>() + 1;
-        let mut views = vec![self.view.view_id.to_owned()];
-        for v in self.views.keys() {
-            views.push(v.to_owned());
-        }
-
+        let views = vec![self.view.view_id];
         PluginBufferInfo::new(self.buffer_id, &views,
                               self.engine.get_head_rev_id().token(), self.text.len(),
                               nb_lines, self.path.clone(), self.syntax.clone())
+    }
+
+    /// Send initial config state to the client.
+    pub fn send_config_init(&self) {
+        let config = self.config.to_table();
+        self.doc_ctx.config_changed(&self.view.view_id, &config);
     }
 
     fn insert(&mut self, s: &str) {
@@ -358,9 +333,13 @@ impl Editor {
     }
 
     fn update_after_revision(&mut self, author: Option<&str>) {
-        let delta = self.engine.delta_rev_head(self.last_rev_id.token());
+        let last_token = self.last_rev_id.token();
+        let delta = self.engine.delta_rev_head(last_token);
         let is_pristine = self.is_pristine();
-        self.scroll_to = self.view.after_edit(&self.text, &delta, is_pristine);
+        // TODO (performance): it's probably quicker to stash last_text rather than
+        // resynthesize it.
+        let last_text = self.engine.get_rev(last_token).expect("last_rev not found");
+        self.scroll_to = self.view.after_edit(&self.text, &last_text, &delta, is_pristine);
         let (iv, new_len) = delta.summary();
 
         // TODO: maybe more precise editing based on actual delta rather than summary.
@@ -375,21 +354,24 @@ impl Editor {
         self.increment_revs_in_flight();
 
         {
-            let author = author.unwrap_or(&self.view.view_id.as_str());
-            let text = match new_len < MAX_SIZE_LIMIT {
+            let author = match author {
+                Some(s) => s.to_owned(),
+                None => self.view.view_id.to_string(),
+            };
+                let text = match new_len < MAX_SIZE_LIMIT {
                 true => Some(self.text.slice_to_string(iv.start(), iv.start() + new_len)),
                 false => None
             };
 
             let update = PluginUpdate::new(
-                self.view.view_id.clone(),
+                self.view.view_id,
                 iv.start(), iv.end(), new_len,
                 self.engine.get_head_rev_id().token(), text,
                 self.this_edit_type.json_string().to_owned(),
                 author.to_owned());
 
             let undo_group = *self.live_undos.last().unwrap_or(&0);
-            let view_id = self.view.view_id.clone();
+            let view_id = self.view.view_id;
             self.doc_ctx.update_plugins(view_id, update, undo_group);
         }
 
@@ -422,7 +404,7 @@ impl Editor {
         self.view.render_if_dirty(&self.text, &self.doc_ctx, self.styles.get_merged());
         if let Some(scrollto) = self.scroll_to {
             let (line, col) = self.view.offset_to_line_col(&self.text, scrollto);
-            self.doc_ctx.scroll_to(&self.view.view_id, line, col);
+            self.doc_ctx.scroll_to(self.view.view_id, line, col);
             self.scroll_to = None;
         }
     }
@@ -569,7 +551,7 @@ impl Editor {
 
     fn insert_newline(&mut self) {
         self.this_edit_type = EditType::InsertChars;
-        let text = self.config.newline.clone();
+        let text = self.config.items.line_ending.clone();
         self.insert(&text);
     }
 
@@ -577,9 +559,9 @@ impl Editor {
         let mut builder = delta::Builder::new(self.text.len());
         for region in self.view.sel_regions() {
             let iv = Interval::new_closed_open(region.min(), region.max());
-            let tab_text = if self.config.translate_tabs_to_spaces {
+            let tab_text = if self.config.items.translate_tabs_to_spaces {
                     let (_, col) = self.view.offset_to_line_col(&self.text, region.start);
-                    let tab_size = self.config.tab_size;
+                    let tab_size = self.config.items.tab_size;
                     let n = tab_size - (col % tab_size);
                     n_spaces(n)
             } else {
@@ -676,7 +658,7 @@ impl Editor {
     }
 
     fn select_all(&mut self) {
-        self.view.select_all(self.text.len());
+        self.view.select_all(&self.text);
     }
 
     fn add_selection_by_movement(&mut self, movement: Movement) {
@@ -701,17 +683,17 @@ impl Editor {
             Ok(mut f) => {
                 for chunk in self.text.iter_chunks(0, self.text.len()) {
                     if let Err(e) = f.write_all(chunk.as_bytes()) {
-                        print_err!("write error {}", e);
+                        eprintln!("write error {}", e);
                         break;
                     }
                 }
             }
-            Err(e) => print_err!("create error {}", e),
+            Err(e) => eprintln!("create error {}", e),
         }
 
         self.pristine_rev_id = self.last_rev_id;
         self.view.set_pristine();
-        self.view.set_dirty();
+        self.view.set_dirty(&self.text);
         self.render();
     }
 
@@ -719,7 +701,6 @@ impl Editor {
         let first = max(first, 0) as usize;
         let last = last as usize;
         self.view.set_scroll(first, last);
-        self.view.send_update_for_scroll(&self.text, &self.doc_ctx, self.styles.get_merged(), first, last);
     }
 
     /// Sets the cursor and scrolls to the beginning of the given line.
@@ -729,7 +710,7 @@ impl Editor {
     }
 
     fn do_request_lines(&mut self, first: i64, last: i64) {
-        self.view.send_update(&self.text, &self.doc_ctx, self.styles.get_merged(), first as usize, last as usize);
+        self.view.request_lines(&self.text, &self.doc_ctx, self.styles.get_merged(), first as usize, last as usize);
     }
 
     fn do_click(&mut self, line: u64, col: u64, flags: u64, click_count: u64) {
@@ -795,13 +776,13 @@ impl Editor {
     fn do_gesture(&mut self, line: u64, col: u64, ty: GestureType) {
         let offset = self.view.line_col_to_offset(&self.text, line as usize, col as usize);
         match ty {
-            GestureType::ToggleSel => self.view.toggle_sel(offset),
+            GestureType::ToggleSel => self.view.toggle_sel(&self.text, offset),
         }
     }
 
     fn debug_rewrap(&mut self) {
         self.view.rewrap(&self.text, 72);
-        self.view.set_dirty();
+        self.view.set_dirty(&self.text);
     }
 
     fn debug_print_spans(&self) {
@@ -900,17 +881,17 @@ impl Editor {
         };
 
         if search_string.is_none() {
-            self.view.unset_find();
+            self.view.unset_find(&self.text);
             return Value::Null;
         }
 
         let search_string = search_string.unwrap();
         if search_string.len() == 0 {
-            self.view.unset_find();
+            self.view.unset_find(&self.text);
             return Value::Null;
         }
 
-        self.view.set_find(&search_string, case_sensitive);
+        self.view.set_find(&self.text, &search_string, case_sensitive);
 
         Value::String(search_string.to_string())
     }
@@ -924,15 +905,13 @@ impl Editor {
         }
     }
 
-    fn cmd_prelude(&mut self, view_id: &ViewIdentifier) {
+    fn do_cancel_operation(&mut self) {
+        self.view.unset_find(&self.text);
+        self.view.collapse_selections(&self.text);
+    }
+
+    fn cmd_prelude(&mut self) {
         self.this_edit_type = EditType::Other;
-        // if the rpc's originating view is different from current self.view, swap it in
-        if self.view.view_id != *view_id {
-            let mut temp = self.views.remove(view_id)
-                .expect("no view for provided view_id");
-            mem::swap(&mut temp, &mut self.view);
-            self.views.insert(temp.view_id.clone(), temp);
-        }
     }
 
     fn cmd_postlude(&mut self) {
@@ -942,11 +921,11 @@ impl Editor {
         self.last_edit_type = self.this_edit_type;
     }
 
-    pub fn handle_notification(&mut self, view_id: &ViewIdentifier,
+    pub fn handle_notification(&mut self, _view_id: ViewIdentifier,
                                cmd: rpc::EditNotification) {
         use rpc::EditNotification::*;
         use rpc::{LineRange, MouseAction};
-        self.cmd_prelude(view_id);
+        self.cmd_prelude();
 
         match cmd {
             Insert { chars } => self.do_insert(&chars),
@@ -1007,15 +986,16 @@ impl Editor {
             FindPrevious { wrap_around } => self.do_find_next(true, wrap_around.unwrap_or(false), true),
             DebugRewrap => self.debug_rewrap(),
             DebugPrintSpans => self.debug_print_spans(),
+            CancelOperation => self.do_cancel_operation(),
         };
 
         self.cmd_postlude();
     }
 
-    pub fn handle_request(&mut self, view_id: &ViewIdentifier,
+    pub fn handle_request(&mut self, _view_id: ViewIdentifier,
                           cmd: rpc::EditRequest) -> Result<Value, RemoteError> {
         use rpc::EditRequest::*;
-        self.cmd_prelude(&view_id);
+        self.cmd_prelude();
 
         let result = match cmd {
             Cut => self.do_cut(),
@@ -1029,7 +1009,7 @@ impl Editor {
 
     pub fn theme_changed(&mut self) {
         self.styles.theme_changed(&self.doc_ctx);
-        self.view.set_dirty();
+        self.view.set_dirty(&self.text);
         self.render();
     }
 
@@ -1075,7 +1055,7 @@ impl Editor {
         }
         let iv = Interval::new_closed_closed(start, end_offset);
         self.styles.update_layer(plugin, iv, spans);
-        self.view.set_dirty();
+        self.view.invalidate_styles(&self.text, start, end_offset);
         self.render();
     }
 
@@ -1102,9 +1082,9 @@ impl Editor {
         Some(text.slice_to_string(offset, end_off))
     }
 
-    pub fn plugin_get_selections(&self, view_id: &ViewIdentifier) -> Value {
+    pub fn plugin_get_selections(&self, view_id: ViewIdentifier) -> Value {
         //TODO: multiview support
-        assert_eq!(view_id, &self.view.view_id);
+        assert_eq!(view_id, self.view.view_id);
         let sels: Vec<(usize, usize)> = self.view.sel_regions()
             .iter()
             .map(|s| { (s.start, s.end) })
@@ -1120,7 +1100,7 @@ impl Editor {
     }
 
     /// Notifies the client of the currently available plugins.
-    pub fn available_plugins(&self, view_id: &ViewIdentifier,
+    pub fn available_plugins(&self, view_id: ViewIdentifier,
                              plugins: &[ClientPluginInfo]) {
         self.doc_ctx.available_plugins(view_id, plugins);
     }
@@ -1131,10 +1111,10 @@ impl Editor {
     /// for a particular view; plugins are active at the editor/buffer level.
     /// Some `view_id` is needed, however, to route to the correct client view.
     //TODO: revisit this after implementing multiview
-    pub fn plugin_started<'a, T>(&'a self, view_id: T, plugin: &str,
-                                 cmds: &[Command])
-        where T: Into<Option<&'a ViewIdentifier>> {
-        let view_id = view_id.into().unwrap_or(&self.view.view_id);
+    pub fn plugin_started<T>(&self, view_id: T, plugin: &str, cmds: &[Command])
+        where T: Into<Option<ViewIdentifier>>
+    {
+        let view_id = view_id.into().unwrap_or(self.view.view_id);
         self.doc_ctx.plugin_started(view_id, plugin);
         self.doc_ctx.update_cmds(view_id, plugin, cmds);
     }
@@ -1144,13 +1124,13 @@ impl Editor {
     /// `code` is reserved for future use.
     pub fn plugin_stopped<'a, T>(&'a mut self, view_id: T, plugin: &str,
                                  plugin_id: PluginPid, code: i32)
-        where T: Into<Option<&'a ViewIdentifier>> {
+        where T: Into<Option<ViewIdentifier>> {
         {
             self.styles.remove_layer(plugin_id);
-            self.view.set_dirty();
+            self.view.set_dirty(&self.text);
             self.render();
         }
-        let view_id = view_id.into().unwrap_or(&self.view.view_id);
+        let view_id = view_id.into().unwrap_or(self.view.view_id);
         self.doc_ctx.plugin_stopped(view_id, plugin, code);
         self.doc_ctx.update_cmds(view_id, plugin, &Vec::new());
     }

@@ -15,15 +15,17 @@
 //! A container for all the documents being edited. Also functions as main dispatch for RPC.
 
 use std::collections::BTreeMap;
+use std::ffi::OsStr;
 use std::fmt;
 use std::io::{self, Read};
 use std::path::{PathBuf, Path};
 use std::fs::File;
 use std::sync::{Arc, Mutex, MutexGuard, Weak, mpsc};
 
-use serde::de::Deserialize;
+use serde::de::{Deserialize, Deserializer};
+use serde::ser::{Serialize, Serializer};
 use serde_json::value::Value;
-use config::Value as ConfigValue;
+use notify::{RecursiveMode, DebouncedEvent};
 
 use xi_rope::rope::Rope;
 use xi_rpc::{RpcCtx, RemoteError};
@@ -31,61 +33,30 @@ use xi_rpc::{RpcCtx, RemoteError};
 use editor::Editor;
 
 use rpc;
+use config;
+use watcher::{WATCH_IDLE_TOKEN, FsWatcher, EventToken};
 use styles::{Style, ThemeStyleMap};
 use MainPeer;
 
 use syntax::SyntaxDefinition;
-use prefs::ConfigManager;
+use config::{ConfigManager, ConfigDomain, Table};
 use plugins::{self, PluginManagerRef, Command};
 use plugins::rpc::{PluginUpdate, ClientPluginInfo};
 
 #[cfg(target_os = "fuchsia")]
 use apps_ledger_services_public::{Ledger_Proxy};
 
+/// Token for config-related file change events
+const CONFIG_EVENT_TOKEN: EventToken = EventToken(1);
+const NEW_VIEW_IDLE_TOKEN: usize = 1001;
+
 /// ViewIdentifiers are the primary means of routing messages between xi-core and a client view.
-#[derive(Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct ViewIdentifier(String);
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ViewIdentifier(usize);
 
 /// BufferIdentifiers uniquely identify open buffers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Hash)]
 pub struct BufferIdentifier(usize);
-
-impl fmt::Display for ViewIdentifier {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl<'a> From<&'a str> for ViewIdentifier {
-    fn from(s: &'a str) -> Self {
-        ViewIdentifier(String::from(s))
-    }
-}
-
-impl From<String> for ViewIdentifier {
-    fn from(s: String) -> Self {
-        ViewIdentifier(s)
-    }
-}
-
-impl ViewIdentifier {
-    /// Returns a reference to the identifier's String value.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Display for BufferIdentifier {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "buffer-id-{}", self.0)
-    }
-}
-
-impl BufferIdentifier {
-    pub fn new(val: usize) -> Self {
-        BufferIdentifier(val)
-    }
-}
 
 /// Tracks open buffers, and relationships between buffers and views.
 pub struct BufferContainer {
@@ -117,24 +88,70 @@ pub struct BufferContainerRef(Arc<Mutex<BufferContainer>>);
 /// [BufferContainer]: struct.BufferContainer.html
 pub struct WeakBufferContainerRef(Weak<Mutex<BufferContainer>>);
 
+/// A container for all open documents.
+///
+/// `Documents` is effectively the apex of the xi's model graph. It keeps references
+/// to all active `Editor ` instances (through a `BufferContainerRef` instance),
+/// and handles dispatch of RPC methods between client views and `Editor`
+/// instances, as well as between `Editor` instances and Plugins.
+pub struct Documents {
+    /// keeps track of buffer/view state.
+    buffers: BufferContainerRef,
+    id_counter: usize,
+    kill_ring: Arc<Mutex<Rope>>,
+    style_map: Arc<Mutex<ThemeStyleMap>>,
+    plugins: PluginManagerRef,
+    config_manager: ConfigManager,
+    file_watcher: FsWatcher,
+    /// A tx channel used to propagate plugin updates from all `Editor`s.
+    update_channel: mpsc::Sender<(ViewIdentifier, PluginUpdate, usize)>,
+    /// A queue of closures to be executed on the next idle runloop pass.
+    idle_queue: Vec<Box<IdleProc>>,
+    #[allow(dead_code)]
+    sync_repo: Option<SyncRepo>,
+}
+
+#[derive(Clone)]
+/// A container for state shared between `Editor` instances.
+pub struct DocumentCtx {
+    kill_ring: Arc<Mutex<Rope>>,
+    rpc_peer: MainPeer,
+    style_map: Arc<Mutex<ThemeStyleMap>>,
+    update_channel: mpsc::Sender<(ViewIdentifier, PluginUpdate, usize)>
+}
+
+/// A trait for closure types which are callable with a `Documents` instance.
+trait IdleProc: Send {
+    fn call(self: Box<Self>, docs: &mut Documents);
+}
+
+
+impl<F: Send + FnOnce(&mut Documents)> IdleProc for F {
+    fn call(self: Box<F>, docs: &mut Documents) {
+        (*self)(docs)
+    }
+}
+
 impl BufferContainer {
     /// Returns a reference to the `Editor` instance owning `view_id`'s view.
-    pub fn editor_for_view(&self, view_id: &ViewIdentifier) -> Option<&Editor> {
-        match self.views.get(view_id) {
+    pub fn editor_for_view(&self, view_id: ViewIdentifier) -> Option<&Editor> {
+        match self.views.get(&view_id) {
             Some(id) => self.editors.get(id),
             None => {
-                print_err!("no buffer_id for view {}", view_id);
+                eprintln!("no buffer_id for view {}", view_id);
                 None
             }
         }
     }
 
-    /// Returns a mutable reference to the `Editor` instance owning `view_id`'s view.
-    pub fn editor_for_view_mut(&mut self, view_id: &ViewIdentifier) -> Option<&mut Editor> {
-        match self.views.get(view_id) {
+    /// Returns a mutable reference to the `Editor` instance owning
+    /// `view_id`'s view.
+    pub fn editor_for_view_mut(&mut self, view_id: ViewIdentifier)
+                               -> Option<&mut Editor> {
+        match self.views.get(&view_id) {
             Some(id) => self.editors.get_mut(id),
             None => {
-                print_err!("no buffer_id for view {}", view_id);
+                eprintln!("no buffer_id for view {}", view_id);
                 None
             }
         }
@@ -151,7 +168,8 @@ impl BufferContainer {
     }
 
     /// Returns a mutable reference to the `Editor` instance with `id`
-    pub fn editor_for_buffer_mut(&mut self, id: &BufferIdentifier) -> Option<&mut Editor> {
+    pub fn editor_for_buffer_mut(&mut self, id: &BufferIdentifier)
+                                 -> Option<&mut Editor> {
         self.editors.get_mut(id)
     }
 }
@@ -183,25 +201,25 @@ impl BufferContainerRef {
     }
 
     /// Returns a copy of the BufferIdentifier associated with a given view.
-    pub fn buffer_for_view(&self, view_id: &ViewIdentifier) -> Option<BufferIdentifier> {
-        self.lock().views.get(view_id).map(|id| id.to_owned())
+    pub fn buffer_for_view(&self, view_id: ViewIdentifier) -> Option<BufferIdentifier> {
+        self.lock().views.get(&view_id).map(|id| id.to_owned())
     }
 
     /// Adds a new editor, associating it with the provided identifiers.
-    pub fn add_editor(&self, view_id: &ViewIdentifier, buffer_id: &BufferIdentifier,
+    pub fn add_editor(&self, view_id: ViewIdentifier, buffer_id: BufferIdentifier,
                       editor: Editor) {
         let mut inner = self.lock();
-        inner.views.insert(view_id.to_owned(), buffer_id.to_owned());
-        inner.editors.insert(buffer_id.to_owned(), editor);
+        inner.views.insert(view_id, buffer_id);
+        inner.editors.insert(buffer_id, editor);
     }
 
     /// Registers `file_path` as an open file, associated with `view_id`'s buffer.
     ///
     /// If an existing path is already associated with this buffer, it is removed.
-    pub fn set_path<P: AsRef<Path>>(&self, file_path: P, view_id: &ViewIdentifier) {
+    pub fn set_path<P: AsRef<Path>>(&self, file_path: P, view_id: ViewIdentifier) {
         let file_path = file_path.as_ref();
         let mut inner = self.lock();
-        let buffer_id = inner.views.get(view_id).unwrap().to_owned();
+        let buffer_id = inner.views.get(&view_id).unwrap().to_owned();
         let prev_path = inner.editor_for_view(view_id).unwrap()
             .get_path().map(Path::to_owned);
         if let Some(prev_path) = prev_path {
@@ -213,36 +231,21 @@ impl BufferContainerRef {
         inner.editor_for_view_mut(view_id).unwrap()._set_path(file_path);
     }
 
-    /// Adds a new view to the `Editor` instance owning `buffer_id`.
-    pub fn add_view(&self, view_id: &ViewIdentifier, buffer_id: &BufferIdentifier) {
-        let mut inner = self.lock();
-        inner.views.insert(view_id.to_owned(), buffer_id.to_owned());
-        inner.editor_for_view_mut(view_id).unwrap().add_view(view_id);
-    }
-
     /// Closes the view with identifier `view_id`.
     ///
     /// If this is the last view open onto the underlying buffer, also cleans up
     /// the `Editor` instance.
-    pub fn close_view(&self, view_id: &ViewIdentifier) {
-        let (remove, path) = {
-            let mut inner = self.lock();
-            let editor = inner.editor_for_view_mut(view_id).unwrap();
-            editor.remove_view(view_id);
-            if !editor.has_views() {
-                (true, editor.get_path().map(PathBuf::from))
-            } else {
-                (false, None)
-            }
+    pub fn close_view(&self, view_id: ViewIdentifier) {
+        let mut inner = self.lock();
+        let buffer_id = inner.views.remove(&view_id);
+        let ed = buffer_id.and_then(|id| inner.editors.remove(&id));
+        let ed = match ed {
+            Some(ed) => ed,
+            None => return,
         };
 
-        if remove {
-            let mut inner = self.lock();
-            let buffer_id = inner.views.remove(view_id).unwrap();
-            if let Some(path) = path {
-                inner.open_files.remove(&path);
-            }
-            inner.editors.remove(&buffer_id);
+        if let Some(path) = ed.get_path() {
+            inner.open_files.remove(path);
         }
     }
 }
@@ -265,56 +268,11 @@ impl Clone for BufferContainerRef {
     }
 }
 
-/// A trait for closure types which are callable with a `Documents` instance.
-trait IdleProc: Send {
-    fn call(self: Box<Self>, docs: &mut Documents);
-}
-
-impl<F: Send + FnOnce(&mut Documents)> IdleProc for F {
-    fn call(self: Box<F>, docs: &mut Documents) {
-        (*self)(docs)
-    }
-}
-
-/// A container for all open documents.
-///
-/// `Documents` is effectively the apex of the xi's model graph. It keeps references
-/// to all active `Editor ` instances (through a `BufferContainerRef` instance),
-/// and handles dispatch of RPC methods between client views and `Editor`
-/// instances, as well as between `Editor` instances and Plugins.
-pub struct Documents {
-    /// keeps track of buffer/view state.
-    buffers: BufferContainerRef,
-    id_counter: usize,
-    kill_ring: Arc<Mutex<Rope>>,
-    style_map: Arc<Mutex<ThemeStyleMap>>,
-    plugins: PluginManagerRef,
-    #[allow(dead_code)]
-    config_manager: ConfigManager,
-    /// A tx channel used to propagate plugin updates from all `Editor`s.
-    update_channel: mpsc::Sender<(ViewIdentifier, PluginUpdate, usize)>,
-    /// A queue of closures to be executed on the next idle runloop pass.
-    idle_queue: Vec<Box<IdleProc>>,
-    #[allow(dead_code)]
-    sync_repo: Option<SyncRepo>,
-}
-
-#[derive(Clone)]
-/// A container for state shared between `Editor` instances.
-pub struct DocumentCtx {
-    kill_ring: Arc<Mutex<Rope>>,
-    rpc_peer: MainPeer,
-    style_map: Arc<Mutex<ThemeStyleMap>>,
-    update_channel: mpsc::Sender<(ViewIdentifier, PluginUpdate, usize)>
-}
-
-
 impl Documents {
     pub fn new() -> Documents {
         let buffers = BufferContainerRef::new();
         let config_manager = ConfigManager::default();
-        let plugin_path = config_manager.get_config(None, None).plugin_search_path;
-        let plugin_manager = PluginManagerRef::new(buffers.clone(), plugin_path);
+        let plugin_manager = PluginManagerRef::new(buffers.clone());
         let (update_tx, update_rx) = mpsc::channel();
 
         plugins::start_update_thread(update_rx, &plugin_manager);
@@ -326,6 +284,7 @@ impl Documents {
             style_map: Arc::new(Mutex::new(ThemeStyleMap::new())),
             plugins: plugin_manager,
             config_manager: config_manager,
+            file_watcher: FsWatcher::default(),
             update_channel: update_tx,
             idle_queue: Vec::new(),
             sync_repo: None,
@@ -360,33 +319,20 @@ impl Documents {
                                rpc_ctx: &RpcCtx) {
         use rpc::CoreNotification::*;
         match cmd {
-            ClientStarted(..) => self.do_client_init(rpc_ctx.get_peer()),
-            SetTheme { theme_name } => self.do_set_theme(rpc_ctx.get_peer(),
-                                                         &theme_name),
-            DebugOverrideSetting { view_id, key, value } => {
-                //TODO: when we have more ways for settings to change,
-                //we need to move this into some independent function.
-                //And maybe do diffs or something, so we can act on specific
-                //changes...?
-                if let Some(buffer_id) = self.buffers.buffer_for_view(&view_id) {
-                    let syntax = self.buffers.lock().editor_for_view(&view_id)
-                        .map(|ed| ed.get_syntax().to_owned())
-                        .unwrap_or_default();
-                    let value = ConfigValue::deserialize(&value)
-                        .expect("config value should already be validated");
-                    self.config_manager.set_override(key, value, buffer_id, true);
-                    let new_conf = self.config_manager.get_config(syntax, buffer_id);
-                    self.buffers.lock().editor_for_view_mut(&view_id)
-                        .map(|ed| ed.set_config(new_conf));
-                }
-            }
-            Save { view_id, file_path } => self.do_save(&view_id, file_path),
-            CloseView { view_id } => self.do_close_view(&view_id),
+            ClientStarted { config_dir, client_extras_dir } =>
+                self.do_client_init(rpc_ctx.get_peer(), config_dir,
+                                    client_extras_dir),
+            SetTheme { theme_name } =>
+                self.do_set_theme(rpc_ctx.get_peer(), &theme_name),
+            Save { view_id, file_path } => self.do_save(view_id, file_path),
+            CloseView { view_id } => self.do_close_view(view_id),
             Edit(rpc::EditCommand { view_id, cmd }) => {
-                self.buffers.lock().editor_for_view_mut(&view_id)
-                    .map(|ed| ed.handle_notification(&view_id, cmd));
+                self.buffers.lock().editor_for_view_mut(view_id)
+                    .map(|ed| ed.handle_notification(view_id, cmd));
                 }
             Plugin(cmd) => self.do_plugin_cmd(cmd),
+            ModifyUserConfig { domain, changes } =>
+                self.do_modify_user_config(domain, changes)
         }
     }
 
@@ -398,12 +344,12 @@ impl Documents {
                 let result = self.do_new_view(rpc_ctx.get_peer(), file_path);
                 // schedule idle handler after creating views; this is used to
                 // send cursors for empty views, and to initialize plugins.
-                rpc_ctx.schedule_idle(0);
+                rpc_ctx.schedule_idle(NEW_VIEW_IDLE_TOKEN);
                 Ok(result)
             }
             Edit(rpc::EditCommand { view_id, cmd }) => {
-                let result = self.buffers.lock().editor_for_view_mut(&view_id)
-                    .map(|ed| ed.handle_request(&view_id, cmd));
+                let result = self.buffers.lock().editor_for_view_mut(view_id)
+                    .map(|ed| ed.handle_request(view_id, cmd));
                 match result {
                     None => {
                         let msg = format!("No editor for view_id: {}", view_id);
@@ -411,6 +357,14 @@ impl Documents {
                     }
                     Some(result) => result,
                 }
+            },
+            GetConfig { view_id } => {
+                self.do_get_config(view_id)
+                .map(|v| v.into())
+                .map_err(|_| {
+                    let msg = format!("No editor for view_id: {}", view_id);
+                    RemoteError::custom(2, msg, None)
+                })
             }
         }
     }
@@ -435,29 +389,28 @@ impl Documents {
             // for the time being, we just create a new empty view.
             if self.buffers.has_open_file(&file_path) {
                 let buffer_id = self.next_buffer_id();
-                self.new_empty_view(rpc_peer, &view_id, buffer_id);
-                // let buffer_id = self.open_files.get(&file_path).unwrap().to_owned();
-                //self.add_view(&view_id, buffer_id);
+                self.new_empty_view(rpc_peer, view_id, buffer_id);
             } else {
                 // not open: create new buffer_id and open file
                 let buffer_id = self.next_buffer_id();
-                self.new_view_with_file(rpc_peer, &view_id, buffer_id, &file_path);
+                self.new_view_with_file(rpc_peer, view_id, buffer_id, &file_path);
             }
         } else {
             // file_path was nil: create a new empty buffer.
             let buffer_id = self.next_buffer_id();
-            self.new_empty_view(rpc_peer, &view_id, buffer_id);
+            self.new_empty_view(rpc_peer, view_id, buffer_id);
         }
 
         // closure to handle post-creation work on next idle runloop
-        let view_id2 = view_id.clone();
-        let init_info = self.buffers.lock().editor_for_view(&view_id)
+        let init_info = self.buffers.lock().editor_for_view(view_id)
             .unwrap().plugin_init_info();
 
         let on_idle = Box::new(move |self_ref: &mut Documents| {
-            self_ref.plugins.document_new(&view_id2, &init_info);
+            self_ref.plugins.document_new(view_id, &init_info);
             {
                 let mut editors = self_ref.buffers.lock();
+                editors.editor_for_view(view_id)
+                    .map(|ed| ed.send_config_init());
                 for editor in editors.iter_editors_mut() {
                     editor.render();
                 }
@@ -467,41 +420,41 @@ impl Documents {
         json!(view_id)
     }
 
-    fn do_close_view(&mut self, view_id: &ViewIdentifier) {
+    fn do_close_view(&mut self, view_id: ViewIdentifier) {
         self.plugins.document_close(view_id);
         self.buffers.close_view(view_id);
     }
 
-    fn new_empty_view(&mut self, rpc_peer: &MainPeer, view_id: &ViewIdentifier,
+    fn new_empty_view(&mut self, rpc_peer: &MainPeer, view_id: ViewIdentifier,
                       buffer_id: BufferIdentifier) {
         let editor = Editor::new(self.new_tab_ctx(rpc_peer),
-                                 self.config_manager.get_config(None, None),
+                                 self.config_manager.default_buffer_config(),
                                  buffer_id, view_id);
-        self.add_editor(view_id, &buffer_id, editor, None);
+        self.add_editor(view_id, buffer_id, editor, None);
     }
 
-    fn new_view_with_file(&mut self, rpc_peer: &MainPeer, view_id: &ViewIdentifier,
+    fn new_view_with_file(&mut self, rpc_peer: &MainPeer, view_id: ViewIdentifier,
                           buffer_id: BufferIdentifier, path: &Path) {
         match self.read_file(&path) {
             Ok(contents) => {
                 let syntax = SyntaxDefinition::new(path.to_str());
-                let config = self.config_manager.get_config(syntax, buffer_id);
+                let config = self.config_manager.get_buffer_config(syntax, view_id);
                 let ed = Editor::with_text(self.new_tab_ctx(rpc_peer), config,
                                            buffer_id, view_id, contents);
-                self.add_editor(view_id, &buffer_id, ed, Some(path));
+                self.add_editor(view_id, buffer_id, ed, Some(path));
             }
             Err(err) => {
                 let ed = Editor::new(self.new_tab_ctx(rpc_peer),
-                                     self.config_manager.get_config(None, None),
+                                     self.config_manager.default_buffer_config(),
                                      buffer_id, view_id);
                 if path.exists() {
                     // if this is a read error of an actual file, we don't set path
                     // TODO: we should be reporting errors to the client
-                    print_err!("unable to read file: {}, error: {:?}", buffer_id, err);
-                    self.add_editor(view_id, &buffer_id, ed, None);
+                    eprintln!("unable to read file: {}, error: {:?}", buffer_id, err);
+                    self.add_editor(view_id, buffer_id, ed, None);
                 } else {
                     // if a path that doesn't exist, create a new empty buffer + set path
-                    self.add_editor(view_id, &buffer_id, ed, Some(path));
+                    self.add_editor(view_id, buffer_id, ed, Some(path));
                 }
             }
         }
@@ -510,7 +463,7 @@ impl Documents {
     /// Adds a new editor, associating it with the provided identifiers.
     ///
     /// This is called once each time a new editor is created.
-    fn add_editor(&mut self, view_id: &ViewIdentifier, buffer_id: &BufferIdentifier,
+    fn add_editor(&mut self, view_id: ViewIdentifier, buffer_id: BufferIdentifier,
                   mut editor: Editor, path: Option<&Path>) {
         self.initialize_sync(&mut editor, path, buffer_id);
         self.buffers.add_editor(view_id, buffer_id, editor);
@@ -520,15 +473,8 @@ impl Documents {
     }
 
     #[cfg(not(target_os = "fuchsia"))]
-    fn initialize_sync(&mut self, _editor: &mut Editor, _path_opt: Option<&Path>, _buffer_id: &BufferIdentifier) {
+    fn initialize_sync(&mut self, _editor: &mut Editor, _path_opt: Option<&Path>, _buffer_id: BufferIdentifier) {
         // not implemented yet on OSs other than Fuchsia
-    }
-
-    /// Adds a new view to an existing editor instance.
-    #[allow(unreachable_code, unused_variables, dead_code)]
-    fn add_view(&mut self, view_id: &ViewIdentifier, buffer_id: BufferIdentifier) {
-        panic!("add_view should not currently be accessible");
-        self.buffers.add_view(view_id, &buffer_id);
     }
 
     fn read_file<P: AsRef<Path>>(&self, path: P) -> io::Result<String> {
@@ -538,7 +484,7 @@ impl Documents {
         Ok(s)
     }
 
-    fn do_save<P: AsRef<Path>>(&mut self, view_id: &ViewIdentifier,
+    fn do_save<P: AsRef<Path>>(&mut self, view_id: ViewIdentifier,
                                file_path: P) {
         //TODO: handle & report errors
         let file_path = file_path.as_ref();
@@ -557,14 +503,12 @@ impl Documents {
 
         if prev_syntax != new_syntax {
             self.plugins.document_syntax_changed(view_id, init_info);
-            let buffer_id = self.buffers.buffer_for_view(view_id)
-                .expect("buffer should be present while saving");
-            let new_config = self.config_manager.get_config(new_syntax,
-                                                            buffer_id);
+            let new_config = self.config_manager.get_buffer_config(new_syntax,
+                                                                   view_id);
             self.buffers.lock().editor_for_view_mut(view_id)
                 .unwrap().set_config(new_config);
         }
-        self.plugins.document_did_save(&view_id, file_path);
+        self.plugins.document_did_save(view_id, file_path);
     }
 
     /// Handles a plugin related command from a client
@@ -573,29 +517,42 @@ impl Documents {
         match cmd {
             Start { view_id, plugin_name } => {
                 //TODO: report this error to client?
-                let info = self.buffers.lock().editor_for_view(&view_id)
+                let info = self.buffers.lock().editor_for_view(view_id)
                     .map(|ed| ed.plugin_init_info());
                 match info {
                     Some(info) => {
-                        let _ = self.plugins.start_plugin(&view_id, &info, &plugin_name);
+                        let _ = self.plugins.start_plugin(view_id, &info, &plugin_name);
                     },
                     None => (),
                 }
             }
             Stop { view_id, plugin_name } => {
-                print_err!("stop plugin rpc {}", plugin_name);
-                self.plugins.stop_plugin(&view_id, &plugin_name);
+                eprintln!("stop plugin rpc {}", plugin_name);
+                self.plugins.stop_plugin(view_id, &plugin_name);
             }
             PluginRpc  { view_id, receiver, rpc } => {
                 assert!(rpc.params_ref().is_object(), "params must be an object");
                 assert!(!rpc.is_request(), "client->plugin rpc is notification only");
-                self.plugins.dispatch_command(&view_id, &receiver,
+                self.plugins.dispatch_command(view_id, &receiver,
                                               &rpc.method, &rpc.params);
             }
         }
     }
 
-    fn do_client_init(&self, rpc_peer: &MainPeer) {
+    fn do_client_init(&mut self, rpc_peer: &MainPeer, config_dir: Option<PathBuf>,
+                      client_extras_dir: Option<PathBuf>) {
+        if let Some(ref d) = config_dir {
+            self.config_manager.set_config_dir(&d);
+            if let Err(e) = self.init_file_based_configs(d, rpc_peer) {
+                eprintln!("Error reading config dir: {:?}", e);
+            }
+        }
+
+        if let Some(ref d) = client_extras_dir {
+            //TODO: test setting this when config_dir.is_none()
+            self.config_manager.set_extras_dir(d);
+        }
+
         let params = {
             let style_map = self.style_map.lock().unwrap();
             json!({
@@ -603,6 +560,8 @@ impl Documents {
             })
         };
 
+        let plugin_paths = self.config_manager.plugin_search_path();
+        self.plugins.set_plugin_search_path(plugin_paths);
         rpc_peer.send_rpc_notification("available_themes", &params);
     }
 
@@ -625,13 +584,128 @@ impl Documents {
                 ed.theme_changed();
             }
         } else {
-            print_err!("no theme named {}", theme_name);
+            eprintln!("no theme named {}", theme_name);
         }
     }
 
-    pub fn handle_idle(&mut self) {
-        while let Some(f) = self.idle_queue.pop() {
-            f.call(self);
+    fn do_get_config(&self, view_id: ViewIdentifier) -> Result<Table, RemoteError> {
+        let view_config = self.buffers.lock().editor_for_view(view_id)
+            .map(|ed| ed.get_config().to_table());
+        view_config.ok_or(
+            RemoteError::custom(2, &format!("No buffer for view {}", view_id), None))
+    }
+
+    pub fn handle_idle(&mut self, token: usize) {
+        match token {
+            WATCH_IDLE_TOKEN => self.handle_fs_events(),
+            NEW_VIEW_IDLE_TOKEN => {
+                while let Some(f) = self.idle_queue.pop() {
+                    f.call(self);
+                }
+            }
+            _ => (),
+        }
+    }
+
+    /// Process file system events, forwarding them to registrees.
+    fn handle_fs_events(&mut self) {
+        let mut events = {
+            let mut e = self.file_watcher.events.lock().unwrap();
+            let events = e.drain(..).collect::<Vec<_>>();
+            events
+        };
+
+        let mut config_changed = false;
+        for (token, event) in events.drain(..) {
+            match token {
+                CONFIG_EVENT_TOKEN => {
+                    //TODO: we should(?) be more efficient about this update,
+                    // with config_manager returning whether it's necessary.
+                    self.handle_config_fs_event(event);
+                    config_changed = true;
+                }
+                _ => eprintln!("unexpected fs event token {:?}", token),
+            }
+        }
+        if config_changed {
+            self.after_config_change();
+        }
+    }
+
+    /// Handles a config related file system event.
+    fn handle_config_fs_event(&mut self, event: DebouncedEvent) {
+        use self::DebouncedEvent::*;
+        match event {
+            Create(ref path) | Write(ref path) => {
+                self.load_file_based_config(path)
+            }
+            Remove(ref path) => self.config_manager.remove_source(path),
+            Rename(ref old, ref new) => {
+                self.config_manager.remove_source(old);
+                let should_load = self.config_manager.should_load_file(new);
+                if should_load { self.load_file_based_config(new) }
+            }
+            _ => (),
+        }
+    }
+
+    /// Checks for existence of config dir, loading config files and registering
+    /// for file system events if the directory exists and can be read.
+    fn init_file_based_configs(&mut self, config_dir: &Path,
+                               rpc_peer: &MainPeer) -> io::Result<()> {
+        if !config_dir.exists() {
+            config::init_config_dir(config_dir)?;
+        }
+        let config_files = config::iter_config_files(config_dir)?;
+        config_files.for_each(|p| self.load_file_based_config(&p));
+
+        self.file_watcher.watch_filtered(config_dir, RecursiveMode::Recursive,
+                                         CONFIG_EVENT_TOKEN, rpc_peer,
+                                         |p| {
+                                             p.extension()
+                                                 .and_then(OsStr::to_str)
+                                                 .unwrap_or("") == "xiconfig"
+                                         });
+        Ok(())
+    }
+
+    /// Attempt to load a config file.
+    fn load_file_based_config(&mut self, path: &Path) {
+        match config::try_load_from_file(&path) {
+            Ok((d, t)) => self.set_config(d, t, Some(path.to_owned())),
+            Err(e) => eprintln!("Error loading config file: {:?}", e),
+        }
+    }
+
+    /// Sets (overwriting) the config for a given domain. Will fail if the config
+    /// fails validation.
+    fn set_config<P>(&mut self, domain: ConfigDomain, table: Table, path: P)
+        where P: Into<Option<PathBuf>>
+    {
+        if let Err(e) = self.config_manager.set_user_config(domain, table, path) {
+            //TODO: report this error to the peer
+            eprintln!("Error updating config {:?}: {:?}", domain, e);
+        }
+    }
+
+    /// Updates the config for a given domain.
+    fn do_modify_user_config(&mut self, domain: ConfigDomain, changes: Table) {
+        if let Err(e) = self.config_manager.update_user_config(domain, changes) {
+            eprintln!("Error updating config {:?}: {:?}", domain, e);
+        }
+        self.after_config_change();
+    }
+
+
+    /// Notify editors/views/plugins of config changes.
+    fn after_config_change(&self) {
+        let mut editors = self.buffers.lock();
+        for ed in editors.iter_editors_mut() {
+            let syntax = ed.get_syntax().to_owned();
+            let identifier = ed.get_main_view_id();
+            let new_config = self.config_manager.get_buffer_config(syntax,
+                                                                   identifier);
+            ed.set_config(new_config)
         }
     }
 }
@@ -648,7 +722,7 @@ impl Drop for Documents {
 }
 
 impl DocumentCtx {
-    pub fn update_view(&self, view_id: &ViewIdentifier, update: &Value) {
+    pub fn update_view(&self, view_id: ViewIdentifier, update: &Value) {
         self.rpc_peer.send_rpc_notification("update",
             &json!({
                 "view_id": view_id,
@@ -656,7 +730,7 @@ impl DocumentCtx {
             }));
     }
 
-    pub fn scroll_to(&self, view_id: &ViewIdentifier, line: usize, col: usize) {
+    pub fn scroll_to(&self, view_id: ViewIdentifier, line: usize, col: usize) {
         self.rpc_peer.send_rpc_notification("scroll_to",
             &json!({
                 "view_id": view_id,
@@ -665,8 +739,16 @@ impl DocumentCtx {
             }));
     }
 
+    pub fn config_changed(&self, view_id: &ViewIdentifier, changes: &Table) {
+        self.rpc_peer.send_rpc_notification("config_changed",
+                                            &json!({
+                                                "view_id": view_id,
+                                                "changes": changes,
+                                            }));
+    }
+
     /// Notify the client that a plugin ha started.
-    pub fn plugin_started(&self, view_id: &ViewIdentifier, plugin: &str) {
+    pub fn plugin_started(&self, view_id: ViewIdentifier, plugin: &str) {
         self.rpc_peer.send_rpc_notification("plugin_started",
                                             &json!({
                                                 "view_id": view_id,
@@ -677,7 +759,7 @@ impl DocumentCtx {
     /// Notify the client that a plugin ha stopped.
     ///
     /// `code` is not currently used.
-    pub fn plugin_stopped(&self, view_id: &ViewIdentifier, plugin: &str, code: i32) {
+    pub fn plugin_stopped(&self, view_id: ViewIdentifier, plugin: &str, code: i32) {
         self.rpc_peer.send_rpc_notification("plugin_stopped",
                                             &json!({
                                                 "view_id": view_id,
@@ -687,7 +769,7 @@ impl DocumentCtx {
     }
 
     /// Notify the client of the available plugins.
-    pub fn available_plugins(&self, view_id: &ViewIdentifier,
+    pub fn available_plugins(&self, view_id: ViewIdentifier,
                              plugins: &[ClientPluginInfo]) {
         self.rpc_peer.send_rpc_notification("available_plugins",
                                             &json!({
@@ -695,7 +777,7 @@ impl DocumentCtx {
                                                 "plugins": plugins }));
     }
 
-    pub fn update_cmds(&self, view_id: &ViewIdentifier,
+    pub fn update_cmds(&self, view_id: ViewIdentifier,
                        plugin: &str, cmds: &[Command]) {
         self.rpc_peer.send_rpc_notification("update_cmds",
                                             &json!({
@@ -725,7 +807,6 @@ impl DocumentCtx {
         &self.style_map
     }
 
-
     // Get the index for a given style. If the style is not in the existing
     // style map, then issues a def_style request to the front end. Intended
     // to be reasonably efficient, but ideally callers would do their own
@@ -745,6 +826,58 @@ impl DocumentCtx {
     pub fn update_plugins(&self, view_id: ViewIdentifier,
                           update: PluginUpdate, undo_group: usize) {
         self.update_channel.send((view_id, update, undo_group)).unwrap();
+    }
+}
+
+impl<'a> From<&'a str> for ViewIdentifier {
+    fn from(s: &'a str) -> Self {
+        let ord = s.trim_left_matches("view-id-");
+        let ident = usize::from_str_radix(ord, 10)
+            .expect("ViewIdentifier parsing should never fail");
+        ViewIdentifier(ident)
+    }
+}
+
+impl From<String> for ViewIdentifier {
+    fn from(s: String) -> Self {
+        //let s: &str = &s;
+        s.as_str().into()
+    }
+}
+
+impl fmt::Display for ViewIdentifier {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "view-id-{}", self.0)
+    }
+}
+
+impl Serialize for ViewIdentifier {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where S: Serializer
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for ViewIdentifier
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where D: Deserializer<'de>
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(s.into())
+    }
+}
+
+impl fmt::Display for BufferIdentifier {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "buffer-id-{}", self.0)
+    }
+}
+
+impl BufferIdentifier {
+    pub fn new(val: usize) -> Self {
+        BufferIdentifier(val)
     }
 }
 
@@ -836,51 +969,51 @@ mod tests {
     #[test]
     fn test_save_as() {
         let container_ref = BufferContainerRef::new();
-        let config = ConfigManager::default().get_config(None, None);
+        let config = ConfigManager::default().default_buffer_config();
         assert!(!container_ref.has_open_file("a fake file, for sure"));
-        let view_id_1 = ViewIdentifier::from("view-id-1");
+        let view_id_1 = ViewIdentifier(1);
         let buf_id_1 = BufferIdentifier(1);
         let path_1 = PathBuf::from("a_path");
         let path_2 = PathBuf::from("a_different_path");
-        let editor = Editor::new(mock_doc_ctx(view_id_1.as_str()),
+        let editor = Editor::new(mock_doc_ctx(&view_id_1.to_string()),
                                  config.clone(),
-                                 buf_id_1, &view_id_1);
-        container_ref.add_editor(&view_id_1, &buf_id_1, editor);
+                                 buf_id_1, view_id_1);
+        container_ref.add_editor(view_id_1, buf_id_1, editor);
         assert_eq!(container_ref.lock().editors.len(), 1);
 
         // set path (as if on save)
-        container_ref.set_path(&path_1, &view_id_1);
+        container_ref.set_path(&path_1, view_id_1);
         assert_eq!(container_ref.has_open_file(&path_1), true);
         assert_eq!(
-            container_ref.lock().editor_for_view(&view_id_1).unwrap().get_path(),
+            container_ref.lock().editor_for_view(view_id_1).unwrap().get_path(),
             Some(path_1.as_ref()));
 
         // then save somewhere else:
-        container_ref.set_path(&path_2, &view_id_1);
+        container_ref.set_path(&path_2, view_id_1);
         assert_eq!(container_ref.lock().editors.len(), 1);
         assert_eq!(container_ref.has_open_file(&path_1), false);
         assert_eq!(container_ref.has_open_file(&path_2), true);
         assert_eq!(
-            container_ref.lock().editor_for_view(&view_id_1).unwrap().get_path(),
+            container_ref.lock().editor_for_view(view_id_1).unwrap().get_path(),
             Some(path_2.as_ref()));
 
         // reopen the original file:
-        let view_id_2 = ViewIdentifier::from("view-id-2");
+        let view_id_2 = ViewIdentifier(2);
         let buf_id_2 = BufferIdentifier(2);
-        let editor = Editor::new(mock_doc_ctx(view_id_2.as_str()),
-                                 config.clone(), buf_id_2, &view_id_2);
-        container_ref.add_editor(&view_id_2, &buf_id_2, editor);
-        container_ref.set_path(&path_1, &view_id_2);
+        let editor = Editor::new(mock_doc_ctx(&view_id_2.to_string()),
+                                 config.clone(), buf_id_2, view_id_2);
+        container_ref.add_editor(view_id_2, buf_id_2, editor);
+        container_ref.set_path(&path_1, view_id_2);
         assert_eq!(container_ref.lock().editors.len(), 2);
         assert_eq!(container_ref.has_open_file(&path_1), true);
         assert_eq!(container_ref.has_open_file(&path_2), true);
 
-        container_ref.close_view(&view_id_1);
+        container_ref.close_view(view_id_1);
         assert_eq!(container_ref.lock().editors.len(), 1);
         assert_eq!(container_ref.has_open_file(&path_2), false);
         assert_eq!(container_ref.has_open_file(&path_1), true);
 
-        container_ref.close_view(&view_id_2);
+        container_ref.close_view(view_id_2);
         assert_eq!(container_ref.has_open_file(&path_2), false);
         assert_eq!(container_ref.lock().editors.len(), 0);
     }
@@ -888,9 +1021,9 @@ mod tests {
     #[test]
     fn test_id_serde() {
         // check to see that struct with single string member serializes as string
-        let view_id = ViewIdentifier::from("hello-id-8");
-        let as_val = serde_json::to_value(&view_id).unwrap();
-        assert_eq!(as_val.to_string(), "\"hello-id-8\"");
+        let view_id = ViewIdentifier(8);
+        let as_val = serde_json::to_value(view_id).unwrap();
+        assert_eq!(as_val.to_string(), "\"view-id-8\"");
     }
 
     #[test]
@@ -903,11 +1036,11 @@ mod tests {
         }
         let json = r#"
         {"name": "victor",
-         "view": "a-view",
+         "view": "view-id-6",
          "flag": 42
         }"#;
 
         let result: TestStruct = serde_json::from_str(json).unwrap();
-        assert_eq!(result.view.as_str(), "a-view");
+        assert_eq!(result.view, ViewIdentifier(6));
     }
 }

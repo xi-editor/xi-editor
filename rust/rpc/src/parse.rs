@@ -40,7 +40,7 @@ pub struct MessageReader(String);
 /// occur on the read thread. If the message looks like a request, it
 /// is passed to the main thread for handling.
 #[derive(Debug, Clone)]
-pub struct RpcObject(Value);
+pub struct RpcObject(pub Value);
 
 #[derive(Debug, Clone, PartialEq)]
 /// An RPC call, which may be either a notification or a request.
