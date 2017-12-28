@@ -77,7 +77,7 @@ pub enum UpdateResponse {
     /// An edit to the buffer.
     Edit(PluginEdit),
     /// An acknowledgement with no action. A response cannot be Null,
-    ///gso we send a uint.
+    /// so we send a uint.
     Ack(u64),
 }
 
