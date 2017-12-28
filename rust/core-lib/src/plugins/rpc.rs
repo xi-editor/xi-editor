@@ -23,6 +23,7 @@ use serde_json::{self, Value};
 use super::PluginPid;
 use syntax::SyntaxDefinition;
 use tabs::{BufferIdentifier, ViewIdentifier};
+use config::Table;
 
 //TODO: At the moment (May 08, 2017) this is all very much in flux.
 // At some point, it will be stabalized and then perhaps will live in another crate,
@@ -45,6 +46,7 @@ pub struct PluginBufferInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
     pub syntax: SyntaxDefinition,
+    pub config: Table,
 }
 
 //TODO: very likely this should be merged with PluginDescription
@@ -100,6 +102,7 @@ pub enum HostNotification {
     Ping(EmptyStruct),
     Initialize { plugin_id: PluginPid, buffer_info: Vec<PluginBufferInfo> },
     DidSave { view_id: ViewIdentifier, path: PathBuf },
+    ConfigChanged { view_id: ViewIdentifier, changes: Table },
     NewBuffer { buffer_info: Vec<PluginBufferInfo> },
     DidClose { view_id: ViewIdentifier },
     Shutdown(EmptyStruct),
@@ -201,11 +204,13 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for PluginCommand<T>
 impl PluginBufferInfo {
     pub fn new(buffer_id: BufferIdentifier, views: &[ViewIdentifier],
                rev: u64, buf_size: usize, nb_lines: usize,
-               path: Option<PathBuf>, syntax: SyntaxDefinition) -> Self {
+               path: Option<PathBuf>, syntax: SyntaxDefinition,
+               config: Table) -> Self {
         //TODO: do make any current assertions about paths being valid utf-8? do we want to?
         let path = path.map(|p| p.to_str().unwrap().to_owned());
         let views = views.to_owned();
-        PluginBufferInfo { buffer_id, views, rev, buf_size, nb_lines, path, syntax }
+        PluginBufferInfo { buffer_id, views, rev, buf_size,
+        nb_lines, path, syntax, config }
     }
 }
 

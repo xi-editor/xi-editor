@@ -15,7 +15,7 @@
 //! A more sophisticated cache that manages user state.
 
 use std::path::PathBuf;
-use serde_json::Value;
+use serde_json::{self, Value};
 use bytecount;
 use rand::{thread_rng, Rng};
 
@@ -24,6 +24,8 @@ use xi_rpc::{RemoteError, ReadError};
 
 use plugin_base;
 pub use plugin_base::Error;
+
+type ConfigTable = serde_json::Map<String, Value>;
 
 const CHUNK_SIZE: usize = 1024 * 1024;
 const CACHE_SIZE: usize = 1024;
@@ -70,6 +72,7 @@ struct CacheState<S> {
     frontier: Vec<usize>,
 
     syntax: SyntaxDefinition,
+    config: ConfigTable,
     path: Option<PathBuf>,
 }
 
@@ -93,11 +96,11 @@ impl<'a, P: Plugin> plugin_base::Handler for CacheHandler<'a, P> {
         };
         match rpc {
             Ping( .. ) => (),
-            Initialize { plugin_id, ref buffer_info } => {
-                let info = buffer_info.first()
-                    .expect("buffer_info always contains at least one item");
+            Initialize { plugin_id, mut buffer_info } => {
+                let info = buffer_info.remove(0);
                 ctx.do_initialize(info, plugin_id, self.handler);
             }
+            ConfigChanged { changes, .. } => ctx.do_config_changed(changes),
             DidSave { ref path, .. } => ctx.do_did_save(path, self.handler),
             NewBuffer { .. } | DidClose { .. } => eprintln!("Rust plugin lib \
             does not support global plugins"),
@@ -137,19 +140,30 @@ pub fn mainloop<P: Plugin>(handler: &mut P) -> Result<(), ReadError>  {
 }
 
 impl<'a, S: Default + Clone> PluginCtx<'a, S> {
-    fn do_initialize<P>(mut self, init_info: &plugin_rpc::PluginBufferInfo,
+    fn do_initialize<P>(mut self, init_info: plugin_rpc::PluginBufferInfo,
                         plugin_id: PluginPid, handler: &mut P)
         where P: Plugin<State = S>
     {
+        let plugin_rpc::PluginBufferInfo {
+            mut views, rev, buf_size,
+            path, syntax, config, ..
+        } = init_info;
         self.state.plugin_id = plugin_id;
-        self.state.buf_size = init_info.buf_size;
-        assert_eq!(init_info.views.len(), 1);
-        self.state.view_id = init_info.views[0].clone();
-        self.state.rev = init_info.rev;
-        self.state.syntax = init_info.syntax.clone();
-        self.state.path = init_info.path.clone().map(|p| PathBuf::from(p));
+        self.state.buf_size = buf_size;
+        assert_eq!(views.len(), 1);
+        self.state.view_id = views.remove(0);
+        self.state.rev = rev;
+        self.state.syntax = syntax;
+        self.state.config = config;
+        self.state.path = path.map(|p| PathBuf::from(p));
         self.truncate_frontier(0);
-        handler.initialize(self, init_info.buf_size);
+        handler.initialize(self, buf_size);
+    }
+
+    fn do_config_changed(self, changes: ConfigTable) {
+        for (key, value) in changes.iter() {
+            self.state.config.insert(key.to_owned(), value.to_owned());
+        }
     }
 
     fn do_did_save<P: Plugin<State = S>>(self, path: &PathBuf, handler: &mut P) {
