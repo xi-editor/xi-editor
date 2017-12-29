@@ -38,7 +38,9 @@ pub trait Plugin {
     type State: Default + Clone;
 
     fn initialize(&mut self, ctx: PluginCtx<Self::State>, buf_size: usize);
-    fn update(&mut self, ctx: PluginCtx<Self::State>);
+    fn update(&mut self, ctx: PluginCtx<Self::State>, start: usize,
+              end: usize, new_len: usize, rev: usize, text: &Option<String>)
+              -> Option<Value>;
     fn did_save(&mut self, ctx: PluginCtx<Self::State>);
     #[allow(unused_variables)]
     fn idle(&mut self, ctx: PluginCtx<Self::State>, token: usize) {}
@@ -177,7 +179,7 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
         let plugin_rpc::PluginUpdate { start, end, new_len, text, rev, .. } = update;
         self.state.buf_size = self.state.buf_size - (end - start) + new_len;
         self.state.rev = rev;
-        if let Some(text) = text {
+        if let Some(ref text) = text {
             let off = self.state.chunk_offset;
             if start >= off && start <= off + self.state.chunk.len() {
                 let nlc_tail = if end <= off + self.state.chunk.len() {
@@ -207,8 +209,8 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
             self.state.chunk_offset = 0;
             self.truncate_cache(start);
         }
-        handler.update(self);
-        Value::from(0i32)
+        handler.update(self, start, end, new_len, rev as usize, &text)
+            .unwrap_or(Value::from(0i32))
     }
 
     pub fn get_path(&self) -> Option<&PathBuf> {
@@ -216,6 +218,14 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
             Some(ref p) => Some(p),
             None => None,
         }
+    }
+
+    pub fn get_config(&self) -> &ConfigTable {
+        &self.state.config
+    }
+
+    pub fn get_syntax(&self) -> SyntaxDefinition {
+        self.state.syntax
     }
 
     pub fn add_scopes(&self, scopes: &Vec<Vec<String>>) {
@@ -226,6 +236,12 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
                         spans: &[plugin_rpc::ScopeSpan]) {
         self.peer.update_spans(self.state.plugin_id, &self.state.view_id,
                                start, len, self.state.rev, spans)
+    }
+
+    pub fn edit(&self, plugin_id: PluginPid, start: usize, end: usize, rev: usize,
+                after_cursor: bool, text: &str, author: &str, priority: usize) {
+        self.peer.edit(self.state.plugin_id, start, end, rev, after_cursor,
+                       text, author, priority);
     }
 
     /// Determines whether an incoming request (or notification) is pending. This
@@ -247,7 +263,7 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
     }
 
     /// Find an entry in the cache by offset. Similar to `find_line`.
-    fn find_offset(&self, offset: usize) -> Result<usize, usize> {
+    pub fn find_offset(&self, offset: usize) -> Result<usize, usize> {
         self.state.state_cache.binary_search_by(|probe| probe.offset.cmp(&offset))
     }
 
