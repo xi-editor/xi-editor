@@ -265,7 +265,8 @@ mod tests {
              "buf_size": 20,
              "nb_lines": 5,
              "path": "some_path",
-             "syntax": "toml"}"#;
+             "syntax": "toml",
+            "config": {"some_key": 420}}"#;
 
         let val: PluginBufferInfo = match serde_json::from_str(json) {
             Ok(val) => val,

@@ -202,20 +202,17 @@ impl<'a> PluginState<'a> {
         // don't touch indentation if this is not a simple edit
         if end != start { return None }
         let is_newline = {
-            let user_line_ending = ctx.get_config().get("line_ending")
-                .unwrap().as_str().unwrap();
-            text.as_ref()
-                .map(|t| t.ends_with(user_line_ending))
+            let line_ending = &ctx.get_config().line_ending;
+                text.as_ref()
+                .map(|t| t.ends_with(line_ending))
                 .unwrap_or(false)
         };
 
         if is_newline {
             let line_num = ctx.find_offset(start).err();
 
-            let use_spaces = ctx.get_config().get("translate_tabs_to_spaces")
-                .unwrap().as_bool().unwrap();
-            let tab_size = ctx.get_config().get("tab_size").unwrap()
-                .as_u64().unwrap() as usize;
+            let use_spaces = ctx.get_config().translate_tabs_to_spaces;
+            let tab_size = ctx.get_config().tab_size;
             if let Some(line) = line_num.and_then(|idx| ctx.get_line(idx).ok()) {
                 let indent = self.indent_for_next_line(line, use_spaces, tab_size);
                 let edit = json!({

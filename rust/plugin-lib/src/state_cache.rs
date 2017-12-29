@@ -19,13 +19,12 @@ use serde_json::{self, Value};
 use bytecount;
 use rand::{thread_rng, Rng};
 
-use xi_core::{PluginPid, ViewIdentifier, SyntaxDefinition, plugin_rpc};
+use xi_core::{PluginPid, ViewIdentifier, SyntaxDefinition, plugin_rpc,
+              ConfigTable, BufferConfig};
 use xi_rpc::{RemoteError, ReadError};
 
 use plugin_base;
 pub use plugin_base::Error;
-
-type ConfigTable = serde_json::Map<String, Value>;
 
 const CHUNK_SIZE: usize = 1024 * 1024;
 const CACHE_SIZE: usize = 1024;
@@ -74,7 +73,8 @@ struct CacheState<S> {
     frontier: Vec<usize>,
 
     syntax: SyntaxDefinition,
-    config: ConfigTable,
+    config_table: ConfigTable,
+    config: Option<BufferConfig>,
     path: Option<PathBuf>,
 }
 
@@ -150,13 +150,15 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
             mut views, rev, buf_size,
             path, syntax, config, ..
         } = init_info;
+
         self.state.plugin_id = plugin_id;
         self.state.buf_size = buf_size;
         assert_eq!(views.len(), 1);
         self.state.view_id = views.remove(0);
         self.state.rev = rev;
         self.state.syntax = syntax;
-        self.state.config = config;
+        self.state.config_table = config.clone();
+        self.state.config = serde_json::from_value(Value::Object(config)).unwrap();
         self.state.path = path.map(|p| PathBuf::from(p));
         self.truncate_frontier(0);
         handler.initialize(self, buf_size);
@@ -164,8 +166,10 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
 
     fn do_config_changed(self, changes: ConfigTable) {
         for (key, value) in changes.iter() {
-            self.state.config.insert(key.to_owned(), value.to_owned());
+            self.state.config_table.insert(key.to_owned(), value.to_owned());
         }
+        let conf = serde_json::from_value(Value::Object(self.state.config_table.clone()));
+        self.state.config = conf.unwrap();
     }
 
     fn do_did_save<P: Plugin<State = S>>(self, path: &PathBuf, handler: &mut P) {
@@ -220,8 +224,8 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
         }
     }
 
-    pub fn get_config(&self) -> &ConfigTable {
-        &self.state.config
+    pub fn get_config(&self) -> &BufferConfig {
+        self.state.config.as_ref().unwrap()
     }
 
     pub fn get_syntax(&self) -> SyntaxDefinition {
@@ -236,12 +240,6 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
                         spans: &[plugin_rpc::ScopeSpan]) {
         self.peer.update_spans(self.state.plugin_id, &self.state.view_id,
                                start, len, self.state.rev, spans)
-    }
-
-    pub fn edit(&self, plugin_id: PluginPid, start: usize, end: usize, rev: usize,
-                after_cursor: bool, text: &str, author: &str, priority: usize) {
-        self.peer.edit(self.state.plugin_id, start, end, rev, after_cursor,
-                       text, author, priority);
     }
 
     /// Determines whether an incoming request (or notification) is pending. This
