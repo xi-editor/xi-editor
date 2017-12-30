@@ -476,16 +476,20 @@ impl Editor {
                 region.min()
             } else {
                 // backspace deletes max(1, tab_size) contiguous spaces
-                let tab_size = self.config.items.tab_size;
+                let (_, c) = self.view.offset_to_line_col(&self.text,
+                                                          region.start);
                 let use_spaces = self.config.items.translate_tabs_to_spaces;
-                let preceded_by_spaces = (0..tab_size)
-                    .map(|i| (region.max() - 1) - i)
-                    .all(|i| self.text.byte_at(i) == b' ');
+                let tab_size = self.config.items.tab_size;
+                let tab_size = if c % tab_size == 0 { tab_size } else { c % tab_size };
+                let preceded_by_spaces = (1..tab_size + 1)
+                    .map(|i| region.start.saturating_sub(i))
+                    .all(|i| self.text.len() > 0 && self.text.byte_at(i) == b' ');
                if preceded_by_spaces && use_spaces {
-                   region.max() - tab_size
+                   region.start - tab_size
                } else {
                    // TODO: implement complex emoji logic
-                    self.text.prev_codepoint_offset(region.end).unwrap_or(region.end)
+                    self.text.prev_codepoint_offset(region.end)
+                        .unwrap_or(region.end)
                }
             };
 
