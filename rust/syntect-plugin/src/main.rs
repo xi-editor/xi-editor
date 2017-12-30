@@ -214,7 +214,8 @@ impl<'a> PluginState<'a> {
             let use_spaces = ctx.get_config().translate_tabs_to_spaces;
             let tab_size = ctx.get_config().tab_size;
             if let Some(line) = line_num.and_then(|idx| ctx.get_line(idx).ok()) {
-                let indent = self.indent_for_next_line(line, use_spaces, tab_size);
+                let indent = self.indent_for_next_line(
+                    line, use_spaces, tab_size);
                 let edit = json!({
                     "start": start + new_len,
                     "end": start + new_len,
@@ -236,31 +237,30 @@ impl<'a> PluginState<'a> {
                                 tab_size: usize) -> Cow<'b, str> {
         let leading_ws = prev_line.char_indices()
             .find(|&(_, c)| !c.is_whitespace())
+            .or(prev_line.char_indices().last())
             .map(|(idx, _)| unsafe { prev_line.slice_unchecked(0, idx) } )
             .unwrap_or("");
-        if let Some(increase) = self.indent_increase(prev_line, use_spaces, tab_size) {
-            format!("{}{}", leading_ws, increase).into()
+
+        if self.increase_indentation(prev_line) {
+            let indent_text = if use_spaces {
+                &"                                    "[..tab_size]
+            } else {
+                "\t"
+            };
+            format!("{}{}", leading_ws, indent_text).into()
         } else {
             leading_ws.into()
         }
     }
 
-    /// Checks if the indent level should be increased. If so, returns the text
-    /// to insert.
-    fn indent_increase(&self, prev_line: &str, use_spaces: bool, tab_size: usize)
-                       -> Option<&str> {
+    /// Checks if the indent level should be increased.
+    fn increase_indentation(&self, prev_line: &str) -> bool {
         let trailing_char = prev_line.trim_right().chars()
             .rev().next().unwrap_or(' ');
-        // very naive heuristic for inreasing indentation level.
-        let increase = trailing_char == '[' || trailing_char == '{' ||
-            trailing_char == ':' || trailing_char == '(';
-        if increase {
-            Some(match use_spaces {
-                true => "                                 "[..tab_size].into(),
-                false => "\t".into(),
-            })
-        } else {
-            None
+        // very naive heuristic for modifying indentation level.
+        match trailing_char {
+            '{' | ':' => true,
+            _ => false,
         }
     }
 }
