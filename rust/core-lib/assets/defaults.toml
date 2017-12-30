@@ -12,3 +12,5 @@ font_face = "InconsolataGo"
 font_size = 14
 
 line_ending = "\n"
+
+auto_indent = true

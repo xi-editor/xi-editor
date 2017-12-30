@@ -46,6 +46,7 @@ mod defaults {
         "translate_tabs_to_spaces",
         "font_face",
         "font_size",
+        "auto_indent",
     ];
     /// config keys that are only legal at the top level
     pub const TOP_LEVEL_KEYS: &'static [&'static str] = &[
@@ -187,6 +188,7 @@ pub struct BufferItems {
     pub translate_tabs_to_spaces: bool,
     pub font_face: String,
     pub font_size: f32,
+    pub auto_indent: bool,
 }
 
 pub type BufferConfig = Config<BufferItems>;

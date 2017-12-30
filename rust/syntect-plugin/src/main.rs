@@ -275,7 +275,12 @@ impl<'a> state_cache::Plugin for PluginState<'a> {
     fn update(&mut self, mut ctx: PluginCtx<State>, start: usize, end: usize,
               new_len: usize, rev: usize, text: &Option<String>) -> Option<Value> {
         ctx.schedule_idle(0);
-        self.do_indentation(&mut ctx, start, end, new_len, rev, text)
+        let should_auto_indent = ctx.get_config().auto_indent;
+        if should_auto_indent {
+            self.do_indentation(&mut ctx, start, end, new_len, rev, text)
+        } else {
+            None
+        }
     }
 
     fn did_save(&mut self, ctx: PluginCtx<State>) {
