@@ -475,9 +475,20 @@ impl Editor {
             let start = if !region.is_caret() {
                 region.min()
             } else {
-                // TODO: implement complex emoji logic
-                self.text.prev_codepoint_offset(region.end).unwrap_or(region.end)
+                // backspace deletes max(1, tab_size) contiguous spaces
+                let tab_size = self.config.items.tab_size;
+                let use_spaces = self.config.items.translate_tabs_to_spaces;
+                let preceded_by_spaces = (0..tab_size)
+                    .map(|i| (region.max() - 1) - i)
+                    .all(|i| self.text.byte_at(i) == b' ');
+               if preceded_by_spaces && use_spaces {
+                   region.max() - tab_size
+               } else {
+                   // TODO: implement complex emoji logic
+                    self.text.prev_codepoint_offset(region.end).unwrap_or(region.end)
+               }
             };
+
             let iv = Interval::new_closed_open(start, region.max());
             if !iv.is_empty() {
                 builder.delete(iv);
