@@ -14,7 +14,7 @@
 
 //! Plugins and related functionality.
 
-pub mod rpc_types;
+pub mod rpc;
 mod manager;
 mod manifest;
 mod catalog;
@@ -27,14 +27,13 @@ use std::io::{self, BufReader};
 
 use serde_json::{self, Value};
 
-use xi_rpc::{self, RpcPeer, RpcCtx, RpcLoop, Handler, RemoteError};
+use xi_rpc::{self, RpcPeer, RpcLoop};
 use tabs::ViewIdentifier;
 
 pub use self::manager::{PluginManagerRef, WeakPluginManagerRef};
 pub use self::manifest::{PluginDescription, Command, PlaceholderRpc};
 
-use self::rpc_types::{PluginUpdate, PluginNotification, PluginRequest,
-PluginBufferInfo};
+use self::rpc::{PluginUpdate, PluginBufferInfo};
 
 use self::manager::PluginName;
 use self::catalog::PluginCatalog;
@@ -45,7 +44,7 @@ pub type PluginPeer = RpcPeer;
 ///
 /// Note: two instances of the same executable will have different identifiers.
 /// Note: this identifier is distinct from the OS's process id.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Serialize, Deserialize, Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PluginPid(usize);
 
 /// A running plugin.
@@ -53,7 +52,6 @@ pub struct Plugin {
     peer: PluginPeer,
     /// The plugin's process
     process: Child,
-    manager: WeakPluginManagerRef,
     description: PluginDescription,
     identifier: PluginPid,
 }
@@ -71,34 +69,6 @@ impl Clone for PluginRef {
     }
 }
 
-impl Handler for PluginRef {
-    type Notification = PluginNotification;
-    type Request = PluginRequest;
-    fn handle_notification(&mut self, _ctx: &RpcCtx, rpc: Self::Notification) {
-        let plugin_manager = {
-            self.0.lock().unwrap().manager.upgrade()
-        };
-        if let Some(plugin_manager) = plugin_manager {
-            let pid = self.get_identifier();
-            plugin_manager.lock().handle_plugin_notification(rpc, pid)
-        }
-    }
-
-    fn handle_request(&mut self, _ctx: &RpcCtx, rpc: Self::Request) ->
-        Result<Value, RemoteError> {
-        let plugin_manager = {
-            self.0.lock().unwrap().manager.upgrade()
-        };
-        if let Some(plugin_manager) = plugin_manager {
-            let pid = self.get_identifier();
-            Ok(plugin_manager.lock().handle_plugin_request(rpc, pid))
-        } else {
-            Err(RemoteError::custom(88, "Plugin manager missing", None))
-        }
-    }
-}
-
-
 impl PluginRef {
     /// Send an arbitrary RPC notification to the plugin.
     pub fn rpc_notification(&self, method: &str, params: &Value) {
@@ -107,8 +77,10 @@ impl PluginRef {
 
     /// Initialize the plugin.
     pub fn initialize(&self, init: &[PluginBufferInfo]) {
+        let pid = self.get_identifier();
         self.0.lock().unwrap().peer
             .send_rpc_notification("initialize", &json!({
+                "plugin_id": pid,
                 "buffer_info": init,
             }));
     }
@@ -204,7 +176,7 @@ pub fn start_plugin_process<C>(manager_ref: &PluginManagerRef,
     where C: FnOnce(Result<PluginRef, io::Error>) + Send + 'static
 {
 
-    let manager_ref = manager_ref.to_weak();
+    let mut manager_ref = manager_ref.clone();
     let plugin_desc = plugin_desc.to_owned();
 
     thread::spawn(move || {
@@ -224,17 +196,16 @@ pub fn start_plugin_process<C>(manager_ref: &PluginManagerRef,
                 let plugin = Plugin {
                     peer: peer,
                     process: child,
-                    manager: manager_ref,
                     description: plugin_desc,
                     identifier: identifier,
                 };
-                let mut plugin_ref = PluginRef(
+                let plugin_ref = PluginRef(
                     Arc::new(Mutex::new(plugin)),
                     Arc::new(AtomicBool::new(false)));
                 completion(Ok(plugin_ref.clone()));
                 //TODO: we could be logging plugin exit results
                 let _ = looper.mainloop(|| BufReader::new(child_stdout),
-                                        &mut plugin_ref);
+                                        &mut manager_ref);
             }
             Err(err) => completion(Err(err)),
         }

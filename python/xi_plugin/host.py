@@ -26,28 +26,42 @@ MAX_FETCH_SIZE = 1024*1024
 
 class PluginPeer(RpcPeer):
     """A proxy object which wraps RPC methods implemented in xi-core."""
+    _plugin_pid = None
+
+    @property
+    def plugin_pid(self):
+        assert self._plugin_pid, 'plugin_pid must be set before sending rpcs'
+        return self._plugin_pid
 
     def edit(self, view_id, edit):
-        self.send_rpc('edit', {'view_id': view_id, 'edit': edit.to_dict()})
+        self.send_rpc('edit', {'view_id': view_id,
+                               'plugin_id': self.plugin_pid,
+                               'edit': edit.to_dict()})
 
     def update_spans(self, view_id, start, length, spans, rev):
         self.send_rpc('update_spans', {'view_id': view_id,
+                                       'plugin_id': self.plugin_pid,
                                        'start': start,
                                        'len': length,
                                        'spans': spans,
                                        'rev': rev})
 
     def add_scopes(self, view_id, scopes):
-        self.send_rpc('add_scopes', {'view_id': view_id, 'scopes': scopes})
+        self.send_rpc('add_scopes', {'view_id': view_id,
+                                     'plugin_id': self.plugin_pid,
+                                     'scopes': scopes})
 
     def get_data(self, view_id, from_offset, rev, max_size=MAX_FETCH_SIZE):
         return self.send_rpc_sync('get_data', {'view_id': view_id,
+                                               'plugin_id': self.plugin_pid,
                                                'offset': from_offset,
                                                'max_size': max_size,
                                                'rev': rev})
 
     def get_selections(self, view_id):
-        return self.send_rpc_sync('get_selections', {'view_id': view_id})
+        return self.send_rpc_sync('get_selections', {'view_id': view_id,
+                                                     'plugin_id': self.plugin_pid,
+                                                     })
 
 
 class PluginHost(object):
@@ -58,7 +72,8 @@ class PluginHost(object):
         self.plugin = plugin
         self.views = dict()
 
-    def initialize(self, peer, buffer_info):
+    def initialize(self, peer, plugin_pid, buffer_info):
+        peer._plugin_pid = plugin_pid
         self._initialize_buffers(peer, buffer_info)
 
         if isinstance(self.plugin, GlobalPlugin):

@@ -41,7 +41,7 @@ use MainPeer;
 use syntax::SyntaxDefinition;
 use config::{ConfigManager, ConfigDomain, Table};
 use plugins::{self, PluginManagerRef, Command};
-use plugins::rpc_types::{PluginUpdate, ClientPluginInfo};
+use plugins::rpc::{PluginUpdate, ClientPluginInfo};
 
 #[cfg(target_os = "fuchsia")]
 use apps_ledger_services_public::{Ledger_Proxy};
@@ -51,7 +51,7 @@ const CONFIG_EVENT_TOKEN: EventToken = EventToken(1);
 const NEW_VIEW_IDLE_TOKEN: usize = 1001;
 
 /// ViewIdentifiers are the primary means of routing messages between xi-core and a client view.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ViewIdentifier(usize);
 
 /// BufferIdentifiers uniquely identify open buffers.

@@ -463,42 +463,9 @@ impl<W: Write> Clone for RawPeer<W> {
     }
 }
 
-// =============================================================================
-//  Helper functions for value manipulation
-// =============================================================================
-
-//TODO: delete after finishing migration
-pub fn dict_get_u64(dict: &serde_json::Map<String, Value>, key: &str) -> Option<u64> {
-    dict.get(key).and_then(Value::as_u64)
-}
-
-pub fn dict_get_string<'a>(dict: &'a serde_json::Map<String, Value>, key: &str) -> Option<&'a str> {
-    dict.get(key).and_then(Value::as_str)
-}
-
-pub fn dict_get_bool<'a>(dict: &'a serde_json::Map<String, Value>, key: &str) -> Option<bool> {
-    dict.get(key).and_then(Value::as_bool)
-}
-
-pub fn arr_get_u64(arr: &[Value], idx: usize) -> Option<u64> {
-    arr.get(idx).and_then(Value::as_u64)
-}
-
-pub fn arr_get_i64(arr: &[Value], idx: usize) -> Option<i64> {
-    arr.get(idx).and_then(Value::as_i64)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_dict_get_u64() {
-        let dict = json!({"life_meaning": 42});
-        let dict = dict.as_object().unwrap();
-        assert_eq!(dict_get_u64(&dict, "life_meaning"), Some(42));
-        assert_eq!(dict_get_u64(&dict, "tea"), None);
-    }
 
     #[test]
     fn test_parse_notif() {

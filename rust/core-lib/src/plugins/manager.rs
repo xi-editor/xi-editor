@@ -25,10 +25,13 @@ use std::fmt::Debug;
 use serde::Serialize;
 use serde_json::{self, Value};
 
+use xi_rpc::{RpcCtx, Handler, RemoteError};
+
 use tabs::{BufferIdentifier, ViewIdentifier, BufferContainerRef};
 
 use super::{PluginCatalog, PluginRef, start_plugin_process, PluginPid};
-use super::rpc_types::{PluginNotification, PluginRequest, PluginUpdate, UpdateResponse, PluginBufferInfo, ClientPluginInfo};
+use super::rpc::{PluginNotification, PluginRequest, PluginCommand,
+PluginUpdate, UpdateResponse, PluginBufferInfo, ClientPluginInfo};
 use super::manifest::{PluginActivation, Command};
 
 pub type PluginName = String;
@@ -68,52 +71,6 @@ impl PluginManager {
             let name = name.clone();
             ClientPluginInfo { name, running }
         }).collect::<Vec<_>>()
-    }
-
-    /// Handle a request from a plugin.
-    pub fn handle_plugin_notification(&self, cmd: PluginNotification, plugin_id: PluginPid) {
-        use self::PluginNotification::*;
-        match cmd {
-            //TODO: these should not be unwraps
-            AddScopes { view_id, scopes } => {
-                self.buffers.lock().editor_for_view_mut(view_id).unwrap()
-                    .plugin_add_scopes(plugin_id, scopes);
-            }
-            UpdateSpans { view_id, start, len, spans, rev } => {
-                self.buffers.lock().editor_for_view_mut(view_id).unwrap()
-                    .plugin_update_spans(plugin_id, start, len, spans, rev);
-            }
-            Edit { view_id, edit } => {
-                self.buffers.lock().editor_for_view_mut(view_id).unwrap()
-                    .plugin_edit(&edit);
-            }
-            Alert { view_id, msg } => {
-                self.buffers.lock().editor_for_view(view_id).unwrap()
-                .plugin_alert(&msg);
-            }
-        }
-    }
-
-    /// Handle a request from a plugin.
-    pub fn handle_plugin_request(&self, cmd: PluginRequest, _: PluginPid) -> Value {
-        use self::PluginRequest::*;
-        match cmd {
-            //TODO: these should not be unwraps
-            LineCount { view_id } => {
-                let n_lines = self.buffers.lock().editor_for_view(view_id).unwrap()
-                    .plugin_n_lines() as u64;
-                serde_json::to_value(n_lines).unwrap()
-            }
-            GetData { view_id, offset, max_size, rev } => {
-                self.buffers.lock().editor_for_view(view_id).unwrap()
-                .plugin_get_data(offset, max_size, rev)
-                .map(|data| Value::String(data)).unwrap()
-            }
-            GetSelections { view_id } => {
-                self.buffers.lock().editor_for_view(view_id).unwrap()
-                    .plugin_get_selections(view_id)
-            }
-        }
     }
 
     /// Passes an update from a buffer to all registered plugins.
@@ -599,5 +556,50 @@ impl PluginManagerRef {
                                        plugin_name, err),
             }
         }
+    }
+}
+
+impl Handler for PluginManagerRef {
+    type Notification = PluginCommand<PluginNotification>;
+    type Request = PluginCommand<PluginRequest>;
+
+    fn handle_notification(&mut self, _ctx: &RpcCtx, rpc: Self::Notification) {
+        use self::PluginNotification::*;
+        let PluginCommand { view_id, plugin_id, cmd } = rpc;
+        let inner = self.lock();
+        let mut buffers = inner.buffers.lock();
+
+        match cmd {
+            AddScopes { scopes } => buffers.editor_for_view_mut(view_id)
+                .map(|ed| ed.plugin_add_scopes(plugin_id, scopes)),
+            UpdateSpans { start, len, spans, rev } => buffers.editor_for_view_mut(view_id)
+                .map(|ed| ed.plugin_update_spans(plugin_id, start, len, spans, rev)),
+            Edit { edit } => buffers.editor_for_view_mut(view_id)
+                .map(|ed| ed.plugin_edit(&edit)),
+            Alert { msg } => buffers.editor_for_view(view_id)
+                .map(|ed| ed.plugin_alert(&msg)),
+        };
+    }
+
+    fn handle_request(&mut self, _ctx: &RpcCtx, rpc: Self::Request) -> Result<Value, RemoteError> {
+        use self::PluginRequest::*;
+        let PluginCommand { view_id, cmd, .. } = rpc;
+        let inner = self.lock();
+        let buffers = inner.buffers.lock();
+
+        let resp = match cmd {
+            LineCount => buffers.editor_for_view(view_id)
+                .map(|ed| json!(ed.plugin_n_lines())),
+            GetData { offset, max_size, rev } => buffers.editor_for_view(view_id)
+                .map(|ed| json!(ed.plugin_get_data(offset, max_size, rev))),
+            GetSelections => buffers.editor_for_view(view_id)
+                .map(|ed| json!(ed.plugin_get_selections(view_id))),
+            };
+        resp.ok_or(RemoteError::custom(404,
+                                       "Missing editor",
+                                       json!({
+                                           "view_id": view_id,
+                                           "rpc": &cmd
+                                       })))
     }
 }
