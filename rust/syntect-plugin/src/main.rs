@@ -39,7 +39,7 @@ struct PluginState<'a> {
     syntax_name: String,
 }
 
-const LINES_PER_RPC: usize = 50;
+const LINES_PER_RPC: usize = 10;
 
 type LockedRepo = MutexGuard<'static, ScopeRepository>;
 
