@@ -25,6 +25,9 @@ use xi_rpc::RpcPeer;
 /// xi_rpc idle Token for watcher related idle scheduling.
 pub const WATCH_IDLE_TOKEN: usize = 1002;
 
+/// Delay for aggregating related file system events.
+pub const DEBOUNCE_WAIT_MILLIS: u64 = 50;
+
 /// Token provided to `FsWatcher`, to associate events with registrees.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EventToken(pub usize);
@@ -62,7 +65,8 @@ impl FsWatcher {
         thread::spawn(move || {
 
             let (tx, rx) = channel();
-            let mut watcher = watcher(tx, Duration::from_secs(1)).unwrap();
+            let mut watcher = watcher(tx, Duration::from_millis(DEBOUNCE_WAIT_MILLIS))
+                .unwrap();
 
             watcher.watch(&path, recursive_mode).unwrap();
 
