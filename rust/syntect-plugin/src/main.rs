@@ -201,13 +201,8 @@ impl<'a> PluginState<'a> {
                       text: &Option<String>) -> Option<Value> {
         // don't touch indentation if this is not a simple edit
         if end != start { return None }
-        let is_newline = {
-            let line_ending = &ctx.get_config().line_ending;
-                text.as_ref()
-                .map(|t| t.ends_with(line_ending))
-                .unwrap_or(false)
-        };
 
+        let is_newline = Some(&ctx.get_config().line_ending) == text.as_ref();
         if is_newline {
             let line_num = ctx.find_offset(start).err();
 
