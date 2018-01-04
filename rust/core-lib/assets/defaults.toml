@@ -14,3 +14,5 @@ font_size = 14
 line_ending = "\n"
 
 auto_indent = true
+
+scroll_past_end = false

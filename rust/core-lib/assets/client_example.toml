@@ -19,5 +19,8 @@ font_face = "InconsolataGo"
 # In points
 font_size = 14
 
-# automatically match current indentation level on newline
+# Automatically match current indentation level on newline.
 auto_indent = true
+
+# Allow scrolling past the last line of a document.
+scroll_past_end = false

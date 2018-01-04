@@ -47,6 +47,7 @@ mod defaults {
         "font_face",
         "font_size",
         "auto_indent",
+        "scroll_past_end",
     ];
     /// config keys that are only legal at the top level
     pub const TOP_LEVEL_KEYS: &'static [&'static str] = &[
@@ -189,6 +190,7 @@ pub struct BufferItems {
     pub font_face: String,
     pub font_size: f32,
     pub auto_indent: bool,
+    pub scroll_past_end: bool,
 }
 
 pub type BufferConfig = Config<BufferItems>;
