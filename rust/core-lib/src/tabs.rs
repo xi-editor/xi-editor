@@ -699,13 +699,22 @@ impl Documents {
 
     /// Notify editors/views/plugins of config changes.
     fn after_config_change(&self) {
-        let mut editors = self.buffers.lock();
-        for ed in editors.iter_editors_mut() {
-            let syntax = ed.get_syntax().to_owned();
-            let identifier = ed.get_main_view_id();
-            let new_config = self.config_manager.get_buffer_config(syntax,
-                                                                   identifier);
-            ed.set_config(new_config)
+        let mut to_notify = Vec::new();
+        {
+            let mut editors = self.buffers.lock();
+            for ed in editors.iter_editors_mut() {
+                let syntax = ed.get_syntax().to_owned();
+                let identifier = ed.get_main_view_id();
+                let new_config = self.config_manager.get_buffer_config(syntax,
+                                                                       identifier);
+                if let Some(changes) = ed.set_config(new_config) {
+                    to_notify.push((identifier, changes));
+                }
+            }
+        }
+        // update plugins after releasing the lock
+        for (view_id, changes) in to_notify.drain(..) {
+            self.plugins.document_config_changed(view_id, &changes);
         }
     }
 }

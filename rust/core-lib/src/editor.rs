@@ -39,7 +39,7 @@ use plugins::rpc::{PluginUpdate, PluginEdit, ScopeSpan, PluginBufferInfo,
 ClientPluginInfo};
 use plugins::{PluginPid, Command};
 use layers::Scopes;
-use config::BufferConfig;
+use config::{BufferConfig, Table};
 
 
 #[cfg(not(target_os = "fuchsia"))]
@@ -176,10 +176,15 @@ impl Editor {
         }
     }
 
-    pub fn set_config(&mut self, conf: BufferConfig) {
+    /// Sets the config for this buffer. If the new config differs
+    /// from the existing config, returns the modified items.
+    pub fn set_config(&mut self, conf: BufferConfig) -> Option<Table> {
         if let Some(changes) = conf.changes_from(Some(&self.config)) {
             self.config = conf;
             self.doc_ctx.config_changed(&self.view.view_id, &changes);
+            Some(changes)
+        } else {
+            None
         }
     }
 
@@ -218,9 +223,11 @@ impl Editor {
     pub fn plugin_init_info(&self) -> PluginBufferInfo {
         let nb_lines = self.text.measure::<LinesMetric>() + 1;
         let views = vec![self.view.view_id];
+        let config = self.config.to_table();
         PluginBufferInfo::new(self.buffer_id, &views,
                               self.engine.get_head_rev_id().token(), self.text.len(),
-                              nb_lines, self.path.clone(), self.syntax.clone())
+                              nb_lines, self.path.clone(), self.syntax.clone(),
+                              config)
     }
 
     /// Send initial config state to the client.

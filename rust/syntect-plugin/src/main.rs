@@ -14,6 +14,9 @@
 
 //! A syntax highlighting plugin based on syntect.
 
+#[macro_use]
+extern crate serde_json;
+
 extern crate syntect;
 extern crate xi_plugin_lib;
 extern crate xi_core_lib;
@@ -21,10 +24,15 @@ extern crate xi_core_lib;
 mod stackmap;
 
 use std::sync::MutexGuard;
+use std::borrow::Cow;
+
+use serde_json::Value;
+
 use xi_plugin_lib::state_cache::{self, PluginCtx};
 use xi_core_lib::plugin_rpc::ScopeSpan;
 use syntect::parsing::{ParseState, ScopeStack, SyntaxSet, SCOPE_REPO, ScopeRepository};
 use stackmap::{StackMap, LookupResult};
+
 
 /// The state for syntax highlighting of one file.
 struct PluginState<'a> {
@@ -40,6 +48,7 @@ struct PluginState<'a> {
 }
 
 const LINES_PER_RPC: usize = 10;
+const INDENTATION_PRIORITY: usize = 100;
 
 type LockedRepo = MutexGuard<'static, ScopeRepository>;
 
@@ -184,6 +193,71 @@ impl<'a> PluginState<'a> {
         ctx.reset();
         ctx.schedule_idle(0);
     }
+
+    /// Checks if a newline has been inserted, and if so inserts whitespace
+    /// as necessary.
+    fn do_indentation(&mut self, ctx: &mut PluginCtx<State>, start: usize,
+                      end: usize, new_len: usize, rev: usize,
+                      text: &Option<String>) -> Option<Value> {
+        // don't touch indentation if this is not a simple edit
+        if end != start { return None }
+
+        let is_newline = Some(&ctx.get_config().line_ending) == text.as_ref();
+        if is_newline {
+            let line_num = ctx.find_offset(start).err();
+
+            let use_spaces = ctx.get_config().translate_tabs_to_spaces;
+            let tab_size = ctx.get_config().tab_size;
+            if let Some(line) = line_num.and_then(|idx| ctx.get_line(idx).ok()) {
+                let indent = self.indent_for_next_line(
+                    line, use_spaces, tab_size);
+                let edit = json!({
+                    "start": start + new_len,
+                    "end": start + new_len,
+                    "rev": rev,
+                    "text": &indent,
+                    "priority": INDENTATION_PRIORITY,
+                    "after_cursor": false,
+                    "author": "syntect",
+                });
+                return Some(edit)
+            }
+        }
+        None
+    }
+
+    /// Returns the string which should be inserted after the newline
+    /// to achieve the desired indentation level.
+    fn indent_for_next_line<'b>(&self, prev_line: &'b str, use_spaces: bool,
+                                tab_size: usize) -> Cow<'b, str> {
+        let leading_ws = prev_line.char_indices()
+            .find(|&(_, c)| !c.is_whitespace())
+            .or(prev_line.char_indices().last())
+            .map(|(idx, _)| unsafe { prev_line.slice_unchecked(0, idx) } )
+            .unwrap_or("");
+
+        if self.increase_indentation(prev_line) {
+            let indent_text = if use_spaces {
+                &"                                    "[..tab_size]
+            } else {
+                "\t"
+            };
+            format!("{}{}", leading_ws, indent_text).into()
+        } else {
+            leading_ws.into()
+        }
+    }
+
+    /// Checks if the indent level should be increased.
+    fn increase_indentation(&self, prev_line: &str) -> bool {
+        let trailing_char = prev_line.trim_right().chars()
+            .rev().next().unwrap_or(' ');
+        // very naive heuristic for modifying indentation level.
+        match trailing_char {
+            '{' | ':' => true,
+            _ => false,
+        }
+    }
 }
 
 impl<'a> state_cache::Plugin for PluginState<'a> {
@@ -193,8 +267,15 @@ impl<'a> state_cache::Plugin for PluginState<'a> {
         self.do_highlighting(ctx);
     }
 
-    fn update(&mut self, mut ctx: PluginCtx<State>) {
+    fn update(&mut self, mut ctx: PluginCtx<State>, start: usize, end: usize,
+              new_len: usize, rev: usize, text: &Option<String>) -> Option<Value> {
         ctx.schedule_idle(0);
+        let should_auto_indent = ctx.get_config().auto_indent;
+        if should_auto_indent {
+            self.do_indentation(&mut ctx, start, end, new_len, rev, text)
+        } else {
+            None
+        }
     }
 
     fn did_save(&mut self, ctx: PluginCtx<State>) {

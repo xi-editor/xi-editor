@@ -28,6 +28,7 @@ use serde_json::{self, Value};
 use xi_rpc::{RpcCtx, Handler, RemoteError};
 
 use tabs::{BufferIdentifier, ViewIdentifier, BufferContainerRef};
+use config::Table;
 
 use super::{PluginCatalog, PluginRef, start_plugin_process, PluginPid};
 use super::rpc::{PluginNotification, PluginRequest, PluginCommand,
@@ -472,6 +473,13 @@ impl PluginManagerRef {
             .collect::<Vec<String>>();
 
         self.start_plugins(view_id, &init_info, &to_run);
+    }
+
+    /// Notifies plugins of a user config change
+    pub fn document_config_changed(&self, view_id: ViewIdentifier,
+                                   changes: &Table) {
+        self.lock().notify_plugins(view_id, false, "config_changed",
+                                   &json!({"view_id": view_id, "changes": changes}));
     }
 
     /// Launches and initializes the named plugin.

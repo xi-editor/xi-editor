@@ -72,6 +72,7 @@ pub use plugins::rpc as plugin_rpc;
 pub use plugins::PluginPid;
 pub use tabs::ViewIdentifier;
 pub use syntax::SyntaxDefinition;
+pub use config::{BufferItems as BufferConfig, Table as ConfigTable};
 
 use internal::tabs;
 use internal::editor;

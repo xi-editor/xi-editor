@@ -15,11 +15,12 @@
 //! A more sophisticated cache that manages user state.
 
 use std::path::PathBuf;
-use serde_json::Value;
+use serde_json::{self, Value};
 use bytecount;
 use rand::{thread_rng, Rng};
 
-use xi_core::{PluginPid, ViewIdentifier, SyntaxDefinition, plugin_rpc};
+use xi_core::{PluginPid, ViewIdentifier, SyntaxDefinition, plugin_rpc,
+              ConfigTable, BufferConfig};
 use xi_rpc::{RemoteError, ReadError};
 
 use plugin_base;
@@ -36,7 +37,9 @@ pub trait Plugin {
     type State: Default + Clone;
 
     fn initialize(&mut self, ctx: PluginCtx<Self::State>, buf_size: usize);
-    fn update(&mut self, ctx: PluginCtx<Self::State>);
+    fn update(&mut self, ctx: PluginCtx<Self::State>, start: usize,
+              end: usize, new_len: usize, rev: usize, text: &Option<String>)
+              -> Option<Value>;
     fn did_save(&mut self, ctx: PluginCtx<Self::State>);
     #[allow(unused_variables)]
     fn idle(&mut self, ctx: PluginCtx<Self::State>, token: usize) {}
@@ -70,6 +73,8 @@ struct CacheState<S> {
     frontier: Vec<usize>,
 
     syntax: SyntaxDefinition,
+    config_table: ConfigTable,
+    config: Option<BufferConfig>,
     path: Option<PathBuf>,
 }
 
@@ -93,11 +98,11 @@ impl<'a, P: Plugin> plugin_base::Handler for CacheHandler<'a, P> {
         };
         match rpc {
             Ping( .. ) => (),
-            Initialize { plugin_id, ref buffer_info } => {
-                let info = buffer_info.first()
-                    .expect("buffer_info always contains at least one item");
+            Initialize { plugin_id, mut buffer_info } => {
+                let info = buffer_info.remove(0);
                 ctx.do_initialize(info, plugin_id, self.handler);
             }
+            ConfigChanged { changes, .. } => ctx.do_config_changed(changes),
             DidSave { ref path, .. } => ctx.do_did_save(path, self.handler),
             NewBuffer { .. } | DidClose { .. } => eprintln!("Rust plugin lib \
             does not support global plugins"),
@@ -137,19 +142,34 @@ pub fn mainloop<P: Plugin>(handler: &mut P) -> Result<(), ReadError>  {
 }
 
 impl<'a, S: Default + Clone> PluginCtx<'a, S> {
-    fn do_initialize<P>(mut self, init_info: &plugin_rpc::PluginBufferInfo,
+    fn do_initialize<P>(mut self, init_info: plugin_rpc::PluginBufferInfo,
                         plugin_id: PluginPid, handler: &mut P)
         where P: Plugin<State = S>
     {
+        let plugin_rpc::PluginBufferInfo {
+            mut views, rev, buf_size,
+            path, syntax, config, ..
+        } = init_info;
+
         self.state.plugin_id = plugin_id;
-        self.state.buf_size = init_info.buf_size;
-        assert_eq!(init_info.views.len(), 1);
-        self.state.view_id = init_info.views[0].clone();
-        self.state.rev = init_info.rev;
-        self.state.syntax = init_info.syntax.clone();
-        self.state.path = init_info.path.clone().map(|p| PathBuf::from(p));
+        self.state.buf_size = buf_size;
+        assert_eq!(views.len(), 1);
+        self.state.view_id = views.remove(0);
+        self.state.rev = rev;
+        self.state.syntax = syntax;
+        self.state.config_table = config.clone();
+        self.state.config = serde_json::from_value(Value::Object(config)).unwrap();
+        self.state.path = path.map(|p| PathBuf::from(p));
         self.truncate_frontier(0);
-        handler.initialize(self, init_info.buf_size);
+        handler.initialize(self, buf_size);
+    }
+
+    fn do_config_changed(self, changes: ConfigTable) {
+        for (key, value) in changes.iter() {
+            self.state.config_table.insert(key.to_owned(), value.to_owned());
+        }
+        let conf = serde_json::from_value(Value::Object(self.state.config_table.clone()));
+        self.state.config = conf.unwrap();
     }
 
     fn do_did_save<P: Plugin<State = S>>(self, path: &PathBuf, handler: &mut P) {
@@ -163,7 +183,7 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
         let plugin_rpc::PluginUpdate { start, end, new_len, text, rev, .. } = update;
         self.state.buf_size = self.state.buf_size - (end - start) + new_len;
         self.state.rev = rev;
-        if let Some(text) = text {
+        if let Some(ref text) = text {
             let off = self.state.chunk_offset;
             if start >= off && start <= off + self.state.chunk.len() {
                 let nlc_tail = if end <= off + self.state.chunk.len() {
@@ -193,8 +213,8 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
             self.state.chunk_offset = 0;
             self.truncate_cache(start);
         }
-        handler.update(self);
-        Value::from(0i32)
+        handler.update(self, start, end, new_len, rev as usize, &text)
+            .unwrap_or(Value::from(0i32))
     }
 
     pub fn get_path(&self) -> Option<&PathBuf> {
@@ -202,6 +222,14 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
             Some(ref p) => Some(p),
             None => None,
         }
+    }
+
+    pub fn get_config(&self) -> &BufferConfig {
+        self.state.config.as_ref().unwrap()
+    }
+
+    pub fn get_syntax(&self) -> SyntaxDefinition {
+        self.state.syntax
     }
 
     pub fn add_scopes(&self, scopes: &Vec<Vec<String>>) {
@@ -233,7 +261,7 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
     }
 
     /// Find an entry in the cache by offset. Similar to `find_line`.
-    fn find_offset(&self, offset: usize) -> Result<usize, usize> {
+    pub fn find_offset(&self, offset: usize) -> Result<usize, usize> {
         self.state.state_cache.binary_search_by(|probe| probe.offset.cmp(&offset))
     }
 
