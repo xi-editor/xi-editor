@@ -481,9 +481,9 @@ impl Editor {
                 let use_spaces = self.config.items.translate_tabs_to_spaces;
                 let tab_size = self.config.items.tab_size;
                 let tab_size = if c % tab_size == 0 { tab_size } else { c % tab_size };
-                let preceded_by_spaces = (1..tab_size + 1)
-                    .map(|i| region.start.saturating_sub(i))
-                    .all(|i| self.text.len() > 0 && self.text.byte_at(i) == b' ');
+                let preceded_by_spaces = self.text.len() > 0 &&
+                    (region.start.saturating_sub(tab_size)..region.start)
+                    .all(|i| self.text.byte_at(i) == b' ');
                if preceded_by_spaces && use_spaces {
                    region.start - tab_size
                } else {
