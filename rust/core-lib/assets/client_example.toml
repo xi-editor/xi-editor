@@ -9,12 +9,18 @@
 
 # The width of a tab, in spaces.
 tab_size = 4
+
 # Insert spaces when the tab key is pressed.
 translate_tabs_to_spaces = true
+
+# If translate_tabs_to_spaces is true, backspace will delete multiple
+# spaces, up to the previous tab stop.
+use_tab_stops = true
 
 # List of paths to additional plugins
 plugin_search_path = []
 
 font_face = "InconsolataGo"
+
 # In points
 font_size = 14

@@ -44,6 +44,7 @@ mod defaults {
         "tab_size",
         "line_ending",
         "translate_tabs_to_spaces",
+        "use_tab_stops",
         "font_face",
         "font_size",
     ];
@@ -185,6 +186,7 @@ pub struct BufferItems {
     pub line_ending: String,
     pub tab_size: usize,
     pub translate_tabs_to_spaces: bool,
+    pub use_tab_stops: bool,
     pub font_face: String,
     pub font_size: f32,
 }
