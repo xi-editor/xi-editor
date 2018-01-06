@@ -548,8 +548,12 @@ impl View {
     }
 
     pub fn rewrap(&mut self, text: &Rope, wrap_col: usize) {
-        self.breaks = Some(linewrap::linewrap(text, wrap_col));
-        self.wrap_col = wrap_col;
+        if wrap_col > 0 {
+            self.breaks = Some(linewrap::linewrap(text, wrap_col));
+            self.wrap_col = wrap_col;
+        } else {
+            self.breaks = None
+        }
     }
 
     /// Updates the view after the text has been modified by the given `delta`.
