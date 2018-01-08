@@ -20,3 +20,5 @@ line_ending = "\n"
 auto_indent = false
 
 scroll_past_end = false
+
+wrap_width = 0

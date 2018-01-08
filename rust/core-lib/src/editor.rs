@@ -181,6 +181,11 @@ impl Editor {
     pub fn set_config(&mut self, conf: BufferConfig) -> Option<Table> {
         if let Some(changes) = conf.changes_from(Some(&self.config)) {
             self.config = conf;
+            if changes.contains_key("wrap_width") {
+                self.view.rewrap(&self.text, self.config.items.wrap_width);;
+                self.view.set_dirty(&self.text);
+                self.render();
+            }
             self.doc_ctx.config_changed(&self.view.view_id, &changes);
             Some(changes)
         } else {
