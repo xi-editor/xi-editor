@@ -155,6 +155,7 @@ impl Editor {
             sync_store: None,
             last_synced_rev: last_rev_id,
         };
+        editor.view.rewrap(&editor.text, editor.config.items.wrap_width);
         editor.view.set_dirty(&editor.text);
         editor
     }
