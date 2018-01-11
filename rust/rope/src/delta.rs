@@ -25,7 +25,7 @@ use std::fmt;
 use std::slice;
 
 #[derive(Clone)]
-enum DeltaElement<N: NodeInfo> {
+pub enum DeltaElement<N: NodeInfo> {
     /// Represents a range of text in the base document. Includes beginning, excludes end.
     Copy(usize, usize),  // note: for now, we lose open/closed info at interval endpoints
     Insert(Node<N>),
@@ -40,8 +40,8 @@ enum DeltaElement<N: NodeInfo> {
 /// `[Copy(0,1),Copy(2,4),Insert("e")]`
 #[derive(Clone)]
 pub struct Delta<N: NodeInfo> {
-    els: Vec<DeltaElement<N>>,
-    base_len: usize,
+    pub els: Vec<DeltaElement<N>>,
+    pub base_len: usize,
 }
 
 /// A struct marking that a Delta contains only insertions. That is, it copies

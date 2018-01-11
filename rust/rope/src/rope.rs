@@ -23,11 +23,12 @@ use std::fmt;
 use std::str;
 
 use tree::{Leaf, Node, NodeInfo, Metric, TreeBuilder, Cursor};
+use delta::{Delta, DeltaElement};
 use interval::Interval;
 
 use bytecount;
 use memchr::memchr;
-use serde::ser::{Serialize, Serializer};
+use serde::ser::{Serialize, Serializer, SerializeStruct, SerializeTupleVariant};
 use serde::de::{Deserialize, Deserializer};
 
 const MIN_LEAF: usize = 511;
@@ -245,6 +246,78 @@ impl<'de> Deserialize<'de> for Rope {
     {
         let s = String::deserialize(deserializer)?;
         Ok(Rope::from(s))
+    }
+}
+
+impl Serialize for DeltaElement<RopeInfo> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where S: Serializer
+    {
+        match *self {
+            DeltaElement::Copy(ref start, ref end) => {
+                let mut el = serializer.serialize_tuple_variant("DeltaElement", 0, "Copy", 2)?;
+                el.serialize_field(start)?;
+                el.serialize_field(end)?;
+                el.end()
+            }
+            DeltaElement::Insert(ref node) => {
+                let mut el = serializer.serialize_tuple_variant("DeltaElement", 1, "Insert", 1)?;
+                el.serialize_field(node)?;
+                el.end()
+            }
+        }
+    }
+}
+
+impl Serialize for Delta<RopeInfo> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where S: Serializer
+    {
+        let mut delta = serializer.serialize_struct("Delta", 2)?;
+        delta.serialize_field("els", &self.els)?;
+        delta.serialize_field("base_len", &self.base_len)?;
+        delta.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Delta<RopeInfo> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where D: Deserializer<'de>,
+    {
+        // NOTE: we derive to an interim representation and then convert
+        // that into our actual target.
+        #[derive(Serialize, Deserialize)]
+        enum RopeDeltaElement<'a> {
+            Copy(usize, usize),
+            Insert(&'a str),
+        }
+
+        #[derive(Serialize, Deserialize)]
+        struct RopeDelta<'a> {
+            #[serde(borrow)]
+            els: Vec<RopeDeltaElement<'a>>,
+            base_len: usize
+        }
+
+        impl<'a, 'b> From<&'b RopeDeltaElement<'a>> for DeltaElement<RopeInfo> {
+            fn from(elem: &'b RopeDeltaElement<'a>) -> DeltaElement<RopeInfo> {
+                match *elem {
+                    RopeDeltaElement::Copy(start, end) => DeltaElement::Copy(start, end),
+                    RopeDeltaElement::Insert(s) => DeltaElement::Insert(Rope::from(s)),
+                }
+            }
+        }
+
+        impl<'a> From<RopeDelta<'a>> for Delta<RopeInfo> {
+            fn from(delta: RopeDelta<'a>) -> Delta<RopeInfo> {
+                Delta {
+                    els: delta.els.iter().map(|el| DeltaElement::from(el)).collect(),
+                    base_len: delta.base_len
+                }
+            }
+        }
+        let d = RopeDelta::deserialize(deserializer)?;
+        Ok(Delta::from(d))
     }
 }
 
