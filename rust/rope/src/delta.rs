@@ -627,7 +627,8 @@ impl<'a, N: NodeInfo> Iterator for DeletionsIter<'a, N> {
 
 #[cfg(test)]
 mod tests {
-    use rope::Rope;
+    use serde_json;
+    use rope::{Rope, RopeInfo};
     use delta::{Delta, Builder, DeltaRegion};
     use interval::Interval;
     use test_helpers::find_deletions;
@@ -733,5 +734,18 @@ mod tests {
         assert_eq!(Some(DeltaRegion::new(4, 2, 2)), iter.next());
         assert_eq!(Some(DeltaRegion::new(8, 4, 2)), iter.next());
         assert_eq!(None, iter.next());
+    }
+
+    #[test]
+    fn delta_serde() {
+        let d = Delta::simple_edit(Interval::new_closed_open(10, 12),
+                                   Rope::from("+"), TEST_STR.len());
+        let ser = serde_json::to_value(d.clone()).expect("serialize failed");
+        eprintln!("{:?}", &ser);
+        let de: Delta<RopeInfo> = serde_json::from_value(ser)
+        .expect("deserialize failed");
+        assert_eq!(d.apply_to_string(TEST_STR), de.apply_to_string(TEST_STR));
+
+
     }
 }
