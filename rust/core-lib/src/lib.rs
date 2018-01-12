@@ -25,19 +25,17 @@ extern crate toml;
 extern crate notify;
 
 #[cfg(feature = "ledger")]
-extern crate fuchsia_zircon;
+mod ledger_includes {
+    extern crate fuchsia_zircon;
+    extern crate fuchsia_zircon_sys;
+    extern crate mxruntime;
+    #[macro_use]
+    extern crate fidl;
+    extern crate apps_ledger_services_public;
+    extern crate sha2;
+}
 #[cfg(feature = "ledger")]
-extern crate fuchsia_zircon_sys;
-#[cfg(feature = "ledger")]
-extern crate mxruntime;
-#[cfg(feature = "ledger")]
-#[macro_use]
-extern crate fidl;
-#[cfg(feature = "ledger")]
-extern crate apps_ledger_services_public;
-
-#[cfg(feature = "ledger")]
-extern crate sha2;
+use ledger_includes::*;
 
 use serde_json::Value;
 
