@@ -25,6 +25,7 @@ use std::sync::{Arc, Mutex, MutexGuard, Weak, mpsc};
 use serde::de::{Deserialize, Deserializer};
 use serde::ser::{Serialize, Serializer};
 use serde_json::value::Value;
+#[cfg(feature = "notify")]
 use notify::{RecursiveMode, DebouncedEvent};
 
 use xi_rope::rope::Rope;
@@ -34,7 +35,8 @@ use editor::Editor;
 
 use rpc;
 use config;
-use watcher::{WATCH_IDLE_TOKEN, FsWatcher, EventToken};
+#[cfg(feature = "notify")]
+use watcher::{FsWatcher, EventToken};
 use styles::{Style, ThemeStyleMap};
 use MainPeer;
 
@@ -47,8 +49,13 @@ use plugins::rpc::{PluginUpdate, ClientPluginInfo};
 use apps_ledger_services_public::{Ledger_Proxy};
 
 /// Token for config-related file change events
+#[cfg(feature = "notify")]
 const CONFIG_EVENT_TOKEN: EventToken = EventToken(1);
+
 const NEW_VIEW_IDLE_TOKEN: usize = 1001;
+
+/// xi_rpc idle Token for watcher related idle scheduling.
+pub const WATCH_IDLE_TOKEN: usize = 1002;
 
 /// ViewIdentifiers are the primary means of routing messages between xi-core and a client view.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -102,6 +109,7 @@ pub struct Documents {
     style_map: Arc<Mutex<ThemeStyleMap>>,
     plugins: PluginManagerRef,
     config_manager: ConfigManager,
+    #[cfg(feature = "notify")]
     file_watcher: FsWatcher,
     /// A tx channel used to propagate plugin updates from all `Editor`s.
     update_channel: mpsc::Sender<(ViewIdentifier, PluginUpdate, usize)>,
@@ -284,6 +292,7 @@ impl Documents {
             style_map: Arc::new(Mutex::new(ThemeStyleMap::new())),
             plugins: plugin_manager,
             config_manager: config_manager,
+            #[cfg(feature = "notify")]
             file_watcher: FsWatcher::default(),
             update_channel: update_tx,
             idle_queue: Vec::new(),
@@ -597,7 +606,10 @@ impl Documents {
 
     pub fn handle_idle(&mut self, token: usize) {
         match token {
-            WATCH_IDLE_TOKEN => self.handle_fs_events(),
+            WATCH_IDLE_TOKEN => {
+                #[cfg(feature = "notify")]
+                self.handle_fs_events()
+            }
             NEW_VIEW_IDLE_TOKEN => {
                 while let Some(f) = self.idle_queue.pop() {
                     f.call(self);
@@ -608,6 +620,7 @@ impl Documents {
     }
 
     /// Process file system events, forwarding them to registrees.
+    #[cfg(feature = "notify")]
     fn handle_fs_events(&mut self) {
         let mut events = {
             let mut e = self.file_watcher.events.lock().unwrap();
@@ -633,6 +646,7 @@ impl Documents {
     }
 
     /// Handles a config related file system event.
+    #[cfg(feature = "notify")]
     fn handle_config_fs_event(&mut self, event: DebouncedEvent) {
         use self::DebouncedEvent::*;
         match event {
@@ -659,6 +673,7 @@ impl Documents {
         let config_files = config::iter_config_files(config_dir)?;
         config_files.for_each(|p| self.load_file_based_config(&p));
 
+        #[cfg(feature = "notify")]
         self.file_watcher.watch_filtered(config_dir, RecursiveMode::Recursive,
                                          CONFIG_EVENT_TOKEN, rpc_peer,
                                          |p| {
