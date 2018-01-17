@@ -43,7 +43,7 @@ use config::{ConfigManager, ConfigDomain, Table};
 use plugins::{self, PluginManagerRef, Command};
 use plugins::rpc::{PluginUpdate, ClientPluginInfo};
 
-#[cfg(target_os = "fuchsia")]
+#[cfg(feature="ledger")]
 use apps_ledger_services_public::{Ledger_Proxy};
 
 /// Token for config-related file change events
@@ -472,7 +472,7 @@ impl Documents {
         }
     }
 
-    #[cfg(not(target_os = "fuchsia"))]
+    #[cfg(not(feature = "ledger"))]
     fn initialize_sync(&mut self, _editor: &mut Editor, _path_opt: Option<&Path>, _buffer_id: BufferIdentifier) {
         // not implemented yet on OSs other than Fuchsia
     }
@@ -719,7 +719,7 @@ impl Documents {
     }
 }
 
-#[cfg(target_os = "fuchsia")]
+#[cfg(feature = "ledger")]
 impl Drop for Documents {
     fn drop(&mut self) {
         use std::mem;
@@ -893,17 +893,17 @@ impl BufferIdentifier {
 // =============== Fuchsia-specific synchronization plumbing
 // We can't move this elsewhere since it requires access to private fields
 
-#[cfg(not(target_os = "fuchsia"))]
+#[cfg(not(feature = "ledger"))]
 pub struct SyncRepo;
 
-#[cfg(target_os = "fuchsia")]
+#[cfg(feature = "ledger")]
 use std::sync::mpsc::{channel, Sender};
-#[cfg(target_os = "fuchsia")]
+#[cfg(feature = "ledger")]
 use std::thread;
-#[cfg(target_os = "fuchsia")]
+#[cfg(feature = "ledger")]
 use fuchsia::sync::{SyncStore, SyncMsg, SyncUpdater, start_conflict_resolver_factory};
 
-#[cfg(target_os = "fuchsia")]
+#[cfg(feature = "ledger")]
 pub struct SyncRepo {
     ledger: Ledger_Proxy,
     tx: Sender<SyncMsg>,
@@ -911,7 +911,7 @@ pub struct SyncRepo {
     session_id: (u64,u32),
 }
 
-#[cfg(target_os = "fuchsia")]
+#[cfg(feature = "ledger")]
 impl Documents {
     pub fn setup_ledger(&mut self, mut ledger: Ledger_Proxy, session_id: (u64,u32)) {
         let key = vec![0];

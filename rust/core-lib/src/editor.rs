@@ -42,9 +42,9 @@ use layers::Scopes;
 use config::{BufferConfig, Table};
 
 
-#[cfg(not(target_os = "fuchsia"))]
+#[cfg(not(feature = "ledger"))]
 pub struct SyncStore;
-#[cfg(target_os = "fuchsia")]
+#[cfg(feature = "ledger")]
 use fuchsia::sync::SyncStore;
 
 const FLAG_SELECT: u64 = 2;
@@ -437,16 +437,16 @@ impl Editor {
         self.engine.set_session_id(session);
     }
 
-    #[cfg(target_os = "fuchsia")]
+    #[cfg(feature = "ledger")]
     pub fn set_sync_store(&mut self, sync_store: SyncStore) {
         self.sync_store = Some(sync_store);
     }
 
-    #[cfg(not(target_os = "fuchsia"))]
+    #[cfg(not(feature = "ledger"))]
     pub fn sync_state_changed(&mut self) {
     }
 
-    #[cfg(target_os = "fuchsia")]
+    #[cfg(feature = "ledger")]
     pub fn sync_state_changed(&mut self) {
         if let Some(sync_store) = self.sync_store.as_mut() {
             // we don't want to sync right after recieving a new merge
@@ -457,7 +457,7 @@ impl Editor {
         }
     }
 
-    #[cfg(target_os = "fuchsia")]
+    #[cfg(feature = "ledger")]
     pub fn transaction_ready(&mut self) {
         if let Some(sync_store) = self.sync_store.as_mut() {
             sync_store.commit_transaction(&self.engine);
