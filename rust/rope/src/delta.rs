@@ -61,6 +61,24 @@ impl<N: NodeInfo> Delta<N> {
         builder.build()
     }
 
+    /// If this delta represents a simple insertion, returns the inserted node.
+    pub fn as_simple_insert(&self) -> Option<&Node<N>> {
+        if self.els.len() <= 3 && self.iter_deletions().count() == 0 {
+            for el in &self.els {
+                if let &DeltaElement::Insert(ref n) = el {
+                    return Some(n)
+                }
+            }
+        }
+        None
+    }
+
+    /// Returns `true` if this delta represents a single deletion without
+    /// any insertions.
+    pub fn is_simple_delete(&self) -> bool {
+        self.els.len() <= 2 && self.iter_inserts().count() == 0
+    }
+
     /// Apply the delta to the given rope. May not work well if the length of the rope
     /// is not compatible with the construction of the delta.
     pub fn apply(&self, base: &Node<N>) -> Node<N> {
@@ -291,7 +309,7 @@ impl<N: NodeInfo> fmt::Debug for Delta<N> where Node<N>: fmt::Debug {
                     }
                 }
             }
-            write!(f, ")")?;
+            write!(f, "base_len: {})", self.base_len)?;
         }
         Ok(())
     }
