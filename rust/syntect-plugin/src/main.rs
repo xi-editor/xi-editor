@@ -20,6 +20,7 @@ extern crate serde_json;
 extern crate syntect;
 extern crate xi_plugin_lib;
 extern crate xi_core_lib;
+extern crate xi_rope;
 
 mod stackmap;
 
@@ -30,6 +31,8 @@ use serde_json::Value;
 
 use xi_plugin_lib::state_cache::{self, PluginCtx};
 use xi_core_lib::plugin_rpc::ScopeSpan;
+use xi_rope::rope::RopeDelta;
+
 use syntect::parsing::{ParseState, ScopeStack, SyntaxSet, SCOPE_REPO, ScopeRepository};
 use stackmap::{StackMap, LookupResult};
 
@@ -197,12 +200,11 @@ impl<'a> PluginState<'a> {
     /// Checks if a newline has been inserted, and if so inserts whitespace
     /// as necessary.
     fn do_indentation(&mut self, ctx: &mut PluginCtx<State>, start: usize,
-                      end: usize, new_len: usize, rev: usize,
-                      text: &Option<String>) -> Option<Value> {
+                      end: usize, rev: usize, text: &str) -> Option<Value> {
         // don't touch indentation if this is not a simple edit
         if end != start { return None }
 
-        let is_newline = Some(&ctx.get_config().line_ending) == text.as_ref();
+        let is_newline = &ctx.get_config().line_ending == text;
         if is_newline {
             let line_num = ctx.find_offset(start).err();
 
@@ -212,8 +214,8 @@ impl<'a> PluginState<'a> {
                 let indent = self.indent_for_next_line(
                     line, use_spaces, tab_size);
                 let edit = json!({
-                    "start": start + new_len,
-                    "end": start + new_len,
+                    "start": start + text.len(),
+                    "end": start + text.len(),
                     "rev": rev,
                     "text": &indent,
                     "priority": INDENTATION_PRIORITY,
@@ -267,15 +269,18 @@ impl<'a> state_cache::Plugin for PluginState<'a> {
         self.do_highlighting(ctx);
     }
 
-    fn update(&mut self, mut ctx: PluginCtx<State>, start: usize, end: usize,
-              new_len: usize, rev: usize, text: &Option<String>) -> Option<Value> {
+    fn update(&mut self, mut ctx: PluginCtx<State>, rev: usize,
+              delta: RopeDelta) -> Option<Value> {
         ctx.schedule_idle(0);
         let should_auto_indent = ctx.get_config().auto_indent;
         if should_auto_indent {
-            self.do_indentation(&mut ctx, start, end, new_len, rev, text)
-        } else {
-            None
+            let (iv, _) = delta.summary();
+            if let Some(n) = delta.as_simple_insert() {
+                let s: String = n.into();
+                return self.do_indentation(&mut ctx, iv.start(), iv.end(), rev, &s)
+            }
         }
+        None
     }
 
     fn did_save(&mut self, ctx: PluginCtx<State>) {
