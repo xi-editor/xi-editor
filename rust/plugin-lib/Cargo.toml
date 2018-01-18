@@ -18,3 +18,6 @@ path = "../rpc"
 
 [dependencies.xi-core-lib]
 path = "../core-lib"
+
+[dependencies.xi-rope]
+path = "../rope"

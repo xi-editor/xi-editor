@@ -371,15 +371,11 @@ impl Editor {
                 Some(s) => s.to_owned(),
                 None => self.view.view_id.to_string(),
             };
-                let text = match new_len < MAX_SIZE_LIMIT {
-                true => Some(self.text.slice_to_string(iv.start(), iv.start() + new_len)),
-                false => None
-            };
 
             let update = PluginUpdate::new(
                 self.view.view_id,
-                iv.start(), iv.end(), new_len,
-                self.engine.get_head_rev_id().token(), text,
+                self.engine.get_head_rev_id().token(),
+                delta,
                 self.this_edit_type.json_string().to_owned(),
                 author.to_owned());
 

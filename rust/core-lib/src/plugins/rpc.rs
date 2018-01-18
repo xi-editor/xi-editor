@@ -20,6 +20,7 @@ use serde::de::{self, Deserialize, Deserializer};
 use serde::ser::{self, Serialize, Serializer};
 use serde_json::{self, Value};
 
+use xi_rope::rope::RopeDelta;
 use super::PluginPid;
 use syntax::SyntaxDefinition;
 use tabs::{BufferIdentifier, ViewIdentifier};
@@ -62,11 +63,7 @@ pub struct ClientPluginInfo {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PluginUpdate {
     pub view_id: ViewIdentifier,
-    pub start: usize,
-    pub end: usize,
-    pub new_len: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub text: Option<String>,
+    pub delta: RopeDelta,
     pub rev: u64,
     pub edit_type: String,
     pub author: String,
@@ -215,15 +212,11 @@ impl PluginBufferInfo {
 }
 
 impl PluginUpdate {
-    pub fn new(view_id: ViewIdentifier, start: usize, end: usize,
-               new_len: usize, rev: u64, text: Option<String>,
+    pub fn new(view_id: ViewIdentifier, rev: u64, delta: RopeDelta,
                edit_type: String, author: String) -> Self {
         PluginUpdate {
             view_id: view_id,
-            start: start,
-            end: end,
-            new_len: new_len,
-            text: text,
+            delta: delta,
             rev: rev,
             edit_type: edit_type,
             author: author
