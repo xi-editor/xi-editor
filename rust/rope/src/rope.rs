@@ -262,14 +262,14 @@ impl Serialize for DeltaElement<RopeInfo> {
         match *self {
             DeltaElement::Copy(ref start, ref end) => {
                 let mut el = serializer.serialize_tuple_variant("DeltaElement",
-                                                                0, "Copy", 2)?;
+                                                                0, "copy", 2)?;
                 el.serialize_field(start)?;
                 el.serialize_field(end)?;
                 el.end()
             }
             DeltaElement::Insert(ref node) =>
                 serializer.serialize_newtype_variant("DeltaElement", 1,
-                                                     "Insert", node)
+                                                     "insert", node)
         }
     }
 }
@@ -292,6 +292,7 @@ impl<'de> Deserialize<'de> for Delta<RopeInfo> {
         // NOTE: we derive to an interim representation and then convert
         // that into our actual target.
         #[derive(Serialize, Deserialize)]
+        #[serde(rename_all = "snake_case")]
         enum RopeDeltaElement_ {
             Copy(usize, usize),
             Insert(String),

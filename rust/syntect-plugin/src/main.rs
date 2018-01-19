@@ -32,6 +32,8 @@ use serde_json::Value;
 use xi_plugin_lib::state_cache::{self, PluginCtx};
 use xi_core_lib::plugin_rpc::ScopeSpan;
 use xi_rope::rope::RopeDelta;
+use xi_rope::interval::Interval;
+use xi_rope::delta::Builder as EditBuilder;
 
 use syntect::parsing::{ParseState, ScopeStack, SyntaxSet, SCOPE_REPO, ScopeRepository};
 use stackmap::{StackMap, LookupResult};
@@ -210,14 +212,18 @@ impl<'a> PluginState<'a> {
 
             let use_spaces = ctx.get_config().translate_tabs_to_spaces;
             let tab_size = ctx.get_config().tab_size;
+            let buf_size = ctx.get_buf_size();
             if let Some(line) = line_num.and_then(|idx| ctx.get_line(idx).ok()) {
                 let indent = self.indent_for_next_line(
                     line, use_spaces, tab_size);
+                let ix = start + text.len();
+                let interval = Interval::new_open_closed(ix, ix);
+                let mut builder = EditBuilder::new(buf_size);
+                builder.replace(interval, indent.into());
+                let delta = builder.build();
                 let edit = json!({
-                    "start": start + text.len(),
-                    "end": start + text.len(),
                     "rev": rev,
-                    "text": &indent,
+                    "delta": delta,
                     "priority": INDENTATION_PRIORITY,
                     "after_cursor": false,
                     "author": "syntect",

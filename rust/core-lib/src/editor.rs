@@ -317,22 +317,16 @@ impl Editor {
         }
     }
 
-    //TODO: plugin edits should be represented by real Deltas.
     /// generates a delta from a plugin's response and applies it to the buffer.
-    pub fn apply_plugin_edit(&mut self, edit: &PluginEdit, undo_group: Option<usize>) {
-        let interval = Interval::new_closed_open(edit.start as usize, edit.end as usize);
-        let text = Rope::from(&edit.text);
-        let rev_len = self.engine.get_rev(edit.rev).unwrap().len();
-        let delta = Delta::simple_edit(interval, text, rev_len);
-
+    pub fn apply_plugin_edit(&mut self, edit: PluginEdit, undo_group: Option<usize>) {
         if let Some(undo_group) = undo_group {
             // non-async edits modify their associated revision
             //TODO: get priority working, so that plugin edits don't necessarily move cursor
-            self.engine.edit_rev(edit.priority as usize, undo_group, edit.rev, delta);
+            self.engine.edit_rev(edit.priority as usize, undo_group, edit.rev, edit.delta);
             self.text = self.engine.get_head().clone();
         }
         else {
-            self.add_delta(delta);
+            self.add_delta(edit.delta);
         }
 
         self.commit_delta(Some(&edit.author));
@@ -1042,7 +1036,7 @@ impl Editor {
     // deal with asynchrony or be efficient.
 
     /// Applies an async edit from a plugin.
-    pub fn plugin_edit(&mut self, edit: &PluginEdit) {
+    pub fn plugin_edit_async(&mut self, edit: PluginEdit) {
         self.this_edit_type = EditType::Other;
         self.apply_plugin_edit(edit, None)
     }

@@ -112,13 +112,10 @@ pub enum HostNotification {
 
 
 /// A simple edit, received from a plugin.
-//TODO: use a real delta here
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PluginEdit {
-    pub start: u64,
-    pub end: u64,
     pub rev: u64,
-    pub text: String,
+    pub delta: RopeDelta,
     /// the edit priority determines the resolution strategy when merging
     /// concurrent edits. The highest priority edit will be applied last.
     pub priority: u64,
@@ -233,9 +230,7 @@ mod tests {
     fn test_plugin_update() {
         let json = r#"{
             "view_id": "view-id-42",
-            "start": 1,
-            "end": 5,
-            "new_len": 2,
+            "delta": {"base_len": 6, "els": [{"copy": [0,5]}, {"insert":"rofls"}]},
             "rev": 5,
             "edit_type": "something",
             "author": "me"
@@ -245,8 +240,7 @@ mod tests {
         Ok(val) => val,
         Err(err) => panic!("{:?}", err),
     };
-    assert!(val.text.is_none());
-    assert_eq!(val.start, 1);
+    assert!(val.delta.as_simple_insert().is_some());
     }
 
     #[test]

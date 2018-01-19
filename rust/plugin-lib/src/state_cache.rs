@@ -207,6 +207,10 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
         self.state.syntax
     }
 
+    pub fn get_buf_size(&self) -> usize {
+        self.state.buf_size
+    }
+
     pub fn add_scopes(&self, scopes: &Vec<Vec<String>>) {
         self.peer.add_scopes(self.state.plugin_id, &self.state.view_id, scopes)
     }

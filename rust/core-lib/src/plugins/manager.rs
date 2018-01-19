@@ -105,7 +105,7 @@ impl PluginManager {
                     match response.map(serde_json::from_value::<UpdateResponse>) {
                         Ok(Ok(UpdateResponse::Edit(edit))) => {
                             buffers.lock().editor_for_view_mut(view_id).unwrap()
-                                .apply_plugin_edit(&edit, Some(undo_group));
+                                .apply_plugin_edit(edit, Some(undo_group));
                         }
                         Ok(Ok(UpdateResponse::Ack(_))) => (),
                         Ok(Err(err)) => eprintln!("plugin response json err: {:?}", err),
@@ -583,7 +583,7 @@ impl Handler for PluginManagerRef {
             UpdateSpans { start, len, spans, rev } => buffers.editor_for_view_mut(view_id)
                 .map(|ed| ed.plugin_update_spans(plugin_id, start, len, spans, rev)),
             Edit { edit } => buffers.editor_for_view_mut(view_id)
-                .map(|ed| ed.plugin_edit(&edit)),
+                .map(|ed| ed.plugin_edit_async(edit)),
             Alert { msg } => buffers.editor_for_view(view_id)
                 .map(|ed| ed.plugin_alert(&msg)),
         };
