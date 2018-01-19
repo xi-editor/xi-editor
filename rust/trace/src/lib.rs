@@ -53,32 +53,41 @@ type TracePayloadT = serde_json::Value;
 #[cfg(feature = "dict_payload")]
 type TracePayloadT = std::collections::HashMap<StrCow, StrCow>;
 
+/// How tracing should be configured.
 #[derive(Copy, Clone)]
 pub struct Config {
-    /* Returns the maximum number of bytes that should be used for storing trace data */
     sample_limit_count: usize
 }
 
 impl Config {
+    /// The maximum number of bytes the tracing data should take up.  This limit
+    /// won't be exceeded by the underlying storage itself (i.e. rounds down).
     fn with_limit_bytes(size: usize) -> Self {
         Self::with_limit_count(size / size_of::<Sample>())
     }
 
+    /// The maximum number of entries the tracing data should allow.  Total
+    /// storage allocated will be limit * size_of<Sample>
     fn with_limit_count(limit: usize) -> Self {
         Self {
             sample_limit_count: limit
         }
     }
 
+    /// The default amount of storage to allocate for tracing.  Currently 1 MB.
     fn default() -> Self {
         // 1 MB
         Self::with_limit_bytes(1 * 1024 * 1024)
     }
 
+    /// The maximum amount of space the tracing data will take up.  This does
+    /// not account for any overhead of storing the data itself (i.e. pointer to
+    /// the heap, counters, etc); just the data itself.
     pub fn max_size_in_bytes(&self) -> usize {
         self.sample_limit_count * size_of::<Sample>()
     }
 
+    /// The maximum number of samples that should be stored.
     pub fn max_samples(&self) -> usize {
         self.sample_limit_count
     }
@@ -88,10 +97,17 @@ static SAMPLE_COUNTER: AtomicUsize = ATOMIC_USIZE_INIT;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SampleType {
+    /// This is an instantaneous sample (i.e. X occurred)
     Instant,
+    /// This sample has a beginning & end to measure the time elapsed for a
+    /// block of code.
     Duration,
 }
 
+/// Stores the relevant data about a sample for later serialization.
+/// The payload associated with any sample is by default a string but may be
+/// configured via the `dict_payload` or `json_payload` features (there is an
+/// associated performance hit across the board for turning it on).
 #[derive(Clone, Debug)]
 pub struct Sample {
     /// A private ordering to apply to the events based on creation order.
@@ -102,12 +118,14 @@ pub struct Sample {
     pub name: StrCow,
     /// List of categories the event applies to.
     pub categories: CategoriesT,
-    /// An arbitrary payload to associate with the sample.
+    /// An arbitrary payload to associate with the sample.  The type is
+    /// controlled by features (default string).
     pub payload: Option<TracePayloadT>,
     /// When was the sample started.
     pub start_ns: u64,
     /// When the sample completed.  Equivalent to start_ns for instantaneous
-    /// samples.
+    /// samples.  However, to distinguish instantaneous from duration samples
+    /// look at the sample_type instead.
     pub end_ns: u64,
     /// Whether the sample was record via trace/trace_payload or
     /// trace_block/trace_closure.
@@ -119,6 +137,8 @@ pub struct Sample {
 }
 
 impl Sample {
+    /// Constructs a Duration sample without an end timestamp set.  Should not
+    /// be used directly.  Instead should be constructed via SampleGuard.
     fn new<S>(name: S, categories: CategoriesT, payload: Option<TracePayloadT>)
         -> Self
         where S: Into<StrCow>
@@ -136,6 +156,7 @@ impl Sample {
         }
     }
 
+    /// Constructs an instantaneous sample.
     fn new_instant<S>(name: S, categories: CategoriesT,
                       payload: Option<TracePayloadT>) -> Self
         where S: Into<StrCow>
@@ -213,6 +234,7 @@ impl Drop for SampleGuard {
     }
 }
 
+/// Stores the tracing data.
 struct Trace {
     enabled: AtomicBool,
     samples: Mutex<FixedLifoDeque<Sample>>,
@@ -229,16 +251,21 @@ impl Trace {
 
 lazy_static! { static ref TRACE : Trace = Trace::new(); }
 
+/// Enable tracing with the default configuration.  See Config::default.
+/// Tracing is disabled initially on program launch.
 pub fn enable_tracing() {
     enable_tracing_with_config(&Config::default());
 }
 
+/// Enable tracing with a specific configuration. Tracing is disabled initially
+/// on program launch.
 pub fn enable_tracing_with_config(config: &Config) {
     let mut all_samples = TRACE.samples.lock().unwrap();
     all_samples.reset_limit(config.max_samples());
     TRACE.enabled.store(true, AtomicOrdering::Relaxed);
 }
 
+/// Disable tracing.  This clears all trace data (& frees the memory).
 pub fn disable_tracing() {
     let mut all_samples = TRACE.samples.lock().unwrap();
     all_samples.reset_limit(0);
@@ -246,11 +273,35 @@ pub fn disable_tracing() {
     TRACE.enabled.store(false, AtomicOrdering::Relaxed);
 }
 
+/// Is tracing enabled.  Technically doesn't guarantee any samples will be
+/// stored as tracing could still be enabled but set with a limit of 0.
 #[inline]
 fn is_enabled() -> bool {
     TRACE.enabled.load(AtomicOrdering::Relaxed)
 }
 
+/// Create an instantaneous sample without any payload.  This is the lowest
+/// overhead tracing routine available.
+///
+/// # Performance
+/// The `dict_payload` or `json_payload` feature makes this ~1.3-~1.5x slower.
+/// See `trace_payload` for a more complete discussion.
+///
+/// # Arguments
+///
+/// * `name` - A string that provides some meaningful name to this sample.
+/// Usage of static strings is encouraged for best performance to avoid copies.
+/// However, anything that can be converted into a Cow string can be passed as
+/// an argument.
+///
+/// * `categories` - A static array of static strings that tags the samples in
+/// some way.
+///
+/// # Examples
+///
+/// ```
+/// xi_trace::trace("something happened", &["rpc", "response"]);
+/// ```
 pub fn trace<S>(name: S, categories: CategoriesT)
     where S: Into<StrCow>
 {
@@ -259,6 +310,41 @@ pub fn trace<S>(name: S, categories: CategoriesT)
     }
 }
 
+/// Create an instantaneous sample with a payload.  The type the payload
+/// conforms to is currently determined by the feature this library is compiled
+/// with.  By default, the type is string-like just like name.  If compiled with
+/// `dict_payload` then a Rust HashMap is expected while the `json_payload`
+/// feature makes the payload a `serde_json::Value` (additionally the library
+/// acquires a dependency on the `serde_json` crate.
+///
+/// # Performance
+/// A static string has the lowest overhead as no copies are necessary, roughly
+/// equivalent performance to a regular trace.  A string that needs to be copied
+/// first can make it ~1.7x slower than a regular trace.
+///
+/// When compiling with `dict_payload` or `json_payload`, this is ~2.1x slower
+/// than a string that needs to be copied (or ~4.5x slower than a static string)
+///
+/// # Arguments
+///
+/// * `name` - A string that provides some meaningful name to this sample.
+/// Usage of static strings is encouraged for best performance to avoid copies.
+/// However, anything that can be converted into a Cow string can be passed as
+/// an argument.
+///
+/// * `categories` - A static array of static strings that tags the samples in
+/// some way.
+///
+/// # Examples
+///
+/// ```
+/// xi_trace::trace_payload("something happened", &["rpc", "response"], "a note about this");
+/// ```
+///
+/// With `json_payload` feature:
+/// ```
+/// xi_trace::trace_payload("something happened", &["rpc", "response"], json!({"key": "value"}));
+/// ```
 pub fn trace_payload<S, P>(name: S, categories: CategoriesT, payload: P)
     where S: Into<StrCow>, P: Into<TracePayloadT>
 {
@@ -268,6 +354,44 @@ pub fn trace_payload<S, P>(name: S, categories: CategoriesT, payload: P)
     }
 }
 
+/// Creates a duration sample.  The sample is finalized (end_ns set) when the
+/// returned value is dropped.  `trace_closure` may be prettier to read.
+///
+/// # Performance
+/// See `trace_payload` for a more complete discussion.
+///
+/// # Arguments
+///
+/// * `name` - A string that provides some meaningful name to this sample.
+/// Usage of static strings is encouraged for best performance to avoid copies.
+/// However, anything that can be converted into a Cow string can be passed as
+/// an argument.
+///
+/// * `categories` - A static array of static strings that tags the samples in
+/// some way.
+///
+/// # Returns
+/// A guard that when dropped will update the Sample with the timestamp & then
+/// record it.
+///
+/// # Examples
+///
+/// ```
+/// fn something_expensive() {
+/// }
+///
+/// fn something_else_expensive() {
+/// }
+///
+/// let trace_guard = xi_trace::trace_block("something_expensive", &["rpc", "request"]);
+/// something_expensive();
+/// std::mem::drop(trace_guard); // finalize explicitly if
+///
+/// {
+///     let _guard = xi_trace::trace_block("something_else_expensive", &["rpc", "response"]);
+///     something_else_expensive();
+/// }
+/// ```
 pub fn trace_block<S>(name: S, categories: CategoriesT) -> SampleGuard
     where S: Into<StrCow>
 {
@@ -278,6 +402,8 @@ pub fn trace_block<S>(name: S, categories: CategoriesT) -> SampleGuard
     }
 }
 
+/// See `trace_block` for how the block works and `trace_payload` for a
+/// discussion on payload.
 pub fn trace_block_payload<S, P>(name: S, categories: CategoriesT, payload: P)
     -> SampleGuard
     where S: Into<StrCow>, P: Into<TracePayloadT>
@@ -289,6 +415,42 @@ pub fn trace_block_payload<S, P>(name: S, categories: CategoriesT, payload: P)
     }
 }
 
+
+/// Creates a duration sample that measures how long the closure took to execute.
+///
+/// # Performance
+/// See `trace_payload` for a more complete discussion.
+///
+/// # Arguments
+///
+/// * `name` - A string that provides some meaningful name to this sample.
+/// Usage of static strings is encouraged for best performance to avoid copies.
+/// However, anything that can be converted into a Cow string can be passed as
+/// an argument.
+///
+/// * `categories` - A static array of static strings that tags the samples in
+/// some way.
+///
+/// # Returns
+/// The result of the closure.
+///
+/// # Examples
+///
+/// ```
+/// fn something_expensive() -> u32 {
+///     0
+/// }
+///
+/// fn something_else_expensive(value: u32) {
+/// }
+///
+/// let result = xi_trace::trace_closure("something_expensive", &["rpc", "request"], || {
+///     something_expensive()
+/// });
+/// xi_trace::trace_closure("something_else_expensive", &["rpc", "response"], || {
+///     something_else_expensive(result);
+/// });
+/// ```
 pub fn trace_closure<S, F, R>(name: S, categories: CategoriesT, closure: F) -> R
     where S: Into<StrCow>, F: FnOnce() -> R
 {
@@ -297,6 +459,9 @@ pub fn trace_closure<S, F, R>(name: S, categories: CategoriesT, closure: F) -> R
     r
 }
 
+
+/// See `trace_closure` for how the closure works and `trace_payload` for a
+/// discussion on payload.
 pub fn trace_closure_payload<S, P, F, R>(name: S, categories: CategoriesT,
                                               closure: F, payload: P) -> R
     where S: Into<StrCow>, P: Into<TracePayloadT>,
