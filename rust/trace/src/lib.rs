@@ -113,7 +113,7 @@ pub struct Sample {
     /// A private ordering to apply to the events based on creation order.
     /// Disambiguates in case 2 samples might be created from different threads
     /// with the same start_ns for purposes of ordering.
-    sample_id: usize,
+    pub(crate) sample_id: usize,
     /// The name of the event to be shown.
     pub name: StrCow,
     /// List of categories the event applies to.
@@ -158,7 +158,7 @@ impl Sample {
 
     /// Constructs an instantaneous sample.
     pub fn new_instant<S>(name: S, categories: CategoriesT,
-                      payload: Option<TracePayloadT>) -> Self
+                          payload: Option<TracePayloadT>) -> Self
         where S: Into<StrCow>
     {
         let now = time::precise_time_ns();
@@ -192,7 +192,7 @@ impl Sample {
 
 impl PartialEq for Sample {
     fn eq(&self, other: &Sample) -> bool {
-        self.sample_id == other.sample_id
+        self.pid == other.pid && self.sample_id == other.sample_id
     }
 }
 
@@ -206,13 +206,17 @@ impl PartialOrd for Sample {
 
 impl Ord for Sample {
     fn cmp(&self, other: &Sample) -> cmp::Ordering {
-        self.sample_id.cmp(&other.sample_id)
+        if self.pid == other.pid {
+            self.sample_id.cmp(&other.sample_id)
+        } else {
+            self.start_ns.cmp(&other.start_ns)
+        }
     }
 }
 
 impl Hash for Sample {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.sample_id.hash(state);
+        (self.pid, self.sample_id).hash(state);
     }
 }
 
@@ -784,6 +788,25 @@ mod tests {
         assert_eq!(snapshot[3].name, "b");
         assert_eq!(snapshot[4].name, "z");
         assert_eq!(snapshot[5].name, "c");
+    }
+
+    #[test]
+    fn test_cross_process_samples() {
+        let mut samples = vec![
+            Sample::new_instant("local pid", &[], None),
+            Sample::new_instant("remote pid", &[], None)];
+        samples[0].pid = 1;
+        samples[0].start_ns = 10;
+        samples[0].end_ns = 10;
+
+        samples[1].pid = 2;
+        samples[1].start_ns = 5;
+        samples[1].end_ns = 5;
+
+        samples.sort();
+
+        assert_eq!(samples[0].name, "remote pid");
+        assert_eq!(samples[1].name, "local pid");
     }
 
     #[cfg(feature = "benchmarks")]
