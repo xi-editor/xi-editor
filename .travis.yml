@@ -1,25 +1,55 @@
+sudo: required
 language: rust
-osx_image: xcode8.2
-
 rust:
   - stable
   - nightly
-
 os:
   - linux
   - osx
-
+osx_image: xcode8.2
+dist: trusty
 matrix:
   allow_failures:
     - rust: nightly
-
 cache:
   directories:
     - $HOME/.cargo
 
+before_install: |
+  if [ $TRAVIS_OS_NAME == "osx" ]; then
+    brew update
+    brew install python3
+    brew outdated pyenv || brew upgrade pyenv
+    brew install pyenv-virtualenv
+    eval "$(pyenv init -)"
+    eval "$(pyenv virtualenv-init -)"
+    sudo pyenv install 3.6.0
+    sudo pyenv virtualenv 3.6.0 general
+    sudo pyenv global general
+    sudo pip3 install -U setuptools
+
+  else
+    sudo curl -L https://raw.githubusercontent.com/pyenv/pyenv-installer/master/bin/pyenv-installer | bash
+    sudo apt-get update
+    export PATH="~/.pyenv/bin:$PATH"
+    eval "$(pyenv init -)"
+    eval "$(pyenv virtualenv-init -)"
+    pyenv install 3.6.0
+    pyenv virtualenv 3.6.0 general
+    pyenv global general
+    sudo apt-get -y install python3-pip python-dev
+    sudo pip3 install -U setuptools    
+  fi
+
+install:
+  - sudo python3 -m pip install -U pip
+  - sudo pip3 install pytest
 script:
   - cd rust
   - export CARGO_TARGET_DIR=/tmp/target
   - cargo build || exit
   - cargo build --manifest-path syntect-plugin/Cargo.toml || exit
   - for MANIFEST in Cargo.toml */Cargo.toml; do cargo test --manifest-path $MANIFEST || exit; done
+  - cd ../python
+  - sudo python3 setup.py install
+  - sudo python3 -m pytest tests
