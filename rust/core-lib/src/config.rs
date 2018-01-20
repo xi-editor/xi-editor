@@ -21,7 +21,7 @@ use std::fs;
 use std::rc::Rc;
 use std::path::{PathBuf, Path};
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use serde::de::Deserialize;
 use serde_json::{self, Value};
@@ -38,6 +38,14 @@ mod defaults {
     pub const WINDOWS: &'static str = include_str!("../assets/windows.toml");
     pub const YAML: &'static str = include_str!("../assets/yaml.toml");
     pub const MAKEFILE: &'static str = include_str!("../assets/makefile.toml");
+
+    /// A cache of loaded defaults.
+    lazy_static! {
+        static ref LOADED: Mutex<HashMap<ConfigDomain, Option<Table>>> = {
+            Mutex::new(HashMap::new())
+        };
+    }
+
 
     /// config keys that are legal in most config files
     pub const GENERAL_KEYS: &'static [&'static str] = &[
@@ -61,6 +69,13 @@ mod defaults {
     pub fn defaults_for_domain<D>(domain: D) -> Option<Table>
         where D: Into<ConfigDomain>,
     {
+        let mut loaded = LOADED.lock().unwrap();
+        let domain = domain.into();
+        loaded.entry(domain).or_insert_with(|| { load_for_domain(domain) })
+            .to_owned()
+    }
+
+    fn load_for_domain(domain: ConfigDomain) -> Option<Table> {
         match domain.into() {
             ConfigDomain::General => {
                 let mut base = load(BASE);
@@ -118,6 +133,8 @@ pub enum ConfigError {
     UnknownDomain(String),
     /// A file-based config could not be loaded or parsed.
     Parse(PathBuf, toml::de::Error),
+    /// The config table contained unexpected values
+    UnexpectedItem(serde_json::Error),
     /// An Io Error
     Io(io::Error),
 }
@@ -284,6 +301,7 @@ impl ConfigManager {
                               -> Result<(), ConfigError>
         where P: Into<Option<PathBuf>>,
     {
+        self.check_table(&new_config)?;
         let result = self.get_or_insert_config(domain).set_table(new_config);
 
        if result.is_ok() {
@@ -320,6 +338,17 @@ impl ConfigManager {
             self.config_dir.as_ref()
             .map(|p| Some(p.borrow()) == path.parent())
             .unwrap_or(false)
+    }
+
+    fn check_table(&self, table: &Table) -> Result<(), ConfigError> {
+        // verify that this table is well formed
+        let mut defaults = defaults::defaults_for_domain(ConfigDomain::General)
+            .expect("general domain must have defaults");
+        for (k, v) in table.iter() {
+            defaults.insert(k.to_owned(), v.to_owned());
+        }
+        let _: BufferItems = serde_json::from_value(defaults.into())?;
+        Ok(())
     }
 
     fn get_or_insert_config<D>(&mut self, domain: D) -> &mut ConfigPair
@@ -497,11 +526,12 @@ impl From<ViewIdentifier> for ConfigDomain {
 impl fmt::Display for ConfigError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::ConfigError::*;
-        match self {
-            &IllegalKey(ref s) |
-                &UnknownDomain(ref s) => write!(f, "{}: {}", self.description(), s),
-            &Parse(ref p, ref e) => write!(f, "{} ({:?}), {:?}", self.description(), p, e),
-            &Io(ref e) => write!(f, "error loading config: {:?}", e)
+        match *self {
+            IllegalKey(ref s) | UnknownDomain(ref s)
+                => write!(f, "{}: {}", self.description(), s),
+            Parse(ref p, ref e) => write!(f, "{} ({:?}), {:?}", self.description(), p, e),
+            Io(ref e) => write!(f, "error loading config: {:?}", e),
+            UnexpectedItem( ref e ) => write!(f, "{}", e),
         }
     }
 }
@@ -514,6 +544,7 @@ impl Error for ConfigError {
             UnknownDomain( .. ) => "unknown domain",
             Parse( _, ref e ) => e.description(),
             Io( ref e ) => e.description(),
+            UnexpectedItem( ref e ) => e.description(),
         }
     }
 }
@@ -521,6 +552,12 @@ impl Error for ConfigError {
 impl From<io::Error> for ConfigError {
     fn from(src: io::Error) -> ConfigError {
         ConfigError::Io(src)
+    }
+}
+
+impl From<serde_json::Error> for ConfigError {
+    fn from(src: serde_json::Error) -> ConfigError {
+        ConfigError::UnexpectedItem(src)
     }
 }
 
