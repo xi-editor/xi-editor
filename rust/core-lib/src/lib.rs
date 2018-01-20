@@ -145,7 +145,7 @@ impl Handler for MainState {
         self.tabs.handle_request(rpc, ctx)
     }
 
-    fn idle(&mut self, _ctx: &RpcCtx, token: usize) {
-        self.tabs.handle_idle(token);
+    fn idle(&mut self, ctx: &RpcCtx, token: usize) {
+        self.tabs.handle_idle(ctx, token);
     }
 }

@@ -499,8 +499,8 @@ impl fmt::Display for ConfigError {
         use self::ConfigError::*;
         match self {
             &IllegalKey(ref s) |
-                &UnknownDomain(ref s) => write!(f, "{}: {}", self, s),
-            &Parse(ref p, ref e) => write!(f, "{} ({:?}), {:?}", self, p, e),
+                &UnknownDomain(ref s) => write!(f, "{}: {}", self.description(), s),
+            &Parse(ref p, ref e) => write!(f, "{} ({:?}), {:?}", self.description(), p, e),
             &Io(ref e) => write!(f, "error loading config: {:?}", e)
         }
     }

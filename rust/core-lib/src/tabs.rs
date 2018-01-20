@@ -341,7 +341,7 @@ impl Documents {
                 }
             Plugin(cmd) => self.do_plugin_cmd(cmd),
             ModifyUserConfig { domain, changes } =>
-                self.do_modify_user_config(domain, changes)
+                self.do_modify_user_config(rpc_ctx.get_peer(), domain, changes)
         }
     }
 
@@ -604,11 +604,11 @@ impl Documents {
             RemoteError::custom(2, &format!("No buffer for view {}", view_id), None))
     }
 
-    pub fn handle_idle(&mut self, token: usize) {
+    pub fn handle_idle(&mut self, ctx: &RpcCtx, token: usize) {
         match token {
             WATCH_IDLE_TOKEN => {
                 #[cfg(feature = "notify")]
-                self.handle_fs_events()
+                self.handle_fs_events(ctx.get_peer())
             }
             NEW_VIEW_IDLE_TOKEN => {
                 while let Some(f) = self.idle_queue.pop() {
@@ -621,20 +621,16 @@ impl Documents {
 
     /// Process file system events, forwarding them to registrees.
     #[cfg(feature = "notify")]
-    fn handle_fs_events(&mut self) {
-        let mut events = {
-            let mut e = self.file_watcher.events.lock().unwrap();
-            let events = e.drain(..).collect::<Vec<_>>();
-            events
-        };
-
+    fn handle_fs_events(&mut self, peer: &MainPeer) {
+        let mut events = self.file_watcher.take_events();
         let mut config_changed = false;
+
         for (token, event) in events.drain(..) {
             match token {
                 CONFIG_EVENT_TOKEN => {
                     //TODO: we should(?) be more efficient about this update,
                     // with config_manager returning whether it's necessary.
-                    self.handle_config_fs_event(event);
+                    self.handle_config_fs_event(event, peer);
                     config_changed = true;
                 }
                 _ => eprintln!("unexpected fs event token {:?}", token),
@@ -647,17 +643,17 @@ impl Documents {
 
     /// Handles a config related file system event.
     #[cfg(feature = "notify")]
-    fn handle_config_fs_event(&mut self, event: DebouncedEvent) {
+    fn handle_config_fs_event(&mut self, event: DebouncedEvent, peer: &MainPeer) {
         use self::DebouncedEvent::*;
         match event {
             Create(ref path) | Write(ref path) => {
-                self.load_file_based_config(path)
+                self.load_file_based_config(peer, path)
             }
             Remove(ref path) => self.config_manager.remove_source(path),
             Rename(ref old, ref new) => {
                 self.config_manager.remove_source(old);
                 let should_load = self.config_manager.should_load_file(new);
-                if should_load { self.load_file_based_config(new) }
+                if should_load { self.load_file_based_config(peer, new) }
             }
             _ => (),
         }
@@ -666,16 +662,16 @@ impl Documents {
     /// Checks for existence of config dir, loading config files and registering
     /// for file system events if the directory exists and can be read.
     fn init_file_based_configs(&mut self, config_dir: &Path,
-                               rpc_peer: &MainPeer) -> io::Result<()> {
+                               peer: &MainPeer) -> io::Result<()> {
         if !config_dir.exists() {
             config::init_config_dir(config_dir)?;
         }
         let config_files = config::iter_config_files(config_dir)?;
-        config_files.for_each(|p| self.load_file_based_config(&p));
+        config_files.for_each(|p| self.load_file_based_config(peer, &p));
 
         #[cfg(feature = "notify")]
         self.file_watcher.watch_filtered(config_dir, RecursiveMode::Recursive,
-                                         CONFIG_EVENT_TOKEN, rpc_peer,
+                                         CONFIG_EVENT_TOKEN, peer,
                                          |p| {
                                              p.extension()
                                                  .and_then(OsStr::to_str)
@@ -685,28 +681,36 @@ impl Documents {
     }
 
     /// Attempt to load a config file.
-    fn load_file_based_config(&mut self, path: &Path) {
+    fn load_file_based_config(&mut self, peer: &MainPeer, path: &Path) {
         match config::try_load_from_file(&path) {
-            Ok((d, t)) => self.set_config(d, t, Some(path.to_owned())),
-            Err(e) => eprintln!("Error loading config file: {:?}", e),
+            Ok((d, t)) => self.set_config(peer, d, t, Some(path.to_owned())),
+            Err(e) => {
+                let err_msg = format!("{}", &e);
+                peer.send_rpc_notification("alert", &json!({"msg": err_msg}));
+            }
         }
     }
 
     /// Sets (overwriting) the config for a given domain. Will fail if the config
     /// fails validation.
-    fn set_config<P>(&mut self, domain: ConfigDomain, table: Table, path: P)
+    fn set_config<P>(&mut self, peer: &MainPeer, domain: ConfigDomain,
+                     table: Table, path: P)
         where P: Into<Option<PathBuf>>
     {
         if let Err(e) = self.config_manager.set_user_config(domain, table, path) {
-            //TODO: report this error to the peer
-            eprintln!("Error updating config {:?}: {:?}", domain, e);
+            let err_msg = format!("{}", &e);
+            peer.send_rpc_notification("alert", &json!({"msg": err_msg}));
         }
     }
 
+    // NOTE: this is coming in from a direct RPC; unlike `set_config`, missing
+    // keys here are left in their current state (`set_config` clears missing keys)
     /// Updates the config for a given domain.
-    fn do_modify_user_config(&mut self, domain: ConfigDomain, changes: Table) {
+    fn do_modify_user_config(&mut self, peer: &MainPeer, domain: ConfigDomain,
+                             changes: Table) {
         if let Err(e) = self.config_manager.update_user_config(domain, changes) {
-            eprintln!("Error updating config {:?}: {:?}", domain, e);
+            let err_msg = format!("{}", &e);
+            peer.send_rpc_notification("alert", &json!({"msg": err_msg}));
         }
         self.after_config_change();
     }
@@ -864,7 +868,6 @@ impl<'a> From<&'a str> for ViewIdentifier {
 
 impl From<String> for ViewIdentifier {
     fn from(s: String) -> Self {
-        //let s: &str = &s;
         s.as_str().into()
     }
 }

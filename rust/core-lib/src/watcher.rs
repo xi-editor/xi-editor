@@ -18,6 +18,7 @@ use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::thread;
+use std::mem;
 use std::collections::VecDeque;
 
 use xi_rpc::RpcPeer;
@@ -85,6 +86,13 @@ impl FsWatcher {
             }
         });
     }
+
+    /// Takes ownership of this `Watcher`'s current event queue.
+    pub fn take_events(&mut self) -> VecDeque<(EventToken, DebouncedEvent)> {
+        let mut events = self.events.lock().unwrap();
+        mem::replace(&mut events, VecDeque::new())
+    }
+
     //TODO impl unwatch, when we add in watching of opened files
 }
 
