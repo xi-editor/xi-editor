@@ -276,7 +276,9 @@ impl ConfigManager {
         where P: Into<Option<PathBuf>>,
     {
         self.check_table(&new_config)?;
-        self.get_or_insert_config(domain).set_table(new_config);
+        self.configs.entry(domain.into())
+            .or_insert_with(|| { ConfigPair::for_domain(domain) })
+            .set_table(new_config);
         path.into().map(|p| self.sources.insert(p, domain));
         Ok(())
     }
@@ -288,7 +290,8 @@ impl ConfigManager {
                           -> Result<(), ConfigError>
     {
         self.check_table(&changes)?;
-        let conf = self.get_or_insert_config(domain);
+        let conf = self.configs.entry(domain.into())
+            .or_insert_with(|| { ConfigPair::for_domain(domain) });
         conf.update_table(changes);
         Ok(())
     }
@@ -324,16 +327,6 @@ impl ConfigManager {
         }
         let _: BufferItems = serde_json::from_value(defaults.into())?;
         Ok(())
-    }
-
-    fn get_or_insert_config<D>(&mut self, domain: D) -> &mut ConfigPair
-    where D: Into<ConfigDomain>
-    {
-        let domain = domain.into();
-        if !self.configs.contains_key(&domain) {
-            self.configs.insert(domain, ConfigPair::for_domain(domain));
-        }
-        self.configs.get_mut(&domain).unwrap()
     }
 
     /// Generates a snapshot of the current configuration for a particular
