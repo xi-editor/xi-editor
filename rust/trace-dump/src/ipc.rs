@@ -38,6 +38,10 @@ pub fn serialize_to_stream<'a, W>(samples: &Vec<Sample>, output: &mut W)
         .map_err(|e| Error::BincodeError(e))
 }
 
+pub fn serialized_size(samples: &Vec<Sample>) -> u64 {
+    bincode::serialized_size(samples)
+}
+
 pub fn deserialize_from_bytes(encoded: &[u8]) -> Result<Vec<Sample>, Error> {
     bincode::deserialize(encoded)
         .map_err(|e| Error::BincodeError(e))

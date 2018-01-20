@@ -1,0 +1,23 @@
+[package]
+name = "xi-trace-ffi"
+version = "0.1.0"
+license = "Apache-2.0"
+authors = ["Vitali Lovich <vlovich@google.com>"]
+categories = ["development-tools::profiling"]
+repository = "https://github.com/google/xi-editor"
+description = "C bindings for xi-trace"
+
+[lib]
+name = "xi_trace_ffi"
+crate-type = ["cdylib"]
+
+[dependencies]
+xi-trace = { path = "../trace" }
+# The FFI crate only exposes serializing to IPC so there's no need for any
+# other formats (can even reduce this further to serialization only APIs).
+xi-trace-dump = { path = "../trace-dump", default-features = false, features = ["ipc"] }
+libc = "0.2.36"
+
+[build-dependencies.cc]
+version = "1.0"
+features = ["parallel"]
