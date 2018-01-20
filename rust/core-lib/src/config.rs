@@ -18,9 +18,8 @@ use std::error::Error;
 use std::ffi::OsStr;
 use std::fmt;
 use std::fs;
-use std::rc::Rc;
 use std::path::{PathBuf, Path};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use serde::de::Deserialize;
@@ -127,8 +126,6 @@ pub enum ConfigDomain {
 /// The errors that can occur when managing configs.
 #[derive(Debug)]
 pub enum ConfigError {
-    /// The config contains a key that is invalid for its domain.
-    IllegalKey(String),
     /// The config domain was not recognized.
     UnknownDomain(String),
     /// A file-based config could not be loaded or parsed.
@@ -137,23 +134,6 @@ pub enum ConfigError {
     UnexpectedItem(serde_json::Error),
     /// An Io Error
     Io(io::Error),
-}
-
-/// A `Validator` is responsible for validating a config table.
-pub trait Validator: fmt::Debug {
-    fn validate(&self, key: &str, value: &Value) -> Result<(), ConfigError>;
-    fn validate_table(&self, table: &Table) -> Result<(), ConfigError> {
-        for (key, value) in table.iter() {
-            let _ = self.validate(key, value)?;
-        }
-        Ok(())
-    }
-}
-
-/// An implementation of `Validator` that checks keys against a whitelist.
-#[derive(Debug, Clone)]
-pub struct KeyValidator {
-    keys: HashSet<String>,
 }
 
 /// Represents the common pattern of default settings masked by
@@ -167,7 +147,6 @@ pub struct ConfigPair {
     user: Option<Table>,
     /// A snapshot of base + user.
     cache: Arc<Table>,
-    validator: Rc<Validator>,
 }
 
 #[derive(Debug)]
@@ -220,22 +199,18 @@ impl ConfigPair {
     /// Creates a new `ConfigPair` suitable for the provided domain.
     fn for_domain<D: Into<ConfigDomain>>(domain: D) -> Self {
         let domain = domain.into();
-        let validator = KeyValidator::for_domain(domain);
         let base = defaults::defaults_for_domain(domain);
         let user = None;
         let cache = Arc::new(base.clone().unwrap_or_default());
-        ConfigPair { base, user, cache, validator }
+        ConfigPair { base, user, cache }
     }
 
-    fn set_table(&mut self, user: Table) -> Result<(), ConfigError> {
-        self.validator.validate_table(&user)?;
+    fn set_table(&mut self, user: Table) {
         self.user = Some(user);
         self.rebuild();
-        Ok(())
     }
 
-    fn update_table(&mut self, changes: Table) -> Result<(), ConfigError> {
-        self.validator.validate_table(&changes)?;
+    fn update_table(&mut self, changes: Table) {
         {
             let conf = self.user.get_or_insert(Table::new());
             for (k, v) in changes {
@@ -248,7 +223,6 @@ impl ConfigPair {
             }
         }
         self.rebuild();
-        Ok(())
     }
 
     fn rebuild(&mut self) {
@@ -302,12 +276,9 @@ impl ConfigManager {
         where P: Into<Option<PathBuf>>,
     {
         self.check_table(&new_config)?;
-        let result = self.get_or_insert_config(domain).set_table(new_config);
-
-       if result.is_ok() {
-           path.into().map(|p| self.sources.insert(p, domain));
-       }
-       result
+        self.get_or_insert_config(domain).set_table(new_config);
+        path.into().map(|p| self.sources.insert(p, domain));
+        Ok(())
     }
 
     /// Updates the config for the given domain. Existing keys which are
@@ -316,8 +287,10 @@ impl ConfigManager {
     pub fn update_user_config(&mut self, domain: ConfigDomain, changes: Table)
                           -> Result<(), ConfigError>
     {
+        self.check_table(&changes)?;
         let conf = self.get_or_insert_config(domain);
-        Ok(conf.update_table(changes)?)
+        conf.update_table(changes);
+        Ok(())
     }
 
     /// If `path` points to a loaded config file, unloads the associated config.
@@ -345,6 +318,8 @@ impl ConfigManager {
         let mut defaults = defaults::defaults_for_domain(ConfigDomain::General)
             .expect("general domain must have defaults");
         for (k, v) in table.iter() {
+            // changes can include 'null', which means clear field
+            if v.is_null() { continue }
             defaults.insert(k.to_owned(), v.to_owned());
         }
         let _: BufferItems = serde_json::from_value(defaults.into())?;
@@ -527,8 +502,7 @@ impl fmt::Display for ConfigError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::ConfigError::*;
         match *self {
-            IllegalKey(ref s) | UnknownDomain(ref s)
-                => write!(f, "{}: {}", self.description(), s),
+            UnknownDomain(ref s) => write!(f, "{}: {}", self.description(), s),
             Parse(ref p, ref e) => write!(f, "{} ({:?}), {:?}", self.description(), p, e),
             Io(ref e) => write!(f, "error loading config: {:?}", e),
             UnexpectedItem( ref e ) => write!(f, "{}", e),
@@ -540,7 +514,6 @@ impl Error for ConfigError {
     fn description(&self) -> &str {
         use self::ConfigError::*;
         match *self {
-            IllegalKey( .. ) => "illegal key",
             UnknownDomain( .. ) => "unknown domain",
             Parse( _, ref e ) => e.description(),
             Io( ref e ) => e.description(),
@@ -558,38 +531,6 @@ impl From<io::Error> for ConfigError {
 impl From<serde_json::Error> for ConfigError {
     fn from(src: serde_json::Error) -> ConfigError {
         ConfigError::UnexpectedItem(src)
-    }
-}
-
-
-impl KeyValidator {
-    /// Create a `KeyValidator` appropriate to the given domain.
-    pub fn for_domain<D: Into<ConfigDomain>>(d: D) -> Rc<Self> {
-        let keys = match d.into() {
-            ConfigDomain::General =>
-                defaults::GENERAL_KEYS.iter()
-                    .chain(defaults::TOP_LEVEL_KEYS.iter())
-                    .map(|s| String::from(*s))
-                    .collect(),
-            ConfigDomain::Syntax(_) |
-                ConfigDomain::UserOverride(_) |
-                ConfigDomain::SysOverride(_) =>
-                defaults::GENERAL_KEYS.iter()
-                    .map(|s| String::from(*s))
-                    .collect(),
-        };
-        Rc::new(KeyValidator { keys })
-    }
-}
-
-impl Validator for KeyValidator {
-    fn validate(&self, key: &str, _value: &Value) -> Result<(), ConfigError>
-    {
-        if self.keys.contains(key) {
-            Ok(())
-        } else {
-            Err(ConfigError::IllegalKey(key.to_owned()))
-        }
     }
 }
 
@@ -721,32 +662,6 @@ mod tests {
         manager.update_user_config(ConfigDomain::UserOverride(view_id), changes).unwrap();
         let config = manager.get_buffer_config(SyntaxDefinition::Rust, view_id);
         assert_eq!(config.items.tab_size, 85);
-    }
-
-    #[test]
-    fn test_validation() {
-        let mut manager = ConfigManager::default();
-        let user_config = r#"tab_size = 42
-font_frace = "InconsolableMo"
-translate_tabs_to_spaces = true
-"#;
-        let user_config = table_from_toml_str(user_config).unwrap();
-        let r = manager.set_user_config(ConfigDomain::General, user_config, None);
-        match r {
-            Err(ConfigError::IllegalKey(ref key)) if key == "font_frace" => (),
-            other => assert!(false, format!("{:?}", other)),
-        }
-
-        let syntax_config =  table_from_toml_str(r#"tab_size = 42
-plugin_search_path = "/some/path"
-translate_tabs_to_spaces = true"#).unwrap();
-        let r = manager.set_user_config(ConfigDomain::Syntax(SyntaxDefinition::Rust),
-                                      syntax_config, None);
-        // not valid in a syntax config
-        match r {
-            Err(ConfigError::IllegalKey(ref key)) if key == "plugin_search_path" => (),
-            other => assert!(false, format!("{:?}", other)),
-        }
     }
 
     #[test]
