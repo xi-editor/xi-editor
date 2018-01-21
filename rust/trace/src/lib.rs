@@ -21,7 +21,7 @@ extern crate time;
 
 extern crate libc;
 
-#[cfg(all(test, feature = "benchmarks"))]
+#[cfg(feature = "benchmarks")]
 extern crate test;
 
 #[cfg(feature = "json_payload")]
@@ -62,20 +62,20 @@ pub struct Config {
 impl Config {
     /// The maximum number of bytes the tracing data should take up.  This limit
     /// won't be exceeded by the underlying storage itself (i.e. rounds down).
-    fn with_limit_bytes(size: usize) -> Self {
+    pub fn with_limit_bytes(size: usize) -> Self {
         Self::with_limit_count(size / size_of::<Sample>())
     }
 
     /// The maximum number of entries the tracing data should allow.  Total
     /// storage allocated will be limit * size_of<Sample>
-    fn with_limit_count(limit: usize) -> Self {
+    pub fn with_limit_count(limit: usize) -> Self {
         Self {
             sample_limit_count: limit
         }
     }
 
     /// The default amount of storage to allocate for tracing.  Currently 1 MB.
-    fn default() -> Self {
+    pub fn default() -> Self {
         // 1 MB
         Self::with_limit_bytes(1 * 1024 * 1024)
     }
@@ -126,7 +126,7 @@ pub struct Sample {
     /// When the sample completed.  Equivalent to start_ns for instantaneous
     /// samples.  However, to distinguish instantaneous from duration samples
     /// look at the sample_type instead.
-    pub end_ns: u64,
+    end_ns: u64,
     /// Whether the sample was record via trace/trace_payload or
     /// trace_block/trace_closure.
     pub sample_type: SampleType,
@@ -139,7 +139,7 @@ pub struct Sample {
 impl Sample {
     /// Constructs a Duration sample without an end timestamp set.  Should not
     /// be used directly.  Instead should be constructed via SampleGuard.
-    fn new<S>(name: S, categories: CategoriesT, payload: Option<TracePayloadT>)
+    pub fn new<S>(name: S, categories: CategoriesT, payload: Option<TracePayloadT>)
         -> Self
         where S: Into<StrCow>
     {
@@ -157,7 +157,7 @@ impl Sample {
     }
 
     /// Constructs an instantaneous sample.
-    fn new_instant<S>(name: S, categories: CategoriesT,
+    pub fn new_instant<S>(name: S, categories: CategoriesT,
                       payload: Option<TracePayloadT>) -> Self
         where S: Into<StrCow>
     {
@@ -173,6 +173,20 @@ impl Sample {
             tid: sys_tid::current_tid().unwrap(),
             pid: sys_pid::current_pid(),
         }
+    }
+
+    #[inline]
+    pub fn set_end_ns(&mut self, end_ns: u64) {
+        debug_assert_eq!(self.sample_type, SampleType::Duration, "invalid sample type {:?} doesn't have separate start/end", self.sample_type);
+        debug_assert_eq!(self.end_ns, 0, "end timestamp already set");
+        self.end_ns = end_ns;
+    }
+
+    #[inline]
+    pub fn get_end_ns(&self) -> u64 {
+        debug_assert_ne!(self.end_ns, 0, "end timestamp not set");
+        debug_assert!(self.end_ns >= self.start_ns, "end timestamp is after begin: [{}, {})", self.start_ns, self.end_ns);
+        self.end_ns
     }
 }
 
@@ -202,82 +216,198 @@ impl Hash for Sample {
     }
 }
 
-pub struct SampleGuard {
+pub struct SampleGuard<'a> {
     sample: Option<Sample>,
+    trace: Option<&'a Trace>,
 }
 
-impl SampleGuard {
+impl<'a> SampleGuard<'a> {
     #[inline]
     fn new_disabled() -> Self {
         Self {
-            sample: None
+            sample: None,
+            trace: None,
         }
     }
 
     #[inline]
-    fn new<S>(name: S, categories: CategoriesT, payload: Option<TracePayloadT>)
+    fn new<S>(trace: &'a Trace, name: S, categories: CategoriesT, payload: Option<TracePayloadT>)
         -> Self
         where S: Into<StrCow>
     {
         Self {
-            sample: Some(Sample::new(name, categories, payload))
+            sample: Some(Sample::new(name, categories, payload)),
+            trace: Some(&trace),
         }
     }
 }
 
-impl Drop for SampleGuard {
+impl<'a> Drop for SampleGuard<'a> {
     fn drop(&mut self) {
         if let Some(ref mut sample) = self.sample {
-            sample.end_ns = time::precise_time_ns();
-            record_sample(sample);
+            sample.set_end_ns(time::precise_time_ns());
+            self.trace.unwrap().record(sample);
         }
     }
 }
 
 /// Stores the tracing data.
-struct Trace {
+pub struct Trace {
     enabled: AtomicBool,
     samples: Mutex<FixedLifoDeque<Sample>>,
 }
 
 impl Trace {
-    fn new() -> Self {
+    pub fn disabled() -> Self {
         Self {
             enabled: AtomicBool::new(false),
             samples: Mutex::new(FixedLifoDeque::new())
         }
     }
+
+    pub fn enabled(config: Config) -> Self {
+        Self {
+            enabled: AtomicBool::new(true),
+            samples: Mutex::new(FixedLifoDeque::with_limit(config.max_samples())),
+        }
+    }
+
+    pub fn disable(&self) {
+        let mut all_samples = self.samples.lock().unwrap();
+        all_samples.reset_limit(0);
+        self.enabled.store(false, AtomicOrdering::Relaxed);
+    }
+
+    #[inline]
+    pub fn enable(&self) {
+        self.enable_config(Config::default());
+    }
+
+    pub fn enable_config(&self, config: Config) {
+        let mut all_samples = self.samples.lock().unwrap();
+        all_samples.reset_limit(config.max_samples());
+        self.enabled.store(true, AtomicOrdering::Relaxed);
+    }
+
+    /// Generally racy since the underlying storage might be mutated in a separate thread.
+    /// Exposed for unit tests.
+    pub fn get_samples_count(&self) -> usize {
+        self.samples.lock().unwrap().len()
+    }
+
+    /// Exposed for unit tests only.
+    pub fn get_samples_limit(&self) -> usize {
+        self.samples.lock().unwrap().limit()
+    }
+
+    #[inline]
+    pub(crate) fn record(&self, sample: &Sample) {
+        let mut all_samples = self.samples.lock().unwrap();
+        all_samples.push_back(sample.clone());
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        self.enabled.load(AtomicOrdering::Relaxed)
+    }
+
+    pub fn instant<S>(&self, name: S, categories: CategoriesT)
+        where S: Into<StrCow>
+    {
+        if self.is_enabled() {
+            self.record(&Sample::new_instant(name, categories, None));
+        }
+    }
+
+    pub fn instant_payload<S, P>(&self, name: S, categories: CategoriesT, payload: P)
+        where S: Into<StrCow>, P: Into<TracePayloadT>
+    {
+        if self.is_enabled() {
+            self.record(&Sample::new_instant(name, categories, Some(payload.into())));
+        }
+    }
+
+    pub fn block<'a, S>(&'a self, name: S, categories: CategoriesT) -> SampleGuard<'a>
+        where S: Into<StrCow>
+    {
+        if !self.is_enabled() {
+            SampleGuard::new_disabled()
+        } else {
+            SampleGuard::new(&self, name, categories, None)
+        }
+    }
+
+    pub fn block_payload<'a, S, P>(&'a self, name: S, categories: CategoriesT, payload: P)
+                               -> SampleGuard<'a>
+        where S: Into<StrCow>, P: Into<TracePayloadT>
+    {
+        if !self.is_enabled() {
+            SampleGuard::new_disabled()
+        } else {
+            SampleGuard::new(&self, name, categories, Some(payload.into()))
+        }
+    }
+
+    pub fn closure<S, F, R>(&self, name: S, categories: CategoriesT, closure: F) -> R
+        where S: Into<StrCow>, F: FnOnce() -> R
+    {
+        let _closure_guard = self.block(name, categories);
+        let r = closure();
+        r
+    }
+
+    pub fn closure_payload<S, P, F, R>(&self, name: S, categories: CategoriesT,
+                                       closure: F, payload: P) -> R
+        where S: Into<StrCow>, P: Into<TracePayloadT>,
+              F: FnOnce() -> R
+    {
+        let _closure_guard = self.block_payload(name, categories, payload);
+        let r = closure();
+        r
+    }
+
+    pub fn samples_cloned_unsorted(&self) -> Vec<Sample> {
+        let all_samples = self.samples.lock().unwrap();
+        let mut as_vec = Vec::with_capacity(all_samples.len());
+        as_vec.extend(all_samples.iter().cloned());
+        as_vec
+    }
+
+    #[inline]
+    pub fn samples_cloned_sorted(&self) -> Vec<Sample> {
+        let mut samples = self.samples_cloned_unsorted();
+        samples.sort_unstable();
+        samples
+    }
 }
 
-lazy_static! { static ref TRACE : Trace = Trace::new(); }
+lazy_static! { static ref TRACE : Trace = Trace::disabled(); }
 
 /// Enable tracing with the default configuration.  See Config::default.
 /// Tracing is disabled initially on program launch.
+#[inline]
 pub fn enable_tracing() {
-    enable_tracing_with_config(&Config::default());
+    TRACE.enable();
 }
 
 /// Enable tracing with a specific configuration. Tracing is disabled initially
 /// on program launch.
-pub fn enable_tracing_with_config(config: &Config) {
-    let mut all_samples = TRACE.samples.lock().unwrap();
-    all_samples.reset_limit(config.max_samples());
-    TRACE.enabled.store(true, AtomicOrdering::Relaxed);
+#[inline]
+pub fn enable_tracing_with_config(config: Config) {
+    TRACE.enable_config(config);
 }
 
 /// Disable tracing.  This clears all trace data (& frees the memory).
+#[inline]
 pub fn disable_tracing() {
-    let mut all_samples = TRACE.samples.lock().unwrap();
-    all_samples.reset_limit(0);
+    TRACE.disable();
     SAMPLE_COUNTER.store(0, AtomicOrdering::Relaxed);
-    TRACE.enabled.store(false, AtomicOrdering::Relaxed);
 }
 
 /// Is tracing enabled.  Technically doesn't guarantee any samples will be
 /// stored as tracing could still be enabled but set with a limit of 0.
 #[inline]
-fn is_enabled() -> bool {
-    TRACE.enabled.load(AtomicOrdering::Relaxed)
+pub fn is_enabled() -> bool {
+    TRACE.is_enabled()
 }
 
 /// Create an instantaneous sample without any payload.  This is the lowest
@@ -302,13 +432,13 @@ fn is_enabled() -> bool {
 /// ```
 /// xi_trace::trace("something happened", &["rpc", "response"]);
 /// ```
+#[inline]
 pub fn trace<S>(name: S, categories: CategoriesT)
     where S: Into<StrCow>
 {
-    if is_enabled() {
-        record_sample(&Sample::new_instant(name, categories, None));
-    }
+    TRACE.instant(name, categories);
 }
+
 
 /// Create an instantaneous sample with a payload.  The type the payload
 /// conforms to is currently determined by the feature this library is compiled
@@ -345,13 +475,11 @@ pub fn trace<S>(name: S, categories: CategoriesT)
 /// ```
 /// xi_trace::trace_payload("something happened", &["rpc", "response"], json!({"key": "value"}));
 /// ```
+#[inline]
 pub fn trace_payload<S, P>(name: S, categories: CategoriesT, payload: P)
     where S: Into<StrCow>, P: Into<TracePayloadT>
 {
-    if is_enabled() {
-        record_sample(&Sample::new_instant(name, categories,
-                                           Some(payload.into())));
-    }
+    TRACE.instant_payload(name, categories, payload);
 }
 
 /// Creates a duration sample.  The sample is finalized (end_ns set) when the
@@ -392,29 +520,23 @@ pub fn trace_payload<S, P>(name: S, categories: CategoriesT, payload: P)
 ///     something_else_expensive();
 /// }
 /// ```
-pub fn trace_block<S>(name: S, categories: CategoriesT) -> SampleGuard
+#[inline]
+pub fn trace_block<'a, S>(name: S, categories: CategoriesT) -> SampleGuard<'a>
     where S: Into<StrCow>
 {
-    if !is_enabled() {
-        SampleGuard::new_disabled()
-    } else {
-        SampleGuard::new(name, categories, None)
-    }
+    TRACE.block(name, categories)
 }
+
 
 /// See `trace_block` for how the block works and `trace_payload` for a
 /// discussion on payload.
-pub fn trace_block_payload<S, P>(name: S, categories: CategoriesT, payload: P)
-    -> SampleGuard
+#[inline]
+pub fn trace_block_payload<'a, S, P>(name: S, categories: CategoriesT, payload: P)
+    -> SampleGuard<'a>
     where S: Into<StrCow>, P: Into<TracePayloadT>
 {
-    if !is_enabled() {
-        SampleGuard::new_disabled()
-    } else {
-        SampleGuard::new(name, categories, Some(payload.into()))
-    }
+    TRACE.block_payload(name, categories, payload)
 }
-
 
 /// Creates a duration sample that measures how long the closure took to execute.
 ///
@@ -451,25 +573,22 @@ pub fn trace_block_payload<S, P>(name: S, categories: CategoriesT, payload: P)
 ///     something_else_expensive(result);
 /// });
 /// ```
+#[inline]
 pub fn trace_closure<S, F, R>(name: S, categories: CategoriesT, closure: F) -> R
     where S: Into<StrCow>, F: FnOnce() -> R
 {
-    let _closure_guard = trace_block(name, categories);
-    let r = closure();
-    r
+    TRACE.closure(name, categories, closure)
 }
-
 
 /// See `trace_closure` for how the closure works and `trace_payload` for a
 /// discussion on payload.
+#[inline]
 pub fn trace_closure_payload<S, P, F, R>(name: S, categories: CategoriesT,
                                               closure: F, payload: P) -> R
     where S: Into<StrCow>, P: Into<TracePayloadT>,
           F: FnOnce() -> R
 {
-    let _closure_guard = trace_block_payload(name, categories, payload);
-    let r = closure();
-    r
+    TRACE.closure_payload(name, categories, closure, payload)
 }
 
 /// Returns all the samples collected so far.  There is no guarantee that the
@@ -481,27 +600,18 @@ pub fn trace_closure_payload<S, P, F, R>(name: S, categories: CategoriesT,
 /// 3. You may not care about them always being sorted if you're merging samples
 /// from multiple distributed sources (i.e. you want to sort the merged result
 /// rather than just this processe's samples).
+#[inline]
 pub fn samples_cloned_unsorted() -> Vec<Sample> {
-    let all_samples = TRACE.samples.lock().unwrap();
-    let mut as_vec = Vec::with_capacity(all_samples.len());
-    as_vec.extend(all_samples.iter().cloned());
-    as_vec
+    TRACE.samples_cloned_unsorted()
 }
 
 /// Returns all the samples collected so far ordered chronologically by
 /// creation.  Roughly corresponds to start_ns but instead there's a
 /// monotonically increasing single global integer (when tracing) per creation
 /// of Sample that determines order.
-pub fn samples_cloned_sorted() -> Vec<Sample> {
-    let mut samples = samples_cloned_unsorted();
-    samples.sort_unstable();
-    samples
-}
-
 #[inline]
-fn record_sample(sample: &Sample) {
-    let mut all_samples = TRACE.samples.lock().unwrap();
-    all_samples.push_back(sample.clone());
+pub fn samples_cloned_sorted() -> Vec<Sample> {
+    TRACE.samples_cloned_sorted()
 }
 
 #[cfg(test)]
@@ -511,8 +621,6 @@ mod tests {
     use test::Bencher;
     #[cfg(feature = "benchmarks")]
     use test::black_box;
-
-    lazy_static! { static ref TEST_MUTEX : Mutex<u32> = Mutex::new(0); }
 
     #[cfg(all(not(feature = "dict_payload"), not(feature = "json_payload")))]
     fn to_payload(value: &'static str) -> &'static str {
@@ -531,117 +639,94 @@ mod tests {
         json!({"test": value})
     }
 
-    fn get_samples_count() -> usize {
-        TRACE.samples.lock().unwrap().len()
-    }
-
-    fn get_samples_limit() -> usize {
-        TRACE.samples.lock().unwrap().limit()
-    }
-
     #[test]
     fn test_samples_pulse() {
-        let _test_mutex = TEST_MUTEX.lock().unwrap();
-
-        disable_tracing();
-        enable_tracing_with_config(&Config::with_limit_count(10));
+        let trace = Trace::enabled(Config::with_limit_count(10));
         for _i in 0..50 {
-            trace("test_samples_pulse", &["test"]);
+            trace.instant("test_samples_pulse", &["test"]);
         }
     }
 
     #[test]
     fn test_samples_block() {
-        let _test_mutex = TEST_MUTEX.lock().unwrap();
-
-        disable_tracing();
-        enable_tracing_with_config(&Config::with_limit_count(10));
+        let trace = Trace::enabled(Config::with_limit_count(10));
         for _i in 0..50 {
-            let _ = trace_block("test_samples_block", &["test"]);
+            let _ = trace.block("test_samples_block", &["test"]);
         }
     }
 
     #[test]
     fn test_samples_closure() {
-        let _test_mutex = TEST_MUTEX.lock().unwrap();
-
-        disable_tracing();
-        enable_tracing_with_config(&Config::with_limit_count(10));
+        let trace = Trace::enabled(Config::with_limit_count(10));
         for _i in 0..50 {
-            trace_closure("test_samples_closure", &["test"], || {});
+            trace.closure("test_samples_closure", &["test"], || {});
         }
     }
 
     #[test]
     fn test_disable_drops_all_samples() {
-        let _test_mutex = TEST_MUTEX.lock().unwrap();
-
-        disable_tracing();
-        enable_tracing_with_config(&Config::with_limit_count(10));
-        trace("1", &["test"]);
-        trace("2", &["test"]);
-        trace("3", &["test"]);
-        trace("4", &["test"]);
-        trace("5", &["test"]);
-        assert_eq!(get_samples_count(), 5);
-        assert_eq!(samples_cloned_unsorted().len(), 5);
-        disable_tracing();
-        assert_eq!(get_samples_count(), 0);
-        assert_eq!(samples_cloned_unsorted().len(), 0);
+        let trace = Trace::enabled(Config::with_limit_count(10));
+        assert_eq!(trace.is_enabled(), true);
+        trace.instant("1", &["test"]);
+        trace.instant("2", &["test"]);
+        trace.instant("3", &["test"]);
+        trace.instant("4", &["test"]);
+        trace.instant("5", &["test"]);
+        assert_eq!(trace.get_samples_count(), 5);
+        assert_eq!(trace.samples_cloned_unsorted().len(), 5);
+        trace.disable();
+        assert_eq!(trace.get_samples_count(), 0);
     }
 
     #[test]
     fn test_get_samples() {
-        let _test_mutex = TEST_MUTEX.lock().unwrap();
+        let trace = Trace::enabled(Config::with_limit_count(20));
+        assert_eq!(trace.samples_cloned_unsorted().len(), 0);
 
-        disable_tracing();
-        for i in 0..100 {
-            assert_eq!(samples_cloned_unsorted().len(), 0, "i = {}", i);
-        }
+        assert_eq!(trace.is_enabled(), true);
+        assert_eq!(trace.get_samples_limit(), 20);
+        assert_eq!(trace.samples_cloned_unsorted().len(), 0);
 
-        enable_tracing_with_config(&Config::with_limit_count(20));
-        assert_eq!(samples_cloned_unsorted().len(), 0);
-
-        for i in 0..100 {
-            assert_eq!(samples_cloned_unsorted().len(), 0, "i = {}", i);
-        }
-
-        assert_eq!(is_enabled(), true);
-        assert_eq!(get_samples_limit(), 20);
-        assert_eq!(samples_cloned_unsorted().len(), 0);
-
-        trace_closure_payload("x", &["test"], || {},
+        trace.closure_payload("x", &["test"], || (),
                               to_payload("test_get_samples"));
-        assert_eq!(samples_cloned_unsorted().len(), 1);
+        assert_eq!(trace.get_samples_count(), 1);
+        assert_eq!(trace.samples_cloned_unsorted().len(), 1);
 
-        trace_closure_payload("y", &["test"], || {},
+        trace.closure_payload("y", &["test"], || {},
                               to_payload("test_get_samples"));
-        assert_eq!(samples_cloned_unsorted().len(), 2);
+        assert_eq!(trace.samples_cloned_unsorted().len(), 2);
 
-        trace_closure_payload("z", &["test"], || {},
+        trace.closure_payload("z", &["test"], || {},
                               to_payload("test_get_samples"));
-        assert_eq!(samples_cloned_unsorted().len(), 3);
 
-        let snapshot = samples_cloned_unsorted();
+        let snapshot = trace.samples_cloned_unsorted();
         assert_eq!(snapshot.len(), 3);
-        assert_eq!(snapshot[0].sample_id, 0);
+
         assert_eq!(snapshot[0].name, "x");
-        assert_eq!(snapshot[1].sample_id, 1);
         assert_eq!(snapshot[1].name, "y");
-        assert_eq!(snapshot[2].sample_id, 2);
         assert_eq!(snapshot[2].name, "z");
     }
 
     #[test]
+    fn test_trace_disabled() {
+        let trace = Trace::disabled();
+        assert_eq!(trace.get_samples_limit(), 0);
+        assert_eq!(trace.get_samples_count(), 0);
+
+        {
+            trace.instant("something", &[]);
+            let _x = trace.block("something", &[]);
+            trace.closure("something", &[], || ());
+        }
+
+        assert_eq!(trace.get_samples_count(), 0);
+    }
+
+    #[test]
     fn test_get_samples_nested_trace() {
-        let _test_mutex = TEST_MUTEX.lock().unwrap();
-
-        disable_tracing();
-        assert_eq!(get_samples_limit(), 0);
-
-        enable_tracing_with_config(&Config::with_limit_count(11));
-        assert_eq!(is_enabled(), true);
-        assert_eq!(get_samples_limit(), 11);
+        let trace = Trace::enabled(Config::with_limit_count(11));
+        assert_eq!(trace.is_enabled(), true);
+        assert_eq!(trace.get_samples_limit(), 11);
 
         // current recording mechanism should see:
         // a, b, y, z, c, x
@@ -650,43 +735,29 @@ mod tests {
         // x, a, y, b, z, c
         // This might be an over-specified test as it will
         // probably change as the recording internals change.
-        trace_closure_payload("x", &["test"], || {
-            trace_payload("a", &["test"], to_payload("test_get_samples_nested_trace"));
-            trace_closure_payload("y", &["test"], || {
-                trace_payload("b", &["test"], to_payload("test_get_samples_nested_trace"));
+        trace.closure_payload("x", &["test"], || {
+            trace.instant_payload("a", &["test"], to_payload("test_get_samples_nested_trace"));
+            trace.closure_payload("y", &["test"], || {
+                trace.instant_payload("b", &["test"], to_payload("test_get_samples_nested_trace"));
             }, to_payload("test_get_samples_nested_trace"));
-            trace_block_payload("z", &["test"], to_payload("test_get_samples_nested_trace"));
-            trace_payload("c", &["test"], to_payload("test_get_samples_nested_trace"));
+            trace.block_payload("z", &["test"], to_payload("test_get_samples_nested_trace"));
+            trace.instant_payload("c", &["test"], to_payload("test_get_samples_nested_trace"));
         }, to_payload("test_get_samples_nested_trace"));
 
-        let snapshot = samples_cloned_unsorted();
+        let snapshot = trace.samples_cloned_unsorted();
         assert_eq!(snapshot.len(), 6);
 
-        assert_eq!(snapshot[0].sample_id, 1);
         assert_eq!(snapshot[0].name, "a");
-
-        assert_eq!(snapshot[1].sample_id, 3);
         assert_eq!(snapshot[1].name, "b");
-
-        assert_eq!(snapshot[2].sample_id, 2);
         assert_eq!(snapshot[2].name, "y");
-
-        assert_eq!(snapshot[3].sample_id, 4);
         assert_eq!(snapshot[3].name, "z");
-
-        assert_eq!(snapshot[4].sample_id, 5);
         assert_eq!(snapshot[4].name, "c");
-
-        assert_eq!(snapshot[5].sample_id, 0);
         assert_eq!(snapshot[5].name, "x");
     }
 
     #[test]
     fn test_get_sorted_samples() {
-        let _test_mutex = TEST_MUTEX.lock().unwrap();
-
-        disable_tracing();
-        enable_tracing_with_config(&Config::with_limit_count(10));
+        let trace = Trace::enabled(Config::with_limit_count(10));
 
         // current recording mechanism should see:
         // a, b, y, z, c, x
@@ -695,64 +766,46 @@ mod tests {
         // x, a, y, b, z, c
         // This might be an over-specified test as it will
         // probably change as the recording internals change.
-        trace_closure_payload("x", &["test"], || {
-            trace_payload("a", &["test"], to_payload("test_get_sorted_samples"));
-            trace_closure_payload("y", &["test"], || {
-                trace_payload("b", &["test"], to_payload("test_get_sorted_samples"));
+        trace.closure_payload("x", &["test"], || {
+            trace.instant_payload("a", &["test"], to_payload("test_get_sorted_samples"));
+            trace.closure_payload("y", &["test"], || {
+                trace.instant_payload("b", &["test"], to_payload("test_get_sorted_samples"));
             }, to_payload("test_get_sorted_samples"));
-            trace_block_payload("z", &["test"], to_payload("test_get_sorted_samples"));
-            trace("c", &["test"]);
+            trace.block_payload("z", &["test"], to_payload("test_get_sorted_samples"));
+            trace.instant("c", &["test"]);
         }, to_payload("test_get_sorted_samples"));
 
-        let snapshot = samples_cloned_sorted();
+        let snapshot = trace.samples_cloned_sorted();
         assert_eq!(snapshot.len(), 6);
 
-        assert_eq!(snapshot[0].sample_id, 0);
         assert_eq!(snapshot[0].name, "x");
-
-        assert_eq!(snapshot[1].sample_id, 1);
         assert_eq!(snapshot[1].name, "a");
-
-        assert_eq!(snapshot[2].sample_id, 2);
         assert_eq!(snapshot[2].name, "y");
-
-        assert_eq!(snapshot[3].sample_id, 3);
         assert_eq!(snapshot[3].name, "b");
-
-        assert_eq!(snapshot[4].sample_id, 4);
         assert_eq!(snapshot[4].name, "z");
-
-        assert_eq!(snapshot[5].sample_id, 5);
         assert_eq!(snapshot[5].name, "c");
     }
 
     #[cfg(feature = "benchmarks")]
     #[bench]
     fn bench_trace_instant_disabled(b: &mut Bencher) {
-        let _test_mutex = TEST_MUTEX.lock().unwrap();
+        let trace = Trace::disabled();
 
-        disable_tracing();
-        b.iter(|| black_box(trace("nothing", &["benchmark"])));
+        b.iter(|| black_box(trace.instant("nothing", &["benchmark"])));
     }
 
     #[cfg(feature = "benchmarks")]
     #[bench]
     fn bench_trace_instant(b: &mut Bencher) {
-        let _test_mutex = TEST_MUTEX.lock().unwrap();
-
-        disable_tracing();
-        enable_tracing_with_config(&Config::with_limit_count(500));
-        b.iter(|| black_box(trace("something", &["benchmark"])));
+        let trace = Trace::enabled(Config::default());
+        b.iter(|| black_box(trace.instant("something", &["benchmark"])));
     }
 
     #[cfg(feature = "benchmarks")]
     #[bench]
     fn bench_trace_instant_with_payload(b: &mut Bencher) {
-        let _test_mutex = TEST_MUTEX.lock().unwrap();
-
-        disable_tracing();
-        enable_tracing_with_config(&Config::with_limit_count(500));
-        b.iter(|| black_box(trace_payload(
+        let trace = Trace::enabled(Config::default());
+        b.iter(|| black_box(trace.instant_payload(
             "something", &["benchmark"],
             to_payload("some description of the trace"))));
     }
@@ -760,32 +813,24 @@ mod tests {
     #[cfg(feature = "benchmarks")]
     #[bench]
     fn bench_trace_block_disabled(b: &mut Bencher) {
-        let _test_mutex = TEST_MUTEX.lock().unwrap();
-
-        disable_tracing();
-        b.iter(|| black_box(trace_block("something", &["benchmark"])));
+        let trace = Trace::disabled();
+        b.iter(|| black_box(trace.block("something", &["benchmark"])));
     }
 
     #[cfg(feature = "benchmarks")]
     #[bench]
     fn bench_trace_block(b: &mut Bencher) {
-        let _test_mutex = TEST_MUTEX.lock().unwrap();
-
-        disable_tracing();
-        enable_tracing_with_config(&Config::with_limit_count(500));
-        b.iter(|| black_box(trace_block("something", &["benchmark"])));
+        let trace = Trace::enabled(Config::default());
+        b.iter(|| black_box(trace.block("something", &["benchmark"])));
     }
 
 
     #[cfg(feature = "benchmarks")]
     #[bench]
     fn bench_trace_block_payload(b: &mut Bencher) {
-        let _test_mutex = TEST_MUTEX.lock().unwrap();
-
-        disable_tracing();
-        enable_tracing_with_config(&Config::with_limit_count(500));
+        let trace = Trace::enabled(Config::default());
         b.iter(|| {
-            black_box(trace_block_payload(
+            black_box(trace.block_payload(
                     "something", &["benchmark"],
                     to_payload(("some payload for the block"))));
         });
@@ -794,30 +839,23 @@ mod tests {
     #[cfg(feature = "benchmarks")]
     #[bench]
     fn bench_trace_closure_disabled(b: &mut Bencher) {
-        let _test_mutex = TEST_MUTEX.lock().unwrap();
+        let trace = Trace::disabled();
 
-        disable_tracing();
-        b.iter(|| black_box(trace_closure("something", &["benchmark"], || {})));
+        b.iter(|| black_box(trace.closure("something", &["benchmark"], || {})));
     }
 
     #[cfg(feature = "benchmarks")]
     #[bench]
     fn bench_trace_closure(b: &mut Bencher) {
-        let _test_mutex = TEST_MUTEX.lock().unwrap();
-
-        disable_tracing();
-        enable_tracing_with_config(&Config::with_limit_count(500));
-        b.iter(|| black_box(trace_closure("something", &["benchmark"], || {})));
+        let trace = Trace::enabled(Config::default());
+        b.iter(|| black_box(trace.closure("something", &["benchmark"], || {})));
     }
 
     #[cfg(feature = "benchmarks")]
     #[bench]
     fn bench_trace_closure_payload(b: &mut Bencher) {
-        let _test_mutex = TEST_MUTEX.lock().unwrap();
-
-        disable_tracing();
-        enable_tracing_with_config(&Config::with_limit_count(500));
-        b.iter(|| black_box(trace_closure_payload(
+        let trace = Trace::enabled(Config::default());
+        b.iter(|| black_box(trace.closure_payload(
                     "something", &["benchmark"], || {},
                     to_payload(("some description of the closure")))));
     }
@@ -826,8 +864,6 @@ mod tests {
     #[cfg(feature = "benchmarks")]
     #[bench]
     fn bench_single_timestamp(b: &mut Bencher) {
-        let _test_mutex = TEST_MUTEX.lock().unwrap();
-
         b.iter(|| black_box(time::precise_time_ns()));
     }
 
@@ -836,8 +872,6 @@ mod tests {
     #[cfg(feature = "benchmarks")]
     #[bench]
     fn bench_two_timestamps(b: &mut Bencher) {
-        let _test_mutex = TEST_MUTEX.lock().unwrap();
-
         b.iter(|| {
             black_box(time::precise_time_ns());
             black_box(time::precise_time_ns());
