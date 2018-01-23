@@ -22,6 +22,7 @@ extern crate serde_derive;
 extern crate time;
 extern crate syntect;
 extern crate toml;
+#[cfg(feature = "notify")]
 extern crate notify;
 
 #[cfg(feature = "ledger")]
@@ -62,6 +63,7 @@ pub mod internal {
     pub mod syntax;
     pub mod layers;
     pub mod config;
+    #[cfg(feature = "notify")]
     pub mod watcher;
     pub mod line_cache_shadow;
 }
@@ -85,6 +87,7 @@ use internal::movement;
 use internal::syntax;
 use internal::layers;
 use internal::config;
+#[cfg(feature = "notify")]
 use internal::watcher;
 use internal::line_cache_shadow;
 #[cfg(feature = "ledger")]

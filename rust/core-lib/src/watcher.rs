@@ -22,9 +22,6 @@ use std::collections::VecDeque;
 
 use xi_rpc::RpcPeer;
 
-/// xi_rpc idle Token for watcher related idle scheduling.
-pub const WATCH_IDLE_TOKEN: usize = 1002;
-
 /// Delay for aggregating related file system events.
 pub const DEBOUNCE_WAIT_MILLIS: u64 = 50;
 
@@ -75,7 +72,7 @@ impl FsWatcher {
                     Ok(event) =>  {
                         if apply_filter(&predicate, &event) {
                             events.lock().unwrap().push_back((token, event));
-                            peer.schedule_idle(WATCH_IDLE_TOKEN);
+                            peer.schedule_idle(::tabs::WATCH_IDLE_TOKEN);
                         }
                     },
                     Err(e) => {
