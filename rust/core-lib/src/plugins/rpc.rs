@@ -63,7 +63,14 @@ pub struct ClientPluginInfo {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PluginUpdate {
     pub view_id: ViewIdentifier,
-    pub delta: RopeDelta,
+    /// The delta representing changes to the document.
+    ///
+    /// Note: Is `Some` in the general case; only if the delta involves
+    /// inserting more than some maximum number of bytes, will this be `None`,
+    /// indicating the plugin should flush cache and fetch manually.
+    pub delta: Option<RopeDelta>,
+    /// The size of the document after applying this delta.
+    pub new_len: usize,
     pub rev: u64,
     pub edit_type: String,
     pub author: String,
@@ -209,15 +216,12 @@ impl PluginBufferInfo {
 }
 
 impl PluginUpdate {
-    pub fn new(view_id: ViewIdentifier, rev: u64, delta: RopeDelta,
-               edit_type: String, author: String) -> Self {
-        PluginUpdate {
-            view_id: view_id,
-            delta: delta,
-            rev: rev,
-            edit_type: edit_type,
-            author: author
-        }
+    pub fn new<D>(view_id: ViewIdentifier, rev: u64, delta: D, new_len: usize,
+                  edit_type: String, author: String) -> Self
+        where D: Into<Option<RopeDelta>>
+    {
+        let delta = delta.into();
+        PluginUpdate { view_id, delta, new_len, rev, edit_type, author }
     }
 }
 
@@ -231,6 +235,7 @@ mod tests {
         let json = r#"{
             "view_id": "view-id-42",
             "delta": {"base_len": 6, "els": [{"copy": [0,5]}, {"insert":"rofls"}]},
+            "new_len": 404,
             "rev": 5,
             "edit_type": "something",
             "author": "me"
@@ -240,7 +245,8 @@ mod tests {
         Ok(val) => val,
         Err(err) => panic!("{:?}", err),
     };
-    assert!(val.delta.as_simple_insert().is_some());
+    assert!(val.delta.is_some());
+    assert!(val.delta.unwrap().as_simple_insert().is_some());
     }
 
     #[test]

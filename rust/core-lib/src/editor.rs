@@ -361,6 +361,11 @@ impl Editor {
         self.increment_revs_in_flight();
 
         {
+            let new_len = delta.new_document_len();
+            let delta = match delta.inserts_len() > MAX_SIZE_LIMIT {
+                true => None,
+                false => Some(delta),
+            };
             let author = match author {
                 Some(s) => s.to_owned(),
                 None => self.view.view_id.to_string(),
@@ -370,6 +375,7 @@ impl Editor {
                 self.view.view_id,
                 self.engine.get_head_rev_id().token(),
                 delta,
+                new_len,
                 self.this_edit_type.json_string().to_owned(),
                 author.to_owned());
 

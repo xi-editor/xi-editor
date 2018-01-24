@@ -39,8 +39,8 @@ pub trait Plugin {
     type State: Default + Clone;
 
     fn initialize(&mut self, ctx: PluginCtx<Self::State>, buf_size: usize);
-    fn update(&mut self, ctx: PluginCtx<Self::State>, rev: usize, delta: RopeDelta)
-              -> Option<Value>;
+    fn update(&mut self, ctx: PluginCtx<Self::State>, rev: usize,
+              delta: Option<RopeDelta>) -> Option<Value>;
     fn did_save(&mut self, ctx: PluginCtx<Self::State>);
     #[allow(unused_variables)]
     fn idle(&mut self, ctx: PluginCtx<Self::State>, token: usize) {}
@@ -181,12 +181,16 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
     fn do_update<P>(mut self, update: plugin_rpc::PluginUpdate, handler: &mut P) -> Value
         where P: Plugin<State = S>
     {
-        let plugin_rpc::PluginUpdate { delta, rev, .. } = update;
-        self.state.buf_size = delta.new_document_len();
+        let plugin_rpc::PluginUpdate { delta, new_len, rev, .. } = update;
+        self.state.buf_size = new_len;
         self.state.rev = rev;
-
-        self.update_line_cache(&delta);
-        self.update_chunk(&delta);
+        if let Some(ref delta) = delta {
+            self.update_line_cache(delta);
+            self.update_chunk(delta);
+        } else {
+            // if there's no delta (very large insert) we blow away everything
+            self.clear_to_start(0);
+        }
 
         handler.update(self, rev as usize, delta)
             .unwrap_or(Value::from(0i32))

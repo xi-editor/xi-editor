@@ -276,14 +276,16 @@ impl<'a> state_cache::Plugin for PluginState<'a> {
     }
 
     fn update(&mut self, mut ctx: PluginCtx<State>, rev: usize,
-              delta: RopeDelta) -> Option<Value> {
+              delta: Option<RopeDelta>) -> Option<Value> {
         ctx.schedule_idle(0);
         let should_auto_indent = ctx.get_config().auto_indent;
         if should_auto_indent {
-            let (iv, _) = delta.summary();
-            if let Some(n) = delta.as_simple_insert() {
-                let s: String = n.into();
-                return self.do_indentation(&mut ctx, iv.start(), iv.end(), rev, &s)
+            if let Some(delta) = delta {
+                let (iv, _) = delta.summary();
+                if let Some(s) = delta.as_simple_insert() {
+                    let s: String = s.into();
+                    return self.do_indentation(&mut ctx, iv.start(), iv.end(), rev, &s)
+                }
             }
         }
         None

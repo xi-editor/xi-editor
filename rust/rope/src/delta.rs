@@ -264,6 +264,17 @@ impl<N: NodeInfo> Delta<N> {
         )
     }
 
+    /// Returns the sum length of the inserts of the delta.
+    pub fn inserts_len(&self) -> usize {
+        self.els.as_slice().iter()
+            .fold(0, |sum, el|
+                  sum + match *el {
+                      DeltaElement::Copy(_, _) => 0,
+                      DeltaElement::Insert(ref s) => s.len(),
+                  }
+            )
+    }
+
     /// Iterates over all the inserts of the delta.
     pub fn iter_inserts(&self) -> InsertsIter<N> {
         InsertsIter {
