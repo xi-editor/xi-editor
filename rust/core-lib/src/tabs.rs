@@ -691,8 +691,7 @@ impl Documents {
         }
     }
 
-    /// Sets (overwriting) the config for a given domain. Will fail if the config
-    /// fails validation.
+    /// Sets (overwriting) the config for a given domain.
     fn set_config<P>(&mut self, peer: &MainPeer, domain: ConfigDomain,
                      table: Table, path: P)
         where P: Into<Option<PathBuf>>
