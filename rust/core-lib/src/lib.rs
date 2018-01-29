@@ -19,6 +19,8 @@ extern crate serde;
 extern crate serde_json;
 #[macro_use]
 extern crate serde_derive;
+#[macro_use]
+extern crate lazy_static;
 extern crate time;
 extern crate syntect;
 extern crate toml;
@@ -145,7 +147,7 @@ impl Handler for MainState {
         self.tabs.handle_request(rpc, ctx)
     }
 
-    fn idle(&mut self, _ctx: &RpcCtx, token: usize) {
-        self.tabs.handle_idle(token);
+    fn idle(&mut self, ctx: &RpcCtx, token: usize) {
+        self.tabs.handle_idle(ctx, token);
     }
 }
