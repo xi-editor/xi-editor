@@ -349,10 +349,10 @@ impl Editor {
         self.scroll_to = self.view.after_edit(&self.text, &last_text, &delta, is_pristine);
         let (iv, new_len) = delta.summary();
 
-        // TODO: maybe more precise editing based on actual delta rather than summary.
-        // TODO: perhaps use different semantics for spans that enclose the edited region.
-        // Currently it breaks any such span in half and applies no spans to the inserted
-        // text. That's ok for syntax highlighting but not ideal for rich text.
+        // TODO: perhaps use different semantics for spans that enclose the
+        // edited region. Currently it breaks any such span in half and applies
+        // no spans to the inserted text. That's ok for syntax highlighting but
+        // not ideal for rich text.
         self.styles.update_all(iv, new_len);
 
         // We increment revs in flight once here, and we decrement once
@@ -362,7 +362,8 @@ impl Editor {
 
         {
             let new_len = delta.new_document_len();
-            let delta = match delta.inserts_len() > MAX_SIZE_LIMIT {
+            let approx_delta_size = delta.inserts_len() + (delta.els.len() * 10);
+            let delta = match approx_delta_size > MAX_SIZE_LIMIT {
                 true => None,
                 false => Some(delta),
             };

@@ -188,7 +188,7 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
             self.update_line_cache(delta);
             self.update_chunk(delta);
         } else {
-            // if there's no delta (very large insert) we blow away everything
+            // if there's no delta (very large edit) we blow away everything
             self.clear_to_start(0);
         }
 
