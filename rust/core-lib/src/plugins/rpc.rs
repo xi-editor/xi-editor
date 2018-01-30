@@ -20,6 +20,7 @@ use serde::de::{self, Deserialize, Deserializer};
 use serde::ser::{self, Serialize, Serializer};
 use serde_json::{self, Value};
 
+use xi_rope::rope::RopeDelta;
 use super::PluginPid;
 use syntax::SyntaxDefinition;
 use tabs::{BufferIdentifier, ViewIdentifier};
@@ -62,11 +63,14 @@ pub struct ClientPluginInfo {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PluginUpdate {
     pub view_id: ViewIdentifier,
-    pub start: usize,
-    pub end: usize,
+    /// The delta representing changes to the document.
+    ///
+    /// Note: Is `Some` in the general case; only if the delta involves
+    /// inserting more than some maximum number of bytes, will this be `None`,
+    /// indicating the plugin should flush cache and fetch manually.
+    pub delta: Option<RopeDelta>,
+    /// The size of the document after applying this delta.
     pub new_len: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub text: Option<String>,
     pub rev: u64,
     pub edit_type: String,
     pub author: String,
@@ -115,13 +119,10 @@ pub enum HostNotification {
 
 
 /// A simple edit, received from a plugin.
-//TODO: use a real delta here
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PluginEdit {
-    pub start: u64,
-    pub end: u64,
     pub rev: u64,
-    pub text: String,
+    pub delta: RopeDelta,
     /// the edit priority determines the resolution strategy when merging
     /// concurrent edits. The highest priority edit will be applied last.
     pub priority: u64,
@@ -215,19 +216,12 @@ impl PluginBufferInfo {
 }
 
 impl PluginUpdate {
-    pub fn new(view_id: ViewIdentifier, start: usize, end: usize,
-               new_len: usize, rev: u64, text: Option<String>,
-               edit_type: String, author: String) -> Self {
-        PluginUpdate {
-            view_id: view_id,
-            start: start,
-            end: end,
-            new_len: new_len,
-            text: text,
-            rev: rev,
-            edit_type: edit_type,
-            author: author
-        }
+    pub fn new<D>(view_id: ViewIdentifier, rev: u64, delta: D, new_len: usize,
+                  edit_type: String, author: String) -> Self
+        where D: Into<Option<RopeDelta>>
+    {
+        let delta = delta.into();
+        PluginUpdate { view_id, delta, new_len, rev, edit_type, author }
     }
 }
 
@@ -240,9 +234,8 @@ mod tests {
     fn test_plugin_update() {
         let json = r#"{
             "view_id": "view-id-42",
-            "start": 1,
-            "end": 5,
-            "new_len": 2,
+            "delta": {"base_len": 6, "els": [{"copy": [0,5]}, {"insert":"rofls"}]},
+            "new_len": 404,
             "rev": 5,
             "edit_type": "something",
             "author": "me"
@@ -252,8 +245,8 @@ mod tests {
         Ok(val) => val,
         Err(err) => panic!("{:?}", err),
     };
-    assert!(val.text.is_none());
-    assert_eq!(val.start, 1);
+    assert!(val.delta.is_some());
+    assert!(val.delta.unwrap().as_simple_insert().is_some());
     }
 
     #[test]

@@ -23,11 +23,12 @@ use std::fmt;
 use std::str;
 
 use tree::{Leaf, Node, NodeInfo, Metric, TreeBuilder, Cursor};
+use delta::{Delta, DeltaElement};
 use interval::Interval;
 
 use bytecount;
 use memchr::memchr;
-use serde::ser::{Serialize, Serializer};
+use serde::ser::{Serialize, Serializer, SerializeStruct, SerializeTupleVariant};
 use serde::de::{Deserialize, Deserializer};
 
 const MIN_LEAF: usize = 511;
@@ -37,6 +38,12 @@ const MAX_LEAF: usize = 1024;
 /// `String` as the leaf type. The base metric counts UTF-8 code units
 /// (bytes) and has boundaries at code points.
 pub type Rope = Node<RopeInfo>;
+
+/// Represents a transform from one rope to another.
+pub type RopeDelta = Delta<RopeInfo>;
+
+/// An element in a `RopeDelta`.
+pub type RopeDeltaElement = DeltaElement<RopeInfo>;
 
 impl Leaf for String {
     fn len(&self) -> usize {
@@ -245,6 +252,80 @@ impl<'de> Deserialize<'de> for Rope {
     {
         let s = String::deserialize(deserializer)?;
         Ok(Rope::from(s))
+    }
+}
+
+impl Serialize for DeltaElement<RopeInfo> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where S: Serializer
+    {
+        match *self {
+            DeltaElement::Copy(ref start, ref end) => {
+                let mut el = serializer.serialize_tuple_variant("DeltaElement",
+                                                                0, "copy", 2)?;
+                el.serialize_field(start)?;
+                el.serialize_field(end)?;
+                el.end()
+            }
+            DeltaElement::Insert(ref node) =>
+                serializer.serialize_newtype_variant("DeltaElement", 1,
+                                                     "insert", node)
+        }
+    }
+}
+
+impl Serialize for Delta<RopeInfo> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where S: Serializer
+    {
+        let mut delta = serializer.serialize_struct("Delta", 2)?;
+        delta.serialize_field("els", &self.els)?;
+        delta.serialize_field("base_len", &self.base_len)?;
+        delta.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Delta<RopeInfo> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where D: Deserializer<'de>,
+    {
+        // NOTE: we derive to an interim representation and then convert
+        // that into our actual target.
+        #[derive(Serialize, Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        enum RopeDeltaElement_ {
+            Copy(usize, usize),
+            Insert(String),
+        }
+
+        #[derive(Serialize, Deserialize)]
+        struct RopeDelta_ {
+            els: Vec<RopeDeltaElement_>,
+            base_len: usize
+        }
+
+        impl From<RopeDeltaElement_> for DeltaElement<RopeInfo> {
+            fn from(elem: RopeDeltaElement_) -> DeltaElement<RopeInfo> {
+                match elem {
+                    RopeDeltaElement_::Copy(start, end) =>
+                        DeltaElement::Copy(start, end),
+                    RopeDeltaElement_::Insert(s) =>
+                        DeltaElement::Insert(Rope::from(s)),
+                }
+            }
+        }
+
+        impl From<RopeDelta_> for Delta<RopeInfo> {
+            fn from(mut delta: RopeDelta_) -> Delta<RopeInfo> {
+                Delta {
+                    els: delta.els.drain(..)
+                        .map(DeltaElement::from).collect(),
+                    base_len: delta.base_len
+                }
+            }
+        }
+        let d = RopeDelta_::deserialize(deserializer)?;
+        Ok(Delta::from(d))
     }
 }
 

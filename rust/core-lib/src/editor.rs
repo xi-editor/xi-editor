@@ -317,22 +317,16 @@ impl Editor {
         }
     }
 
-    //TODO: plugin edits should be represented by real Deltas.
     /// generates a delta from a plugin's response and applies it to the buffer.
-    pub fn apply_plugin_edit(&mut self, edit: &PluginEdit, undo_group: Option<usize>) {
-        let interval = Interval::new_closed_open(edit.start as usize, edit.end as usize);
-        let text = Rope::from(&edit.text);
-        let rev_len = self.engine.get_rev(edit.rev).unwrap().len();
-        let delta = Delta::simple_edit(interval, text, rev_len);
-
+    pub fn apply_plugin_edit(&mut self, edit: PluginEdit, undo_group: Option<usize>) {
         if let Some(undo_group) = undo_group {
             // non-async edits modify their associated revision
             //TODO: get priority working, so that plugin edits don't necessarily move cursor
-            self.engine.edit_rev(edit.priority as usize, undo_group, edit.rev, delta);
+            self.engine.edit_rev(edit.priority as usize, undo_group, edit.rev, edit.delta);
             self.text = self.engine.get_head().clone();
         }
         else {
-            self.add_delta(delta);
+            self.add_delta(edit.delta);
         }
 
         self.commit_delta(Some(&edit.author));
@@ -355,10 +349,10 @@ impl Editor {
         self.scroll_to = self.view.after_edit(&self.text, &last_text, &delta, is_pristine);
         let (iv, new_len) = delta.summary();
 
-        // TODO: maybe more precise editing based on actual delta rather than summary.
-        // TODO: perhaps use different semantics for spans that enclose the edited region.
-        // Currently it breaks any such span in half and applies no spans to the inserted
-        // text. That's ok for syntax highlighting but not ideal for rich text.
+        // TODO: perhaps use different semantics for spans that enclose the
+        // edited region. Currently it breaks any such span in half and applies
+        // no spans to the inserted text. That's ok for syntax highlighting but
+        // not ideal for rich text.
         self.styles.update_all(iv, new_len);
 
         // We increment revs in flight once here, and we decrement once
@@ -367,19 +361,22 @@ impl Editor {
         self.increment_revs_in_flight();
 
         {
+            let new_len = delta.new_document_len();
+            let approx_delta_size = delta.inserts_len() + (delta.els.len() * 10);
+            let delta = match approx_delta_size > MAX_SIZE_LIMIT {
+                true => None,
+                false => Some(delta),
+            };
             let author = match author {
                 Some(s) => s.to_owned(),
                 None => self.view.view_id.to_string(),
             };
-                let text = match new_len < MAX_SIZE_LIMIT {
-                true => Some(self.text.slice_to_string(iv.start(), iv.start() + new_len)),
-                false => None
-            };
 
             let update = PluginUpdate::new(
                 self.view.view_id,
-                iv.start(), iv.end(), new_len,
-                self.engine.get_head_rev_id().token(), text,
+                self.engine.get_head_rev_id().token(),
+                delta,
+                new_len,
                 self.this_edit_type.json_string().to_owned(),
                 author.to_owned());
 
@@ -1046,7 +1043,7 @@ impl Editor {
     // deal with asynchrony or be efficient.
 
     /// Applies an async edit from a plugin.
-    pub fn plugin_edit(&mut self, edit: &PluginEdit) {
+    pub fn plugin_edit_async(&mut self, edit: PluginEdit) {
         self.this_edit_type = EditType::Other;
         self.apply_plugin_edit(edit, None)
     }
