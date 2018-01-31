@@ -109,6 +109,17 @@ impl<'a, P: Plugin> plugin_base::Handler for CacheHandler<'a, P> {
             does not support global plugins"),
             //TODO: figure out shutdown
             Shutdown( .. ) => (),
+            TracingConfig {enabled} => {
+                use xi_trace;
+
+                if enabled {
+                    eprintln!("Enabling tracing in {:?}", ctx.state.plugin_id);
+                    xi_trace::enable_tracing();
+                } else {
+                    eprintln!("Disabling tracing in {:?}",  ctx.state.plugin_id);
+                    xi_trace::disable_tracing();
+                }
+            }
         }
     }
 
@@ -122,6 +133,20 @@ impl<'a, P: Plugin> plugin_base::Handler for CacheHandler<'a, P> {
         };
         match rpc {
             Update(params) => Ok(ctx.do_update(params, self.handler)),
+            CollectTrace( .. ) => {
+                use xi_trace;
+                use xi_trace_dump::*;
+
+                let samples = xi_trace::samples_cloned_unsorted();
+                let serialized_result = chrome_trace::to_value(
+                    &samples, chrome_trace::OutputFormat::JsonArray);
+                let serialized = serialized_result.map_err(|e| RemoteError::Custom {
+                    code: 0,
+                    message: format!("{:?}", e),
+                    data: None
+                })?;
+                Ok(serialized)
+            }
         }
     }
 

@@ -30,6 +30,7 @@ use notify::{RecursiveMode, DebouncedEvent};
 
 use xi_rope::rope::Rope;
 use xi_rpc::{RpcCtx, RemoteError};
+use xi_trace;
 
 use editor::Editor;
 
@@ -94,6 +95,7 @@ pub struct BufferContainerRef(Arc<Mutex<BufferContainer>>);
 ///
 /// [BufferContainer]: struct.BufferContainer.html
 pub struct WeakBufferContainerRef(Weak<Mutex<BufferContainer>>);
+
 
 /// A container for all open documents.
 ///
@@ -324,6 +326,55 @@ impl Documents {
         BufferIdentifier(self.id_counter)
     }
 
+    fn toggle_tracing(&self, enabled: bool) {
+        if enabled {
+            eprintln!("Enabling tracing in core");
+            xi_trace::enable_tracing();
+        } else {
+            eprintln!("Disabling tracing in core");
+            xi_trace::disable_tracing();
+        }
+
+        self.plugins.toggle_tracing(enabled);
+    }
+
+    fn save_trace<P: AsRef<Path>>(&self, destination: P, frontend_samples: &Value) {
+        use xi_trace_dump::*;
+
+        let mut frontend_trace = chrome_trace::decode(frontend_samples)
+            .unwrap_or(Vec::with_capacity(0));
+
+        let plugin_traces_json = self.plugins.collect_trace();
+        let mut all_plugin_traces = plugin_traces_json.iter().filter_map(|trace_result| {
+            trace_result.as_ref().ok().map(|trace_json| {
+                chrome_trace::decode(trace_json).unwrap_or(Vec::with_capacity(0))
+            })
+        });
+
+        eprintln!("Saving trace to {:?}", destination.as_ref());
+
+        let trace_file_result = File::create(destination.as_ref());
+        if trace_file_result.is_err() {
+            eprintln!("Failed to create file: {:?}", trace_file_result.unwrap_err());
+            return;
+        }
+        let mut trace_file = trace_file_result.unwrap();
+
+        let mut samples = xi_trace::samples_cloned_unsorted();
+        for mut plugin_traces in &mut all_plugin_traces {
+            samples.append(&mut plugin_traces);
+        }
+        samples.append(&mut frontend_trace);
+        samples.sort_unstable();
+        let serialize_result = chrome_trace::serialize(
+            &samples, chrome_trace::OutputFormat::JsonArray,
+            &mut trace_file);
+        if serialize_result.is_err() {
+            eprintln!("Failed to serialize samples: {:?}", serialize_result.unwrap_err());
+            return;
+        }
+    }
+
     pub fn handle_notification(&mut self, cmd: rpc::CoreNotification,
                                rpc_ctx: &RpcCtx) {
         use rpc::CoreNotification::*;
@@ -341,7 +392,9 @@ impl Documents {
                 }
             Plugin(cmd) => self.do_plugin_cmd(cmd),
             ModifyUserConfig { domain, changes } =>
-                self.do_modify_user_config(rpc_ctx.get_peer(), domain, changes)
+                self.do_modify_user_config(rpc_ctx.get_peer(), domain, changes),
+            TracingConfig {enabled} => self.toggle_tracing(enabled),
+            SaveTrace { destination, frontend_samples } => self.save_trace(&destination, &frontend_samples),
         }
     }
 
@@ -374,7 +427,7 @@ impl Documents {
                     let msg = format!("No editor for view_id: {}", view_id);
                     RemoteError::custom(2, msg, None)
                 })
-            }
+            },
         }
     }
 

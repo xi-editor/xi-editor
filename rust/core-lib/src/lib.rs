@@ -27,6 +27,9 @@ extern crate toml;
 #[cfg(feature = "notify")]
 extern crate notify;
 
+extern crate xi_trace;
+extern crate xi_trace_dump;
+
 #[cfg(feature = "ledger")]
 mod ledger_includes {
     extern crate fuchsia_zircon;

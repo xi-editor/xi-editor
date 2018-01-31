@@ -19,7 +19,6 @@
 //!
 //! [Serde]: https://serde.rs
 
-
 use std::path::PathBuf;
 
 use serde_json::{self, Value};
@@ -198,6 +197,13 @@ pub enum CoreNotification {
     /// represents non-persistent view-specific settings, such as when
     /// a user manually changes whitespace settings for a given view.
     ModifyUserConfig { domain: ConfigDomain, changes: Table },
+    /// Control whether the tracing infrastructure is enabled.
+    /// This propagates to all peers that should respond by toggling its own
+    /// infrastructure on/off.
+    TracingConfig {enabled: bool},
+    /// Save trace data to the given path.  The core will first send
+    /// CoreRequest::CollectTrace to all peers to collect the samples.
+    SaveTrace { destination: PathBuf, frontend_samples: Value }
 }
 
 /// The requests which make up the base of the protocol.

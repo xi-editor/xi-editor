@@ -13,6 +13,13 @@ serde_derive = "1.0"
 bytecount = "0.3.1"
 rand = "0.4"
 
+[dependencies.xi-trace]
+path = "../trace"
+
+
+[dependencies.xi-trace-dump]
+path = "../trace-dump"
+
 [dependencies.xi-rpc]
 path = "../rpc"
 

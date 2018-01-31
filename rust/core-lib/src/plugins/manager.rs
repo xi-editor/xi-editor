@@ -14,7 +14,7 @@
 
 //! `PluginManager` handles launching, monitoring, and communicating with plugins.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, Weak, MutexGuard};
@@ -25,6 +25,7 @@ use std::fmt::Debug;
 use serde::Serialize;
 use serde_json::{self, Value};
 
+use xi_rpc;
 use xi_rpc::{RpcCtx, Handler, RemoteError};
 
 use tabs::{BufferIdentifier, ViewIdentifier, BufferContainerRef};
@@ -143,6 +144,29 @@ impl PluginManager {
                 }
             }
         }
+    }
+
+    // NOTE: This is a temporary API just for tracing.
+    fn request_trace_rpc_sync(&self, method: &str, params: &Value)
+        -> Vec<Result<Value, xi_rpc::Error>>
+    {
+        let mut gathered_results = Vec::new();
+
+        for plugin in self.global_plugins.values() {
+            let result = plugin.request_trace_rpc_sync(method, &params);
+            gathered_results.push(result);
+        }
+
+        let mut processed_plugins = HashSet::new();
+
+        for plugin in self.buffer_plugins.values().flat_map(|group| group.values()) {
+            // currently each buffer must have its own instance of a given plugin running.
+            assert!(processed_plugins.insert(plugin.get_identifier()));
+            let result = plugin.request_trace_rpc_sync(method, &params);
+            gathered_results.push(result);
+        }
+
+        gathered_results
     }
 
     fn dispatch_command(&self, view_id: ViewIdentifier, receiver: &str,
@@ -403,6 +427,19 @@ impl PluginManagerRef {
 
     }
 
+    pub fn toggle_tracing(&self, enabled: bool) {
+        self.lock().request_trace_rpc_sync(
+            "tracing_config",
+            &json!({"enabled": enabled}),
+        );
+    }
+
+    pub fn collect_trace(&self) -> Vec<Result<Value, xi_rpc::Error>> {
+        self.lock().request_trace_rpc_sync(
+            "collect_trace",
+            &json!({}),
+        )
+    }
 
     /// Called when a new buffer is created.
     pub fn document_new(&self, view_id: ViewIdentifier, init_info: &PluginBufferInfo) {

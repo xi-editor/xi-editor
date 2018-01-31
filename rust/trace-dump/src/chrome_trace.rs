@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use xi_trace::{Sample, SampleType, StrCow, TracePayloadT};
+use serde::Deserialize;
 use serde_json;
 use std::io::{Error as IOError, Read, Write};
 use std::iter::Iterator;
@@ -245,8 +246,8 @@ fn is_begin_sample(sample: &Sample, pid: u64, tid: u64, name: &str) -> bool {
     }
 }
 
-pub fn decode(samples: serde_json::Value) -> Result<Vec<Sample>, Error> {
-    let entries : ChromeTraceArrayEntries= serde_json::from_value(samples).map_err(|e| Error::Json(e))?;
+pub fn decode(samples: &serde_json::Value) -> Result<Vec<Sample>, Error> {
+    let entries = ChromeTraceArrayEntries::deserialize(samples).map_err(|e| Error::Json(e))?;
     Vec::try_from(entries)
 }
 
