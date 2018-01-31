@@ -19,6 +19,9 @@ extern crate xi_trace;
 #[cfg(any(feature = "chrome_trace_event", feature = "ipc"))]
 extern crate serde;
 
+#[macro_use]
+extern crate serde_derive;
+
 #[cfg(feature = "ipc")]
 extern crate bincode;
 
@@ -40,6 +43,24 @@ mod tests {
     use super::*;
     #[cfg(feature = "benchmarks")]
     use test::Bencher;
+    use xi_trace::{StrCow, TracePayloadT};
+
+    #[cfg(all(not(feature = "dict_payload"), not(feature = "json_payload")))]
+    fn to_payload(value: &'static str) -> &'static str {
+        value
+    }
+
+    #[cfg(feature = "dict_payload")]
+    fn to_payload(value: &'static str) -> TracePayloadT {
+        let mut d = TracePayloadT::with_capacity(1);
+        d.insert(StrCow::from("test"), StrCow::from(value));
+        d
+    }
+
+    #[cfg(feature = "json_payload")]
+    fn to_payload(value: &'static str) -> TracePayloadT {
+        json!({"test": value})
+    }
 
     #[cfg(feature = "chrome_trace_event")]
     #[test]
@@ -48,9 +69,9 @@ mod tests {
 
         let trace = Trace::enabled(Config::with_limit_count(10));
         trace.instant("sample1", &["test", "chrome"]);
-        trace.instant_payload("sample2", &["test", "chrome"], "payload 2");
-        trace.instant_payload("sample3", &["test", "chrome"], "payload 3");
-        trace.closure_payload("sample4", &["test", "chrome"],|| (), "payload 4");
+        trace.instant_payload("sample2", &["test", "chrome"], to_payload("payload 2"));
+        trace.instant_payload("sample3", &["test", "chrome"], to_payload("payload 3"));
+        trace.closure_payload("sample4", &["test", "chrome"],|| (), to_payload("payload 4"));
 
         let samples = trace.samples_cloned_unsorted();
 
@@ -72,6 +93,28 @@ mod tests {
         assert_eq!(decoded_result[4]["ph"], "E");
     }
 
+    #[cfg(feature = "chrome_trace_event")]
+    #[test]
+    fn test_chrome_trace_deserialization() {
+        use xi_trace::*;
+
+        let trace = Trace::enabled(Config::with_limit_count(10));
+        trace.instant("sample1", &["test", "chrome"]);
+        trace.instant_payload("sample2", &["test", "chrome"], to_payload("payload 2"));
+        trace.instant_payload("sample3", &["test", "chrome"], to_payload("payload 3"));
+        trace.closure_payload("sample4", &["test", "chrome"],|| (), to_payload("payload 4"));
+
+        let samples = trace.samples_cloned_unsorted();
+
+        let mut serialized = Vec::<u8>::new();
+        let result = chrome_trace::serialize(
+            &samples, chrome_trace::OutputFormat::JsonArray, &mut serialized);
+        assert!(result.is_ok());
+
+        let deserialized_samples = chrome_trace::deserialize(serialized.as_slice()).unwrap();
+        assert_eq!(deserialized_samples, samples);
+    }
+
     #[cfg(feature = "ipc")]
     #[test]
     fn test_ipc_ser_der() {
@@ -79,9 +122,9 @@ mod tests {
 
         let trace = Trace::enabled(Config::with_limit_count(10));
         trace.instant("sample1", &["test", "chrome"]);
-        trace.instant_payload("sample2", &["test", "chrome"], "payload 2");
-        trace.instant_payload("sample3", &["test", "chrome"], "payload 3");
-        trace.closure_payload("sample4", &["test", "chrome"],|| (), "payload 4");
+        trace.instant_payload("sample2", &["test", "chrome"], to_payload("payload 2"));
+        trace.instant_payload("sample3", &["test", "chrome"], to_payload("payload 3"));
+        trace.closure_payload("sample4", &["test", "chrome"],|| (), to_payload("payload 4"));
 
         let samples = trace.samples_cloned_unsorted();
 
@@ -117,7 +160,7 @@ mod tests {
         let mut samples = [
             Sample::new_instant("trace1", &["benchmark", "test"], None),
             Sample::new_instant("trace2", &["benchmark"], None),
-            Sample::new("trace3", &["benchmark"], Some(StrCow::from("some payload"))),
+            Sample::new("trace3", &["benchmark"], Some(to_payload("some payload"))),
             Sample::new_instant("trace4", &["benchmark"], None)];
         let sample_start = samples[2].start_ns;
         samples[2].set_end_ns(sample_start);

@@ -12,6 +12,8 @@ default = ["chrome_trace_event", "ipc"]
 benchmarks = []
 chrome_trace_event = ["serde", "serde_json"]
 ipc = ["serde", "bincode"]
+dict_payload = ["xi-trace/dict_payload"]
+json_payload = ["xi-trace/json_payload"]
 
 [dependencies]
 xi-trace = { path = "../trace", version = "0.1.0" }

@@ -16,7 +16,7 @@ xi-trace = { path = "../trace" }
 # The FFI crate only exposes serializing to IPC so there's no need for any
 # other formats (can even reduce this further to serialization only APIs).
 xi-trace-dump = { path = "../trace-dump", default-features = false, features = ["ipc"] }
-libc = "0.2.36"
+libc = "0.2"
 
 [build-dependencies.cc]
 version = "1.0"
