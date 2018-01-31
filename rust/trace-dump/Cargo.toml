@@ -1,0 +1,24 @@
+[package]
+name = "xi-trace-dump"
+version = "0.1.0"
+license = "Apache-2.0"
+authors = ["Vitali Lovich <vlovich@google.com>"]
+categories = ["development-tools::profiling"]
+repository = "https://github.com/google/xi-editor"
+description = "Library-based API to dump xi-trace data to disk"
+
+[features]
+default = ["chrome_trace_event", "ipc"]
+benchmarks = []
+chrome_trace_event = ["serde", "serde_json"]
+ipc = ["serde", "bincode"]
+
+[dependencies]
+xi-trace = { path = "../trace", version = "0.1.0" }
+bincode = { version = "0.9.2", optional = true }
+serde_json = { version = "1.0", optional = true }
+serde_derive = "1.0"
+serde = { version = "1.0", optional = true }
+
+[dev-dependencies]
+serde_json = "1.0"

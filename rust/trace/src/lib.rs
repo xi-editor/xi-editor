@@ -19,6 +19,11 @@
 extern crate lazy_static;
 extern crate time;
 
+#[macro_use]
+extern crate serde_derive;
+
+extern crate serde;
+
 extern crate libc;
 
 #[cfg(feature = "benchmarks")]
@@ -34,7 +39,7 @@ mod sys_tid;
 
 use std::borrow::Cow;
 use std::cmp;
-
+use std::fmt;
 use std::mem::size_of;
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, AtomicUsize, ATOMIC_USIZE_INIT, Ordering as AtomicOrdering};
@@ -42,7 +47,146 @@ use std::sync::Mutex;
 use fixed_lifo_deque::FixedLifoDeque;
 
 pub type StrCow = Cow<'static, str>;
-pub type CategoriesT = &'static[&'static str];
+
+#[derive(Clone, Debug)]
+pub enum CategoriesT {
+    StaticArray(&'static[&'static str]),
+    DynamicArray(Vec<String>),
+}
+
+trait StringArrayEq<Rhs: ?Sized = Self> {
+    fn arr_eq(&self, other: &Rhs) -> bool;
+}
+
+impl StringArrayEq<[&'static str]> for Vec<String> {
+    fn arr_eq(&self, other: &[&'static str]) -> bool {
+        if self.len() != other.len() {
+            return false;
+        }
+
+        for i in 0..self.len() {
+            if self[i] != other[i] {
+                return false;
+            }
+        }
+        return true;
+    }
+}
+
+impl StringArrayEq<Vec<String>> for &'static [&'static str] {
+    fn arr_eq(&self, other: &Vec<String>) -> bool {
+        if self.len() != other.len() {
+            return false;
+        }
+        for i in 0..self.len() {
+            if self[i] != other[i] {
+                return false;
+            }
+        }
+        return true;
+    }
+}
+
+impl PartialEq for CategoriesT {
+    fn eq(&self, other: &CategoriesT) -> bool {
+        match self {
+            &CategoriesT::StaticArray(ref self_arr) => {
+                match other {
+                    &CategoriesT::StaticArray(ref other_arr) => self_arr.eq(other_arr),
+                    &CategoriesT::DynamicArray(ref other_arr) => self_arr.arr_eq(other_arr),
+                }
+            },
+            &CategoriesT::DynamicArray(ref self_arr) => {
+                match other {
+                    &CategoriesT::StaticArray(ref other_arr) => self_arr.arr_eq(other_arr),
+                    &CategoriesT::DynamicArray(ref other_arr) => self_arr.eq(other_arr),
+                }
+            }
+        }
+    }
+}
+
+impl Eq for CategoriesT {}
+
+impl serde::Serialize for CategoriesT {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where S: serde::Serializer
+    {
+        match self {
+            &CategoriesT::StaticArray(ref arr) => arr.serialize(serializer),
+            &CategoriesT::DynamicArray(ref arr) => arr.serialize(serializer),
+        }
+    }
+}
+
+
+impl<'de> serde::Deserialize<'de> for CategoriesT {
+    fn deserialize<D>(deserializer: D)
+        -> Result<CategoriesT, D::Error>
+        where D: serde::Deserializer<'de>
+    {
+        use serde::de::{SeqAccess, Visitor};
+        struct CategoriesTVisitor;
+
+        impl<'de> Visitor<'de> for CategoriesTVisitor {
+            type Value = CategoriesT;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("array of strings")
+            }
+
+            fn visit_seq<V>(self, mut seq: V) -> Result<CategoriesT, V::Error>
+                where V: SeqAccess<'de>
+            {
+                let mut arr = Vec::with_capacity(seq.size_hint().unwrap_or(0));
+                while let Some(entry) = seq.next_element()? {
+                    arr.push(entry);
+                }
+
+                Ok(CategoriesT::DynamicArray(arr))
+            }
+        }
+
+        deserializer.deserialize_seq(CategoriesTVisitor)
+    }
+}
+
+impl CategoriesT {
+    pub fn join(&self, sep: &str) -> String {
+        match self {
+            &CategoriesT::StaticArray(ref arr) => arr.join(sep),
+            &CategoriesT::DynamicArray(ref vec) => vec.join(sep),
+        }
+    }
+}
+
+macro_rules! categories_from_constant_array {
+    ($num_args: expr) => {
+        impl From<&'static[&'static str; $num_args]> for CategoriesT {
+            fn from(c: &'static[&'static str; $num_args]) -> CategoriesT {
+                CategoriesT::StaticArray(c)
+            }
+        }
+    }
+}
+
+categories_from_constant_array!(0);
+categories_from_constant_array!(1);
+categories_from_constant_array!(2);
+categories_from_constant_array!(3);
+categories_from_constant_array!(4);
+categories_from_constant_array!(5);
+categories_from_constant_array!(6);
+categories_from_constant_array!(7);
+categories_from_constant_array!(8);
+categories_from_constant_array!(9);
+categories_from_constant_array!(10);
+
+impl From<Vec<String>> for CategoriesT {
+    fn from(c: Vec<String>) -> CategoriesT {
+        CategoriesT::DynamicArray(c)
+    }
+}
 
 #[cfg(all(not(feature = "dict_payload"), not(feature = "json_payload")))]
 type TracePayloadT = StrCow;
@@ -95,7 +239,7 @@ impl Config {
 
 static SAMPLE_COUNTER: AtomicUsize = ATOMIC_USIZE_INIT;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub enum SampleType {
     /// This is an instantaneous sample (i.e. X occurred)
     Instant,
@@ -108,7 +252,7 @@ pub enum SampleType {
 /// The payload associated with any sample is by default a string but may be
 /// configured via the `dict_payload` or `json_payload` features (there is an
 /// associated performance hit across the board for turning it on).
-#[derive(Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Sample {
     /// A private ordering to apply to the events based on creation order.
     /// Disambiguates in case 2 samples might be created from different threads
@@ -139,14 +283,14 @@ pub struct Sample {
 impl Sample {
     /// Constructs a Duration sample without an end timestamp set.  Should not
     /// be used directly.  Instead should be constructed via SampleGuard.
-    pub fn new<S>(name: S, categories: CategoriesT, payload: Option<TracePayloadT>)
+    pub fn new<S, C>(name: S, categories: C, payload: Option<TracePayloadT>)
         -> Self
-        where S: Into<StrCow>
+        where S: Into<StrCow>, C: Into<CategoriesT>
     {
         Self {
             sample_id: SAMPLE_COUNTER.fetch_add(1, AtomicOrdering::Relaxed),
             name: name.into(),
-            categories: categories,
+            categories: categories.into(),
             start_ns: time::precise_time_ns(),
             payload: payload,
             end_ns: 0,
@@ -157,15 +301,15 @@ impl Sample {
     }
 
     /// Constructs an instantaneous sample.
-    pub fn new_instant<S>(name: S, categories: CategoriesT,
+    pub fn new_instant<S, C>(name: S, categories: C,
                           payload: Option<TracePayloadT>) -> Self
-        where S: Into<StrCow>
+        where S: Into<StrCow>, C: Into<CategoriesT>
     {
         let now = time::precise_time_ns();
         Self {
             sample_id: SAMPLE_COUNTER.fetch_add(1, AtomicOrdering::Relaxed),
             name: name.into(),
-            categories: categories,
+            categories: categories.into(),
             start_ns: now,
             payload: payload,
             end_ns: now,
@@ -227,7 +371,7 @@ pub struct SampleGuard<'a> {
 
 impl<'a> SampleGuard<'a> {
     #[inline]
-    fn new_disabled() -> Self {
+    pub fn new_disabled() -> Self {
         Self {
             sample: None,
             trace: None,
@@ -235,9 +379,9 @@ impl<'a> SampleGuard<'a> {
     }
 
     #[inline]
-    fn new<S>(trace: &'a Trace, name: S, categories: CategoriesT, payload: Option<TracePayloadT>)
+    fn new<S, C>(trace: &'a Trace, name: S, categories: C, payload: Option<TracePayloadT>)
         -> Self
-        where S: Into<StrCow>
+        where S: Into<StrCow>, C: Into<CategoriesT>
     {
         Self {
             sample: Some(Sample::new(name, categories, payload)),
@@ -314,24 +458,24 @@ impl Trace {
         self.enabled.load(AtomicOrdering::Relaxed)
     }
 
-    pub fn instant<S>(&self, name: S, categories: CategoriesT)
-        where S: Into<StrCow>
+    pub fn instant<S, C>(&self, name: S, categories: C)
+        where S: Into<StrCow>, C: Into<CategoriesT>
     {
         if self.is_enabled() {
             self.record(&Sample::new_instant(name, categories, None));
         }
     }
 
-    pub fn instant_payload<S, P>(&self, name: S, categories: CategoriesT, payload: P)
-        where S: Into<StrCow>, P: Into<TracePayloadT>
+    pub fn instant_payload<S, C, P>(&self, name: S, categories: C, payload: P)
+        where S: Into<StrCow>, C:Into<CategoriesT>, P: Into<TracePayloadT>
     {
         if self.is_enabled() {
             self.record(&Sample::new_instant(name, categories, Some(payload.into())));
         }
     }
 
-    pub fn block<'a, S>(&'a self, name: S, categories: CategoriesT) -> SampleGuard<'a>
-        where S: Into<StrCow>
+    pub fn block<'a, S, C>(&'a self, name: S, categories: C) -> SampleGuard<'a>
+        where S: Into<StrCow>, C: Into<CategoriesT>
     {
         if !self.is_enabled() {
             SampleGuard::new_disabled()
@@ -340,9 +484,9 @@ impl Trace {
         }
     }
 
-    pub fn block_payload<'a, S, P>(&'a self, name: S, categories: CategoriesT, payload: P)
-                               -> SampleGuard<'a>
-        where S: Into<StrCow>, P: Into<TracePayloadT>
+    pub fn block_payload<'a, S, C, P>(&'a self, name: S, categories: C, payload: P)
+        -> SampleGuard<'a>
+        where S: Into<StrCow>, C: Into<CategoriesT>, P: Into<TracePayloadT>
     {
         if !self.is_enabled() {
             SampleGuard::new_disabled()
@@ -351,17 +495,18 @@ impl Trace {
         }
     }
 
-    pub fn closure<S, F, R>(&self, name: S, categories: CategoriesT, closure: F) -> R
-        where S: Into<StrCow>, F: FnOnce() -> R
+    pub fn closure<S, C, F, R>(&self, name: S, categories: C, closure: F) -> R
+        where S: Into<StrCow>, C: Into<CategoriesT>, F: FnOnce() -> R
     {
         let _closure_guard = self.block(name, categories);
         let r = closure();
         r
     }
 
-    pub fn closure_payload<S, P, F, R>(&self, name: S, categories: CategoriesT,
-                                       closure: F, payload: P) -> R
-        where S: Into<StrCow>, P: Into<TracePayloadT>,
+    pub fn closure_payload<S, C, P, F, R>(&self, name: S, categories: C,
+                                          closure: F, payload: P)
+        -> R
+        where S: Into<StrCow>, C: Into<CategoriesT>, P: Into<TracePayloadT>,
               F: FnOnce() -> R
     {
         let _closure_guard = self.block_payload(name, categories, payload);
@@ -437,8 +582,8 @@ pub fn is_enabled() -> bool {
 /// xi_trace::trace("something happened", &["rpc", "response"]);
 /// ```
 #[inline]
-pub fn trace<S>(name: S, categories: CategoriesT)
-    where S: Into<StrCow>
+pub fn trace<S, C>(name: S, categories: C)
+    where S: Into<StrCow>, C: Into<CategoriesT>
 {
     TRACE.instant(name, categories);
 }
@@ -480,8 +625,8 @@ pub fn trace<S>(name: S, categories: CategoriesT)
 /// xi_trace::trace_payload("something happened", &["rpc", "response"], json!({"key": "value"}));
 /// ```
 #[inline]
-pub fn trace_payload<S, P>(name: S, categories: CategoriesT, payload: P)
-    where S: Into<StrCow>, P: Into<TracePayloadT>
+pub fn trace_payload<S, C, P>(name: S, categories: C, payload: P)
+    where S: Into<StrCow>, C: Into<CategoriesT>, P: Into<TracePayloadT>
 {
     TRACE.instant_payload(name, categories, payload);
 }
@@ -525,8 +670,8 @@ pub fn trace_payload<S, P>(name: S, categories: CategoriesT, payload: P)
 /// }
 /// ```
 #[inline]
-pub fn trace_block<'a, S>(name: S, categories: CategoriesT) -> SampleGuard<'a>
-    where S: Into<StrCow>
+pub fn trace_block<'a, S, C>(name: S, categories: C) -> SampleGuard<'a>
+    where S: Into<StrCow>, C: Into<CategoriesT>
 {
     TRACE.block(name, categories)
 }
@@ -535,9 +680,9 @@ pub fn trace_block<'a, S>(name: S, categories: CategoriesT) -> SampleGuard<'a>
 /// See `trace_block` for how the block works and `trace_payload` for a
 /// discussion on payload.
 #[inline]
-pub fn trace_block_payload<'a, S, P>(name: S, categories: CategoriesT, payload: P)
+pub fn trace_block_payload<'a, S, C, P>(name: S, categories: C, payload: P)
     -> SampleGuard<'a>
-    where S: Into<StrCow>, P: Into<TracePayloadT>
+    where S: Into<StrCow>, C: Into<CategoriesT>, P: Into<TracePayloadT>
 {
     TRACE.block_payload(name, categories, payload)
 }
@@ -578,8 +723,8 @@ pub fn trace_block_payload<'a, S, P>(name: S, categories: CategoriesT, payload: 
 /// });
 /// ```
 #[inline]
-pub fn trace_closure<S, F, R>(name: S, categories: CategoriesT, closure: F) -> R
-    where S: Into<StrCow>, F: FnOnce() -> R
+pub fn trace_closure<S, C, F, R>(name: S, categories: C, closure: F) -> R
+    where S: Into<StrCow>, C: Into<CategoriesT>, F: FnOnce() -> R
 {
     TRACE.closure(name, categories, closure)
 }
@@ -587,12 +732,17 @@ pub fn trace_closure<S, F, R>(name: S, categories: CategoriesT, closure: F) -> R
 /// See `trace_closure` for how the closure works and `trace_payload` for a
 /// discussion on payload.
 #[inline]
-pub fn trace_closure_payload<S, P, F, R>(name: S, categories: CategoriesT,
-                                              closure: F, payload: P) -> R
-    where S: Into<StrCow>, P: Into<TracePayloadT>,
+pub fn trace_closure_payload<S, C, P, F, R>(name: S, categories: C,
+                                            closure: F, payload: P) -> R
+    where S: Into<StrCow>, C: Into<CategoriesT>, P: Into<TracePayloadT>,
           F: FnOnce() -> R
 {
     TRACE.closure_payload(name, categories, closure, payload)
+}
+
+#[inline]
+pub fn samples_len() -> usize {
+    TRACE.get_samples_count()
 }
 
 /// Returns all the samples collected so far.  There is no guarantee that the
