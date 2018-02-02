@@ -61,9 +61,9 @@ and might work on other Flutter targets.
 
 * [xi-tui](https://github.com/little-dude/xi-tui), a text UI.
 
-* [`xi-electron`](https://github.com/acheronfail/xi-electron), a cross-platform front-end based on web-technologies.
+* [xi-electron](https://github.com/acheronfail/xi-electron), a cross-platform front-end based on web-technologies.
 
-* [`gxi`](https://github.com/bvinc/gxi), a GTK+ front-end written in Rust.
+* [gxi](https://github.com/bvinc/gxi), a GTK+ front-end written in Rust.
 
 * [xi-win](https://github.com/google/xi-win), an experimental Windows front-end written in Rust.
 
