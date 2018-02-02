@@ -521,8 +521,11 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
     /// Updates the line cache to reflect this delta.
     fn update_line_cache(&mut self, delta: &RopeDelta) {
         let (iv, new_len) = delta.summary();
-        if let Some(n) = delta.as_simple_insert() {
-            assert_eq!(iv.size(), 0);
+        // A paste that replaces a selection is treated as a simple insert,
+        // but our logic in line_cache_simple_insert does not properly account
+        // for the deleted regions, so we have to just clear_to_start in that case.
+        // TODO: revisit if a patch to iter_deletions lands.
+        if let (0, Some(n)) = (iv.size(), delta.as_simple_insert()) {
             assert_eq!(new_len, n.len());
 
             let newline_count = n.measure::<LinesMetric>();
