@@ -18,7 +18,7 @@
 //! Scope information originating from any number of plugins can be resolved
 //! into styles using a theme, augmented with additional style definitions.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use syntect::parsing::Scope;
 use syntect::highlighting::StyleModifier;
 
@@ -34,6 +34,7 @@ use plugins::PluginPid;
 //TODO: rename. Probably to `Layers`
 pub struct Scopes {
     layers: BTreeMap<PluginPid, ScopeLayer>,
+    deleted: HashSet<PluginPid>,
     merged: Spans<Style>,
 }
 
@@ -60,7 +61,7 @@ impl Scopes {
     /// Adds the provided scopes to the layer's lookup table.
     pub fn add_scopes(&mut self, layer: PluginPid, scopes: Vec<Vec<String>>,
                                 doc_ctx: &DocumentCtx) {
-        self.create_if_missing(layer);
+        if self.create_if_missing(layer).is_err() { return }
         self.layers.get_mut(&layer).unwrap().add_scopes(scopes, doc_ctx);
     }
 
@@ -79,7 +80,7 @@ impl Scopes {
 
     /// Updates the scope spans for a given layer.
     pub fn update_layer(&mut self, layer: PluginPid, iv: Interval, spans: Spans<u32>) {
-        self.create_if_missing(layer);
+        if self.create_if_missing(layer).is_err() { return }
         self.layers.get_mut(&layer).unwrap().update_scopes(iv, &spans);
         self.resolve_styles(iv);
     }
@@ -87,6 +88,7 @@ impl Scopes {
     /// Removes a given layer. This will remove all styles derived from
     /// that layer's scopes.
     pub fn remove_layer(&mut self, layer: PluginPid) -> Option<ScopeLayer> {
+        self.deleted.insert(layer);
         let layer = self.layers.remove(&layer);
         if layer.is_some() {
             let iv_all = Interval::new_closed_closed(0, self.merged.len());
@@ -147,10 +149,13 @@ impl Scopes {
     }
 
 
-    fn create_if_missing(&mut self, layer_id: PluginPid) {
+    /// Returns an `Err` if this layer has been deleted; the caller should return.
+    fn create_if_missing(&mut self, layer_id: PluginPid) -> Result<(), ()> {
+        if self.deleted.contains(&layer_id) { return Err(()) }
         if !self.layers.contains_key(&layer_id) {
             self.layers.insert(layer_id, ScopeLayer::new(self.merged.len()));
         }
+        Ok(())
     }
 }
 
