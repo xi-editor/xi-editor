@@ -34,7 +34,7 @@ Homework for the next installment of the rope science series.
 
 I crammed some readings on CRDTs the past few days, and last night believe I came up with a clean, simple solution for dealing with concurrent editing by asynchronous plugins. I really recommend the CRDT concept, it hugely helped me focus my thinking. To make sense of my next post, it's kinda necessary to catch up on CRDTs.
 
-I recommend starting with [Marc Shapiro's 2011 talk](http://research.microsoft.com/apps/video/default.aspx?id=153540&r=1) at Microsoft Research explaining the CRDT concept and the underlying mathematical concept of monotonic semi-lattice.
+I recommend starting with [Marc Shapiro's 2011 talk](https://www.microsoft.com/en-us/research/video/strong-eventual-consistency-and-conflict-free-replicated-data-types/) at Microsoft Research explaining the CRDT concept and the underlying mathematical concept of monotonic semi-lattice.
 
 The concept of CRDT actually started with the collaborative editing use case, before they generalized it to more general cloud-flavored problems (it now powers eventual consistency in Riak, among other things). The [WOOT paper](https://hal.inria.fr/inria-00071240/document) (2006) is very good at comparing the new approach to operational transforms, but I'm definitely not going to adapt the details of that implementation.
 
