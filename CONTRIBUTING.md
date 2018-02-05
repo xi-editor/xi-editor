@@ -19,6 +19,26 @@ frustration later on.
 All submissions, including submissions by project members, require review. We
 use Github pull requests for this purpose.
 
+After a demonstrated record of contribution and understanding of the code base,
+we grant collaborator access, at our discretion. Collaborators have write access,
+subject to the following rules:
+
+* Managing issues and merging trivial PR's (comments, doc fixes, etc) are fine.
+
+* A Google-employed project member should approve all nontrivial PR's.
+
+* We wait for CI to be green, unless there is a really compelling reason.
+
+* If the PR author has commit privs, then they should merge after approval (this
+  gives the author a chance to make last-minute fixes). Otherwise, the approver
+  generally merges.
+
+### Code of conduct
+
+We are committed to preserving and fostering a diverse, welcoming community. This
+project follows the
+[Fuchsia Code of Conduct](https://fuchsia.googlesource.com/docs/+/master/CODE_OF_CONDUCT.md).
+
 ### The small print
 Contributions made by corporations are covered by a different agreement than
 the one above, the Software Grant and Corporate Contributor License Agreement.
