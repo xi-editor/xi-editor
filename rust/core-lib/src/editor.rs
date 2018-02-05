@@ -56,8 +56,16 @@ const MAX_UNDOS: usize = 20;
 // Maximum returned result from plugin get_data RPC.
 const MAX_SIZE_LIMIT: usize = 1024 * 1024;
 
+enum CharacterEncoding {
+    Utf8,
+    Utf8WithBom
+}
+
+const UTF8_BOM: &str = "\u{feff}";
+
 pub struct Editor {
     text: Rope,
+    encoding: CharacterEncoding,
 
     path: Option<PathBuf>,
     buffer_id: BufferIdentifier,
@@ -124,12 +132,22 @@ impl Editor {
                      buffer_id: BufferIdentifier,
                      initial_view_id: ViewIdentifier, text: String) -> Editor {
 
-        let engine = Engine::new(Rope::from(text));
+        let encoding = if text.starts_with(UTF8_BOM) {
+            CharacterEncoding::Utf8WithBom
+        } else {
+            CharacterEncoding::Utf8
+        };
+
+        let engine = Engine::new(Rope::from(match encoding {
+            CharacterEncoding::Utf8WithBom => &text[UTF8_BOM.len()..],
+            CharacterEncoding::Utf8 => text.as_str()
+        }));
         let buffer = engine.get_head().clone();
         let last_rev_id = engine.get_head_rev_id();
 
         let mut editor = Editor {
             text: buffer,
+            encoding: encoding,
             buffer_id: buffer_id,
             path: None,
             syntax: SyntaxDefinition::default(),
@@ -707,10 +725,17 @@ impl Editor {
     pub fn do_save<P: AsRef<Path>>(&mut self, path: P) {
         match File::create(&path) {
             Ok(mut f) => {
-                for chunk in self.text.iter_chunks(0, self.text.len()) {
-                    if let Err(e) = f.write_all(chunk.as_bytes()) {
-                        eprintln!("write error {}", e);
-                        break;
+                if let Err(e) = match self.encoding {
+                    CharacterEncoding::Utf8WithBom => f.write_all(UTF8_BOM.as_bytes()),
+                    CharacterEncoding::Utf8 => Result::Ok(())
+                } {
+                    eprintln!("write error {}", e);
+                } else {
+                    for chunk in self.text.iter_chunks(0, self.text.len()) {
+                        if let Err(e) = f.write_all(chunk.as_bytes()) {
+                            eprintln!("write error {}", e);
+                            break;
+                        }
                     }
                 }
             }
