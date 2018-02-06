@@ -550,9 +550,10 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
     }
 
     fn line_cache_simple_delete(&mut self, start: usize, end: usize) {
-        let chunk_end = self.state.chunk_offset + self.state.chunk.len();
-        if start >= self.state.chunk_offset && end <= chunk_end {
-            let del_newline_num = count_newlines(&self.state.chunk[start..end]);
+        let off = self.state.chunk_offset;
+        let chunk_end = off + self.state.chunk.len();
+        if start >= off && end <= chunk_end {
+            let del_newline_num = count_newlines(&self.state.chunk[start - off..end - off]);
             // delete all entries that overlap the deleted range
             let ix = match self.find_offset(start) {
                 Ok(ix) => ix + 1,
