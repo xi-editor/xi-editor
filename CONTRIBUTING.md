@@ -25,7 +25,7 @@ subject to the following rules:
 
 * Managing issues and merging trivial PR's (comments, doc fixes, etc) are fine.
 
-* A Google-employed project member should approve all nontrivial PR's.
+* A Google-employed project member should approve all nontrivial PR's by non-Googlers.
 
 * We wait for CI to be green, unless there is a really compelling reason.
 
