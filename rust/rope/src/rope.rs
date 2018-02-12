@@ -31,6 +31,8 @@ use memchr::memchr;
 use serde::ser::{Serialize, Serializer, SerializeStruct, SerializeTupleVariant};
 use serde::de::{Deserialize, Deserializer};
 
+use unicode_segmentation::GraphemeCursor;
+
 const MIN_LEAF: usize = 511;
 const MAX_LEAF: usize = 1024;
 
@@ -137,6 +139,51 @@ impl Metric<RopeInfo> for BaseMetric {
         } else {
             let b = s.as_bytes()[offset];
             Some(offset + len_utf8_from_first_byte(b))
+        }
+    }
+
+    fn can_fragment() -> bool {
+        false
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct GraphemeMetric(());
+
+impl Metric<RopeInfo> for GraphemeMetric {
+    fn measure(_: &RopeInfo, len: usize) -> usize {
+        len
+    }
+
+    fn to_base_units(_: &String, in_measured_units: usize) -> usize {
+        in_measured_units
+    }
+
+    fn from_base_units(_: &String, in_base_units: usize) -> usize {
+        in_base_units
+    }
+
+    fn is_boundary(s: &String, offset: usize) -> bool {
+        if let Ok(r) = GraphemeCursor::new(offset, s.len(), true).is_boundary(s, 0) {
+            r
+        } else {
+            false
+        }
+    }
+
+    fn prev(s: &String, offset: usize) -> Option<usize> {
+        if let Ok(o) = GraphemeCursor::new(offset, s.len(), true).prev_boundary(s, 0) {
+            o
+        } else {
+            None
+        }
+    }
+
+    fn next(s: &String, offset: usize) -> Option<usize> {
+        if let Ok(o) = GraphemeCursor::new(offset, s.len(), true).next_boundary(s, 0) {
+            o
+        } else {
+            None
         }
     }
 
@@ -361,15 +408,20 @@ impl Rope {
         cursor.next::<BaseMetric>()
     }
 
+    pub fn is_grapheme_boundary(&self, offset: usize) -> bool {
+        let mut cursor = Cursor::new(self, offset);
+        cursor.is_boundary::<GraphemeMetric>()
+    }
+
     // graphemes should probably be developed as a cursor-based interface
     pub fn prev_grapheme_offset(&self, offset: usize) -> Option<usize> {
-        // TODO: actual grapheme analysis
-        self.prev_codepoint_offset(offset)
+        let mut cursor = Cursor::new(self, offset);
+        cursor.prev::<GraphemeMetric>()
     }
 
     pub fn next_grapheme_offset(&self, offset: usize) -> Option<usize> {
-        // TODO: actual grapheme analysis
-        self.next_codepoint_offset(offset)
+        let mut cursor = Cursor::new(self, offset);
+        cursor.next::<GraphemeMetric>()
     }
 
     /// Return the line number corresponding to the byte index `offset`.
@@ -672,6 +724,26 @@ mod tests {
         assert_eq!(Some(2), b.next_codepoint_offset(0));
         assert_eq!(None, b.next_codepoint_offset(9));
         */
+    }
+
+    #[test]
+    fn prev_grapheme_offset() {
+        // A with ring, hangul, regional indicator "US"
+        let a = Rope::from("A\u{030a}\u{110b}\u{1161}\u{1f1fa}\u{1f1f8}");
+        assert_eq!(Some(9), a.prev_grapheme_offset(17));
+        assert_eq!(Some(3), a.prev_grapheme_offset(9));
+        assert_eq!(Some(0), a.prev_grapheme_offset(3));
+        assert_eq!(None, a.prev_grapheme_offset(0));
+    }
+
+    #[test]
+    fn next_grapheme_offset() {
+        // A with ring, hangul, regional indicator "US"
+        let a = Rope::from("A\u{030a}\u{110b}\u{1161}\u{1f1fa}\u{1f1f8}");
+        assert_eq!(Some(3), a.next_grapheme_offset(0));
+        assert_eq!(Some(9), a.next_grapheme_offset(3));
+        assert_eq!(Some(17), a.next_grapheme_offset(9));
+        assert_eq!(None, a.next_grapheme_offset(17));
     }
 
     #[test]

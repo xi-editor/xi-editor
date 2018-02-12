@@ -516,8 +516,7 @@ impl Editor {
                if preceded_by_spaces && use_spaces && use_tab_stops {
                    region.start - tab_size
                } else {
-                   // TODO: implement complex emoji logic
-                    self.text.prev_codepoint_offset(region.end)
+                    self.text.prev_grapheme_offset(region.end)
                         .unwrap_or(region.end)
                }
             };
@@ -1121,7 +1120,7 @@ impl Editor {
         };
         let text = &text_cow;
         // Enforce start is on codepoint boundary.
-        if !text.is_codepoint_boundary(offset) { return None; }
+        if !text.is_grapheme_boundary(offset) { return None; }
         let max_size = min(max_size, MAX_SIZE_LIMIT);
         let mut end_off = offset.saturating_add(max_size);
         if end_off >= text.len() {

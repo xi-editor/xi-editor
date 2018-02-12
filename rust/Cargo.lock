@@ -453,6 +453,11 @@ version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
+name = "unicode-segmentation"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
 name = "unicode-xid"
 version = "0.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -548,6 +553,7 @@ dependencies = [
  "memchr 2.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.21 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_derive 1.0.21 (registry+https://github.com/rust-lang/crates.io-index)",
+ "unicode-segmentation 1.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -631,6 +637,7 @@ dependencies = [
 "checksum time 0.1.38 (registry+https://github.com/rust-lang/crates.io-index)" = "d5d788d3aa77bc0ef3e9621256885555368b47bd495c13dd2e7413c89f845520"
 "checksum toml 0.4.5 (registry+https://github.com/rust-lang/crates.io-index)" = "a7540f4ffc193e0d3c94121edb19b055670d369f77d5804db11ae053a45b6e7e"
 "checksum typenum 1.9.0 (registry+https://github.com/rust-lang/crates.io-index)" = "13a99dc6780ef33c78780b826cf9d2a78840b72cae9474de4bcaf9051e60ebbd"
+"checksum unicode-segmentation 1.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "a8083c594e02b8ae1654ae26f0ade5158b119bd88ad0e8227a5d8fcd72407946"
 "checksum unicode-xid 0.0.4 (registry+https://github.com/rust-lang/crates.io-index)" = "8c1f860d7d29cf02cb2f3f359fd35991af3d30bac52c57d265a3c461074cb4dc"
 "checksum walkdir 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)" = "c66c0b9792f0a765345452775f3adbd28dde9d33f30d13e5dcc5ae17cf6f3780"
 "checksum walkdir 2.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "aac55cc73a6f7fc5052bffb3e62760dc3122e5290e0f4a2b056b53c6521b3f0f"
