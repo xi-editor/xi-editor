@@ -961,6 +961,34 @@ impl Editor {
         self.view.collapse_selections(&self.text);
     }
 
+    fn make_uppercase(&mut self) {
+        let mut builder = delta::Builder::new(self.text.len());
+
+        for region in self.view.sel_regions() {
+            let selected_text = self.text.slice_to_string(region.min(), region.max());
+            let interval = Interval::new_closed_open(region.min(), region.max());
+            builder.replace(interval, Rope::from(selected_text.to_uppercase()));
+        }
+        if !builder.is_empty() {
+            self.this_edit_type = EditType::Other;
+            self.add_delta(builder.build());
+        }
+    }
+
+    fn make_lowercase(&mut self) {
+        let mut builder = delta::Builder::new(self.text.len());
+
+        for region in self.view.sel_regions() {
+            let selected_text = self.text.slice_to_string(region.min(), region.max());
+            let interval = Interval::new_closed_open(region.min(), region.max());
+            builder.replace(interval, Rope::from(selected_text.to_lowercase()));
+        }
+        if !builder.is_empty() {
+            self.this_edit_type = EditType::Other;
+            self.add_delta(builder.build());
+        }
+    }
+
     fn cmd_prelude(&mut self) {
         self.this_edit_type = EditType::Other;
     }
@@ -1038,6 +1066,8 @@ impl Editor {
             DebugRewrap => self.debug_rewrap(),
             DebugPrintSpans => self.debug_print_spans(),
             CancelOperation => self.do_cancel_operation(),
+            Uppercase => self.make_uppercase(),
+            Lowercase => self.make_lowercase(),
         };
 
         self.cmd_postlude();

@@ -374,6 +374,8 @@ pub enum EditNotification {
     /// Prints the style spans present in the active selection.
     DebugPrintSpans,
     CancelOperation,
+    Uppercase,
+    Lowercase,
 }
 
 /// The edit related requests.
