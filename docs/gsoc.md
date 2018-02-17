@@ -6,6 +6,21 @@ is_site_nav_category: true
 site_nav_category: gsoc
 ---
 
+List of project ideas for Google Summer of Code 2018:
+ - [Xi-Mac Polish and UI improvements](#xi-mac-polish-and-ui-improvements)
+ - [Language Server Plugin](#language-server-plugin)
+ - [Improved Theming Support](#improved-theming-support)
+ - [Theme / Syntax Loading](#theme--syntax-loading)
+ - [Diff / Merge](#diff--merge)
+ - [Workspace + Git](#workspace--git)
+ - [Vi / modal editing](#vimodal-editing)
+ - [Find enhancements](#find-enhancements)
+ - [Scriptable language bindings (C API)](#scriptable-language-bindings-c-api)
+ - [Flush out unit tests](#flush-out-unit-tests)
+ - [Memory map text buffers](#memory-map-text-buffers)
+
+--------
+
 ## Xi-Mac Polish and UI improvements
 
 ### Improve the core editing experience
@@ -60,7 +75,7 @@ There is opportunity for the student to expand the scope of the work to improve 
 
 --------
 
-## Diff/Merge
+## Diff / Merge
 
 ### OSS merge could use a lot of work
 Right now the story for merge tools, let alone native ones, isn’t particularly great. The gold standard Kdiff3 hasn’t seen very active development and suffers from a number of bugs (some related to trying to be cross-platform, some just inherent bugs in its core algorithm). Adding support for xi to act as diff/merge tool has several benefits in that it’s a simple enough operation that people might use it even before xi is ready for use as an IDE, kdiff3 provides a decent template for the UX with clear improvements that could be made. The plugin architecture for xi means that we can support different automatic diff/merge algorithms (there’s been a lot of work in this field since kdiff3 started). For Xi itself this work would flush out the ability for having multiple views to the same file which is valuable as a regular text editor.  A built-in diff mechanism would also be useful from the perspective of offering the user the option to view a diff if the file contents change while there are unsaved changes (e.g. checkout).
