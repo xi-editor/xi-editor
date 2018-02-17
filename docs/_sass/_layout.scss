@@ -1,0 +1,238 @@
+.site-header {
+  min-height: 74px;
+}
+.tac-site-title {
+  text-decoration: none;
+  color: white;
+}
+.tac-site-title img {
+  height: 36px;
+  margin-right: 12px;
+  padding-left: 12px;
+}
+.tac-header {
+  padding-top: 0px;
+  background-color: $color-primary-dark !important;
+}
+.header-content {
+  display: flex;
+}
+.header-content .mdl-textfield {
+  align-self: center;
+}
+.header-content .mdl-textfield .mdl-button {
+  bottom: inherit; /*Override MDL default*/
+}
+.tac-logo-row {
+  background-color: $color-primary-dark;
+  height: 72px;
+}
+.tac-title {
+  display: inline-block;
+  font-weight: 300;
+  vertical-align: middle;
+}
+.tac-layout {
+  min-height: 100%;
+  height: auto;
+}
+.tac-search {
+  margin-left: auto;
+}
+.docs-content-wrapper {
+  width: 100%;
+}
+.docs-content-grid {
+  padding-left: 8px; /*Align with the menu above*/
+}
+
+ /* Selectable elements */
+.docs-content-grid, .mdl-textfield {
+  -webkit-touch-callout: text;
+  -webkit-user-select: text;
+  -khtml-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
+
+.side-nav {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: inline-block;
+  background: #fff;
+  height: 100%;
+  width: $side-nav-width;
+  box-sizing: border-box;
+  padding: 24px 0;
+  z-index: 1;
+}
+.scrollable-header-row {
+  overflow-x: auto;
+  overflow-y: hidden;
+  background-color: $color-primary;
+}
+
+.tac-tab-navigation .mdl-navigation__link {
+  font-weight: 700;
+  font-size: 14px;
+  box-sizing: border-box;
+  text-transform: uppercase;
+  display: inline-block;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  font-weight: 500;
+  background-color: transparent !important;
+  border-bottom: 4px solid transparent;
+}
+.tac-navigation .mdl-navigation__link.tac-site-nav-category {
+  padding-left: 12px;
+  font-weight: 600;
+}
+.tac-tab-navigation .mdl-navigation__link:hover {
+  border-bottom: 4px solid $color-accent;
+}
+
+// Ripples
+.tac-tab-navigation .mdl-navigation__link .mdl-ripple {
+  background-color: white;
+}
+.tac-navigation .mdl-navigation__link {
+  overflow: hidden;
+  position: relative;
+}
+.tac-navigation .mdl-navigation__link:hover {
+  text-decoration: none;
+}
+.tac-tab-navigation .mdl-navigation__link--current {
+  border-bottom: 4px solid $color-accent;
+}
+.tac-navigation .mdl-navigation__link--current {
+  font-weight: 800;
+  color: $color-primary !important;
+  background-color: $tac-grey;
+}
+.tac-navigation {
+  flex-direction: column;
+  align-items: stretch;
+  padding-top: 16px;
+
+  & .mdl-navigation__link {
+    display: block;
+    flex-shrink: 0;
+    padding: 8px;
+    padding-left: 24px;
+    margin: 0;
+    color: grey;
+
+    &:hover {
+      background-color: $tac-grey;
+    }
+  }
+}
+
+.tac-header .mdl-layout__drawer-button {
+  display: none;
+}
+
+/* Orders for the title header */
+.header-content .mdl-textfield {
+  order: 3;
+}
+
+.header-content .mdl-layout-spacer {
+  order: 2;
+}
+
+.header-content .tac-site-title {
+  order: 1;
+}
+
+
+
+
+/* TOC */
+#markdown-toc  {
+  list-style-type: none;
+  border-left: solid 3px $color-primary;
+  padding-left: 20px;
+  line-height: 28px;
+  margin-left: 0px;
+}
+
+#markdown-toc a {
+  text-decoration: none;
+  font-weight: 400;
+  font-size: 16px;
+  color: $color-primary-dark;
+}
+
+/* TABLES */
+td {
+  padding: 2px;
+}
+
+
+// Remove tabs and move to a drawer navigation on smaller screens
+@media screen and (max-width: $layout-large-screen) {
+  .tac-header .mdl-layout__drawer-button {
+    display: block;
+  }
+  .header-content {
+    padding-left: 48px;
+  }
+
+  .tac-navigation .mdl-navigation__link {
+    padding-left: 12px;
+    font-weight: inherit;
+  }
+
+  .tac-navigation .mdl-navigation__link.tac-site-nav-category {
+    padding-left: 8px;
+    font-weight: 800;
+  }
+
+  .tac-navigation .mdl-navigation__link.tac-site-nav-category2 {
+    padding-left: 12px;
+    font-weight: 500;
+  }
+
+  .tac-site-title img {
+    padding-left: 0px;
+    width: 24px;
+    height: auto;
+  }
+
+  .tac-logo-row{
+    height: 48px;
+  }
+
+  .tac-navigation .mdl-navigation__link--current {
+    color: $color-accent;
+    background-color: transparent !important;
+  }
+  .tac_navigation {
+      display: none;
+  }
+  .tac-title {
+    font-size: 12px
+  }
+  /* Remove title when search textfield is focused */
+  .header-content .mdl-textfield.is-focused ~ .tac-site-title {
+    display: none;
+  }
+
+}
+
+.tac-site-footer {
+  z-index: 5;
+  margin: 0px;
+  position: relative;
+  border-top: 1px solid #f0f0f0;
+  color: #999;
+  padding-top: 12px;
+  font-size: 12px;
+  background-color: transparent;
+}

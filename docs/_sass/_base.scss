@@ -1,0 +1,251 @@
+
+/**
+ * Reset some basic elements
+ */
+body, h1, h2, h3, h4, h5, h6,
+p, blockquote, pre, hr,
+dl, dd, ol, ul, figure {
+    margin: 0;
+    padding: 0;
+}
+
+
+
+/**
+ * Basic styling
+ */
+html, body {
+  font-family: 'Roboto', 'Helvetica', sans-serif;
+}
+
+
+/**
+ * Set `margin-bottom` to maintain vertical rhythm
+ */
+h1, h2, h3, h4, h5, h6,
+p, blockquote, pre,
+ul, ol, dl, figure,
+%vertical-rhythm {
+    margin-bottom: $spacing-unit / 2;
+}
+
+h1 {
+  font-size: 44px;
+}
+h2 {
+  font-size: 28px;
+  font-weight: 400;
+  line-height: 32px;
+  margin: 24px 0 16px;
+}
+h3 {
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 400;
+  margin: 16px 0;
+}
+h4 {
+  font-size: 18px;
+  line-height: 24px;
+  margin: 12px 0;
+  font-weight: 500;
+}
+h5, h6 {
+  font-size: 16px;
+  line-height: 24px;
+  margin: 8px 0;
+}
+/**
+ * Images
+ */
+img {
+    max-width: 100%;
+    vertical-align: middle;
+}
+
+
+
+/**
+ * Figures
+ */
+figure > img {
+    display: block;
+}
+
+figcaption {
+    font-size: $small-font-size;
+}
+
+
+
+/**
+ * Lists
+ */
+ul, ol {
+    margin-left: $spacing-unit;
+}
+
+li {
+    > ul,
+    > ol {
+         margin-bottom: 0;
+    }
+}
+
+
+
+/**
+ * Headings
+ */
+h1, h2 {
+    font-weight: 300;
+}
+
+
+
+/**
+ * Links
+ */
+a {
+    color: $color-primary;
+    text-decoration: none;
+}
+
+
+
+/**
+ * Blockquotes
+ */
+blockquote {
+    color: $grey-color;
+    border-left: 4px solid $grey-color-light;
+    padding-left: $spacing-unit / 2;
+    font-size: 18px;
+    letter-spacing: -1px;
+    font-style: italic;
+
+    > :last-child {
+        margin-bottom: 0;
+    }
+}
+
+
+
+/**
+ * Code formatting
+ */
+pre
+code {
+    font-size: 15px;
+    background: $tac-code-background;
+}
+
+code {
+    color: #505050;
+    font-size: inherit;
+    background: transparent;
+
+    padding: 0px 4px;
+    border: 1px solid $grey-color-light;
+}
+
+pre {
+    padding: 8px 12px;
+    background: $tac-code-background;
+    overflow-x: auto;
+
+    border: 1px solid $grey-color-light;
+
+    > code {
+        border: 0;
+        padding-right: 0;
+        padding-left: 0;
+    }
+}
+
+/**
+ * Wrapper
+ */
+.wrapper {
+    max-width: -webkit-calc(#{$content-width} - (#{$spacing-unit} * 2));
+    max-width:         calc(#{$content-width} - (#{$spacing-unit} * 2));
+    margin-right: auto;
+    margin-left: auto;
+    padding-right: $spacing-unit;
+    padding-left: $spacing-unit;
+    @extend %clearfix;
+
+    @include media-query($on-laptop) {
+        max-width: -webkit-calc(#{$content-width} - (#{$spacing-unit}));
+        max-width:         calc(#{$content-width} - (#{$spacing-unit}));
+        padding-right: $spacing-unit / 2;
+        padding-left: $spacing-unit / 2;
+    }
+}
+
+
+
+/**
+ * Clearfix
+ */
+%clearfix {
+
+    &:after {
+        content: "";
+        display: table;
+        clear: both;
+    }
+}
+
+
+
+/**
+ * Icons
+ */
+.icon {
+
+    > svg {
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        vertical-align: middle;
+
+        path {
+            fill: $grey-color;
+        }
+    }
+}
+
+
+@media screen and (max-width: $layout-large-screen) {
+
+  h1 {
+      font-size: 36px;
+      line-height: 48px;
+
+  }
+  h2 {
+    clear: left;
+    font-size: 28px;
+    font-weight: 400;
+    line-height: 32px;
+    margin: 24px 0 16px;
+  }
+  h3 {
+    font-size: 24px;
+    line-height: 32px;
+    font-weight: 400;
+    margin: 16px 0;
+  }
+  h4 {
+    font-size: 18px;
+    line-height: 24px;
+    margin: 12px 0;
+    font-weight: 500;
+  }
+  h5, h6 {
+    font-size: 16px;
+    line-height: 24px;
+    margin: 8px 0;
+  }
+}

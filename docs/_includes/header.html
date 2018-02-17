@@ -1,0 +1,47 @@
+<header class="mdl-layout__header mdl-layout__header--scroll mdl-color--primary tac-header">
+  <div class="mdl-layout__header-row tac-logo-row mdl-grid">
+
+    <div class="mdl-cell mdl-cell--2-col mdl-cell--hide-phone mdl-cell--hide-tablet"></div>
+
+    <form class="header-content mdl-cell mdl-cell--8-col" action="https://www.google.com/search">
+
+        <!-- Expandable Textfield -->
+          <div class="mdl-textfield mdl-js-textfield mdl-textfield--expandable textfield-demo">
+            <label class="mdl-button mdl-js-button mdl-button--icon" for="q">
+              <i class="material-icons">search</i>
+            </label>
+            <div class="mdl-textfield__expandable-holder">
+              <input class="mdl-textfield__input" type="text" name="q" id="q" />
+              <input type="hidden" name="sitesearch" value="{{ site.url }}{{ site.baseurl }}" />
+              <label class="mdl-textfield__label" for="sample-expandable">Expandable Input</label>
+            </div>
+          </div>
+
+        <div class="mdl-layout-spacer"></div>
+
+        <a class="tac-site-title" href="{{ site.baseurl }}/">
+          <img src="{{ site.baseurl }}/assets/logo.png"/>
+          <span class="mdl-layout-title tac-title">
+            {{ site.title }}
+          </span>
+        </a>
+    </form>
+
+  </div>
+  <div class="mdl-layout__header-row scrollable-header-row mdl-layout--large-screen-only mdl-grid mdl-grid--no-spacing">
+
+    <div class="mdl-cell--hide-phone mdl-cell--hide-tablet mdl-cell mdl-cell--2-col"></div>
+    <nav class="mdl-navigation tac-tab-navigation mdl-cell mdl-cell--8-col">
+
+      {% assign nav_items = (site.pages | sort:"site_nav_category_order" %}
+      {% for nav_item in nav_items %}
+      {% if nav_item.is_site_nav_category %}
+      <a class="mdl-navigation__link mdl-js-ripple-effect{% if page.site_nav_category == nav_item.site_nav_category %} mdl-navigation__link--current{% endif %}"
+      href="{{ site.baseurl }}{{ nav_item.url }}">{{ nav_item.title }}<div class="mdl-ripple"></div></a>
+
+      {% endif %}
+      {% endfor %}
+
+    </nav>
+  </div>
+</header>

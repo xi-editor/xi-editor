@@ -1,0 +1,14 @@
+
+{% if page.site_nav_category %}
+  {% assign menu_items = (site.pages | where: "site_nav_category", page.site_nav_category) | sort:"site_nav_category_order" %}
+
+  <nav class="tac-navigation mdl-navigation">
+    {% for menu_item in menu_items %}
+    
+      {% unless menu_item.is_site_nav_category %}
+        <a class="mdl-navigation__link mdl-js-ripple-effect{% if page.url == menu_item.url %} mdl-navigation__link--current{% endif %}{% if menu_item.is_site_nav_category2 %} tac-site-nav-category{% endif %}"
+        href="{{ menu_item.url | prepend: site.baseurl }}">{{ menu_item.title }} <div class="mdl-ripple"></div></a>
+      {% endunless %}
+    {% endfor %}
+  </nav>
+{% endif %}
