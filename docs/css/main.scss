@@ -1,33 +1,30 @@
 ---
 # Only the main Sass file needs front matter (the dashes are enough)
 ---
+
 @charset "utf-8";
-
-
 
 // Our variables
 $base-font-family: Roboto, Helvetica, Arial, sans-serif;
-$base-font-size:   16px;
-$small-font-size:  $base-font-size * 0.875;
+$base-font-size: 16px;
+$small-font-size: $base-font-size * 0.875;
 $base-line-height: 1.5;
 
-$spacing-unit:     30px;
+$spacing-unit: 30px;
 
-$text-color:       #111;
+$text-color: #111;
 $background-color: #fdfdfd;
-$brand-color:      #2a7ae2;
+$brand-color: #2a7ae2;
 
-$grey-color:       #828282;
+$grey-color: #828282;
 $grey-color-light: lighten($grey-color, 40%);
-$grey-color-dark:  darken($grey-color, 25%);
+$grey-color-dark: darken($grey-color, 25%);
 
 // Width of the content area
-$content-width:    800px;
+$content-width: 800px;
 
-$on-palm:          600px;
-$on-laptop:        800px;
-
-
+$on-palm: 600px;
+$on-laptop: 800px;
 
 // Using media queries with like this:
 // @include media-query($on-palm) {
@@ -37,21 +34,17 @@ $on-laptop:        800px;
 //     }
 // }
 @mixin media-query($device) {
-    @media screen and (max-width: $device) {
-        @content;
-    }
+  @media screen and (max-width: $device) {
+    @content;
+  }
 }
 
-
-
 // Import partials from `sass_dir` (defaults to `_sass`)
-@import
-        "config",
-        "mdl",
-        "base",
-        "layout",
-        "syntax-highlighting"
-;
+@import "config";
+@import "mdl";
+@import "base";
+@import "layout";
+@import "syntax-highlighting";
 
 /**
  * Copyright 2015 Google Inc. All Rights Reserved.
@@ -72,8 +65,8 @@ $on-laptop:        800px;
 @font-face {
   font-family: "And Black";
   src: url("myfont-webfont.eot?#iefix") format('embedded-opentype'),
-       url("fonts/and_black.woff") format('woff'),
-       url("fonts/and_black.ttf") format('truetype');
+  url("fonts/and_black.woff") format('woff'),
+  url("fonts/and_black.ttf") format('truetype');
 }
 
 body {
@@ -87,7 +80,7 @@ body {
 }
 
 /* Disable ugly boxes around images in IE10 */
-a img{
+a img {
   border: 0px;
 }
 
@@ -110,7 +103,6 @@ a img{
   margin: 0 !important;
 }
 
-
 .mdl-textfield--expandable {
   width: auto;
 }
@@ -128,107 +120,103 @@ a img{
   display: none !important;
 }
 
-
 .android-logo-image {
   height: 28px;
   width: 140px;
 }
-
 
 .android-header {
   overflow: visible;
   background-color: white;
 }
 
-  .android-header .material-icons {
-    color: #767777 !important;
-  }
+.android-header .material-icons {
+  color: #767777 !important;
+}
 
-  .android-header .mdl-layout__drawer-button {
-    background: transparent;
-    color: #767777;
-  }
+.android-header .mdl-layout__drawer-button {
+  background: transparent;
+  color: #767777;
+}
 
-  .android-header .mdl-navigation__link {
-    color: #757575;
-    font-weight: 700;
-    font-size: 14px;
-  }
+.android-header .mdl-navigation__link {
+  color: #757575;
+  font-weight: 700;
+  font-size: 14px;
+}
 
-  .android-navigation-container {
-    /* Simple hack to make the overflow happen to the left instead... */
-    direction: rtl;
-    order: 1;
-    width: 500px;
-    transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1),
-        width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  }
+.android-navigation-container {
+  /* Simple hack to make the overflow happen to the left instead... */
+  direction: rtl;
+  order: 1;
+  width: 500px;
+  transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+  width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
 
-  .android-navigation {
-    /* ... and now make sure the content is actually LTR */
-    direction: ltr;
-    justify-content: flex-end;
-    width: 800px;
-  }
+.android-navigation {
+  /* ... and now make sure the content is actually LTR */
+  direction: ltr;
+  justify-content: flex-end;
+  width: 800px;
+}
 
-  .android-search-box.is-focused ~ .android-navigation-container {
-    opacity: 0;
-    width: 100px;
-  }
+.android-search-box.is-focused ~ .android-navigation-container {
+  opacity: 0;
+  width: 100px;
+}
 
+.android-navigation .mdl-navigation__link {
+  display: inline-block;
+  height: 60px;
+  line-height: 68px;
+  background-color: transparent !important;
+  border-bottom: 4px solid transparent;
+}
 
-  .android-navigation .mdl-navigation__link {
-    display: inline-block;
-    height: 60px;
-    line-height: 68px;
-    background-color: transparent !important;
-    border-bottom: 4px solid transparent;
-  }
+.android-navigation .mdl-navigation__link:hover {
+  border-bottom: 4px solid #8bc34a;
+}
 
-    .android-navigation .mdl-navigation__link:hover {
-      border-bottom: 4px solid #8bc34a;
-    }
+.android-search-box {
+  order: 2;
+  margin-left: 16px;
+  margin-right: 16px;
+}
 
-  .android-search-box {
-    order: 2;
-    margin-left: 16px;
-    margin-right: 16px;
-  }
-
-  .android-more-button {
-    order: 3;
-  }
-
+.android-more-button {
+  order: 3;
+}
 
 .android-drawer {
   border-right: none;
 }
 
-  .android-drawer-separator {
-    height: 1px;
-    background-color: #dcdcdc;
-    margin: 8px 0;
-  }
+.android-drawer-separator {
+  height: 1px;
+  background-color: #dcdcdc;
+  margin: 8px 0;
+}
 
-  .android-drawer .mdl-navigation__link.mdl-navigation__link {
-    font-size: 14px;
-    color: #757575;
-  }
+.android-drawer .mdl-navigation__link.mdl-navigation__link {
+  font-size: 14px;
+  color: #757575;
+}
 
-  .android-drawer span.mdl-navigation__link.mdl-navigation__link {
-    color: #8bc34a;
-  }
+.android-drawer span.mdl-navigation__link.mdl-navigation__link {
+  color: #8bc34a;
+}
 
-  .android-drawer .mdl-layout-title {
-    position: relative;
-    background: #6ab344;
-    height: 160px;
-  }
+.android-drawer .mdl-layout-title {
+  position: relative;
+  background: #6ab344;
+  height: 160px;
+}
 
-    .android-drawer .android-logo-image {
-      position: absolute;
-      bottom: 16px;
-    }
+.android-drawer .android-logo-image {
+  position: absolute;
+  bottom: 16px;
+}
 
 .android-be-together-section {
   position: relative;
@@ -261,11 +249,11 @@ a img{
   padding-top: 400px;
 }
 
-  .android-create-character a {
-    text-decoration: none;
-    color: #767777;
-    font-weight: 300;
-  }
+.android-create-character a {
+  text-decoration: none;
+  color: #767777;
+  font-weight: 300;
+}
 
 .android-screen-section {
   position: relative;
@@ -300,11 +288,10 @@ a img{
   margin-right: 32px;
 }
 
-  .android-wear .android-screen-image {
-    width: 40%;
-    z-index: 1;
-  }
-
+.android-wear .android-screen-image {
+  width: 40%;
+  z-index: 1;
+}
 
 .android-phone {
   display: inline-block;
@@ -312,11 +299,10 @@ a img{
   margin-right: 48px;
 }
 
-  .android-phone .android-screen-image {
-    width: 100%;
-    z-index: 1;
-  }
-
+.android-phone .android-screen-image {
+  width: 100%;
+  z-index: 1;
+}
 
 .android-tablet {
   display: inline-block;
@@ -324,16 +310,15 @@ a img{
   margin-right: 64px;
 }
 
-  .android-tablet .android-screen-image {
-    width: 100%;
-    z-index: 1;
-  }
+.android-tablet .android-screen-image {
+  width: 100%;
+  z-index: 1;
+}
 
-  .android-tablet .android-link {
-    display: block;
-    z-index: 2;
-  }
-
+.android-tablet .android-link {
+  display: block;
+  z-index: 2;
+}
 
 .android-tv {
   display: inline-block;
@@ -341,11 +326,10 @@ a img{
   margin-right: 80px;
 }
 
-  .android-tv .android-screen-image {
-    width: 100%;
-    z-index: 1;
-  }
-
+.android-tv .android-screen-image {
+  width: 100%;
+  z-index: 1;
+}
 
 .android-auto {
   display: inline-block;
@@ -353,12 +337,11 @@ a img{
   overflow: hidden;
 }
 
-  .android-auto .android-screen-image {
-    display: block;
-    height: 300px;
-    z-index: 1;
-  }
-
+.android-auto .android-screen-image {
+  display: block;
+  height: 300px;
+  z-index: 1;
+}
 
 .android-wear-section {
   position: relative;
@@ -383,23 +366,23 @@ a img{
   color: white;
 }
 
-  .android-wear-band-text p {
-    padding-top: 8px;
-  }
+.android-wear-band-text p {
+  padding-top: 8px;
+}
 
 .android-link {
   text-decoration: none;
   color: #8bc34a !important;
 }
 
-  .android-link:hover {
-    color: #7cb342 !important;
-  }
+.android-link:hover {
+  color: #7cb342 !important;
+}
 
-  .android-link .material-icons {
-    position: relative;
-    top: 6px;
-  }
+.android-link .material-icons {
+  position: relative;
+  top: 6px;
+}
 
 .android-alt-link {
   text-decoration: none;
@@ -407,14 +390,14 @@ a img{
   font-size: 16px;
 }
 
-  .android-alt-link:hover {
-    color: #00bfa5 !important;
-  }
+.android-alt-link:hover {
+  color: #00bfa5 !important;
+}
 
-  .android-alt-link .material-icons {
-    position: relative;
-    top: 6px;
-  }
+.android-alt-link .material-icons {
+  position: relative;
+  top: 6px;
+}
 
 .android-customized-section {
   text-align: center;
@@ -427,9 +410,9 @@ a img{
   padding: 80px 16px 0 16px;
 }
 
-  .android-customized-section-text p {
-    padding-top: 16px;
-  }
+.android-customized-section-text p {
+  padding-top: 16px;
+}
 
 .android-customized-section-image {
   background: url('images/devices.jpg') center top no-repeat;
@@ -444,85 +427,83 @@ a img{
   margin-right: auto;
 }
 
-  .android-more-section .android-section-title {
-    margin-left: 12px;
-    padding-bottom: 24px;
-  }
+.android-more-section .android-section-title {
+  margin-left: 12px;
+  padding-bottom: 24px;
+}
 
 .android-card-container {
 }
 
-  .android-card-container .mdl-card__media {
-    overflow: hidden;
-    background: transparent;
-  }
+.android-card-container .mdl-card__media {
+  overflow: hidden;
+  background: transparent;
+}
 
-    .android-card-container .mdl-card__media img {
-      width: 100%;
-    }
+.android-card-container .mdl-card__media img {
+  width: 100%;
+}
 
-  .android-card-container .mdl-card__title {
-    background: transparent;
-    height: auto;
-  }
+.android-card-container .mdl-card__title {
+  background: transparent;
+  height: auto;
+}
 
-  .android-card-container .mdl-card__title-text {
-    color: black;
-    height: auto;
-  }
+.android-card-container .mdl-card__title-text {
+  color: black;
+  height: auto;
+}
 
-  .android-card-container .mdl-card__supporting-text {
-    height: auto;
-    color: black;
-    padding-bottom: 48px;
-  }
+.android-card-container .mdl-card__supporting-text {
+  height: auto;
+  color: black;
+  padding-bottom: 48px;
+}
 
-  .android-card-container .mdl-card__actions {
-    position: absolute;
-    bottom: 0;
-  }
+.android-card-container .mdl-card__actions {
+  position: absolute;
+  bottom: 0;
+}
 
-  .android-card-container .mdl-card__actions a {
-    border-top: none;
-    line-height: 32px;
-    font-size: 16px;
-  }
+.android-card-container .mdl-card__actions a {
+  border-top: none;
+  line-height: 32px;
+  font-size: 16px;
+}
 
 .android-footer {
   background-color: #fafafa;
   position: relative;
 }
 
-  .android-footer a:hover {
-    color: #8bc34a;
-  }
+.android-footer a:hover {
+  color: #8bc34a;
+}
 
-  .android-footer .mdl-mega-footer--top-section::after {
-    border-bottom: none;
-  }
+.android-footer .mdl-mega-footer--top-section::after {
+  border-bottom: none;
+}
 
-  .android-footer .mdl-mega-footer--middle-section::after {
-    border-bottom: none;
-  }
+.android-footer .mdl-mega-footer--middle-section::after {
+  border-bottom: none;
+}
 
-  .android-footer .mdl-mega-footer--bottom-section {
-    position: relative;
-  }
+.android-footer .mdl-mega-footer--bottom-section {
+  position: relative;
+}
 
-  .android-footer .mdl-mega-footer--bottom-section a {
-    margin-right: 2em;
-  }
+.android-footer .mdl-mega-footer--bottom-section a {
+  margin-right: 2em;
+}
 
-  .android-footer .mdl-mega-footer--right-section a .material-icons {
-    position: relative;
-    top: 6px;
-  }
-
+.android-footer .mdl-mega-footer--right-section a .material-icons {
+  position: relative;
+  top: 6px;
+}
 
 .android-link-menu:hover {
   cursor: pointer;
 }
-
 
 /**** Mobile layout ****/
 @media (max-width: 900px) {

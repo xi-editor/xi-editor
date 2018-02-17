@@ -1,52 +1,64 @@
 .site-header {
   min-height: 74px;
 }
+
 .tac-site-title {
   text-decoration: none;
   color: white;
 }
+
 .tac-site-title img {
   height: 36px;
   margin-right: 12px;
   padding-left: 12px;
 }
+
 .tac-header {
   padding-top: 0px;
   background-color: $color-primary-dark !important;
 }
+
 .header-content {
   display: flex;
 }
+
 .header-content .mdl-textfield {
   align-self: center;
 }
+
 .header-content .mdl-textfield .mdl-button {
   bottom: inherit; /*Override MDL default*/
 }
+
 .tac-logo-row {
   background-color: $color-primary-dark;
   height: 72px;
 }
+
 .tac-title {
   display: inline-block;
   font-weight: 300;
   vertical-align: middle;
 }
+
 .tac-layout {
   min-height: 100%;
   height: auto;
 }
+
 .tac-search {
   margin-left: auto;
 }
+
 .docs-content-wrapper {
   width: 100%;
 }
+
 .docs-content-grid {
   padding-left: 8px; /*Align with the menu above*/
 }
 
- /* Selectable elements */
+/* Selectable elements */
 .docs-content-grid, .mdl-textfield {
   -webkit-touch-callout: text;
   -webkit-user-select: text;
@@ -68,6 +80,7 @@
   padding: 24px 0;
   z-index: 1;
 }
+
 .scrollable-header-row {
   overflow-x: auto;
   overflow-y: hidden;
@@ -87,10 +100,12 @@
   background-color: transparent !important;
   border-bottom: 4px solid transparent;
 }
+
 .tac-navigation .mdl-navigation__link.tac-site-nav-category {
   padding-left: 12px;
   font-weight: 600;
 }
+
 .tac-tab-navigation .mdl-navigation__link:hover {
   border-bottom: 4px solid $color-accent;
 }
@@ -99,21 +114,26 @@
 .tac-tab-navigation .mdl-navigation__link .mdl-ripple {
   background-color: white;
 }
+
 .tac-navigation .mdl-navigation__link {
   overflow: hidden;
   position: relative;
 }
+
 .tac-navigation .mdl-navigation__link:hover {
   text-decoration: none;
 }
+
 .tac-tab-navigation .mdl-navigation__link--current {
   border-bottom: 4px solid $color-accent;
 }
+
 .tac-navigation .mdl-navigation__link--current {
   font-weight: 800;
   color: $color-primary !important;
   background-color: $tac-grey;
 }
+
 .tac-navigation {
   flex-direction: column;
   align-items: stretch;
@@ -150,11 +170,8 @@
   order: 1;
 }
 
-
-
-
 /* TOC */
-#markdown-toc  {
+#markdown-toc {
   list-style-type: none;
   border-left: solid 3px $color-primary;
   padding-left: 20px;
@@ -173,7 +190,6 @@
 td {
   padding: 2px;
 }
-
 
 // Remove tabs and move to a drawer navigation on smaller screens
 @media screen and (max-width: $layout-large-screen) {
@@ -205,7 +221,7 @@ td {
     height: auto;
   }
 
-  .tac-logo-row{
+  .tac-logo-row {
     height: 48px;
   }
 
@@ -214,7 +230,7 @@ td {
     background-color: transparent !important;
   }
   .tac_navigation {
-      display: none;
+    display: none;
   }
   .tac-title {
     font-size: 12px
