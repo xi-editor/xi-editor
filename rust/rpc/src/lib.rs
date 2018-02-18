@@ -193,7 +193,7 @@ impl<W: Write + Send> RpcLoop<W> {
     /// Starts the event loop, reading lines from the reader until EOF,
     /// or an error occurs.
     ///
-    /// Returns `Ok()` in  the EOF case, otherwise returns the
+    /// Returns `Ok()` in the EOF case, otherwise returns the
     /// underlying `ReadError`.
     ///
     /// # Note:
