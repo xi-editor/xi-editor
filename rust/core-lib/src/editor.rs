@@ -961,13 +961,13 @@ impl Editor {
         self.view.collapse_selections(&self.text);
     }
 
-    fn transform_text(&mut self, transform_function: &Fn(String) -> String) {
+    fn transform_text<F: Fn(&str) -> String>(&mut self, transform_function: F) {
         let mut builder = delta::Builder::new(self.text.len());
 
         for region in self.view.sel_regions() {
             let selected_text = self.text.slice_to_string(region.min(), region.max());
             let interval = Interval::new_closed_open(region.min(), region.max());
-            builder.replace(interval, Rope::from(transform_function(selected_text)));
+            builder.replace(interval, Rope::from(transform_function(&selected_text)));
         }
         if !builder.is_empty() {
             self.this_edit_type = EditType::Other;
@@ -1052,12 +1052,13 @@ impl Editor {
             DebugRewrap => self.debug_rewrap(),
             DebugPrintSpans => self.debug_print_spans(),
             CancelOperation => self.do_cancel_operation(),
-            Uppercase => self.transform_text(&|s| s.to_uppercase()),
-            Lowercase => self.transform_text(&|s| s.to_lowercase()),
+            Uppercase => self.transform_text(|s| s.to_uppercase()),
+            Lowercase => self.transform_text(|s| s.to_lowercase()),
         };
 
         self.cmd_postlude();
     }
+
 
     pub fn handle_request(&mut self, _view_id: ViewIdentifier,
                           cmd: rpc::EditRequest) -> Result<Value, RemoteError> {
