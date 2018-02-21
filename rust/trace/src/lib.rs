@@ -189,13 +189,13 @@ impl From<Vec<String>> for CategoriesT {
 }
 
 #[cfg(all(not(feature = "dict_payload"), not(feature = "json_payload")))]
-type TracePayloadT = StrCow;
+pub type TracePayloadT = StrCow;
 
 #[cfg(feature = "json_payload")]
-type TracePayloadT = serde_json::Value;
+pub type TracePayloadT = serde_json::Value;
 
 #[cfg(feature = "dict_payload")]
-type TracePayloadT = std::collections::HashMap<StrCow, StrCow>;
+pub type TracePayloadT = std::collections::HashMap<StrCow, StrCow>;
 
 /// How tracing should be configured.
 #[derive(Copy, Clone)]
@@ -257,7 +257,7 @@ pub struct Sample {
     /// A private ordering to apply to the events based on creation order.
     /// Disambiguates in case 2 samples might be created from different threads
     /// with the same start_ns for purposes of ordering.
-    pub(crate) sample_id: usize,
+    pub sample_id: usize,
     /// The name of the event to be shown.
     pub name: StrCow,
     /// List of categories the event applies to.
@@ -336,7 +336,17 @@ impl Sample {
 
 impl PartialEq for Sample {
     fn eq(&self, other: &Sample) -> bool {
-        self.pid == other.pid && self.sample_id == other.sample_id
+        if self.pid == other.pid {
+            self.sample_id == other.sample_id
+        } else {
+            self.start_ns == other.start_ns && self.end_ns == other.end_ns &&
+                self.name == other.name &&
+                self.categories == other.categories &&
+                self.pid == other.pid &&
+                self.tid == other.tid &&
+                self.sample_type == other.sample_type &&
+                self.payload == other.payload
+        }
     }
 }
 
