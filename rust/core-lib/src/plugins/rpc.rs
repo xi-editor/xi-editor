@@ -96,6 +96,7 @@ pub struct EmptyStruct {}
 /// RPC requests sent from the host
 pub enum HostRequest {
     Update(PluginUpdate),
+    CollectTrace(EmptyStruct),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -110,6 +111,7 @@ pub enum HostNotification {
     NewBuffer { buffer_info: Vec<PluginBufferInfo> },
     DidClose { view_id: ViewIdentifier },
     Shutdown(EmptyStruct),
+    TracingConfig {enabled: bool},
 }
 
 

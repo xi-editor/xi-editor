@@ -15,6 +15,8 @@ toml = "0.4"
 lazy_static = "1.0"
 notify = { optional = true, version = "4.0" }
 
+xi-trace = { path = "../trace", version = "0.1.0" }
+xi-trace-dump = { path = "../trace-dump", version = "0.1.0" }
 xi-rope = { path = "../rope", version = "0.2" }
 xi-unicode = { path = "../unicode", version = "0.1.0" }
 xi-rpc = { path = "../rpc", version = "0.2.0" }
