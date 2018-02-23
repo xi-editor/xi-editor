@@ -256,6 +256,8 @@ const TEXT_EDIT_RPCS: &str = r#"{"method":"edit","params":{"view_id":"view-id-1"
 {"method":"edit","params":{"view_id":"view-id-1","method":"undo","params":[]}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"redo","params":[]}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"transpose","params":[]}}
+{"method":"edit","params":{"view_id":"view-id-1","method":"uppercase","params":[]}}
+{"method":"edit","params":{"view_id":"view-id-1","method":"lowercase","params":[]}}
 {"id":2,"method":"edit","params":{"view_id":"view-id-1","method":"cut","params":[]}}"#;
 
 const OTHER_EDIT_RPCS: &str = r#"{"method":"edit","params":{"view_id":"view-id-1","method":"scroll","params":[0,1]}}
