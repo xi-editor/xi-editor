@@ -236,8 +236,8 @@ mod tests {
     fn test_plugin_update() {
         let json = r#"{
             "view_id": "view-id-42",
-            "delta": {"base_len": 6, "els": [{"copy": [0,5]}, {"insert":"rofls"}]},
-            "new_len": 404,
+            "delta": {"base_len": 6, "els": [{"copy": [0,5]}, {"insert":"rofls"}, {"copy": [5,6]}]},
+            "new_len": 11,
             "rev": 5,
             "edit_type": "something",
             "author": "me"
