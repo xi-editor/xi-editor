@@ -129,7 +129,7 @@ impl RemoteError {
 }
 
 impl ReadError {
-    /// Returns `true` iff this is the `ReadError::Disconnect` variant.
+    /// Returns `true` if this is the `ReadError::Disconnect` variant.
     pub fn is_disconnect(&self) -> bool {
         match *self {
             ReadError::Disconnect => true,
