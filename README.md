@@ -69,6 +69,8 @@ and might work on other Flutter targets.
 
 * [kod](https://github.com/linde12/kod), a terminal frontend written in Golang.
 
+* [xi-qt](https://github.com/sw5cc/xi-qt), a Qt front-end.
+
 The following are currently inactive, based on earlier versions of the front-end
 protocol, but perhaps could be revitalized:
 
