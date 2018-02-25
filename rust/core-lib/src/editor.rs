@@ -63,6 +63,16 @@ enum CharacterEncoding {
 
 const UTF8_BOM: &str = "\u{feff}";
 
+fn last_selection_region(regions: &[SelRegion]) -> Option<&SelRegion> {
+    for region in regions.iter().rev() {
+        if !region.is_caret() {
+            return Some(region);
+        }
+    }
+
+    None
+}
+
 pub struct Editor {
     text: Rope,
     encoding: CharacterEncoding,
@@ -104,6 +114,7 @@ enum EditType {
     Delete,
     Undo,
     Redo,
+    Transpose,
 }
 
 impl EditType {
@@ -113,6 +124,7 @@ impl EditType {
             EditType::Delete => "delete",
             EditType::Undo => "undo",
             EditType::Redo => "redo",
+            EditType::Transpose => "transpose",
             _ => "other",
         }
     }
@@ -306,7 +318,7 @@ impl Editor {
         let undo_group;
 
         if self.this_edit_type == self.last_edit_type &&
-            self.this_edit_type != EditType::Other &&
+            self.this_edit_type != EditType::Other && self.this_edit_type != EditType::Transpose &&
             !self.live_undos.is_empty() {
 
             undo_group = *self.live_undos.last().unwrap();
@@ -364,7 +376,8 @@ impl Editor {
         // TODO (performance): it's probably quicker to stash last_text rather than
         // resynthesize it.
         let last_text = self.engine.get_rev(last_token).expect("last_rev not found");
-        self.scroll_to = self.view.after_edit(&self.text, &last_text, &delta, is_pristine);
+        let keep_selections = self.this_edit_type == EditType::Transpose;
+        self.scroll_to = self.view.after_edit(&self.text, &last_text, &delta, is_pristine, keep_selections);
         let (iv, new_len) = delta.summary();
 
         // TODO: perhaps use different semantics for spans that enclose the
@@ -877,9 +890,20 @@ impl Editor {
         }
     }
 
+    fn sel_region_to_interval_and_rope(&self, region: &SelRegion) -> (Interval, Rope) {
+        let as_interval = Interval::new_closed_open(region.min(), region.max());
+        let interval_rope = Rope::from(self.text.slice_to_string(
+            as_interval.start(), as_interval.end()));
+        (as_interval, interval_rope)
+    }
+
     fn do_transpose(&mut self) {
         let mut builder = delta::Builder::new(self.text.len());
         let mut last = 0;
+        let mut optional_previous_selection : Option<(Interval, Rope)> =
+            last_selection_region(self.view.sel_regions()).map(
+                |ref region| self.sel_region_to_interval_and_rope(region));
+
         for region in self.view.sel_regions() {
             if region.is_caret() {
                 let middle = region.end;
@@ -895,11 +919,14 @@ impl Editor {
                         last = end;
                     }
                 }
+            } else if let Some(previous_selection) = optional_previous_selection {
+                let current_interval = self.sel_region_to_interval_and_rope(&region);
+                builder.replace(current_interval.0, previous_selection.1);
+                optional_previous_selection = Some(current_interval);
             }
-            // TODO: handle else case by rotating non-caret regions.
         }
         if !builder.is_empty() {
-            self.this_edit_type = EditType::Other;
+            self.this_edit_type = EditType::Transpose;
             self.add_delta(builder.build());
         }
     }
