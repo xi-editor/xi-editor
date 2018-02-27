@@ -32,6 +32,7 @@ use serde::ser::{Serialize, Serializer, SerializeStruct, SerializeTupleVariant};
 use serde::de::{Deserialize, Deserializer};
 
 use unicode_segmentation::GraphemeCursor;
+use unicode_segmentation::GraphemeIncomplete;
 
 const MIN_LEAF: usize = 511;
 const MAX_LEAF: usize = 1024;
@@ -139,51 +140,6 @@ impl Metric<RopeInfo> for BaseMetric {
         } else {
             let b = s.as_bytes()[offset];
             Some(offset + len_utf8_from_first_byte(b))
-        }
-    }
-
-    fn can_fragment() -> bool {
-        false
-    }
-}
-
-#[derive(Clone, Copy)]
-pub struct GraphemeMetric(());
-
-impl Metric<RopeInfo> for GraphemeMetric {
-    fn measure(_: &RopeInfo, len: usize) -> usize {
-        len
-    }
-
-    fn to_base_units(_: &String, in_measured_units: usize) -> usize {
-        in_measured_units
-    }
-
-    fn from_base_units(_: &String, in_base_units: usize) -> usize {
-        in_base_units
-    }
-
-    fn is_boundary(s: &String, offset: usize) -> bool {
-        if let Ok(r) = GraphemeCursor::new(offset, s.len(), true).is_boundary(s, 0) {
-            r
-        } else {
-            false
-        }
-    }
-
-    fn prev(s: &String, offset: usize) -> Option<usize> {
-        if let Ok(o) = GraphemeCursor::new(offset, s.len(), true).prev_boundary(s, 0) {
-            o
-        } else {
-            None
-        }
-    }
-
-    fn next(s: &String, offset: usize) -> Option<usize> {
-        if let Ok(o) = GraphemeCursor::new(offset, s.len(), true).next_boundary(s, 0) {
-            o
-        } else {
-            None
         }
     }
 
@@ -408,20 +364,15 @@ impl Rope {
         cursor.next::<BaseMetric>()
     }
 
-    pub fn is_grapheme_boundary(&self, offset: usize) -> bool {
-        let mut cursor = Cursor::new(self, offset);
-        cursor.is_boundary::<GraphemeMetric>()
-    }
-
     // graphemes should probably be developed as a cursor-based interface
     pub fn prev_grapheme_offset(&self, offset: usize) -> Option<usize> {
         let mut cursor = Cursor::new(self, offset);
-        cursor.prev::<GraphemeMetric>()
+        cursor.prev_grapheme()
     }
 
     pub fn next_grapheme_offset(&self, offset: usize) -> Option<usize> {
         let mut cursor = Cursor::new(self, offset);
-        cursor.next::<GraphemeMetric>()
+        cursor.next_grapheme()
     }
 
     /// Return the line number corresponding to the byte index `offset`.
@@ -600,6 +551,91 @@ impl<'a> Cursor<'a, RopeInfo> {
             None
         }
     }
+
+    fn maybe_provide_context(&mut self, c: &mut GraphemeCursor, leaf: &String, leaf_offset: usize) -> bool {
+        while let Err(GraphemeIncomplete::PreContext(_)) = c.is_boundary(&leaf, leaf_offset) {
+            if let Some((pl, poffset)) = self.prev_leaf() {
+                c.provide_context(&pl, self.pos() - poffset);
+            } else {
+                return false;
+            }
+        }
+        c.is_boundary(&leaf, leaf_offset).is_ok()
+    }
+
+    pub fn next_grapheme(&mut self) -> Option<usize> {
+        if let Some((l, offset)) = self.get_leaf() {
+            let pos = self.pos();
+            let leaf_offset = pos - offset;
+            let mut c = GraphemeCursor::new(pos, l.len() + leaf_offset, true);
+            if !self.maybe_provide_context(&mut c, l, leaf_offset) {
+                return None;
+            }
+            let next_boundary = c.next_boundary(&l, leaf_offset);
+            // GraphemeIncomplete::NextChunk error will not happen, since this cursor thinks the end of
+            // the current leaf as the end of the string.
+            if let Ok(Some(next_offset)) = next_boundary {
+                if next_offset == l.len() + leaf_offset {
+                    self.set(pos);
+                    if let Some((nl, _)) = self.next_leaf() {
+                        let mut c = GraphemeCursor::new(next_offset, nl.len() + next_offset, true);
+                        if !self.maybe_provide_context(&mut c, nl, next_offset) {
+                            return None;
+                        }
+                        if !c.is_boundary(&nl, next_offset).unwrap_or(true) {
+                            return c.next_boundary(&nl, next_offset).unwrap_or(None);
+                        }
+                    }
+                }
+            }
+            next_boundary.unwrap_or(None)
+        } else {
+            None
+        }
+    }
+
+    pub fn prev_grapheme(&mut self) -> Option<usize> {
+        if let Some((mut l, mut offset)) = self.get_leaf() {
+            // If the current position is at the end of the current node -- it's always considered
+            // as a grapheme boundary, but that could be wrong. To take this into account, just moves
+            // to the previous code point first. As the result, if the previous code point happens to
+            // be a grapheme boundary, that's the right position. Otherwise, check through
+            // prev_boundary method.
+            let end_of_leaf = offset == l.len();
+            if end_of_leaf {
+                self.prev_codepoint();
+                if let Some((pl, poffset)) = self.get_leaf() {
+                    l = pl;
+                    offset = poffset;
+                } else {
+                    return None;
+                }
+            }
+            let pos = self.pos();
+            let leaf_offset = pos - offset;
+            let mut c = GraphemeCursor::new(pos, l.len() + leaf_offset, true);
+            if !self.maybe_provide_context(&mut c, l, leaf_offset) {
+                return None;
+            }
+            if end_of_leaf && c.is_boundary(&l, leaf_offset).unwrap_or(false) {
+                return Some(pos);
+            }
+            let prev_boundary = c.prev_boundary(&l, leaf_offset);
+            if let Err(GraphemeIncomplete::PrevChunk) = prev_boundary {
+                self.set(pos);
+                if let Some((pl, offset)) = self.prev_leaf() {
+                    c.set_cursor(offset+pl.len());
+                    if !self.maybe_provide_context(&mut c, pl, offset) {
+                        return None;
+                    }
+                    return c.prev_boundary(&pl, offset).unwrap_or(None);
+                }
+            }
+            prev_boundary.unwrap_or(None)
+        } else {
+            None
+        }
+    }
 }
 
 // line iterators
@@ -744,6 +780,20 @@ mod tests {
         assert_eq!(Some(9), a.next_grapheme_offset(3));
         assert_eq!(Some(17), a.next_grapheme_offset(9));
         assert_eq!(None, a.next_grapheme_offset(17));
+    }
+
+    #[test]
+    fn next_grapheme_offset_with_ris_of_leaf_boundaries() {
+        let s1 = "\u{1f1fa}\u{1f1f8}".repeat(100);
+        let a = Rope::concat(Rope::from(String::from(s1.clone()) + "\u{1f1fa}"), Rope::from(s1.clone()));
+        for i in 0..201 {
+            let prev_exp = if i > 0 { Some(i*8-8) } else { None };
+            let next_exp = if i < 200 { Some(i*8+8) } else { Some(i*8+4) };
+            assert_eq!(prev_exp, a.prev_grapheme_offset(i*8));
+            assert_eq!(next_exp, a.next_grapheme_offset(i*8));
+        }
+        assert_eq!(Some(s1.len()*2), a.prev_grapheme_offset(s1.len()*2+4));
+        assert_eq!(None, a.next_grapheme_offset(s1.len() * 2 + 4));
     }
 
     #[test]
