@@ -1,4 +1,10 @@
-# A CRDT approach to async plugins and undo
+---
+layout: page
+title: CRDT - Approach to async plugins and undo
+site_nav_category_order: 203
+is_site_nav_category2: true
+site_nav_category: docs
+---
 
 A primary goal of the xi project is to provide extremely fast responsiveness in all circumstances. For core editing operations, this can generally be accomplished by extremely fast implementation of the editing primitives. However, non-responsiveness due to plugins is a very significant problem, and just making faster plugins is not an appealing solution; we want plugins to do sophisticated lexical and syntactical analysis so their operations can be accurate.
 
