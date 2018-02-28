@@ -8,3 +8,9 @@ site_nav_category: docs
 
 ### Table of Contents:
  - [Front-end protocol](docs/frontend-protocol.html)
+ - [Plugin architecture](docs/plugin.html)
+ - CRDT:
+    - [Approach to async plugins and undo](docs/crdt.html)
+    - [The Xi Text Engine](docs/crdt-details.html)
+    - [Using the Ledger for CRDTs](docs/fuchsia-ledger-crdts.html)
+ - [Working with the config system](docs/config.html)
