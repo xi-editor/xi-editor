@@ -1,14 +1,20 @@
-# Rope science, part 10: designing for a conflict-free world
+---
+layout: page
+title: Rope science, part 10 - designing for a conflict-free world
+site_nav_category_order: 218
+is_site_nav_category2: true
+site_nav_category: docs
+---
 
 (originally written 11 May 2016)
 
 In today's post, we'll deep dive into a very specific problem (namely, the design of an asynchronous plugin that does indentation) and then try to derive some more general lessons from it.
 
-The indentation problem seems relatively simple on the surface. Let's say the buffer starts out with "foo {|}" (the cursor position represented by a pipe), and the user presses Enter. Let's let the core synchronously insert a newline, and notify a plugin to compute the correct indentation. Of course, correct indentation is a hard problem, relying on an accurate parse of the source text, which is why many editors give up and compute approximate indentation only, usually using regexes. I find that annoying.
+The indentation problem seems relatively simple on the surface. Let's say the buffer starts out with "foo {\|}" (the cursor position represented by a pipe), and the user presses Enter. Let's let the core synchronously insert a newline, and notify a plugin to compute the correct indentation. Of course, correct indentation is a hard problem, relying on an accurate parse of the source text, which is why many editors give up and compute approximate indentation only, usually using regexes. I find that annoying.
 
-In a synchronous plugin model, it's not conceptually hard. The plugin thinks for a (hopefully short) while, then inserts "....\n" after the newline (dots representing spaces), and moves the cursor to a point between the spaces and the newline. Now the editor is ready to accept edits again, and hopefully any keys pressed were buffered in-order. The buffer and cursor now read "foo {\n....|\n}".
+In a synchronous plugin model, it's not conceptually hard. The plugin thinks for a (hopefully short) while, then inserts "....\n" after the newline (dots representing spaces), and moves the cursor to a point between the spaces and the newline. Now the editor is ready to accept edits again, and hopefully any keys pressed were buffered in-order. The buffer and cursor now read "foo {\n....\|\n}".
 
-We want to do even better, allowing the user to type while the plugin is thinking. So, if the user types "bar" concurrently with the plugin's edit, we want the buffer to read "foo {\nbar|}" transiently, converging on "foo\n...bar|\n}" when the plugin posts its edit.
+We want to do even better, allowing the user to type while the plugin is thinking. So, if the user types "bar" concurrently with the plugin's edit, we want the buffer to read "foo {\nbar\|}" transiently, converging on "foo\n...bar\|\n}" when the plugin posts its edit.
 
 If you were to just apply the edit commands (insert, move cursor) out of order, you'd end up with an interleaved mess, arguably a much worse experience than just the latency spike. Unfortunately, I've seen quite a bit of this kind of behavior. How to avoid it?
 

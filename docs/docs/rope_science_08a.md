@@ -1,4 +1,10 @@
-# Rope science, part 8a: CRDT followup
+---
+layout: page
+title: Rope science, part 8a - CRDT follow-up
+site_nav_category_order: 216
+is_site_nav_category2: true
+site_nav_category: docs
+---
 
 (originally written 5 May 2016)
 

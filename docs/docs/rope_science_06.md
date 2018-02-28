@@ -1,4 +1,10 @@
-# Rope science, part 6: parallel and asynchronous word wrapping
+---
+layout: page
+title: Rope science, part 6 - parallel and asynchronous word wrapping
+site_nav_category_order: 213
+is_site_nav_category2: true
+site_nav_category: docs
+---
 
 (originally written 24 Apr 2016)
 

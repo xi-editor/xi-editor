@@ -1,4 +1,10 @@
-# Rope science, part 2: metrics
+---
+layout: page
+title: Rope science, part 2 - metrics
+site_nav_category_order: 209
+is_site_nav_category2: true
+site_nav_category: docs
+---
 
 (originally written 15 Apr 2016)
 
@@ -77,4 +83,3 @@ In xi, I’m trying to represent these tricky problems in clean, general abstrac
 Some discussion of alternatives to "base unit" but no consensus on a better one.
 
 Thomas Colthurst pointed me to Guy Steele's talk on [catamorphisms](http://groups.csail.mit.edu/mac/users/gjs/6.945/readings/MITApril2009Steele.pdf), which is quite interesting.
-

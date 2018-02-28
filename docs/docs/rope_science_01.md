@@ -1,4 +1,10 @@
-# Rope science, part 1
+---
+layout: page
+title: Rope science, part 1 - MapReduce for text
+site_nav_category_order: 208
+is_site_nav_category2: true
+site_nav_category: docs
+---
 
 (or, MapReduce for text)
 

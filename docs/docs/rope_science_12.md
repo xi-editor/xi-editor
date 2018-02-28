@@ -1,4 +1,10 @@
-# Rope science, part 12: minimal invalidation
+---
+layout: page
+title: Rope science, part 12 - minimal invalidation
+site_nav_category_order: 220
+is_site_nav_category2: true
+site_nav_category: docs
+---
 
 24 Nov 2017
 
