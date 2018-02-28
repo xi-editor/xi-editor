@@ -1,7 +1,7 @@
 ---
 layout: page
 title: GSoC
-site_nav_category_order: 200
+site_nav_category_order: 300
 is_site_nav_category: true
 site_nav_category: gsoc
 ---
