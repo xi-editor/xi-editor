@@ -83,7 +83,7 @@ experimental GL-based front-end in Rust.
 
 There are notes (I wouldn’t call it
 documentation at this point) on the protocol at
-[frontend.md](doc/frontend.md). If you're working on a front-end, feel free to
+[frontend.md](http://google.github.io/xi-editor/docs/frontend-protocol.html). If you're working on a front-end, feel free to
 send a PR to add it to the above list.
 
 ## Design decisions
