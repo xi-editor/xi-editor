@@ -1,4 +1,10 @@
-# Plugin architecture
+---
+layout: page
+title: Plugin architecture
+site_nav_category_order: 202
+is_site_nav_category2: true
+site_nav_category: docs
+---
 
 ## Philosophy
 
@@ -169,7 +175,7 @@ edits while an RPC is in flight.
 
 ## Security
 
-Plugins can potentially 
+Plugins can potentially
 
 ## Open questions
 
