@@ -32,7 +32,7 @@ to learn more about planned features.
 
 Screenshot (will need to be updated as syntax coloring and UI polish is added):
 
-![xi screenshot](/doc/img/xi-mac-screenshot.png?raw=true)
+![xi screenshot](/docs/docs/img/xi-mac-screenshot.png?raw=true)
 
 ## Getting started
 
