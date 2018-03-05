@@ -6,6 +6,10 @@ is_site_nav_category: true
 site_nav_category: gsoc
 ---
 
+Please, use the suggested [proposal template](gsoc-template.html) when applying. 
+
+--------
+
 List of project ideas for Google Summer of Code 2018:
  - [Xi-Mac Polish and UI improvements](#xi-mac-polish-and-ui-improvements)
  - [Language Server Plugin](#language-server-plugin)
