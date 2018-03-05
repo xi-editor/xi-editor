@@ -6,7 +6,7 @@ is_site_nav_category: true
 site_nav_category: gsoc
 ---
 
-Please, use the suggested [proposal template](gsoc-template.html) when applying. 
+Please, use the suggested [proposal template](gsoc-template.html) when applying. Good places to start learning Xi are [easy](https://github.com/google/xi-editor/issues?q=is%3Aopen+is%3Aissue+label%3Aeasy) and [help wanted](https://github.com/google/xi-editor/issues?q=is%3Aopen+is%3Aissue+label%3A%22help+wanted%22) issues on GitHub. 
 
 --------
 
