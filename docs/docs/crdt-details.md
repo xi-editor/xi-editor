@@ -1,4 +1,10 @@
-# The Xi Text Engine CRDT
+---
+layout: page
+title: CRDT - The Xi Text Engine
+site_nav_category_order: 204
+is_site_nav_category2: true
+site_nav_category: docs
+---
 
 <!-- See https://www.figma.com/file/UGOAcpKR5WIP81t3DGPIP2dR/CRDT-Merge-Diagrams for the source of the diagrams -->
 

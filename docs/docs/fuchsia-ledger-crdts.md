@@ -1,4 +1,10 @@
-# Using the Ledger for CRDTs
+---
+layout: page
+title: CRDT - Using the Ledger for CRDTs
+site_nav_category_order: 205
+is_site_nav_category2: true
+site_nav_category: docs
+---
 
 This document contains notes about implementing a CRDT on top of the Ledger on Fuchsia, based on existing and planned work for Xi's text CRDT. It should be helpful for anyone developing a CRDT that works in the form of a Ledger custom conflict resolver that merges two histories.
 
@@ -59,4 +65,3 @@ Alternatively, whenever a new edit is appended it can be added as its own key-va
 - Ensure the Ledger representation of the result of a CRDT merge is deterministic, otherwise convergence will take much longer under concurrent editing. The easiest way to run afoul of this is using randomly-generated IDs.
 - The result of a conflict you are asked to resolve is not guaranteed to become the current state yet, don't set it as your local state, wait for the `PageWatcher` update from Ledger.
 - Commits can fail when out of disk space or memory. You should listen to the result of the `Commit` call to display some error state to user so they stop typing anything they care about. You also need to listen to wait for last commit before shutting down, or it may or may not be completed.
-

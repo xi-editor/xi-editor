@@ -1,4 +1,10 @@
-# Working with the config system
+---
+layout: page
+title: Working with the config system
+site_nav_category_order: 206
+is_site_nav_category2: true
+site_nav_category: docs
+---
 
 This document is intended for the authors of front-end clients.
 
@@ -143,4 +149,3 @@ Whenever a config table is modified, either through the RPC mechanism or by
 editing a file, the updated table is passed through a validator. If the table is
 invalid (for instance if it contains unrecognized keys) then an error is
 reported and the new table is ignored.
-
