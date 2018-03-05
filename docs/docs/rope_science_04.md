@@ -1,4 +1,10 @@
-# Rope science, part 4: parenthesis matching
+---
+layout: page
+title: Rope science, part 4 - parenthesis matching
+site_nav_category_order: 211
+is_site_nav_category2: true
+site_nav_category: docs
+---
 
 (originally written 20 Apr 2016)
 

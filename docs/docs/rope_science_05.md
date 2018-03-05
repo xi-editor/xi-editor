@@ -1,4 +1,10 @@
-# Rope science, part 5: incremental word wrapping
+---
+layout: page
+title: Rope science, part 5 - incremental word wrapping
+site_nav_category_order: 212
+is_site_nav_category2: true
+site_nav_category: docs
+---
 
 (originally written 22 Apr 2016)
 

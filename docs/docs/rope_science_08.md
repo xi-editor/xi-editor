@@ -1,4 +1,10 @@
-# Rope science part 8-ish: CRDTs for concurrent editing
+---
+layout: page
+title: Rope science, part 8 - CRDTs for concurrent editing
+site_nav_category_order: 215
+is_site_nav_category2: true
+site_nav_category: docs
+---
 
 (originally written 3 May 2016)
 

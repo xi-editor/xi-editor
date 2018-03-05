@@ -1,4 +1,10 @@
-# Rope science, part 11: practical syntax highlighting
+---
+layout: page
+title: Rope science, part 11 - practical syntax highlighting
+site_nav_category_order: 219
+is_site_nav_category2: true
+site_nav_category: docs
+---
 
 23 Apr 2017
 

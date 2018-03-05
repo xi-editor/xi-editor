@@ -1,4 +1,10 @@
-# Rope science, part 9
+---
+layout: page
+title: Rope science, part 9 - CRDT Approach to Async Plugins and Undo
+site_nav_category_order: 217
+is_site_nav_category2: true
+site_nav_category: docs
+---
 
 (originally written 7 May 2016, now at [doc/crdt.md](../crdt.md))
 

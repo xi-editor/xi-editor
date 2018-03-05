@@ -1,4 +1,10 @@
-# Rope science, part 3: Grapheme cluster boundaries
+---
+layout: page
+title: Rope science, part 3 - Grapheme cluster boundaries
+site_nav_category_order: 210
+is_site_nav_category2: true
+site_nav_category: docs
+---
 
 (originally written 16 Apr 2016)
 
