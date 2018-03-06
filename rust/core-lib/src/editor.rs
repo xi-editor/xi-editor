@@ -18,6 +18,8 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::io::Write;
 use std::collections::BTreeSet;
+use std::time::SystemTime;
+
 use serde_json::Value;
 
 use xi_rope::rope::{LinesMetric, Rope, RopeInfo};
@@ -32,7 +34,7 @@ use word_boundaries::WordCursor;
 use movement::{Movement, region_movement};
 use selection::{Affinity, Selection, SelRegion};
 
-use tabs::{BufferIdentifier, ViewIdentifier, DocumentCtx};
+use tabs::{self, BufferIdentifier, ViewIdentifier, DocumentCtx};
 use rpc::{self, GestureType};
 use syntax::SyntaxDefinition;
 use plugins::rpc::{PluginUpdate, PluginEdit, ScopeSpan, PluginBufferInfo,
@@ -78,6 +80,8 @@ pub struct Editor {
     encoding: CharacterEncoding,
 
     path: Option<PathBuf>,
+    file_mod_time: Option<SystemTime>,
+    file_has_changed: bool,
     buffer_id: BufferIdentifier,
     syntax: SyntaxDefinition,
     view: View,
@@ -162,6 +166,8 @@ impl Editor {
             encoding: encoding,
             buffer_id: buffer_id,
             path: None,
+            file_mod_time: None,
+            file_has_changed: false,
             syntax: SyntaxDefinition::default(),
             view: View::new(initial_view_id),
             engine: engine,
@@ -196,6 +202,7 @@ impl Editor {
         let path = path.as_ref();
         //TODO: if the user sets syntax, we shouldn't overwrite here
         self.syntax = SyntaxDefinition::new(path.to_str());
+        self.file_mod_time = tabs::get_file_mod_time(path);
         self.path = Some(path.to_owned());
     }
 
@@ -205,6 +212,58 @@ impl Editor {
             Some(ref p) => Some(p),
             None => None,
         }
+    }
+
+    /// Returns the time of the last file write initiated by this `Editor`.
+    pub fn get_file_mod_time(&self) -> Option<SystemTime> {
+        self.file_mod_time
+    }
+
+    /// Returns `true` if this editor's file has changed on disk.
+    pub fn get_file_has_changed(&self) -> bool {
+        self.file_has_changed
+    }
+
+    #[doc(hidden)]
+    pub (crate) fn _set_file_has_changed(&mut self, has_changed: bool) {
+        self.file_has_changed = has_changed
+    }
+
+    /// Sets this Editor's contents to `text`, preserving undo state and cursor
+    /// position when possible.
+    pub fn reload(&mut self, text: &str) {
+        self.this_edit_type = EditType::Other;
+        let new_text = Rope::from(text);
+        let new_len = new_text.len();
+
+        // preserve a single caret
+        self.view.collapse_selections(&self.text);
+        let prev_sel = self.view.sel_regions().first().map(|s| s.clone());
+        self.view.unset_find(&self.text);
+
+        let mut builder = delta::Builder::new(self.text.len());
+        let all_iv = Interval::new_closed_open(0, self.text.len());
+        builder.replace(all_iv, new_text);
+        self.add_delta(builder.build());
+        self.commit_delta(None);
+        self.last_edit_type = EditType::Other;
+
+        if let Some(prev_sel) = prev_sel {
+            let offset = prev_sel.start.min(new_len);
+            let new_sel = SelRegion {
+                start: offset,
+                end: offset,
+                horiz: None,
+                affinity: Affinity::default(),
+            };
+            self.set_sel_single_region(new_sel);
+        }
+
+        self.file_mod_time = self.path.as_ref()
+            .and_then(tabs::get_file_mod_time);
+        self.pristine_rev_id = self.last_rev_id;
+        self.view.set_pristine();
+        self.render()
     }
 
     /// Sets the config for this buffer. If the new config differs
@@ -436,7 +495,7 @@ impl Editor {
         // last_rev_id and so that merge will work.
     }
 
-    fn is_pristine(&self) -> bool {
+    pub (crate) fn is_pristine(&self) -> bool {
         self.engine.is_equivalent_revision(self.pristine_rev_id, self.engine.get_head_rev_id())
     }
 
@@ -757,6 +816,7 @@ impl Editor {
 
         self.pristine_rev_id = self.last_rev_id;
         self.view.set_pristine();
+        self.file_mod_time = tabs::get_file_mod_time(path);
         self.view.set_dirty(&self.text);
         self.render();
     }

@@ -21,6 +21,7 @@ use std::io::{self, Read};
 use std::path::{PathBuf, Path};
 use std::fs::File;
 use std::sync::{Arc, Mutex, MutexGuard, Weak, mpsc};
+use std::time::SystemTime;
 
 use serde::de::{Deserialize, Deserializer};
 use serde::ser::{Serialize, Serializer};
@@ -52,6 +53,9 @@ use apps_ledger_services_public::{Ledger_Proxy};
 /// Token for config-related file change events
 #[cfg(feature = "notify")]
 const CONFIG_EVENT_TOKEN: WatchToken = WatchToken(1);
+/// Token for file-change events in open files
+const OPEN_FILE_EVENT_TOKEN: WatchToken = WatchToken(2);
+
 const NEW_VIEW_IDLE_TOKEN: usize = 1001;
 
 /// xi_rpc idle Token for watcher related idle scheduling.
@@ -207,6 +211,14 @@ impl BufferContainerRef {
     /// Returns `true` if `file_path` is already open, else `false`.
     pub fn has_open_file<P: AsRef<Path>>(&self, file_path: P) -> bool {
         self.lock().open_files.contains_key(file_path.as_ref())
+    }
+
+    /// if `file_path` is currently open, returns the `BufferIdentifier` of
+    /// the corresponding `Editor`.
+    pub fn editor_for_path<P>(&self, path: P) -> Option<BufferIdentifier>
+        where P: AsRef<Path>,
+    {
+        self.lock().open_files.get(path.as_ref()).map(|id| *id)
     }
 
     /// Returns a copy of the BufferIdentifier associated with a given view.
@@ -383,7 +395,8 @@ impl Documents {
                                     client_extras_dir),
             SetTheme { theme_name } =>
                 self.do_set_theme(rpc_ctx.get_peer(), &theme_name),
-            Save { view_id, file_path } => self.do_save(view_id, file_path),
+            Save { view_id, file_path } =>
+                self.do_save(rpc_ctx.get_peer(), view_id, file_path),
             CloseView { view_id } => self.do_close_view(view_id),
             Edit(rpc::EditCommand { view_id, cmd }) => {
                 self.buffers.lock().editor_for_view_mut(view_id)
@@ -530,6 +543,7 @@ impl Documents {
         self.buffers.add_editor(view_id, buffer_id, editor);
         if let Some(path) = path {
             self.buffers.set_path(path, view_id);
+            self.add_watch_path(path);
         }
     }
 
@@ -545,20 +559,46 @@ impl Documents {
         Ok(s)
     }
 
-    fn do_save<P: AsRef<Path>>(&mut self, view_id: ViewIdentifier,
-                               file_path: P) {
+    fn do_save<P>(&mut self, peer: &MainPeer, view_id: ViewIdentifier, file_path: P)
+        where P: AsRef<Path>
+    {
         //TODO: handle & report errors
         let file_path = file_path.as_ref();
         let prev_syntax = self.buffers.lock().editor_for_view(view_id)
             .unwrap().get_syntax().to_owned();
+        let prev_path = self.buffers.lock().editor_for_view(view_id)
+            .and_then(|ed| ed.get_path().map(PathBuf::from));
         let new_syntax = SyntaxDefinition::new(file_path.to_str());
         // notify of syntax change before notify of file_save
         //FIXME: this doesn't tell us if the syntax _will_ change, for instance
         //if syntax was a user selection. (we don't handle this case right now)
 
+        let mut is_new_file_path = false;
+        if let Some(ref prev_path) = prev_path {
+            if prev_path != file_path {
+                self.remove_watch_path(prev_path);
+                is_new_file_path = true;
+            } else {
+                // if we're already open at this path, check file hasn't changed
+                if self.buffers.lock().editor_for_view(view_id)
+                    .unwrap().get_file_has_changed() {
+                        let err_msg = format!("File {:?} has changed on disk. \
+                        Please save as something else. \
+                        I'm sorry if this is annoying.", file_path);
+                        peer.send_rpc_notification("alert", &json!({"msg": err_msg}));
+                        return
+                }
+            }
+        }
+
         self.buffers.lock().editor_for_view_mut(view_id)
             .unwrap().do_save(file_path);
         self.buffers.set_path(file_path, view_id);
+
+        if is_new_file_path {
+            self.add_watch_path(file_path);
+        }
+
         let init_info = self.buffers.lock().editor_for_view(view_id)
             .unwrap().plugin_init_info();
 
@@ -660,6 +700,20 @@ impl Documents {
             RemoteError::custom(2, &format!("No buffer for view {}", view_id), None))
     }
 
+    fn add_watch_path(&mut self, path: &Path) {
+        #[cfg(feature = "notify")]
+        self.file_watcher.as_mut()
+            .unwrap()
+            .watch(path, false, OPEN_FILE_EVENT_TOKEN);
+    }
+
+    fn remove_watch_path(&mut self, path: &Path) {
+        #[cfg(feature = "notify")]
+        self.file_watcher.as_mut()
+            .unwrap()
+            .unwatch(path, OPEN_FILE_EVENT_TOKEN);
+    }
+
     pub fn handle_idle(&mut self, ctx: &RpcCtx, token: usize) {
         match token {
             WATCH_IDLE_TOKEN => {
@@ -689,11 +743,46 @@ impl Documents {
                     self.handle_config_fs_event(event, peer);
                     config_changed = true;
                 }
+                OPEN_FILE_EVENT_TOKEN => self.handle_open_file_fs_event(event, peer),
                 _ => eprintln!("unexpected fs event token {:?}", token),
             }
         }
         if config_changed {
             self.after_config_change();
+        }
+    }
+
+    /// Handles a file system event related to a currently open file
+    fn handle_open_file_fs_event(&mut self, event: DebouncedEvent, _peer: &MainPeer) {
+        use notify::DebouncedEvent::*;
+        match event {
+            NoticeWrite(ref path @ _) |
+            Create(ref path @ _) |
+            Write(ref path @ _) => {
+                let mod_time = get_file_mod_time(path);
+                let id = self.buffers.editor_for_path(path);
+                let mut inner = self.buffers.lock();
+                let mut ed = match id.and_then(|x| inner.editor_for_buffer_mut(&x)) {
+                    Some(ed) => ed,
+                    None => return,
+                };
+
+                let is_write_conflict = ed.get_file_mod_time()
+                    .map(|t| Some(t) != mod_time)
+                    .unwrap_or(false);
+
+                if is_write_conflict {
+                    // if the buffer isn't dirty we can just reload the file
+                    if ed.is_pristine() {
+                        if let Ok(contents) = self.read_file(path) {
+                            ed.reload(&contents);
+                        }
+                    } else {
+                        ed._set_file_has_changed(true);
+                    }
+                }
+            }
+            other => eprintln!("Event in open file {:?}", other),
         }
     }
 
@@ -1020,6 +1109,18 @@ impl Documents {
             editor.set_sync_store(sync_store);
         }
     }
+}
+
+
+/// Returns the modification timestamp for the file at a given path,
+/// if present.
+pub fn get_file_mod_time<P>(path: P) -> Option<SystemTime>
+where P: AsRef<Path>
+{
+    File::open(path)
+        .and_then(|f| f.metadata())
+        .and_then(|meta| meta.modified())
+        .ok()
 }
 
 #[cfg(test)]

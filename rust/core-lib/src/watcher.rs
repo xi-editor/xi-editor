@@ -164,7 +164,7 @@ impl FileWatcher {
     /// Removes the provided token/path pair from the watch list.
     /// Does not stop watching this path, if it is associated with
     /// other tokens.
-    pub fn unwatch(&mut self, token: WatchToken, path: &Path) {
+    pub fn unwatch(&mut self, path: &Path, token: WatchToken) {
         let mut state = self.state.lock().unwrap();
 
         let idx = state.watchees.iter()
@@ -466,7 +466,7 @@ mod tests {
         sleep_macos(10);
         w.watch(&tmp.mkpath("adir/dir2/file"), false,  2.into());
         sleep_macos(10);
-        w.unwatch(1.into(), &tmp.mkpath("adir"));
+        w.unwatch(&tmp.mkpath("adir"), 1.into());
         sleep(10);
         tmp.write("adir/dir2/file");
         let _ = recv_all(&rx, Duration::from_millis(1000));
@@ -499,7 +499,7 @@ mod tests {
                    (2.into(), DebouncedEvent::Remove(tmp.mkpath("my_file"))),
         ]);
 
-        w.unwatch(1.into(), &tmp.mkpath("my_file"));
+        w.unwatch(&tmp.mkpath("my_file"), 1.into());
         sleep_macos(10);
         tmp.create("my_file");
 
