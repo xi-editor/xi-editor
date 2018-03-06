@@ -6,7 +6,9 @@ is_site_nav_category: true
 site_nav_category: gsoc
 ---
 
-Please, use the suggested [proposal template](gsoc-template.html) when applying. Good places to start contributing to Xi are [easy](https://github.com/google/xi-editor/issues?q=is%3Aopen+is%3Aissue+label%3Aeasy) and [help wanted](https://github.com/google/xi-editor/issues?q=is%3Aopen+is%3Aissue+label%3A%22help+wanted%22) issues on GitHub. 
+Please, use the suggested [proposal template](gsoc-template.html) when applying. Check out [GSoC guides](https://google.github.io/gsocguides/student/writing-a-proposal#elements-of-a-quality-proposal) for more tips. 
+
+Good places to start contributing to Xi are [easy](https://github.com/google/xi-editor/issues?q=is%3Aopen+is%3Aissue+label%3Aeasy) and [help wanted](https://github.com/google/xi-editor/issues?q=is%3Aopen+is%3Aissue+label%3A%22help+wanted%22) issues on GitHub.
 
 --------
 
