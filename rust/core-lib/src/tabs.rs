@@ -25,33 +25,40 @@ use std::sync::{Arc, Mutex, MutexGuard, Weak, mpsc};
 use serde::de::{Deserialize, Deserializer};
 use serde::ser::{Serialize, Serializer};
 use serde_json::value::Value;
+#[cfg(feature = "notify")]
 use notify::DebouncedEvent;
 
 use xi_rope::rope::Rope;
 use xi_rpc::{RpcCtx, RemoteError};
+use xi_trace;
 
 use editor::Editor;
 
 use rpc;
 use config;
-use watcher::{WATCH_IDLE_TOKEN, FileWatcher, WatchToken};
+#[cfg(feature = "notify")]
+use watcher::{FileWatcher, WatchToken};
 use styles::{Style, ThemeStyleMap};
 use MainPeer;
 
 use syntax::SyntaxDefinition;
 use config::{ConfigManager, ConfigDomain, Table};
 use plugins::{self, PluginManagerRef, Command};
-use plugins::rpc_types::{PluginUpdate, ClientPluginInfo};
+use plugins::rpc::{PluginUpdate, ClientPluginInfo};
 
-#[cfg(target_os = "fuchsia")]
+#[cfg(feature="ledger")]
 use apps_ledger_services_public::{Ledger_Proxy};
 
 /// Token for config-related file change events
+#[cfg(feature = "notify")]
 const CONFIG_EVENT_TOKEN: WatchToken = WatchToken(1);
 const NEW_VIEW_IDLE_TOKEN: usize = 1001;
 
+/// xi_rpc idle Token for watcher related idle scheduling.
+pub const WATCH_IDLE_TOKEN: usize = 1002;
+
 /// ViewIdentifiers are the primary means of routing messages between xi-core and a client view.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ViewIdentifier(usize);
 
 /// BufferIdentifiers uniquely identify open buffers.
@@ -88,6 +95,7 @@ pub struct BufferContainerRef(Arc<Mutex<BufferContainer>>);
 /// [BufferContainer]: struct.BufferContainer.html
 pub struct WeakBufferContainerRef(Weak<Mutex<BufferContainer>>);
 
+
 /// A container for all open documents.
 ///
 /// `Documents` is effectively the apex of the xi's model graph. It keeps references
@@ -102,6 +110,7 @@ pub struct Documents {
     style_map: Arc<Mutex<ThemeStyleMap>>,
     plugins: PluginManagerRef,
     config_manager: ConfigManager,
+    #[cfg(feature = "notify")]
     file_watcher: Option<FileWatcher>,
     /// A tx channel used to propagate plugin updates from all `Editor`s.
     update_channel: mpsc::Sender<(ViewIdentifier, PluginUpdate, usize)>,
@@ -284,6 +293,7 @@ impl Documents {
             style_map: Arc::new(Mutex::new(ThemeStyleMap::new())),
             plugins: plugin_manager,
             config_manager: config_manager,
+            #[cfg(feature = "notify")]
             file_watcher: None,
             update_channel: update_tx,
             idle_queue: Vec::new(),
@@ -315,6 +325,55 @@ impl Documents {
         BufferIdentifier(self.id_counter)
     }
 
+    fn toggle_tracing(&self, enabled: bool) {
+        if enabled {
+            eprintln!("Enabling tracing in core");
+            xi_trace::enable_tracing();
+        } else {
+            eprintln!("Disabling tracing in core");
+            xi_trace::disable_tracing();
+        }
+
+        self.plugins.toggle_tracing(enabled);
+    }
+
+    fn save_trace<P: AsRef<Path>>(&self, destination: P, frontend_samples: &Value) {
+        use xi_trace_dump::*;
+
+        let mut frontend_trace = chrome_trace::decode(frontend_samples)
+            .unwrap_or(Vec::with_capacity(0));
+
+        let plugin_traces_json = self.plugins.collect_trace();
+        let mut all_plugin_traces = plugin_traces_json.iter().filter_map(|trace_result| {
+            trace_result.as_ref().ok().map(|trace_json| {
+                chrome_trace::decode(trace_json).unwrap_or(Vec::with_capacity(0))
+            })
+        });
+
+        eprintln!("Saving trace to {:?}", destination.as_ref());
+
+        let trace_file_result = File::create(destination.as_ref());
+        if trace_file_result.is_err() {
+            eprintln!("Failed to create file: {:?}", trace_file_result.unwrap_err());
+            return;
+        }
+        let mut trace_file = trace_file_result.unwrap();
+
+        let mut samples = xi_trace::samples_cloned_unsorted();
+        for mut plugin_traces in &mut all_plugin_traces {
+            samples.append(&mut plugin_traces);
+        }
+        samples.append(&mut frontend_trace);
+        samples.sort_unstable();
+        let serialize_result = chrome_trace::serialize(
+            &samples, chrome_trace::OutputFormat::JsonArray,
+            &mut trace_file);
+        if serialize_result.is_err() {
+            eprintln!("Failed to serialize samples: {:?}", serialize_result.unwrap_err());
+            return;
+        }
+    }
+
     pub fn handle_notification(&mut self, cmd: rpc::CoreNotification,
                                rpc_ctx: &RpcCtx) {
         use rpc::CoreNotification::*;
@@ -332,7 +391,9 @@ impl Documents {
                 }
             Plugin(cmd) => self.do_plugin_cmd(cmd),
             ModifyUserConfig { domain, changes } =>
-                self.do_modify_user_config(domain, changes)
+                self.do_modify_user_config(rpc_ctx.get_peer(), domain, changes),
+            TracingConfig {enabled} => self.toggle_tracing(enabled),
+            SaveTrace { destination, frontend_samples } => self.save_trace(&destination, &frontend_samples),
         }
     }
 
@@ -365,7 +426,7 @@ impl Documents {
                     let msg = format!("No editor for view_id: {}", view_id);
                     RemoteError::custom(2, msg, None)
                 })
-            }
+            },
         }
     }
 
@@ -472,7 +533,7 @@ impl Documents {
         }
     }
 
-    #[cfg(not(target_os = "fuchsia"))]
+    #[cfg(not(feature = "ledger"))]
     fn initialize_sync(&mut self, _editor: &mut Editor, _path_opt: Option<&Path>, _buffer_id: BufferIdentifier) {
         // not implemented yet on OSs other than Fuchsia
     }
@@ -542,11 +603,12 @@ impl Documents {
     fn do_client_init(&mut self, rpc_peer: &MainPeer, config_dir: Option<PathBuf>,
                       client_extras_dir: Option<PathBuf>) {
         // we would like to set this in self::new but we need the peer
-        self.file_watcher = Some(FileWatcher::new(rpc_peer.clone()));
+        #[cfg(feature = "notify")]
+        { self.file_watcher = Some(FileWatcher::new(rpc_peer.clone())); }
 
         if let Some(ref d) = config_dir {
             self.config_manager.set_config_dir(&d);
-            if let Err(e) = self.init_file_based_configs(d) {
+            if let Err(e) = self.init_file_based_configs(d, rpc_peer) {
                 eprintln!("Error reading config dir: {:?}", e);
             }
         }
@@ -598,9 +660,12 @@ impl Documents {
             RemoteError::custom(2, &format!("No buffer for view {}", view_id), None))
     }
 
-    pub fn handle_idle(&mut self, token: usize) {
+    pub fn handle_idle(&mut self, ctx: &RpcCtx, token: usize) {
         match token {
-            WATCH_IDLE_TOKEN => self.handle_fs_events(),
+            WATCH_IDLE_TOKEN => {
+                #[cfg(feature = "notify")]
+                self.handle_fs_events(ctx.get_peer())
+            }
             NEW_VIEW_IDLE_TOKEN => {
                 while let Some(f) = self.idle_queue.pop() {
                     f.call(self);
@@ -611,18 +676,17 @@ impl Documents {
     }
 
     /// Process file system events, forwarding them to registrees.
-    fn handle_fs_events(&mut self) {
-        let mut events = self.file_watcher.as_ref()
-            .expect("file_watcher is always set before events arrive")
-            .drain_events();
-
+    #[cfg(feature = "notify")]
+    fn handle_fs_events(&mut self, peer: &MainPeer) {
+        let mut events = self.file_watcher.as_mut().unwrap().take_events();
         let mut config_changed = false;
+
         for (token, event) in events.drain(..) {
             match token {
                 CONFIG_EVENT_TOKEN => {
                     //TODO: we should(?) be more efficient about this update,
                     // with config_manager returning whether it's necessary.
-                    self.handle_config_fs_event(event);
+                    self.handle_config_fs_event(event, peer);
                     config_changed = true;
                 }
                 _ => eprintln!("unexpected fs event token {:?}", token),
@@ -634,17 +698,18 @@ impl Documents {
     }
 
     /// Handles a config related file system event.
-    fn handle_config_fs_event(&mut self, event: DebouncedEvent) {
+    #[cfg(feature = "notify")]
+    fn handle_config_fs_event(&mut self, event: DebouncedEvent, peer: &MainPeer) {
         use self::DebouncedEvent::*;
         match event {
             Create(ref path) | Write(ref path) => {
-                self.load_file_based_config(path)
+                self.load_file_based_config(peer, path)
             }
             Remove(ref path) => self.config_manager.remove_source(path),
             Rename(ref old, ref new) => {
                 self.config_manager.remove_source(old);
                 let should_load = self.config_manager.should_load_file(new);
-                if should_load { self.load_file_based_config(new) }
+                if should_load { self.load_file_based_config(peer, new) }
             }
             _ => (),
         }
@@ -652,48 +717,55 @@ impl Documents {
 
     /// Checks for existence of config dir, loading config files and registering
     /// for file system events if the directory exists and can be read.
-    fn init_file_based_configs(&mut self, config_dir: &Path)
-                               -> io::Result<()> {
+    fn init_file_based_configs(&mut self, config_dir: &Path,
+                               peer: &MainPeer) -> io::Result<()> {
         if !config_dir.exists() {
             config::init_config_dir(config_dir)?;
         }
         let config_files = config::iter_config_files(config_dir)?;
-        config_files.for_each(|p| self.load_file_based_config(&p));
+        config_files.for_each(|p| self.load_file_based_config(peer, &p));
 
-        self.file_watcher.as_mut().unwrap().
-            watch_filtered(config_dir, true,
-                           CONFIG_EVENT_TOKEN,
-                           |p| {
-                               p.extension()
-                                   .and_then(OsStr::to_str)
-                                   .unwrap_or("") == "xiconfig"
-                           });
+        #[cfg(feature = "notify")]
+        self.file_watcher.as_mut().unwrap()
+            .watch_filtered(config_dir,
+                            true,
+                            CONFIG_EVENT_TOKEN,
+                            |p| p.extension()
+                                    .and_then(OsStr::to_str)
+                                    .unwrap_or("") == "xiconfig" );
         Ok(())
     }
 
     /// Attempt to load a config file.
-    fn load_file_based_config(&mut self, path: &Path) {
+    fn load_file_based_config(&mut self, peer: &MainPeer, path: &Path) {
         match config::try_load_from_file(&path) {
-            Ok((d, t)) => self.set_config(d, t, Some(path.to_owned())),
-            Err(e) => eprintln!("Error loading config file: {:?}", e),
+            Ok((d, t)) => self.set_config(peer, d, t, Some(path.to_owned())),
+            Err(e) => {
+                let err_msg = format!("{}", &e);
+                peer.send_rpc_notification("alert", &json!({"msg": err_msg}));
+            }
         }
     }
 
-    /// Sets (overwriting) the config for a given domain. Will fail if the config
-    /// fails validation.
-    fn set_config<P>(&mut self, domain: ConfigDomain, table: Table, path: P)
+    /// Sets (overwriting) the config for a given domain.
+    fn set_config<P>(&mut self, peer: &MainPeer, domain: ConfigDomain,
+                     table: Table, path: P)
         where P: Into<Option<PathBuf>>
     {
         if let Err(e) = self.config_manager.set_user_config(domain, table, path) {
-            //TODO: report this error to the peer
-            eprintln!("Error updating config {:?}: {:?}", domain, e);
+            let err_msg = format!("{}", &e);
+            peer.send_rpc_notification("alert", &json!({"msg": err_msg}));
         }
     }
 
+    // NOTE: this is coming in from a direct RPC; unlike `set_config`, missing
+    // keys here are left in their current state (`set_config` clears missing keys)
     /// Updates the config for a given domain.
-    fn do_modify_user_config(&mut self, domain: ConfigDomain, changes: Table) {
+    fn do_modify_user_config(&mut self, peer: &MainPeer, domain: ConfigDomain,
+                             changes: Table) {
         if let Err(e) = self.config_manager.update_user_config(domain, changes) {
-            eprintln!("Error updating config {:?}: {:?}", domain, e);
+            let err_msg = format!("{}", &e);
+            peer.send_rpc_notification("alert", &json!({"msg": err_msg}));
         }
         self.after_config_change();
     }
@@ -701,18 +773,27 @@ impl Documents {
 
     /// Notify editors/views/plugins of config changes.
     fn after_config_change(&self) {
-        let mut editors = self.buffers.lock();
-        for ed in editors.iter_editors_mut() {
-            let syntax = ed.get_syntax().to_owned();
-            let identifier = ed.get_main_view_id();
-            let new_config = self.config_manager.get_buffer_config(syntax,
-                                                                   identifier);
-            ed.set_config(new_config)
+        let mut to_notify = Vec::new();
+        {
+            let mut editors = self.buffers.lock();
+            for ed in editors.iter_editors_mut() {
+                let syntax = ed.get_syntax().to_owned();
+                let identifier = ed.get_main_view_id();
+                let new_config = self.config_manager.get_buffer_config(syntax,
+                                                                       identifier);
+                if let Some(changes) = ed.set_config(new_config) {
+                    to_notify.push((identifier, changes));
+                }
+            }
+        }
+        // update plugins after releasing the lock
+        for (view_id, changes) in to_notify.drain(..) {
+            self.plugins.document_config_changed(view_id, &changes);
         }
     }
 }
 
-#[cfg(target_os = "fuchsia")]
+#[cfg(feature = "ledger")]
 impl Drop for Documents {
     fn drop(&mut self) {
         use std::mem;
@@ -842,7 +923,6 @@ impl<'a> From<&'a str> for ViewIdentifier {
 
 impl From<String> for ViewIdentifier {
     fn from(s: String) -> Self {
-        //let s: &str = &s;
         s.as_str().into()
     }
 }
@@ -886,17 +966,17 @@ impl BufferIdentifier {
 // =============== Fuchsia-specific synchronization plumbing
 // We can't move this elsewhere since it requires access to private fields
 
-#[cfg(not(target_os = "fuchsia"))]
+#[cfg(not(feature = "ledger"))]
 pub struct SyncRepo;
 
-#[cfg(target_os = "fuchsia")]
+#[cfg(feature = "ledger")]
 use std::sync::mpsc::{channel, Sender};
-#[cfg(target_os = "fuchsia")]
+#[cfg(feature = "ledger")]
 use std::thread;
-#[cfg(target_os = "fuchsia")]
+#[cfg(feature = "ledger")]
 use fuchsia::sync::{SyncStore, SyncMsg, SyncUpdater, start_conflict_resolver_factory};
 
-#[cfg(target_os = "fuchsia")]
+#[cfg(feature = "ledger")]
 pub struct SyncRepo {
     ledger: Ledger_Proxy,
     tx: Sender<SyncMsg>,
@@ -904,7 +984,7 @@ pub struct SyncRepo {
     session_id: (u64,u32),
 }
 
-#[cfg(target_os = "fuchsia")]
+#[cfg(feature = "ledger")]
 impl Documents {
     pub fn setup_ledger(&mut self, mut ledger: Ledger_Proxy, session_id: (u64,u32)) {
         let key = vec![0];

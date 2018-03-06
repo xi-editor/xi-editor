@@ -15,13 +15,11 @@
 //! A base for xi plugins. Will be split out into its own crate once it's a bit more stable.
 
 use std::io;
-use std::fmt;
-use std::path::PathBuf;
 
-use serde_json::{self, Value};
+use serde_json::Value;
 
-use xi_rpc;
-use xi_rpc::{RpcLoop, RpcCtx, RpcCall, RemoteError, ReadError, dict_get_u64, dict_get_string};
+use xi_core::{ViewIdentifier, PluginPid, plugin_rpc};
+use xi_rpc::{self, RpcLoop, RpcCtx, RemoteError, ReadError};
 
 #[derive(Debug)]
 pub enum Error {
@@ -29,33 +27,22 @@ pub enum Error {
     WrongReturnType,
 }
 
-// TODO: make more similar to xi_rpc::Handler
 pub trait Handler {
-    fn call(&mut self, &PluginRequest, PluginCtx) -> Option<Value>;
+    fn handle_notification(&mut self, ctx: PluginCtx,
+                           rpc: plugin_rpc::HostNotification);
+    fn handle_request(&mut self, ctx: PluginCtx, rpc: plugin_rpc::HostRequest)
+                      -> Result<Value, RemoteError>;
     #[allow(unused_variables)]
     fn idle(&mut self, ctx: PluginCtx, token: usize) {}
-}
-
-//TODO: share this between core and plugin lib
-#[derive(Serialize, Deserialize, Debug)]
-pub struct ScopeSpan {
-    pub start: usize,
-    pub end: usize,
-    pub scope_id: u32,
-}
-
-impl ScopeSpan {
-	pub fn new(start: usize, end: usize, scope_id: u32) -> Self {
-		ScopeSpan { start, end, scope_id }
-	}
 }
 
 pub struct PluginCtx<'a>(&'a RpcCtx);
 
 impl<'a> PluginCtx<'a> {
-    pub fn get_data(&self, view_id: &str, offset: usize,
+    pub fn get_data(&self, plugin_id: PluginPid, view_id: &ViewIdentifier, offset: usize,
                     max_size: usize, rev: u64) -> Result<String, Error> {
         let params = json!({
+            "plugin_id": plugin_id,
             "view_id": view_id,
             "offset": offset,
             "max_size": max_size,
@@ -69,16 +56,18 @@ impl<'a> PluginCtx<'a> {
         }
     }
 
-    pub fn add_scopes(&self, view_id: &str, scopes: &Vec<Vec<String>>) {
+    pub fn add_scopes(&self, plugin_id: PluginPid, view_id: &ViewIdentifier, scopes: &Vec<Vec<String>>) {
         let params = json!({
+            "plugin_id": plugin_id,
             "view_id": view_id,
             "scopes": scopes,
         });
         self.send_rpc_notification("add_scopes", &params);
     }
 
-    pub fn update_spans(&self, view_id: &str, start: usize, len: usize, rev: u64, spans: &[ScopeSpan]) {
+    pub fn update_spans(&self, plugin_id: PluginPid, view_id: &ViewIdentifier, start: usize, len: usize, rev: u64, spans: &[plugin_rpc::ScopeSpan]) {
         let params = json!({
+            "plugin_id": plugin_id,
             "view_id": view_id,
             "start": start,
             "len": len,
@@ -107,160 +96,18 @@ impl<'a> PluginCtx<'a> {
         self.0.schedule_idle(token);
     }
 }
-
-#[derive(Debug, Clone, Copy)]
-pub enum EditType {
-    Insert,
-    Delete,
-    Undo,
-    Redo,
-    Other,
-}
-
-impl EditType {
-    pub fn from_str(s: &str) -> Self {
-        match s {
-            "insert" => EditType::Insert,
-            "delete" => EditType::Delete,
-            "undo" => EditType::Undo,
-            "redo" => EditType::Redo,
-            _ => EditType::Other,
-        }
-    }
-}
-
-pub enum PluginRequest<'a> {
-    Ping,
-    Initialize(PluginBufferInfo),
-    Update {
-        start: usize,
-        end: usize,
-        new_len: usize,
-        rev: u64,
-        edit_type: EditType,
-        author: &'a str,
-        text: Option<&'a str>,
-    },
-    DidSave {
-        path: PathBuf,
-    }
-}
-
-//TODO: this is just copy-paste from core-lib::plugins::rpc_types
-//these should be shared, it looks like
-
-/// Buffer information sent on plugin init.
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct PluginBufferInfo {
-    pub buffer_id: usize,
-    pub views: Vec<String>,
-    pub rev: u64,
-    pub buf_size: usize,
-    pub nb_lines: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub path: Option<String>,
-    pub syntax: String,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct BufferInfoWrapper {
-    pub buffer_info: Vec<PluginBufferInfo>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct SaveWrapper {
-    pub path: PathBuf,
-}
-
-enum InternalError {
-    InvalidParams,
-    UnknownMethod(String),
-}
-
-impl fmt::Display for InternalError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            InternalError::UnknownMethod(ref method) => write!(f, "Unknown method {}", method),
-            InternalError::InvalidParams => write!(f, "Invalid params"),
-        }
-    }
-}
-
-fn parse_plugin_request<'a>(method: &str, params: &'a Value) ->
-        Result<PluginRequest<'a>, InternalError> {
-            use self::PluginRequest::*;
-    match method {
-        "ping" => Ok(Ping),
-        "initialize" => {
-            match serde_json::from_value::<BufferInfoWrapper>(params.to_owned()) {
-                //TODO: this can return multiple values but we assume only one.
-                // global plugins will need to correct this assumption.
-                Ok(BufferInfoWrapper { mut buffer_info }) => Ok(Initialize(buffer_info.remove(0))),
-                Err(_) => {
-                    eprintln!("bad params? {:?}", params);
-                    Err(InternalError::InvalidParams)
-                }
-            }
-        }
-        "did_save" => {
-            match serde_json::from_value::<SaveWrapper>(params.to_owned()) {
-                Ok(SaveWrapper { path }) => Ok(DidSave { path }),
-                Err(_) => {
-                    eprintln!("bad params? {:?}", params);
-                    Err(InternalError::InvalidParams)
-                }
-            }
-        }
-        "update" => {
-            params.as_object().and_then(|dict|
-                if let (Some(start), Some(end), Some(new_len), Some(rev), Some(edit_type), Some(author)) =
-                    (dict_get_u64(dict, "start"), dict_get_u64(dict, "end"),
-                        dict_get_u64(dict, "new_len"), dict_get_u64(dict, "rev"),
-                        dict_get_string(dict, "edit_type"), dict_get_string(dict, "author")) {
-                        Some(PluginRequest::Update {
-                            start: start as usize,
-                            end: end as usize,
-                            new_len: new_len as usize,
-                            rev: rev,
-                            edit_type: EditType::from_str(edit_type),
-                            author: author,
-                            text: dict_get_string(dict, "text"),
-                        })
-                } else { None }
-            ).ok_or_else(|| InternalError::InvalidParams)
-        }
-        _ => Err(InternalError::UnknownMethod(method.to_string()))
-    }
-}
-
 struct MyHandler<'a, H: 'a>(&'a mut H);
 
 impl<'a, H: Handler> xi_rpc::Handler for MyHandler<'a, H> {
-    type Notification = RpcCall;
-    type Request = RpcCall;
+    type Notification = plugin_rpc::HostNotification;
+    type Request = plugin_rpc::HostRequest;
     fn handle_notification(&mut self, ctx: &RpcCtx, rpc: Self::Notification) {
-        match parse_plugin_request(&rpc.method, &rpc.params) {
-            Ok(req) => {
-                if let Some(_) = self.0.call(&req, PluginCtx(ctx)) {
-                    eprintln!("Unexpected return value for notification {}", &rpc.method)
-                }
-            }
-            Err(err) => eprintln!("error: {}", err)
-        }
+        self.0.handle_notification(PluginCtx(ctx), rpc)
     }
 
-    fn handle_request(&mut self, ctx: &RpcCtx, rpc: Self::Request) ->
-        Result<Value, RemoteError> {
-        match parse_plugin_request(&rpc.method, &rpc.params) {
-            Ok(req) => {
-                let result = self.0.call(&req, PluginCtx(ctx));
-                Ok(result.expect("return value missing"))
-            }
-            Err(err) => {
-                eprintln!("Error {} decoding RPC request {}", err, &rpc.method);
-                Err(RemoteError::InvalidRequest(Some(Value::String(err.to_string()))))
-            }
-        }
+    fn handle_request(&mut self, ctx: &RpcCtx, rpc: Self::Request)
+                      -> Result<Value, RemoteError> {
+        self.0.handle_request(PluginCtx(ctx), rpc)
     }
 
     fn idle(&mut self, ctx: &RpcCtx, token: usize) {

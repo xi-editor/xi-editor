@@ -35,16 +35,16 @@ use selection::{Affinity, Selection, SelRegion};
 use tabs::{BufferIdentifier, ViewIdentifier, DocumentCtx};
 use rpc::{self, GestureType};
 use syntax::SyntaxDefinition;
-use plugins::rpc_types::{PluginUpdate, PluginEdit, ScopeSpan, PluginBufferInfo,
+use plugins::rpc::{PluginUpdate, PluginEdit, ScopeSpan, PluginBufferInfo,
 ClientPluginInfo};
 use plugins::{PluginPid, Command};
 use layers::Scopes;
-use config::BufferConfig;
+use config::{BufferConfig, Table};
 
 
-#[cfg(not(target_os = "fuchsia"))]
+#[cfg(not(feature = "ledger"))]
 pub struct SyncStore;
-#[cfg(target_os = "fuchsia")]
+#[cfg(feature = "ledger")]
 use fuchsia::sync::SyncStore;
 
 const FLAG_SELECT: u64 = 2;
@@ -56,8 +56,26 @@ const MAX_UNDOS: usize = 20;
 // Maximum returned result from plugin get_data RPC.
 const MAX_SIZE_LIMIT: usize = 1024 * 1024;
 
+enum CharacterEncoding {
+    Utf8,
+    Utf8WithBom
+}
+
+const UTF8_BOM: &str = "\u{feff}";
+
+fn last_selection_region(regions: &[SelRegion]) -> Option<&SelRegion> {
+    for region in regions.iter().rev() {
+        if !region.is_caret() {
+            return Some(region);
+        }
+    }
+
+    None
+}
+
 pub struct Editor {
     text: Rope,
+    encoding: CharacterEncoding,
 
     path: Option<PathBuf>,
     buffer_id: BufferIdentifier,
@@ -96,6 +114,7 @@ enum EditType {
     Delete,
     Undo,
     Redo,
+    Transpose,
 }
 
 impl EditType {
@@ -105,6 +124,7 @@ impl EditType {
             EditType::Delete => "delete",
             EditType::Undo => "undo",
             EditType::Redo => "redo",
+            EditType::Transpose => "transpose",
             _ => "other",
         }
     }
@@ -124,12 +144,22 @@ impl Editor {
                      buffer_id: BufferIdentifier,
                      initial_view_id: ViewIdentifier, text: String) -> Editor {
 
-        let engine = Engine::new(Rope::from(text));
+        let encoding = if text.starts_with(UTF8_BOM) {
+            CharacterEncoding::Utf8WithBom
+        } else {
+            CharacterEncoding::Utf8
+        };
+
+        let engine = Engine::new(Rope::from(match encoding {
+            CharacterEncoding::Utf8WithBom => &text[UTF8_BOM.len()..],
+            CharacterEncoding::Utf8 => text.as_str()
+        }));
         let buffer = engine.get_head().clone();
         let last_rev_id = engine.get_head_rev_id();
 
         let mut editor = Editor {
             text: buffer,
+            encoding: encoding,
             buffer_id: buffer_id,
             path: None,
             syntax: SyntaxDefinition::default(),
@@ -155,6 +185,7 @@ impl Editor {
             sync_store: None,
             last_synced_rev: last_rev_id,
         };
+        editor.view.rewrap(&editor.text, editor.config.items.wrap_width);
         editor.view.set_dirty(&editor.text);
         editor
     }
@@ -176,10 +207,20 @@ impl Editor {
         }
     }
 
-    pub fn set_config(&mut self, conf: BufferConfig) {
+    /// Sets the config for this buffer. If the new config differs
+    /// from the existing config, returns the modified items.
+    pub fn set_config(&mut self, conf: BufferConfig) -> Option<Table> {
         if let Some(changes) = conf.changes_from(Some(&self.config)) {
             self.config = conf;
+            if changes.contains_key("wrap_width") {
+                self.view.rewrap(&self.text, self.config.items.wrap_width);;
+                self.view.set_dirty(&self.text);
+                self.render();
+            }
             self.doc_ctx.config_changed(&self.view.view_id, &changes);
+            Some(changes)
+        } else {
+            None
         }
     }
 
@@ -218,9 +259,11 @@ impl Editor {
     pub fn plugin_init_info(&self) -> PluginBufferInfo {
         let nb_lines = self.text.measure::<LinesMetric>() + 1;
         let views = vec![self.view.view_id];
+        let config = self.config.to_table();
         PluginBufferInfo::new(self.buffer_id, &views,
                               self.engine.get_head_rev_id().token(), self.text.len(),
-                              nb_lines, self.path.clone(), self.syntax.clone())
+                              nb_lines, self.path.clone(), self.syntax.clone(),
+                              config)
     }
 
     /// Send initial config state to the client.
@@ -275,7 +318,7 @@ impl Editor {
         let undo_group;
 
         if self.this_edit_type == self.last_edit_type &&
-            self.this_edit_type != EditType::Other &&
+            self.this_edit_type != EditType::Other && self.this_edit_type != EditType::Transpose &&
             !self.live_undos.is_empty() {
 
             undo_group = *self.live_undos.last().unwrap();
@@ -304,22 +347,16 @@ impl Editor {
         }
     }
 
-    //TODO: plugin edits should be represented by real Deltas.
     /// generates a delta from a plugin's response and applies it to the buffer.
-    pub fn apply_plugin_edit(&mut self, edit: &PluginEdit, undo_group: Option<usize>) {
-        let interval = Interval::new_closed_open(edit.start as usize, edit.end as usize);
-        let text = Rope::from(&edit.text);
-        let rev_len = self.engine.get_rev(edit.rev).unwrap().len();
-        let delta = Delta::simple_edit(interval, text, rev_len);
-
+    pub fn apply_plugin_edit(&mut self, edit: PluginEdit, undo_group: Option<usize>) {
         if let Some(undo_group) = undo_group {
             // non-async edits modify their associated revision
             //TODO: get priority working, so that plugin edits don't necessarily move cursor
-            self.engine.edit_rev(edit.priority as usize, undo_group, edit.rev, delta);
+            self.engine.edit_rev(edit.priority as usize, undo_group, edit.rev, edit.delta);
             self.text = self.engine.get_head().clone();
         }
         else {
-            self.add_delta(delta);
+            self.add_delta(edit.delta);
         }
 
         self.commit_delta(Some(&edit.author));
@@ -339,13 +376,14 @@ impl Editor {
         // TODO (performance): it's probably quicker to stash last_text rather than
         // resynthesize it.
         let last_text = self.engine.get_rev(last_token).expect("last_rev not found");
-        self.scroll_to = self.view.after_edit(&self.text, &last_text, &delta, is_pristine);
+        let keep_selections = self.this_edit_type == EditType::Transpose;
+        self.scroll_to = self.view.after_edit(&self.text, &last_text, &delta, is_pristine, keep_selections);
         let (iv, new_len) = delta.summary();
 
-        // TODO: maybe more precise editing based on actual delta rather than summary.
-        // TODO: perhaps use different semantics for spans that enclose the edited region.
-        // Currently it breaks any such span in half and applies no spans to the inserted
-        // text. That's ok for syntax highlighting but not ideal for rich text.
+        // TODO: perhaps use different semantics for spans that enclose the
+        // edited region. Currently it breaks any such span in half and applies
+        // no spans to the inserted text. That's ok for syntax highlighting but
+        // not ideal for rich text.
         self.styles.update_all(iv, new_len);
 
         // We increment revs in flight once here, and we decrement once
@@ -354,19 +392,22 @@ impl Editor {
         self.increment_revs_in_flight();
 
         {
+            let new_len = delta.new_document_len();
+            let approx_delta_size = delta.inserts_len() + (delta.els.len() * 10);
+            let delta = match approx_delta_size > MAX_SIZE_LIMIT {
+                true => None,
+                false => Some(delta),
+            };
             let author = match author {
                 Some(s) => s.to_owned(),
                 None => self.view.view_id.to_string(),
             };
-                let text = match new_len < MAX_SIZE_LIMIT {
-                true => Some(self.text.slice_to_string(iv.start(), iv.start() + new_len)),
-                false => None
-            };
 
             let update = PluginUpdate::new(
                 self.view.view_id,
-                iv.start(), iv.end(), new_len,
-                self.engine.get_head_rev_id().token(), text,
+                self.engine.get_head_rev_id().token(),
+                delta,
+                new_len,
                 self.this_edit_type.json_string().to_owned(),
                 author.to_owned());
 
@@ -424,16 +465,16 @@ impl Editor {
         self.engine.set_session_id(session);
     }
 
-    #[cfg(target_os = "fuchsia")]
+    #[cfg(feature = "ledger")]
     pub fn set_sync_store(&mut self, sync_store: SyncStore) {
         self.sync_store = Some(sync_store);
     }
 
-    #[cfg(not(target_os = "fuchsia"))]
+    #[cfg(not(feature = "ledger"))]
     pub fn sync_state_changed(&mut self) {
     }
 
-    #[cfg(target_os = "fuchsia")]
+    #[cfg(feature = "ledger")]
     pub fn sync_state_changed(&mut self) {
         if let Some(sync_store) = self.sync_store.as_mut() {
             // we don't want to sync right after recieving a new merge
@@ -444,7 +485,7 @@ impl Editor {
         }
     }
 
-    #[cfg(target_os = "fuchsia")]
+    #[cfg(feature = "ledger")]
     pub fn transaction_ready(&mut self) {
         if let Some(sync_store) = self.sync_store.as_mut() {
             sync_store.commit_transaction(&self.engine);
@@ -475,9 +516,25 @@ impl Editor {
             let start = if !region.is_caret() {
                 region.min()
             } else {
-                // TODO: implement complex emoji logic
-                self.text.prev_codepoint_offset(region.end).unwrap_or(region.end)
+                // backspace deletes max(1, tab_size) contiguous spaces
+                let (_, c) = self.view.offset_to_line_col(&self.text,
+                                                          region.start);
+                let use_spaces = self.config.items.translate_tabs_to_spaces;
+                let use_tab_stops = self.config.items.use_tab_stops;
+                let tab_size = self.config.items.tab_size;
+                let tab_size = if c % tab_size == 0 { tab_size } else { c % tab_size };
+                let preceded_by_spaces = self.text.len() > 0 &&
+                    (region.start.saturating_sub(tab_size)..region.start)
+                    .all(|i| self.text.byte_at(i) == b' ');
+               if preceded_by_spaces && use_spaces && use_tab_stops {
+                   region.start - tab_size
+               } else {
+                   // TODO: implement complex emoji logic
+                    self.text.prev_codepoint_offset(region.end)
+                        .unwrap_or(region.end)
+               }
             };
+
             let iv = Interval::new_closed_open(start, region.max());
             if !iv.is_empty() {
                 builder.delete(iv);
@@ -681,10 +738,17 @@ impl Editor {
     pub fn do_save<P: AsRef<Path>>(&mut self, path: P) {
         match File::create(&path) {
             Ok(mut f) => {
-                for chunk in self.text.iter_chunks(0, self.text.len()) {
-                    if let Err(e) = f.write_all(chunk.as_bytes()) {
-                        eprintln!("write error {}", e);
-                        break;
+                if let Err(e) = match self.encoding {
+                    CharacterEncoding::Utf8WithBom => f.write_all(UTF8_BOM.as_bytes()),
+                    CharacterEncoding::Utf8 => Result::Ok(())
+                } {
+                    eprintln!("write error {}", e);
+                } else {
+                    for chunk in self.text.iter_chunks(0, self.text.len()) {
+                        if let Err(e) = f.write_all(chunk.as_bytes()) {
+                            eprintln!("write error {}", e);
+                            break;
+                        }
                     }
                 }
             }
@@ -826,9 +890,20 @@ impl Editor {
         }
     }
 
+    fn sel_region_to_interval_and_rope(&self, region: &SelRegion) -> (Interval, Rope) {
+        let as_interval = Interval::new_closed_open(region.min(), region.max());
+        let interval_rope = Rope::from(self.text.slice_to_string(
+            as_interval.start(), as_interval.end()));
+        (as_interval, interval_rope)
+    }
+
     fn do_transpose(&mut self) {
         let mut builder = delta::Builder::new(self.text.len());
         let mut last = 0;
+        let mut optional_previous_selection : Option<(Interval, Rope)> =
+            last_selection_region(self.view.sel_regions()).map(
+                |ref region| self.sel_region_to_interval_and_rope(region));
+
         for region in self.view.sel_regions() {
             if region.is_caret() {
                 let middle = region.end;
@@ -844,11 +919,14 @@ impl Editor {
                         last = end;
                     }
                 }
+            } else if let Some(previous_selection) = optional_previous_selection {
+                let current_interval = self.sel_region_to_interval_and_rope(&region);
+                builder.replace(current_interval.0, previous_selection.1);
+                optional_previous_selection = Some(current_interval);
             }
-            // TODO: handle else case by rotating non-caret regions.
         }
         if !builder.is_empty() {
-            self.this_edit_type = EditType::Other;
+            self.this_edit_type = EditType::Transpose;
             self.add_delta(builder.build());
         }
     }
@@ -908,6 +986,20 @@ impl Editor {
     fn do_cancel_operation(&mut self) {
         self.view.unset_find(&self.text);
         self.view.collapse_selections(&self.text);
+    }
+
+    fn transform_text<F: Fn(&str) -> String>(&mut self, transform_function: F) {
+        let mut builder = delta::Builder::new(self.text.len());
+
+        for region in self.view.sel_regions() {
+            let selected_text = self.text.slice_to_string(region.min(), region.max());
+            let interval = Interval::new_closed_open(region.min(), region.max());
+            builder.replace(interval, Rope::from(transform_function(&selected_text)));
+        }
+        if !builder.is_empty() {
+            self.this_edit_type = EditType::Other;
+            self.add_delta(builder.build());
+        }
     }
 
     fn cmd_prelude(&mut self) {
@@ -987,10 +1079,13 @@ impl Editor {
             DebugRewrap => self.debug_rewrap(),
             DebugPrintSpans => self.debug_print_spans(),
             CancelOperation => self.do_cancel_operation(),
+            Uppercase => self.transform_text(|s| s.to_uppercase()),
+            Lowercase => self.transform_text(|s| s.to_lowercase()),
         };
 
         self.cmd_postlude();
     }
+
 
     pub fn handle_request(&mut self, _view_id: ViewIdentifier,
                           cmd: rpc::EditRequest) -> Result<Value, RemoteError> {
@@ -1017,7 +1112,7 @@ impl Editor {
     // deal with asynchrony or be efficient.
 
     /// Applies an async edit from a plugin.
-    pub fn plugin_edit(&mut self, edit: &PluginEdit) {
+    pub fn plugin_edit_async(&mut self, edit: PluginEdit) {
         self.this_edit_type = EditType::Other;
         self.apply_plugin_edit(edit, None)
     }

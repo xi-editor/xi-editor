@@ -240,6 +240,7 @@ impl RenderPlan {
     pub fn create(total_height: usize, first_line: usize, height: usize) -> RenderPlan {
         let mut spans = Vec::new();
         let mut last = 0;
+        let first_line = min(first_line, total_height);
         if first_line > PRESERVE_EXTENT {
             last = first_line - PRESERVE_EXTENT;
             spans.push((last, RenderTactic::Discard));

@@ -40,13 +40,14 @@ use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::thread;
+use std::mem;
 use std::collections::VecDeque;
 use std::fmt;
 
 use xi_rpc::RpcPeer;
 
-/// xi_rpc idle Token for watcher related idle scheduling.
-pub const WATCH_IDLE_TOKEN: usize = 1002;
+/// Delay for aggregating related file system events.
+pub const DEBOUNCE_WAIT_MILLIS: u64 = 50;
 
 /// Wrapper around a `notify::Watcher`. It runs the inner watcher
 /// in a separate thread, and communicates with it via an `mpsc::channel`.
@@ -179,12 +180,11 @@ impl FileWatcher {
         }
     }
 
-    /// Empties the event queue, returning any contained events.
-    pub fn drain_events(&self) -> Vec<(WatchToken, DebouncedEvent)> {
+    /// Takes ownership of this `Watcher`'s current event queue.
+    pub fn take_events(&mut self) -> VecDeque<(WatchToken, DebouncedEvent)> {
         let mut state = self.state.lock().unwrap();
         let WatcherState { ref mut events, .. } = *state;
-        let v = events.drain(..).collect();
-        v
+        mem::replace(events, VecDeque::new())
     }
 }
 
@@ -225,7 +225,7 @@ impl Watchee {
 
 impl Notify for RpcPeer {
     fn notify(&self) {
-        self.schedule_idle(WATCH_IDLE_TOKEN);
+        self.schedule_idle(::tabs::WATCH_IDLE_TOKEN);
     }
 }
 
@@ -470,7 +470,7 @@ mod tests {
         sleep(10);
         tmp.write("adir/dir2/file");
         let _ = recv_all(&rx, Duration::from_millis(1000));
-        let events = w.drain_events();
+        let events = w.take_events();
         assert_eq!(events, vec![
                    (2.into(), DebouncedEvent::NoticeWrite(tmp.mkpath("adir/dir2/file"))),
                    (2.into(), DebouncedEvent::Write(tmp.mkpath("adir/dir2/file"))),
@@ -491,7 +491,7 @@ mod tests {
         tmp.remove("my_file");
 
         let _ = recv_all(&rx, Duration::from_millis(1000));
-        let events = w.drain_events();
+        let events = w.take_events();
         assert_eq!(events, vec![
                    (1.into(), DebouncedEvent::NoticeRemove(tmp.mkpath("my_file"))),
                    (2.into(), DebouncedEvent::NoticeRemove(tmp.mkpath("my_file"))),
@@ -504,7 +504,7 @@ mod tests {
         tmp.create("my_file");
 
         let _ = recv_all(&rx, Duration::from_millis(1000));
-        let events = w.drain_events();
+        let events = w.take_events();
         assert_eq!(events, vec![
                    (2.into(), DebouncedEvent::Create(tmp.mkpath("my_file"))),
         ]);

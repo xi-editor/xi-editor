@@ -25,7 +25,7 @@ use std::fmt;
 use std::slice;
 
 #[derive(Clone)]
-enum DeltaElement<N: NodeInfo> {
+pub enum DeltaElement<N: NodeInfo> {
     /// Represents a range of text in the base document. Includes beginning, excludes end.
     Copy(usize, usize),  // note: for now, we lose open/closed info at interval endpoints
     Insert(Node<N>),
@@ -40,8 +40,8 @@ enum DeltaElement<N: NodeInfo> {
 /// `[Copy(0,1),Copy(2,4),Insert("e")]`
 #[derive(Clone)]
 pub struct Delta<N: NodeInfo> {
-    els: Vec<DeltaElement<N>>,
-    base_len: usize,
+    pub els: Vec<DeltaElement<N>>,
+    pub base_len: usize,
 }
 
 /// A struct marking that a Delta contains only insertions. That is, it copies
@@ -59,6 +59,59 @@ impl<N: NodeInfo> Delta<N> {
             builder.delete(interval);
         }
         builder.build()
+    }
+
+    /// If this delta represents a simple insertion, returns the inserted node.
+    pub fn as_simple_insert(&self) -> Option<&Node<N>> {
+        let mut iter = self.els.iter();
+        let mut el = iter.next();
+        let mut i = 0;
+        if let Some(&DeltaElement::Copy(beg, end)) = el {
+            if beg != 0 {
+                return None;
+            }
+            i = end;
+            el = iter.next();
+        }
+        if let Some(&DeltaElement::Insert(ref n)) = el {
+            el = iter.next();
+            if el.is_none() {
+                if i == self.base_len {
+                    return Some(n);
+                }
+            } else if let Some(&DeltaElement::Copy(beg, end)) = el {
+                if i == beg && end == self.base_len && iter.next().is_none() {
+                    return Some(n);
+                }
+            }
+        }
+        None
+    }
+
+    /// Returns `true` if this delta represents a single deletion without
+    /// any insertions. Note that this is `false` for the trivial delta.
+    pub fn is_simple_delete(&self) -> bool {
+        if self.els.is_empty() && self.base_len > 0 {
+            return true;
+        }
+        if let DeltaElement::Copy(beg, end) = self.els[0] {
+            if beg == 0 {
+                if self.els.len() == 1 {
+                    // Deletion at end
+                    end < self.base_len
+                } else if let DeltaElement::Copy(b1, e1) = self.els[1] {
+                    // Deletion in middle
+                    end < b1 && e1 == self.base_len
+                } else {
+                    false
+                }
+            } else {
+                // Deletion at beginning
+                end == self.base_len && self.els.len() == 1
+            }
+        } else {
+            false
+        }
     }
 
     /// Apply the delta to the given rope. May not work well if the length of the rope
@@ -246,6 +299,17 @@ impl<N: NodeInfo> Delta<N> {
         )
     }
 
+    /// Returns the sum length of the inserts of the delta.
+    pub fn inserts_len(&self) -> usize {
+        self.els.iter()
+            .fold(0, |sum, el|
+                  sum + match *el {
+                      DeltaElement::Copy(_, _) => 0,
+                      DeltaElement::Insert(ref s) => s.len(),
+                  }
+            )
+    }
+
     /// Iterates over all the inserts of the delta.
     pub fn iter_inserts(&self) -> InsertsIter<N> {
         InsertsIter {
@@ -291,7 +355,7 @@ impl<N: NodeInfo> fmt::Debug for Delta<N> where Node<N>: fmt::Debug {
                     }
                 }
             }
-            write!(f, ")")?;
+            write!(f, "base_len: {})", self.base_len)?;
         }
         Ok(())
     }
@@ -627,7 +691,8 @@ impl<'a, N: NodeInfo> Iterator for DeletionsIter<'a, N> {
 
 #[cfg(test)]
 mod tests {
-    use rope::Rope;
+    use serde_json;
+    use rope::{Rope, RopeInfo};
     use delta::{Delta, Builder, DeltaRegion};
     use interval::Interval;
     use test_helpers::find_deletions;
@@ -733,5 +798,48 @@ mod tests {
         assert_eq!(Some(DeltaRegion::new(4, 2, 2)), iter.next());
         assert_eq!(Some(DeltaRegion::new(8, 4, 2)), iter.next());
         assert_eq!(None, iter.next());
+    }
+
+    #[test]
+    fn delta_serde() {
+        let d = Delta::simple_edit(Interval::new_closed_open(10, 12),
+                                   Rope::from("+"), TEST_STR.len());
+        let ser = serde_json::to_value(d.clone()).expect("serialize failed");
+        eprintln!("{:?}", &ser);
+        let de: Delta<RopeInfo> = serde_json::from_value(ser)
+        .expect("deserialize failed");
+        assert_eq!(d.apply_to_string(TEST_STR), de.apply_to_string(TEST_STR));
+    }
+
+    #[test]
+    fn is_simple_delete() {
+        let d = Delta::simple_edit(Interval::new_closed_open(10, 12),
+                                   Rope::from("+"), TEST_STR.len());
+        assert_eq!(false, d.is_simple_delete());
+
+        let d = Delta::simple_edit(Interval::new_closed_open(10, 11),
+                                   Rope::from(""), TEST_STR.len());
+        assert_eq!(true, d.is_simple_delete());
+
+        let mut builder = Builder::<RopeInfo>::new(10);
+        builder.delete(Interval::new_closed_open(0, 2));
+        builder.delete(Interval::new_closed_open(4, 6));
+        let d = builder.build();
+        assert_eq!(false, d.is_simple_delete());
+
+        let builder = Builder::<RopeInfo>::new(10);
+        let d = builder.build();
+        assert_eq!(false, d.is_simple_delete());
+    }
+
+    #[test]
+    fn as_simple_insert() {
+        let d = Delta::simple_edit(Interval::new_closed_open(10, 11),
+                                   Rope::from("+"), TEST_STR.len());
+        assert_eq!(None, d.as_simple_insert());
+
+        let d = Delta::simple_edit(Interval::new_closed_open(10, 10),
+                                   Rope::from("+"), TEST_STR.len());
+        assert_eq!(Some(Rope::from("+")).as_ref(), d.as_simple_insert());
     }
 }

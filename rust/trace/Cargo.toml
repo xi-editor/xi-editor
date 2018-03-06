@@ -1,0 +1,27 @@
+[package]
+name = "xi-trace"
+version = "0.1.0"
+license = "Apache-2.0"
+authors = ["Vitali Lovich <vlovich@google.com>"]
+categories = ["development-tools::profiling"]
+repository = "https://github.com/google/xi-editor"
+description = "Library-based distributed tracing API to meet the needs of xi-core, frontends and plugins"
+
+[features]
+benchmarks = []
+collections_range = []
+default = []
+dict_payload = []
+json_payload = ["serde_json"]
+getpid = []
+
+[dependencies]
+time = "0.1"
+lazy_static = "1.0"
+serde_json = { version = "1.0", optional = true }
+serde_derive = "1.0"
+serde = "1.0"
+libc = "0.2"
+
+[profile.bench]
+lto = true

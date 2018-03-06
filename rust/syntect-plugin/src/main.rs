@@ -14,16 +14,30 @@
 
 //! A syntax highlighting plugin based on syntect.
 
+#[macro_use]
+extern crate serde_json;
+
 extern crate syntect;
 extern crate xi_plugin_lib;
+extern crate xi_core_lib;
+extern crate xi_rope;
 
 mod stackmap;
 
 use std::sync::MutexGuard;
+use std::borrow::Cow;
+
+use serde_json::Value;
+
 use xi_plugin_lib::state_cache::{self, PluginCtx};
-use xi_plugin_lib::plugin_base::ScopeSpan;
+use xi_core_lib::plugin_rpc::ScopeSpan;
+use xi_rope::rope::RopeDelta;
+use xi_rope::interval::Interval;
+use xi_rope::delta::Builder as EditBuilder;
+
 use syntect::parsing::{ParseState, ScopeStack, SyntaxSet, SCOPE_REPO, ScopeRepository};
 use stackmap::{StackMap, LookupResult};
+
 
 /// The state for syntax highlighting of one file.
 struct PluginState<'a> {
@@ -38,7 +52,8 @@ struct PluginState<'a> {
     syntax_name: String,
 }
 
-const LINES_PER_RPC: usize = 50;
+const LINES_PER_RPC: usize = 10;
+const INDENTATION_PRIORITY: usize = 100;
 
 type LockedRepo = MutexGuard<'static, ScopeRepository>;
 
@@ -73,11 +88,11 @@ impl<'a> PluginState<'a> {
         let repo = SCOPE_REPO.lock().unwrap();
         for (cursor, batch) in ops {
             if scope_state.len() > 0 {
-                let scope_ident = self.identifier_for_stack(&scope_state, &repo);
+                let scope_id = self.identifier_for_stack(&scope_state, &repo);
                 let start = self.offset - self.spans_start + prev_cursor;
                 let end = start + (cursor - prev_cursor);
                 if start != end {
-                    let span = ScopeSpan::new(start, end, scope_ident);
+                    let span = ScopeSpan { start, end, scope_id };
                     self.spans.push(span);
                 }
             }
@@ -87,8 +102,8 @@ impl<'a> PluginState<'a> {
         // add span for final state
         let start = self.offset - self.spans_start + prev_cursor;
         let end = start + (line.len() - prev_cursor);
-        let scope_ident = self.identifier_for_stack(&scope_state, &repo);
-        let span = ScopeSpan::new(start, end, scope_ident);
+        let scope_id = self.identifier_for_stack(&scope_state, &repo);
+        let span = ScopeSpan { start, end, scope_id };
         self.spans.push(span);
         Some((parse_state, scope_state))
     }
@@ -183,6 +198,74 @@ impl<'a> PluginState<'a> {
         ctx.reset();
         ctx.schedule_idle(0);
     }
+
+    /// Checks if a newline has been inserted, and if so inserts whitespace
+    /// as necessary.
+    fn do_indentation(&mut self, ctx: &mut PluginCtx<State>, start: usize,
+                      end: usize, rev: usize, text: &str) -> Option<Value> {
+        // don't touch indentation if this is not a simple edit
+        if end != start { return None }
+
+        let is_newline = &ctx.get_config().line_ending == text;
+        if is_newline {
+            let line_num = ctx.find_offset(start).err();
+
+            let use_spaces = ctx.get_config().translate_tabs_to_spaces;
+            let tab_size = ctx.get_config().tab_size;
+            let buf_size = ctx.get_buf_size();
+            if let Some(line) = line_num.and_then(|idx| ctx.get_line(idx).ok()) {
+                let indent = self.indent_for_next_line(
+                    line, use_spaces, tab_size);
+                let ix = start + text.len();
+                let interval = Interval::new_open_closed(ix, ix);
+                let mut builder = EditBuilder::new(buf_size);
+                builder.replace(interval, indent.into());
+                let delta = builder.build();
+                let edit = json!({
+                    "rev": rev,
+                    "delta": delta,
+                    "priority": INDENTATION_PRIORITY,
+                    "after_cursor": false,
+                    "author": "syntect",
+                });
+                return Some(edit)
+            }
+        }
+        None
+    }
+
+    /// Returns the string which should be inserted after the newline
+    /// to achieve the desired indentation level.
+    fn indent_for_next_line<'b>(&self, prev_line: &'b str, use_spaces: bool,
+                                tab_size: usize) -> Cow<'b, str> {
+        let leading_ws = prev_line.char_indices()
+            .find(|&(_, c)| !c.is_whitespace())
+            .or(prev_line.char_indices().last())
+            .map(|(idx, _)| unsafe { prev_line.slice_unchecked(0, idx) } )
+            .unwrap_or("");
+
+        if self.increase_indentation(prev_line) {
+            let indent_text = if use_spaces {
+                &"                                    "[..tab_size]
+            } else {
+                "\t"
+            };
+            format!("{}{}", leading_ws, indent_text).into()
+        } else {
+            leading_ws.into()
+        }
+    }
+
+    /// Checks if the indent level should be increased.
+    fn increase_indentation(&self, prev_line: &str) -> bool {
+        let trailing_char = prev_line.trim_right().chars()
+            .rev().next().unwrap_or(' ');
+        // very naive heuristic for modifying indentation level.
+        match trailing_char {
+            '{' | ':' => true,
+            _ => false,
+        }
+    }
 }
 
 impl<'a> state_cache::Plugin for PluginState<'a> {
@@ -192,8 +275,20 @@ impl<'a> state_cache::Plugin for PluginState<'a> {
         self.do_highlighting(ctx);
     }
 
-    fn update(&mut self, mut ctx: PluginCtx<State>) {
+    fn update(&mut self, mut ctx: PluginCtx<State>, rev: usize,
+              delta: Option<RopeDelta>) -> Option<Value> {
         ctx.schedule_idle(0);
+        let should_auto_indent = ctx.get_config().auto_indent;
+        if should_auto_indent {
+            if let Some(delta) = delta {
+                let (iv, _) = delta.summary();
+                if let Some(s) = delta.as_simple_insert() {
+                    let s: String = s.into();
+                    return self.do_indentation(&mut ctx, iv.start(), iv.end(), rev, &s)
+                }
+            }
+        }
+        None
     }
 
     fn did_save(&mut self, ctx: PluginCtx<State>) {
@@ -222,5 +317,5 @@ fn main() {
     let syntax_set = SyntaxSet::load_defaults_newlines();
     let mut state = PluginState::new(&syntax_set);
 
-    state_cache::mainloop(&mut state);
+    let _ = state_cache::mainloop(&mut state);
 }

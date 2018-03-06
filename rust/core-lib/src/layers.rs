@@ -18,8 +18,9 @@
 //! Scope information originating from any number of plugins can be resolved
 //! into styles using a theme, augmented with additional style definitions.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use syntect::parsing::Scope;
+use syntect::highlighting::StyleModifier;
 
 use xi_rope::interval::Interval;
 use xi_rope::spans::{Spans, SpansBuilder};
@@ -33,6 +34,7 @@ use plugins::PluginPid;
 //TODO: rename. Probably to `Layers`
 pub struct Scopes {
     layers: BTreeMap<PluginPid, ScopeLayer>,
+    deleted: HashSet<PluginPid>,
     merged: Spans<Style>,
 }
 
@@ -40,8 +42,12 @@ pub struct Scopes {
 pub struct ScopeLayer {
     stack_lookup: Vec<Vec<Scope>>,
     style_lookup: Vec<Style>,
+    // TODO: this might be efficient (in memory at least) if we use
+    // a prefix tree.
+    /// style state of existing scope spans, so we can more efficiently
+    /// compute styles of child spans.
+    style_cache: HashMap<Vec<Scope>, StyleModifier>,
     /// Human readable scope names, for debugging
-    name_lookup: Vec<Vec<String>>,
     scope_spans: Spans<u32>,
     style_spans: Spans<Style>,
 }
@@ -55,7 +61,7 @@ impl Scopes {
     /// Adds the provided scopes to the layer's lookup table.
     pub fn add_scopes(&mut self, layer: PluginPid, scopes: Vec<Vec<String>>,
                                 doc_ctx: &DocumentCtx) {
-        self.create_if_missing(layer);
+        if self.create_if_missing(layer).is_err() { return }
         self.layers.get_mut(&layer).unwrap().add_scopes(scopes, doc_ctx);
     }
 
@@ -74,7 +80,7 @@ impl Scopes {
 
     /// Updates the scope spans for a given layer.
     pub fn update_layer(&mut self, layer: PluginPid, iv: Interval, spans: Spans<u32>) {
-        self.create_if_missing(layer);
+        if self.create_if_missing(layer).is_err() { return }
         self.layers.get_mut(&layer).unwrap().update_scopes(iv, &spans);
         self.resolve_styles(iv);
     }
@@ -82,6 +88,7 @@ impl Scopes {
     /// Removes a given layer. This will remove all styles derived from
     /// that layer's scopes.
     pub fn remove_layer(&mut self, layer: PluginPid) -> Option<ScopeLayer> {
+        self.deleted.insert(layer);
         let layer = self.layers.remove(&layer);
         if layer.is_some() {
             let iv_all = Interval::new_closed_closed(0, self.merged.len());
@@ -131,7 +138,7 @@ impl Scopes {
             if spans.iter().next().is_some() {
                 eprintln!("scopes for layer {:?}:", id);
                 for (iv, val) in spans.iter() {
-                    eprintln!("{}: {:?}", iv, layer.name_lookup[*val as usize]);
+                    eprintln!("{}: {:?}", iv, layer.stack_lookup[*val as usize]);
                 }
                 eprintln!("styles:");
                 for (iv, val) in styles.iter() {
@@ -142,10 +149,13 @@ impl Scopes {
     }
 
 
-    fn create_if_missing(&mut self, layer_id: PluginPid) {
+    /// Returns an `Err` if this layer has been deleted; the caller should return.
+    fn create_if_missing(&mut self, layer_id: PluginPid) -> Result<(), ()> {
+        if self.deleted.contains(&layer_id) { return Err(()) }
         if !self.layers.contains_key(&layer_id) {
             self.layers.insert(layer_id, ScopeLayer::new(self.merged.len()));
         }
+        Ok(())
     }
 }
 
@@ -154,7 +164,7 @@ impl Default for ScopeLayer {
         ScopeLayer {
             stack_lookup: Vec::new(),
             style_lookup: Vec::new(),
-            name_lookup: Vec::new(),
+            style_cache: HashMap::new(),
             scope_spans: Spans::default(),
             style_spans: Spans::default(),
         }
@@ -167,7 +177,7 @@ impl ScopeLayer {
         ScopeLayer {
             stack_lookup: Vec::new(),
             style_lookup: Vec::new(),
-            name_lookup: Vec::new(),
+            style_cache: HashMap::new(),
             scope_spans: SpansBuilder::new(len).build(),
             style_spans: SpansBuilder::new(len).build(),
         }
@@ -175,7 +185,8 @@ impl ScopeLayer {
 
     fn theme_changed(&mut self, doc_ctx: &DocumentCtx) {
         // recompute styles with the new theme
-        self.style_lookup = self.styles_for_stacks(self.stack_lookup.as_slice(), doc_ctx);
+        let cur_stacks = self.stack_lookup.clone();
+        self.style_lookup = self.styles_for_stacks(&cur_stacks, doc_ctx);
         let iv_all = Interval::new_closed_closed(0, self.style_spans.len());
         self.style_spans = SpansBuilder::new(self.style_spans.len()).build();
         // this feels unnecessary but we can't pass in a reference to self
@@ -201,7 +212,6 @@ impl ScopeLayer {
                 .map(|s| s.unwrap())
                 .collect::<Vec<_>>();
             stacks.push(scopes);
-            self.name_lookup.push(stack);
         }
 
         let mut new_styles = self.styles_for_stacks(stacks.as_slice(), doc_ctx);
@@ -209,15 +219,37 @@ impl ScopeLayer {
         self.style_lookup.append(&mut new_styles);
     }
 
-    fn styles_for_stacks(&self, stacks: &[Vec<Scope>],
+    fn styles_for_stacks(&mut self, stacks: &[Vec<Scope>],
                          doc_ctx: &DocumentCtx) -> Vec<Style> {
         let style_map = doc_ctx.get_style_map().lock().unwrap();
         let highlighter = style_map.get_highlighter();
-
         let mut new_styles = Vec::new();
+
         for stack in stacks {
-            let style = highlighter.style_mod_for_stack(stack);
-            let style = Style::from_syntect_style_mod(&style);
+            let mut last_style: Option<StyleModifier> = None;
+            let mut upper_bound_of_last = stack.len() as usize;
+
+            // walk backwards through stack to see if we have an existing
+            // style for any child stacks.
+            for i in 0..stack.len()-1 {
+                let prev_range = 0..stack.len() - (i + 1);
+                if let Some(s) = self.style_cache.get(&stack[prev_range]) {
+                    last_style = Some(*s);
+                    upper_bound_of_last = stack.len() - (i + 1);
+                    break
+                }
+            }
+            let mut base_style_mod = last_style.unwrap_or_default();
+
+            // apply the stack, generating children as needed.
+            for i in upper_bound_of_last..stack.len() {
+                let style_mod = highlighter.get_style(&stack[0..i+1]);
+                base_style_mod = base_style_mod.apply(style_mod);
+            }
+
+            let style = Style::from_syntect_style_mod(&base_style_mod);
+            self.style_cache.insert(stack.clone(), base_style_mod);
+
             new_styles.push(style);
         }
         new_styles

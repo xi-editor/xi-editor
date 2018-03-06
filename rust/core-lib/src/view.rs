@@ -548,8 +548,12 @@ impl View {
     }
 
     pub fn rewrap(&mut self, text: &Rope, wrap_col: usize) {
-        self.breaks = Some(linewrap::linewrap(text, wrap_col));
-        self.wrap_col = wrap_col;
+        if wrap_col > 0 {
+            self.breaks = Some(linewrap::linewrap(text, wrap_col));
+            self.wrap_col = wrap_col;
+        } else {
+            self.breaks = None
+        }
     }
 
     /// Updates the view after the text has been modified by the given `delta`.
@@ -558,7 +562,7 @@ impl View {
     ///
     /// Return value is a location of a point that should be scrolled into view.
     pub fn after_edit(&mut self, text: &Rope, last_text: &Rope, delta: &Delta<RopeInfo>,
-        pristine: bool) -> Option<usize>
+        pristine: bool, keep_selections: bool) -> Option<usize>
     {
         let (iv, new_len) = delta.summary();
         if let Some(breaks) = self.breaks.as_mut() {
@@ -590,7 +594,7 @@ impl View {
                 occurrences.delete_range(old_offset, old_offset + len, false);
             }
 
-            occurrences = occurrences.apply_delta(delta, false);
+            occurrences = occurrences.apply_delta(delta, false, false);
 
             // invalidate occurrences around insert positions
             for DeltaRegion{ new_offset, len, .. } in delta.iter_inserts() {
@@ -607,7 +611,7 @@ impl View {
 
         // Note: for committing plugin edits, we probably want to know the priority
         // of the delta so we can set the cursor before or after the edit, as needed.
-        let new_sel = self.selection.apply_delta(delta, true);
+        let new_sel = self.selection.apply_delta(delta, true, keep_selections);
         self.set_selection_for_edit(text, new_sel)
     }
 

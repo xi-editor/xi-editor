@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+
+{% include head.html %}
+
+<body class="mdl-base">
+<div class="tac-layout mdl-layout mdl-js-layout mdl-layout--fixed-header">
+    {% include header.html %}
+    {% include drawer_nav_full.html %}
+    <main class="mdl-layout__content docs-content-wrapper mdl-grid">
+        <div class="mdl-cell mdl-cell--2-col mdl-cell--hide-phone mdl-cell--hide-tablet">
+            {% include side_nav.html %}
+        </div>
+        <div class="docs-content-grid mdl-cell mdl-cell--8-col">
+            {{ content }}
+        </div>
+        <div class="mdl-layout--small-screen-only">{% include footer.html %}</div>
+    </main>
+    <div class="mdl-layout--large-screen-only">{% include footer.html %}</div>
+</div>
+</body>
+</html>

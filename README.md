@@ -27,12 +27,12 @@ Goals include:
 * ***Developer friendliness***. It should be easy to customize xi editor, whether
   by adding plug-ins or hacking on the core.
 
-Please refer to the [May 2017 roadmap](https://github.com/google/xi-editor/issues/252)
+Please refer to the [November 2017 roadmap](https://github.com/google/xi-editor/issues/437)
 to learn more about planned features.
 
 Screenshot (will need to be updated as syntax coloring and UI polish is added):
 
-![xi screenshot](/doc/img/xi-mac-screenshot.png?raw=true)
+![xi screenshot](/docs/docs/img/xi-mac-screenshot.png?raw=true)
 
 ## Getting started
 
@@ -61,13 +61,15 @@ and might work on other Flutter targets.
 
 * [xi-tui](https://github.com/little-dude/xi-tui), a text UI.
 
-* [`xi-electron`](https://github.com/callodacity/xi-electron), a front-end based on web-technologies.
+* [xi-electron](https://github.com/acheronfail/xi-electron), a cross-platform front-end based on web-technologies.
 
-* [`gxi`](https://github.com/bvinc/gxi), a GTK+ front-end written in Rust.
+* [gxi](https://github.com/bvinc/gxi), a GTK+ front-end written in Rust.
 
 * [xi-win](https://github.com/google/xi-win), an experimental Windows front-end written in Rust.
 
 * [kod](https://github.com/linde12/kod), a terminal frontend written in Golang.
+
+* [xi-qt](https://github.com/sw5cc/xi-qt), a Qt front-end.
 
 The following are currently inactive, based on earlier versions of the front-end
 protocol, but perhaps could be revitalized:
@@ -77,9 +79,11 @@ experimental GL-based front-end in Rust.
 
 * [XiEditorVS2015](https://github.com/Sineaggi/XiEditorVS2015), C#.
 
+* [xi-android](https://github.com/adrientetar/xi-android), an Android frontend.
+
 There are notes (I wouldn’t call it
 documentation at this point) on the protocol at
-[frontend.md](doc/frontend.md). If you're working on a front-end, feel free to
+[frontend.md](http://google.github.io/xi-editor/docs/frontend-protocol.html). If you're working on a front-end, feel free to
 send a PR to add it to the above list.
 
 ## Design decisions

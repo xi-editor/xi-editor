@@ -14,7 +14,7 @@
 
 //! `PluginManager` handles launching, monitoring, and communicating with plugins.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, Weak, MutexGuard};
@@ -25,10 +25,15 @@ use std::fmt::Debug;
 use serde::Serialize;
 use serde_json::{self, Value};
 
+use xi_rpc;
+use xi_rpc::{RpcCtx, Handler, RemoteError};
+
 use tabs::{BufferIdentifier, ViewIdentifier, BufferContainerRef};
+use config::Table;
 
 use super::{PluginCatalog, PluginRef, start_plugin_process, PluginPid};
-use super::rpc_types::{PluginNotification, PluginRequest, PluginUpdate, UpdateResponse, PluginBufferInfo, ClientPluginInfo};
+use super::rpc::{PluginNotification, PluginRequest, PluginCommand,
+PluginUpdate, UpdateResponse, PluginBufferInfo, ClientPluginInfo};
 use super::manifest::{PluginActivation, Command};
 
 pub type PluginName = String;
@@ -70,52 +75,6 @@ impl PluginManager {
         }).collect::<Vec<_>>()
     }
 
-    /// Handle a request from a plugin.
-    pub fn handle_plugin_notification(&self, cmd: PluginNotification, plugin_id: PluginPid) {
-        use self::PluginNotification::*;
-        match cmd {
-            //TODO: these should not be unwraps
-            AddScopes { view_id, scopes } => {
-                self.buffers.lock().editor_for_view_mut(view_id).unwrap()
-                    .plugin_add_scopes(plugin_id, scopes);
-            }
-            UpdateSpans { view_id, start, len, spans, rev } => {
-                self.buffers.lock().editor_for_view_mut(view_id).unwrap()
-                    .plugin_update_spans(plugin_id, start, len, spans, rev);
-            }
-            Edit { view_id, edit } => {
-                self.buffers.lock().editor_for_view_mut(view_id).unwrap()
-                    .plugin_edit(&edit);
-            }
-            Alert { view_id, msg } => {
-                self.buffers.lock().editor_for_view(view_id).unwrap()
-                .plugin_alert(&msg);
-            }
-        }
-    }
-
-    /// Handle a request from a plugin.
-    pub fn handle_plugin_request(&self, cmd: PluginRequest, _: PluginPid) -> Value {
-        use self::PluginRequest::*;
-        match cmd {
-            //TODO: these should not be unwraps
-            LineCount { view_id } => {
-                let n_lines = self.buffers.lock().editor_for_view(view_id).unwrap()
-                    .plugin_n_lines() as u64;
-                serde_json::to_value(n_lines).unwrap()
-            }
-            GetData { view_id, offset, max_size, rev } => {
-                self.buffers.lock().editor_for_view(view_id).unwrap()
-                .plugin_get_data(offset, max_size, rev)
-                .map(|data| Value::String(data)).unwrap()
-            }
-            GetSelections { view_id } => {
-                self.buffers.lock().editor_for_view(view_id).unwrap()
-                    .plugin_get_selections(view_id)
-            }
-        }
-    }
-
     /// Passes an update from a buffer to all registered plugins.
     fn update_plugins(&mut self, view_id: ViewIdentifier,
                   update: PluginUpdate, undo_group: usize) -> Result<(), Error> {
@@ -147,7 +106,7 @@ impl PluginManager {
                     match response.map(serde_json::from_value::<UpdateResponse>) {
                         Ok(Ok(UpdateResponse::Edit(edit))) => {
                             buffers.lock().editor_for_view_mut(view_id).unwrap()
-                                .apply_plugin_edit(&edit, Some(undo_group));
+                                .apply_plugin_edit(edit, Some(undo_group));
                         }
                         Ok(Ok(UpdateResponse::Ack(_))) => (),
                         Ok(Err(err)) => eprintln!("plugin response json err: {:?}", err),
@@ -185,6 +144,29 @@ impl PluginManager {
                 }
             }
         }
+    }
+
+    // NOTE: This is a temporary API just for tracing.
+    fn request_trace_rpc_sync(&self, method: &str, params: &Value)
+        -> Vec<Result<Value, xi_rpc::Error>>
+    {
+        let mut gathered_results = Vec::new();
+
+        for plugin in self.global_plugins.values() {
+            let result = plugin.request_trace_rpc_sync(method, &params);
+            gathered_results.push(result);
+        }
+
+        let mut processed_plugins = HashSet::new();
+
+        for plugin in self.buffer_plugins.values().flat_map(|group| group.values()) {
+            // currently each buffer must have its own instance of a given plugin running.
+            assert!(processed_plugins.insert(plugin.get_identifier()));
+            let result = plugin.request_trace_rpc_sync(method, &params);
+            gathered_results.push(result);
+        }
+
+        gathered_results
     }
 
     fn dispatch_command(&self, view_id: ViewIdentifier, receiver: &str,
@@ -445,6 +427,19 @@ impl PluginManagerRef {
 
     }
 
+    pub fn toggle_tracing(&self, enabled: bool) {
+        self.lock().request_trace_rpc_sync(
+            "tracing_config",
+            &json!({"enabled": enabled}),
+        );
+    }
+
+    pub fn collect_trace(&self) -> Vec<Result<Value, xi_rpc::Error>> {
+        self.lock().request_trace_rpc_sync(
+            "collect_trace",
+            &json!({}),
+        )
+    }
 
     /// Called when a new buffer is created.
     pub fn document_new(&self, view_id: ViewIdentifier, init_info: &PluginBufferInfo) {
@@ -515,6 +510,13 @@ impl PluginManagerRef {
             .collect::<Vec<String>>();
 
         self.start_plugins(view_id, &init_info, &to_run);
+    }
+
+    /// Notifies plugins of a user config change
+    pub fn document_config_changed(&self, view_id: ViewIdentifier,
+                                   changes: &Table) {
+        self.lock().notify_plugins(view_id, false, "config_changed",
+                                   &json!({"view_id": view_id, "changes": changes}));
     }
 
     /// Launches and initializes the named plugin.
@@ -599,5 +601,50 @@ impl PluginManagerRef {
                                        plugin_name, err),
             }
         }
+    }
+}
+
+impl Handler for PluginManagerRef {
+    type Notification = PluginCommand<PluginNotification>;
+    type Request = PluginCommand<PluginRequest>;
+
+    fn handle_notification(&mut self, _ctx: &RpcCtx, rpc: Self::Notification) {
+        use self::PluginNotification::*;
+        let PluginCommand { view_id, plugin_id, cmd } = rpc;
+        let inner = self.lock();
+        let mut buffers = inner.buffers.lock();
+
+        match cmd {
+            AddScopes { scopes } => buffers.editor_for_view_mut(view_id)
+                .map(|ed| ed.plugin_add_scopes(plugin_id, scopes)),
+            UpdateSpans { start, len, spans, rev } => buffers.editor_for_view_mut(view_id)
+                .map(|ed| ed.plugin_update_spans(plugin_id, start, len, spans, rev)),
+            Edit { edit } => buffers.editor_for_view_mut(view_id)
+                .map(|ed| ed.plugin_edit_async(edit)),
+            Alert { msg } => buffers.editor_for_view(view_id)
+                .map(|ed| ed.plugin_alert(&msg)),
+        };
+    }
+
+    fn handle_request(&mut self, _ctx: &RpcCtx, rpc: Self::Request) -> Result<Value, RemoteError> {
+        use self::PluginRequest::*;
+        let PluginCommand { view_id, cmd, .. } = rpc;
+        let inner = self.lock();
+        let buffers = inner.buffers.lock();
+
+        let resp = match cmd {
+            LineCount => buffers.editor_for_view(view_id)
+                .map(|ed| json!(ed.plugin_n_lines())),
+            GetData { offset, max_size, rev } => buffers.editor_for_view(view_id)
+                .map(|ed| json!(ed.plugin_get_data(offset, max_size, rev))),
+            GetSelections => buffers.editor_for_view(view_id)
+                .map(|ed| json!(ed.plugin_get_selections(view_id))),
+            };
+        resp.ok_or(RemoteError::custom(404,
+                                       "Missing editor",
+                                       json!({
+                                           "view_id": view_id,
+                                           "rpc": &cmd
+                                       })))
     }
 }

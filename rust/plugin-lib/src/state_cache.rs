@@ -15,14 +15,18 @@
 //! A more sophisticated cache that manages user state.
 
 use std::path::PathBuf;
-use serde_json::Value;
+use serde_json::{self, Value};
 use bytecount;
 use rand::{thread_rng, Rng};
 
-use plugin_base;
-use plugin_base::{PluginBufferInfo, PluginRequest};
+use xi_core::{PluginPid, ViewIdentifier, SyntaxDefinition, plugin_rpc,
+              ConfigTable, BufferConfig};
+use xi_rpc::{RemoteError, ReadError};
+use xi_rope::rope::{RopeDelta, LinesMetric};
+use xi_rope::delta::DeltaElement;
 
-pub use plugin_base::{Error, ScopeSpan};
+use plugin_base;
+pub use plugin_base::Error;
 
 const CHUNK_SIZE: usize = 1024 * 1024;
 const CACHE_SIZE: usize = 1024;
@@ -35,7 +39,8 @@ pub trait Plugin {
     type State: Default + Clone;
 
     fn initialize(&mut self, ctx: PluginCtx<Self::State>, buf_size: usize);
-    fn update(&mut self, ctx: PluginCtx<Self::State>);
+    fn update(&mut self, ctx: PluginCtx<Self::State>, rev: usize,
+              delta: Option<RopeDelta>) -> Option<Value>;
     fn did_save(&mut self, ctx: PluginCtx<Self::State>);
     #[allow(unused_variables)]
     fn idle(&mut self, ctx: PluginCtx<Self::State>, token: usize) {}
@@ -50,9 +55,10 @@ struct CacheEntry<S> {
 /// The caching state
 #[derive(Default)]
 struct CacheState<S> {
+    plugin_id: PluginPid,
     /// The length of the document in bytes.
     buf_size: usize,
-    view_id: String,
+    view_id: ViewIdentifier,
     rev: u64,
 
     /// A chunk of the document.
@@ -67,7 +73,9 @@ struct CacheState<S> {
     /// The frontier, represented as a sorted list of line numbers.
     frontier: Vec<usize>,
 
-    syntax: String,
+    syntax: SyntaxDefinition,
+    config_table: ConfigTable,
+    config: Option<BufferConfig>,
     path: Option<PathBuf>,
 }
 
@@ -82,20 +90,63 @@ struct CacheHandler<'a, P: Plugin + 'a> {
 }
 
 impl<'a, P: Plugin> plugin_base::Handler for CacheHandler<'a, P> {
-    fn call(&mut self, req: &PluginRequest, peer: plugin_base::PluginCtx) -> Option<Value> {
+    fn handle_notification(&mut self, ctx: plugin_base::PluginCtx,
+                           rpc: plugin_rpc::HostNotification) {
+        use self::plugin_rpc::HostNotification::*;
         let ctx = PluginCtx {
             state: &mut self.state,
-            peer: peer,
+            peer: ctx,
         };
-        match *req {
-            PluginRequest::Ping => {
-                eprintln!("got ping");
-                None
+        match rpc {
+            Ping( .. ) => (),
+            Initialize { plugin_id, mut buffer_info } => {
+                let info = buffer_info.remove(0);
+                ctx.do_initialize(info, plugin_id, self.handler);
             }
-            PluginRequest::Initialize(ref init_info) => ctx.do_initialize(init_info, self.handler),
-            PluginRequest::Update { start, end, new_len, rev, text, .. } =>
-                ctx.do_update(start, end, new_len, rev, text, self.handler),
-            PluginRequest::DidSave { ref path } => ctx.do_did_save(path, self.handler),
+            ConfigChanged { changes, .. } => ctx.do_config_changed(changes),
+            DidSave { ref path, .. } => ctx.do_did_save(path, self.handler),
+            NewBuffer { .. } | DidClose { .. } => eprintln!("Rust plugin lib \
+            does not support global plugins"),
+            //TODO: figure out shutdown
+            Shutdown( .. ) => (),
+            TracingConfig {enabled} => {
+                use xi_trace;
+
+                if enabled {
+                    eprintln!("Enabling tracing in {:?}", ctx.state.plugin_id);
+                    xi_trace::enable_tracing();
+                } else {
+                    eprintln!("Disabling tracing in {:?}",  ctx.state.plugin_id);
+                    xi_trace::disable_tracing();
+                }
+            }
+        }
+    }
+
+    fn handle_request(&mut self, ctx: plugin_base::PluginCtx,
+                      rpc: plugin_rpc::HostRequest)
+                      -> Result<Value, RemoteError> {
+        use self::plugin_rpc::HostRequest::*;
+        let ctx = PluginCtx {
+            state: &mut self.state,
+            peer: ctx,
+        };
+        match rpc {
+            Update(params) => Ok(ctx.do_update(params, self.handler)),
+            CollectTrace( .. ) => {
+                use xi_trace;
+                use xi_trace_dump::*;
+
+                let samples = xi_trace::samples_cloned_unsorted();
+                let serialized_result = chrome_trace::to_value(
+                    &samples, chrome_trace::OutputFormat::JsonArray);
+                let serialized = serialized_result.map_err(|e| RemoteError::Custom {
+                    code: 0,
+                    message: format!("{:?}", e),
+                    data: None
+                })?;
+                Ok(serialized)
+            }
         }
     }
 
@@ -108,74 +159,66 @@ impl<'a, P: Plugin> plugin_base::Handler for CacheHandler<'a, P> {
     }
 }
 
-pub fn mainloop<P: Plugin>(handler: &mut P) {
+pub fn mainloop<P: Plugin>(handler: &mut P) -> Result<(), ReadError>  {
     let mut my_handler = CacheHandler {
         handler: handler,
         state: CacheState::default(),
     };
-    plugin_base::mainloop(&mut my_handler);
+    plugin_base::mainloop(&mut my_handler)
 }
 
 impl<'a, S: Default + Clone> PluginCtx<'a, S> {
-    fn do_initialize<P: Plugin<State = S>>(mut self, init_info: &PluginBufferInfo, handler: &mut P)
-        -> Option<Value>
+    fn do_initialize<P>(mut self, init_info: plugin_rpc::PluginBufferInfo,
+                        plugin_id: PluginPid, handler: &mut P)
+        where P: Plugin<State = S>
     {
-        self.state.buf_size = init_info.buf_size;
-        assert_eq!(init_info.views.len(), 1);
-        self.state.view_id = init_info.views[0].clone();
-        self.state.rev = init_info.rev;
-        self.state.syntax = init_info.syntax.clone();
-        self.state.path = init_info.path.clone().map(|p| PathBuf::from(p));
+        let plugin_rpc::PluginBufferInfo {
+            mut views, rev, buf_size,
+            path, syntax, config, ..
+        } = init_info;
+
+        self.state.plugin_id = plugin_id;
+        self.state.buf_size = buf_size;
+        assert_eq!(views.len(), 1);
+        self.state.view_id = views.remove(0);
+        self.state.rev = rev;
+        self.state.syntax = syntax;
+        self.state.config_table = config.clone();
+        self.state.config = serde_json::from_value(Value::Object(config)).unwrap();
+        self.state.path = path.map(|p| PathBuf::from(p));
         self.truncate_frontier(0);
-        handler.initialize(self, init_info.buf_size);
-        None
+        handler.initialize(self, buf_size);
     }
 
-    fn do_did_save<P: Plugin<State = S>>(self, path: &PathBuf, handler: &mut P) -> Option<Value> {
+    fn do_config_changed(self, changes: ConfigTable) {
+        for (key, value) in changes.iter() {
+            self.state.config_table.insert(key.to_owned(), value.to_owned());
+        }
+        let conf = serde_json::from_value(Value::Object(self.state.config_table.clone()));
+        self.state.config = conf.unwrap();
+    }
+
+    fn do_did_save<P: Plugin<State = S>>(self, path: &PathBuf, handler: &mut P) {
         self.state.path = Some(path.to_owned());
         handler.did_save(self);
-        None
     }
 
-    fn do_update<P: Plugin<State = S>>(mut self, start: usize, end: usize, new_len: usize, rev: u64,
-        text: Option<&str>, handler: &mut P) -> Option<Value>
+    fn do_update<P>(mut self, update: plugin_rpc::PluginUpdate, handler: &mut P) -> Value
+        where P: Plugin<State = S>
     {
-        //eprintln!("got update notification {:?}", edit_type);
-        self.state.buf_size = self.state.buf_size - (end - start) + new_len;
+        let plugin_rpc::PluginUpdate { delta, new_len, rev, .. } = update;
+        self.state.buf_size = new_len;
         self.state.rev = rev;
-        if let Some(text) = text {
-            let off = self.state.chunk_offset;
-            if start >= off && start <= off + self.state.chunk.len() {
-                let nlc_tail = if end <= off + self.state.chunk.len() {
-                    let nlc = count_newlines(&self.state.chunk[start - off .. end - off]);
-                    let tail = self.state.chunk[end - off ..].to_string();
-                    Some((nlc, tail))
-                } else {
-                    None
-                };
-                self.state.chunk.truncate(start - off);
-                self.state.chunk.push_str(text);
-                if let Some((newline_count, tail)) = nlc_tail {
-                    self.state.chunk.push_str(&tail);
-                    let new_nl_count = count_newlines(&text);
-                    let nl_delta = new_nl_count.wrapping_sub(newline_count) as isize;
-                    self.apply_delta(start, end, new_len, nl_delta);
-                } else {
-                    self.truncate_cache(start);
-                }
-            } else {
-                self.state.chunk.clear();
-                self.state.chunk_offset = 0;
-                self.truncate_cache(start);
-            }
+        if let Some(ref delta) = delta {
+            self.update_line_cache(delta);
+            self.update_chunk(delta);
         } else {
-            self.state.chunk.clear();
-            self.state.chunk_offset = 0;
-            self.truncate_cache(start);
+            // if there's no delta (very large edit) we blow away everything
+            self.clear_to_start(0);
         }
-        handler.update(self);
-        Some(Value::from(0i32))
 
+        handler.update(self, rev as usize, delta)
+            .unwrap_or(Value::from(0i32))
     }
 
     pub fn get_path(&self) -> Option<&PathBuf> {
@@ -185,12 +228,26 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
         }
     }
 
-    pub fn add_scopes(&self, scopes: &Vec<Vec<String>>) {
-        self.peer.add_scopes(&self.state.view_id, scopes)
+    pub fn get_config(&self) -> &BufferConfig {
+        self.state.config.as_ref().unwrap()
     }
 
-    pub fn update_spans(&self, start: usize, len: usize, spans: &[ScopeSpan]) {
-        self.peer.update_spans(&self.state.view_id, start, len, self.state.rev, spans)
+    pub fn get_syntax(&self) -> SyntaxDefinition {
+        self.state.syntax
+    }
+
+    pub fn get_buf_size(&self) -> usize {
+        self.state.buf_size
+    }
+
+    pub fn add_scopes(&self, scopes: &Vec<Vec<String>>) {
+        self.peer.add_scopes(self.state.plugin_id, &self.state.view_id, scopes)
+    }
+
+    pub fn update_spans(&self, start: usize, len: usize,
+                        spans: &[plugin_rpc::ScopeSpan]) {
+        self.peer.update_spans(self.state.plugin_id, &self.state.view_id,
+                               start, len, self.state.rev, spans)
     }
 
     /// Determines whether an incoming request (or notification) is pending. This
@@ -212,7 +269,7 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
     }
 
     /// Find an entry in the cache by offset. Similar to `find_line`.
-    fn find_offset(&self, offset: usize) -> Result<usize, usize> {
+    pub fn find_offset(&self, offset: usize) -> Result<usize, usize> {
         self.state.state_cache.binary_search_by(|probe| probe.offset.cmp(&offset))
     }
 
@@ -317,8 +374,9 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
         after - before
     }
 
-    fn fetch_chunk(&mut self, start: usize) -> Result<String, Error> {
-        self.peer.get_data(&self.state.view_id, start, CHUNK_SIZE, self.state.rev)
+    fn fetch_chunk(&self, start: usize) -> Result<String, Error> {
+        self.peer.get_data(self.state.plugin_id, &self.state.view_id,
+                           start, CHUNK_SIZE, self.state.rev)
     }
 
     /// Get a slice of the document, containing at least the given interval
@@ -437,30 +495,115 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
         }
     }
 
-    /// The contents between `start` and `end` have been replaced with
-    /// new content of size `new_bytes`. Clears all state in the interior
-    /// of that region, fixes up line and offset info, and sets a frontier
-    /// at the beginning of the region.
-    fn apply_delta(&mut self, start: usize, end: usize, new_bytes: usize,
-        nl_count_delta: isize)
-    {
+    /// Updates the chunk to reflect changes in this delta.
+    fn update_chunk(&mut self, delta: &RopeDelta) {
+        if self.state.chunk_offset == 0 && self.state.chunk.len() == 0 {
+            return
+        }
+        let chunk_start = self.state.chunk_offset;
+        let chunk_end = chunk_start + self.state.chunk.len();
+        let mut new_state = String::with_capacity(self.state.chunk.len());
+        let mut prev_copy_end = 0;
+        let mut del_before: usize = 0;
+        let mut ins_before: usize = 0;
+
+        for op in delta.els.as_slice() {
+            match op {
+                &DeltaElement::Copy(start, end) => {
+                    if start < chunk_start {
+                        del_before += start - prev_copy_end;
+                        if end >= chunk_start {
+                            let cp_end = (end - chunk_start).min(self.state.chunk.len());
+                            new_state.push_str(&self.state.chunk[0..cp_end]);
+                        }
+                    } else if start <= chunk_end {
+                        if prev_copy_end < chunk_start {
+                            del_before += chunk_start - prev_copy_end;
+                        }
+                        let cp_start = start - chunk_start;
+                        let cp_end = (end - chunk_start).min(self.state.chunk.len());
+                        new_state.push_str(&self.state.chunk[cp_start .. cp_end]);
+                    }
+                    prev_copy_end = end;
+                }
+                &DeltaElement::Insert(ref s) => {
+                    if prev_copy_end < chunk_start {
+                        ins_before += s.len();
+                    } else if prev_copy_end <= chunk_end {
+                        let s: String = s.into();
+                        new_state.push_str(&s);
+                    }
+                }
+            }
+        }
+
+        self.state.buf_size = delta.new_document_len();
+        self.state.chunk_offset += ins_before;
+        self.state.chunk_offset -= del_before;
+        self.state.chunk = new_state;
+    }
+
+    /// Updates the line cache to reflect this delta.
+    fn update_line_cache(&mut self, delta: &RopeDelta) {
+        let (iv, new_len) = delta.summary();
+        if let Some(n) = delta.as_simple_insert() {
+            assert_eq!(iv.size(), 0);
+            assert_eq!(new_len, n.len());
+
+            let newline_count = n.measure::<LinesMetric>();
+            self.line_cache_simple_insert(iv.start(), new_len, newline_count);
+        } else if delta.is_simple_delete() {
+            assert_eq!(new_len, 0);
+            self.line_cache_simple_delete(iv.start(), iv.end())
+        } else {
+            self.clear_to_start(iv.start());
+        }
+    }
+
+    fn line_cache_simple_insert(&mut self, start: usize, new_len: usize,
+                                newline_num: usize) {
         let ix = match self.find_offset(start) {
             Ok(ix) => ix + 1,
             Err(ix) => ix,
         };
-        // Note: the "<=" can be tightened to "<" in some circumstances, but the logic
-        // is complicated.
-        while ix < self.state.state_cache.len() && self.state.state_cache[ix].offset <= end {
-            self.state.state_cache.remove(ix);
+
+        for entry in &mut self.state.state_cache[ix..] {
+            entry.line_num += newline_num;
+            entry.offset += new_len;
         }
-        let off_delta = (start + new_bytes).wrapping_sub(end);
-        if off_delta != 0 || nl_count_delta != 0 {
-            for entry in &mut self.state.state_cache[ix..] {
-                entry.line_num = entry.line_num.wrapping_add(nl_count_delta as usize);
-                entry.offset = entry.offset.wrapping_add(off_delta);
+        self.patchup_frontier(ix, newline_num as isize);
+    }
+
+    fn line_cache_simple_delete(&mut self, start: usize, end: usize) {
+        let off = self.state.chunk_offset;
+        let chunk_end = off + self.state.chunk.len();
+        if start >= off && end <= chunk_end {
+            let del_newline_num = count_newlines(&self.state.chunk[start - off..end - off]);
+            // delete all entries that overlap the deleted range
+            let ix = match self.find_offset(start) {
+                Ok(ix) => ix + 1,
+                Err(ix) => ix,
+            };
+            while ix < self.state.state_cache.len() &&
+                self.state.state_cache[ix].offset <= end {
+                    self.state.state_cache.remove(ix);
             }
+            for entry in &mut self.state.state_cache[ix..] {
+                entry.line_num -= del_newline_num;
+                entry.offset -= end - start;
+            }
+            self.patchup_frontier(ix, -(del_newline_num as isize));
+        } else {
+            // if this region isn't in our chunk we can't correctly adjust newlines
+            self.clear_to_start(start);
         }
-        let line_num = if ix == 0 { 0 } else { self.state.state_cache[ix - 1].line_num };
+    }
+
+    fn patchup_frontier(&mut self, cache_idx: usize, nl_count_delta: isize) {
+        let line_num = match cache_idx {
+            0 => 0,
+            ix => self.state.state_cache[ix - 1].line_num,
+        };
         let mut new_frontier = Vec::new();
         let mut need_push = true;
         for old_ln in &self.state.frontier {
@@ -470,7 +613,7 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
                 if need_push {
                     new_frontier.push(line_num);
                     need_push = false;
-                    if let Some(ref entry) = self.state.state_cache.get(ix) {
+                    if let Some(ref entry) = self.state.state_cache.get(cache_idx) {
                         if *old_ln >= entry.line_num {
                             new_frontier.push(old_ln.wrapping_add(nl_count_delta as usize));
                         }
@@ -482,6 +625,13 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
             new_frontier.push(line_num);
         }
         self.state.frontier = new_frontier;
+    }
+
+    /// Clears any cached text and anything in the state cache before `start`.
+    fn clear_to_start(&mut self, start: usize) {
+        self.state.chunk.clear();
+        self.state.chunk_offset = 0;
+        self.truncate_cache(start);
     }
 
     /// Clear all state and reset frontier to start.

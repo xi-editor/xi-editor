@@ -19,25 +19,29 @@ extern crate serde;
 extern crate serde_json;
 #[macro_use]
 extern crate serde_derive;
+#[macro_use]
+extern crate lazy_static;
 extern crate time;
 extern crate syntect;
 extern crate toml;
+#[cfg(feature = "notify")]
 extern crate notify;
 
-#[cfg(target_os = "fuchsia")]
-extern crate magenta;
-#[cfg(target_os = "fuchsia")]
-extern crate magenta_sys;
-#[cfg(target_os = "fuchsia")]
-extern crate mxruntime;
-#[cfg(target_os = "fuchsia")]
-#[macro_use]
-extern crate fidl;
-#[cfg(target_os = "fuchsia")]
-extern crate apps_ledger_services_public;
+extern crate xi_trace;
+extern crate xi_trace_dump;
 
-#[cfg(target_os = "fuchsia")]
-extern crate sha2;
+#[cfg(feature = "ledger")]
+mod ledger_includes {
+    extern crate fuchsia_zircon;
+    extern crate fuchsia_zircon_sys;
+    extern crate mxruntime;
+    #[macro_use]
+    extern crate fidl;
+    extern crate apps_ledger_services_public;
+    extern crate sha2;
+}
+#[cfg(feature = "ledger")]
+use ledger_includes::*;
 
 use serde_json::Value;
 
@@ -54,7 +58,7 @@ pub mod internal {
     pub mod view;
     pub mod linewrap;
     pub mod plugins;
-    #[cfg(target_os = "fuchsia")]
+    #[cfg(feature = "ledger")]
     pub mod fuchsia;
     pub mod styles;
     pub mod word_boundaries;
@@ -64,9 +68,16 @@ pub mod internal {
     pub mod syntax;
     pub mod layers;
     pub mod config;
+    #[cfg(feature = "notify")]
     pub mod watcher;
     pub mod line_cache_shadow;
 }
+
+pub use plugins::rpc as plugin_rpc;
+pub use plugins::PluginPid;
+pub use tabs::ViewIdentifier;
+pub use syntax::SyntaxDefinition;
+pub use config::{BufferItems as BufferConfig, Table as ConfigTable};
 
 use internal::tabs;
 use internal::editor;
@@ -81,15 +92,16 @@ use internal::movement;
 use internal::syntax;
 use internal::layers;
 use internal::config;
+#[cfg(feature = "notify")]
 use internal::watcher;
 use internal::line_cache_shadow;
-#[cfg(target_os = "fuchsia")]
+#[cfg(feature = "ledger")]
 use internal::fuchsia;
 
 use tabs::{Documents, BufferContainerRef};
 use rpc::{CoreNotification, CoreRequest};
 
-#[cfg(target_os = "fuchsia")]
+#[cfg(feature = "ledger")]
 use apps_ledger_services_public::Ledger_Proxy;
 
 extern crate xi_rope;
@@ -119,7 +131,7 @@ impl MainState {
         self.tabs._get_buffers()
     }
 
-    #[cfg(target_os = "fuchsia")]
+    #[cfg(feature = "ledger")]
     pub fn set_ledger(&mut self, ledger: Ledger_Proxy, session_id: (u64, u32)) {
         self.tabs.setup_ledger(ledger, session_id);
     }
@@ -138,7 +150,7 @@ impl Handler for MainState {
         self.tabs.handle_request(rpc, ctx)
     }
 
-    fn idle(&mut self, _ctx: &RpcCtx, token: usize) {
-        self.tabs.handle_idle(token);
+    fn idle(&mut self, ctx: &RpcCtx, token: usize) {
+        self.tabs.handle_idle(ctx, token);
     }
 }
