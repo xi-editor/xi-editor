@@ -206,7 +206,9 @@ impl<'a> PluginState<'a> {
         // don't touch indentation if this is not a simple edit
         if end != start { return None }
 
-        let is_newline = &ctx.get_config().line_ending == text;
+        let line_ending = ctx.get_config().line_ending.clone();
+        let is_newline = line_ending == text;
+
         if is_newline {
             let line_num = ctx.find_offset(start).err();
 
@@ -214,6 +216,9 @@ impl<'a> PluginState<'a> {
             let tab_size = ctx.get_config().tab_size;
             let buf_size = ctx.get_buf_size();
             if let Some(line) = line_num.and_then(|idx| ctx.get_line(idx).ok()) {
+                // do not send update if last line is empty string (contains only line ending)
+                if line == line_ending { return None }
+
                 let indent = self.indent_for_next_line(
                     line, use_spaces, tab_size);
                 let ix = start + text.len();
