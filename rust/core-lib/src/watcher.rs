@@ -177,6 +177,31 @@ impl FileWatcher {
                     eprintln!("unwatching error {:?}", e);
                 }
             }
+            //TODO: Ideally we would be tracking what paths we're watching with
+            // some prefix-tree-like structure, which would let us keep track
+            // of when some child path might need to be reregistered. How this
+            // works and when registration would be required is dependent on
+            // the underlying notification mechanism, however. There's an
+            // in-progress rewrite of the Notify crate which use under the
+            // hood, and a component of that rewrite is adding this
+            // functionality; so until that lands we're using a fairly coarse
+            // heuristic to determine if we need to re-watch subpaths.
+
+            // if this was recursive, check if any child paths need to be
+            // manually re-added
+            if removed.recursive {
+                // do this in two steps because we've borrowed mutably up top
+                let to_add = state.watchees.iter()
+                    .filter(|w| w.path.starts_with(&removed.path))
+                    .map(|w| (w.path.to_owned(), mode_from_bool(w.recursive)))
+                    .collect::<Vec<_>>();
+
+                for (path, mode) in to_add.into_iter() {
+                    if let Err(e) = self.inner.watch(&path, mode) {
+                        eprintln!("watching error {:?}", e);
+                    }
+                }
+            }
         }
     }
 
@@ -445,9 +470,10 @@ mod tests {
 
     //https://github.com/passcod/notify/issues/131
     #[test]
+    #[cfg(unix)]
     fn test_crash_repro() {
         let (tx, _rx) = channel();
-        let path = PathBuf::from("/usr/local/bin/git");
+        let path = PathBuf::from("/bin/cat");
         let mut w = watcher(tx, Duration::from_secs(1)).unwrap();
         w.watch(&path, RecursiveMode::NonRecursive).unwrap();
         sleep(20);
@@ -463,9 +489,9 @@ mod tests {
         tmp.create("adir/dir2/file");
         sleep_if_macos(35_000);
         w.watch(&tmp.mkpath("adir"), true, 1.into());
-        sleep_if_macos(10);
+        sleep(10);
         w.watch(&tmp.mkpath("adir/dir2/file"), false,  2.into());
-        sleep_if_macos(10);
+        sleep(10);
         w.unwatch(&tmp.mkpath("adir"), 1.into());
         sleep(10);
         tmp.write("adir/dir2/file");
@@ -482,31 +508,34 @@ mod tests {
         let (tx, rx) = channel();
         let tmp = tempdir::TempDir::new("xi-test").unwrap();
         tmp.create("my_file");
-        sleep_if_macos(25_000);
+        sleep_if_macos(35_000);
         let mut w = FileWatcher::new(tx);
         w.watch(&tmp.mkpath("my_file"), false, 1.into());
         sleep_if_macos(10);
         w.watch(&tmp.mkpath("my_file"), false, 2.into());
         sleep_if_macos(10);
+        tmp.write("my_file");
+
+        let _ = recv_all(&rx, Duration::from_millis(1000));
+        let events = w.take_events();
+        assert_eq!(events, vec![
+                   (1.into(), DebouncedEvent::NoticeWrite(tmp.mkpath("my_file"))),
+                   (2.into(), DebouncedEvent::NoticeWrite(tmp.mkpath("my_file"))),
+                   (1.into(), DebouncedEvent::Write(tmp.mkpath("my_file"))),
+                   (2.into(), DebouncedEvent::Write(tmp.mkpath("my_file"))),
+        ]);
+
+        assert_eq!(w.state.lock().unwrap().watchees.len(), 2);
+        w.unwatch(&tmp.mkpath("my_file"), 1.into());
+        assert_eq!(w.state.lock().unwrap().watchees.len(), 1);
+        sleep_if_macos(35_000);
         tmp.remove("my_file");
 
         let _ = recv_all(&rx, Duration::from_millis(1000));
         let events = w.take_events();
         assert_eq!(events, vec![
-                   (1.into(), DebouncedEvent::NoticeRemove(tmp.mkpath("my_file"))),
                    (2.into(), DebouncedEvent::NoticeRemove(tmp.mkpath("my_file"))),
-                   (1.into(), DebouncedEvent::Remove(tmp.mkpath("my_file"))),
                    (2.into(), DebouncedEvent::Remove(tmp.mkpath("my_file"))),
-        ]);
-
-        w.unwatch(&tmp.mkpath("my_file"), 1.into());
-        sleep_if_macos(10);
-        tmp.create("my_file");
-
-        let _ = recv_all(&rx, Duration::from_millis(1000));
-        let events = w.take_events();
-        assert_eq!(events, vec![
-                   (2.into(), DebouncedEvent::Create(tmp.mkpath("my_file"))),
         ]);
     }
 }
