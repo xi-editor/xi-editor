@@ -59,7 +59,7 @@ and might work on other Flutter targets.
 
 * [xi-gtk](https://github.com/eyelash/xi-gtk), a GTK+ front-end.
 
-* [xi-tui](https://github.com/little-dude/xi-tui), a text UI.
+* [xi-term](https://github.com/xi-frontend/xi-term), a text UI.
 
 * [xi-electron](https://github.com/acheronfail/xi-electron), a cross-platform front-end based on web-technologies.
 
