@@ -236,8 +236,8 @@ impl fmt::Debug for Watchee {
     }
 }
 
-fn mode_from_bool(b: bool) -> RecursiveMode {
-    if b {
+fn mode_from_bool(is_recursive: bool) -> RecursiveMode {
+    if is_recursive {
         RecursiveMode::Recursive
     } else {
         RecursiveMode::NonRecursive
@@ -302,14 +302,14 @@ mod tests {
     }
 
     // Sleep for `duration` in milliseconds
-    pub fn sleep(duration: u64) {
-        thread::sleep(Duration::from_millis(duration));
+    pub fn sleep(millis: u64) {
+        thread::sleep(Duration::from_millis(millis));
     }
 
     // Sleep for `duration` in milliseconds if running on OS X
-    pub fn sleep_macos(duration: u64) {
+    pub fn sleep_if_macos(millis: u64) {
         if cfg!(target_os = "macos") {
-            thread::sleep(Duration::from_millis(duration));
+            sleep(millis)
         }
     }
 
@@ -461,11 +461,11 @@ mod tests {
         let tmp = tempdir::TempDir::new("xi-test").unwrap();
         let mut w = FileWatcher::new(tx);
         tmp.create("adir/dir2/file");
-        sleep_macos(35_000);
+        sleep_if_macos(35_000);
         w.watch(&tmp.mkpath("adir"), true, 1.into());
-        sleep_macos(10);
+        sleep_if_macos(10);
         w.watch(&tmp.mkpath("adir/dir2/file"), false,  2.into());
-        sleep_macos(10);
+        sleep_if_macos(10);
         w.unwatch(&tmp.mkpath("adir"), 1.into());
         sleep(10);
         tmp.write("adir/dir2/file");
@@ -482,12 +482,12 @@ mod tests {
         let (tx, rx) = channel();
         let tmp = tempdir::TempDir::new("xi-test").unwrap();
         tmp.create("my_file");
-        sleep_macos(25_000);
+        sleep_if_macos(25_000);
         let mut w = FileWatcher::new(tx);
         w.watch(&tmp.mkpath("my_file"), false, 1.into());
-        sleep_macos(10);
+        sleep_if_macos(10);
         w.watch(&tmp.mkpath("my_file"), false, 2.into());
-        sleep_macos(10);
+        sleep_if_macos(10);
         tmp.remove("my_file");
 
         let _ = recv_all(&rx, Duration::from_millis(1000));
@@ -500,7 +500,7 @@ mod tests {
         ]);
 
         w.unwatch(&tmp.mkpath("my_file"), 1.into());
-        sleep_macos(10);
+        sleep_if_macos(10);
         tmp.create("my_file");
 
         let _ = recv_all(&rx, Duration::from_millis(1000));

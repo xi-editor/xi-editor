@@ -743,7 +743,7 @@ impl Documents {
                     self.handle_config_fs_event(event, peer);
                     config_changed = true;
                 }
-                OPEN_FILE_EVENT_TOKEN => self.handle_open_file_fs_event(event, peer),
+                OPEN_FILE_EVENT_TOKEN => self.handle_open_file_fs_event(event),
                 _ => eprintln!("unexpected fs event token {:?}", token),
             }
         }
@@ -753,7 +753,7 @@ impl Documents {
     }
 
     /// Handles a file system event related to a currently open file
-    fn handle_open_file_fs_event(&mut self, event: DebouncedEvent, _peer: &MainPeer) {
+    fn handle_open_file_fs_event(&mut self, event: DebouncedEvent) {
         use notify::DebouncedEvent::*;
         match event {
             NoticeWrite(ref path @ _) |
@@ -767,11 +767,14 @@ impl Documents {
                     None => return,
                 };
 
-                let is_write_conflict = ed.get_file_mod_time()
+                //TODO: currently we only use the file's modification time when
+                // determining if a file has been changed by another process.
+                // A more robust solution would also hash the file's contents.
+                let has_changed_on_disk = ed.get_file_mod_time()
                     .map(|t| Some(t) != mod_time)
                     .unwrap_or(false);
 
-                if is_write_conflict {
+                if has_changed_on_disk {
                     // if the buffer isn't dirty we can just reload the file
                     if ed.is_pristine() {
                         if let Ok(contents) = self.read_file(path) {
