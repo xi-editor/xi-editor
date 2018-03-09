@@ -559,9 +559,14 @@ impl Documents {
         Ok(s)
     }
 
+<<<<<<< HEAD
     fn do_save<P>(&mut self, peer: &MainPeer, view_id: ViewIdentifier, file_path: P)
         where P: AsRef<Path>
     {
+=======
+    fn do_save<P: AsRef<Path>>(&mut self, rpc_peer: &MainPeer,
+                               view_id: ViewIdentifier, file_path: P) {
+>>>>>>> Notify peer of a successfull save operation (issue519)
         //TODO: handle & report errors
         let file_path = file_path.as_ref();
         let prev_syntax = self.buffers.lock().editor_for_view(view_id)
@@ -610,6 +615,11 @@ impl Documents {
                 .unwrap().set_config(new_config);
         }
         self.plugins.document_did_save(view_id, file_path);
+        rpc_peer.send_rpc_notification(
+            "view_saved", &json!({
+                "view_id": view_id,
+                "file_path": file_path,
+            }));
     }
 
     /// Handles a plugin related command from a client
