@@ -28,6 +28,7 @@ extern crate serde_json;
 extern crate serde_derive;
 extern crate serde;
 extern crate crossbeam;
+extern crate xi_trace;
 
 mod parse;
 mod error;
@@ -213,6 +214,8 @@ impl<W: Write + Send> RpcLoop<W> {
           RF: Send + FnOnce() -> R,
           H: Handler,
     {
+        let _mainloop_trace = xi_trace::trace_block(
+            "rpc mainloop", &["rpc", "notification"]);
 
         let exit = crossbeam::scope(|scope| {
             let peer = self.get_raw_peer();
@@ -222,6 +225,7 @@ impl<W: Write + Send> RpcLoop<W> {
             scope.spawn(move|| {
                 let mut stream = rf();
                 loop {
+                    let json_decode = xi_trace::trace_block("decode rpc", &["rpc", "json"]);
                     let json = match self.reader.next(&mut stream) {
                         Ok(json) => json,
                         Err(err) => {
@@ -229,6 +233,9 @@ impl<W: Write + Send> RpcLoop<W> {
                             break
                         }
                     };
+                    drop(json_decode);
+
+                    let json_handler = xi_trace::trace_block("handle rpc", &["rpc", "json"]);
                     if json.is_response() {
                         let id = json.get_id().unwrap();
                         match json.into_response() {
@@ -249,6 +256,7 @@ impl<W: Write + Send> RpcLoop<W> {
             });
 
             loop {
+                let read_result_trace = xi_trace::trace_block("read & process result", &["rpc"]);
                 let read_result = next_read(&peer, handler, &ctx);
 
                 let json = match read_result {
@@ -263,15 +271,24 @@ impl<W: Write + Send> RpcLoop<W> {
                         return err
                     }
                 };
+                drop(read_result_trace);
 
                 match json.into_rpc::<H::Notification, H::Request>() {
                     Ok(Call::Request(id, cmd)) => {
+                        let _request_trace = xi_trace::trace_block("handle_request", &["rpc"]);
                         let result = handler.handle_request(&ctx, cmd);
                         peer.respond(result, id);
                     }
-                    Ok(Call::Notification(cmd)) => handler.handle_notification(&ctx, cmd),
-                    Ok(Call::InvalidRequest(id, err)) => peer.respond(Err(err), id),
+                    Ok(Call::Notification(cmd)) => {
+                        let notification_trace = xi_trace::trace_block("handle_notification", &["rpc"]);
+                        handler.handle_notification(&ctx, cmd)
+                    },
+                    Ok(Call::InvalidRequest(id, err)) => {
+                        xi_trace::trace("invalid request", &["rpc"]);
+                        peer.respond(Err(err), id)
+                    },
                     Err(err) => {
+                        xi_trace::trace("error", &["rpc"]);
                         peer.disconnect();
                         return ReadError::UnknownRequest(err)
                     }
