@@ -38,8 +38,9 @@ use std::collections::{BTreeMap, VecDeque};
 use std::io::{self, BufRead, Write};
 use std::sync::{Arc, Mutex, Condvar};
 use std::sync::mpsc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, AtomicBool, Ordering};
 use std::time::Duration;
+use std::thread;
 
 use serde_json::Value;
 use serde::de::DeserializeOwned;
@@ -126,6 +127,19 @@ impl<F: Send + FnOnce(Result<Value, Error>)> Callback for F {
     }
 }
 
+/// A helper type which shuts down the runloop if a panic occurs while
+/// handling an RPC.
+struct PanicGuard<'a, W: Write + 'static>(&'a RawPeer<W>);
+
+impl<'a, W: Write + 'static> Drop for PanicGuard<'a, W> {
+    fn drop(&mut self) {
+       if thread::panicking() {
+           eprintln!("panic guard hit, closing runloop");
+           self.0.disconnect();
+        }
+    }
+}
+
 trait IdleProc: Send {
     fn call(self: Box<Self>, token: usize);
 }
@@ -159,6 +173,7 @@ struct RpcState<W: Write> {
     id: AtomicUsize,
     pending: Mutex<BTreeMap<usize, ResponseHandler>>,
     idle_queue: Mutex<VecDeque<usize>>,
+    needs_exit: AtomicBool,
 }
 
 /// A structure holding the state of a main loop for handling RPC's.
@@ -178,6 +193,7 @@ impl<W: Write + Send> RpcLoop<W> {
             id: AtomicUsize::new(0),
             pending: Mutex::new(BTreeMap::new()),
             idle_queue: Mutex::new(VecDeque::new()),
+            needs_exit: AtomicBool::new(false),
         }));
         RpcLoop {
             reader: MessageReader::default(),
@@ -216,12 +232,20 @@ impl<W: Write + Send> RpcLoop<W> {
 
         let exit = crossbeam::scope(|scope| {
             let peer = self.get_raw_peer();
+            peer.reset_needs_exit();
+
             let ctx = RpcCtx {
                 peer: Box::new(peer.clone()),
             };
             scope.spawn(move|| {
                 let mut stream = rf();
                 loop {
+                    // The main thread cannot return while this thread is active;
+                    // when the main thread wants to exit it sets this flag.
+                    if self.peer.needs_exit() {
+                        break
+                    }
+
                     let json = match self.reader.next(&mut stream) {
                         Ok(json) => json,
                         Err(err) => {
@@ -249,6 +273,7 @@ impl<W: Write + Send> RpcLoop<W> {
             });
 
             loop {
+                let _guard = PanicGuard(&peer);
                 let read_result = next_read(&peer, handler, &ctx);
 
                 let json = match read_result {
@@ -447,6 +472,16 @@ impl<W:Write> RawPeer<W> {
             let callback = pending.remove(id).unwrap();
             callback.invoke(Err(Error::PeerDisconnect));
         }
+        self.0.needs_exit.store(true, Ordering::Relaxed);
+    }
+
+    /// Returns `true` if an error has occured in the main thread.
+    fn needs_exit(&self) -> bool {
+        self.0.needs_exit.load(Ordering::Relaxed)
+    }
+
+    fn reset_needs_exit(&self) {
+        self.0.needs_exit.store(false, Ordering::SeqCst);
     }
 }
 
