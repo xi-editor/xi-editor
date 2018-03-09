@@ -873,7 +873,7 @@ impl Editor {
     }
 
     fn do_undo(&mut self) {
-        if self.cur_undo > 0 {
+        if self.cur_undo > 1 {
             self.cur_undo -= 1;
             assert!(self.undos.insert(self.live_undos[self.cur_undo]));
             self.this_edit_type = EditType::Undo;
