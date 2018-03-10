@@ -36,6 +36,9 @@ sha2 = "0.7"
 #mxruntime = "0.1.0"
 #fidl = "0.1.0"
 
+[dev-dependencies]
+tempdir = "^0.3.4"
+
 [features]
 avx-accel = ["xi-rope/avx-accel"]
 simd-accel = ["xi-rope/simd-accel"]
