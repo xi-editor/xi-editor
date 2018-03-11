@@ -484,7 +484,7 @@ mod tests {
     #[test]
     fn recurse_with_contained() {
         let (tx, rx) = channel();
-        let tmp = tempdir::TempDir::new("xi-test").unwrap();
+        let tmp = tempdir::TempDir::new("xi-test-recurse-contained").unwrap();
         let mut w = FileWatcher::new(tx);
         tmp.create("adir/dir2/file");
         sleep_if_macos(35_000);
@@ -506,9 +506,9 @@ mod tests {
     #[test]
     fn two_watchers_one_file() {
         let (tx, rx) = channel();
-        let tmp = tempdir::TempDir::new("xi-test").unwrap();
+        let tmp = tempdir::TempDir::new("xi-test-two-watchers").unwrap();
         tmp.create("my_file");
-        sleep_if_macos(35_000);
+        sleep_if_macos(30_100);
         let mut w = FileWatcher::new(tx);
         w.watch(&tmp.mkpath("my_file"), false, 1.into());
         sleep_if_macos(10);
@@ -528,9 +528,9 @@ mod tests {
         assert_eq!(w.state.lock().unwrap().watchees.len(), 2);
         w.unwatch(&tmp.mkpath("my_file"), 1.into());
         assert_eq!(w.state.lock().unwrap().watchees.len(), 1);
-        sleep_if_macos(35_000);
+        sleep_if_macos(30_100);
         tmp.remove("my_file");
-
+        sleep_if_macos(1000);
         let _ = recv_all(&rx, Duration::from_millis(1000));
         let events = w.take_events();
         assert_eq!(events, vec![
