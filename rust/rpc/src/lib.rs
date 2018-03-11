@@ -62,15 +62,15 @@ pub struct RawPeer<W: Write + 'static>(Arc<RpcState<W>>);
 /// channel. It is intended to be used behind a pointer, a trait object.
 pub trait Peer: Send + 'static {
     /// Used to implement `clone` in an object-safe way.
-    /// For an explanation on this approach, see this thread:
-    /// https://users.rust-lang.org/t/solved-is-it-possible-to-clone-a-boxed-trait-object/1714/6
+    /// For an explanation on this approach, see
+    /// [this thread](https://users.rust-lang.org/t/solved-is-it-possible-to-clone-a-boxed-trait-object/1714/6).
     fn box_clone(&self) -> Box<Peer>;
     /// Sends a notification (asynchronous RPC) to the peer.
     fn send_rpc_notification(&self, method: &str, params: &Value);
     /// Sends a request asynchronously, and the supplied callback will
     /// be called when the response arrives.
     ///
-    /// `Callback` is an alias for FnOnce(Result<Value, Error>); it must
+    /// `Callback` is an alias for `FnOnce(Result<Value, Error>)`; it must
     /// be boxed because trait objects cannot use generic paramaters.
     fn send_rpc_request_async(&self, method: &str, params: &Value,
                               f: Box<Callback>);

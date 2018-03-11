@@ -631,8 +631,9 @@ pub fn trace<S, C>(name: S, categories: C)
 /// ```
 ///
 /// With `json_payload` feature:
-/// ```
-/// xi_trace::trace_payload("something happened", &["rpc", "response"], json!({"key": "value"}));
+///
+/// ```rust,ignore
+/// xi_trace::trace_payload("my event", &["rpc", "response"], json!({"key": "value"}));
 /// ```
 #[inline]
 pub fn trace_payload<S, C, P>(name: S, categories: C, payload: P)
@@ -757,6 +758,7 @@ pub fn samples_len() -> usize {
 
 /// Returns all the samples collected so far.  There is no guarantee that the
 /// samples are ordered chronologically for several reasons:
+///
 /// 1. Samples that span sections of code may be inserted on end instead of
 /// beginning.
 /// 2. Performance optimizations might have per-thread buffers.  Keeping all

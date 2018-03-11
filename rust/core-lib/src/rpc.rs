@@ -142,7 +142,7 @@ pub enum CoreNotification {
     /// (this should be changed to more accurately reflect the behaviour
     /// of the edit commands).
     ///
-    ///For the available commands, see [`PluginNotification`].
+    /// For the available commands, see [`PluginNotification`].
     ///
     /// [`PluginNotification`]: enum.PluginNotification.html
     ///
@@ -213,6 +213,7 @@ pub enum CoreNotification {
 /// # Examples
 ///
 /// The `new_view` command:
+///
 /// ```
 /// # extern crate xi_core_lib as xi_core;
 /// extern crate serde_json;
