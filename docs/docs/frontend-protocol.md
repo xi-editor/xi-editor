@@ -250,7 +250,7 @@ or a request.
 
 #### update
 **Note**: This document is not entirely up to date: some changes to
-the protocol are described in [this document](frontend-protocol.md#Xi-view-update-protocol).
+the protocol are described in [this document](frontend-protocol.md#xi-view-update-protocol).
 
 ```
 update {"tab": "1", "update": {
