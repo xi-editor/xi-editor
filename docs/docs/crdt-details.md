@@ -92,7 +92,7 @@ An example of a `O(log n)` operation is deleting an interval of a `Rope`, which 
 
 Obviously `Rope`s will be slower and take more memory than small `Strings` but they have an asymptotic advantage when working with large documents.
 
-For a deeper look at `Rope`s see the [Rope Science](rope_science/intro.md) series.
+For a deeper look at `Rope`s see the [Rope Science](rope_science_00.md) series.
 
 ### Subset
 
