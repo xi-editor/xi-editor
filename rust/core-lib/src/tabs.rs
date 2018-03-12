@@ -562,22 +562,22 @@ impl Documents {
     fn do_save<P>(&mut self, peer: &MainPeer, view_id: ViewIdentifier, file_path: P)
         where P: AsRef<Path>
     {
-        //TODO: handle & report errors
         let file_path = file_path.as_ref();
         let prev_syntax = self.buffers.lock().editor_for_view(view_id)
             .unwrap().get_syntax().to_owned();
         let prev_path = self.buffers.lock().editor_for_view(view_id)
             .and_then(|ed| ed.get_path().map(PathBuf::from));
         let new_syntax = SyntaxDefinition::new(file_path.to_str());
+
         // notify of syntax change before notify of file_save
         //FIXME: this doesn't tell us if the syntax _will_ change, for instance
         //if syntax was a user selection. (we don't handle this case right now)
-        let mut is_new_file_path = false;
+        let mut is_new_file_path = true;
         if let Some(ref prev_path) = prev_path {
             if prev_path != file_path {
                 self.remove_watch_path(prev_path);
-                is_new_file_path = true;
             } else {
+                is_new_file_path = false;
                 // if we're already open at this path, check file hasn't changed
                 if self.buffers.lock().editor_for_view(view_id)
                     .unwrap().get_file_has_changed() {
