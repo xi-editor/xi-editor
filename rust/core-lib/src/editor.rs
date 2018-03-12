@@ -794,31 +794,29 @@ impl Editor {
         self.insert(chars);
     }
 
-    pub fn do_save<P: AsRef<Path>>(&mut self, path: P) {
+    pub fn do_save<P: AsRef<Path>>(&mut self, path: P) -> Result<(), String> {
         match File::create(&path) {
             Ok(mut f) => {
                 if let Err(e) = match self.encoding {
                     CharacterEncoding::Utf8WithBom => f.write_all(UTF8_BOM.as_bytes()),
                     CharacterEncoding::Utf8 => Result::Ok(())
                 } {
-                    eprintln!("write error {}", e);
+                    Err(format!("write error {}", e))
                 } else {
                     for chunk in self.text.iter_chunks(0, self.text.len()) {
                         if let Err(e) = f.write_all(chunk.as_bytes()) {
-                            eprintln!("write error {}", e);
-                            break;
+                            return Err(format!("write error {}", e));
                         }
                     }
+                    self.pristine_rev_id = self.last_rev_id;
+                    self.view.set_pristine();
+                    self.view.set_dirty(&self.text);
+                    self.render();
+                    Ok(())
                 }
             }
-            Err(e) => eprintln!("create error {}", e),
+            Err(e) => Err(format!("create error {}", e)),
         }
-
-        self.pristine_rev_id = self.last_rev_id;
-        self.view.set_pristine();
-        self.file_mod_time = tabs::get_file_mod_time(path);
-        self.view.set_dirty(&self.text);
-        self.render();
     }
 
     fn do_scroll(&mut self, first: i64, last: i64) {
