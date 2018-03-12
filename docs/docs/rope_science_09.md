@@ -6,7 +6,7 @@ is_site_nav_category2: true
 site_nav_category: docs
 ---
 
-(originally written 7 May 2016, now at [doc/crdt.md](../crdt.md))
+(originally written 7 May 2016, now at [crdt.md](crdt.md))
 
 I'll publish this shortly as a doc in the xi repo, but figured it might be useful to get a draft up here first. I'm prototyping the relevant diff calculations hinted in the second section, not sure how useful it would be to describe the data structures and algorithms in detail. Feels like working code is the most important thing :)
 

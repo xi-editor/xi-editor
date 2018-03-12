@@ -110,7 +110,7 @@ details of representation are not terribly important. In xi, we ended up with a
 sequence of `invalidate`, `skip`, `copy`, `ins`, and `update` operations (this last
 is for updating only styles and cursors when the text is otherwise unchanged). The
 `ins` operation is the same as diff, while deletion is represented as two `copy`
-operations with a `skip` in the middle. See [update.md](../update.md) for detailed
+operations with a `skip` in the middle. See [update.md](update.md) for detailed
 documentation on the update method.
 
 ## The render plan
