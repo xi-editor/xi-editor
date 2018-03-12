@@ -47,8 +47,8 @@ versions.
 This document is not always perfectly up to date. For a comprehensive list of
 supported commands, the canonical resource is the source specifically [rust/core-lib/src/rpc.rs](https://github.com/google/xi-editor/blob/master/rust/core-lib/src/rpc.rs).
 
-- The update protocol is explained in more detail in [Xi view update protocol](#Xi-view-update-protocol).
-- The config system is explained in more detail in [doc/config.md](https://github.com/google/xi-editor/blob/master/doc/config.md).
+- The update protocol is explained in more detail in [Xi view update protocol](#xi-view-update-protocol).
+- The config system is explained in more detail in [docs/config.md](config.md).
 
 
 ## Table of Contents
