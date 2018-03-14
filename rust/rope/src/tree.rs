@@ -130,7 +130,7 @@ enum NodeVal<N: NodeInfo> {
 /// A trait for quickly processing attributes of a NodeInfo.
 /// 
 /// For the conceptual background see the 
-/// [blog post, Rope science, part 2: metrics](https://github.com/google/xi-editor/blob/master/doc/rope_science/rope_science_02.md).
+/// [blog post, Rope science, part 2: metrics](https://github.com/google/xi-editor/blob/master/docs/docs/rope_science_02.md).
 pub trait Metric<N: NodeInfo> {
     /// Return the number of boundarys in the NodeInfo::Leaf
     /// 

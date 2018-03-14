@@ -176,13 +176,32 @@ impl Selection {
     ///
     /// When new text is inserted at a caret, the new caret can be either before
     /// or after the inserted text, depending on the `after` parameter.
-    pub fn apply_delta(&self, delta: &Delta<RopeInfo>, after: bool) -> Selection {
+    ///
+    /// Whether or not the preceding selections are restored depends on the keep_selections
+    /// value (only set to true on transpose).
+    pub fn apply_delta(&self, delta: &Delta<RopeInfo>, after: bool, keep_selections: bool) -> Selection {
         let mut result = Selection::new();
         let mut transformer = Transformer::new(delta);
         for region in self.iter() {
-            let new_region = SelRegion {
-                start: transformer.transform(region.start, after),
-                end: transformer.transform(region.end, after),
+            let preserve_selection = keep_selections && region.start != region.end;
+            let start_after = {
+                if preserve_selection {
+                    region.start > region.end
+                } else {
+                    after
+                }
+            };
+            let end_after = {
+                if preserve_selection {
+                    region.start < region.end
+                } else {
+                    after
+                }
+            };
+
+            let new_region =  SelRegion {
+                start: transformer.transform(region.start, start_after),
+                end: transformer.transform(region.end, end_after),
                 horiz: None,
                 affinity: region.affinity,
             };

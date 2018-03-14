@@ -18,6 +18,8 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::io::Write;
 use std::collections::BTreeSet;
+use std::time::SystemTime;
+
 use serde_json::Value;
 
 use xi_rope::rope::{LinesMetric, Rope, RopeInfo};
@@ -32,7 +34,7 @@ use word_boundaries::WordCursor;
 use movement::{Movement, region_movement};
 use selection::{Affinity, Selection, SelRegion};
 
-use tabs::{BufferIdentifier, ViewIdentifier, DocumentCtx};
+use tabs::{self, BufferIdentifier, ViewIdentifier, DocumentCtx};
 use rpc::{self, GestureType};
 use syntax::SyntaxDefinition;
 use plugins::rpc::{PluginUpdate, PluginEdit, ScopeSpan, PluginBufferInfo,
@@ -63,11 +65,23 @@ enum CharacterEncoding {
 
 const UTF8_BOM: &str = "\u{feff}";
 
+fn last_selection_region(regions: &[SelRegion]) -> Option<&SelRegion> {
+    for region in regions.iter().rev() {
+        if !region.is_caret() {
+            return Some(region);
+        }
+    }
+
+    None
+}
+
 pub struct Editor {
     text: Rope,
     encoding: CharacterEncoding,
 
     path: Option<PathBuf>,
+    file_mod_time: Option<SystemTime>,
+    file_has_changed: bool,
     buffer_id: BufferIdentifier,
     syntax: SyntaxDefinition,
     view: View,
@@ -104,6 +118,7 @@ enum EditType {
     Delete,
     Undo,
     Redo,
+    Transpose,
 }
 
 impl EditType {
@@ -113,6 +128,7 @@ impl EditType {
             EditType::Delete => "delete",
             EditType::Undo => "undo",
             EditType::Redo => "redo",
+            EditType::Transpose => "transpose",
             _ => "other",
         }
     }
@@ -150,6 +166,8 @@ impl Editor {
             encoding: encoding,
             buffer_id: buffer_id,
             path: None,
+            file_mod_time: None,
+            file_has_changed: false,
             syntax: SyntaxDefinition::default(),
             view: View::new(initial_view_id),
             engine: engine,
@@ -184,6 +202,7 @@ impl Editor {
         let path = path.as_ref();
         //TODO: if the user sets syntax, we shouldn't overwrite here
         self.syntax = SyntaxDefinition::new(path.to_str());
+        self.file_mod_time = tabs::get_file_mod_time(path);
         self.path = Some(path.to_owned());
     }
 
@@ -193,6 +212,58 @@ impl Editor {
             Some(ref p) => Some(p),
             None => None,
         }
+    }
+
+    /// Returns the time of the last file write initiated by this `Editor`.
+    pub fn get_file_mod_time(&self) -> Option<SystemTime> {
+        self.file_mod_time
+    }
+
+    /// Returns `true` if this editor's file has changed on disk.
+    pub fn get_file_has_changed(&self) -> bool {
+        self.file_has_changed
+    }
+
+    #[doc(hidden)]
+    pub (crate) fn _set_file_has_changed(&mut self, has_changed: bool) {
+        self.file_has_changed = has_changed
+    }
+
+    /// Sets this Editor's contents to `text`, preserving undo state and cursor
+    /// position when possible.
+    pub fn reload(&mut self, text: &str) {
+        self.this_edit_type = EditType::Other;
+        let new_text = Rope::from(text);
+        let new_len = new_text.len();
+
+        // preserve a single caret
+        self.view.collapse_selections(&self.text);
+        let prev_sel = self.view.sel_regions().first().map(|s| s.clone());
+        self.view.unset_find(&self.text);
+
+        let mut builder = delta::Builder::new(self.text.len());
+        let all_iv = Interval::new_closed_open(0, self.text.len());
+        builder.replace(all_iv, new_text);
+        self.add_delta(builder.build());
+        self.commit_delta(None);
+        self.last_edit_type = EditType::Other;
+
+        if let Some(prev_sel) = prev_sel {
+            let offset = prev_sel.start.min(new_len);
+            let new_sel = SelRegion {
+                start: offset,
+                end: offset,
+                horiz: None,
+                affinity: Affinity::default(),
+            };
+            self.set_sel_single_region(new_sel);
+        }
+
+        self.file_mod_time = self.path.as_ref()
+            .and_then(tabs::get_file_mod_time);
+        self.pristine_rev_id = self.last_rev_id;
+        self.view.set_pristine();
+        self.render()
     }
 
     /// Sets the config for this buffer. If the new config differs
@@ -306,7 +377,7 @@ impl Editor {
         let undo_group;
 
         if self.this_edit_type == self.last_edit_type &&
-            self.this_edit_type != EditType::Other &&
+            self.this_edit_type != EditType::Other && self.this_edit_type != EditType::Transpose &&
             !self.live_undos.is_empty() {
 
             undo_group = *self.live_undos.last().unwrap();
@@ -364,7 +435,8 @@ impl Editor {
         // TODO (performance): it's probably quicker to stash last_text rather than
         // resynthesize it.
         let last_text = self.engine.get_rev(last_token).expect("last_rev not found");
-        self.scroll_to = self.view.after_edit(&self.text, &last_text, &delta, is_pristine);
+        let keep_selections = self.this_edit_type == EditType::Transpose;
+        self.scroll_to = self.view.after_edit(&self.text, &last_text, &delta, is_pristine, keep_selections);
         let (iv, new_len) = delta.summary();
 
         // TODO: perhaps use different semantics for spans that enclose the
@@ -423,7 +495,7 @@ impl Editor {
         // last_rev_id and so that merge will work.
     }
 
-    fn is_pristine(&self) -> bool {
+    pub (crate) fn is_pristine(&self) -> bool {
         self.engine.is_equivalent_revision(self.pristine_rev_id, self.engine.get_head_rev_id())
     }
 
@@ -721,30 +793,29 @@ impl Editor {
         self.insert(chars);
     }
 
-    pub fn do_save<P: AsRef<Path>>(&mut self, path: P) {
+    pub fn do_save<P: AsRef<Path>>(&mut self, path: P) -> Result<(), String> {
         match File::create(&path) {
             Ok(mut f) => {
                 if let Err(e) = match self.encoding {
                     CharacterEncoding::Utf8WithBom => f.write_all(UTF8_BOM.as_bytes()),
                     CharacterEncoding::Utf8 => Result::Ok(())
                 } {
-                    eprintln!("write error {}", e);
+                    Err(format!("write error {}", e))
                 } else {
                     for chunk in self.text.iter_chunks(0, self.text.len()) {
                         if let Err(e) = f.write_all(chunk.as_bytes()) {
-                            eprintln!("write error {}", e);
-                            break;
+                            return Err(format!("write error {}", e));
                         }
                     }
+                    self.pristine_rev_id = self.last_rev_id;
+                    self.view.set_pristine();
+                    self.view.set_dirty(&self.text);
+                    self.render();
+                    Ok(())
                 }
             }
-            Err(e) => eprintln!("create error {}", e),
+            Err(e) => Err(format!("create error {}", e)),
         }
-
-        self.pristine_rev_id = self.last_rev_id;
-        self.view.set_pristine();
-        self.view.set_dirty(&self.text);
-        self.render();
     }
 
     fn do_scroll(&mut self, first: i64, last: i64) {
@@ -859,7 +930,7 @@ impl Editor {
     }
 
     fn do_undo(&mut self) {
-        if self.cur_undo > 0 {
+        if self.cur_undo > 1 {
             self.cur_undo -= 1;
             assert!(self.undos.insert(self.live_undos[self.cur_undo]));
             self.this_edit_type = EditType::Undo;
@@ -876,9 +947,20 @@ impl Editor {
         }
     }
 
+    fn sel_region_to_interval_and_rope(&self, region: &SelRegion) -> (Interval, Rope) {
+        let as_interval = Interval::new_closed_open(region.min(), region.max());
+        let interval_rope = Rope::from(self.text.slice_to_string(
+            as_interval.start(), as_interval.end()));
+        (as_interval, interval_rope)
+    }
+
     fn do_transpose(&mut self) {
         let mut builder = delta::Builder::new(self.text.len());
         let mut last = 0;
+        let mut optional_previous_selection : Option<(Interval, Rope)> =
+            last_selection_region(self.view.sel_regions()).map(
+                |ref region| self.sel_region_to_interval_and_rope(region));
+
         for region in self.view.sel_regions() {
             if region.is_caret() {
                 let middle = region.end;
@@ -894,11 +976,14 @@ impl Editor {
                         last = end;
                     }
                 }
+            } else if let Some(previous_selection) = optional_previous_selection {
+                let current_interval = self.sel_region_to_interval_and_rope(&region);
+                builder.replace(current_interval.0, previous_selection.1);
+                optional_previous_selection = Some(current_interval);
             }
-            // TODO: handle else case by rotating non-caret regions.
         }
         if !builder.is_empty() {
-            self.this_edit_type = EditType::Other;
+            self.this_edit_type = EditType::Transpose;
             self.add_delta(builder.build());
         }
     }
@@ -958,6 +1043,20 @@ impl Editor {
     fn do_cancel_operation(&mut self) {
         self.view.unset_find(&self.text);
         self.view.collapse_selections(&self.text);
+    }
+
+    fn transform_text<F: Fn(&str) -> String>(&mut self, transform_function: F) {
+        let mut builder = delta::Builder::new(self.text.len());
+
+        for region in self.view.sel_regions() {
+            let selected_text = self.text.slice_to_string(region.min(), region.max());
+            let interval = Interval::new_closed_open(region.min(), region.max());
+            builder.replace(interval, Rope::from(transform_function(&selected_text)));
+        }
+        if !builder.is_empty() {
+            self.this_edit_type = EditType::Other;
+            self.add_delta(builder.build());
+        }
     }
 
     fn cmd_prelude(&mut self) {
@@ -1037,10 +1136,13 @@ impl Editor {
             DebugRewrap => self.debug_rewrap(),
             DebugPrintSpans => self.debug_print_spans(),
             CancelOperation => self.do_cancel_operation(),
+            Uppercase => self.transform_text(|s| s.to_uppercase()),
+            Lowercase => self.transform_text(|s| s.to_lowercase()),
         };
 
         self.cmd_postlude();
     }
+
 
     pub fn handle_request(&mut self, _view_id: ViewIdentifier,
                           cmd: rpc::EditRequest) -> Result<Value, RemoteError> {

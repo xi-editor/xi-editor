@@ -16,12 +16,12 @@ json_payload = ["serde_json"]
 getpid = []
 
 [dependencies]
-time = "0.1.39"
+time = "0.1"
 lazy_static = "1.0"
 serde_json = { version = "1.0", optional = true }
 serde_derive = "1.0"
 serde = "1.0"
-libc = "0.2.36"
+libc = "0.2"
 
 [profile.bench]
 lto = true

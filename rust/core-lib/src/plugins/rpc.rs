@@ -96,6 +96,7 @@ pub struct EmptyStruct {}
 /// RPC requests sent from the host
 pub enum HostRequest {
     Update(PluginUpdate),
+    CollectTrace(EmptyStruct),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -110,6 +111,7 @@ pub enum HostNotification {
     NewBuffer { buffer_info: Vec<PluginBufferInfo> },
     DidClose { view_id: ViewIdentifier },
     Shutdown(EmptyStruct),
+    TracingConfig {enabled: bool},
 }
 
 
@@ -234,8 +236,8 @@ mod tests {
     fn test_plugin_update() {
         let json = r#"{
             "view_id": "view-id-42",
-            "delta": {"base_len": 6, "els": [{"copy": [0,5]}, {"insert":"rofls"}]},
-            "new_len": 404,
+            "delta": {"base_len": 6, "els": [{"copy": [0,5]}, {"insert":"rofls"}, {"copy": [5,6]}]},
+            "new_len": 11,
             "rev": 5,
             "edit_type": "something",
             "author": "me"

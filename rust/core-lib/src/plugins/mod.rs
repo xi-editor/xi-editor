@@ -27,7 +27,7 @@ use std::io::{self, BufReader};
 
 use serde_json::{self, Value};
 
-use xi_rpc::{self, RpcPeer, RpcLoop};
+use xi_rpc::{self, RpcPeer, RpcLoop, Callback as RpcCallback};
 use tabs::ViewIdentifier;
 
 pub use self::manager::{PluginManagerRef, WeakPluginManagerRef};
@@ -44,7 +44,7 @@ pub type PluginPeer = RpcPeer;
 ///
 /// Note: two instances of the same executable will have different identifiers.
 /// Note: this identifier is distinct from the OS's process id.
-#[derive(Serialize, Deserialize, Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Serialize, Deserialize, Default, Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PluginPid(usize);
 
 /// A running plugin.
@@ -73,6 +73,20 @@ impl PluginRef {
     /// Send an arbitrary RPC notification to the plugin.
     pub fn rpc_notification(&self, method: &str, params: &Value) {
         self.0.lock().unwrap().peer.send_rpc_notification(method, params);
+    }
+
+    /// Send an arbitrary RPC request to the plugin.
+    pub fn rpc_request_async(&self, method: &str, params: &Value,
+                                f: Box<RpcCallback>) {
+        self.0.lock().unwrap().peer.send_rpc_request_async(method, params, f);
+    }
+
+    /// NOTE: Only added temporarily for tracing infrastructure to simplify
+    /// the initial implementation & perf doesn't matter.
+    /// Otherwise should communicate asynchronously with plugins.
+    pub fn request_trace_rpc_sync(&self, method: &str, params: &Value)
+        -> Result<Value, xi_rpc::Error> {
+        self.0.lock().unwrap().peer.send_rpc_request(method, params)
     }
 
     /// Initialize the plugin.

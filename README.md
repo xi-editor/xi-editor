@@ -32,7 +32,7 @@ to learn more about planned features.
 
 Screenshot (will need to be updated as syntax coloring and UI polish is added):
 
-![xi screenshot](/doc/img/xi-mac-screenshot.png?raw=true)
+![xi screenshot](/docs/docs/img/xi-mac-screenshot.png?raw=true)
 
 ## Getting started
 
@@ -59,7 +59,7 @@ and might work on other Flutter targets.
 
 * [xi-gtk](https://github.com/eyelash/xi-gtk), a GTK+ front-end.
 
-* [xi-tui](https://github.com/little-dude/xi-tui), a text UI.
+* [xi-term](https://github.com/xi-frontend/xi-term), a text UI.
 
 * [xi-electron](https://github.com/acheronfail/xi-electron), a cross-platform front-end based on web-technologies.
 
@@ -68,6 +68,8 @@ and might work on other Flutter targets.
 * [xi-win](https://github.com/google/xi-win), an experimental Windows front-end written in Rust.
 
 * [kod](https://github.com/linde12/kod), a terminal frontend written in Golang.
+
+* [xi-qt](https://github.com/sw5cc/xi-qt), a Qt front-end.
 
 The following are currently inactive, based on earlier versions of the front-end
 protocol, but perhaps could be revitalized:
@@ -81,7 +83,7 @@ experimental GL-based front-end in Rust.
 
 There are notes (I wouldn’t call it
 documentation at this point) on the protocol at
-[frontend.md](doc/frontend.md). If you're working on a front-end, feel free to
+[frontend.md](http://google.github.io/xi-editor/docs/frontend-protocol.html). If you're working on a front-end, feel free to
 send a PR to add it to the above list.
 
 ## Design decisions
