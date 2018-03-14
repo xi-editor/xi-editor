@@ -821,7 +821,7 @@ impl Editor {
 
     fn do_scroll(&mut self, first: i64, last: i64) {
         let first = max(first, 0) as usize;
-        let last = last as usize;
+        let last = max(last, 0) as usize;
         self.view.set_scroll(first, last);
     }
 
