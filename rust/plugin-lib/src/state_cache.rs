@@ -14,19 +14,16 @@
 
 //! A more sophisticated cache that manages user state.
 
-use std::path::PathBuf;
-use serde_json::{self, Value};
+use serde_json::Value;
 use bytecount;
 use rand::{thread_rng, Rng};
 
-use xi_core::{PluginPid, ViewIdentifier, SyntaxDefinition, plugin_rpc,
-              ConfigTable, BufferConfig};
+use xi_core::{plugin_rpc, BufferConfig};
 use xi_rpc::{RemoteError, ReadError};
 use xi_rope::rope::{RopeDelta, LinesMetric};
 use xi_rope::delta::DeltaElement;
 
-use plugin_base;
-pub use plugin_base::Error;
+pub use plugin_base::{self, Error, ViewState};
 
 const CHUNK_SIZE: usize = 1024 * 1024;
 const CACHE_SIZE: usize = 1024;
@@ -55,10 +52,8 @@ struct CacheEntry<S> {
 /// The caching state
 #[derive(Default)]
 struct CacheState<S> {
-    plugin_id: PluginPid,
     /// The length of the document in bytes.
     buf_size: usize,
-    view_id: ViewIdentifier,
     rev: u64,
 
     /// A chunk of the document.
@@ -72,11 +67,6 @@ struct CacheState<S> {
 
     /// The frontier, represented as a sorted list of line numbers.
     frontier: Vec<usize>,
-
-    syntax: SyntaxDefinition,
-    config_table: ConfigTable,
-    config: Option<BufferConfig>,
-    path: Option<PathBuf>,
 }
 
 pub struct PluginCtx<'a, S: 'a> {
@@ -99,27 +89,17 @@ impl<'a, P: Plugin> plugin_base::Handler for CacheHandler<'a, P> {
         };
         match rpc {
             Ping( .. ) => (),
-            Initialize { plugin_id, mut buffer_info } => {
+            Initialize { mut buffer_info, .. } => {
                 let info = buffer_info.remove(0);
-                ctx.do_initialize(info, plugin_id, self.handler);
+                ctx.do_initialize(info, self.handler);
             }
-            ConfigChanged { changes, .. } => ctx.do_config_changed(changes),
-            DidSave { ref path, .. } => ctx.do_did_save(path, self.handler),
+            // TODO: add this to handler
+            ConfigChanged { .. } => (),
+            DidSave { .. } => ctx.do_did_save(self.handler),
             NewBuffer { .. } | DidClose { .. } => eprintln!("Rust plugin lib \
             does not support global plugins"),
             //TODO: figure out shutdown
-            Shutdown( .. ) => (),
-            TracingConfig {enabled} => {
-                use xi_trace;
-
-                if enabled {
-                    eprintln!("Enabling tracing in {:?}", ctx.state.plugin_id);
-                    xi_trace::enable_tracing();
-                } else {
-                    eprintln!("Disabling tracing in {:?}",  ctx.state.plugin_id);
-                    xi_trace::disable_tracing();
-                }
-            }
+            Shutdown( .. ) | TracingConfig{ .. } => (),
         }
     }
 
@@ -168,38 +148,16 @@ pub fn mainloop<P: Plugin>(handler: &mut P) -> Result<(), ReadError>  {
 }
 
 impl<'a, S: Default + Clone> PluginCtx<'a, S> {
-    fn do_initialize<P>(mut self, init_info: plugin_rpc::PluginBufferInfo,
-                        plugin_id: PluginPid, handler: &mut P)
+    fn do_initialize<P>(mut self, init_info: plugin_rpc::PluginBufferInfo, handler: &mut P)
         where P: Plugin<State = S>
     {
-        let plugin_rpc::PluginBufferInfo {
-            mut views, rev, buf_size,
-            path, syntax, config, ..
-        } = init_info;
-
-        self.state.plugin_id = plugin_id;
-        self.state.buf_size = buf_size;
-        assert_eq!(views.len(), 1);
-        self.state.view_id = views.remove(0);
-        self.state.rev = rev;
-        self.state.syntax = syntax;
-        self.state.config_table = config.clone();
-        self.state.config = serde_json::from_value(Value::Object(config)).unwrap();
-        self.state.path = path.map(|p| PathBuf::from(p));
+        self.state.buf_size = init_info.buf_size;
+        self.state.rev = init_info.rev;
         self.truncate_frontier(0);
-        handler.initialize(self, buf_size);
+        handler.initialize(self, init_info.buf_size);
     }
 
-    fn do_config_changed(self, changes: ConfigTable) {
-        for (key, value) in changes.iter() {
-            self.state.config_table.insert(key.to_owned(), value.to_owned());
-        }
-        let conf = serde_json::from_value(Value::Object(self.state.config_table.clone()));
-        self.state.config = conf.unwrap();
-    }
-
-    fn do_did_save<P: Plugin<State = S>>(self, path: &PathBuf, handler: &mut P) {
-        self.state.path = Some(path.to_owned());
+    fn do_did_save<P: Plugin<State = S>>(self, handler: &mut P) {
         handler.did_save(self);
     }
 
@@ -221,19 +179,16 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
             .unwrap_or(Value::from(0i32))
     }
 
-    pub fn get_path(&self) -> Option<&PathBuf> {
-        match self.state.path {
-            Some(ref p) => Some(p),
-            None => None,
-        }
+    /// Provides access to the view state, which contains information about
+    /// config options, path, etc.
+    pub fn get_view(&self) -> &ViewState {
+        &self.peer.view
     }
 
+    //FIXME: config should be accessed through the view, but can be nil.
+    // Why can it be nil? There should always be a default config.
     pub fn get_config(&self) -> &BufferConfig {
-        self.state.config.as_ref().unwrap()
-    }
-
-    pub fn get_syntax(&self) -> SyntaxDefinition {
-        self.state.syntax
+        self.peer.view.config.as_ref().unwrap()
     }
 
     pub fn get_buf_size(&self) -> usize {
@@ -241,13 +196,12 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
     }
 
     pub fn add_scopes(&self, scopes: &Vec<Vec<String>>) {
-        self.peer.add_scopes(self.state.plugin_id, &self.state.view_id, scopes)
+        self.peer.add_scopes(scopes)
     }
 
     pub fn update_spans(&self, start: usize, len: usize,
                         spans: &[plugin_rpc::ScopeSpan]) {
-        self.peer.update_spans(self.state.plugin_id, &self.state.view_id,
-                               start, len, self.state.rev, spans)
+        self.peer.update_spans(start, len, self.state.rev, spans)
     }
 
     /// Determines whether an incoming request (or notification) is pending. This
@@ -375,8 +329,7 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
     }
 
     fn fetch_chunk(&self, start: usize) -> Result<String, Error> {
-        self.peer.get_data(self.state.plugin_id, &self.state.view_id,
-                           start, CHUNK_SIZE, self.state.rev)
+        self.peer.get_data(start, CHUNK_SIZE, self.state.rev)
     }
 
     /// Get a slice of the document, containing at least the given interval
