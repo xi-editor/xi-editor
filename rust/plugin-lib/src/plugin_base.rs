@@ -49,8 +49,17 @@ pub struct ViewState {
 
 pub struct PluginCtx<'a> {
     inner: &'a RpcCtx,
+    /// Information about the view initiating this RPC.
     pub view: &'a ViewState,
     plugin_id: PluginPid,
+}
+
+/// The handler that does low level plugin setup, and then forwards RPC calls
+/// to another `Handler` type.
+struct BaseHandler<'a, H: 'a> {
+    inner: &'a mut H,
+    plugin_id: Option<PluginPid>,
+    state: Option<ViewState>,
 }
 
 impl ViewState {
@@ -145,15 +154,9 @@ impl<'a> PluginCtx<'a> {
     }
 }
 
-struct MyHandler<'a, H: 'a> {
-    inner: &'a mut H,
-    plugin_id: Option<PluginPid>,
-    state: Option<ViewState>,
-}
-
-impl<'a, H: 'a> MyHandler<'a, H> {
+impl<'a, H: 'a> BaseHandler<'a, H> {
     fn new(inner: &'a mut H) -> Self {
-        MyHandler {
+        BaseHandler {
             inner: inner,
             plugin_id: None,
             state: None,
@@ -166,7 +169,7 @@ impl<'a, H: 'a> MyHandler<'a, H> {
     }
 }
 
-impl<'a, H: Handler> xi_rpc::Handler for MyHandler<'a, H> {
+impl<'a, H: Handler> xi_rpc::Handler for BaseHandler<'a, H> {
     type Notification = plugin_rpc::HostNotification;
     type Request = plugin_rpc::HostRequest;
     fn handle_notification(&mut self, ctx: &RpcCtx, rpc: Self::Notification) {
@@ -226,7 +229,7 @@ pub fn mainloop<H: Handler>(handler: &mut H) -> Result<(), ReadError> {
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut rpc_looper = RpcLoop::new(stdout);
-    let mut my_handler = MyHandler::new(handler);
+    let mut my_handler = BaseHandler::new(handler);
 
     rpc_looper.mainloop(|| stdin.lock(), &mut my_handler)
 }
