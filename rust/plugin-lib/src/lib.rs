@@ -26,3 +26,4 @@ extern crate rand;
 
 pub mod plugin_base;
 pub mod state_cache;
+mod base_cache;
