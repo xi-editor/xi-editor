@@ -179,7 +179,7 @@ impl<'a> PluginState<'a> {
     }
 
     fn do_highlighting(&mut self, mut ctx: PluginCtx<State>) {
-        let syntax = match ctx.get_path() {
+        let syntax = match ctx.get_view().path {
             Some(ref path) => self.syntax_set.find_syntax_for_file(path).unwrap()
                 .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text()),
             None => self.syntax_set.find_syntax_plain_text(),

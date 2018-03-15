@@ -87,11 +87,11 @@ impl<'a> PluginCtx<'a> {
         PluginCtx { inner, view, plugin_id }
     }
 
-    pub fn get_data(&self, plugin_id: PluginPid, view_id: &ViewIdentifier, offset: usize,
-                    max_size: usize, rev: u64) -> Result<String, Error> {
+    pub fn get_data(&self, offset: usize, max_size: usize, rev: u64)
+        -> Result<String, Error> {
         let params = json!({
-            "plugin_id": plugin_id,
-            "view_id": view_id,
+            "plugin_id": self.plugin_id,
+            "view_id": self.view.view_id,
             "offset": offset,
             "max_size": max_size,
             "rev": rev,
@@ -104,19 +104,19 @@ impl<'a> PluginCtx<'a> {
         }
     }
 
-    pub fn add_scopes(&self, plugin_id: PluginPid, view_id: &ViewIdentifier, scopes: &Vec<Vec<String>>) {
+    pub fn add_scopes(&self, scopes: &Vec<Vec<String>>) {
         let params = json!({
-            "plugin_id": plugin_id,
-            "view_id": view_id,
+            "plugin_id": self.plugin_id,
+            "view_id": self.view.view_id,
             "scopes": scopes,
         });
         self.send_rpc_notification("add_scopes", &params);
     }
 
-    pub fn update_spans(&self, plugin_id: PluginPid, view_id: &ViewIdentifier, start: usize, len: usize, rev: u64, spans: &[plugin_rpc::ScopeSpan]) {
+    pub fn update_spans(&self, start: usize, len: usize, rev: u64, spans: &[plugin_rpc::ScopeSpan]) {
         let params = json!({
-            "plugin_id": plugin_id,
-            "view_id": view_id,
+            "plugin_id": self.plugin_id,
+            "view_id": self.view.view_id,
             "start": start,
             "len": len,
             "rev": rev,
@@ -171,10 +171,14 @@ impl<'a, H: Handler> xi_rpc::Handler for MyHandler<'a, H> {
     type Request = plugin_rpc::HostRequest;
     fn handle_notification(&mut self, ctx: &RpcCtx, rpc: Self::Notification) {
         use self::plugin_rpc::HostNotification::*;
+        // we handle a few RPCs here, updating basic view information
+        // before forwarding to the actual handler.
         match rpc {
+            // don't forward ping before we're initialized
+            Ping( .. ) => { if self.state.is_none() { return } }
             Initialize { ref plugin_id, ref buffer_info } => {
                 assert!(self.state.is_none());
-                self.state = Some(ViewState::new(buffer_info.first().as_ref().unwrap()));
+                self.state = Some(ViewState::new(buffer_info.first().as_ref().expect("missing buffer info?")));
                 self.plugin_id = Some(*plugin_id);
             }
 
@@ -183,6 +187,18 @@ impl<'a, H: Handler> xi_rpc::Handler for MyHandler<'a, H> {
 
             DidSave { ref path, .. } =>
                 self.expect_state_mut().update_path(path),
+
+            TracingConfig {enabled} => {
+                use xi_trace;
+
+                if enabled {
+                    eprintln!("Enabling tracing in {:?}", self.plugin_id);
+                    xi_trace::enable_tracing();
+                } else {
+                    eprintln!("Disabling tracing in {:?}",  self.plugin_id);
+                    xi_trace::disable_tracing();
+                }
+            }
             _ => (),
         }
 
@@ -193,6 +209,7 @@ impl<'a, H: Handler> xi_rpc::Handler for MyHandler<'a, H> {
 
     fn handle_request(&mut self, ctx: &RpcCtx, rpc: Self::Request)
                       -> Result<Value, RemoteError> {
+        assert!(self.state.is_some(), "request received before init: {:?}", &rpc);
         let plugin_ctx = PluginCtx::new(
             ctx, self.state.as_ref().unwrap(), self.plugin_id.unwrap());
         self.inner.handle_request(plugin_ctx, rpc)
