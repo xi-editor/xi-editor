@@ -15,10 +15,12 @@
 //! A base for xi plugins. Will be split out into its own crate once it's a bit more stable.
 
 use std::io;
+use std::path::{PathBuf, Path};
 
-use serde_json::Value;
+use serde_json::{self, Value};
 
-use xi_core::{ViewIdentifier, PluginPid, plugin_rpc};
+use xi_core::{ViewIdentifier, PluginPid, plugin_rpc, SyntaxDefinition,
+ConfigTable, BufferConfig};
 use xi_rpc::{self, RpcLoop, RpcCtx, RemoteError, ReadError};
 
 #[derive(Debug)]
@@ -36,9 +38,55 @@ pub trait Handler {
     fn idle(&mut self, ctx: PluginCtx, token: usize) {}
 }
 
-pub struct PluginCtx<'a>(&'a RpcCtx);
+/// A container for general view information, shared between all plugin layers.
+pub struct ViewState {
+    pub view_id: ViewIdentifier,
+    pub syntax: SyntaxDefinition,
+    config_table: ConfigTable,
+    pub config: Option<BufferConfig>,
+    pub path: Option<PathBuf>,
+}
+
+pub struct PluginCtx<'a> {
+    inner: &'a RpcCtx,
+    pub view: &'a ViewState,
+    plugin_id: PluginPid,
+}
+
+impl ViewState {
+    fn new(init_info: &plugin_rpc::PluginBufferInfo) -> Self {
+
+        let &plugin_rpc::PluginBufferInfo {
+            ref views, ref path, ref syntax, ref config, ..
+        } = init_info;
+
+        ViewState {
+            view_id: *views.first().unwrap(),
+            syntax: *syntax,
+            config_table: config.clone(),
+            config: serde_json::from_value(Value::Object(config.clone())).unwrap(),
+            path: path.as_ref().map(PathBuf::from)
+        }
+    }
+
+    fn update_config(&mut self, changes: &ConfigTable) {
+        for (key, value) in changes.iter() {
+            self.config_table.insert(key.to_owned(), value.to_owned());
+        }
+        let conf = serde_json::from_value(Value::Object(self.config_table.clone()));
+        self.config = conf.unwrap();
+    }
+
+    fn update_path(&mut self, path: &Path) {
+        self.path = Some(path.to_owned())
+    }
+}
 
 impl<'a> PluginCtx<'a> {
+    fn new(inner: &'a RpcCtx, view: &'a ViewState, plugin_id: PluginPid) -> Self {
+        PluginCtx { inner, view, plugin_id }
+    }
+
     pub fn get_data(&self, plugin_id: PluginPid, view_id: &ViewIdentifier, offset: usize,
                     max_size: usize, rev: u64) -> Result<String, Error> {
         let params = json!({
@@ -78,40 +126,82 @@ impl<'a> PluginCtx<'a> {
     }
 
     fn send_rpc_notification(&self, method: &str, params: &Value) {
-        self.0.get_peer().send_rpc_notification(method, params)
+        self.inner.get_peer().send_rpc_notification(method, params)
     }
 
     fn send_rpc_request(&self, method: &str, params: &Value) -> Result<Value, xi_rpc::Error> {
-        self.0.get_peer().send_rpc_request(method, params)
+        self.inner.get_peer().send_rpc_request(method, params)
     }
 
     /// Determines whether an incoming request (or notification) is pending. This
     /// is intended to reduce latency for bulk operations done in the background.
     pub fn request_is_pending(&self) -> bool {
-        self.0.get_peer().request_is_pending()
+        self.inner.get_peer().request_is_pending()
     }
 
     /// Schedule the idle handler to be run when there are no requests pending.
     pub fn schedule_idle(&mut self, token: usize) {
-        self.0.schedule_idle(token);
+        self.inner.schedule_idle(token);
     }
 }
-struct MyHandler<'a, H: 'a>(&'a mut H);
+
+struct MyHandler<'a, H: 'a> {
+    inner: &'a mut H,
+    plugin_id: Option<PluginPid>,
+    state: Option<ViewState>,
+}
+
+impl<'a, H: 'a> MyHandler<'a, H> {
+    fn new(inner: &'a mut H) -> Self {
+        MyHandler {
+            inner: inner,
+            plugin_id: None,
+            state: None,
+        }
+    }
+
+    fn expect_state_mut(&mut self) -> &mut ViewState {
+        self.state.as_mut()
+            .expect("missing state; was plugin init RPC sent?")
+    }
+}
 
 impl<'a, H: Handler> xi_rpc::Handler for MyHandler<'a, H> {
     type Notification = plugin_rpc::HostNotification;
     type Request = plugin_rpc::HostRequest;
     fn handle_notification(&mut self, ctx: &RpcCtx, rpc: Self::Notification) {
-        self.0.handle_notification(PluginCtx(ctx), rpc)
+        use self::plugin_rpc::HostNotification::*;
+        match rpc {
+            Initialize { ref plugin_id, ref buffer_info } => {
+                assert!(self.state.is_none());
+                self.state = Some(ViewState::new(buffer_info.first().as_ref().unwrap()));
+                self.plugin_id = Some(*plugin_id);
+            }
+
+            ConfigChanged { ref changes, .. } =>
+                self.expect_state_mut().update_config(changes),
+
+            DidSave { ref path, .. } =>
+                self.expect_state_mut().update_path(path),
+            _ => (),
+        }
+
+        let plugin_ctx = PluginCtx::new(
+            ctx, self.state.as_ref().unwrap(), self.plugin_id.unwrap());
+        self.inner.handle_notification(plugin_ctx, rpc)
     }
 
     fn handle_request(&mut self, ctx: &RpcCtx, rpc: Self::Request)
                       -> Result<Value, RemoteError> {
-        self.0.handle_request(PluginCtx(ctx), rpc)
+        let plugin_ctx = PluginCtx::new(
+            ctx, self.state.as_ref().unwrap(), self.plugin_id.unwrap());
+        self.inner.handle_request(plugin_ctx, rpc)
     }
 
     fn idle(&mut self, ctx: &RpcCtx, token: usize) {
-        self.0.idle(PluginCtx(ctx), token);
+        let plugin_ctx = PluginCtx::new(
+            ctx, self.state.as_ref().unwrap(), self.plugin_id.unwrap());
+        self.inner.idle(plugin_ctx, token);
     }
 }
 
@@ -119,7 +209,7 @@ pub fn mainloop<H: Handler>(handler: &mut H) -> Result<(), ReadError> {
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut rpc_looper = RpcLoop::new(stdout);
-    let mut my_handler = MyHandler(handler);
+    let mut my_handler = MyHandler::new(handler);
 
     rpc_looper.mainloop(|| stdin.lock(), &mut my_handler)
 }
