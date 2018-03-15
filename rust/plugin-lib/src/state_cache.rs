@@ -21,11 +21,10 @@ use rand::{thread_rng, Rng};
 use xi_core::{plugin_rpc, BufferConfig};
 use xi_rpc::{RemoteError, ReadError};
 use xi_rope::rope::{RopeDelta, LinesMetric};
-use xi_rope::delta::DeltaElement;
 
+use base_cache::{Cache, RawCache};
 pub use plugin_base::{self, Error, ViewState};
 
-const CHUNK_SIZE: usize = 1024 * 1024;
 const CACHE_SIZE: usize = 1024;
 
 /// Number of probes for eviction logic.
@@ -52,19 +51,8 @@ struct CacheEntry<S> {
 /// The caching state
 #[derive(Default)]
 struct CacheState<S> {
-    /// The length of the document in bytes.
-    buf_size: usize,
-    rev: u64,
-
-    /// A chunk of the document.
-    chunk: String,
-    /// Starting offset of the chunk.
-    chunk_offset: usize,
-
-    // cache of per-line state
-    // Note: this doesn't store the 0 state, that's assumed
+    buf_cache: Cache,
     state_cache: Vec<CacheEntry<S>>,
-
     /// The frontier, represented as a sorted list of line numbers.
     frontier: Vec<usize>,
 }
@@ -151,8 +139,13 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
     fn do_initialize<P>(mut self, init_info: plugin_rpc::PluginBufferInfo, handler: &mut P)
         where P: Plugin<State = S>
     {
-        self.state.buf_size = init_info.buf_size;
-        self.state.rev = init_info.rev;
+
+        self.state.buf_cache.initialize(init_info.buf_size,
+                                        init_info.rev,
+                                        self.peer.view.view_id,
+                                        self.peer.plugin_id,
+                                        self.peer.get_peer().clone(),
+                                        );
         self.truncate_frontier(0);
         handler.initialize(self, init_info.buf_size);
     }
@@ -165,11 +158,11 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
         where P: Plugin<State = S>
     {
         let plugin_rpc::PluginUpdate { delta, new_len, rev, .. } = update;
-        self.state.buf_size = new_len;
-        self.state.rev = rev;
+        self.state.buf_cache.buf_size = new_len;
+        self.state.buf_cache.rev = rev;
         if let Some(ref delta) = delta {
             self.update_line_cache(delta);
-            self.update_chunk(delta);
+            self.state.buf_cache.apply_delta(delta);
         } else {
             // if there's no delta (very large edit) we blow away everything
             self.clear_to_start(0);
@@ -192,7 +185,7 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
     }
 
     pub fn get_buf_size(&self) -> usize {
-        self.state.buf_size
+        self.state.buf_cache.buf_size
     }
 
     pub fn add_scopes(&self, scopes: &Vec<Vec<String>>) {
@@ -201,7 +194,7 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
 
     pub fn update_spans(&self, start: usize, len: usize,
                         spans: &[plugin_rpc::ScopeSpan]) {
-        self.peer.update_spans(start, len, self.state.rev, spans)
+        self.peer.update_spans(start, len, self.state.buf_cache.rev, spans)
     }
 
     /// Determines whether an incoming request (or notification) is pending. This
@@ -323,41 +316,9 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
         let after = if let Some(item) = self.state.state_cache.get(ix + 1) {
             item.offset
         } else {
-            self.state.buf_size
+            self.state.buf_cache.buf_size
         };
         after - before
-    }
-
-    fn fetch_chunk(&self, start: usize) -> Result<String, Error> {
-        self.peer.get_data(start, CHUNK_SIZE, self.state.rev)
-    }
-
-    /// Get a slice of the document, containing at least the given interval
-    /// plus at least one more codepoint (unless at EOF).
-    fn get_chunk(&mut self, start: usize, end: usize) -> Result<&str, Error> {
-        loop {
-            let chunk_start = self.state.chunk_offset;
-            let chunk_end = chunk_start + self.state.chunk.len();
-            if start >= chunk_start && (start < chunk_end || chunk_end == self.state.buf_size) {
-                // At least the first codepoint at start is in the chunk.
-                if end < chunk_end || chunk_end == self.state.buf_size {
-                    return Ok(&self.state.chunk[start - chunk_start ..]);
-                }
-                let new_chunk = self.fetch_chunk(chunk_end)?;
-                if start == chunk_start {
-                    self.state.chunk.push_str(&new_chunk);
-                } else {
-                    self.state.chunk_offset = start;
-                    self.state.chunk = [&self.state.chunk[start - chunk_start ..],
-                        &new_chunk].concat();
-                }
-            } else {
-                // TODO: if chunk_start < start + CHUNK_SIZE, could fetch smaller
-                // chunk and concat; probably not a major savings in practice.
-                self.state.chunk = self.fetch_chunk(start)?;
-                self.state.chunk_offset = start;
-            }
-        }
     }
 
     /// Returns the offset, the index in the cache, and a bool indicating whether it's a
@@ -375,10 +336,10 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
                 };
                 let mut end = offset;
                 loop {
-                    if end == self.state.buf_size {
+                    if end == self.state.buf_cache.buf_size {
                         return Ok((end, ix, true));
                     }
-                    let chunk = self.get_chunk(offset, end)?;
+                    let chunk = self.state.buf_cache.get_slice(offset, end)?;
                     if let Some(pos) = memchr(b'\n', chunk.as_bytes()) {
                         offset += pos + 1;
                         l += 1;
@@ -396,8 +357,8 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
     fn get_line_len(&mut self, start: usize) -> Result<usize, Error> {
         let mut end = start;
         loop {
-            let buf_size = self.state.buf_size;
-            let chunk = self.get_chunk(start, end)?;
+            let buf_size = self.state.buf_cache.buf_size;
+            let chunk = self.state.buf_cache.get_slice(start, end)?;
             match memchr(b'\n', chunk.as_bytes()) {
                 Some(pos) => return Ok(pos + 1),
                 None => {
@@ -419,7 +380,7 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
 
         // TODO: this will pull in the first codepoint of the next line, which
         // is not necessary.
-        let chunk = self.get_chunk(start, start + len)?;
+        let chunk = self.state.buf_cache.get_slice(start, start + len)?;
         Ok(&chunk[..len])
     }
 
@@ -446,54 +407,6 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
                 self.state.frontier.push(line_num);
             }
         }
-    }
-
-    /// Updates the chunk to reflect changes in this delta.
-    fn update_chunk(&mut self, delta: &RopeDelta) {
-        if self.state.chunk_offset == 0 && self.state.chunk.len() == 0 {
-            return
-        }
-        let chunk_start = self.state.chunk_offset;
-        let chunk_end = chunk_start + self.state.chunk.len();
-        let mut new_state = String::with_capacity(self.state.chunk.len());
-        let mut prev_copy_end = 0;
-        let mut del_before: usize = 0;
-        let mut ins_before: usize = 0;
-
-        for op in delta.els.as_slice() {
-            match op {
-                &DeltaElement::Copy(start, end) => {
-                    if start < chunk_start {
-                        del_before += start - prev_copy_end;
-                        if end >= chunk_start {
-                            let cp_end = (end - chunk_start).min(self.state.chunk.len());
-                            new_state.push_str(&self.state.chunk[0..cp_end]);
-                        }
-                    } else if start <= chunk_end {
-                        if prev_copy_end < chunk_start {
-                            del_before += chunk_start - prev_copy_end;
-                        }
-                        let cp_start = start - chunk_start;
-                        let cp_end = (end - chunk_start).min(self.state.chunk.len());
-                        new_state.push_str(&self.state.chunk[cp_start .. cp_end]);
-                    }
-                    prev_copy_end = end;
-                }
-                &DeltaElement::Insert(ref s) => {
-                    if prev_copy_end < chunk_start {
-                        ins_before += s.len();
-                    } else if prev_copy_end <= chunk_end {
-                        let s: String = s.into();
-                        new_state.push_str(&s);
-                    }
-                }
-            }
-        }
-
-        self.state.buf_size = delta.new_document_len();
-        self.state.chunk_offset += ins_before;
-        self.state.chunk_offset -= del_before;
-        self.state.chunk = new_state;
     }
 
     /// Updates the line cache to reflect this delta.
@@ -528,10 +441,10 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
     }
 
     fn line_cache_simple_delete(&mut self, start: usize, end: usize) {
-        let off = self.state.chunk_offset;
-        let chunk_end = off + self.state.chunk.len();
+        let off = self.state.buf_cache.offset;
+        let chunk_end = off + self.state.buf_cache.contents.len();
         if start >= off && end <= chunk_end {
-            let del_newline_num = count_newlines(&self.state.chunk[start - off..end - off]);
+            let del_newline_num = count_newlines(&self.state.buf_cache.contents[start - off..end - off]);
             // delete all entries that overlap the deleted range
             let ix = match self.find_offset(start) {
                 Ok(ix) => ix + 1,
@@ -582,8 +495,7 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
 
     /// Clears any cached text and anything in the state cache before `start`.
     fn clear_to_start(&mut self, start: usize) {
-        self.state.chunk.clear();
-        self.state.chunk_offset = 0;
+        self.state.buf_cache.clear();
         self.truncate_cache(start);
     }
 

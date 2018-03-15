@@ -21,7 +21,7 @@ use serde_json::{self, Value};
 
 use xi_core::{ViewIdentifier, PluginPid, plugin_rpc, SyntaxDefinition,
 ConfigTable, BufferConfig};
-use xi_rpc::{self, RpcLoop, RpcCtx, RemoteError, ReadError};
+use xi_rpc::{self, RpcLoop, RpcPeer, RpcCtx, RemoteError, ReadError};
 
 #[derive(Debug)]
 pub enum Error {
@@ -51,7 +51,7 @@ pub struct PluginCtx<'a> {
     inner: &'a RpcCtx,
     /// Information about the view initiating this RPC.
     pub view: &'a ViewState,
-    plugin_id: PluginPid,
+    pub plugin_id: PluginPid,
 }
 
 /// The handler that does low level plugin setup, and then forwards RPC calls
@@ -151,6 +151,10 @@ impl<'a> PluginCtx<'a> {
     /// Schedule the idle handler to be run when there are no requests pending.
     pub fn schedule_idle(&mut self, token: usize) {
         self.inner.schedule_idle(token);
+    }
+
+    pub fn get_peer(&self) -> &RpcPeer {
+        self.inner.get_peer()
     }
 }
 
