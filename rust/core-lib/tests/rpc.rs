@@ -93,7 +93,7 @@ fn test_malformed_json() {
     let mut state = MainState::new();
     let write = io::sink();
     let mut rpc_looper = RpcLoop::new(write);
-    // malformed json, no id: should not receive a response, and connection should close.
+    // malformed json: method should be in quotes.
     let read = make_reader(r#"{method:"client_started","params":{}}
 {"id":0,"method":"new_view","params":{}}"#);
     match rpc_looper.mainloop(|| read, &mut state).err()
