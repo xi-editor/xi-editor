@@ -1222,7 +1222,7 @@ impl Editor {
         };
         let text = &text_cow;
         // Enforce start is on codepoint boundary.
-        if !text.is_grapheme_boundary(offset) { return None; }
+        if !text.is_codepoint_boundary(offset) { return None; }
         let max_size = min(max_size, MAX_SIZE_LIMIT);
         let mut end_off = offset.saturating_add(max_size);
         if end_off >= text.len() {
