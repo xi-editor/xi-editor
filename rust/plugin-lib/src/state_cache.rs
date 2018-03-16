@@ -22,7 +22,7 @@ use xi_core::{plugin_rpc, BufferConfig};
 use xi_rpc::{RemoteError, ReadError};
 use xi_rope::rope::{RopeDelta, LinesMetric};
 
-use base_cache::{Cache, RawCache};
+use base_cache::ChunkCache;
 pub use plugin_base::{self, Error, ViewState};
 
 const CACHE_SIZE: usize = 1024;
@@ -51,7 +51,7 @@ struct CacheEntry<S> {
 /// The caching state
 #[derive(Default)]
 struct CacheState<S> {
-    buf_cache: Cache,
+    buf_cache: ChunkCache,
     state_cache: Vec<CacheEntry<S>>,
     /// The frontier, represented as a sorted list of line numbers.
     frontier: Vec<usize>,
@@ -140,12 +140,8 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
         where P: Plugin<State = S>
     {
 
-        self.state.buf_cache.initialize(init_info.buf_size,
-                                        init_info.rev,
-                                        self.peer.view.view_id,
-                                        self.peer.plugin_id,
-                                        self.peer.get_peer().clone(),
-                                        );
+        self.state.buf_cache.buf_size = init_info.buf_size;
+        self.state.buf_cache.rev = init_info.rev;
         self.truncate_frontier(0);
         handler.initialize(self, init_info.buf_size);
     }
@@ -339,7 +335,7 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
                     if end == self.state.buf_cache.buf_size {
                         return Ok((end, ix, true));
                     }
-                    let chunk = self.state.buf_cache.get_slice(offset, end)?;
+                    let chunk = self.state.buf_cache.get_slice(&self.peer, offset, end)?;
                     if let Some(pos) = memchr(b'\n', chunk.as_bytes()) {
                         offset += pos + 1;
                         l += 1;
@@ -358,7 +354,7 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
         let mut end = start;
         loop {
             let buf_size = self.state.buf_cache.buf_size;
-            let chunk = self.state.buf_cache.get_slice(start, end)?;
+            let chunk = self.state.buf_cache.get_slice(&self.peer, start, end)?;
             match memchr(b'\n', chunk.as_bytes()) {
                 Some(pos) => return Ok(pos + 1),
                 None => {
@@ -380,7 +376,7 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
 
         // TODO: this will pull in the first codepoint of the next line, which
         // is not necessary.
-        let chunk = self.state.buf_cache.get_slice(start, start + len)?;
+        let chunk = self.state.buf_cache.get_slice(&self.peer, start, start + len)?;
         Ok(&chunk[..len])
     }
 
