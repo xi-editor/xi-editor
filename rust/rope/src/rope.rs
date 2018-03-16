@@ -553,8 +553,12 @@ impl<'a> Cursor<'a, RopeInfo> {
     }
 
     pub fn next_grapheme(&mut self) -> Option<usize> {
-        let (l, offset) = self.get_leaf()?;
-        let pos = self.pos();
+        let (l, mut offset) = self.get_leaf()?;
+        let mut pos = self.pos();
+        while !l.is_char_boundary(offset) {
+            offset -= 1;
+            pos -= 1;
+        }
         let leaf_offset = pos - offset;
         let mut c = GraphemeCursor::new(pos, l.len() + leaf_offset, true);
         let mut next_boundary = c.next_boundary(&l, leaf_offset);
@@ -589,8 +593,12 @@ impl<'a> Cursor<'a, RopeInfo> {
     }
 
     pub fn prev_grapheme(&mut self) -> Option<usize> {
-        let (mut l, offset) = self.get_leaf()?;
+        let (mut l, mut offset) = self.get_leaf()?;
         let mut pos = self.pos();
+        while offset < l.len() && !l.is_char_boundary(offset) {
+            pos += 1;
+            offset += 1;
+        }
         let mut leaf_offset = pos - offset;
         let mut c = GraphemeCursor::new(pos, l.len() + leaf_offset, true);
         let mut prev_boundary = c.prev_boundary(&l, leaf_offset);
@@ -764,13 +772,17 @@ mod tests {
             Rope::from(s1.clone()),
             Rope::concat(Rope::from(String::from(s1.clone()) + "\u{1f1fa}"), Rope::from(s1.clone())),
         );
-        for i in 0..601 {
-            let prev_exp = if i > 0 { if i % 2 == 0 { Some(i*4-8) } else { Some(i*4-4) } } else { None };
-            let next_exp = if i % 2 == 0 && i < 600 { Some(i*4+8) } else { Some(i*4+4) };
-            assert_eq!(prev_exp, a.prev_grapheme_offset(i*4));
-            assert_eq!(next_exp, a.next_grapheme_offset(i*4));
+        for i in 1..(s1.len()*3) {
+            assert_eq!(Some((i - 1) / 8 * 8), a.prev_grapheme_offset(i));
+            assert_eq!(Some(i / 8 * 8 + 8), a.next_grapheme_offset(i));
         }
-        assert_eq!(Some(s1.len()*3), a.prev_grapheme_offset(s1.len()*3+4));
+        for i in (s1.len()*3+1)..(s1.len()*3+4) {
+            assert_eq!(Some(s1.len()*3), a.prev_grapheme_offset(i));
+            assert_eq!(Some(s1.len()*3+4), a.next_grapheme_offset(i));
+        }
+        assert_eq!(None, a.prev_grapheme_offset(0));
+        assert_eq!(Some(8), a.next_grapheme_offset(0));
+        assert_eq!(Some(s1.len()*3), a.prev_grapheme_offset(s1.len() * 3 + 4));
         assert_eq!(None, a.next_grapheme_offset(s1.len() * 3 + 4));
     }
 
