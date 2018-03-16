@@ -568,7 +568,8 @@ impl<'a> Cursor<'a, RopeInfo> {
             next_boundary = c.next_boundary(&l, leaf_offset);
         }
         // GraphemeIncomplete::NextChunk error will not happen, since this cursor thinks the end of
-        // the current leaf as the end of the string. Can a cursor know the total length of the tree?
+        // the current leaf as the end of the string. Can a cursor know the total length of
+        // the tree?
         if let Ok(Some(next_offset)) = next_boundary {
             if next_offset == l.len() + leaf_offset {
                 self.set(pos);
@@ -770,19 +771,22 @@ mod tests {
         let s1 = "\u{1f1fa}\u{1f1f8}".repeat(100);
         let a = Rope::concat(
             Rope::from(s1.clone()),
-            Rope::concat(Rope::from(String::from(s1.clone()) + "\u{1f1fa}"), Rope::from(s1.clone())),
+            Rope::concat(
+                Rope::from(String::from(s1.clone()) + "\u{1f1fa}"),
+                Rope::from(s1.clone()),
+            ),
         );
-        for i in 1..(s1.len()*3) {
+        for i in 1..(s1.len() * 3) {
             assert_eq!(Some((i - 1) / 8 * 8), a.prev_grapheme_offset(i));
             assert_eq!(Some(i / 8 * 8 + 8), a.next_grapheme_offset(i));
         }
-        for i in (s1.len()*3+1)..(s1.len()*3+4) {
-            assert_eq!(Some(s1.len()*3), a.prev_grapheme_offset(i));
-            assert_eq!(Some(s1.len()*3+4), a.next_grapheme_offset(i));
+        for i in (s1.len() * 3 + 1)..(s1.len() * 3 + 4) {
+            assert_eq!(Some(s1.len() * 3), a.prev_grapheme_offset(i));
+            assert_eq!(Some(s1.len() * 3 + 4), a.next_grapheme_offset(i));
         }
         assert_eq!(None, a.prev_grapheme_offset(0));
         assert_eq!(Some(8), a.next_grapheme_offset(0));
-        assert_eq!(Some(s1.len()*3), a.prev_grapheme_offset(s1.len() * 3 + 4));
+        assert_eq!(Some(s1.len() * 3), a.prev_grapheme_offset(s1.len() * 3 + 4));
         assert_eq!(None, a.next_grapheme_offset(s1.len() * 3 + 4));
     }
 
