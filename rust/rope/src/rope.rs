@@ -595,41 +595,37 @@ impl<'a> Cursor<'a, RopeInfo> {
     }
 
     pub fn prev_grapheme(&mut self) -> Option<usize> {
-        if let Some((mut l, mut offset)) = self.get_leaf() {
-            // If the current position is at the end of the current node -- it's always considered
-            // as a grapheme boundary, but that could be wrong. To take this into account, just moves
-            // to the previous code point first. As the result, if the previous code point happens to
-            // be a grapheme boundary, that's the right position. Otherwise, check through
-            // prev_boundary method.
-            let end_of_leaf = offset == l.len();
-            if end_of_leaf {
-                self.prev_codepoint();
-                if let Some((pl, poffset)) = self.get_leaf() {
+        if let Some((mut l, offset)) = self.get_leaf() {
+            let mut pos = self.pos();
+            let mut leaf_offset = pos - offset;
+            if offset == 0 && pos > 0 {
+                if let Some((pl, poffset)) = self.prev_leaf() {
                     l = pl;
-                    offset = poffset;
+                    leaf_offset = self.pos() - poffset;
                 } else {
                     return None;
                 }
             }
-            let pos = self.pos();
-            let leaf_offset = pos - offset;
             let mut c = GraphemeCursor::new(pos, l.len() + leaf_offset, true);
-            if !self.maybe_provide_context(&mut c, l, leaf_offset) {
-                return None;
-            }
-            if end_of_leaf && c.is_boundary(&l, leaf_offset).unwrap_or(false) {
-                return Some(pos);
-            }
-            let prev_boundary = c.prev_boundary(&l, leaf_offset);
-            if let Err(GraphemeIncomplete::PrevChunk) = prev_boundary {
-                self.set(pos);
-                if let Some((pl, offset)) = self.prev_leaf() {
-                    c.set_cursor(offset+pl.len());
-                    if !self.maybe_provide_context(&mut c, pl, offset) {
+            let mut prev_boundary = c.prev_boundary(&l, leaf_offset);
+            while prev_boundary.is_err() {
+                if let Err(GraphemeIncomplete::PreContext(_)) = prev_boundary {
+                    if let Some((pl, poffset)) = self.prev_leaf() {
+                        c.provide_context(&pl, self.pos() - poffset);
+                    } else {
                         return None;
                     }
-                    return c.prev_boundary(&pl, offset).unwrap_or(None);
+                } else if let Err(GraphemeIncomplete::PrevChunk) = prev_boundary {
+                    self.set(pos);
+                    if let Some((pl, poffset)) = self.prev_leaf() {
+                        l = pl;
+                        leaf_offset = self.pos() - poffset;
+                        pos = leaf_offset + pl.len();
+                    } else {
+                        return None;
+                    }
                 }
+                prev_boundary = c.prev_boundary(&l, leaf_offset);
             }
             prev_boundary.unwrap_or(None)
         } else {
@@ -785,15 +781,18 @@ mod tests {
     #[test]
     fn next_grapheme_offset_with_ris_of_leaf_boundaries() {
         let s1 = "\u{1f1fa}\u{1f1f8}".repeat(100);
-        let a = Rope::concat(Rope::from(String::from(s1.clone()) + "\u{1f1fa}"), Rope::from(s1.clone()));
-        for i in 0..201 {
-            let prev_exp = if i > 0 { Some(i*8-8) } else { None };
-            let next_exp = if i < 200 { Some(i*8+8) } else { Some(i*8+4) };
-            assert_eq!(prev_exp, a.prev_grapheme_offset(i*8));
-            assert_eq!(next_exp, a.next_grapheme_offset(i*8));
+        let a = Rope::concat(
+            Rope::from(s1.clone()),
+            Rope::concat(Rope::from(String::from(s1.clone()) + "\u{1f1fa}"), Rope::from(s1.clone())),
+        );
+        for i in 0..601 {
+            let prev_exp = if i > 0 { if i % 2 == 0 { Some(i*4-8) } else { Some(i*4-4) } } else { None };
+            let next_exp = if i % 2 == 0 && i < 600 { Some(i*4+8) } else { Some(i*4+4) };
+            assert_eq!(prev_exp, a.prev_grapheme_offset(i*4));
+            assert_eq!(next_exp, a.next_grapheme_offset(i*4));
         }
-        assert_eq!(Some(s1.len()*2), a.prev_grapheme_offset(s1.len()*2+4));
-        assert_eq!(None, a.next_grapheme_offset(s1.len() * 2 + 4));
+        assert_eq!(Some(s1.len()*3), a.prev_grapheme_offset(s1.len()*3+4));
+        assert_eq!(None, a.next_grapheme_offset(s1.len() * 3 + 4));
     }
 
     #[test]
