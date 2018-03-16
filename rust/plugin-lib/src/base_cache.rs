@@ -1,4 +1,4 @@
-// Copyright 2016 Google Inc. All rights reserved.
+// Copyright 2018 Google Inc. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,31 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use serde_json::Value;
+//! The simplest cache. This should eventually offer line-oriented access
+//! to the remote document, and can be used as a building block for more
+//! complicated caching schemes.
 
 use xi_rope::rope::RopeDelta;
 use xi_rope::delta::DeltaElement;
-use xi_rpc::RpcPeer;
-use xi_core::{ViewIdentifier, PluginPid};
 
-use plugin_base::{Error};
+use plugin_base::{Error, DataSource};
 
 const CHUNK_SIZE: usize = 1024 * 1024;
 
-/// A byte-oriented cache tracking a remote document.
-pub trait RawCache {
-    /// Get a slice of the document, containing at least the given interval
-    /// plus at least one more codepoint (unless at EOF).
-    fn get_slice(&mut self, start: usize, end: usize) -> Result<&str, Error>;
-    /// Updates the cache by applying this delta'.
-    fn apply_delta(&mut self, delta: &RopeDelta);
-    /// Flushes any state held by this cache.
-    fn clear(&mut self);
-}
-
 /// A simple cache, holding a single contiguous chunk of the document.
-#[derive(Debug, Clone)]
-pub struct ChunkCache<DS> {
+#[derive(Debug, Clone, Default)]
+pub struct ChunkCache {
     /// The position of this chunk relative to the tracked document.
     pub offset: usize,
     /// A chunk of the remote buffer.
@@ -44,30 +33,11 @@ pub struct ChunkCache<DS> {
     /// The total size of the tracked document.
     pub buf_size: usize,
     pub rev: u64,
-    // only optional so we can get `Default`, and play nicely with
-    // existing state cache
-    datasource: Option<DS>,
 }
 
-/// Abstracts getting data from the peer. This only exists so we can mock it in tests.
-pub trait DataSource {
-    fn get_data(&self, offset: usize, max_size: usize, rev: u64) -> Result<String, Error>;
-}
-
-/// Single-purpose handle to the RPC channel.
-///
-/// This lets us avoid having to pass a handle to the peer every time
-/// we do something that might require a fetch.
-pub struct RemoteDataSource {
-    peer: RpcPeer,
-    plugin_id: PluginPid,
-    view_id: ViewIdentifier,
-}
-
-pub type Cache = ChunkCache<RemoteDataSource>;
-
-impl<DS: DataSource> RawCache for ChunkCache<DS> {
-    fn get_slice(&mut self, start: usize, end: usize) -> Result<&str, Error>
+impl ChunkCache {
+    pub fn get_slice<DS: DataSource>(&mut self, source: &DS, start: usize, end: usize)
+        -> Result<&str, Error>
     {
         loop {
             let chunk_start = self.offset;
@@ -77,9 +47,7 @@ impl<DS: DataSource> RawCache for ChunkCache<DS> {
                 if end < chunk_end || chunk_end == self.buf_size {
                     return Ok(&self.contents[start - chunk_start ..]);
                 }
-                let new_chunk = self.datasource.as_ref()
-                    .expect("datasource must be set")
-                    .get_data(chunk_end, CHUNK_SIZE, self.rev)?;
+                let new_chunk = source.get_data(chunk_end, CHUNK_SIZE, self.rev)?;
                 if start == chunk_start {
                     self.contents.push_str(&new_chunk);
                 } else {
@@ -90,16 +58,14 @@ impl<DS: DataSource> RawCache for ChunkCache<DS> {
             } else {
                 // TODO: if chunk_start < start + CHUNK_SIZE, could fetch smaller
                 // chunk and concat; probably not a major savings in practice.
-                self.contents = self.datasource.as_ref()
-                    .expect("datasource must be set")
-                    .get_data(start, CHUNK_SIZE, self.rev)?;
+                self.contents = source.get_data(start, CHUNK_SIZE, self.rev)?;
                 self.offset = start;
             }
         }
     }
 
     /// Updates the chunk to reflect changes in this delta.
-    fn apply_delta(&mut self, delta: &RopeDelta) {
+    pub fn apply_delta(&mut self, delta: &RopeDelta) {
         if self.offset == 0 && self.contents.len() == 0 {
             return
         }
@@ -147,50 +113,9 @@ impl<DS: DataSource> RawCache for ChunkCache<DS> {
         self.contents = new_state;
     }
 
-    fn clear(&mut self) {
+    pub fn clear(&mut self) {
         self.contents.clear();
         self.offset = 0;
-    }
-}
-
-impl DataSource for RemoteDataSource {
-    fn get_data(&self, offset: usize, max_size: usize, rev: u64) -> Result<String, Error> {
-        let result = self.peer.send_rpc_request("get_data", &json!({
-            "plugin_id": self.plugin_id,
-            "view_id": self.view_id,
-            "offset": offset,
-            "max_size": max_size,
-            "rev": rev,
-        }));
-
-        match result {
-            Ok(Value::String(s)) => Ok(s),
-            Ok(_) => Err(Error::WrongReturnType),
-            Err(err) => Err(Error::RpcError(err)),
-        }
-    }
-}
-
-// not derivable if DS !Default: https://github.com/rust-lang/rust/issues/26925
-impl<DS> Default for ChunkCache<DS> {
-    fn default() -> Self {
-        ChunkCache {
-            offset: 0,
-            contents: "".into(),
-            buf_size: 0,
-            rev: 0,
-            datasource: None,
-        }
-    }
-}
-
-impl Cache {
-    pub fn initialize(&mut self, buf_size: usize, rev: u64, view_id: ViewIdentifier,
-                      plugin_id: PluginPid, peer: RpcPeer) {
-        let ds = RemoteDataSource { view_id, plugin_id, peer };
-        self.buf_size = buf_size;
-        self.rev = rev;
-        self.datasource = Some(ds);
     }
 }
 
@@ -198,6 +123,7 @@ impl Cache {
 mod tests {
     use super::*;
     use xi_rope::interval::Interval;
+    use xi_rope::delta::Delta;
 
     struct MockDataSource(String);
 
@@ -215,13 +141,11 @@ mod tests {
 
     #[test]
     fn simple_chunk() {
-        let datasource = MockDataSource("oh".into());
         let mut c = ChunkCache {
             offset: 0,
             contents: "oh".into(),
             buf_size: 2,
             rev: 0,
-            datasource: Some(datasource)
         };
         let d = Delta::simple_edit(Interval::new_closed_open(0, 0), "yay".into(), c.contents.len());
         c.apply_delta(&d);
@@ -251,11 +175,9 @@ mod tests {
 
     #[test]
     fn offset_chunk() {
-        let datasource = MockDataSource("this is a tenchars!!".into());
         let mut c = ChunkCache {
             offset: 10,
             contents: "tenchars!!".into(),
-            datasource: Some(datasource),
             buf_size: 20,
             rev: 0,
         };
@@ -290,5 +212,20 @@ mod tests {
         c.apply_delta(&d);
         assert_eq!(c.offset, 8);
         assert_eq!(&c.contents, "ntchars???");
+    }
+
+    #[test]
+    fn get_lines() {
+        //FIXME: this should be testing a get_line method, but we cna't implement
+        //that until we add line information to deltas
+        let remote_document = MockDataSource("this\nhas\nfour\nlines!".into());
+        let mut c = ChunkCache {
+            offset: 0,
+            contents: "".into(),
+            buf_size: 20,
+            rev: 0,
+        };
+
+        assert_eq!(c.get_slice(&remote_document, 0, 100).unwrap(), remote_document.0.as_str());
     }
 }

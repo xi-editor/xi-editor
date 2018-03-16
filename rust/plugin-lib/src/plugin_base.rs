@@ -62,6 +62,11 @@ struct BaseHandler<'a, H: 'a> {
     state: Option<ViewState>,
 }
 
+/// Abstracts getting data from the peer. This only exists so we can mock it in tests.
+pub trait DataSource {
+    fn get_data(&self, offset: usize, max_size: usize, rev: u64) -> Result<String, Error>;
+}
+
 impl ViewState {
     fn new(init_info: &plugin_rpc::PluginBufferInfo) -> Self {
 
@@ -94,23 +99,6 @@ impl ViewState {
 impl<'a> PluginCtx<'a> {
     fn new(inner: &'a RpcCtx, view: &'a ViewState, plugin_id: PluginPid) -> Self {
         PluginCtx { inner, view, plugin_id }
-    }
-
-    pub fn get_data(&self, offset: usize, max_size: usize, rev: u64)
-        -> Result<String, Error> {
-        let params = json!({
-            "plugin_id": self.plugin_id,
-            "view_id": self.view.view_id,
-            "offset": offset,
-            "max_size": max_size,
-            "rev": rev,
-        });
-        let result = self.send_rpc_request("get_data", &params);
-        match result {
-            Ok(Value::String(s)) => Ok(s),
-            Ok(_) => Err(Error::WrongReturnType),
-            Err(err) => Err(Error::RpcError(err)),
-        }
     }
 
     pub fn add_scopes(&self, scopes: &Vec<Vec<String>>) {
@@ -155,6 +143,25 @@ impl<'a> PluginCtx<'a> {
 
     pub fn get_peer(&self) -> &RpcPeer {
         self.inner.get_peer()
+    }
+}
+
+impl<'a> DataSource for PluginCtx<'a> {
+    fn get_data(&self, offset: usize, max_size: usize, rev: u64)
+        -> Result<String, Error> {
+        let params = json!({
+            "plugin_id": self.plugin_id,
+            "view_id": self.view.view_id,
+            "offset": offset,
+            "max_size": max_size,
+            "rev": rev,
+        });
+        let result = self.send_rpc_request("get_data", &params);
+        match result {
+            Ok(Value::String(s)) => Ok(s),
+            Ok(_) => Err(Error::WrongReturnType),
+            Err(err) => Err(Error::RpcError(err)),
+        }
     }
 }
 
