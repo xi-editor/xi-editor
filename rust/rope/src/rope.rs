@@ -553,84 +553,63 @@ impl<'a> Cursor<'a, RopeInfo> {
     }
 
     pub fn next_grapheme(&mut self) -> Option<usize> {
-        if let Some((l, offset)) = self.get_leaf() {
-            let pos = self.pos();
-            let leaf_offset = pos - offset;
-            let mut c = GraphemeCursor::new(pos, l.len() + leaf_offset, true);
-            let mut next_boundary = c.next_boundary(&l, leaf_offset);
-            while let Err(GraphemeIncomplete::PreContext(_)) = next_boundary {
-                if let Some((pl, poffset)) = self.prev_leaf() {
-                    c.provide_context(&pl, self.pos() - poffset);
-                } else {
-                    return None;
-                }
-                next_boundary = c.next_boundary(&l, leaf_offset);
-            }
-            // GraphemeIncomplete::NextChunk error will not happen, since this cursor thinks the end of
-            // the current leaf as the end of the string. Can a cursor know the total length of the tree?
-            if let Ok(Some(next_offset)) = next_boundary {
-                if next_offset == l.len() + leaf_offset {
-                    self.set(pos);
-                    if let Some((nl, _)) = self.next_leaf() {
-                        let mut c = GraphemeCursor::new(next_offset, nl.len() + next_offset, true);
-                        let mut is_boundary = c.is_boundary(&nl, next_offset);
-                        while let Err(GraphemeIncomplete::PreContext(_)) = is_boundary {
-                            if let Some((pl, poffset)) = self.prev_leaf() {
-                                c.provide_context(&pl, self.pos() - poffset);
-                            } else {
-                                return None;
-                            }
-                            is_boundary = c.is_boundary(&nl, next_offset);
-                        }
-                        if !is_boundary.unwrap_or(true) {
-                            next_boundary = c.next_boundary(&nl, next_offset);
-                        }
+        let (l, offset) = self.get_leaf()?;
+        let pos = self.pos();
+        let leaf_offset = pos - offset;
+        let mut c = GraphemeCursor::new(pos, l.len() + leaf_offset, true);
+        let mut next_boundary = c.next_boundary(&l, leaf_offset);
+        while let Err(GraphemeIncomplete::PreContext(_)) = next_boundary {
+            let (pl, poffset) = self.prev_leaf()?;
+            c.provide_context(&pl, self.pos() - poffset);
+            next_boundary = c.next_boundary(&l, leaf_offset);
+        }
+        // GraphemeIncomplete::NextChunk error will not happen, since this cursor thinks the end of
+        // the current leaf as the end of the string. Can a cursor know the total length of the tree?
+        if let Ok(Some(next_offset)) = next_boundary {
+            if next_offset == l.len() + leaf_offset {
+                self.set(pos);
+                if let Some((l, offset)) = self.next_leaf() {
+                    let leaf_offset = self.pos() - offset;
+                    // Recreating the cursor, since there's no way to extend the total length of
+                    // an existing cursor.
+                    let mut c = GraphemeCursor::new(next_offset, l.len() + leaf_offset, true);
+                    let mut is_boundary = c.is_boundary(&l, leaf_offset);
+                    while let Err(GraphemeIncomplete::PreContext(_)) = is_boundary {
+                        let (pl, poffset) = self.prev_leaf()?;
+                        c.provide_context(&pl, self.pos() - poffset);
+                        is_boundary = c.is_boundary(&l, leaf_offset);
+                    }
+                    if !is_boundary.unwrap_or(true) {
+                        next_boundary = c.next_boundary(&l, leaf_offset);
                     }
                 }
             }
-            next_boundary.unwrap_or(None)
-        } else {
-            None
         }
+        next_boundary.unwrap_or(None)
     }
 
     pub fn prev_grapheme(&mut self) -> Option<usize> {
-        if let Some((mut l, offset)) = self.get_leaf() {
-            let mut pos = self.pos();
-            let mut leaf_offset = pos - offset;
-            if offset == 0 && pos > 0 {
-                if let Some((pl, poffset)) = self.prev_leaf() {
-                    l = pl;
-                    leaf_offset = self.pos() - poffset;
-                } else {
-                    return None;
-                }
+        let (mut l, offset) = self.get_leaf()?;
+        let mut pos = self.pos();
+        let mut leaf_offset = pos - offset;
+        let mut c = GraphemeCursor::new(pos, l.len() + leaf_offset, true);
+        let mut prev_boundary = c.prev_boundary(&l, leaf_offset);
+        while let Err(incomp) = prev_boundary {
+            if let GraphemeIncomplete::PreContext(_) = incomp {
+                let (pl, poffset) = self.prev_leaf()?;
+                c.provide_context(&pl, self.pos() - poffset);
+            } else if incomp == GraphemeIncomplete::PrevChunk {
+                self.set(pos);
+                let (pl, poffset) = self.prev_leaf()?;
+                l = pl;
+                leaf_offset = self.pos() - poffset;
+                pos = leaf_offset + pl.len();
+            } else {
+                return None;
             }
-            let mut c = GraphemeCursor::new(pos, l.len() + leaf_offset, true);
-            let mut prev_boundary = c.prev_boundary(&l, leaf_offset);
-            while prev_boundary.is_err() {
-                if let Err(GraphemeIncomplete::PreContext(_)) = prev_boundary {
-                    if let Some((pl, poffset)) = self.prev_leaf() {
-                        c.provide_context(&pl, self.pos() - poffset);
-                    } else {
-                        return None;
-                    }
-                } else if let Err(GraphemeIncomplete::PrevChunk) = prev_boundary {
-                    self.set(pos);
-                    if let Some((pl, poffset)) = self.prev_leaf() {
-                        l = pl;
-                        leaf_offset = self.pos() - poffset;
-                        pos = leaf_offset + pl.len();
-                    } else {
-                        return None;
-                    }
-                }
-                prev_boundary = c.prev_boundary(&l, leaf_offset);
-            }
-            prev_boundary.unwrap_or(None)
-        } else {
-            None
+            prev_boundary = c.prev_boundary(&l, leaf_offset);
         }
+        prev_boundary.unwrap_or(None)
     }
 }
 
