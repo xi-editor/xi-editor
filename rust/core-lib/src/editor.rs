@@ -38,7 +38,7 @@ use tabs::{self, BufferIdentifier, ViewIdentifier, DocumentCtx};
 use rpc::{self, GestureType};
 use syntax::SyntaxDefinition;
 use plugins::rpc::{PluginUpdate, PluginEdit, ScopeSpan, PluginBufferInfo,
-ClientPluginInfo};
+ClientPluginInfo, TextUnit, GetDataResponse};
 use plugins::{PluginPid, Command};
 use layers::Scopes;
 use config::{BufferConfig, Table};
@@ -1212,7 +1212,8 @@ impl Editor {
         self.render();
     }
 
-    pub fn plugin_get_data(&self, offset: usize, max_size: usize, rev: RevToken) -> Option<String> {
+    pub fn plugin_get_data(&self, start: usize, unit: TextUnit,
+                           max_size: usize, rev: RevToken) -> Option<GetDataResponse> {
         let text_cow = if rev == self.engine.get_head_rev_id().token() {
             Cow::Borrowed(&self.text)
         } else {
@@ -1222,8 +1223,9 @@ impl Editor {
             }
         };
         let text = &text_cow;
-        // Enforce start is on codepoint boundary.
-        if !text.is_codepoint_boundary(offset) { return None; }
+        // convert our offset into a valid byte offset
+        let offset = self.resolve_offset(text, start, unit)?;
+
         let max_size = min(max_size, MAX_SIZE_LIMIT);
         let mut end_off = offset.saturating_add(max_size);
         if end_off >= text.len() {
@@ -1232,7 +1234,38 @@ impl Editor {
             // Snap end to codepoint boundary.
             end_off = text.prev_codepoint_offset(end_off + 1).unwrap();
         }
-        Some(text.slice_to_string(offset, end_off))
+
+        let chunk = text.slice_to_string(offset, end_off);
+        let first_line = text.line_of_offset(offset);
+        let first_line_offset = offset - text.offset_of_line(first_line);
+
+        Some(GetDataResponse { chunk, offset, first_line, first_line_offset })
+    }
+
+    /// Converts an offset in some unit to a concrete byte offset. Returns
+    /// `None` if the input offset is out of bounds in its unit space.
+    fn resolve_offset(&self, text: &Cow<Rope>, offset: usize, unit: TextUnit) -> Option<usize> {
+        match unit {
+            TextUnit::Utf8 => {
+                if offset >= text.len() {
+                    None
+                } else {
+                    if text.is_codepoint_boundary(offset) {
+                        offset.into()
+                    } else {
+                        text.prev_codepoint_offset(offset).into()
+                    }
+                }
+            }
+            TextUnit::Line => {
+                let num_lines = text.measure::<LinesMetric>() + 1;
+                if offset > num_lines {
+                    None
+                } else {
+                    text.offset_of_line(offset).into()
+                }
+            }
+        }
     }
 
     pub fn plugin_get_selections(&self, view_id: ViewIdentifier) -> Value {

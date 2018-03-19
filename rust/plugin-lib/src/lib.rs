@@ -21,6 +21,7 @@ extern crate xi_trace;
 extern crate xi_trace_dump;
 #[macro_use]
 extern crate serde_json;
+extern crate serde;
 extern crate bytecount;
 extern crate rand;
 

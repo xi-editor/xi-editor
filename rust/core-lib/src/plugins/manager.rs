@@ -635,8 +635,8 @@ impl Handler for PluginManagerRef {
         let resp = match cmd {
             LineCount => buffers.editor_for_view(view_id)
                 .map(|ed| json!(ed.plugin_n_lines())),
-            GetData { offset, max_size, rev } => buffers.editor_for_view(view_id)
-                .map(|ed| json!(ed.plugin_get_data(offset, max_size, rev))),
+            GetData { start, unit, max_size, rev } => buffers.editor_for_view(view_id)
+                .map(|ed| json!(ed.plugin_get_data(start, unit, max_size, rev))),
             GetSelections => buffers.editor_for_view(view_id)
                 .map(|ed| json!(ed.plugin_get_selections(view_id))),
             };
