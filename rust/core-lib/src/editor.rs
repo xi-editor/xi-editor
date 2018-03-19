@@ -438,6 +438,7 @@ impl Editor {
         let keep_selections = self.this_edit_type == EditType::Transpose;
         self.scroll_to = self.view.after_edit(&self.text, &last_text, &delta, is_pristine, keep_selections);
         let (iv, new_len) = delta.summary();
+        let new_line_count = self.text.measure::<LinesMetric>() + 1;
 
         // TODO: perhaps use different semantics for spans that enclose the
         // edited region. Currently it breaks any such span in half and applies
@@ -467,6 +468,7 @@ impl Editor {
                 self.engine.get_head_rev_id().token(),
                 delta,
                 new_len,
+                new_line_count,
                 self.this_edit_type.json_string().to_owned(),
                 author.to_owned());
 

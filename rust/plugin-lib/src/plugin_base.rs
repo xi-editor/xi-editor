@@ -20,8 +20,10 @@ use std::path::{PathBuf, Path};
 use serde_json::{self, Value};
 use serde::Deserialize;
 
-use xi_core::{ViewIdentifier, PluginPid, plugin_rpc, SyntaxDefinition,
+use xi_core::{ViewIdentifier, PluginPid, SyntaxDefinition,
 ConfigTable, BufferConfig};
+use xi_core::plugin_rpc::{TextUnit, PluginBufferInfo, HostRequest, HostNotification,
+GetDataResponse, ScopeSpan};
 use xi_rpc::{self, RpcLoop, RpcPeer, RpcCtx, RemoteError, ReadError};
 
 #[derive(Debug)]
@@ -31,9 +33,8 @@ pub enum Error {
 }
 
 pub trait Handler {
-    fn handle_notification(&mut self, ctx: PluginCtx,
-                           rpc: plugin_rpc::HostNotification);
-    fn handle_request(&mut self, ctx: PluginCtx, rpc: plugin_rpc::HostRequest)
+    fn handle_notification(&mut self, ctx: PluginCtx, rpc: HostNotification);
+    fn handle_request(&mut self, ctx: PluginCtx, rpc: HostRequest)
                       -> Result<Value, RemoteError>;
     #[allow(unused_variables)]
     fn idle(&mut self, ctx: PluginCtx, token: usize) {}
@@ -65,14 +66,14 @@ struct BaseHandler<'a, H: 'a> {
 
 /// Abstracts getting data from the peer. This only exists so we can mock it in tests.
 pub trait DataSource {
-    fn get_data(&self, offset: usize, max_size: usize, rev: u64)
-        -> Result<plugin_rpc::GetDataResponse, Error>;
+    fn get_data(&self, start: usize, unit: TextUnit, max_size: usize, rev: u64)
+        -> Result<GetDataResponse, Error>;
 }
 
 impl ViewState {
-    fn new(init_info: &plugin_rpc::PluginBufferInfo) -> Self {
+    fn new(init_info: &PluginBufferInfo) -> Self {
 
-        let &plugin_rpc::PluginBufferInfo {
+        let &PluginBufferInfo {
             ref views, ref path, ref syntax, ref config, ..
         } = init_info;
 
@@ -112,7 +113,7 @@ impl<'a> PluginCtx<'a> {
         self.send_rpc_notification("add_scopes", &params);
     }
 
-    pub fn update_spans(&self, start: usize, len: usize, rev: u64, spans: &[plugin_rpc::ScopeSpan]) {
+    pub fn update_spans(&self, start: usize, len: usize, rev: u64, spans: &[ScopeSpan]) {
         let params = json!({
             "plugin_id": self.plugin_id,
             "view_id": self.view.view_id,
@@ -149,19 +150,19 @@ impl<'a> PluginCtx<'a> {
 }
 
 impl<'a> DataSource for PluginCtx<'a> {
-    fn get_data(&self, offset: usize, max_size: usize, rev: u64)
-        -> Result<plugin_rpc::GetDataResponse, Error> {
+    fn get_data(&self, start: usize, unit: TextUnit, max_size: usize, rev: u64)
+        -> Result<GetDataResponse, Error> {
         let params = json!({
             "plugin_id": self.plugin_id,
             "view_id": self.view.view_id,
-            "start": offset,
-            "unit": "utf8",
+            "start": start,
+            "unit": unit,
             "max_size": max_size,
             "rev": rev,
         });
         let result = self.send_rpc_request("get_data", &params)
             .map_err(|e| Error::RpcError(e))?;
-        plugin_rpc::GetDataResponse::deserialize(result)
+        GetDataResponse::deserialize(result)
             .map_err(|_| Error::WrongReturnType)
     }
 }
@@ -182,10 +183,10 @@ impl<'a, H: 'a> BaseHandler<'a, H> {
 }
 
 impl<'a, H: Handler> xi_rpc::Handler for BaseHandler<'a, H> {
-    type Notification = plugin_rpc::HostNotification;
-    type Request = plugin_rpc::HostRequest;
+    type Notification = HostNotification;
+    type Request = HostRequest;
     fn handle_notification(&mut self, ctx: &RpcCtx, rpc: Self::Notification) {
-        use self::plugin_rpc::HostNotification::*;
+        use self::HostNotification::*;
         // we handle a few RPCs here, updating basic view information
         // before forwarding to the actual handler.
         match rpc {
