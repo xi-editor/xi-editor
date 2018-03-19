@@ -18,6 +18,7 @@ use std::io;
 use std::path::{PathBuf, Path};
 
 use serde_json::{self, Value};
+use serde::Deserialize;
 
 use xi_core::{ViewIdentifier, PluginPid, plugin_rpc, SyntaxDefinition,
 ConfigTable, BufferConfig};
@@ -64,7 +65,8 @@ struct BaseHandler<'a, H: 'a> {
 
 /// Abstracts getting data from the peer. This only exists so we can mock it in tests.
 pub trait DataSource {
-    fn get_data(&self, offset: usize, max_size: usize, rev: u64) -> Result<String, Error>;
+    fn get_data(&self, offset: usize, max_size: usize, rev: u64)
+        -> Result<plugin_rpc::GetDataResponse, Error>;
 }
 
 impl ViewState {
@@ -148,20 +150,19 @@ impl<'a> PluginCtx<'a> {
 
 impl<'a> DataSource for PluginCtx<'a> {
     fn get_data(&self, offset: usize, max_size: usize, rev: u64)
-        -> Result<String, Error> {
+        -> Result<plugin_rpc::GetDataResponse, Error> {
         let params = json!({
             "plugin_id": self.plugin_id,
             "view_id": self.view.view_id,
-            "offset": offset,
+            "start": offset,
+            "unit": "utf8",
             "max_size": max_size,
             "rev": rev,
         });
-        let result = self.send_rpc_request("get_data", &params);
-        match result {
-            Ok(Value::String(s)) => Ok(s),
-            Ok(_) => Err(Error::WrongReturnType),
-            Err(err) => Err(Error::RpcError(err)),
-        }
+        let result = self.send_rpc_request("get_data", &params)
+            .map_err(|e| Error::RpcError(e))?;
+        plugin_rpc::GetDataResponse::deserialize(result)
+            .map_err(|_| Error::WrongReturnType)
     }
 }
 

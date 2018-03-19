@@ -141,15 +141,37 @@ pub struct ScopeSpan {
     pub scope_id: u32,
 }
 
+/// The object returned by the `get_data` RPC.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GetDataResponse {
+    pub chunk: String,
+    pub offset: usize,
+    pub first_line: usize,
+    pub first_line_offset: usize,
+}
+
+/// The unit of measure when requesting data.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum TextUnit {
+    /// The requested offset is in bytes. The returned chunk will be valid
+    /// UTF8, and is guaruanteed to include the byte specified the offset.
+    Utf8,
+    /// The requested offset is a line number. The returned chunk will begin
+    /// at the offset of the requested line.
+    Line,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "method", content = "params")]
 /// RPC requests sent from plugins.
 pub enum PluginRequest {
-    GetData { offset: usize, max_size: usize, rev: u64 },
+    GetData { start: usize, unit: TextUnit, max_size: usize, rev: u64 },
     LineCount,
     GetSelections,
 }
+
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]

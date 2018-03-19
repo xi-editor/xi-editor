@@ -47,7 +47,7 @@ impl ChunkCache {
                 if end < chunk_end || chunk_end == self.buf_size {
                     return Ok(&self.contents[start - chunk_start ..]);
                 }
-                let new_chunk = source.get_data(chunk_end, CHUNK_SIZE, self.rev)?;
+                let new_chunk = source.get_data(chunk_end, CHUNK_SIZE, self.rev)?.chunk;
                 if start == chunk_start {
                     self.contents.push_str(&new_chunk);
                 } else {
@@ -58,7 +58,7 @@ impl ChunkCache {
             } else {
                 // TODO: if chunk_start < start + CHUNK_SIZE, could fetch smaller
                 // chunk and concat; probably not a major savings in practice.
-                self.contents = source.get_data(start, CHUNK_SIZE, self.rev)?;
+                self.contents = source.get_data(start, CHUNK_SIZE, self.rev)?.chunk;
                 self.offset = start;
             }
         }
@@ -124,17 +124,25 @@ mod tests {
     use super::*;
     use xi_rope::interval::Interval;
     use xi_rope::delta::Delta;
+    use xi_core::plugin_rpc::GetDataResponse;
 
     struct MockDataSource(String);
 
     impl DataSource for MockDataSource {
-        fn get_data(&self, offset: usize, max_size: usize, _rev: u64) -> Result<String, Error> {
+        fn get_data(&self, offset: usize, max_size: usize, _rev: u64)
+            -> Result<GetDataResponse, Error> {
             // not the right error, but okay for this
             let end = self.0.len().min(offset+max_size);
             if offset > self.0.len() || !self.0.is_char_boundary(offset) || !self.0.is_char_boundary(end) {
                 Err(Error::WrongReturnType)
             } else {
-                Ok( unsafe{ self.0.slice_unchecked(offset, end).into() } )
+                let chunk = unsafe{ self.0.slice_unchecked(offset, end).into() };
+                Ok(GetDataResponse {
+                    chunk: chunk,
+                    offset: offset,
+                    first_line: usize::max_value(),
+                    first_line_offset: usize::max_value(),
+                })
             }
         }
     }
