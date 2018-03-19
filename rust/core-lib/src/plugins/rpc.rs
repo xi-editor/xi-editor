@@ -71,6 +71,8 @@ pub struct PluginUpdate {
     pub delta: Option<RopeDelta>,
     /// The size of the document after applying this delta.
     pub new_len: usize,
+    /// The total number of lines in the document after applying this delta.
+    pub new_line_count: usize,
     pub rev: u64,
     pub edit_type: String,
     pub author: String,
@@ -241,11 +243,11 @@ impl PluginBufferInfo {
 
 impl PluginUpdate {
     pub fn new<D>(view_id: ViewIdentifier, rev: u64, delta: D, new_len: usize,
-                  edit_type: String, author: String) -> Self
+                  new_line_count: usize, edit_type: String, author: String) -> Self
         where D: Into<Option<RopeDelta>>
     {
         let delta = delta.into();
-        PluginUpdate { view_id, delta, new_len, rev, edit_type, author }
+        PluginUpdate { view_id, delta, new_len, new_line_count, rev, edit_type, author }
     }
 }
 
