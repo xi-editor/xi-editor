@@ -30,6 +30,9 @@ use xi_rpc::{self, RpcLoop, RpcPeer, RpcCtx, RemoteError, ReadError};
 pub enum Error {
     RpcError(xi_rpc::Error),
     WrongReturnType,
+    BadRequest,
+    // Just used in tests
+    Other(String),
 }
 
 pub trait Handler {

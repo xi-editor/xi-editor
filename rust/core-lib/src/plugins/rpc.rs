@@ -15,12 +15,13 @@
 //! RPC types, corresponding to protocol requests, notifications & responses.
 
 use std::path::PathBuf;
+use std::borrow::Borrow;
 
 use serde::de::{self, Deserialize, Deserializer};
 use serde::ser::{self, Serialize, Serializer};
 use serde_json::{self, Value};
 
-use xi_rope::rope::RopeDelta;
+use xi_rope::rope::{RopeDelta, Rope, LinesMetric};
 use super::PluginPid;
 use syntax::SyntaxDefinition;
 use tabs::{BufferIdentifier, ViewIdentifier};
@@ -251,6 +252,37 @@ impl PluginUpdate {
     }
 }
 
+// maybe this should be in xi_rope? has a strong resemblance to the various
+// concrete `Metric` types.
+impl TextUnit {
+    /// Converts an offset in some unit to a concrete byte offset. Returns
+    /// `None` if the input offset is out of bounds in its unit space.
+    pub fn resolve_offset<T: Borrow<Rope>>(&self, text: T, offset: usize) -> Option<usize> {
+        let text = text.borrow();
+        match *self {
+            TextUnit::Utf8 => {
+                if offset >= text.len() {
+                    None
+                } else {
+                    if text.is_codepoint_boundary(offset) {
+                        offset.into()
+                    } else {
+                        text.prev_codepoint_offset(offset).into()
+                    }
+                }
+            }
+            TextUnit::Line => {
+                let num_lines = text.measure::<LinesMetric>() + 1;
+                if offset > num_lines {
+                    None
+                } else {
+                    text.offset_of_line(offset).into()
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -262,6 +294,7 @@ mod tests {
             "view_id": "view-id-42",
             "delta": {"base_len": 6, "els": [{"copy": [0,5]}, {"insert":"rofls"}, {"copy": [5,6]}]},
             "new_len": 11,
+            "new_line_count": 1,
             "rev": 5,
             "edit_type": "something",
             "author": "me"

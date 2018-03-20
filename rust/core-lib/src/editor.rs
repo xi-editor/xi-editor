@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::borrow::Cow;
+use std::borrow::{Borrow, Cow};
 use std::cmp::{min, max};
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -1226,7 +1226,7 @@ impl Editor {
         };
         let text = &text_cow;
         // convert our offset into a valid byte offset
-        let offset = self.resolve_offset(text, start, unit)?;
+        let offset = unit.resolve_offset(text.borrow(), start)?;
 
         let max_size = min(max_size, MAX_SIZE_LIMIT);
         let mut end_off = offset.saturating_add(max_size);
@@ -1242,32 +1242,6 @@ impl Editor {
         let first_line_offset = offset - text.offset_of_line(first_line);
 
         Some(GetDataResponse { chunk, offset, first_line, first_line_offset })
-    }
-
-    /// Converts an offset in some unit to a concrete byte offset. Returns
-    /// `None` if the input offset is out of bounds in its unit space.
-    fn resolve_offset(&self, text: &Cow<Rope>, offset: usize, unit: TextUnit) -> Option<usize> {
-        match unit {
-            TextUnit::Utf8 => {
-                if offset >= text.len() {
-                    None
-                } else {
-                    if text.is_codepoint_boundary(offset) {
-                        offset.into()
-                    } else {
-                        text.prev_codepoint_offset(offset).into()
-                    }
-                }
-            }
-            TextUnit::Line => {
-                let num_lines = text.measure::<LinesMetric>() + 1;
-                if offset > num_lines {
-                    None
-                } else {
-                    text.offset_of_line(offset).into()
-                }
-            }
-        }
     }
 
     pub fn plugin_get_selections(&self, view_id: ViewIdentifier) -> Value {

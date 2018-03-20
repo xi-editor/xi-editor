@@ -24,7 +24,8 @@ extern crate serde_json;
 extern crate serde;
 extern crate bytecount;
 extern crate rand;
+extern crate memchr;
 
 pub mod plugin_base;
 pub mod state_cache;
-mod base_cache;
+pub mod base_cache;
