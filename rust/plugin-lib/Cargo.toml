@@ -12,6 +12,7 @@ serde_json = "1.0"
 serde_derive = "1.0"
 bytecount = "0.3.1"
 rand = "0.4"
+memchr = "2.0"
 
 [dependencies.xi-trace]
 path = "../trace"

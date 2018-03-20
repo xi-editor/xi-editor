@@ -17,6 +17,7 @@
 use serde_json::Value;
 use bytecount;
 use rand::{thread_rng, Rng};
+use memchr::memchr;
 
 use xi_core::{plugin_rpc, BufferConfig};
 use xi_rpc::{RemoteError, ReadError};
@@ -153,12 +154,10 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
     fn do_update<P>(mut self, update: plugin_rpc::PluginUpdate, handler: &mut P) -> Value
         where P: Plugin<State = S>
     {
-        let plugin_rpc::PluginUpdate { delta, new_len, rev, .. } = update;
-        self.state.buf_cache.buf_size = new_len;
-        self.state.buf_cache.rev = rev;
+        let plugin_rpc::PluginUpdate { delta, new_len, rev, new_line_count, .. } = update;
+        self.state.buf_cache.apply_update(new_len, new_line_count, rev, delta.as_ref());
         if let Some(ref delta) = delta {
             self.update_line_cache(delta);
-            self.state.buf_cache.apply_delta(delta);
         } else {
             // if there's no delta (very large edit) we blow away everything
             self.clear_to_start(0);
@@ -524,11 +523,6 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
     pub fn close_frontier(&mut self) {
         self.state.frontier.remove(0);
     }
-}
-
-// TODO: use burntsushi memchr, or import this from xi_rope
-fn memchr(needle: u8, haystack: &[u8]) -> Option<usize> {
-    haystack.iter().position(|&b| b == needle)
 }
 
 fn count_newlines(s: &str) -> usize {
