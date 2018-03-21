@@ -17,7 +17,6 @@
 use serde_json::Value;
 use bytecount;
 use rand::{thread_rng, Rng};
-use memchr::memchr;
 
 use xi_core::{plugin_rpc, BufferConfig};
 use xi_rpc::{RemoteError, ReadError};
@@ -143,6 +142,7 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
 
         self.state.buf_cache.buf_size = init_info.buf_size;
         self.state.buf_cache.rev = init_info.rev;
+        self.state.buf_cache.num_lines = init_info.nb_lines;
         self.truncate_frontier(0);
         handler.initialize(self, init_info.buf_size);
     }
@@ -155,7 +155,7 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
         where P: Plugin<State = S>
     {
         let plugin_rpc::PluginUpdate { delta, new_len, rev, new_line_count, .. } = update;
-        self.state.buf_cache.apply_update(new_len, new_line_count, rev, delta.as_ref());
+        // update our own state before updating buf_cache
         if let Some(ref delta) = delta {
             self.update_line_cache(delta);
         } else {
@@ -163,6 +163,7 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
             self.clear_to_start(0);
         }
 
+        self.state.buf_cache.apply_update(new_len, new_line_count, rev, delta.as_ref());
         handler.update(self, rev as usize, delta)
             .unwrap_or(Value::from(0i32))
     }
@@ -257,12 +258,11 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
         match self.find_line(line_num) {
             Ok(ix) => Some(&mut self.state.state_cache[ix]),
             Err(_ix) => {
-                // TODO: could get rid of redundant binary search
-                let (offset, _ix, partial) = self.get_offset_ix_of_line(line_num)
-                    .expect("TODO return result");
-                if partial {
+                if line_num == self.state.buf_cache.num_lines {
                     None
                 } else {
+                    let offset = self.state.buf_cache.offset_of_line(&self.peer, line_num)
+                        .expect("get_entry should validate inputs");
                     let new_ix = self.insert_entry(line_num, offset, None);
                     Some(&mut self.state.state_cache[new_ix])
                 }
@@ -313,70 +313,13 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
         } else {
             self.state.buf_cache.buf_size
         };
+        assert!(after >= before, "{} < {} ix: {}", after, before, ix);
         after - before
-    }
-
-    /// Returns the offset, the index in the cache, and a bool indicating whether it's a
-    /// partial line at EOF.
-    fn get_offset_ix_of_line(&mut self, line_num: usize) -> Result<(usize, usize, bool), Error> {
-        if line_num == 0 {
-            return Ok((0, 0, false));
-        }
-        match self.find_line(line_num) {
-            Ok(ix) => Ok((self.state.state_cache[ix].offset, ix, false)),
-            Err(ix) => {
-                let (mut l, mut offset) = if ix == 0 { (0, 0) } else {
-                    let item = &self.state.state_cache[ix - 1];
-                    (item.line_num, item.offset)
-                };
-                let mut end = offset;
-                loop {
-                    if end == self.state.buf_cache.buf_size {
-                        return Ok((end, ix, true));
-                    }
-                    let chunk = self.state.buf_cache.get_slice(&self.peer, offset, end)?;
-                    if let Some(pos) = memchr(b'\n', chunk.as_bytes()) {
-                        offset += pos + 1;
-                        l += 1;
-                        if l == line_num {
-                            return Ok((offset, ix, false));
-                        }
-                    } else {
-                        end = offset + chunk.len();
-                    }
-                }
-            }
-        }
-    }
-
-    fn get_line_len(&mut self, start: usize) -> Result<usize, Error> {
-        let mut end = start;
-        loop {
-            let buf_size = self.state.buf_cache.buf_size;
-            let chunk = self.state.buf_cache.get_slice(&self.peer, start, end)?;
-            match memchr(b'\n', chunk.as_bytes()) {
-                Some(pos) => return Ok(pos + 1),
-                None => {
-                    end = start + chunk.len();
-                    if end == buf_size {
-                        return Ok(chunk.len());
-                    }
-                }
-            }
-        }
     }
 
     /// Get the line at the given line. Returns empty string if at EOF.
     pub fn get_line(&mut self, line_num: usize) -> Result<&str, Error> {
-        let (start, _ix, _partial) = self.get_offset_ix_of_line(line_num)?;
-        // TODO: if cache entry at ix + 1 has line_num + 1, then we know line len
-        let len = self.get_line_len(start)?;
-        // TODO: should store offset of next line, to avoid re-scanning
-
-        // TODO: this will pull in the first codepoint of the next line, which
-        // is not necessary.
-        let chunk = self.state.buf_cache.get_slice(&self.peer, start, start + len)?;
-        Ok(&chunk[..len])
+        self.state.buf_cache.get_line(&self.peer, line_num)
     }
 
     /// Release all state _after_ the given offset.
@@ -490,7 +433,6 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
 
     /// Clears any cached text and anything in the state cache before `start`.
     fn clear_to_start(&mut self, start: usize) {
-        self.state.buf_cache.clear();
         self.truncate_cache(start);
     }
 
