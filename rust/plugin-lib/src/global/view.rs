@@ -28,9 +28,10 @@ pub struct View<C> {
     pub (crate) cache: C,
     peer: RpcPeer,
     pub (crate) path: Option<PathBuf>,
-    config: BufferConfig,
-    config_table: ConfigTable,
+    pub (crate) config: BufferConfig,
+    pub (crate) config_table: ConfigTable,
     plugin_id: PluginPid,
+    pub (crate) rev: u64,
     pub (crate) view_id: ViewIdentifier,
 }
 
@@ -58,6 +59,7 @@ impl<C: Cache> View<C> {
             path: path,
             plugin_id: plugin_id,
             view_id: view_id,
+            rev: rev,
         }
     }
 
@@ -69,17 +71,8 @@ impl<C: Cache> View<C> {
         &self.config
     }
 
-    pub fn add_scopes(&self, scopes: &Vec<Vec<String>>) {
-
-    }
-
-    pub fn update_spans(&self, start: usize, len: usize,
-                        spans: &[ScopeSpan]) {
-
-    }
-
-    pub fn do_edit(&self) {
-
+    pub fn get_cache(&mut self) -> &mut C {
+        &mut self.cache
     }
 
     pub fn get_line(&self, line_num: usize) -> Result<&str, Error> {
@@ -89,6 +82,28 @@ impl<C: Cache> View<C> {
             peer: self.peer.clone(),
         };
         self.cache.get_line(&ctx, line_num)
+    }
+
+    //TODO: add a PluginHost trait, add these functions, implement on an RpcPeer wrapper
+    pub fn add_scopes(&self, scopes: &Vec<Vec<String>>) {
+        let params = json!({
+            "plugin_id": self.plugin_id,
+            "view_id": self.view_id,
+            "scopes": scopes,
+        });
+        self.peer.send_rpc_notification("add_scopes", &params);
+    }
+
+    pub fn update_spans(&self, start: usize, len: usize, spans: &[ScopeSpan]) {
+        let params = json!({
+            "plugin_id": self.plugin_id,
+            "view_id": self.view_id,
+            "start": start,
+            "len": len,
+            "rev": self.rev,
+            "spans": spans,
+        });
+        self.peer.send_rpc_notification("update_spans", &params);
     }
 
     pub fn schedule_idle(&self) {
@@ -112,15 +127,16 @@ pub trait Cache {
 pub trait Plugin {
     type Cache: Cache;
 
-    fn update(&mut self, view: &mut View<Self::Cache>, delta: Option<&RopeDelta>)
-        -> Result<Value, RemoteError>;
+    fn update(&mut self, view: &mut View<Self::Cache>, delta: Option<&RopeDelta>,
+              edit_type: String, author: String) -> Result<Value, RemoteError>;
     fn did_save(&mut self, view: &mut View<Self::Cache>, new_path: &Path);
     fn did_close(&self, view: &View<Self::Cache>);
     fn new_view(&mut self, view: &mut View<Self::Cache>);
 
     /// `view.config` contains the pre-change config
     fn config_changed(&mut self, view: &mut View<Self::Cache>, changes: &ConfigTable);
-    fn idle(&mut self) { }
+    #[allow(unused_variables)]
+    fn idle(&mut self, view: &mut View<Self::Cache>) { }
 }
 
 impl DataSource for FetchCtx {

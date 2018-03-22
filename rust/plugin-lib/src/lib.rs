@@ -29,4 +29,4 @@ extern crate memchr;
 pub mod plugin_base;
 pub mod state_cache;
 pub mod base_cache;
-mod global;
+pub mod global;
