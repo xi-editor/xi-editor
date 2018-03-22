@@ -170,8 +170,10 @@ impl<'a, P: Plugin> RpcHandler for Dispatcher<'a, P> {
         }
     }
 
-    fn idle(&mut self, ctx: &RpcCtx, token: usize) {
-        self.plugin.idle();
+    fn idle(&mut self, _ctx: &RpcCtx, token: usize) {
+        let view_id: ViewIdentifier = token.into();
+        let v = bail!(self.views.get_mut(&view_id), "idle", self.pid, view_id);
+        self.plugin.idle(v);
     }
 }
 

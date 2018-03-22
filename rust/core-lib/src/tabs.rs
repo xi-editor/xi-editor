@@ -1031,6 +1031,19 @@ impl From<String> for ViewIdentifier {
     }
 }
 
+// these two only exist so that we can use ViewIdentifiers as idle tokens
+impl From<usize> for ViewIdentifier {
+    fn from(src: usize) -> ViewIdentifier {
+        ViewIdentifier(src)
+    }
+}
+
+impl From<ViewIdentifier> for usize {
+    fn from(src: ViewIdentifier) -> usize {
+        src.0
+    }
+}
+
 impl fmt::Display for ViewIdentifier {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "view-id-{}", self.0)
