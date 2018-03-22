@@ -22,9 +22,11 @@ use serde_json::{self, Value};
 
 use xi_core::{ViewIdentifier, PluginPid, ConfigTable};
 use xi_core::plugin_rpc::{PluginBufferInfo, PluginUpdate, HostRequest, HostNotification};
-use xi_rpc::{self, RpcLoop, RpcCtx, RemoteError, ReadError, Handler as RpcHandler};
-use self::view::{Plugin, View, Cache};
+use xi_rpc::{RpcLoop, RpcCtx, RemoteError, ReadError, Handler as RpcHandler};
 
+pub use self::view::{Plugin, View, Cache};
+
+/// Convenience for unwrapping a view, when handling RPC notifications.
 macro_rules! bail {
     ($opt:expr, $method:expr, $pid:expr, $view:expr) => ( match $opt {
         Some(t) => t,
@@ -35,17 +37,19 @@ macro_rules! bail {
     })
 }
 
+/// Convenience for unwrapping a view when handling RPC requests.
+/// Prints an error if the view is missing, and returns an appropriate error.
 macro_rules! bail_err {
-    ($opt:expr, $method:expr, $pid:expr, $view:expr, $err:expr) => ( match $opt {
+    ($opt:expr, $method:expr, $pid:expr, $view:expr) => ( match $opt {
         Some(t) => t,
         None => {
             eprintln!("{:?} missing {:?} for {:?}", $pid, $view, $method);
-            return Err($err)
+            return Err(RemoteError::custom(404, "missing view", None))
         }
     })
 }
 
-/// Handles raw RPCs from core, updating documents and bridging calls
+/// Handles raw RPCs from core, updating state and forwarding calls
 /// to the plugin,
 pub struct Dispatcher<'a, P: 'a + Plugin> {
     //TODO: when we add multi-view, this should be an Arc+Mutex/Rc+RefCell
@@ -55,7 +59,7 @@ pub struct Dispatcher<'a, P: 'a + Plugin> {
 }
 
 impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
-    pub fn new(plugin: &'a mut P) -> Self {
+    fn new(plugin: &'a mut P) -> Self {
         Dispatcher {
             views: HashMap::new(),
             pid: None,
@@ -82,6 +86,11 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
     fn do_config_changed(&mut self, view_id: ViewIdentifier, changes: ConfigTable) {
         let v = bail!(self.views.get_mut(&view_id), "config_changed", self.pid, view_id);
         self.plugin.config_changed(v, &changes);
+        for (key, value) in changes.iter() {
+            v.config_table.insert(key.to_owned(), value.to_owned());
+        }
+        let conf = serde_json::from_value(Value::Object(v.config_table.clone()));
+        v.config = conf.unwrap();
     }
 
     fn do_new_buffer(&mut self, ctx: &RpcCtx, buffers: Vec<PluginBufferInfo>) {
@@ -104,18 +113,8 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
         self.views.remove(&view_id);
     }
 
-    fn do_update(&mut self, update: PluginUpdate) -> Result<Value, RemoteError> {
-        let PluginUpdate {
-            view_id, delta, new_len, new_line_count, rev, edit_type, author,
-        } = update;
-        let v = bail_err!(self.views.get_mut(&view_id), "update",
-                          self.pid, view_id,
-                          RemoteError::custom(404, "missing view", None));
-        v.cache.update(delta.as_ref(), new_len, new_line_count, rev);
-        self.plugin.update(v, delta.as_ref())
-    }
-
     fn do_shutdown(&mut self) {
+        eprintln!("rust plugin lib does not shutdown");
         //TODO: handle shutdown
 
     }
@@ -130,6 +129,27 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
             eprintln!("Disabling tracing in {:?}",  self.pid);
             xi_trace::disable_tracing();
         }
+    }
+
+    fn do_update(&mut self, update: PluginUpdate) -> Result<Value, RemoteError> {
+        let PluginUpdate {
+            view_id, delta, new_len, new_line_count, rev, edit_type, author,
+        } = update;
+        let v = bail_err!(self.views.get_mut(&view_id), "update",
+                          self.pid, view_id);
+        //TODO: probably view should just have an update method
+        v.cache.update(delta.as_ref(), new_len, new_line_count, rev);
+        v.rev = rev;
+        self.plugin.update(v, delta.as_ref(), edit_type, author)
+    }
+
+    fn do_collect_trace(&self) -> Result<Value, RemoteError> {
+        use xi_trace;
+        use xi_trace_dump::*;
+
+        let samples = xi_trace::samples_cloned_unsorted();
+        chrome_trace::to_value(&samples, chrome_trace::OutputFormat::JsonArray)
+            .map_err(|e| RemoteError::custom(500, format!("{:?}", e), None))
     }
 }
 
@@ -159,14 +179,14 @@ impl<'a, P: Plugin> RpcHandler for Dispatcher<'a, P> {
         }
     }
 
-    fn handle_request(&mut self, ctx: &RpcCtx, rpc: Self::Request)
+    fn handle_request(&mut self, _ctx: &RpcCtx, rpc: Self::Request)
                       -> Result<Value, RemoteError> {
         use self::HostRequest::*;
         match rpc {
             Update(params) =>
                 self.do_update(params),
             CollectTrace ( .. ) =>
-                Err(RemoteError::custom(100, "method not supported", None)),
+                self.do_collect_trace(),
         }
     }
 
