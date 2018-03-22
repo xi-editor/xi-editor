@@ -12,18 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use serde_json::{self, Value};
 use serde::Deserialize;
 
 use xi_core::{ViewIdentifier, PluginPid, BufferConfig, ConfigTable};
 use xi_core::plugin_rpc::{TextUnit, GetDataResponse, ScopeSpan, PluginBufferInfo};
 
-use xi_rpc::{RpcPeer, RemoteError};
-use xi_rope::rope::RopeDelta;
+use xi_rpc::RpcPeer;
 
 use plugin_base::{Error, DataSource};
 
+use global::Cache;
+
+/// A type that acts as a proxy for a remote view. Provides access to
+/// a document cache, and implements various methods for querying and modifying
+/// view state.
 pub struct View<C> {
     pub (crate) cache: C,
     peer: RpcPeer,
@@ -33,12 +37,6 @@ pub struct View<C> {
     plugin_id: PluginPid,
     pub (crate) rev: u64,
     pub (crate) view_id: ViewIdentifier,
-}
-
-struct FetchCtx {
-    plugin_id: PluginPid,
-    view_id: ViewIdentifier,
-    peer: RpcPeer,
 }
 
 impl<C: Cache> View<C> {
@@ -112,31 +110,11 @@ impl<C: Cache> View<C> {
     }
 }
 
-
-/// A cache of a document's contents
-pub trait Cache {
-    fn new(buf_size: usize, rev: u64, num_lines: usize) -> Self;
-    fn get_line<DS>(&self, source: &DS, line_num: usize) -> Result<&str, Error>;
-    /// Updates the cache by applying this delta'.
-    fn update(&mut self, delta: Option<&RopeDelta>, buf_size: usize,
-              num_lines: usize, rev: u64);
-    /// Flushes any state held by this cache.
-    fn clear(&mut self);
-}
-
-pub trait Plugin {
-    type Cache: Cache;
-
-    fn update(&mut self, view: &mut View<Self::Cache>, delta: Option<&RopeDelta>,
-              edit_type: String, author: String) -> Result<Value, RemoteError>;
-    fn did_save(&mut self, view: &mut View<Self::Cache>, new_path: &Path);
-    fn did_close(&self, view: &View<Self::Cache>);
-    fn new_view(&mut self, view: &mut View<Self::Cache>);
-
-    /// `view.config` contains the pre-change config
-    fn config_changed(&mut self, view: &mut View<Self::Cache>, changes: &ConfigTable);
-    #[allow(unused_variables)]
-    fn idle(&mut self, view: &mut View<Self::Cache>) { }
+/// A simple wrapper type that acts as a `DataSource`.
+struct FetchCtx {
+    plugin_id: PluginPid,
+    view_id: ViewIdentifier,
+    peer: RpcPeer,
 }
 
 impl DataSource for FetchCtx {

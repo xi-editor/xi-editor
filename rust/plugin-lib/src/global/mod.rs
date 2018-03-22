@@ -13,190 +13,89 @@
 // limitations under the License.
 
 mod view;
+mod dispatch;
 
-use std::collections::HashMap;
 use std::io;
-use std::path::PathBuf;
+use std::path::Path;
 
-use serde_json::{self, Value};
+use xi_rpc::{RpcLoop, ReadError};
+use xi_rope::rope::RopeDelta;
+use xi_core::ConfigTable;
+use xi_core::plugin_rpc::PluginEdit;
 
-use xi_core::{ViewIdentifier, PluginPid, ConfigTable};
-use xi_core::plugin_rpc::{PluginBufferInfo, PluginUpdate, HostRequest, HostNotification};
-use xi_rpc::{RpcLoop, RpcCtx, RemoteError, ReadError, Handler as RpcHandler};
+use plugin_base::{Error, DataSource};
 
-pub use self::view::{Plugin, View, Cache};
+pub use self::view::View;
+pub use self::dispatch::Dispatcher;
 
-/// Convenience for unwrapping a view, when handling RPC notifications.
-macro_rules! bail {
-    ($opt:expr, $method:expr, $pid:expr, $view:expr) => ( match $opt {
-        Some(t) => t,
-        None => {
-            eprintln!("{:?} missing {:?} for {:?}", $pid, $view, $method);
-            return
-        }
-    })
+/// A generic interface for types that cache a remote document.
+///
+/// In general, users of this library should not need to implement this trait;
+/// we provide two concrete Cache implementations, [`ChunkCache`] and
+/// [`StateCache`]. If however a plugin's particular needs are not met by
+/// those implementations, a user may choose to implement their own.
+///
+/// [`ChunkCache`]: struct.ChunkCache.html
+/// [`StateCache`]: struct.StateCache.html
+
+pub trait Cache {
+    /// Create a new instance of this type; instances are created automatically
+    /// as relevant views are added.
+    fn new(buf_size: usize, rev: u64, num_lines: usize) -> Self;
+    /// Returns the line at `line_num` (zero-indexed). Returns an `Err(_)` if
+    /// there is a problem connecting to the peer, or if the requested line
+    /// is out of bounds.
+    ///
+    /// The `source` argument is some type that implements [`DataSource`]; in
+    /// the general case this is backed by the remote peer.
+    ///
+    /// [`DataSource`]: trait.DataSource.html
+    fn get_line<DS>(&self, source: &DS, line_num: usize) -> Result<&str, Error>
+        where DS: DataSource;
+    /// Updates the cache by applying this delta.
+    fn update(&mut self, delta: Option<&RopeDelta>, buf_size: usize,
+              num_lines: usize, rev: u64);
+    /// Flushes any state held by this cache.
+    fn clear(&mut self);
 }
 
-/// Convenience for unwrapping a view when handling RPC requests.
-/// Prints an error if the view is missing, and returns an appropriate error.
-macro_rules! bail_err {
-    ($opt:expr, $method:expr, $pid:expr, $view:expr) => ( match $opt {
-        Some(t) => t,
-        None => {
-            eprintln!("{:?} missing {:?} for {:?}", $pid, $view, $method);
-            return Err(RemoteError::custom(404, "missing view", None))
-        }
-    })
+/// An interface for plugins.
+///
+/// Users of this library must implement this trait for some type.
+pub trait Plugin {
+    type Cache: Cache;
+
+    //TODO: async edits only; this is here for feature paritiy during initial hacking
+    /// Called when an edit has occured in the remote view. If the plugin wishes
+    /// to add its own edit, it may return `Some(edit)`.
+    fn update(&mut self, view: &mut View<Self::Cache>, delta: Option<&RopeDelta>,
+              edit_type: String, author: String) -> Option<PluginEdit>;
+    /// Called when a buffer has been saved to disk. The buffer's previous
+    /// path, if one existed, is available through `view.get_path()`.
+    fn did_save(&mut self, view: &mut View<Self::Cache>, new_path: &Path);
+    /// Called when a view has been closed. By the time this message is received,
+    /// It is possible to send messages to this view. The plugin may wish to
+    /// perform cleanup, however.
+    fn did_close(&self, view: &View<Self::Cache>);
+    /// Called when there is a new view that this buffer is interested in.
+    /// This is called once per view, and is paired with a call to
+    /// `Plugin::did_close` when the view is closed.
+    fn new_view(&mut self, view: &mut View<Self::Cache>);
+
+    /// Called when a config option has changed for this view. `changes`
+    /// is a map of keys/values that have changed; previous values are available
+    /// in the existing config, accessible through `view.get_config()`.
+    fn config_changed(&mut self, view: &mut View<Self::Cache>, changes: &ConfigTable);
+
+    /// Called when the runloop is idle, if the plugin has prevoiusly
+    /// asked to be scheduled via `View::schedule_idle()`. Plugins that
+    /// are doing things like full document analysis can use this mechanism
+    /// to perform their work incrementally while remaining responsive.
+    #[allow(unused_variables)]
+    fn idle(&mut self, view: &mut View<Self::Cache>) { }
 }
 
-/// Handles raw RPCs from core, updating state and forwarding calls
-/// to the plugin,
-pub struct Dispatcher<'a, P: 'a + Plugin> {
-    //TODO: when we add multi-view, this should be an Arc+Mutex/Rc+RefCell
-    views: HashMap<ViewIdentifier, View<P::Cache>>,
-    pid: Option<PluginPid>,
-    plugin: &'a mut P,
-}
-
-impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
-    fn new(plugin: &'a mut P) -> Self {
-        Dispatcher {
-            views: HashMap::new(),
-            pid: None,
-            plugin: plugin,
-        }
-    }
-
-    fn do_initialize(&mut self, ctx: &RpcCtx,
-                     plugin_id: PluginPid,
-                     buffers: Vec<PluginBufferInfo>)
-    {
-        assert!(self.pid.is_none(), "initialize rpc received with existing pid");
-        self.pid = Some(plugin_id);
-        self.do_new_buffer(ctx, buffers);
-
-    }
-
-    fn do_did_save(&mut self, view_id: ViewIdentifier, path: PathBuf) {
-        let v = bail!(self.views.get_mut(&view_id), "did_save", self.pid, view_id);
-        self.plugin.did_save(v, &path);
-        v.path = Some(path);
-    }
-
-    fn do_config_changed(&mut self, view_id: ViewIdentifier, changes: ConfigTable) {
-        let v = bail!(self.views.get_mut(&view_id), "config_changed", self.pid, view_id);
-        self.plugin.config_changed(v, &changes);
-        for (key, value) in changes.iter() {
-            v.config_table.insert(key.to_owned(), value.to_owned());
-        }
-        let conf = serde_json::from_value(Value::Object(v.config_table.clone()));
-        v.config = conf.unwrap();
-    }
-
-    fn do_new_buffer(&mut self, ctx: &RpcCtx, buffers: Vec<PluginBufferInfo>) {
-        let plugin_id = self.pid.unwrap();
-        buffers.into_iter()
-            .map(|info| View::new(ctx.get_peer().clone(), plugin_id, info))
-            .for_each(|view| {
-                let mut view = view;
-                self.plugin.new_view(&mut view);
-                self.views.insert(view.view_id, view);
-            });
-
-    }
-
-    fn do_close(&mut self, view_id: ViewIdentifier) {
-        {
-            let v = bail!(self.views.get(&view_id), "close", self.pid, view_id);
-            self.plugin.did_close(v);
-        }
-        self.views.remove(&view_id);
-    }
-
-    fn do_shutdown(&mut self) {
-        eprintln!("rust plugin lib does not shutdown");
-        //TODO: handle shutdown
-
-    }
-
-    fn do_tracing_config(&mut self, enabled: bool) {
-        use xi_trace;
-
-        if enabled {
-            eprintln!("Enabling tracing in {:?}", self.pid);
-            xi_trace::enable_tracing();
-        } else {
-            eprintln!("Disabling tracing in {:?}",  self.pid);
-            xi_trace::disable_tracing();
-        }
-    }
-
-    fn do_update(&mut self, update: PluginUpdate) -> Result<Value, RemoteError> {
-        let PluginUpdate {
-            view_id, delta, new_len, new_line_count, rev, edit_type, author,
-        } = update;
-        let v = bail_err!(self.views.get_mut(&view_id), "update",
-                          self.pid, view_id);
-        //TODO: probably view should just have an update method
-        v.cache.update(delta.as_ref(), new_len, new_line_count, rev);
-        v.rev = rev;
-        self.plugin.update(v, delta.as_ref(), edit_type, author)
-    }
-
-    fn do_collect_trace(&self) -> Result<Value, RemoteError> {
-        use xi_trace;
-        use xi_trace_dump::*;
-
-        let samples = xi_trace::samples_cloned_unsorted();
-        chrome_trace::to_value(&samples, chrome_trace::OutputFormat::JsonArray)
-            .map_err(|e| RemoteError::custom(500, format!("{:?}", e), None))
-    }
-}
-
-impl<'a, P: Plugin> RpcHandler for Dispatcher<'a, P> {
-    type Notification = HostNotification;
-    type Request = HostRequest;
-
-    fn handle_notification(&mut self, ctx: &RpcCtx, rpc: Self::Notification) {
-        use self::HostNotification::*;
-        match rpc {
-            Initialize { plugin_id, buffer_info } =>
-                self.do_initialize(ctx, plugin_id, buffer_info),
-            DidSave { view_id, path } =>
-                self.do_did_save(view_id, path),
-            ConfigChanged { view_id, changes } =>
-                self.do_config_changed(view_id, changes),
-            NewBuffer { buffer_info } =>
-                self.do_new_buffer(ctx, buffer_info),
-            DidClose { view_id } =>
-                self.do_close(view_id),
-            //TODO: figure out shutdown
-            Shutdown ( .. ) =>
-                self.do_shutdown(),
-            TracingConfig { enabled } =>
-                self.do_tracing_config(enabled),
-            Ping ( .. ) => (),
-        }
-    }
-
-    fn handle_request(&mut self, _ctx: &RpcCtx, rpc: Self::Request)
-                      -> Result<Value, RemoteError> {
-        use self::HostRequest::*;
-        match rpc {
-            Update(params) =>
-                self.do_update(params),
-            CollectTrace ( .. ) =>
-                self.do_collect_trace(),
-        }
-    }
-
-    fn idle(&mut self, _ctx: &RpcCtx, token: usize) {
-        let view_id: ViewIdentifier = token.into();
-        let v = bail!(self.views.get_mut(&view_id), "idle", self.pid, view_id);
-        self.plugin.idle(v);
-    }
-}
-
+//TODO: docs, including an example
 pub fn mainloop<P: Plugin>(plugin: &mut P) -> Result<(), ReadError> {
     let stdin = io::stdin();
     let stdout = io::stdout();
