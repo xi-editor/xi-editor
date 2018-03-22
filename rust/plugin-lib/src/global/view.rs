@@ -90,6 +90,11 @@ impl<C: Cache> View<C> {
         };
         self.cache.get_line(&ctx, line_num)
     }
+
+    pub fn schedule_idle(&self) {
+        let token: usize = self.view_id.into();
+        self.peer.schedule_idle(token);
+    }
 }
 
 
