@@ -18,7 +18,7 @@ use std::borrow::Cow;
 use serde_json::Value;
 
 use xi_plugin_lib::state_cache::{self, PluginCtx};
-use xi_core_lib::plugin_rpc::ScopeSpan;
+use xi_core::plugin_rpc::ScopeSpan;
 use xi_rope::rope::RopeDelta;
 use xi_rope::interval::Interval;
 use xi_rope::delta::Builder as EditBuilder;
@@ -28,19 +28,19 @@ use stackmap::{StackMap, LookupResult};
 
 
 /// The state for syntax highlighting of one file.
-struct PluginState<'a> {
-    syntax_set: &'a SyntaxSet,
-    stack_idents: StackMap,
-    offset: usize,
-    initial_state: Option<(ParseState, ScopeStack)>,
-    spans_start: usize,
+pub(crate) struct PluginState<'a> {
+    pub(crate) syntax_set: &'a SyntaxSet,
+    pub(crate) stack_idents: StackMap,
+    pub(crate) offset: usize,
+    pub(crate) initial_state: Option<(ParseState, ScopeStack)>,
+    pub(crate) spans_start: usize,
     // unflushed spans
-    spans: Vec<ScopeSpan>,
-    new_scopes: Vec<Vec<String>>,
-    syntax_name: String,
+    pub(crate) spans: Vec<ScopeSpan>,
+    pub(crate) new_scopes: Vec<Vec<String>>,
+    pub(crate) syntax_name: String,
 }
 
-const LINES_PER_RPC: usize = 10;
+pub(crate) const LINES_PER_RPC: usize = 10;
 const INDENTATION_PRIORITY: usize = 100;
 
 type LockedRepo = MutexGuard<'static, ScopeRepository>;
@@ -50,7 +50,7 @@ type LockedRepo = MutexGuard<'static, ScopeRepository>;
 // Note: this needs to be option because the caching layer relies on Default.
 // We can't implement that because the actual initial state depends on the
 // syntax. There are other ways to handle this, but this will do for now.
-type State = Option<(ParseState, ScopeStack)>;
+pub(crate) type State = Option<(ParseState, ScopeStack)>;
 
 
 impl<'a> PluginState<'a> {
@@ -68,7 +68,7 @@ impl<'a> PluginState<'a> {
     }
 
     // compute syntax for one line, also accumulating the style spans
-    fn compute_syntax(&mut self, line: &str, state: State) -> State {
+    pub(crate) fn compute_syntax(&mut self, line: &str, state: State) -> State {
         let (mut parse_state, mut scope_state) = state.or_else(|| self.initial_state.clone()).unwrap();
         let ops = parse_state.parse_line(&line);
 

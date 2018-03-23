@@ -19,7 +19,7 @@ extern crate serde_json;
 
 extern crate syntect;
 extern crate xi_plugin_lib;
-extern crate xi_core_lib;
+extern crate xi_core_lib as xi_core;
 extern crate xi_rope;
 
 mod stackmap;
