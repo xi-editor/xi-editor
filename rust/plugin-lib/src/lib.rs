@@ -27,6 +27,7 @@ extern crate rand;
 extern crate memchr;
 
 pub mod plugin_base;
+pub mod stateful_plugin;
 pub mod state_cache;
 pub mod base_cache;
 pub mod global;
