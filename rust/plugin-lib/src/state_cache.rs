@@ -23,6 +23,7 @@ use xi_rpc::{RemoteError, ReadError};
 use xi_rope::rope::{RopeDelta, LinesMetric};
 
 use base_cache::ChunkCache;
+use global::Cache;
 pub use plugin_base::{self, Error, ViewState, DataSource};
 
 const CACHE_SIZE: usize = 1024;
@@ -140,9 +141,9 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
         where P: Plugin<State = S>
     {
 
-        self.state.buf_cache.buf_size = init_info.buf_size;
-        self.state.buf_cache.rev = init_info.rev;
-        self.state.buf_cache.num_lines = init_info.nb_lines;
+        self.state.buf_cache = ChunkCache::new(init_info.buf_size,
+                                               init_info.rev,
+                                               init_info.nb_lines);
         self.state.truncate_frontier(0);
         handler.initialize(self, init_info.buf_size);
     }
@@ -156,14 +157,7 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
     {
         let plugin_rpc::PluginUpdate { delta, new_len, rev, new_line_count, .. } = update;
         // update our own state before updating buf_cache
-        if let Some(ref delta) = delta {
-            self.state.update_line_cache(delta);
-        } else {
-            // if there's no delta (very large edit) we blow away everything
-            self.state.clear_to_start(0);
-        }
-
-        self.state.buf_cache.apply_update(new_len, new_line_count, rev, delta.as_ref());
+        self.state.update(delta.as_ref(), new_len, new_line_count, rev);
         handler.update(self, rev as usize, delta)
             .unwrap_or(Value::from(0i32))
     }
@@ -243,14 +237,43 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
     }
 }
 
-impl<S: Default + Clone> StateCache<S> {
-    /// Get the line at the given line. Returns empty string if at EOF.
-    pub fn get_line<DS>(&mut self, source: &DS, line_num: usize) -> Result<&str, Error>
-        where DS: DataSource,
+impl<S: Clone + Default> Cache for StateCache<S> {
+    fn new(buf_size: usize, rev: u64, num_lines: usize) -> Self {
+        StateCache {
+            buf_cache: ChunkCache::new(buf_size, rev, num_lines),
+            state_cache: Vec::new(),
+            frontier: Vec::new(),
+        }
+
+    }
+
+    fn get_line<DS>(&mut self, source: &DS, line_num: usize) -> Result<&str, Error>
+        where DS: DataSource
     {
         self.buf_cache.get_line(source, line_num)
     }
 
+    /// Updates the cache by applying this delta.
+    fn update(&mut self, delta: Option<&RopeDelta>, buf_size: usize,
+              num_lines: usize, rev: u64) {
+
+        if let Some(ref delta) = delta {
+            self.update_line_cache(delta);
+        } else {
+            // if there's no delta (very large edit) we blow away everything
+            self.clear_to_start(0);
+        }
+
+        self.buf_cache.update(delta, buf_size, num_lines, rev);
+    }
+
+    /// Flushes any state held by this cache.
+    fn clear(&mut self) {
+        self.reset()
+    }
+}
+
+impl<S: Clone + Default> StateCache<S> {
     /// Find an entry in the cache by line num. On return `Ok(i)` means entry
     /// at index `i` is an exact match, while `Err(i)` means the entry would be
     /// inserted at `i`.
