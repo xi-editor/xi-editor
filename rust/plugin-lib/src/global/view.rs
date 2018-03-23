@@ -73,7 +73,7 @@ impl<C: Cache> View<C> {
         &mut self.cache
     }
 
-    pub fn get_line(&self, line_num: usize) -> Result<&str, Error> {
+    pub fn get_line(&mut self, line_num: usize) -> Result<&str, Error> {
         let ctx = FetchCtx {
             view_id: self.view_id,
             plugin_id: self.plugin_id,

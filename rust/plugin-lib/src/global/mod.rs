@@ -50,7 +50,7 @@ pub trait Cache {
     /// the general case this is backed by the remote peer.
     ///
     /// [`DataSource`]: trait.DataSource.html
-    fn get_line<DS>(&self, source: &DS, line_num: usize) -> Result<&str, Error>
+    fn get_line<DS>(&mut self, source: &DS, line_num: usize) -> Result<&str, Error>
         where DS: DataSource;
     /// Updates the cache by applying this delta.
     fn update(&mut self, delta: Option<&RopeDelta>, buf_size: usize,
