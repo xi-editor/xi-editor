@@ -23,7 +23,7 @@ use xi_rpc::{RemoteError, ReadError};
 use xi_rope::rope::{RopeDelta, LinesMetric};
 
 use base_cache::ChunkCache;
-pub use plugin_base::{self, Error, ViewState};
+pub use plugin_base::{self, Error, ViewState, DataSource};
 
 const CACHE_SIZE: usize = 1024;
 
@@ -50,7 +50,7 @@ struct CacheEntry<S> {
 
 /// The caching state
 #[derive(Default)]
-struct CacheState<S> {
+struct StateCache<S> {
     buf_cache: ChunkCache,
     state_cache: Vec<CacheEntry<S>>,
     /// The frontier, represented as a sorted list of line numbers.
@@ -58,13 +58,13 @@ struct CacheState<S> {
 }
 
 pub struct PluginCtx<'a, S: 'a> {
-    state: &'a mut CacheState<S>,
+    state: &'a mut StateCache<S>,
     peer: plugin_base::PluginCtx<'a>,
 }
 
 struct CacheHandler<'a, P: Plugin + 'a> {
     handler: &'a mut P,
-    state: CacheState<P::State>,
+    state: StateCache<P::State>,
 }
 
 impl<'a, P: Plugin> plugin_base::Handler for CacheHandler<'a, P> {
@@ -130,20 +130,20 @@ impl<'a, P: Plugin> plugin_base::Handler for CacheHandler<'a, P> {
 pub fn mainloop<P: Plugin>(handler: &mut P) -> Result<(), ReadError>  {
     let mut my_handler = CacheHandler {
         handler: handler,
-        state: CacheState::default(),
+        state: StateCache::default(),
     };
     plugin_base::mainloop(&mut my_handler)
 }
 
 impl<'a, S: Default + Clone> PluginCtx<'a, S> {
-    fn do_initialize<P>(mut self, init_info: plugin_rpc::PluginBufferInfo, handler: &mut P)
+    fn do_initialize<P>(self, init_info: plugin_rpc::PluginBufferInfo, handler: &mut P)
         where P: Plugin<State = S>
     {
 
         self.state.buf_cache.buf_size = init_info.buf_size;
         self.state.buf_cache.rev = init_info.rev;
         self.state.buf_cache.num_lines = init_info.nb_lines;
-        self.truncate_frontier(0);
+        self.state.truncate_frontier(0);
         handler.initialize(self, init_info.buf_size);
     }
 
@@ -151,16 +151,16 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
         handler.did_save(self);
     }
 
-    fn do_update<P>(mut self, update: plugin_rpc::PluginUpdate, handler: &mut P) -> Value
+    fn do_update<P>(self, update: plugin_rpc::PluginUpdate, handler: &mut P) -> Value
         where P: Plugin<State = S>
     {
         let plugin_rpc::PluginUpdate { delta, new_len, rev, new_line_count, .. } = update;
         // update our own state before updating buf_cache
         if let Some(ref delta) = delta {
-            self.update_line_cache(delta);
+            self.state.update_line_cache(delta);
         } else {
             // if there's no delta (very large edit) we blow away everything
-            self.clear_to_start(0);
+            self.state.clear_to_start(0);
         }
 
         self.state.buf_cache.apply_update(new_len, new_line_count, rev, delta.as_ref());
@@ -204,16 +204,63 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
         self.peer.schedule_idle(token);
     }
 
+    // re-expose methods implemented in the state cache
+
+    pub fn get_frontier(&self) -> Option<usize> {
+        self.state.get_frontier()
+    }
+
+    pub fn get_prev(&self, line_num: usize) -> (usize, usize, S) {
+        self.state.get_prev(line_num)
+    }
+
+    pub fn get_line(&mut self, line_num: usize) -> Result<&str, Error> {
+        self.state.get_line(&self.peer, line_num)
+    }
+
+    pub fn get(&self, line_num: usize) -> Option<&S> {
+        self.state.get(line_num)
+    }
+
+    pub fn set(&mut self, line_num: usize, s: S) {
+        self.state.set(&self.peer, line_num, s)
+    }
+
+    pub fn update_frontier(&mut self, new_frontier: usize) {
+        self.state.update_frontier(new_frontier)
+    }
+
+    pub fn close_frontier(&mut self) {
+        self.state.close_frontier()
+    }
+
+    pub fn reset(&mut self) {
+        self.state.reset()
+    }
+
+    pub fn find_offset(&self, offset: usize) -> Result<usize, usize> {
+        self.state.find_offset(offset)
+    }
+}
+
+impl<S: Default + Clone> StateCache<S> {
+    /// Get the line at the given line. Returns empty string if at EOF.
+    pub fn get_line<DS>(&mut self, source: &DS, line_num: usize) -> Result<&str, Error>
+        where DS: DataSource,
+    {
+        self.buf_cache.get_line(source, line_num)
+    }
+
     /// Find an entry in the cache by line num. On return `Ok(i)` means entry
     /// at index `i` is an exact match, while `Err(i)` means the entry would be
     /// inserted at `i`.
     fn find_line(&self, line_num: usize) -> Result<usize, usize> {
-        self.state.state_cache.binary_search_by(|probe| probe.line_num.cmp(&line_num))
+        self.state_cache.binary_search_by(|probe| probe.line_num.cmp(&line_num))
     }
 
     /// Find an entry in the cache by offset. Similar to `find_line`.
     pub fn find_offset(&self, offset: usize) -> Result<usize, usize> {
-        self.state.state_cache.binary_search_by(|probe| probe.offset.cmp(&offset))
+        self.state_cache.binary_search_by(|probe| probe.offset.cmp(&offset))
     }
 
     /// Get the state from the nearest cache entry at or before given line number.
@@ -226,7 +273,7 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
                 Err(ix) => ix - 1,
             };
             loop {
-                let item = &self.state.state_cache[ix];
+                let item = &self.state_cache[ix];
                 if let Some(ref s) = item.user_state {
                     return (item.line_num, item.offset, s.clone());
                 }
@@ -240,13 +287,15 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
     /// Get the state at the given line number, if it exists in the cache.
     pub fn get(&self, line_num: usize) -> Option<&S> {
         self.find_line(line_num).ok()
-            .and_then(|ix| self.state.state_cache[ix].user_state.as_ref())
+            .and_then(|ix| self.state_cache[ix].user_state.as_ref())
     }
 
     /// Set the state at the given line number. Note: has no effect if line_num
     /// references the end of the partial line at EOF.
-    pub fn set(&mut self, line_num: usize, s: S) {
-        if let Some(entry) = self.get_entry(line_num) {
+    pub fn set<DS>(&mut self, source: &DS, line_num: usize, s: S)
+        where DS: DataSource,
+    {
+        if let Some(entry) = self.get_entry(source, line_num) {
             entry.user_state = Some(s);
         }
     }
@@ -254,17 +303,20 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
     /// Get the cache entry at the given line number, creating it if necessary.
     /// Returns None if line_num > number of newlines in doc (ie if it references
     /// the end of the partial line at EOF).
-    fn get_entry(&mut self, line_num: usize) -> Option<&mut CacheEntry<S>> {
+    fn get_entry<DS>(&mut self, source: &DS, line_num: usize)
+        -> Option<&mut CacheEntry<S>>
+        where DS: DataSource,
+    {
         match self.find_line(line_num) {
-            Ok(ix) => Some(&mut self.state.state_cache[ix]),
+            Ok(ix) => Some(&mut self.state_cache[ix]),
             Err(_ix) => {
-                if line_num == self.state.buf_cache.num_lines {
+                if line_num == self.buf_cache.num_lines {
                     None
                 } else {
-                    let offset = self.state.buf_cache.offset_of_line(&self.peer, line_num)
+                    let offset = self.buf_cache.offset_of_line(source, line_num)
                         .expect("get_entry should validate inputs");
                     let new_ix = self.insert_entry(line_num, offset, None);
-                    Some(&mut self.state.state_cache[new_ix])
+                    Some(&mut self.state_cache[new_ix])
                 }
             }
         }
@@ -272,13 +324,13 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
 
     /// Insert a new entry into the cache, returning its index.
     fn insert_entry(&mut self, line_num: usize, offset: usize, user_state: Option<S>) -> usize {
-        if self.state.state_cache.len() >= CACHE_SIZE {
+        if self.state_cache.len() >= CACHE_SIZE {
             self.evict();
         }
         match self.find_line(line_num) {
             Ok(_ix) => panic!("entry already exists"),
             Err(ix) => {
-                self.state.state_cache.insert(ix, CacheEntry {
+                self.state_cache.insert(ix, CacheEntry {
                     line_num, offset, user_state
                 });
                 ix
@@ -289,14 +341,14 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
     /// Evict one cache entry.
     fn evict(&mut self) {
         let ix = self.choose_victim();
-        self.state.state_cache.remove(ix);
+        self.state_cache.remove(ix);
     }
 
     fn choose_victim(&self) -> usize {
         let mut best = None;
         let mut rng = thread_rng();
         for _ in 0..NUM_PROBES {
-            let ix = rng.gen_range(0, self.state.state_cache.len());
+            let ix = rng.gen_range(0, self.state_cache.len());
             let gap = self.compute_gap(ix);
             if best.map(|(last_gap, _)| gap < last_gap).unwrap_or(true) {
                 best = Some((gap, ix));
@@ -307,42 +359,37 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
 
     /// Compute the gap that would result after deleting the given entry.
     fn compute_gap(&self, ix: usize) -> usize {
-        let before = if ix == 0 { 0 } else { self.state.state_cache[ix - 1].offset };
-        let after = if let Some(item) = self.state.state_cache.get(ix + 1) {
+        let before = if ix == 0 { 0 } else { self.state_cache[ix - 1].offset };
+        let after = if let Some(item) = self.state_cache.get(ix + 1) {
             item.offset
         } else {
-            self.state.buf_cache.buf_size
+            self.buf_cache.buf_size
         };
         assert!(after >= before, "{} < {} ix: {}", after, before, ix);
         after - before
     }
 
-    /// Get the line at the given line. Returns empty string if at EOF.
-    pub fn get_line(&mut self, line_num: usize) -> Result<&str, Error> {
-        self.state.buf_cache.get_line(&self.peer, line_num)
-    }
-
     /// Release all state _after_ the given offset.
     fn truncate_cache(&mut self, offset: usize) {
         let (line_num, ix) = match self.find_offset(offset) {
-            Ok(ix) => (self.state.state_cache[ix].line_num, ix + 1),
+            Ok(ix) => (self.state_cache[ix].line_num, ix + 1),
             Err(ix) => (
                 if ix == 0 { 0 } else {
-                    self.state.state_cache[ix - 1].line_num
+                    self.state_cache[ix - 1].line_num
                 },
                 ix
             ),
         };
         self.truncate_frontier(line_num);
-        self.state.state_cache.truncate(ix);
+        self.state_cache.truncate(ix);
     }
 
     fn truncate_frontier(&mut self, line_num: usize) {
-        match self.state.frontier.binary_search(&line_num) {
-            Ok(ix) => self.state.frontier.truncate(ix + 1),
+        match self.frontier.binary_search(&line_num) {
+            Ok(ix) => self.frontier.truncate(ix + 1),
             Err(ix) => {
-                self.state.frontier.truncate(ix);
-                self.state.frontier.push(line_num);
+                self.frontier.truncate(ix);
+                self.frontier.push(line_num);
             }
         }
     }
@@ -371,7 +418,7 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
             Err(ix) => ix,
         };
 
-        for entry in &mut self.state.state_cache[ix..] {
+        for entry in &mut self.state_cache[ix..] {
             entry.line_num += newline_num;
             entry.offset += new_len;
         }
@@ -379,20 +426,20 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
     }
 
     fn line_cache_simple_delete(&mut self, start: usize, end: usize) {
-        let off = self.state.buf_cache.offset;
-        let chunk_end = off + self.state.buf_cache.contents.len();
+        let off = self.buf_cache.offset;
+        let chunk_end = off + self.buf_cache.contents.len();
         if start >= off && end <= chunk_end {
-            let del_newline_num = count_newlines(&self.state.buf_cache.contents[start - off..end - off]);
+            let del_newline_num = count_newlines(&self.buf_cache.contents[start - off..end - off]);
             // delete all entries that overlap the deleted range
             let ix = match self.find_offset(start) {
                 Ok(ix) => ix + 1,
                 Err(ix) => ix,
             };
-            while ix < self.state.state_cache.len() &&
-                self.state.state_cache[ix].offset <= end {
-                    self.state.state_cache.remove(ix);
+            while ix < self.state_cache.len() &&
+                self.state_cache[ix].offset <= end {
+                    self.state_cache.remove(ix);
             }
-            for entry in &mut self.state.state_cache[ix..] {
+            for entry in &mut self.state_cache[ix..] {
                 entry.line_num -= del_newline_num;
                 entry.offset -= end - start;
             }
@@ -406,18 +453,18 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
     fn patchup_frontier(&mut self, cache_idx: usize, nl_count_delta: isize) {
         let line_num = match cache_idx {
             0 => 0,
-            ix => self.state.state_cache[ix - 1].line_num,
+            ix => self.state_cache[ix - 1].line_num,
         };
         let mut new_frontier = Vec::new();
         let mut need_push = true;
-        for old_ln in &self.state.frontier {
+        for old_ln in &self.frontier {
             if *old_ln < line_num {
                 new_frontier.push(*old_ln);
             } else {
                 if need_push {
                     new_frontier.push(line_num);
                     need_push = false;
-                    if let Some(ref entry) = self.state.state_cache.get(cache_idx) {
+                    if let Some(ref entry) = self.state_cache.get(cache_idx) {
                         if *old_ln >= entry.line_num {
                             new_frontier.push(old_ln.wrapping_add(nl_count_delta as usize));
                         }
@@ -428,7 +475,7 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
         if need_push {
             new_frontier.push(line_num);
         }
-        self.state.frontier = new_frontier;
+        self.frontier = new_frontier;
     }
 
     /// Clears any cached text and anything in the state cache before `start`.
@@ -447,23 +494,23 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
     /// `update_frontier` or `close_frontier` depending on whether there
     /// is more work to be done at that location.
     pub fn get_frontier(&self) -> Option<usize> {
-        self.state.frontier.first().cloned()
+        self.frontier.first().cloned()
     }
 
     /// Updates the frontier. This can go backward, but most typically
     /// goes forward by 1 line (compared to the `get_frontier` result).
     pub fn update_frontier(&mut self, new_frontier: usize) {
-        if self.state.frontier.get(1) == Some(&new_frontier) {
-            self.state.frontier.remove(0);
+        if self.frontier.get(1) == Some(&new_frontier) {
+            self.frontier.remove(0);
         } else {
-            self.state.frontier[0] = new_frontier;
+            self.frontier[0] = new_frontier;
         }
     }
 
     /// Closes the current frontier. This is the correct choice to handle
     /// EOF.
     pub fn close_frontier(&mut self) {
-        self.state.frontier.remove(0);
+        self.frontier.remove(0);
     }
 }
 
