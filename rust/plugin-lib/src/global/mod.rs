@@ -24,9 +24,9 @@ use xi_core::ConfigTable;
 use xi_core::plugin_rpc::PluginEdit;
 
 use plugin_base::{Error, DataSource};
+use self::dispatch::Dispatcher;
 
 pub use self::view::View;
-pub use self::dispatch::Dispatcher;
 
 /// A generic interface for types that cache a remote document.
 ///
@@ -37,6 +37,7 @@ pub use self::dispatch::Dispatcher;
 ///
 /// [`ChunkCache`]: struct.ChunkCache.html
 /// [`StateCache`]: struct.StateCache.html
+//TODO: run cargo doc, validate these links
 
 pub trait Cache {
     /// Create a new instance of this type; instances are created automatically
@@ -71,12 +72,12 @@ pub trait Plugin {
     fn update(&mut self, view: &mut View<Self::Cache>, delta: Option<&RopeDelta>,
               edit_type: String, author: String) -> Option<PluginEdit>;
     /// Called when a buffer has been saved to disk. The buffer's previous
-    /// path, if one existed, is available through `view.get_path()`.
-    fn did_save(&mut self, view: &mut View<Self::Cache>, new_path: &Path);
+    /// path, if one existed, is passed as `old_path`.
+    fn did_save(&mut self, view: &mut View<Self::Cache>, old_path: Option<&Path>);
     /// Called when a view has been closed. By the time this message is received,
     /// It is possible to send messages to this view. The plugin may wish to
     /// perform cleanup, however.
-    fn did_close(&self, view: &View<Self::Cache>);
+    fn did_close(&mut self, view: &View<Self::Cache>);
     /// Called when there is a new view that this buffer is interested in.
     /// This is called once per view, and is paired with a call to
     /// `Plugin::did_close` when the view is closed.

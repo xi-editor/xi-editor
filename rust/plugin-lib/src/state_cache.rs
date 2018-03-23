@@ -20,7 +20,7 @@ use rand::{thread_rng, Rng};
 use xi_rope::rope::{RopeDelta, LinesMetric};
 
 use base_cache::ChunkCache;
-use global::Cache;
+use global::{Cache, View};
 pub use plugin_base::{self, Error, ViewState, DataSource};
 //TODO: revisit.
 //reexported to keep current API working during global refactor
@@ -344,6 +344,42 @@ impl<S: Clone + Default> StateCache<S> {
     /// EOF.
     pub fn close_frontier(&mut self) {
         self.frontier.remove(0);
+    }
+}
+
+/// StateCache specific extensions on `View`
+impl<S: Default + Clone> View<StateCache<S>> {
+    pub fn get_frontier(&self) -> Option<usize> {
+        self.cache.get_frontier()
+    }
+
+    pub fn get_prev(&self, line_num: usize) -> (usize, usize, S) {
+        self.cache.get_prev(line_num)
+    }
+
+    pub fn get(&self, line_num: usize) -> Option<&S> {
+        self.cache.get(line_num)
+    }
+
+    pub fn set(&mut self, line_num: usize, s: S) {
+        let ctx = self.make_ctx();
+        self.cache.set(&ctx, line_num, s)
+    }
+
+    pub fn update_frontier(&mut self, new_frontier: usize) {
+        self.cache.update_frontier(new_frontier)
+    }
+
+    pub fn close_frontier(&mut self) {
+        self.cache.close_frontier()
+    }
+
+    pub fn reset(&mut self) {
+        self.cache.reset()
+    }
+
+    pub fn find_offset(&self, offset: usize) -> Result<usize, usize> {
+        self.cache.find_offset(offset)
     }
 }
 

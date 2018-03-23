@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::path::PathBuf;
+use std::path::{PathBuf, Path};
 use serde_json::{self, Value};
 use serde::Deserialize;
 
@@ -30,7 +30,7 @@ use global::Cache;
 /// view state.
 pub struct View<C> {
     pub (crate) cache: C,
-    peer: RpcPeer,
+    pub (crate) peer: RpcPeer,
     pub (crate) path: Option<PathBuf>,
     pub (crate) config: BufferConfig,
     pub (crate) config_table: ConfigTable,
@@ -61,8 +61,8 @@ impl<C: Cache> View<C> {
         }
     }
 
-    pub fn get_path(&self) -> Option<&PathBuf> {
-        self.path.as_ref()
+    pub fn get_path(&self) -> Option<&Path> {
+        self.path.as_ref().map(PathBuf::as_path)
     }
 
     pub fn get_config(&self) -> &BufferConfig {
@@ -73,13 +73,22 @@ impl<C: Cache> View<C> {
         &mut self.cache
     }
 
+    pub fn get_id(&self) -> ViewIdentifier {
+        self.view_id.clone()
+    }
+
     pub fn get_line(&mut self, line_num: usize) -> Result<&str, Error> {
-        let ctx = FetchCtx {
+        let ctx = self.make_ctx();
+        self.cache.get_line(&ctx, line_num)
+    }
+
+    //TODO: rename FetchCtx to 'PluginPeer', move to own module, implement host methods on it
+    pub fn make_ctx(&self) -> FetchCtx {
+        FetchCtx {
             view_id: self.view_id,
             plugin_id: self.plugin_id,
             peer: self.peer.clone(),
-        };
-        self.cache.get_line(&ctx, line_num)
+        }
     }
 
     //TODO: add a PluginHost trait, add these functions, implement on an RpcPeer wrapper
@@ -108,10 +117,17 @@ impl<C: Cache> View<C> {
         let token: usize = self.view_id.into();
         self.peer.schedule_idle(token);
     }
+
+    /// Returns `true` if an incoming RPC is pending. This is intended
+    /// to reduce latency for bulk operations done in the background.
+    pub fn request_is_pending(&self) -> bool {
+        self.peer.request_is_pending()
+    }
+
 }
 
 /// A simple wrapper type that acts as a `DataSource`.
-struct FetchCtx {
+pub struct FetchCtx {
     plugin_id: PluginPid,
     view_id: ViewIdentifier,
     peer: RpcPeer,

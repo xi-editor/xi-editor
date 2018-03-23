@@ -76,8 +76,9 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
 
     fn do_did_save(&mut self, view_id: ViewIdentifier, path: PathBuf) {
         let v = bail!(self.views.get_mut(&view_id), "did_save", self.pid, view_id);
-        self.plugin.did_save(v, &path);
+        let prev_path = v.path.take();
         v.path = Some(path);
+        self.plugin.did_save(v, prev_path.as_ref().map(PathBuf::as_path));
     }
 
     fn do_config_changed(&mut self, view_id: ViewIdentifier, changes: ConfigTable) {
