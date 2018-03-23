@@ -12,26 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A syntax highlighting plugin based on syntect.
-
-#[macro_use]
-extern crate serde_json;
-
-extern crate syntect;
-extern crate xi_plugin_lib;
-extern crate xi_core_lib;
-extern crate xi_rope;
-
-mod stackmap;
-mod local;
-mod global;
-
-#[cfg(feature = "global")]
-fn main() {
-    global::main()
-}
-
-#[cfg(not(feature = "global"))]
-fn main() {
-    local::main()
+#[allow(dead_code)]
+pub(crate) fn main() {
+    panic!("global syntect does not exist")
 }
