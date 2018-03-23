@@ -45,7 +45,7 @@ pub trait NodeInfo: Clone {
 
     /// The identity of the monoid. Need not be implemented because it
     /// can be computed from the leaf default.
-    /// 
+    ///
     /// This is hear to demonstrate that this is a monoid.
     fn identity() -> Self {
         Self::compute_info(&Self::L::default())
@@ -72,11 +72,11 @@ pub trait Leaf: Sized + Clone + Default {
     /// Combine other into self, optionly splitting in two.
     /// Interval is in "base units".
     /// Generally implements a maximum size.
-    /// 
+    ///
     /// TODO: What does Interval represent?
-    /// 
+    ///
     /// Invariants:
-    /// 
+    ///
     /// - If one or the other input is empty, then no split.
     /// - If either input satisfies is_ok_child, then on return self
     /// satisfies this, as does the optional split.
@@ -84,7 +84,7 @@ pub trait Leaf: Sized + Clone + Default {
 
     /// same meaning as push_maybe_split starting from an empty
     /// leaf, but maybe can be implemented more efficiently?
-    /// 
+    ///
     /// TODO: remove if it doesn't pull its weight
     fn subseq(&self, iv: Interval) -> Self {
         let mut result = Self::default();
@@ -128,12 +128,12 @@ enum NodeVal<N: NodeInfo> {
 // help separate metrics
 
 /// A trait for quickly processing attributes of a NodeInfo.
-/// 
-/// For the conceptual background see the 
+///
+/// For the conceptual background see the
 /// [blog post, Rope science, part 2: metrics](https://github.com/google/xi-editor/blob/master/docs/docs/rope_science_02.md).
 pub trait Metric<N: NodeInfo> {
     /// Return the number of boundarys in the NodeInfo::Leaf
-    /// 
+    ///
     /// The usize argument is the total size/length of the node, in base units.
     fn measure(&N, usize) -> usize;
 
