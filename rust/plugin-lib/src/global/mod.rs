@@ -28,6 +28,7 @@ use self::dispatch::Dispatcher;
 
 pub use self::view::View;
 
+///
 /// A generic interface for types that cache a remote document.
 ///
 /// In general, users of this library should not need to implement this trait;
@@ -35,10 +36,8 @@ pub use self::view::View;
 /// [`StateCache`]. If however a plugin's particular needs are not met by
 /// those implementations, a user may choose to implement their own.
 ///
-/// [`ChunkCache`]: struct.ChunkCache.html
-/// [`StateCache`]: struct.StateCache.html
-//TODO: run cargo doc, validate these links
-
+/// [`ChunkCache`]: ../base_cache/struct.ChunkCache.html
+/// [`StateCache`]: ../state_cache/struct.StateCache.html
 pub trait Cache {
     /// Create a new instance of this type; instances are created automatically
     /// as relevant views are added.
@@ -96,7 +95,7 @@ pub trait Plugin {
     fn idle(&mut self, view: &mut View<Self::Cache>) { }
 }
 
-//TODO: docs, including an example
+/// Run `plugin` until it exits, blocking the current thread.
 pub fn mainloop<P: Plugin>(plugin: &mut P) -> Result<(), ReadError> {
     let stdin = io::stdin();
     let stdout = io::stdout();

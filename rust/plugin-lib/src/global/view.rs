@@ -18,6 +18,7 @@ use serde::Deserialize;
 
 use xi_core::{ViewIdentifier, PluginPid, BufferConfig, ConfigTable};
 use xi_core::plugin_rpc::{TextUnit, GetDataResponse, ScopeSpan, PluginBufferInfo};
+use xi_rope::rope::RopeDelta;
 
 use xi_rpc::RpcPeer;
 
@@ -61,6 +62,26 @@ impl<C: Cache> View<C> {
         }
     }
 
+    pub (crate) fn update(&mut self, delta: Option<&RopeDelta>, new_len: usize,
+                       new_num_lines: usize, rev: u64) {
+        self.cache.update(delta, new_len, new_num_lines, rev);
+        self.rev = rev;
+    }
+
+    //NOTE: (discuss in review) this feels bad, but because we're mutating cache,
+    // which we own, we can't just pass in a reference to something else we own;
+    // so we create this on each call. The `clone`is only cloning an `Arc`,
+    // but we could maybe use a RefCell or something and make this cleaner.
+    /// Returns a `FetchCtx`, a thin wrapper around an RpcPeer that implements
+    /// the `DataSource` trait and can be used when updating a cache.
+    pub (crate) fn make_ctx(&self) -> FetchCtx {
+        FetchCtx {
+            view_id: self.view_id,
+            plugin_id: self.plugin_id,
+            peer: self.peer.clone(),
+        }
+    }
+
     pub fn get_path(&self) -> Option<&Path> {
         self.path.as_ref().map(PathBuf::as_path)
     }
@@ -82,16 +103,6 @@ impl<C: Cache> View<C> {
         self.cache.get_line(&ctx, line_num)
     }
 
-    //TODO: rename FetchCtx to 'PluginPeer', move to own module, implement host methods on it
-    pub fn make_ctx(&self) -> FetchCtx {
-        FetchCtx {
-            view_id: self.view_id,
-            plugin_id: self.plugin_id,
-            peer: self.peer.clone(),
-        }
-    }
-
-    //TODO: add a PluginHost trait, add these functions, implement on an RpcPeer wrapper
     pub fn add_scopes(&self, scopes: &Vec<Vec<String>>) {
         let params = json!({
             "plugin_id": self.plugin_id,
