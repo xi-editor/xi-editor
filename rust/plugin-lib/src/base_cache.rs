@@ -69,13 +69,13 @@ impl ChunkCache {
         }
 
         // We now know that the start of this line is contained in self.contents.
-        let mut start_off = self.cached_offset_of_line(line_num).unwrap();
+        let mut start_off = self.cached_offset_of_line(line_num).unwrap() - self.offset;
 
         // Now we make sure we also contain the end of the line, fetching more
         // of the document as necessary.
         loop {
             if let Some(end_off) = self.cached_offset_of_line(line_num + 1) {
-                return Ok(&self.contents[start_off..end_off])
+                return Ok(&self.contents[start_off..end_off - self.offset])
             }
             // if we have a chunk and we're fetching more, discard unnecessary
             // portion of our chunk.
@@ -103,7 +103,7 @@ impl ChunkCache {
     {
         if line_num > self.num_lines { return Err(Error::BadRequest) }
         match self.cached_offset_of_line(line_num) {
-            Some(offset) => Ok(offset + self.offset),
+            Some(offset) => Ok(offset),
             None => {
                 let resp = source.get_data(line_num, TextUnit::Line, CHUNK_SIZE, self.rev)?;
                 self.reset_chunk(resp);
@@ -112,23 +112,24 @@ impl ChunkCache {
         }
     }
 
-    /// Returns the offset of the provided `line_num` in `self.contents` if
-    /// it is present in the chunk.
+    /// Returns the offset of the provided `line_num` if it can be determined
+    /// without fetching data.
     fn cached_offset_of_line(&self, line_num: usize) -> Option<usize> {
         if line_num < self.first_line { return None }
 
         let rel_line_num = line_num - self.first_line;
 
-        if rel_line_num == 0 && self.first_line_offset == 0 {
-            return Some(0)
+        if rel_line_num == 0 {
+            return Some(self.offset - self.first_line_offset)
         }
+
         if rel_line_num <= self.line_offsets.len() {
-            return Some(self.line_offsets[rel_line_num - 1])
+            return Some(self.offset + self.line_offsets[rel_line_num - 1])
         }
 
         // EOF
         if line_num == self.num_lines && self.offset + self.contents.len() == self.buf_size {
-            return Some(self.contents.len())
+            return Some(self.offset + self.contents.len())
         }
         None
     }
@@ -246,7 +247,6 @@ impl ChunkCache {
         let has_newline = text.measure::<LinesMetric>() > 0;
         let self_off = self.offset;
         assert!(ins_offset >= self_off);
-        //let ins_offset = ins_offset + self.offset;
         // regardless of if we are inserting newlines we adjust offsets
         self.line_offsets.iter_mut()
             .for_each(|off| if *off > ins_offset - self_off { *off += text.len() });
@@ -555,5 +555,23 @@ mod tests {
         assert_eq!(c.offset, 5);
         assert_eq!(c.first_line, 1);
         assert_eq!(c.offset_of_line(&source, 2).unwrap(), 15);
+    }
+
+    #[test]
+    fn cache_offsets() {
+        let mut c = ChunkCache::default();
+        // "this\nstring\nis\nour\ntotal\nbuffer"
+        c.contents = "ring\nis\nour\ntotal\nbuffer".into();
+        c.buf_size = c.contents.len() + 7;
+        c.offset = 7;
+        c.first_line = 1;
+        c.first_line_offset = 2;
+        c.recalculate_line_offsets();
+
+        assert_eq!(c.cached_offset_of_line(2), Some(12));
+        assert_eq!(c.cached_offset_of_line(3), Some(15));
+        assert_eq!(c.cached_offset_of_line(0), None);
+        assert_eq!(c.cached_offset_of_line(1), Some(5));
+
     }
 }
