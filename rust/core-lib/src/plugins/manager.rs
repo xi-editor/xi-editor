@@ -45,6 +45,7 @@ pub struct PluginManager {
     /// Buffer-scoped plugins, by buffer
     buffer_plugins: BTreeMap<BufferIdentifier, PluginGroup>,
     global_plugins: PluginGroup,
+    launching_globals: BTreeSet<PluginName>,
     buffers: BufferContainerRef,
     next_id: usize,
 }
@@ -224,6 +225,10 @@ impl PluginManager {
             .ok_or(Error::Other(format!("no plugin found with name {}", plugin_name)))?;
 
         let is_global = plugin_desc.is_global();
+        if is_global && !self.launching_globals.insert(plugin_name.to_owned()) {
+            return Err(Error::Other(format!("global {} has started", plugin_name)))
+        }
+
         let commands = plugin_desc.commands.clone();
         let init_info = if is_global {
             let buffers = self.buffers.lock();
@@ -292,6 +297,7 @@ impl PluginManager {
                 ed.plugin_started(None, plugin_name, &commands);
             }
         }
+        self.launching_globals.remove(plugin_name);
         self.global_plugins.insert(plugin_name.to_owned(), plugin_ref);
     }
 
@@ -426,6 +432,7 @@ impl PluginManagerRef {
                 catalog: PluginCatalog::from_paths(Vec::new()),
                 buffer_plugins: BTreeMap::new(),
                 global_plugins: PluginGroup::new(),
+                launching_globals: BTreeSet::new(),
                 buffers: buffers,
                 next_id: 0,
             }
