@@ -24,7 +24,11 @@ use xi_core::plugin_rpc::{TextUnit, GetDataResponse};
 
 use plugin_base::{Error, DataSource};
 
+#[cfg(not(test))]
 const CHUNK_SIZE: usize = 1024 * 1024;
+
+#[cfg(test)]
+const CHUNK_SIZE: usize = 16;
 
 /// A simple cache, holding a single contiguous chunk of the document.
 #[derive(Debug, Clone, Default)]
@@ -63,7 +67,8 @@ impl ChunkCache {
         // if chunk does not include the start of this line, fetch and reset everything
         if self.contents.len() == 0
             || line_num < self.first_line
-            || (line_num == self.first_line && self.first_line_offset > 0) {
+            || (line_num == self.first_line && self.first_line_offset > 0)
+            || (line_num > self.first_line + self.line_offsets.len()) {
                 let resp = source.get_data(line_num, TextUnit::Line, CHUNK_SIZE, self.rev)?;
                 self.reset_chunk(resp);
         }
@@ -428,9 +433,10 @@ mod tests {
         assert_eq!(c.line_offsets.len(), 3);
         assert_eq!(c.offset, 0);
         assert_eq!(c.buf_size, 20);
-        assert_eq!(c.contents.len(), 20);
+        assert_eq!(c.contents.len(), 16);
         assert_eq!(c.get_line(&remote_document, 2).ok(), Some("four\n"));
-        assert_eq!(c.cached_offset_of_line(4), Some(20));
+        assert_eq!(c.cached_offset_of_line(3), Some(14));
+        assert_eq!(c.cached_offset_of_line(4), None);
         assert_eq!(c.get_line(&remote_document, 3).ok(), Some("lines!"));
         assert!(c.get_line(&remote_document, 4).is_err());
     }
@@ -532,28 +538,32 @@ mod tests {
         assert_eq!(c.offset, 9);
         assert_eq!(c.offset_of_line(&source, 3).unwrap(), 19);
         assert_eq!(c.offset_of_line(&source, 4).unwrap(), 24);
-        // this isn't in the chunk, so should cause a fetch that brings in the whole buffer
+        // this isn't in the chunk, so should cause a fetch that brings in the line
         assert_eq!(c.offset_of_line(&source, 0).unwrap(), 0);
         assert_eq!(c.offset, 0);
-        assert_eq!(&c.contents, "this\nhas\nfive nice\nsour\nlines!");
+        // during tests, we fetch the document in 16 byte chunks
+        assert_eq!(&c.contents, "this\nhas\nfive ni");// "ce\nsour\nlines!");
         assert_eq!(c.offset_of_line(&source, 1).unwrap(), 5);
         assert_eq!(c.offset_of_line(&source, 3).unwrap(), 19);
         assert_eq!(c.offset_of_line(&source, 4).unwrap(), 24);
 
         // reset and fetch the middle, so we have an offset:
+        let _ = c.offset_of_line(&source, 0);
         c.clear_up_to(5);
-        assert_eq!(&c.contents, "has\nfive nice\nsour\nlines!");
+        assert_eq!(&c.contents, &"this\nhas\nfive nice\nsour\nlines!"[5..CHUNK_SIZE]);
         assert_eq!(c.offset, 5);
         assert_eq!(c.first_line, 1);
-        assert_eq!(c.offset_of_line(&source, 2).unwrap(), 9);
+        //assert_eq!(c.offset_of_line(&source, 2).unwrap(), 9);
         let d = Delta::simple_edit(Interval::new_closed_open(6, 10),
                                    "".into(), c.contents.len() + c.offset);
         assert!(d.is_simple_delete());
         c.apply_update(d.new_document_len(), 4, 1, Some(&d));
+        source.0 = "this\nhive nice\nsour\nlines!".into();
 
-        assert_eq!(&c.contents, "hive nice\nsour\nlines!");
+        //assert_eq!(&c.contents, "hive nice\nsour\nlines!");
         assert_eq!(c.offset, 5);
         assert_eq!(c.first_line, 1);
+        assert_eq!(c.get_line(&source, 1).unwrap(), "hive nice\n");
         assert_eq!(c.offset_of_line(&source, 2).unwrap(), 15);
     }
 
@@ -572,6 +582,23 @@ mod tests {
         assert_eq!(c.cached_offset_of_line(3), Some(15));
         assert_eq!(c.cached_offset_of_line(0), None);
         assert_eq!(c.cached_offset_of_line(1), Some(5));
+    }
 
+    #[test]
+    fn get_big_line() {
+        let test_str = "this\nhas one big line in the middle\nwow, multi-fetch!\nyay!";
+        let source = MockDataSource(test_str.into());
+        let mut c = ChunkCache::default();
+        c.buf_size = source.0.len();
+        c.num_lines = source.0.measure::<LinesMetric>() + 1;
+        assert_eq!(c.num_lines, 4);
+        assert_eq!(c.get_line(&source, 0).unwrap(), "this\n");
+        assert_eq!(c.contents, test_str[..CHUNK_SIZE]);
+        assert_eq!(c.get_line(&source, 1).unwrap(), "has one big line in the middle\n");
+        // fetches are always in an interval of CHUNK_SIZE. because getting this line
+        // requres multiple fetches, contents is truncated at the start of the line.
+        assert_eq!(c.contents, test_str[5..CHUNK_SIZE*3]);
+        assert_eq!(c.get_line(&source, 3).unwrap(), "yay!");
+        assert_eq!(c.first_line, 3);
     }
 }
