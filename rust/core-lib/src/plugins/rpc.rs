@@ -272,8 +272,8 @@ impl TextUnit {
                 }
             }
             TextUnit::Line => {
-                let num_lines = text.measure::<LinesMetric>() + 1;
-                if offset > num_lines {
+                let max_line_number = text.measure::<LinesMetric>() + 1;
+                if offset > max_line_number {
                     None
                 } else {
                     text.offset_of_line(offset).into()
