@@ -21,7 +21,7 @@ use xi_core::{ViewIdentifier, PluginPid, ConfigTable};
 use xi_core::plugin_rpc::{PluginBufferInfo, PluginUpdate, HostRequest, HostNotification};
 use xi_rpc::{RpcCtx, RemoteError, Handler as RpcHandler};
 
-use global::{Plugin, View, Cache};
+use global::{Plugin, View};
 
 /// Convenience for unwrapping a view, when handling RPC notifications.
 macro_rules! bail {
@@ -135,9 +135,7 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
         } = update;
         let v = bail_err!(self.views.get_mut(&view_id), "update",
                           self.pid, view_id);
-        //TODO: probably view should just have an update method
-        v.cache.update(delta.as_ref(), new_len, new_line_count, rev);
-        v.rev = rev;
+        v.update(delta.as_ref(), new_len, new_line_count, rev);
         Ok(self.plugin.update(v, delta.as_ref(), edit_type, author)
             .map(|edit| serde_json::to_value(edit).unwrap())
             .unwrap_or(Value::from(1)))
@@ -170,7 +168,6 @@ impl<'a, P: Plugin> RpcHandler for Dispatcher<'a, P> {
                 self.do_new_buffer(ctx, buffer_info),
             DidClose { view_id } =>
                 self.do_close(view_id),
-            //TODO: figure out shutdown
             Shutdown ( .. ) =>
                 self.do_shutdown(),
             TracingConfig { enabled } =>

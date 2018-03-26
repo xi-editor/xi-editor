@@ -49,7 +49,7 @@ pub struct ViewState {
     pub view_id: ViewIdentifier,
     pub syntax: SyntaxDefinition,
     config_table: ConfigTable,
-    pub config: Option<BufferConfig>,
+    pub config: BufferConfig,
     pub path: Option<PathBuf>,
 }
 

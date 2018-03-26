@@ -137,10 +137,8 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
         &self.peer.view
     }
 
-    //FIXME: config should be accessed through the view, but can be nil.
-    // Why can it be nil? There should always be a default config.
     pub fn get_config(&self) -> &BufferConfig {
-        self.peer.view.config.as_ref().unwrap()
+        &self.peer.view.config
     }
 
     pub fn get_buf_size(&self) -> usize {
