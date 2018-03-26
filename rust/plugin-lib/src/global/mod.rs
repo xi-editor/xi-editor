@@ -65,7 +65,7 @@ pub trait Cache {
 pub trait Plugin {
     type Cache: Cache;
 
-    //TODO: async edits only; this is here for feature paritiy during initial hacking
+    //TODO: async edits only; this is here for feature parity during initial hacking
     /// Called when an edit has occured in the remote view. If the plugin wishes
     /// to add its own edit, it may return `Some(edit)`.
     fn update(&mut self, view: &mut View<Self::Cache>, delta: Option<&RopeDelta>,
