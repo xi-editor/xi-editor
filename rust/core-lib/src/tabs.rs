@@ -355,12 +355,10 @@ impl Documents {
         let mut frontend_trace = chrome_trace::decode(frontend_samples)
             .unwrap_or(Vec::with_capacity(0));
 
-        let plugin_traces_json = self.plugins.collect_trace();
-        let mut all_plugin_traces = plugin_traces_json.iter().filter_map(|trace_result| {
-            trace_result.as_ref().ok().map(|trace_json| {
-                chrome_trace::decode(trace_json).unwrap_or(Vec::with_capacity(0))
-            })
-        });
+        let mut plugin_traces = self.plugins.collect_trace()
+            .into_iter()
+            .map(|json| chrome_trace::decode(&json).unwrap())
+            .collect::<Vec<_>>();
 
         eprintln!("Saving trace to {:?}", destination.as_ref());
 
@@ -372,9 +370,10 @@ impl Documents {
         let mut trace_file = trace_file_result.unwrap();
 
         let mut samples = xi_trace::samples_cloned_unsorted();
-        for mut plugin_traces in &mut all_plugin_traces {
-            samples.append(&mut plugin_traces);
+        for mut traces in &mut plugin_traces {
+            samples.append(&mut traces);
         }
+
         samples.append(&mut frontend_trace);
         samples.sort_unstable();
         let serialize_result = chrome_trace::serialize(

@@ -25,9 +25,8 @@ use std::fmt::Debug;
 use serde::Serialize;
 use serde_json::{self, Value};
 
-use xi_rpc;
 use xi_rpc::{RpcCtx, Handler, RemoteError};
-use xi_trace::{trace_block, trace_block_payload};
+use xi_trace::{self, trace_block, trace_block_payload};
 
 use tabs::{BufferIdentifier, ViewIdentifier, BufferContainerRef};
 use config::Table;
@@ -79,7 +78,7 @@ impl PluginManager {
     /// Passes an update from a buffer to all registered plugins.
     fn update_plugins(&mut self, view_id: ViewIdentifier,
                   update: PluginUpdate, undo_group: usize) -> Result<(), Error> {
-        let _t = trace_block("PluginManager::upate_plugins", &["core"]);
+        let _t = trace_block("PluginManager::update_plugins", &["core"]);
 
         // find all running plugins for this buffer, and send them the update
         let mut dead_plugins = Vec::new();
@@ -149,16 +148,29 @@ impl PluginManager {
         }
     }
 
-    // NOTE: This is a temporary API just for tracing.
-    fn request_trace_rpc_sync(&self, method: &str, params: &Value)
-        -> Vec<Result<Value, xi_rpc::Error>>
+    fn toggle_tracing(&self, enabled: bool) {
+        self.global_plugins.values()
+            .for_each(|plug| {
+            plug.rpc_notification("tracing_config",
+                                  &json!({"enabled": enabled}))
+        });
+        self.buffer_plugins.values().flat_map(|group| group.values())
+            .for_each(|plug| {
+                plug.rpc_notification("tracing_config",
+                                      &json!({"enabled": enabled}))
+            })
+    }
+
+    fn request_trace(&self) -> Vec<Value>
     {
         let _t = trace_block("PluginManager::request_trace", &["core"]);
         let mut gathered_results = Vec::new();
 
         for plugin in self.global_plugins.values() {
-            let result = plugin.request_trace_rpc_sync(method, &params);
-            gathered_results.push(result);
+            match plugin.request_traces() {
+                Ok(result) => gathered_results.push(result),
+                Err(e) => eprintln!("trace {:?}, {:?}", plugin.get_identifier(), e),
+            }
         }
 
         let mut processed_plugins = HashSet::new();
@@ -166,8 +178,10 @@ impl PluginManager {
         for plugin in self.buffer_plugins.values().flat_map(|group| group.values()) {
             // currently each buffer must have its own instance of a given plugin running.
             assert!(processed_plugins.insert(plugin.get_identifier()));
-            let result = plugin.request_trace_rpc_sync(method, &params);
-            gathered_results.push(result);
+            match plugin.request_traces() {
+                Ok(result) => gathered_results.push(result),
+                Err(e) => eprintln!("trace {:?}, {:?}", plugin.get_identifier(), e),
+            }
         }
 
         gathered_results
@@ -228,6 +242,10 @@ impl PluginManager {
             match result {
                 Ok(plugin_ref) => {
                     plugin_ref.initialize(&init_info);
+                    if xi_trace::is_enabled() {
+                        plugin_ref.rpc_notification("tracing_config",
+                                                    &json!({"enabled": true}));
+                    }
                     if is_global {
                         me.lock().on_plugin_connect_global(&plugin_name, plugin_ref,
                                                            commands);
@@ -434,17 +452,11 @@ impl PluginManagerRef {
     }
 
     pub fn toggle_tracing(&self, enabled: bool) {
-        self.lock().request_trace_rpc_sync(
-            "tracing_config",
-            &json!({"enabled": enabled}),
-        );
+        self.lock().toggle_tracing(enabled)
     }
 
-    pub fn collect_trace(&self) -> Vec<Result<Value, xi_rpc::Error>> {
-        self.lock().request_trace_rpc_sync(
-            "collect_trace",
-            &json!({}),
-        )
+    pub fn collect_trace(&self) -> Vec<Value> {
+        self.lock().request_trace()
     }
 
     /// Called when a new buffer is created.
