@@ -28,6 +28,7 @@ extern crate serde_json;
 extern crate serde_derive;
 extern crate serde;
 extern crate crossbeam;
+extern crate xi_trace;
 
 mod parse;
 mod error;
@@ -44,6 +45,8 @@ use std::thread;
 
 use serde_json::Value;
 use serde::de::DeserializeOwned;
+
+use xi_trace::{trace, trace_block, trace_block_payload, trace_payload};
 
 use parse::{Call, Response, RpcObject, MessageReader};
 pub use error::{Error, ReadError, RemoteError};
@@ -243,6 +246,7 @@ impl<W: Write + Send> RpcLoop<W> {
                     // The main thread cannot return while this thread is active;
                     // when the main thread wants to exit it sets this flag.
                     if self.peer.needs_exit() {
+                        trace("read loop exit", &["rpc"]);
                         break
                     }
 
@@ -255,6 +259,9 @@ impl<W: Write + Send> RpcLoop<W> {
                     };
                     if json.is_response() {
                         let id = json.get_id().unwrap();
+                        let _resp = trace_block_payload("read loop response",
+                                                        &["rpc"],
+                                                        format!("{}", id));
                         match json.into_response() {
                             Ok(resp) => {
                                 let resp = resp.map_err(Error::from);
@@ -275,10 +282,13 @@ impl<W: Write + Send> RpcLoop<W> {
             loop {
                 let _guard = PanicGuard(&peer);
                 let read_result = next_read(&peer, handler, &ctx);
+                let _trace = trace_block("main got msg", &["rpc"]);
 
                 let json = match read_result {
                     Ok(json) => json,
                     Err(err) => {
+                        trace_payload("main loop err", &["rpc"],
+                                      err.to_string());
                         // finish idle work before disconnecting;
                         // this is mostly useful for integration tests.
                         if let Some(idle_token) = peer.try_get_idle() {
@@ -289,14 +299,24 @@ impl<W: Write + Send> RpcLoop<W> {
                     }
                 };
 
+                let method = json.get_method().map(String::from);
                 match json.into_rpc::<H::Notification, H::Request>() {
                     Ok(Call::Request(id, cmd)) => {
+                        let _t = trace_block_payload("handle request", &["rpc"],
+                                                     method.unwrap());
                         let result = handler.handle_request(&ctx, cmd);
                         peer.respond(result, id);
                     }
-                    Ok(Call::Notification(cmd)) => handler.handle_notification(&ctx, cmd),
+                    Ok(Call::Notification(cmd)) => {
+                        let _t = trace_block_payload("handle notif", &["rpc"],
+                                                     method.unwrap());
+                        handler.handle_notification(&ctx, cmd);
+
+                    }
                     Ok(Call::InvalidRequest(id, err)) => peer.respond(Err(err), id),
                     Err(err) => {
+                        trace_payload("read loop exit", &["rpc"],
+                                      err.to_string());
                         peer.disconnect();
                         return ReadError::UnknownRequest(err)
                     }
@@ -323,9 +343,12 @@ fn next_read<W, H>(peer: &RawPeer<W>, handler: &mut H, ctx: &RpcCtx)
             return result
         }
         if let Some(idle_token) = peer.try_get_idle() {
-            handler.idle(ctx, idle_token);
+            let _trace = trace_block_payload("handle idle", &["rpc"],
+                                             format!("token: {}", idle_token));
+                handler.idle(ctx, idle_token);
             continue
         }
+        // TODO: maybe we should just be using thread::yield_now here?
         // we don't want to block indefinitely if there's no current idle work,
         // because idle work could be scheduled from another thread.
         let check_idle_timeout = Duration::from_millis(100);
@@ -353,6 +376,8 @@ impl<W: Write + Send + 'static> Peer for RawPeer<W> {
     }
 
     fn send_rpc_notification(&self, method: &str, params: &Value) {
+        let _trace = trace_block_payload("send notif", &["rpc"],
+                                         method.to_owned());
         if let Err(e) = self.send(&json!({
             "method": method,
             "params": params,
@@ -364,12 +389,16 @@ impl<W: Write + Send + 'static> Peer for RawPeer<W> {
 
     fn send_rpc_request_async(&self, method: &str, params: &Value,
                               f: Box<Callback>) {
+        let _trace = trace_block_payload("send req async", &["rpc"],
+                                         method.to_owned());
         self.send_rpc_request_common(method, params,
                                      ResponseHandler::Callback(f));
     }
 
     fn send_rpc_request(&self, method: &str, params: &Value)
                         -> Result<Value, Error> {
+        let _trace = trace_block_payload("send req sync", &["rpc"],
+                                         method.to_owned());
         let (tx, rx) = mpsc::channel();
         self.send_rpc_request_common(method, params, ResponseHandler::Chan(tx));
         rx.recv().unwrap_or(Err(Error::PeerDisconnect))
@@ -388,6 +417,7 @@ impl<W: Write + Send + 'static> Peer for RawPeer<W> {
 
 impl<W:Write> RawPeer<W> {
     fn send(&self, v: &Value) -> Result<(), io::Error> {
+        let _trace = trace_block("send", &["rpc"]);
         let mut s = serde_json::to_string(v).unwrap();
         s.push('\n');
         self.0.writer.lock().unwrap().write_all(s.as_bytes())
