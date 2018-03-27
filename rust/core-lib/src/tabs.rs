@@ -31,7 +31,7 @@ use notify::DebouncedEvent;
 
 use xi_rope::rope::Rope;
 use xi_rpc::{RpcCtx, RemoteError};
-use xi_trace;
+use xi_trace::{self, trace_block};
 
 use editor::Editor;
 
@@ -562,6 +562,7 @@ impl Documents {
     fn do_save<P>(&mut self, peer: &MainPeer, view_id: ViewIdentifier, file_path: P)
         where P: AsRef<Path>
     {
+        let _t = trace_block("Documents::do_save", &["core"]);
         let file_path = file_path.as_ref();
         let prev_syntax = self.buffers.lock().editor_for_view(view_id)
             .unwrap().get_syntax().to_owned();
@@ -620,6 +621,7 @@ impl Documents {
     /// Handles a plugin related command from a client
     fn do_plugin_cmd(&mut self, cmd: rpc::PluginNotification) {
         use rpc::PluginNotification::*;
+        let _t = trace_block("Documents::do_plugin_cmd", &["core"]);
         match cmd {
             Start { view_id, plugin_name } => {
                 //TODO: report this error to client?
@@ -647,6 +649,7 @@ impl Documents {
 
     fn do_client_init(&mut self, rpc_peer: &MainPeer, config_dir: Option<PathBuf>,
                       client_extras_dir: Option<PathBuf>) {
+        let _t = trace_block("Documents::do_client_init", &["core"]);
         // we would like to set this in self::new but we need the peer
         #[cfg(feature = "notify")]
         { self.file_watcher = Some(FileWatcher::new(rpc_peer.clone())); }
@@ -677,6 +680,7 @@ impl Documents {
 
     /// Handle a client set theme RPC
     fn do_set_theme(&self, rpc_peer: &MainPeer, theme_name: &str) {
+        let _t = trace_block("Documents::set_theme", &["core"]);
         let success = self.style_map.lock().unwrap()
             .set_theme(&theme_name).is_ok();
         if success {
@@ -699,6 +703,7 @@ impl Documents {
     }
 
     fn do_get_config(&self, view_id: ViewIdentifier) -> Result<Table, RemoteError> {
+        let _t = trace_block("Documents::get_config", &["core"]);
         let view_config = self.buffers.lock().editor_for_view(view_id)
             .map(|ed| ed.get_config().to_table());
         view_config.ok_or(
@@ -726,6 +731,7 @@ impl Documents {
                 self.handle_fs_events(ctx.get_peer())
             }
             NEW_VIEW_IDLE_TOKEN => {
+                let _t = trace_block("Documents::new view idle", &["core"]);
                 while let Some(f) = self.idle_queue.pop() {
                     f.call(self);
                 }
@@ -737,6 +743,7 @@ impl Documents {
     /// Process file system events, forwarding them to registrees.
     #[cfg(feature = "notify")]
     fn handle_fs_events(&mut self, peer: &MainPeer) {
+        let _t = trace_block("Documents::handle_fs_events", &["core"]);
         let mut events = self.file_watcher.as_mut().unwrap().take_events();
         let mut config_changed = false;
 
@@ -816,6 +823,7 @@ impl Documents {
     /// for file system events if the directory exists and can be read.
     fn init_file_based_configs(&mut self, config_dir: &Path,
                                peer: &MainPeer) -> io::Result<()> {
+        let _t = trace_block("Documents::init_file_config", &["core"]);
         if !config_dir.exists() {
             config::init_config_dir(config_dir)?;
         }
