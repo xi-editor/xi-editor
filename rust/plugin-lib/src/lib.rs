@@ -21,8 +21,11 @@ extern crate xi_trace;
 extern crate xi_trace_dump;
 #[macro_use]
 extern crate serde_json;
+extern crate serde;
 extern crate bytecount;
 extern crate rand;
+extern crate memchr;
 
 pub mod plugin_base;
 pub mod state_cache;
+pub mod base_cache;

@@ -15,12 +15,13 @@
 //! RPC types, corresponding to protocol requests, notifications & responses.
 
 use std::path::PathBuf;
+use std::borrow::Borrow;
 
 use serde::de::{self, Deserialize, Deserializer};
 use serde::ser::{self, Serialize, Serializer};
 use serde_json::{self, Value};
 
-use xi_rope::rope::RopeDelta;
+use xi_rope::rope::{RopeDelta, Rope, LinesMetric};
 use super::PluginPid;
 use syntax::SyntaxDefinition;
 use tabs::{BufferIdentifier, ViewIdentifier};
@@ -71,6 +72,8 @@ pub struct PluginUpdate {
     pub delta: Option<RopeDelta>,
     /// The size of the document after applying this delta.
     pub new_len: usize,
+    /// The total number of lines in the document after applying this delta.
+    pub new_line_count: usize,
     pub rev: u64,
     pub edit_type: String,
     pub author: String,
@@ -141,15 +144,37 @@ pub struct ScopeSpan {
     pub scope_id: u32,
 }
 
+/// The object returned by the `get_data` RPC.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GetDataResponse {
+    pub chunk: String,
+    pub offset: usize,
+    pub first_line: usize,
+    pub first_line_offset: usize,
+}
+
+/// The unit of measure when requesting data.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum TextUnit {
+    /// The requested offset is in bytes. The returned chunk will be valid
+    /// UTF8, and is guaruanteed to include the byte specified the offset.
+    Utf8,
+    /// The requested offset is a line number. The returned chunk will begin
+    /// at the offset of the requested line.
+    Line,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "method", content = "params")]
 /// RPC requests sent from plugins.
 pub enum PluginRequest {
-    GetData { offset: usize, max_size: usize, rev: u64 },
+    GetData { start: usize, unit: TextUnit, max_size: usize, rev: u64 },
     LineCount,
     GetSelections,
 }
+
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -219,11 +244,42 @@ impl PluginBufferInfo {
 
 impl PluginUpdate {
     pub fn new<D>(view_id: ViewIdentifier, rev: u64, delta: D, new_len: usize,
-                  edit_type: String, author: String) -> Self
+                  new_line_count: usize, edit_type: String, author: String) -> Self
         where D: Into<Option<RopeDelta>>
     {
         let delta = delta.into();
-        PluginUpdate { view_id, delta, new_len, rev, edit_type, author }
+        PluginUpdate { view_id, delta, new_len, new_line_count, rev, edit_type, author }
+    }
+}
+
+// maybe this should be in xi_rope? has a strong resemblance to the various
+// concrete `Metric` types.
+impl TextUnit {
+    /// Converts an offset in some unit to a concrete byte offset. Returns
+    /// `None` if the input offset is out of bounds in its unit space.
+    pub fn resolve_offset<T: Borrow<Rope>>(&self, text: T, offset: usize) -> Option<usize> {
+        let text = text.borrow();
+        match *self {
+            TextUnit::Utf8 => {
+                if offset >= text.len() {
+                    None
+                } else {
+                    if text.is_codepoint_boundary(offset) {
+                        offset.into()
+                    } else {
+                        text.prev_codepoint_offset(offset).into()
+                    }
+                }
+            }
+            TextUnit::Line => {
+                let max_line_number = text.measure::<LinesMetric>() + 1;
+                if offset > max_line_number {
+                    None
+                } else {
+                    text.offset_of_line(offset).into()
+                }
+            }
+        }
     }
 }
 
@@ -238,6 +294,7 @@ mod tests {
             "view_id": "view-id-42",
             "delta": {"base_len": 6, "els": [{"copy": [0,5]}, {"insert":"rofls"}, {"copy": [5,6]}]},
             "new_len": 11,
+            "new_line_count": 1,
             "rev": 5,
             "edit_type": "something",
             "author": "me"

@@ -381,17 +381,33 @@ impl Rope {
     /// in the slice up to `offset`.
     ///
     /// Time complexity: O(log n)
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if `offset > self.len()`. Callers are expected to
+    /// validate their input.
     pub fn line_of_offset(&self, offset: usize) -> usize {
         self.convert_metrics::<BaseMetric, LinesMetric>(offset)
     }
 
     /// Return the byte offset corresponding to the line number `line`.
+    /// If `line` is equal to one plus the current number of lines,
+    /// this returns the offset of the end of the rope. Arguments higher
+    /// than this will panic.
     ///
     /// The line number is 0-based.
     ///
     /// Time complexity: O(log n)
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if `line > self.measure::<LinesMetric>() + 1`.
+    /// Callers are expected to validate their input.
     pub fn offset_of_line(&self, line: usize) -> usize {
-        if line > self.measure::<LinesMetric>() {
+        let max_line = self.measure::<LinesMetric>() + 1;
+        if line > max_line {
+            panic!("line number {} beyond last line {}", line, max_line);
+        } else if line == max_line {
             return self.len();
         }
         self.convert_metrics::<LinesMetric, BaseMetric>(line)
@@ -802,5 +818,33 @@ mod tests {
         assert_tokens(&rope, &[
             Token::BorrowedStr("a\u{00A1}\u{4E00}\u{1F4A9}"),
         ]);
+    }
+
+    #[test]
+    fn line_offsets() {
+        let rope = Rope::from("hi\ni'm\nfour\nlines");
+        assert_eq!(rope.offset_of_line(0), 0);
+        assert_eq!(rope.offset_of_line(1), 3);
+        assert_eq!(rope.line_of_offset(0), 0);
+        assert_eq!(rope.line_of_offset(3), 1);
+        // interior of first line should be first line
+        assert_eq!(rope.line_of_offset(1), 0);
+        // interior of last line should be last line
+        assert_eq!(rope.line_of_offset(15), 3);
+        assert_eq!(rope.offset_of_line(4), rope.len());
+    }
+
+    #[test]
+    #[should_panic]
+    fn line_of_offset_panic() {
+        let rope = Rope::from("hi\ni'm\nfour\nlines");
+        rope.line_of_offset(20);
+    }
+
+    #[test]
+    #[should_panic]
+    fn offset_of_line_panic() {
+        let rope = Rope::from("hi\ni'm\nfour\nlines");
+        rope.offset_of_line(5);
     }
 }

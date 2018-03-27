@@ -543,7 +543,11 @@ impl View {
             Some(ref breaks) => {
                 breaks.convert_metrics::<BreaksMetric, BreaksBaseMetric>(line)
             }
-            None => text.offset_of_line(line)
+            None => {
+                // sanitize input
+                let line = line.min(text.measure::<LinesMetric>() + 1);
+                text.offset_of_line(line)
+            }
         }
     }
 

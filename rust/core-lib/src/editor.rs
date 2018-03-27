@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::borrow::Cow;
+use std::borrow::{Borrow, Cow};
 use std::cmp::{min, max};
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -38,7 +38,7 @@ use tabs::{self, BufferIdentifier, ViewIdentifier, DocumentCtx};
 use rpc::{self, GestureType};
 use syntax::SyntaxDefinition;
 use plugins::rpc::{PluginUpdate, PluginEdit, ScopeSpan, PluginBufferInfo,
-ClientPluginInfo};
+ClientPluginInfo, TextUnit, GetDataResponse};
 use plugins::{PluginPid, Command};
 use layers::Scopes;
 use config::{BufferConfig, Table};
@@ -438,6 +438,7 @@ impl Editor {
         let keep_selections = self.this_edit_type == EditType::Transpose;
         self.scroll_to = self.view.after_edit(&self.text, &last_text, &delta, is_pristine, keep_selections);
         let (iv, new_len) = delta.summary();
+        let total_num_lines = self.text.measure::<LinesMetric>() + 1;
 
         // TODO: perhaps use different semantics for spans that enclose the
         // edited region. Currently it breaks any such span in half and applies
@@ -467,6 +468,7 @@ impl Editor {
                 self.engine.get_head_rev_id().token(),
                 delta,
                 new_len,
+                total_num_lines,
                 self.this_edit_type.json_string().to_owned(),
                 author.to_owned());
 
@@ -820,7 +822,7 @@ impl Editor {
 
     fn do_scroll(&mut self, first: i64, last: i64) {
         let first = max(first, 0) as usize;
-        let last = last as usize;
+        let last = max(last, 0) as usize;
         self.view.set_scroll(first, last);
     }
 
@@ -1211,7 +1213,8 @@ impl Editor {
         self.render();
     }
 
-    pub fn plugin_get_data(&self, offset: usize, max_size: usize, rev: RevToken) -> Option<String> {
+    pub fn plugin_get_data(&self, start: usize, unit: TextUnit,
+                           max_size: usize, rev: RevToken) -> Option<GetDataResponse> {
         let text_cow = if rev == self.engine.get_head_rev_id().token() {
             Cow::Borrowed(&self.text)
         } else {
@@ -1221,8 +1224,9 @@ impl Editor {
             }
         };
         let text = &text_cow;
-        // Enforce start is on codepoint boundary.
-        if !text.is_codepoint_boundary(offset) { return None; }
+        // convert our offset into a valid byte offset
+        let offset = unit.resolve_offset(text.borrow(), start)?;
+
         let max_size = min(max_size, MAX_SIZE_LIMIT);
         let mut end_off = offset.saturating_add(max_size);
         if end_off >= text.len() {
@@ -1231,7 +1235,12 @@ impl Editor {
             // Snap end to codepoint boundary.
             end_off = text.prev_codepoint_offset(end_off + 1).unwrap();
         }
-        Some(text.slice_to_string(offset, end_off))
+
+        let chunk = text.slice_to_string(offset, end_off);
+        let first_line = text.line_of_offset(offset);
+        let first_line_offset = offset - text.offset_of_line(first_line);
+
+        Some(GetDataResponse { chunk, offset, first_line, first_line_offset })
     }
 
     pub fn plugin_get_selections(&self, view_id: ViewIdentifier) -> Value {
