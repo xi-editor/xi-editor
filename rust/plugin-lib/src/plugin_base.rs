@@ -25,6 +25,7 @@ ConfigTable, BufferConfig};
 use xi_core::plugin_rpc::{TextUnit, PluginBufferInfo, HostRequest, HostNotification,
 GetDataResponse, ScopeSpan};
 use xi_rpc::{self, RpcLoop, RpcPeer, RpcCtx, RemoteError, ReadError};
+use xi_trace;
 
 #[derive(Debug)]
 pub enum Error {
@@ -183,6 +184,17 @@ impl<'a, H: 'a> BaseHandler<'a, H> {
         self.state.as_mut()
             .expect("missing state; was plugin init RPC sent?")
     }
+
+    fn collect_trace(&self) -> Result<Value, RemoteError> {
+        use xi_trace_dump::*;
+        let traces = xi_trace::samples_cloned_unsorted();
+        let mut out = Vec::new();
+        chrome_trace::serialize(traces.iter(),
+                                chrome_trace::OutputFormat::JsonArray,
+                                &mut out).unwrap();
+        let traces = serde_json::from_reader(out.as_slice());
+        Ok(traces?)
+    }
 }
 
 impl<'a, H: Handler> xi_rpc::Handler for BaseHandler<'a, H> {
@@ -231,6 +243,9 @@ impl<'a, H: Handler> xi_rpc::Handler for BaseHandler<'a, H> {
         assert!(self.state.is_some(), "request received before init: {:?}", &rpc);
         let plugin_ctx = PluginCtx::new(
             ctx, self.state.as_ref().unwrap(), self.plugin_id.unwrap());
+        if let &HostRequest::CollectTrace(..) = &rpc {
+            return self.collect_trace();
+        }
         self.inner.handle_request(plugin_ctx, rpc)
     }
 

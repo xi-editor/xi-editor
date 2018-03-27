@@ -84,9 +84,8 @@ impl PluginRef {
     /// NOTE: Only added temporarily for tracing infrastructure to simplify
     /// the initial implementation & perf doesn't matter.
     /// Otherwise should communicate asynchronously with plugins.
-    pub fn request_trace_rpc_sync(&self, method: &str, params: &Value)
-        -> Result<Value, xi_rpc::Error> {
-        self.0.lock().unwrap().peer.send_rpc_request(method, params)
+    pub fn request_traces(&self) -> Result<Value, xi_rpc::Error> {
+        self.0.lock().unwrap().peer.send_rpc_request("collect_trace", &json!({}))
     }
 
     /// Initialize the plugin.
