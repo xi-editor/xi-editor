@@ -28,6 +28,7 @@ use xi_rope::delta::{self, Delta, Transformer};
 use xi_rope::engine::{Engine, RevId, RevToken};
 use xi_rope::spans::SpansBuilder;
 use xi_rpc::RemoteError;
+use xi_trace::trace_block;
 
 use view::View;
 use word_boundaries::WordCursor;
@@ -429,6 +430,7 @@ impl Editor {
     }
 
     fn update_after_revision(&mut self, author: Option<&str>) {
+        let _t = trace_block("Editor::update_after_rev", &["core"]);
         let last_token = self.last_rev_id.token();
         let delta = self.engine.delta_rev_head(last_token);
         let is_pristine = self.is_pristine();
@@ -503,6 +505,7 @@ impl Editor {
 
     // render if needed, sending to ui
     pub fn render(&mut self) {
+        let _t = trace_block("Editor::render", &["core"]);
         self.view.render_if_dirty(&self.text, &self.doc_ctx, self.styles.get_merged());
         if let Some(scrollto) = self.scroll_to {
             let (line, col) = self.view.offset_to_line_col(&self.text, scrollto);
@@ -1075,6 +1078,9 @@ impl Editor {
 
     pub fn handle_notification(&mut self, _view_id: ViewIdentifier,
                                cmd: rpc::EditNotification) {
+
+        let _t = trace_block("Editor::handle_notif", &["core"]);
+
         use rpc::EditNotification::*;
         use rpc::{LineRange, MouseAction};
         self.cmd_prelude();
@@ -1150,6 +1156,7 @@ impl Editor {
     pub fn handle_request(&mut self, _view_id: ViewIdentifier,
                           cmd: rpc::EditRequest) -> Result<Value, RemoteError> {
         use rpc::EditRequest::*;
+        let _t = trace_block("Editor::handle_request", &["core"]);
         self.cmd_prelude();
 
         let result = match cmd {
@@ -1173,6 +1180,7 @@ impl Editor {
 
     /// Applies an async edit from a plugin.
     pub fn plugin_edit_async(&mut self, edit: PluginEdit) {
+        let _t = trace_block("Editor::plugin_edit", &["core"]);
         self.this_edit_type = EditType::Other;
         self.apply_plugin_edit(edit, None)
     }
@@ -1184,11 +1192,13 @@ impl Editor {
     //TODO: plugins should optionally be able to provide a layer id
     // so a single plugin can maintain multiple layers
     pub fn plugin_add_scopes(&mut self, plugin: PluginPid, scopes: Vec<Vec<String>>) {
+        let _t = trace_block("Editor::add_scopes", &["core"]);
         self.styles.add_scopes(plugin, scopes, &self.doc_ctx);
     }
 
     pub fn plugin_update_spans(&mut self, plugin: PluginPid, start: usize, len: usize,
                                spans: Vec<ScopeSpan>, rev: RevToken) {
+        let _t = trace_block("Editor::update_spans", &["core"]);
         // TODO: more protection against invalid input
         let mut start = start;
         let mut end_offset = start + len;
@@ -1216,6 +1226,7 @@ impl Editor {
 
     pub fn plugin_get_data(&self, start: usize, unit: TextUnit,
                            max_size: usize, rev: RevToken) -> Option<GetDataResponse> {
+        let _t = trace_block("Editor::plugin_get_data", &["core"]);
         let text_cow = if rev == self.engine.get_head_rev_id().token() {
             Cow::Borrowed(&self.text)
         } else {
@@ -1276,6 +1287,7 @@ impl Editor {
     pub fn plugin_started<T>(&self, view_id: T, plugin: &str, cmds: &[Command])
         where T: Into<Option<ViewIdentifier>>
     {
+        let _t = trace_block("Editor::plugin_started", &["core"]);
         let view_id = view_id.into().unwrap_or(self.view.view_id);
         self.doc_ctx.plugin_started(view_id, plugin);
         self.doc_ctx.update_cmds(view_id, plugin, cmds);
@@ -1287,6 +1299,7 @@ impl Editor {
     pub fn plugin_stopped<'a, T>(&'a mut self, view_id: T, plugin: &str,
                                  plugin_id: PluginPid, code: i32)
         where T: Into<Option<ViewIdentifier>> {
+        let _t = trace_block("Editor::plugin_stopped", &["core"]);
         {
             self.styles.remove_layer(plugin_id);
             self.view.set_dirty(&self.text);

@@ -27,6 +27,7 @@ use serde_json::{self, Value};
 
 use xi_rpc;
 use xi_rpc::{RpcCtx, Handler, RemoteError};
+use xi_trace::{trace_block, trace_block_payload};
 
 use tabs::{BufferIdentifier, ViewIdentifier, BufferContainerRef};
 use config::Table;
@@ -78,6 +79,7 @@ impl PluginManager {
     /// Passes an update from a buffer to all registered plugins.
     fn update_plugins(&mut self, view_id: ViewIdentifier,
                   update: PluginUpdate, undo_group: usize) -> Result<(), Error> {
+        let _t = trace_block("PluginManager::upate_plugins", &["core"]);
 
         // find all running plugins for this buffer, and send them the update
         let mut dead_plugins = Vec::new();
@@ -131,6 +133,7 @@ impl PluginManager {
                          only_globals: bool, method: &str, params: &V)
         where V: Serialize + Debug
     {
+        let _t = trace_block("PluginManager::notify_plugins", &["core"]);
         let params = serde_json::to_value(params)
             .expect(&format!("bad notif params.\nmethod: {}\nparams: {:?}",
                              method, params));
@@ -150,6 +153,7 @@ impl PluginManager {
     fn request_trace_rpc_sync(&self, method: &str, params: &Value)
         -> Vec<Result<Value, xi_rpc::Error>>
     {
+        let _t = trace_block("PluginManager::request_trace", &["core"]);
         let mut gathered_results = Vec::new();
 
         for plugin in self.global_plugins.values() {
@@ -193,6 +197,8 @@ impl PluginManager {
                     init_info: &PluginBufferInfo,
                     plugin_name: &str, ) -> Result<(), Error> {
 
+        let _t = trace_block_payload("PluginManager::start_plugin", &["core"],
+                                     format!("{:?} {}", view_id, plugin_name));
         // verify that this view_id is valid
          let _ = self.running_for_view(view_id)?;
          if self.plugin_is_running(view_id, plugin_name) {
@@ -610,6 +616,7 @@ impl Handler for PluginManagerRef {
 
     fn handle_notification(&mut self, _ctx: &RpcCtx, rpc: Self::Notification) {
         use self::PluginNotification::*;
+        let _t = trace_block("PluginManager::handle_notif", &["core"]);
         let PluginCommand { view_id, plugin_id, cmd } = rpc;
         let inner = self.lock();
         let mut buffers = inner.buffers.lock();
@@ -628,6 +635,7 @@ impl Handler for PluginManagerRef {
 
     fn handle_request(&mut self, _ctx: &RpcCtx, rpc: Self::Request) -> Result<Value, RemoteError> {
         use self::PluginRequest::*;
+        let _t = trace_block("PluginManager::handle_request", &["core"]);
         let PluginCommand { view_id, cmd, .. } = rpc;
         let inner = self.lock();
         let buffers = inner.buffers.lock();
