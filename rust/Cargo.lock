@@ -463,7 +463,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "unicode-segmentation"
 version = "1.2.0"
-source = "git+https://github.com/jmuk/unicode-segmentation.git?branch=fix_for_xi#1d7d062b38e6e5299ed0e5750f6890230c6cd0fa"
+source = "git+https://github.com/unicode-rs/unicode-segmentation.git#64713997a1e26f6749489c453c3152a6919c03c5"
 
 [[package]]
 name = "unicode-xid"
@@ -555,7 +555,7 @@ dependencies = [
  "memchr 2.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.27 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_derive 1.0.27 (registry+https://github.com/rust-lang/crates.io-index)",
- "unicode-segmentation 1.2.0 (git+https://github.com/jmuk/unicode-segmentation.git?branch=fix_for_xi)",
+ "unicode-segmentation 1.2.0 (git+https://github.com/unicode-rs/unicode-segmentation.git)",
 ]
 
 [[package]]
@@ -662,7 +662,7 @@ dependencies = [
 "checksum time 0.1.39 (registry+https://github.com/rust-lang/crates.io-index)" = "a15375f1df02096fb3317256ce2cee6a1f42fc84ea5ad5fc8c421cfe40c73098"
 "checksum toml 0.4.5 (registry+https://github.com/rust-lang/crates.io-index)" = "a7540f4ffc193e0d3c94121edb19b055670d369f77d5804db11ae053a45b6e7e"
 "checksum typenum 1.9.0 (registry+https://github.com/rust-lang/crates.io-index)" = "13a99dc6780ef33c78780b826cf9d2a78840b72cae9474de4bcaf9051e60ebbd"
-"checksum unicode-segmentation 1.2.0 (git+https://github.com/jmuk/unicode-segmentation.git?branch=fix_for_xi)" = "<none>"
+"checksum unicode-segmentation 1.2.0 (git+https://github.com/unicode-rs/unicode-segmentation.git)" = "<none>"
 "checksum unicode-xid 0.0.4 (registry+https://github.com/rust-lang/crates.io-index)" = "8c1f860d7d29cf02cb2f3f359fd35991af3d30bac52c57d265a3c461074cb4dc"
 "checksum walkdir 2.1.4 (registry+https://github.com/rust-lang/crates.io-index)" = "63636bd0eb3d00ccb8b9036381b526efac53caf112b7783b730ab3f8e44da369"
 "checksum winapi 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)" = "167dc9d6949a9b857f3451275e911c3f44255842c1f7a76f33c55103a909087a"

@@ -13,7 +13,7 @@ serde = "1.0"
 serde_derive = "1.0"
 # replace to the official version once fixes are merged.
 # unicode-segmentation = "1.2.0"
-unicode-segmentation = { git = "https://github.com/jmuk/unicode-segmentation.git", branch = "fix_for_xi" }
+unicode-segmentation = { git = "https://github.com/unicode-rs/unicode-segmentation.git" }
 
 [dev-dependencies]
 serde_test = "^1.0"
