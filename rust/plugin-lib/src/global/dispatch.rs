@@ -20,6 +20,7 @@ use serde_json::{self, Value};
 use xi_core::{ViewIdentifier, PluginPid, ConfigTable};
 use xi_core::plugin_rpc::{PluginBufferInfo, PluginUpdate, HostRequest, HostNotification};
 use xi_rpc::{RpcCtx, RemoteError, Handler as RpcHandler};
+use xi_trace::{self, trace, trace_block, trace_block_payload};
 
 use global::{Plugin, View};
 
@@ -71,7 +72,6 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
         assert!(self.pid.is_none(), "initialize rpc received with existing pid");
         self.pid = Some(plugin_id);
         self.do_new_buffer(ctx, buffers);
-
     }
 
     fn do_did_save(&mut self, view_id: ViewIdentifier, path: PathBuf) {
@@ -121,15 +121,18 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
         use xi_trace;
 
         if enabled {
-            eprintln!("Enabling tracing in {:?}", self.pid);
             xi_trace::enable_tracing();
+            eprintln!("Enabling tracing in {:?}", self.pid);
+            trace("enable tracing", &["plugin"]);
         } else {
-            eprintln!("Disabling tracing in {:?}",  self.pid);
             xi_trace::disable_tracing();
+            eprintln!("Disabling tracing in {:?}",  self.pid);
+            trace("enable tracing", &["plugin"]);
         }
     }
 
     fn do_update(&mut self, update: PluginUpdate) -> Result<Value, RemoteError> {
+        let _t = trace_block("Dispatcher::do_update", &["plugin"]);
         let PluginUpdate {
             view_id, delta, new_len, new_line_count, rev, edit_type, author,
         } = update;
@@ -142,12 +145,15 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
     }
 
     fn do_collect_trace(&self) -> Result<Value, RemoteError> {
-        use xi_trace;
         use xi_trace_dump::*;
 
         let samples = xi_trace::samples_cloned_unsorted();
-        chrome_trace::to_value(&samples, chrome_trace::OutputFormat::JsonArray)
-            .map_err(|e| RemoteError::custom(500, format!("{:?}", e), None))
+        let mut out = Vec::new();
+        chrome_trace::serialize(samples.iter(),
+                                chrome_trace::OutputFormat::JsonArray,
+                                &mut out).unwrap();
+        let traces = serde_json::from_reader(out.as_slice());
+        Ok(traces?)
     }
 }
 
@@ -157,6 +163,7 @@ impl<'a, P: Plugin> RpcHandler for Dispatcher<'a, P> {
 
     fn handle_notification(&mut self, ctx: &RpcCtx, rpc: Self::Notification) {
         use self::HostNotification::*;
+        let _t = trace_block("Dispatcher::handle_notif", &["plugin"]);
         match rpc {
             Initialize { plugin_id, buffer_info } =>
                 self.do_initialize(ctx, plugin_id, buffer_info),
@@ -179,6 +186,7 @@ impl<'a, P: Plugin> RpcHandler for Dispatcher<'a, P> {
     fn handle_request(&mut self, _ctx: &RpcCtx, rpc: Self::Request)
                       -> Result<Value, RemoteError> {
         use self::HostRequest::*;
+        let _t = trace_block("Dispatcher::handle_request", &["plugin"]);
         match rpc {
             Update(params) =>
                 self.do_update(params),
@@ -188,6 +196,8 @@ impl<'a, P: Plugin> RpcHandler for Dispatcher<'a, P> {
     }
 
     fn idle(&mut self, _ctx: &RpcCtx, token: usize) {
+        let _t = trace_block_payload("Dispatcher::idle", &["plugin"],
+                                     format!("token: {}", token));
         let view_id: ViewIdentifier = token.into();
         let v = bail!(self.views.get_mut(&view_id), "idle", self.pid, view_id);
         self.plugin.idle(v);

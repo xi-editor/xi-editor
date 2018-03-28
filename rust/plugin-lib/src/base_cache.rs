@@ -21,6 +21,7 @@ use memchr::memchr;
 use xi_rope::rope::{Rope, RopeDelta, LinesMetric};
 use xi_rope::delta::DeltaElement;
 use xi_core::plugin_rpc::{TextUnit, GetDataResponse};
+use xi_trace::trace_block;
 
 use plugin_base::{Error, DataSource};
 use global::Cache;
@@ -77,6 +78,7 @@ impl Cache for ChunkCache {
     fn get_line<DS>(&mut self, source: &DS, line_num: usize) -> Result<&str, Error>
         where DS: DataSource
     {
+        let _t = trace_block("ChunkCache::get_line", &["plugin"]);
         if line_num > self.num_lines { return Err(Error::BadRequest) }
 
         // if chunk does not include the start of this line, fetch and reset everything
@@ -115,6 +117,7 @@ impl Cache for ChunkCache {
     /// Updates the chunk to reflect changes in this delta.
     fn update(&mut self, delta: Option<&RopeDelta>, new_len: usize,
               num_lines: usize, rev: u64) {
+        let _t = trace_block("ChunkCache::update", &["plugin"]);
         let is_empty = self.offset == 0 && self.contents.len() == 0;
         let should_clear = match delta {
             Some(delta) if !is_empty => self.should_clear(delta),

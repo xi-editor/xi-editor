@@ -17,6 +17,7 @@ use serde_json::Value;
 use xi_core::{plugin_rpc, BufferConfig};
 use xi_rpc::{RemoteError, ReadError};
 use xi_rope::rope::RopeDelta;
+use xi_trace::trace_block;
 
 use state_cache::StateCache;
 use base_cache::ChunkCache;
@@ -110,6 +111,7 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
         where P: Plugin<State = S>
     {
 
+        let _t = trace_block("StatePluginCtx::do_initialize", &["state_plugin"]);
         self.state.buf_cache = ChunkCache::new(init_info.buf_size,
                                                init_info.rev,
                                                init_info.nb_lines);
@@ -118,12 +120,14 @@ impl<'a, S: Default + Clone> PluginCtx<'a, S> {
     }
 
     fn do_did_save<P: Plugin<State = S>>(self, handler: &mut P) {
+        let _t = trace_block("StatePluginCtx::do_did_save", &["state_plugin"]);
         handler.did_save(self);
     }
 
     fn do_update<P>(self, update: plugin_rpc::PluginUpdate, handler: &mut P) -> Value
         where P: Plugin<State = S>
     {
+        let _t = trace_block("StatePluginCtx::do_update", &["state_plugin"]);
         let plugin_rpc::PluginUpdate { delta, new_len, rev, new_line_count, .. } = update;
         // update our own state before updating buf_cache
         self.state.update(delta.as_ref(), new_len, new_line_count, rev);

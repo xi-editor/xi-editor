@@ -18,6 +18,7 @@ use bytecount;
 use rand::{thread_rng, Rng};
 
 use xi_rope::rope::{RopeDelta, LinesMetric};
+use xi_trace::trace_block;
 
 use base_cache::ChunkCache;
 use global::{Cache, View};
@@ -66,6 +67,7 @@ impl<S: Clone + Default> Cache for StateCache<S> {
     /// Updates the cache by applying this delta.
     fn update(&mut self, delta: Option<&RopeDelta>, buf_size: usize,
               num_lines: usize, rev: u64) {
+        let _t = trace_block("StateCache::update", &["plugin"]);
 
         if let Some(ref delta) = delta {
             self.update_line_cache(delta);
