@@ -37,7 +37,10 @@ pub struct View<C> {
     pub (crate) config: BufferConfig,
     pub (crate) config_table: ConfigTable,
     plugin_id: PluginPid,
-    pub (crate) rev: u64,
+    // TODO: this is only public to avoid changing the syntect impl
+    // this should go away with async edits
+    pub rev: u64,
+    buf_size: usize,
     pub (crate) view_id: ViewIdentifier,
 }
 
@@ -60,6 +63,7 @@ impl<C: Cache> View<C> {
             plugin_id: plugin_id,
             view_id: view_id,
             rev: rev,
+            buf_size: buf_size,
         }
     }
 
@@ -67,6 +71,7 @@ impl<C: Cache> View<C> {
                        new_num_lines: usize, rev: u64) {
         self.cache.update(delta, new_len, new_num_lines, rev);
         self.rev = rev;
+        self.buf_size = new_len;
     }
 
     //NOTE: (discuss in review) this feels bad, but because we're mutating cache,
@@ -81,6 +86,11 @@ impl<C: Cache> View<C> {
             plugin_id: self.plugin_id,
             peer: self.peer.clone(),
         }
+    }
+
+    /// Returns the length of the view's buffer, in bytes.
+    pub fn get_buf_size(&self) -> usize {
+        self.buf_size
     }
 
     pub fn get_path(&self) -> Option<&Path> {
