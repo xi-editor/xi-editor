@@ -25,7 +25,7 @@ ConfigTable, BufferConfig};
 use xi_core::plugin_rpc::{TextUnit, PluginBufferInfo, HostRequest, HostNotification,
 GetDataResponse, ScopeSpan};
 use xi_rpc::{self, RpcLoop, RpcPeer, RpcCtx, RemoteError, ReadError};
-use xi_trace;
+use xi_trace::{self, trace, trace_block};
 
 #[derive(Debug)]
 pub enum Error {
@@ -156,6 +156,7 @@ impl<'a> PluginCtx<'a> {
 impl<'a> DataSource for PluginCtx<'a> {
     fn get_data(&self, start: usize, unit: TextUnit, max_size: usize, rev: u64)
         -> Result<GetDataResponse, Error> {
+        let _t = trace_block("PluginCtx::get_data", &["plugin"]);
         let params = json!({
             "plugin_id": self.plugin_id,
             "view_id": self.view.view_id,
@@ -208,6 +209,7 @@ impl<'a, H: Handler> xi_rpc::Handler for BaseHandler<'a, H> {
             // don't forward ping before we're initialized
             Ping( .. ) => { if self.state.is_none() { return } }
             Initialize { ref plugin_id, ref buffer_info } => {
+                let _t = trace_block("BaseHandler Initialize", &["plugin"]);
                 assert!(self.state.is_none());
                 self.state = Some(ViewState::new(buffer_info.first().as_ref().expect("missing buffer info?")));
                 self.plugin_id = Some(*plugin_id);
@@ -221,14 +223,16 @@ impl<'a, H: Handler> xi_rpc::Handler for BaseHandler<'a, H> {
 
             TracingConfig {enabled} => {
                 use xi_trace;
-
                 if enabled {
-                    eprintln!("Enabling tracing in {:?}", self.plugin_id);
                     xi_trace::enable_tracing();
+                    eprintln!("Enabling tracing in {:?}", self.plugin_id);
+                    trace("enable tracing", &["plugin"]);
                 } else {
-                    eprintln!("Disabling tracing in {:?}",  self.plugin_id);
                     xi_trace::disable_tracing();
+                    eprintln!("Disabling tracing in {:?}",  self.plugin_id);
+                    trace("disable tracing", &["plugin"]);
                 }
+                return;
             }
             _ => (),
         }

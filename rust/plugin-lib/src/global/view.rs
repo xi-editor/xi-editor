@@ -19,6 +19,7 @@ use serde::Deserialize;
 use xi_core::{ViewIdentifier, PluginPid, BufferConfig, ConfigTable};
 use xi_core::plugin_rpc::{TextUnit, GetDataResponse, ScopeSpan, PluginBufferInfo};
 use xi_rope::rope::RopeDelta;
+use xi_trace::trace_block;
 
 use xi_rpc::RpcPeer;
 
@@ -147,6 +148,7 @@ pub struct FetchCtx {
 impl DataSource for FetchCtx {
     fn get_data(&self, start: usize, unit: TextUnit, max_size: usize, rev: u64)
         -> Result<GetDataResponse, Error> {
+        let _t = trace_block("FetchCtx::get_data", &["plugin"]);
         let params = json!({
             "plugin_id": self.plugin_id,
             "view_id": self.view_id,

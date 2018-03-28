@@ -246,11 +246,11 @@ impl PluginManager {
         start_plugin_process(self_ref, &plugin_desc, plugin_id, move |result| {
             match result {
                 Ok(plugin_ref) => {
-                    plugin_ref.initialize(&init_info);
                     if xi_trace::is_enabled() {
                         plugin_ref.rpc_notification("tracing_config",
                                                     &json!({"enabled": true}));
                     }
+                    plugin_ref.initialize(&init_info);
                     if is_global {
                         me.lock().on_plugin_connect_global(&plugin_name, plugin_ref,
                                                            commands);
@@ -635,7 +635,6 @@ impl Handler for PluginManagerRef {
 
     fn handle_notification(&mut self, _ctx: &RpcCtx, rpc: Self::Notification) {
         use self::PluginNotification::*;
-        let _t = trace_block("PluginManager::handle_notif", &["core"]);
         let PluginCommand { view_id, plugin_id, cmd } = rpc;
         let inner = self.lock();
         let mut buffers = inner.buffers.lock();
@@ -654,7 +653,6 @@ impl Handler for PluginManagerRef {
 
     fn handle_request(&mut self, _ctx: &RpcCtx, rpc: Self::Request) -> Result<Value, RemoteError> {
         use self::PluginRequest::*;
-        let _t = trace_block("PluginManager::handle_request", &["core"]);
         let PluginCommand { view_id, cmd, .. } = rpc;
         let inner = self.lock();
         let buffers = inner.buffers.lock();
