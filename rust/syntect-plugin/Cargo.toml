@@ -30,6 +30,3 @@ path = "../rope"
 
 [dependencies.xi-trace]
 path = "../trace"
-
-[dependencies.xi-trace-dump]
-path = "../trace-dump"

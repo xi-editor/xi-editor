@@ -21,6 +21,7 @@ extern crate syntect;
 extern crate xi_plugin_lib;
 extern crate xi_core_lib as xi_core;
 extern crate xi_rope;
+extern crate xi_trace;
 
 mod stackmap;
 mod local;

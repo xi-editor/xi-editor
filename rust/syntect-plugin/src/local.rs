@@ -22,6 +22,7 @@ use xi_core::plugin_rpc::ScopeSpan;
 use xi_rope::rope::RopeDelta;
 use xi_rope::interval::Interval;
 use xi_rope::delta::Builder as EditBuilder;
+use xi_trace::{trace, trace_block};
 
 use syntect::parsing::{ParseState, ScopeStack, SyntaxSet, SCOPE_REPO, ScopeRepository};
 use stackmap::{StackMap, LookupResult};
@@ -115,6 +116,7 @@ impl<'a> PluginState<'a> {
     #[allow(unused)]
     // Return true if there's any more work to be done.
     fn highlight_one_line(&mut self, ctx: &mut PluginCtx<State>) -> bool {
+        let _t = trace_block("PluginState::highlight_one_line", &["syntect"]);
         if let Some(line_num) = ctx.get_frontier() {
             let (line_num, offset, state) = ctx.get_prev(line_num);
             if offset != self.offset {
@@ -154,6 +156,7 @@ impl<'a> PluginState<'a> {
     }
 
     fn flush_spans(&mut self, ctx: &mut PluginCtx<State>) {
+        let _t = trace_block("PluginState::flush_spans", &["syntect"]);
         if !self.new_scopes.is_empty() {
             ctx.add_scopes(&self.new_scopes);
             self.new_scopes.clear();
@@ -191,6 +194,7 @@ impl<'a> PluginState<'a> {
     /// as necessary.
     fn do_indentation(&mut self, ctx: &mut PluginCtx<State>, start: usize,
                       end: usize, rev: usize, text: &str) -> Option<Value> {
+        let _t = trace_block("PluginState::do_indentation", &["syntect"]);
         // don't touch indentation if this is not a simple edit
         if end != start { return None }
 
@@ -270,6 +274,7 @@ impl<'a> state_cache::Plugin for PluginState<'a> {
 
     fn update(&mut self, mut ctx: PluginCtx<State>, rev: usize,
               delta: Option<RopeDelta>) -> Option<Value> {
+        let _t = trace_block("PluginState::update", &["syntect"]);
         ctx.schedule_idle(0);
         let should_auto_indent = ctx.get_config().auto_indent;
         if should_auto_indent {
@@ -285,18 +290,20 @@ impl<'a> state_cache::Plugin for PluginState<'a> {
     }
 
     fn did_save(&mut self, ctx: PluginCtx<State>) {
-        // TODO: use smarter logic to figure out whether we need to re-highlight the whole file
+        let _t = trace_block("PluginState::did_save", &["syntect"]);
+        // TODO: use smarter logic to figure out whether we need
+        // to re-highlight the whole file
         self.do_highlighting(ctx);
     }
 
     fn idle(&mut self, mut ctx: PluginCtx<State>, _token: usize) {
-        //eprintln!("idle task at offset {}", self.offset);
         for _ in 0..LINES_PER_RPC {
             if !self.highlight_one_line(&mut ctx) {
                 self.flush_spans(&mut ctx);
                 return;
             }
             if ctx.request_is_pending() {
+                trace("yielding for request", &["syntect"]);
                 eprintln!("request pending at offset {}", self.offset);
                 break;
             }

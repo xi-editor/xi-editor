@@ -19,6 +19,7 @@ use syntect::parsing::{ParseState, ScopeStack, SyntaxSet, SyntaxDefinition};
 use xi_core::{ViewIdentifier, ConfigTable};
 use xi_core::plugin_rpc::PluginEdit;
 use xi_rope::rope::RopeDelta;
+use xi_trace::{trace, trace_block};
 use xi_plugin_lib::global::{Cache, Plugin, View, mainloop};
 use xi_plugin_lib::state_cache::StateCache;
 
@@ -43,6 +44,7 @@ impl<'a> Plugin for Syntect<'a> {
     type Cache = StateCache<LineState>;
 
     fn new_view(&mut self, view: &mut View<Self::Cache>) {
+        let _t = trace_block("Syntect::new_view", &["syntect"]);
         eprintln!("added view {:?}", view.get_id());
         let view_id = view.get_id();
         let state = PluginState::new(self.syntax_set);
@@ -56,6 +58,7 @@ impl<'a> Plugin for Syntect<'a> {
     }
 
     fn did_save(&mut self, view: &mut View<Self::Cache>, _old: Option<&Path>) {
+        let _t = trace_block("Syntect::did_save", &["syntect"]);
         self.do_highlighting(view);
     }
 
@@ -64,11 +67,13 @@ impl<'a> Plugin for Syntect<'a> {
 
     fn update(&mut self, view: &mut View<Self::Cache>, _delta: Option<&RopeDelta>,
               _edit_type: String, _author: String) -> Option<PluginEdit> {
+        let _t = trace_block("Syntect::update", &["syntect"]);
         view.schedule_idle();
         None
     }
 
     fn idle(&mut self, view: &mut View<Self::Cache>) {
+        let _t = trace_block("Syntect::idle", &["syntect"]);
         let state = self.view_state.get_mut(&view.get_id()).unwrap();
         for _ in 0..LINES_PER_RPC {
             if !highlight_one_line(view, state) {
@@ -76,6 +81,7 @@ impl<'a> Plugin for Syntect<'a> {
                 return;
             }
             if view.request_is_pending() {
+                trace("yielding for request", &["syntect"]);
                 eprintln!("request pending for {:?} at offset {}",
                           view.get_id(), state.offset);
                 break;
@@ -108,6 +114,7 @@ impl<'a> Syntect<'a> {
 
 
     fn guess_syntax(&'a self, path: Option<&Path>) -> &'a SyntaxDefinition {
+        let _t = trace_block("Syntect::guess_syntax", &["syntect"]);
         match path {
             Some(path) => self.syntax_set.find_syntax_for_file(path).unwrap()
                 .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text()),
@@ -121,6 +128,7 @@ impl<'a> Syntect<'a> {
 /// Highlight a single line, returning a bool indicating whether or
 /// not there is more work to be done.
 fn highlight_one_line(view: &mut MyView, view_state: &mut PluginState) -> bool {
+    let _t = trace_block("highlight_one_line", &["syntect"]);
     if let Some(line_num) = view.get_frontier() {
         let (line_num, offset, state) = view.get_prev(line_num);
         if offset != view_state.offset {
@@ -160,6 +168,7 @@ fn highlight_one_line(view: &mut MyView, view_state: &mut PluginState) -> bool {
 }
 
 fn flush_spans(view: &mut MyView, view_state: &mut PluginState) {
+    let _t = trace_block("flush_spans", &["syntect"]);
     if !view_state.new_scopes.is_empty() {
         view.add_scopes(&view_state.new_scopes);
         view_state.new_scopes.clear();
