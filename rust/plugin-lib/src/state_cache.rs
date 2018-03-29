@@ -55,13 +55,24 @@ impl<S: Clone + Default> Cache for StateCache<S> {
             state_cache: Vec::new(),
             frontier: Vec::new(),
         }
-
     }
 
-    fn get_line<DS>(&mut self, source: &DS, line_num: usize) -> Result<&str, Error>
-        where DS: DataSource
+    fn get_line<DS: DataSource>(&mut self, source: &DS, line_num: usize)
+        -> Result<&str, Error>
     {
         self.buf_cache.get_line(source, line_num)
+    }
+
+    fn offset_of_line<DS: DataSource>(&mut self, source: &DS, line_num: usize)
+        -> Result<usize, Error>
+    {
+        self.buf_cache.offset_of_line(source, line_num)
+    }
+
+    fn line_of_offset<DS: DataSource>(&mut self, source: &DS, offset: usize)
+        -> Result<usize, Error>
+    {
+        self.buf_cache.line_of_offset(source, offset)
     }
 
     /// Updates the cache by applying this delta.
