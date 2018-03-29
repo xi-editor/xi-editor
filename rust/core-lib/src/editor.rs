@@ -867,28 +867,10 @@ impl Editor {
                 return;
             }
         } else if click_count == 2 {
-            let (start, end) = {
-                let mut word_cursor = WordCursor::new(&self.text, offset);
-                word_cursor.select_word()
-            };
-            self.set_sel_single_region(SelRegion{
-                start: start,
-                end: end,
-                horiz: None,
-                affinity: Affinity::default(),
-            });
-            self.view.start_drag(offset, start, end);
+            self.view.select_word(&self.text, offset, false);
             return;
         } else if click_count == 3 {
-            let start = self.view.line_col_to_offset(&self.text, line as usize, 0);
-            let end = self.view.line_col_to_offset(&self.text, line as usize + 1, 0);
-            self.set_sel_single_region(SelRegion{
-                start: start,
-                end: end,
-                horiz: None,
-                affinity: Affinity::default(),
-            });
-            self.view.start_drag(offset, start, end);
+            self.view.select_line(&self.text, offset, line as usize, false);
             return;
         }
         self.view.start_drag(offset, offset, offset);
@@ -904,6 +886,8 @@ impl Editor {
         let offset = self.view.line_col_to_offset(&self.text, line as usize, col as usize);
         match ty {
             GestureType::ToggleSel => self.view.toggle_sel(&self.text, offset),
+            GestureType::MultiLineSelect => self.view.select_line(&self.text, offset, line as usize, true),
+            GestureType::MultiWordSelect => self.view.select_word(&self.text, offset, true)
         }
     }
 
