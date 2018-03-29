@@ -289,6 +289,8 @@ pub struct EditCommand<T> {
 #[serde(rename_all = "snake_case")]
 pub enum GestureType {
     ToggleSel,
+    MultiLineSelect,
+    MultiWordSelect,
 }
 
 /// An inclusive range.

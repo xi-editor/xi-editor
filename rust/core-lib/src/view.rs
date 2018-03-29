@@ -31,6 +31,7 @@ use index_set::IndexSet;
 use selection::{Affinity, Selection, SelRegion};
 use movement::{Movement, selection_movement};
 use line_cache_shadow::{self, LineCacheShadow, RenderPlan, RenderTactic};
+use word_boundaries::WordCursor;
 
 use linewrap;
 
@@ -241,6 +242,55 @@ impl View {
             affinity: Default::default(),
         });
         self.set_selection_raw(text, selection);
+    }
+
+    /// Selects an entire word and supports multi selection.
+    pub fn select_word(&mut self, text: &Rope, offset: usize, multi_select: bool) {
+        let (start, end) = {
+            let mut word_cursor = WordCursor::new(text, offset);
+            word_cursor.select_word()
+        };
+
+        let region = SelRegion {
+            start: start,
+            end: end,
+            horiz: None,
+            affinity: Affinity::default(),
+        };
+
+        let mut selection = Selection::new();
+
+        if multi_select {
+            selection = self.selection.clone();
+        }
+
+        selection.add_region(region);
+        self.set_selection(text, selection);
+
+        self.start_drag(offset, start, end);
+    }
+
+    /// Selects an entire line and supports multi selection.
+    pub fn select_line(&mut self, text: &Rope, offset: usize, line: usize, multi_select: bool) {
+        let start = self.line_col_to_offset(text, line, 0);
+        let end = self.line_col_to_offset(text, line + 1, 0);
+        let region = SelRegion {
+            start: start,
+            end: end,
+            horiz: None,
+            affinity: Affinity::default(),
+        };
+
+        let mut selection = Selection::new();
+
+        if multi_select {
+            selection = self.selection.clone();
+        }
+
+        selection.add_region(region);
+        self.set_selection(text, selection);
+
+        self.start_drag(offset, start, end);
     }
 
     /// Starts a drag operation.
