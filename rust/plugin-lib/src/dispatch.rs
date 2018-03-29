@@ -22,7 +22,7 @@ use xi_core::plugin_rpc::{PluginBufferInfo, PluginUpdate, HostRequest, HostNotif
 use xi_rpc::{RpcCtx, RemoteError, Handler as RpcHandler};
 use xi_trace::{self, trace, trace_block, trace_block_payload};
 
-use global::{Plugin, View};
+use super::{Plugin, View};
 
 /// Convenience for unwrapping a view, when handling RPC notifications.
 macro_rules! bail {
