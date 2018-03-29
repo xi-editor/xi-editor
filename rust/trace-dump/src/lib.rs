@@ -23,14 +23,11 @@
 
 extern crate xi_trace;
 
-#[cfg(any(feature = "chrome_trace_event", feature = "ipc"))]
+#[cfg(any(feature = "chrome_trace_event"))]
 extern crate serde;
 
 #[macro_use]
 extern crate serde_derive;
-
-#[cfg(feature = "ipc")]
-extern crate bincode;
 
 #[cfg(feature = "chrome_trace_event")]
 #[macro_use]
@@ -42,14 +39,12 @@ extern crate test;
 #[cfg(feature = "chrome_trace_event")]
 pub mod chrome_trace;
 
-#[cfg(feature = "ipc")]
-pub mod ipc;
-
 #[cfg(test)]
 mod tests {
     use super::*;
     #[cfg(feature = "benchmarks")]
     use test::Bencher;
+    #[cfg(feature = "dict_payload")]
     use xi_trace::{StrCow, TracePayloadT};
 
     #[cfg(all(not(feature = "dict_payload"), not(feature = "json_payload")))]
@@ -78,23 +73,27 @@ mod tests {
         trace.instant("sample1", &["test", "chrome"]);
         trace.instant_payload("sample2", &["test", "chrome"], to_payload("payload 2"));
         trace.instant_payload("sample3", &["test", "chrome"], to_payload("payload 3"));
-        trace.closure_payload("sample4", &["test", "chrome"],|| (), to_payload("payload 4"));
+        trace.closure_payload("sample4", &["test", "chrome"],|| {
+            let _guard = trace.block("sample5", &["test,chrome"]);
+        }, to_payload("payload 4"));
 
         let samples = trace.samples_cloned_unsorted();
 
         let mut serialized = Vec::<u8>::new();
-        let result = chrome_trace::serialize(
-            &samples, chrome_trace::OutputFormat::JsonArray, &mut serialized);
-        assert!(result.is_ok());
+
+        let result = chrome_trace::serialize(&samples, &mut serialized);
+        assert!(result.is_ok(), "{:?}", result);
 
         let decoded_result : Vec<serde_json::Value> = serde_json::from_slice(&serialized).unwrap();
-        assert_eq!(decoded_result.len(), 5);
+        assert_eq!(decoded_result.len(), 6);
         for i in 0..3 {
             assert_eq!(decoded_result[i]["name"].as_str().unwrap(), samples[i].name);
             assert_eq!(decoded_result[i]["cat"].as_str().unwrap(), "test,chrome");
             assert_eq!(decoded_result[i]["ph"].as_str().unwrap(), "i");
-            assert_eq!(decoded_result[i]["ts"], samples[i].start_ns / 1000);
-            assert_eq!(decoded_result[i]["args"]["payload"], json!(samples[i].payload));
+            assert_eq!(decoded_result[i]["ts"], samples[i].timestamp_us);
+            let nth_sample = &samples[i];
+            let mut nth_args = nth_sample.args.as_ref().unwrap();
+            assert_eq!(decoded_result[i]["args"]["xi_payload"], json!(nth_args.payload.as_ref()));
         }
         assert_eq!(decoded_result[3]["ph"], "B");
         assert_eq!(decoded_result[4]["ph"], "E");
@@ -114,34 +113,11 @@ mod tests {
         let samples = trace.samples_cloned_unsorted();
 
         let mut serialized = Vec::<u8>::new();
-        let result = chrome_trace::serialize(
-            &samples, chrome_trace::OutputFormat::JsonArray, &mut serialized);
-        assert!(result.is_ok());
+        let result = chrome_trace::serialize(&samples, &mut serialized);
+        assert!(result.is_ok(), "{:?}", result);
 
         let deserialized_samples = chrome_trace::deserialize(serialized.as_slice()).unwrap();
         assert_eq!(deserialized_samples, samples);
-    }
-
-    #[cfg(feature = "ipc")]
-    #[test]
-    fn test_ipc_ser_der() {
-        use xi_trace::*;
-
-        let trace = Trace::enabled(Config::with_limit_count(10));
-        trace.instant("sample1", &["test", "chrome"]);
-        trace.instant_payload("sample2", &["test", "chrome"], to_payload("payload 2"));
-        trace.instant_payload("sample3", &["test", "chrome"], to_payload("payload 3"));
-        trace.closure_payload("sample4", &["test", "chrome"],|| (), to_payload("payload 4"));
-
-        let samples = trace.samples_cloned_unsorted();
-
-        let serialized = ipc::serialize_to_bytes(&samples).unwrap();
-        let deserialized = ipc::deserialize_from_bytes(&serialized).unwrap();
-
-        assert_eq!(deserialized.len(), samples.len());
-        for i in 0..deserialized.len() {
-            assert_eq!(deserialized[i], samples[i])
-        }
     }
 
     #[cfg(all(feature = "chrome_trace_event", feature = "benchmarks"))]
@@ -153,7 +129,7 @@ mod tests {
         let samples = [xi_trace::Sample::new_instant("trace1", &["benchmark", "test"], None)];
         b.iter(|| {
             serialized.clear();
-            serialize(samples.iter(), OutputFormat::JsonArray, &mut serialized).unwrap();
+            serialize(samples.iter(), &mut serialized).unwrap();
         });
     }
 
@@ -167,14 +143,12 @@ mod tests {
         let mut samples = [
             Sample::new_instant("trace1", &["benchmark", "test"], None),
             Sample::new_instant("trace2", &["benchmark"], None),
-            Sample::new("trace3", &["benchmark"], Some(to_payload("some payload"))),
+            Sample::new_duration("trace3", &["benchmark"], Some(to_payload("some payload"), 0)),
             Sample::new_instant("trace4", &["benchmark"], None)];
-        let sample_start = samples[2].start_ns;
-        samples[2].set_end_ns(sample_start);
 
         b.iter(|| {
             serialized.clear();
-            serialize(samples.iter(), OutputFormat::JsonArray, &mut serialized).unwrap();
+            serialize(samples.iter(), &mut serialized).unwrap();
         });
     }
 }

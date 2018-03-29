@@ -283,7 +283,7 @@ impl CoreState {
             SetTheme { theme_name } =>
                 self.do_set_theme(&theme_name),
             SaveTrace { destination, frontend_samples } =>
-                self.save_trace(&destination, &frontend_samples),
+                self.save_trace(&destination, frontend_samples),
             Plugin(..) => (),
                 //self.do_plugin_cmd(cmd),
             TracingConfig { enabled } =>
@@ -585,7 +585,7 @@ impl CoreState {
         plugins.iter().for_each(|plugin| plugin.toggle_tracing(enabled))
     }
 
-    fn save_trace<P>(&self, path: P, frontend_samples: &Value)
+    fn save_trace<P>(&self, path: P, frontend_samples: Value)
         where P: AsRef<Path>,
     {
         use xi_trace_dump::*;
@@ -599,7 +599,7 @@ impl CoreState {
         for plugin in plugins {
             match plugin.collect_trace() {
                 Ok(json) => {
-                    let mut trace = chrome_trace::decode(&json).unwrap();
+                    let mut trace = chrome_trace::decode(json).unwrap();
                     all_traces.append(&mut trace);
                 }
                 Err(e) => eprintln!("trace error {:?}", e),
@@ -616,9 +616,7 @@ impl CoreState {
             }
         };
 
-        if let Err(e) = chrome_trace::serialize(
-            &all_traces, chrome_trace::OutputFormat::JsonArray,
-            &mut trace_file) {
+        if let Err(e) = chrome_trace::serialize(&all_traces, &mut trace_file) {
             eprintln!("error saving trace {:?}", e);
         }
     }
