@@ -50,8 +50,26 @@ pub trait Cache {
     /// the general case this is backed by the remote peer.
     ///
     /// [`DataSource`]: trait.DataSource.html
-    fn get_line<DS>(&mut self, source: &DS, line_num: usize) -> Result<&str, Error>
-        where DS: DataSource;
+    fn get_line<DS: DataSource>(&mut self, source: &DS, line_num: usize)
+        -> Result<&str, Error>;
+    /// Returns the offset of the line at `line_num`, zero-indexed, fetching
+    /// data from `source` if needed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `line_num` is greater than the total number of lines
+    /// in the document, or if there is a problem communicating with `source`.
+    fn offset_of_line<DS: DataSource>(&mut self, source: &DS, line_num: usize)
+        -> Result<usize, Error>;
+    /// Returns the index of the line containing `offset`, fetching
+    /// data from `source` if needed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `offset` is greater than the total length of
+    /// the document, or if there is a problem communicating with `source`.
+    fn line_of_offset<DS: DataSource>(&mut self, source: &DS, offset: usize)
+        -> Result<usize, Error>;
     /// Updates the cache by applying this delta.
     fn update(&mut self, delta: Option<&RopeDelta>, buf_size: usize,
               num_lines: usize, rev: u64);

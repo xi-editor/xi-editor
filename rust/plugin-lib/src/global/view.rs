@@ -114,6 +114,16 @@ impl<C: Cache> View<C> {
         self.cache.get_line(&ctx, line_num)
     }
 
+    pub fn offset_of_line(&mut self, line_num: usize) -> Result<usize, Error> {
+        let ctx = self.make_ctx();
+        self.cache.offset_of_line(&ctx, line_num)
+    }
+
+    pub fn line_of_offset(&mut self, offset: usize) -> Result<usize, Error> {
+        let ctx = self.make_ctx();
+        self.cache.line_of_offset(&ctx, offset)
+    }
+
     pub fn add_scopes(&self, scopes: &Vec<Vec<String>>) {
         let params = json!({
             "plugin_id": self.plugin_id,

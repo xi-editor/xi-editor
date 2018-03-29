@@ -114,6 +114,42 @@ impl Cache for ChunkCache {
 
     }
 
+    fn offset_of_line<DS: DataSource>(&mut self, source: &DS, line_num: usize)
+        -> Result<usize, Error>
+    {
+        if line_num > self.num_lines { return Err(Error::BadRequest) }
+        match self.cached_offset_of_line(line_num) {
+            Some(offset) => Ok(offset),
+            None => {
+                let resp = source.get_data(line_num, TextUnit::Line,
+                                           CHUNK_SIZE, self.rev)?;
+                self.reset_chunk(resp);
+                self.offset_of_line(source, line_num)
+            }
+        }
+    }
+
+    fn line_of_offset<DS: DataSource>(&mut self, source: &DS, offset: usize)
+        -> Result<usize, Error>
+    {
+        if offset > self.buf_size { return Err(Error::BadRequest) }
+        if self.contents.len() == 0
+            || offset < self.offset
+            || offset > self.offset + self.contents.len() {
+                let resp = source.get_data(offset, TextUnit::Utf8,
+                                           CHUNK_SIZE, self.rev)?;
+                self.reset_chunk(resp);
+        }
+
+        let rel_offset = offset - self.offset;
+        let line_num = match self.line_offsets.binary_search(&rel_offset) {
+            Ok(ix) => ix + self.first_line + 1,
+            Err(ix) => ix + self.first_line,
+        };
+        Ok(line_num)
+    }
+
+
     /// Updates the chunk to reflect changes in this delta.
     fn update(&mut self, delta: Option<&RopeDelta>, new_len: usize,
               num_lines: usize, rev: u64) {
@@ -148,28 +184,6 @@ impl Cache for ChunkCache {
 }
 
 impl ChunkCache {
-    /// Returns the offset of the line at `line_num`, zero-indexed, fetching
-    /// data from `source` if needed.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `line_num` is greater than the total number of lines
-    /// in the document, or if there is a problem communicating with `source`.
-    pub fn offset_of_line<DS>(&mut self, source: &DS, line_num: usize)
-        -> Result<usize, Error>
-        where DS: DataSource
-    {
-        if line_num > self.num_lines { return Err(Error::BadRequest) }
-        match self.cached_offset_of_line(line_num) {
-            Some(offset) => Ok(offset),
-            None => {
-                let resp = source.get_data(line_num, TextUnit::Line, CHUNK_SIZE, self.rev)?;
-                self.reset_chunk(resp);
-                self.offset_of_line(source, line_num)
-            }
-        }
-    }
-
     /// Returns the offset of the provided `line_num` if it can be determined
     /// without fetching data.
     fn cached_offset_of_line(&self, line_num: usize) -> Option<usize> {
@@ -621,5 +635,34 @@ mod tests {
         assert_eq!(c.contents, test_str[5..CHUNK_SIZE*3]);
         assert_eq!(c.get_line(&source, 3).unwrap(), "yay!");
         assert_eq!(c.first_line, 3);
+    }
+
+    #[test]
+    fn convert_lines_offsets() {
+        let mut source = MockDataSource("this\nhas\nfour\nlines!".into());
+        let mut c = ChunkCache::default();
+        c.buf_size = source.0.len();
+        c.num_lines = source.0.measure::<LinesMetric>() + 1;
+
+        assert_eq!(c.line_of_offset(&source, 0).unwrap(), 0);
+        assert_eq!(c.line_of_offset(&source, 1).unwrap(), 0);
+        eprintln!("{:?} {} {}", c.line_offsets, c.offset, c.buf_size);
+        assert_eq!(c.line_of_offset(&source, 4).unwrap(), 0);
+        assert_eq!(c.line_of_offset(&source, 5).unwrap(), 1);
+        assert_eq!(c.line_of_offset(&source, 8).unwrap(), 1);
+        assert_eq!(c.line_of_offset(&source, 9).unwrap(), 2);
+        assert_eq!(c.line_of_offset(&source, 13).unwrap(), 2);
+        assert_eq!(c.line_of_offset(&source, 14).unwrap(), 3);
+        assert_eq!(c.line_of_offset(&source, 18).unwrap(), 3);
+        assert_eq!(c.line_of_offset(&source, 20).unwrap(), 3);
+        assert!(c.line_of_offset(&source, 21).is_err());
+
+
+        assert_eq!(c.offset_of_line(&source, 0).unwrap(), 0);
+        assert_eq!(c.offset_of_line(&source, 1).unwrap(), 5);
+        assert_eq!(c.offset_of_line(&source, 2).unwrap(), 9);
+        assert_eq!(c.offset_of_line(&source, 3).unwrap(), 14);
+        assert_eq!(c.offset_of_line(&source, 4).unwrap(), 20);
+        assert!(c.offset_of_line(&source, 5).is_err());
     }
 }
