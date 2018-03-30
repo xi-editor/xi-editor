@@ -142,7 +142,6 @@ pub trait Metric<N: NodeInfo> {
     /// Invariants:
     ///
     /// - `from_base_units(to_base_units(x)) == x` is True for valid `x`
-    /// - `is_boundary(to_base_units(x))` is True for all `x`
     fn to_base_units(l: &N::L, in_measured_units: usize) -> usize;
 
     /// Returns the smallest offset in measured units corresponding to an offset in base units.
