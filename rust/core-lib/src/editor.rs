@@ -734,13 +734,13 @@ impl Editor {
                 last_line
             } else {
                 last_line + 1
-            };    
+            };
             for line in first_line..last_line {
-                let tab_offset = self.view.line_col_to_offset(&self.text, line, tab_text.len());             
+                let tab_offset = self.view.line_col_to_offset(&self.text, line, tab_text.len());
                 let offset = self.view.offset_of_line(&self.text, line);
-                let interval = Interval::new_closed_open(offset, tab_offset);  
+                let interval = Interval::new_closed_open(offset, tab_offset);
                 if self.text.slice_to_string(interval.start(), interval.end()).contains(tab_text) {
-                    builder.delete(interval); 
+                    builder.delete(interval);
                 }
             }
         }
