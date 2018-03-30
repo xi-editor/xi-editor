@@ -691,6 +691,63 @@ impl Editor {
         */
     }
 
+    fn indent(&mut self) {
+        let mut builder = delta::Builder::new(self.text.len());
+        let tab_text = if self.config.items.translate_tabs_to_spaces {
+                    let tab_size = self.config.items.tab_size;
+                    n_spaces(tab_size)
+            } else {
+                "\t"
+            };
+        for region in self.view.sel_regions() {
+            let (first_line, _) = self.view.offset_to_line_col(&self.text, region.min());
+            let (last_line, last_col) =
+                self.view.offset_to_line_col(&self.text, region.max());
+            let last_line = if last_col == 0 && last_line > first_line {
+                last_line
+            } else {
+                last_line + 1
+            };    
+            for line in first_line..last_line {
+                let offset = self.view.offset_of_line(&self.text, line);
+                let interval = Interval::new_closed_open(offset, offset);  
+                 builder.replace(interval, Rope::from(tab_text));
+            }
+        }
+        self.this_edit_type = EditType::InsertChars;
+        self.add_delta(builder.build());
+    }
+
+    fn outdent(&mut self) {
+        let mut builder = delta::Builder::new(self.text.len());
+        let tab_text = if self.config.items.translate_tabs_to_spaces {
+                let tab_size = self.config.items.tab_size;
+                n_spaces(tab_size)
+        } else {
+            "\t"
+        };
+        for region in self.view.sel_regions() {
+            let (first_line, first_col) = self.view.offset_to_line_col(&self.text, region.min());
+            let (last_line, last_col) =
+                self.view.offset_to_line_col(&self.text, region.max());
+            let last_line = if last_col == 0 && last_line > first_line {
+                last_line
+            } else {
+                last_line + 1
+            };    
+            for line in first_line..last_line {
+                let tab_offset = self.view.line_col_to_offset(&self.text, line, tab_text.len());             
+                let offset = self.view.offset_of_line(&self.text, line);
+                let interval = Interval::new_closed_open(offset, tab_offset);  
+                if self.text.slice_to_string(interval.start(), interval.end()).contains(tab_text) {
+                    builder.delete(interval); 
+                }
+            }
+        }
+        self.this_edit_type = EditType::Delete;
+        self.add_delta(builder.build());
+    }
+
     /// Apply a movement, also setting the scroll to the point requested by
     /// the movement.
     ///
@@ -1105,6 +1162,8 @@ impl Editor {
             CancelOperation => self.do_cancel_operation(),
             Uppercase => self.transform_text(|s| s.to_uppercase()),
             Lowercase => self.transform_text(|s| s.to_lowercase()),
+            Indent => self.indent(),
+            Outdent => self.outdent()
         };
 
         self.cmd_postlude();
