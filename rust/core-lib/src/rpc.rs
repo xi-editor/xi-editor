@@ -383,6 +383,8 @@ pub enum EditNotification {
     CancelOperation,
     Uppercase,
     Lowercase,
+    Indent,
+    Outdent
 }
 
 /// The edit related requests.
