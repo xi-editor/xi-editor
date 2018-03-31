@@ -139,6 +139,7 @@ impl View {
             selection.delete_range(offset, offset, true);
             if !selection.is_empty() {
                 self.drag_state = None;
+                self.set_selection_raw(text, selection);
                 return;
             }
         }
