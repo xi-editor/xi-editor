@@ -846,6 +846,14 @@ impl View {
             None
         }
     }
+
+    /// Generate line breaks based on width measurement. Currently batch-mode,
+    /// and currently in a debugging state.
+    pub fn wrap_width(&mut self, text: &Rope, tab_ctx: &DocumentCtx,
+        style_spans: &Spans<Style>)
+    {
+        self.breaks = Some(linewrap::linewrap_width(text, style_spans, tab_ctx, 500.0));
+    }
 }
 
 // utility function to clamp a value within the given range

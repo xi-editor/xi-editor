@@ -20,7 +20,12 @@ use xi_rope::rope::{Rope, RopeInfo};
 use xi_rope::tree::Cursor;
 use xi_rope::interval::Interval;
 use xi_rope::breaks::{Breaks, BreakBuilder, BreaksBaseMetric};
+use xi_rope::spans::Spans;
 use xi_unicode::LineBreakLeafIter;
+
+use styles::Style;
+use tabs::DocumentCtx;
+use width_cache::{Token, WidthCache};
 
 struct LineBreakCursor<'a> {
     inner: Cursor<'a, RopeInfo>,
@@ -160,4 +165,73 @@ pub fn rewrap(breaks: &mut Breaks, text: &Rope, iv: Interval, newsize: usize, co
         (Interval::new_open_closed(inval_start, inval_end + (end - start) - newsize), builder.build())
     };
     breaks.edit(edit_iv, new_breaks);
+}
+
+/// A potential opportunity to insert a break. In this representation, the widths
+/// have been requested (in a batch request) but are not necessarily known until
+/// the request is issued.
+struct PotentialBreak {
+    pos: usize,  // offset within text
+    tok: Token,
+    hard: bool,
+}
+
+/// Wrap the text (in batch mode) using width measurement.
+pub fn linewrap_width(text: &Rope, style_spans: &Spans<Style>, doc_ctx: &DocumentCtx,
+        max_width: f64) -> Breaks
+{
+    // TODO: this should be scoped to the FE. However, it will work (just with
+    // degraded performance).
+    let mut width_cache = WidthCache::new();
+    eprintln!("wrapping with width, text len = {} {:?}", text.len(),
+        style_spans);
+    for (iv, style) in style_spans.iter() {
+        let style_id = doc_ctx.get_style_id(&style);
+        eprintln!("{}..{}: {}", iv.start(), iv.end(), style_id);
+    }
+    let style_id = 2;  // TODO: derive from style spans rather than assuming.
+    let mut lb_cursor = LineBreakCursor::new(text, 0);
+
+    // Prepare and issue the width request; in a block to limit mutable borrow
+    // of width_cache.
+    let mut pot_breaks = Vec::new();
+    {
+        let mut req = width_cache.batch_req();
+        let mut last_pos = 0;
+
+        while last_pos < text.len() {
+            let (pos, hard) = lb_cursor.next();
+            // TODO: avoid allocating string
+            let word = &text.slice_to_string(last_pos, pos);
+            let tok = req.request(style_id, &word);
+            pot_breaks.push(PotentialBreak { pos, tok, hard });
+            last_pos = pos;
+        }
+        req.issue(doc_ctx).unwrap();
+    }
+
+    // debug code, should be safe to eliminate
+    for p in &pot_breaks {
+        eprintln!("pos {}, tok {}, hard {}, width {}",
+            p.pos, p.tok, p.hard, width_cache.resolve(p.tok));
+    }
+
+    // Compute breaks based on measured widths
+    let mut builder = BreakBuilder::new();
+    let mut last_break_pos = 0;
+    let mut last_hard = false;
+    let mut line_width = 0.0;
+    for p in &pot_breaks {
+        let pos = p.pos;
+        let width = width_cache.resolve(p.tok);
+        if last_hard || (pos > last_break_pos && line_width + width > max_width) {
+            builder.add_break(pos - last_break_pos);
+            last_break_pos = pos;
+            line_width = 0.0;
+        }
+        line_width += width;
+        last_hard = p.hard;
+    }
+    builder.add_no_break(text.len() - last_break_pos);
+    builder.build()
 }

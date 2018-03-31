@@ -912,6 +912,11 @@ impl Editor {
         self.view.set_dirty(&self.text);
     }
 
+    fn debug_wrap_width(&mut self) {
+        self.view.wrap_width(&self.text, &self.doc_ctx, self.styles.get_merged());
+        self.view.set_dirty(&self.text);
+    }
+
     fn debug_print_spans(&self) {
         // get last sel region
         let last_sel = self.view.sel_regions().last().unwrap();
@@ -1143,6 +1148,7 @@ impl Editor {
             FindNext { wrap_around, allow_same } => self.do_find_next(false, wrap_around.unwrap_or(false), allow_same.unwrap_or(false)),
             FindPrevious { wrap_around } => self.do_find_next(true, wrap_around.unwrap_or(false), true),
             DebugRewrap => self.debug_rewrap(),
+            DebugWrapWidth => self.debug_wrap_width(),
             DebugPrintSpans => self.debug_print_spans(),
             CancelOperation => self.do_cancel_operation(),
             Uppercase => self.transform_text(|s| s.to_uppercase()),

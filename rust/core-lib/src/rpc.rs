@@ -378,6 +378,7 @@ pub enum EditNotification {
     FindNext { wrap_around: Option<bool>, allow_same: Option<bool> },
     FindPrevious { wrap_around: Option<bool> },
     DebugRewrap,
+    DebugWrapWidth,
     /// Prints the style spans present in the active selection.
     DebugPrintSpans,
     CancelOperation,
