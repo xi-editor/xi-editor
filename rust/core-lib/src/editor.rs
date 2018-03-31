@@ -759,8 +759,8 @@ impl Editor {
             for line in first_line..last_line {
                 let tab_offset = self.view.line_col_to_offset(&self.text, line, tab_text.len());
                 let offset = self.view.offset_of_line(&self.text, line);
-                let interval = Interval::new_closed_open(offset, tab_offset);
-                if self.text.slice_to_string(interval.start(), interval.end()).contains(tab_text) {
+                let interval = Interval::new_closed_open(offset, tab_offset);         
+                if self.text.slice_to_string(interval.start(), interval.end()).starts_with(tab_text.chars().next().unwrap())  {
                     builder.delete(interval);
                 }
             }
@@ -1104,8 +1104,10 @@ impl Editor {
     }
 
     fn do_cancel_operation(&mut self) {
-        self.view.unset_find(&self.text);
         self.view.collapse_selections(&self.text);
+        self.view.unset_find(&self.text);
+        self.view.set_dirty(&self.text);
+        self.render();
     }
 
     fn transform_text<F: Fn(&str) -> String>(&mut self, transform_function: F) {
