@@ -258,11 +258,10 @@ impl View {
             affinity: Affinity::default(),
         };
 
-        let mut selection = Selection::new();
-
-        if multi_select {
-            selection = self.selection.clone();
-        }
+        let mut selection = match multi_select {
+            true => self.selection.clone(),
+            false => Selection::new(),
+        };
 
         selection.add_region(region);
         self.set_selection(text, selection);
@@ -281,11 +280,10 @@ impl View {
             affinity: Affinity::default(),
         };
 
-        let mut selection = Selection::new();
-
-        if multi_select {
-            selection = self.selection.clone();
-        }
+        let mut selection = match multi_select {
+            true => self.selection.clone(),
+            false => Selection::new(),
+        };
 
         selection.add_region(region);
         self.set_selection(text, selection);
