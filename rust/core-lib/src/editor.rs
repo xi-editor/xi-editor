@@ -66,6 +66,11 @@ enum CharacterEncoding {
 
 const UTF8_BOM: &str = "\u{feff}";
 
+enum IndentDirection {
+    In,
+    Out
+}
+
 fn last_selection_region(regions: &[SelRegion]) -> Option<&SelRegion> {
     for region in regions.iter().rev() {
         if !region.is_caret() {
@@ -692,6 +697,18 @@ impl Editor {
     }
 
     fn indent(&mut self) {
+        self.modify_indent(IndentDirection::In);
+    }
+
+    fn outdent(&mut self) {
+        self.modify_indent(IndentDirection::Out);
+    }
+
+    /// Indents lines based on selection, while taking care to preserve cursor position as much as possible.
+    /// Outdent checks if each line in the selection is already fully tabbed (that is, larger than the config's tab size),
+    /// and deletes a tab character at start of line if it is. Otherwise, it checks for the first non-whitespace character and deletes 
+    /// up to that character instead.
+    fn modify_indent(&mut self, direction: IndentDirection) {
         let mut builder = delta::Builder::new(self.text.len());
         let tab_text = if self.config.items.translate_tabs_to_spaces {
                     let tab_size = self.config.items.tab_size;
@@ -710,42 +727,29 @@ impl Editor {
             };    
             for line in first_line..last_line {
                 let offset = self.view.offset_of_line(&self.text, line);
-                let interval = Interval::new_closed_open(offset, offset);  
-                 builder.replace(interval, Rope::from(tab_text));
+                match direction {
+                    IndentDirection::In => {
+                        let interval = Interval::new_closed_open(offset, offset);  
+                        builder.replace(interval, Rope::from(tab_text));
+                        self.this_edit_type = EditType::InsertChars;
+                    },
+                    IndentDirection::Out => {
+                        let tab_offset = self.view.line_col_to_offset(&self.text, line, tab_text.len());
+                        let slice_interval = Interval::new_closed_open(offset, tab_offset);         
+                        let leading_slice = self.text.slice_to_string(slice_interval.start(), slice_interval.end());
+                        if leading_slice == tab_text {
+                            builder.delete(slice_interval);
+                        } else if let Some(first_char_col) = leading_slice.find(char::is_alphanumeric) {
+                            let first_char_offset = self.view.line_col_to_offset(&self.text, line, first_char_col);
+                            let interval = Interval::new_closed_open(offset, first_char_offset);
+                            builder.delete(interval);
+                        }
+                        self.this_edit_type = EditType::Delete;
+                    },
+                };
             }
         }
-        self.this_edit_type = EditType::InsertChars;
-        self.add_delta(builder.build());
-    }
-
-    fn outdent(&mut self) {
-        let mut builder = delta::Builder::new(self.text.len());
-        let tab_text = if self.config.items.translate_tabs_to_spaces {
-                let tab_size = self.config.items.tab_size;
-                n_spaces(tab_size)
-        } else {
-            "\t"
-        };
-        for region in self.view.sel_regions() {
-            let (first_line, first_col) = self.view.offset_to_line_col(&self.text, region.min());
-            let (last_line, last_col) =
-                self.view.offset_to_line_col(&self.text, region.max());
-            let last_line = if last_col == 0 && last_line > first_line {
-                last_line
-            } else {
-                last_line + 1
-            };
-            for line in first_line..last_line {
-                let tab_offset = self.view.line_col_to_offset(&self.text, line, tab_text.len());
-                let offset = self.view.offset_of_line(&self.text, line);
-                let interval = Interval::new_closed_open(offset, tab_offset);         
-                if self.text.slice_to_string(interval.start(), interval.end()).starts_with(tab_text.chars().next().unwrap())  {
-                    builder.delete(interval);
-                }
-            }
-        }
-        self.this_edit_type = EditType::Delete;
-        self.add_delta(builder.build());
+        self.add_delta(builder.build());   
     }
 
     /// Apply a movement, also setting the scroll to the point requested by
@@ -1064,8 +1068,6 @@ impl Editor {
     fn do_cancel_operation(&mut self) {
         self.view.collapse_selections(&self.text);
         self.view.unset_find(&self.text);
-        self.view.set_dirty(&self.text);
-        self.render();
     }
 
     fn transform_text<F: Fn(&str) -> String>(&mut self, transform_function: F) {
