@@ -61,7 +61,7 @@ pub enum Movement {
 ///
 /// Note: in non-exceptional cases, this function preserves the `horiz`
 /// field of the selection region.
-fn vertical_motion(r: &SelRegion, view: &View, text: &Rope, line_delta: isize,
+fn vertical_motion(r: SelRegion, view: &View, text: &Rope, line_delta: isize,
     modify: bool) -> (usize, Option<HorizPos>)
 {
     // The active point of the selection
@@ -107,7 +107,7 @@ fn scroll_height(view: &View) -> isize {
 }
 
 /// Compute the result of movement on one selection region.
-pub fn region_movement(m: Movement, r: &SelRegion, view: &View, text: &Rope, modify: bool)
+pub fn region_movement(m: Movement, r: SelRegion, view: &View, text: &Rope, modify: bool)
     -> SelRegion
 {
     let (offset, horiz) = match m {
@@ -224,7 +224,7 @@ pub fn selection_movement(m: Movement, s: &Selection, view: &View, text: &Rope,
     modify: bool) -> Selection
 {
     let mut result = Selection::new();
-    for r in s.iter() {
+    for &r in s.iter() {
         let new_region = region_movement(m, r, view, text, modify);
         result.add_region(new_region);
     }
