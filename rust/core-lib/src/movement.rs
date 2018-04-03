@@ -16,7 +16,7 @@
 
 use std::cmp::max;
 
-use selection::{Affinity, HorizPos, Selection, SelRegion};
+use selection::{HorizPos, Selection, SelRegion};
 use view::View;
 use word_boundaries::WordCursor;
 use xi_rope::rope::{LinesMetric, Rope};
@@ -205,12 +205,10 @@ pub fn region_movement(m: Movement, r: SelRegion, view: &View, text: &Rope, modi
         Movement::StartOfDocument => (0, None),
         Movement::EndOfDocument => (text.len(), None),
     };
-    SelRegion {
-        start: if modify { r.start } else { offset },
-        end: offset,
-        horiz: horiz,
-        affinity: Affinity::default(),
-    }
+    SelRegion::new(
+        if modify { r.start } else { offset },
+        offset,
+    ).with_horiz(horiz)
 }
 
 /// Compute a new selection by applying a movement to an existing selection.

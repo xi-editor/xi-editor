@@ -199,12 +199,10 @@ impl Selection {
                 }
             };
 
-            let new_region =  SelRegion {
-                start: transformer.transform(region.start, start_after),
-                end: transformer.transform(region.end, end_after),
-                horiz: None,
-                affinity: region.affinity,
-            };
+            let new_region = SelRegion::new(
+                transformer.transform(region.start, start_after),
+                transformer.transform(region.end, end_after),
+            ).with_affinity(region.affinity);
             result.add_region(new_region);
         }
         result
@@ -265,6 +263,42 @@ pub struct SelRegion {
 }
 
 impl SelRegion {
+    /// Returns a new region.
+    pub fn new(start: usize, end: usize) -> Self {
+        Self {
+            start,
+            end,
+            horiz: None,
+            affinity: Affinity::default(),
+        }
+    }
+
+    /// Returns a new caret region (`start == end`).
+    pub fn caret(pos: usize) -> Self {
+        Self {
+            start: pos,
+            end: pos,
+            horiz: None,
+            affinity: Affinity::default(),
+        }
+    }
+
+    /// Returns a region with the given horizontal position.
+    pub fn with_horiz(self, horiz: Option<HorizPos>) -> Self {
+        Self {
+            horiz,
+            ..self
+        }
+    }
+
+    /// Returns a region with the given affinity.
+    pub fn with_affinity(self, affinity: Affinity) -> Self {
+        Self {
+            affinity,
+            ..self
+        }
+    }
+
     /// Gets the earliest offset within the region, ie the minimum of both edges.
     pub fn min(self) -> usize {
         min(self.start, self.end)
@@ -301,29 +335,19 @@ impl SelRegion {
         } else {
             (new_max, new_min)
         };
-        SelRegion {
-            start: start,
-            end: end,
-            // Could try to preserve horiz/affinity from one of the
-            // sources, but very likely not worth it.
-            horiz: None,
-            affinity: Affinity::default(),
-        }
+        // Could try to preserve horiz/affinity from one of the
+        // sources, but very likely not worth it.
+        SelRegion::new(start, end)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Affinity, Selection, SelRegion};
+    use super::{Selection, SelRegion};
     use std::ops::Deref;
 
     fn r(start: usize, end: usize) -> SelRegion {
-        SelRegion {
-            start: start,
-            end: end,
-            horiz: None,
-            affinity: Affinity::default(),
-        }
+        SelRegion::new(start, end)
     }
 
     #[test]

@@ -251,12 +251,7 @@ impl Editor {
 
         if let Some(prev_sel) = prev_sel {
             let offset = prev_sel.start.min(new_len);
-            let new_sel = SelRegion {
-                start: offset,
-                end: offset,
-                horiz: None,
-                affinity: Affinity::default(),
-            };
+            let new_sel = SelRegion::caret(offset);
             self.set_sel_single_region(new_sel);
         }
 
@@ -346,12 +341,7 @@ impl Editor {
 
     // TODO: add affinity.
     fn set_cursor(&mut self, offset: usize) {
-        self.set_sel_single_region(SelRegion {
-            start: offset,
-            end: offset,
-            horiz: None,
-            affinity: Affinity::default(),
-        });
+        self.set_sel_single_region(SelRegion::caret(offset));
     }
 
     /// Sets the selection to a single region, and scrolls the end of that
@@ -854,12 +844,7 @@ impl Editor {
                     // TODO: small nit, merged region should be backward if end < start.
                     // This could be done by explicitly overriding, or by tweaking the
                     // merge logic.
-                    sel.add_region(SelRegion {
-                        start: last.start,
-                        end: offset,
-                        horiz: None,
-                        affinity: Affinity::default(),
-                    });
+                    sel.add_region(SelRegion::new(last.start, offset));
                     sel
                 };
                 self.view.start_drag(offset, offset, offset);
