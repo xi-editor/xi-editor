@@ -40,6 +40,13 @@ impl Selection {
         Selection::default()
     }
 
+    /// Creates a selection with a single region.
+    pub fn new_simple(region: SelRegion) -> Selection {
+        Selection {
+            regions: vec![region]
+        }
+    }
+
     /// Clear the selection.
     pub fn clear(&mut self) {
         self.regions.clear();
@@ -359,16 +366,14 @@ mod tests {
 
     #[test]
     fn simple_region() {
-        let mut s = Selection::new();
-        s.add_region(r(3, 5));
+        let s = Selection::new_simple(r(3, 5));
         assert!(!s.is_empty());
         assert_eq!(s.deref(), &[r(3, 5)]);
     }
 
     #[test]
     fn delete_range() {
-        let mut s = Selection::new();
-        s.add_region(r(3, 5));
+        let mut s = Selection::new_simple(r(3, 5));
         s.delete_range(1, 2, true);
         assert_eq!(s.deref(), &[r(3, 5)]);
         s.delete_range(1, 3, false);
@@ -376,15 +381,13 @@ mod tests {
         s.delete_range(1, 3, true);
         assert_eq!(s.deref(), &[]);
 
-        let mut s = Selection::new();
-        s.add_region(r(3, 5));
+        let mut s = Selection::new_simple(r(3, 5));
         s.delete_range(5, 6, false);
         assert_eq!(s.deref(), &[r(3, 5)]);
         s.delete_range(5, 6, true);
         assert_eq!(s.deref(), &[]);
 
-        let mut s = Selection::new();
-        s.add_region(r(3, 5));
+        let mut s = Selection::new_simple(r(3, 5));
         s.delete_range(2, 4, false);
         assert_eq!(s.deref(), &[]);
         assert_eq!(s.deref(), &[]);
@@ -398,8 +401,7 @@ mod tests {
 
     #[test]
     fn simple_regions_in_range() {
-        let mut s = Selection::new();
-        s.add_region(r(3, 5));
+        let s = Selection::new_simple(r(3, 5));
         assert_eq!(s.regions_in_range(0, 1), &[]);
         assert_eq!(s.regions_in_range(0, 2), &[]);
         assert_eq!(s.regions_in_range(0, 3), &[r(3, 5)]);
@@ -410,8 +412,7 @@ mod tests {
 
     #[test]
     fn caret_regions_in_range() {
-        let mut s = Selection::new();
-        s.add_region(r(4, 4));
+        let s = Selection::new_simple(r(4, 4));
         assert_eq!(s.regions_in_range(0, 1), &[]);
         assert_eq!(s.regions_in_range(0, 2), &[]);
         assert_eq!(s.regions_in_range(0, 3), &[]);

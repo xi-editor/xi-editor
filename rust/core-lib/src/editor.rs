@@ -347,8 +347,7 @@ impl Editor {
     /// Sets the selection to a single region, and scrolls the end of that
     /// region into view.
     fn set_sel_single_region(&mut self, region: SelRegion) {
-        let mut sel = Selection::new();
-        sel.add_region(region);
+        let sel = Selection::new_simple(region);
         self.scroll_to = self.view.set_selection(&self.text, sel);
     }
 
