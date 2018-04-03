@@ -621,12 +621,12 @@ impl Editor {
         // Another possibility would be to make the delta builder be able to handle
         // overlapping deletions (using union semantics).
         let mut deletions = Selection::new();
-        for r in self.view.sel_regions() {
+        for &r in self.view.sel_regions() {
             if r.is_caret() {
                 let new_region = region_movement(movement, r, &self.view, &self.text, true);
                 deletions.add_region(new_region);
             } else {
-                deletions.add_region(r.clone());
+                deletions.add_region(r);
             }
         }
         if save {
@@ -784,8 +784,8 @@ impl Editor {
 
     fn add_selection_by_movement(&mut self, movement: Movement) {
         let mut sel = Selection::new();
-        for region in self.view.sel_regions() {
-            sel.add_region(region.clone());
+        for &region in self.view.sel_regions() {
+            sel.add_region(region);
             let new_region = region_movement(movement, region, &self.view, &self.text, false);
             sel.add_region(new_region);
         }
@@ -848,8 +848,8 @@ impl Editor {
                 let sel = {
                     let (last, rest) = self.view.sel_regions().split_last().unwrap();
                     let mut sel = Selection::new();
-                    for region in rest {
-                        sel.add_region(region.clone());
+                    for &region in rest {
+                        sel.add_region(region);
                     }
                     // TODO: small nit, merged region should be backward if end < start.
                     // This could be done by explicitly overriding, or by tweaking the
@@ -937,7 +937,7 @@ impl Editor {
         }
     }
 
-    fn sel_region_to_interval_and_rope(&self, region: &SelRegion) -> (Interval, Rope) {
+    fn sel_region_to_interval_and_rope(&self, region: SelRegion) -> (Interval, Rope) {
         let as_interval = Interval::new_closed_open(region.min(), region.max());
         let interval_rope = Rope::from(self.text.slice_to_string(
             as_interval.start(), as_interval.end()));
@@ -949,9 +949,9 @@ impl Editor {
         let mut last = 0;
         let mut optional_previous_selection : Option<(Interval, Rope)> =
             last_selection_region(self.view.sel_regions()).map(
-                |ref region| self.sel_region_to_interval_and_rope(region));
+                |&region| self.sel_region_to_interval_and_rope(region));
 
-        for region in self.view.sel_regions() {
+        for &region in self.view.sel_regions() {
             if region.is_caret() {
                 let middle = region.end;
                 let start = self.text.prev_grapheme_offset(middle).unwrap_or(0);
@@ -967,7 +967,7 @@ impl Editor {
                     }
                 }
             } else if let Some(previous_selection) = optional_previous_selection {
-                let current_interval = self.sel_region_to_interval_and_rope(&region);
+                let current_interval = self.sel_region_to_interval_and_rope(region);
                 builder.replace(current_interval.0, previous_selection.1);
                 optional_previous_selection = Some(current_interval);
             }

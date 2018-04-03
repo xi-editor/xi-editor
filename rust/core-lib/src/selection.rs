@@ -69,7 +69,7 @@ impl Selection {
     /// touching at the edges does not cause a merge. A caret merges with
     /// a non-caret if it is in the interior or on either edge. Two carets
     /// merge if they are the same offset.
-    /// 
+    ///
     /// Performance note: should be O(1) if the new region strictly comes
     /// after all the others in the selection, otherwise O(n).
     pub fn add_region(&mut self, region: SelRegion) {
@@ -81,15 +81,15 @@ impl Selection {
         let mut region = region;
         let mut end_ix = ix;
         if self.regions[ix].min() <= region.min() {
-            if self.regions[ix].should_merge(&region) {
-                region = self.regions[ix].merge_with(&region);
+            if self.regions[ix].should_merge(region) {
+                region = self.regions[ix].merge_with(region);
             } else {
                 ix += 1;
             }
             end_ix += 1;
         }
-        while end_ix < self.regions.len() && region.should_merge(&self.regions[end_ix]) {
-            region = region.merge_with(&self.regions[end_ix]);
+        while end_ix < self.regions.len() && region.should_merge(self.regions[end_ix]) {
+            region = region.merge_with(self.regions[end_ix]);
             end_ix += 1;
         }
         if ix == end_ix {
@@ -223,7 +223,7 @@ impl Deref for Selection {
 }
 
 /// The "affinity" of a cursor which is sitting exactly on a line break.
-/// 
+///
 /// We say "cursor" here rather than "caret" because (depending on presentation)
 /// the front-end may draw a cursor even when the region is not a caret.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -248,7 +248,7 @@ impl Default for Affinity {
 /// term "caret" (sometimes also "cursor", more loosely) to refer to a selection
 /// region with an empty interior. A "non-caret region" is one with a non-empty
 /// interior (i.e. `start != end`).
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct SelRegion {
     /// The inactive edge of a selection, as a byte offset. When
     /// equal to end, the selection range acts as a caret.
@@ -266,33 +266,33 @@ pub struct SelRegion {
 
 impl SelRegion {
     /// Gets the earliest offset within the region, ie the minimum of both edges.
-    pub fn min(&self) -> usize {
+    pub fn min(self) -> usize {
         min(self.start, self.end)
     }
 
     /// Gets the latest offset within the region, ie the maximum of both edges.
-    pub fn max(&self) -> usize {
+    pub fn max(self) -> usize {
         max(self.start, self.end)
     }
 
     /// Determines whether the region is a caret (ie has an empty interior).
-    pub fn is_caret(&self) -> bool {
+    pub fn is_caret(self) -> bool {
         self.start == self.end
     }
 
     /// Determines whether the region's affinity is upstream.
-    pub fn is_upstream(&self) -> bool {
+    pub fn is_upstream(self) -> bool {
         self.affinity == Affinity::Upstream
     }
 
     // Indicate whether this region should merge with the next.
     // Assumption: regions are sorted (self.min() <= other.min())
-    fn should_merge(&self, other: &SelRegion) -> bool {
+    fn should_merge(self, other: SelRegion) -> bool {
         other.min() < self.max() ||
             ((self.is_caret() || other.is_caret()) && other.min() == self.max())
     }
 
-    fn merge_with(&self, other: &SelRegion) -> SelRegion {
+    fn merge_with(self, other: SelRegion) -> SelRegion {
         let is_forward = self.end > self.start || other.end > other.start;
         let new_min = min(self.min(), other.min());
         let new_max = max(self.max(), other.max());
