@@ -696,11 +696,12 @@ impl Editor {
         */
     }
 
-    /// Indents lines based on selection while trying to preserve it.
-    /// Outdent checks if each line in the selection is already fully tabbed,
-    /// (tabbed larger than the config's tab size) and deletes a tab character if it is.
-    /// Otherwise, it checks for the first non-whitespace character  
-    /// and deletes up to that character instead.
+    /// Indents or outdents lines based on selection and user's tab settings.
+    /// Uses a BTreeSet to holds the collection of lines to modify.
+    /// Preserves cursor position and current selection as much as possible.
+    /// Tries to have behavior consistent with other editors like Atom, Sublime and VSCode,
+    /// with non-caret selections not being modified.
+   
     fn modify_indent(&mut self, direction: IndentDirection) {
         let mut builder = delta::Builder::new(self.text.len());
         let mut lines = BTreeSet::new();
@@ -709,14 +710,16 @@ impl Editor {
                 n_spaces(tab_size)
             } else { "\t" };
         for region in self.view.sel_regions() {
-            let first_line = self.view.line_of_offset(&self.text, region.min());
-            let last_line = self.view.line_of_offset(&self.text, region.max());
-            if first_line != last_line {
-                lines.insert(first_line);
-                lines.insert(last_line);
+            let (first_line, _) = self.view.offset_to_line_col(&self.text, region.min());
+            let (last_line, last_col) =
+                self.view.offset_to_line_col(&self.text, region.max());
+            let last_line = if last_col == 0 && last_line > first_line {
+                last_line - 1
             } else {
-                lines.insert(last_line);
-            }
+                last_line   
+            };
+            lines.insert(first_line);
+            lines.insert(last_line);
         }    
         for line in lines {
             let offset = self.view.line_col_to_offset(&self.text, line, 0);
