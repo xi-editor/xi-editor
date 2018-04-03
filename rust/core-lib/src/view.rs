@@ -88,11 +88,9 @@ struct DragState {
 
 impl View {
     pub fn new(view_id: ViewIdentifier) -> View {
-        let mut selection = Selection::new();
-        selection.add_region(SelRegion::caret(0));
         View {
             view_id: view_id.to_owned(),
-            selection: selection,
+            selection: Selection::new_simple(SelRegion::caret(0)),
             drag_state: None,
             first_line: 0,
             height: 10,
@@ -224,8 +222,7 @@ impl View {
     ///
     /// Note: unlike movement based selection, this does not scroll.
     pub fn select_all(&mut self, text: &Rope) {
-        let mut selection = Selection::new();
-        selection.add_region(SelRegion::new(0, text.len()));
+        let selection = Selection::new_simple(SelRegion::new(0, text.len()));
         self.set_selection_raw(text, selection);
     }
 
@@ -861,8 +858,7 @@ impl View {
         }
 
         if let Some(occurrence) = next_occurrence {
-            let mut selection = Selection::new();
-            selection.add_region(occurrence);
+            let selection = Selection::new_simple(occurrence);
             self.set_selection(text, selection)
         } else {
             None
