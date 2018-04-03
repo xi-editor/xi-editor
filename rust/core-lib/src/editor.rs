@@ -722,7 +722,6 @@ impl Editor {
     /// Preserves cursor position and current selection as much as possible.
     /// Tries to have behavior consistent with other editors like Atom, Sublime and VSCode,
     /// with non-caret selections not being modified.
-   
     fn modify_indent(&mut self, direction: IndentDirection) {
         let mut builder = delta::Builder::new(self.text.len());
         let mut lines = BTreeSet::new();
@@ -739,8 +738,10 @@ impl Editor {
             } else {
                 last_line   
             };
-            lines.insert(first_line);
-            lines.insert(last_line);
+            let line_range = first_line..(last_line + 1);
+            for line in line_range {
+                lines.insert(line);
+            }
         }    
         for line in lines {
             let offset = self.view.line_col_to_offset(&self.text, line, 0);
