@@ -717,60 +717,60 @@ impl Editor {
         */
     }
 
+    /// Indents lines based on selection while trying to preserve it.
+    /// Outdent checks if each line in the selection is already fully tabbed,
+    /// (tabbed larger than the config's tab size) and deletes a tab character if it is.
+    /// Otherwise, it checks for the first non-whitespace character  
+    /// and deletes up to that character instead.
+    fn modify_indent(&mut self, direction: IndentDirection) {
+        let mut builder = delta::Builder::new(self.text.len());
+        let mut lines = BTreeSet::new();
+        let tab_text = if self.config.items.translate_tabs_to_spaces {
+                let tab_size = self.config.items.tab_size;
+                n_spaces(tab_size)
+            } else { "\t" };
+        for region in self.view.sel_regions() {
+            let first_line = self.view.line_of_offset(&self.text, region.min());
+            let last_line = self.view.line_of_offset(&self.text, region.max());
+            if first_line != last_line {
+                lines.insert(first_line);
+                lines.insert(last_line);
+            } else {
+                lines.insert(last_line);
+            }
+        }    
+        for line in lines {
+            let offset = self.view.line_col_to_offset(&self.text, line, 0);
+            match direction {
+                IndentDirection::In => {
+                    let interval = Interval::new_closed_open(offset, offset);  
+                    builder.replace(interval, Rope::from(tab_text));
+                    self.this_edit_type = EditType::InsertChars;
+                },
+                IndentDirection::Out => {
+                    let tab_offset = self.view.line_col_to_offset(&self.text, line, tab_text.len());
+                    let interval = Interval::new_closed_open(offset, tab_offset);         
+                    let leading_slice = self.text.slice_to_string(interval.start(), interval.end());
+                    if leading_slice == tab_text {
+                        builder.delete(interval);
+                    } else if let Some(first_char_col) = leading_slice.find(|c: char| !c.is_whitespace()) {
+                        let first_char_offset = self.view.line_col_to_offset(&self.text, line, first_char_col);
+                        let interval = Interval::new_closed_open(offset, first_char_offset);
+                        builder.delete(interval);
+                    }
+                    self.this_edit_type = EditType::Delete;
+                },
+            };
+        }       
+        self.add_delta(builder.build());   
+    }
+
     fn indent(&mut self) {
         self.modify_indent(IndentDirection::In);
     }
 
     fn outdent(&mut self) {
         self.modify_indent(IndentDirection::Out);
-    }
-
-    /// Indents lines based on selection, while taking care to preserve cursor position as much as possible.
-    /// Outdent checks if each line in the selection is already fully tabbed (that is, larger than the config's tab size),
-    /// and deletes a tab character at start of line if it is. Otherwise, it checks for the first non-whitespace character and deletes 
-    /// up to that character instead.
-    fn modify_indent(&mut self, direction: IndentDirection) {
-        let mut builder = delta::Builder::new(self.text.len());
-        let tab_text = if self.config.items.translate_tabs_to_spaces {
-                    let tab_size = self.config.items.tab_size;
-                    n_spaces(tab_size)
-            } else {
-                "\t"
-            };
-        for region in self.view.sel_regions() {
-            let (first_line, _) = self.view.offset_to_line_col(&self.text, region.min());
-            let (last_line, last_col) =
-                self.view.offset_to_line_col(&self.text, region.max());
-            let last_line = if last_col == 0 && last_line > first_line {
-                last_line
-            } else {
-                last_line + 1
-            };    
-            for line in first_line..last_line {
-                let offset = self.view.offset_of_line(&self.text, line);
-                match direction {
-                    IndentDirection::In => {
-                        let interval = Interval::new_closed_open(offset, offset);  
-                        builder.replace(interval, Rope::from(tab_text));
-                        self.this_edit_type = EditType::InsertChars;
-                    },
-                    IndentDirection::Out => {
-                        let tab_offset = self.view.line_col_to_offset(&self.text, line, tab_text.len());
-                        let slice_interval = Interval::new_closed_open(offset, tab_offset);         
-                        let leading_slice = self.text.slice_to_string(slice_interval.start(), slice_interval.end());
-                        if leading_slice == tab_text {
-                            builder.delete(slice_interval);
-                        } else if let Some(first_char_col) = leading_slice.find(char::is_alphanumeric) {
-                            let first_char_offset = self.view.line_col_to_offset(&self.text, line, first_char_col);
-                            let interval = Interval::new_closed_open(offset, first_char_offset);
-                            builder.delete(interval);
-                        }
-                        self.this_edit_type = EditType::Delete;
-                    },
-                };
-            }
-        }
-        self.add_delta(builder.build());   
     }
 
     /// Apply a movement, also setting the scroll to the point requested by
