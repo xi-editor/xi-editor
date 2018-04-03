@@ -89,12 +89,7 @@ struct DragState {
 impl View {
     pub fn new(view_id: ViewIdentifier) -> View {
         let mut selection = Selection::new();
-        selection.add_region(SelRegion {
-            start: 0,
-            end: 0,
-            horiz: None,
-            affinity: Affinity::default(),
-        });
+        selection.add_region(SelRegion::caret(0));
         View {
             view_id: view_id.to_owned(),
             selection: selection,
@@ -150,12 +145,7 @@ impl View {
             min: offset,
             max: offset,
         });
-        let region = SelRegion {
-            start: offset,
-            end: offset,
-            horiz: None,
-            affinity: Affinity::default(),
-        };
+        let region = SelRegion::caret(offset);
         selection.add_region(region);
         self.set_selection_raw(text, selection);
     }
@@ -235,12 +225,7 @@ impl View {
     /// Note: unlike movement based selection, this does not scroll.
     pub fn select_all(&mut self, text: &Rope) {
         let mut selection = Selection::new();
-        selection.add_region(SelRegion {
-            start: 0,
-            end: text.len(),
-            horiz: None,
-            affinity: Default::default(),
-        });
+        selection.add_region(SelRegion::new(0, text.len()));
         self.set_selection_raw(text, selection);
     }
 
@@ -251,12 +236,7 @@ impl View {
             word_cursor.select_word()
         };
 
-        let region = SelRegion {
-            start: start,
-            end: end,
-            horiz: None,
-            affinity: Affinity::default(),
-        };
+        let region = SelRegion::new(start, end);
 
         let mut selection = match multi_select {
             true => self.selection.clone(),
@@ -273,12 +253,7 @@ impl View {
     pub fn select_line(&mut self, text: &Rope, offset: usize, line: usize, multi_select: bool) {
         let start = self.line_col_to_offset(text, line, 0);
         let end = self.line_col_to_offset(text, line + 1, 0);
-        let region = SelRegion {
-            start: start,
-            end: end,
-            horiz: None,
-            affinity: Affinity::default(),
-        };
+        let region = SelRegion::new(start, end);
 
         let mut selection = match multi_select {
             true => self.selection.clone(),
@@ -309,7 +284,11 @@ impl View {
                 (drag_state.min, max(offset, drag_state.max))
             };
             let horiz = None;
-            sel.add_region(SelRegion { start, end, horiz, affinity });
+            sel.add_region(
+                SelRegion::new(start, end)
+                    .with_horiz(horiz)
+                    .with_affinity(affinity)
+            );
             sel
         });
         new_sel.and_then(|new_sel| self.set_selection(text, new_sel))
@@ -747,12 +726,7 @@ impl View {
                     Some(start) => {
                         let end = start + len;
 
-                        let region = SelRegion {
-                            start: start,
-                            end: end,
-                            horiz: None,
-                            affinity: Affinity::default(),
-                        };
+                        let region = SelRegion::new(start, end);
                         let prev_len = occurrences.len();
                         let (_, e) = occurrences.add_range_distinct(region);
                         // in case of ambiguous search results (e.g. search "aba" in "ababa"),
