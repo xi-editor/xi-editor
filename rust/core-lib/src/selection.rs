@@ -29,7 +29,7 @@ pub type HorizPos = usize;
 /// A set of zero or more selection regions, representing a selection state.
 #[derive(Default, Debug, Clone)]
 pub struct Selection {
-    // an invariant: regions[i].max() <= regions[i+1].min()
+    // An invariant: regions[i].max() <= regions[i+1].min()
     // and < if either is_caret()
     regions: Vec<SelRegion>,
 }
@@ -45,7 +45,7 @@ impl Selection {
         self.regions.clear();
     }
 
-    /// Collapse all selections into a single caret
+    /// Collapse all selections into a single caret.
     pub fn collapse(&mut self) {
         self.regions.truncate(1);
         self.regions[0].start = self.regions[0].end;
@@ -251,13 +251,13 @@ impl Default for Affinity {
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct SelRegion {
     /// The inactive edge of a selection, as a byte offset. When
-    /// equal to end, the selection rage acts as a caret.
+    /// equal to end, the selection range acts as a caret.
     pub start: usize,
 
     /// The active edge of a selection, as a byte offset.
     pub end: usize,
 
-    /// A saved horizontal position (used primarily for line up/down movement)
+    /// A saved horizontal position (used primarily for line up/down movement).
     pub horiz: Option<HorizPos>,
 
     /// The affinity of the cursor.
@@ -270,7 +270,7 @@ impl SelRegion {
         min(self.start, self.end)
     }
 
-    /// Gets the earliest latest within the region, ie the maximum of both edges.
+    /// Gets the latest offset within the region, ie the maximum of both edges.
     pub fn max(&self) -> usize {
         max(self.start, self.end)
     }
