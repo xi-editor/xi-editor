@@ -348,6 +348,12 @@ impl SelRegion {
     }
 }
 
+impl From<SelRegion> for Selection {
+    fn from(region: SelRegion) -> Self {
+        Self::new_simple(region)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Selection, SelRegion};
@@ -367,6 +373,13 @@ mod tests {
     #[test]
     fn simple_region() {
         let s = Selection::new_simple(r(3, 5));
+        assert!(!s.is_empty());
+        assert_eq!(s.deref(), &[r(3, 5)]);
+    }
+
+    #[test]
+    fn from_selregion() {
+        let s: Selection = r(3, 5).into();
         assert!(!s.is_empty());
         assert_eq!(s.deref(), &[r(3, 5)]);
     }

@@ -90,7 +90,7 @@ impl View {
     pub fn new(view_id: ViewIdentifier) -> View {
         View {
             view_id: view_id.to_owned(),
-            selection: Selection::new_simple(SelRegion::caret(0)),
+            selection: SelRegion::caret(0).into(),
             drag_state: None,
             first_line: 0,
             height: 10,
@@ -222,7 +222,7 @@ impl View {
     ///
     /// Note: unlike movement based selection, this does not scroll.
     pub fn select_all(&mut self, text: &Rope) {
-        let selection = Selection::new_simple(SelRegion::new(0, text.len()));
+        let selection = SelRegion::new(0, text.len()).into();
         self.set_selection_raw(text, selection);
     }
 
@@ -852,8 +852,7 @@ impl View {
         }
 
         if let Some(occurrence) = next_occurrence {
-            let selection = Selection::new_simple(occurrence);
-            self.set_selection(text, selection)
+            self.set_selection(text, occurrence.into())
         } else {
             None
         }
