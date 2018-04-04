@@ -226,6 +226,19 @@ impl View {
         self.set_selection_raw(text, selection);
     }
 
+    /// Selects the given region and supports multi selection.
+    fn select_region(&mut self, text: &Rope, offset: usize, region: SelRegion, multi_select: bool) {
+        let mut selection = match multi_select {
+            true => self.selection.clone(),
+            false => Selection::new(),
+        };
+
+        selection.add_region(region);
+        self.set_selection(text, selection);
+
+        self.start_drag(offset, region.start, region.end);
+    }
+
     /// Selects an entire word and supports multi selection.
     pub fn select_word(&mut self, text: &Rope, offset: usize, multi_select: bool) {
         let (start, end) = {
@@ -233,34 +246,15 @@ impl View {
             word_cursor.select_word()
         };
 
-        let region = SelRegion::new(start, end);
-
-        let mut selection = match multi_select {
-            true => self.selection.clone(),
-            false => Selection::new(),
-        };
-
-        selection.add_region(region);
-        self.set_selection(text, selection);
-
-        self.start_drag(offset, start, end);
+        self.select_region(text, offset, SelRegion::new(start, end), multi_select);
     }
 
     /// Selects an entire line and supports multi selection.
     pub fn select_line(&mut self, text: &Rope, offset: usize, line: usize, multi_select: bool) {
         let start = self.line_col_to_offset(text, line, 0);
         let end = self.line_col_to_offset(text, line + 1, 0);
-        let region = SelRegion::new(start, end);
 
-        let mut selection = match multi_select {
-            true => self.selection.clone(),
-            false => Selection::new(),
-        };
-
-        selection.add_region(region);
-        self.set_selection(text, selection);
-
-        self.start_drag(offset, start, end);
+        self.select_region(text, offset, SelRegion::new(start, end), multi_select);
     }
 
     /// Starts a drag operation.
