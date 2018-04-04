@@ -251,8 +251,7 @@ impl Editor {
 
         if let Some(prev_sel) = prev_sel {
             let offset = prev_sel.start.min(new_len);
-            let new_sel = SelRegion::caret(offset);
-            self.set_sel_single_region(new_sel);
+            self.set_selection(SelRegion::caret(offset));
         }
 
         self.file_mod_time = self.path.as_ref()
@@ -337,17 +336,9 @@ impl Editor {
         self.add_delta(builder.build());
     }
 
-    /// Sets the position of the cursor to `offset`, as part of an edit operation.
-
-    // TODO: add affinity.
-    fn set_cursor(&mut self, offset: usize) {
-        self.set_sel_single_region(SelRegion::caret(offset));
-    }
-
-    /// Sets the selection to a single region, and scrolls the end of that
-    /// region into view.
-    fn set_sel_single_region(&mut self, region: SelRegion) {
-        self.scroll_to = self.view.set_selection(&self.text, region.into());
+    /// Sets the selection and scrolls the end of it into view.
+    fn set_selection<S: Into<Selection>>(&mut self, sel: S) {
+        self.scroll_to = self.view.set_selection(&self.text, sel);
     }
 
     /// Applies a delta to the text, and updates undo state.
@@ -777,7 +768,7 @@ impl Editor {
             let new_region = region_movement(movement, region, &self.view, &self.text, false);
             sel.add_region(new_region);
         }
-        self.scroll_to = self.view.set_selection(&self.text, sel);
+        self.set_selection(sel);
     }
 
     // TODO: insert from keyboard or input method shouldn't break undo group,
@@ -820,8 +811,8 @@ impl Editor {
 
     /// Sets the cursor and scrolls to the beginning of the given line.
     fn do_goto_line(&mut self, line: u64) {
-        let line = self.view.line_col_to_offset(&self.text, line as usize, 0);
-        self.set_cursor(line);
+        let offset = self.view.line_col_to_offset(&self.text, line as usize, 0);
+        self.set_selection(SelRegion::caret(offset));
     }
 
     fn do_request_lines(&mut self, first: i64, last: i64) {
@@ -846,7 +837,7 @@ impl Editor {
                     sel
                 };
                 self.view.start_drag(offset, offset, offset);
-                self.scroll_to = self.view.set_selection(&self.text, sel);
+                self.set_selection(sel);
                 return;
             }
         } else if click_count == 2 {
@@ -857,7 +848,7 @@ impl Editor {
             return;
         }
         self.view.start_drag(offset, offset, offset);
-        self.set_cursor(offset);
+        self.set_selection(SelRegion::caret(offset));
     }
 
     fn do_drag(&mut self, line: u64, col: u64, _flags: u64) {

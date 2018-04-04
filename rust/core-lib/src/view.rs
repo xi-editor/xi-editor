@@ -163,7 +163,8 @@ impl View {
 
     /// Set the selection to a new value. Return value is the offset of a
     /// point that should be scrolled into view.
-    pub fn set_selection(&mut self, text: &Rope, sel: Selection) -> Option<usize> {
+    pub fn set_selection<S: Into<Selection>>(&mut self, text: &Rope, sel: S) -> Option<usize> {
+        let sel = sel.into();
         self.set_selection_raw(text, sel);
         // We somewhat arbitrarily choose the last region for setting the old-style
         // selection state, and for scrolling it into view if needed. This choice can
@@ -852,7 +853,7 @@ impl View {
         }
 
         if let Some(occurrence) = next_occurrence {
-            self.set_selection(text, occurrence.into())
+            self.set_selection(text, occurrence)
         } else {
             None
         }
