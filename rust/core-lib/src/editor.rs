@@ -702,7 +702,6 @@ impl Editor {
     /// Tries to have behavior consistent with other editors like Atom, Sublime and VSCode,
     /// with non-caret selections not being modified.
     fn modify_indent(&mut self, direction: IndentDirection) {
-        let mut builder = delta::Builder::new(self.text.len());
         let mut lines = BTreeSet::new();
         let tab_text = if self.config.items.translate_tabs_to_spaces {
                 let tab_size = self.config.items.tab_size;
@@ -722,38 +721,44 @@ impl Editor {
                 lines.insert(line);
             }
         }    
+        match direction {
+            IndentDirection::In => {
+               self.indent(lines, tab_text);
+            },
+            IndentDirection::Out => {
+              self.outdent(lines, tab_text);
+            },
+        };
+    }
+
+    fn indent(&mut self, lines: BTreeSet<usize>, tab_text: &str) {
+        let mut builder = delta::Builder::new(self.text.len());
         for line in lines {
             let offset = self.view.line_col_to_offset(&self.text, line, 0);
-            match direction {
-                IndentDirection::In => {
-                    let interval = Interval::new_closed_open(offset, offset);  
-                    builder.replace(interval, Rope::from(tab_text));
-                    self.this_edit_type = EditType::InsertChars;
-                },
-                IndentDirection::Out => {
-                    let tab_offset = self.view.line_col_to_offset(&self.text, line, tab_text.len());
-                    let interval = Interval::new_closed_open(offset, tab_offset);         
-                    let leading_slice = self.text.slice_to_string(interval.start(), interval.end());
-                    if leading_slice == tab_text {
-                        builder.delete(interval);
-                    } else if let Some(first_char_col) = leading_slice.find(|c: char| !c.is_whitespace()) {
-                        let first_char_offset = self.view.line_col_to_offset(&self.text, line, first_char_col);
-                        let interval = Interval::new_closed_open(offset, first_char_offset);
-                        builder.delete(interval);
-                    }
-                    self.this_edit_type = EditType::Delete;
-                },
-            };
-        }       
+            let interval = Interval::new_closed_open(offset, offset);  
+            builder.replace(interval, Rope::from(tab_text));
+            self.this_edit_type = EditType::InsertChars;
+        }      
         self.add_delta(builder.build());   
     }
 
-    fn indent(&mut self) {
-        self.modify_indent(IndentDirection::In);
-    }
-
-    fn outdent(&mut self) {
-        self.modify_indent(IndentDirection::Out);
+    fn outdent(&mut self, lines: BTreeSet<usize>, tab_text: &str) {
+        let mut builder = delta::Builder::new(self.text.len());
+        for line in lines {
+            let offset = self.view.line_col_to_offset(&self.text, line, 0);
+            let tab_offset = self.view.line_col_to_offset(&self.text, line, tab_text.len());
+            let interval = Interval::new_closed_open(offset, tab_offset);         
+            let leading_slice = self.text.slice_to_string(interval.start(), interval.end());
+            if leading_slice == tab_text {
+                builder.delete(interval);
+            } else if let Some(first_char_col) = leading_slice.find(|c: char| !c.is_whitespace()) {
+                let first_char_offset = self.view.line_col_to_offset(&self.text, line, first_char_col);
+                let interval = Interval::new_closed_open(offset, first_char_offset);
+                builder.delete(interval);
+            }
+            self.this_edit_type = EditType::Delete;
+        }
+        self.add_delta(builder.build());   
     }
 
     /// Apply a movement, also setting the scroll to the point requested by
@@ -1170,8 +1175,8 @@ impl Editor {
             CancelOperation => self.do_cancel_operation(),
             Uppercase => self.transform_text(|s| s.to_uppercase()),
             Lowercase => self.transform_text(|s| s.to_lowercase()),
-            Indent => self.indent(),
-            Outdent => self.outdent()
+            Indent => self.modify_indent(IndentDirection::In),
+            Outdent => self.modify_indent(IndentDirection::Out)
         };
 
         self.cmd_postlude();
