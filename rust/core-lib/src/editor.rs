@@ -722,13 +722,10 @@ impl Editor {
             }
         }    
         match direction {
-            IndentDirection::In => {
-               self.indent(lines, tab_text);
-            },
-            IndentDirection::Out => {
-              self.outdent(lines, tab_text);
-            },
-        };
+            IndentDirection::In =>  self.indent(lines, tab_text),
+            IndentDirection::Out => self.outdent(lines, tab_text)
+         };
+        
     }
 
     fn indent(&mut self, lines: BTreeSet<usize>, tab_text: &str) {
