@@ -60,6 +60,9 @@ pub struct View {
     /// Tracks whether or not the view has unsaved changes.
     pristine: bool,
 
+    /// New offset to be scrolled into position after an edit.
+    scroll_to: Option<usize>,
+
     /// The currently active search string
     search_string: Option<String>,
     /// The case matching setting for the currently active search
@@ -91,6 +94,7 @@ impl View {
         View {
             view_id: view_id.to_owned(),
             selection: SelRegion::caret(0).into(),
+            scroll_to: Some(0),
             drag_state: None,
             first_line: 0,
             height: 10,
@@ -115,7 +119,7 @@ impl View {
         self.height
     }
 
-    pub fn scroll_to_cursor(&mut self, text: &Rope) {
+    fn scroll_to_cursor(&mut self, text: &Rope) {
         let end = self.sel_regions().last().unwrap().end;
         let line = self.line_of_offset(text, end);
         if line < self.first_line {
@@ -123,6 +127,10 @@ impl View {
         } else if self.first_line + self.height <= line {
             self.first_line = line - (self.height - 1);
         }
+        // We somewhat arbitrarily choose the last region for setting the old-style
+        // selection state, and for scrolling it into view if needed. This choice can
+        // likely be improved.
+        self.scroll_to = Some(end);
     }
 
     /// Toggles a caret at the given offset.
@@ -153,41 +161,26 @@ impl View {
     ///
     /// If `modify` is `true`, the selections are modified, otherwise the results
     /// of individual region movements become carets.
-    pub fn do_move(&mut self, text: &Rope, movement: Movement, modify: bool)
-        -> Option<usize>
-    {
+    pub fn do_move(&mut self, text: &Rope, movement: Movement, modify: bool) {
         self.drag_state = None;
         let new_sel = selection_movement(movement, &self.selection, self, text, modify);
-        self.set_selection(text, new_sel)
+        self.set_selection(text, new_sel);
     }
 
-    /// Set the selection to a new value. Return value is the offset of a
-    /// point that should be scrolled into view.
-    pub fn set_selection<S: Into<Selection>>(&mut self, text: &Rope, sel: S) -> Option<usize> {
-        let sel = sel.into();
-        self.set_selection_raw(text, sel);
-        // We somewhat arbitrarily choose the last region for setting the old-style
-        // selection state, and for scrolling it into view if needed. This choice can
-        // likely be improved.
-        let region = self.selection.last().unwrap().clone();
+    /// Set the selection to a new value.
+    pub fn set_selection<S: Into<Selection>>(&mut self, text: &Rope, sel: S) {
+        self.set_selection_raw(text, sel.into());
         self.scroll_to_cursor(text);
-        Some(region.end)
     }
 
-    /// Sets the selection to a new value, without invalidating. Return values is
-    /// the offset of a point that should be scrolled into view.
-    fn set_selection_for_edit(&mut self, text: &Rope, sel: Selection) -> Option<usize> {
+    /// Sets the selection to a new value, without invalidating.
+    fn set_selection_for_edit(&mut self, text: &Rope, sel: Selection) {
         self.selection = sel;
-        // We somewhat arbitrarily choose the last region for setting the old-style
-        // selection state, and for scrolling it into view if needed. This choice can
-        // likely be improved.
-        let region = self.selection.last().unwrap().clone();
         self.scroll_to_cursor(text);
-        Some(region.end)
     }
 
-    /// Sets the selection to a new value, invalidating the line cache as needed. This
-    /// function does not perform any scrolling.
+    /// Sets the selection to a new value, invalidating the line cache as needed.
+    /// This function does not perform any scrolling.
     fn set_selection_raw(&mut self, text: &Rope, sel: Selection) {
         self.invalidate_selection(text);
         self.selection = sel;
@@ -266,7 +259,8 @@ impl View {
 
     /// Does a drag gesture, setting the selection from a combination of the drag
     /// state and new offset.
-    pub fn do_drag(&mut self, text: &Rope, offset: usize, affinity: Affinity) -> Option<usize> {
+    pub fn do_drag(&mut self, text: &Rope, line: u64, col: u64, affinity: Affinity) {
+        let offset = self.line_col_to_offset(text, line as usize, col as usize);
         let new_sel = self.drag_state.as_ref().map(|drag_state| {
             let mut sel = drag_state.base_sel.clone();
             // TODO: on double or triple click, quantize offset to requested granularity.
@@ -283,7 +277,7 @@ impl View {
             );
             sel
         });
-        new_sel.and_then(|new_sel| self.set_selection(text, new_sel))
+        new_sel.map(|sel| self.set_selection(text, sel));
     }
 
     /// Returns the regions of the current selection.
@@ -486,6 +480,11 @@ impl View {
         let height = self.line_of_offset(text, text.len()) + 1;
         let plan = RenderPlan::create(height, self.first_line, self.height);
         self.send_update_for_plan(text, tab_ctx, style_spans, &plan);
+        if let Some(new_scroll_pos) = self.scroll_to {
+            let (line, col) = self.offset_to_line_col(text, new_scroll_pos);
+            tab_ctx.scroll_to(self.view_id, line, col);
+            self.scroll_to = None;
+        }
     }
 
     // Send the requested lines even if they're outside the current scroll region.
@@ -586,7 +585,7 @@ impl View {
     ///
     /// Return value is a location of a point that should be scrolled into view.
     pub fn after_edit(&mut self, text: &Rope, last_text: &Rope, delta: &Delta<RopeInfo>,
-        pristine: bool, keep_selections: bool) -> Option<usize>
+        pristine: bool, keep_selections: bool)
     {
         let (iv, new_len) = delta.summary();
         if let Some(breaks) = self.breaks.as_mut() {
@@ -636,7 +635,7 @@ impl View {
         // Note: for committing plugin edits, we probably want to know the priority
         // of the delta so we can set the cursor before or after the edit, as needed.
         let new_sel = self.selection.apply_delta(delta, true, keep_selections);
-        self.set_selection_for_edit(text, new_sel)
+        self.set_selection_for_edit(text, new_sel);
     }
 
     /// Call to mark view as pristine. Used after a buffer is saved.
@@ -774,6 +773,13 @@ impl View {
         }
     }
 
+    pub fn find_next(&mut self, text: &Rope, reverse: bool, wrap: bool, allow_same: bool) {
+        self.select_next_occurrence(text, reverse, false, true, allow_same);
+        if self.scroll_to.is_none() && wrap {
+            self.select_next_occurrence(text, reverse, true, true, allow_same);
+        }
+    }
+
     /// Select the next occurrence relative to the last cursor. `reverse` determines whether the
     /// next occurrence before (`true`) or after (`false`) the last cursor is selected. `wrapped`
     /// indicates a search for the next occurrence past the end of the file. `stop_on_found`
@@ -781,15 +787,15 @@ impl View {
     /// to forward search, i.e. reverse = false). If `allow_same` is set to `true` the current
     /// selection is considered a valid next occurrence.
     pub fn select_next_occurrence(&mut self, text: &Rope, reverse: bool, wrapped: bool,
-                                  stop_on_found: bool, allow_same: bool) -> Option<usize>
+                                  stop_on_found: bool, allow_same: bool)
     {
         if self.search_string.is_none() {
-            return None;
+            return
         }
 
         let sel = match self.sel_regions().last() {
             Some(sel) => (sel.min(), sel.max()),
-            None => return None
+            None => return
         };
 
         let (from, to) = if reverse != wrapped { (0, sel.0) } else { (sel.0, text.len()) };
@@ -852,11 +858,7 @@ impl View {
             }
         }
 
-        if let Some(occurrence) = next_occurrence {
-            self.set_selection(text, occurrence)
-        } else {
-            None
-        }
+        next_occurrence.map(|occ| self.set_selection(text, occ));
     }
 }
 
