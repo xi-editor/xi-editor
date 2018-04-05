@@ -755,8 +755,9 @@ impl Editor {
             let offset = self.view.line_col_to_offset(&self.text, line, 0);
             let interval = Interval::new_closed_open(offset, offset);  
             builder.replace(interval, Rope::from(tab_text));
-            self.this_edit_type = EditType::InsertChars;
+          
         }      
+        self.this_edit_type = EditType::InsertChars;
         self.add_delta(builder.build());   
     }
 
@@ -774,8 +775,8 @@ impl Editor {
                 let interval = Interval::new_closed_open(offset, first_char_offset);
                 builder.delete(interval);
             }
-            self.this_edit_type = EditType::Delete;
         }
+        self.this_edit_type = EditType::Delete;
         self.add_delta(builder.build());   
     }
 
