@@ -701,30 +701,30 @@ impl Editor {
             let last_line = if last_col == 0 && last_line > first_line {
                 last_line - 1
             } else {
-                last_line   
+                last_line
             };
             let line_range = first_line..(last_line + 1);
             for line in line_range {
                 lines.insert(line);
             }
-        }    
+        }
         match direction {
             IndentDirection::In =>  self.indent(lines, tab_text),
             IndentDirection::Out => self.outdent(lines, tab_text)
          };
-        
+
     }
 
     fn indent(&mut self, lines: BTreeSet<usize>, tab_text: &str) {
         let mut builder = delta::Builder::new(self.text.len());
         for line in lines {
             let offset = self.view.line_col_to_offset(&self.text, line, 0);
-            let interval = Interval::new_closed_open(offset, offset);  
+            let interval = Interval::new_closed_open(offset, offset);
             builder.replace(interval, Rope::from(tab_text));
-          
-        }      
+
+        }
         self.this_edit_type = EditType::InsertChars;
-        self.add_delta(builder.build());   
+        self.add_delta(builder.build());
     }
 
     fn outdent(&mut self, lines: BTreeSet<usize>, tab_text: &str) {
@@ -732,7 +732,7 @@ impl Editor {
         for line in lines {
             let offset = self.view.line_col_to_offset(&self.text, line, 0);
             let tab_offset = self.view.line_col_to_offset(&self.text, line, tab_text.len());
-            let interval = Interval::new_closed_open(offset, tab_offset);         
+            let interval = Interval::new_closed_open(offset, tab_offset);
             let leading_slice = self.text.slice_to_string(interval.start(), interval.end());
             if leading_slice == tab_text {
                 builder.delete(interval);
@@ -743,7 +743,7 @@ impl Editor {
             }
         }
         self.this_edit_type = EditType::Delete;
-        self.add_delta(builder.build());   
+        self.add_delta(builder.build());
     }
 
     /// Apply a movement, also setting the scroll to the point requested by
