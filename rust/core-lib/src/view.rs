@@ -277,7 +277,10 @@ impl View {
             );
             sel
         });
-        new_sel.map(|sel| self.set_selection(text, sel));
+
+        if let Some(sel) = new_sel {
+            self.set_selection(text, sel);
+        }
     }
 
     /// Returns the regions of the current selection.
@@ -480,10 +483,9 @@ impl View {
         let height = self.line_of_offset(text, text.len()) + 1;
         let plan = RenderPlan::create(height, self.first_line, self.height);
         self.send_update_for_plan(text, tab_ctx, style_spans, &plan);
-        if let Some(new_scroll_pos) = self.scroll_to {
+        if let Some(new_scroll_pos) = self.scroll_to.take() {
             let (line, col) = self.offset_to_line_col(text, new_scroll_pos);
             tab_ctx.scroll_to(self.view_id, line, col);
-            self.scroll_to = None;
         }
     }
 
@@ -582,8 +584,6 @@ impl View {
     /// Updates the view after the text has been modified by the given `delta`.
     /// This method is responsible for updating the cursors, and also for
     /// recomputing line wraps.
-    ///
-    /// Return value is a location of a point that should be scrolled into view.
     pub fn after_edit(&mut self, text: &Rope, last_text: &Rope, delta: &Delta<RopeInfo>,
         pristine: bool, keep_selections: bool)
     {
@@ -790,12 +790,12 @@ impl View {
                                   stop_on_found: bool, allow_same: bool)
     {
         if self.search_string.is_none() {
-            return
+            return;
         }
 
         let sel = match self.sel_regions().last() {
             Some(sel) => (sel.min(), sel.max()),
-            None => return
+            None => return,
         };
 
         let (from, to) = if reverse != wrapped { (0, sel.0) } else { (sel.0, text.len()) };
@@ -858,7 +858,9 @@ impl View {
             }
         }
 
-        next_occurrence.map(|occ| self.set_selection(text, occ));
+        if let Some(occ) = next_occurrence {
+            self.set_selection(text, occ);
+        }
     }
 }
 
