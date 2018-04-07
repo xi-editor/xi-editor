@@ -216,7 +216,6 @@ pub fn len_utf8_from_first_byte(b: u8) -> usize {
 #[derive(Clone, Copy)]
 pub struct LinesMetric(usize);  // number of lines
 
-
 /// Measured unit is newline amount
 /// Base unit is utf8 code unit(=byte) amount
 /// Boundary is trailing and determined by a newline char
