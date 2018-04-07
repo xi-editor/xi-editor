@@ -14,6 +14,7 @@
 
 use std::cmp::{min,max};
 use std::mem;
+use std::cell::RefCell;
 
 use serde_json::value::Value;
 
@@ -25,28 +26,40 @@ use xi_rope::interval::Interval;
 use xi_rope::spans::Spans;
 use xi_rope::find::{find, CaseMatching};
 
-use tabs::{ViewIdentifier, DocumentCtx};
-use styles::Style;
+use tabs::{ViewId, BufferId};
+use styles::{Style, ThemeStyleMap};
 use index_set::IndexSet;
 use selection::{Affinity, Selection, SelRegion};
-use movement::{Movement, selection_movement};
 use line_cache_shadow::{self, LineCacheShadow, RenderPlan, RenderTactic};
 use word_boundaries::WordCursor;
+use rpc::{GestureType, MouseAction};
+
+use movement::{Movement, region_movement, selection_movement};
+use edit_types::ViewEvent;
+use client::Client;
 
 use linewrap;
 
+type StyleMap = RefCell<ThemeStyleMap>;
+
 const BACKWARDS_FIND_CHUNK_SIZE: usize = 32_768;
 
+/// A flag used to indicate when legacy actions should modify selections
+const FLAG_SELECT: u64 = 2;
+
 pub struct View {
-    pub view_id: ViewIdentifier,
+    pub view_id: ViewId,
+    pub buffer_id: BufferId,
 
     /// The selection state for this view. Invariant: non-empty.
     selection: Selection,
 
     drag_state: Option<DragState>,
 
-    first_line: usize,  // vertical scroll position
-    height: usize,  // height of visible portion
+    /// vertical scroll position
+    first_line: usize,
+    /// height of visible portion
+    height: usize,
     breaks: Option<Breaks>,
     wrap_col: usize,
 
@@ -54,7 +67,7 @@ pub struct View {
     /// description for the invariant.
     lc_shadow: LineCacheShadow,
 
-    // The occurrences, which determine the highlights, have been updated.
+    /// The occurrences, which determine the highlights, have been updated.
     hls_dirty: bool,
 
     /// Tracks whether or not the view has unsaved changes.
@@ -90,9 +103,10 @@ struct DragState {
 }
 
 impl View {
-    pub fn new(view_id: ViewIdentifier) -> View {
+    pub fn new(view_id: ViewId, buffer_id: BufferId) -> View {
         View {
-            view_id: view_id.to_owned(),
+            view_id: view_id,
+            buffer_id: buffer_id,
             selection: SelRegion::caret(0).into(),
             scroll_to: Some(0),
             drag_state: None,
@@ -110,7 +124,81 @@ impl View {
         }
     }
 
-    pub fn set_scroll(&mut self, first: usize, last: usize) {
+    pub (crate) fn do_edit(&mut self, text: &Rope, cmd: ViewEvent) {
+        use self::ViewEvent::*;
+        match cmd {
+            Move(movement) => self.do_move(text, movement, false),
+            ModifySelection(movement) => self.do_move(text, movement, true),
+            SelectAll => self.select_all(text),
+            Scroll(range) => self.set_scroll(range.first, range.last),
+            AddSelectionAbove =>
+                self.add_selection_by_movement(text, Movement::Up),
+            AddSelectionBelow =>
+                self.add_selection_by_movement(text, Movement::Down),
+            Gesture { line, col, ty } =>
+                self.do_gesture(text, line, col, ty),
+            GotoLine { line } => self.goto_line(text, line),
+            FindNext { wrap_around, allow_same } =>
+                self.find_next(text, false,
+                               wrap_around.unwrap_or(false),
+                               allow_same.unwrap_or(false)),
+            FindPrevious { wrap_around } =>
+                self.find_next(text, true, wrap_around.unwrap_or(false), true),
+            Click(MouseAction { line, column, flags, click_count }) => {
+                // Deprecated (kept for client compatibility):
+                // should be removed in favor of do_gesture
+                eprintln!("Usage of click is deprecated; use do_gesture");
+                if (flags & FLAG_SELECT) != 0 {
+                    self.do_gesture(text, line, column, GestureType::RangeSelect)
+                } else if click_count == Some(2) {
+                    self.do_gesture(text, line, column, GestureType::WordSelect)
+                } else if click_count == Some(3) {
+                    self.do_gesture(text, line, column, GestureType::LineSelect)
+                } else {
+                    self.do_gesture(text, line, column, GestureType::PointSelect)
+                }
+            }
+            Drag(MouseAction { line, column, .. }) =>
+                self.do_drag(text, line, column, Affinity::default()),
+            Cancel => self.do_cancel(text),
+        }
+    }
+
+    fn do_gesture(&mut self, text: &Rope, line: u64, col: u64, ty: GestureType) {
+        let line = line as usize;
+        let col = col as usize;
+        let offset = self.line_col_to_offset(text, line, col);
+        match ty {
+            GestureType::PointSelect => {
+                self.set_selection(text, SelRegion::caret(offset));
+                self.start_drag(offset, offset, offset);
+            },
+            GestureType::RangeSelect => self.select_range(text, offset),
+            GestureType::ToggleSel => self.toggle_sel(text, offset),
+            GestureType::LineSelect =>
+                self.select_line(text, offset, line, false),
+            GestureType::WordSelect =>
+                self.select_word(text, offset, false),
+            GestureType::MultiLineSelect =>
+                self.select_line(text, offset, line, true),
+            GestureType::MultiWordSelect =>
+                self.select_word(text, offset, true)
+        }
+    }
+
+    fn do_cancel(&mut self, text: &Rope) {
+        self.collapse_selections(text);
+        self.unset_find(text);
+    }
+
+    fn goto_line(&mut self, text: &Rope, line: u64) {
+        let offset = self.line_col_to_offset(text, line as usize, 0);
+        self.set_selection(text, SelRegion::caret(offset));
+    }
+
+    pub fn set_scroll(&mut self, first: i64, last: i64) {
+        let first = max(first, 0) as usize;
+        let last = max(last, 0) as usize;
         self.first_line = first;
         self.height = last - first;
     }
@@ -187,9 +275,9 @@ impl View {
         self.invalidate_selection(text);
     }
 
-    /// Invalidate the current selection. Note that we could be even more fine-grained
-    /// in the case of multiple cursors, but we also want this method to be fast even
-    /// when the selection is large.
+    /// Invalidate the current selection. Note that we could be even more
+    /// fine-grained in the case of multiple cursors, but we also want this
+    /// method to be fast even when the selection is large.
     fn invalidate_selection(&mut self, text: &Rope) {
         // TODO: refine for upstream (caret appears on prev line)
         let first_line = self.line_of_offset(text, self.selection.first().unwrap().min());
@@ -203,6 +291,18 @@ impl View {
         self.lc_shadow.partial_invalidate(first_line, last_line, invalid);
     }
 
+    fn add_selection_by_movement(&mut self, text: &Rope, movement: Movement) {
+        let mut sel = Selection::new();
+        for &region in self.sel_regions() {
+            sel.add_region(region);
+            let new_region = region_movement(movement, region, self,
+                                             &text, false);
+            sel.add_region(new_region);
+        }
+        self.set_selection(text, sel);
+    }
+
+    // TODO: insert from keyboard or input method shouldn't break undo group,
     /// Invalidates the styles of the given range (start and end are offsets within
     /// the text).
     pub fn invalidate_styles(&mut self, text: &Rope, start: usize, end: usize) {
@@ -279,7 +379,7 @@ impl View {
 
     /// Does a drag gesture, setting the selection from a combination of the drag
     /// state and new offset.
-    pub fn do_drag(&mut self, text: &Rope, line: u64, col: u64, affinity: Affinity) {
+    fn do_drag(&mut self, text: &Rope, line: u64, col: u64, affinity: Affinity) {
         let offset = self.line_col_to_offset(text, line as usize, col as usize);
         let new_sel = self.drag_state.as_ref().map(|drag_state| {
             let mut sel = drag_state.base_sel.clone();
@@ -303,6 +403,40 @@ impl View {
         }
     }
 
+    pub fn do_click(&mut self, text: &Rope, line: u64, col: u64,
+                    flags: u64, click_count: u64) {
+        // TODO: calculate affinity
+        let offset = self.line_col_to_offset(&text, line as usize, col as usize);
+        if (flags & FLAG_SELECT) != 0 {
+            if !self.is_point_in_selection(offset) {
+                let sel = {
+                    let (last, rest) = self.sel_regions().split_last().unwrap();
+                    let mut sel = Selection::new();
+                    for &region in rest {
+                        sel.add_region(region);
+                    }
+                    // TODO: small nit, merged region should be backward
+                    // if end < start. This could be done by explicitly
+                    // overriding, or by tweaking the merge logic.
+                    sel.add_region(SelRegion::new(last.start, offset));
+                    sel
+                };
+                self.set_selection(&text, sel);
+                self.start_drag(offset, offset, offset);
+                return;
+            }
+        } else if click_count == 2 {
+            self.select_word(&text, offset, false);
+            return;
+        } else if click_count == 3 {
+            self.select_line(&text, offset, line as usize, false);
+            return;
+        }
+        self.set_selection(text, SelRegion::caret(offset));
+        self.start_drag(offset, offset, offset);
+    }
+
+
     /// Returns the regions of the current selection.
     pub fn sel_regions(&self) -> &[SelRegion] {
         &self.selection
@@ -322,9 +456,10 @@ impl View {
     }
 
     // Render a single line, and advance cursors to next line.
-    fn render_line(&self, tab_ctx: &DocumentCtx, text: &Rope,
-        start_of_line: &mut Cursor<RopeInfo>, soft_breaks: Option<&mut Cursor<BreaksInfo>>, style_spans: &Spans<Style>,
-        line_num: usize) -> Value
+    fn render_line(&self, client: &Client, styles: &StyleMap,
+                   text: &Rope, start_of_line: &mut Cursor<RopeInfo>,
+                   soft_breaks: Option<&mut Cursor<BreaksInfo>>,
+                   style_spans: &Spans<Style>, line_num: usize) -> Value
     {
         let start_pos = start_of_line.pos();
         let pos = soft_breaks.map_or(start_of_line.next::<LinesMetric>(), |bc| {
@@ -367,7 +502,8 @@ impl View {
             }
         }
 
-        let styles = self.render_styles(tab_ctx, start_pos, pos, &selections, &hls, style_spans);
+        let styles = self.render_styles(client, styles, start_pos, pos,
+                                        &selections, &hls, style_spans);
 
         let mut result = json!({
             "text": &l_str,
@@ -380,8 +516,10 @@ impl View {
         result
     }
 
-    pub fn render_styles(&self, tab_ctx: &DocumentCtx, start: usize, end: usize,
-        sel: &[(usize, usize)], hls: &[(usize, usize)], style_spans: &Spans<Style>) -> Vec<isize>
+    pub fn render_styles(&self, client: &Client, styles: &StyleMap,
+                         start: usize, end: usize, sel: &[(usize, usize)],
+                         hls: &[(usize, usize)],
+                         style_spans: &Spans<Style>) -> Vec<isize>
     {
         let mut rendered_styles = Vec::new();
         let style_spans = style_spans.subseq(Interval::new_closed_open(start, end));
@@ -400,13 +538,25 @@ impl View {
             ix = sel_end as isize;
         }
         for (iv, style) in style_spans.iter() {
-            let style_id = tab_ctx.get_style_id(&style);
+            let style_id = self.get_or_def_style_id(client, styles, &style);
             rendered_styles.push((iv.start() as isize) - ix);
             rendered_styles.push(iv.end() as isize - iv.start() as isize);
             rendered_styles.push(style_id as isize);
             ix = iv.end() as isize;
         }
         rendered_styles
+    }
+
+    fn get_or_def_style_id(&self, client: &Client, style_map: &StyleMap,
+                           style: &Style) -> usize {
+        let mut style_map = style_map.borrow_mut();
+        if let Some(ix) = style_map.lookup(style) {
+            return ix;
+        }
+        let ix = style_map.add(style);
+        let style = style_map.merge_with_default(style);
+        client.def_style(&style.to_json(ix));
+        ix
     }
 
     fn build_update_op(&self, op: &str, lines: Option<Vec<Value>>, n: usize) -> Value {
@@ -422,8 +572,9 @@ impl View {
         update
     }
 
-    fn send_update_for_plan(&mut self, text: &Rope, tab_ctx: &DocumentCtx,
-        style_spans: &Spans<Style>, plan: &RenderPlan)
+    fn send_update_for_plan(&mut self, text: &Rope, client: &Client,
+                            styles: &StyleMap, style_spans: &Spans<Style>,
+                            plan: &RenderPlan)
     {
         if !self.lc_shadow.needs_render(plan) { return; }
 
@@ -478,8 +629,11 @@ impl View {
                             Cursor::new(breaks, offset));
                         let mut rendered_lines = Vec::new();
                         for line_num in start_line..end_line {
-                            rendered_lines.push(self.render_line(tab_ctx, text,
-                                &mut line_cursor, soft_breaks.as_mut(), style_spans, line_num));
+                            let line = self.render_line(client, styles, text,
+                                                        &mut line_cursor,
+                                                        soft_breaks.as_mut(),
+                                                        style_spans, line_num);
+                            rendered_lines.push(line);
                         }
                         ops.push(self.build_update_op("ins", Some(rendered_lines), seg.n));
                         b.add_span(seg.n, seg.our_line_num, line_cache_shadow::ALL_VALID);
@@ -491,31 +645,32 @@ impl View {
             "ops": ops,
             "pristine": self.pristine,
         });
-        tab_ctx.update_view(self.view_id, &params);
+        client.update_view(self.view_id, &params);
         self.lc_shadow = b.build();
         self.hls_dirty = false;
     }
 
     // Update front-end with any changes to view since the last time sent.
-    pub fn render_if_dirty(&mut self, text: &Rope, tab_ctx: &DocumentCtx,
-        style_spans: &Spans<Style>)
+    pub fn render_if_dirty(&mut self, text: &Rope, client: &Client,
+                           styles: &StyleMap, style_spans: &Spans<Style>)
     {
         let height = self.line_of_offset(text, text.len()) + 1;
         let plan = RenderPlan::create(height, self.first_line, self.height);
-        self.send_update_for_plan(text, tab_ctx, style_spans, &plan);
+        self.send_update_for_plan(text, client, styles, style_spans, &plan);
         if let Some(new_scroll_pos) = self.scroll_to.take() {
             let (line, col) = self.offset_to_line_col(text, new_scroll_pos);
-            tab_ctx.scroll_to(self.view_id, line, col);
+            client.scroll_to(self.view_id, line, col);
         }
     }
 
     // Send the requested lines even if they're outside the current scroll region.
-    pub fn request_lines(&mut self, text: &Rope, tab_ctx: &DocumentCtx, style_spans: &Spans<Style>,
-        first_line: usize, last_line: usize) {
+    pub fn request_lines(&mut self, text: &Rope, client: &Client,
+                         styles: &StyleMap, style_spans: &Spans<Style>,
+                         first_line: usize, last_line: usize) {
         let height = self.line_of_offset(text, text.len()) + 1;
         let mut plan = RenderPlan::create(height, self.first_line, self.height);
         plan.request_lines(first_line, last_line);
-        self.send_update_for_plan(text, tab_ctx, style_spans, &plan);
+        self.send_update_for_plan(text, client, styles, style_spans, &plan);
     }
 
     /// Invalidates front-end's entire line cache, forcing a full render at the next
@@ -663,8 +818,40 @@ impl View {
         self.pristine = true;
     }
 
+    pub fn do_find(&mut self, text: &Rope, chars: Option<String>,
+                   case_sensitive: bool) -> Value {
+        let mut from_sel = false;
+        let search_string = if chars.is_some() {
+            chars
+        } else {
+            self.sel_regions().last().and_then(|region| {
+                if region.is_caret() {
+                    None
+                } else {
+                    from_sel = true;
+                    Some(text.slice_to_string(region.min(), region.max()))
+                }
+            })
+        };
+
+        if search_string.is_none() {
+            self.unset_find(text);
+            return Value::Null;
+        }
+
+        let search_string = search_string.unwrap();
+        if search_string.len() == 0 {
+            self.unset_find(text);
+            return Value::Null;
+        }
+
+        self.set_find(text, &search_string, case_sensitive);
+
+        Value::String(search_string.to_string())
+    }
+
     /// Unsets the search and removes all highlights from the view.
-    pub fn unset_find(&mut self, text: &Rope) {
+    fn unset_find(&mut self, text: &Rope) {
         self.search_string = None;
         self.occurrences = None;
         self.hls_dirty = true;
@@ -673,9 +860,10 @@ impl View {
         self.valid_search.clear();
     }
 
-    /// Sets find for the view, highlights occurrences in the current viewport and selects the first
-    /// occurrence relative to the last cursor.
-    pub fn set_find(&mut self, text: &Rope, search_string: &str, case_sensitive: bool) {
+    /// Sets find for the view, highlights occurrences in the current viewport
+    /// and selects the first occurrence relative to the last cursor.
+    fn set_find(&mut self, text: &Rope, search_string: &str,
+                case_sensitive: bool) {
         let case_matching = if case_sensitive {
             CaseMatching::Exact
         } else {
