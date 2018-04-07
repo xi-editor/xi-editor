@@ -1,4 +1,4 @@
-#Metrics and Boundaries
+# Metrics and Boundaries
 The xi-rope code tries to capture general underlying mathematical concepts without being overly abstract. This can be confusing (especially to newcomers) and there are definitely ways in which the current code doesn't live up to this ideal.
 
 ## Monoid homomorphisms
