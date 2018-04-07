@@ -25,8 +25,7 @@ use syntect::highlighting::StyleModifier;
 use xi_rope::interval::Interval;
 use xi_rope::spans::{Spans, SpansBuilder};
 
-use tabs::DocumentCtx;
-use styles::Style;
+use styles::{Style, ThemeStyleMap};
 use plugins::PluginPid;
 
 /// A collection of layers containing scope information.
@@ -60,9 +59,9 @@ impl Scopes {
 
     /// Adds the provided scopes to the layer's lookup table.
     pub fn add_scopes(&mut self, layer: PluginPid, scopes: Vec<Vec<String>>,
-                                doc_ctx: &DocumentCtx) {
+                                style_map: &ThemeStyleMap) {
         if self.create_if_missing(layer).is_err() { return }
-        self.layers.get_mut(&layer).unwrap().add_scopes(scopes, doc_ctx);
+        self.layers.get_mut(&layer).unwrap().add_scopes(scopes, style_map);
     }
 
     /// Inserts empty spans at the given interval for all layers.
@@ -99,9 +98,9 @@ impl Scopes {
         layer
     }
 
-    pub fn theme_changed(&mut self, doc_ctx: &DocumentCtx) {
+    pub fn theme_changed(&mut self, style_map: &ThemeStyleMap) {
         for layer in self.layers.values_mut() {
-            layer.theme_changed(doc_ctx);
+            layer.theme_changed(style_map);
         }
         self.merged = SpansBuilder::new(self.merged.len()).build();
         let iv_all = Interval::new_closed_closed(0, self.merged.len());
@@ -183,10 +182,10 @@ impl ScopeLayer {
         }
     }
 
-    fn theme_changed(&mut self, doc_ctx: &DocumentCtx) {
+    fn theme_changed(&mut self, style_map: &ThemeStyleMap) {
         // recompute styles with the new theme
         let cur_stacks = self.stack_lookup.clone();
-        self.style_lookup = self.styles_for_stacks(&cur_stacks, doc_ctx);
+        self.style_lookup = self.styles_for_stacks(&cur_stacks, style_map);
         let iv_all = Interval::new_closed_closed(0, self.style_spans.len());
         self.style_spans = SpansBuilder::new(self.style_spans.len()).build();
         // this feels unnecessary but we can't pass in a reference to self
@@ -196,7 +195,7 @@ impl ScopeLayer {
     }
 
     fn add_scopes(&mut self, scopes: Vec<Vec<String>>,
-                                doc_ctx: &DocumentCtx) {
+                                style_map: &ThemeStyleMap) {
         let mut stacks = Vec::with_capacity(scopes.len());
         for stack in scopes {
             let scopes = stack.iter().map(|s| Scope::new(&s))
@@ -214,14 +213,14 @@ impl ScopeLayer {
             stacks.push(scopes);
         }
 
-        let mut new_styles = self.styles_for_stacks(stacks.as_slice(), doc_ctx);
+        let mut new_styles = self.styles_for_stacks(stacks.as_slice(), style_map);
         self.stack_lookup.append(&mut stacks);
         self.style_lookup.append(&mut new_styles);
     }
 
     fn styles_for_stacks(&mut self, stacks: &[Vec<Scope>],
-                         doc_ctx: &DocumentCtx) -> Vec<Style> {
-        let style_map = doc_ctx.get_style_map().lock().unwrap();
+                         style_map: &ThemeStyleMap) -> Vec<Style> {
+        //let style_map = style_map.borrow();
         let highlighter = style_map.get_highlighter();
         let mut new_styles = Vec::new();
 
