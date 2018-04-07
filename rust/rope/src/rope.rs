@@ -149,7 +149,11 @@ pub struct BaseMetric(());
 
 /// Measured unit is utf8 code unit
 /// Base unit is utf8 code unit
-/// Boundary is are codepoint boundaries
+/// Boundary is atomic and determined by codepoint boundary.
+/// Atomicity is implicit, putting the offset
+/// between two utf8 code units that form a code point is considered invalid.
+/// For example, take a string that starts with a 0x80 byte.
+/// Then offset=1 is invalid.
 impl Metric<RopeInfo> for BaseMetric {
     fn measure(_: &RopeInfo, len: usize) -> usize {
         len
