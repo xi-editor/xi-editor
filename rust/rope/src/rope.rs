@@ -144,6 +144,7 @@ impl NodeInfo for RopeInfo {
 }
 
 //TODO: document metrics, based on https://github.com/google/xi-editor/issues/456
+//See ../docs/MetricsAndBoundaries.md for more information.
 #[derive(Clone, Copy)]
 pub struct BaseMetric(());
 
