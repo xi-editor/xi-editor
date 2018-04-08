@@ -902,6 +902,7 @@ impl Editor {
             self.view.select_line(&self.text, offset, line as usize, false);
             return;
         }
+        self.view.set_selection(&self.text, SelRegion::caret(offset));
         self.view.start_drag(offset, offset, offset);
     }
 
