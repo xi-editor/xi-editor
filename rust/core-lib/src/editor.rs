@@ -874,37 +874,6 @@ impl Editor {
         self.view.request_lines(&self.text, &self.doc_ctx, self.styles.get_merged(), first as usize, last as usize);
     }
 
-    fn do_click(&mut self, line: u64, col: u64, flags: u64, click_count: u64) {
-        // TODO: calculate affinity
-        let offset = self.view.line_col_to_offset(&self.text, line as usize, col as usize);
-        if (flags & FLAG_SELECT) != 0 {
-            if !self.view.is_point_in_selection(offset) {
-                let sel = {
-                    let (last, rest) = self.view.sel_regions().split_last().unwrap();
-                    let mut sel = Selection::new();
-                    for &region in rest {
-                        sel.add_region(region);
-                    }
-                    // TODO: small nit, merged region should be backward if end < start.
-                    // This could be done by explicitly overriding, or by tweaking the
-                    // merge logic.
-                    sel.add_region(SelRegion::new(last.start, offset));
-                    sel
-                };
-                self.view.set_selection(&self.text, sel);
-                self.view.start_drag(offset, offset, offset);
-                return;
-            }
-        } else if click_count == 2 {
-            self.view.select_word(&self.text, offset, false);
-            return;
-        } else if click_count == 3 {
-            self.view.select_line(&self.text, offset, line as usize, false);
-            return;
-        }
-        self.view.start_drag(offset, offset, offset);
-    }
-
     fn do_drag(&mut self, line: u64, col: u64, _flags: u64) {
         self.view.do_drag(&self.text, line, col, Affinity::default());
     }
@@ -912,7 +881,14 @@ impl Editor {
     fn do_gesture(&mut self, line: u64, col: u64, ty: GestureType) {
         let offset = self.view.line_col_to_offset(&self.text, line as usize, col as usize);
         match ty {
+            GestureType::Click => {
+                self.view.set_selection(&self.text, SelRegion::caret(offset));
+                self.view.start_drag(offset, offset, offset);
+            },
+            GestureType::RangeSelect => self.view.select_range(&self.text, offset),
             GestureType::ToggleSel => self.view.toggle_sel(&self.text, offset),
+            GestureType::LineSelect => self.view.select_line(&self.text, offset, line as usize, false),
+            GestureType::WordSelect => self.view.select_word(&self.text, offset, false),
             GestureType::MultiLineSelect => self.view.select_line(&self.text, offset, line as usize, true),
             GestureType::MultiWordSelect => self.view.select_word(&self.text, offset, true)
         }
@@ -1137,9 +1113,6 @@ impl Editor {
             RequestLines(LineRange { first, last }) => self.do_request_lines(first, last),
             Yank => self.yank(),
             Transpose => self.do_transpose(),
-            Click(MouseAction {line, column, flags, click_count} ) => {
-                self.do_click(line, column, flags, click_count.unwrap())
-            }
             Drag (MouseAction {line, column, flags, ..}) => {
                 self.do_drag(line, column, flags);
             }
