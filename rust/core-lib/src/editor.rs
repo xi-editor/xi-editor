@@ -648,21 +648,35 @@ impl Editor {
     }
 
     fn insert_tab(&mut self) {
-        let mut builder = delta::Builder::new(self.text.len());
-        for region in self.view.sel_regions() {
-            let iv = Interval::new_closed_open(region.min(), region.max());
-            let tab_text = if self.config.items.translate_tabs_to_spaces {
-                    let (_, col) = self.view.offset_to_line_col(&self.text, region.start);
-                    let tab_size = self.config.items.tab_size;
-                    let n = tab_size - (col % tab_size);
-                    n_spaces(n)
-            } else {
-                "\t"
-            };
-            builder.replace(iv, Rope::from(tab_text));
+        let nb_regions = self.view.sel_regions().len();
+        
+        let nb_lines = if nb_regions == 1 {
+            let mut region = self.view.sel_regions()[0];
+            let mut sel_text = self.text.slice(region.start, region.end);
+            sel_text.measure::<LinesMetric>() + 1
         }
-        self.this_edit_type = EditType::InsertChars;
-        self.add_delta(builder.build());
+        else{ 0 };
+
+        if nb_lines > 1 {
+            self.modify_indent(IndentDirection::In);
+        }
+        else {            
+            let mut builder = delta::Builder::new(self.text.len());
+            for region in self.view.sel_regions() {       
+                let iv = Interval::new_closed_open(region.min(), region.max());
+                let tab_text = if self.config.items.translate_tabs_to_spaces {
+                        let (_, col) = self.view.offset_to_line_col(&self.text, region.start);      
+                        let tab_size = self.config.items.tab_size;
+                        let n = tab_size - (col % tab_size);
+                        n_spaces(n)
+                } else {
+                    "\t"
+                };
+                builder.replace(iv, Rope::from(tab_text));
+            }
+            self.this_edit_type = EditType::InsertChars;
+            self.add_delta(builder.build());
+        }
 
         // What follows is old indent code, retained because it will be useful for
         // indent action (Sublime no longer does indent on non-caret selections).
