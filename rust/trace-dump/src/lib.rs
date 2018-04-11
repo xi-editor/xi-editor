@@ -26,7 +26,6 @@ extern crate serde_derive;
 extern crate bincode;
 
 #[cfg(feature = "chrome_trace_event")]
-#[macro_use]
 extern crate serde_json;
 
 #[cfg(all(test, feature = "benchmarks"))]
