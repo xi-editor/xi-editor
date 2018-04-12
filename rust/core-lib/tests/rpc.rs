@@ -267,7 +267,7 @@ const OTHER_EDIT_RPCS: &str = r#"{"method":"edit","params":{"view_id":"view-id-1
 {"method":"edit","params":{"view_id":"view-id-1","method":"request_lines","params":[0,1]}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"drag","params":[17,15,0]}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"gesture","params":{"line": 1, "col": 2, "ty": "toggle_sel"}}}
-{"method":"edit","params":{"view_id":"view-id-1","method":"gesture","params":{"line": 1, "col": 2, "ty": "click"}}}
+{"method":"edit","params":{"view_id":"view-id-1","method":"gesture","params":{"line": 1, "col": 2, "ty": "point_select"}}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"gesture","params":{"line": 1, "col": 2, "ty": "range_select"}}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"gesture","params":{"line": 1, "col": 2, "ty": "line_select"}}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"gesture","params":{"line": 1, "col": 2, "ty": "word_select"}}}
