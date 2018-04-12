@@ -288,7 +288,7 @@ pub struct EditCommand<T> {
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum GestureType {
-    Click,
+    PointSelect,
     ToggleSel,
     RangeSelect,
     LineSelect,
@@ -376,6 +376,7 @@ pub enum EditNotification {
     RequestLines(LineRange),
     Yank,
     Transpose,
+    Click(MouseAction),
     Drag(MouseAction),
     Gesture { line: u64, col: u64, ty: GestureType},
     Undo,

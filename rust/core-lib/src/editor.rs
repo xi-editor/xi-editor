@@ -881,7 +881,7 @@ impl Editor {
     fn do_gesture(&mut self, line: u64, col: u64, ty: GestureType) {
         let offset = self.view.line_col_to_offset(&self.text, line as usize, col as usize);
         match ty {
-            GestureType::Click => {
+            GestureType::PointSelect => {
                 self.view.set_selection(&self.text, SelRegion::caret(offset));
                 self.view.start_drag(offset, offset, offset);
             },
@@ -1113,6 +1113,20 @@ impl Editor {
             RequestLines(LineRange { first, last }) => self.do_request_lines(first, last),
             Yank => self.yank(),
             Transpose => self.do_transpose(),
+            Click(MouseAction {line, column, flags, click_count} ) => {
+                // Deprecated (kept for client compatibility): should be removed in favor of do_gesture
+                println!("Usage of click is deprecated and should be replaced by gestures");
+
+                if (flags & FLAG_SELECT) != 0 {
+                    self.do_gesture(line, column, GestureType::RangeSelect)
+                } else if click_count == Some(2) {
+                    self.do_gesture(line, column, GestureType::WordSelect)
+                } else if click_count == Some(3) {
+                    self.do_gesture(line, column, GestureType::LineSelect)
+                } else {
+                    self.do_gesture(line, column, GestureType::PointSelect)
+                }
+            }
             Drag (MouseAction {line, column, flags, ..}) => {
                 self.do_drag(line, column, flags);
             }
