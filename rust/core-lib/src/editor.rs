@@ -873,7 +873,7 @@ impl Editor {
     fn do_request_lines(&mut self, first: i64, last: i64) {
         self.view.request_lines(&self.text, &self.doc_ctx, self.styles.get_merged(), first as usize, last as usize);
     }
-    
+
     fn do_drag(&mut self, line: u64, col: u64, _flags: u64) {
         self.view.do_drag(&self.text, line, col, Affinity::default());
     }
@@ -1115,7 +1115,7 @@ impl Editor {
             Transpose => self.do_transpose(),
             Click(MouseAction {line, column, flags, click_count} ) => {
                 // Deprecated (kept for client compatibility): should be removed in favor of do_gesture
-                println!("Usage of click is deprecated and should be replaced by gestures");
+                eprintln!("Usage of click is deprecated and should be replaced by gestures");
 
                 if (flags & FLAG_SELECT) != 0 {
                     self.do_gesture(line, column, GestureType::RangeSelect)
