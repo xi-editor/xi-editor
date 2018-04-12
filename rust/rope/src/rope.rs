@@ -28,7 +28,7 @@ use delta::{Delta, DeltaElement};
 use interval::Interval;
 
 use bytecount;
-use memchr::memchr;
+use memchr::{memrchr, memchr};
 use serde::ser::{Serialize, Serializer, SerializeStruct, SerializeTupleVariant};
 use serde::de::{Deserialize, Deserializer};
 
@@ -144,6 +144,7 @@ impl NodeInfo for RopeInfo {
 }
 
 //TODO: document metrics, based on https://github.com/google/xi-editor/issues/456
+//See ../docs/MetricsAndBoundaries.md for more information.
 #[derive(Clone, Copy)]
 pub struct BaseMetric(());
 
@@ -238,7 +239,7 @@ impl Metric<RopeInfo> for LinesMetric {
     }
 
     fn prev(s: &String, offset: usize) -> Option<usize> {
-        s.as_bytes()[..offset].iter().rposition(|&c| c == b'\n')
+        memrchr(b'\n', &s.as_bytes()[..offset])
             .map(|pos| pos + 1)
     }
 
@@ -267,7 +268,7 @@ fn find_leaf_split_for_merge(s: &str) -> usize {
 // Try to split at newline boundary (leaning left), if not, then split at codepoint
 fn find_leaf_split(s: &str, minsplit: usize) -> usize {
     let mut splitpoint = min(MAX_LEAF, s.len() - MIN_LEAF);
-    match s.as_bytes()[minsplit - 1..splitpoint].iter().rposition(|&c| c == b'\n') {
+    match memrchr(b'\n', &s.as_bytes()[minsplit - 1..splitpoint]) {
         Some(pos) => minsplit + pos,
         None => {
             while !s.is_char_boundary(splitpoint) {

@@ -873,7 +873,7 @@ impl Editor {
     fn do_request_lines(&mut self, first: i64, last: i64) {
         self.view.request_lines(&self.text, &self.doc_ctx, self.styles.get_merged(), first as usize, last as usize);
     }
-
+    
     fn do_drag(&mut self, line: u64, col: u64, _flags: u64) {
         self.view.do_drag(&self.text, line, col, Affinity::default());
     }
