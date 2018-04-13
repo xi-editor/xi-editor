@@ -27,7 +27,7 @@ use serde_json::{self, Value};
 use toml;
 
 use syntax::SyntaxDefinition;
-use tabs::ViewIdentifier;
+use tabs::BufferId;
 
 /// Namespace for various default settings.
 #[allow(unused)]
@@ -117,10 +117,10 @@ pub enum ConfigDomain {
     /// The overrides for a particular syntax.
     Syntax(SyntaxDefinition),
     /// The user overrides for a particular buffer
-    UserOverride(ViewIdentifier),
+    UserOverride(BufferId),
     /// The system's overrides for a particular buffer. Only used internally.
     #[serde(skip_deserializing)]
-    SysOverride(ViewIdentifier),
+    SysOverride(BufferId),
 }
 
 /// The errors that can occur when managing configs.
@@ -333,7 +333,7 @@ impl ConfigManager {
     /// view.
     pub fn get_buffer_config<S, V>(&self, syntax: S, view_id: V) -> BufferConfig
         where S: Into<Option<SyntaxDefinition>>,
-              V: Into<Option<ViewIdentifier>>
+              V: Into<Option<BufferId>>
     {
         let syntax = syntax.into();
         let view_id = view_id.into();
@@ -485,8 +485,8 @@ impl From<SyntaxDefinition> for ConfigDomain {
     }
 }
 
-impl From<ViewIdentifier> for ConfigDomain {
-    fn from(src: ViewIdentifier) -> ConfigDomain {
+impl From<BufferId> for ConfigDomain {
+    fn from(src: BufferId) -> ConfigDomain {
         ConfigDomain::UserOverride(src)
     }
 }
@@ -665,8 +665,8 @@ mod tests {
         assert!(ConfigDomain::try_from_path(Path::new("hi/unknown.xiconfig")).is_err());
 
         assert_eq!(serde_json::to_string(&ConfigDomain::General).unwrap(), "\"general\"");
-        let d = ConfigDomain::UserOverride(ViewIdentifier::from("view-id-1"));
-        assert_eq!(serde_json::to_string(&d).unwrap(), "{\"user_override\":\"view-id-1\"}");
+        let d = ConfigDomain::UserOverride(BufferId(5));
+        assert_eq!(serde_json::to_string(&d).unwrap(), "{\"user_override\":5}");
         let d = ConfigDomain::Syntax(SyntaxDefinition::Swift);
         assert_eq!(serde_json::to_string(&d).unwrap(), "{\"syntax\":\"swift\"}");
     }

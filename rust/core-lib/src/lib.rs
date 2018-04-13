@@ -49,12 +49,13 @@ use ledger_includes::*;
 /// a front-end), but are exposed here, largely so they appear in documentation.
 #[path=""]
 pub mod internal {
+    pub mod client;
     pub mod core;
     pub mod tabs;
     pub mod editor;
     pub mod edit_types;
     pub mod editing;
-    pub mod client;
+    pub mod file;
     pub mod view;
     pub mod linewrap;
     pub mod plugins;
@@ -88,6 +89,7 @@ use internal::client;
 use internal::edit_types;
 use internal::editing;
 use internal::editor;
+use internal::file;
 use internal::view;
 use internal::linewrap;
 use internal::plugins;

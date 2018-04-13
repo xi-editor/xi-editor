@@ -27,21 +27,24 @@ use plugins::rpc::{PluginBufferInfo, PluginNotification, PluginRequest,
 PluginUpdate, UpdateResponse};
 
 use styles::ThemeStyleMap;
-use config::ConfigManager;
+use config::{BufferConfig, ConfigManager};
 
 use WeakXiCore;
 use tabs::{ViewId, PluginId};
 use editor::Editor;
-use view::View;
+use file::FileInfo;
 use edit_types::EventDomain;
 use client::Client;
 use plugins::Plugin;
+use selection::SelRegion;
+use view::View;
 
 // Maximum returned result from plugin get_data RPC.
 pub const MAX_SIZE_LIMIT: usize = 1024 * 1024;
 
 pub struct EventContext<'a> {
     pub (crate) buffer: &'a RefCell<Editor>,
+    pub (crate) info: Option<&'a FileInfo>,
     pub (crate) view: &'a RefCell<View>,
     pub (crate) siblings: Vec<&'a RefCell<View>>,
     pub (crate) plugins: Vec<&'a Plugin>,
@@ -200,13 +203,36 @@ impl<'a> EventContext<'a> {
         }
     }
 
+    pub (crate) fn after_save(&self, path: &Path, new_config: BufferConfig) {
+        // notify plugins
+        let view_id = self.view.borrow().view_id;
+        self.plugins.iter().for_each(
+            |plugin| plugin.did_save(view_id, path)
+            );
+        if let Some(changes) = self.buffer.borrow_mut().set_config(new_config) {
+            self.client.config_changed(view_id, &changes);
+        }
+        self.buffer.borrow_mut().set_pristine();
+        self.with_view(|view, text| view.set_dirty(text));
+        self.render()
+    }
+
+    /// Returns `true` if this was the last view
+    pub (crate) fn close_view(&self) -> bool {
+        // we probably want to notify plugins _before_ we close the view
+        // TODO: determine what plugins we're stopping
+        let view_id = self.view.borrow().view_id;
+        self.plugins.iter().for_each(|plug| plug.close_view(view_id));
+        self.siblings.is_empty()
+    }
+
     pub (crate) fn config_changed(&self, config_manager: &ConfigManager) {
         {
             let mut ed = self.buffer.borrow_mut();
             let mut view = self.view.borrow_mut();
             let syntax = ed.get_syntax().to_owned();
             let new_config = config_manager.get_buffer_config(syntax,
-                                                              view.view_id);
+                                                              view.buffer_id);
             if let Some(changes) = ed.set_config(new_config) {
                 if changes.contains_key("wrap_width") {
                     let wrap_width = ed.get_config().items.wrap_width;
@@ -219,6 +245,24 @@ impl<'a> EventContext<'a> {
         self.render()
     }
 
+    pub (crate) fn reload(&self, text: Rope) {
+        self.with_editor(|ed, view| {
+            let new_len = text.len();
+            view.collapse_selections(ed.get_buffer());
+            view.unset_find(ed.get_buffer());
+            let prev_sel = view.sel_regions().first().map(|s| s.clone());
+            ed.reload(text);
+            if let Some(prev_sel) = prev_sel {
+                let offset = prev_sel.start.min(new_len);
+                let sel = SelRegion::caret(offset);
+                view.set_selection(ed.get_buffer(), sel);
+            }
+        });
+
+        self.after_edit("core");
+        self.render();
+    }
+
     pub (crate) fn plugin_info(&self) -> PluginBufferInfo {
         let buffer = self.buffer.borrow();
         let nb_lines = buffer.get_buffer().measure::<LinesMetric>() + 1;
@@ -226,12 +270,14 @@ impl<'a> EventContext<'a> {
             .chain(self.siblings.iter())
             .map(|v| v.borrow().view_id)
             .collect();
+        let buffer_id = self.view.borrow().buffer_id;
 
         let config = buffer.get_config().to_table();
-        PluginBufferInfo::new(self.view.borrow().buffer_id, &views,
+        let path = self.info.map(|info| info.path.to_owned());
+        PluginBufferInfo::new(buffer_id, &views,
                               buffer.get_head_rev_token(),
                               buffer.get_buffer().len(), nb_lines,
-                              buffer.get_path().map(Path::to_path_buf),
+                              path,
                               buffer.get_syntax().clone(),
                               config)
 
