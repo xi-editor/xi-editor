@@ -171,9 +171,96 @@ pub fn rewrap(breaks: &mut Breaks, text: &Rope, iv: Interval, newsize: usize, co
 /// have been requested (in a batch request) but are not necessarily known until
 /// the request is issued.
 struct PotentialBreak {
-    pos: usize,  // offset within text
+    pos: usize,  // offset within text of the end of the word
     tok: Token,
     hard: bool,
+}
+
+// State for a rewrap in progress
+struct RewrapCtx<'a> {
+    text: &'a Rope,
+    lb_cursor: LineBreakCursor<'a>,
+    lb_cursor_pos: usize,
+    width_cache: &'a mut WidthCache,
+    doc_ctx: &'a DocumentCtx,
+    pot_breaks: Vec<PotentialBreak>,
+    pot_break_ix: usize,  // index within pot_breaks
+    max_offset: usize, // offset of maximum break (ie hard break following edit)
+    max_width: f64,
+}
+
+// This constant should be tuned so that the RPC takes about 1ms. Less than that,
+// RPC overhead becomes significant. More than that, interactivity suffers.
+const MAX_POT_BREAKS: usize = 10_000;
+
+impl<'a> RewrapCtx<'a> {
+    fn new(text: &'a Rope, _style_spans: &Spans<Style>, doc_ctx: &'a DocumentCtx,
+        max_width: f64, width_cache: &'a mut WidthCache) -> RewrapCtx<'a>
+    {
+        let lb_cursor_pos = 0;
+        let lb_cursor = LineBreakCursor::new(text, 0);
+        RewrapCtx {
+            text,
+            lb_cursor,
+            lb_cursor_pos,
+            width_cache,
+            doc_ctx,
+            pot_breaks: Vec::new(),
+            pot_break_ix: 0,
+            max_offset: text.len(),
+            max_width,
+        }
+    }
+
+    fn refill_pot_breaks(&mut self) {
+        let style_id = 2;  // TODO: derive from style spans rather than assuming.
+
+        let mut req = self.width_cache.batch_req();
+
+        self.pot_breaks.clear();
+        self.pot_break_ix = 0;
+        let mut pos = self.lb_cursor_pos;
+        while pos < self.max_offset && self.pot_breaks.len() < MAX_POT_BREAKS {
+            let (next, hard) = self.lb_cursor.next();
+            // TODO: avoid allocating string
+            let word = self.text.slice_to_string(pos, next);
+            let tok = req.request(style_id, &word);
+            pos = next;
+            self.pot_breaks.push(PotentialBreak { pos, tok, hard });
+        }
+        req.issue(self.doc_ctx).unwrap();
+        self.lb_cursor_pos = pos;
+    }
+
+    // Compute the next break, assuming `start` is a valid break.
+    //
+    // Invariant: start corresponds to the start of the word referenced by pot_break_ix.
+    fn wrap_one_line(&mut self, start: usize) -> Option<usize> {
+        let mut line_width = 0.0;
+        let mut pos = start;
+        while pos < self.max_offset {
+            if self.pot_break_ix >= self.pot_breaks.len() {
+                self.refill_pot_breaks();
+            }
+            let pot_break = &self.pot_breaks[self.pot_break_ix];
+            if pot_break.hard {
+                self.pot_break_ix += 1;
+                return Some(pot_break.pos);
+            }
+            let width = self.width_cache.resolve(pot_break.tok);
+            if line_width == 0.0 && width >= self.max_width {
+                self.pot_break_ix += 1;
+                return Some(pot_break.pos);
+            }
+            line_width += width;
+            if line_width > self.max_width {
+                return Some(pos);
+            }
+            self.pot_break_ix += 1;
+            pos = pot_break.pos;
+        }
+        None
+    }
 }
 
 /// Wrap the text (in batch mode) using width measurement.
@@ -183,55 +270,13 @@ pub fn linewrap_width(text: &Rope, style_spans: &Spans<Style>, doc_ctx: &Documen
     // TODO: this should be scoped to the FE. However, it will work (just with
     // degraded performance).
     let mut width_cache = WidthCache::new();
-    eprintln!("wrapping with width, text len = {} {:?}", text.len(),
-        style_spans);
-    for (iv, style) in style_spans.iter() {
-        let style_id = doc_ctx.get_style_id(&style);
-        eprintln!("{}..{}: {}", iv.start(), iv.end(), style_id);
-    }
-    let style_id = 2;  // TODO: derive from style spans rather than assuming.
-    let mut lb_cursor = LineBreakCursor::new(text, 0);
-
-    // Prepare and issue the width request; in a block to limit mutable borrow
-    // of width_cache.
-    let mut pot_breaks = Vec::new();
-    {
-        let mut req = width_cache.batch_req();
-        let mut last_pos = 0;
-
-        while last_pos < text.len() {
-            let (pos, hard) = lb_cursor.next();
-            // TODO: avoid allocating string
-            let word = &text.slice_to_string(last_pos, pos);
-            let tok = req.request(style_id, &word);
-            pot_breaks.push(PotentialBreak { pos, tok, hard });
-            last_pos = pos;
-        }
-        req.issue(doc_ctx).unwrap();
-    }
-
-    // debug code, should be safe to eliminate
-    for p in &pot_breaks {
-        eprintln!("pos {}, tok {}, hard {}, width {}",
-            p.pos, p.tok, p.hard, width_cache.resolve(p.tok));
-    }
-
-    // Compute breaks based on measured widths
+    let mut ctx = RewrapCtx::new(text, style_spans, doc_ctx, max_width, &mut width_cache);
     let mut builder = BreakBuilder::new();
-    let mut last_break_pos = 0;
-    let mut last_hard = false;
-    let mut line_width = 0.0;
-    for p in &pot_breaks {
-        let pos = p.pos;
-        let width = width_cache.resolve(p.tok);
-        if last_hard || (pos > last_break_pos && line_width + width > max_width) {
-            builder.add_break(pos - last_break_pos);
-            last_break_pos = pos;
-            line_width = 0.0;
-        }
-        line_width += width;
-        last_hard = p.hard;
+    let mut pos = 0;
+    while let Some(next) = ctx.wrap_one_line(pos) {
+        builder.add_break(next - pos);
+        pos = next;
     }
-    builder.add_no_break(text.len() - last_break_pos);
+    builder.add_no_break(text.len() - pos);
     builder.build()
 }
