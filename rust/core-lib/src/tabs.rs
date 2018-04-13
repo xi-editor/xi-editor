@@ -35,6 +35,7 @@ use client::Client;
 use config::{self, ConfigManager, ConfigDomain, Table};
 use editing::EventContext;
 use editor::Editor;
+use file::FileManager;
 use plugins::{PluginCatalog, PluginPid, Plugin, start_plugin_process};
 use plugin_rpc::{PluginNotification, PluginRequest};
 use rpc::{CoreNotification, CoreRequest, EditNotification, EditRequest};
@@ -70,13 +71,13 @@ pub const WATCH_IDLE_TOKEN: usize = 1002;
 const CONFIG_EVENT_TOKEN: WatchToken = WatchToken(1);
 
 /// Token for file-change events in open files
-const OPEN_FILE_EVENT_TOKEN: WatchToken = WatchToken(2);
+pub const OPEN_FILE_EVENT_TOKEN: WatchToken = WatchToken(2);
 
 #[allow(dead_code)]
 pub struct CoreState {
     editors: BTreeMap<BufferId, RefCell<Editor>>,
     views: BTreeMap<ViewId, RefCell<View>>,
-    open_files: BTreeMap<PathBuf, ViewId>,
+    file_manager: FileManager,
     /// A local pasteboard.
     kill_ring: Rope,
     /// Theme and style state.
@@ -84,7 +85,7 @@ pub struct CoreState {
     /// User and platform specific settings
     config_manager: ConfigManager,
     /// A monitor of filesystem events, for things like reloading on file change.
-    file_watcher: FileWatcher,
+    //file_watcher: FileWatcher,
     self_ref: Option<WeakXiCore>,
     pending_views: Vec<ViewId>,
     peer: Client,
@@ -98,14 +99,14 @@ pub struct CoreState {
 /// Initial setup and bookkeeping
 impl CoreState {
     pub (crate) fn new(peer: &RpcPeer) -> Self {
+        let watcher = FileWatcher::new(peer.clone());
         CoreState {
             views: BTreeMap::new(),
             editors: BTreeMap::new(),
-            open_files: BTreeMap::new(),
+            file_manager: FileManager::new(watcher),
             kill_ring: Rope::from(""),
             style_map: RefCell::new(ThemeStyleMap::new()),
             config_manager: ConfigManager::default(),
-            file_watcher: FileWatcher::new(peer.clone()),
             self_ref: None,
             pending_views: Vec::new(),
             peer: Client::new(peer.clone()),
@@ -171,10 +172,11 @@ impl CoreState {
         config_files.for_each(|p| self.load_file_based_config(&p));
 
         #[cfg(feature = "notify")]
-        self.file_watcher.watch_filtered(config_dir, true, CONFIG_EVENT_TOKEN,
-                                         |p| p.extension()
-                                         .and_then(OsStr::to_str)
-                                         .unwrap_or("") == "xiconfig" );
+        self.file_manager.watcher()
+            .watch_filtered(config_dir, true, CONFIG_EVENT_TOKEN,
+                            |p| p.extension()
+                            .and_then(OsStr::to_str)
+                            .unwrap_or("") == "xiconfig" );
         Ok(())
     }
 
@@ -195,20 +197,10 @@ impl CoreState {
         }
     }
 
-    fn add_watch_path(&mut self, path: &Path) {
-        #[cfg(feature = "notify")]
-        self.file_watcher.watch(path, false, OPEN_FILE_EVENT_TOKEN);
-    }
-
-    fn remove_watch_path(&mut self, path: &Path) {
-        #[cfg(feature = "notify")]
-        self.file_watcher.unwatch(path, OPEN_FILE_EVENT_TOKEN);
-    }
-
     #[cfg(feature = "notify")]
     fn handle_fs_events(&mut self) {
         let _t = trace_block("Documents::handle_fs_events", &["core"]);
-        let mut events = self.file_watcher.take_events();
+        let mut events = self.file_manager.watcher().take_events();
         let mut config_changed = false;
 
         for (token, event) in events.drain(..) {
@@ -234,40 +226,38 @@ impl CoreState {
     /// Handles a file system event related to a currently open file
     fn handle_open_file_fs_event(&mut self, event: DebouncedEvent) {
         use notify::DebouncedEvent::*;
-        match event {
+        let path = match event {
             NoticeWrite(ref path @ _) |
                 Create(ref path @ _) |
-                Write(ref path @ _) => {
-                    let mod_time = get_file_mod_time(path);
-                    let ed = match self.open_files.get(path)
-                        .and_then(|v| self.views.get(v))
-                        .map(|v| v.borrow().buffer_id)
-                        .and_then(|id| self.editors.get(&id)) {
-                            Some(ed) => ed,
-                            None => return,
-                        };
-                    let mut ed = ed.borrow_mut();
+                Write(ref path @ _) => path,
+            other => {
+                eprintln!("Event in open file {:?}", other);
+                return;
+            }
+        };
 
-                    //TODO: currently we only use the file's modification time when
-                    // determining if a file has been changed by another process.
-                    // A more robust solution would also hash the file's contents.
-                    let has_changed_on_disk = ed.get_file_mod_time()
-                        .map(|t| Some(t) != mod_time)
-                        .unwrap_or(false);
+        let buffer_id = match self.file_manager.get_editor(path) {
+            Some(id) => id,
+            None => return,
+        };
 
-                    if has_changed_on_disk {
-                        // if the buffer isn't dirty we can just reload the file
-                        if ed.is_pristine() {
-                            if let Ok(contents) = self.read_file(path) {
-                                //FIXME:
-                                //ed.reload(&contents);
-                            }
-                        } else {
-                            ed._set_file_has_changed(true);
-                        }
-                    }
-                }
-            other => eprintln!("Event in open file {:?}", other),
+        let has_changes = self.file_manager.check_file(path, buffer_id);
+        let is_pristine = self.editors.get(&buffer_id)
+            .map(|ed| ed.borrow().is_pristine()).unwrap();
+        //TODO: currently we only use the file's modification time when
+        // determining if a file has been changed by another process.
+        // A more robust solution would also hash the file's contents.
+
+        if has_changes && is_pristine {
+            if let Ok(text) = self.file_manager.open(path, buffer_id) {
+                // this is ugly; we don't map buffer_id -> view_id anywhere
+                // but we know we must have a view.
+                let view_id = self.views.values()
+                    .find(|v| v.borrow().buffer_id == buffer_id)
+                    .map(|v| v.borrow().view_id)
+                    .unwrap();
+                self.setup_edit(view_id).unwrap().reload(text);
+            }
         }
     }
 
@@ -329,7 +319,7 @@ impl CoreState {
             //TODO: make file_path be an Option<PathBuf>
             //TODO: make this a notification
             NewView { file_path } =>
-                Ok(self.do_new_view(file_path)),
+                self.do_new_view(file_path.map(PathBuf::from)),
             Edit(::rpc::EditCommand { view_id, cmd }) =>
                 self.do_edit_sync(view_id, cmd),
             //TODO: why is this a request?? make a notification?
@@ -338,12 +328,14 @@ impl CoreState {
         }
     }
 
-    fn do_new_view(&mut self, path: Option<String>) -> Value {
+    fn do_new_view(&mut self, path: Option<PathBuf>)
+        -> Result<Value, RemoteError>
+    {
         let view_id = self.next_view_id();
         let buffer_id = self.next_buffer_id();
 
-        let editor = match path.map(PathBuf::from) {
-            Some(path) => self.new_with_file(&path, view_id),
+        let editor = match path {
+            Some(path) => self.new_with_file(&path, buffer_id)?,
             None => self.new_empty_buffer(),
         };
 
@@ -361,7 +353,7 @@ impl CoreState {
         self.pending_views.push(view_id);
         self.peer.schedule_idle(NEW_VIEW_IDLE_TOKEN);
 
-        json!(view_id)
+        Ok(json!(view_id))
     }
 
     fn new_empty_buffer(&mut self) -> Editor {
@@ -369,62 +361,59 @@ impl CoreState {
         Editor::new(config)
     }
 
-    fn new_with_file(&mut self, path: &Path, view_id: ViewId) -> Editor {
-        let contents = match self.read_file(path) {
-            Ok(s) => s,
-            Err(_) => return self.new_empty_buffer(),
-        };
-
+    fn new_with_file(&mut self, path: &Path, buffer_id: BufferId)
+        -> Result<Editor, RemoteError>
+    {
+        let rope = self.file_manager.open(path, buffer_id)?;
         let syntax = SyntaxDefinition::new(path.to_str());
-        let config = self.config_manager.get_buffer_config(syntax, view_id);
-        let mut editor = Editor::with_text(contents, config);
+        let config = self.config_manager.get_buffer_config(syntax, buffer_id);
+        let mut editor = Editor::with_text(rope, config);
 
-        editor._set_path(path);
-        self.open_files.insert(path.to_owned(), view_id);
-        self.add_watch_path(path);
-
-        //FIXME: DO IT BETTER: let's have some FileLoader struct that handles
-        // incremental loading, encoding/decoding, etc.
-        editor
+        //self.add_watch_path(path);
+        Ok(editor)
     }
 
-    fn read_file<P: AsRef<Path>>(&self, path: P) -> io::Result<String> {
-        let mut f = File::open(path)?;
-        let mut s = String::new();
-        f.read_to_string(&mut s)?;
-        Ok(s)
-    }
-
-    fn do_save<P>(&mut self, view_id: ViewId, file_path: P)
+    fn do_save<P>(&mut self, view_id: ViewId, path: P)
         where P: AsRef<Path>
     {
+        let path = path.as_ref();
+        let buffer_id = self.views.get(&view_id).map(|v| v.borrow().buffer_id);
+        let buffer_id = match buffer_id {
+            Some(id) => id,
+            None => return,
+        };
 
-        unimplemented!()
-        // - is this a new path? (modify watcher state)
-        // - does this file have unsaved changes? (abort, fire an alert)
-        // then:
-        // - try to save the file. did you succeed?
-        // Y:
-        //      - update the path (where?)
-        //      - new path? (update watcher state)
-        //      - TODO: autotags
-        //      - notify plugins
-        // N:
-        //      - report error
-        //
+        let ed = self.editors.get(&buffer_id).unwrap();
+
+        let result = self.file_manager.save(path, ed.borrow().get_buffer(),
+                                            buffer_id);
+        if let Err(e) = result {
+            self.peer.alert(e.to_string());
+            return;
+        }
+
+        // hacky, syntax defs per-se are going away soon
+        let syntax = SyntaxDefinition::new(path.to_str());
+        let config = self.config_manager.get_buffer_config(syntax, buffer_id);
+
+        let event_ctx = self.setup_edit(view_id).unwrap();
+        event_ctx.after_save(path, config);
     }
 
     fn do_close_view(&mut self, view_id: ViewId) {
-        //TODO: do this in EditCtx, so we can notify plugins etc?
-        if let Some(view) = self.views.remove(&view_id) {
-            let ed = self.editors.remove(&view.borrow().buffer_id).unwrap();
-            let ed = ed.borrow();
-            if let Some(path) = ed.get_path() {
-                self.open_files.remove(path);
-                self.remove_watch_path(path);
+        let close_buffer = self.setup_edit(view_id)
+            .map(|ctx| ctx.close_view())
+            .unwrap_or(true);
+
+        let buffer_id = self.views.remove(&view_id)
+            .map(|v| v.borrow().buffer_id);
+
+        if let Some(buffer_id) = buffer_id {
+            if close_buffer {
+                self.editors.remove(&buffer_id);
+                self.file_manager.close(buffer_id);
             }
         }
-        //TODO: notify plugins
     }
 
     fn do_set_theme(&self, theme_name: &str) {
@@ -457,10 +446,15 @@ impl CoreState {
         self.after_config_change();
     }
 
-    pub (crate) fn setup_edit<'a>(&'a self, view_id: ViewId
-                                  ) -> Option<EventContext<'a>> {
+    //TODO: rename me
+    pub (crate) fn setup_edit<'a>(&'a self, view_id: ViewId)
+        -> Option<EventContext<'a>>
+    {
         self.views.get(&view_id).map(|view| {
-            let buffer = self.editors.get(&view.borrow().buffer_id).unwrap();
+            let buffer_id = view.borrow().buffer_id;
+
+            let buffer = self.editors.get(&buffer_id).unwrap();
+            let info = self.file_manager.get_info(buffer_id);
 
             let mut plugins = Vec::new();
             if let Some(syntect) = self.syntect.as_ref() {
@@ -468,7 +462,8 @@ impl CoreState {
             }
             EventContext {
                 view,
-                buffer: buffer,
+                buffer,
+                info: info,
                 siblings: Vec::new(),
                 plugins: plugins,
                 client: &self.peer,

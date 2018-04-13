@@ -19,16 +19,18 @@ pub mod rpc;
 mod manifest;
 mod catalog;
 
-use std::thread;
-use std::process::{Child, Command as ProcCommand, Stdio};
-use std::io::BufReader;
 use std::fmt;
+use std::io::BufReader;
+use std::path::Path;
+use std::process::{Child, Command as ProcCommand, Stdio};
+use std::thread;
 
 use serde_json::Value;
 
 use xi_rpc::{RpcPeer, RpcLoop, Error as RpcError};
 
 use WeakXiCore;
+use tabs::ViewId;
 
 use self::rpc::{PluginUpdate, PluginBufferInfo};
 
@@ -77,6 +79,22 @@ impl Plugin {
         self.peer.send_rpc_notification("new_buffer",
                                         &json!({
                                             "buffer_info": [info],
+                                        }))
+    }
+
+    pub fn close_view(&self, view_id: ViewId) {
+        self.peer.send_rpc_notification("did_close",
+                                        &json!({
+                                            "view_id": view_id,
+                                        }))
+
+    }
+
+    pub fn did_save(&self, view_id: ViewId, path: &Path) {
+        self.peer.send_rpc_notification("did_save",
+                                        &json!({
+                                            "view_id": view_id,
+                                            "path": path,
                                         }))
     }
 

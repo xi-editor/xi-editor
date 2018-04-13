@@ -14,11 +14,7 @@
 
 use std::borrow::{Borrow, Cow};
 use std::cmp::min;
-use std::fs::File;
-use std::path::{Path, PathBuf};
-use std::io::Write;
 use std::collections::BTreeSet;
-use std::time::SystemTime;
 
 use serde_json::Value;
 
@@ -33,7 +29,7 @@ use view::View;
 use movement::{Movement, region_movement};
 use selection::{Selection, SelRegion};
 
-use tabs;
+//use tabs;
 use rpc::LineRange;
 use syntax::SyntaxDefinition;
 use plugins::rpc::{PluginEdit, ScopeSpan, TextUnit, GetDataResponse};
@@ -44,6 +40,7 @@ use layers::Scopes;
 use plugins::PluginId;
 use editing::MAX_SIZE_LIMIT;
 use edit_types::BufferEvent;
+//use file::{Store, FileInfo};
 
 #[cfg(not(feature = "ledger"))]
 pub struct SyncStore;
@@ -54,26 +51,18 @@ use fuchsia::sync::SyncStore;
 // better to keep it low to expose bugs in the GC during casual testing.
 const MAX_UNDOS: usize = 20;
 
-
-enum CharacterEncoding {
-    Utf8,
-    Utf8WithBom
-}
-
-const UTF8_BOM: &str = "\u{feff}";
-
 enum IndentDirection {
     In,
     Out
 }
 
+//TODO: move me
 fn last_selection_region(regions: &[SelRegion]) -> Option<&SelRegion> {
     for region in regions.iter().rev() {
         if !region.is_caret() {
             return Some(region);
         }
     }
-
     None
 }
 
@@ -109,13 +98,6 @@ pub struct Editor {
     #[allow(dead_code)]
     last_synced_rev: RevId,
 
-
-    // TODO: move this elsewhere?
-    encoding: CharacterEncoding,
-
-    path: Option<PathBuf>,
-    file_mod_time: Option<SystemTime>,
-    file_has_changed: bool,
     syntax: SyntaxDefinition,
     styles: Scopes,
     config: BufferConfig,
@@ -128,27 +110,16 @@ impl Editor {
     }
 
     /// Creates a new `Editor`, loading text into a new buffer.
-    pub fn with_text(text: String, config: BufferConfig) -> Editor {
+    pub fn with_text<T>(text: T, config: BufferConfig) -> Editor
+        where T: Into<Rope>,
+    {
 
-        let encoding = if text.starts_with(UTF8_BOM) {
-            CharacterEncoding::Utf8WithBom
-        } else {
-            CharacterEncoding::Utf8
-        };
-
-        let engine = Engine::new(Rope::from(match encoding {
-            CharacterEncoding::Utf8WithBom => &text[UTF8_BOM.len()..],
-            CharacterEncoding::Utf8 => text.as_str()
-        }));
+        let engine = Engine::new(text.into());
         let buffer = engine.get_head().clone();
         let last_rev_id = engine.get_head_rev_id();
 
         Editor {
             text: buffer,
-            encoding: encoding,
-            path: None,
-            file_mod_time: None,
-            file_has_changed: false,
             syntax: SyntaxDefinition::default(),
             engine: engine,
             last_rev_id: last_rev_id,
@@ -164,7 +135,7 @@ impl Editor {
             last_edit_type: EditType::Other,
             this_edit_type: EditType::Other,
             styles: Scopes::default(),
-            config: config,
+            config,
             revs_in_flight: 0,
             sync_store: None,
             last_synced_rev: last_rev_id,
@@ -195,39 +166,6 @@ impl Editor {
         *self.live_undos.last().unwrap_or(&0)
     }
 
-    /// should only ever be called from `BufferContainerRef::set_path`
-    #[doc(hidden)]
-    pub fn _set_path<P: AsRef<Path>>(&mut self, path: P) {
-        let path = path.as_ref();
-        //TODO: if the user sets syntax, we shouldn't overwrite here
-        self.syntax = SyntaxDefinition::new(path.to_str());
-        self.file_mod_time = tabs::get_file_mod_time(path);
-        self.path = Some(path.to_owned());
-    }
-
-    /// If this `Editor`'s buffer has been saved, Returns its path.
-    pub fn get_path(&self) -> Option<&Path> {
-        match self.path {
-            Some(ref p) => Some(p),
-            None => None,
-        }
-    }
-
-    /// Returns the time of the last file write initiated by this `Editor`.
-    pub fn get_file_mod_time(&self) -> Option<SystemTime> {
-        self.file_mod_time
-    }
-
-    /// Returns `true` if this editor's file has changed on disk.
-    pub fn get_file_has_changed(&self) -> bool {
-        self.file_has_changed
-    }
-
-    #[doc(hidden)]
-    pub (crate) fn _set_file_has_changed(&mut self, has_changed: bool) {
-        self.file_has_changed = has_changed
-    }
-
     pub (crate) fn update_edit_type(&mut self) {
         self.last_edit_type = self.this_edit_type;
         self.this_edit_type = EditType::Other
@@ -235,36 +173,13 @@ impl Editor {
 
     /// Sets this Editor's contents to `text`, preserving undo state and cursor
     /// position when possible.
-    //FIXME: ..
-    //pub fn reload(&mut self, text: &str) {
-        //self.this_edit_type = EditType::Other;
-        //let new_text = Rope::from(text);
-        //let new_len = new_text.len();
-
-        //// preserve a single caret
-        //view.collapse_selections(&self.text);
-        //let prev_sel = view.sel_regions().first().map(|s| s.clone());
-        //view.unset_find(&self.text);
-
-        //let mut builder = delta::Builder::new(self.text.len());
-        //let all_iv = Interval::new_closed_open(0, self.text.len());
-        //builder.replace(all_iv, new_text);
-        //self.add_delta(builder.build());
-        //self.commit_delta(None);
-        //self.last_edit_type = EditType::Other;
-
-        //if let Some(prev_sel) = prev_sel {
-            //let offset = prev_sel.start.min(new_len);
-            //let sel: Selection = SelRegion::caret(offset).into();
-            //view.set_selection(&self.text, sel);
-        //}
-
-        //self.file_mod_time = self.path.as_ref()
-            //.and_then(tabs::get_file_mod_time);
-        //self.pristine_rev_id = self.last_rev_id;
-        //view.set_pristine();
-        //self.render()
-    //}
+    pub fn reload(&mut self, text: Rope) {
+        let mut builder = delta::Builder::new(self.text.len());
+        let all_iv = Interval::new_closed_open(0, self.text.len());
+        builder.replace(all_iv, text);
+        self.add_delta(builder.build());
+        self.pristine_rev_id = self.last_rev_id;
+    }
 
     /// Sets the config for this buffer. If the new config differs
     /// from the existing config, returns the modified items.
@@ -365,8 +280,8 @@ impl Editor {
     /// buffer, and a bool indicating whether selections should be preserved.
     pub (crate) fn commit_delta(&mut self)
         -> Option<(Delta<RopeInfo>, Rope, bool)> {
-
         let _t = trace_block("Editor::update_after_rev", &["core"]);
+
         if self.engine.get_head_rev_id() == self.last_rev_id {
             return None;
         }
@@ -380,8 +295,6 @@ impl Editor {
 
         let keep_selections = self.this_edit_type == EditType::Transpose;
         let (iv, new_len) = delta.summary();
-        let total_num_lines = self.text.measure::<LinesMetric>() + 1;
-
         self.styles.update_all(iv, new_len);
 
         self.last_rev_id = self.engine.get_head_rev_id();
@@ -402,6 +315,10 @@ impl Editor {
     fn gc_undos(&mut self) {
         // Never run GC on Fuchsia so that peers don't invalidate our
         // last_rev_id and so that merge will work.
+    }
+
+    pub (crate) fn set_pristine(&mut self) {
+        self.pristine_rev_id = self.last_rev_id
     }
 
     pub (crate) fn is_pristine(&self) -> bool {
@@ -513,8 +430,8 @@ impl Editor {
             }
         }
         if save {
-            let saved = self.extract_sel_regions(&deletions)
-                .unwrap_or(String::new());
+            //let saved = self.extract_sel_regions(&deletions)
+                //.unwrap_or(String::new());
             //FIXME: set kill ring
             //self.doc_ctx.set_kill_ring(Rope::from(saved));
         }
@@ -668,32 +585,6 @@ impl Editor {
         self.this_edit_type = EditType::InsertChars;
         self.insert(view, chars);
     }
-
-    //pub fn do_save<P: AsRef<Path>>(&mut self, view: &mut View,
-                                   //path: P) -> Result<(), String> {
-        //match File::create(&path) {
-            //Ok(mut f) => {
-                //if let Err(e) = match self.encoding {
-                    //CharacterEncoding::Utf8WithBom => f.write_all(UTF8_BOM.as_bytes()),
-                    //CharacterEncoding::Utf8 => Result::Ok(())
-                //} {
-                    //Err(format!("write error {}", e))
-                //} else {
-                    //for chunk in self.text.iter_chunks(0, self.text.len()) {
-                        //if let Err(e) = f.write_all(chunk.as_bytes()) {
-                            //return Err(format!("write error {}", e));
-                        //}
-                    //}
-                    //self.pristine_rev_id = self.last_rev_id;
-                    //view.set_pristine();
-                    //view.set_dirty(&self.text);
-                    //self.render();
-                    //Ok(())
-                //}
-            //}
-            //Err(e) => Err(format!("create error {}", e)),
-        //}
-    //}
 
     fn do_request_lines(&mut self, first: i64, last: i64) {
         unimplemented!()

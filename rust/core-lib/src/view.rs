@@ -851,7 +851,7 @@ impl View {
     }
 
     /// Unsets the search and removes all highlights from the view.
-    fn unset_find(&mut self, text: &Rope) {
+    pub (crate) fn unset_find(&mut self, text: &Rope) {
         self.search_string = None;
         self.occurrences = None;
         self.hls_dirty = true;
