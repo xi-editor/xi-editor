@@ -265,9 +265,12 @@ const TEXT_EDIT_RPCS: &str = r#"{"method":"edit","params":{"view_id":"view-id-1"
 const OTHER_EDIT_RPCS: &str = r#"{"method":"edit","params":{"view_id":"view-id-1","method":"scroll","params":[0,1]}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"goto_line","params":{"line":1}}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"request_lines","params":[0,1]}}
-{"method":"edit","params":{"view_id":"view-id-1","method":"click","params":[6,0,0,1]}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"drag","params":[17,15,0]}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"gesture","params":{"line": 1, "col": 2, "ty": "toggle_sel"}}}
+{"method":"edit","params":{"view_id":"view-id-1","method":"gesture","params":{"line": 1, "col": 2, "ty": "point_select"}}}
+{"method":"edit","params":{"view_id":"view-id-1","method":"gesture","params":{"line": 1, "col": 2, "ty": "range_select"}}}
+{"method":"edit","params":{"view_id":"view-id-1","method":"gesture","params":{"line": 1, "col": 2, "ty": "line_select"}}}
+{"method":"edit","params":{"view_id":"view-id-1","method":"gesture","params":{"line": 1, "col": 2, "ty": "word_select"}}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"gesture","params":{"line": 1, "col": 2, "ty": "multi_line_select"}}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"gesture","params":{"line": 1, "col": 2, "ty": "multi_word_select"}}}
 {"id":4,"method":"edit","params":{"view_id":"view-id-1","method":"find","params":{"case_sensitive":false,"chars":"m"}}}

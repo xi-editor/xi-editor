@@ -288,7 +288,11 @@ pub struct EditCommand<T> {
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum GestureType {
+    PointSelect,
     ToggleSel,
+    RangeSelect,
+    LineSelect,
+    WordSelect,
     MultiLineSelect,
     MultiWordSelect,
 }

@@ -177,11 +177,21 @@ column, and flag as in `click`.
 
 `gesture {"line": 42, "col": 31, "ty": "toggle_sel"}`
 
-Note: both `click` and `drag` functionality will be migrated to
-additional `ty` options for `gesture`. For now, "toggle_sel" is the
-only supported option, and has the semantics of toggling one cursor
-in the selection (the usual mapping of Command-click in macOS
-front-ends).
+**Note:** both `click` and `drag` functionality will be migrated to
+additional `ty` options for `gesture`.
+
+Currently, the following gestures are supported:
+
+```
+toggle_sel
+point_select
+range_select
+line_select
+word_select
+multi_line_select
+multi_word_select
+```
+
 
 The following edit methods take no parameters, and have similar
 meanings as NSView actions. The pure movement and selection
