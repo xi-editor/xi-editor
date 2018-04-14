@@ -12,15 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! The main container for core state. This file is called 'tabs' for legacy
+//! reasons.
+
 use std::collections::{BTreeMap, HashSet};
 use std::cell::{Cell, RefCell};
 use std::ffi::OsStr;
 use std::fmt;
-use std::fs::File;
-use std::io::{self, Read};
+use std::io;
 use std::mem;
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
 
 use serde::de::{Deserialize, Deserializer};
 use serde::ser::{Serialize, Serializer};
@@ -58,6 +59,7 @@ pub struct ViewIdentifier(pub (crate) usize);
          Serialize, Deserialize, Hash)]
 pub struct BufferIdentifier(pub (crate) usize);
 
+// new-style names; old names will be deprecated
 pub type BufferId = BufferIdentifier;
 pub type ViewId = ViewIdentifier;
 pub type PluginId = ::plugins::PluginPid;
@@ -84,9 +86,10 @@ pub struct CoreState {
     style_map: RefCell<ThemeStyleMap>,
     /// User and platform specific settings
     config_manager: ConfigManager,
-    /// A monitor of filesystem events, for things like reloading on file change.
-    //file_watcher: FileWatcher,
+    /// A weak reference to the main state container, stashed so that
+    /// it can be passed to plugins.
     self_ref: Option<WeakXiCore>,
+    /// Views which need to have setup finished.
     pending_views: Vec<ViewId>,
     peer: Client,
     id_counter: Counter,
@@ -196,6 +199,255 @@ impl CoreState {
             self.peer.alert(format!("{}", &e));
         }
     }
+    /// Notify editors/views/plugins of config changes.
+    fn after_config_change(&self) {
+        self.iter_groups()
+            .for_each(|ctx| ctx.config_changed(&self.config_manager))
+    }
+}
+
+/// Handling client events
+impl CoreState {
+
+    /// Creates an `EventContext` for the provided `ViewId`. This context
+    /// holds references to the `Editor` and `View` backing this `ViewId`,
+    /// as well as to sibling views, plugins, and other state necessary
+    /// for handling most events.
+    pub (crate) fn make_context<'a>(&'a self, view_id: ViewId)
+        -> Option<EventContext<'a>>
+    {
+        self.views.get(&view_id).map(|view| {
+            let buffer_id = view.borrow().buffer_id;
+
+            let buffer = self.editors.get(&buffer_id).unwrap();
+            let info = self.file_manager.get_info(buffer_id);
+
+            let mut plugins = Vec::new();
+            if let Some(syntect) = self.syntect.as_ref() {
+                plugins.push(syntect);
+            }
+            EventContext {
+                view,
+                buffer,
+                info: info,
+                siblings: Vec::new(),
+                plugins: plugins,
+                client: &self.peer,
+                style_map: &self.style_map,
+                weak_core: self.self_ref.as_ref().unwrap(),
+            }
+        })
+    }
+
+    /// Produces an iterator over all event contexts, with each view appearing
+    /// exactly once.
+    fn iter_groups<'a>(&'a self) -> Iter<'a, Box<Iterator<Item=&ViewId> + 'a>>
+    {
+        Iter {
+            views: Box::new(self.views.keys()),
+            seen: HashSet::new(),
+            inner: self,
+        }
+    }
+
+    pub (crate) fn client_notification(&mut self, cmd: CoreNotification) {
+        use self::CoreNotification::*;
+        match cmd {
+            Edit(::rpc::EditCommand { view_id, cmd }) =>
+                self.do_edit(view_id, cmd),
+            Save { view_id, file_path } =>
+                self.do_save(view_id, file_path),
+            CloseView { view_id } =>
+                self.do_close_view(view_id),
+            ModifyUserConfig { domain, changes } =>
+                self.do_modify_user_config(domain, changes),
+            SetTheme { theme_name } =>
+                self.do_set_theme(&theme_name),
+            SaveTrace { .. } => (),
+            //TODO: restore me
+                //self.save_trace(&destination, &frontend_samples),
+            Plugin(..) => (),
+                //self.do_plugin_cmd(cmd),
+            // these two are handled at the top level
+            ClientStarted { .. } => (),
+            TracingConfig { .. } => (),
+        }
+    }
+
+    pub (crate) fn client_request(&mut self, cmd: CoreRequest)
+        -> Result<Value, RemoteError>
+    {
+        use self::CoreRequest::*;
+        match cmd {
+            //TODO: make file_path be an Option<PathBuf>
+            //TODO: make this a notification
+            NewView { file_path } =>
+                self.do_new_view(file_path.map(PathBuf::from)),
+            Edit(::rpc::EditCommand { view_id, cmd }) =>
+                self.do_edit_sync(view_id, cmd),
+            //TODO: why is this a request?? make a notification?
+            GetConfig { view_id } => Ok(1.into()),
+                //self.do_get_config(ctx, view_id),
+        }
+    }
+
+    fn do_edit(&mut self, view_id: ViewId, cmd: EditNotification) {
+        if let Some(edit_ctx) = self.make_context(view_id) {
+            edit_ctx.do_edit(cmd);
+        }
+    }
+
+    fn do_edit_sync(&mut self, view_id: ViewId,
+                    cmd: EditRequest) -> Result<Value, RemoteError> {
+        if let Some(edit_ctx) = self.make_context(view_id) {
+            edit_ctx.do_edit_sync(cmd)
+        } else {
+            // TODO: some custom error tpye that can Into<RemoteError>
+            Err(RemoteError::custom(404,
+                                    format!("missing view {:?}", view_id),
+                                    None))
+        }
+    }
+
+    fn do_new_view(&mut self, path: Option<PathBuf>)
+        -> Result<Value, RemoteError>
+    {
+        let view_id = self.next_view_id();
+        let buffer_id = self.next_buffer_id();
+
+        let editor = match path {
+            Some(path) => self.new_with_file(&path, buffer_id)?,
+            None => self.new_empty_buffer(),
+        };
+
+        let mut view = View::new(view_id, buffer_id);
+
+        let wrap_width = editor.get_config().items.wrap_width;
+        view.rewrap(editor.get_buffer(), wrap_width);
+        view.set_dirty(editor.get_buffer());
+
+        let editor = RefCell::new(editor);
+        let view = RefCell::new(view);
+
+        self.editors.insert(buffer_id, editor);
+        self.views.insert(view_id, view);
+        //NOTE: because this is a synchronous call, we have to return the
+        //view_id before we can send any events to this view. We use mark the
+        // viewa s pending and schedule the idle handler so that we can finish
+        // setting up this view on the next runloop pass.
+        self.pending_views.push(view_id);
+        self.peer.schedule_idle(NEW_VIEW_IDLE_TOKEN);
+
+        Ok(json!(view_id))
+    }
+
+    fn new_empty_buffer(&mut self) -> Editor {
+        let config = self.config_manager.default_buffer_config();
+        Editor::new(config)
+    }
+
+    fn new_with_file(&mut self, path: &Path, buffer_id: BufferId)
+        -> Result<Editor, RemoteError>
+    {
+        let rope = self.file_manager.open(path, buffer_id)?;
+        let syntax = SyntaxDefinition::new(path.to_str());
+        let config = self.config_manager.get_buffer_config(syntax, buffer_id);
+        let editor = Editor::with_text(rope, config);
+        Ok(editor)
+    }
+
+    fn do_save<P>(&mut self, view_id: ViewId, path: P)
+        where P: AsRef<Path>
+    {
+        let path = path.as_ref();
+        let buffer_id = self.views.get(&view_id).map(|v| v.borrow().buffer_id);
+        let buffer_id = match buffer_id {
+            Some(id) => id,
+            None => return,
+        };
+
+        let ed = self.editors.get(&buffer_id).unwrap();
+
+        let result = self.file_manager.save(path, ed.borrow().get_buffer(),
+                                            buffer_id);
+        if let Err(e) = result {
+            self.peer.alert(e.to_string());
+            return;
+        }
+
+        // hacky, syntax defs per-se are going away soon
+        let syntax = SyntaxDefinition::new(path.to_str());
+        let config = self.config_manager.get_buffer_config(syntax, buffer_id);
+
+        let event_ctx = self.make_context(view_id).unwrap();
+        event_ctx.after_save(path, config);
+    }
+
+    fn do_close_view(&mut self, view_id: ViewId) {
+        let close_buffer = self.make_context(view_id)
+            .map(|ctx| ctx.close_view())
+            .unwrap_or(true);
+
+        let buffer_id = self.views.remove(&view_id)
+            .map(|v| v.borrow().buffer_id);
+
+        if let Some(buffer_id) = buffer_id {
+            if close_buffer {
+                self.editors.remove(&buffer_id);
+                self.file_manager.close(buffer_id);
+            }
+        }
+    }
+
+    fn do_set_theme(&self, theme_name: &str) {
+        if self.style_map.borrow_mut().set_theme(&theme_name).is_err() {
+        //TODO: report error
+            return;
+        }
+        {
+            let style_map = self.style_map.borrow();
+            self.peer.theme_changed(style_map.get_theme_name(),
+                                    style_map.get_theme_settings());
+        }
+
+        self.iter_groups().for_each(|edit_ctx| {
+            edit_ctx.with_editor(|ed, view| {
+                ed.theme_changed(&self.style_map.borrow());
+                view.set_dirty(ed.get_buffer());
+            });
+            edit_ctx.render();
+        });
+    }
+
+    // NOTE: this is coming in from a direct RPC; unlike `set_config`, missing
+    // keys here are left in their current state (`set_config` clears missing keys)
+    /// Updates the config for a given domain.
+    fn do_modify_user_config(&mut self, domain: ConfigDomain, changes: Table) {
+        if let Err(e) = self.config_manager.update_user_config(domain, changes) {
+            self.peer.alert(e.to_string());
+        }
+        self.after_config_change();
+    }
+}
+
+
+/// Idle and file event handling
+impl CoreState {
+    pub (crate) fn handle_idle(&mut self, token: usize) {
+        match token {
+            NEW_VIEW_IDLE_TOKEN => self.finalize_new_views(),
+            WATCH_IDLE_TOKEN => self.handle_fs_events(),
+            _ => panic!("unexpected idle token {}", token),
+        };
+    }
+
+    fn finalize_new_views(&mut self) {
+        let to_start = mem::replace(&mut self.pending_views, Vec::new());
+        to_start.iter().for_each(|id| {
+            let edit_ctx = self.make_context(*id).unwrap();
+            edit_ctx.finish_init();
+        });
+    }
 
     #[cfg(feature = "notify")]
     fn handle_fs_events(&mut self) {
@@ -256,7 +508,7 @@ impl CoreState {
                     .find(|v| v.borrow().buffer_id == buffer_id)
                     .map(|v| v.borrow().view_id)
                     .unwrap();
-                self.setup_edit(view_id).unwrap().reload(text);
+                self.make_context(view_id).unwrap().reload(text);
             }
         }
     }
@@ -278,246 +530,9 @@ impl CoreState {
             _ => (),
         }
     }
-
-    /// Notify editors/views/plugins of config changes.
-    fn after_config_change(&self) {
-        self.iter_groups()
-            .for_each(|ctx| ctx.config_changed(&self.config_manager))
-    }
 }
 
-/// Handling client events
-impl CoreState {
-    pub (crate) fn client_notification(&mut self, cmd: CoreNotification) {
-        use self::CoreNotification::*;
-        match cmd {
-            Edit(::rpc::EditCommand { view_id, cmd }) =>
-                self.do_edit(view_id, cmd),
-            Save { view_id, file_path } =>
-                self.do_save(view_id, file_path),
-            CloseView { view_id } =>
-                self.do_close_view(view_id),
-            ModifyUserConfig { domain, changes } =>
-                self.do_modify_user_config(domain, changes),
-            SetTheme { theme_name } =>
-                self.do_set_theme(&theme_name),
-            TracingConfig { enabled } => (),
-                //self.toggle_tracing(enabled),
-            SaveTrace { destination, frontend_samples } => (),
-                //self.save_trace(&destination, &frontend_samples),
-            Plugin(cmd) => (),
-                //self.do_plugin_cmd(cmd),
-            ClientStarted { .. } => (),
-        }
-    }
-
-    pub (crate) fn client_request(&mut self, cmd: CoreRequest)
-        -> Result<Value, RemoteError>
-    {
-        use self::CoreRequest::*;
-        match cmd {
-            //TODO: make file_path be an Option<PathBuf>
-            //TODO: make this a notification
-            NewView { file_path } =>
-                self.do_new_view(file_path.map(PathBuf::from)),
-            Edit(::rpc::EditCommand { view_id, cmd }) =>
-                self.do_edit_sync(view_id, cmd),
-            //TODO: why is this a request?? make a notification?
-            GetConfig { view_id } => Ok(1.into()),
-                //self.do_get_config(ctx, view_id),
-        }
-    }
-
-    fn do_new_view(&mut self, path: Option<PathBuf>)
-        -> Result<Value, RemoteError>
-    {
-        let view_id = self.next_view_id();
-        let buffer_id = self.next_buffer_id();
-
-        let editor = match path {
-            Some(path) => self.new_with_file(&path, buffer_id)?,
-            None => self.new_empty_buffer(),
-        };
-
-        let mut view = View::new(view_id, buffer_id);
-
-        let wrap_width = editor.get_config().items.wrap_width;
-        view.rewrap(editor.get_buffer(), wrap_width);
-        view.set_dirty(editor.get_buffer());
-
-        let editor = RefCell::new(editor);
-        let view = RefCell::new(view);
-
-        self.editors.insert(buffer_id, editor);
-        self.views.insert(view_id, view);
-        self.pending_views.push(view_id);
-        self.peer.schedule_idle(NEW_VIEW_IDLE_TOKEN);
-
-        Ok(json!(view_id))
-    }
-
-    fn new_empty_buffer(&mut self) -> Editor {
-        let config = self.config_manager.default_buffer_config();
-        Editor::new(config)
-    }
-
-    fn new_with_file(&mut self, path: &Path, buffer_id: BufferId)
-        -> Result<Editor, RemoteError>
-    {
-        let rope = self.file_manager.open(path, buffer_id)?;
-        let syntax = SyntaxDefinition::new(path.to_str());
-        let config = self.config_manager.get_buffer_config(syntax, buffer_id);
-        let mut editor = Editor::with_text(rope, config);
-
-        //self.add_watch_path(path);
-        Ok(editor)
-    }
-
-    fn do_save<P>(&mut self, view_id: ViewId, path: P)
-        where P: AsRef<Path>
-    {
-        let path = path.as_ref();
-        let buffer_id = self.views.get(&view_id).map(|v| v.borrow().buffer_id);
-        let buffer_id = match buffer_id {
-            Some(id) => id,
-            None => return,
-        };
-
-        let ed = self.editors.get(&buffer_id).unwrap();
-
-        let result = self.file_manager.save(path, ed.borrow().get_buffer(),
-                                            buffer_id);
-        if let Err(e) = result {
-            self.peer.alert(e.to_string());
-            return;
-        }
-
-        // hacky, syntax defs per-se are going away soon
-        let syntax = SyntaxDefinition::new(path.to_str());
-        let config = self.config_manager.get_buffer_config(syntax, buffer_id);
-
-        let event_ctx = self.setup_edit(view_id).unwrap();
-        event_ctx.after_save(path, config);
-    }
-
-    fn do_close_view(&mut self, view_id: ViewId) {
-        let close_buffer = self.setup_edit(view_id)
-            .map(|ctx| ctx.close_view())
-            .unwrap_or(true);
-
-        let buffer_id = self.views.remove(&view_id)
-            .map(|v| v.borrow().buffer_id);
-
-        if let Some(buffer_id) = buffer_id {
-            if close_buffer {
-                self.editors.remove(&buffer_id);
-                self.file_manager.close(buffer_id);
-            }
-        }
-    }
-
-    fn do_set_theme(&self, theme_name: &str) {
-        if self.style_map.borrow_mut().set_theme(&theme_name).is_err() {
-        //TODO: report error
-            return;
-        }
-        {
-            let style_map = self.style_map.borrow();
-            self.peer.theme_changed(style_map.get_theme_name(),
-                                    style_map.get_theme_settings());
-        }
-
-        self.iter_groups().for_each(|edit_ctx| {
-            edit_ctx.with_editor(|ed, view| {
-                ed.theme_changed(&self.style_map.borrow());
-                view.set_dirty(ed.get_buffer());
-            });
-            edit_ctx.render();
-        });
-    }
-
-    // NOTE: this is coming in from a direct RPC; unlike `set_config`, missing
-    // keys here are left in their current state (`set_config` clears missing keys)
-    /// Updates the config for a given domain.
-    fn do_modify_user_config(&mut self, domain: ConfigDomain, changes: Table) {
-        if let Err(e) = self.config_manager.update_user_config(domain, changes) {
-            self.peer.alert(e.to_string());
-        }
-        self.after_config_change();
-    }
-
-    //TODO: rename me
-    pub (crate) fn setup_edit<'a>(&'a self, view_id: ViewId)
-        -> Option<EventContext<'a>>
-    {
-        self.views.get(&view_id).map(|view| {
-            let buffer_id = view.borrow().buffer_id;
-
-            let buffer = self.editors.get(&buffer_id).unwrap();
-            let info = self.file_manager.get_info(buffer_id);
-
-            let mut plugins = Vec::new();
-            if let Some(syntect) = self.syntect.as_ref() {
-                plugins.push(syntect);
-            }
-            EventContext {
-                view,
-                buffer,
-                info: info,
-                siblings: Vec::new(),
-                plugins: plugins,
-                client: &self.peer,
-                style_map: &self.style_map,
-                weak_core: self.self_ref.as_ref().unwrap(),
-            }
-        })
-    }
-
-    fn iter_groups<'a>(&'a self) -> Iter<'a, Box<Iterator<Item=&ViewId> + 'a>>
-    {
-        Iter {
-            views: Box::new(self.views.keys()),
-            seen: HashSet::new(),
-            inner: self,
-        }
-    }
-
-    fn do_edit(&mut self, view_id: ViewId, cmd: EditNotification) {
-        if let Some(edit_ctx) = self.setup_edit(view_id) {
-            edit_ctx.do_edit(cmd);
-        }
-    }
-
-    fn do_edit_sync(&mut self, view_id: ViewId,
-                    cmd: EditRequest) -> Result<Value, RemoteError> {
-        if let Some(edit_ctx) = self.setup_edit(view_id) {
-            edit_ctx.do_edit_sync(cmd)
-        } else {
-            // TODO: some custom error tpye that can Into<RemoteError>
-            Err(RemoteError::custom(404,
-                                    format!("missing view {:?}", view_id),
-                                    None))
-        }
-    }
-
-    pub (crate) fn handle_idle(&mut self, token: usize) {
-        match token {
-            NEW_VIEW_IDLE_TOKEN => self.finalize_new_views(),
-            WATCH_IDLE_TOKEN => self.handle_fs_events(),
-            _ => panic!("unexpected idle token {}", token),
-        };
-    }
-
-    fn finalize_new_views(&mut self) {
-        let to_start = mem::replace(&mut self.pending_views, Vec::new());
-        to_start.iter().for_each(|id| {
-            let edit_ctx = self.setup_edit(*id).unwrap();
-            edit_ctx.finish_init();
-        });
-    }
-}
-
-/// plugin related functionality
+/// plugin event handling
 impl CoreState {
     /// Called from a plugin's thread after trying to start the plugin.
     pub (crate) fn plugin_connect(&mut self,
@@ -541,7 +556,7 @@ impl CoreState {
                                  view_id: ViewId, undo_group: usize,
                                  response: Result<Value, RpcError>) {
 
-        if let Some(edit_ctx) = self.setup_edit(view_id) {
+        if let Some(edit_ctx) = self.make_context(view_id) {
             edit_ctx.do_plugin_update(response, undo_group);
         }
     }
@@ -549,7 +564,7 @@ impl CoreState {
     pub (crate) fn plugin_notification(&mut self, _ctx: &RpcCtx,
                                        view_id: ViewId, plugin_id: PluginId,
                                        cmd: PluginNotification) {
-        if let Some(edit_ctx) = self.setup_edit(view_id) {
+        if let Some(edit_ctx) = self.make_context(view_id) {
             edit_ctx.do_plugin_cmd(plugin_id, cmd)
         }
     }
@@ -558,7 +573,7 @@ impl CoreState {
                                   plugin_id: PluginId, cmd: PluginRequest
                                   ) -> Result<Value, RemoteError>
     {
-        if let Some(edit_ctx) = self.setup_edit(view_id) {
+        if let Some(edit_ctx) = self.make_context(view_id) {
             Ok(edit_ctx.do_plugin_cmd_sync(plugin_id, cmd))
         } else {
             Err(RemoteError::custom(404, "missing view", None))
@@ -585,7 +600,7 @@ impl<'a, I> Iterator for Iter<'a, I> where I: Iterator<Item=&'a ViewId> {
                 Some(v) if seen.contains(v) => continue,
                 Some(v) => v,
             };
-            let context = inner.setup_edit(*next_view).unwrap();
+            let context = inner.make_context(*next_view).unwrap();
             context.siblings.iter().for_each(|sibl| {
                 let _ = seen.insert(sibl.borrow().view_id);
             });
@@ -603,17 +618,6 @@ impl Counter {
         self.0.set(n+1);
         n
     }
-}
-
-/// Returns the modification timestamp for the file at a given path,
-/// if present.
-pub fn get_file_mod_time<P>(path: P) -> Option<SystemTime>
-where P: AsRef<Path>
-{
-    File::open(path)
-        .and_then(|f| f.metadata())
-        .and_then(|meta| meta.modified())
-        .ok()
 }
 
 impl<'a> From<&'a str> for ViewIdentifier {

@@ -42,6 +42,10 @@ use view::View;
 // Maximum returned result from plugin get_data RPC.
 pub const MAX_SIZE_LIMIT: usize = 1024 * 1024;
 
+/// A collection of all the state relevant for handling a particular event.
+///
+/// This is created dynamically for each event that arrives to the core,
+/// such as a user-initiated edit or style updates from a plugin.
 pub struct EventContext<'a> {
     pub (crate) buffer: &'a RefCell<Editor>,
     pub (crate) info: Option<&'a FileInfo>,
@@ -54,6 +58,27 @@ pub struct EventContext<'a> {
 }
 
 impl<'a> EventContext<'a> {
+    /// Executes a closure with mutable references to the editor and the view,
+    /// common in edit actions that modify the text.
+    pub (crate) fn with_editor<R, F>(&self, f: F) -> R
+        where F: FnOnce(&mut Editor, &mut View) -> R
+    {
+        let mut editor = self.buffer.borrow_mut();
+        let mut view = self.view.borrow_mut();
+        f(&mut editor, &mut view)
+    }
+
+    /// Executes a closure with a mutable reference to the view and a reference
+    /// to the current text. This is common to most edits that just modify
+    /// selection or viewport state.
+    fn with_view<R, F>(&self, f: F) -> R
+        where F: FnOnce(&mut View, &Rope) -> R
+    {
+        let editor = self.buffer.borrow();
+        let mut view = self.view.borrow_mut();
+        f(&mut view, editor.get_buffer())
+    }
+
     pub (crate) fn do_edit(&self, cmd: EditNotification) {
         let event: EventDomain = cmd.into();
         match event {
@@ -114,27 +139,6 @@ impl<'a> EventContext<'a> {
         }
     }
 
-    /// Executes a closure with mutable references to the editor and the view,
-    /// common in edit actions that modify the text.
-    pub (crate) fn with_editor<R, F>(&self, f: F) -> R
-        where F: FnOnce(&mut Editor, &mut View) -> R
-    {
-        let mut editor = self.buffer.borrow_mut();
-        let mut view = self.view.borrow_mut();
-        f(&mut editor, &mut view)
-    }
-
-    /// Executes a closure with a mutable reference to the view and a reference
-    /// to the current text. This is common to most edits that just modify
-    /// selection or viewport state.
-    fn with_view<R, F>(&self, f: F) -> R
-        where F: FnOnce(&mut View, &Rope) -> R
-    {
-        let editor = self.buffer.borrow();
-        let mut view = self.view.borrow_mut();
-        f(&mut view, editor.get_buffer())
-    }
-
     /// Commits any changes to the buffer, updating views and plugins as needed.
     /// This only updates internal state; it does not update the client.
     fn after_edit(&self, author: &str) {
@@ -181,6 +185,7 @@ impl<'a> EventContext<'a> {
         buffer.update_edit_type();
     }
 
+    /// Flushes any changes in the views out to the frontend.
     pub (crate) fn render(&self) {
         let buffer = self.buffer.borrow();
         self.view.borrow_mut()
@@ -189,7 +194,11 @@ impl<'a> EventContext<'a> {
     }
 }
 
-// helpers related to specific commands
+/// Helpers related to specific commands.
+///
+/// Certain events and actions don't generalize well; handling these
+/// requires access to particular combinations of state. We isolate such
+/// special cases here.
 impl<'a> EventContext<'a> {
     pub (crate) fn finish_init(&self) {
         let buffer = self.buffer.borrow();

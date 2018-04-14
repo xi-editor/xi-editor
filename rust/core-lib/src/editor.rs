@@ -25,22 +25,18 @@ use xi_rope::engine::{Engine, RevId, RevToken};
 use xi_rope::spans::SpansBuilder;
 use xi_trace::trace_block;
 
-use view::View;
-use movement::{Movement, region_movement};
-use selection::{Selection, SelRegion};
-
-//use tabs;
-use rpc::LineRange;
-use syntax::SyntaxDefinition;
-use plugins::rpc::{PluginEdit, ScopeSpan, TextUnit, GetDataResponse};
-use styles::ThemeStyleMap;
 use config::{BufferConfig, Table};
-
-use layers::Scopes;
-use plugins::PluginId;
 use editing::MAX_SIZE_LIMIT;
 use edit_types::BufferEvent;
-//use file::{Store, FileInfo};
+use layers::Scopes;
+use movement::{Movement, region_movement};
+use plugins::PluginId;
+use plugins::rpc::{PluginEdit, ScopeSpan, TextUnit, GetDataResponse};
+use rpc::LineRange;
+use selection::{Selection, SelRegion};
+use styles::ThemeStyleMap;
+use syntax::SyntaxDefinition;
+use view::View;
 
 #[cfg(not(feature = "ledger"))]
 pub struct SyncStore;
@@ -238,10 +234,11 @@ impl Editor {
         let head_rev_id = self.engine.get_head_rev_id();
         let undo_group;
 
-        if self.this_edit_type == self.last_edit_type &&
-            self.this_edit_type != EditType::Other && self.this_edit_type != EditType::Transpose &&
-            !self.live_undos.is_empty() {
-
+        if self.this_edit_type == self.last_edit_type
+            && self.this_edit_type != EditType::Other
+            && self.this_edit_type != EditType::Transpose
+            && !self.live_undos.is_empty()
+        {
             undo_group = *self.live_undos.last().unwrap();
         } else {
             undo_group = self.undo_group_id;
@@ -266,8 +263,10 @@ impl Editor {
                              undo_group: Option<usize>) {
         if let Some(undo_group) = undo_group {
             // non-async edits modify their associated revision
-            //TODO: get priority working, so that plugin edits don't necessarily move cursor
-            self.engine.edit_rev(edit.priority as usize, undo_group, edit.rev, edit.delta);
+            //TODO: get priority working, so that plugin edits don't
+            // necessarily move cursor
+            self.engine.edit_rev(edit.priority as usize, undo_group,
+                                 edit.rev, edit.delta);
             self.text = self.engine.get_head().clone();
         }
         else {
@@ -410,15 +409,17 @@ impl Editor {
         }
     }
 
-    /// Common logic for a number of delete methods. For each region in the selection,
-    /// if the selection is a caret, delete the region between the caret and the
-    /// movement applied to the caret, otherwise delete the region.
+    /// Common logic for a number of delete methods. For each region in the
+    /// selection, if the selection is a caret, delete the region between
+    /// the caret and the movement applied to the caret, otherwise delete
+    /// the region.
     ///
     /// If `save` is set, save the deleted text into the kill ring.
-    fn delete_by_movement(&mut self, view: &View, movement: Movement, save: bool) {
-        // We compute deletions as a selection because the merge logic is convenient.
-        // Another possibility would be to make the delta builder be able to handle
-        // overlapping deletions (using union semantics).
+    fn delete_by_movement(&mut self, view: &View,
+                          movement: Movement, save: bool) {
+        // We compute deletions as a selection because the merge logic
+        // is convenient. Another possibility would be to make the delta
+        // builder able to handle overlapping deletions (with union semantics).
         let mut deletions = Selection::new();
         for &r in view.sel_regions() {
             if r.is_caret() {
@@ -453,8 +454,8 @@ impl Editor {
         }
     }
 
-    /// Extracts non-caret selection regions into a string, joining multiple regions
-    /// with newlines.
+    /// Extracts non-caret selection regions into a string,
+    /// joining multiple regions with newlines.
     fn extract_sel_regions(&self, sel_regions: &[SelRegion]) -> Option<String> {
         let mut saved = None;
         for region in sel_regions {
@@ -518,8 +519,8 @@ impl Editor {
     /// Indents or outdents lines based on selection and user's tab settings.
     /// Uses a BTreeSet to holds the collection of lines to modify.
     /// Preserves cursor position and current selection as much as possible.
-    /// Tries to have behavior consistent with other editors like Atom, Sublime and VSCode,
-    /// with non-caret selections not being modified.
+    /// Tries to have behavior consistent with other editors like Atom,
+    /// Sublime and VSCode, with non-caret selections not being modified.
     fn modify_indent(&mut self, view: &View, direction: IndentDirection) {
         let mut lines = BTreeSet::new();
         let tab_text = if self.config.items.translate_tabs_to_spaces {
@@ -564,9 +565,11 @@ impl Editor {
         let mut builder = delta::Builder::new(self.text.len());
         for line in lines {
             let offset = view.line_col_to_offset(&self.text, line, 0);
-            let tab_offset = view.line_col_to_offset(&self.text, line, tab_text.len());
+            let tab_offset = view.line_col_to_offset(&self.text, line,
+                                                     tab_text.len());
             let interval = Interval::new_closed_open(offset, tab_offset);
-            let leading_slice = self.text.slice_to_string(interval.start(), interval.end());
+            let leading_slice = self.text.slice_to_string(interval.start(),
+                                                          interval.end());
             if leading_slice == tab_text {
                 builder.delete(interval);
             } else if let Some(first_char_col) = leading_slice.find(|c: char| !c.is_whitespace()) {

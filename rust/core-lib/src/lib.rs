@@ -27,8 +27,11 @@ extern crate toml;
 #[cfg(feature = "notify")]
 extern crate notify;
 
+extern crate xi_rope;
+extern crate xi_rpc;
 extern crate xi_trace;
 extern crate xi_trace_dump;
+extern crate xi_unicode;
 
 #[cfg(feature = "ledger")]
 mod ledger_includes {
@@ -76,13 +79,6 @@ pub mod internal {
 
 pub mod rpc;
 
-pub use plugins::rpc as plugin_rpc;
-pub use plugins::PluginPid;
-pub use tabs::ViewIdentifier;
-pub use syntax::SyntaxDefinition;
-pub use config::{BufferItems as BufferConfig, Table as ConfigTable};
-pub use core::{XiCore, WeakXiCore};
-
 use internal::tabs;
 use internal::core;
 use internal::client;
@@ -110,7 +106,10 @@ use internal::fuchsia;
 #[cfg(feature = "ledger")]
 use apps_ledger_services_public::Ledger_Proxy;
 
-extern crate xi_rope;
-extern crate xi_unicode;
-extern crate xi_rpc;
+pub use plugins::rpc as plugin_rpc;
+pub use plugins::PluginPid;
+pub use tabs::ViewIdentifier;
+pub use syntax::SyntaxDefinition;
+pub use config::{BufferItems as BufferConfig, Table as ConfigTable};
+pub use core::{XiCore, WeakXiCore};
 

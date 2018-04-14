@@ -29,10 +29,12 @@ use watcher::FileWatcher;
 
 const UTF8_BOM: &str = "\u{feff}";
 
-#[derive(Debug, Clone, Copy)]
-pub enum CharacterEncoding {
-    Utf8,
-    Utf8WithBom
+/// Tracks all state related to open files.
+pub struct FileManager {
+    open_files: HashMap<PathBuf, BufferId>,
+    file_info: HashMap<BufferId, FileInfo>,
+    /// A monitor of filesystem events, for things like reloading changed files.
+    watcher: FileWatcher,
 }
 
 #[derive(Debug)]
@@ -49,10 +51,10 @@ pub enum FileError {
     HasChanged,
 }
 
-pub struct FileManager {
-    open_files: HashMap<PathBuf, BufferId>,
-    file_info: HashMap<BufferId, FileInfo>,
-    watcher: FileWatcher,
+#[derive(Debug, Clone, Copy)]
+pub enum CharacterEncoding {
+    Utf8,
+    Utf8WithBom
 }
 
 impl FileManager {
@@ -152,7 +154,7 @@ impl FileManager {
     }
 }
 
-pub fn try_load_file<P>(path: P) -> Result<(Rope, FileInfo), FileError>
+fn try_load_file<P>(path: P) -> Result<(Rope, FileInfo), FileError>
 where P: AsRef<Path>
 {
     // TODO: support for non-utf8
@@ -212,7 +214,7 @@ impl CharacterEncoding {
 
 /// Returns the modification timestamp for the file at a given path,
 /// if present.
-pub fn get_mod_time<P>(path: P) -> Option<SystemTime>
+fn get_mod_time<P>(path: P) -> Option<SystemTime>
 where P: AsRef<Path>
 {
     File::open(path)
