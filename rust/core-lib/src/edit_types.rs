@@ -12,6 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! A bunch of boilerplate for converting the `EditNotification`s we receive
+//! from the client into the events we use internally.
+//!
+//! This simplifies code elsewhere, and makes it easier to route events to
+//! the editor or view as appropriate.
+
 use movement::Movement;
 use ::rpc::{GestureType, LineRange, EditNotification, MouseAction};
 
@@ -49,6 +55,8 @@ pub (crate) enum BufferEvent {
     InsertTab,
     RequestLines(LineRange),
     Yank,
+    DebugRewrap,
+    DebugPrintSpans,
 }
 
 pub (crate) enum EventDomain {
@@ -160,10 +168,8 @@ impl From<EditNotification> for EventDomain {
                 ViewEvent::FindNext { wrap_around, allow_same }.into(),
             FindPrevious { wrap_around } =>
                 ViewEvent::FindPrevious { wrap_around }.into(),
-            DebugRewrap =>
-                panic!("ahhh"),
-            DebugPrintSpans =>
-                panic!("ahhh"),
+            DebugRewrap => BufferEvent::DebugRewrap.into(),
+            DebugPrintSpans => BufferEvent::DebugPrintSpans.into(),
             CancelOperation => ViewEvent::Cancel.into(),
             Uppercase => BufferEvent::Uppercase.into(),
             Lowercase => BufferEvent::Lowercase.into(),

@@ -21,6 +21,7 @@ use styles::ThemeSettings;
 use plugins::rpc::ClientPluginInfo;
 use plugins::Command;
 
+/// An interface to the frontend.
 pub struct Client(RpcPeer);
 
 impl Client {

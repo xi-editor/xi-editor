@@ -22,12 +22,13 @@ use std::io;
 
 use xi_rpc::{RpcLoop, ReadError};
 use xi_rpc::test_utils::{make_reader, test_channel};
-use xi_core_lib::MainState;
+use xi_core_lib::{BufferId, ViewId, XiCore};
+use xi_core_lib::test_helpers;
 
 #[test]
 /// Tests that the handler responds to a standard startup sequence as expected.
 fn test_startup() {
-    let mut state = MainState::new();
+    let mut state = XiCore::new();
     let (tx, mut rx) = test_channel();
     let mut rpc_looper = RpcLoop::new(tx);
     let json = make_reader(r#"{"method":"client_started","params":{}}
@@ -39,7 +40,7 @@ fn test_startup() {
     let json = make_reader(r#"{"id":0,"method":"new_view","params":{}}"#);
     assert!(rpc_looper.mainloop(|| json, &mut state).is_ok());
     assert_eq!(rx.expect_response(), Ok(json!("view-id-1")));
-    rx.expect_rpc("available_plugins");
+    //rx.expect_rpc("available_plugins");
     rx.expect_rpc("config_changed");
     rx.expect_rpc("update");
     rx.expect_rpc("scroll_to");
@@ -50,8 +51,7 @@ fn test_startup() {
 #[test]
 /// Tests that the handler creates and destroys views and buffers
 fn test_state() {
-    let mut state = MainState::new();
-    let buffers = state._get_buffers();
+    let mut state = XiCore::new();
 
     let write = io::sink();
     let json = make_reader(r#"{"method":"client_started","params":{}}
@@ -61,17 +61,20 @@ fn test_state() {
     rpc_looper.mainloop(|| json, &mut state).unwrap();
 
     {
-        let buffers = buffers.lock();
-        assert_eq!(buffers.iter_editors().count(), 1);
+        let state = state.inner();
+        assert_eq!(state._test_open_editors(),
+                   vec![test_helpers::new_buffer_id(2)]);
+        assert_eq!(state._test_open_views(),
+                   vec![test_helpers::new_view_id(1)]);
     }
-    assert!(buffers.buffer_for_view("view-id-1".into()).is_some());
 
     let json = make_reader(
         r#"{"method":"close_view","params":{"view_id":"view-id-1"}}"#);
     rpc_looper.mainloop(|| json, &mut state).unwrap();
     {
-        let buffers = buffers.lock();
-        assert_eq!(buffers.iter_editors().count(), 0);
+        let state = state.inner();
+        assert_eq!(state._test_open_views(), Vec::new());
+        assert_eq!(state._test_open_editors(), Vec::new());
     }
 
     let json = make_reader(r#"{"id":1,"method":"new_view","params":{}}
@@ -81,8 +84,8 @@ fn test_state() {
 
     rpc_looper.mainloop(|| json, &mut state).unwrap();
     {
-        let buffers = buffers.lock();
-        assert_eq!(buffers.iter_editors().count(), 3);
+        let state = state.inner();
+        assert_eq!(state._test_open_editors().len(), 3);
     }
 }
 
@@ -90,12 +93,12 @@ fn test_state() {
 /// Tests that the runloop exits with the correct error when receiving
 /// malformed json.
 fn test_malformed_json() {
-    let mut state = MainState::new();
+    let mut state = XiCore::new();
     let write = io::sink();
     let mut rpc_looper = RpcLoop::new(write);
     // malformed json: method should be in quotes.
-    let read = make_reader(r#"{method:"client_started","params":{}}
-{"id":0,"method":"new_view","params":{}}"#);
+    let read = make_reader(r#"{"method":"client_started","params":{}}
+{"id":0,method:"new_view","params":{}}"#);
     match rpc_looper.mainloop(|| read, &mut state).err()
         .expect("malformed json exits with error") {
             ReadError::Json(_) => (), // expected
@@ -103,9 +106,8 @@ fn test_malformed_json() {
     }
     // read should have ended after first item
     {
-        let buffers = state._get_buffers();
-        let buffers = buffers.lock();
-        assert_eq!(buffers.iter_editors().count(), 0);
+        let state = state.inner();
+        assert_eq!(state._test_open_editors().len(), 0);
     }
 }
 
@@ -116,7 +118,7 @@ fn test_malformed_json() {
 ///
 /// Note: this is a test of message parsing, not of editor behaviour.
 fn test_movement_cmds() {
-    let mut state = MainState::new();
+    let mut state = XiCore::new();
     let write = io::sink();
     let mut rpc_looper = RpcLoop::new(write);
     // init a new view
@@ -133,7 +135,7 @@ fn test_movement_cmds() {
 /// Sends all the commands which modify the buffer, and verifies that they
 /// are handled.
 fn test_text_commands() {
-    let mut state = MainState::new();
+    let mut state = XiCore::new();
     let write = io::sink();
     let mut rpc_looper = RpcLoop::new(write);
     // init a new view
@@ -148,7 +150,7 @@ fn test_text_commands() {
 
 #[test]
 fn test_other_edit_commands() {
-    let mut state = MainState::new();
+    let mut state = XiCore::new();
     let write = io::sink();
     let mut rpc_looper = RpcLoop::new(write);
     // init a new view
@@ -164,7 +166,7 @@ fn test_other_edit_commands() {
 
 #[test]
 fn test_settings_commands() {
-    let mut state = MainState::new();
+    let mut state = XiCore::new();
     let (tx, mut rx) = test_channel();
     let mut rpc_looper = RpcLoop::new(tx);
     // init a new view
@@ -176,7 +178,7 @@ fn test_settings_commands() {
     rx.expect_rpc("available_themes");
     rx.expect_rpc("theme_changed");
     rx.expect_response().unwrap();
-    rx.expect_rpc("available_plugins");
+    //rx.expect_rpc("available_plugins");
     rx.expect_rpc("config_changed");
     rx.expect_rpc("update");
     rx.expect_rpc("scroll_to");

@@ -27,8 +27,11 @@ extern crate toml;
 #[cfg(feature = "notify")]
 extern crate notify;
 
+extern crate xi_rope;
+extern crate xi_rpc;
 extern crate xi_trace;
 extern crate xi_trace_dump;
+extern crate xi_unicode;
 
 #[cfg(feature = "ledger")]
 mod ledger_includes {
@@ -54,7 +57,7 @@ pub mod internal {
     pub mod tabs;
     pub mod editor;
     pub mod edit_types;
-    pub mod editing;
+    pub mod event_context;
     pub mod file;
     pub mod view;
     pub mod linewrap;
@@ -76,19 +79,12 @@ pub mod internal {
 
 pub mod rpc;
 
-pub use plugins::rpc as plugin_rpc;
-pub use plugins::PluginPid;
-pub use tabs::ViewIdentifier;
-pub use syntax::SyntaxDefinition;
-pub use config::{BufferItems as BufferConfig, Table as ConfigTable};
-pub use core::{XiCore, WeakXiCore};
-
 use internal::tabs;
 use internal::core;
 use internal::client;
 use internal::edit_types;
-use internal::editing;
 use internal::editor;
+use internal::event_context;
 use internal::file;
 use internal::view;
 use internal::linewrap;
@@ -110,7 +106,11 @@ use internal::fuchsia;
 #[cfg(feature = "ledger")]
 use apps_ledger_services_public::Ledger_Proxy;
 
-extern crate xi_rope;
-extern crate xi_unicode;
-extern crate xi_rpc;
+pub use config::{BufferItems as BufferConfig, Table as ConfigTable};
+pub use core::{XiCore, WeakXiCore};
+pub use plugins::rpc as plugin_rpc;
+pub use plugins::PluginPid;
+pub use syntax::SyntaxDefinition;
+pub use tabs::{BufferId, BufferIdentifier, ViewId, ViewIdentifier};
+pub use tabs::test_helpers as test_helpers;
 
