@@ -60,7 +60,7 @@ pub struct EventContext<'a> {
 impl<'a> EventContext<'a> {
     /// Executes a closure with mutable references to the editor and the view,
     /// common in edit actions that modify the text.
-    pub (crate) fn with_editor<R, F>(&self, f: F) -> R
+    pub (crate) fn with_editor<R, F>(&mut self, f: F) -> R
         where F: FnOnce(&mut Editor, &mut View) -> R
     {
         let mut editor = self.buffer.borrow_mut();
@@ -71,7 +71,7 @@ impl<'a> EventContext<'a> {
     /// Executes a closure with a mutable reference to the view and a reference
     /// to the current text. This is common to most edits that just modify
     /// selection or viewport state.
-    fn with_view<R, F>(&self, f: F) -> R
+    fn with_view<R, F>(&mut self, f: F) -> R
         where F: FnOnce(&mut View, &Rope) -> R
     {
         let editor = self.buffer.borrow();
@@ -79,7 +79,7 @@ impl<'a> EventContext<'a> {
         f(&mut view, editor.get_buffer())
     }
 
-    pub (crate) fn do_edit(&self, cmd: EditNotification) {
+    pub (crate) fn do_edit(&mut self, cmd: EditNotification) {
         let event: EventDomain = cmd.into();
         match event {
             EventDomain::View(cmd) => self.with_view(
@@ -91,7 +91,7 @@ impl<'a> EventContext<'a> {
         self.render();
     }
 
-    pub (crate) fn do_edit_sync(&self, cmd: EditRequest
+    pub (crate) fn do_edit_sync(&mut self, cmd: EditRequest
                                ) -> Result<Value, RemoteError> {
         use self::EditRequest::*;
         let result = match cmd {
@@ -105,7 +105,7 @@ impl<'a> EventContext<'a> {
         result
     }
 
-    pub (crate) fn do_plugin_cmd(&self, plugin: PluginId,
+    pub (crate) fn do_plugin_cmd(&mut self, plugin: PluginId,
                                  cmd: PluginNotification) {
         use self::PluginNotification::*;
         match cmd {
@@ -125,7 +125,7 @@ impl<'a> EventContext<'a> {
         self.render();
     }
 
-    pub (crate) fn do_plugin_cmd_sync(&self, _plugin: PluginId,
+    pub (crate) fn do_plugin_cmd_sync(&mut self, _plugin: PluginId,
                                       cmd: PluginRequest) -> Value {
         use self::PluginRequest::*;
         match cmd {
@@ -141,7 +141,7 @@ impl<'a> EventContext<'a> {
 
     /// Commits any changes to the buffer, updating views and plugins as needed.
     /// This only updates internal state; it does not update the client.
-    fn after_edit(&self, author: &str) {
+    fn after_edit(&mut self, author: &str) {
         let mut buffer = self.buffer.borrow_mut();
         let (delta, last_text, keep_sels) = match buffer.commit_delta() {
             Some(edit_info) => edit_info,
@@ -186,7 +186,7 @@ impl<'a> EventContext<'a> {
     }
 
     /// Flushes any changes in the views out to the frontend.
-    pub (crate) fn render(&self) {
+    pub (crate) fn render(&mut self) {
         let buffer = self.buffer.borrow();
         self.view.borrow_mut()
             .render_if_dirty(buffer.get_buffer(), self.client, self.style_map,
@@ -200,7 +200,7 @@ impl<'a> EventContext<'a> {
 /// requires access to particular combinations of state. We isolate such
 /// special cases here.
 impl<'a> EventContext<'a> {
-    pub (crate) fn finish_init(&self) {
+    pub (crate) fn finish_init(&mut self) {
         let buffer = self.buffer.borrow();
         let config = buffer.get_config().to_table();
         self.client.config_changed(self.view.borrow().view_id, &config);
@@ -212,7 +212,7 @@ impl<'a> EventContext<'a> {
         }
     }
 
-    pub (crate) fn after_save(&self, path: &Path, new_config: BufferConfig) {
+    pub (crate) fn after_save(&mut self, path: &Path, new_config: BufferConfig) {
         // notify plugins
         let view_id = self.view.borrow().view_id;
         self.plugins.iter().for_each(
@@ -235,7 +235,7 @@ impl<'a> EventContext<'a> {
         self.siblings.is_empty()
     }
 
-    pub (crate) fn config_changed(&self, config_manager: &ConfigManager) {
+    pub (crate) fn config_changed(&mut self, config_manager: &ConfigManager) {
         {
             let mut ed = self.buffer.borrow_mut();
             let mut view = self.view.borrow_mut();
@@ -254,7 +254,7 @@ impl<'a> EventContext<'a> {
         self.render()
     }
 
-    pub (crate) fn reload(&self, text: Rope) {
+    pub (crate) fn reload(&mut self, text: Rope) {
         self.with_editor(|ed, view| {
             let new_len = text.len();
             view.collapse_selections(ed.get_buffer());
@@ -272,7 +272,7 @@ impl<'a> EventContext<'a> {
         self.render();
     }
 
-    pub (crate) fn plugin_info(&self) -> PluginBufferInfo {
+    pub (crate) fn plugin_info(&mut self) -> PluginBufferInfo {
         let buffer = self.buffer.borrow();
         let nb_lines = buffer.get_buffer().measure::<LinesMetric>() + 1;
         let views: Vec<ViewId> = iter::once(&self.view)
@@ -293,7 +293,7 @@ impl<'a> EventContext<'a> {
     }
 
     // TODO: remove support for sync updates
-    pub (crate) fn do_plugin_update(&self, update: Result<Value, RpcError>,
+    pub (crate) fn do_plugin_update(&mut self, update: Result<Value, RpcError>,
                                     undo_group: usize) {
 
         match update.map(serde_json::from_value::<UpdateResponse>) {

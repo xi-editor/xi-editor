@@ -203,7 +203,7 @@ impl CoreState {
     /// Notify editors/views/plugins of config changes.
     fn after_config_change(&self) {
         self.iter_groups()
-            .for_each(|ctx| ctx.config_changed(&self.config_manager))
+            .for_each(|mut ctx| ctx.config_changed(&self.config_manager))
     }
 }
 
@@ -293,14 +293,14 @@ impl CoreState {
     }
 
     fn do_edit(&mut self, view_id: ViewId, cmd: EditNotification) {
-        if let Some(edit_ctx) = self.make_context(view_id) {
+        if let Some(mut edit_ctx) = self.make_context(view_id) {
             edit_ctx.do_edit(cmd);
         }
     }
 
     fn do_edit_sync(&mut self, view_id: ViewId,
                     cmd: EditRequest) -> Result<Value, RemoteError> {
-        if let Some(edit_ctx) = self.make_context(view_id) {
+        if let Some(mut edit_ctx) = self.make_context(view_id) {
             edit_ctx.do_edit_sync(cmd)
         } else {
             // TODO: some custom error tpye that can Into<RemoteError>
@@ -380,7 +380,7 @@ impl CoreState {
         let syntax = SyntaxDefinition::new(path.to_str());
         let config = self.config_manager.get_buffer_config(syntax, buffer_id);
 
-        let event_ctx = self.make_context(view_id).unwrap();
+        let mut event_ctx = self.make_context(view_id).unwrap();
         event_ctx.after_save(path, config);
     }
 
@@ -411,7 +411,7 @@ impl CoreState {
                                     style_map.get_theme_settings());
         }
 
-        self.iter_groups().for_each(|edit_ctx| {
+        self.iter_groups().for_each(|mut edit_ctx| {
             edit_ctx.with_editor(|ed, view| {
                 ed.theme_changed(&self.style_map.borrow());
                 view.set_dirty(ed.get_buffer());
@@ -467,7 +467,7 @@ impl CoreState {
     fn finalize_new_views(&mut self) {
         let to_start = mem::replace(&mut self.pending_views, Vec::new());
         to_start.iter().for_each(|id| {
-            let edit_ctx = self.make_context(*id).unwrap();
+            let mut edit_ctx = self.make_context(*id).unwrap();
             edit_ctx.finish_init();
         });
     }
@@ -564,7 +564,7 @@ impl CoreState {
             Ok(plugin) => {
                 assert_eq!(&plugin.name, "syntect");
                 let init_info = self.iter_groups()
-                    .map(|ctx| ctx.plugin_info())
+                    .map(|mut ctx| ctx.plugin_info())
                     .collect::<Vec<_>>();
                 plugin.initialize(init_info);
                 self.syntect = Some(plugin);
@@ -579,7 +579,7 @@ impl CoreState {
                                  view_id: ViewId, undo_group: usize,
                                  response: Result<Value, RpcError>) {
 
-        if let Some(edit_ctx) = self.make_context(view_id) {
+        if let Some(mut edit_ctx) = self.make_context(view_id) {
             edit_ctx.do_plugin_update(response, undo_group);
         }
     }
@@ -587,7 +587,7 @@ impl CoreState {
     pub (crate) fn plugin_notification(&mut self, _ctx: &RpcCtx,
                                        view_id: ViewId, plugin_id: PluginId,
                                        cmd: PluginNotification) {
-        if let Some(edit_ctx) = self.make_context(view_id) {
+        if let Some(mut edit_ctx) = self.make_context(view_id) {
             edit_ctx.do_plugin_cmd(plugin_id, cmd)
         }
     }
@@ -596,7 +596,7 @@ impl CoreState {
                                   plugin_id: PluginId, cmd: PluginRequest
                                   ) -> Result<Value, RemoteError>
     {
-        if let Some(edit_ctx) = self.make_context(view_id) {
+        if let Some(mut edit_ctx) = self.make_context(view_id) {
             Ok(edit_ctx.do_plugin_cmd_sync(plugin_id, cmd))
         } else {
             Err(RemoteError::custom(404, "missing view", None))
