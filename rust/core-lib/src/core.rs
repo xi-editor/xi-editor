@@ -50,6 +50,7 @@ impl XiCore {
         XiCore::Waiting
     }
 
+    /// Returns `true` if the `client_started` has not yet been received.
     fn is_waiting(&self) -> bool {
         match *self {
             XiCore::Waiting => true,
@@ -57,6 +58,11 @@ impl XiCore {
         }
     }
 
+    /// Returns a guard to the core state. A convenience around `Mutex::lock`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if core has not yet received the `client_started` message.
     pub fn inner(&self) -> MutexGuard<CoreState> {
         match self {
             &XiCore::Running(ref inner) => inner.lock().unwrap(),
@@ -118,16 +124,26 @@ impl Handler for XiCore {
 }
 
 impl WeakXiCore {
+    /// Attempts to upgrade the weak reference. Essentially a wrapper
+    /// for `Arc::upgrade`.
     fn upgrade(&self) -> Option<XiCore> {
         self.0.upgrade().map(|state| XiCore::Running(state))
     }
 
+    /// Called immediately after attempting to start a plugin,
+    /// from the plugin's thread.
     pub fn plugin_connect(&self, plugin: Result<Plugin, io::Error>) {
         if let Some(core) = self.upgrade() {
             core.inner().plugin_connect(plugin)
         }
     }
 
+    /// Handles the result of an update sent to a plugin.
+    ///
+    /// All plugins must acknowledge when they are sent a new update, so that
+    /// core can track which revisiions are still 'live', that is can still
+    /// be the base revision for a delta. Once a plugin has acknowleged a new
+    /// revision, it can no longer send deltas against any older revision.
     pub fn handle_plugin_update(&self, plugin: PluginId, view: ViewId,
                                 undo_group: usize,
                                 response: Result<Value, RpcError>) {
@@ -161,6 +177,7 @@ impl Handler for WeakXiCore {
 }
 
 #[cfg(test)]
+/// Returns a non-functional `WeakXiRef`, needed to mock other types.
 pub fn dummy_weak_core() -> WeakXiCore {
     use xi_rpc::test_utils::DummyPeer;
     use xi_rpc::Peer;

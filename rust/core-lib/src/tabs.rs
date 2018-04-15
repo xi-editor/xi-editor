@@ -154,7 +154,6 @@ impl CoreState {
         self.peer.available_themes(theme_names);
 
         // just during refactor, we manually start syntect at launch
-
         if let Some(manifest) = self.plugins.get_named("syntect") {
             start_plugin_process(manifest.clone(),
                                  self.next_plugin_id(),
@@ -444,12 +443,9 @@ impl CoreState {
 
     fn do_get_config(&self, view_id: ViewId) -> Result<Table, RemoteError> {
         let _t = trace_block("CoreState::get_config", &["core"]);
-        let config = self.views.get(&view_id)
-            .map(|v| v.borrow().buffer_id)
-            .and_then(|id| self.editors.get(&id))
-            .map(|ed| ed.borrow().get_config().to_table());
-        config.ok_or(
-            RemoteError::custom(404, format!("missing view {}", view_id), None))
+        self.make_context(view_id)
+            .map(|mut ctx| ctx.with_editor(|ed, _| ed.get_config().to_table()))
+            .ok_or(RemoteError::custom(404, format!("missing {}", view_id), None))
     }
 }
 
