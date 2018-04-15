@@ -115,9 +115,9 @@ impl From<EditNotification> for EventDomain {
             MoveRightAndModifySelection =>
                 ViewEvent::ModifySelection(Movement::Right).into(),
             MoveWordLeft =>
-                ViewEvent::Move(Movement::Left).into(),
+                ViewEvent::Move(Movement::LeftWord).into(),
             MoveWordLeftAndModifySelection =>
-                ViewEvent::ModifySelection(Movement::Left).into(),
+                ViewEvent::ModifySelection(Movement::LeftWord).into(),
             MoveWordRight =>
                 ViewEvent::Move(Movement::RightWord).into(),
             MoveWordRightAndModifySelection =>

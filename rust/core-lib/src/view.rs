@@ -251,7 +251,8 @@ impl View {
     /// of individual region movements become carets.
     pub fn do_move(&mut self, text: &Rope, movement: Movement, modify: bool) {
         self.drag_state = None;
-        let new_sel = selection_movement(movement, &self.selection, self, text, modify);
+        let new_sel = selection_movement(movement, &self.selection,
+                                         self, text, modify);
         self.set_selection(text, new_sel);
     }
 

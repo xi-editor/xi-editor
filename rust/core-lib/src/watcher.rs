@@ -482,6 +482,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn recurse_with_contained() {
         let (tx, rx) = channel();
         let tmp = tempdir::TempDir::new("xi-test-recurse-contained").unwrap();
@@ -504,6 +505,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn two_watchers_one_file() {
         let (tx, rx) = channel();
         let tmp = tempdir::TempDir::new("xi-test-two-watchers").unwrap();

@@ -18,9 +18,9 @@ use std::sync::mpsc::{channel, Sender, Receiver};
 use std::time::Duration;
 use std::io::{self, Write, Cursor};
 
-use serde_json;
+use serde_json::{self, Value};
 
-use super::{MessageReader, RpcObject, Response, ReadError};
+use super::{Callback, MessageReader, RpcObject, Peer, Response, ReadError, Error};
 
 /// Wraps an instance of `mpsc::Sender`, implementing `Write`.
 ///
@@ -31,6 +31,10 @@ pub struct DummyWriter(Sender<String>);
 /// Wraps an instance of `mpsc::Receiver`, providing convenience methods
 /// for parsing received messages.
 pub struct DummyReader(MessageReader, Receiver<String>);
+
+/// An Peer that doesn't do anything.
+#[derive(Debug, Clone)]
+pub struct DummyPeer;
 
 /// Returns a `(DummyWriter, DummyReader)` pair.
 pub fn test_channel() -> (DummyWriter, DummyReader) {
@@ -110,4 +114,23 @@ impl Write for DummyWriter {
     fn flush(&mut self) -> io::Result<()> {
         Ok(())
     }
+}
+
+
+impl Peer for DummyPeer {
+    fn box_clone(&self) -> Box<Peer> {
+        Box::new(self.clone())
+    }
+    fn send_rpc_notification(&self, _method: &str, _params: &Value) {  }
+    fn send_rpc_request_async(&self, _method: &str, _params: &Value,
+                              f: Box<Callback>) {
+        f.call(Ok("dummy peer".into()))
+    }
+    fn send_rpc_request(&self, _method: &str, _params: &Value)
+        -> Result<Value, Error>
+    {
+        Ok("dummy peer".into())
+    }
+    fn request_is_pending(&self) -> bool { false }
+    fn schedule_idle(&self, _token: usize) {  }
 }

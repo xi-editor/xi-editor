@@ -307,3 +307,85 @@ impl<'a> EventContext<'a> {
     }
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core::dummy_weak_core;
+    use tabs::BufferId;
+    use xi_rpc::test_utils::DummyPeer;
+
+    struct ContextHarness {
+        view: RefCell<View>,
+        editor: RefCell<Editor>,
+        client: Client,
+        core_ref: WeakXiCore,
+        style_map: RefCell<ThemeStyleMap>,
+    }
+
+    impl ContextHarness {
+        fn new<S: AsRef<str>>(s: S) -> Self {
+            let view_id = ViewId(1);
+            let buffer_id = BufferId(2);
+            let config_manager = ConfigManager::default();
+            let view = RefCell::new(View::new(view_id, buffer_id));
+            let editor = RefCell::new(
+                Editor::with_text(s, config_manager.default_buffer_config()));
+            let client = Client::new(Box::new(DummyPeer));
+            let core_ref = dummy_weak_core();
+            let style_map = RefCell::new(ThemeStyleMap::new());
+            ContextHarness { view, editor, client, core_ref, style_map }
+        }
+
+        /// Renders the text and selections. cursors are represented with
+        /// the pipe '|', and non-caret regions are represented by \[braces\].
+        fn debug_render(&self) -> String {
+            let b = self.editor.borrow();
+            let mut text: String = b.get_buffer().into();
+            let v = self.view.borrow();
+            for sel in v.sel_regions().iter().rev() {
+                if sel.end == sel.start {
+                    text.insert(sel.end, '|');
+                } else if sel.end > sel.start {
+                    text.insert_str(sel.end, "|]");
+                    text.insert(sel.start, '[');
+                } else {
+                    text.insert(sel.start, ']');
+                    text.insert_str(sel.end, "[|");
+                }
+            }
+            text
+        }
+
+        fn make_context<'a>(&'a self) -> EventContext<'a> {
+            EventContext {
+                view: &self.view,
+                editor: &self.editor,
+                info: None,
+                siblings: Vec::new(),
+                plugins: Vec::new(),
+                client: &self.client,
+                style_map: &self.style_map,
+                weak_core: &self.core_ref,
+            }
+        }
+    }
+
+    #[test]
+    fn smoke_test() {
+        let harness = ContextHarness::new("");
+        let mut ctx = harness.make_context();
+        ctx.do_edit(EditNotification::Insert { chars: "hello".into() });
+        ctx.do_edit(EditNotification::Insert { chars: " ".into() });
+        ctx.do_edit(EditNotification::Insert { chars: "world".into() });
+        ctx.do_edit(EditNotification::Insert { chars: "!".into() });
+        assert_eq!(harness.debug_render(),"hello world!|");
+        ctx.do_edit(EditNotification::MoveWordLeft);
+        ctx.do_edit(EditNotification::InsertNewline);
+        assert_eq!(harness.debug_render(),"hello \n|world!");
+        ctx.do_edit(EditNotification::MoveWordRightAndModifySelection);
+        assert_eq!(harness.debug_render(), "hello \n[world|]!");
+        ctx.do_edit(EditNotification::Insert { chars: "friends".into() });
+        assert_eq!(harness.debug_render(), "hello \nfriends|!");
+    }
+}
