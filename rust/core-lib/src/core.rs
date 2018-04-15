@@ -159,3 +159,13 @@ impl Handler for WeakXiCore {
         }
     }
 }
+
+#[cfg(test)]
+pub fn dummy_weak_core() -> WeakXiCore {
+    use xi_rpc::test_utils::DummyPeer;
+    use xi_rpc::Peer;
+    let peer = Box::new(DummyPeer);
+    let state = CoreState::new(&peer.box_clone());
+    let core = Arc::new(Mutex::new(state));
+    WeakXiCore(Arc::downgrade(&core))
+}
