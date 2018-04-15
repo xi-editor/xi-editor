@@ -648,21 +648,26 @@ impl Editor {
     }
 
     fn insert_tab(&mut self) {
-        let nb_regions = self.view.sel_regions().len();
-        
-        let nb_lines = if nb_regions == 1 {
-            let mut region = self.view.sel_regions()[0];
-            let mut sel_text = self.text.slice(region.start, region.end);
-            sel_text.measure::<LinesMetric>() + 1
-        }
-        else{ 0 };
+        let mut builder = delta::Builder::new(self.text.len());
+        let const_tab_text = if self.config.items.translate_tabs_to_spaces {
+                                    let tab_size = self.config.items.tab_size;
+                                    n_spaces(tab_size)
+                               } else { "\t" };
 
-        if nb_lines > 1 {
-            self.modify_indent(IndentDirection::In);
-        }
-        else {            
-            let mut builder = delta::Builder::new(self.text.len());
-            for region in self.view.sel_regions() {       
+        for region in self.view.sel_regions() {
+            let mut sel_text = self.text.slice(region.start, region.end);
+            let nb_lines = sel_text.measure::<LinesMetric>() + 1;
+
+            if nb_lines > 1 {
+                let line_range = self.view.get_line_range(&self.text, region);
+
+                for line in line_range {
+                    let offset = self.view.line_col_to_offset(&self.text, line, 0);
+                    let iv = Interval::new_closed_open(offset, offset);
+                    builder.replace(iv, Rope::from(const_tab_text));
+                }
+            }
+            else {
                 let iv = Interval::new_closed_open(region.min(), region.max());
                 let tab_text = if self.config.items.translate_tabs_to_spaces {
                         let (_, col) = self.view.offset_to_line_col(&self.text, region.start);      
@@ -674,9 +679,9 @@ impl Editor {
                 };
                 builder.replace(iv, Rope::from(tab_text));
             }
-            self.this_edit_type = EditType::InsertChars;
-            self.add_delta(builder.build());
         }
+        self.this_edit_type = EditType::InsertChars;
+        self.add_delta(builder.build());
 
         // What follows is old indent code, retained because it will be useful for
         // indent action (Sublime no longer does indent on non-caret selections).
@@ -709,15 +714,7 @@ impl Editor {
                 n_spaces(tab_size)
             } else { "\t" };
         for region in self.view.sel_regions() {
-            let (first_line, _) = self.view.offset_to_line_col(&self.text, region.min());
-            let (last_line, last_col) =
-                self.view.offset_to_line_col(&self.text, region.max());
-            let last_line = if last_col == 0 && last_line > first_line {
-                last_line - 1
-            } else {
-                last_line
-            };
-            let line_range = first_line..(last_line + 1);
+            let line_range = self.view.get_line_range(&self.text, region);
             for line in line_range {
                 lines.insert(line);
             }

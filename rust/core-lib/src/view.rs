@@ -14,6 +14,7 @@
 
 use std::cmp::{min,max};
 use std::mem;
+use std::ops::Range;
 
 use serde_json::value::Value;
 
@@ -881,6 +882,19 @@ impl View {
         if let Some(occ) = next_occurrence {
             self.set_selection(text, occ);
         }
+    }
+
+    pub fn get_line_range(&self, text: &Rope, region: &SelRegion) -> Range<usize> {
+        let (first_line, _) = self.offset_to_line_col(text, region.min());
+        let (last_line, last_col) =
+            self.offset_to_line_col(text, region.max());
+        let last_line = if last_col == 0 && last_line > first_line {
+            last_line - 1
+        } else {
+            last_line
+        };
+        let line_range = first_line..(last_line + 1);
+        line_range
     }
 }
 
