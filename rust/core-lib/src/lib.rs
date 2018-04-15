@@ -106,10 +106,11 @@ use internal::fuchsia;
 #[cfg(feature = "ledger")]
 use apps_ledger_services_public::Ledger_Proxy;
 
-pub use plugins::rpc as plugin_rpc;
-pub use plugins::PluginPid;
-pub use tabs::ViewIdentifier;
-pub use syntax::SyntaxDefinition;
 pub use config::{BufferItems as BufferConfig, Table as ConfigTable};
 pub use core::{XiCore, WeakXiCore};
+pub use plugins::rpc as plugin_rpc;
+pub use plugins::PluginPid;
+pub use syntax::SyntaxDefinition;
+pub use tabs::{BufferId, BufferIdentifier, ViewId, ViewIdentifier};
+pub use tabs::test_helpers as test_helpers;
 

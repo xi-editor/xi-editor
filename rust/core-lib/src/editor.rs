@@ -590,19 +590,11 @@ impl Editor {
     }
 
     fn do_request_lines(&mut self, first: i64, last: i64) {
-        unimplemented!()
         //FIXME::
         //view.request_lines(&self.text, &self.doc_ctx,
                            //self.styles.get_merged(),
                            //first as usize, last as usize);
     }
-
-    //fn debug_print_spans(&self, view: &View) {
-        //// get last sel region
-        //let last_sel = view.sel_regions().last().unwrap();
-        //let iv = Interval::new_closed_open(last_sel.min(), last_sel.max());
-        //self.styles.debug_print_spans(iv);
-    //}
 
     pub (crate) fn do_cut(&mut self, view: &mut View) -> Value {
         let result = self.do_copy(view);
@@ -731,6 +723,8 @@ impl Editor {
             Yank =>
                 //FIXME: broken; yank needs rethinking
                 self.yank(),
+            DebugPrintSpans => (),
+            DebugRewrap => (),
         }
     }
 

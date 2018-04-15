@@ -49,6 +49,8 @@ pub (crate) enum BufferEvent {
     InsertTab,
     RequestLines(LineRange),
     Yank,
+    DebugRewrap,
+    DebugPrintSpans,
 }
 
 pub (crate) enum EventDomain {
@@ -160,10 +162,8 @@ impl From<EditNotification> for EventDomain {
                 ViewEvent::FindNext { wrap_around, allow_same }.into(),
             FindPrevious { wrap_around } =>
                 ViewEvent::FindPrevious { wrap_around }.into(),
-            DebugRewrap =>
-                panic!("ahhh"),
-            DebugPrintSpans =>
-                panic!("ahhh"),
+            DebugRewrap => BufferEvent::DebugRewrap.into(),
+            DebugPrintSpans => BufferEvent::DebugPrintSpans.into(),
             CancelOperation => ViewEvent::Cancel.into(),
             Uppercase => BufferEvent::Uppercase.into(),
             Lowercase => BufferEvent::Lowercase.into(),

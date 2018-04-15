@@ -27,7 +27,7 @@ use serde_json::{self, Value};
 use toml;
 
 use syntax::SyntaxDefinition;
-use tabs::BufferId;
+use tabs::{BufferId, ViewId};
 
 /// Namespace for various default settings.
 #[allow(unused)]
@@ -121,6 +121,16 @@ pub enum ConfigDomain {
     /// The system's overrides for a particular buffer. Only used internally.
     #[serde(skip_deserializing)]
     SysOverride(BufferId),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all="snake_case")]
+/// The external RPC sends `ViewId`s, which we convert to `BufferId`s
+/// internally.
+pub enum ConfigDomainExternal {
+    General,
+    Syntax(SyntaxDefinition),
+    UserOverride(ViewId),
 }
 
 /// The errors that can occur when managing configs.
@@ -331,18 +341,18 @@ impl ConfigManager {
 
     /// Generates a snapshot of the current configuration for a particular
     /// view.
-    pub fn get_buffer_config<S, V>(&self, syntax: S, view_id: V) -> BufferConfig
+    pub fn get_buffer_config<S, I>(&self, syntax: S, id: I) -> BufferConfig
         where S: Into<Option<SyntaxDefinition>>,
-              V: Into<Option<BufferId>>
+              I: Into<Option<BufferId>>
     {
         let syntax = syntax.into();
-        let view_id = view_id.into();
+        let id = id.into();
         let mut configs = Vec::new();
 
         configs.push(self.configs.get(&ConfigDomain::General));
         syntax.map(|s| configs.push(self.configs.get(&s.into())));
-        view_id.map(|v| configs.push(self.configs.get(&ConfigDomain::SysOverride(v))));
-        view_id.map(|v| configs.push(self.configs.get(&ConfigDomain::UserOverride(v))));
+        id.map(|v| configs.push(self.configs.get(&ConfigDomain::SysOverride(v))));
+        id.map(|v| configs.push(self.configs.get(&ConfigDomain::UserOverride(v))));
 
         let configs = configs.iter().flat_map(Option::iter)
             .map(|c| c.cache.clone())
@@ -629,10 +639,11 @@ mod tests {
         manager.set_user_config(ConfigDomain::General, user_config, None)
             .unwrap();
 
-        let view_id = "view-id-1".into();
+        let buffer_id = BufferId(1);
         // system override
         let changes = json!({"tab_size": 67}).as_object().unwrap().to_owned();
-        manager.update_user_config(ConfigDomain::SysOverride(view_id), changes).unwrap();
+        manager.update_user_config(ConfigDomain::SysOverride(buffer_id), changes)
+            .unwrap();
 
         let config = manager.default_buffer_config();
         assert_eq!(config.source.0.len(), 1);
@@ -641,19 +652,20 @@ mod tests {
         let config = manager.get_buffer_config(SyntaxDefinition::Yaml, None);
         assert_eq!(config.source.0.len(), 2);
         assert_eq!(config.items.tab_size, 2);
-        let config = manager.get_buffer_config(SyntaxDefinition::Yaml, view_id);
+        let config = manager.get_buffer_config(SyntaxDefinition::Yaml, buffer_id);
         assert_eq!(config.source.0.len(), 3);
         assert_eq!(config.items.tab_size, 67);
 
         let config = manager.get_buffer_config(SyntaxDefinition::Rust, None);
         assert_eq!(config.items.tab_size, 31);
-        let config = manager.get_buffer_config(SyntaxDefinition::Rust, view_id);
+        let config = manager.get_buffer_config(SyntaxDefinition::Rust, buffer_id);
         assert_eq!(config.items.tab_size, 67);
 
         // user override trumps everything
         let changes = json!({"tab_size": 85}).as_object().unwrap().to_owned();
-        manager.update_user_config(ConfigDomain::UserOverride(view_id), changes).unwrap();
-        let config = manager.get_buffer_config(SyntaxDefinition::Rust, view_id);
+        manager.update_user_config(ConfigDomain::UserOverride(buffer_id), changes)
+            .unwrap();
+        let config = manager.get_buffer_config(SyntaxDefinition::Rust, buffer_id);
         assert_eq!(config.items.tab_size, 85);
     }
 
@@ -665,8 +677,8 @@ mod tests {
         assert!(ConfigDomain::try_from_path(Path::new("hi/unknown.xiconfig")).is_err());
 
         assert_eq!(serde_json::to_string(&ConfigDomain::General).unwrap(), "\"general\"");
-        let d = ConfigDomain::UserOverride(BufferId(5));
-        assert_eq!(serde_json::to_string(&d).unwrap(), "{\"user_override\":5}");
+        let d = ConfigDomainExternal::UserOverride(ViewId(1));
+        assert_eq!(serde_json::to_string(&d).unwrap(), "{\"user_override\":\"view-id-1\"}");
         let d = ConfigDomain::Syntax(SyntaxDefinition::Swift);
         assert_eq!(serde_json::to_string(&d).unwrap(), "{\"syntax\":\"swift\"}");
     }

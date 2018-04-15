@@ -33,7 +33,7 @@ use xi_trace::trace_block;
 
 use WeakXiCore;
 use client::Client;
-use config::{self, ConfigManager, ConfigDomain, Table};
+use config::{self, ConfigManager, ConfigDomain, ConfigDomainExternal, Table};
 use editing::EventContext;
 use editor::Editor;
 use file::FileManager;
@@ -49,20 +49,21 @@ use watcher::{FileWatcher, WatchToken};
 #[cfg(feature = "notify")]
 use notify::DebouncedEvent;
 
-/// ViewIdentifiers are the primary means of routing messages between
+/// ViewIds are the primary means of routing messages between
 /// xi-core and a client view.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ViewIdentifier(pub (crate) usize);
+pub struct ViewId(pub (crate) usize);
 
-/// BufferIdentifiers uniquely identify open buffers.
+/// BufferIds uniquely identify open buffers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord,
          Serialize, Deserialize, Hash)]
-pub struct BufferIdentifier(pub (crate) usize);
+pub struct BufferId(pub (crate) usize);
 
-// new-style names; old names will be deprecated
-pub type BufferId = BufferIdentifier;
-pub type ViewId = ViewIdentifier;
 pub type PluginId = ::plugins::PluginPid;
+
+// old-style names; will be deprecated
+pub type BufferIdentifier = BufferId;
+pub type ViewIdentifier = ViewId;
 
 const NEW_VIEW_IDLE_TOKEN: usize = 1001;
 
@@ -120,11 +121,11 @@ impl CoreState {
     }
 
     fn next_view_id(&self) -> ViewId {
-        ViewIdentifier(self.id_counter.next())
+        ViewId(self.id_counter.next())
     }
 
     fn next_buffer_id(&self) -> BufferId {
-        BufferIdentifier(self.id_counter.next())
+        BufferId(self.id_counter.next())
     }
 
     fn next_plugin_id(&self) -> PluginId {
@@ -286,8 +287,8 @@ impl CoreState {
             Edit(::rpc::EditCommand { view_id, cmd }) =>
                 self.do_edit_sync(view_id, cmd),
             //TODO: why is this a request?? make a notification?
-            GetConfig { view_id } => Ok(1.into()),
-                //self.do_get_config(ctx, view_id),
+            GetConfig { view_id } =>
+                self.do_get_config(view_id).map(|c| json!(c)),
         }
     }
 
@@ -422,11 +423,33 @@ impl CoreState {
     // NOTE: this is coming in from a direct RPC; unlike `set_config`, missing
     // keys here are left in their current state (`set_config` clears missing keys)
     /// Updates the config for a given domain.
-    fn do_modify_user_config(&mut self, domain: ConfigDomain, changes: Table) {
+    fn do_modify_user_config(&mut self, domain: ConfigDomainExternal,
+                             changes: Table) {
+        // the client sends ViewId but we need BufferId so we do a dance
+        let domain: ConfigDomain = match domain {
+            ConfigDomainExternal::General => ConfigDomain::General,
+            ConfigDomainExternal::Syntax(s) => ConfigDomain::Syntax(s),
+            ConfigDomainExternal::UserOverride(view_id) => {
+                 match self.views.get(&view_id) {
+                     Some(v) => ConfigDomain::UserOverride(v.borrow().buffer_id),
+                     None => return,
+                }
+            }
+        };
         if let Err(e) = self.config_manager.update_user_config(domain, changes) {
             self.peer.alert(e.to_string());
         }
         self.after_config_change();
+    }
+
+    fn do_get_config(&self, view_id: ViewId) -> Result<Table, RemoteError> {
+        let _t = trace_block("CoreState::get_config", &["core"]);
+        let config = self.views.get(&view_id)
+            .map(|v| v.borrow().buffer_id)
+            .and_then(|id| self.editors.get(&id))
+            .map(|ed| ed.borrow().get_config().to_table());
+        config.ok_or(
+            RemoteError::custom(404, format!("missing view {}", view_id), None))
     }
 }
 
@@ -581,6 +604,29 @@ impl CoreState {
     }
 }
 
+/// test helpers
+impl CoreState {
+    pub fn _test_open_editors(&self) -> Vec<BufferId> {
+        self.editors.keys().cloned().collect()
+    }
+
+    pub fn _test_open_views(&self) -> Vec<ViewId> {
+        self.views.keys().cloned().collect()
+    }
+}
+
+pub mod test_helpers {
+    use super::{ViewId, BufferId};
+
+    pub fn new_view_id(id: usize) -> ViewId {
+        ViewId(id)
+    }
+
+    pub fn new_buffer_id(id: usize) -> BufferId {
+        BufferId(id)
+    }
+}
+
 /// A multi-view aware iterator over `EventContext`s. A view which appears
 /// as a sibling will not appear again as a main view.
 pub struct Iter<'a, I> {
@@ -615,46 +661,46 @@ struct Counter(Cell<usize>);
 impl Counter {
     fn next(&self) -> usize {
         let n = self.0.get();
-        self.0.set(n+1);
-        n
+        self.0.set(n + 1);
+        n + 1
     }
 }
 
-impl<'a> From<&'a str> for ViewIdentifier {
+impl<'a> From<&'a str> for ViewId {
     fn from(s: &'a str) -> Self {
         let ord = s.trim_left_matches("view-id-");
         let ident = usize::from_str_radix(ord, 10)
-            .expect("ViewIdentifier parsing should never fail");
-        ViewIdentifier(ident)
+            .expect("ViewId parsing should never fail");
+        ViewId(ident)
     }
 }
 
-impl From<String> for ViewIdentifier {
+impl From<String> for ViewId {
     fn from(s: String) -> Self {
         s.as_str().into()
     }
 }
 
-// these two only exist so that we can use ViewIdentifiers as idle tokens
-impl From<usize> for ViewIdentifier {
-    fn from(src: usize) -> ViewIdentifier {
-        ViewIdentifier(src)
+// these two only exist so that we can use ViewIds as idle tokens
+impl From<usize> for ViewId {
+    fn from(src: usize) -> ViewId {
+        ViewId(src)
     }
 }
 
-impl From<ViewIdentifier> for usize {
-    fn from(src: ViewIdentifier) -> usize {
+impl From<ViewId> for usize {
+    fn from(src: ViewId) -> usize {
         src.0
     }
 }
 
-impl fmt::Display for ViewIdentifier {
+impl fmt::Display for ViewId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "view-id-{}", self.0)
     }
 }
 
-impl Serialize for ViewIdentifier {
+impl Serialize for ViewId {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where S: Serializer
     {
@@ -662,7 +708,7 @@ impl Serialize for ViewIdentifier {
     }
 }
 
-impl<'de> Deserialize<'de> for ViewIdentifier
+impl<'de> Deserialize<'de> for ViewId
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
         where D: Deserializer<'de>
@@ -672,14 +718,14 @@ impl<'de> Deserialize<'de> for ViewIdentifier
     }
 }
 
-impl fmt::Display for BufferIdentifier {
+impl fmt::Display for BufferId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "buffer-id-{}", self.0)
     }
 }
 
-impl BufferIdentifier {
+impl BufferId {
     pub fn new(val: usize) -> Self {
-        BufferIdentifier(val)
+        BufferId(val)
     }
 }

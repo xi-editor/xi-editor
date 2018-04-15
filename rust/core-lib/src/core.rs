@@ -57,7 +57,7 @@ impl XiCore {
         }
     }
 
-    pub (crate) fn inner(&self) -> MutexGuard<CoreState> {
+    pub fn inner(&self) -> MutexGuard<CoreState> {
         match self {
             &XiCore::Running(ref inner) => inner.lock().unwrap(),
             &XiCore::Waiting => panic!("core does not start until client_started \
