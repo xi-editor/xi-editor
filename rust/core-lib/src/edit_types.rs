@@ -23,7 +23,7 @@ use ::rpc::{GestureType, LineRange, EditNotification, MouseAction};
 
 
 /// Events that only modify view state
-pub (crate) enum ViewEvent {
+pub(crate) enum ViewEvent {
     Move(Movement),
     ModifySelection(Movement),
     SelectAll,
@@ -40,7 +40,7 @@ pub (crate) enum ViewEvent {
 }
 
 /// Events that modify the buffer
-pub (crate) enum BufferEvent {
+pub(crate) enum BufferEvent {
     Delete(Movement),
     Backspace,
     Transpose,
@@ -54,18 +54,16 @@ pub (crate) enum BufferEvent {
     InsertNewline,
     InsertTab,
     Yank,
-    DebugRewrap,
-    DebugPrintSpans,
 }
 
 /// An event that needs special handling
-pub (crate) enum SpecialEvent {
+pub(crate) enum SpecialEvent {
     DebugRewrap,
     DebugPrintSpans,
     RequestLines(LineRange),
 }
 
-pub (crate) enum EventDomain {
+pub(crate) enum EventDomain {
     View(ViewEvent),
     Buffer(BufferEvent),
     Special(SpecialEvent),

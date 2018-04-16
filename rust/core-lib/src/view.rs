@@ -124,7 +124,7 @@ impl View {
         }
     }
 
-    pub (crate) fn do_edit(&mut self, text: &Rope, cmd: ViewEvent) {
+    pub(crate) fn do_edit(&mut self, text: &Rope, cmd: ViewEvent) {
         use self::ViewEvent::*;
         match cmd {
             Move(movement) => self.do_move(text, movement, false),
@@ -852,7 +852,7 @@ impl View {
     }
 
     /// Unsets the search and removes all highlights from the view.
-    pub (crate) fn unset_find(&mut self, text: &Rope) {
+    pub(crate) fn unset_find(&mut self, text: &Rope) {
         self.search_string = None;
         self.occurrences = None;
         self.hls_dirty = true;

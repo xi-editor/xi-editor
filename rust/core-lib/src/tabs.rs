@@ -57,12 +57,12 @@ use notify::DebouncedEvent;
 /// ViewIds are the primary means of routing messages between
 /// xi-core and a client view.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ViewId(pub (crate) usize);
+pub struct ViewId(pub(crate) usize);
 
 /// BufferIds uniquely identify open buffers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord,
          Serialize, Deserialize, Hash)]
-pub struct BufferId(pub (crate) usize);
+pub struct BufferId(pub(crate) usize);
 
 pub type PluginId = ::plugins::PluginPid;
 
@@ -107,7 +107,7 @@ pub struct CoreState {
 #[allow(dead_code)]
 /// Initial setup and bookkeeping
 impl CoreState {
-    pub (crate) fn new(peer: &RpcPeer) -> Self {
+    pub(crate) fn new(peer: &RpcPeer) -> Self {
         let watcher = FileWatcher::new(peer.clone());
         CoreState {
             views: BTreeMap::new(),
@@ -137,7 +137,7 @@ impl CoreState {
         PluginPid(self.id_counter.next())
     }
 
-    pub (crate) fn finish_setup(&mut self, self_ref: WeakXiCore,
+    pub(crate) fn finish_setup(&mut self, self_ref: WeakXiCore,
                                 config_dir: Option<PathBuf>,
                                 extras_dir: Option<PathBuf>) {
 
@@ -219,7 +219,7 @@ impl CoreState {
     /// holds references to the `Editor` and `View` backing this `ViewId`,
     /// as well as to sibling views, plugins, and other state necessary
     /// for handling most events.
-    pub (crate) fn make_context<'a>(&'a self, view_id: ViewId)
+    pub(crate) fn make_context<'a>(&'a self, view_id: ViewId)
         -> Option<EventContext<'a>>
     {
         self.views.get(&view_id).map(|view| {
@@ -256,7 +256,7 @@ impl CoreState {
         }
     }
 
-    pub (crate) fn client_notification(&mut self, cmd: CoreNotification) {
+    pub(crate) fn client_notification(&mut self, cmd: CoreNotification) {
         use self::CoreNotification::*;
         match cmd {
             Edit(::rpc::EditCommand { view_id, cmd }) =>
@@ -280,7 +280,7 @@ impl CoreState {
         }
     }
 
-    pub (crate) fn client_request(&mut self, cmd: CoreRequest)
+    pub(crate) fn client_request(&mut self, cmd: CoreRequest)
         -> Result<Value, RemoteError>
     {
         use self::CoreRequest::*;
@@ -459,7 +459,7 @@ impl CoreState {
 
 /// Idle, tracing, and file event handling
 impl CoreState {
-    pub (crate) fn handle_idle(&mut self, token: usize) {
+    pub(crate) fn handle_idle(&mut self, token: usize) {
         match token {
             NEW_VIEW_IDLE_TOKEN => self.finalize_new_views(),
             WATCH_IDLE_TOKEN => self.handle_fs_events(),
@@ -605,7 +605,7 @@ impl CoreState {
 /// plugin event handling
 impl CoreState {
     /// Called from a plugin's thread after trying to start the plugin.
-    pub (crate) fn plugin_connect(&mut self,
+    pub(crate) fn plugin_connect(&mut self,
                                   plugin: Result<Plugin, io::Error>) {
         match plugin {
             Ok(plugin) => {
@@ -622,7 +622,7 @@ impl CoreState {
     }
 
     /// Handles the response to a sync update sent to a plugin.
-    pub (crate) fn plugin_update(&mut self, _plugin_id: PluginId,
+    pub(crate) fn plugin_update(&mut self, _plugin_id: PluginId,
                                  view_id: ViewId, undo_group: usize,
                                  response: Result<Value, RpcError>) {
 
@@ -631,7 +631,7 @@ impl CoreState {
         }
     }
 
-    pub (crate) fn plugin_notification(&mut self, _ctx: &RpcCtx,
+    pub(crate) fn plugin_notification(&mut self, _ctx: &RpcCtx,
                                        view_id: ViewId, plugin_id: PluginId,
                                        cmd: PluginNotification) {
         if let Some(mut edit_ctx) = self.make_context(view_id) {
@@ -639,7 +639,7 @@ impl CoreState {
         }
     }
 
-    pub (crate) fn plugin_request(&mut self, _ctx: &RpcCtx, view_id: ViewId,
+    pub(crate) fn plugin_request(&mut self, _ctx: &RpcCtx, view_id: ViewId,
                                   plugin_id: PluginId, cmd: PluginRequest
                                   ) -> Result<Value, RemoteError>
     {

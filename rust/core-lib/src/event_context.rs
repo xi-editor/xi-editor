@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! A container for the state relevant to a single event.
+
 use std::cell::RefCell;
 use std::iter;
 use std::path::Path;
@@ -49,20 +51,20 @@ pub const MAX_SIZE_LIMIT: usize = 1024 * 1024;
 /// This is created dynamically for each event that arrives to the core,
 /// such as a user-initiated edit or style updates from a plugin.
 pub struct EventContext<'a> {
-    pub (crate) editor: &'a RefCell<Editor>,
-    pub (crate) info: Option<&'a FileInfo>,
-    pub (crate) view: &'a RefCell<View>,
-    pub (crate) siblings: Vec<&'a RefCell<View>>,
-    pub (crate) plugins: Vec<&'a Plugin>,
-    pub (crate) client: &'a Client,
-    pub (crate) style_map: &'a RefCell<ThemeStyleMap>,
-    pub (crate) weak_core: &'a WeakXiCore,
+    pub(crate) editor: &'a RefCell<Editor>,
+    pub(crate) info: Option<&'a FileInfo>,
+    pub(crate) view: &'a RefCell<View>,
+    pub(crate) siblings: Vec<&'a RefCell<View>>,
+    pub(crate) plugins: Vec<&'a Plugin>,
+    pub(crate) client: &'a Client,
+    pub(crate) style_map: &'a RefCell<ThemeStyleMap>,
+    pub(crate) weak_core: &'a WeakXiCore,
 }
 
 impl<'a> EventContext<'a> {
     /// Executes a closure with mutable references to the editor and the view,
     /// common in edit actions that modify the text.
-    pub (crate) fn with_editor<R, F>(&mut self, f: F) -> R
+    pub(crate) fn with_editor<R, F>(&mut self, f: F) -> R
         where F: FnOnce(&mut Editor, &mut View) -> R
     {
         let mut editor = self.editor.borrow_mut();
@@ -81,7 +83,7 @@ impl<'a> EventContext<'a> {
         f(&mut view, editor.get_buffer())
     }
 
-    pub (crate) fn do_edit(&mut self, cmd: EditNotification) {
+    pub(crate) fn do_edit(&mut self, cmd: EditNotification) {
         use self::EventDomain as E;
         let event: EventDomain = cmd.into();
         match event {
@@ -109,7 +111,7 @@ impl<'a> EventContext<'a> {
         }
     }
 
-    pub (crate) fn do_edit_sync(&mut self, cmd: EditRequest
+    pub(crate) fn do_edit_sync(&mut self, cmd: EditRequest
                                ) -> Result<Value, RemoteError> {
         use self::EditRequest::*;
         let result = match cmd {
@@ -123,7 +125,7 @@ impl<'a> EventContext<'a> {
         result
     }
 
-    pub (crate) fn do_plugin_cmd(&mut self, plugin: PluginId,
+    pub(crate) fn do_plugin_cmd(&mut self, plugin: PluginId,
                                  cmd: PluginNotification) {
         use self::PluginNotification::*;
         match cmd {
@@ -143,7 +145,7 @@ impl<'a> EventContext<'a> {
         self.render();
     }
 
-    pub (crate) fn do_plugin_cmd_sync(&mut self, _plugin: PluginId,
+    pub(crate) fn do_plugin_cmd_sync(&mut self, _plugin: PluginId,
                                       cmd: PluginRequest) -> Value {
         use self::PluginRequest::*;
         match cmd {
@@ -206,7 +208,7 @@ impl<'a> EventContext<'a> {
     }
 
     /// Flushes any changes in the views out to the frontend.
-    pub (crate) fn render(&mut self) {
+    pub(crate) fn render(&mut self) {
         let _t = trace_block("EventContext::render", &["core"]);
         let ed = self.editor.borrow();
         //TODO: render other views
@@ -222,7 +224,7 @@ impl<'a> EventContext<'a> {
 /// requires access to particular combinations of state. We isolate such
 /// special cases here.
 impl<'a> EventContext<'a> {
-    pub (crate) fn finish_init(&mut self) {
+    pub(crate) fn finish_init(&mut self) {
         let ed = self.editor.borrow();
         let config = ed.get_config().to_table();
         self.client.config_changed(self.view.borrow().view_id, &config);
@@ -234,7 +236,7 @@ impl<'a> EventContext<'a> {
         }
     }
 
-    pub (crate) fn after_save(&mut self, path: &Path, new_config: BufferConfig) {
+    pub(crate) fn after_save(&mut self, path: &Path, new_config: BufferConfig) {
         // notify plugins
         let view_id = self.view.borrow().view_id;
         self.plugins.iter().for_each(
@@ -249,7 +251,7 @@ impl<'a> EventContext<'a> {
     }
 
     /// Returns `true` if this was the last view
-    pub (crate) fn close_view(&self) -> bool {
+    pub(crate) fn close_view(&self) -> bool {
         // we probably want to notify plugins _before_ we close the view
         // TODO: determine what plugins we're stopping
         let view_id = self.view.borrow().view_id;
@@ -257,7 +259,7 @@ impl<'a> EventContext<'a> {
         self.siblings.is_empty()
     }
 
-    pub (crate) fn config_changed(&mut self, config_manager: &ConfigManager) {
+    pub(crate) fn config_changed(&mut self, config_manager: &ConfigManager) {
         {
             let mut ed = self.editor.borrow_mut();
             let mut view = self.view.borrow_mut();
@@ -276,7 +278,7 @@ impl<'a> EventContext<'a> {
         self.render()
     }
 
-    pub (crate) fn reload(&mut self, text: Rope) {
+    pub(crate) fn reload(&mut self, text: Rope) {
         self.with_editor(|ed, view| {
             let new_len = text.len();
             view.collapse_selections(ed.get_buffer());
@@ -294,7 +296,7 @@ impl<'a> EventContext<'a> {
         self.render();
     }
 
-    pub (crate) fn plugin_info(&mut self) -> PluginBufferInfo {
+    pub(crate) fn plugin_info(&mut self) -> PluginBufferInfo {
         let ed = self.editor.borrow();
         let nb_lines = ed.get_buffer().measure::<LinesMetric>() + 1;
         let views: Vec<ViewId> = iter::once(&self.view)
@@ -315,7 +317,7 @@ impl<'a> EventContext<'a> {
     }
 
     // TODO: remove support for sync updates
-    pub (crate) fn do_plugin_update(&mut self, update: Result<Value, RpcError>,
+    pub(crate) fn do_plugin_update(&mut self, update: Result<Value, RpcError>,
                                     undo_group: usize) {
 
         match update.map(serde_json::from_value::<UpdateResponse>) {
