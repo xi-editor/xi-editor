@@ -21,6 +21,7 @@ use serde_json::{self, Value};
 use xi_rpc::{RemoteError, Error as RpcError};
 use xi_rope::Rope;
 use xi_rope::rope::LinesMetric;
+use xi_trace::trace_block;
 use rpc::{EditNotification, EditRequest};
 
 use plugins::rpc::{PluginBufferInfo, PluginNotification, PluginRequest,
@@ -112,7 +113,7 @@ impl<'a> EventContext<'a> {
             AddScopes { scopes } => {
                 let mut ed = self.editor.borrow_mut();
                 let style_map = self.style_map.borrow();
-                ed.get_styles_mut().add_scopes(plugin, scopes, &style_map);
+                ed.get_layers_mut().add_scopes(plugin, scopes, &style_map);
             }
             UpdateSpans { start, len, spans, rev } => self.with_editor(
                 |ed, view| ed.update_spans(view, plugin, start,
@@ -142,6 +143,7 @@ impl<'a> EventContext<'a> {
     /// Commits any changes to the buffer, updating views and plugins as needed.
     /// This only updates internal state; it does not update the client.
     fn after_edit(&mut self, author: &str) {
+        let _t = trace_block("EventContext::after_edit", &["core"]);
         let mut ed = self.editor.borrow_mut();
         let (delta, last_text, keep_sels) = match ed.commit_delta() {
             Some(edit_info) => edit_info,
@@ -155,8 +157,9 @@ impl<'a> EventContext<'a> {
 
         let new_len = delta.new_document_len();
         let nb_lines = ed.get_buffer().measure::<LinesMetric>() + 1;
+        // don't send the actual delta if it is too large, by some heuristic
         let approx_size = delta.inserts_len() + (delta.els.len() * 10);
-        let delta = if approx_size > MAX_SIZE_LIMIT { Some(delta) } else { None };
+        let delta = if approx_size > MAX_SIZE_LIMIT { None } else { Some(delta) };
 
         let update = PluginUpdate::new(
                 self.view.borrow().view_id,
@@ -187,10 +190,12 @@ impl<'a> EventContext<'a> {
 
     /// Flushes any changes in the views out to the frontend.
     pub (crate) fn render(&mut self) {
+        let _t = trace_block("EventContext::render", &["core"]);
         let ed = self.editor.borrow();
+        //TODO: render other views
         self.view.borrow_mut()
             .render_if_dirty(ed.get_buffer(), self.client, self.style_map,
-                             ed.get_styles().get_merged())
+                             ed.get_layers().get_merged())
     }
 }
 

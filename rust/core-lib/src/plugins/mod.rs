@@ -28,6 +28,7 @@ use std::thread;
 use serde_json::Value;
 
 use xi_rpc::{RpcPeer, RpcLoop, Error as RpcError};
+use xi_trace;
 
 use WeakXiCore;
 use tabs::ViewId;
@@ -71,7 +72,7 @@ impl Plugin {
                                         &json!({
                                          "plugin_id": self.id,
                                          "buffer_info": info,
-                                        }));
+                                        }))
     }
 
     // TODO: rethink naming, does this need to be a vec?
@@ -104,12 +105,21 @@ impl Plugin {
         self.peer.send_rpc_request_async("update", &json!(update),
                                          Box::new(callback))
     }
+
+
+    pub fn toggle_tracing(&self, enabled: bool) {
+        self.peer.send_rpc_notification("tracing_config",
+                                        &json!({"enabled": enabled}))
+    }
+
+    pub fn collect_trace(&self) -> Result<Value, RpcError> {
+        self.peer.send_rpc_request("collect_trace", &json!({}))
+    }
 }
 
 pub (crate) fn start_plugin_process(plugin_desc: PluginDescription,
                                     id: PluginId, core: WeakXiCore) {
     thread::spawn(move || {
-
         eprintln!("starting plugin {}", &plugin_desc.name);
         let child = ProcCommand::new(&plugin_desc.exec_path)
             .stdin(Stdio::piped())
@@ -126,6 +136,12 @@ pub (crate) fn start_plugin_process(plugin_desc: PluginDescription,
                 eprintln!("spawned {}", &name);
                 peer.send_rpc_notification("ping", &json!({}));
                 let plugin = Plugin { peer, process: child, name, id };
+
+                // set tracing immediately
+                if xi_trace::is_enabled() {
+                    plugin.toggle_tracing(true);
+                }
+
                 core.plugin_connect(Ok(plugin));
                 //TODO: we could be logging plugin exit results
                 let mut core = core;

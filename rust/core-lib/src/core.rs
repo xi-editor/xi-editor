@@ -96,7 +96,9 @@ impl Handler for XiCore {
                 false => xi_trace::disable_tracing(),
             }
             eprintln!("tracing in core = {:?}", enabled);
-            return;
+            if self.is_waiting() {
+                return;
+            }
         }
 
         // wait for client_started before setting up inner

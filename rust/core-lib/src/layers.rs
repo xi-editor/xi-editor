@@ -24,14 +24,14 @@ use syntect::highlighting::StyleModifier;
 
 use xi_rope::interval::Interval;
 use xi_rope::spans::{Spans, SpansBuilder};
+use xi_trace::trace_block;
 
 use styles::{Style, ThemeStyleMap};
 use plugins::PluginPid;
 
 /// A collection of layers containing scope information.
 #[derive(Default)]
-//TODO: rename. Probably to `Layers`
-pub struct Scopes {
+pub struct Layers {
     layers: BTreeMap<PluginPid, ScopeLayer>,
     deleted: HashSet<PluginPid>,
     merged: Spans<Style>,
@@ -51,7 +51,7 @@ pub struct ScopeLayer {
     style_spans: Spans<Style>,
 }
 
-impl Scopes {
+impl Layers {
 
     pub fn get_merged(&self) -> &Spans<Style> {
         &self.merged
@@ -60,6 +60,7 @@ impl Scopes {
     /// Adds the provided scopes to the layer's lookup table.
     pub fn add_scopes(&mut self, layer: PluginPid, scopes: Vec<Vec<String>>,
                                 style_map: &ThemeStyleMap) {
+        let _t = trace_block("Layers::AddScopes", &["core"]);
         if self.create_if_missing(layer).is_err() { return }
         self.layers.get_mut(&layer).unwrap().add_scopes(scopes, style_map);
     }

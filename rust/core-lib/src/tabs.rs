@@ -23,6 +23,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::cell::{Cell, RefCell};
 use std::ffi::OsStr;
 use std::fmt;
+use std::fs::File;
 use std::io;
 use std::mem;
 use std::path::{Path, PathBuf};
@@ -33,7 +34,7 @@ use serde_json::Value;
 
 use xi_rpc::{RpcPeer, RpcCtx, RemoteError, Error as RpcError};
 use xi_rope::{Rope};
-use xi_trace::trace_block;
+use xi_trace::{self, trace_block};
 
 use WeakXiCore;
 use client::Client;
@@ -171,7 +172,7 @@ impl CoreState {
         //TODO: we don't do this at setup because we previously didn't
         //know our config path at init time. we do now, so this can happen
         //at init time.
-        let _t = trace_block("Documents::init_file_config", &["core"]);
+        let _t = trace_block("CoreState::init_file_config", &["core"]);
         if !config_dir.exists() {
             config::init_config_dir(config_dir)?;
         }
@@ -189,6 +190,7 @@ impl CoreState {
 
     /// Attempt to load a config file.
     fn load_file_based_config(&mut self, path: &Path) {
+        let _t = trace_block("CoreState::load_config_file", &["core"]);
         match config::try_load_from_file(&path) {
             Ok((d, t)) => self.set_config(d, t, Some(path.to_owned())),
             Err(e) => self.peer.alert(e.to_string()),
@@ -267,14 +269,14 @@ impl CoreState {
                 self.do_modify_user_config(domain, changes),
             SetTheme { theme_name } =>
                 self.do_set_theme(&theme_name),
-            SaveTrace { .. } => (),
-            //TODO: restore me
-                //self.save_trace(&destination, &frontend_samples),
+            SaveTrace { destination, frontend_samples } =>
+                self.save_trace(&destination, &frontend_samples),
             Plugin(..) => (),
                 //self.do_plugin_cmd(cmd),
-            // these two are handled at the top level
+            TracingConfig { enabled } =>
+                self.toggle_tracing(enabled),
+            // handled at the top level
             ClientStarted { .. } => (),
-            TracingConfig { .. } => (),
         }
     }
 
@@ -363,6 +365,7 @@ impl CoreState {
     fn do_save<P>(&mut self, view_id: ViewId, path: P)
         where P: AsRef<Path>
     {
+        let _t = trace_block("CoreState::do_save", &["core"]);
         let path = path.as_ref();
         let buffer_id = self.views.get(&view_id).map(|v| v.borrow().buffer_id);
         let buffer_id = match buffer_id {
@@ -454,7 +457,7 @@ impl CoreState {
 }
 
 
-/// Idle and file event handling
+/// Idle, tracing, and file event handling
 impl CoreState {
     pub (crate) fn handle_idle(&mut self, token: usize) {
         match token {
@@ -474,7 +477,7 @@ impl CoreState {
 
     #[cfg(feature = "notify")]
     fn handle_fs_events(&mut self) {
-        let _t = trace_block("Documents::handle_fs_events", &["core"]);
+        let _t = trace_block("CoreState::handle_fs_events", &["core"]);
         let mut events = self.file_manager.watcher().take_events();
         let mut config_changed = false;
 
@@ -551,6 +554,50 @@ impl CoreState {
                 if should_load { self.load_file_based_config(new) }
             }
             _ => (),
+        }
+    }
+
+    fn toggle_tracing(&self, enabled: bool) {
+        let mut plugins = Vec::new();
+        if let Some(ref plugin) = self.syntect { plugins.push(plugin) };
+        plugins.iter().for_each(|plugin| plugin.toggle_tracing(enabled))
+    }
+
+    fn save_trace<P>(&self, path: P, frontend_samples: &Value)
+        where P: AsRef<Path>,
+    {
+        use xi_trace_dump::*;
+        let mut all_traces = xi_trace::samples_cloned_unsorted();
+        if let Ok(mut traces) = chrome_trace::decode(frontend_samples) {
+            all_traces.append(&mut traces);
+        }
+        let mut plugins = Vec::new();
+        if let Some(ref plugin) = self.syntect { plugins.push(plugin) };
+
+        for plugin in plugins {
+            match plugin.collect_trace() {
+                Ok(json) => {
+                    let mut trace = chrome_trace::decode(&json).unwrap();
+                    all_traces.append(&mut trace);
+                }
+                Err(e) => eprintln!("trace error {:?}", e),
+            }
+        }
+
+        all_traces.sort_unstable();
+
+        let mut trace_file = match File::create(path.as_ref()) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("error saving trace {:?}", e);
+                return;
+            }
+        };
+
+        if let Err(e) = chrome_trace::serialize(
+            &all_traces, chrome_trace::OutputFormat::JsonArray,
+            &mut trace_file) {
+            eprintln!("error saving trace {:?}", e);
         }
     }
 }

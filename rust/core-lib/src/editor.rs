@@ -28,7 +28,7 @@ use xi_trace::trace_block;
 use config::{BufferConfig, Table};
 use event_context::MAX_SIZE_LIMIT;
 use edit_types::BufferEvent;
-use layers::Scopes;
+use layers::Layers;
 use movement::{Movement, region_movement};
 use plugins::PluginId;
 use plugins::rpc::{PluginEdit, ScopeSpan, TextUnit, GetDataResponse};
@@ -95,7 +95,7 @@ pub struct Editor {
     last_synced_rev: RevId,
 
     syntax: SyntaxDefinition,
-    styles: Scopes,
+    styles: Layers,
     config: BufferConfig,
 }
 
@@ -130,7 +130,7 @@ impl Editor {
             gc_undos: BTreeSet::new(),
             last_edit_type: EditType::Other,
             this_edit_type: EditType::Other,
-            styles: Scopes::default(),
+            styles: Layers::default(),
             config,
             revs_in_flight: 0,
             sync_store: None,
@@ -142,11 +142,11 @@ impl Editor {
         &self.text
     }
 
-    pub (crate) fn get_styles(&self) -> &Scopes {
+    pub (crate) fn get_layers(&self) -> &Layers {
         &self.styles
     }
 
-    pub (crate) fn get_styles_mut(&mut self) -> &mut Scopes {
+    pub (crate) fn get_layers_mut(&mut self) -> &mut Layers {
         &mut self.styles
     }
 
