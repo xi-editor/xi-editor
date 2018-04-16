@@ -32,7 +32,6 @@ use layers::Layers;
 use movement::{Movement, region_movement};
 use plugins::PluginId;
 use plugins::rpc::{PluginEdit, ScopeSpan, TextUnit, GetDataResponse};
-use rpc::LineRange;
 use selection::{Selection, SelRegion};
 use styles::ThemeStyleMap;
 use syntax::SyntaxDefinition;
@@ -589,13 +588,6 @@ impl Editor {
         self.insert(view, chars);
     }
 
-    fn do_request_lines(&mut self, first: i64, last: i64) {
-        //FIXME::
-        //view.request_lines(&self.text, &self.doc_ctx,
-                           //self.styles.get_merged(),
-                           //first as usize, last as usize);
-    }
-
     pub (crate) fn do_cut(&mut self, view: &mut View) -> Value {
         let result = self.do_copy(view);
         // This copy is just to make the borrow checker happy, could be optimized.
@@ -717,12 +709,8 @@ impl Editor {
             InsertNewline => self.insert_newline(view),
             InsertTab => self.insert_tab(view),
             Insert(chars) => self.do_insert(view, &chars),
-            RequestLines(LineRange { first, last }) =>
-                //FIXME: broken; needs special handling
-                self.do_request_lines(first, last),
-            Yank =>
-                //FIXME: broken; yank needs rethinking
-                self.yank(),
+            //FIXME: broken; yank needs rethinking
+            Yank => self.yank(),
             DebugPrintSpans => (),
             DebugRewrap => (),
         }

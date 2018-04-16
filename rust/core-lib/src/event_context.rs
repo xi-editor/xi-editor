@@ -18,12 +18,13 @@ use std::path::Path;
 
 use serde_json::{self, Value};
 
-use xi_rpc::{RemoteError, Error as RpcError};
 use xi_rope::Rope;
+use xi_rope::interval::Interval;
 use xi_rope::rope::LinesMetric;
+use xi_rpc::{RemoteError, Error as RpcError};
 use xi_trace::trace_block;
-use rpc::{EditNotification, EditRequest};
 
+use rpc::{EditNotification, EditRequest, LineRange};
 use plugins::rpc::{PluginBufferInfo, PluginNotification, PluginRequest,
 PluginUpdate, UpdateResponse};
 
@@ -34,7 +35,7 @@ use WeakXiCore;
 use tabs::{ViewId, PluginId};
 use editor::Editor;
 use file::FileInfo;
-use edit_types::EventDomain;
+use edit_types::{EventDomain, SpecialEvent};
 use client::Client;
 use plugins::Plugin;
 use selection::SelRegion;
@@ -81,15 +82,31 @@ impl<'a> EventContext<'a> {
     }
 
     pub (crate) fn do_edit(&mut self, cmd: EditNotification) {
+        use self::EventDomain as E;
         let event: EventDomain = cmd.into();
         match event {
-            EventDomain::View(cmd) => self.with_view(
+            E::View(cmd) => self.with_view(
                 |view, text| view.do_edit(text, cmd)),
-            EventDomain::Buffer(cmd) => self.with_editor(
+            E::Buffer(cmd) => self.with_editor(
                 |ed, view| ed.do_edit(view, cmd)),
+            E::Special(cmd) => self.do_special(cmd),
         }
         self.after_edit("core");
         self.render();
+    }
+
+    fn do_special(&mut self, cmd: SpecialEvent) {
+        match cmd {
+            SpecialEvent::DebugRewrap => (),
+            SpecialEvent::DebugPrintSpans => self.with_editor(
+                |ed, view| {
+                    let sel = view.sel_regions().last().unwrap();
+                    let iv = Interval::new_closed_open(sel.min(), sel.max());
+                    ed.get_layers().debug_print_spans(iv);
+                }),
+            SpecialEvent::RequestLines(LineRange { first, last }) =>
+                self.do_request_lines(first as usize, last as usize),
+        }
     }
 
     pub (crate) fn do_edit_sync(&mut self, cmd: EditRequest
@@ -309,6 +326,14 @@ impl<'a> EventContext<'a> {
             Err(err) => eprintln!("plugin shutdown, do something {:?}", err),
         }
         self.editor.borrow_mut().dec_revs_in_flight();
+    }
+
+    fn do_request_lines(&mut self, first: usize, last: usize) {
+        let mut view = self.view.borrow_mut();
+        let ed = self.editor.borrow();
+        view.request_lines(ed.get_buffer(), self.client, self.style_map,
+                           ed.get_layers().get_merged(), first, last)
+
     }
 }
 
