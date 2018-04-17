@@ -263,7 +263,7 @@ impl<T: Clone> FixedLifoDeque<T> {
 impl<A: PartialEq> PartialEq for FixedLifoDeque<A> {
     #[inline]
     fn eq(&self, other: &FixedLifoDeque<A>) -> bool {
-        return self.storage == other.storage;
+        self.storage == other.storage
     }
 }
 

@@ -17,7 +17,6 @@
 
 #![cfg_attr(feature = "cargo-clippy", allow(
     identity_op,
-    needless_return,
     new_without_default_derive,
     redundant_field_names,
 ))]
@@ -76,7 +75,7 @@ impl StringArrayEq<[&'static str]> for Vec<String> {
                 return false;
             }
         }
-        return true;
+        true
     }
 }
 
@@ -90,7 +89,7 @@ impl StringArrayEq<Vec<String>> for &'static [&'static str] {
                 return false;
             }
         }
-        return true;
+        true
     }
 }
 
