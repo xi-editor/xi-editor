@@ -17,7 +17,6 @@
 #![cfg_attr(feature = "cargo-clippy", allow(
     boxed_local,
     cast_lossless,
-    clone_on_copy,
     collapsible_if,
     const_static_lifetime,
     explicit_into_iter_loop,
