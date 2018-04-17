@@ -147,7 +147,7 @@ impl View {
         }
         self.drag_state = Some(DragState {
             base_sel: selection.clone(),
-            offset: offset,
+            offset,
             min: offset,
             max: offset,
         });

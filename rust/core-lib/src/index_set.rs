@@ -118,9 +118,9 @@ impl IndexSet {
             ranges = &ranges[1..];
         }
         MinusIter {
-            ranges: ranges,
-            start: start,
-            end: end,
+            ranges,
+            start,
+            end,
         }
     }
 
@@ -146,7 +146,7 @@ impl IndexSet {
             }
             ranges.push(new_range);
         }
-        IndexSet { ranges: ranges }
+        IndexSet { ranges }
     }
 
     #[cfg(test)]

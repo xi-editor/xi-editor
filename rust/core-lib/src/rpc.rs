@@ -487,7 +487,7 @@ impl<'de> Deserialize<'de> for MouseAction
     {
         let v: Vec<u64> = Vec::deserialize(deserializer)?;
         let click_count = if v.len() == 4 { Some(v[3]) } else { None };
-        Ok(MouseAction { line: v[0], column: v[1], flags: v[2], click_count: click_count })
+        Ok(MouseAction { line: v[0], column: v[1], flags: v[2], click_count })
     }
 }
 

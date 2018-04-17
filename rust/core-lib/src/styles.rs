@@ -79,7 +79,7 @@ impl Style {
     {
         assert!(priority <= 1000);
         Style {
-            priority: priority,
+            priority,
             fg_color: fg_color.into(),
             bg_color: bg_color.into(),
             weight: weight.into(),
@@ -159,10 +159,10 @@ impl ThemeStyleMap {
         let default_style = Style::default_for_theme(&theme);
 
         ThemeStyleMap {
-            themes: themes,
-            theme_name: theme_name,
-            theme: theme,
-            default_style: default_style,
+            themes,
+            theme_name,
+            theme,
+            default_style,
             map: HashMap::new(),
             styles: Vec::new(),
         }
