@@ -28,7 +28,6 @@
     or_fun_call,
     ptr_arg,
     too_many_arguments,
-    unnecessary_operation,
     unreadable_literal,
     while_let_loop,
 ))]
