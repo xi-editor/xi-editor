@@ -629,7 +629,7 @@ impl View {
         // Update search highlights for changed regions
         if self.search_string.is_some() {
             self.valid_search = self.valid_search.apply_delta(delta);
-            let mut occurrences = self.occurrences.take().unwrap_or_else(|| Selection::new());
+            let mut occurrences = self.occurrences.take().unwrap_or_else(Selection::new);
 
             // invalidate occurrences around deletion positions
             for DeltaRegion{ old_offset, new_offset, len } in delta.iter_deletions() {
@@ -715,7 +715,7 @@ impl View {
         // extend the search by twice the string length (twice, because case matching may increase
         // the length of an occurrence)
         let slop = if include_slop { self.search_string.as_ref().unwrap().len() * 2 } else { 0 };
-        let mut occurrences = self.occurrences.take().unwrap_or_else(|| Selection::new());
+        let mut occurrences = self.occurrences.take().unwrap_or_else(Selection::new);
         let mut searched_until = end;
         let mut invalidate_from = None;
 
