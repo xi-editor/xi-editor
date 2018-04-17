@@ -132,7 +132,7 @@ impl Scopes {
 
     /// Prints scopes and style information for the given `Interval`.
     pub fn debug_print_spans(&self, iv: Interval) {
-        for (id, layer) in self.layers.iter() {
+        for (id, layer) in &self.layers {
             let spans = layer.scope_spans.subseq(iv);
             let styles = layer.style_spans.subseq(iv);
             if spans.iter().next().is_some() {

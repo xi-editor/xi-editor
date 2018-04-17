@@ -129,7 +129,7 @@ impl IndexSet {
     pub fn apply_delta(&self, delta: &Delta<RopeInfo>) -> IndexSet {
         let mut ranges: Vec<(usize, usize)> = Vec::new();
         let mut transformer = Transformer::new(delta);
-        for &(start, end) in self.ranges.iter() {
+        for &(start, end) in &self.ranges {
             let new_range = (
                 transformer.transform(start, false),
                 transformer.transform(end, false)

@@ -393,7 +393,7 @@ impl TableStack {
     // NOTE: This is fairly expensive; a future optimization would borrow
     // from the underlying collections.
         let mut out = Table::new();
-        for table in self.0.iter() {
+        for table in &self.0 {
             for (k, v) in table.iter() {
                 if !out.contains_key(k) {
                     // cloning these objects feels a bit gross, we could
@@ -418,7 +418,7 @@ impl TableStack {
     /// Walks the tables in priority order, returning the first
     /// occurance of `key`.
     fn get<S: AsRef<str>>(&self, key: S) -> Option<&Value> {
-        for table in self.0.iter() {
+        for table in &self.0 {
             if let Some(v) = table.get(key.as_ref()) {
                 return Some(v)
             }
