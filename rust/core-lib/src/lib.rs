@@ -19,7 +19,6 @@
     cast_lossless,
     collapsible_if,
     let_and_return,
-    map_clone,
     map_entry,
     match_as_ref,
     match_bool,
