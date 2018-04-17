@@ -745,7 +745,7 @@ fn compute_deltas(revs: &[Revision], text: &Rope, tombstones: &Rope, deletes_fro
 fn compute_transforms(revs: Vec<Revision>) -> Vec<(FullPriority, Subset)> {
     let mut out = Vec::new();
     let mut last_priority: Option<usize> = None;
-    for r in revs.into_iter() {
+    for r in revs {
         if let Contents::Edit {priority, inserts, .. } = r.edit {
             if inserts.is_empty() {
                 continue;
@@ -770,7 +770,7 @@ fn rebase(mut expand_by: Vec<(FullPriority, Subset)>, b_new: Vec<DeltaOp>, mut t
     let mut out = Vec::with_capacity(b_new.len());
 
     let mut next_expand_by = Vec::with_capacity(expand_by.len());
-    for op in b_new.into_iter() {
+    for op in b_new {
         let DeltaOp { rev_id, priority, undo_group, mut inserts, mut deletes } = op;
         let full_priority = FullPriority { priority, session_id: rev_id.session_id() };
         // expand by each in expand_by
