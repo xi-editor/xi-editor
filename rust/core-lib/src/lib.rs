@@ -18,7 +18,6 @@
     boxed_local,
     cast_lossless,
     collapsible_if,
-    const_static_lifetime,
     explicit_into_iter_loop,
     explicit_iter_loop,
     for_kv_map,
