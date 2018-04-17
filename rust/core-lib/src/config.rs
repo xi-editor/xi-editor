@@ -75,7 +75,7 @@ mod defaults {
     }
 
     fn load_for_domain(domain: ConfigDomain) -> Option<Table> {
-        match domain.into() {
+        match domain {
             ConfigDomain::General => {
                 let mut base = load(BASE);
                 if let Some(mut overrides) = platform_overrides() {
@@ -276,7 +276,7 @@ impl ConfigManager {
         where P: Into<Option<PathBuf>>,
     {
         self.check_table(&new_config)?;
-        self.configs.entry(domain.into())
+        self.configs.entry(domain)
             .or_insert_with(|| { ConfigPair::for_domain(domain) })
             .set_table(new_config);
         path.into().map(|p| self.sources.insert(p, domain));
@@ -290,7 +290,7 @@ impl ConfigManager {
                           -> Result<(), ConfigError>
     {
         self.check_table(&changes)?;
-        let conf = self.configs.entry(domain.into())
+        let conf = self.configs.entry(domain)
             .or_insert_with(|| { ConfigPair::for_domain(domain) });
         conf.update_table(changes);
         Ok(())

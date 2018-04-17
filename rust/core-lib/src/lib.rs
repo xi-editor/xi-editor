@@ -18,7 +18,6 @@
     boxed_local,
     cast_lossless,
     collapsible_if,
-    identity_conversion,
     len_zero,
     let_and_return,
     map_clone,
