@@ -299,12 +299,12 @@ impl Documents {
         plugins::start_update_thread(update_rx, &plugin_manager);
 
         Documents {
-            buffers: buffers,
+            buffers,
             id_counter: 0,
             kill_ring: Arc::new(Mutex::new(Rope::from(""))),
             style_map: Arc::new(Mutex::new(ThemeStyleMap::new())),
             plugins: plugin_manager,
-            config_manager: config_manager,
+            config_manager,
             #[cfg(feature = "notify")]
             file_watcher: None,
             update_channel: update_tx,

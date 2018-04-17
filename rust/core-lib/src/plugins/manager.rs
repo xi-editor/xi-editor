@@ -433,7 +433,7 @@ impl PluginManagerRef {
                 buffer_plugins: BTreeMap::new(),
                 global_plugins: PluginGroup::new(),
                 launching_globals: BTreeSet::new(),
-                buffers: buffers,
+                buffers,
                 next_id: 0,
             }
         )))

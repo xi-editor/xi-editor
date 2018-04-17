@@ -37,8 +37,8 @@ impl<'a> LineBreakCursor<'a> {
             _ => LineBreakLeafIter::default()
         };
         LineBreakCursor {
-            inner: inner,
-            lb_iter: lb_iter,
+            inner,
+            lb_iter,
             last_byte: 0,
         }
     }

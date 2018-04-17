@@ -207,10 +207,10 @@ pub fn start_plugin_process<C>(manager_ref: &PluginManagerRef,
                 let peer: RpcPeer = Box::new(looper.get_raw_peer());
                 peer.send_rpc_notification("ping", &Value::Array(Vec::new()));
                 let plugin = Plugin {
-                    peer: peer,
+                    peer,
                     process: child,
                     description: plugin_desc,
-                    identifier: identifier,
+                    identifier,
                 };
                 let plugin_ref = PluginRef(
                     Arc::new(Mutex::new(plugin)),
