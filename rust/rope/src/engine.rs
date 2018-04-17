@@ -556,7 +556,7 @@ impl Engine {
                             rev_id: rev.rev_id,
                             max_undo_so_far: rev.max_undo_so_far,
                             edit: Undo {
-                                toggled_groups: &toggled_groups - &gc_groups,
+                                toggled_groups: &toggled_groups - gc_groups,
                                 deletes_bitxor: new_deletes_bitxor,
                             }
                         })
