@@ -531,7 +531,8 @@ impl From<serde_json::Error> for ConfigError {
 pub fn init_config_dir(dir: &Path) -> io::Result<()> {
     let builder = fs::DirBuilder::new();
     builder.create(dir)?;
-    Ok(builder.create(dir.join("plugins"))?)
+    builder.create(dir.join("plugins"))?;
+    Ok(())
 }
 
 pub fn iter_config_files(dir: &Path) -> io::Result<Box<Iterator<Item=PathBuf>>> {
