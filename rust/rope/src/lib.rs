@@ -15,7 +15,6 @@
 //! Trees for text.
 
 #![cfg_attr(feature = "cargo-clippy", allow(
-    char_lit_as_u8,
     clone_on_copy,
     collapsible_if,
     explicit_into_iter_loop,

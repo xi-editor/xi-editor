@@ -347,7 +347,7 @@ impl fmt::Debug for Subset {
                 } else if s.count == 1 {
                     '#'
                 } else if s.count <= 9 {
-                    ((s.count as u8) + ('0' as u8)) as char
+                    ((s.count as u8) + b'0') as char
                 } else {
                     '+'
                 };
