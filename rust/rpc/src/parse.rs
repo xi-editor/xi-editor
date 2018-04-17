@@ -97,7 +97,7 @@ impl RpcObject {
     }
 
     /// Returns the 'method' field of the underlying object, if present.
-    pub fn get_method<'a>(&'a self) -> Option<&'a str> {
+    pub fn get_method(&self) -> Option<&str> {
         self.0.get("method").and_then(Value::as_str)
     }
 

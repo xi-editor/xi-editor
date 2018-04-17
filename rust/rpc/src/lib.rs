@@ -24,7 +24,6 @@
 
 #![cfg_attr(feature = "cargo-clippy", allow(
     boxed_local,
-    needless_lifetimes,
     or_fun_call,
     unused_lifetimes,
 ))]
