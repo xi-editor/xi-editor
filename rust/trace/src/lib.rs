@@ -17,7 +17,6 @@
 
 #![cfg_attr(feature = "cargo-clippy", allow(
     identity_op,
-    needless_lifetimes,
     needless_return,
     new_without_default_derive,
     redundant_field_names,
@@ -492,7 +491,7 @@ impl Trace {
         }
     }
 
-    pub fn block<'a, S, C>(&'a self, name: S, categories: C) -> SampleGuard<'a>
+    pub fn block<S, C>(&self, name: S, categories: C) -> SampleGuard
         where S: Into<StrCow>, C: Into<CategoriesT>
     {
         if !self.is_enabled() {
@@ -502,8 +501,8 @@ impl Trace {
         }
     }
 
-    pub fn block_payload<'a, S, C, P>(&'a self, name: S, categories: C, payload: P)
-        -> SampleGuard<'a>
+    pub fn block_payload<S, C, P>(&self, name: S, categories: C, payload: P)
+        -> SampleGuard
         where S: Into<StrCow>, C: Into<CategoriesT>, P: Into<TracePayloadT>
     {
         if !self.is_enabled() {
