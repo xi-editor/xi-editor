@@ -14,8 +14,6 @@
 
 //! Unicode utilities useful for text editing, including a line breaking iterator.
 
-#![cfg_attr(feature = "cargo-clippy", allow(redundant_field_names))]
-
 mod tables;
 
 use tables::*;
@@ -104,14 +102,14 @@ impl<'a> LineBreakIterator<'a> {
     pub fn new(s: &str) -> LineBreakIterator {
         if s.is_empty() {
             LineBreakIterator {
-                s: s,
+                s,
                 ix: 1,  // LB2, don't break; sot takes priority for empty string
                 state: 0,
             }
         } else {
             let (lb, len) = linebreak_property_str(s, 0);
             LineBreakIterator {
-                s: s,
+                s,
                 ix: len,
                 state: lb,
             }
