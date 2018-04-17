@@ -626,11 +626,8 @@ impl Documents {
                 //TODO: report this error to client?
                 let info = self.buffers.lock().editor_for_view(view_id)
                     .map(|ed| ed.plugin_init_info());
-                match info {
-                    Some(info) => {
-                        let _ = self.plugins.start_plugin(view_id, &info, &plugin_name);
-                    },
-                    None => (),
+                if let Some(info) = info {
+                    let _ = self.plugins.start_plugin(view_id, &info, &plugin_name);
                 }
             }
             Stop { view_id, plugin_name } => {
