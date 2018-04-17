@@ -636,7 +636,7 @@ fn find_base_index(a: &[Revision], b: &[Revision]) -> usize {
     assert!(a[0].rev_id == b[0].rev_id);
     // TODO find the maximum base revision.
     // this should have the same behavior, but worse performance
-    return 1;
+    1
 }
 
 /// Find a set of revisions common to both lists

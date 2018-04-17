@@ -19,7 +19,6 @@
     len_without_is_empty,
     many_single_char_names,
     needless_range_loop,
-    needless_return,
     new_without_default_derive,
     op_ref,
     redundant_field_names,
