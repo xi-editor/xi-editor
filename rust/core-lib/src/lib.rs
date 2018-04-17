@@ -27,7 +27,6 @@
     new_without_default_derive,
     or_fun_call,
     ptr_arg,
-    redundant_closure,
     redundant_field_names,
     redundant_pattern,
     single_match,
