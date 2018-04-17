@@ -234,7 +234,7 @@ impl Watchee {
 
     fn applies_to_path(&self, path: &Path) -> bool {
         let general_case = if path.starts_with(&self.path) {
-            (self.recursive || &self.path == path) ||
+            (self.recursive || self.path == path) ||
                 path.parent() == Some(&self.path)
         } else {
             false
