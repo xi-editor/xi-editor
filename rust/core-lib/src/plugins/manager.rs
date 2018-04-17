@@ -137,7 +137,7 @@ impl PluginManager {
         let params = serde_json::to_value(params)
             .expect(&format!("bad notif params.\nmethod: {}\nparams: {:?}",
                              method, params));
-        for (_, plugin) in self.global_plugins.iter() {
+        for (_, plugin) in &self.global_plugins {
             plugin.rpc_notification(method, &params);
         }
         if !only_globals {
