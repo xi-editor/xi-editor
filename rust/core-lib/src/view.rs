@@ -312,7 +312,7 @@ impl View {
     pub fn collapse_selections(&mut self, text: &Rope) {
         let mut sel = self.selection.clone();
         sel.collapse();
-        &self.set_selection(text, sel);
+        self.set_selection(text, sel);
     }
 
     /// Determines whether the offset is in any selection (counting carets and
