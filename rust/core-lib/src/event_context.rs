@@ -420,4 +420,112 @@ mod tests {
         ctx.do_edit(EditNotification::Insert { chars: "friends".into() });
         assert_eq!(harness.debug_render(), "hello \nfriends|!");
     }
+
+    #[test]
+    fn test_gestures() {
+        use rpc::GestureType::*;
+        let initial_text = "\
+        this is a string\n\
+        that has three\n\
+        lines.";
+        let harness = ContextHarness::new(initial_text);
+        let mut ctx = harness.make_context();
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 0, ty: PointSelect });
+        assert_eq!(harness.debug_render(),"\
+        |this is a string\n\
+        that has three\n\
+        lines." );
+
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 5, ty: PointSelect });
+        assert_eq!(harness.debug_render(),"\
+        this |is a string\n\
+        that has three\n\
+        lines." );
+
+        ctx.do_edit(EditNotification::Gesture { line: 1, col: 5, ty: ToggleSel });
+        assert_eq!(harness.debug_render(),"\
+        this |is a string\n\
+        that |has three\n\
+        lines." );
+
+        ctx.do_edit(EditNotification::MoveToRightEndOfLineAndModifySelection);
+        assert_eq!(harness.debug_render(),"\
+        this [is a string|]\n\
+        that [has three|]\n\
+        lines." );
+
+        ctx.do_edit(EditNotification::Gesture { line: 2, col: 2, ty: MultiWordSelect });
+        assert_eq!(harness.debug_render(),"\
+        this [is a string|]\n\
+        that [has three|]\n\
+        [lines|]." );
+
+        ctx.do_edit(EditNotification::Gesture { line: 2, col: 2, ty: ToggleSel });
+        assert_eq!(harness.debug_render(),"\
+        this [is a string|]\n\
+        that [has three|]\n\
+        lines." );
+
+        ctx.do_edit(EditNotification::Gesture { line: 2, col: 2, ty: ToggleSel });
+        assert_eq!(harness.debug_render(),"\
+        this [is a string|]\n\
+        that [has three|]\n\
+        li|nes." );
+
+        ctx.do_edit(EditNotification::MoveToLeftEndOfLine);
+        assert_eq!(harness.debug_render(),"\
+        |this is a string\n\
+        |that has three\n\
+        |lines." );
+
+        ctx.do_edit(EditNotification::MoveWordRight);
+        assert_eq!(harness.debug_render(),"\
+        this| is a string\n\
+        that| has three\n\
+        lines|." );
+
+        ctx.do_edit(EditNotification::MoveToLeftEndOfLineAndModifySelection);
+        assert_eq!(harness.debug_render(),"\
+        [|this] is a string\n\
+        [|that] has three\n\
+        [|lines]." );
+
+        ctx.do_edit(EditNotification::CancelOperation);
+        ctx.do_edit(EditNotification::MoveToRightEndOfLine);
+        assert_eq!(harness.debug_render(),"\
+        this is a string|\n\
+        that has three\n\
+        lines." );
+
+        ctx.do_edit(EditNotification::Gesture { line: 2, col: 2, ty: MultiLineSelect });
+        assert_eq!(harness.debug_render(),"\
+        this is a string|\n\
+        that has three\n\
+        [lines.|]" );
+
+        ctx.do_edit(EditNotification::SelectAll);
+        assert_eq!(harness.debug_render(),"\
+        [this is a string\n\
+        that has three\n\
+        lines.|]" );
+
+        ctx.do_edit(EditNotification::CancelOperation);
+        ctx.do_edit(EditNotification::AddSelectionAbove);
+        assert_eq!(harness.debug_render(),"\
+        this is a string\n\
+        that h|as three\n\
+        lines.|" );
+
+        ctx.do_edit(EditNotification::MoveRight);
+        assert_eq!(harness.debug_render(),"\
+        this is a string\n\
+        that ha|s three\n\
+        lines.|" );
+
+        ctx.do_edit(EditNotification::MoveLeft);
+        assert_eq!(harness.debug_render(),"\
+        this is a string\n\
+        that h|as three\n\
+        lines|." );
+    }
 }
