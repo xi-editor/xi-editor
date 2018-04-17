@@ -521,7 +521,7 @@ impl<'a, N: NodeInfo + 'a> Transformer<'a, N> {
                 }
             }
         }
-        return result;
+        result
     }
 
     /// Determine whether a given interval is untouched by the transformation.
