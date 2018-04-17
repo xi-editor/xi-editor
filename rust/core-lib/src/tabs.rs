@@ -21,7 +21,6 @@
 
 use std::collections::{BTreeMap, HashSet};
 use std::cell::{Cell, RefCell};
-use std::ffi::OsStr;
 use std::fmt;
 use std::fs::File;
 use std::io;
@@ -53,6 +52,8 @@ use view::View;
 use watcher::{FileWatcher, WatchToken};
 #[cfg(feature = "notify")]
 use notify::DebouncedEvent;
+#[cfg(feature = "notify")]
+use std::ffi::OsStr;
 
 /// ViewIds are the primary means of routing messages between
 /// xi-core and a client view.
@@ -79,6 +80,7 @@ pub const WATCH_IDLE_TOKEN: usize = 1002;
 const CONFIG_EVENT_TOKEN: WatchToken = WatchToken(1);
 
 /// Token for file-change events in open files
+#[cfg(feature = "notify")]
 pub const OPEN_FILE_EVENT_TOKEN: WatchToken = WatchToken(2);
 
 #[allow(dead_code)]
@@ -108,11 +110,15 @@ pub struct CoreState {
 /// Initial setup and bookkeeping
 impl CoreState {
     pub(crate) fn new(peer: &RpcPeer) -> Self {
+        #[cfg(feature = "notify")]
         let watcher = FileWatcher::new(peer.clone());
         CoreState {
             views: BTreeMap::new(),
             editors: BTreeMap::new(),
+            #[cfg(feature = "notify")]
             file_manager: FileManager::new(watcher),
+            #[cfg(not(feature = "notify"))]
+            file_manager: FileManager::new(),
             kill_ring: Rope::from(""),
             style_map: RefCell::new(ThemeStyleMap::new()),
             config_manager: ConfigManager::default(),
@@ -502,6 +508,7 @@ impl CoreState {
     fn handle_fs_events(&mut self) { }
 
     /// Handles a file system event related to a currently open file
+    #[cfg(feature = "notify")]
     fn handle_open_file_fs_event(&mut self, event: DebouncedEvent) {
         use notify::DebouncedEvent::*;
         let path = match event {

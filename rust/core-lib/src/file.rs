@@ -25,7 +25,10 @@ use std::time::SystemTime;
 use xi_rpc::RemoteError;
 use xi_rope::Rope;
 
-use tabs::{BufferId, OPEN_FILE_EVENT_TOKEN};
+use tabs::BufferId;
+
+#[cfg(feature = "notify")]
+use tabs::OPEN_FILE_EVENT_TOKEN;
 #[cfg(feature = "notify")]
 use watcher::FileWatcher;
 
@@ -36,6 +39,7 @@ pub struct FileManager {
     open_files: HashMap<PathBuf, BufferId>,
     file_info: HashMap<BufferId, FileInfo>,
     /// A monitor of filesystem events, for things like reloading changed files.
+    #[cfg(feature = "notify")]
     watcher: FileWatcher,
 }
 
@@ -60,6 +64,7 @@ pub enum CharacterEncoding {
 }
 
 impl FileManager {
+    #[cfg(feature = "notify")]
     pub fn new(watcher: FileWatcher) -> Self {
         FileManager {
             open_files: HashMap::new(),
@@ -68,6 +73,15 @@ impl FileManager {
         }
     }
 
+    #[cfg(not(feature = "notify"))]
+    pub fn new() -> Self {
+        FileManager {
+            open_files: HashMap::new(),
+            file_info: HashMap::new(),
+        }
+    }
+
+    #[cfg(feature = "notify")]
     pub fn watcher(&mut self) -> &mut FileWatcher {
         &mut self.watcher
     }
@@ -105,6 +119,7 @@ impl FileManager {
     pub fn close(&mut self, id: BufferId) {
         if let Some(info) = self.file_info.remove(&id) {
             self.open_files.remove(&info.path);
+            #[cfg(feature = "notify")]
             self.watcher.unwatch(&info.path, OPEN_FILE_EVENT_TOKEN);
         }
     }
@@ -132,6 +147,7 @@ impl FileManager {
         };
         self.open_files.insert(path.to_owned(), id);
         self.file_info.insert(id, info);
+        #[cfg(feature = "notify")]
         self.watcher.watch(path, false, OPEN_FILE_EVENT_TOKEN);
         Ok(())
     }
@@ -143,6 +159,7 @@ impl FileManager {
         if prev_path != path {
             self.save_new(path, text, id)?;
             self.open_files.remove(&prev_path);
+            #[cfg(feature = "notify")]
             self.watcher.unwatch(&prev_path, OPEN_FILE_EVENT_TOKEN);
         } else if self.file_info.get(&id).unwrap().has_changed {
             return Err(FileError::HasChanged);
