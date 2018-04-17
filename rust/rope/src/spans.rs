@@ -104,7 +104,7 @@ impl<T: Clone + Default> NodeInfo for SpansInfo<T> {
         }
         SpansInfo {
             n_spans: l.spans.len(),
-            iv: iv,
+            iv,
             phantom: PhantomData,
         }
     }
@@ -123,7 +123,7 @@ impl<T: Clone + Default> SpansBuilder<T> {
             b: TreeBuilder::new(),
             leaf: SpansLeaf::default(),
             len: 0,
-            total_len: total_len,
+            total_len,
         }
     }
 
@@ -138,7 +138,7 @@ impl<T: Clone + Default> SpansBuilder<T> {
         }
         self.leaf.spans.push(Span {
             iv: iv.translate_neg(self.len),
-            data: data,
+            data,
         })
     }
 

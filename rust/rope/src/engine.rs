@@ -365,7 +365,7 @@ impl Engine {
             max_undo_so_far: std::cmp::max(undo_group, head_rev.max_undo_so_far),
             edit: Edit {
                 priority: new_priority,
-                undo_group: undo_group,
+                undo_group,
                 inserts: new_inserts,
                 deletes: new_deletes,
             }
@@ -532,10 +532,10 @@ impl Engine {
                             rev_id: rev.rev_id,
                             max_undo_so_far: rev.max_undo_so_far,
                             edit: Edit {
-                                priority: priority,
-                                undo_group: undo_group,
-                                inserts: inserts,
-                                deletes: deletes,
+                                priority,
+                                undo_group,
+                                inserts,
+                                deletes,
                             }
                         });
                     }
