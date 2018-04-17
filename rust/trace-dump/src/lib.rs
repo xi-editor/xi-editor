@@ -19,7 +19,6 @@
     needless_bool,
     needless_pass_by_value,
     ptr_arg,
-    unused_lifetimes,
 ))]
 
 extern crate xi_trace;

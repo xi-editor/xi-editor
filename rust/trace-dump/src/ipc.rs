@@ -24,13 +24,13 @@ pub enum Error {
     BincodeError(bincode::Error)
 }
 
-pub fn serialize_to_bytes<'a>(samples: &Vec<Sample>) -> Result<Vec<u8>, Error>
+pub fn serialize_to_bytes(samples: &Vec<Sample>) -> Result<Vec<u8>, Error>
 {
     bincode::serialize(&samples, bincode::Infinite)
         .map_err(Error::BincodeError)
 }
 
-pub fn serialize_to_stream<'a, W>(samples: &Vec<Sample>, output: &mut W)
+pub fn serialize_to_stream<W>(samples: &Vec<Sample>, output: &mut W)
     -> Result<(), Error>
     where W: Write
 {
