@@ -127,7 +127,7 @@ fn try_from(trace_entry: ChromeTraceArrayEntry, default_sample_id: usize)
     -> Result<Sample, Error> {
     // Chrome trace stores the categories as comma-separated.
     // Split it back out into a vector.
-    let categories = trace_entry.cat.split(",").map(
+    let categories = trace_entry.cat.split(',').map(
         |s| s.to_string()).collect::<Vec<String>>();
 
     let (sample_id, payload ) = trace_entry.args.map_or((default_sample_id, None), |args| {
