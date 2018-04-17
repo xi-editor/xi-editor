@@ -487,7 +487,7 @@ impl Rope {
     pub fn iter_chunks(&self, start: usize, end: usize) -> ChunkIter {
         ChunkIter {
             cursor: Cursor::new(self, start),
-            end: end,
+            end,
         }
     }
 

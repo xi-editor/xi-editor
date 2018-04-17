@@ -253,7 +253,7 @@ impl<N: NodeInfo> Delta<N> {
                 }
             }
         }
-        Delta { els: els, base_len: base_len }
+        Delta { els, base_len }
     }
 
     /// Produce a summary of the delta. Everything outside the returned interval
@@ -426,7 +426,7 @@ impl<N: NodeInfo> InsertDelta<N> {
         if y > b1 {
             els.push(DeltaElement::Copy(b1, y));
         }
-        InsertDelta(Delta { els: els, base_len: l })
+        InsertDelta(Delta { els, base_len: l })
     }
 
     // TODO: it is plausible this method also works on Deltas with deletes
@@ -446,7 +446,7 @@ impl<N: NodeInfo> InsertDelta<N> {
                 }
             }
         }).collect();
-        InsertDelta(Delta { els: els, base_len: xform.len_after_delete()})
+        InsertDelta(Delta { els, base_len: xform.len_after_delete()})
     }
 
     /// Return a Subset containing the inserted ranges.
@@ -492,7 +492,7 @@ impl<'a, N: NodeInfo + 'a> Transformer<'a, N> {
     /// Create a new transformer from a delta.
     pub fn new(delta: &'a Delta<N>) -> Self {
         Transformer {
-            delta: delta,
+            delta,
         }
     }
 
@@ -569,7 +569,7 @@ impl<N: NodeInfo> Builder<N> {
         Builder {
             delta: Delta {
                 els: Vec::new(),
-                base_len: base_len,
+                base_len,
             },
             last_offset: 0,
         }
