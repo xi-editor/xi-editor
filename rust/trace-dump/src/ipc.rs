@@ -27,7 +27,7 @@ pub enum Error {
 pub fn serialize_to_bytes<'a>(samples: &Vec<Sample>) -> Result<Vec<u8>, Error>
 {
     bincode::serialize(&samples, bincode::Infinite)
-        .map_err(|e| Error::BincodeError(e))
+        .map_err(Error::BincodeError)
 }
 
 pub fn serialize_to_stream<'a, W>(samples: &Vec<Sample>, output: &mut W)
@@ -35,7 +35,7 @@ pub fn serialize_to_stream<'a, W>(samples: &Vec<Sample>, output: &mut W)
     where W: Write
 {
     bincode::serialize_into(output, &samples, bincode::Infinite)
-        .map_err(|e| Error::BincodeError(e))
+        .map_err(Error::BincodeError)
 }
 
 pub fn serialized_size(samples: &Vec<Sample>) -> u64 {
@@ -44,12 +44,12 @@ pub fn serialized_size(samples: &Vec<Sample>) -> u64 {
 
 pub fn deserialize_from_bytes(encoded: &[u8]) -> Result<Vec<Sample>, Error> {
     bincode::deserialize(encoded)
-        .map_err(|e| Error::BincodeError(e))
+        .map_err(Error::BincodeError)
 }
 
 pub fn deserialize<R>(reader: &mut R) -> Result<Vec<Sample>, Error>
     where R: Read
 {
     bincode::deserialize_from(reader, bincode::Infinite)
-        .map_err(|e| Error::BincodeError(e))
+        .map_err(Error::BincodeError)
 }
