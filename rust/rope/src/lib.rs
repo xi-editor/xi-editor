@@ -18,7 +18,6 @@
     collapsible_if,
     len_without_is_empty,
     many_single_char_names,
-    match_ref_pats,
     needless_range_loop,
     needless_return,
     new_without_default_derive,

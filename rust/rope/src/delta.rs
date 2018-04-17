@@ -634,12 +634,12 @@ impl<'a, N: NodeInfo> Iterator for InsertsIter<'a, N> {
     fn next(&mut self) -> Option<Self::Item> {
         let mut result = None;
         while let Some(elem) = self.els_iter.next() {
-            match elem {
-                &DeltaElement::Copy(b, e) => {
+            match *elem {
+                DeltaElement::Copy(b, e) => {
                     self.pos += e - b;
                     self.last_end = e;
                 }
-                &DeltaElement::Insert(ref n) => {
+                DeltaElement::Insert(ref n) => {
                     result = Some(DeltaRegion::new(self.last_end, self.pos, n.len()));
                     self.pos += n.len();
                     self.last_end += n.len();
@@ -664,8 +664,8 @@ impl<'a, N: NodeInfo> Iterator for DeletionsIter<'a, N> {
     fn next(&mut self) -> Option<Self::Item> {
         let mut result = None;
         while let Some(elem) = self.els_iter.next() {
-            match elem {
-                &DeltaElement::Copy(b, e) => {
+            match *elem {
+                DeltaElement::Copy(b, e) => {
                     if b > self.last_end {
                         result = Some(DeltaRegion::new(self.last_end, self.pos, b - self.last_end));
                     }
@@ -675,7 +675,7 @@ impl<'a, N: NodeInfo> Iterator for DeletionsIter<'a, N> {
                         break;
                     }
                 }
-                &DeltaElement::Insert(ref n) => {
+                DeltaElement::Insert(ref n) => {
                     self.pos += n.len();
                     self.last_end += n.len();
                 }
