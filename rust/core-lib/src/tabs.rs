@@ -767,9 +767,9 @@ impl Documents {
     fn handle_open_file_fs_event(&mut self, event: DebouncedEvent) {
         use notify::DebouncedEvent::*;
         match event {
-            NoticeWrite(ref path @ _) |
-            Create(ref path @ _) |
-            Write(ref path @ _) => {
+            NoticeWrite(ref path) |
+            Create(ref path) |
+            Write(ref path) => {
                 let mod_time = get_file_mod_time(path);
                 let id = self.buffers.editor_for_path(path);
                 let mut inner = self.buffers.lock();
