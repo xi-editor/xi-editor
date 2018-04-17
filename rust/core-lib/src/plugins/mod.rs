@@ -60,6 +60,7 @@ pub struct Plugin {
     peer: RpcPeer,
     pub(crate) id: PluginId,
     pub(crate) name: String,
+    #[allow(dead_code)]
     process: Child,
 }
 

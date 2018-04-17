@@ -27,8 +27,8 @@ use xi_rpc::{RemoteError, Error as RpcError};
 use xi_trace::trace_block;
 
 use rpc::{EditNotification, EditRequest, LineRange};
-use plugins::rpc::{PluginBufferInfo, PluginNotification, PluginRequest,
-PluginUpdate, UpdateResponse};
+use plugins::rpc::{ClientPluginInfo, PluginBufferInfo, PluginNotification,
+PluginRequest, PluginUpdate, UpdateResponse};
 
 use styles::ThemeStyleMap;
 use config::{BufferConfig, ConfigManager};
@@ -225,15 +225,22 @@ impl<'a> EventContext<'a> {
 /// special cases here.
 impl<'a> EventContext<'a> {
     pub(crate) fn finish_init(&mut self) {
-        let ed = self.editor.borrow();
-        let config = ed.get_config().to_table();
-        self.client.config_changed(self.view.borrow().view_id, &config);
-        self.render();
-        // notify plugins
         if !self.plugins.is_empty() {
             let info = self.plugin_info();
             self.plugins.iter().for_each(|plugin| plugin.new_buffer(&info));
         }
+
+        let available_plugins = self.plugins.iter().map(|plugin|
+            ClientPluginInfo { name: plugin.name.clone(), running: true }
+            )
+            .collect::<Vec<_>>();
+        self.client.available_plugins(self.view.borrow().view_id,
+                                      &available_plugins);
+
+        let ed = self.editor.borrow();
+        let config = ed.get_config().to_table();
+        self.client.config_changed(self.view.borrow().view_id, &config);
+        self.render()
     }
 
     pub(crate) fn after_save(&mut self, path: &Path, new_config: BufferConfig) {

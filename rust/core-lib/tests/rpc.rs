@@ -22,7 +22,7 @@ use std::io;
 
 use xi_rpc::{RpcLoop, ReadError};
 use xi_rpc::test_utils::{make_reader, test_channel};
-use xi_core_lib::{BufferId, ViewId, XiCore};
+use xi_core_lib::XiCore;
 use xi_core_lib::test_helpers;
 
 #[test]
@@ -40,7 +40,7 @@ fn test_startup() {
     let json = make_reader(r#"{"id":0,"method":"new_view","params":{}}"#);
     assert!(rpc_looper.mainloop(|| json, &mut state).is_ok());
     assert_eq!(rx.expect_response(), Ok(json!("view-id-1")));
-    //rx.expect_rpc("available_plugins");
+    rx.expect_rpc("available_plugins");
     rx.expect_rpc("config_changed");
     rx.expect_rpc("update");
     rx.expect_rpc("scroll_to");
@@ -178,7 +178,7 @@ fn test_settings_commands() {
     rx.expect_rpc("available_themes");
     rx.expect_rpc("theme_changed");
     rx.expect_response().unwrap();
-    //rx.expect_rpc("available_plugins");
+    rx.expect_rpc("available_plugins");
     rx.expect_rpc("config_changed");
     rx.expect_rpc("update");
     rx.expect_rpc("scroll_to");
