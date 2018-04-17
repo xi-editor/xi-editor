@@ -18,7 +18,6 @@
 #![cfg_attr(feature = "cargo-clippy", allow(
     identity_op,
     new_without_default_derive,
-    redundant_field_names,
 ))]
 
 #[macro_use]
@@ -298,7 +297,7 @@ impl Sample {
             name: name.into(),
             categories: categories.into(),
             start_ns: time::precise_time_ns(),
-            payload: payload,
+            payload,
             end_ns: 0,
             sample_type: SampleType::Duration,
             tid: sys_tid::current_tid().unwrap(),
@@ -317,7 +316,7 @@ impl Sample {
             name: name.into(),
             categories: categories.into(),
             start_ns: now,
-            payload: payload,
+            payload,
             end_ns: now,
             sample_type: SampleType::Instant,
             tid: sys_tid::current_tid().unwrap(),
