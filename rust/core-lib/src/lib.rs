@@ -25,7 +25,6 @@
     needless_pass_by_value,
     new_without_default,
     new_without_default_derive,
-    op_ref,
     or_fun_call,
     ptr_arg,
     redundant_closure,
