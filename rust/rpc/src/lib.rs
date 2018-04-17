@@ -24,7 +24,6 @@
 
 #![cfg_attr(feature = "cargo-clippy", allow(
     boxed_local,
-    map_clone,
     needless_lifetimes,
     or_fun_call,
     unused_lifetimes,
@@ -505,7 +504,7 @@ impl<W:Write> RawPeer<W> {
     /// send disconnect error to pending requests.
     fn disconnect(&self) {
         let mut pending = self.0.pending.lock().unwrap();
-        let ids = pending.keys().map(|id| *id).collect::<Vec<_>>();
+        let ids = pending.keys().cloned().collect::<Vec<_>>();
         for id in &ids {
             let callback = pending.remove(id).unwrap();
             callback.invoke(Err(Error::PeerDisconnect));
