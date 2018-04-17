@@ -15,6 +15,16 @@
 #![cfg_attr(feature = "benchmarks", feature(test))]
 #![cfg_attr(feature = "collections_range", feature(collections_range))]
 
+#![cfg_attr(feature = "cargo-clippy", allow(
+    identity_op,
+    let_and_return,
+    match_ref_pats,
+    needless_lifetimes,
+    needless_return,
+    new_without_default_derive,
+    redundant_field_names,
+))]
+
 #[macro_use]
 extern crate lazy_static;
 extern crate time;

@@ -22,6 +22,15 @@
 //! Because these changes make the protocol not fully compliant with the spec,
 //! the `"jsonrpc"` member is omitted from request and response objects.
 
+#![cfg_attr(feature = "cargo-clippy", allow(
+    boxed_local,
+    explicit_iter_loop,
+    map_clone,
+    needless_lifetimes,
+    or_fun_call,
+    unused_lifetimes,
+))]
+
 #[macro_use]
 extern crate serde_json;
 #[macro_use]
