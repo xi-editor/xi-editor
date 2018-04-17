@@ -240,7 +240,7 @@ impl BufferContainerRef {
     pub fn set_path<P: AsRef<Path>>(&self, file_path: P, view_id: ViewIdentifier) {
         let file_path = file_path.as_ref();
         let mut inner = self.lock();
-        let buffer_id = inner.views.get(&view_id).unwrap().to_owned();
+        let buffer_id = inner.views[&view_id].to_owned();
         let prev_path = inner.editor_for_view(view_id).unwrap()
             .get_path().map(Path::to_owned);
         if let Some(prev_path) = prev_path {
