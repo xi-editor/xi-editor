@@ -384,8 +384,33 @@ mod tests {
         ctx.do_edit(EditNotification::InsertNewline);
         assert_eq!(harness.debug_render(),"hello \n|world!");
         ctx.do_edit(EditNotification::MoveWordRightAndModifySelection);
-        assert_eq!(harness.debug_render(), "hello \n[world|]!", "{:?}");
+        assert_eq!(harness.debug_render(), "hello \n[world|]!");
         ctx.do_edit(EditNotification::Insert { chars: "friends".into() });
         assert_eq!(harness.debug_render(), "hello \nfriends|!");
     }
+
+    #[test]
+    fn simple_indent_outdent_test() {
+        let harness = ContextHarness::new("");
+        let mut ctx = harness.make_context();
+        // Single indent and outdent test
+        ctx.do_edit(EditNotification::Insert { chars: "hello".into() });
+        ctx.do_edit(EditNotification::Indent);
+        assert_eq!(harness.debug_render(),"    hello|");
+        ctx.do_edit(EditNotification::Outdent);
+        assert_eq!(harness.debug_render(),"hello|");
+        // Non-selection one line indent and outdent test
+        ctx.do_edit(EditNotification::Indent);
+        ctx.do_edit(EditNotification::InsertNewline);
+        ctx.do_edit(EditNotification::Insert { chars: "world".into() });
+        assert_eq!(harness.debug_render(),"    hello\nworld|");
+        ctx.do_edit(EditNotification::MoveWordLeft);
+        ctx.do_edit(EditNotification::MoveToBeginningOfDocumentAndModifySelection);
+        ctx.do_edit(EditNotification::Indent);
+        assert_eq!(harness.debug_render(),"    [|    hello\n]world");
+        ctx.do_edit(EditNotification::Outdent);
+        assert_eq!(harness.debug_render(),"[|    hello\n]world");
+        
+    }
 }
+
