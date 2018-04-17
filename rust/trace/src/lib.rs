@@ -17,7 +17,6 @@
 
 #![cfg_attr(feature = "cargo-clippy", allow(
     identity_op,
-    let_and_return,
     match_ref_pats,
     needless_lifetimes,
     needless_return,
@@ -519,8 +518,7 @@ impl Trace {
         where S: Into<StrCow>, C: Into<CategoriesT>, F: FnOnce() -> R
     {
         let _closure_guard = self.block(name, categories);
-        let r = closure();
-        r
+        closure()
     }
 
     pub fn closure_payload<S, C, P, F, R>(&self, name: S, categories: C,
@@ -530,8 +528,7 @@ impl Trace {
               F: FnOnce() -> R
     {
         let _closure_guard = self.block_payload(name, categories, payload);
-        let r = closure();
-        r
+        closure()
     }
 
     pub fn samples_cloned_unsorted(&self) -> Vec<Sample> {
