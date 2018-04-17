@@ -26,7 +26,7 @@ use rpc::*;
 use tabs::{CoreState, ViewId};
 
 
-/// The main state of the xi core, protected by a mutex.
+/// A reference to the main core state.
 ///
 /// # Note
 ///
@@ -50,7 +50,7 @@ impl XiCore {
         XiCore::Waiting
     }
 
-    /// Returns `true` if the `client_started` has not yet been received.
+    /// Returns `true` if the `client_started` has not been received.
     fn is_waiting(&self) -> bool {
         match *self {
             XiCore::Waiting => true,
@@ -71,6 +71,7 @@ impl XiCore {
         }
     }
 
+    /// Returns a new reference to the core state, if core is running.
     fn weak_self(&self) -> Option<WeakXiCore> {
         match self {
             &XiCore::Running(ref inner) =>
@@ -95,7 +96,9 @@ impl Handler for XiCore {
                 false => xi_trace::disable_tracing(),
             }
             eprintln!("tracing in core = {:?}", enabled);
-            return;
+            if self.is_waiting() {
+                return;
+            }
         }
 
         // wait for client_started before setting up inner

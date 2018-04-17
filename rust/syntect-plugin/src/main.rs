@@ -129,7 +129,6 @@ impl PluginState {
     #[allow(unused)]
     // Return true if there's any more work to be done.
     fn highlight_one_line(&mut self, ctx: &mut MyView) -> bool {
-        let _t = trace_block("PluginState::highlight_one_line", &["syntect"]);
         if let Some(line_num) = ctx.get_frontier() {
             let (line_num, offset, state) = ctx.get_prev(line_num);
             if offset != self.offset {
@@ -337,7 +336,6 @@ impl<'a> Plugin for Syntect<'a> {
     }
 
     fn idle(&mut self, view: &mut View<Self::Cache>) {
-        let _t = trace_block("Syntect::idle", &["syntect"]);
         let state = self.view_state.get_mut(&view.get_id()).unwrap();
         for _ in 0..LINES_PER_RPC {
             if !state.highlight_one_line(view) {

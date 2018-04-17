@@ -57,7 +57,7 @@ pub mod internal {
     pub mod tabs;
     pub mod editor;
     pub mod edit_types;
-    pub mod editing;
+    pub mod event_context;
     pub mod file;
     pub mod view;
     pub mod linewrap;
@@ -83,8 +83,8 @@ use internal::tabs;
 use internal::core;
 use internal::client;
 use internal::edit_types;
-use internal::editing;
 use internal::editor;
+use internal::event_context;
 use internal::file;
 use internal::view;
 use internal::linewrap;

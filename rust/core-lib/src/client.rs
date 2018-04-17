@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Requests and notifications from the core to front-ends.
+
 use serde_json::Value;
 use xi_rpc::RpcPeer;
 
@@ -21,6 +23,7 @@ use styles::ThemeSettings;
 use plugins::rpc::ClientPluginInfo;
 use plugins::Command;
 
+/// An interface to the frontend.
 pub struct Client(RpcPeer);
 
 impl Client {
@@ -66,7 +69,7 @@ impl Client {
                                      }));
     }
 
-    /// Notify the client that a plugin ha started.
+    /// Notify the client that a plugin has started.
     pub fn plugin_started(&self, view_id: ViewId, plugin: &str) {
         self.0.send_rpc_notification("plugin_started",
                                      &json!({
@@ -75,9 +78,10 @@ impl Client {
                                      }));
     }
 
-    /// Notify the client that a plugin ha stopped.
+    /// Notify the client that a plugin has stopped.
     ///
-    /// `code` is not currently used.
+    /// `code` is not currently used; in the future may be used to
+    /// pass an exit code.
     pub fn plugin_stopped(&self, view_id: ViewId, plugin: &str, code: i32) {
         self.0.send_rpc_notification("plugin_stopped",
                                      &json!({

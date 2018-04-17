@@ -26,13 +26,12 @@ use xi_rope::spans::SpansBuilder;
 use xi_trace::trace_block;
 
 use config::{BufferConfig, Table};
-use editing::MAX_SIZE_LIMIT;
+use event_context::MAX_SIZE_LIMIT;
 use edit_types::BufferEvent;
-use layers::Scopes;
+use layers::Layers;
 use movement::{Movement, region_movement};
 use plugins::PluginId;
 use plugins::rpc::{PluginEdit, ScopeSpan, TextUnit, GetDataResponse};
-use rpc::LineRange;
 use selection::{Selection, SelRegion};
 use styles::ThemeStyleMap;
 use syntax::SyntaxDefinition;
@@ -50,16 +49,6 @@ const MAX_UNDOS: usize = 20;
 enum IndentDirection {
     In,
     Out
-}
-
-//TODO: move me
-fn last_selection_region(regions: &[SelRegion]) -> Option<&SelRegion> {
-    for region in regions.iter().rev() {
-        if !region.is_caret() {
-            return Some(region);
-        }
-    }
-    None
 }
 
 pub struct Editor {
@@ -95,14 +84,14 @@ pub struct Editor {
     last_synced_rev: RevId,
 
     syntax: SyntaxDefinition,
-    styles: Scopes,
+    layers: Layers,
     config: BufferConfig,
 }
 
 impl Editor {
     /// Creates a new `Editor` with a new empty buffer.
     pub fn new(config: BufferConfig) -> Editor {
-        Self::with_text("".to_owned(), config)
+        Self::with_text("", config)
     }
 
     /// Creates a new `Editor`, loading text into a new buffer.
@@ -130,7 +119,7 @@ impl Editor {
             gc_undos: BTreeSet::new(),
             last_edit_type: EditType::Other,
             this_edit_type: EditType::Other,
-            styles: Scopes::default(),
+            layers: Layers::default(),
             config,
             revs_in_flight: 0,
             sync_store: None,
@@ -138,31 +127,31 @@ impl Editor {
         }
     }
 
-    pub (crate) fn get_buffer(&self) -> &Rope {
+    pub(crate) fn get_buffer(&self) -> &Rope {
         &self.text
     }
 
-    pub (crate) fn get_styles(&self) -> &Scopes {
-        &self.styles
+    pub(crate) fn get_layers(&self) -> &Layers {
+        &self.layers
     }
 
-    pub (crate) fn get_styles_mut(&mut self) -> &mut Scopes {
-        &mut self.styles
+    pub(crate) fn get_layers_mut(&mut self) -> &mut Layers {
+        &mut self.layers
     }
 
-    pub (crate) fn get_head_rev_token(&self) -> u64 {
+    pub(crate) fn get_head_rev_token(&self) -> u64 {
         self.engine.get_head_rev_id().token()
     }
 
-    pub (crate) fn get_edit_type(&self) -> &str {
+    pub(crate) fn get_edit_type(&self) -> &str {
         self.this_edit_type.json_string()
     }
 
-    pub (crate) fn get_active_undo_group(&self) -> usize {
+    pub(crate) fn get_active_undo_group(&self) -> usize {
         *self.live_undos.last().unwrap_or(&0)
     }
 
-    pub (crate) fn update_edit_type(&mut self) {
+    pub(crate) fn update_edit_type(&mut self) {
         self.last_edit_type = self.this_edit_type;
         self.this_edit_type = EditType::Other
     }
@@ -209,8 +198,10 @@ impl Editor {
         self.gc_undos();
     }
 
-    fn insert(&mut self, view: &View, s: &str) {
-        let rope = Rope::from(s);
+    fn insert<T>(&mut self, view: &View, text: T)
+        where T: Into<Rope>
+    {
+        let rope = text.into();
         let mut builder = delta::Builder::new(self.text.len());
         for region in view.sel_regions() {
             let iv = Interval::new_closed_open(region.min(), region.max());
@@ -277,7 +268,7 @@ impl Editor {
     /// Commits the current delta. If the buffer has changed, returns
     /// a 3-tuple containing the delta representing the changes, the previous
     /// buffer, and a bool indicating whether selections should be preserved.
-    pub (crate) fn commit_delta(&mut self)
+    pub(crate) fn commit_delta(&mut self)
         -> Option<(Delta<RopeInfo>, Rope, bool)> {
         let _t = trace_block("Editor::update_after_rev", &["core"]);
 
@@ -294,7 +285,7 @@ impl Editor {
 
         let keep_selections = self.this_edit_type == EditType::Transpose;
         let (iv, new_len) = delta.summary();
-        self.styles.update_all(iv, new_len);
+        self.layers.update_all(iv, new_len);
 
         self.last_rev_id = self.engine.get_head_rev_id();
         self.sync_state_changed();
@@ -316,11 +307,11 @@ impl Editor {
         // last_rev_id and so that merge will work.
     }
 
-    pub (crate) fn set_pristine(&mut self) {
+    pub(crate) fn set_pristine(&mut self) {
         self.pristine_rev_id = self.last_rev_id
     }
 
-    pub (crate) fn is_pristine(&self) -> bool {
+    pub(crate) fn is_pristine(&self) -> bool {
         self.engine.is_equivalent_revision(self.pristine_rev_id,
                                            self.engine.get_head_rev_id())
     }
@@ -589,14 +580,7 @@ impl Editor {
         self.insert(view, chars);
     }
 
-    fn do_request_lines(&mut self, first: i64, last: i64) {
-        //FIXME::
-        //view.request_lines(&self.text, &self.doc_ctx,
-                           //self.styles.get_merged(),
-                           //first as usize, last as usize);
-    }
-
-    pub (crate) fn do_cut(&mut self, view: &mut View) -> Value {
+    pub(crate) fn do_cut(&mut self, view: &mut View) -> Value {
         let result = self.do_copy(view);
         // This copy is just to make the borrow checker happy, could be optimized.
         let deletions = view.sel_regions().to_vec();
@@ -604,7 +588,7 @@ impl Editor {
         result
     }
 
-    pub (crate) fn do_copy(&self, view: &View) -> Value {
+    pub(crate) fn do_copy(&self, view: &View) -> Value {
         if let Some(val) = self.extract_sel_regions(view.sel_regions()) {
             Value::String(val)
         } else {
@@ -702,7 +686,7 @@ impl Editor {
         }
     }
 
-    pub (crate) fn do_edit(&mut self, view: &mut View, cmd: BufferEvent) {
+    pub(crate) fn do_edit(&mut self, view: &mut View, cmd: BufferEvent) {
         use self::BufferEvent::*;
         match cmd {
             Delete(movement) => self.delete_by_movement(view, movement, false),
@@ -717,19 +701,13 @@ impl Editor {
             InsertNewline => self.insert_newline(view),
             InsertTab => self.insert_tab(view),
             Insert(chars) => self.do_insert(view, &chars),
-            RequestLines(LineRange { first, last }) =>
-                //FIXME: broken; needs special handling
-                self.do_request_lines(first, last),
-            Yank =>
-                //FIXME: broken; yank needs rethinking
-                self.yank(),
-            DebugPrintSpans => (),
-            DebugRewrap => (),
+            //FIXME: broken; yank needs rethinking
+            Yank => self.yank(),
         }
     }
 
     pub fn theme_changed(&mut self, style_map: &ThemeStyleMap) {
-        self.styles.theme_changed(style_map);
+        self.layers.theme_changed(style_map);
     }
 
     pub fn plugin_n_lines(&self) -> usize {
@@ -761,7 +739,7 @@ impl Editor {
             end_offset = transformer.transform(end_offset, true);
         }
         let iv = Interval::new_closed_closed(start, end_offset);
-        self.styles.update_layer(plugin, iv, spans);
+        self.layers.update_layer(plugin, iv, spans);
         view.invalidate_styles(&self.text, start, end_offset);
     }
 
@@ -822,6 +800,14 @@ impl EditType {
     }
 }
 
+fn last_selection_region(regions: &[SelRegion]) -> Option<&SelRegion> {
+    for region in regions.iter().rev() {
+        if !region.is_caret() {
+            return Some(region);
+        }
+    }
+    None
+}
 
 fn n_spaces(n: usize) -> &'static str {
     let spaces = "                                ";

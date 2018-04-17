@@ -12,13 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The main container for core state. This file is called 'tabs' for legacy
-//! reasons.
+//! The main container for core state.
+//!
+//! All events from the frontend or from plugins are handled here first.
+//!
+//! This file is called 'tabs' for historical reasons, and should probably
+//! be renamed.
 
 use std::collections::{BTreeMap, HashSet};
 use std::cell::{Cell, RefCell};
 use std::ffi::OsStr;
 use std::fmt;
+use std::fs::File;
 use std::io;
 use std::mem;
 use std::path::{Path, PathBuf};
@@ -29,13 +34,13 @@ use serde_json::Value;
 
 use xi_rpc::{RpcPeer, RpcCtx, RemoteError, Error as RpcError};
 use xi_rope::{Rope};
-use xi_trace::trace_block;
+use xi_trace::{self, trace_block};
 
 use WeakXiCore;
 use client::Client;
 use config::{self, ConfigManager, ConfigDomain, ConfigDomainExternal, Table};
-use editing::EventContext;
 use editor::Editor;
+use event_context::EventContext;
 use file::FileManager;
 use plugins::{PluginCatalog, PluginPid, Plugin, start_plugin_process};
 use plugin_rpc::{PluginNotification, PluginRequest};
@@ -52,12 +57,12 @@ use notify::DebouncedEvent;
 /// ViewIds are the primary means of routing messages between
 /// xi-core and a client view.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ViewId(pub (crate) usize);
+pub struct ViewId(pub(crate) usize);
 
 /// BufferIds uniquely identify open buffers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord,
          Serialize, Deserialize, Hash)]
-pub struct BufferId(pub (crate) usize);
+pub struct BufferId(pub(crate) usize);
 
 pub type PluginId = ::plugins::PluginPid;
 
@@ -102,7 +107,7 @@ pub struct CoreState {
 #[allow(dead_code)]
 /// Initial setup and bookkeeping
 impl CoreState {
-    pub (crate) fn new(peer: &RpcPeer) -> Self {
+    pub(crate) fn new(peer: &RpcPeer) -> Self {
         let watcher = FileWatcher::new(peer.clone());
         CoreState {
             views: BTreeMap::new(),
@@ -132,7 +137,7 @@ impl CoreState {
         PluginPid(self.id_counter.next())
     }
 
-    pub (crate) fn finish_setup(&mut self, self_ref: WeakXiCore,
+    pub(crate) fn finish_setup(&mut self, self_ref: WeakXiCore,
                                 config_dir: Option<PathBuf>,
                                 extras_dir: Option<PathBuf>) {
 
@@ -167,7 +172,7 @@ impl CoreState {
         //TODO: we don't do this at setup because we previously didn't
         //know our config path at init time. we do now, so this can happen
         //at init time.
-        let _t = trace_block("Documents::init_file_config", &["core"]);
+        let _t = trace_block("CoreState::init_file_config", &["core"]);
         if !config_dir.exists() {
             config::init_config_dir(config_dir)?;
         }
@@ -185,6 +190,7 @@ impl CoreState {
 
     /// Attempt to load a config file.
     fn load_file_based_config(&mut self, path: &Path) {
+        let _t = trace_block("CoreState::load_config_file", &["core"]);
         match config::try_load_from_file(&path) {
             Ok((d, t)) => self.set_config(d, t, Some(path.to_owned())),
             Err(e) => self.peer.alert(e.to_string()),
@@ -213,13 +219,13 @@ impl CoreState {
     /// holds references to the `Editor` and `View` backing this `ViewId`,
     /// as well as to sibling views, plugins, and other state necessary
     /// for handling most events.
-    pub (crate) fn make_context<'a>(&'a self, view_id: ViewId)
+    pub(crate) fn make_context<'a>(&'a self, view_id: ViewId)
         -> Option<EventContext<'a>>
     {
         self.views.get(&view_id).map(|view| {
             let buffer_id = view.borrow().buffer_id;
 
-            let buffer = self.editors.get(&buffer_id).unwrap();
+            let editor = self.editors.get(&buffer_id).unwrap();
             let info = self.file_manager.get_info(buffer_id);
 
             let mut plugins = Vec::new();
@@ -228,7 +234,7 @@ impl CoreState {
             }
             EventContext {
                 view,
-                buffer,
+                editor,
                 info: info,
                 siblings: Vec::new(),
                 plugins: plugins,
@@ -250,7 +256,7 @@ impl CoreState {
         }
     }
 
-    pub (crate) fn client_notification(&mut self, cmd: CoreNotification) {
+    pub(crate) fn client_notification(&mut self, cmd: CoreNotification) {
         use self::CoreNotification::*;
         match cmd {
             Edit(::rpc::EditCommand { view_id, cmd }) =>
@@ -263,18 +269,18 @@ impl CoreState {
                 self.do_modify_user_config(domain, changes),
             SetTheme { theme_name } =>
                 self.do_set_theme(&theme_name),
-            SaveTrace { .. } => (),
-            //TODO: restore me
-                //self.save_trace(&destination, &frontend_samples),
+            SaveTrace { destination, frontend_samples } =>
+                self.save_trace(&destination, &frontend_samples),
             Plugin(..) => (),
                 //self.do_plugin_cmd(cmd),
-            // these two are handled at the top level
+            TracingConfig { enabled } =>
+                self.toggle_tracing(enabled),
+            // handled at the top level
             ClientStarted { .. } => (),
-            TracingConfig { .. } => (),
         }
     }
 
-    pub (crate) fn client_request(&mut self, cmd: CoreRequest)
+    pub(crate) fn client_request(&mut self, cmd: CoreRequest)
         -> Result<Value, RemoteError>
     {
         use self::CoreRequest::*;
@@ -359,6 +365,7 @@ impl CoreState {
     fn do_save<P>(&mut self, view_id: ViewId, path: P)
         where P: AsRef<Path>
     {
+        let _t = trace_block("CoreState::do_save", &["core"]);
         let path = path.as_ref();
         let buffer_id = self.views.get(&view_id).map(|v| v.borrow().buffer_id);
         let buffer_id = match buffer_id {
@@ -450,9 +457,9 @@ impl CoreState {
 }
 
 
-/// Idle and file event handling
+/// Idle, tracing, and file event handling
 impl CoreState {
-    pub (crate) fn handle_idle(&mut self, token: usize) {
+    pub(crate) fn handle_idle(&mut self, token: usize) {
         match token {
             NEW_VIEW_IDLE_TOKEN => self.finalize_new_views(),
             WATCH_IDLE_TOKEN => self.handle_fs_events(),
@@ -470,7 +477,7 @@ impl CoreState {
 
     #[cfg(feature = "notify")]
     fn handle_fs_events(&mut self) {
-        let _t = trace_block("Documents::handle_fs_events", &["core"]);
+        let _t = trace_block("CoreState::handle_fs_events", &["core"]);
         let mut events = self.file_manager.watcher().take_events();
         let mut config_changed = false;
 
@@ -549,12 +556,56 @@ impl CoreState {
             _ => (),
         }
     }
+
+    fn toggle_tracing(&self, enabled: bool) {
+        let mut plugins = Vec::new();
+        if let Some(ref plugin) = self.syntect { plugins.push(plugin) };
+        plugins.iter().for_each(|plugin| plugin.toggle_tracing(enabled))
+    }
+
+    fn save_trace<P>(&self, path: P, frontend_samples: &Value)
+        where P: AsRef<Path>,
+    {
+        use xi_trace_dump::*;
+        let mut all_traces = xi_trace::samples_cloned_unsorted();
+        if let Ok(mut traces) = chrome_trace::decode(frontend_samples) {
+            all_traces.append(&mut traces);
+        }
+        let mut plugins = Vec::new();
+        if let Some(ref plugin) = self.syntect { plugins.push(plugin) };
+
+        for plugin in plugins {
+            match plugin.collect_trace() {
+                Ok(json) => {
+                    let mut trace = chrome_trace::decode(&json).unwrap();
+                    all_traces.append(&mut trace);
+                }
+                Err(e) => eprintln!("trace error {:?}", e),
+            }
+        }
+
+        all_traces.sort_unstable();
+
+        let mut trace_file = match File::create(path.as_ref()) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("error saving trace {:?}", e);
+                return;
+            }
+        };
+
+        if let Err(e) = chrome_trace::serialize(
+            &all_traces, chrome_trace::OutputFormat::JsonArray,
+            &mut trace_file) {
+            eprintln!("error saving trace {:?}", e);
+        }
+    }
 }
 
 /// plugin event handling
 impl CoreState {
     /// Called from a plugin's thread after trying to start the plugin.
-    pub (crate) fn plugin_connect(&mut self,
+    pub(crate) fn plugin_connect(&mut self,
                                   plugin: Result<Plugin, io::Error>) {
         match plugin {
             Ok(plugin) => {
@@ -571,7 +622,7 @@ impl CoreState {
     }
 
     /// Handles the response to a sync update sent to a plugin.
-    pub (crate) fn plugin_update(&mut self, _plugin_id: PluginId,
+    pub(crate) fn plugin_update(&mut self, _plugin_id: PluginId,
                                  view_id: ViewId, undo_group: usize,
                                  response: Result<Value, RpcError>) {
 
@@ -580,7 +631,7 @@ impl CoreState {
         }
     }
 
-    pub (crate) fn plugin_notification(&mut self, _ctx: &RpcCtx,
+    pub(crate) fn plugin_notification(&mut self, _ctx: &RpcCtx,
                                        view_id: ViewId, plugin_id: PluginId,
                                        cmd: PluginNotification) {
         if let Some(mut edit_ctx) = self.make_context(view_id) {
@@ -588,7 +639,7 @@ impl CoreState {
         }
     }
 
-    pub (crate) fn plugin_request(&mut self, _ctx: &RpcCtx, view_id: ViewId,
+    pub(crate) fn plugin_request(&mut self, _ctx: &RpcCtx, view_id: ViewId,
                                   plugin_id: PluginId, cmd: PluginRequest
                                   ) -> Result<Value, RemoteError>
     {
