@@ -186,7 +186,7 @@ impl PlaceholderRpc {
     }
 
     /// Returns a reference to the placeholder's method.
-    pub fn method_ref<'a>(&'a self) -> &'a str {
+    pub fn method_ref(&self) -> &str {
         &self.method
     }
 }

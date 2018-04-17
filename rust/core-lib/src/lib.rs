@@ -22,7 +22,6 @@
     map_entry,
     match_as_ref,
     match_bool,
-    needless_lifetimes,
     needless_pass_by_value,
     new_without_default,
     new_without_default_derive,

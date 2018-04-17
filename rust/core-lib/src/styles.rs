@@ -172,7 +172,7 @@ impl ThemeStyleMap {
         &self.default_style
     }
 
-    pub fn get_highlighter<'a>(&'a self) -> Highlighter<'a> {
+    pub fn get_highlighter(&self) -> Highlighter {
         Highlighter::new(&self.theme)
     }
 
@@ -180,7 +180,7 @@ impl ThemeStyleMap {
         &self.theme_name
     }
 
-    pub fn get_theme_settings<'a>(&'a self) -> &ThemeSettings {
+    pub fn get_theme_settings(&self) -> &ThemeSettings {
         &self.theme.settings
     }
 
