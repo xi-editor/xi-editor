@@ -19,7 +19,6 @@
     needless_bool,
     needless_pass_by_value,
     ptr_arg,
-    redundant_closure,
     single_char_pattern,
     unused_lifetimes,
 ))]
