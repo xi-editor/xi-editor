@@ -218,7 +218,7 @@ impl BufferContainerRef {
     pub fn editor_for_path<P>(&self, path: P) -> Option<BufferIdentifier>
         where P: AsRef<Path>,
     {
-        self.lock().open_files.get(path.as_ref()).map(|id| *id)
+        self.lock().open_files.get(path.as_ref()).cloned()
     }
 
     /// Returns a copy of the BufferIdentifier associated with a given view.

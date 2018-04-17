@@ -209,7 +209,7 @@ impl ThemeStyleMap {
     }
 
     pub fn lookup(&self, style: &Style) -> Option<usize> {
-        self.map.get(style).map(|&ix| ix)
+        self.map.get(style).cloned()
     }
 
     pub fn add(&mut self, style: &Style) -> usize {

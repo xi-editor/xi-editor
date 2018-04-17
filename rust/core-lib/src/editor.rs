@@ -240,7 +240,7 @@ impl Editor {
 
         // preserve a single caret
         self.view.collapse_selections(&self.text);
-        let prev_sel = self.view.sel_regions().first().map(|s| *s);
+        let prev_sel = self.view.sel_regions().first().cloned();
         self.view.unset_find(&self.text);
 
         let mut builder = delta::Builder::new(self.text.len());
