@@ -20,7 +20,6 @@
     many_single_char_names,
     needless_range_loop,
     new_without_default_derive,
-    op_ref,
     redundant_field_names,
     should_implement_trait,
     wrong_self_convention,
