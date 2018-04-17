@@ -29,7 +29,6 @@
     ptr_arg,
     too_many_arguments,
     unreadable_literal,
-    while_let_loop,
 ))]
 
 extern crate serde;

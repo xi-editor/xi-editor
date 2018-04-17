@@ -732,39 +732,34 @@ impl View {
             let text = text.subseq(Interval::new_closed_open(0, to));
             let mut cursor = Cursor::new(&text, from);
 
-            loop {
-                match find(&mut cursor, self.case_matching, &search_string) {
-                    Some(start) => {
-                        let end = start + len;
+            while let Some(start) = find(&mut cursor, self.case_matching, &search_string) {
+                let end = start + len;
 
-                        let region = SelRegion::new(start, end);
-                        let prev_len = occurrences.len();
-                        let (_, e) = occurrences.add_range_distinct(region);
-                        // in case of ambiguous search results (e.g. search "aba" in "ababa"),
-                        // the search result closer to the beginning of the file wins
-                        if e != end {
-                            // Skip the search result and keep the occurrence that is closer to
-                            // the beginning of the file. Re-align the cursor to the kept
-                            // occurrence
-                            cursor.set(e);
-                            continue;
-                        }
+                let region = SelRegion::new(start, end);
+                let prev_len = occurrences.len();
+                let (_, e) = occurrences.add_range_distinct(region);
+                // in case of ambiguous search results (e.g. search "aba" in "ababa"),
+                // the search result closer to the beginning of the file wins
+                if e != end {
+                    // Skip the search result and keep the occurrence that is closer to
+                    // the beginning of the file. Re-align the cursor to the kept
+                    // occurrence
+                    cursor.set(e);
+                    continue;
+                }
 
-                        // add_range_distinct() above removes ambiguous regions after the added
-                        // region, if something has been deleted, everything thereafter is
-                        // invalidated
-                        if occurrences.len() != prev_len + 1 {
-                            invalidate_from = Some(end);
-                            occurrences.delete_range(end, text_len, false);
-                            break;
-                        }
+                // add_range_distinct() above removes ambiguous regions after the added
+                // region, if something has been deleted, everything thereafter is
+                // invalidated
+                if occurrences.len() != prev_len + 1 {
+                    invalidate_from = Some(end);
+                    occurrences.delete_range(end, text_len, false);
+                    break;
+                }
 
-                        if stop_on_found {
-                            searched_until = end;
-                            break;
-                        }
-                    }
-                    None => break,
+                if stop_on_found {
+                    searched_until = end;
+                    break;
                 }
             }
         }
