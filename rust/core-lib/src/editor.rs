@@ -240,7 +240,7 @@ impl Editor {
 
         // preserve a single caret
         self.view.collapse_selections(&self.text);
-        let prev_sel = self.view.sel_regions().first().map(|s| s.clone());
+        let prev_sel = self.view.sel_regions().first().map(|s| *s);
         self.view.unset_find(&self.text);
 
         let mut builder = delta::Builder::new(self.text.len());
@@ -318,7 +318,7 @@ impl Editor {
         let config = self.config.to_table();
         PluginBufferInfo::new(self.buffer_id, &views,
                               self.engine.get_head_rev_id().token(), self.text.len(),
-                              nb_lines, self.path.clone(), self.syntax.clone(),
+                              nb_lines, self.path.clone(), self.syntax,
                               config)
     }
 

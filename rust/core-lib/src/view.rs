@@ -848,7 +848,7 @@ impl View {
                         })
                     }
                 }
-            }).map(|o| o.clone());
+            }).map(|o| *o);
 
             let region = {
                 let mut unsearched = self.valid_search.minus_one_range(from, to);
