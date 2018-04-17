@@ -196,7 +196,7 @@ impl FileWatcher {
                     .map(|w| (w.path.to_owned(), mode_from_bool(w.recursive)))
                     .collect::<Vec<_>>();
 
-                for (path, mode) in to_add.into_iter() {
+                for (path, mode) in to_add {
                     if let Err(e) = self.inner.watch(&path, mode) {
                         eprintln!("watching error {:?}", e);
                     }
