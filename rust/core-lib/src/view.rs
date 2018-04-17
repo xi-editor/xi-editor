@@ -15,7 +15,7 @@
 use std::cmp::{min,max};
 use std::mem;
 
-use serde_json::value::Value;
+use serde_json::Value;
 
 use xi_rope::rope::{Rope, LinesMetric, RopeInfo};
 use xi_rope::delta::{Delta, DeltaRegion};

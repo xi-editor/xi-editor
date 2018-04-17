@@ -475,8 +475,7 @@ impl Serialize for MouseAction
         struct Helper(u64, u64, u64, Option<u64>);
 
         let as_tup = Helper(self.line, self.column, self.flags, self.click_count);
-        let v = serde_json::to_value(&as_tup).map_err(ser::Error::custom)?;
-        v.serialize(serializer)
+        as_tup.serialize(serializer)
     }
 }
 
@@ -497,8 +496,7 @@ impl Serialize for LineRange
         where S: Serializer
     {
         let as_tup = (self.first, self.last);
-        let v = serde_json::to_value(&as_tup).map_err(ser::Error::custom)?;
-        v.serialize(serializer)
+        as_tup.serialize(serializer)
     }
 }
 
