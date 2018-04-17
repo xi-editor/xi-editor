@@ -25,7 +25,6 @@
 #![cfg_attr(feature = "cargo-clippy", allow(
     boxed_local,
     or_fun_call,
-    unused_lifetimes,
 ))]
 
 #[macro_use]
@@ -232,8 +231,8 @@ impl<W: Write + Send> RpcLoop<W> {
     /// Calls to the handler are guaranteed to preserve the order as
     /// they appear on on the channel. At the moment, there is no way
     /// for there to be more than one incoming request to be outstanding.
-    pub fn mainloop<'a, R, RF, H>(&mut self, rf: RF, handler: &mut H)
-                                  -> Result<(), ReadError>
+    pub fn mainloop<R, RF, H>(&mut self, rf: RF, handler: &mut H)
+                              -> Result<(), ReadError>
     where R: BufRead,
           RF: Send + FnOnce() -> R,
           H: Handler,
