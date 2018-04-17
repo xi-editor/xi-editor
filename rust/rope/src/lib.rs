@@ -14,6 +14,24 @@
 
 //! Trees for text.
 
+#![cfg_attr(feature = "cargo-clippy", allow(
+    char_lit_as_u8,
+    clone_on_copy,
+    collapsible_if,
+    explicit_into_iter_loop,
+    len_without_is_empty,
+    len_zero,
+    many_single_char_names,
+    match_ref_pats,
+    needless_range_loop,
+    needless_return,
+    new_without_default_derive,
+    op_ref,
+    redundant_field_names,
+    should_implement_trait,
+    wrong_self_convention,
+))]
+
 extern crate bytecount;
 extern crate memchr;
 extern crate serde;

@@ -14,6 +14,8 @@
 
 //! Unicode utilities useful for text editing, including a line breaking iterator.
 
+#![cfg_attr(feature = "cargo-clippy", allow(redundant_field_names))]
+
 mod tables;
 
 use tables::*;
