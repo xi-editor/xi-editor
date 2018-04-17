@@ -18,7 +18,6 @@
     boxed_local,
     cast_lossless,
     collapsible_if,
-    explicit_into_iter_loop,
     explicit_iter_loop,
     for_kv_map,
     get_unwrap,
