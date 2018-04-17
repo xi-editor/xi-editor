@@ -17,7 +17,6 @@
 
 #![cfg_attr(feature = "cargo-clippy", allow(
     identity_op,
-    match_ref_pats,
     needless_lifetimes,
     needless_return,
     new_without_default_derive,
@@ -98,17 +97,17 @@ impl StringArrayEq<Vec<String>> for &'static [&'static str] {
 
 impl PartialEq for CategoriesT {
     fn eq(&self, other: &CategoriesT) -> bool {
-        match self {
-            &CategoriesT::StaticArray(ref self_arr) => {
-                match other {
-                    &CategoriesT::StaticArray(ref other_arr) => self_arr.eq(other_arr),
-                    &CategoriesT::DynamicArray(ref other_arr) => self_arr.arr_eq(other_arr),
+        match *self {
+            CategoriesT::StaticArray(ref self_arr) => {
+                match *other {
+                    CategoriesT::StaticArray(ref other_arr) => self_arr.eq(other_arr),
+                    CategoriesT::DynamicArray(ref other_arr) => self_arr.arr_eq(other_arr),
                 }
             },
-            &CategoriesT::DynamicArray(ref self_arr) => {
-                match other {
-                    &CategoriesT::StaticArray(ref other_arr) => self_arr.arr_eq(other_arr),
-                    &CategoriesT::DynamicArray(ref other_arr) => self_arr.eq(other_arr),
+            CategoriesT::DynamicArray(ref self_arr) => {
+                match *other {
+                    CategoriesT::StaticArray(ref other_arr) => self_arr.arr_eq(other_arr),
+                    CategoriesT::DynamicArray(ref other_arr) => self_arr.eq(other_arr),
                 }
             }
         }
@@ -121,9 +120,9 @@ impl serde::Serialize for CategoriesT {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where S: serde::Serializer
     {
-        match self {
-            &CategoriesT::StaticArray(ref arr) => arr.serialize(serializer),
-            &CategoriesT::DynamicArray(ref arr) => arr.serialize(serializer),
+        match *self {
+            CategoriesT::StaticArray(ref arr) => arr.serialize(serializer),
+            CategoriesT::DynamicArray(ref arr) => arr.serialize(serializer),
         }
     }
 }
@@ -162,9 +161,9 @@ impl<'de> serde::Deserialize<'de> for CategoriesT {
 
 impl CategoriesT {
     pub fn join(&self, sep: &str) -> String {
-        match self {
-            &CategoriesT::StaticArray(ref arr) => arr.join(sep),
-            &CategoriesT::DynamicArray(ref vec) => vec.join(sep),
+        match *self {
+            CategoriesT::StaticArray(ref arr) => arr.join(sep),
+            CategoriesT::DynamicArray(ref vec) => vec.join(sep),
         }
     }
 }
