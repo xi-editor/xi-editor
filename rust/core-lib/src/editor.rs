@@ -1014,7 +1014,7 @@ impl Editor {
         }
 
         let search_string = search_string.unwrap();
-        if search_string.len() == 0 {
+        if search_string.is_empty() {
             self.view.unset_find(&self.text);
             return Value::Null;
         }

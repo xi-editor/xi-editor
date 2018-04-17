@@ -137,7 +137,7 @@ impl IndexSet {
             if new_range.0 == new_range.1 {
                 continue; // remove collapsed regions
             }
-            if ranges.len() > 0 {
+            if !ranges.is_empty() {
                 let ix = ranges.len() - 1;
                 if ranges[ix].1 == new_range.0 {
                     ranges[ix] = (ranges[ix].0, new_range.1);
