@@ -25,7 +25,7 @@ use std::time::SystemTime;
 
 use serde::de::{Deserialize, Deserializer};
 use serde::ser::{Serialize, Serializer};
-use serde_json::value::Value;
+use serde_json::Value;
 #[cfg(feature = "notify")]
 use notify::DebouncedEvent;
 

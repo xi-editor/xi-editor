@@ -128,7 +128,7 @@ impl Style {
     /// Note: this should only be used when sending the `def_style` RPC.
     pub fn to_json(&self, id: usize) -> Value {
         let mut as_val = serde_json::to_value(self).expect("failed to encode style");
-        as_val["id"] = serde_json::to_value(id).unwrap();
+        as_val["id"] = id.into();
         as_val
     }
 
