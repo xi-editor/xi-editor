@@ -27,7 +27,6 @@
     new_without_default_derive,
     or_fun_call,
     ptr_arg,
-    single_match,
     too_many_arguments,
     unit_arg,
     unnecessary_operation,
