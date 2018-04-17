@@ -632,7 +632,7 @@ fn shuffle(text: &Rope, tombstones: &Rope,
 
 /// Find an index before which everything is the same
 fn find_base_index(a: &[Revision], b: &[Revision]) -> usize {
-    assert!(a.len() > 0 && b.len() > 0);
+    assert!(!a.is_empty() && !b.is_empty());
     assert!(a[0].rev_id == b[0].rev_id);
     // TODO find the maximum base revision.
     // this should have the same behavior, but worse performance

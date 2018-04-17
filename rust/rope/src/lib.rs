@@ -17,7 +17,6 @@
 #![cfg_attr(feature = "cargo-clippy", allow(
     collapsible_if,
     len_without_is_empty,
-    len_zero,
     many_single_char_names,
     match_ref_pats,
     needless_range_loop,
