@@ -195,7 +195,7 @@ const MAX_POT_BREAKS: usize = 10_000;
 
 impl<'a> RewrapCtx<'a> {
     fn new(text: &'a Rope, /* _style_spans: &Spans<Style>, */ doc_ctx: &'a DocumentCtx,
-        max_width: f64, width_cache: &'a mut WidthCache, start: usize) -> RewrapCtx<'a>
+        max_width: f64, width_cache: &'a mut WidthCache, start: usize, end: usize) -> RewrapCtx<'a>
     {
         let lb_cursor_pos = start;
         let lb_cursor = LineBreakCursor::new(text, start);
@@ -207,7 +207,7 @@ impl<'a> RewrapCtx<'a> {
             doc_ctx,
             pot_breaks: Vec::new(),
             pot_break_ix: 0,
-            max_offset: text.len(),
+            max_offset: end,
             max_width,
         }
     }
@@ -270,7 +270,8 @@ pub fn linewrap_width(text: &Rope, _style_spans: &Spans<Style>, doc_ctx: &Docume
     // TODO: this should be scoped to the FE. However, it will work (just with
     // degraded performance).
     let mut width_cache = WidthCache::new();
-    let mut ctx = RewrapCtx::new(text, /* style_spans, */ doc_ctx, max_width, &mut width_cache, 0);
+    let mut ctx = RewrapCtx::new(text, /* style_spans, */ doc_ctx, max_width, &mut width_cache,
+        0, text.len());
     let mut builder = BreakBuilder::new();
     let mut pos = 0;
     while let Some(next) = ctx.wrap_one_line(pos) {
@@ -287,7 +288,14 @@ fn compute_rewrap_width(text: &Rope, /* style_spans: &Spans<Style>, */ doc_ctx: 
     max_width: f64, breaks: &Breaks, start: usize, end: usize) -> Breaks
 {
     let mut width_cache = WidthCache::new();
-    let mut ctx = RewrapCtx::new(text, /* style_spans, */ doc_ctx, max_width, &mut width_cache, start);
+    let mut line_cursor = Cursor::new(&text, end);
+    let measure_end = if line_cursor.is_boundary::<LinesMetric>() {
+        end
+    } else {
+        line_cursor.next::<LinesMetric>().unwrap_or(text.len())
+    };
+    let mut ctx = RewrapCtx::new(text, /* style_spans, */ doc_ctx, max_width, &mut width_cache,
+        start, measure_end);
     let mut builder = BreakBuilder::new();
     let mut pos = start;
     let mut break_cursor = Cursor::new(&breaks, end);
