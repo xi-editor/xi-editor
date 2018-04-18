@@ -147,12 +147,12 @@ impl NodeInfo for RopeInfo {
 #[derive(Clone, Copy)]
 pub struct BaseMetric(());
 
-/// Measured unit is utf8 code unit
-/// Base unit is utf8 code unit
+/// Measured unit is utf8 code unit.
+/// Base unit is utf8 code unit.
 /// Boundary is atomic and determined by codepoint boundary.
 /// Atomicity is implicit, putting the offset
 /// between two utf8 code units that form a code point is considered invalid.
-/// For example, take a string that starts with a 0x80 byte.
+/// For example, take a string that starts with a 0xC2 byte.
 /// Then offset=1 is invalid.
 impl Metric<RopeInfo> for BaseMetric {
     fn measure(_: &RopeInfo, len: usize) -> usize {
@@ -216,9 +216,9 @@ pub fn len_utf8_from_first_byte(b: u8) -> usize {
 #[derive(Clone, Copy)]
 pub struct LinesMetric(usize);  // number of lines
 
-/// Measured unit is newline amount
-/// Base unit is utf8 code unit(=byte) amount
-/// Boundary is trailing and determined by a newline char
+/// Measured unit is newline amount.
+/// Base unit is utf8 code unit.
+/// Boundary is trailing and determined by a newline char.
 impl Metric<RopeInfo> for LinesMetric {
     fn measure(info: &RopeInfo, _: usize) -> usize {
         info.lines
