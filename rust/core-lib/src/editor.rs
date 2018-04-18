@@ -163,7 +163,7 @@ impl Editor {
         let all_iv = Interval::new_closed_open(0, self.text.len());
         builder.replace(all_iv, text);
         self.add_delta(builder.build());
-        self.pristine_rev_id = self.last_rev_id;
+        self.pristine_rev_id = self.engine.get_head_rev_id();
     }
 
     /// Sets the config for this buffer. If the new config differs

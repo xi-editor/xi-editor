@@ -112,7 +112,9 @@ impl FileManager {
     {
         let (rope, info) = try_load_file(path)?;
         self.open_files.insert(path.to_owned(), id);
-        self.file_info.insert(id, info);
+        if self.file_info.insert(id, info).is_none() {
+            self.watcher.watch(path, false, OPEN_FILE_EVENT_TOKEN);
+        }
         Ok(rope)
     }
 
@@ -127,11 +129,11 @@ impl FileManager {
     pub fn save(&mut self, path: &Path, text: &Rope, id: BufferId)
         -> Result<(), FileError>
     {
-        let is_first_save = self.file_info.contains_key(&id);
-        if is_first_save {
-            self.save_new(path, text, id)
-        } else {
+        let is_existing = self.file_info.contains_key(&id);
+        if is_existing {
             self.save_existing(path, text, id)
+        } else {
+            self.save_new(path, text, id)
         }
     }
 

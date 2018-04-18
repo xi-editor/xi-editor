@@ -94,7 +94,7 @@ impl From<EditNotification> for EventDomain {
             Insert { chars } =>
                 BufferEvent::Insert(chars).into(),
             DeleteForward =>
-                BufferEvent::Delete(Movement::Left).into(),
+                BufferEvent::Delete(Movement::Right).into(),
             DeleteBackward =>
                 BufferEvent::Backspace.into(),
             DeleteWordForward =>
