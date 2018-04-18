@@ -20,13 +20,12 @@ use_tab_stops = true
 # List of paths to additional plugins
 plugin_search_path = []
 
-font_face = "InconsolataGo"
+font_face = "Inconsolata"
 
 # In points
 font_size = 14
 
 # Automatically match current indentation level on newline.
-# note: this is currently broken on files with > 1k lines
 auto_indent = false
 
 # Allow scrolling past the last line of a document.

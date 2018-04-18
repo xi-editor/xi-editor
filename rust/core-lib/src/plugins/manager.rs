@@ -45,6 +45,7 @@ pub struct PluginManager {
     /// Buffer-scoped plugins, by buffer
     buffer_plugins: BTreeMap<BufferIdentifier, PluginGroup>,
     global_plugins: PluginGroup,
+    launching_globals: BTreeSet<PluginName>,
     buffers: BufferContainerRef,
     next_id: usize,
 }
@@ -136,12 +137,12 @@ impl PluginManager {
         let params = serde_json::to_value(params)
             .expect(&format!("bad notif params.\nmethod: {}\nparams: {:?}",
                              method, params));
-        for (_, plugin) in self.global_plugins.iter() {
+        for plugin in self.global_plugins.values() {
             plugin.rpc_notification(method, &params);
         }
         if !only_globals {
             if let Ok(locals) = self.running_for_view(view_id) {
-                for (_, plugin) in locals {
+                for plugin in locals.values() {
                     plugin.rpc_notification(method, &params);
                 }
             }
@@ -224,6 +225,10 @@ impl PluginManager {
             .ok_or(Error::Other(format!("no plugin found with name {}", plugin_name)))?;
 
         let is_global = plugin_desc.is_global();
+        if is_global && !self.launching_globals.insert(plugin_name.to_owned()) {
+            return Err(Error::Other(format!("global {} has started", plugin_name)))
+        }
+
         let commands = plugin_desc.commands.clone();
         let init_info = if is_global {
             let buffers = self.buffers.lock();
@@ -241,11 +246,11 @@ impl PluginManager {
         start_plugin_process(self_ref, &plugin_desc, plugin_id, move |result| {
             match result {
                 Ok(plugin_ref) => {
-                    plugin_ref.initialize(&init_info);
                     if xi_trace::is_enabled() {
                         plugin_ref.rpc_notification("tracing_config",
                                                     &json!({"enabled": true}));
                     }
+                    plugin_ref.initialize(&init_info);
                     if is_global {
                         me.lock().on_plugin_connect_global(&plugin_name, plugin_ref,
                                                            commands);
@@ -292,6 +297,7 @@ impl PluginManager {
                 ed.plugin_started(None, plugin_name, &commands);
             }
         }
+        self.launching_globals.remove(plugin_name);
         self.global_plugins.insert(plugin_name.to_owned(), plugin_ref);
     }
 
@@ -426,7 +432,8 @@ impl PluginManagerRef {
                 catalog: PluginCatalog::from_paths(Vec::new()),
                 buffer_plugins: BTreeMap::new(),
                 global_plugins: PluginGroup::new(),
-                buffers: buffers,
+                launching_globals: BTreeSet::new(),
+                buffers,
                 next_id: 0,
             }
         )))
@@ -628,7 +635,6 @@ impl Handler for PluginManagerRef {
 
     fn handle_notification(&mut self, _ctx: &RpcCtx, rpc: Self::Notification) {
         use self::PluginNotification::*;
-        let _t = trace_block("PluginManager::handle_notif", &["core"]);
         let PluginCommand { view_id, plugin_id, cmd } = rpc;
         let inner = self.lock();
         let mut buffers = inner.buffers.lock();
@@ -647,7 +653,6 @@ impl Handler for PluginManagerRef {
 
     fn handle_request(&mut self, _ctx: &RpcCtx, rpc: Self::Request) -> Result<Value, RemoteError> {
         use self::PluginRequest::*;
-        let _t = trace_block("PluginManager::handle_request", &["core"]);
         let PluginCommand { view_id, cmd, .. } = rpc;
         let inner = self.lock();
         let buffers = inner.buffers.lock();

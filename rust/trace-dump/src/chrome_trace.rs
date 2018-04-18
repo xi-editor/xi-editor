@@ -127,7 +127,7 @@ fn try_from(trace_entry: ChromeTraceArrayEntry, default_sample_id: usize)
     -> Result<Sample, Error> {
     // Chrome trace stores the categories as comma-separated.
     // Split it back out into a vector.
-    let categories = trace_entry.cat.split(",").map(
+    let categories = trace_entry.cat.split(',').map(
         |s| s.to_string()).collect::<Vec<String>>();
 
     let (sample_id, payload ) = trace_entry.args.map_or((default_sample_id, None), |args| {
@@ -223,14 +223,14 @@ pub fn serialize<'a, I, W>(samples: I, _format: OutputFormat, output: W)
     where I: IntoIterator<Item = &'a Sample>, W: Write
 {
     let converted = ChromeTraceArrayEntries::from(samples.into_iter());
-    serde_json::to_writer(output, &converted).map_err(|e| Error::Json(e))
+    serde_json::to_writer(output, &converted).map_err(Error::Json)
 }
 
 pub fn to_value(samples: &[Sample], format: OutputFormat)
     -> Result<serde_json::Value, Error>
 {
     match format {
-        OutputFormat::JsonArray => serde_json::to_value(samples).map_err(|e| Error::Json(e))
+        OutputFormat::JsonArray => serde_json::to_value(samples).map_err(Error::Json)
     }
 }
 
@@ -247,13 +247,13 @@ fn is_begin_sample(sample: &Sample, pid: u64, tid: u64, name: &str) -> bool {
 }
 
 pub fn decode(samples: &serde_json::Value) -> Result<Vec<Sample>, Error> {
-    let entries = ChromeTraceArrayEntries::deserialize(samples).map_err(|e| Error::Json(e))?;
+    let entries = ChromeTraceArrayEntries::deserialize(samples).map_err(Error::Json)?;
     Vec::try_from(entries)
 }
 
 pub fn deserialize<R>(input: R) -> Result<Vec<Sample>, Error>
     where R: Read
 {
-    let entries : ChromeTraceArrayEntries = serde_json::from_reader(input).map_err(|e| Error::Json(e))?;
+    let entries : ChromeTraceArrayEntries = serde_json::from_reader(input).map_err(Error::Json)?;
     Vec::try_from(entries)
 }

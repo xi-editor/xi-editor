@@ -31,7 +31,6 @@ use xi_rpc::RemoteError;
 use xi_trace::trace_block;
 
 use view::View;
-use word_boundaries::WordCursor;
 use movement::{Movement, region_movement};
 use selection::{Affinity, Selection, SelRegion};
 
@@ -66,6 +65,11 @@ enum CharacterEncoding {
 
 const UTF8_BOM: &str = "\u{feff}";
 
+enum IndentDirection {
+    In,
+    Out
+}
+
 fn last_selection_region(regions: &[SelRegion]) -> Option<&SelRegion> {
     for region in regions.iter().rev() {
         if !region.is_caret() {
@@ -97,8 +101,6 @@ pub struct Editor {
 
     this_edit_type: EditType,
     last_edit_type: EditType,
-
-    scroll_to: Option<usize>,
 
     styles: Scopes,
     doc_ctx: DocumentCtx,
@@ -164,15 +166,15 @@ impl Editor {
 
         let mut editor = Editor {
             text: buffer,
-            encoding: encoding,
-            buffer_id: buffer_id,
+            encoding,
+            buffer_id,
             path: None,
             file_mod_time: None,
             file_has_changed: false,
             syntax: SyntaxDefinition::default(),
             view: View::new(initial_view_id),
-            engine: engine,
-            last_rev_id: last_rev_id,
+            engine,
+            last_rev_id,
             pristine_rev_id: last_rev_id,
             undo_group_id: 1,
             // GC only works on undone edits or prefixes of the visible edits,
@@ -184,10 +186,9 @@ impl Editor {
             gc_undos: BTreeSet::new(),
             last_edit_type: EditType::Other,
             this_edit_type: EditType::Other,
-            scroll_to: Some(0),
             styles: Scopes::default(),
-            doc_ctx: doc_ctx,
-            config: config,
+            doc_ctx,
+            config,
             revs_in_flight: 0,
             sync_store: None,
             last_synced_rev: last_rev_id,
@@ -239,7 +240,7 @@ impl Editor {
 
         // preserve a single caret
         self.view.collapse_selections(&self.text);
-        let prev_sel = self.view.sel_regions().first().map(|s| s.clone());
+        let prev_sel = self.view.sel_regions().first().cloned();
         self.view.unset_find(&self.text);
 
         let mut builder = delta::Builder::new(self.text.len());
@@ -251,13 +252,8 @@ impl Editor {
 
         if let Some(prev_sel) = prev_sel {
             let offset = prev_sel.start.min(new_len);
-            let new_sel = SelRegion {
-                start: offset,
-                end: offset,
-                horiz: None,
-                affinity: Affinity::default(),
-            };
-            self.set_sel_single_region(new_sel);
+            let sel: Selection = SelRegion::caret(offset).into();
+            self.view.set_selection(&self.text, sel);
         }
 
         self.file_mod_time = self.path.as_ref()
@@ -322,7 +318,7 @@ impl Editor {
         let config = self.config.to_table();
         PluginBufferInfo::new(self.buffer_id, &views,
                               self.engine.get_head_rev_id().token(), self.text.len(),
-                              nb_lines, self.path.clone(), self.syntax.clone(),
+                              nb_lines, self.path.clone(), self.syntax,
                               config)
     }
 
@@ -340,26 +336,6 @@ impl Editor {
             builder.replace(iv, rope.clone());
         }
         self.add_delta(builder.build());
-    }
-
-    /// Sets the position of the cursor to `offset`, as part of an edit operation.
-
-    // TODO: add affinity.
-    fn set_cursor(&mut self, offset: usize) {
-        self.set_sel_single_region(SelRegion {
-            start: offset,
-            end: offset,
-            horiz: None,
-            affinity: Affinity::default(),
-        });
-    }
-
-    /// Sets the selection to a single region, and scrolls the end of that
-    /// region into view.
-    fn set_sel_single_region(&mut self, region: SelRegion) {
-        let mut sel = Selection::new();
-        sel.add_region(region);
-        self.scroll_to = self.view.set_selection(&self.text, sel);
     }
 
     /// Applies a delta to the text, and updates undo state.
@@ -438,8 +414,8 @@ impl Editor {
         // resynthesize it.
         let last_text = self.engine.get_rev(last_token).expect("last_rev not found");
         let keep_selections = self.this_edit_type == EditType::Transpose;
-        self.scroll_to = self.view.after_edit(&self.text, &last_text, &delta, is_pristine,
-            keep_selections, &self.doc_ctx);
+        self.view.after_edit(&self.text, &last_text, &delta, is_pristine, keep_selections,
+            &self.doc_ctx);
         let (iv, new_len) = delta.summary();
         let total_num_lines = self.text.measure::<LinesMetric>() + 1;
 
@@ -508,11 +484,6 @@ impl Editor {
     pub fn render(&mut self) {
         let _t = trace_block("Editor::render", &["core"]);
         self.view.render_if_dirty(&self.text, &self.doc_ctx, self.styles.get_merged());
-        if let Some(scrollto) = self.scroll_to {
-            let (line, col) = self.view.offset_to_line_col(&self.text, scrollto);
-            self.doc_ctx.scroll_to(self.view.view_id, line, col);
-            self.scroll_to = None;
-        }
     }
 
     pub fn merge_new_state(&mut self, new_engine: Engine) {
@@ -588,12 +559,12 @@ impl Editor {
                 let use_tab_stops = self.config.items.use_tab_stops;
                 let tab_size = self.config.items.tab_size;
                 let tab_size = if c % tab_size == 0 { tab_size } else { c % tab_size };
-                let preceded_by_spaces = self.text.len() > 0 &&
+                let preceded_by_spaces = region.start > 0 &&
                     (region.start.saturating_sub(tab_size)..region.start)
                     .all(|i| self.text.byte_at(i) == b' ');
-               if preceded_by_spaces && use_spaces && use_tab_stops {
-                   region.start - tab_size
-               } else {
+                if preceded_by_spaces && use_spaces && use_tab_stops {
+                    region.start - tab_size
+                } else {
                    // TODO: implement complex emoji logic
                     self.text.prev_codepoint_offset(region.end)
                         .unwrap_or(region.end)
@@ -622,12 +593,12 @@ impl Editor {
         // Another possibility would be to make the delta builder be able to handle
         // overlapping deletions (using union semantics).
         let mut deletions = Selection::new();
-        for r in self.view.sel_regions() {
+        for &r in self.view.sel_regions() {
             if r.is_caret() {
                 let new_region = region_movement(movement, r, &self.view, &self.text, true);
                 deletions.add_region(new_region);
             } else {
-                deletions.add_region(r.clone());
+                deletions.add_region(r);
             }
         }
         if save {
@@ -713,14 +684,77 @@ impl Editor {
         */
     }
 
+    /// Indents or outdents lines based on selection and user's tab settings.
+    /// Uses a BTreeSet to holds the collection of lines to modify.
+    /// Preserves cursor position and current selection as much as possible.
+    /// Tries to have behavior consistent with other editors like Atom, Sublime and VSCode,
+    /// with non-caret selections not being modified.
+    fn modify_indent(&mut self, direction: IndentDirection) {
+        let mut lines = BTreeSet::new();
+        let tab_text = if self.config.items.translate_tabs_to_spaces {
+                let tab_size = self.config.items.tab_size;
+                n_spaces(tab_size)
+            } else { "\t" };
+        for region in self.view.sel_regions() {
+            let (first_line, _) = self.view.offset_to_line_col(&self.text, region.min());
+            let (last_line, last_col) =
+                self.view.offset_to_line_col(&self.text, region.max());
+            let last_line = if last_col == 0 && last_line > first_line {
+                last_line - 1
+            } else {
+                last_line
+            };
+            let line_range = first_line..(last_line + 1);
+            for line in line_range {
+                lines.insert(line);
+            }
+        }
+        match direction {
+            IndentDirection::In =>  self.indent(lines, tab_text),
+            IndentDirection::Out => self.outdent(lines, tab_text)
+         };
+
+    }
+
+    fn indent(&mut self, lines: BTreeSet<usize>, tab_text: &str) {
+        let mut builder = delta::Builder::new(self.text.len());
+        for line in lines {
+            let offset = self.view.line_col_to_offset(&self.text, line, 0);
+            let interval = Interval::new_closed_open(offset, offset);
+            builder.replace(interval, Rope::from(tab_text));
+
+        }
+        self.this_edit_type = EditType::InsertChars;
+        self.add_delta(builder.build());
+    }
+
+    fn outdent(&mut self, lines: BTreeSet<usize>, tab_text: &str) {
+        let mut builder = delta::Builder::new(self.text.len());
+        for line in lines {
+            let offset = self.view.line_col_to_offset(&self.text, line, 0);
+            let tab_offset = self.view.line_col_to_offset(&self.text, line, tab_text.len());
+            let interval = Interval::new_closed_open(offset, tab_offset);
+            let leading_slice = self.text.slice_to_string(interval.start(), interval.end());
+            if leading_slice == tab_text {
+                builder.delete(interval);
+            } else if let Some(first_char_col) = leading_slice.find(|c: char| !c.is_whitespace()) {
+                let first_char_offset = self.view.line_col_to_offset(&self.text, line, first_char_col);
+                let interval = Interval::new_closed_open(offset, first_char_offset);
+                builder.delete(interval);
+            }
+        }
+        self.this_edit_type = EditType::Delete;
+        self.add_delta(builder.build());
+    }
+
     /// Apply a movement, also setting the scroll to the point requested by
     /// the movement.
     ///
     /// The type of the `flags` parameter is a convenience to old-style
     /// movement methods.
     fn do_move(&mut self, movement: Movement, flags: u64) {
-        self.scroll_to = self.view.do_move(&self.text, movement,
-            (flags & FLAG_SELECT) != 0);
+        let should_modify = (flags & FLAG_SELECT) != 0;
+        self.view.do_move(&self.text, movement, should_modify);
     }
 
     fn move_up(&mut self, flags: u64) {
@@ -785,12 +819,12 @@ impl Editor {
 
     fn add_selection_by_movement(&mut self, movement: Movement) {
         let mut sel = Selection::new();
-        for region in self.view.sel_regions() {
-            sel.add_region(region.clone());
+        for &region in self.view.sel_regions() {
+            sel.add_region(region);
             let new_region = region_movement(movement, region, &self.view, &self.text, false);
             sel.add_region(new_region);
         }
-        self.scroll_to = self.view.set_selection(&self.text, sel);
+        self.view.set_selection(&self.text, sel);
     }
 
     // TODO: insert from keyboard or input method shouldn't break undo group,
@@ -833,78 +867,31 @@ impl Editor {
 
     /// Sets the cursor and scrolls to the beginning of the given line.
     fn do_goto_line(&mut self, line: u64) {
-        let line = self.view.line_col_to_offset(&self.text, line as usize, 0);
-        self.set_cursor(line);
+        let offset = self.view.line_col_to_offset(&self.text, line as usize, 0);
+        self.view.set_selection(&self.text, SelRegion::caret(offset));
     }
 
     fn do_request_lines(&mut self, first: i64, last: i64) {
         self.view.request_lines(&self.text, &self.doc_ctx, self.styles.get_merged(), first as usize, last as usize);
     }
 
-    fn do_click(&mut self, line: u64, col: u64, flags: u64, click_count: u64) {
-        // TODO: calculate affinity
-        let offset = self.view.line_col_to_offset(&self.text, line as usize, col as usize);
-        if (flags & FLAG_SELECT) != 0 {
-            if !self.view.is_point_in_selection(offset) {
-                let sel = {
-                    let (last, rest) = self.view.sel_regions().split_last().unwrap();
-                    let mut sel = Selection::new();
-                    for region in rest {
-                        sel.add_region(region.clone());
-                    }
-                    // TODO: small nit, merged region should be backward if end < start.
-                    // This could be done by explicitly overriding, or by tweaking the
-                    // merge logic.
-                    sel.add_region(SelRegion {
-                        start: last.start,
-                        end: offset,
-                        horiz: None,
-                        affinity: Affinity::default(),
-                    });
-                    sel
-                };
-                self.view.start_drag(offset, offset, offset);
-                self.scroll_to = self.view.set_selection(&self.text, sel);
-                return;
-            }
-        } else if click_count == 2 {
-            let (start, end) = {
-                let mut word_cursor = WordCursor::new(&self.text, offset);
-                word_cursor.select_word()
-            };
-            self.set_sel_single_region(SelRegion{
-                start: start,
-                end: end,
-                horiz: None,
-                affinity: Affinity::default(),
-            });
-            self.view.start_drag(offset, start, end);
-            return;
-        } else if click_count == 3 {
-            let start = self.view.line_col_to_offset(&self.text, line as usize, 0);
-            let end = self.view.line_col_to_offset(&self.text, line as usize + 1, 0);
-            self.set_sel_single_region(SelRegion{
-                start: start,
-                end: end,
-                horiz: None,
-                affinity: Affinity::default(),
-            });
-            self.view.start_drag(offset, start, end);
-            return;
-        }
-        self.view.start_drag(offset, offset, offset);
-        self.set_cursor(offset);
-    }
-
     fn do_drag(&mut self, line: u64, col: u64, _flags: u64) {
-        let offset = self.view.line_col_to_offset(&self.text, line as usize, col as usize);
-        self.scroll_to = self.view.do_drag(&self.text, offset, Affinity::default());
+        self.view.do_drag(&self.text, line, col, Affinity::default());
     }
 
     fn do_gesture(&mut self, line: u64, col: u64, ty: GestureType) {
         let offset = self.view.line_col_to_offset(&self.text, line as usize, col as usize);
         match ty {
+            GestureType::PointSelect => {
+                self.view.set_selection(&self.text, SelRegion::caret(offset));
+                self.view.start_drag(offset, offset, offset);
+            },
+            GestureType::RangeSelect => self.view.select_range(&self.text, offset),
             GestureType::ToggleSel => self.view.toggle_sel(&self.text, offset),
+            GestureType::LineSelect => self.view.select_line(&self.text, offset, line as usize, false),
+            GestureType::WordSelect => self.view.select_word(&self.text, offset, false),
+            GestureType::MultiLineSelect => self.view.select_line(&self.text, offset, line as usize, true),
+            GestureType::MultiWordSelect => self.view.select_word(&self.text, offset, true)
         }
     }
 
@@ -959,7 +946,7 @@ impl Editor {
         }
     }
 
-    fn sel_region_to_interval_and_rope(&self, region: &SelRegion) -> (Interval, Rope) {
+    fn sel_region_to_interval_and_rope(&self, region: SelRegion) -> (Interval, Rope) {
         let as_interval = Interval::new_closed_open(region.min(), region.max());
         let interval_rope = Rope::from(self.text.slice_to_string(
             as_interval.start(), as_interval.end()));
@@ -971,9 +958,9 @@ impl Editor {
         let mut last = 0;
         let mut optional_previous_selection : Option<(Interval, Rope)> =
             last_selection_region(self.view.sel_regions()).map(
-                |ref region| self.sel_region_to_interval_and_rope(region));
+                |&region| self.sel_region_to_interval_and_rope(region));
 
-        for region in self.view.sel_regions() {
+        for &region in self.view.sel_regions() {
             if region.is_caret() {
                 let middle = region.end;
                 let start = self.text.prev_grapheme_offset(middle).unwrap_or(0);
@@ -989,7 +976,7 @@ impl Editor {
                     }
                 }
             } else if let Some(previous_selection) = optional_previous_selection {
-                let current_interval = self.sel_region_to_interval_and_rope(&region);
+                let current_interval = self.sel_region_to_interval_and_rope(region);
                 builder.replace(current_interval.0, previous_selection.1);
                 optional_previous_selection = Some(current_interval);
             }
@@ -1033,7 +1020,7 @@ impl Editor {
         }
 
         let search_string = search_string.unwrap();
-        if search_string.len() == 0 {
+        if search_string.is_empty() {
             self.view.unset_find(&self.text);
             return Value::Null;
         }
@@ -1044,17 +1031,12 @@ impl Editor {
     }
 
     fn do_find_next(&mut self, reverse: bool, wrap_around: bool, allow_same: bool) {
-        self.scroll_to = self.view.select_next_occurrence(&self.text, reverse, false, true, allow_same);
-
-        if self.scroll_to.is_none() && wrap_around {
-            // nothing found, search past end of file
-            self.scroll_to = self.view.select_next_occurrence(&self.text, reverse, true, true, allow_same);
-        }
+        self.view.find_next(&self.text, reverse, wrap_around, allow_same);
     }
 
     fn do_cancel_operation(&mut self) {
-        self.view.unset_find(&self.text);
         self.view.collapse_selections(&self.text);
+        self.view.unset_find(&self.text);
     }
 
     fn transform_text<F: Fn(&str) -> String>(&mut self, transform_function: F) {
@@ -1138,7 +1120,18 @@ impl Editor {
             Yank => self.yank(),
             Transpose => self.do_transpose(),
             Click(MouseAction {line, column, flags, click_count} ) => {
-                self.do_click(line, column, flags, click_count.unwrap())
+                // Deprecated (kept for client compatibility): should be removed in favor of do_gesture
+                eprintln!("Usage of click is deprecated and should be replaced by gestures");
+
+                if (flags & FLAG_SELECT) != 0 {
+                    self.do_gesture(line, column, GestureType::RangeSelect)
+                } else if click_count == Some(2) {
+                    self.do_gesture(line, column, GestureType::WordSelect)
+                } else if click_count == Some(3) {
+                    self.do_gesture(line, column, GestureType::LineSelect)
+                } else {
+                    self.do_gesture(line, column, GestureType::PointSelect)
+                }
             }
             Drag (MouseAction {line, column, flags, ..}) => {
                 self.do_drag(line, column, flags);
@@ -1154,6 +1147,8 @@ impl Editor {
             CancelOperation => self.do_cancel_operation(),
             Uppercase => self.transform_text(|s| s.to_uppercase()),
             Lowercase => self.transform_text(|s| s.to_lowercase()),
+            Indent => self.modify_indent(IndentDirection::In),
+            Outdent => self.modify_indent(IndentDirection::Out)
         };
 
         self.cmd_postlude();

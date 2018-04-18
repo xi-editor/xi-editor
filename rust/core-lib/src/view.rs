@@ -15,7 +15,7 @@
 use std::cmp::{min,max};
 use std::mem;
 
-use serde_json::value::Value;
+use serde_json::Value;
 
 use xi_rope::rope::{Rope, LinesMetric, RopeInfo};
 use xi_rope::delta::{Delta, DeltaRegion};
@@ -31,6 +31,7 @@ use index_set::IndexSet;
 use selection::{Affinity, Selection, SelRegion};
 use movement::{Movement, selection_movement};
 use line_cache_shadow::{self, LineCacheShadow, RenderPlan, RenderTactic};
+use word_boundaries::WordCursor;
 
 use linewrap;
 
@@ -58,6 +59,9 @@ pub struct View {
 
     /// Tracks whether or not the view has unsaved changes.
     pristine: bool,
+
+    /// New offset to be scrolled into position after an edit.
+    scroll_to: Option<usize>,
 
     /// The currently active search string
     search_string: Option<String>,
@@ -101,16 +105,10 @@ struct DragState {
 
 impl View {
     pub fn new(view_id: ViewIdentifier) -> View {
-        let mut selection = Selection::new();
-        selection.add_region(SelRegion {
-            start: 0,
-            end: 0,
-            horiz: None,
-            affinity: Affinity::default(),
-        });
         View {
             view_id: view_id.to_owned(),
-            selection: selection,
+            selection: SelRegion::caret(0).into(),
+            scroll_to: Some(0),
             drag_state: None,
             first_line: 0,
             height: 10,
@@ -135,7 +133,7 @@ impl View {
         self.height
     }
 
-    pub fn scroll_to_cursor(&mut self, text: &Rope) {
+    fn scroll_to_cursor(&mut self, text: &Rope) {
         let end = self.sel_regions().last().unwrap().end;
         let line = self.line_of_offset(text, end);
         if line < self.first_line {
@@ -143,6 +141,10 @@ impl View {
         } else if self.first_line + self.height <= line {
             self.first_line = line - (self.height - 1);
         }
+        // We somewhat arbitrarily choose the last region for setting the old-style
+        // selection state, and for scrolling it into view if needed. This choice can
+        // likely be improved.
+        self.scroll_to = Some(end);
     }
 
     /// Toggles a caret at the given offset.
@@ -159,16 +161,11 @@ impl View {
         }
         self.drag_state = Some(DragState {
             base_sel: selection.clone(),
-            offset: offset,
+            offset,
             min: offset,
             max: offset,
         });
-        let region = SelRegion {
-            start: offset,
-            end: offset,
-            horiz: None,
-            affinity: Affinity::default(),
-        };
+        let region = SelRegion::caret(offset);
         selection.add_region(region);
         self.set_selection_raw(text, selection);
     }
@@ -178,40 +175,26 @@ impl View {
     ///
     /// If `modify` is `true`, the selections are modified, otherwise the results
     /// of individual region movements become carets.
-    pub fn do_move(&mut self, text: &Rope, movement: Movement, modify: bool)
-        -> Option<usize>
-    {
+    pub fn do_move(&mut self, text: &Rope, movement: Movement, modify: bool) {
         self.drag_state = None;
         let new_sel = selection_movement(movement, &self.selection, self, text, modify);
-        self.set_selection(text, new_sel)
+        self.set_selection(text, new_sel);
     }
 
-    /// Set the selection to a new value. Return value is the offset of a
-    /// point that should be scrolled into view.
-    pub fn set_selection(&mut self, text: &Rope, sel: Selection) -> Option<usize> {
-        self.set_selection_raw(text, sel);
-        // We somewhat arbitrarily choose the last region for setting the old-style
-        // selection state, and for scrolling it into view if needed. This choice can
-        // likely be improved.
-        let region = self.selection.last().unwrap().clone();
+    /// Set the selection to a new value.
+    pub fn set_selection<S: Into<Selection>>(&mut self, text: &Rope, sel: S) {
+        self.set_selection_raw(text, sel.into());
         self.scroll_to_cursor(text);
-        Some(region.end)
     }
 
-    /// Sets the selection to a new value, without invalidating. Return values is
-    /// the offset of a point that should be scrolled into view.
-    fn set_selection_for_edit(&mut self, text: &Rope, sel: Selection) -> Option<usize> {
+    /// Sets the selection to a new value, without invalidating.
+    fn set_selection_for_edit(&mut self, text: &Rope, sel: Selection) {
         self.selection = sel;
-        // We somewhat arbitrarily choose the last region for setting the old-style
-        // selection state, and for scrolling it into view if needed. This choice can
-        // likely be improved.
-        let region = self.selection.last().unwrap().clone();
         self.scroll_to_cursor(text);
-        Some(region.end)
     }
 
-    /// Sets the selection to a new value, invalidating the line cache as needed. This
-    /// function does not perform any scrolling.
+    /// Sets the selection to a new value, invalidating the line cache as needed.
+    /// This function does not perform any scrolling.
     fn set_selection_raw(&mut self, text: &Rope, sel: Selection) {
         self.invalidate_selection(text);
         self.selection = sel;
@@ -247,14 +230,59 @@ impl View {
     ///
     /// Note: unlike movement based selection, this does not scroll.
     pub fn select_all(&mut self, text: &Rope) {
-        let mut selection = Selection::new();
-        selection.add_region(SelRegion {
-            start: 0,
-            end: text.len(),
-            horiz: None,
-            affinity: Default::default(),
-        });
+        let selection = SelRegion::new(0, text.len()).into();
         self.set_selection_raw(text, selection);
+    }
+
+    /// Selects a specific range (eg. when the user performs SHIFT + click).
+    pub fn select_range(&mut self, text: &Rope, offset: usize) {
+      if !self.is_point_in_selection(offset) {
+        let sel = {
+          let (last, rest) = self.sel_regions().split_last().unwrap();
+          let mut sel = Selection::new();
+          for &region in rest {
+            sel.add_region(region);
+          }
+          // TODO: small nit, merged region should be backward if end < start.
+          // This could be done by explicitly overriding, or by tweaking the
+          // merge logic.
+          sel.add_region(SelRegion::new(last.start, offset));
+          sel
+        };
+        self.set_selection(text, sel);
+        self.start_drag(offset, offset, offset);
+      }
+    }
+
+    /// Selects the given region and supports multi selection.
+    fn select_region(&mut self, text: &Rope, offset: usize, region: SelRegion, multi_select: bool) {
+        let mut selection = match multi_select {
+            true => self.selection.clone(),
+            false => Selection::new(),
+        };
+
+        selection.add_region(region);
+        self.set_selection(text, selection);
+
+        self.start_drag(offset, region.start, region.end);
+    }
+
+    /// Selects an entire word and supports multi selection.
+    pub fn select_word(&mut self, text: &Rope, offset: usize, multi_select: bool) {
+        let (start, end) = {
+            let mut word_cursor = WordCursor::new(text, offset);
+            word_cursor.select_word()
+        };
+
+        self.select_region(text, offset, SelRegion::new(start, end), multi_select);
+    }
+
+    /// Selects an entire line and supports multi selection.
+    pub fn select_line(&mut self, text: &Rope, offset: usize, line: usize, multi_select: bool) {
+        let start = self.line_col_to_offset(text, line, 0);
+        let end = self.line_col_to_offset(text, line + 1, 0);
+
+        self.select_region(text, offset, SelRegion::new(start, end), multi_select);
     }
 
     /// Starts a drag operation.
@@ -265,7 +293,8 @@ impl View {
 
     /// Does a drag gesture, setting the selection from a combination of the drag
     /// state and new offset.
-    pub fn do_drag(&mut self, text: &Rope, offset: usize, affinity: Affinity) -> Option<usize> {
+    pub fn do_drag(&mut self, text: &Rope, line: u64, col: u64, affinity: Affinity) {
+        let offset = self.line_col_to_offset(text, line as usize, col as usize);
         let new_sel = self.drag_state.as_ref().map(|drag_state| {
             let mut sel = drag_state.base_sel.clone();
             // TODO: on double or triple click, quantize offset to requested granularity.
@@ -275,10 +304,17 @@ impl View {
                 (drag_state.min, max(offset, drag_state.max))
             };
             let horiz = None;
-            sel.add_region(SelRegion { start, end, horiz, affinity });
+            sel.add_region(
+                SelRegion::new(start, end)
+                    .with_horiz(horiz)
+                    .with_affinity(affinity)
+            );
             sel
         });
-        new_sel.and_then(|new_sel| self.set_selection(text, new_sel))
+
+        if let Some(sel) = new_sel {
+            self.set_selection(text, sel);
+        }
     }
 
     /// Returns the regions of the current selection.
@@ -290,7 +326,7 @@ impl View {
     pub fn collapse_selections(&mut self, text: &Rope) {
         let mut sel = self.selection.clone();
         sel.collapse();
-        &self.set_selection(text, sel);
+        self.set_selection(text, sel);
     }
 
     /// Determines whether the offset is in any selection (counting carets and
@@ -481,6 +517,10 @@ impl View {
         let height = self.line_of_offset(text, text.len()) + 1;
         let plan = RenderPlan::create(height, self.first_line, self.height);
         self.send_update_for_plan(text, tab_ctx, style_spans, &plan);
+        if let Some(new_scroll_pos) = self.scroll_to.take() {
+            let (line, col) = self.offset_to_line_col(text, new_scroll_pos);
+            tab_ctx.scroll_to(self.view_id, line, col);
+        }
     }
 
     // Send the requested lines even if they're outside the current scroll region.
@@ -578,10 +618,8 @@ impl View {
     /// Updates the view after the text has been modified by the given `delta`.
     /// This method is responsible for updating the cursors, and also for
     /// recomputing line wraps.
-    ///
-    /// Return value is a location of a point that should be scrolled into view.
     pub fn after_edit(&mut self, text: &Rope, last_text: &Rope, delta: &Delta<RopeInfo>,
-        pristine: bool, keep_selections: bool, doc_ctx: &DocumentCtx) -> Option<usize>
+        pristine: bool, keep_selections: bool, doc_ctx: &DocumentCtx)
     {
         let (iv, new_len) = delta.summary();
         if let Some(breaks) = self.breaks.as_mut() {
@@ -610,7 +648,7 @@ impl View {
         // Update search highlights for changed regions
         if self.search_string.is_some() {
             self.valid_search = self.valid_search.apply_delta(delta);
-            let mut occurrences = self.occurrences.take().unwrap_or_else(|| Selection::new());
+            let mut occurrences = self.occurrences.take().unwrap_or_else(Selection::new);
 
             // invalidate occurrences around deletion positions
             for DeltaRegion{ old_offset, new_offset, len } in delta.iter_deletions() {
@@ -636,7 +674,7 @@ impl View {
         // Note: for committing plugin edits, we probably want to know the priority
         // of the delta so we can set the cursor before or after the edit, as needed.
         let new_sel = self.selection.apply_delta(delta, true, keep_selections);
-        self.set_selection_for_edit(text, new_sel)
+        self.set_selection_for_edit(text, new_sel);
     }
 
     /// Call to mark view as pristine. Used after a buffer is saved.
@@ -696,7 +734,7 @@ impl View {
         // extend the search by twice the string length (twice, because case matching may increase
         // the length of an occurrence)
         let slop = if include_slop { self.search_string.as_ref().unwrap().len() * 2 } else { 0 };
-        let mut occurrences = self.occurrences.take().unwrap_or_else(|| Selection::new());
+        let mut occurrences = self.occurrences.take().unwrap_or_else(Selection::new);
         let mut searched_until = end;
         let mut invalidate_from = None;
 
@@ -713,44 +751,34 @@ impl View {
             let text = text.subseq(Interval::new_closed_open(0, to));
             let mut cursor = Cursor::new(&text, from);
 
-            loop {
-                match find(&mut cursor, self.case_matching, &search_string) {
-                    Some(start) => {
-                        let end = start + len;
+            while let Some(start) = find(&mut cursor, self.case_matching, &search_string) {
+                let end = start + len;
 
-                        let region = SelRegion {
-                            start: start,
-                            end: end,
-                            horiz: None,
-                            affinity: Affinity::default(),
-                        };
-                        let prev_len = occurrences.len();
-                        let (_, e) = occurrences.add_range_distinct(region);
-                        // in case of ambiguous search results (e.g. search "aba" in "ababa"),
-                        // the search result closer to the beginning of the file wins
-                        if e != end {
-                            // Skip the search result and keep the occurrence that is closer to
-                            // the beginning of the file. Re-align the cursor to the kept
-                            // occurrence
-                            cursor.set(e);
-                            continue;
-                        }
+                let region = SelRegion::new(start, end);
+                let prev_len = occurrences.len();
+                let (_, e) = occurrences.add_range_distinct(region);
+                // in case of ambiguous search results (e.g. search "aba" in "ababa"),
+                // the search result closer to the beginning of the file wins
+                if e != end {
+                    // Skip the search result and keep the occurrence that is closer to
+                    // the beginning of the file. Re-align the cursor to the kept
+                    // occurrence
+                    cursor.set(e);
+                    continue;
+                }
 
-                        // add_range_distinct() above removes ambiguous regions after the added
-                        // region, if something has been deleted, everything thereafter is
-                        // invalidated
-                        if occurrences.len() != prev_len + 1 {
-                            invalidate_from = Some(end);
-                            occurrences.delete_range(end, text_len, false);
-                            break;
-                        }
+                // add_range_distinct() above removes ambiguous regions after the added
+                // region, if something has been deleted, everything thereafter is
+                // invalidated
+                if occurrences.len() != prev_len + 1 {
+                    invalidate_from = Some(end);
+                    occurrences.delete_range(end, text_len, false);
+                    break;
+                }
 
-                        if stop_on_found {
-                            searched_until = end;
-                            break;
-                        }
-                    }
-                    None => break,
+                if stop_on_found {
+                    searched_until = end;
+                    break;
                 }
             }
         }
@@ -779,6 +807,13 @@ impl View {
         }
     }
 
+    pub fn find_next(&mut self, text: &Rope, reverse: bool, wrap: bool, allow_same: bool) {
+        self.select_next_occurrence(text, reverse, false, true, allow_same);
+        if self.scroll_to.is_none() && wrap {
+            self.select_next_occurrence(text, reverse, true, true, allow_same);
+        }
+    }
+
     /// Select the next occurrence relative to the last cursor. `reverse` determines whether the
     /// next occurrence before (`true`) or after (`false`) the last cursor is selected. `wrapped`
     /// indicates a search for the next occurrence past the end of the file. `stop_on_found`
@@ -786,15 +821,15 @@ impl View {
     /// to forward search, i.e. reverse = false). If `allow_same` is set to `true` the current
     /// selection is considered a valid next occurrence.
     pub fn select_next_occurrence(&mut self, text: &Rope, reverse: bool, wrapped: bool,
-                                  stop_on_found: bool, allow_same: bool) -> Option<usize>
+                                  stop_on_found: bool, allow_same: bool)
     {
         if self.search_string.is_none() {
-            return None;
+            return;
         }
 
         let sel = match self.sel_regions().last() {
             Some(sel) => (sel.min(), sel.max()),
-            None => return None
+            None => return,
         };
 
         let (from, to) = if reverse != wrapped { (0, sel.0) } else { (sel.0, text.len()) };
@@ -827,7 +862,7 @@ impl View {
                         })
                     }
                 }
-            }).map(|o| o.clone());
+            }).cloned();
 
             let region = {
                 let mut unsearched = self.valid_search.minus_one_range(from, to);
@@ -857,12 +892,8 @@ impl View {
             }
         }
 
-        if let Some(occurrence) = next_occurrence {
-            let mut selection = Selection::new();
-            selection.add_region(occurrence);
-            self.set_selection(text, selection)
-        } else {
-            None
+        if let Some(occ) = next_occurrence {
+            self.set_selection(text, occ);
         }
     }
 

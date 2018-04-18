@@ -253,7 +253,7 @@ impl<N: NodeInfo> Delta<N> {
                 }
             }
         }
-        Delta { els: els, base_len: base_len }
+        Delta { els, base_len }
     }
 
     /// Produce a summary of the delta. Everything outside the returned interval
@@ -426,7 +426,7 @@ impl<N: NodeInfo> InsertDelta<N> {
         if y > b1 {
             els.push(DeltaElement::Copy(b1, y));
         }
-        InsertDelta(Delta { els: els, base_len: l })
+        InsertDelta(Delta { els, base_len: l })
     }
 
     // TODO: it is plausible this method also works on Deltas with deletes
@@ -446,7 +446,7 @@ impl<N: NodeInfo> InsertDelta<N> {
                 }
             }
         }).collect();
-        InsertDelta(Delta { els: els, base_len: xform.len_after_delete()})
+        InsertDelta(Delta { els, base_len: xform.len_after_delete()})
     }
 
     /// Return a Subset containing the inserted ranges.
@@ -492,7 +492,7 @@ impl<'a, N: NodeInfo + 'a> Transformer<'a, N> {
     /// Create a new transformer from a delta.
     pub fn new(delta: &'a Delta<N>) -> Self {
         Transformer {
-            delta: delta,
+            delta,
         }
     }
 
@@ -521,7 +521,7 @@ impl<'a, N: NodeInfo + 'a> Transformer<'a, N> {
                 }
             }
         }
-        return result;
+        result
     }
 
     /// Determine whether a given interval is untouched by the transformation.
@@ -569,7 +569,7 @@ impl<N: NodeInfo> Builder<N> {
         Builder {
             delta: Delta {
                 els: Vec::new(),
-                base_len: base_len,
+                base_len,
             },
             last_offset: 0,
         }
@@ -634,12 +634,12 @@ impl<'a, N: NodeInfo> Iterator for InsertsIter<'a, N> {
     fn next(&mut self) -> Option<Self::Item> {
         let mut result = None;
         while let Some(elem) = self.els_iter.next() {
-            match elem {
-                &DeltaElement::Copy(b, e) => {
+            match *elem {
+                DeltaElement::Copy(b, e) => {
                     self.pos += e - b;
                     self.last_end = e;
                 }
-                &DeltaElement::Insert(ref n) => {
+                DeltaElement::Insert(ref n) => {
                     result = Some(DeltaRegion::new(self.last_end, self.pos, n.len()));
                     self.pos += n.len();
                     self.last_end += n.len();
@@ -664,8 +664,8 @@ impl<'a, N: NodeInfo> Iterator for DeletionsIter<'a, N> {
     fn next(&mut self) -> Option<Self::Item> {
         let mut result = None;
         while let Some(elem) = self.els_iter.next() {
-            match elem {
-                &DeltaElement::Copy(b, e) => {
+            match *elem {
+                DeltaElement::Copy(b, e) => {
                     if b > self.last_end {
                         result = Some(DeltaRegion::new(self.last_end, self.pos, b - self.last_end));
                     }
@@ -675,7 +675,7 @@ impl<'a, N: NodeInfo> Iterator for DeletionsIter<'a, N> {
                         break;
                     }
                 }
-                &DeltaElement::Insert(ref n) => {
+                DeltaElement::Insert(ref n) => {
                     self.pos += n.len();
                     self.last_end += n.len();
                 }

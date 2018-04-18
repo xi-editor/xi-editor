@@ -22,6 +22,11 @@
 //! Because these changes make the protocol not fully compliant with the spec,
 //! the `"jsonrpc"` member is omitted from request and response objects.
 
+#![cfg_attr(feature = "cargo-clippy", allow(
+    boxed_local,
+    or_fun_call,
+))]
+
 #[macro_use]
 extern crate serde_json;
 #[macro_use]
@@ -226,8 +231,8 @@ impl<W: Write + Send> RpcLoop<W> {
     /// Calls to the handler are guaranteed to preserve the order as
     /// they appear on on the channel. At the moment, there is no way
     /// for there to be more than one incoming request to be outstanding.
-    pub fn mainloop<'a, R, RF, H>(&mut self, rf: RF, handler: &mut H)
-                                  -> Result<(), ReadError>
+    pub fn mainloop<R, RF, H>(&mut self, rf: RF, handler: &mut H)
+                              -> Result<(), ReadError>
     where R: BufRead,
           RF: Send + FnOnce() -> R,
           H: Handler,
@@ -497,8 +502,8 @@ impl<W:Write> RawPeer<W> {
     /// send disconnect error to pending requests.
     fn disconnect(&self) {
         let mut pending = self.0.pending.lock().unwrap();
-        let ids = pending.keys().map(|id| *id).collect::<Vec<_>>();
-        for id in ids.iter() {
+        let ids = pending.keys().cloned().collect::<Vec<_>>();
+        for id in &ids {
             let callback = pending.remove(id).unwrap();
             callback.invoke(Err(Error::PeerDisconnect));
         }

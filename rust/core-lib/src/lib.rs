@@ -14,6 +14,23 @@
 
 //! The main library for xi-core.
 
+#![cfg_attr(feature = "cargo-clippy", allow(
+    boxed_local,
+    cast_lossless,
+    collapsible_if,
+    let_and_return,
+    map_entry,
+    match_as_ref,
+    match_bool,
+    needless_pass_by_value,
+    new_without_default,
+    new_without_default_derive,
+    or_fun_call,
+    ptr_arg,
+    too_many_arguments,
+    unreadable_literal,
+))]
+
 extern crate serde;
 #[macro_use]
 extern crate serde_json;

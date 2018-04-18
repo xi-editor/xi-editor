@@ -25,8 +25,7 @@ use std::time::SystemTime;
 
 use serde::de::{Deserialize, Deserializer};
 use serde::ser::{Serialize, Serializer};
-use serde_json;
-use serde_json::value::Value;
+use serde_json::{self, Value};
 #[cfg(feature = "notify")]
 use notify::DebouncedEvent;
 
@@ -229,7 +228,7 @@ impl BufferContainerRef {
     pub fn editor_for_path<P>(&self, path: P) -> Option<BufferIdentifier>
         where P: AsRef<Path>,
     {
-        self.lock().open_files.get(path.as_ref()).map(|id| *id)
+        self.lock().open_files.get(path.as_ref()).cloned()
     }
 
     /// Returns a copy of the BufferIdentifier associated with a given view.
@@ -251,7 +250,7 @@ impl BufferContainerRef {
     pub fn set_path<P: AsRef<Path>>(&self, file_path: P, view_id: ViewIdentifier) {
         let file_path = file_path.as_ref();
         let mut inner = self.lock();
-        let buffer_id = inner.views.get(&view_id).unwrap().to_owned();
+        let buffer_id = inner.views[&view_id].to_owned();
         let prev_path = inner.editor_for_view(view_id).unwrap()
             .get_path().map(Path::to_owned);
         if let Some(prev_path) = prev_path {
@@ -310,12 +309,12 @@ impl Documents {
         plugins::start_update_thread(update_rx, &plugin_manager);
 
         Documents {
-            buffers: buffers,
+            buffers,
             id_counter: 0,
             kill_ring: Arc::new(Mutex::new(Rope::from(""))),
             style_map: Arc::new(Mutex::new(ThemeStyleMap::new())),
             plugins: plugin_manager,
-            config_manager: config_manager,
+            config_manager,
             #[cfg(feature = "notify")]
             file_watcher: None,
             update_channel: update_tx,
@@ -637,11 +636,8 @@ impl Documents {
                 //TODO: report this error to client?
                 let info = self.buffers.lock().editor_for_view(view_id)
                     .map(|ed| ed.plugin_init_info());
-                match info {
-                    Some(info) => {
-                        let _ = self.plugins.start_plugin(view_id, &info, &plugin_name);
-                    },
-                    None => (),
+                if let Some(info) = info {
+                    let _ = self.plugins.start_plugin(view_id, &info, &plugin_name);
                 }
             }
             Stop { view_id, plugin_name } => {
@@ -778,9 +774,9 @@ impl Documents {
     fn handle_open_file_fs_event(&mut self, event: DebouncedEvent) {
         use notify::DebouncedEvent::*;
         match event {
-            NoticeWrite(ref path @ _) |
-            Create(ref path @ _) |
-            Write(ref path @ _) => {
+            NoticeWrite(ref path) |
+            Create(ref path) |
+            Write(ref path) => {
                 let mod_time = get_file_mod_time(path);
                 let id = self.buffers.editor_for_path(path);
                 let mut inner = self.buffers.lock();
@@ -1046,6 +1042,19 @@ impl<'a> From<&'a str> for ViewIdentifier {
 impl From<String> for ViewIdentifier {
     fn from(s: String) -> Self {
         s.as_str().into()
+    }
+}
+
+// these two only exist so that we can use ViewIdentifiers as idle tokens
+impl From<usize> for ViewIdentifier {
+    fn from(src: usize) -> ViewIdentifier {
+        ViewIdentifier(src)
+    }
+}
+
+impl From<ViewIdentifier> for usize {
+    fn from(src: ViewIdentifier) -> usize {
+        src.0
     }
 }
 

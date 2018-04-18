@@ -288,7 +288,13 @@ pub struct EditCommand<T> {
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum GestureType {
+    PointSelect,
     ToggleSel,
+    RangeSelect,
+    LineSelect,
+    WordSelect,
+    MultiLineSelect,
+    MultiWordSelect,
 }
 
 /// An inclusive range.
@@ -384,6 +390,8 @@ pub enum EditNotification {
     CancelOperation,
     Uppercase,
     Lowercase,
+    Indent,
+    Outdent
 }
 
 /// The edit related requests.
@@ -468,8 +476,7 @@ impl Serialize for MouseAction
         struct Helper(u64, u64, u64, Option<u64>);
 
         let as_tup = Helper(self.line, self.column, self.flags, self.click_count);
-        let v = serde_json::to_value(&as_tup).map_err(ser::Error::custom)?;
-        v.serialize(serializer)
+        as_tup.serialize(serializer)
     }
 }
 
@@ -480,7 +487,7 @@ impl<'de> Deserialize<'de> for MouseAction
     {
         let v: Vec<u64> = Vec::deserialize(deserializer)?;
         let click_count = if v.len() == 4 { Some(v[3]) } else { None };
-        Ok(MouseAction { line: v[0], column: v[1], flags: v[2], click_count: click_count })
+        Ok(MouseAction { line: v[0], column: v[1], flags: v[2], click_count })
     }
 }
 
@@ -490,8 +497,7 @@ impl Serialize for LineRange
         where S: Serializer
     {
         let as_tup = (self.first, self.last);
-        let v = serde_json::to_value(&as_tup).map_err(ser::Error::custom)?;
-        v.serialize(serializer)
+        as_tup.serialize(serializer)
     }
 }
 

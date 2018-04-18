@@ -28,7 +28,7 @@ use delta::{Delta, DeltaElement};
 use interval::Interval;
 
 use bytecount;
-use memchr::memchr;
+use memchr::{memrchr, memchr};
 use serde::ser::{Serialize, Serializer, SerializeStruct, SerializeTupleVariant};
 use serde::de::{Deserialize, Deserializer};
 
@@ -144,9 +144,17 @@ impl NodeInfo for RopeInfo {
 }
 
 //TODO: document metrics, based on https://github.com/google/xi-editor/issues/456
+//See ../docs/MetricsAndBoundaries.md for more information.
 #[derive(Clone, Copy)]
 pub struct BaseMetric(());
 
+/// Measured unit is utf8 code unit.
+/// Base unit is utf8 code unit.
+/// Boundary is atomic and determined by codepoint boundary.
+/// Atomicity is implicit, putting the offset
+/// between two utf8 code units that form a code point is considered invalid.
+/// For example, take a string that starts with a 0xC2 byte.
+/// Then offset=1 is invalid.
 impl Metric<RopeInfo> for BaseMetric {
     fn measure(_: &RopeInfo, len: usize) -> usize {
         len
@@ -196,6 +204,7 @@ impl Metric<RopeInfo> for BaseMetric {
 
 /// Given the inital byte of a UTF-8 codepoint, returns the number of
 /// bytes required to represent the codepoint.
+/// RFC reference : https://tools.ietf.org/html/rfc3629#section-4
 pub fn len_utf8_from_first_byte(b: u8) -> usize {
     match b {
         b if b < 0x80 => 1,
@@ -208,6 +217,9 @@ pub fn len_utf8_from_first_byte(b: u8) -> usize {
 #[derive(Clone, Copy)]
 pub struct LinesMetric(usize);  // number of lines
 
+/// Measured unit is newline amount.
+/// Base unit is utf8 code unit.
+/// Boundary is trailing and determined by a newline char.
 impl Metric<RopeInfo> for LinesMetric {
     fn measure(info: &RopeInfo, _: usize) -> usize {
         info.lines
@@ -238,7 +250,7 @@ impl Metric<RopeInfo> for LinesMetric {
     }
 
     fn prev(s: &String, offset: usize) -> Option<usize> {
-        s.as_bytes()[..offset].iter().rposition(|&c| c == b'\n')
+        memrchr(b'\n', &s.as_bytes()[..offset])
             .map(|pos| pos + 1)
     }
 
@@ -267,7 +279,7 @@ fn find_leaf_split_for_merge(s: &str) -> usize {
 // Try to split at newline boundary (leaning left), if not, then split at codepoint
 fn find_leaf_split(s: &str, minsplit: usize) -> usize {
     let mut splitpoint = min(MAX_LEAF, s.len() - MIN_LEAF);
-    match s.as_bytes()[minsplit - 1..splitpoint].iter().rposition(|&c| c == b'\n') {
+    match memrchr(b'\n', &s.as_bytes()[minsplit - 1..splitpoint]) {
         Some(pos) => minsplit + pos,
         None => {
             while !s.is_char_boundary(splitpoint) {
@@ -486,7 +498,7 @@ impl Rope {
     pub fn iter_chunks(&self, start: usize, end: usize) -> ChunkIter {
         ChunkIter {
             cursor: Cursor::new(self, start),
-            end: end,
+            end,
         }
     }
 
