@@ -438,7 +438,8 @@ impl Editor {
         // resynthesize it.
         let last_text = self.engine.get_rev(last_token).expect("last_rev not found");
         let keep_selections = self.this_edit_type == EditType::Transpose;
-        self.scroll_to = self.view.after_edit(&self.text, &last_text, &delta, is_pristine, keep_selections);
+        self.scroll_to = self.view.after_edit(&self.text, &last_text, &delta, is_pristine,
+            keep_selections, &self.doc_ctx);
         let (iv, new_len) = delta.summary();
         let total_num_lines = self.text.measure::<LinesMetric>() + 1;
 

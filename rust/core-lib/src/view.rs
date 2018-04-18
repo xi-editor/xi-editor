@@ -47,7 +47,7 @@ pub struct View {
     first_line: usize,  // vertical scroll position
     height: usize,  // height of visible portion
     breaks: Option<Breaks>,
-    wrap_col: usize,
+    wrap_col: WrapWidth,
 
     /// Front end's line cache state for this view. See the `LineCacheShadow`
     /// description for the invariant.
@@ -67,6 +67,20 @@ pub struct View {
     occurrences: Option<Selection>,
     /// Set of ranges that have already been searched for the currently active search string
     valid_search: IndexSet,
+}
+
+/// The visual width of the buffer for the purpose of word wrapping.
+enum WrapWidth {
+    /// No wrapping in effect.
+    None,
+
+    /// Width in bytes (utf-8 code units).
+    ///
+    /// Only works well for ASCII, will probably not be maintained long-term.
+    Bytes(usize),
+
+    /// Width in px units, requiring measurement by the front-end.
+    Width(f64),
 }
 
 /// State required to resolve a drag gesture into a selection.
@@ -101,7 +115,7 @@ impl View {
             first_line: 0,
             height: 10,
             breaks: None,
-            wrap_col: 0,
+            wrap_col: WrapWidth::None,
             lc_shadow: LineCacheShadow::default(),
             hls_dirty: true,
             pristine: true,
@@ -555,7 +569,7 @@ impl View {
     pub fn rewrap(&mut self, text: &Rope, wrap_col: usize) {
         if wrap_col > 0 {
             self.breaks = Some(linewrap::linewrap(text, wrap_col));
-            self.wrap_col = wrap_col;
+            self.wrap_col = WrapWidth::Bytes(wrap_col);
         } else {
             self.breaks = None
         }
@@ -567,11 +581,16 @@ impl View {
     ///
     /// Return value is a location of a point that should be scrolled into view.
     pub fn after_edit(&mut self, text: &Rope, last_text: &Rope, delta: &Delta<RopeInfo>,
-        pristine: bool, keep_selections: bool) -> Option<usize>
+        pristine: bool, keep_selections: bool, doc_ctx: &DocumentCtx) -> Option<usize>
     {
         let (iv, new_len) = delta.summary();
         if let Some(breaks) = self.breaks.as_mut() {
-            linewrap::rewrap(breaks, text, iv, new_len, self.wrap_col);
+            match self.wrap_col {
+                WrapWidth::None => (),
+                WrapWidth::Bytes(col) => linewrap::rewrap(breaks, text, iv, new_len, col),
+                WrapWidth::Width(px) =>
+                    linewrap::rewrap_width(breaks, text, doc_ctx, iv, new_len, px),
+            }
         }
         if self.breaks.is_some() {
             // TODO: finer grain invalidation for the line wrapping, needs info
@@ -852,7 +871,9 @@ impl View {
     pub fn wrap_width(&mut self, text: &Rope, tab_ctx: &DocumentCtx,
         style_spans: &Spans<Style>)
     {
-        self.breaks = Some(linewrap::linewrap_width(text, style_spans, tab_ctx, 500.0));
+        let width_px = 500.0;
+        self.breaks = Some(linewrap::linewrap_width(text, style_spans, tab_ctx, width_px));
+        self.wrap_col = WrapWidth::Width(width_px);
     }
 }
 

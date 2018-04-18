@@ -16,7 +16,7 @@
 
 use time;
 
-use xi_rope::rope::{Rope, RopeInfo};
+use xi_rope::rope::{LinesMetric, Rope, RopeInfo};
 use xi_rope::tree::Cursor;
 use xi_rope::interval::Interval;
 use xi_rope::breaks::{Breaks, BreakBuilder, BreaksBaseMetric};
@@ -194,11 +194,11 @@ struct RewrapCtx<'a> {
 const MAX_POT_BREAKS: usize = 10_000;
 
 impl<'a> RewrapCtx<'a> {
-    fn new(text: &'a Rope, _style_spans: &Spans<Style>, doc_ctx: &'a DocumentCtx,
-        max_width: f64, width_cache: &'a mut WidthCache) -> RewrapCtx<'a>
+    fn new(text: &'a Rope, /* _style_spans: &Spans<Style>, */ doc_ctx: &'a DocumentCtx,
+        max_width: f64, width_cache: &'a mut WidthCache, start: usize) -> RewrapCtx<'a>
     {
-        let lb_cursor_pos = 0;
-        let lb_cursor = LineBreakCursor::new(text, 0);
+        let lb_cursor_pos = start;
+        let lb_cursor = LineBreakCursor::new(text, start);
         RewrapCtx {
             text,
             lb_cursor,
@@ -264,13 +264,13 @@ impl<'a> RewrapCtx<'a> {
 }
 
 /// Wrap the text (in batch mode) using width measurement.
-pub fn linewrap_width(text: &Rope, style_spans: &Spans<Style>, doc_ctx: &DocumentCtx,
+pub fn linewrap_width(text: &Rope, _style_spans: &Spans<Style>, doc_ctx: &DocumentCtx,
         max_width: f64) -> Breaks
 {
     // TODO: this should be scoped to the FE. However, it will work (just with
     // degraded performance).
     let mut width_cache = WidthCache::new();
-    let mut ctx = RewrapCtx::new(text, style_spans, doc_ctx, max_width, &mut width_cache);
+    let mut ctx = RewrapCtx::new(text, /* style_spans, */ doc_ctx, max_width, &mut width_cache, 0);
     let mut builder = BreakBuilder::new();
     let mut pos = 0;
     while let Some(next) = ctx.wrap_one_line(pos) {
@@ -279,4 +279,74 @@ pub fn linewrap_width(text: &Rope, style_spans: &Spans<Style>, doc_ctx: &Documen
     }
     builder.add_no_break(text.len() - pos);
     builder.build()
+}
+
+/// Compute a new chunk of breaks after an edit. Returns new breaks to replace
+/// the old ones. The interval [start..end] represents a frontier.
+fn compute_rewrap_width(text: &Rope, /* style_spans: &Spans<Style>, */ doc_ctx: &DocumentCtx,
+    max_width: f64, breaks: &Breaks, start: usize, end: usize) -> Breaks
+{
+    let mut width_cache = WidthCache::new();
+    let mut ctx = RewrapCtx::new(text, /* style_spans, */ doc_ctx, max_width, &mut width_cache, start);
+    let mut builder = BreakBuilder::new();
+    let mut pos = start;
+    let mut break_cursor = Cursor::new(&breaks, end);
+    // TODO: factor this into `at_or_next` method on cursor.
+    let mut next_break = if break_cursor.is_boundary::<BreaksBaseMetric>() {
+        Some(end)
+    } else {
+        break_cursor.next::<BreaksBaseMetric>()
+    };
+    loop {
+        // iterate newly computed breaks and existing breaks until they converge
+        if let Some(new_next) = ctx.wrap_one_line(pos) {
+            while let Some(old_next) = next_break {
+                if old_next >= new_next {
+                    break;
+                }
+                next_break = break_cursor.next::<BreaksBaseMetric>();
+            }
+            // TODO: we might be able to tighten the logic, avoiding this last break,
+            // in some cases (resulting in a smaller delta).
+            builder.add_break(new_next - pos);
+            if let Some(old_next) = next_break {
+                if new_next == old_next {
+                    // Breaking process has converged.
+                    break;
+                }
+            }
+            pos = new_next;
+        } else {
+            // EOF
+            builder.add_no_break(text.len() - pos);
+            break;
+        }
+    }
+    return builder.build();
+}
+
+pub fn rewrap_width(breaks: &mut Breaks, text: &Rope, /* style_spans: &Spans<Style>, */
+    doc_ctx: &DocumentCtx, iv: Interval, newsize: usize, max_width: f64)
+{
+    // First, remove any breaks in edited section.
+    let mut builder = BreakBuilder::new();
+    builder.add_no_break(newsize);
+    breaks.edit(iv, builder.build());
+    // At this point, breaks is aligned with text.
+
+    let mut start = iv.start();
+    let end = start + newsize;
+    // [start..end] is edited range in text
+
+    // Find a point earlier than any possible breaks change. For simplicity, this is the
+    // beginning of the paragraph, but going back two breaks would be better.
+    let mut cursor = Cursor::new(&text, start);
+    if !cursor.is_boundary::<LinesMetric>() {
+        start = cursor.prev::<LinesMetric>().unwrap_or(0);
+    }
+
+    let new_breaks = compute_rewrap_width(text, /* style_spans, */ doc_ctx, max_width, breaks,
+        start, end);
+    let edit_iv = Interval::new_open_closed(start, start + new_breaks.len());
+    breaks.edit(edit_iv, new_breaks);
 }
