@@ -655,7 +655,7 @@ impl Editor {
                                } else { "\t" };
 
         for region in self.view.sel_regions() {
-            let mut sel_text = self.text.slice(region.start, region.end);
+            let mut sel_text = self.text.slice(region.min(), region.max());
             let nb_lines = sel_text.measure::<LinesMetric>() + 1;
 
             if nb_lines > 1 {
