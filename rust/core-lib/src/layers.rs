@@ -22,7 +22,9 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use syntect::parsing::Scope;
 use syntect::highlighting::StyleModifier;
 
+use xi_rope::delta::Delta;
 use xi_rope::interval::Interval;
+use xi_rope::rope::RopeInfo;
 use xi_rope::spans::{Spans, SpansBuilder};
 
 use tabs::DocumentCtx;
@@ -65,16 +67,18 @@ impl Scopes {
         self.layers.get_mut(&layer).unwrap().add_scopes(scopes, doc_ctx);
     }
 
-    /// Inserts empty spans at the given interval for all layers.
+    /// Applies the delta to all layers, inserting empty intervals
+    /// for any regions inserted in the delta.
     ///
     /// This is useful for clearing spans, and for updating spans
     /// as edits occur.
-    pub fn update_all(&mut self, iv: Interval, len: usize) {
-        self.merged.edit(iv, SpansBuilder::new(len).build());
-        let empty_spans = SpansBuilder::new(len).build();
+    pub fn update_all(&mut self, delta: &Delta<RopeInfo>) {
+        self.merged.apply_shape(delta);
+
         for layer in self.layers.values_mut() {
-            layer.update_scopes(iv, &empty_spans);
+            layer.blank_scopes(delta);
         }
+        let (iv, _len) = delta.summary();
         self.resolve_styles(iv);
     }
 
@@ -258,6 +262,14 @@ impl ScopeLayer {
     fn update_scopes(&mut self, iv: Interval, spans: &Spans<u32>) {
         self.scope_spans.edit(iv, spans.to_owned());
         self.update_styles(iv, spans);
+    }
+
+    /// Applies `delta`, which is presumed to contain empty spans.
+    /// This is only used when we receive an edit, to adjust current span
+    /// positions.
+    fn blank_scopes(&mut self, delta: &Delta<RopeInfo>) {
+        self.style_spans.apply_shape(delta);
+        self.scope_spans.apply_shape(delta);
     }
 
     /// Updates `self.style_spans`, mapping scopes to styles and combining

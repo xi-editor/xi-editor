@@ -415,14 +415,13 @@ impl Editor {
         let last_text = self.engine.get_rev(last_token).expect("last_rev not found");
         let keep_selections = self.this_edit_type == EditType::Transpose;
         self.view.after_edit(&self.text, &last_text, &delta, is_pristine, keep_selections);
-        let (iv, new_len) = delta.summary();
         let total_num_lines = self.text.measure::<LinesMetric>() + 1;
 
         // TODO: perhaps use different semantics for spans that enclose the
         // edited region. Currently it breaks any such span in half and applies
         // no spans to the inserted text. That's ok for syntax highlighting but
         // not ideal for rich text.
-        self.styles.update_all(iv, new_len);
+        self.styles.update_all(&delta);
 
         // We increment revs in flight once here, and we decrement once
         // after sending plugin updates, regardless of whether or not any actual
