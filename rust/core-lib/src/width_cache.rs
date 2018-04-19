@@ -79,9 +79,6 @@ impl WidthCache {
 impl<'a> WidthBatchReq<'a> {
 
     /// Request measurement of one string/style pair within the batch.
-    // Note: we could immediately return a width here on cache hit, or
-    // roughly equivalently have a variant of resolve in WidthCache
-    // that returned an Option<width>.
     pub fn request(&mut self, id: usize, s: &str) -> Token {
         let key = WidthCacheKey {
             id,
@@ -115,10 +112,12 @@ impl<'a> WidthBatchReq<'a> {
 
     /// Issue the RPC (synchronously for now). On success, the tokens given by
     /// `request` will resolve in the cache.
-
-    // Note: it would make sense to use a trait for the RPC, so that different width
-    // providers could be used (a mock for testing, one based on unicode_width if
-    // the front-end didn't support width measurement, a binary binding, etc).
+    ///
+    /// Note: this currently takes a document context so we can issue an RPC to
+    /// the front-end, but it would probably be better to use a more general width
+    /// measurement trait, so that different width providers could be used (a mock
+    /// for testing, one based on unicode_width if the front-end didn't support
+    /// width measurement, a binary binding, etc).
     pub fn issue(&mut self, doc_ctx: &DocumentCtx) -> Result<(), xi_rpc::Error> {
         // The 0.0 values should all get replaced with actual widths, assuming the
         // shape of the response from the front-end matches that of the request.

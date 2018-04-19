@@ -171,8 +171,11 @@ pub fn rewrap(breaks: &mut Breaks, text: &Rope, iv: Interval, newsize: usize, co
 /// have been requested (in a batch request) but are not necessarily known until
 /// the request is issued.
 struct PotentialBreak {
-    pos: usize,  // offset within text of the end of the word
+    /// The offset within the text of the end of the word.
+    pos: usize,
+    /// A token referencing the width of the word, to be resolved in the width cache.
     tok: Token,
+    /// Whether the break is a hard break or a soft break.
     hard: bool,
 }
 
@@ -232,9 +235,9 @@ impl<'a> RewrapCtx<'a> {
         self.lb_cursor_pos = pos;
     }
 
-    // Compute the next break, assuming `start` is a valid break.
-    //
-    // Invariant: start corresponds to the start of the word referenced by pot_break_ix.
+    /// Compute the next break, assuming `start` is a valid break.
+    ///
+    /// Invariant: `start` corresponds to the start of the word referenced by `pot_break_ix`.
     fn wrap_one_line(&mut self, start: usize) -> Option<usize> {
         let mut line_width = 0.0;
         let mut pos = start;

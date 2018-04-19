@@ -32,8 +32,6 @@ use notify::DebouncedEvent;
 use xi_rope::rope::Rope;
 use xi_rpc::{self, RpcCtx, RemoteError};
 use xi_trace::{self, trace_block};
-//use xi_rpc::{self, RpcCtx, RemoteError};
-//use xi_trace;
 
 use editor::Editor;
 
