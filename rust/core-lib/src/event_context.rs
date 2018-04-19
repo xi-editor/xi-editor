@@ -538,6 +538,7 @@ mod tests {
 
     #[test]
     fn simple_indentation_test() {
+        use rpc::GestureType::*;
         let harness = ContextHarness::new("");
         let mut ctx = harness.make_context();
         // Single indent and outdent test
@@ -546,8 +547,16 @@ mod tests {
         assert_eq!(harness.debug_render(),"    hello|");
         ctx.do_edit(EditNotification::Outdent);
         assert_eq!(harness.debug_render(),"hello|");
+        
+        // Test when outdenting with less than 4 spaces
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 0, ty: PointSelect });
+        ctx.do_edit(EditNotification::Insert { chars: "  ".into() });
+        assert_eq!(harness.debug_render(),"  |hello");
+        ctx.do_edit(EditNotification::Outdent);
+        assert_eq!(harness.debug_render(),"|hello");
 
         // Non-selection one line indent and outdent test
+        ctx.do_edit(EditNotification::MoveToEndOfDocument);
         ctx.do_edit(EditNotification::Indent);
         ctx.do_edit(EditNotification::InsertNewline);
         ctx.do_edit(EditNotification::Insert { chars: "world".into() });
@@ -592,6 +601,7 @@ mod tests {
         lines." );
 
         ctx.do_edit(EditNotification::Outdent);
+        ctx.do_edit(EditNotification::Outdent);
         assert_eq!(harness.debug_render(),"\
         this |is a string\n\
         that |has three\n\
@@ -633,8 +643,26 @@ mod tests {
         that has three\n\
         lines.|]" );
 
-        ctx.do_edit(EditNotification::Gesture { line: 1, col: 1, ty: PointSelect });
-        ctx.do_edit(EditNotification::Gesture { line: 3, col: 1, ty: ToggleSel });
+        // Multi cursor different line indent test
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 0, ty: PointSelect });
+        ctx.do_edit(EditNotification::Gesture { line: 2, col: 0, ty: ToggleSel });
+        assert_eq!(harness.debug_render(),"\
+        |this is a string\n\
+        that has three\n\
+        |lines." );
 
+        ctx.do_edit(EditNotification::Indent);
+        assert_eq!(harness.debug_render(),"    \
+        |this is a string\n\
+        that has three\n    \
+        |lines." );
+
+        ctx.do_edit(EditNotification::Outdent);
+        assert_eq!(harness.debug_render(),"\
+        |this is a string\n\
+        that has three\n\
+        |lines." );
     }
+
+
 }
