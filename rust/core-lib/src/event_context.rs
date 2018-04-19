@@ -171,8 +171,7 @@ impl<'a> EventContext<'a> {
         let iter_views = iter::once(&self.view).chain(self.siblings.iter());
         iter_views.for_each(|view| view.borrow_mut()
                             .after_edit(ed.get_buffer(), &last_text,
-                                        &delta, ed.is_pristine(),
-                                        keep_sels));
+                                        &delta, keep_sels));
 
         let new_len = delta.new_document_len();
         let nb_lines = ed.get_buffer().measure::<LinesMetric>() + 1;
@@ -214,7 +213,7 @@ impl<'a> EventContext<'a> {
         //TODO: render other views
         self.view.borrow_mut()
             .render_if_dirty(ed.get_buffer(), self.client, self.style_map,
-                             ed.get_layers().get_merged())
+                             ed.get_layers().get_merged(), ed.is_pristine())
     }
 }
 
@@ -341,7 +340,8 @@ impl<'a> EventContext<'a> {
         let mut view = self.view.borrow_mut();
         let ed = self.editor.borrow();
         view.request_lines(ed.get_buffer(), self.client, self.style_map,
-                           ed.get_layers().get_merged(), first, last)
+                           ed.get_layers().get_merged(), first, last,
+                           ed.is_pristine())
 
     }
 }

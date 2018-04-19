@@ -156,6 +156,15 @@ impl Editor {
         self.this_edit_type = EditType::Other
     }
 
+    pub(crate) fn set_pristine(&mut self) {
+        self.pristine_rev_id = self.engine.get_head_rev_id();
+    }
+
+    pub(crate) fn is_pristine(&self) -> bool {
+        self.engine.is_equivalent_revision(self.pristine_rev_id,
+                                           self.engine.get_head_rev_id())
+    }
+
     /// Sets this Editor's contents to `text`, preserving undo state and cursor
     /// position when possible.
     pub fn reload(&mut self, text: Rope) {
@@ -163,7 +172,7 @@ impl Editor {
         let all_iv = Interval::new_closed_open(0, self.text.len());
         builder.replace(all_iv, text);
         self.add_delta(builder.build());
-        self.pristine_rev_id = self.engine.get_head_rev_id();
+        self.set_pristine();
     }
 
     /// Sets the config for this buffer. If the new config differs
@@ -305,15 +314,6 @@ impl Editor {
     fn gc_undos(&mut self) {
         // Never run GC on Fuchsia so that peers don't invalidate our
         // last_rev_id and so that merge will work.
-    }
-
-    pub(crate) fn set_pristine(&mut self) {
-        self.pristine_rev_id = self.last_rev_id
-    }
-
-    pub(crate) fn is_pristine(&self) -> bool {
-        self.engine.is_equivalent_revision(self.pristine_rev_id,
-                                           self.engine.get_head_rev_id())
     }
 
     pub fn merge_new_state(&mut self, new_engine: Engine) {

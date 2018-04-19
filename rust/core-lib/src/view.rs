@@ -70,9 +70,6 @@ pub struct View {
     /// The occurrences, which determine the highlights, have been updated.
     hls_dirty: bool,
 
-    /// Tracks whether or not the view has unsaved changes.
-    pristine: bool,
-
     /// New offset to be scrolled into position after an edit.
     scroll_to: Option<usize>,
 
@@ -116,7 +113,6 @@ impl View {
             wrap_col: 0,
             lc_shadow: LineCacheShadow::default(),
             hls_dirty: true,
-            pristine: true,
             search_string: None,
             case_matching: CaseMatching::CaseInsensitive,
             occurrences: None,
@@ -575,7 +571,7 @@ impl View {
 
     fn send_update_for_plan(&mut self, text: &Rope, client: &Client,
                             styles: &StyleMap, style_spans: &Spans<Style>,
-                            plan: &RenderPlan)
+                            plan: &RenderPlan, pristine: bool)
     {
         if !self.lc_shadow.needs_render(plan) { return; }
 
@@ -644,20 +640,24 @@ impl View {
         }
         let params = json!({
             "ops": ops,
-            "pristine": self.pristine,
+            "pristine": pristine,
         });
         client.update_view(self.view_id, &params);
         self.lc_shadow = b.build();
         self.hls_dirty = false;
     }
 
-    // Update front-end with any changes to view since the last time sent.
+    /// Update front-end with any changes to view since the last time sent.
+    /// The `pristine` argument indicates whether or not the buffer has
+    /// unsaved changes.
     pub fn render_if_dirty(&mut self, text: &Rope, client: &Client,
-                           styles: &StyleMap, style_spans: &Spans<Style>)
+                           styles: &StyleMap, style_spans: &Spans<Style>,
+                           pristine: bool)
     {
         let height = self.line_of_offset(text, text.len()) + 1;
         let plan = RenderPlan::create(height, self.first_line, self.height);
-        self.send_update_for_plan(text, client, styles, style_spans, &plan);
+        self.send_update_for_plan(text, client, styles,
+                                  style_spans, &plan, pristine);
         if let Some(new_scroll_pos) = self.scroll_to.take() {
             let (line, col) = self.offset_to_line_col(text, new_scroll_pos);
             client.scroll_to(self.view_id, line, col);
@@ -667,11 +667,12 @@ impl View {
     // Send the requested lines even if they're outside the current scroll region.
     pub fn request_lines(&mut self, text: &Rope, client: &Client,
                          styles: &StyleMap, style_spans: &Spans<Style>,
-                         first_line: usize, last_line: usize) {
+                         first_line: usize, last_line: usize, pristine: bool) {
         let height = self.line_of_offset(text, text.len()) + 1;
         let mut plan = RenderPlan::create(height, self.first_line, self.height);
         plan.request_lines(first_line, last_line);
-        self.send_update_for_plan(text, client, styles, style_spans, &plan);
+        self.send_update_for_plan(text, client, styles,
+                                  style_spans, &plan, pristine);
     }
 
     /// Invalidates front-end's entire line cache, forcing a full render at the next
@@ -761,7 +762,7 @@ impl View {
     /// This method is responsible for updating the cursors, and also for
     /// recomputing line wraps.
     pub fn after_edit(&mut self, text: &Rope, last_text: &Rope, delta: &Delta<RopeInfo>,
-        pristine: bool, keep_selections: bool)
+        keep_selections: bool)
     {
         let (iv, new_len) = delta.summary();
         if let Some(breaks) = self.breaks.as_mut() {
@@ -777,7 +778,6 @@ impl View {
             let new_end = self.line_of_offset(text, iv.start() + new_len) + 1;
             self.lc_shadow.edit(start, end, new_end - start);
         }
-        self.pristine = pristine;
         // Any edit cancels a drag. This is good behavior for edits initiated through
         // the front-end, but perhaps not for async edits.
         self.drag_state = None;
@@ -812,11 +812,6 @@ impl View {
         // of the delta so we can set the cursor before or after the edit, as needed.
         let new_sel = self.selection.apply_delta(delta, true, keep_selections);
         self.set_selection_for_edit(text, new_sel);
-    }
-
-    /// Call to mark view as pristine. Used after a buffer is saved.
-    pub fn set_pristine(&mut self) {
-        self.pristine = true;
     }
 
     pub fn do_find(&mut self, text: &Rope, chars: Option<String>,
