@@ -88,6 +88,7 @@ pub mod internal {
     #[cfg(feature = "notify")]
     pub mod watcher;
     pub mod line_cache_shadow;
+    pub mod width_cache;
 }
 
 pub use plugins::rpc as plugin_rpc;
@@ -112,6 +113,7 @@ use internal::config;
 #[cfg(feature = "notify")]
 use internal::watcher;
 use internal::line_cache_shadow;
+use internal::width_cache;
 #[cfg(feature = "ledger")]
 use internal::fuchsia;
 

@@ -414,7 +414,8 @@ impl Editor {
         // resynthesize it.
         let last_text = self.engine.get_rev(last_token).expect("last_rev not found");
         let keep_selections = self.this_edit_type == EditType::Transpose;
-        self.view.after_edit(&self.text, &last_text, &delta, is_pristine, keep_selections);
+        self.view.after_edit(&self.text, &last_text, &delta, is_pristine, keep_selections,
+            &self.doc_ctx);
         let total_num_lines = self.text.measure::<LinesMetric>() + 1;
 
         // TODO: perhaps use different semantics for spans that enclose the
@@ -898,6 +899,11 @@ impl Editor {
         self.view.set_dirty(&self.text);
     }
 
+    fn debug_wrap_width(&mut self) {
+        self.view.wrap_width(&self.text, &self.doc_ctx, self.styles.get_merged());
+        self.view.set_dirty(&self.text);
+    }
+
     fn debug_print_spans(&self) {
         // get last sel region
         let last_sel = self.view.sel_regions().last().unwrap();
@@ -1135,6 +1141,7 @@ impl Editor {
             FindNext { wrap_around, allow_same } => self.do_find_next(false, wrap_around.unwrap_or(false), allow_same.unwrap_or(false)),
             FindPrevious { wrap_around } => self.do_find_next(true, wrap_around.unwrap_or(false), true),
             DebugRewrap => self.debug_rewrap(),
+            DebugWrapWidth => self.debug_wrap_width(),
             DebugPrintSpans => self.debug_print_spans(),
             CancelOperation => self.do_cancel_operation(),
             Uppercase => self.transform_text(|s| s.to_uppercase()),

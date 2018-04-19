@@ -25,12 +25,12 @@ use std::time::SystemTime;
 
 use serde::de::{Deserialize, Deserializer};
 use serde::ser::{Serialize, Serializer};
-use serde_json::Value;
+use serde_json::{self, Value};
 #[cfg(feature = "notify")]
 use notify::DebouncedEvent;
 
 use xi_rope::rope::Rope;
-use xi_rpc::{RpcCtx, RemoteError};
+use xi_rpc::{self, RpcCtx, RemoteError};
 use xi_trace::{self, trace_block};
 
 use editor::Editor;
@@ -131,6 +131,14 @@ pub struct DocumentCtx {
     rpc_peer: MainPeer,
     style_map: Arc<Mutex<ThemeStyleMap>>,
     update_channel: mpsc::Sender<(ViewIdentifier, PluginUpdate, usize)>
+}
+
+#[derive(Serialize, Deserialize)]
+/// A request for measuring the widths of strings all of the same style (a request
+/// from core to front-end).
+pub struct WidthReq {
+    pub id: usize,
+    pub strings: Vec<String>,
 }
 
 /// A trait for closure types which are callable with a `Documents` instance.
@@ -1010,6 +1018,13 @@ impl DocumentCtx {
     pub fn update_plugins(&self, view_id: ViewIdentifier,
                           update: PluginUpdate, undo_group: usize) {
         self.update_channel.send((view_id, update, undo_group)).unwrap();
+    }
+
+    /// Ask front-end to measure widths of strings.
+    pub fn measure_width(&self, reqs: &[WidthReq]) -> Result<Vec<Vec<f64>>, xi_rpc::Error> {
+        let req_json = serde_json::to_value(reqs).expect("failed to serialize width req");
+        let resp = self.rpc_peer.send_rpc_request("measure_width", &req_json)?;
+        Ok(serde_json::from_value(resp).expect("failed to deserialize width response"))
     }
 }
 
