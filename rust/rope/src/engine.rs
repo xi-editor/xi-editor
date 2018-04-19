@@ -365,7 +365,7 @@ impl Engine {
             max_undo_so_far: std::cmp::max(undo_group, head_rev.max_undo_so_far),
             edit: Edit {
                 priority: new_priority,
-                undo_group: undo_group,
+                undo_group,
                 inserts: new_inserts,
                 deletes: new_deletes,
             }
@@ -532,10 +532,10 @@ impl Engine {
                             rev_id: rev.rev_id,
                             max_undo_so_far: rev.max_undo_so_far,
                             edit: Edit {
-                                priority: priority,
-                                undo_group: undo_group,
-                                inserts: inserts,
-                                deletes: deletes,
+                                priority,
+                                undo_group,
+                                inserts,
+                                deletes,
                             }
                         });
                     }
@@ -556,7 +556,7 @@ impl Engine {
                             rev_id: rev.rev_id,
                             max_undo_so_far: rev.max_undo_so_far,
                             edit: Undo {
-                                toggled_groups: &toggled_groups - &gc_groups,
+                                toggled_groups: &toggled_groups - gc_groups,
                                 deletes_bitxor: new_deletes_bitxor,
                             }
                         })
@@ -632,11 +632,11 @@ fn shuffle(text: &Rope, tombstones: &Rope,
 
 /// Find an index before which everything is the same
 fn find_base_index(a: &[Revision], b: &[Revision]) -> usize {
-    assert!(a.len() > 0 && b.len() > 0);
+    assert!(!a.is_empty() && !b.is_empty());
     assert!(a[0].rev_id == b[0].rev_id);
     // TODO find the maximum base revision.
     // this should have the same behavior, but worse performance
-    return 1;
+    1
 }
 
 /// Find a set of revisions common to both lists
@@ -745,7 +745,7 @@ fn compute_deltas(revs: &[Revision], text: &Rope, tombstones: &Rope, deletes_fro
 fn compute_transforms(revs: Vec<Revision>) -> Vec<(FullPriority, Subset)> {
     let mut out = Vec::new();
     let mut last_priority: Option<usize> = None;
-    for r in revs.into_iter() {
+    for r in revs {
         if let Contents::Edit {priority, inserts, .. } = r.edit {
             if inserts.is_empty() {
                 continue;
@@ -770,7 +770,7 @@ fn rebase(mut expand_by: Vec<(FullPriority, Subset)>, b_new: Vec<DeltaOp>, mut t
     let mut out = Vec::with_capacity(b_new.len());
 
     let mut next_expand_by = Vec::with_capacity(expand_by.len());
-    for op in b_new.into_iter() {
+    for op in b_new {
         let DeltaOp { rev_id, priority, undo_group, mut inserts, mut deletes } = op;
         let full_priority = FullPriority { priority, session_id: rev_id.session_id() };
         // expand by each in expand_by

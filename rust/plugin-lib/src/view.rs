@@ -23,9 +23,7 @@ use xi_trace::trace_block;
 
 use xi_rpc::RpcPeer;
 
-use plugin_base::{Error, DataSource};
-
-use global::Cache;
+use super::{Cache, Error, DataSource};
 
 /// A type that acts as a proxy for a remote view. Provides access to
 /// a document cache, and implements various methods for querying and modifying

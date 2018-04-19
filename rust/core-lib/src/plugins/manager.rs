@@ -137,12 +137,12 @@ impl PluginManager {
         let params = serde_json::to_value(params)
             .expect(&format!("bad notif params.\nmethod: {}\nparams: {:?}",
                              method, params));
-        for (_, plugin) in self.global_plugins.iter() {
+        for plugin in self.global_plugins.values() {
             plugin.rpc_notification(method, &params);
         }
         if !only_globals {
             if let Ok(locals) = self.running_for_view(view_id) {
-                for (_, plugin) in locals {
+                for plugin in locals.values() {
                     plugin.rpc_notification(method, &params);
                 }
             }
@@ -433,7 +433,7 @@ impl PluginManagerRef {
                 buffer_plugins: BTreeMap::new(),
                 global_plugins: PluginGroup::new(),
                 launching_globals: BTreeSet::new(),
-                buffers: buffers,
+                buffers,
                 next_id: 0,
             }
         )))

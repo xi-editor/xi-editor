@@ -16,7 +16,7 @@ use std::cmp::{min,max};
 use std::mem;
 use std::ops::Range;
 
-use serde_json::value::Value;
+use serde_json::Value;
 
 use xi_rope::rope::{Rope, LinesMetric, RopeInfo};
 use xi_rope::delta::{Delta, DeltaRegion};
@@ -49,7 +49,7 @@ pub struct View {
     first_line: usize,  // vertical scroll position
     height: usize,  // height of visible portion
     breaks: Option<Breaks>,
-    wrap_col: usize,
+    wrap_col: WrapWidth,
 
     /// Front end's line cache state for this view. See the `LineCacheShadow`
     /// description for the invariant.
@@ -72,6 +72,20 @@ pub struct View {
     occurrences: Option<Selection>,
     /// Set of ranges that have already been searched for the currently active search string
     valid_search: IndexSet,
+}
+
+/// The visual width of the buffer for the purpose of word wrapping.
+enum WrapWidth {
+    /// No wrapping in effect.
+    None,
+
+    /// Width in bytes (utf-8 code units).
+    ///
+    /// Only works well for ASCII, will probably not be maintained long-term.
+    Bytes(usize),
+
+    /// Width in px units, requiring measurement by the front-end.
+    Width(f64),
 }
 
 /// State required to resolve a drag gesture into a selection.
@@ -100,7 +114,7 @@ impl View {
             first_line: 0,
             height: 10,
             breaks: None,
-            wrap_col: 0,
+            wrap_col: WrapWidth::None,
             lc_shadow: LineCacheShadow::default(),
             hls_dirty: true,
             pristine: true,
@@ -148,7 +162,7 @@ impl View {
         }
         self.drag_state = Some(DragState {
             base_sel: selection.clone(),
-            offset: offset,
+            offset,
             min: offset,
             max: offset,
         });
@@ -313,7 +327,7 @@ impl View {
     pub fn collapse_selections(&mut self, text: &Rope) {
         let mut sel = self.selection.clone();
         sel.collapse();
-        &self.set_selection(text, sel);
+        self.set_selection(text, sel);
     }
 
     /// Determines whether the offset is in any selection (counting carets and
@@ -596,7 +610,7 @@ impl View {
     pub fn rewrap(&mut self, text: &Rope, wrap_col: usize) {
         if wrap_col > 0 {
             self.breaks = Some(linewrap::linewrap(text, wrap_col));
-            self.wrap_col = wrap_col;
+            self.wrap_col = WrapWidth::Bytes(wrap_col);
         } else {
             self.breaks = None
         }
@@ -606,11 +620,16 @@ impl View {
     /// This method is responsible for updating the cursors, and also for
     /// recomputing line wraps.
     pub fn after_edit(&mut self, text: &Rope, last_text: &Rope, delta: &Delta<RopeInfo>,
-        pristine: bool, keep_selections: bool)
+        pristine: bool, keep_selections: bool, doc_ctx: &DocumentCtx)
     {
         let (iv, new_len) = delta.summary();
         if let Some(breaks) = self.breaks.as_mut() {
-            linewrap::rewrap(breaks, text, iv, new_len, self.wrap_col);
+            match self.wrap_col {
+                WrapWidth::None => (),
+                WrapWidth::Bytes(col) => linewrap::rewrap(breaks, text, iv, new_len, col),
+                WrapWidth::Width(px) =>
+                    linewrap::rewrap_width(breaks, text, doc_ctx, iv, new_len, px),
+            }
         }
         if self.breaks.is_some() {
             // TODO: finer grain invalidation for the line wrapping, needs info
@@ -630,7 +649,7 @@ impl View {
         // Update search highlights for changed regions
         if self.search_string.is_some() {
             self.valid_search = self.valid_search.apply_delta(delta);
-            let mut occurrences = self.occurrences.take().unwrap_or_else(|| Selection::new());
+            let mut occurrences = self.occurrences.take().unwrap_or_else(Selection::new);
 
             // invalidate occurrences around deletion positions
             for DeltaRegion{ old_offset, new_offset, len } in delta.iter_deletions() {
@@ -716,7 +735,7 @@ impl View {
         // extend the search by twice the string length (twice, because case matching may increase
         // the length of an occurrence)
         let slop = if include_slop { self.search_string.as_ref().unwrap().len() * 2 } else { 0 };
-        let mut occurrences = self.occurrences.take().unwrap_or_else(|| Selection::new());
+        let mut occurrences = self.occurrences.take().unwrap_or_else(Selection::new);
         let mut searched_until = end;
         let mut invalidate_from = None;
 
@@ -733,39 +752,34 @@ impl View {
             let text = text.subseq(Interval::new_closed_open(0, to));
             let mut cursor = Cursor::new(&text, from);
 
-            loop {
-                match find(&mut cursor, self.case_matching, &search_string) {
-                    Some(start) => {
-                        let end = start + len;
+            while let Some(start) = find(&mut cursor, self.case_matching, &search_string) {
+                let end = start + len;
 
-                        let region = SelRegion::new(start, end);
-                        let prev_len = occurrences.len();
-                        let (_, e) = occurrences.add_range_distinct(region);
-                        // in case of ambiguous search results (e.g. search "aba" in "ababa"),
-                        // the search result closer to the beginning of the file wins
-                        if e != end {
-                            // Skip the search result and keep the occurrence that is closer to
-                            // the beginning of the file. Re-align the cursor to the kept
-                            // occurrence
-                            cursor.set(e);
-                            continue;
-                        }
+                let region = SelRegion::new(start, end);
+                let prev_len = occurrences.len();
+                let (_, e) = occurrences.add_range_distinct(region);
+                // in case of ambiguous search results (e.g. search "aba" in "ababa"),
+                // the search result closer to the beginning of the file wins
+                if e != end {
+                    // Skip the search result and keep the occurrence that is closer to
+                    // the beginning of the file. Re-align the cursor to the kept
+                    // occurrence
+                    cursor.set(e);
+                    continue;
+                }
 
-                        // add_range_distinct() above removes ambiguous regions after the added
-                        // region, if something has been deleted, everything thereafter is
-                        // invalidated
-                        if occurrences.len() != prev_len + 1 {
-                            invalidate_from = Some(end);
-                            occurrences.delete_range(end, text_len, false);
-                            break;
-                        }
+                // add_range_distinct() above removes ambiguous regions after the added
+                // region, if something has been deleted, everything thereafter is
+                // invalidated
+                if occurrences.len() != prev_len + 1 {
+                    invalidate_from = Some(end);
+                    occurrences.delete_range(end, text_len, false);
+                    break;
+                }
 
-                        if stop_on_found {
-                            searched_until = end;
-                            break;
-                        }
-                    }
-                    None => break,
+                if stop_on_found {
+                    searched_until = end;
+                    break;
                 }
             }
         }
@@ -849,7 +863,7 @@ impl View {
                         })
                     }
                 }
-            }).map(|o| o.clone());
+            }).cloned();
 
             let region = {
                 let mut unsearched = self.valid_search.minus_one_range(from, to);
@@ -895,6 +909,16 @@ impl View {
         };
         let line_range = first_line..(last_line + 1);
         line_range
+  }
+
+    /// Generate line breaks based on width measurement. Currently batch-mode,
+    /// and currently in a debugging state.
+    pub fn wrap_width(&mut self, text: &Rope, tab_ctx: &DocumentCtx,
+        style_spans: &Spans<Style>)
+    {
+        let width_px = 500.0;
+        self.breaks = Some(linewrap::linewrap_width(text, style_spans, tab_ctx, width_px));
+        self.wrap_col = WrapWidth::Width(width_px);
     }
 }
 

@@ -118,9 +118,9 @@ impl IndexSet {
             ranges = &ranges[1..];
         }
         MinusIter {
-            ranges: ranges,
-            start: start,
-            end: end,
+            ranges,
+            start,
+            end,
         }
     }
 
@@ -129,7 +129,7 @@ impl IndexSet {
     pub fn apply_delta(&self, delta: &Delta<RopeInfo>) -> IndexSet {
         let mut ranges: Vec<(usize, usize)> = Vec::new();
         let mut transformer = Transformer::new(delta);
-        for &(start, end) in self.ranges.iter() {
+        for &(start, end) in &self.ranges {
             let new_range = (
                 transformer.transform(start, false),
                 transformer.transform(end, false)
@@ -137,7 +137,7 @@ impl IndexSet {
             if new_range.0 == new_range.1 {
                 continue; // remove collapsed regions
             }
-            if ranges.len() > 0 {
+            if !ranges.is_empty() {
                 let ix = ranges.len() - 1;
                 if ranges[ix].1 == new_range.0 {
                     ranges[ix] = (ranges[ix].0, new_range.1);
@@ -146,7 +146,7 @@ impl IndexSet {
             }
             ranges.push(new_range);
         }
-        IndexSet { ranges: ranges }
+        IndexSet { ranges }
     }
 
     #[cfg(test)]

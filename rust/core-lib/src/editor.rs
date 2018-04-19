@@ -166,15 +166,15 @@ impl Editor {
 
         let mut editor = Editor {
             text: buffer,
-            encoding: encoding,
-            buffer_id: buffer_id,
+            encoding,
+            buffer_id,
             path: None,
             file_mod_time: None,
             file_has_changed: false,
             syntax: SyntaxDefinition::default(),
             view: View::new(initial_view_id),
-            engine: engine,
-            last_rev_id: last_rev_id,
+            engine,
+            last_rev_id,
             pristine_rev_id: last_rev_id,
             undo_group_id: 1,
             // GC only works on undone edits or prefixes of the visible edits,
@@ -187,8 +187,8 @@ impl Editor {
             last_edit_type: EditType::Other,
             this_edit_type: EditType::Other,
             styles: Scopes::default(),
-            doc_ctx: doc_ctx,
-            config: config,
+            doc_ctx,
+            config,
             revs_in_flight: 0,
             sync_store: None,
             last_synced_rev: last_rev_id,
@@ -240,7 +240,7 @@ impl Editor {
 
         // preserve a single caret
         self.view.collapse_selections(&self.text);
-        let prev_sel = self.view.sel_regions().first().map(|s| s.clone());
+        let prev_sel = self.view.sel_regions().first().cloned();
         self.view.unset_find(&self.text);
 
         let mut builder = delta::Builder::new(self.text.len());
@@ -318,7 +318,7 @@ impl Editor {
         let config = self.config.to_table();
         PluginBufferInfo::new(self.buffer_id, &views,
                               self.engine.get_head_rev_id().token(), self.text.len(),
-                              nb_lines, self.path.clone(), self.syntax.clone(),
+                              nb_lines, self.path.clone(), self.syntax,
                               config)
     }
 
@@ -414,15 +414,15 @@ impl Editor {
         // resynthesize it.
         let last_text = self.engine.get_rev(last_token).expect("last_rev not found");
         let keep_selections = self.this_edit_type == EditType::Transpose;
-        self.view.after_edit(&self.text, &last_text, &delta, is_pristine, keep_selections);
-        let (iv, new_len) = delta.summary();
+        self.view.after_edit(&self.text, &last_text, &delta, is_pristine, keep_selections,
+            &self.doc_ctx);
         let total_num_lines = self.text.measure::<LinesMetric>() + 1;
 
         // TODO: perhaps use different semantics for spans that enclose the
         // edited region. Currently it breaks any such span in half and applies
         // no spans to the inserted text. That's ok for syntax highlighting but
         // not ideal for rich text.
-        self.styles.update_all(iv, new_len);
+        self.styles.update_all(&delta);
 
         // We increment revs in flight once here, and we decrement once
         // after sending plugin updates, regardless of whether or not any actual
@@ -910,6 +910,11 @@ impl Editor {
         self.view.set_dirty(&self.text);
     }
 
+    fn debug_wrap_width(&mut self) {
+        self.view.wrap_width(&self.text, &self.doc_ctx, self.styles.get_merged());
+        self.view.set_dirty(&self.text);
+    }
+
     fn debug_print_spans(&self) {
         // get last sel region
         let last_sel = self.view.sel_regions().last().unwrap();
@@ -1025,7 +1030,7 @@ impl Editor {
         }
 
         let search_string = search_string.unwrap();
-        if search_string.len() == 0 {
+        if search_string.is_empty() {
             self.view.unset_find(&self.text);
             return Value::Null;
         }
@@ -1147,6 +1152,7 @@ impl Editor {
             FindNext { wrap_around, allow_same } => self.do_find_next(false, wrap_around.unwrap_or(false), allow_same.unwrap_or(false)),
             FindPrevious { wrap_around } => self.do_find_next(true, wrap_around.unwrap_or(false), true),
             DebugRewrap => self.debug_rewrap(),
+            DebugWrapWidth => self.debug_wrap_width(),
             DebugPrintSpans => self.debug_print_spans(),
             CancelOperation => self.do_cancel_operation(),
             Uppercase => self.transform_text(|s| s.to_uppercase()),

@@ -79,7 +79,7 @@ impl Style {
     {
         assert!(priority <= 1000);
         Style {
-            priority: priority,
+            priority,
             fg_color: fg_color.into(),
             bg_color: bg_color.into(),
             weight: weight.into(),
@@ -128,7 +128,7 @@ impl Style {
     /// Note: this should only be used when sending the `def_style` RPC.
     pub fn to_json(&self, id: usize) -> Value {
         let mut as_val = serde_json::to_value(self).expect("failed to encode style");
-        as_val["id"] = serde_json::to_value(id).unwrap();
+        as_val["id"] = id.into();
         as_val
     }
 
@@ -159,10 +159,10 @@ impl ThemeStyleMap {
         let default_style = Style::default_for_theme(&theme);
 
         ThemeStyleMap {
-            themes: themes,
-            theme_name: theme_name,
-            theme: theme,
-            default_style: default_style,
+            themes,
+            theme_name,
+            theme,
+            default_style,
             map: HashMap::new(),
             styles: Vec::new(),
         }
@@ -172,7 +172,7 @@ impl ThemeStyleMap {
         &self.default_style
     }
 
-    pub fn get_highlighter<'a>(&'a self) -> Highlighter<'a> {
+    pub fn get_highlighter(&self) -> Highlighter {
         Highlighter::new(&self.theme)
     }
 
@@ -180,7 +180,7 @@ impl ThemeStyleMap {
         &self.theme_name
     }
 
-    pub fn get_theme_settings<'a>(&'a self) -> &ThemeSettings {
+    pub fn get_theme_settings(&self) -> &ThemeSettings {
         &self.theme.settings
     }
 
@@ -209,7 +209,7 @@ impl ThemeStyleMap {
     }
 
     pub fn lookup(&self, style: &Style) -> Option<usize> {
-        self.map.get(style).map(|&ix| ix)
+        self.map.get(style).cloned()
     }
 
     pub fn add(&mut self, style: &Style) -> usize {

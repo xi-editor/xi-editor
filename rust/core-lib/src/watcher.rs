@@ -196,7 +196,7 @@ impl FileWatcher {
                     .map(|w| (w.path.to_owned(), mode_from_bool(w.recursive)))
                     .collect::<Vec<_>>();
 
-                for (path, mode) in to_add.into_iter() {
+                for (path, mode) in to_add {
                     if let Err(e) = self.inner.watch(&path, mode) {
                         eprintln!("watching error {:?}", e);
                     }
@@ -234,7 +234,7 @@ impl Watchee {
 
     fn applies_to_path(&self, path: &Path) -> bool {
         let general_case = if path.starts_with(&self.path) {
-            (self.recursive || &self.path == path) ||
+            (self.recursive || self.path == path) ||
                 path.parent() == Some(&self.path)
         } else {
             false
@@ -528,14 +528,13 @@ mod tests {
         assert_eq!(w.state.lock().unwrap().watchees.len(), 2);
         w.unwatch(&tmp.mkpath("my_file"), 1.into());
         assert_eq!(w.state.lock().unwrap().watchees.len(), 1);
-        sleep_if_macos(30_100);
+        sleep_if_macos(1000);
+        let path = tmp.mkpath("my_file");
         tmp.remove("my_file");
         sleep_if_macos(1000);
         let _ = recv_all(&rx, Duration::from_millis(1000));
         let events = w.take_events();
-        assert_eq!(events, vec![
-                   (2.into(), DebouncedEvent::NoticeRemove(tmp.mkpath("my_file"))),
-                   (2.into(), DebouncedEvent::Remove(tmp.mkpath("my_file"))),
-        ]);
+        assert!(events.contains(&(2.into(), DebouncedEvent::NoticeRemove(path.clone()))));
+        assert!(!events.contains(&(1.into(), DebouncedEvent::NoticeRemove(path))));
     }
 }

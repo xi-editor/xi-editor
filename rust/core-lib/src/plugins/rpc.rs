@@ -267,7 +267,7 @@ impl TextUnit {
                     if text.is_codepoint_boundary(offset) {
                         offset.into()
                     } else {
-                        text.prev_codepoint_offset(offset).into()
+                        text.prev_codepoint_offset(offset)
                     }
                 }
             }

@@ -167,15 +167,10 @@ pub fn start_update_thread(
 {
     let manager_ref = manager_ref.clone();
     thread::spawn(move ||{
-        loop {
-            match rx.recv() {
-                Ok((view_id, update, undo_group)) => {
-                    if let Some(err) = manager_ref.update_plugins(
-                        view_id, update, undo_group).err() {
-                        eprintln!("error updating plugins {:?}", err);
-                    }
-                }
-                Err(_) => break,
+        while let Ok((view_id, update, undo_group)) = rx.recv() {
+            if let Some(err) = manager_ref.update_plugins(
+                view_id, update, undo_group).err() {
+                eprintln!("error updating plugins {:?}", err);
             }
         }
     });
@@ -207,10 +202,10 @@ pub fn start_plugin_process<C>(manager_ref: &PluginManagerRef,
                 let peer: RpcPeer = Box::new(looper.get_raw_peer());
                 peer.send_rpc_notification("ping", &Value::Array(Vec::new()));
                 let plugin = Plugin {
-                    peer: peer,
+                    peer,
                     process: child,
                     description: plugin_desc,
-                    identifier: identifier,
+                    identifier,
                 };
                 let plugin_ref = PluginRef(
                     Arc::new(Mutex::new(plugin)),

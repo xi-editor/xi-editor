@@ -14,6 +14,13 @@
 
 #![cfg_attr(feature = "benchmarks", feature(test))]
 
+#![cfg_attr(feature = "cargo-clippy", allow(
+    if_same_then_else,
+    needless_bool,
+    needless_pass_by_value,
+    ptr_arg,
+))]
+
 extern crate xi_trace;
 
 #[cfg(any(feature = "chrome_trace_event", feature = "ipc"))]

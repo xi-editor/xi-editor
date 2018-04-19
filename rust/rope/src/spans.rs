@@ -21,7 +21,7 @@ use std::mem;
 use std::fmt;
 
 use tree::{Leaf, Node, NodeInfo, TreeBuilder, Cursor};
-use delta::Transformer;
+use delta::{Delta, DeltaElement, Transformer};
 use interval::Interval;
 
 const MIN_LEAF: usize = 32;
@@ -104,7 +104,7 @@ impl<T: Clone + Default> NodeInfo for SpansInfo<T> {
         }
         SpansInfo {
             n_spans: l.spans.len(),
-            iv: iv,
+            iv,
             phantom: PhantomData,
         }
     }
@@ -123,7 +123,7 @@ impl<T: Clone + Default> SpansBuilder<T> {
             b: TreeBuilder::new(),
             leaf: SpansLeaf::default(),
             len: 0,
-            total_len: total_len,
+            total_len,
         }
     }
 
@@ -138,7 +138,7 @@ impl<T: Clone + Default> SpansBuilder<T> {
         }
         self.leaf.spans.push(Span {
             iv: iv.translate_neg(self.len),
-            data: data,
+            data,
         })
     }
 
@@ -290,6 +290,24 @@ impl<T: Clone + Default> Spans<T> {
             cursor: Cursor::new(self, 0),
             ix: 0,
         }
+    }
+
+    /// Applies a generic delta to `self`, inserting empty spans for any
+    /// added regions.
+    ///
+    /// This is intended to be used to keep spans up to date with a `Rope`
+    /// as edits occur.
+    pub fn apply_shape<M: NodeInfo>(&mut self, delta: &Delta<M>) {
+        let mut b = TreeBuilder::new();
+        for elem in &delta.els {
+            match elem {
+                &DeltaElement::Copy(beg, end) =>
+                    b.push(self.subseq(Interval::new_closed_open(beg, end))),
+                &DeltaElement::Insert(ref n) =>
+                    b.push(SpansBuilder::new(n.len()).build()),
+            }
+        }
+        *self = b.build();
     }
 }
 
