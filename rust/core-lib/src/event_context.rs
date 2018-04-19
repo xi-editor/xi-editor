@@ -536,6 +536,61 @@ mod tests {
         lines|." );
     }
 
+    
+    #[test]
+    fn delete_tests() {
+        use rpc::GestureType::*;
+        let initial_text = "\
+        this is a string\n\
+        that has three\n\
+        lines.";   
+        let harness = ContextHarness::new(initial_text);
+        let mut ctx = harness.make_context(); 
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 0, ty: PointSelect });
+        
+        ctx.do_edit(EditNotification::MoveRight);
+        assert_eq!(harness.debug_render(),"\
+        t|his is a string\n\
+        that has three\n\
+        lines." );
+
+        ctx.do_edit(EditNotification::DeleteBackward);
+        assert_eq!(harness.debug_render(),"\
+        |his is a string\n\
+        that has three\n\
+        lines." );
+
+        ctx.do_edit(EditNotification::DeleteForward);
+        assert_eq!(harness.debug_render(),"\
+        |is is a string\n\
+        that has three\n\
+        lines." );
+
+        ctx.do_edit(EditNotification::MoveWordRight);
+        ctx.do_edit(EditNotification::DeleteWordForward);
+        assert_eq!(harness.debug_render(),"\
+        is| a string\n\
+        that has three\n\
+        lines." );
+
+        ctx.do_edit(EditNotification::DeleteWordBackward);
+        assert_eq!(harness.debug_render(),"| \
+        a string\n\
+        that has three\n\
+        lines." );
+
+        ctx.do_edit(EditNotification::MoveToRightEndOfLine);
+        ctx.do_edit(EditNotification::DeleteToBeginningOfLine);
+        assert_eq!(harness.debug_render(),"\
+        |\nthat has three\n\
+        lines." );
+
+        ctx.do_edit(EditNotification::DeleteToEndOfParagraph);
+        ctx.do_edit(EditNotification::DeleteToEndOfParagraph);
+        assert_eq!(harness.debug_render(),"\
+        |\nlines." );
+    }
+    
     #[test]
     fn simple_indentation_test() {
         use rpc::GestureType::*;
@@ -663,6 +718,4 @@ mod tests {
         that has three\n\
         |lines." );
     }
-
-
 }
