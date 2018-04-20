@@ -101,7 +101,12 @@ impl<'a> EventContext<'a> {
 
     fn do_special(&mut self, cmd: SpecialEvent) {
         match cmd {
-            SpecialEvent::DebugRewrap => (),
+            SpecialEvent::DebugRewrap => self.with_view(
+                |view, text| {
+                    view.rewrap(text, 72);
+                    view.set_dirty(text);
+                }),
+            SpecialEvent::DebugWrapWidth => self.debug_wrap_width(),
             SpecialEvent::DebugPrintSpans => self.with_editor(
                 |ed, view, _| {
                     let sel = view.sel_regions().last().unwrap();
@@ -173,7 +178,7 @@ impl<'a> EventContext<'a> {
         let iter_views = iter::once(&self.view).chain(self.siblings.iter());
         iter_views.for_each(|view| view.borrow_mut()
                             .after_edit(ed.get_buffer(), &last_text,
-                                        &delta, keep_sels));
+                                        &delta, self.client, keep_sels));
 
         let new_len = delta.new_document_len();
         let nb_lines = ed.get_buffer().measure::<LinesMetric>() + 1;
@@ -338,13 +343,23 @@ impl<'a> EventContext<'a> {
         self.editor.borrow_mut().dec_revs_in_flight();
     }
 
+    fn debug_wrap_width(&mut self) {
+        {
+            let mut view = self.view.borrow_mut();
+            let ed = self.editor.borrow();
+            view.wrap_width(ed.get_buffer(), self.client,
+                            ed.get_layers().get_merged());
+            view.set_dirty(ed.get_buffer());
+        }
+        self.render();
+    }
+
     fn do_request_lines(&mut self, first: usize, last: usize) {
         let mut view = self.view.borrow_mut();
         let ed = self.editor.borrow();
         view.request_lines(ed.get_buffer(), self.client, self.style_map,
                            ed.get_layers().get_merged(), first, last,
                            ed.is_pristine())
-
     }
 }
 

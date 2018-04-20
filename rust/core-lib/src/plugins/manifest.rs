@@ -134,7 +134,7 @@ impl Command {
           V: Into<Option<Vec<CommandArgument>>> {
         let title = title.as_ref().to_owned();
         let description = description.as_ref().to_owned();
-        let args = args.into().unwrap_or(Vec::new());
+        let args = args.into().unwrap_or_else(Vec::new);
         Command { title, description, rpc_cmd, args }
     }
 }
@@ -186,7 +186,7 @@ impl PlaceholderRpc {
     }
 
     /// Returns a reference to the placeholder's method.
-    pub fn method_ref<'a>(&'a self) -> &'a str {
+    pub fn method_ref(&self) -> &str {
         &self.method
     }
 }

@@ -14,8 +14,8 @@
 
 //! Requests and notifications from the core to front-ends.
 
-use serde_json::Value;
-use xi_rpc::RpcPeer;
+use serde_json::{self, Value};
+use xi_rpc::{self, RpcPeer};
 
 use tabs::ViewId;
 use config::Table;
@@ -25,6 +25,14 @@ use plugins::Command;
 
 /// An interface to the frontend.
 pub struct Client(RpcPeer);
+
+#[derive(Serialize, Deserialize)]
+/// A request for measuring the widths of strings all of the same style
+/// (a request from core to front-end).
+pub struct WidthReq {
+    pub id: usize,
+    pub strings: Vec<String>,
+}
 
 impl Client {
     pub fn new(peer: RpcPeer) -> Self {
@@ -113,6 +121,18 @@ impl Client {
     pub fn def_style(&self, style: &Value) {
         self.0.send_rpc_notification("def_style", &style)
     }
+
+    /// Ask front-end to measure widths of strings.
+    pub fn measure_width(&self, reqs: &[WidthReq])
+        -> Result<Vec<Vec<f64>>, xi_rpc::Error>
+    {
+        let req_json = serde_json::to_value(reqs)
+            .expect("failed to serialize width req");
+        let resp = self.0.send_rpc_request("measure_width", &req_json)?;
+        Ok(serde_json::from_value(resp)
+           .expect("failed to deserialize width response"))
+    }
+
 
     pub fn alert<S: AsRef<str>>(&self, msg: S) {
         self.0.send_rpc_notification("alert", &json!({ "msg": msg.as_ref() }));

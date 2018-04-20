@@ -26,7 +26,7 @@ use std::thread;
 
 use serde_json::Value;
 
-use xi_rpc::{RpcPeer, RpcLoop, Error as RpcError};
+use xi_rpc::{self, RpcPeer, RpcLoop};
 use xi_trace;
 
 use WeakXiCore;
@@ -100,7 +100,7 @@ impl Plugin {
     }
 
     pub fn update<F>(&self, update: &PluginUpdate, callback: F)
-        where F: FnOnce(Result<Value, RpcError>) + Send + 'static
+where F: FnOnce(Result<Value, xi_rpc::Error>) + Send + 'static
     {
         self.peer.send_rpc_request_async("update", &json!(update),
                                          Box::new(callback))
@@ -112,7 +112,7 @@ impl Plugin {
                                         &json!({"enabled": enabled}))
     }
 
-    pub fn collect_trace(&self) -> Result<Value, RpcError> {
+    pub fn collect_trace(&self) -> Result<Value, xi_rpc::Error> {
         self.peer.send_rpc_request("collect_trace", &json!({}))
     }
 }
@@ -133,8 +133,7 @@ pub(crate) fn start_plugin_process(plugin_desc: PluginDescription,
                 let mut looper = RpcLoop::new(child_stdin);
                 let peer: RpcPeer = Box::new(looper.get_raw_peer());
                 let name = plugin_desc.name.clone();
-                eprintln!("spawned {}", &name);
-                peer.send_rpc_notification("ping", &json!({}));
+peer.send_rpc_notification("ping", &Value::Array(Vec::new()));
                 let plugin = Plugin { peer, process: child, name, id };
 
                 // set tracing immediately

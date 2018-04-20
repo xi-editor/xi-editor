@@ -193,7 +193,7 @@ impl Breaks {
     // other use cases, use the builder.
     pub fn new_no_break(len: usize) -> Breaks {
         let leaf = BreaksLeaf {
-            len: len,
+            len,
             data: vec![],
         };
         Node::from_leaf(leaf)

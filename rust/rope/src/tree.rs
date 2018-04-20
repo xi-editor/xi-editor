@@ -180,8 +180,8 @@ impl<N: NodeInfo> Node<N> {
         Node(Arc::new(
             NodeBody {
             height: 0,
-            len: len,
-            info: info,
+            len,
+            info,
             val: NodeVal::Leaf(l),
         }))
     }
@@ -196,9 +196,9 @@ impl<N: NodeInfo> Node<N> {
         }
         Node(Arc::new(
             NodeBody {
-            height: height,
-            len: len,
-            info: info,
+            height,
+            len,
+            info,
             val: NodeVal::Internal(nodes),
         }))
     }
@@ -512,7 +512,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
     pub fn new(n: &'a Node<N>, position: usize) -> Cursor<'a, N> {
         let mut result = Cursor {
             root: n,
-            position: position,
+            position,
             cache: [None; CURSOR_CACHE_SIZE],
             leaf: None,
             offset_of_leaf: 0,

@@ -33,8 +33,7 @@ use xi_rope::rope::RopeDelta;
 use xi_rope::interval::Interval;
 use xi_rope::delta::Builder as EditBuilder;
 use xi_trace::{trace, trace_block};
-use xi_plugin_lib::global::{Cache, Plugin, View, mainloop};
-use xi_plugin_lib::state_cache::StateCache;
+use xi_plugin_lib::{Cache, Plugin, StateCache, View, mainloop};
 
 use syntect::parsing::{ParseState, ScopeStack, SyntaxSet, SCOPE_REPO,
 SyntaxDefinition, ScopeRepository};

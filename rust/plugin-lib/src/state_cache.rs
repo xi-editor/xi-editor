@@ -21,11 +21,7 @@ use xi_rope::rope::{RopeDelta, LinesMetric};
 use xi_trace::trace_block;
 
 use base_cache::ChunkCache;
-use global::{Cache, View};
-pub use plugin_base::{self, Error, ViewState, DataSource};
-//TODO: revisit.
-//reexported to keep current API working during global refactor
-pub use stateful_plugin::{Plugin, PluginCtx, mainloop};
+use super::{Error, Cache, View, DataSource};
 
 const CACHE_SIZE: usize = 1024;
 

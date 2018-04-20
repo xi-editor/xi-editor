@@ -59,6 +59,7 @@ pub(crate) enum BufferEvent {
 /// An event that needs special handling
 pub(crate) enum SpecialEvent {
     DebugRewrap,
+    DebugWrapWidth,
     DebugPrintSpans,
     RequestLines(LineRange),
 }
@@ -195,6 +196,7 @@ impl From<EditNotification> for EventDomain {
             FindPrevious { wrap_around } =>
                 ViewEvent::FindPrevious { wrap_around }.into(),
             DebugRewrap => SpecialEvent::DebugRewrap.into(),
+            DebugWrapWidth => SpecialEvent::DebugWrapWidth.into(),
             DebugPrintSpans => SpecialEvent::DebugPrintSpans.into(),
             CancelOperation => ViewEvent::Cancel.into(),
             Uppercase => BufferEvent::Uppercase.into(),

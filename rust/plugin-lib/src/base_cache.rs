@@ -23,8 +23,7 @@ use xi_rope::delta::DeltaElement;
 use xi_core::plugin_rpc::{TextUnit, GetDataResponse};
 use xi_trace::trace_block;
 
-use plugin_base::{Error, DataSource};
-use global::Cache;
+use super::{Error, DataSource, Cache};
 
 #[cfg(not(test))]
 const CHUNK_SIZE: usize = 1024 * 1024;
@@ -638,7 +637,7 @@ mod tests {
 
     #[test]
     fn convert_lines_offsets() {
-        let mut source = MockDataSource("this\nhas\nfour\nlines!".into());
+        let source = MockDataSource("this\nhas\nfour\nlines!".into());
         let mut c = ChunkCache::default();
         c.buf_size = source.0.len();
         c.num_lines = source.0.measure::<LinesMetric>() + 1;

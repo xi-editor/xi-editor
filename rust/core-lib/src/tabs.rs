@@ -31,8 +31,8 @@ use serde::de::{Deserialize, Deserializer};
 use serde::ser::{Serialize, Serializer};
 use serde_json::Value;
 
-use xi_rpc::{RpcPeer, RpcCtx, RemoteError, Error as RpcError};
-use xi_rope::{Rope};
+use xi_rpc::{self, RpcPeer, RpcCtx, RemoteError};
+use xi_rope::Rope;
 use xi_trace::{self, trace_block};
 
 use WeakXiCore;
@@ -106,7 +106,6 @@ pub struct CoreState {
     syntect: Option<Plugin>,
 }
 
-#[allow(dead_code)]
 /// Initial setup and bookkeeping
 impl CoreState {
     pub(crate) fn new(peer: &RpcPeer) -> Self {
@@ -463,7 +462,6 @@ impl CoreState {
     }
 }
 
-
 /// Idle, tracing, and file event handling
 impl CoreState {
     pub(crate) fn handle_idle(&mut self, token: usize) {
@@ -513,9 +511,9 @@ impl CoreState {
     fn handle_open_file_fs_event(&mut self, event: DebouncedEvent) {
         use notify::DebouncedEvent::*;
         let path = match event {
-            NoticeWrite(ref path @ _) |
-                Create(ref path @ _) |
-                Write(ref path @ _) => path,
+            NoticeWrite(ref path) |
+                Create(ref path) |
+                Write(ref path) => path,
             other => {
                 eprintln!("Event in open file {:?}", other);
                 return;
@@ -632,7 +630,7 @@ impl CoreState {
     /// Handles the response to a sync update sent to a plugin.
     pub(crate) fn plugin_update(&mut self, _plugin_id: PluginId,
                                  view_id: ViewId, undo_group: usize,
-                                 response: Result<Value, RpcError>) {
+                                 response: Result<Value, xi_rpc::Error>) {
 
         if let Some(mut edit_ctx) = self.make_context(view_id) {
             edit_ctx.do_plugin_update(response, undo_group);

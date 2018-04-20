@@ -33,10 +33,10 @@ use tabs::{BufferId, ViewId};
 #[allow(unused)]
 mod defaults {
     use super::*;
-    pub const BASE: &'static str = include_str!("../assets/defaults.toml");
-    pub const WINDOWS: &'static str = include_str!("../assets/windows.toml");
-    pub const YAML: &'static str = include_str!("../assets/yaml.toml");
-    pub const MAKEFILE: &'static str = include_str!("../assets/makefile.toml");
+    pub const BASE: &str = include_str!("../assets/defaults.toml");
+    pub const WINDOWS: &str = include_str!("../assets/windows.toml");
+    pub const YAML: &str = include_str!("../assets/yaml.toml");
+    pub const MAKEFILE: &str = include_str!("../assets/makefile.toml");
 
     /// A cache of loaded defaults.
     lazy_static! {
@@ -47,7 +47,7 @@ mod defaults {
 
 
     /// config keys that are legal in most config files
-    pub const GENERAL_KEYS: &'static [&'static str] = &[
+    pub const GENERAL_KEYS: &[&str] = &[
         "tab_size",
         "line_ending",
         "translate_tabs_to_spaces",
@@ -59,7 +59,7 @@ mod defaults {
         "wrap_width",
     ];
     /// config keys that are only legal at the top level
-    pub const TOP_LEVEL_KEYS: &'static [&'static str] = &[
+    pub const TOP_LEVEL_KEYS: &[&str] = &[
         "plugin_search_path",
     ];
 
@@ -75,7 +75,7 @@ mod defaults {
     }
 
     fn load_for_domain(domain: ConfigDomain) -> Option<Table> {
-        match domain.into() {
+        match domain {
             ConfigDomain::General => {
                 let mut base = load(BASE);
                 if let Some(mut overrides) = platform_overrides() {
@@ -286,7 +286,7 @@ impl ConfigManager {
         where P: Into<Option<PathBuf>>,
     {
         self.check_table(&new_config)?;
-        self.configs.entry(domain.into())
+        self.configs.entry(domain)
             .or_insert_with(|| { ConfigPair::for_domain(domain) })
             .set_table(new_config);
         path.into().map(|p| self.sources.insert(p, domain));
@@ -300,7 +300,7 @@ impl ConfigManager {
                           -> Result<(), ConfigError>
     {
         self.check_table(&changes)?;
-        let conf = self.configs.entry(domain.into())
+        let conf = self.configs.entry(domain)
             .or_insert_with(|| { ConfigPair::for_domain(domain) });
         conf.update_table(changes);
         Ok(())
@@ -403,7 +403,7 @@ impl TableStack {
     // NOTE: This is fairly expensive; a future optimization would borrow
     // from the underlying collections.
         let mut out = Table::new();
-        for table in self.0.iter() {
+        for table in &self.0 {
             for (k, v) in table.iter() {
                 if !out.contains_key(k) {
                     // cloning these objects feels a bit gross, we could
@@ -428,7 +428,7 @@ impl TableStack {
     /// Walks the tables in priority order, returning the first
     /// occurance of `key`.
     fn get<S: AsRef<str>>(&self, key: S) -> Option<&Value> {
-        for table in self.0.iter() {
+        for table in &self.0 {
             if let Some(v) = table.get(key.as_ref()) {
                 return Some(v)
             }
@@ -541,7 +541,8 @@ impl From<serde_json::Error> for ConfigError {
 pub fn init_config_dir(dir: &Path) -> io::Result<()> {
     let builder = fs::DirBuilder::new();
     builder.create(dir)?;
-    Ok(builder.create(dir.join("plugins"))?)
+    builder.create(dir.join("plugins"))?;
+    Ok(())
 }
 
 pub fn iter_config_files(dir: &Path) -> io::Result<Box<Iterator<Item=PathBuf>>> {

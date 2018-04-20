@@ -106,8 +106,8 @@ impl Editor {
         Editor {
             text: buffer,
             syntax: SyntaxDefinition::default(),
-            engine: engine,
-            last_rev_id: last_rev_id,
+            engine,
+            last_rev_id,
             pristine_rev_id: last_rev_id,
             undo_group_id: 1,
             // GC only works on undone edits or prefixes of the visible edits,
@@ -293,8 +293,7 @@ impl Editor {
             .expect("last_rev not found");
 
         let keep_selections = self.this_edit_type == EditType::Transpose;
-        let (iv, new_len) = delta.summary();
-        self.layers.update_all(iv, new_len);
+        self.layers.update_all(&delta);
 
         self.last_rev_id = self.engine.get_head_rev_id();
         self.sync_state_changed();
@@ -471,18 +470,36 @@ impl Editor {
 
     fn insert_tab(&mut self, view: &View) {
         let mut builder = delta::Builder::new(self.text.len());
+        let const_tab_text = if self.config.items.translate_tabs_to_spaces {
+                                    let tab_size = self.config.items.tab_size;
+                                    n_spaces(tab_size)
+                               } else { "\t" };
+
         for region in view.sel_regions() {
-            let iv = Interval::new_closed_open(region.min(), region.max());
-            //FIXME: keep tab_text in the config
-            let tab_text = if self.config.items.translate_tabs_to_spaces {
-                let (_, col) = view.offset_to_line_col(&self.text, region.start);
-                let tab_size = self.config.items.tab_size;
-                let n = tab_size - (col % tab_size);
-                n_spaces(n)
-            } else {
-                "\t"
-            };
-            builder.replace(iv, Rope::from(tab_text));
+            let mut sel_text = self.text.slice(region.min(), region.max());
+            let nb_lines = sel_text.measure::<LinesMetric>() + 1;
+
+            if nb_lines > 1 {
+                let line_range = view.get_line_range(&self.text, region);
+
+                for line in line_range {
+                    let offset = view.line_col_to_offset(&self.text, line, 0);
+                    let iv = Interval::new_closed_open(offset, offset);
+                    builder.replace(iv, Rope::from(const_tab_text));
+                }
+            }
+            else {
+                let iv = Interval::new_closed_open(region.min(), region.max());
+                let tab_text = if self.config.items.translate_tabs_to_spaces {
+                        let (_, col) = view.offset_to_line_col(&self.text, region.start);
+                        let tab_size = self.config.items.tab_size;
+                        let n = tab_size - (col % tab_size);
+                        n_spaces(n)
+                } else {
+                    "\t"
+                };
+                builder.replace(iv, Rope::from(tab_text));
+            }
         }
         self.this_edit_type = EditType::InsertChars;
         self.add_delta(builder.build());
@@ -518,16 +535,7 @@ impl Editor {
                 n_spaces(tab_size)
             } else { "\t" };
         for region in view.sel_regions() {
-            let (first_line, _) = view.offset_to_line_col(&self.text,
-                                                          region.min());
-            let (last_line, last_col) =
-                view.offset_to_line_col(&self.text, region.max());
-            let last_line = if last_col == 0 && last_line > first_line {
-                last_line - 1
-            } else {
-                last_line
-            };
-            let line_range = first_line..(last_line + 1);
+            let line_range = view.get_line_range(&self.text, region);
             for line in line_range {
                 lines.insert(line);
             }
@@ -666,17 +674,15 @@ impl Editor {
         self.insert(view, kill_ring.clone());
     }
 
-    fn transform_text<F>(&mut self, view: &View, transform: F)
-    where
-        F: Fn(&str) -> String
-    {
+    fn transform_text<F: Fn(&str) -> String>(&mut self, view: &View,
+                                             transform_function: F) {
         let mut builder = delta::Builder::new(self.text.len());
 
         for region in view.sel_regions() {
             let selected_text = self.text.slice_to_string(region.min(),
                                                           region.max());
             let interval = Interval::new_closed_open(region.min(), region.max());
-            builder.replace(interval, Rope::from(transform(&selected_text)));
+            builder.replace(interval, Rope::from(transform_function(&selected_text)));
         }
         if !builder.is_empty() {
             self.this_edit_type = EditType::Other;
