@@ -53,6 +53,10 @@ pub struct View {
     pub view_id: ViewId,
     pub buffer_id: BufferId,
 
+    /// Tracks whether this view has been scheduled to render.
+    /// We attempt to reduce duplicate renders by setting a small timeout
+    /// after an edit is applied, to allow batching with any plugin updates.
+    pending_render: bool,
     /// The selection state for this view. Invariant: non-empty.
     selection: Selection,
 
@@ -120,6 +124,7 @@ impl View {
         View {
             view_id: view_id,
             buffer_id: buffer_id,
+            pending_render: false,
             selection: SelRegion::caret(0).into(),
             scroll_to: Some(0),
             drag_state: None,
@@ -134,6 +139,14 @@ impl View {
             occurrences: None,
             valid_search: IndexSet::new(),
         }
+    }
+
+    pub(crate) fn set_has_pending_render(&mut self, pending: bool) {
+        self.pending_render = pending
+    }
+
+    pub(crate) fn has_pending_render(&self) -> bool {
+        self.pending_render
     }
 
     pub(crate) fn do_edit(&mut self, text: &Rope, cmd: ViewEvent) {

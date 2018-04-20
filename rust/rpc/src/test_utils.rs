@@ -15,7 +15,7 @@
 //! Types and helpers used for testing.
 
 use std::sync::mpsc::{channel, Sender, Receiver};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::io::{self, Write, Cursor};
 
 use serde_json::{self, Value};
@@ -133,4 +133,5 @@ impl Peer for DummyPeer {
     }
     fn request_is_pending(&self) -> bool { false }
     fn schedule_idle(&self, _token: usize) {  }
+    fn schedule_timer(&self, _time: Instant, _token: usize) {  }
 }

@@ -14,6 +14,8 @@
 
 //! Requests and notifications from the core to front-ends.
 
+use std::time::Instant;
+
 use serde_json::{self, Value};
 use xi_rpc::{self, RpcPeer};
 
@@ -140,5 +142,9 @@ impl Client {
 
     pub fn schedule_idle(&self, token: usize) {
         self.0.schedule_idle(token)
+    }
+
+    pub fn schedule_timer(&self, timeout: Instant, token: usize) {
+        self.0.schedule_timer(timeout, token);
     }
 }

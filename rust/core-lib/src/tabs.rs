@@ -72,10 +72,13 @@ pub type PluginId = ::plugins::PluginPid;
 pub type BufferIdentifier = BufferId;
 pub type ViewIdentifier = ViewId;
 
+/// Totally arbitrary; we reserve this space for `ViewId`s
+pub(crate) const RENDER_VIEW_IDLE_MASK: usize = 1 << 25;
+
 const NEW_VIEW_IDLE_TOKEN: usize = 1001;
 
 /// xi_rpc idle Token for watcher related idle scheduling.
-pub const WATCH_IDLE_TOKEN: usize = 1002;
+pub(crate) const WATCH_IDLE_TOKEN: usize = 1002;
 
 #[cfg(feature = "notify")]
 const CONFIG_EVENT_TOKEN: WatchToken = WatchToken(1);
@@ -432,7 +435,7 @@ impl CoreState {
                 ed.theme_changed(&self.style_map.borrow());
                 view.set_dirty(ed.get_buffer());
             });
-            edit_ctx.render();
+            edit_ctx.render_if_needed();
         });
     }
 
@@ -472,7 +475,9 @@ impl CoreState {
         match token {
             NEW_VIEW_IDLE_TOKEN => self.finalize_new_views(),
             WATCH_IDLE_TOKEN => self.handle_fs_events(),
-            _ => panic!("unexpected idle token {}", token),
+            other if (other & RENDER_VIEW_IDLE_MASK) != 0 =>
+                self.handle_render_timer(other ^ RENDER_VIEW_IDLE_MASK),
+            other => panic!("unexpected idle token {}", other),
         };
     }
 
@@ -482,6 +487,13 @@ impl CoreState {
             let mut edit_ctx = self.make_context(*id).unwrap();
             edit_ctx.finish_init();
         });
+    }
+
+    fn handle_render_timer(&mut self, token: usize) {
+        let id: ViewId = token.into();
+        if let Some(mut ctx) = self.make_context(id) {
+            ctx._finish_delayed_render();
+        }
     }
 
     #[cfg(feature = "notify")]

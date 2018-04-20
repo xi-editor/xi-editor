@@ -151,6 +151,7 @@ impl WeakXiCore {
                                 undo_group: usize,
                                 response: Result<Value, RpcError>) {
         if let Some(core) = self.upgrade() {
+            let _t = xi_trace::trace_block("WeakXiCore::plugin_update", &["core"]);
             core.inner().plugin_update(plugin, view, undo_group, response);
         }
     }
