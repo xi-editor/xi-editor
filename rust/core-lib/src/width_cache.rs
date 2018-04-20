@@ -19,11 +19,11 @@ use std::collections::{BTreeMap, HashMap};
 
 use xi_rpc;
 
-use tabs::{DocumentCtx, WidthReq};
+use client::{Client, WidthReq};
 
 /// A token which can be used to retrieve an actual width value when the
 /// batch request is submitted.
-/// 
+///
 /// Internally, it is implemented as an index into the `widths` array.
 pub type Token = usize;
 
@@ -118,12 +118,12 @@ impl<'a> WidthBatchReq<'a> {
     /// measurement trait, so that different width providers could be used (a mock
     /// for testing, one based on unicode_width if the front-end didn't support
     /// width measurement, a binary binding, etc).
-    pub fn issue(&mut self, doc_ctx: &DocumentCtx) -> Result<(), xi_rpc::Error> {
+    pub fn issue(&mut self, client: &Client) -> Result<(), xi_rpc::Error> {
         // The 0.0 values should all get replaced with actual widths, assuming the
         // shape of the response from the front-end matches that of the request.
         if self.pending_tok > self.cache.widths.len() {
             self.cache.widths.resize(self.pending_tok, 0.0);
-            let widths = doc_ctx.measure_width(&self.req)?;
+            let widths = client.measure_width(&self.req)?;
             for (w, t) in widths.iter().zip(self.req_toks.iter()) {
                 for (width, tok) in w.iter().zip(t.iter()) {
                     self.cache.widths[*tok] = *width;

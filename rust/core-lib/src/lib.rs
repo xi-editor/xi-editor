@@ -44,8 +44,11 @@ extern crate toml;
 #[cfg(feature = "notify")]
 extern crate notify;
 
+extern crate xi_rope;
+extern crate xi_rpc;
 extern crate xi_trace;
 extern crate xi_trace_dump;
+extern crate xi_unicode;
 
 #[cfg(feature = "ledger")]
 mod ledger_includes {
@@ -60,18 +63,19 @@ mod ledger_includes {
 #[cfg(feature = "ledger")]
 use ledger_includes::*;
 
-use serde_json::Value;
-
-pub mod rpc;
-
 /// Internal data structures and logic.
 ///
 /// These internals are not part of the public API (for the purpose of binding to
 /// a front-end), but are exposed here, largely so they appear in documentation.
 #[path=""]
 pub mod internal {
+    pub mod client;
+    pub mod core;
     pub mod tabs;
     pub mod editor;
+    pub mod edit_types;
+    pub mod event_context;
+    pub mod file;
     pub mod view;
     pub mod linewrap;
     pub mod plugins;
@@ -91,14 +95,15 @@ pub mod internal {
     pub mod width_cache;
 }
 
-pub use plugins::rpc as plugin_rpc;
-pub use plugins::PluginPid;
-pub use tabs::ViewIdentifier;
-pub use syntax::SyntaxDefinition;
-pub use config::{BufferItems as BufferConfig, Table as ConfigTable};
+pub mod rpc;
 
 use internal::tabs;
+use internal::core;
+use internal::client;
+use internal::edit_types;
 use internal::editor;
+use internal::event_context;
+use internal::file;
 use internal::view;
 use internal::linewrap;
 use internal::plugins;
@@ -117,59 +122,14 @@ use internal::width_cache;
 #[cfg(feature = "ledger")]
 use internal::fuchsia;
 
-use tabs::{Documents, BufferContainerRef};
-use rpc::{CoreNotification, CoreRequest};
-
 #[cfg(feature = "ledger")]
 use apps_ledger_services_public::Ledger_Proxy;
 
-extern crate xi_rope;
-extern crate xi_unicode;
-extern crate xi_rpc;
+pub use config::{BufferItems as BufferConfig, Table as ConfigTable};
+pub use core::{XiCore, WeakXiCore};
+pub use plugins::rpc as plugin_rpc;
+pub use plugins::PluginPid;
+pub use syntax::SyntaxDefinition;
+pub use tabs::{BufferId, BufferIdentifier, ViewId, ViewIdentifier};
+pub use tabs::test_helpers as test_helpers;
 
-use xi_rpc::{RpcPeer, RpcCtx, Handler, RemoteError};
-
-pub type MainPeer = RpcPeer;
-
-pub struct MainState {
-    tabs: Documents,
-}
-
-impl MainState {
-    pub fn new() -> Self {
-        MainState {
-            tabs: Documents::new(),
-        }
-    }
-
-    /// Returns a copy of the `BufferContainerRef`.
-    ///
-    /// This is exposed for testing purposes only.
-    #[doc(hidden)]
-    pub fn _get_buffers(&self) -> BufferContainerRef {
-        self.tabs._get_buffers()
-    }
-
-    #[cfg(feature = "ledger")]
-    pub fn set_ledger(&mut self, ledger: Ledger_Proxy, session_id: (u64, u32)) {
-        self.tabs.setup_ledger(ledger, session_id);
-    }
-}
-
-impl Handler for MainState {
-    type Notification = CoreNotification;
-    type Request = CoreRequest;
-
-    fn handle_notification(&mut self, ctx: &RpcCtx, rpc: Self::Notification) {
-        self.tabs.handle_notification(rpc, ctx)
-    }
-
-    fn handle_request(&mut self, ctx: &RpcCtx, rpc: Self::Request)
-                      -> Result<Value, RemoteError> {
-        self.tabs.handle_request(rpc, ctx)
-    }
-
-    fn idle(&mut self, ctx: &RpcCtx, token: usize) {
-        self.tabs.handle_idle(ctx, token);
-    }
-}

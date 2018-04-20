@@ -25,9 +25,9 @@ use serde_json::{self, Value};
 use serde::de::{self, Deserialize, Deserializer};
 use serde::ser::{self, Serialize, Serializer};
 
-use tabs::ViewIdentifier;
+use tabs::ViewId;
 use plugins::PlaceholderRpc;
-use config::{Table, ConfigDomain};
+use config::{Table, ConfigDomainExternal};
 
 // =============================================================================
 //  Command types
@@ -173,10 +173,10 @@ pub enum CoreNotification {
     /// ```
     Plugin(PluginNotification),
     /// Tells `xi-core` to close the specified view.
-    CloseView { view_id: ViewIdentifier },
+    CloseView { view_id: ViewId },
     /// Tells `xi-core` to save the contents of the specified view's
     /// buffer to the specified path.
-    Save { view_id: ViewIdentifier, file_path: String },
+    Save { view_id: ViewId, file_path: String },
     /// Tells `xi-core` to set the theme.
     SetTheme { theme_name: String },
     /// Notifies `xi-core` that the client has started.
@@ -196,7 +196,7 @@ pub enum CoreNotification {
     /// domain argument is `ConfigDomain::UserOverride(_)`, which
     /// represents non-persistent view-specific settings, such as when
     /// a user manually changes whitespace settings for a given view.
-    ModifyUserConfig { domain: ConfigDomain, changes: Table },
+    ModifyUserConfig { domain: ConfigDomainExternal, changes: Table },
     /// Control whether the tracing infrastructure is enabled.
     /// This propagates to all peers that should respond by toggling its own
     /// infrastructure on/off.
@@ -246,7 +246,7 @@ pub enum CoreRequest {
     /// with the newly created view.
     NewView { file_path: Option<String> },
     /// Returns the current collated config object for the given view.
-    GetConfig { view_id: ViewIdentifier },
+    GetConfig { view_id: ViewId },
 }
 
 /// A helper type, which extracts the `view_id` field from edit
@@ -280,7 +280,7 @@ pub enum CoreRequest {
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct EditCommand<T> {
-    pub view_id: ViewIdentifier,
+    pub view_id: ViewId,
     pub cmd: T,
 }
 
@@ -419,9 +419,9 @@ pub enum EditRequest {
 #[serde(tag = "command")]
 #[serde(rename_all = "snake_case")]
 pub enum PluginNotification {
-    Start { view_id: ViewIdentifier, plugin_name: String },
-    Stop { view_id: ViewIdentifier, plugin_name: String },
-    PluginRpc { view_id: ViewIdentifier, receiver: String, rpc: PlaceholderRpc },
+    Start { view_id: ViewId, plugin_name: String },
+    Stop { view_id: ViewId, plugin_name: String },
+    PluginRpc { view_id: ViewId, receiver: String, rpc: PlaceholderRpc },
 }
 
 // Serialize / Deserialize
@@ -444,7 +444,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for EditCommand<T>
     {
         #[derive(Deserialize)]
         struct InnerId {
-            view_id: ViewIdentifier,
+            view_id: ViewId,
         }
 
         let mut v = Value::deserialize(deserializer)?;

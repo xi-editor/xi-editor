@@ -34,6 +34,7 @@ pub enum PluginLoadError {
     Parse(toml::de::Error),
 }
 
+#[allow(dead_code)]
 impl <'a>PluginCatalog {
     /// Loads plugins from the user's search paths
     pub fn from_paths(paths: Vec<PathBuf>) -> Self {

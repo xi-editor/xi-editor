@@ -24,7 +24,7 @@ use xi_rope::spans::Spans;
 use xi_unicode::LineBreakLeafIter;
 
 use styles::Style;
-use tabs::DocumentCtx;
+use client::Client;
 use width_cache::{Token, WidthCache};
 
 struct LineBreakCursor<'a> {
@@ -185,7 +185,7 @@ struct RewrapCtx<'a> {
     lb_cursor: LineBreakCursor<'a>,
     lb_cursor_pos: usize,
     width_cache: &'a mut WidthCache,
-    doc_ctx: &'a DocumentCtx,
+    client: &'a Client,
     pot_breaks: Vec<PotentialBreak>,
     pot_break_ix: usize,  // index within pot_breaks
     max_offset: usize, // offset of maximum break (ie hard break following edit)
@@ -197,7 +197,7 @@ struct RewrapCtx<'a> {
 const MAX_POT_BREAKS: usize = 10_000;
 
 impl<'a> RewrapCtx<'a> {
-    fn new(text: &'a Rope, /* _style_spans: &Spans<Style>, */ doc_ctx: &'a DocumentCtx,
+    fn new(text: &'a Rope, /* _style_spans: &Spans<Style>, */ client: &'a Client,
         max_width: f64, width_cache: &'a mut WidthCache, start: usize, end: usize) -> RewrapCtx<'a>
     {
         let lb_cursor_pos = start;
@@ -207,7 +207,7 @@ impl<'a> RewrapCtx<'a> {
             lb_cursor,
             lb_cursor_pos,
             width_cache,
-            doc_ctx,
+            client,
             pot_breaks: Vec::new(),
             pot_break_ix: 0,
             max_offset: end,
@@ -231,7 +231,7 @@ impl<'a> RewrapCtx<'a> {
             pos = next;
             self.pot_breaks.push(PotentialBreak { pos, tok, hard });
         }
-        req.issue(self.doc_ctx).unwrap();
+        req.issue(self.client).unwrap();
         self.lb_cursor_pos = pos;
     }
 
@@ -267,13 +267,13 @@ impl<'a> RewrapCtx<'a> {
 }
 
 /// Wrap the text (in batch mode) using width measurement.
-pub fn linewrap_width(text: &Rope, _style_spans: &Spans<Style>, doc_ctx: &DocumentCtx,
+pub fn linewrap_width(text: &Rope, _style_spans: &Spans<Style>, client: &Client,
         max_width: f64) -> Breaks
 {
     // TODO: this should be scoped to the FE. However, it will work (just with
     // degraded performance).
     let mut width_cache = WidthCache::new();
-    let mut ctx = RewrapCtx::new(text, /* style_spans, */ doc_ctx, max_width, &mut width_cache,
+    let mut ctx = RewrapCtx::new(text, /* style_spans, */ client, max_width, &mut width_cache,
         0, text.len());
     let mut builder = BreakBuilder::new();
     let mut pos = 0;
@@ -287,7 +287,7 @@ pub fn linewrap_width(text: &Rope, _style_spans: &Spans<Style>, doc_ctx: &Docume
 
 /// Compute a new chunk of breaks after an edit. Returns new breaks to replace
 /// the old ones. The interval [start..end] represents a frontier.
-fn compute_rewrap_width(text: &Rope, /* style_spans: &Spans<Style>, */ doc_ctx: &DocumentCtx,
+fn compute_rewrap_width(text: &Rope, /* style_spans: &Spans<Style>, */ client: &Client,
     max_width: f64, breaks: &Breaks, start: usize, end: usize) -> Breaks
 {
     let mut width_cache = WidthCache::new();
@@ -297,7 +297,7 @@ fn compute_rewrap_width(text: &Rope, /* style_spans: &Spans<Style>, */ doc_ctx: 
     } else {
         line_cursor.next::<LinesMetric>().unwrap_or(text.len())
     };
-    let mut ctx = RewrapCtx::new(text, /* style_spans, */ doc_ctx, max_width, &mut width_cache,
+    let mut ctx = RewrapCtx::new(text, /* style_spans, */ client, max_width, &mut width_cache,
         start, measure_end);
     let mut builder = BreakBuilder::new();
     let mut pos = start;
@@ -337,7 +337,7 @@ fn compute_rewrap_width(text: &Rope, /* style_spans: &Spans<Style>, */ doc_ctx: 
 }
 
 pub fn rewrap_width(breaks: &mut Breaks, text: &Rope, /* style_spans: &Spans<Style>, */
-    doc_ctx: &DocumentCtx, iv: Interval, newsize: usize, max_width: f64)
+    client: &Client, iv: Interval, newsize: usize, max_width: f64)
 {
     // First, remove any breaks in edited section.
     let mut builder = BreakBuilder::new();
@@ -356,7 +356,7 @@ pub fn rewrap_width(breaks: &mut Breaks, text: &Rope, /* style_spans: &Spans<Sty
         start = cursor.prev::<LinesMetric>().unwrap_or(0);
     }
 
-    let new_breaks = compute_rewrap_width(text, /* style_spans, */ doc_ctx, max_width, breaks,
+    let new_breaks = compute_rewrap_width(text, /* style_spans, */ client, max_width, breaks,
         start, end);
     let edit_iv = Interval::new_open_closed(start, start + new_breaks.len());
     breaks.edit(edit_iv, new_breaks);

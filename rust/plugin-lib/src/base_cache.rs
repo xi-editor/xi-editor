@@ -77,7 +77,6 @@ impl Cache for ChunkCache {
     fn get_line<DS>(&mut self, source: &DS, line_num: usize) -> Result<&str, Error>
         where DS: DataSource
     {
-        let _t = trace_block("ChunkCache::get_line", &["plugin"]);
         if line_num > self.num_lines { return Err(Error::BadRequest) }
 
         // if chunk does not include the start of this line, fetch and reset everything

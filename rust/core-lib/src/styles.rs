@@ -18,7 +18,9 @@ use std::collections::HashMap;
 
 use serde_json::{self, Value};
 use syntect::highlighting::StyleModifier as SynStyleModifier;
-use syntect::highlighting::{Color, Theme, ThemeSet, ThemeSettings, Highlighter};
+use syntect::highlighting::{Color, Theme, ThemeSet, Highlighter};
+
+pub use syntect::highlighting::ThemeSettings;
 
 const N_RESERVED_STYLES: usize = 2;
 const SYNTAX_PRIORITY_DEFAULT: u16 = 200;
