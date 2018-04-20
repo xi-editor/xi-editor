@@ -376,6 +376,7 @@ mod tests {
         editor: RefCell<Editor>,
         client: Client,
         core_ref: WeakXiCore,
+        kill_ring: RefCell<Rope>,
         style_map: RefCell<ThemeStyleMap>,
     }
 
@@ -389,8 +390,9 @@ mod tests {
                 Editor::with_text(s, config_manager.default_buffer_config()));
             let client = Client::new(Box::new(DummyPeer));
             let core_ref = dummy_weak_core();
+            let kill_ring = RefCell::new(Rope::from(""));
             let style_map = RefCell::new(ThemeStyleMap::new());
-            ContextHarness { view, editor, client, core_ref, style_map }
+            ContextHarness { view, editor, client, core_ref, kill_ring, style_map }
         }
 
         /// Renders the text and selections. cursors are represented with
@@ -421,6 +423,7 @@ mod tests {
                 siblings: Vec::new(),
                 plugins: Vec::new(),
                 client: &self.client,
+                kill_ring: &self.kill_ring,
                 style_map: &self.style_map,
                 weak_core: &self.core_ref,
             }
@@ -553,18 +556,18 @@ mod tests {
         lines|." );
     }
 
-    
+
     #[test]
     fn delete_tests() {
         use rpc::GestureType::*;
         let initial_text = "\
         this is a string\n\
         that has three\n\
-        lines.";   
+        lines.";
         let harness = ContextHarness::new(initial_text);
-        let mut ctx = harness.make_context(); 
+        let mut ctx = harness.make_context();
         ctx.do_edit(EditNotification::Gesture { line: 0, col: 0, ty: PointSelect });
-        
+
         ctx.do_edit(EditNotification::MoveRight);
         assert_eq!(harness.debug_render(),"\
         t|his is a string\n\
@@ -607,7 +610,7 @@ mod tests {
         assert_eq!(harness.debug_render(),"\
         |\nlines." );
     }
-    
+
     #[test]
     fn simple_indentation_test() {
         use rpc::GestureType::*;
@@ -619,7 +622,7 @@ mod tests {
         assert_eq!(harness.debug_render(),"    hello|");
         ctx.do_edit(EditNotification::Outdent);
         assert_eq!(harness.debug_render(),"hello|");
-        
+
         // Test when outdenting with less than 4 spaces
         ctx.do_edit(EditNotification::Gesture { line: 0, col: 0, ty: PointSelect });
         ctx.do_edit(EditNotification::Insert { chars: "  ".into() });
@@ -640,7 +643,7 @@ mod tests {
         assert_eq!(harness.debug_render(),"    [|    hello\n]world");
 
         ctx.do_edit(EditNotification::Outdent);
-        assert_eq!(harness.debug_render(),"[|    hello\n]world");     
+        assert_eq!(harness.debug_render(),"[|    hello\n]world");
     }
 
     #[test]
@@ -652,7 +655,7 @@ mod tests {
         lines.";
         let harness = ContextHarness::new(initial_text);
         let mut ctx = harness.make_context();
-        
+
         ctx.do_edit(EditNotification::Gesture { line: 0, col: 5, ty: PointSelect });
         assert_eq!(harness.debug_render(),"\
         this |is a string\n\
