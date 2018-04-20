@@ -15,7 +15,6 @@
 //! Plugins and related functionality.
 
 pub mod rpc;
-//mod manager;
 mod manifest;
 mod catalog;
 

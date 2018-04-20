@@ -41,7 +41,7 @@ pub(crate) enum ViewEvent {
 
 /// Events that modify the buffer
 pub(crate) enum BufferEvent {
-    Delete(Movement),
+    Delete { movement: Movement, kill: bool },
     Backspace,
     Transpose,
     Undo,
@@ -94,17 +94,32 @@ impl From<EditNotification> for EventDomain {
             Insert { chars } =>
                 BufferEvent::Insert(chars).into(),
             DeleteForward =>
-                BufferEvent::Delete(Movement::Right).into(),
+                BufferEvent::Delete {
+                    movement: Movement::Right,
+                    kill: false
+                }.into(),
             DeleteBackward =>
                 BufferEvent::Backspace.into(),
             DeleteWordForward =>
-                BufferEvent::Delete(Movement::RightWord).into(),
+                BufferEvent::Delete {
+                    movement: Movement::RightWord,
+                    kill: false
+                }.into(),
             DeleteWordBackward =>
-                BufferEvent::Delete(Movement::LeftWord).into(),
+                BufferEvent::Delete {
+                    movement: Movement::LeftWord,
+                    kill: false
+                }.into(),
             DeleteToEndOfParagraph =>
-                BufferEvent::Delete(Movement::EndOfParagraphKill).into(),
+                BufferEvent::Delete {
+                    movement: Movement::EndOfParagraphKill,
+                    kill: true
+                }.into(),
             DeleteToBeginningOfLine =>
-                BufferEvent::Delete(Movement::LeftOfLine).into(),
+                BufferEvent::Delete {
+                    movement: Movement::LeftOfLine,
+                    kill: false
+                }.into(),
             InsertNewline =>
                 BufferEvent::InsertNewline.into(),
             InsertTab =>

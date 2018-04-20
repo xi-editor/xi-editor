@@ -58,6 +58,7 @@ pub struct EventContext<'a> {
     pub(crate) plugins: Vec<&'a Plugin>,
     pub(crate) client: &'a Client,
     pub(crate) style_map: &'a RefCell<ThemeStyleMap>,
+    pub(crate) kill_ring: &'a RefCell<Rope>,
     pub(crate) weak_core: &'a WeakXiCore,
 }
 
@@ -65,11 +66,12 @@ impl<'a> EventContext<'a> {
     /// Executes a closure with mutable references to the editor and the view,
     /// common in edit actions that modify the text.
     pub(crate) fn with_editor<R, F>(&mut self, f: F) -> R
-        where F: FnOnce(&mut Editor, &mut View) -> R
+        where F: FnOnce(&mut Editor, &mut View, &mut Rope) -> R
     {
         let mut editor = self.editor.borrow_mut();
         let mut view = self.view.borrow_mut();
-        f(&mut editor, &mut view)
+        let mut kill_ring = self.kill_ring.borrow_mut();
+        f(&mut editor, &mut view, &mut kill_ring)
     }
 
     /// Executes a closure with a mutable reference to the view and a reference
@@ -90,7 +92,7 @@ impl<'a> EventContext<'a> {
             E::View(cmd) => self.with_view(
                 |view, text| view.do_edit(text, cmd)),
             E::Buffer(cmd) => self.with_editor(
-                |ed, view| ed.do_edit(view, cmd)),
+                |ed, view, kill_ring| ed.do_edit(view, kill_ring, cmd)),
             E::Special(cmd) => self.do_special(cmd),
         }
         self.after_edit("core");
@@ -101,7 +103,7 @@ impl<'a> EventContext<'a> {
         match cmd {
             SpecialEvent::DebugRewrap => (),
             SpecialEvent::DebugPrintSpans => self.with_editor(
-                |ed, view| {
+                |ed, view, _| {
                     let sel = view.sel_regions().last().unwrap();
                     let iv = Interval::new_closed_open(sel.min(), sel.max());
                     ed.get_layers().debug_print_spans(iv);
@@ -115,8 +117,8 @@ impl<'a> EventContext<'a> {
                                ) -> Result<Value, RemoteError> {
         use self::EditRequest::*;
         let result = match cmd {
-            Cut => Ok(self.with_editor(|ed, view| ed.do_cut(view))),
-            Copy => Ok(self.with_editor(|ed, view| ed.do_copy(view))),
+            Cut => Ok(self.with_editor(|ed, view, _| ed.do_cut(view))),
+            Copy => Ok(self.with_editor(|ed, view, _| ed.do_copy(view))),
             Find { chars, case_sensitive } => Ok(self.with_view(
                 |view, text| view.do_find(text, chars, case_sensitive))),
         };
@@ -135,10 +137,10 @@ impl<'a> EventContext<'a> {
                 ed.get_layers_mut().add_scopes(plugin, scopes, &style_map);
             }
             UpdateSpans { start, len, spans, rev } => self.with_editor(
-                |ed, view| ed.update_spans(view, plugin, start,
+                |ed, view, _| ed.update_spans(view, plugin, start,
                                            len, spans, rev)),
             Edit { edit } => self.with_editor(
-                |ed, _| ed.apply_plugin_edit(edit, None)),
+                |ed, _, _| ed.apply_plugin_edit(edit, None)),
             Alert { msg } => self.client.alert(&msg),
         };
         self.after_edit(&plugin.to_string());
@@ -285,7 +287,7 @@ impl<'a> EventContext<'a> {
     }
 
     pub(crate) fn reload(&mut self, text: Rope) {
-        self.with_editor(|ed, view| {
+        self.with_editor(|ed, view, _| {
             let new_len = text.len();
             view.collapse_selections(ed.get_buffer());
             view.unset_find(ed.get_buffer());

@@ -89,7 +89,7 @@ pub struct CoreState {
     views: BTreeMap<ViewId, RefCell<View>>,
     file_manager: FileManager,
     /// A local pasteboard.
-    kill_ring: Rope,
+    kill_ring: RefCell<Rope>,
     /// Theme and style state.
     style_map: RefCell<ThemeStyleMap>,
     /// User and platform specific settings
@@ -119,7 +119,7 @@ impl CoreState {
             file_manager: FileManager::new(watcher),
             #[cfg(not(feature = "notify"))]
             file_manager: FileManager::new(),
-            kill_ring: Rope::from(""),
+            kill_ring: RefCell::new(Rope::from("")),
             style_map: RefCell::new(ThemeStyleMap::new()),
             config_manager: ConfigManager::default(),
             self_ref: None,
@@ -246,6 +246,7 @@ impl CoreState {
                 plugins: plugins,
                 client: &self.peer,
                 style_map: &self.style_map,
+                kill_ring: &self.kill_ring,
                 weak_core: self.self_ref.as_ref().unwrap(),
             }
         })
@@ -424,7 +425,7 @@ impl CoreState {
         }
 
         self.iter_groups().for_each(|mut edit_ctx| {
-            edit_ctx.with_editor(|ed, view| {
+            edit_ctx.with_editor(|ed, view, _| {
                 ed.theme_changed(&self.style_map.borrow());
                 view.set_dirty(ed.get_buffer());
             });
@@ -457,7 +458,7 @@ impl CoreState {
     fn do_get_config(&self, view_id: ViewId) -> Result<Table, RemoteError> {
         let _t = trace_block("CoreState::get_config", &["core"]);
         self.make_context(view_id)
-            .map(|mut ctx| ctx.with_editor(|ed, _| ed.get_config().to_table()))
+            .map(|mut ctx| ctx.with_editor(|ed, _, _| ed.get_config().to_table()))
             .ok_or(RemoteError::custom(404, format!("missing {}", view_id), None))
     }
 }

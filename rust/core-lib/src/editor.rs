@@ -406,8 +406,8 @@ impl Editor {
     /// the region.
     ///
     /// If `save` is set, save the deleted text into the kill ring.
-    fn delete_by_movement(&mut self, view: &View,
-                          movement: Movement, save: bool) {
+    fn delete_by_movement(&mut self, view: &View, movement: Movement,
+                          save: bool, kill_ring: &mut Rope) {
         // We compute deletions as a selection because the merge logic
         // is convenient. Another possibility would be to make the delta
         // builder able to handle overlapping deletions (with union semantics).
@@ -422,10 +422,9 @@ impl Editor {
             }
         }
         if save {
-            //let saved = self.extract_sel_regions(&deletions)
-                //.unwrap_or(String::new());
-            //FIXME: set kill ring
-            //self.doc_ctx.set_kill_ring(Rope::from(saved));
+            let saved = self.extract_sel_regions(&deletions)
+                .unwrap_or_default();
+            *kill_ring = saved.into();
         }
         self.delete_sel_regions(&deletions);
     }
@@ -660,12 +659,11 @@ impl Editor {
         }
     }
 
-    fn yank(&mut self) {
+    fn yank(&mut self, view: &View, kill_ring: &mut Rope) {
         // TODO: if there are multiple cursors and the number of newlines
         // is one less than the number of cursors, split and distribute one
         // line per cursor.
-        //let kill_ring_string = self.doc_ctx.get_kill_ring();
-        //self.insert(&*String::from(kill_ring_string));
+        self.insert(view, kill_ring.clone());
     }
 
     fn transform_text<F>(&mut self, view: &View, transform: F)
@@ -686,10 +684,12 @@ impl Editor {
         }
     }
 
-    pub(crate) fn do_edit(&mut self, view: &mut View, cmd: BufferEvent) {
+    pub(crate) fn do_edit(&mut self, view: &mut View, kill_ring: &mut Rope,
+                          cmd: BufferEvent) {
         use self::BufferEvent::*;
         match cmd {
-            Delete(movement) => self.delete_by_movement(view, movement, false),
+            Delete { movement, kill } =>
+                self.delete_by_movement(view, movement, kill, kill_ring),
             Backspace => self.delete_backward(view),
             Transpose => self.do_transpose(view),
             Undo => self.do_undo(),
@@ -701,8 +701,7 @@ impl Editor {
             InsertNewline => self.insert_newline(view),
             InsertTab => self.insert_tab(view),
             Insert(chars) => self.do_insert(view, &chars),
-            //FIXME: broken; yank needs rethinking
-            Yank => self.yank(),
+            Yank => self.yank(view, kill_ring),
         }
     }
 
