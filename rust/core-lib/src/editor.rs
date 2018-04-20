@@ -261,6 +261,7 @@ impl Editor {
     /// generates a delta from a plugin's response and applies it to the buffer.
     pub fn apply_plugin_edit(&mut self, edit: PluginEdit,
                              undo_group: Option<usize>) {
+        let _t = trace_block("Editor::apply_plugin_edit", &["core"]);
         if let Some(undo_group) = undo_group {
             // non-async edits modify their associated revision
             //TODO: get priority working, so that plugin edits don't
@@ -279,7 +280,7 @@ impl Editor {
     /// buffer, and a bool indicating whether selections should be preserved.
     pub(crate) fn commit_delta(&mut self)
         -> Option<(Delta<RopeInfo>, Rope, bool)> {
-        let _t = trace_block("Editor::update_after_rev", &["core"]);
+        let _t = trace_block("Editor::commit_delta", &["core"]);
 
         if self.engine.get_head_rev_id() == self.last_rev_id {
             return None;

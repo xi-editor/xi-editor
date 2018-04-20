@@ -17,6 +17,7 @@
 use std::cell::RefCell;
 use std::iter;
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 use serde_json::{self, Value};
 
@@ -34,7 +35,7 @@ use styles::ThemeStyleMap;
 use config::{BufferConfig, ConfigManager};
 
 use WeakXiCore;
-use tabs::{ViewId, PluginId};
+use tabs::{ViewId, PluginId, RENDER_VIEW_IDLE_MASK};
 use editor::Editor;
 use file::FileInfo;
 use edit_types::{EventDomain, SpecialEvent};
@@ -45,6 +46,12 @@ use view::View;
 
 // Maximum returned result from plugin get_data RPC.
 pub const MAX_SIZE_LIMIT: usize = 1024 * 1024;
+
+//TODO: tune this. a few ms can make a big difference. We may in the future
+//want to make this tuneable at runtime, or to be configured by the client.
+/// The render delay after an edit occurs; plugin updates received in this
+/// window will be sent to the view along with the edit.
+const RENDER_DELAY: Duration = Duration::from_millis(2);
 
 /// A collection of all the state relevant for handling a particular event.
 ///
@@ -96,7 +103,7 @@ impl<'a> EventContext<'a> {
             E::Special(cmd) => self.do_special(cmd),
         }
         self.after_edit("core");
-        self.render();
+        self.render_if_needed();
     }
 
     fn do_special(&mut self, cmd: SpecialEvent) {
@@ -128,7 +135,7 @@ impl<'a> EventContext<'a> {
                 |view, text| view.do_find(text, chars, case_sensitive))),
         };
         self.after_edit("core");
-        self.render();
+        self.render_if_needed();
         result
     }
 
@@ -149,7 +156,7 @@ impl<'a> EventContext<'a> {
             Alert { msg } => self.client.alert(&msg),
         };
         self.after_edit(&plugin.to_string());
-        self.render();
+        self.render_if_needed();
     }
 
     pub(crate) fn do_plugin_cmd_sync(&mut self, _plugin: PluginId,
@@ -211,10 +218,35 @@ impl<'a> EventContext<'a> {
         });
         ed.dec_revs_in_flight();
         ed.update_edit_type();
+
+         //if we have no plugins we always render immediately.
+        if !self.plugins.is_empty() {
+            let mut view = self.view.borrow_mut();
+            if !view.has_pending_render() {
+                let timeout = Instant::now() + RENDER_DELAY;
+                let view_id: usize = view.view_id.into();
+                let token = RENDER_VIEW_IDLE_MASK | view_id;
+                self.client.schedule_timer(timeout, token);
+                view.set_has_pending_render(true);
+            }
+        }
+    }
+
+    /// Renders the view, if a render has not already been scheduled.
+    pub(crate) fn render_if_needed(&mut self) {
+        let needed = !self.view.borrow().has_pending_render();
+        if needed {
+            self.render()
+        }
+    }
+
+    pub(crate) fn _finish_delayed_render(&mut self) {
+        self.render();
+        self.view.borrow_mut().set_has_pending_render(false);
     }
 
     /// Flushes any changes in the views out to the frontend.
-    pub(crate) fn render(&mut self) {
+    fn render(&mut self) {
         let _t = trace_block("EventContext::render", &["core"]);
         let ed = self.editor.borrow();
         //TODO: render other views
@@ -334,8 +366,12 @@ impl<'a> EventContext<'a> {
                                     undo_group: usize) {
 
         match update.map(serde_json::from_value::<UpdateResponse>) {
-            Ok(Ok(UpdateResponse::Edit(edit))) => self.editor.borrow_mut()
-                .apply_plugin_edit(edit, Some(undo_group)),
+            Ok(Ok(UpdateResponse::Edit(edit))) => {
+                let author = edit.author.clone();
+                self.editor.borrow_mut().apply_plugin_edit(edit, Some(undo_group));
+                self.after_edit(&author);
+                self.render_if_needed();
+            }
             Ok(Ok(UpdateResponse::Ack(_))) => (),
             Ok(Err(err)) => eprintln!("plugin response json err: {:?}", err),
             Err(err) => eprintln!("plugin shutdown, do something {:?}", err),

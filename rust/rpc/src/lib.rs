@@ -40,12 +40,13 @@ mod error;
 
 pub mod test_utils;
 
-use std::collections::{BTreeMap, VecDeque};
+use std::cmp;
+use std::collections::{BinaryHeap, BTreeMap, VecDeque};
 use std::io::{self, BufRead, Write};
 use std::sync::{Arc, Mutex, Condvar};
 use std::sync::mpsc;
 use std::sync::atomic::{AtomicUsize, AtomicBool, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::thread;
 
 use serde_json::Value;
@@ -56,6 +57,9 @@ use xi_trace::{trace, trace_block, trace_block_payload, trace_payload};
 use parse::{Call, Response, RpcObject, MessageReader};
 pub use error::{Error, ReadError, RemoteError};
 
+
+/// The maximum duration we will block on a reader before checking for an task.
+const MAX_IDLE_WAIT: Duration = Duration::from_millis(5);
 
 /// An interface to access the other side of the RPC channel. The main purpose
 /// is to send RPC requests and notifications to the peer.
@@ -90,7 +94,18 @@ pub trait Peer: Send + 'static {
     /// pending. This is intended to reduce latency for bulk operations
     /// done in the background.
     fn request_is_pending(&self) -> bool;
+    /// Adds a token to the idle queue. When the runloop is idle and the
+    /// queue is not empty, the handler's `idle` fn will be called
+    /// with the earliest added token.
     fn schedule_idle(&self, token: usize);
+    /// Like `schedule_idle`, with the guarantee that the handler's `idle`
+    /// fn will not be called _before_ the provided `Instant`.
+    ///
+    /// # Note
+    ///
+    /// This is not intended as a high-fidelity timer. Regular RPC messages
+    /// will always take priority over an idle task.
+    fn schedule_timer(&self, after: Instant, token: usize);
 }
 
 /// The `Peer` trait object.
@@ -174,6 +189,12 @@ impl ResponseHandler {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct Timer {
+    fire_after: Instant,
+    token: usize,
+}
+
 struct RpcState<W: Write> {
     rx_queue: Mutex<VecDeque<Result<RpcObject, ReadError>>>,
     rx_cvar: Condvar,
@@ -181,6 +202,7 @@ struct RpcState<W: Write> {
     id: AtomicUsize,
     pending: Mutex<BTreeMap<usize, ResponseHandler>>,
     idle_queue: Mutex<VecDeque<usize>>,
+    timers: Mutex<BinaryHeap<Timer>>,
     needs_exit: AtomicBool,
 }
 
@@ -201,6 +223,7 @@ impl<W: Write + Send> RpcLoop<W> {
             id: AtomicUsize::new(0),
             pending: Mutex::new(BTreeMap::new()),
             idle_queue: Mutex::new(VecDeque::new()),
+            timers: Mutex::new(BinaryHeap::new()),
             needs_exit: AtomicBool::new(false),
         }));
         RpcLoop {
@@ -347,20 +370,37 @@ fn next_read<W, H>(peer: &RawPeer<W>, handler: &mut H, ctx: &RpcCtx)
         if let Some(result) = peer.try_get_rx() {
             return result
         }
+        // handle timers before general idle work
+        let time_to_next_timer = match peer.check_timers() {
+            Some(Ok(token)) => {
+                do_idle(handler, ctx, token);
+                continue;
+            }
+            Some(Err(duration)) => Some(duration),
+            None => None,
+        };
+
         if let Some(idle_token) = peer.try_get_idle() {
-            let _trace = trace_block_payload("handle idle", &["rpc"],
-                                             format!("token: {}", idle_token));
-                handler.idle(ctx, idle_token);
-            continue
+            do_idle(handler, ctx, idle_token);
+            continue;
         }
-        // TODO: maybe we should just be using thread::yield_now here?
+
         // we don't want to block indefinitely if there's no current idle work,
         // because idle work could be scheduled from another thread.
-        let check_idle_timeout = Duration::from_millis(100);
-        if let Some(result) = peer.get_rx_timeout(check_idle_timeout) {
+        let idle_timeout = time_to_next_timer
+            .unwrap_or(MAX_IDLE_WAIT)
+            .min(MAX_IDLE_WAIT);
+
+        if let Some(result) = peer.get_rx_timeout(idle_timeout) {
             return result
         }
     }
+}
+
+fn do_idle<H: Handler>(handler: &mut H, ctx: &RpcCtx, token: usize) {
+    let _trace = trace_block_payload("do_idle", &["rpc"],
+                                     format!("token: {}", token));
+    handler.idle(ctx, token);
 }
 
 impl RpcCtx {
@@ -418,6 +458,9 @@ impl<W: Write + Send + 'static> Peer for RawPeer<W> {
         self.0.idle_queue.lock().unwrap().push_back(token);
     }
 
+    fn schedule_timer(&self, after: Instant, token: usize) {
+        self.0.timers.lock().unwrap().push(Timer { fire_after: after, token });
+    }
 }
 
 impl<W:Write> RawPeer<W> {
@@ -499,6 +542,25 @@ impl<W:Write> RawPeer<W> {
         self.0.idle_queue.lock().unwrap().pop_front()
     }
 
+    /// Checks status of the most imminent timer. If that timer has expired,
+    /// returns `Some(Ok(_))`, with the corresponding token.
+    /// If a timer exists but has not expired, returns `Some(Err(_))`,
+    /// with the error value being the `Duration` until the timer is ready.
+    /// Returns `None` if no timers are registered.
+    fn check_timers(&self) -> Option<Result<usize, Duration>> {
+        let mut timers = self.0.timers.lock().unwrap();
+        match timers.peek() {
+            None => return None,
+            Some(t) => {
+                let now = Instant::now();
+                if t.fire_after > now {
+                    return Some(Err(t.fire_after - now));
+                }
+            }
+        }
+        Some(Ok(timers.pop().unwrap().token))
+    }
+
     /// send disconnect error to pending requests.
     fn disconnect(&self) {
         let mut pending = self.0.pending.lock().unwrap();
@@ -530,6 +592,20 @@ impl Clone for Box<Peer>
 impl<W: Write> Clone for RawPeer<W> {
     fn clone(&self) -> Self {
         RawPeer(self.0.clone())
+    }
+}
+
+//NOTE: for our timers to work with Rust's BinaryHeap we want to reverse
+//the default comparison; smaller `Instant`'s are considered 'greater'.
+impl Ord for Timer {
+    fn cmp(&self, other: &Timer) -> cmp::Ordering {
+        other.fire_after.cmp(&self.fire_after)
+    }
+}
+
+impl PartialOrd for Timer {
+    fn partial_cmp(&self, other: &Timer) -> Option<cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 
