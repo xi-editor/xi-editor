@@ -1082,18 +1082,17 @@ impl View {
         }
     }
 
+    //get the line range of a selected region
     pub fn get_line_range(&self, text: &Rope, region: &SelRegion) -> Range<usize> {
         let (first_line, _) = self.offset_to_line_col(text, region.min());
-        let (last_line, last_col) =
+        let (mut last_line, last_col) =
             self.offset_to_line_col(text, region.max());
-        let last_line = if last_col == 0 && last_line > first_line {
-            last_line - 1
-        } else {
-            last_line
-        };
-        let line_range = first_line..(last_line + 1);
-        line_range
-  }
+        if last_col == 0 && last_line > first_line {
+            last_line -= 1;
+        }
+        
+        first_line..(last_line + 1)
+    }
 
     /// Generate line breaks based on width measurement. Currently batch-mode,
     /// and currently in a debugging state.
