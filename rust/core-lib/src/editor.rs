@@ -470,34 +470,24 @@ impl Editor {
 
     fn insert_tab(&mut self, view: &View) {
         let mut builder = delta::Builder::new(self.text.len());
-        let const_tab_text = if self.config.items.translate_tabs_to_spaces {
-                                    let tab_size = self.config.items.tab_size;
-                                    n_spaces(tab_size)
-                               } else { "\t" };
+        let const_tab_text = self.get_tab_text(self.config.items.tab_size);
 
         for region in view.sel_regions() {
-            let mut sel_text = self.text.slice(region.min(), region.max());
-            let nb_lines = sel_text.measure::<LinesMetric>() + 1;
+            let line_range = view.get_line_range(&self.text, region);
 
-            if nb_lines > 1 {
-                let line_range = view.get_line_range(&self.text, region);
-
+            if line_range.len() > 1 {
                 for line in line_range {
                     let offset = view.line_col_to_offset(&self.text, line, 0);
                     let iv = Interval::new_closed_open(offset, offset);
                     builder.replace(iv, Rope::from(const_tab_text));
                 }
-            }
-            else {
+            } else {
+                let (_, col) = view.offset_to_line_col(&self.text, region.start);
+                let mut tab_size = self.config.items.tab_size;
+                tab_size = tab_size - (col % tab_size);
+                let tab_text = self.get_tab_text(tab_size);
+
                 let iv = Interval::new_closed_open(region.min(), region.max());
-                let tab_text = if self.config.items.translate_tabs_to_spaces {
-                        let (_, col) = view.offset_to_line_col(&self.text, region.start);
-                        let tab_size = self.config.items.tab_size;
-                        let n = tab_size - (col % tab_size);
-                        n_spaces(n)
-                } else {
-                    "\t"
-                };
                 builder.replace(iv, Rope::from(tab_text));
             }
         }
@@ -530,10 +520,7 @@ impl Editor {
     /// Sublime and VSCode, with non-caret selections not being modified.
     fn modify_indent(&mut self, view: &View, direction: IndentDirection) {
         let mut lines = BTreeSet::new();
-        let tab_text = if self.config.items.translate_tabs_to_spaces {
-                let tab_size = self.config.items.tab_size;
-                n_spaces(tab_size)
-            } else { "\t" };
+        let tab_text = self.get_tab_text(self.config.items.tab_size);
         for region in view.sel_regions() {
             let line_range = view.get_line_range(&self.text, region);
             for line in line_range {
@@ -578,6 +565,14 @@ impl Editor {
         }
         self.this_edit_type = EditType::Delete;
         self.add_delta(builder.build());
+    }
+
+    fn get_tab_text(&self, tab_size: usize) -> &'static str {
+        let tab_text = if self.config.items.translate_tabs_to_spaces {
+            n_spaces(tab_size)
+        } else { "\t" };
+
+        tab_text
     }
 
     // TODO: insert from keyboard or input method shouldn't break undo group,
