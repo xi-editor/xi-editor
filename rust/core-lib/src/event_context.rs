@@ -42,6 +42,7 @@ use client::Client;
 use plugins::Plugin;
 use selection::SelRegion;
 use view::View;
+use width_cache::WidthCache;
 
 // Maximum returned result from plugin get_data RPC.
 pub const MAX_SIZE_LIMIT: usize = 1024 * 1024;
@@ -58,6 +59,7 @@ pub struct EventContext<'a> {
     pub(crate) plugins: Vec<&'a Plugin>,
     pub(crate) client: &'a Client,
     pub(crate) style_map: &'a RefCell<ThemeStyleMap>,
+    pub(crate) width_cache: &'a RefCell<WidthCache>,
     pub(crate) kill_ring: &'a RefCell<Rope>,
     pub(crate) weak_core: &'a WeakXiCore,
 }
@@ -175,10 +177,11 @@ impl<'a> EventContext<'a> {
             Some(edit_info) => edit_info,
             None => return,
         };
+        let mut width_cache = self.width_cache.borrow_mut();
         let iter_views = iter::once(&self.view).chain(self.siblings.iter());
         iter_views.for_each(|view| view.borrow_mut()
-                            .after_edit(ed.get_buffer(), &last_text,
-                                        &delta, self.client, keep_sels));
+                            .after_edit(ed.get_buffer(), &last_text, &delta,
+                                        self.client, &mut width_cache, keep_sels));
 
         let new_len = delta.new_document_len();
         let nb_lines = ed.get_buffer().measure::<LinesMetric>() + 1;
@@ -346,8 +349,9 @@ impl<'a> EventContext<'a> {
     fn debug_wrap_width(&mut self) {
         {
             let mut view = self.view.borrow_mut();
+            let mut width_cache = self.width_cache.borrow_mut();
             let ed = self.editor.borrow();
-            view.wrap_width(ed.get_buffer(), self.client,
+            view.wrap_width(ed.get_buffer(), &mut width_cache, self.client,
                             ed.get_layers().get_merged());
             view.set_dirty(ed.get_buffer());
         }
@@ -378,6 +382,7 @@ mod tests {
         core_ref: WeakXiCore,
         kill_ring: RefCell<Rope>,
         style_map: RefCell<ThemeStyleMap>,
+        width_cache: RefCell<WidthCache>,
     }
 
     impl ContextHarness {
@@ -392,7 +397,9 @@ mod tests {
             let core_ref = dummy_weak_core();
             let kill_ring = RefCell::new(Rope::from(""));
             let style_map = RefCell::new(ThemeStyleMap::new());
-            ContextHarness { view, editor, client, core_ref, kill_ring, style_map }
+            let width_cache = RefCell::new(WidthCache::new());
+            ContextHarness { view, editor, client, core_ref,
+                             kill_ring, style_map, width_cache }
         }
 
         /// Renders the text and selections. cursors are represented with
@@ -425,6 +432,7 @@ mod tests {
                 client: &self.client,
                 kill_ring: &self.kill_ring,
                 style_map: &self.style_map,
+                width_cache: &self.width_cache,
                 weak_core: &self.core_ref,
             }
         }

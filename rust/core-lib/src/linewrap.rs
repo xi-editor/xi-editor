@@ -21,6 +21,7 @@ use xi_rope::tree::Cursor;
 use xi_rope::interval::Interval;
 use xi_rope::breaks::{Breaks, BreakBuilder, BreaksBaseMetric};
 use xi_rope::spans::Spans;
+use xi_trace::trace_block;
 use xi_unicode::LineBreakLeafIter;
 
 use styles::Style;
@@ -267,14 +268,12 @@ impl<'a> RewrapCtx<'a> {
 }
 
 /// Wrap the text (in batch mode) using width measurement.
-pub fn linewrap_width(text: &Rope, _style_spans: &Spans<Style>, client: &Client,
-        max_width: f64) -> Breaks
+pub fn linewrap_width(text: &Rope, width_cache: &mut WidthCache,
+                      _style_spans: &Spans<Style>, client: &Client,
+                      max_width: f64) -> Breaks
 {
-    // TODO: this should be scoped to the FE. However, it will work (just with
-    // degraded performance).
-    let mut width_cache = WidthCache::new();
-    let mut ctx = RewrapCtx::new(text, /* style_spans, */ client, max_width, &mut width_cache,
-        0, text.len());
+    let mut ctx = RewrapCtx::new(text, /* style_spans, */ client,
+                                 max_width, width_cache, 0, text.len());
     let mut builder = BreakBuilder::new();
     let mut pos = 0;
     while let Some(next) = ctx.wrap_one_line(pos) {
@@ -287,18 +286,19 @@ pub fn linewrap_width(text: &Rope, _style_spans: &Spans<Style>, client: &Client,
 
 /// Compute a new chunk of breaks after an edit. Returns new breaks to replace
 /// the old ones. The interval [start..end] represents a frontier.
-fn compute_rewrap_width(text: &Rope, /* style_spans: &Spans<Style>, */ client: &Client,
-    max_width: f64, breaks: &Breaks, start: usize, end: usize) -> Breaks
+fn compute_rewrap_width(text: &Rope, width_cache: &mut WidthCache,
+                        /* style_spans: &Spans<Style>, */ client: &Client,
+                        max_width: f64, breaks: &Breaks,
+                        start: usize, end: usize) -> Breaks
 {
-    let mut width_cache = WidthCache::new();
     let mut line_cursor = Cursor::new(&text, end);
     let measure_end = if line_cursor.is_boundary::<LinesMetric>() {
         end
     } else {
         line_cursor.next::<LinesMetric>().unwrap_or(text.len())
     };
-    let mut ctx = RewrapCtx::new(text, /* style_spans, */ client, max_width, &mut width_cache,
-        start, measure_end);
+    let mut ctx = RewrapCtx::new(text, /* style_spans, */ client, max_width,
+                                 width_cache, start, measure_end);
     let mut builder = BreakBuilder::new();
     let mut pos = start;
     let mut break_cursor = Cursor::new(&breaks, end);
@@ -336,9 +336,11 @@ fn compute_rewrap_width(text: &Rope, /* style_spans: &Spans<Style>, */ client: &
     return builder.build();
 }
 
-pub fn rewrap_width(breaks: &mut Breaks, text: &Rope, /* style_spans: &Spans<Style>, */
-    client: &Client, iv: Interval, newsize: usize, max_width: f64)
+pub fn rewrap_width(breaks: &mut Breaks, text: &Rope,
+                    width_cache: &mut WidthCache, // _style_spans: &Spans<Style>,
+                    client: &Client, iv: Interval, newsize: usize, max_width: f64)
 {
+    let _t = trace_block("linewrap::rewrap_width", &["core"]);
     // First, remove any breaks in edited section.
     let mut builder = BreakBuilder::new();
     builder.add_no_break(newsize);
@@ -356,8 +358,9 @@ pub fn rewrap_width(breaks: &mut Breaks, text: &Rope, /* style_spans: &Spans<Sty
         start = cursor.prev::<LinesMetric>().unwrap_or(0);
     }
 
-    let new_breaks = compute_rewrap_width(text, /* style_spans, */ client, max_width, breaks,
-        start, end);
+    let new_breaks = compute_rewrap_width(text, width_cache, /* style_spans, */
+                                          client, max_width, breaks,
+                                          start, end);
     let edit_iv = Interval::new_open_closed(start, start + new_breaks.len());
     breaks.edit(edit_iv, new_breaks);
 }
