@@ -47,6 +47,7 @@ use rpc::{CoreNotification, CoreRequest, EditNotification, EditRequest};
 use styles::ThemeStyleMap;
 use syntax::SyntaxDefinition;
 use view::View;
+use width_cache::WidthCache;
 
 #[cfg(feature = "notify")]
 use watcher::{FileWatcher, WatchToken};
@@ -92,6 +93,7 @@ pub struct CoreState {
     kill_ring: RefCell<Rope>,
     /// Theme and style state.
     style_map: RefCell<ThemeStyleMap>,
+    width_cache: RefCell<WidthCache>,
     /// User and platform specific settings
     config_manager: ConfigManager,
     /// A weak reference to the main state container, stashed so that
@@ -120,6 +122,7 @@ impl CoreState {
             file_manager: FileManager::new(),
             kill_ring: RefCell::new(Rope::from("")),
             style_map: RefCell::new(ThemeStyleMap::new()),
+            width_cache: RefCell::new(WidthCache::new()),
             config_manager: ConfigManager::default(),
             self_ref: None,
             pending_views: Vec::new(),
@@ -245,6 +248,7 @@ impl CoreState {
                 plugins: plugins,
                 client: &self.peer,
                 style_map: &self.style_map,
+                width_cache: &self.width_cache,
                 kill_ring: &self.kill_ring,
                 weak_core: self.self_ref.as_ref().unwrap(),
             }

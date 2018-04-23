@@ -26,18 +26,19 @@ use xi_rope::breaks::{Breaks, BreaksInfo, BreaksMetric, BreaksBaseMetric};
 use xi_rope::interval::Interval;
 use xi_rope::spans::Spans;
 use xi_rope::find::{find, CaseMatching};
+use xi_trace::trace_block;
 
-use tabs::{ViewId, BufferId};
-use styles::{Style, ThemeStyleMap};
-use index_set::IndexSet;
-use selection::{Affinity, Selection, SelRegion};
-use line_cache_shadow::{self, LineCacheShadow, RenderPlan, RenderTactic};
-use word_boundaries::WordCursor;
-use rpc::{GestureType, MouseAction};
-
-use movement::{Movement, region_movement, selection_movement};
-use edit_types::ViewEvent;
 use client::Client;
+use edit_types::ViewEvent;
+use index_set::IndexSet;
+use line_cache_shadow::{self, LineCacheShadow, RenderPlan, RenderTactic};
+use movement::{Movement, region_movement, selection_movement};
+use rpc::{GestureType, MouseAction};
+use styles::{Style, ThemeStyleMap};
+use selection::{Affinity, Selection, SelRegion};
+use tabs::{ViewId, BufferId};
+use width_cache::WidthCache;
+use word_boundaries::WordCursor;
 
 use linewrap;
 
@@ -742,16 +743,19 @@ impl View {
     /// Updates the view after the text has been modified by the given `delta`.
     /// This method is responsible for updating the cursors, and also for
     /// recomputing line wraps.
-    pub fn after_edit(&mut self, text: &Rope, last_text: &Rope, delta: &Delta<RopeInfo>,
-                      client: &Client, keep_selections: bool)
+    pub fn after_edit(&mut self, text: &Rope, last_text: &Rope,
+                      delta: &Delta<RopeInfo>, client: &Client,
+                      width_cache: &mut WidthCache, keep_selections: bool)
     {
         let (iv, new_len) = delta.summary();
         if let Some(breaks) = self.breaks.as_mut() {
             match self.wrap_col {
                 WrapWidth::None => (),
-                WrapWidth::Bytes(col) => linewrap::rewrap(breaks, text, iv, new_len, col),
+                WrapWidth::Bytes(col) => linewrap::rewrap(breaks, text, iv,
+                                                          new_len, col),
                 WrapWidth::Width(px) =>
-                    linewrap::rewrap_width(breaks, text, client, iv, new_len, px),
+                    linewrap::rewrap_width(breaks, text, width_cache,
+                                           client, iv, new_len, px),
             }
         }
         if self.breaks.is_some() {
@@ -1062,11 +1066,14 @@ impl View {
 
     /// Generate line breaks based on width measurement. Currently batch-mode,
     /// and currently in a debugging state.
-    pub fn wrap_width(&mut self, text: &Rope, client: &Client,
-        style_spans: &Spans<Style>)
+    pub fn wrap_width(&mut self, text: &Rope, width_cache: &mut WidthCache,
+                      client: &Client, style_spans: &Spans<Style>)
     {
+        let _t = trace_block("View::wrap_width", &["core"]);
         let width_px = 500.0;
-        self.breaks = Some(linewrap::linewrap_width(text, style_spans, client, width_px));
+        self.breaks = Some(linewrap::linewrap_width(text, width_cache,
+                                                    style_spans, client,
+                                                    width_px));
         self.wrap_col = WrapWidth::Width(width_px);
     }
 }
