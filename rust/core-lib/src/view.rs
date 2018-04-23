@@ -415,40 +415,6 @@ impl View {
         }
     }
 
-    pub fn do_click(&mut self, text: &Rope, line: u64, col: u64,
-                    flags: u64, click_count: u64) {
-        // TODO: calculate affinity
-        let offset = self.line_col_to_offset(&text, line as usize, col as usize);
-        if (flags & FLAG_SELECT) != 0 {
-            if !self.is_point_in_selection(offset) {
-                let sel = {
-                    let (last, rest) = self.sel_regions().split_last().unwrap();
-                    let mut sel = Selection::new();
-                    for &region in rest {
-                        sel.add_region(region);
-                    }
-                    // TODO: small nit, merged region should be backward
-                    // if end < start. This could be done by explicitly
-                    // overriding, or by tweaking the merge logic.
-                    sel.add_region(SelRegion::new(last.start, offset));
-                    sel
-                };
-                self.set_selection(&text, sel);
-                self.start_drag(offset, offset, offset);
-                return;
-            }
-        } else if click_count == 2 {
-            self.select_word(&text, offset, false);
-            return;
-        } else if click_count == 3 {
-            self.select_line(&text, offset, line as usize, false);
-            return;
-        }
-        self.set_selection(text, SelRegion::caret(offset));
-        self.start_drag(offset, offset, offset);
-    }
-
-
     /// Returns the regions of the current selection.
     pub fn sel_regions(&self) -> &[SelRegion] {
         &self.selection
