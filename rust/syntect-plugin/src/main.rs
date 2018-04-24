@@ -212,7 +212,9 @@ impl<'a> Syntect<'a> {
     fn guess_syntax(&'a self, path: Option<&Path>) -> &'a SyntaxDefinition {
         let _t = trace_block("Syntect::guess_syntax", &["syntect"]);
         match path {
-            Some(path) => self.syntax_set.find_syntax_for_file(path).unwrap()
+            Some(path) => self.syntax_set.find_syntax_for_file(path)
+                .ok()
+                .unwrap_or(None)
                 .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text()),
             None => self.syntax_set.find_syntax_plain_text(),
         }

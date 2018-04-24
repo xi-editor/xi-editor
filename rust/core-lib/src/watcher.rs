@@ -142,8 +142,11 @@ impl FileWatcher {
                   filter: Option<Box<PathFilter>>)
     {
         let path = match path.canonicalize() {
-            Ok(ref p) if p.exists() => p.to_owned(),
-            _ => return,
+            Ok(ref p) => p.to_owned(),
+            Err(e) => {
+                eprintln!("error watching {:?}: {:?}", path, e);
+                return
+            }
         };
 
         let mut state = self.state.lock().unwrap();
