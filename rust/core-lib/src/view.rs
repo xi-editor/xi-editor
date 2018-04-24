@@ -1082,7 +1082,7 @@ impl View {
         }
     }
 
-    //get the line range of a selected region
+    /// Get the line range of a selected region.
     pub fn get_line_range(&self, text: &Rope, region: &SelRegion) -> Range<usize> {
         let (first_line, _) = self.offset_to_line_col(text, region.min());
         let (mut last_line, last_col) =
