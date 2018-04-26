@@ -110,11 +110,11 @@ impl FileManager {
     pub fn open(&mut self, path: &Path, id: BufferId)
         -> Result<Rope, FileError>
     {
-        let (rope, info) = if path.exists() {
-            try_load_file(path)?
-        } else {
-            new_for_path(path)
-        };
+        if !path.exists() {
+            let _ = File::create(path)?;
+        }
+
+        let (rope, info) = try_load_file(path)?;
 
         self.open_files.insert(path.to_owned(), id);
         if self.file_info.insert(id, info).is_none() {
@@ -179,18 +179,6 @@ impl FileManager {
         }
         Ok(())
     }
-}
-
-/// We allow 'opening' paths that don't exist
-fn new_for_path<P: AsRef<Path>>(path: P) -> (Rope, FileInfo) {
-    let info = FileInfo {
-        encoding: CharacterEncoding::Utf8,
-        mod_time: None,
-        path: path.as_ref().to_owned(),
-        has_changed: false,
-    };
-
-    ("".into(), info)
 }
 
 fn try_load_file<P>(path: P) -> Result<(Rope, FileInfo), FileError>
