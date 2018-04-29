@@ -117,12 +117,14 @@ impl<'a> EventContext<'a> {
 
     fn do_special(&mut self, cmd: SpecialEvent) {
         match cmd {
-            SpecialEvent::DebugRewrap => self.with_view(
-                |view, text| {
-                    view.rewrap(text, 72);
-                    view.set_dirty(text);
-                }),
-            SpecialEvent::DebugWrapWidth => self.debug_wrap_width(),
+            SpecialEvent::Resize(size) => {
+                self.with_view(|view, _| view.set_size(size));
+                if self.config.word_wrap {
+                    self.update_wrap_state();
+                }
+            }
+            SpecialEvent::DebugRewrap | SpecialEvent::DebugWrapWidth =>
+                eprintln!("debug wrapping methods are removed, use the config system"),
             SpecialEvent::DebugPrintSpans => self.with_editor(
                 |ed, view, _, _| {
                     let sel = view.sel_regions().last().unwrap();
@@ -277,15 +279,8 @@ impl<'a> EventContext<'a> {
 /// requires access to particular combinations of state. We isolate such
 /// special cases here.
 impl<'a> EventContext<'a> {
-    pub(crate) fn after_new_view(&mut self) {
-        self.with_editor(|ed, view, _, config| {
-            view.rewrap(ed.get_buffer(), config.wrap_width);
-            view.set_dirty(ed.get_buffer());
-        })
-    }
 
     pub(crate) fn finish_init(&mut self) {
-        self.after_new_view();
         if !self.plugins.is_empty() {
             let info = self.plugin_info();
             self.plugins.iter().for_each(|plugin| plugin.new_buffer(&info));
@@ -300,6 +295,7 @@ impl<'a> EventContext<'a> {
 
         let changes = serde_json::to_value(self.config).unwrap();
         self.client.config_changed(self.view_id, changes.as_object().unwrap());
+        self.update_wrap_state();
         self.render()
     }
 
@@ -323,11 +319,9 @@ impl<'a> EventContext<'a> {
     }
 
     pub(crate) fn config_changed(&mut self, changes: &Table) {
-        if changes.contains_key("wrap_width") {
-            self.with_editor(|ed, view, _, conf| {
-                view.rewrap(ed.get_buffer(), conf.wrap_width);
-                view.set_dirty(ed.get_buffer());
-            })
+        if changes.contains_key("wrap_width")
+            || changes.contains_key("word_wrap") {
+            self.update_wrap_state();
         }
 
         self.client.config_changed(self.view_id, &changes);
@@ -394,14 +388,21 @@ impl<'a> EventContext<'a> {
         self.editor.borrow_mut().dec_revs_in_flight();
     }
 
-    fn debug_wrap_width(&mut self) {
-        {
+    fn update_wrap_state(&mut self) {
+        // word based wrapping trumps column wrapping
+        if self.config.word_wrap {
             let mut view = self.view.borrow_mut();
             let mut width_cache = self.width_cache.borrow_mut();
             let ed = self.editor.borrow();
             view.wrap_width(ed.get_buffer(), &mut width_cache, self.client,
                             ed.get_layers().get_merged());
             view.set_dirty(ed.get_buffer());
+        } else {
+            let wrap_width = self.config.wrap_width;
+            self.with_view(|view, text| {
+                view.rewrap(text, wrap_width);
+                view.set_dirty(text);
+            });
         }
         self.render();
     }

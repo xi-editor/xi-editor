@@ -19,7 +19,8 @@
 //! the editor or view as appropriate.
 
 use movement::Movement;
-use ::rpc::{GestureType, LineRange, EditNotification, MouseAction};
+use rpc::{GestureType, LineRange, EditNotification, MouseAction};
+use view::Size;
 
 
 /// Events that only modify view state
@@ -63,6 +64,7 @@ pub(crate) enum SpecialEvent {
     DebugRewrap,
     DebugWrapWidth,
     DebugPrintSpans,
+    Resize(Size),
     RequestLines(LineRange),
 }
 
@@ -183,6 +185,7 @@ impl From<EditNotification> for EventDomain {
             AddSelectionAbove => ViewEvent::AddSelectionAbove.into(),
             AddSelectionBelow => ViewEvent::AddSelectionBelow.into(),
             Scroll(range) => ViewEvent::Scroll(range).into(),
+            Resize(size) => SpecialEvent::Resize(size).into(),
             GotoLine { line } => ViewEvent::GotoLine { line }.into(),
             RequestLines(range) => SpecialEvent::RequestLines(range).into(),
             Yank => BufferEvent::Yank.into(),

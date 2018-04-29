@@ -25,9 +25,10 @@ use serde_json::{self, Value};
 use serde::de::{self, Deserialize, Deserializer};
 use serde::ser::{self, Serialize, Serializer};
 
-use tabs::ViewId;
-use plugins::PlaceholderRpc;
 use config::{Table, ConfigDomainExternal};
+use plugins::PlaceholderRpc;
+use tabs::ViewId;
+use view::Size;
 
 // =============================================================================
 //  Command types
@@ -372,6 +373,7 @@ pub enum EditNotification {
     AddSelectionAbove,
     AddSelectionBelow,
     Scroll(LineRange),
+    Resize(Size),
     GotoLine { line: u64 },
     RequestLines(LineRange),
     Yank,

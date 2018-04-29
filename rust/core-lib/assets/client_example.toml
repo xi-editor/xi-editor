@@ -33,3 +33,6 @@ scroll_past_end = false
 
 # If non-zero, indicates the column at which lines will be wrapped.
 wrap_width = 0
+
+# If true, wraps lines at the edge of the view. Overrides 'wrap_width'.
+word_wrap = false
