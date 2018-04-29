@@ -15,22 +15,22 @@
 //! A rope data structure with a line count metric and (soon) other useful
 //! info.
 
-use std::cmp::{min,max};
 use std::borrow::Cow;
+use std::cmp::{max, min};
+use std::fmt;
+use std::ops::Add;
+use std::str;
 use std::str::FromStr;
 use std::string::ParseError;
-use std::fmt;
-use std::str;
-use std::ops::Add;
 
-use tree::{Leaf, Node, NodeInfo, Metric, TreeBuilder, Cursor};
 use delta::{Delta, DeltaElement};
 use interval::Interval;
+use tree::{Cursor, Leaf, Metric, Node, NodeInfo, TreeBuilder};
 
 use bytecount;
-use memchr::{memrchr, memchr};
-use serde::ser::{Serialize, Serializer, SerializeStruct, SerializeTupleVariant};
+use memchr::{memchr, memrchr};
 use serde::de::{Deserialize, Deserializer};
+use serde::ser::{Serialize, SerializeStruct, SerializeTupleVariant, Serializer};
 
 use unicode_segmentation::GraphemeCursor;
 use unicode_segmentation::GraphemeIncomplete;
@@ -217,12 +217,12 @@ pub fn len_utf8_from_first_byte(b: u8) -> usize {
         b if b < 0x80 => 1,
         b if b < 0xe0 => 2,
         b if b < 0xf0 => 3,
-        _ => 4
+        _ => 4,
     }
 }
 
 #[derive(Clone, Copy)]
-pub struct LinesMetric(usize);  // number of lines
+pub struct LinesMetric(usize); // number of lines
 
 /// Measured unit is newline amount.
 /// Base unit is utf8 code unit.
@@ -246,7 +246,7 @@ impl Metric<RopeInfo> for LinesMetric {
         for _ in 0..in_measured_units {
             match memchr(b'\n', &s.as_bytes()[offset..]) {
                 Some(pos) => offset += pos + 1,
-                _ => panic!("to_base_units called with arg too large")
+                _ => panic!("to_base_units called with arg too large"),
             }
         }
         offset
@@ -257,16 +257,16 @@ impl Metric<RopeInfo> for LinesMetric {
     }
 
     fn prev(s: &String, offset: usize) -> Option<usize> {
-        memrchr(b'\n', &s.as_bytes()[..offset])
-            .map(|pos| pos + 1)
+        memrchr(b'\n', &s.as_bytes()[..offset]).map(|pos| pos + 1)
     }
 
     fn next(s: &String, offset: usize) -> Option<usize> {
-        memchr(b'\n', &s.as_bytes()[offset..])
-            .map(|pos| offset + pos + 1)
+        memchr(b'\n', &s.as_bytes()[offset..]).map(|pos| offset + pos + 1)
     }
 
-    fn can_fragment() -> bool { true }
+    fn can_fragment() -> bool {
+        true
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -323,7 +323,9 @@ impl Metric<RopeInfo> for Utf16CodeUnitsMetric {
         }
     }
 
-    fn can_fragment() -> bool { false }
+    fn can_fragment() -> bool {
+        false
+    }
 }
 
 // Low level functions
@@ -380,7 +382,8 @@ impl FromStr for Rope {
 
 impl Serialize for Rope {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where S: Serializer
+    where
+        S: Serializer,
     {
         serializer.serialize_str(&String::from(self))
     }
@@ -388,7 +391,8 @@ impl Serialize for Rope {
 
 impl<'de> Deserialize<'de> for Rope {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where D: Deserializer<'de>,
+    where
+        D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
         Ok(Rope::from(s))
@@ -397,26 +401,27 @@ impl<'de> Deserialize<'de> for Rope {
 
 impl Serialize for DeltaElement<RopeInfo> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where S: Serializer
+    where
+        S: Serializer,
     {
         match *self {
             DeltaElement::Copy(ref start, ref end) => {
-                let mut el = serializer.serialize_tuple_variant("DeltaElement",
-                                                                0, "copy", 2)?;
+                let mut el = serializer.serialize_tuple_variant("DeltaElement", 0, "copy", 2)?;
                 el.serialize_field(start)?;
                 el.serialize_field(end)?;
                 el.end()
             }
-            DeltaElement::Insert(ref node) =>
-                serializer.serialize_newtype_variant("DeltaElement", 1,
-                                                     "insert", node)
+            DeltaElement::Insert(ref node) => {
+                serializer.serialize_newtype_variant("DeltaElement", 1, "insert", node)
+            }
         }
     }
 }
 
 impl Serialize for Delta<RopeInfo> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where S: Serializer
+    where
+        S: Serializer,
     {
         let mut delta = serializer.serialize_struct("Delta", 2)?;
         delta.serialize_field("els", &self.els)?;
@@ -427,7 +432,8 @@ impl Serialize for Delta<RopeInfo> {
 
 impl<'de> Deserialize<'de> for Delta<RopeInfo> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where D: Deserializer<'de>,
+    where
+        D: Deserializer<'de>,
     {
         // NOTE: we derive to an interim representation and then convert
         // that into our actual target.
@@ -441,16 +447,14 @@ impl<'de> Deserialize<'de> for Delta<RopeInfo> {
         #[derive(Serialize, Deserialize)]
         struct RopeDelta_ {
             els: Vec<RopeDeltaElement_>,
-            base_len: usize
+            base_len: usize,
         }
 
         impl From<RopeDeltaElement_> for DeltaElement<RopeInfo> {
             fn from(elem: RopeDeltaElement_) -> DeltaElement<RopeInfo> {
                 match elem {
-                    RopeDeltaElement_::Copy(start, end) =>
-                        DeltaElement::Copy(start, end),
-                    RopeDeltaElement_::Insert(s) =>
-                        DeltaElement::Insert(Rope::from(s)),
+                    RopeDeltaElement_::Copy(start, end) => DeltaElement::Copy(start, end),
+                    RopeDeltaElement_::Insert(s) => DeltaElement::Insert(Rope::from(s)),
                 }
             }
         }
@@ -458,9 +462,8 @@ impl<'de> Deserialize<'de> for Delta<RopeInfo> {
         impl From<RopeDelta_> for Delta<RopeInfo> {
             fn from(mut delta: RopeDelta_) -> Delta<RopeInfo> {
                 Delta {
-                    els: delta.els.drain(..)
-                        .map(DeltaElement::from).collect(),
-                    base_len: delta.base_len
+                    els: delta.els.drain(..).map(DeltaElement::from).collect(),
+                    base_len: delta.base_len,
                 }
             }
         }
@@ -591,7 +594,7 @@ impl Rope {
     pub fn lines_raw(&self, start: usize, end: usize) -> LinesRaw {
         LinesRaw {
             inner: self.iter_chunks(start, end),
-            fragment: ""
+            fragment: "",
         }
     }
 
@@ -612,7 +615,7 @@ impl Rope {
     /// The semantics are intended to match `str::lines()`.
     pub fn lines(&self, start: usize, end: usize) -> Lines {
         Lines {
-            inner: self.lines_raw(start, end)
+            inner: self.lines_raw(start, end),
         }
     }
 
@@ -655,7 +658,7 @@ impl<'a> Iterator for ChunkIter<'a> {
         let (leaf, start_pos) = self.cursor.get_leaf().unwrap();
         let len = min(self.end - self.cursor.pos(), leaf.len() - start_pos);
         self.cursor.next_leaf();
-        Some(&leaf[start_pos .. start_pos + len])
+        Some(&leaf[start_pos..start_pos + len])
     }
 }
 
@@ -677,6 +680,26 @@ impl TreeBuilder<RopeInfo> {
             s = &s[splitpoint..];
         }
     }
+
+    pub fn push_str_stacked(&mut self, s: &str) {
+        let leaves = split_as_leaves(s);
+        self.push_leaves(leaves);
+    }
+}
+
+fn split_as_leaves(mut s: &str) -> Vec<String> {
+    let mut nodes = Vec::new();
+    while !s.is_empty() {
+        let splitpoint = if s.len() > MAX_LEAF {
+            find_leaf_split_for_bulk(s)
+        } else {
+            s.len()
+        };
+        nodes.push(s[..splitpoint].to_owned());
+        s = &s[splitpoint..];
+    }
+
+    return nodes;
 }
 
 impl<T: AsRef<str>> From<T> for Rope {
@@ -718,7 +741,7 @@ impl Add<Rope> for Rope {
     }
 }
 
- //additional cursor features
+//additional cursor features
 
 impl<'a> Cursor<'a, RopeInfo> {
     /// Get previous codepoint before cursor position, and advance cursor backwards.
@@ -802,7 +825,7 @@ impl<'a> Cursor<'a, RopeInfo> {
 
 pub struct LinesRaw<'a> {
     inner: ChunkIter<'a>,
-    fragment: &'a str
+    fragment: &'a str,
 }
 
 fn cow_append<'a>(a: Cow<'a, str>, b: &'a str) -> Cow<'a, str> {
@@ -822,7 +845,13 @@ impl<'a> Iterator for LinesRaw<'a> {
             if self.fragment.is_empty() {
                 match self.inner.next() {
                     Some(chunk) => self.fragment = chunk,
-                    None => return if result.is_empty() { None } else { Some(result) }
+                    None => {
+                        return if result.is_empty() {
+                            None
+                        } else {
+                            Some(result)
+                        }
+                    }
                 }
                 if self.fragment.is_empty() {
                     // can only happen on empty input
@@ -831,10 +860,10 @@ impl<'a> Iterator for LinesRaw<'a> {
             }
             match memchr(b'\n', self.fragment.as_bytes()) {
                 Some(i) => {
-                    result = cow_append(result, &self.fragment[.. i + 1]);
-                    self.fragment = &self.fragment[i + 1 ..];
+                    result = cow_append(result, &self.fragment[..i + 1]);
+                    self.fragment = &self.fragment[i + 1..];
                     return Some(result);
-                },
+                }
                 None => {
                     result = cow_append(result, self.fragment);
                     self.fragment = "";
@@ -845,7 +874,7 @@ impl<'a> Iterator for LinesRaw<'a> {
 }
 
 pub struct Lines<'a> {
-    inner: LinesRaw<'a>
+    inner: LinesRaw<'a>,
 }
 
 impl<'a> Iterator for Lines<'a> {
@@ -861,7 +890,7 @@ impl<'a> Iterator for Lines<'a> {
                     }
                 }
                 Some(Cow::from(s))
-            },
+            }
             Some(Cow::Owned(mut s)) => {
                 if s.ends_with('\n') {
                     let _ = s.pop();
@@ -871,7 +900,7 @@ impl<'a> Iterator for Lines<'a> {
                 }
                 Some(Cow::from(s))
             }
-            None => None
+            None => None,
         }
     }
 }
@@ -879,7 +908,7 @@ impl<'a> Iterator for Lines<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_test::{Token, assert_tokens};
+    use serde_test::{assert_tokens, Token};
 
     #[test]
     fn replace_small() {
@@ -891,7 +920,10 @@ mod tests {
     #[test]
     fn lines_raw_small() {
         let a = Rope::from("a\nb\nc");
-        assert_eq!(vec!["a\n", "b\n", "c"], a.lines_raw_all().collect::<Vec<_>>());
+        assert_eq!(
+            vec!["a\n", "b\n", "c"],
+            a.lines_raw_all().collect::<Vec<_>>()
+        );
 
         let a = Rope::from("a\nb\n");
         assert_eq!(vec!["a\n", "b\n"], a.lines_raw_all().collect::<Vec<_>>());
@@ -907,33 +939,45 @@ mod tests {
     fn lines_small() {
         let a = Rope::from("a\nb\nc");
         assert_eq!(vec!["a", "b", "c"], a.lines_all().collect::<Vec<_>>());
-        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(),
-        a.lines_all().collect::<Vec<_>>());
+        assert_eq!(
+            String::from(&a).lines().collect::<Vec<_>>(),
+            a.lines_all().collect::<Vec<_>>()
+        );
 
         let a = Rope::from("a\nb\n");
         assert_eq!(vec!["a", "b"], a.lines_all().collect::<Vec<_>>());
-        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(),
-        a.lines_all().collect::<Vec<_>>());
+        assert_eq!(
+            String::from(&a).lines().collect::<Vec<_>>(),
+            a.lines_all().collect::<Vec<_>>()
+        );
 
         let a = Rope::from("\n");
         assert_eq!(vec![""], a.lines_all().collect::<Vec<_>>());
-        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(),
-        a.lines_all().collect::<Vec<_>>());
+        assert_eq!(
+            String::from(&a).lines().collect::<Vec<_>>(),
+            a.lines_all().collect::<Vec<_>>()
+        );
 
         let a = Rope::from("");
         assert_eq!(0, a.lines_all().count());
-        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(),
-        a.lines_all().collect::<Vec<_>>());
+        assert_eq!(
+            String::from(&a).lines().collect::<Vec<_>>(),
+            a.lines_all().collect::<Vec<_>>()
+        );
 
         let a = Rope::from("a\r\nb\r\nc");
         assert_eq!(vec!["a", "b", "c"], a.lines_all().collect::<Vec<_>>());
-        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(),
-        a.lines_all().collect::<Vec<_>>());
+        assert_eq!(
+            String::from(&a).lines().collect::<Vec<_>>(),
+            a.lines_all().collect::<Vec<_>>()
+        );
 
         let a = Rope::from("a\rb\rc");
         assert_eq!(vec!["a\rb\rc"], a.lines_all().collect::<Vec<_>>());
-        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(),
-               a.lines_all().collect::<Vec<_>>());
+        assert_eq!(
+            String::from(&a).lines().collect::<Vec<_>>(),
+            a.lines_all().collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -952,10 +996,18 @@ mod tests {
         let r = r + Rope::from(&b[MIN_LEAF..]);
         //println!("{:?}", r.iter_chunks().collect::<Vec<_>>());
 
-        assert_eq!(vec![a.as_str(), b.as_str()], r.lines_raw_all().collect::<Vec<_>>());
-        assert_eq!(vec![&a[..line_len], &b[..line_len]], r.lines_all().collect::<Vec<_>>());
-        assert_eq!(String::from(&r).lines().collect::<Vec<_>>(),
-                   r.lines_all().collect::<Vec<_>>());
+        assert_eq!(
+            vec![a.as_str(), b.as_str()],
+            r.lines_raw_all().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            vec![&a[..line_len], &b[..line_len]],
+            r.lines_all().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            String::from(&r).lines().collect::<Vec<_>>(),
+            r.lines_all().collect::<Vec<_>>()
+        );
 
         // additional tests for line indexing
         assert_eq!(a.len(), r.offset_of_line(1));
@@ -1055,15 +1107,9 @@ mod tests {
     #[test]
     fn test_ser_de() {
         let rope = Rope::from("a\u{00A1}\u{4E00}\u{1F4A9}");
-        assert_tokens(&rope, &[
-            Token::Str("a\u{00A1}\u{4E00}\u{1F4A9}"),
-        ]);
-        assert_tokens(&rope, &[
-            Token::String("a\u{00A1}\u{4E00}\u{1F4A9}"),
-        ]);
-        assert_tokens(&rope, &[
-            Token::BorrowedStr("a\u{00A1}\u{4E00}\u{1F4A9}"),
-        ]);
+        assert_tokens(&rope, &[Token::Str("a\u{00A1}\u{4E00}\u{1F4A9}")]);
+        assert_tokens(&rope, &[Token::String("a\u{00A1}\u{4E00}\u{1F4A9}")]);
+        assert_tokens(&rope, &[Token::BorrowedStr("a\u{00A1}\u{4E00}\u{1F4A9}")]);
     }
 
     #[test]
@@ -1174,23 +1220,27 @@ mod tests {
 
         let rope_with_emoji = Rope::from("hi\ni'm\n😀 four\nlines");
         let utf16_units = rope_with_emoji.measure::<Utf16CodeUnitsMetric>();
-        
+
         assert_eq!(utf16_units, 20);
 
         // position after 'f' in four
         let utf8_offset = 13;
-        let utf16_units = rope_with_emoji.convert_metrics::<BaseMetric, Utf16CodeUnitsMetric>(utf8_offset);
+        let utf16_units =
+            rope_with_emoji.convert_metrics::<BaseMetric, Utf16CodeUnitsMetric>(utf8_offset);
         assert_eq!(utf16_units, 11);
 
-        let utf8_offset = rope_with_emoji.convert_metrics::<Utf16CodeUnitsMetric, BaseMetric>(utf16_units);
+        let utf8_offset =
+            rope_with_emoji.convert_metrics::<Utf16CodeUnitsMetric, BaseMetric>(utf16_units);
         assert_eq!(utf8_offset, 13);
 
         //for next line
         let utf8_offset = 19;
-        let utf16_units = rope_with_emoji.convert_metrics::<BaseMetric, Utf16CodeUnitsMetric>(utf8_offset);
+        let utf16_units =
+            rope_with_emoji.convert_metrics::<BaseMetric, Utf16CodeUnitsMetric>(utf8_offset);
         assert_eq!(utf16_units, 17);
 
-        let utf8_offset = rope_with_emoji.convert_metrics::<Utf16CodeUnitsMetric, BaseMetric>(utf16_units);
+        let utf8_offset =
+            rope_with_emoji.convert_metrics::<Utf16CodeUnitsMetric, BaseMetric>(utf16_units);
         assert_eq!(utf8_offset, 19);
     }
 }
