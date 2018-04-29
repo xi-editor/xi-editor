@@ -53,6 +53,7 @@ pub struct View {
     /// We attempt to reduce duplicate renders by setting a small timeout
     /// after an edit is applied, to allow batching with any plugin updates.
     pending_render: bool,
+    size: Size,
     /// The selection state for this view. Invariant: non-empty.
     selection: Selection,
 
@@ -98,6 +99,13 @@ enum FindStatusChange {
     Matches
 }
 
+/// A size, in pixels.
+#[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Size {
+    pub width: f64,
+    pub height: f64,
+}
+
 /// The visual width of the buffer for the purpose of word wrapping.
 enum WrapWidth {
     /// No wrapping in effect.
@@ -136,6 +144,7 @@ impl View {
             pending_render: false,
             selection: SelRegion::caret(0).into(),
             scroll_to: Some(0),
+            size: Size::default(),
             drag_state: None,
             first_line: 0,
             height: 10,
@@ -250,6 +259,11 @@ impl View {
     fn goto_line(&mut self, text: &Rope, line: u64) {
         let offset = self.line_col_to_offset(text, line as usize, 0);
         self.set_selection(text, SelRegion::caret(offset));
+    }
+
+    pub fn set_size(&mut self, size: Size) {
+        eprintln!("set size {:?}", size);
+        self.size = size;
     }
 
     pub fn set_scroll(&mut self, first: i64, last: i64) {
@@ -795,13 +809,25 @@ impl View {
         }
     }
 
-    pub fn rewrap(&mut self, text: &Rope, wrap_col: usize) {
+    pub(crate) fn rewrap(&mut self, text: &Rope, wrap_col: usize) {
         if wrap_col > 0 {
             self.breaks = Some(linewrap::linewrap(text, wrap_col));
             self.wrap_col = WrapWidth::Bytes(wrap_col);
         } else {
             self.breaks = None
         }
+    }
+
+    /// Generate line breaks based on width measurement. Currently batch-mode,
+    /// and currently in a debugging state.
+    pub(crate) fn wrap_width(&mut self, text: &Rope, width_cache: &mut WidthCache,
+                             client: &Client, style_spans: &Spans<Style>)
+    {
+        let _t = trace_block("View::wrap_width", &["core"]);
+        self.breaks = Some(linewrap::linewrap_width(text, width_cache,
+                                                    style_spans, client,
+                                                    self.size.width));
+        self.wrap_col = WrapWidth::Width(self.size.width);
     }
 
     /// Updates the view after the text has been modified by the given `delta`.
@@ -920,19 +946,6 @@ impl View {
         }
         
         first_line..(last_line + 1)
-    }
-
-    /// Generate line breaks based on width measurement. Currently batch-mode,
-    /// and currently in a debugging state.
-    pub fn wrap_width(&mut self, text: &Rope, width_cache: &mut WidthCache,
-                      client: &Client, style_spans: &Spans<Style>)
-    {
-        let _t = trace_block("View::wrap_width", &["core"]);
-        let width_px = 500.0;
-        self.breaks = Some(linewrap::linewrap_width(text, width_cache,
-                                                    style_spans, client,
-                                                    width_px));
-        self.wrap_col = WrapWidth::Width(width_px);
     }
 }
 

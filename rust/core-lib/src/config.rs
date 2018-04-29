@@ -164,6 +164,7 @@ pub struct BufferItems {
     pub auto_indent: bool,
     pub scroll_past_end: bool,
     pub wrap_width: usize,
+    pub word_wrap: bool,
 }
 
 pub type BufferConfig = Config<BufferItems>;
