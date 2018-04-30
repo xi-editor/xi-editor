@@ -11,9 +11,7 @@ bytecount = "0.3.1"
 memchr = "2.0"
 serde = "1.0"
 serde_derive = "1.0"
-# replace to the official version once fixes are merged.
-# unicode-segmentation = "1.2.0"
-unicode-segmentation = { git = "https://github.com/unicode-rs/unicode-segmentation.git" }
+unicode-segmentation = "1.2.1"
 
 [dev-dependencies]
 serde_test = "^1.0"
