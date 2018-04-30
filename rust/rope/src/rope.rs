@@ -438,7 +438,6 @@ impl Rope {
         cursor.next::<BaseMetric>()
     }
 
-    // graphemes should probably be developed as a cursor-based interface
     pub fn prev_grapheme_offset(&self, offset: usize) -> Option<usize> {
         let mut cursor = Cursor::new(self, offset);
         cursor.prev_grapheme()
