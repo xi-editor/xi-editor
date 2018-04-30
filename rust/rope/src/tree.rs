@@ -521,6 +521,10 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
         result
     }
 
+    pub fn total_len(&self) -> usize {
+        self.root.len()
+    }
+
     /// return value is leaf (if cursor is valid) and offset within leaf
     ///
     /// invariant: offset is at end of leaf iff end of rope
