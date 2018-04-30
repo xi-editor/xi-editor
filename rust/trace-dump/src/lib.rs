@@ -85,8 +85,10 @@ mod tests {
         assert!(result.is_ok(), "{:?}", result);
 
         let decoded_result : Vec<serde_json::Value> = serde_json::from_slice(&serialized).unwrap();
-        assert_eq!(decoded_result.len(), 6);
-        for i in 0..3 {
+        assert_eq!(decoded_result.len(), 8);
+        assert_eq!(decoded_result[0]["name"].as_str().unwrap(), "process_name");
+        assert_eq!(decoded_result[1]["name"].as_str().unwrap(), "thread_name");
+        for i in 2..5 {
             assert_eq!(decoded_result[i]["name"].as_str().unwrap(), samples[i].name);
             assert_eq!(decoded_result[i]["cat"].as_str().unwrap(), "test,chrome");
             assert_eq!(decoded_result[i]["ph"].as_str().unwrap(), "i");
@@ -95,8 +97,9 @@ mod tests {
             let mut nth_args = nth_sample.args.as_ref().unwrap();
             assert_eq!(decoded_result[i]["args"]["xi_payload"], json!(nth_args.payload.as_ref()));
         }
-        assert_eq!(decoded_result[3]["ph"], "B");
-        assert_eq!(decoded_result[4]["ph"], "E");
+        assert_eq!(decoded_result[5]["ph"], "B");
+        assert_eq!(decoded_result[6]["ph"], "E");
+        assert_eq!(decoded_result[7]["ph"], "X");
     }
 
     #[cfg(feature = "chrome_trace_event")]

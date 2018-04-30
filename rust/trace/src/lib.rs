@@ -43,6 +43,7 @@ mod sys_pid;
 mod sys_tid;
 
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::cmp;
 use std::fmt;
 use std::mem::size_of;
@@ -298,6 +299,40 @@ impl SampleEventType {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum MetadataType {
+    ProcessName { name: String },
+    #[allow(dead_code)]
+    ProcessLabels { labels: String },
+    #[allow(dead_code)]
+    ProcessSortIndex { sort_index: i32 },
+    ThreadName { name: String },
+    #[allow(dead_code)]
+    ThreadSortIndex { sort_index: i32 },
+}
+
+impl MetadataType {
+    fn sample_name(&self) -> &'static str {
+        match *self {
+            MetadataType::ProcessName {..} => "process_name",
+            MetadataType::ProcessLabels {..} => "process_labels",
+            MetadataType::ProcessSortIndex {..} => "process_sort_index",
+            MetadataType::ThreadName {..} => "thread_name",
+            MetadataType::ThreadSortIndex {..} => "thread_sort_index",
+        }
+    }
+
+    fn consume(self) -> (Option<String>, Option<i32>) {
+        match self {
+            MetadataType::ProcessName {name} => (Some(name), None),
+            MetadataType::ThreadName {name} => (Some(name), None),
+            MetadataType::ProcessSortIndex {sort_index} => (None, Some(sort_index)),
+            MetadataType::ThreadSortIndex {sort_index} => (None, Some(sort_index)),
+            MetadataType::ProcessLabels {..} => (None, None)
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SampleArgs {
     /// An arbitrary payload to associate with the sample.  The type is
@@ -362,11 +397,23 @@ pub struct Sample {
     /// The thread the sample was captured on.  Omitted for Metadata events that
     /// want to set the process name (if provided then sets the thread name).
     pub tid: u64,
+    #[serde(skip_serializing)]
+    pub thread_name: Option<StrCow>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub args: Option<SampleArgs>
 }
 
+fn to_cow_str<S>(s: S) -> StrCow where S: Into<StrCow> {
+    s.into()
+}
+
 impl Sample {
+
+    fn thread_name() -> Option<StrCow> {
+        let thread = std::thread::current();
+        thread.name().map(|ref s| to_cow_str(s.to_string()))
+    }
+
     /// Constructs a Begin or End sample.  Should not be used directly.  Instead
     /// should be constructed via SampleGuard.
     pub fn new_duration_marker<S, C>(name: S,
@@ -383,6 +430,7 @@ impl Sample {
             event_type: event_type,
             duration_us: None,
             tid: sys_tid::current_tid().unwrap(),
+            thread_name: Sample::thread_name(),
             pid: sys_pid::current_pid(),
             args: Some(SampleArgs {
                 payload: payload,
@@ -407,6 +455,7 @@ impl Sample {
             event_type: SampleEventType::CompleteDuration,
             duration_us: Some(ns_to_us(duration_ns)),
             tid: sys_tid::current_tid().unwrap(),
+            thread_name: Sample::thread_name(),
             pid: sys_pid::current_pid(),
             args: Some(SampleArgs {
                 payload: payload,
@@ -428,11 +477,33 @@ impl Sample {
             event_type: SampleEventType::Instant,
             duration_us: None,
             tid: sys_tid::current_tid().unwrap(),
+            thread_name: Sample::thread_name(),
             pid: sys_pid::current_pid(),
             args: Some(SampleArgs {
                 payload: payload,
                 metadata_name: None,
                 metadata_sort_index: None,
+            }),
+        }
+    }
+
+    fn new_metadata(timestamp_ns: u64, meta: MetadataType, tid: u64) -> Self {
+        let sample_name = to_cow_str(meta.sample_name());
+        let (metadata_name, sort_index) = meta.consume();
+
+        Self {
+            name: sample_name,
+            categories: None,
+            timestamp_us: ns_to_us(timestamp_ns),
+            event_type: SampleEventType::Metadata,
+            duration_us: None,
+            tid: tid,
+            thread_name: None,
+            pid: sys_pid::current_pid(),
+            args: Some(SampleArgs {
+                payload: None,
+                metadata_name: metadata_name.map(|s| Cow::Owned(s)),
+                metadata_sort_index: sort_index,
             }),
         }
     }
@@ -510,6 +581,35 @@ impl<'a> Drop for SampleGuard<'a> {
             sample.event_type = SampleEventType::DurationEnd;
             trace.record(sample);
         }
+    }
+}
+
+/// Returns the file name of the EXE if possible, otherwise the full path, or
+/// None if an irrecoverable error occured.
+fn exe_name() -> Option<String> {
+    match std::env::current_exe() {
+        Ok(exe_name) => {
+            match exe_name.clone().file_name() {
+                Some(filename) => {
+                    filename.to_str().map(|s| s.to_string())
+                },
+                None => {
+                    let full_path = exe_name.into_os_string();
+                    let full_path_str = full_path.into_string();
+                    match full_path_str {
+                        Ok(s) => Some(s),
+                        Err(e) => {
+                            eprintln!("Failed to get string representation: {:?}", e);
+                            None
+                        },
+                    }
+                }
+            }
+        },
+        Err(ref e) => {
+            eprintln!("Failed to get path to current exe: {:?}", e);
+            None
+        },
     }
 }
 
@@ -640,9 +740,39 @@ impl Trace {
         result
     }
 
-    pub fn samples_cloned_unsorted(&self) -> Vec<Sample> {
+    pub fn samples_cloned_unsorted<'a>(&'a self) -> Vec<Sample> {
         let all_samples = self.samples.lock().unwrap();
-        let mut as_vec = Vec::with_capacity(all_samples.len());
+        if all_samples.is_empty() {
+            return Vec::with_capacity(0);
+        }
+
+        let mut as_vec = Vec::with_capacity(all_samples.len() + 10);
+        let first_sample_timestamp = all_samples.front()
+            .map_or(0, |ref s| s.timestamp_us);
+        let tid = all_samples.front()
+            .map_or_else(|| sys_tid::current_tid().unwrap(), |ref s| s.tid);
+
+        if let Some(exe_name) = exe_name() {
+            as_vec.push(Sample::new_metadata(
+                first_sample_timestamp,
+                MetadataType::ProcessName {name: exe_name},
+                tid));
+        }
+
+        let mut thread_names: HashMap<u64, StrCow> = HashMap::new();
+
+        for sample in all_samples.iter() {
+            if let Some(ref thread_name) = sample.thread_name {
+                let previous_name = thread_names.insert(sample.tid, thread_name.clone());
+                if previous_name.is_none() || previous_name.unwrap() != *thread_name {
+                    as_vec.push(Sample::new_metadata(
+                        first_sample_timestamp,
+                        MetadataType::ThreadName { name: thread_name.to_string() },
+                        sample.tid));
+                }
+            }
+        }
+
         as_vec.extend(all_samples.iter().cloned());
         as_vec
     }
@@ -954,7 +1084,8 @@ mod tests {
         trace.instant("4", &["test"]);
         trace.instant("5", &["test"]);
         assert_eq!(trace.get_samples_count(), 5);
-        assert_eq!(trace.samples_cloned_unsorted().len(), 5);
+        // 1 for exe name & 1 for the thread name
+        assert_eq!(trace.samples_cloned_unsorted().len(), 7);
         trace.disable();
         assert_eq!(trace.get_samples_count(), 0);
     }
@@ -971,21 +1102,26 @@ mod tests {
         trace.closure_payload("x", &["test"], || (),
                               to_payload("test_get_samples"));
         assert_eq!(trace.get_samples_count(), 1);
-        assert_eq!(trace.samples_cloned_unsorted().len(), 1);
+        // +2 for exe & thread name.
+        assert_eq!(trace.samples_cloned_unsorted().len(), 3);
 
         trace.closure_payload("y", &["test"], || {},
                               to_payload("test_get_samples"));
-        assert_eq!(trace.samples_cloned_unsorted().len(), 2);
+        assert_eq!(trace.samples_cloned_unsorted().len(), 4);
 
         trace.closure_payload("z", &["test"], || {},
                               to_payload("test_get_samples"));
 
         let snapshot = trace.samples_cloned_unsorted();
-        assert_eq!(snapshot.len(), 3);
+        assert_eq!(snapshot.len(), 5);
 
-        assert_eq!(snapshot[0].name, "x");
-        assert_eq!(snapshot[1].name, "y");
-        assert_eq!(snapshot[2].name, "z");
+        assert_eq!(snapshot[0].name, "process_name");
+        assert_eq!(snapshot[0].args.as_ref().unwrap().metadata_name.as_ref().is_some(), true);
+        assert_eq!(snapshot[1].name, "thread_name");
+        assert_eq!(snapshot[1].args.as_ref().unwrap().metadata_name.as_ref().is_some(), true);
+        assert_eq!(snapshot[2].name, "x");
+        assert_eq!(snapshot[3].name, "y");
+        assert_eq!(snapshot[4].name, "z");
     }
 
     #[test]
@@ -1026,15 +1162,20 @@ mod tests {
         }, to_payload("test_get_samples_nested_trace"));
 
         let snapshot = trace.samples_cloned_unsorted();
-        assert_eq!(snapshot.len(), 7);
+        // +2 for exe & thread name
+        assert_eq!(snapshot.len(), 9);
 
-        assert_eq!(snapshot[0].name, "a");
-        assert_eq!(snapshot[1].name, "b");
-        assert_eq!(snapshot[2].name, "y");
-        assert_eq!(snapshot[3].name, "z");
-        assert_eq!(snapshot[4].name, "z");
-        assert_eq!(snapshot[5].name, "c");
-        assert_eq!(snapshot[6].name, "x");
+        assert_eq!(snapshot[0].name, "process_name");
+        assert_eq!(snapshot[0].args.as_ref().unwrap().metadata_name.as_ref().is_some(), true);
+        assert_eq!(snapshot[1].name, "thread_name");
+        assert_eq!(snapshot[1].args.as_ref().unwrap().metadata_name.as_ref().is_some(), true);
+        assert_eq!(snapshot[2].name, "a");
+        assert_eq!(snapshot[3].name, "b");
+        assert_eq!(snapshot[4].name, "y");
+        assert_eq!(snapshot[5].name, "z");
+        assert_eq!(snapshot[6].name, "z");
+        assert_eq!(snapshot[7].name, "c");
+        assert_eq!(snapshot[8].name, "x");
     }
 
     #[test]
@@ -1065,15 +1206,20 @@ mod tests {
         }, to_payload("test_get_sorted_samples"));
 
         let snapshot = trace.samples_cloned_sorted();
-        assert_eq!(snapshot.len(), 7);
+        // +2 for exe & thread name.
+        assert_eq!(snapshot.len(), 9);
 
-        assert_eq!(snapshot[0].name, "x");
-        assert_eq!(snapshot[1].name, "a");
-        assert_eq!(snapshot[2].name, "y");
-        assert_eq!(snapshot[3].name, "b");
-        assert_eq!(snapshot[4].name, "z");
-        assert_eq!(snapshot[5].name, "z");
-        assert_eq!(snapshot[6].name, "c");
+        assert_eq!(snapshot[0].name, "process_name");
+        assert_eq!(snapshot[0].args.as_ref().unwrap().metadata_name.as_ref().is_some(), true);
+        assert_eq!(snapshot[1].name, "thread_name");
+        assert_eq!(snapshot[1].args.as_ref().unwrap().metadata_name.as_ref().is_some(), true);
+        assert_eq!(snapshot[2].name, "x");
+        assert_eq!(snapshot[3].name, "a");
+        assert_eq!(snapshot[4].name, "y");
+        assert_eq!(snapshot[5].name, "b");
+        assert_eq!(snapshot[6].name, "z");
+        assert_eq!(snapshot[7].name, "z");
+        assert_eq!(snapshot[8].name, "c");
     }
 
     #[test]
