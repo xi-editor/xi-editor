@@ -15,6 +15,11 @@
 #![cfg_attr(feature = "benchmarks", feature(test))]
 #![cfg_attr(feature = "collections_range", feature(collections_range))]
 
+#![cfg_attr(feature = "cargo-clippy", allow(
+    identity_op,
+    new_without_default_derive,
+))]
+
 #[macro_use]
 extern crate lazy_static;
 extern crate time;
@@ -69,7 +74,7 @@ impl StringArrayEq<[&'static str]> for Vec<String> {
                 return false;
             }
         }
-        return true;
+        true
     }
 }
 
@@ -83,23 +88,23 @@ impl StringArrayEq<Vec<String>> for &'static [&'static str] {
                 return false;
             }
         }
-        return true;
+        true
     }
 }
 
 impl PartialEq for CategoriesT {
     fn eq(&self, other: &CategoriesT) -> bool {
-        match self {
-            &CategoriesT::StaticArray(ref self_arr) => {
-                match other {
-                    &CategoriesT::StaticArray(ref other_arr) => self_arr.eq(other_arr),
-                    &CategoriesT::DynamicArray(ref other_arr) => self_arr.arr_eq(other_arr),
+        match *self {
+            CategoriesT::StaticArray(ref self_arr) => {
+                match *other {
+                    CategoriesT::StaticArray(ref other_arr) => self_arr.eq(other_arr),
+                    CategoriesT::DynamicArray(ref other_arr) => self_arr.arr_eq(other_arr),
                 }
             },
-            &CategoriesT::DynamicArray(ref self_arr) => {
-                match other {
-                    &CategoriesT::StaticArray(ref other_arr) => self_arr.arr_eq(other_arr),
-                    &CategoriesT::DynamicArray(ref other_arr) => self_arr.eq(other_arr),
+            CategoriesT::DynamicArray(ref self_arr) => {
+                match *other {
+                    CategoriesT::StaticArray(ref other_arr) => self_arr.arr_eq(other_arr),
+                    CategoriesT::DynamicArray(ref other_arr) => self_arr.eq(other_arr),
                 }
             }
         }
@@ -112,9 +117,9 @@ impl serde::Serialize for CategoriesT {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where S: serde::Serializer
     {
-        match self {
-            &CategoriesT::StaticArray(ref arr) => arr.serialize(serializer),
-            &CategoriesT::DynamicArray(ref arr) => arr.serialize(serializer),
+        match *self {
+            CategoriesT::StaticArray(ref arr) => arr.serialize(serializer),
+            CategoriesT::DynamicArray(ref arr) => arr.serialize(serializer),
         }
     }
 }
@@ -153,9 +158,9 @@ impl<'de> serde::Deserialize<'de> for CategoriesT {
 
 impl CategoriesT {
     pub fn join(&self, sep: &str) -> String {
-        match self {
-            &CategoriesT::StaticArray(ref arr) => arr.join(sep),
-            &CategoriesT::DynamicArray(ref vec) => vec.join(sep),
+        match *self {
+            CategoriesT::StaticArray(ref arr) => arr.join(sep),
+            CategoriesT::DynamicArray(ref vec) => vec.join(sep),
         }
     }
 }
@@ -292,7 +297,7 @@ impl Sample {
             name: name.into(),
             categories: categories.into(),
             start_ns: time::precise_time_ns(),
-            payload: payload,
+            payload,
             end_ns: 0,
             sample_type: SampleType::Duration,
             tid: sys_tid::current_tid().unwrap(),
@@ -311,7 +316,7 @@ impl Sample {
             name: name.into(),
             categories: categories.into(),
             start_ns: now,
-            payload: payload,
+            payload,
             end_ns: now,
             sample_type: SampleType::Instant,
             tid: sys_tid::current_tid().unwrap(),
@@ -484,7 +489,7 @@ impl Trace {
         }
     }
 
-    pub fn block<'a, S, C>(&'a self, name: S, categories: C) -> SampleGuard<'a>
+    pub fn block<S, C>(&self, name: S, categories: C) -> SampleGuard
         where S: Into<StrCow>, C: Into<CategoriesT>
     {
         if !self.is_enabled() {
@@ -494,8 +499,8 @@ impl Trace {
         }
     }
 
-    pub fn block_payload<'a, S, C, P>(&'a self, name: S, categories: C, payload: P)
-        -> SampleGuard<'a>
+    pub fn block_payload<S, C, P>(&self, name: S, categories: C, payload: P)
+        -> SampleGuard
         where S: Into<StrCow>, C: Into<CategoriesT>, P: Into<TracePayloadT>
     {
         if !self.is_enabled() {
@@ -509,8 +514,7 @@ impl Trace {
         where S: Into<StrCow>, C: Into<CategoriesT>, F: FnOnce() -> R
     {
         let _closure_guard = self.block(name, categories);
-        let r = closure();
-        r
+        closure()
     }
 
     pub fn closure_payload<S, C, P, F, R>(&self, name: S, categories: C,
@@ -520,8 +524,7 @@ impl Trace {
               F: FnOnce() -> R
     {
         let _closure_guard = self.block_payload(name, categories, payload);
-        let r = closure();
-        r
+        closure()
     }
 
     pub fn samples_cloned_unsorted(&self) -> Vec<Sample> {

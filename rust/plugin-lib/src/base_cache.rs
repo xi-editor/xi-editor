@@ -21,8 +21,9 @@ use memchr::memchr;
 use xi_rope::rope::{Rope, RopeDelta, LinesMetric};
 use xi_rope::delta::DeltaElement;
 use xi_core::plugin_rpc::{TextUnit, GetDataResponse};
+use xi_trace::trace_block;
 
-use plugin_base::{Error, DataSource};
+use super::{Error, DataSource, Cache};
 
 #[cfg(not(test))]
 const CHUNK_SIZE: usize = 1024 * 1024;
@@ -51,15 +52,29 @@ pub struct ChunkCache {
     pub rev: u64,
 }
 
-impl ChunkCache {
-    /// Returns the text of the line at `line_num`, zero-indexed, fetching
-    /// data from `source` if needed.
+impl Cache for ChunkCache {
+    fn new(buf_size: usize, rev: u64, num_lines: usize) -> Self {
+        let mut new = Self::default();
+        new.buf_size = buf_size;
+        new.num_lines = num_lines;
+        new.rev = rev;
+        new
+    }
+
+    /// Returns the line at `line_num` (zero-indexed). Returns an `Err(_)` if
+    /// there is a problem connecting to the peer, or if the requested line
+    /// is out of bounds.
+    ///
+    /// The `source` argument is some type that implements [`DataSource`]; in
+    /// the general case this is backed by the remote peer.
     ///
     /// # Errors
     ///
     /// Returns an error if `line_num` is greater than the total number of lines
     /// in the document, or if there is a problem communicating with `source`.
-    pub fn get_line<DS>(&mut self, source: &DS, line_num: usize) -> Result<&str, Error>
+    ///
+    /// [`DataSource`]: trait.DataSource.html
+    fn get_line<DS>(&mut self, source: &DS, line_num: usize) -> Result<&str, Error>
         where DS: DataSource
     {
         if line_num > self.num_lines { return Err(Error::BadRequest) }
@@ -94,29 +109,79 @@ impl ChunkCache {
                                        CHUNK_SIZE, self.rev)?;
             self.append_chunk(resp);
         }
+
     }
 
-    /// Returns the offset of the line at `line_num`, zero-indexed, fetching
-    /// data from `source` if needed.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `line_num` is greater than the total number of lines
-    /// in the document, or if there is a problem communicating with `source`.
-    pub fn offset_of_line<DS>(&mut self, source: &DS, line_num: usize) -> Result<usize, Error>
-        where DS: DataSource
+    fn offset_of_line<DS: DataSource>(&mut self, source: &DS, line_num: usize)
+        -> Result<usize, Error>
     {
         if line_num > self.num_lines { return Err(Error::BadRequest) }
         match self.cached_offset_of_line(line_num) {
             Some(offset) => Ok(offset),
             None => {
-                let resp = source.get_data(line_num, TextUnit::Line, CHUNK_SIZE, self.rev)?;
+                let resp = source.get_data(line_num, TextUnit::Line,
+                                           CHUNK_SIZE, self.rev)?;
                 self.reset_chunk(resp);
                 self.offset_of_line(source, line_num)
             }
         }
     }
 
+    fn line_of_offset<DS: DataSource>(&mut self, source: &DS, offset: usize)
+        -> Result<usize, Error>
+    {
+        if offset > self.buf_size { return Err(Error::BadRequest) }
+        if self.contents.len() == 0
+            || offset < self.offset
+            || offset > self.offset + self.contents.len() {
+                let resp = source.get_data(offset, TextUnit::Utf8,
+                                           CHUNK_SIZE, self.rev)?;
+                self.reset_chunk(resp);
+        }
+
+        let rel_offset = offset - self.offset;
+        let line_num = match self.line_offsets.binary_search(&rel_offset) {
+            Ok(ix) => ix + self.first_line + 1,
+            Err(ix) => ix + self.first_line,
+        };
+        Ok(line_num)
+    }
+
+
+    /// Updates the chunk to reflect changes in this delta.
+    fn update(&mut self, delta: Option<&RopeDelta>, new_len: usize,
+              num_lines: usize, rev: u64) {
+        let _t = trace_block("ChunkCache::update", &["plugin"]);
+        let is_empty = self.offset == 0 && self.contents.len() == 0;
+        let should_clear = match delta {
+            Some(delta) if !is_empty => self.should_clear(delta),
+            // if no contents, clearing is a noop
+            Some(_) => true,
+            // no delta means a very large edit
+            None => true,
+        };
+
+        if should_clear {
+            self.clear();
+        } else {
+            // only reached if delta exists
+            self.update_chunk(delta.unwrap());
+        }
+        self.buf_size = new_len;
+        self.num_lines =  num_lines;
+        self.rev = rev;
+    }
+
+    fn clear(&mut self) {
+        self.contents.clear();
+        self.offset = 0;
+        self.line_offsets.clear();
+        self.first_line = 0;
+        self.first_line_offset = 0;
+    }
+}
+
+impl ChunkCache {
     /// Returns the offset of the provided `line_num` if it can be determined
     /// without fetching data.
     fn cached_offset_of_line(&self, line_num: usize) -> Option<usize> {
@@ -191,29 +256,6 @@ impl ChunkCache {
     fn recalculate_line_offsets(&mut self) {
         self.line_offsets.clear();
         newline_offsets(&self.contents, &mut self.line_offsets);
-    }
-
-    /// Updates the chunk to reflect changes in this delta.
-    pub fn apply_update(&mut self, new_len: usize, num_lines: usize,
-                        rev: u64, delta: Option<&RopeDelta>) {
-        let is_empty = self.offset == 0 && self.contents.len() == 0;
-        let should_clear = match delta {
-            Some(delta) if !is_empty => self.should_clear(delta),
-            // if no contents, clearing is a noop
-            Some(_) => true,
-            // no delta means a very large edit
-            None => true,
-        };
-
-        if should_clear {
-            self.clear();
-        } else {
-            // only reached if delta exists
-            self.update_chunk(delta.unwrap());
-        }
-        self.buf_size = new_len;
-        self.num_lines =  num_lines;
-        self.rev = rev;
     }
 
     /// Determine whether we should update our state with this delta,
@@ -339,14 +381,6 @@ impl ChunkCache {
         self.offset -= del_before;
         self.contents = new_state;
     }
-
-    pub fn clear(&mut self) {
-        self.contents.clear();
-        self.offset = 0;
-        self.line_offsets.clear();
-        self.first_line = 0;
-        self.first_line_offset = 0;
-    }
 }
 
 /// Calculates the offsets of newlines in `text`,
@@ -396,25 +430,25 @@ mod tests {
         c.contents = "oh".into();
 
         let d = Delta::simple_edit(Interval::new_closed_open(0, 0), "yay".into(), c.contents.len());
-        c.apply_update(d.new_document_len(), 1, 1, Some(&d));
+        c.update(Some(&d), d.new_document_len(), 1, 1);
         assert_eq!(&c.contents, "yayoh");
         assert_eq!(c.offset, 0);
 
         let d = Delta::simple_edit(Interval::new_closed_open(0, 0), "ahh".into(), c.contents.len());
-        c.apply_update(d.new_document_len(), 1, 2, Some(&d));
+        c.update(Some(&d), d.new_document_len(), 1, 2);
 
         assert_eq!(&c.contents, "ahhyayoh");
         assert_eq!(c.offset, 0);
 
         let d = Delta::simple_edit(Interval::new_closed_open(2, 2), "_oops_".into(), c.contents.len());
         assert_eq!(d.els.len(), 3);
-        c.apply_update(d.new_document_len(), 1, 3, Some(&d));
+        c.update(Some(&d), d.new_document_len(), 1, 3);
 
         assert_eq!(&c.contents, "ah_oops_hyayoh");
         assert_eq!(c.offset, 0);
 
         let d = Delta::simple_edit(Interval::new_closed_open(9, 9), "fin".into(), c.contents.len());
-        c.apply_update(d.new_document_len(), 1, 5, Some(&d));
+        c.update(Some(&d), d.new_document_len(), 1, 5);
 
         assert_eq!(&c.contents, "ah_oops_hfinyayoh");
         assert_eq!(c.offset, 0);
@@ -493,13 +527,13 @@ mod tests {
                                    "two\nline\nbreaks".into(), c.contents.len());
         assert!(d.as_simple_insert().is_some());
         assert!(!d.is_simple_delete());
-        c.apply_update(d.new_document_len(), 3, 1, Some(&d));
+        c.update(Some(&d), d.new_document_len(), 3, 1);
         assert_eq!(c.line_offsets, vec![4, 9]);
 
         let d = Delta::simple_edit(Interval::new_closed_open(4, 4),
                                    "one\nmore".into(), c.contents.len());
         assert!(d.as_simple_insert().is_some());
-        c.apply_update(d.new_document_len(), 4, 2, Some(&d));
+        c.update(Some(&d), d.new_document_len(), 4, 2);
         assert_eq!(&c.contents, "two\none\nmoreline\nbreakssome");
         assert_eq!(c.line_offsets, vec![4, 8, 17]);
     }
@@ -530,7 +564,7 @@ mod tests {
         assert_eq!(c.offset_of_line(&source, 3).unwrap(), 14);
         let d = Delta::simple_edit(Interval::new_closed_open(10,10),
                                    "ive nice\ns".into(), c.contents.len() + c.offset);
-        c.apply_update(d.new_document_len(), 5, 1, Some(&d));
+        c.update(Some(&d), d.new_document_len(), 5, 1);
         // keep our source up to date
         source.0 = "this\nhas\nfive nice\nsour\nlines!".into();
 
@@ -557,10 +591,9 @@ mod tests {
         let d = Delta::simple_edit(Interval::new_closed_open(6, 10),
                                    "".into(), c.contents.len() + c.offset);
         assert!(d.is_simple_delete());
-        c.apply_update(d.new_document_len(), 4, 1, Some(&d));
+        c.update(Some(&d), d.new_document_len(), 4, 1);
         source.0 = "this\nhive nice\nsour\nlines!".into();
 
-        //assert_eq!(&c.contents, "hive nice\nsour\nlines!");
         assert_eq!(c.offset, 5);
         assert_eq!(c.first_line, 1);
         assert_eq!(c.get_line(&source, 1).unwrap(), "hive nice\n");
@@ -600,5 +633,34 @@ mod tests {
         assert_eq!(c.contents, test_str[5..CHUNK_SIZE*3]);
         assert_eq!(c.get_line(&source, 3).unwrap(), "yay!");
         assert_eq!(c.first_line, 3);
+    }
+
+    #[test]
+    fn convert_lines_offsets() {
+        let source = MockDataSource("this\nhas\nfour\nlines!".into());
+        let mut c = ChunkCache::default();
+        c.buf_size = source.0.len();
+        c.num_lines = source.0.measure::<LinesMetric>() + 1;
+
+        assert_eq!(c.line_of_offset(&source, 0).unwrap(), 0);
+        assert_eq!(c.line_of_offset(&source, 1).unwrap(), 0);
+        eprintln!("{:?} {} {}", c.line_offsets, c.offset, c.buf_size);
+        assert_eq!(c.line_of_offset(&source, 4).unwrap(), 0);
+        assert_eq!(c.line_of_offset(&source, 5).unwrap(), 1);
+        assert_eq!(c.line_of_offset(&source, 8).unwrap(), 1);
+        assert_eq!(c.line_of_offset(&source, 9).unwrap(), 2);
+        assert_eq!(c.line_of_offset(&source, 13).unwrap(), 2);
+        assert_eq!(c.line_of_offset(&source, 14).unwrap(), 3);
+        assert_eq!(c.line_of_offset(&source, 18).unwrap(), 3);
+        assert_eq!(c.line_of_offset(&source, 20).unwrap(), 3);
+        assert!(c.line_of_offset(&source, 21).is_err());
+
+
+        assert_eq!(c.offset_of_line(&source, 0).unwrap(), 0);
+        assert_eq!(c.offset_of_line(&source, 1).unwrap(), 5);
+        assert_eq!(c.offset_of_line(&source, 2).unwrap(), 9);
+        assert_eq!(c.offset_of_line(&source, 3).unwrap(), 14);
+        assert_eq!(c.offset_of_line(&source, 4).unwrap(), 20);
+        assert!(c.offset_of_line(&source, 5).is_err());
     }
 }

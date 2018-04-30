@@ -45,7 +45,7 @@ pub trait NodeInfo: Clone {
 
     /// The identity of the monoid. Need not be implemented because it
     /// can be computed from the leaf default.
-    /// 
+    ///
     /// This is hear to demonstrate that this is a monoid.
     fn identity() -> Self {
         Self::compute_info(&Self::L::default())
@@ -72,11 +72,11 @@ pub trait Leaf: Sized + Clone + Default {
     /// Combine other into self, optionly splitting in two.
     /// Interval is in "base units".
     /// Generally implements a maximum size.
-    /// 
+    ///
     /// TODO: What does Interval represent?
-    /// 
+    ///
     /// Invariants:
-    /// 
+    ///
     /// - If one or the other input is empty, then no split.
     /// - If either input satisfies is_ok_child, then on return self
     /// satisfies this, as does the optional split.
@@ -84,7 +84,7 @@ pub trait Leaf: Sized + Clone + Default {
 
     /// same meaning as push_maybe_split starting from an empty
     /// leaf, but maybe can be implemented more efficiently?
-    /// 
+    ///
     /// TODO: remove if it doesn't pull its weight
     fn subseq(&self, iv: Interval) -> Self {
         let mut result = Self::default();
@@ -128,12 +128,12 @@ enum NodeVal<N: NodeInfo> {
 // help separate metrics
 
 /// A trait for quickly processing attributes of a NodeInfo.
-/// 
-/// For the conceptual background see the 
+///
+/// For the conceptual background see the
 /// [blog post, Rope science, part 2: metrics](https://github.com/google/xi-editor/blob/master/docs/docs/rope_science_02.md).
 pub trait Metric<N: NodeInfo> {
     /// Return the number of boundarys in the NodeInfo::Leaf
-    /// 
+    ///
     /// The usize argument is the total size/length of the node, in base units.
     fn measure(&N, usize) -> usize;
 
@@ -142,7 +142,6 @@ pub trait Metric<N: NodeInfo> {
     /// Invariants:
     ///
     /// - `from_base_units(to_base_units(x)) == x` is True for valid `x`
-    /// - `is_boundary(to_base_units(x))` is True for all `x`
     fn to_base_units(l: &N::L, in_measured_units: usize) -> usize;
 
     /// Returns the smallest offset in measured units corresponding to an offset in base units.
@@ -181,8 +180,8 @@ impl<N: NodeInfo> Node<N> {
         Node(Arc::new(
             NodeBody {
             height: 0,
-            len: len,
-            info: info,
+            len,
+            info,
             val: NodeVal::Leaf(l),
         }))
     }
@@ -197,9 +196,9 @@ impl<N: NodeInfo> Node<N> {
         }
         Node(Arc::new(
             NodeBody {
-            height: height,
-            len: len,
-            info: info,
+            height,
+            len,
+            info,
             val: NodeVal::Internal(nodes),
         }))
     }
@@ -513,7 +512,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
     pub fn new(n: &'a Node<N>, position: usize) -> Cursor<'a, N> {
         let mut result = Cursor {
             root: n,
-            position: position,
+            position,
             cache: [None; CURSOR_CACHE_SIZE],
             leaf: None,
             offset_of_leaf: 0,

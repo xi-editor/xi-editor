@@ -14,46 +14,44 @@
 
 //! A syntax highlighting plugin based on syntect.
 
-#[macro_use]
-extern crate serde_json;
-
 extern crate syntect;
 extern crate xi_plugin_lib;
-extern crate xi_core_lib;
+extern crate xi_core_lib as xi_core;
 extern crate xi_rope;
+extern crate xi_trace;
 
 mod stackmap;
 
 use std::sync::MutexGuard;
 use std::borrow::Cow;
+use std::collections::HashMap;
+use std::path::Path;
 
-use serde_json::Value;
-
-use xi_plugin_lib::state_cache::{self, PluginCtx};
-use xi_core_lib::plugin_rpc::ScopeSpan;
+use xi_core::{ViewIdentifier, ConfigTable};
+use xi_core::plugin_rpc::{ScopeSpan, PluginEdit};
 use xi_rope::rope::RopeDelta;
 use xi_rope::interval::Interval;
 use xi_rope::delta::Builder as EditBuilder;
+use xi_trace::{trace, trace_block};
+use xi_plugin_lib::{Cache, Plugin, StateCache, View, mainloop};
 
-use syntect::parsing::{ParseState, ScopeStack, SyntaxSet, SCOPE_REPO, ScopeRepository};
+use syntect::parsing::{ParseState, ScopeStack, SyntaxSet, SCOPE_REPO,
+SyntaxDefinition, ScopeRepository};
 use stackmap::{StackMap, LookupResult};
 
+const LINES_PER_RPC: usize = 10;
+const INDENTATION_PRIORITY: u64 = 100;
 
 /// The state for syntax highlighting of one file.
-struct PluginState<'a> {
-    syntax_set: &'a SyntaxSet,
+struct PluginState {
     stack_idents: StackMap,
     offset: usize,
-    initial_state: Option<(ParseState, ScopeStack)>,
+    initial_state: LineState,
     spans_start: usize,
     // unflushed spans
     spans: Vec<ScopeSpan>,
     new_scopes: Vec<Vec<String>>,
-    syntax_name: String,
 }
-
-const LINES_PER_RPC: usize = 10;
-const INDENTATION_PRIORITY: usize = 100;
 
 type LockedRepo = MutexGuard<'static, ScopeRepository>;
 
@@ -62,25 +60,28 @@ type LockedRepo = MutexGuard<'static, ScopeRepository>;
 // Note: this needs to be option because the caching layer relies on Default.
 // We can't implement that because the actual initial state depends on the
 // syntax. There are other ways to handle this, but this will do for now.
-type State = Option<(ParseState, ScopeStack)>;
+type LineState = Option<(ParseState, ScopeStack)>;
 
+/// The state of syntax highlighting for a collection of buffers.
+struct Syntect<'a> {
+    view_state: HashMap<ViewIdentifier, PluginState>,
+    syntax_set: &'a SyntaxSet,
+}
 
-impl<'a> PluginState<'a> {
-    pub fn new(syntax_set: &'a SyntaxSet) -> Self {
+impl PluginState {
+    fn new() -> Self {
         PluginState {
-            syntax_set: syntax_set,
             stack_idents: StackMap::default(),
             offset: 0,
             initial_state: None,
             spans_start: 0,
             spans: Vec::new(),
             new_scopes: Vec::new(),
-            syntax_name: String::from("None"),
         }
     }
 
     // compute syntax for one line, also accumulating the style spans
-    fn compute_syntax(&mut self, line: &str, state: State) -> State {
+    fn compute_syntax(&mut self, line: &str, state: LineState) -> LineState {
         let (mut parse_state, mut scope_state) = state.or_else(|| self.initial_state.clone()).unwrap();
         let ops = parse_state.parse_line(&line);
 
@@ -126,7 +127,7 @@ impl<'a> PluginState<'a> {
 
     #[allow(unused)]
     // Return true if there's any more work to be done.
-    fn highlight_one_line(&mut self, ctx: &mut PluginCtx<State>) -> bool {
+    fn highlight_one_line(&mut self, ctx: &mut MyView) -> bool {
         if let Some(line_num) = ctx.get_frontier() {
             let (line_num, offset, state) = ctx.get_prev(line_num);
             if offset != self.offset {
@@ -165,7 +166,8 @@ impl<'a> PluginState<'a> {
         false
     }
 
-    fn flush_spans(&mut self, ctx: &mut PluginCtx<State>) {
+    fn flush_spans(&mut self, ctx: &mut MyView) {
+        let _t = trace_block("PluginState::flush_spans", &["syntect"]);
         if !self.new_scopes.is_empty() {
             ctx.add_scopes(&self.new_scopes);
             self.new_scopes.clear();
@@ -178,44 +180,65 @@ impl<'a> PluginState<'a> {
         self.spans_start = self.offset;
     }
 
-    fn do_highlighting(&mut self, mut ctx: PluginCtx<State>) {
-        let syntax = match ctx.get_view().path {
-            Some(ref path) => self.syntax_set.find_syntax_for_file(path).unwrap()
-                .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text()),
-            None => self.syntax_set.find_syntax_plain_text(),
+}
+
+type MyView = View<StateCache<LineState>>;
+
+impl<'a> Syntect<'a> {
+    fn new(syntax_set: &'a SyntaxSet) -> Self {
+        Syntect {
+            view_state: HashMap::new(),
+            syntax_set: syntax_set,
+        }
+    }
+
+    /// Wipes any existing state and starts highlighting with `syntax`.
+    fn do_highlighting(&mut self, view: &mut MyView) {
+        let initial_state = {
+            let syntax = self.guess_syntax(view.get_path());
+            Some((ParseState::new(syntax), ScopeStack::new()))
         };
 
-        if syntax.name != self.syntax_name {
-            self.syntax_name = syntax.name.clone();
-            eprintln!("syntect using {}", syntax.name);
-        }
+        let state = self.view_state.get_mut(&view.get_id()).unwrap();
+        state.initial_state = initial_state;
+        state.spans = Vec::new();
+        state.new_scopes = Vec::new();
+        state.offset = 0;
+        state.spans_start = 0;
+        view.get_cache().clear();
+        view.schedule_idle();
+    }
 
-        self.initial_state = Some((ParseState::new(syntax), ScopeStack::new()));
-        self.spans = Vec::new();
-        self.new_scopes = Vec::new();
-        self.offset = 0;
-        self.spans_start = 0;
-        ctx.reset();
-        ctx.schedule_idle(0);
+    fn guess_syntax(&'a self, path: Option<&Path>) -> &'a SyntaxDefinition {
+        let _t = trace_block("Syntect::guess_syntax", &["syntect"]);
+        match path {
+            Some(path) => self.syntax_set.find_syntax_for_file(path)
+                .ok()
+                .unwrap_or(None)
+                .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text()),
+            None => self.syntax_set.find_syntax_plain_text(),
+        }
     }
 
     /// Checks if a newline has been inserted, and if so inserts whitespace
     /// as necessary.
-    fn do_indentation(&mut self, ctx: &mut PluginCtx<State>, start: usize,
-                      end: usize, rev: usize, text: &str) -> Option<Value> {
+    fn do_indentation(&mut self, view: &mut MyView, start: usize,
+                      end: usize, text: &str) -> Option<PluginEdit> {
+        let _t = trace_block("PluginState::do_indentation", &["syntect"]);
         // don't touch indentation if this is not a simple edit
         if end != start { return None }
 
-        let line_ending = ctx.get_config().line_ending.clone();
+        let line_ending = view.get_config().line_ending.clone();
         let is_newline = line_ending == text;
 
         if is_newline {
-            let line_num = ctx.find_offset(start).err();
+            let line_num = view.line_of_offset(start).unwrap();
 
-            let use_spaces = ctx.get_config().translate_tabs_to_spaces;
-            let tab_size = ctx.get_config().tab_size;
-            let buf_size = ctx.get_buf_size();
-            if let Some(line) = line_num.and_then(|idx| ctx.get_line(idx).ok()) {
+            let use_spaces = view.get_config().translate_tabs_to_spaces;
+            let tab_size = view.get_config().tab_size;
+            let buf_size = view.get_buf_size();
+            let rev = view.rev;
+            if let Some(line) = view.get_line(line_num).ok() {
                 // do not send update if last line is empty string (contains only line ending)
                 if line == line_ending { return None }
 
@@ -223,17 +246,17 @@ impl<'a> PluginState<'a> {
                     line, use_spaces, tab_size);
                 let ix = start + text.len();
                 let interval = Interval::new_open_closed(ix, ix);
+                //TODO: view should have a `get_edit_builder` fn?
                 let mut builder = EditBuilder::new(buf_size);
                 builder.replace(interval, indent.into());
                 let delta = builder.build();
-                let edit = json!({
-                    "rev": rev,
-                    "delta": delta,
-                    "priority": INDENTATION_PRIORITY,
-                    "after_cursor": false,
-                    "author": "syntect",
-                });
-                return Some(edit)
+                return Some(PluginEdit {
+                    rev: rev,
+                    delta: delta,
+                    priority: INDENTATION_PRIORITY,
+                    after_cursor: false,
+                    author: "syntect".to_owned(),
+                })
             }
         }
         None
@@ -273,54 +296,65 @@ impl<'a> PluginState<'a> {
     }
 }
 
-impl<'a> state_cache::Plugin for PluginState<'a> {
-    type State = State;
 
-    fn initialize(&mut self, ctx: PluginCtx<State>, _buf_size: usize) {
-        self.do_highlighting(ctx);
+impl<'a> Plugin for Syntect<'a> {
+    type Cache = StateCache<LineState>;
+
+    fn new_view(&mut self, view: &mut View<Self::Cache>) {
+        let _t = trace_block("Syntect::new_view", &["syntect"]);
+        let view_id = view.get_id();
+        let state = PluginState::new();
+        self.view_state.insert(view_id, state);
+        self.do_highlighting(view);
     }
 
-    fn update(&mut self, mut ctx: PluginCtx<State>, rev: usize,
-              delta: Option<RopeDelta>) -> Option<Value> {
-        ctx.schedule_idle(0);
-        let should_auto_indent = ctx.get_config().auto_indent;
-        if should_auto_indent {
-            if let Some(delta) = delta {
-                let (iv, _) = delta.summary();
-                if let Some(s) = delta.as_simple_insert() {
-                    let s: String = s.into();
-                    return self.do_indentation(&mut ctx, iv.start(), iv.end(), rev, &s)
-                }
+    fn did_close(&mut self, view: &View<Self::Cache>) {
+        self.view_state.remove(&view.get_id());
+    }
+
+    fn did_save(&mut self, view: &mut View<Self::Cache>, _old: Option<&Path>) {
+        let _t = trace_block("Syntect::did_save", &["syntect"]);
+        self.do_highlighting(view);
+    }
+
+    fn config_changed(&mut self, _view: &mut View<Self::Cache>, _changes: &ConfigTable) {
+    }
+
+    fn update(&mut self, view: &mut View<Self::Cache>, delta: Option<&RopeDelta>,
+              _edit_type: String, _author: String) -> Option<PluginEdit> {
+        let _t = trace_block("Syntect::update", &["syntect"]);
+        view.schedule_idle();
+        let should_auto_indent = view.get_config().auto_indent;
+        if !should_auto_indent { return None }
+        if let Some(delta) = delta {
+            let (iv, _) = delta.summary();
+            if let Some(s) = delta.as_simple_insert() {
+                let s: String = s.into();
+                return self.do_indentation(view, iv.start(), iv.end(), &s)
             }
         }
         None
     }
 
-    fn did_save(&mut self, ctx: PluginCtx<State>) {
-        // TODO: use smarter logic to figure out whether we need to re-highlight the whole file
-        self.do_highlighting(ctx);
-    }
-
-    fn idle(&mut self, mut ctx: PluginCtx<State>, _token: usize) {
-        //eprintln!("idle task at offset {}", self.offset);
+    fn idle(&mut self, view: &mut View<Self::Cache>) {
+        let state = self.view_state.get_mut(&view.get_id()).unwrap();
         for _ in 0..LINES_PER_RPC {
-            if !self.highlight_one_line(&mut ctx) {
-                self.flush_spans(&mut ctx);
+            if !state.highlight_one_line(view) {
+                state.flush_spans(view);
                 return;
             }
-            if ctx.request_is_pending() {
-                eprintln!("request pending at offset {}", self.offset);
+            if view.request_is_pending() {
+                trace("yielding for request", &["syntect"]);
                 break;
             }
         }
-        self.flush_spans(&mut ctx);
-        ctx.schedule_idle(0);
+        state.flush_spans(view);
+        view.schedule_idle();
     }
 }
 
 fn main() {
     let syntax_set = SyntaxSet::load_defaults_newlines();
-    let mut state = PluginState::new(&syntax_set);
-
-    let _ = state_cache::mainloop(&mut state);
+    let mut state = Syntect::new(&syntax_set);
+    mainloop(&mut state).unwrap();
 }

@@ -9,7 +9,6 @@ description = "A syntax highlighting plugin based on syntect."
 [dependencies]
 serde = "1.0"
 serde_derive = "1.0"
-serde_json = "1.0"
 
 [dependencies.syntect]
 version = "2.0"
@@ -24,3 +23,6 @@ path = "../core-lib"
 
 [dependencies.xi-rope]
 path = "../rope"
+
+[dependencies.xi-trace]
+path = "../trace"

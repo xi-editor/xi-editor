@@ -22,17 +22,18 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use syntect::parsing::Scope;
 use syntect::highlighting::StyleModifier;
 
+use xi_rope::delta::Delta;
 use xi_rope::interval::Interval;
+use xi_rope::rope::RopeInfo;
 use xi_rope::spans::{Spans, SpansBuilder};
+use xi_trace::trace_block;
 
-use tabs::DocumentCtx;
-use styles::Style;
+use styles::{Style, ThemeStyleMap};
 use plugins::PluginPid;
 
 /// A collection of layers containing scope information.
 #[derive(Default)]
-//TODO: rename. Probably to `Layers`
-pub struct Scopes {
+pub struct Layers {
     layers: BTreeMap<PluginPid, ScopeLayer>,
     deleted: HashSet<PluginPid>,
     merged: Spans<Style>,
@@ -52,7 +53,7 @@ pub struct ScopeLayer {
     style_spans: Spans<Style>,
 }
 
-impl Scopes {
+impl Layers {
 
     pub fn get_merged(&self) -> &Spans<Style> {
         &self.merged
@@ -60,21 +61,24 @@ impl Scopes {
 
     /// Adds the provided scopes to the layer's lookup table.
     pub fn add_scopes(&mut self, layer: PluginPid, scopes: Vec<Vec<String>>,
-                                doc_ctx: &DocumentCtx) {
+                                style_map: &ThemeStyleMap) {
+        let _t = trace_block("Layers::AddScopes", &["core"]);
         if self.create_if_missing(layer).is_err() { return }
-        self.layers.get_mut(&layer).unwrap().add_scopes(scopes, doc_ctx);
+        self.layers.get_mut(&layer).unwrap().add_scopes(scopes, style_map);
     }
 
-    /// Inserts empty spans at the given interval for all layers.
+    /// Applies the delta to all layers, inserting empty intervals
+    /// for any regions inserted in the delta.
     ///
     /// This is useful for clearing spans, and for updating spans
     /// as edits occur.
-    pub fn update_all(&mut self, iv: Interval, len: usize) {
-        self.merged.edit(iv, SpansBuilder::new(len).build());
-        let empty_spans = SpansBuilder::new(len).build();
+    pub fn update_all(&mut self, delta: &Delta<RopeInfo>) {
+        self.merged.apply_shape(delta);
+
         for layer in self.layers.values_mut() {
-            layer.update_scopes(iv, &empty_spans);
+            layer.blank_scopes(delta);
         }
+        let (iv, _len) = delta.summary();
         self.resolve_styles(iv);
     }
 
@@ -99,9 +103,9 @@ impl Scopes {
         layer
     }
 
-    pub fn theme_changed(&mut self, doc_ctx: &DocumentCtx) {
+    pub fn theme_changed(&mut self, style_map: &ThemeStyleMap) {
         for layer in self.layers.values_mut() {
-            layer.theme_changed(doc_ctx);
+            layer.theme_changed(style_map);
         }
         self.merged = SpansBuilder::new(self.merged.len()).build();
         let iv_all = Interval::new_closed_closed(0, self.merged.len());
@@ -132,7 +136,7 @@ impl Scopes {
 
     /// Prints scopes and style information for the given `Interval`.
     pub fn debug_print_spans(&self, iv: Interval) {
-        for (id, layer) in self.layers.iter() {
+        for (id, layer) in &self.layers {
             let spans = layer.scope_spans.subseq(iv);
             let styles = layer.style_spans.subseq(iv);
             if spans.iter().next().is_some() {
@@ -183,10 +187,10 @@ impl ScopeLayer {
         }
     }
 
-    fn theme_changed(&mut self, doc_ctx: &DocumentCtx) {
+    fn theme_changed(&mut self, style_map: &ThemeStyleMap) {
         // recompute styles with the new theme
         let cur_stacks = self.stack_lookup.clone();
-        self.style_lookup = self.styles_for_stacks(&cur_stacks, doc_ctx);
+        self.style_lookup = self.styles_for_stacks(&cur_stacks, style_map);
         let iv_all = Interval::new_closed_closed(0, self.style_spans.len());
         self.style_spans = SpansBuilder::new(self.style_spans.len()).build();
         // this feels unnecessary but we can't pass in a reference to self
@@ -196,7 +200,7 @@ impl ScopeLayer {
     }
 
     fn add_scopes(&mut self, scopes: Vec<Vec<String>>,
-                                doc_ctx: &DocumentCtx) {
+                                style_map: &ThemeStyleMap) {
         let mut stacks = Vec::with_capacity(scopes.len());
         for stack in scopes {
             let scopes = stack.iter().map(|s| Scope::new(&s))
@@ -214,14 +218,14 @@ impl ScopeLayer {
             stacks.push(scopes);
         }
 
-        let mut new_styles = self.styles_for_stacks(stacks.as_slice(), doc_ctx);
+        let mut new_styles = self.styles_for_stacks(stacks.as_slice(), style_map);
         self.stack_lookup.append(&mut stacks);
         self.style_lookup.append(&mut new_styles);
     }
 
     fn styles_for_stacks(&mut self, stacks: &[Vec<Scope>],
-                         doc_ctx: &DocumentCtx) -> Vec<Style> {
-        let style_map = doc_ctx.get_style_map().lock().unwrap();
+                         style_map: &ThemeStyleMap) -> Vec<Style> {
+        //let style_map = style_map.borrow();
         let highlighter = style_map.get_highlighter();
         let mut new_styles = Vec::new();
 
@@ -258,6 +262,14 @@ impl ScopeLayer {
     fn update_scopes(&mut self, iv: Interval, spans: &Spans<u32>) {
         self.scope_spans.edit(iv, spans.to_owned());
         self.update_styles(iv, spans);
+    }
+
+    /// Applies `delta`, which is presumed to contain empty spans.
+    /// This is only used when we receive an edit, to adjust current span
+    /// positions.
+    fn blank_scopes(&mut self, delta: &Delta<RopeInfo>) {
+        self.style_spans.apply_shape(delta);
+        self.scope_spans.apply_shape(delta);
     }
 
     /// Updates `self.style_spans`, mapping scopes to styles and combining

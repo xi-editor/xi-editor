@@ -25,9 +25,9 @@ use serde_json::{self, Value};
 use serde::de::{self, Deserialize, Deserializer};
 use serde::ser::{self, Serialize, Serializer};
 
-use tabs::ViewIdentifier;
+use tabs::ViewId;
 use plugins::PlaceholderRpc;
-use config::{Table, ConfigDomain};
+use config::{Table, ConfigDomainExternal};
 
 // =============================================================================
 //  Command types
@@ -173,10 +173,10 @@ pub enum CoreNotification {
     /// ```
     Plugin(PluginNotification),
     /// Tells `xi-core` to close the specified view.
-    CloseView { view_id: ViewIdentifier },
+    CloseView { view_id: ViewId },
     /// Tells `xi-core` to save the contents of the specified view's
     /// buffer to the specified path.
-    Save { view_id: ViewIdentifier, file_path: String },
+    Save { view_id: ViewId, file_path: String },
     /// Tells `xi-core` to set the theme.
     SetTheme { theme_name: String },
     /// Notifies `xi-core` that the client has started.
@@ -196,7 +196,7 @@ pub enum CoreNotification {
     /// domain argument is `ConfigDomain::UserOverride(_)`, which
     /// represents non-persistent view-specific settings, such as when
     /// a user manually changes whitespace settings for a given view.
-    ModifyUserConfig { domain: ConfigDomain, changes: Table },
+    ModifyUserConfig { domain: ConfigDomainExternal, changes: Table },
     /// Control whether the tracing infrastructure is enabled.
     /// This propagates to all peers that should respond by toggling its own
     /// infrastructure on/off.
@@ -246,7 +246,7 @@ pub enum CoreRequest {
     /// with the newly created view.
     NewView { file_path: Option<String> },
     /// Returns the current collated config object for the given view.
-    GetConfig { view_id: ViewIdentifier },
+    GetConfig { view_id: ViewId },
 }
 
 /// A helper type, which extracts the `view_id` field from edit
@@ -280,7 +280,7 @@ pub enum CoreRequest {
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct EditCommand<T> {
-    pub view_id: ViewIdentifier,
+    pub view_id: ViewId,
     pub cmd: T,
 }
 
@@ -288,7 +288,13 @@ pub struct EditCommand<T> {
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum GestureType {
+    PointSelect,
     ToggleSel,
+    RangeSelect,
+    LineSelect,
+    WordSelect,
+    MultiLineSelect,
+    MultiWordSelect,
 }
 
 /// An inclusive range.
@@ -378,11 +384,14 @@ pub enum EditNotification {
     FindNext { wrap_around: Option<bool>, allow_same: Option<bool> },
     FindPrevious { wrap_around: Option<bool> },
     DebugRewrap,
+    DebugWrapWidth,
     /// Prints the style spans present in the active selection.
     DebugPrintSpans,
     CancelOperation,
     Uppercase,
     Lowercase,
+    Indent,
+    Outdent
 }
 
 /// The edit related requests.
@@ -410,9 +419,9 @@ pub enum EditRequest {
 #[serde(tag = "command")]
 #[serde(rename_all = "snake_case")]
 pub enum PluginNotification {
-    Start { view_id: ViewIdentifier, plugin_name: String },
-    Stop { view_id: ViewIdentifier, plugin_name: String },
-    PluginRpc { view_id: ViewIdentifier, receiver: String, rpc: PlaceholderRpc },
+    Start { view_id: ViewId, plugin_name: String },
+    Stop { view_id: ViewId, plugin_name: String },
+    PluginRpc { view_id: ViewId, receiver: String, rpc: PlaceholderRpc },
 }
 
 // Serialize / Deserialize
@@ -435,7 +444,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for EditCommand<T>
     {
         #[derive(Deserialize)]
         struct InnerId {
-            view_id: ViewIdentifier,
+            view_id: ViewId,
         }
 
         let mut v = Value::deserialize(deserializer)?;
@@ -467,8 +476,7 @@ impl Serialize for MouseAction
         struct Helper(u64, u64, u64, Option<u64>);
 
         let as_tup = Helper(self.line, self.column, self.flags, self.click_count);
-        let v = serde_json::to_value(&as_tup).map_err(ser::Error::custom)?;
-        v.serialize(serializer)
+        as_tup.serialize(serializer)
     }
 }
 
@@ -479,7 +487,7 @@ impl<'de> Deserialize<'de> for MouseAction
     {
         let v: Vec<u64> = Vec::deserialize(deserializer)?;
         let click_count = if v.len() == 4 { Some(v[3]) } else { None };
-        Ok(MouseAction { line: v[0], column: v[1], flags: v[2], click_count: click_count })
+        Ok(MouseAction { line: v[0], column: v[1], flags: v[2], click_count })
     }
 }
 
@@ -489,8 +497,7 @@ impl Serialize for LineRange
         where S: Serializer
     {
         let as_tup = (self.first, self.last);
-        let v = serde_json::to_value(&as_tup).map_err(ser::Error::custom)?;
-        v.serialize(serializer)
+        as_tup.serialize(serializer)
     }
 }
 

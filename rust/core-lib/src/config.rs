@@ -27,16 +27,16 @@ use serde_json::{self, Value};
 use toml;
 
 use syntax::SyntaxDefinition;
-use tabs::ViewIdentifier;
+use tabs::{BufferId, ViewId};
 
 /// Namespace for various default settings.
 #[allow(unused)]
 mod defaults {
     use super::*;
-    pub const BASE: &'static str = include_str!("../assets/defaults.toml");
-    pub const WINDOWS: &'static str = include_str!("../assets/windows.toml");
-    pub const YAML: &'static str = include_str!("../assets/yaml.toml");
-    pub const MAKEFILE: &'static str = include_str!("../assets/makefile.toml");
+    pub const BASE: &str = include_str!("../assets/defaults.toml");
+    pub const WINDOWS: &str = include_str!("../assets/windows.toml");
+    pub const YAML: &str = include_str!("../assets/yaml.toml");
+    pub const MAKEFILE: &str = include_str!("../assets/makefile.toml");
 
     /// A cache of loaded defaults.
     lazy_static! {
@@ -47,7 +47,7 @@ mod defaults {
 
 
     /// config keys that are legal in most config files
-    pub const GENERAL_KEYS: &'static [&'static str] = &[
+    pub const GENERAL_KEYS: &[&str] = &[
         "tab_size",
         "line_ending",
         "translate_tabs_to_spaces",
@@ -59,7 +59,7 @@ mod defaults {
         "wrap_width",
     ];
     /// config keys that are only legal at the top level
-    pub const TOP_LEVEL_KEYS: &'static [&'static str] = &[
+    pub const TOP_LEVEL_KEYS: &[&str] = &[
         "plugin_search_path",
     ];
 
@@ -75,7 +75,7 @@ mod defaults {
     }
 
     fn load_for_domain(domain: ConfigDomain) -> Option<Table> {
-        match domain.into() {
+        match domain {
             ConfigDomain::General => {
                 let mut base = load(BASE);
                 if let Some(mut overrides) = platform_overrides() {
@@ -117,10 +117,20 @@ pub enum ConfigDomain {
     /// The overrides for a particular syntax.
     Syntax(SyntaxDefinition),
     /// The user overrides for a particular buffer
-    UserOverride(ViewIdentifier),
+    UserOverride(BufferId),
     /// The system's overrides for a particular buffer. Only used internally.
     #[serde(skip_deserializing)]
-    SysOverride(ViewIdentifier),
+    SysOverride(BufferId),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all="snake_case")]
+/// The external RPC sends `ViewId`s, which we convert to `BufferId`s
+/// internally.
+pub enum ConfigDomainExternal {
+    General,
+    Syntax(SyntaxDefinition),
+    UserOverride(ViewId),
 }
 
 /// The errors that can occur when managing configs.
@@ -276,7 +286,7 @@ impl ConfigManager {
         where P: Into<Option<PathBuf>>,
     {
         self.check_table(&new_config)?;
-        self.configs.entry(domain.into())
+        self.configs.entry(domain)
             .or_insert_with(|| { ConfigPair::for_domain(domain) })
             .set_table(new_config);
         path.into().map(|p| self.sources.insert(p, domain));
@@ -290,7 +300,7 @@ impl ConfigManager {
                           -> Result<(), ConfigError>
     {
         self.check_table(&changes)?;
-        let conf = self.configs.entry(domain.into())
+        let conf = self.configs.entry(domain)
             .or_insert_with(|| { ConfigPair::for_domain(domain) });
         conf.update_table(changes);
         Ok(())
@@ -331,18 +341,18 @@ impl ConfigManager {
 
     /// Generates a snapshot of the current configuration for a particular
     /// view.
-    pub fn get_buffer_config<S, V>(&self, syntax: S, view_id: V) -> BufferConfig
+    pub fn get_buffer_config<S, I>(&self, syntax: S, id: I) -> BufferConfig
         where S: Into<Option<SyntaxDefinition>>,
-              V: Into<Option<ViewIdentifier>>
+              I: Into<Option<BufferId>>
     {
         let syntax = syntax.into();
-        let view_id = view_id.into();
+        let id = id.into();
         let mut configs = Vec::new();
 
         configs.push(self.configs.get(&ConfigDomain::General));
         syntax.map(|s| configs.push(self.configs.get(&s.into())));
-        view_id.map(|v| configs.push(self.configs.get(&ConfigDomain::SysOverride(v))));
-        view_id.map(|v| configs.push(self.configs.get(&ConfigDomain::UserOverride(v))));
+        id.map(|v| configs.push(self.configs.get(&ConfigDomain::SysOverride(v))));
+        id.map(|v| configs.push(self.configs.get(&ConfigDomain::UserOverride(v))));
 
         let configs = configs.iter().flat_map(Option::iter)
             .map(|c| c.cache.clone())
@@ -393,7 +403,7 @@ impl TableStack {
     // NOTE: This is fairly expensive; a future optimization would borrow
     // from the underlying collections.
         let mut out = Table::new();
-        for table in self.0.iter() {
+        for table in &self.0 {
             for (k, v) in table.iter() {
                 if !out.contains_key(k) {
                     // cloning these objects feels a bit gross, we could
@@ -418,7 +428,7 @@ impl TableStack {
     /// Walks the tables in priority order, returning the first
     /// occurance of `key`.
     fn get<S: AsRef<str>>(&self, key: S) -> Option<&Value> {
-        for table in self.0.iter() {
+        for table in &self.0 {
             if let Some(v) = table.get(key.as_ref()) {
                 return Some(v)
             }
@@ -485,8 +495,8 @@ impl From<SyntaxDefinition> for ConfigDomain {
     }
 }
 
-impl From<ViewIdentifier> for ConfigDomain {
-    fn from(src: ViewIdentifier) -> ConfigDomain {
+impl From<BufferId> for ConfigDomain {
+    fn from(src: BufferId) -> ConfigDomain {
         ConfigDomain::UserOverride(src)
     }
 }
@@ -531,7 +541,8 @@ impl From<serde_json::Error> for ConfigError {
 pub fn init_config_dir(dir: &Path) -> io::Result<()> {
     let builder = fs::DirBuilder::new();
     builder.create(dir)?;
-    Ok(builder.create(dir.join("plugins"))?)
+    builder.create(dir.join("plugins"))?;
+    Ok(())
 }
 
 pub fn iter_config_files(dir: &Path) -> io::Result<Box<Iterator<Item=PathBuf>>> {
@@ -629,10 +640,11 @@ mod tests {
         manager.set_user_config(ConfigDomain::General, user_config, None)
             .unwrap();
 
-        let view_id = "view-id-1".into();
+        let buffer_id = BufferId(1);
         // system override
         let changes = json!({"tab_size": 67}).as_object().unwrap().to_owned();
-        manager.update_user_config(ConfigDomain::SysOverride(view_id), changes).unwrap();
+        manager.update_user_config(ConfigDomain::SysOverride(buffer_id), changes)
+            .unwrap();
 
         let config = manager.default_buffer_config();
         assert_eq!(config.source.0.len(), 1);
@@ -641,19 +653,20 @@ mod tests {
         let config = manager.get_buffer_config(SyntaxDefinition::Yaml, None);
         assert_eq!(config.source.0.len(), 2);
         assert_eq!(config.items.tab_size, 2);
-        let config = manager.get_buffer_config(SyntaxDefinition::Yaml, view_id);
+        let config = manager.get_buffer_config(SyntaxDefinition::Yaml, buffer_id);
         assert_eq!(config.source.0.len(), 3);
         assert_eq!(config.items.tab_size, 67);
 
         let config = manager.get_buffer_config(SyntaxDefinition::Rust, None);
         assert_eq!(config.items.tab_size, 31);
-        let config = manager.get_buffer_config(SyntaxDefinition::Rust, view_id);
+        let config = manager.get_buffer_config(SyntaxDefinition::Rust, buffer_id);
         assert_eq!(config.items.tab_size, 67);
 
         // user override trumps everything
         let changes = json!({"tab_size": 85}).as_object().unwrap().to_owned();
-        manager.update_user_config(ConfigDomain::UserOverride(view_id), changes).unwrap();
-        let config = manager.get_buffer_config(SyntaxDefinition::Rust, view_id);
+        manager.update_user_config(ConfigDomain::UserOverride(buffer_id), changes)
+            .unwrap();
+        let config = manager.get_buffer_config(SyntaxDefinition::Rust, buffer_id);
         assert_eq!(config.items.tab_size, 85);
     }
 
@@ -665,7 +678,7 @@ mod tests {
         assert!(ConfigDomain::try_from_path(Path::new("hi/unknown.xiconfig")).is_err());
 
         assert_eq!(serde_json::to_string(&ConfigDomain::General).unwrap(), "\"general\"");
-        let d = ConfigDomain::UserOverride(ViewIdentifier::from("view-id-1"));
+        let d = ConfigDomainExternal::UserOverride(ViewId(1));
         assert_eq!(serde_json::to_string(&d).unwrap(), "{\"user_override\":\"view-id-1\"}");
         let d = ConfigDomain::Syntax(SyntaxDefinition::Swift);
         assert_eq!(serde_json::to_string(&d).unwrap(), "{\"syntax\":\"swift\"}");

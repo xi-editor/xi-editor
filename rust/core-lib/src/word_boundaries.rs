@@ -26,7 +26,7 @@ impl<'a> WordCursor<'a> {
     pub fn new(text: &'a Rope, pos: usize) -> WordCursor<'a> {
         let inner = Cursor::new(text, pos);
         WordCursor {
-            inner: inner,
+            inner,
         }
     }
 

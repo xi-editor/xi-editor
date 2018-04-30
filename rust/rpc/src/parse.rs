@@ -18,6 +18,7 @@ use std::io::BufRead;
 
 use serde_json::{self, Value, Error as JsonError};
 use serde::de::DeserializeOwned;
+use xi_trace;
 
 use error::{RemoteError, ReadError};
 
@@ -79,6 +80,7 @@ impl MessageReader {
     /// This should not be called directly unless you are writing tests.
     #[doc(hidden)]
     pub fn parse(&self, s: &str) -> Result<RpcObject, ReadError> {
+        let _trace = xi_trace::trace_block("parse", &["rpc"]);
         let val = serde_json::from_str::<Value>(&s)?;
         if !val.is_object() {
             Err(ReadError::NotObject)
@@ -95,7 +97,7 @@ impl RpcObject {
     }
 
     /// Returns the 'method' field of the underlying object, if present.
-    pub fn get_method<'a>(&'a self) -> Option<&'a str> {
+    pub fn get_method(&self) -> Option<&str> {
         self.0.get("method").and_then(Value::as_str)
     }
 
@@ -127,7 +129,7 @@ impl RpcObject {
         }
         let result = self.0.as_object_mut()
             .and_then(|obj| obj.remove("result"));
-        //let id = id.map(Value::from).unwrap_or(Value::Null);
+
         match result {
             Some(r) => Ok(Ok(r)),
             None => {
