@@ -382,8 +382,7 @@ impl Editor {
                 if preceded_by_spaces && use_spaces && use_tab_stops {
                     region.start - tab_size
                 } else {
-                   // TODO: implement complex emoji logic
-                    self.text.prev_codepoint_offset(region.end)
+                    self.text.prev_grapheme_offset(region.end)
                         .unwrap_or(region.end)
                }
             };

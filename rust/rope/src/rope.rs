@@ -32,6 +32,9 @@ use memchr::{memrchr, memchr};
 use serde::ser::{Serialize, Serializer, SerializeStruct, SerializeTupleVariant};
 use serde::de::{Deserialize, Deserializer};
 
+use unicode_segmentation::GraphemeCursor;
+use unicode_segmentation::GraphemeIncomplete;
+
 const MIN_LEAF: usize = 511;
 const MAX_LEAF: usize = 1024;
 
@@ -435,15 +438,14 @@ impl Rope {
         cursor.next::<BaseMetric>()
     }
 
-    // graphemes should probably be developed as a cursor-based interface
     pub fn prev_grapheme_offset(&self, offset: usize) -> Option<usize> {
-        // TODO: actual grapheme analysis
-        self.prev_codepoint_offset(offset)
+        let mut cursor = Cursor::new(self, offset);
+        cursor.prev_grapheme()
     }
 
     pub fn next_grapheme_offset(&self, offset: usize) -> Option<usize> {
-        // TODO: actual grapheme analysis
-        self.next_codepoint_offset(offset)
+        let mut cursor = Cursor::new(self, offset);
+        cursor.next_grapheme()
     }
 
     /// Return the line number corresponding to the byte index `offset`.
@@ -664,6 +666,62 @@ impl<'a> Cursor<'a, RopeInfo> {
             None
         }
     }
+
+    pub fn next_grapheme(&mut self) -> Option<usize> {
+        let (mut l, mut offset) = self.get_leaf()?;
+        let mut pos = self.pos();
+        while offset < l.len() && !l.is_char_boundary(offset) {
+            pos -= 1;
+            offset -= 1;
+        }
+        let mut leaf_offset = pos - offset;
+        let mut c = GraphemeCursor::new(pos, self.total_len(), true);
+        let mut next_boundary = c.next_boundary(&l, leaf_offset);
+        while let Err(incomp) = next_boundary {
+            if let GraphemeIncomplete::PreContext(_) = incomp {
+                let (pl, poffset) = self.prev_leaf()?;
+                c.provide_context(&pl, self.pos() - poffset);
+            } else if incomp == GraphemeIncomplete::NextChunk {
+                self.set(pos);
+                let (nl, noffset) = self.next_leaf()?;
+                l = nl;
+                leaf_offset = self.pos() - noffset;
+                pos = leaf_offset + nl.len();
+            } else {
+                return None;
+            }
+            next_boundary = c.next_boundary(&l, leaf_offset);
+        }
+        next_boundary.unwrap_or(None)
+    }
+
+    pub fn prev_grapheme(&mut self) -> Option<usize> {
+        let (mut l, mut offset) = self.get_leaf()?;
+        let mut pos = self.pos();
+        while offset < l.len() && !l.is_char_boundary(offset) {
+            pos += 1;
+            offset += 1;
+        }
+        let mut leaf_offset = pos - offset;
+        let mut c = GraphemeCursor::new(pos, l.len() + leaf_offset, true);
+        let mut prev_boundary = c.prev_boundary(&l, leaf_offset);
+        while let Err(incomp) = prev_boundary {
+            if let GraphemeIncomplete::PreContext(_) = incomp {
+                let (pl, poffset) = self.prev_leaf()?;
+                c.provide_context(&pl, self.pos() - poffset);
+            } else if incomp == GraphemeIncomplete::PrevChunk {
+                self.set(pos);
+                let (pl, poffset) = self.prev_leaf()?;
+                l = pl;
+                leaf_offset = self.pos() - poffset;
+                pos = leaf_offset + pl.len();
+            } else {
+                return None;
+            }
+            prev_boundary = c.prev_boundary(&l, leaf_offset);
+        }
+        prev_boundary.unwrap_or(None)
+    }
 }
 
 // line iterators
@@ -874,6 +932,50 @@ mod tests {
         assert_eq!(Some(5), b.next_codepoint_offset(2));
         assert_eq!(Some(2), b.next_codepoint_offset(0));
         assert_eq!(None, b.next_codepoint_offset(9));
+    }
+
+    #[test]
+    fn prev_grapheme_offset() {
+        // A with ring, hangul, regional indicator "US"
+        let a = Rope::from("A\u{030a}\u{110b}\u{1161}\u{1f1fa}\u{1f1f8}");
+        assert_eq!(Some(9), a.prev_grapheme_offset(17));
+        assert_eq!(Some(3), a.prev_grapheme_offset(9));
+        assert_eq!(Some(0), a.prev_grapheme_offset(3));
+        assert_eq!(None, a.prev_grapheme_offset(0));
+    }
+
+    #[test]
+    fn next_grapheme_offset() {
+        // A with ring, hangul, regional indicator "US"
+        let a = Rope::from("A\u{030a}\u{110b}\u{1161}\u{1f1fa}\u{1f1f8}");
+        assert_eq!(Some(3), a.next_grapheme_offset(0));
+        assert_eq!(Some(9), a.next_grapheme_offset(3));
+        assert_eq!(Some(17), a.next_grapheme_offset(9));
+        assert_eq!(None, a.next_grapheme_offset(17));
+    }
+
+    #[test]
+    fn next_grapheme_offset_with_ris_of_leaf_boundaries() {
+        let s1 = "\u{1f1fa}\u{1f1f8}".repeat(100);
+        let a = Rope::concat(
+            Rope::from(s1.clone()),
+            Rope::concat(
+                Rope::from(String::from(s1.clone()) + "\u{1f1fa}"),
+                Rope::from(s1.clone()),
+            ),
+        );
+        for i in 1..(s1.len() * 3) {
+            assert_eq!(Some((i - 1) / 8 * 8), a.prev_grapheme_offset(i));
+            assert_eq!(Some(i / 8 * 8 + 8), a.next_grapheme_offset(i));
+        }
+        for i in (s1.len() * 3 + 1)..(s1.len() * 3 + 4) {
+            assert_eq!(Some(s1.len() * 3), a.prev_grapheme_offset(i));
+            assert_eq!(Some(s1.len() * 3 + 4), a.next_grapheme_offset(i));
+        }
+        assert_eq!(None, a.prev_grapheme_offset(0));
+        assert_eq!(Some(8), a.next_grapheme_offset(0));
+        assert_eq!(Some(s1.len() * 3), a.prev_grapheme_offset(s1.len() * 3 + 4));
+        assert_eq!(None, a.next_grapheme_offset(s1.len() * 3 + 4));
     }
 
     #[test]
