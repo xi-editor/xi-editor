@@ -8,7 +8,7 @@ repository = "https://github.com/google/xi-editor"
 description = "Library-based API to dump xi-trace data to disk"
 
 [features]
-default = ["chrome_trace_event", "ipc"]
+default = ["chrome_trace_event"]
 benchmarks = []
 chrome_trace_event = ["serde", "serde_json"]
 ipc = ["serde", "bincode"]

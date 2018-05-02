@@ -70,6 +70,7 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
                      buffers: Vec<PluginBufferInfo>)
     {
         assert!(self.pid.is_none(), "initialize rpc received with existing pid");
+        eprintln!("Initializing plugin {:?}", plugin_id);
         self.pid = Some(plugin_id);
         self.do_new_buffer(ctx, buffers);
     }
@@ -122,11 +123,11 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
 
         if enabled {
             xi_trace::enable_tracing();
-            eprintln!("Enabling tracing in {:?}", self.pid);
+            eprintln!("Enabling tracing in global plugin {:?}", self.pid);
             trace("enable tracing", &["plugin"]);
         } else {
             xi_trace::disable_tracing();
-            eprintln!("Disabling tracing in {:?}",  self.pid);
+            eprintln!("Disabling tracing in global plugin {:?}",  self.pid);
             trace("enable tracing", &["plugin"]);
         }
     }
@@ -148,12 +149,12 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
         use xi_trace_dump::*;
 
         let samples = xi_trace::samples_cloned_unsorted();
-        let mut out = Vec::new();
-        chrome_trace::serialize(samples.iter(),
-                                chrome_trace::OutputFormat::JsonArray,
-                                &mut out).unwrap();
-        let traces = serde_json::from_reader(out.as_slice());
-        Ok(traces?)
+        chrome_trace::to_value(&samples).map_err(|e|
+            RemoteError::Custom {
+                code: 0,
+                message: format!("Could not serialize trace: {:?}", e),
+                data: None
+            })
     }
 }
 
