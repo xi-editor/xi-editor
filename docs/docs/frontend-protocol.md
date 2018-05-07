@@ -1,16 +1,10 @@
 ---
 layout: page
-title: Front-end protocol
+title: Notes on writing front-ends
 site_nav_category_order: 201
 is_site_nav_category2: true
 site_nav_category: docs
 ---
-
-Please note, protocol has been [updated](#xi-view-update-protocol).
-
----
-
-# Notes on writing front-ends
 
 These notes are provisional, as the protocol between front-end and
 back-end (aka "core") is expected to evolve. Even so, it might be
@@ -42,16 +36,33 @@ there are other front-ends developed independently, in which case a
 simple version negotiation at startup will support a small window of
 versions.
 
+### First steps
+
+When a frontend is initialized, the first thing it does is launch and connect to
+the core. Currently, the core is always run as a process, although we expect at
+some point it could be run in the client process as a library.
+
+After establishing a connection with the core, the client sends the
+[`client_started`](#client_started) RPC. Core will respond by notifying the
+client of some initial state, such as a list of available themes. The client
+then normally sends a [`new_view`](#new_view) request; when it receives
+a response it can begin sending editing operations against that view.
+
 ### Additional Resources
 
 This document is not always perfectly up to date. For a comprehensive list of
-supported commands, the canonical resource is the source specifically [rust/core-lib/src/rpc.rs](https://github.com/google/xi-editor/blob/master/rust/core-lib/src/rpc.rs).
+supported commands, the canonical resource is the source, specifically [rust/core-lib/src/rpc.rs](https://github.com/google/xi-editor/blob/master/rust/core-lib/src/rpc.rs).
 
 - The update protocol is explained in more detail in [Xi view update protocol](#xi-view-update-protocol).
 - The config system is explained in more detail in [docs/config.md](config.md).
 
 
-## Table of Contents
+----
+
+
+## The Protocol API
+
+### Table Of Contents
 
 - [API Methods](#methods)
     - [Backend](#from-front-end-to-back-end)
@@ -60,7 +71,6 @@ supported commands, the canonical resource is the source specifically [rust/core
     - [Frontend](#from-back-end-to-front-end)
 
 ----
-
 
 ## Methods
 
@@ -75,6 +85,17 @@ from core: {"id":0,"result": "view-id-1"}
 
 ## From front-end to back-end
 
+### client_started
+
+`client_started {"config_dir" "some/path"?, "client_extras_dir":
+"some/other/path"?}`
+
+ Sent by the client immediately after establishing the core connection. This is
+ used to perform initial setup. The two arguments are optional; the `config_dir`
+ points to a directory where the user's config files and plugins live, and the
+ `client_extras_dir` points to a directory where the frontend can package
+ additional resources, such as bundled plugins.
+
 ### new_view
 
 `new_view { "file_path": "path.md"? }` -> `"view-id-1"`
@@ -84,7 +105,7 @@ Creates a new view, returning the view identifier as a string.
 buffer; if not a new empty buffer is created. Currently, only a
 single view into a given file can be open at a time.
 
-**Note**, there is currently no mechanism for reporting errors. Also
+**Note:**, there is currently no mechanism for reporting errors. Also
 note, the protocol delegates power to load and save arbitrary files.
 Thus, exposing the protocol to any other agent than a front-end in
 direct control should be done with extreme caution.
@@ -183,15 +204,16 @@ additional `ty` options for `gesture`.
 Currently, the following gestures are supported:
 
 ```
-toggle_sel
-point_select
-range_select
-line_select
-word_select
-multi_line_select
-multi_word_select
+point_select # moves the cursor to a point
+toggle_sel # adds or removes a selection at a point
+range_select # modifies the selection to include a point (shift+click)
+line_select # sets the selection to a given line
+word_select # sets the selection to a given word
+multi_line_select # adds a line to the selection
+multi_word_select # adds a word to the selection
 ```
 
+#### Other movement and deletion commands
 
 The following edit methods take no parameters, and have similar
 meanings as NSView actions. The pure movement and selection
@@ -216,6 +238,17 @@ page_up_and_modify_selection
 scroll_page_down
 page_down
 page_down_and_modify_selection
+```
+
+#### Transformations
+
+The following methods act by modifying the current selection.
+
+```
+uppercase
+lowercase
+indent
+outdent
 ```
 
 ### Plugin namespace
@@ -258,53 +291,50 @@ or a request.
 
 ## From back-end to front-end
 
+**Note:** The following three methods are used to update the view's contents. For
+a more detailed explanation see [Xi view update protocol](#xi-view-update-protocol).
+
+#### set_style
+
+```
+set_style
+  id: number
+  fg_color?: number // 32-bit RGBA value
+  bg_color?: number // 32-bit RGBA value, default 0
+  weight?: number // 100..900, default 400
+  italic?: boolean  // default false
+  underline?: boolean // default false
+```
+
+#### scroll_to
+
+```
+scroll_to: [number, number]  // line, column (in utf-8 code units)
+```
+
 #### update
-**Note**: This document is not entirely up to date: some changes to
-the protocol are described in [this document](frontend-protocol.md#xi-view-update-protocol).
 
 ```
-update {"tab": "1", "update": {
- "first_line":0,
- "height":1,
- "lines":[["hello",["sel",4,5],["cursor",4]]],
- "scrollto":[0,4]
-}}
+update
+  rev?: number
+  ops: Op[]
+  view-id: string
+  pristine: bool
+
+interface Op {
+  op: "copy" | "skip" | "invalidate" | "update" | "ins"
+  n: number  // number of lines affected
+  lines?: Line[]  // only present when op is "update" or "ins"
+}
 ```
 
-The update method is the main way of conveying formatted text to
-display in the editor window. `first_line` is the index of the first
-formatted line in the `lines` array (generally this will be the
-visible region conveyed by `scroll` plus some padding). `height` is
-the total number of formatted lines, and is suitable for setting the
-height of the scroll region. `scrollto` is a (line, column) pair
-(both 0-indexed) requesting to bring that cursor position into view.
-
-The `lines` array has additional structure. Each line is an array,
-of which the first element is the text of the line and each
-additional element is an annotation. Current annotations include:
-
-`cursor`: An offset from the beginning of the line, in UTF-8 code
-units, indicating a cursor to be drawn at that location. In future,
-multiple cursor annotations may be present (to support multiple
-cursor editing). The offset might possibly switch to UTF-16 code
-units as well, because it's probably faster to do the conversion in
-Rust code than in the front-end.
-
-`sel`: A range (expressed in UTF-8 code units) to be highlighted
-indicating a selection. Note that in the case of BiDi there will
-generally be at most one selection region, but it might be displayed
-as multiple runs.
-
-`fg`: A range (same as sel) and an ARGB color (4290772992 is
-0xffc00000 = a nice red). Might possibly change to a symbolic
-representation of the color to give the front-end more control over
-theming.
-
-The update method is also how the back-end indicates that the
-contents may have been invalidated and need to be redrawn. The
-evolution of this method will probably include finer grained
-invalidation (including motion of just the cursor), but will broadly
-follow the existing pattern.
+```
+interface Line {
+  text?: string  // present when op is "update"
+  cursor?: number[]  // utf-8 code point offsets, in increasing order
+  styles?: number[]  // length is a multiple of 3, see below
+}
+```
 
 #### theme_changed
 
@@ -426,18 +456,7 @@ The front-end maintains a *cache* of this view. Some lines will be present, othe
 
 To optimize communication, the core keeps some state about the client. One bit of this state is the *scroll window;* in general, the core tries to proactively update all lines within this window (plus a certain amount of slop on top and bottom). In addition, the core maintains a set of lines in the client's cache. If a line changes, the update need only be communicated if it is in this set. This set is conservative; if a line is missing in the actual cache held by the front-end (evicted to save memory), no great harm is done updating it.
 
-## Requests from front-end to core
-
-```
-scroll: [number, number]  // first line, last line
-```
-
-```
-request: [number, number]  // first line, last line
-```
-
 ## Requests from core to front-end
-
 
 ```
 set_style
@@ -491,6 +510,8 @@ The "ins" op appends new lines, specified by the "`lines`" parameter, specified 
 
 The "update" op updates the cursor and/or style of n existing lines. As in "ins", n must equal lines.length. It also increments `old_ix` by `n`.
 
+**Note:** The "update" op is not currently used by core.
+
 In all cases, n is guaranteed positive and nonzero (as a consequence, any line present in the old state is copied at most once to the new state).
 
 ```
@@ -508,7 +529,3 @@ In an "update" op, then the text property is absent from the line, and text is c
 The styles property represents style spans, in an efficient encoding. It is conceptually an array of triples (though flattened, so triple at is `styles[i*3]`, `styles[i*3 + 1]`, `styles[i*3 + 2]`). The first element of the triple is the start index (in utf-8 code units), but encoded as a delta relative to the *end* of the last span (or relative to 0 for the first triple). It may be negative, if spans overlap. The second element is the length (in utf-8 code units). It is guaranteed nonzero and positive. The third element is a style id. The core guarantees that any style id sent in a styles property will have previously been set in a set_style request.
 
 The number of lines in the new lines array always matches the view as maintained by the core. Another way of saying this is that adding all "`n`" values except for "skip" operations is the number of lines. [Discussion: the last line always represents a partial line, so an empty document is one empty line. But I think the initial state should be the empty array. Then, the empty array represents the state that no updates have been processed].
-
-## Discussion questions
-
-Should offsets be utf-8 or utf-16? The majority of front-ends use utf-16. It might be more efficient for xi to do the conversions (in Rust) than the front-end.

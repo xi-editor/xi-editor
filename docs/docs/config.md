@@ -15,7 +15,7 @@ for front-ends that wish to manage preferences on their own, or which cannot
 support the file-based approach for platform reasons.
 
 Clients which wish to use the file-based mechanism must explicitly **opt-in** by
-including `"config_dir": "$CONFIG_PATH"` in the params of the `client_init` RPC,
+including `"config_dir": "$CONFIG_PATH"` in the params of the `client_started` RPC,
 where `$CONFIG_PATH` is a path to a directory that will contain config files.
 
 If using file-based config, `xi-core` is responsible for watching those files

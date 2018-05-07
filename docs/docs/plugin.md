@@ -6,6 +6,10 @@ is_site_nav_category2: true
 site_nav_category: docs
 ---
 
+**Note:** This document is mostly of historical interest. Although the
+high level details remain true, implementation details have changed,
+and remain in flux.
+
 ## Philosophy
 
 All serious programming editors have a mechanism for extensibility,
