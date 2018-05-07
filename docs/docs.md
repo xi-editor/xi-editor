@@ -7,7 +7,8 @@ site_nav_category: docs
 ---
 
 ### Table of Contents:
- - [Notes on writing frontends](docs/frontend-protocol.html)
+ - [Notes on writing frontends](docs/frontend-notes.html)
+ - [The Xi Protocol](docs/frontend-protocol.html)
  - [Plugin architecture](docs/plugin.html)
  - [The config system](docs/config.html)
  - CRDT Docs:
