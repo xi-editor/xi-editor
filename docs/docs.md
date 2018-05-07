@@ -7,13 +7,13 @@ site_nav_category: docs
 ---
 
 ### Table of Contents:
- - [Front-end protocol](docs/frontend-protocol.html)
+ - [Notes on writing frontends](docs/frontend-protocol.html)
  - [Plugin architecture](docs/plugin.html)
- - CRDT:
-    - [An approach to async plugins and undo](docs/crdt.html)
+ - [The config system](docs/config.html)
+ - CRDT Docs:
+    - [The CRDT model](docs/crdt.html)
     - [The Xi Text Engine](docs/crdt-details.html)
     - [Using the Ledger for CRDTs](docs/fuchsia-ledger-crdts.html)
- - [Working with the config system](docs/config.html)
  - Rope Science:
     - [Introduction](docs/rope_science_00.html)
     - [01 MapReduce for Text](docs/rope_science_01.html)
