@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Working with the config system
-site_nav_category_order: 206
+site_nav_category_order: 204
 is_site_nav_category2: true
 site_nav_category: docs
 ---

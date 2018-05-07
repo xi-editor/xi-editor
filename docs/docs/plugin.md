@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Plugin architecture
-site_nav_category_order: 202
+site_nav_category_order: 203
 is_site_nav_category2: true
 site_nav_category: docs
 ---

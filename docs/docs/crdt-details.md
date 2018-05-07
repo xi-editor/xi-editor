@@ -1,7 +1,7 @@
 ---
 layout: page
 title: CRDT - The Xi Text Engine
-site_nav_category_order: 204
+site_nav_category_order: 206
 is_site_nav_category2: true
 site_nav_category: docs
 ---

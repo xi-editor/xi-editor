@@ -1,7 +1,7 @@
 ---
 layout: page
 title: CRDT - An approach to async plugins and undo
-site_nav_category_order: 203
+site_nav_category_order: 205
 is_site_nav_category2: true
 site_nav_category: docs
 ---
