@@ -76,6 +76,7 @@ pub mod internal {
     pub mod edit_types;
     pub mod event_context;
     pub mod file;
+    pub mod find;
     pub mod view;
     pub mod linewrap;
     pub mod plugins;
@@ -104,6 +105,7 @@ use internal::edit_types;
 use internal::editor;
 use internal::event_context;
 use internal::file;
+use internal::find;
 use internal::view;
 use internal::linewrap;
 use internal::plugins;

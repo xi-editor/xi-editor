@@ -135,6 +135,7 @@ impl<'a> EventContext<'a> {
             Copy => Ok(self.with_editor(|ed, view, _| ed.do_copy(view))),
             Find { chars, case_sensitive } => Ok(self.with_view(
                 |view, text| view.do_find(text, chars, case_sensitive))),
+            // Replace
         };
         self.after_edit("core");
         self.render_if_needed();
