@@ -1,5 +1,5 @@
 name = "syntect"
 version = "0.1"
+scope = "global"
 exec_path = "./bin/xi-syntect-plugin"
 activations = ["autorun"]
-scope = "global"

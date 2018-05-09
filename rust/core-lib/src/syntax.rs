@@ -15,8 +15,54 @@
 //! Very basic syntax detection.
 
 use std::fmt;
+use std::collections::HashMap;
+use std::path::Path;
+use std::sync::Arc;
+
 use serde::de::{value, Deserialize, IntoDeserializer};
 use serde_json;
+
+use config::Table;
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct LanguageId(pub(crate) String);
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LanguageDefinition {
+    pub name: LanguageId,
+    pub extensions: Vec<String>,
+    pub first_line_match: Option<String>,
+    pub scope: String,
+    #[serde(skip)]
+    pub default_config: Option<Table>,
+}
+
+#[derive(Debug, Default)]
+pub struct Languages {
+    named: HashMap<LanguageId, Arc<LanguageDefinition>>,
+    extensions: HashMap<String, Arc<LanguageDefinition>>,
+}
+
+impl Languages {
+    pub fn new(language_defs: &[LanguageDefinition]) -> Self {
+        let mut named = HashMap::new();
+        let mut extensions = HashMap::new();
+        for lang in language_defs.iter() {
+            let lang_arc = Arc::new(lang.clone());
+            named.insert(lang.name.clone(), lang_arc.clone());
+            for ext in lang.extensions.iter() {
+                extensions.insert(ext.clone(), lang_arc.clone());
+            }
+        }
+        Languages { named, extensions }
+    }
+
+    pub fn language_for_path(&self, path: &Path) -> Option<Arc<LanguageDefinition>> {
+        path.extension()
+            .and_then(|ext| self.extensions.get(ext.to_str().unwrap_or_default()))
+            .map(Arc::clone)
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
