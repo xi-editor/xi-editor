@@ -144,8 +144,8 @@ impl WeakXiCore {
     /// Handles the result of an update sent to a plugin.
     ///
     /// All plugins must acknowledge when they are sent a new update, so that
-    /// core can track which revisiions are still 'live', that is can still
-    /// be the base revision for a delta. Once a plugin has acknowleged a new
+    /// core can track which revisions are still 'live', that is can still
+    /// be the base revision for a delta. Once a plugin has acknowledged a new
     /// revision, it can no longer send deltas against any older revision.
     pub fn handle_plugin_update(&self, plugin: PluginId, view: ViewId,
                                 undo_group: usize,

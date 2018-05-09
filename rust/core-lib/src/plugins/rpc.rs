@@ -79,17 +79,6 @@ pub struct PluginUpdate {
     pub author: String,
 }
 
-/// A response to an `update` RPC sent to a plugin.
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(untagged)]
-pub enum UpdateResponse {
-    /// An edit to the buffer.
-    Edit(PluginEdit),
-    /// An acknowledgement with no action. A response cannot be Null,
-    /// so we send a uint.
-    Ack(u64),
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmptyStruct {}
 
@@ -121,7 +110,6 @@ pub enum HostNotification {
 // ====================================================================
 // plugin -> core RPC method types
 // ====================================================================
-
 
 /// A simple edit, received from a plugin.
 #[derive(Serialize, Deserialize, Debug, Clone)]

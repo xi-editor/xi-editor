@@ -37,7 +37,7 @@ use std::path::Path;
 use xi_rpc::{RpcLoop, ReadError};
 use xi_rope::rope::RopeDelta;
 use xi_core::ConfigTable;
-use xi_core::plugin_rpc::{PluginEdit, GetDataResponse, TextUnit};
+use xi_core::plugin_rpc::{GetDataResponse, TextUnit};
 
 use self::dispatch::Dispatcher;
 
@@ -109,7 +109,7 @@ pub trait Plugin {
     /// Called when an edit has occured in the remote view. If the plugin wishes
     /// to add its own edit, it may return `Some(edit)`.
     fn update(&mut self, view: &mut View<Self::Cache>, delta: Option<&RopeDelta>,
-              edit_type: String, author: String) -> Option<PluginEdit>;
+              edit_type: String, author: String) -> Option<u64>;
     /// Called when a buffer has been saved to disk. The buffer's previous
     /// path, if one existed, is passed as `old_path`.
     fn did_save(&mut self, view: &mut View<Self::Cache>, old_path: Option<&Path>);
