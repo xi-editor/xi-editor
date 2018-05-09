@@ -29,7 +29,7 @@ use xi_trace::trace_block;
 
 use rpc::{EditNotification, EditRequest, LineRange};
 use plugins::rpc::{ClientPluginInfo, PluginBufferInfo, PluginNotification,
-PluginRequest, PluginUpdate, UpdateResponse};
+                   PluginRequest, PluginUpdate};
 
 use styles::ThemeStyleMap;
 use config::{BufferConfig, ConfigManager};
@@ -383,14 +383,8 @@ impl<'a> EventContext<'a> {
     pub(crate) fn do_plugin_update(&mut self, update: Result<Value, RpcError>,
                                     undo_group: usize) {
 
-        match update.map(serde_json::from_value::<UpdateResponse>) {
-            Ok(Ok(UpdateResponse::Edit(edit))) => {
-                let author = edit.author.clone();
-                self.editor.borrow_mut().apply_plugin_edit(edit, Some(undo_group));
-                self.after_edit(&author);
-                self.render_if_needed();
-            }
-            Ok(Ok(UpdateResponse::Ack(_))) => (),
+        match update.map(serde_json::from_value::<u64>) {
+            Ok(Ok(_)) => (),
             Ok(Err(err)) => eprintln!("plugin response json err: {:?}", err),
             Err(err) => eprintln!("plugin shutdown, do something {:?}", err),
         }

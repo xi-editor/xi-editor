@@ -17,7 +17,7 @@ use serde_json::{self, Value};
 use serde::Deserialize;
 
 use xi_core::{ViewIdentifier, PluginPid, BufferConfig, ConfigTable};
-use xi_core::plugin_rpc::{TextUnit, GetDataResponse, ScopeSpan, PluginBufferInfo};
+use xi_core::plugin_rpc::{TextUnit, PluginEdit, GetDataResponse, ScopeSpan, PluginBufferInfo};
 use xi_rope::rope::RopeDelta;
 use xi_trace::trace_block;
 
@@ -129,6 +129,15 @@ impl<C: Cache> View<C> {
             "scopes": scopes,
         });
         self.peer.send_rpc_notification("add_scopes", &params);
+    }
+
+    pub fn edit(&self, edit: PluginEdit) {
+        let params = json!({
+            "plugin_id": self.plugin_id,
+            "view_id": self.view_id,
+            "edit": edit
+        });
+        self.peer.send_rpc_notification("edit", &params);
     }
 
     pub fn update_spans(&self, start: usize, len: usize, spans: &[ScopeSpan]) {
