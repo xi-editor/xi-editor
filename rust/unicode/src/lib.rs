@@ -144,9 +144,13 @@ impl Default for LineBreakLeafIter {
 
 impl LineBreakLeafIter {
     /// Create a new line break iterator suitable for leaves in a rope.
-    /// Precondition: ix references a codepoint in s (implies s is not empty).
+    /// Precondition: ix is at a code point boundary within s.
     pub fn new(s: &str, ix: usize) -> LineBreakLeafIter {
-        let (lb, len) = linebreak_property_str(s, ix);
+        let (lb, len) = if ix == s.len() {
+            (0, 0)
+        } else {
+            linebreak_property_str(s, ix)
+        };
         LineBreakLeafIter {
             ix: ix + len,
             state: lb,

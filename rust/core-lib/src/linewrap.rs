@@ -38,8 +38,7 @@ impl<'a> LineBreakCursor<'a> {
     fn new(text: &'a Rope, pos: usize) -> LineBreakCursor<'a> {
         let inner = Cursor::new(text, pos);
         let lb_iter = match inner.get_leaf() {
-            Some((s, offset)) if !s.is_empty() =>
-                LineBreakLeafIter::new(s.as_str(), offset),
+            Some((s, offset)) => LineBreakLeafIter::new(s.as_str(), offset),
             _ => LineBreakLeafIter::default()
         };
         LineBreakCursor {
@@ -358,6 +357,7 @@ pub fn rewrap_width(breaks: &mut Breaks, text: &Rope,
         start = cursor.prev::<LinesMetric>().unwrap_or(0);
     }
 
+    eprintln!("text len = {}, start = {}, end = {}", text.len(), start, end);
     let new_breaks = compute_rewrap_width(text, width_cache, /* style_spans, */
                                           client, max_width, breaks,
                                           start, end);
