@@ -15,7 +15,7 @@
 //! Plugins and related functionality.
 
 pub mod rpc;
-mod manifest;
+pub mod manifest;
 mod catalog;
 
 use std::fmt;
