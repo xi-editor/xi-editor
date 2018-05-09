@@ -145,6 +145,7 @@ impl<'a> EventContext<'a> {
     pub(crate) fn do_plugin_cmd(&mut self, plugin: PluginId,
                                  cmd: PluginNotification) {
         use self::PluginNotification::*;
+
         match cmd {
             AddScopes { scopes } => {
                 let mut ed = self.editor.borrow_mut();
@@ -331,7 +332,7 @@ impl<'a> EventContext<'a> {
         self.with_editor(|ed, view, _| {
             let new_len = text.len();
             view.collapse_selections(ed.get_buffer());
-            view.unset_find(ed.get_buffer());
+            view.unset_find();
             let prev_sel = view.sel_regions().first().map(|s| s.clone());
             ed.reload(text);
             if let Some(prev_sel) = prev_sel {

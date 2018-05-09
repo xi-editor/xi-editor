@@ -72,6 +72,7 @@ pub struct View {
     /// New offset to be scrolled into position after an edit.
     scroll_to: Option<usize>,
 
+    /// The state for finding text for this view.
     find: Find,
 }
 
@@ -195,11 +196,11 @@ impl View {
 
     fn do_cancel(&mut self, text: &Rope) {
         self.collapse_selections(text);
-        self.find.unset_find(text);
+        self.find.unset();
     }
 
-    pub fn unset_find(&mut self, text: &Rope) {
-        self.find.unset_find(text)
+    pub fn unset_find(&mut self) {
+        self.find.unset()
     }
 
     fn goto_line(&mut self, text: &Rope, line: u64) {
@@ -599,6 +600,7 @@ impl View {
                     } else {
                         let start_line = seg.our_line_num;
                         let end_line = start_line + seg.n;
+
                         // todo
                         if self.find.hls_dirty() {
                             self.update_find_for_lines(text, start_line, end_line);
@@ -626,6 +628,9 @@ impl View {
             "ops": ops,
             "pristine": pristine,
         });
+
+        eprintln!("params {:?}", params);
+
         client.update_view(self.view_id, &params);
         self.lc_shadow = b.build();
         self.find.set_hls_dirty(false)
@@ -774,7 +779,7 @@ impl View {
         // the front-end, but perhaps not for async edits.
         self.drag_state = None;
 
-        self.find.update_highlights(text, last_text, delta);      // todo
+        self.find.update_highlights(text, last_text, delta);      // todo (or update_find for delta region?)
 
         // Note: for committing plugin edits, we probably want to know the priority
         // of the delta so we can set the cursor before or after the edit, as needed.
@@ -799,6 +804,7 @@ impl View {
             })
         };
 
+//        self.set_dirty(text);
         self.find.do_find(text, search_string, case_sensitive)
     }
 

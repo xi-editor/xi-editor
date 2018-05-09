@@ -221,6 +221,7 @@ impl<'a> Iterator for PlanIterator<'a> {
             validity: shadow_span.validity,
             tactic: plan_span.1,
         };
+
         if end == self.shadow_line_num + shadow_span.n {
             self.shadow_line_num = end;
             self.shadow_ix += 1;
