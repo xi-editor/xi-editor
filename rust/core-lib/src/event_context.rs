@@ -98,8 +98,10 @@ impl<'a> EventContext<'a> {
         use self::EventDomain as E;
         let event: EventDomain = cmd.into();
         match event {
-            E::View(cmd) => self.with_view(
-                |view, text| view.do_edit(text, cmd)),
+            E::View(cmd) => {
+                    self.with_view(|view, text| view.do_edit(text, cmd));
+                    self.editor.borrow_mut().update_edit_type();
+                },
             E::Buffer(cmd) => self.with_editor(
                 |ed, view, kill_ring| ed.do_edit(view, kill_ring, cmd)),
             E::Special(cmd) => self.do_special(cmd),
