@@ -1,7 +1,7 @@
 ---
 layout: page
 title: Building Docs
-site_nav_category: contribute
+site_nav_category: buildingdocs
 site_nav_category_order: 500
 is_site_nav_category: true
 ---
