@@ -343,7 +343,8 @@ pub fn rewrap_width(breaks: &mut Breaks, text: &Rope,
     // First, remove any breaks in edited section.
     let mut builder = BreakBuilder::new();
     builder.add_no_break(newsize);
-    breaks.edit(iv, builder.build());
+    let edit_iv = Interval::new_open_closed(iv.start(), iv.end());
+    breaks.edit(edit_iv, builder.build());
     // At this point, breaks is aligned with text.
 
     let mut start = iv.start();
@@ -357,7 +358,6 @@ pub fn rewrap_width(breaks: &mut Breaks, text: &Rope,
         start = cursor.prev::<LinesMetric>().unwrap_or(0);
     }
 
-    eprintln!("text len = {}, start = {}, end = {}", text.len(), start, end);
     let new_breaks = compute_rewrap_width(text, width_cache, /* style_spans, */
                                           client, max_width, breaks,
                                           start, end);
