@@ -541,6 +541,7 @@ impl Hash for Sample {
     }
 }
 
+#[must_use]
 pub struct SampleGuard<'a> {
     sample: Option<Sample>,
     trace: Option<&'a Trace>,
