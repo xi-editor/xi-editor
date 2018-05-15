@@ -148,11 +148,10 @@ impl WeakXiCore {
     /// be the base revision for a delta. Once a plugin has acknowledged a new
     /// revision, it can no longer send deltas against any older revision.
     pub fn handle_plugin_update(&self, plugin: PluginId, view: ViewId,
-                                undo_group: usize,
                                 response: Result<Value, RpcError>) {
         if let Some(core) = self.upgrade() {
             let _t = xi_trace::trace_block("WeakXiCore::plugin_update", &["core"]);
-            core.inner().plugin_update(plugin, view, undo_group, response);
+            core.inner().plugin_update(plugin, view, response);
         }
     }
 }

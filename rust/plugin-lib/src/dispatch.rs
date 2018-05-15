@@ -135,14 +135,14 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
     fn do_update(&mut self, update: PluginUpdate) -> Result<Value, RemoteError> {
         let _t = trace_block("Dispatcher::do_update", &["plugin"]);
         let PluginUpdate {
-            view_id, delta, new_len, new_line_count, rev, edit_type, author,
+            view_id, delta, new_len, new_line_count, rev, undo_group, edit_type, author,
         } = update;
         let v = bail_err!(self.views.get_mut(&view_id), "update",
                           self.pid, view_id);
-        v.update(delta.as_ref(), new_len, new_line_count, rev);
-        Ok(self.plugin.update(v, delta.as_ref(), edit_type, author)
-            .map(|edit| serde_json::to_value(edit).unwrap())
-            .unwrap_or(Value::from(1)))
+        v.update(delta.as_ref(), new_len, new_line_count, rev, undo_group);
+        self.plugin.update(v, delta.as_ref(), edit_type, author);
+
+        return Ok(Value::from(1));
     }
 
     fn do_collect_trace(&self) -> Result<Value, RemoteError> {

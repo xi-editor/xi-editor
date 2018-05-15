@@ -672,12 +672,11 @@ impl CoreState {
     }
 
     /// Handles the response to a sync update sent to a plugin.
-    pub(crate) fn plugin_update(&mut self, _plugin_id: PluginId,
-                                 view_id: ViewId, undo_group: usize,
+    pub(crate) fn plugin_update(&mut self, _plugin_id: PluginId, view_id: ViewId,
                                  response: Result<Value, xi_rpc::Error>) {
 
         if let Some(mut edit_ctx) = self.make_context(view_id) {
-            edit_ctx.do_plugin_update(response, undo_group);
+            edit_ctx.do_plugin_update(response);
         }
     }
 
