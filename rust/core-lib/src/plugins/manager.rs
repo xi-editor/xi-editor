@@ -33,7 +33,7 @@ use config::Table;
 
 use super::{PluginCatalog, PluginRef, start_plugin_process, PluginPid};
 use super::rpc::{PluginNotification, PluginRequest, PluginCommand,
-PluginUpdate, UpdateResponse, PluginBufferInfo, ClientPluginInfo};
+PluginUpdate, PluginBufferInfo, ClientPluginInfo};
 use super::manifest::{PluginActivation, Command};
 
 pub type PluginName = String;
@@ -105,21 +105,10 @@ impl PluginManager {
                         None => return,
                     };
 
-                    match response.map(serde_json::from_value::<UpdateResponse>) {
-                        Ok(Ok(UpdateResponse::Edit(edit))) => {
-                            buffers.lock().editor_for_view_mut(view_id).unwrap()
-                                .apply_plugin_edit(edit, Some(undo_group));
-                        }
-                        Ok(Ok(UpdateResponse::Ack(_))) => (),
-                        Ok(Err(err)) => eprintln!("plugin response json err: {:?}", err),
-                        Err(err) => {
-                            eprintln!("plugin process dead? {:?}", err);
-                            //TODO: do we have a retry policy?
-                            plugin_ref.declare_dead();
-                        }
+                    if response {
+                        buffers.lock().editor_for_view_mut(view_id)
+                            .unwrap().dec_revs_in_flight();
                     }
-                    buffers.lock().editor_for_view_mut(view_id)
-                        .unwrap().dec_revs_in_flight();
                 });
             }
         };

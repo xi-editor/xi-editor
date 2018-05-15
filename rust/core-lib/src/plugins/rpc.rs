@@ -75,6 +75,12 @@ pub struct PluginUpdate {
     /// The total number of lines in the document after applying this delta.
     pub new_line_count: usize,
     pub rev: u64,
+    /// The undo_group associated with this update. The plugin may pass
+    /// this value back to core when making an edit, to associate the
+    /// plugin's edit with this undo group. Core uses undo_group
+    //  to undo actions occurred due to plugins after a user action
+    // in a single step.
+    pub undo_group: Option<usize>,
     pub edit_type: String,
     pub author: String,
 }
@@ -122,6 +128,8 @@ pub struct PluginEdit {
     /// whether the inserted text prefers to be to the right of the cursor.
     pub after_cursor: bool,
     /// the originator of this edit: some identifier (plugin name, 'core', etc)
+    /// undo_group associated with this edit
+    pub undo_group: Option<usize>,
     pub author: String,
 }
 
@@ -232,11 +240,11 @@ impl PluginBufferInfo {
 
 impl PluginUpdate {
     pub fn new<D>(view_id: ViewIdentifier, rev: u64, delta: D, new_len: usize,
-                  new_line_count: usize, edit_type: String, author: String) -> Self
+                  new_line_count: usize, undo_group: Option<usize>, edit_type: String, author: String) -> Self
         where D: Into<Option<RopeDelta>>
     {
         let delta = delta.into();
-        PluginUpdate { view_id, delta, new_len, new_line_count, rev, edit_type, author }
+        PluginUpdate { view_id, delta, new_len, new_line_count, rev, undo_group, edit_type, author }
     }
 }
 
@@ -284,6 +292,7 @@ mod tests {
             "new_len": 11,
             "new_line_count": 1,
             "rev": 5,
+            "undo_group": 6,
             "edit_type": "something",
             "author": "me"
     }"#;

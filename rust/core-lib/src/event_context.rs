@@ -156,7 +156,7 @@ impl<'a> EventContext<'a> {
                 |ed, view, _| ed.update_spans(view, plugin, start,
                                            len, spans, rev)),
             Edit { edit } => self.with_editor(
-                |ed, _, _| ed.apply_plugin_edit(edit, None)),
+                |ed, _, _| ed.apply_plugin_edit(edit)),
             Alert { msg } => self.client.alert(&msg),
         };
         self.after_edit(&plugin.to_string());
@@ -198,15 +198,17 @@ impl<'a> EventContext<'a> {
         let approx_size = delta.inserts_len() + (delta.els.len() * 10);
         let delta = if approx_size > MAX_SIZE_LIMIT { None } else { Some(delta) };
 
+        let undo_group = ed.get_active_undo_group();
         let update = PluginUpdate::new(
                 self.view.borrow().view_id,
                 ed.get_head_rev_token(),
                 delta,
                 new_len,
                 nb_lines,
+                Some(undo_group),
                 ed.get_edit_type().to_owned(),
                 author.into());
-        let undo_group = ed.get_active_undo_group();
+
 
         // we always increment and decrement regardless of whether we're
         // sending plugins, to ensure that GC runs.
@@ -218,7 +220,7 @@ impl<'a> EventContext<'a> {
             let id = plugin.id;
             let view_id = self.view.borrow().view_id;
             plugin.update(&update, move |resp| {
-                weak_core.handle_plugin_update(id, view_id, undo_group, resp);
+                weak_core.handle_plugin_update(id, view_id, resp);
             });
         });
         ed.dec_revs_in_flight();
@@ -379,10 +381,7 @@ impl<'a> EventContext<'a> {
         self.render();
     }
 
-    // TODO: remove support for sync updates
-    pub(crate) fn do_plugin_update(&mut self, update: Result<Value, RpcError>,
-                                    undo_group: usize) {
-
+    pub(crate) fn do_plugin_update(&mut self, update: Result<Value, RpcError>) {
         match update.map(serde_json::from_value::<u64>) {
             Ok(Ok(_)) => (),
             Ok(Err(err)) => eprintln!("plugin response json err: {:?}", err),
