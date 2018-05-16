@@ -21,7 +21,7 @@ use serde_json::Value;
 
 use xi_rope::rope::{Rope, LinesMetric, RopeInfo};
 use xi_rope::delta::{Delta};
-use xi_rope::tree::{Cursor, Metric};
+use xi_rope::tree::Cursor;
 use xi_rope::breaks::{Breaks, BreaksInfo, BreaksMetric, BreaksBaseMetric};
 use xi_rope::interval::Interval;
 use xi_rope::spans::Spans;
@@ -804,7 +804,7 @@ impl View {
             })
         };
 
-//        self.set_dirty(text);
+        self.set_dirty(text);       // todo: only set lines with search results dirty
         self.find.do_find(text, search_string, case_sensitive)
     }
 

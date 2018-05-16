@@ -1,7 +1,4 @@
 use std::cmp::{min,max};
-use std::mem;
-use std::cell::RefCell;
-use std::ops::Range;
 
 use serde_json::Value;
 
@@ -9,33 +6,23 @@ use index_set::IndexSet;
 use xi_rope::delta::{Delta, DeltaRegion};
 use xi_rope::find::{find, CaseMatching};
 use xi_rope::rope::{Rope, LinesMetric, RopeInfo};
-use xi_rope::tree::{Cursor, Metric};
-use xi_rope::breaks::{Breaks, BreaksInfo, BreaksMetric, BreaksBaseMetric};
+use xi_rope::tree::Cursor;
 use xi_rope::interval::Interval;
-use xi_rope::spans::Spans;
-use xi_trace::trace_block;
-use client::Client;
-use edit_types::ViewEvent;
-use line_cache_shadow::{self, LineCacheShadow, RenderPlan, RenderTactic};
-use movement::{Movement, region_movement, selection_movement};
-use rpc::{GestureType, MouseAction};
-use styles::{Style, ThemeStyleMap};
-use selection::{Affinity, Selection, SelRegion};
-use tabs::{ViewId, BufferId};
-use width_cache::WidthCache;
-use word_boundaries::WordCursor;
+use selection::{Selection, SelRegion};
+use xi_rope::tree::Metric;
 
-pub struct SearchQuery {
-  id: usize,   // necessary?
-  query: String,
-  case_matching: CaseMatching // todo: add regex
-}
-
-pub struct SearchOccurrence {
-  query_id: usize,      // id or reference to SearchQuery?
-  highlight: Selection
-}
-
+// might be used in the future to support multiple search queries
+//pub struct SearchQuery {
+//  id: usize,   // necessary?
+//  query: String,
+//  case_matching: CaseMatching // todo: add regex
+//}
+//
+//pub struct SearchOccurrence {
+//  query_id: usize,      // id or reference to SearchQuery?
+//  highlight: Selection
+//}
+//
 
 
 
@@ -171,82 +158,83 @@ impl Find {
   pub fn update_find(&mut self, text: &Rope, start: usize, end: usize, include_slop: bool,
                  stop_on_found: bool)
   {
-      if self.search_string.is_none() {
-          return;
-      }
+    if self.search_string.is_none() {
+        return;
+    }
 
-      let text_len = text.len();
-      // extend the search by twice the string length (twice, because case matching may increase
-      // the length of an occurrence)
-      let slop = if include_slop { self.search_string.as_ref().unwrap().len() * 2 } else { 0 };
-      let mut occurrences = self.occurrences.take().unwrap_or_else(Selection::new);
-      let mut searched_until = end;
-//      let mut invalidate_from = None;
+    let text_len = text.len();
+    // extend the search by twice the string length (twice, because case matching may increase
+    // the length of an occurrence)
+    let slop = if include_slop { self.search_string.as_ref().unwrap().len() * 2 } else { 0 };
+    let mut occurrences = self.occurrences.take().unwrap_or_else(Selection::new);
+    let mut searched_until = end;
+    let mut invalidate_from = None;
 
-      for (start, end) in self.valid_search.minus_one_range(start, end) {
-        let search_string = self.search_string.as_ref().unwrap();
-        let len = search_string.len();
+    for (_start, end) in self.valid_search.minus_one_range(start, end) {
+      let search_string = self.search_string.as_ref().unwrap();
 
-        // expand region to be able to find occurrences around the region's edges
-        let from = max(0, slop) - slop;
-        let to = min(end + slop, text.len());
+      // expand region to be able to find occurrences around the region's edges
+      let from = max(0, slop) - slop;
+      let to = min(end + slop, text.len());
 
-        // TODO: this interval might cut a unicode codepoint, make sure it is
-        // aligned to codepoint boundaries.
-        let text = text.subseq(Interval::new_closed_open(0, to));
-        let mut cursor = Cursor::new(&text, from);
+      // TODO: this interval might cut a unicode codepoint, make sure it is
+      // aligned to codepoint boundaries.
+      let text = text.subseq(Interval::new_closed_open(0, to));
+      let mut cursor = Cursor::new(&text, from);
+      while let Some(start) = find(&mut cursor, self.case_matching, &search_string) {
+        let end = cursor.pos();
 
-        while cursor.pos() < end {
-          match find(&mut cursor, self.case_matching, &search_string) {
-            Some(start) => {
-              let end = start + len;
-
-              let region = SelRegion::new(start, end);
-              eprintln!("Start of occurrence {:?}, End {:?}", start, end);
-
-              let prev_len = occurrences.len();
-              let (_, e) = occurrences.add_range_distinct(region);
-              // in case of ambiguous search results (e.g. search "aba" in "ababa"),
-              // the search result closer to the beginning of the file wins
-              if e != end {
-                // Skip the search result and keep the occurrence that is closer to
-                // the beginning of the file. Re-align the cursor to the kept
-                // occurrence
-                cursor.set(e);
-                continue;
-              }
-              cursor.set(end);
-            }
-            _ => {}
-          }
+        let region = SelRegion::new(start, end);
+        let prev_len = occurrences.len();
+        let (_, e) = occurrences.add_range_distinct(region);
+        // in case of ambiguous search results (e.g. search "aba" in "ababa"),
+        // the search result closer to the beginning of the file wins
+        if e != end {
+          // Skip the search result and keep the occurrence that is closer to
+          // the beginning of the file. Re-align the cursor to the kept
+          // occurrence
+          cursor.set(e);
+          continue;
         }
 
-      }
-      self.occurrences = Some(occurrences);
+        // add_range_distinct() above removes ambiguous regions after the added
+        // region, if something has been deleted, everything thereafter is
+        // invalidated
+        if occurrences.len() != prev_len + 1 {
+          invalidate_from = Some(end);
+          occurrences.delete_range(end, text_len, false);
+          break;
+        }
 
-      // commented out for simplicity
-//      if let Some(invalidate_from) = invalidate_from {
-//          self.valid_search.union_one_range(start, invalidate_from);
-//
-//          // invalidate all search results from the point of the ambiguous search result until ...
-//          let is_multi_line = LinesMetric::next(self.search_string.as_ref().unwrap(), 0).is_some();
-//          if is_multi_line {
-//              // ... the end of the file
-//              self.valid_search.delete_range(invalidate_from, text_len);
-//          } else {
-//              // ... the end of the line
-//              let mut cursor = Cursor::new(&text, invalidate_from);
-//              if let Some(end_of_line) = cursor.next::<LinesMetric>() {
-//                  self.valid_search.delete_range(invalidate_from, end_of_line);
-//              }
-//          }
-//
-//          // continue with the find for the current region
-//          self.update_find(text, invalidate_from, end, false, false);
-//      } else {
-          self.valid_search.union_one_range(start, searched_until);
-          self.hls_dirty = true;
-//      }
+        if stop_on_found {
+          searched_until = end;
+          break;
+        }
+      }
+    }
+    self.occurrences = Some(occurrences);
+    if let Some(invalidate_from) = invalidate_from {
+      self.valid_search.union_one_range(start, invalidate_from);
+
+      // invalidate all search results from the point of the ambiguous search result until ...
+      let is_multi_line = LinesMetric::next(self.search_string.as_ref().unwrap(), 0).is_some();
+      if is_multi_line {
+        // ... the end of the file
+        self.valid_search.delete_range(invalidate_from, text_len);
+      } else {
+        // ... the end of the line
+        let mut cursor = Cursor::new(&text, invalidate_from);
+        if let Some(end_of_line) = cursor.next::<LinesMetric>() {
+          self.valid_search.delete_range(invalidate_from, end_of_line);
+        }
+      }
+
+      // continue with the find for the current region
+      self.update_find(text, invalidate_from, end, false, false);
+    } else {
+      self.valid_search.union_one_range(start, searched_until);
+      self.hls_dirty = true;
+    }
   }
 
   pub fn next_occurrence(&mut self, text: &Rope, reverse: bool, wrapped: bool,
