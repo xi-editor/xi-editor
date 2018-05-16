@@ -156,13 +156,13 @@ fn find_core(cursor: &mut Cursor<RopeInfo>, pat: &str,
             let candidate_pos = orig_pos + off;
             cursor.set(candidate_pos);
             match matcher(cursor, pat) {
-              Some(actual_pos) => return FindResult::Found(actual_pos),
-              None => {
-                // Advance cursor to next codepoint.
-                // Note: could be optimized in some cases but general case is sometimes needed.
-                cursor.set(candidate_pos);
-                cursor.next::<BaseMetric>();
-              }
+                Some(actual_pos) => return FindResult::Found(actual_pos),
+                None => {
+                    // Advance cursor to next codepoint.
+                    // Note: could be optimized in some cases but general case is sometimes needed.
+                    cursor.set(candidate_pos);
+                    cursor.next::<BaseMetric>();
+                }
             }
         } else {
             let _ = cursor.next_leaf();
@@ -176,7 +176,8 @@ fn find_core(cursor: &mut Cursor<RopeInfo>, pat: &str,
 
 /// Compare whether the substring beginning at the current cursor location
 /// is equal to the provided string. Leaves the cursor at an indeterminate
-/// position on failure, but the end of the string on success.
+/// position on failure, but the end of the string on success. Returns the
+/// start position of the match.
 pub fn compare_cursor_str(cursor: &mut Cursor<RopeInfo>, mut pat: &str) -> Option<usize> {
     let start_position = cursor.pos();
     if pat.is_empty() {
@@ -199,7 +200,8 @@ pub fn compare_cursor_str(cursor: &mut Cursor<RopeInfo>, mut pat: &str) -> Optio
 }
 
 /// Like `compare_cursor_str` but case invariant (using to_lowercase() to
-/// normalize both strings before comparison).
+/// normalize both strings before comparison). Returns the start position
+/// of the match.
 fn compare_cursor_str_casei(cursor: &mut Cursor<RopeInfo>, pat: &str) -> Option<usize> {
     let start_position = cursor.pos();
     let mut pat_iter = pat.chars();
@@ -228,41 +230,43 @@ fn compare_cursor_str_casei(cursor: &mut Cursor<RopeInfo>, pat: &str) -> Option<
 /// of the leave/start of the line.
 /// If the regular expression can match multiple lines then all leaves are
 /// consumed and matched against the regular expression. Otherwise only the
-/// current leave is matched.
+/// current leave is matched. Returns the start position of the match.
 fn compare_cursor_regex(cursor: &mut Cursor<RopeInfo>, pat: &str) -> Option<usize> {
+    let orig_position = cursor.pos();
+
     if pat.is_empty() {
-        return Some(cursor.pos());
+        return Some(orig_position);
     }
 
     // create regex from untrusted input
     match RegexBuilder::new(pat).size_limit(REGEX_SIZE_LIMIT).build() {
         Ok(regex) => {
             let mut text = String::new();
-            match is_multiline_regex(pat) {
-                true => {
-                    // consume all leaves to match regex
-                    while let Some((leaf, pos_in_leaf)) = cursor.get_leaf() {
-                        text.push_str(leaf);
-                        let _ = cursor.next_leaf();
-                    }
-                },
-                false => {
-                    // match regex only against single line/leaf
-                    match cursor.get_leaf() {
-                        Some((leaf, pos_in_leaf)) => {
-                            text.push_str(str::from_utf8(&leaf.as_bytes()[pos_in_leaf..]).unwrap());
-                        },
-                        _ => return None
-                    }
-                },
-            };
 
+            match cursor.get_leaf() {
+                // get text of current leaf
+                Some((leaf, pos_in_leaf)) => {
+                    text.push_str(str::from_utf8(&leaf.as_bytes()[pos_in_leaf..]).unwrap());
+                    let _ = cursor.next_leaf();
+                },
+                _ => return None
+            }
+
+            if is_multiline_regex(pat) {
+                // consume all remaining leaves
+                while let Some((leaf, _)) = cursor.get_leaf() {
+                    text.push_str(leaf);
+                    let _ = cursor.next_leaf();
+                }
+            }
+
+            // match regex against text
             match regex.find(&text) {
                 Some(mat) => {
                     // calculate start position based on where the match starts
-                    let start_position = cursor.pos() + mat.start();
+                    let start_position = orig_position + mat.start();
                     // update cursor and set to end of match
-                    let end_position = cursor.pos() + mat.end();
+                    let end_position = orig_position + mat.end();
                     cursor.set(end_position);
                     return Some(start_position)
                 },
@@ -295,7 +299,7 @@ fn scan_lowercase(probe: char, s: &str) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::CaseMatching::{Exact, CaseInsensitive};
+    use super::CaseMatching::{Exact, CaseInsensitive, RegularExpression};
     use tree::Cursor;
     use rope::Rope;
 
@@ -401,23 +405,70 @@ mod tests {
     }
 
     #[test]
+    fn find_regex_small() {
+        let a = Rope::from("Löwe 老虎 Léopard\nSecond line");
+        let mut c = Cursor::new(&a, 0);
+        assert_eq!(find(&mut c, RegularExpression, "L"), Some(0));
+        assert_eq!(find(&mut c, RegularExpression, "L"), Some(13));
+        assert_eq!(find(&mut c, RegularExpression, "L"), None);
+        c.set(0);
+        assert_eq!(find(&mut c, RegularExpression, "Léopard"), Some(13));
+        assert_eq!(find(&mut c, RegularExpression, "Léopard"), None);
+        c.set(0);
+        assert_eq!(find(&mut c, RegularExpression, "老虎"), Some(6));
+        assert_eq!(find(&mut c, RegularExpression, "老虎"), None);
+        c.set(0);
+        assert_eq!(find(&mut c, RegularExpression, "Tiger"), None);
+        c.set(0);
+        assert_eq!(find(&mut c, RegularExpression, "."), Some(0));
+        assert_eq!(find(&mut c, RegularExpression, "\\s"), Some(5));
+        assert_eq!(find(&mut c, RegularExpression, "\\sLéopard\n.*"), Some(12));
+    }
+
+    #[test]
+    fn find_regex_medium() {
+        let mut s = String::new();
+        for _ in 0..4000 {
+            s.push('x');
+        }
+        s.push_str("Löwe 老虎 Léopard\nSecond line");
+        let a = Rope::from(&s);
+        let mut c = Cursor::new(&a, 0);
+        assert_eq!(find(&mut c, RegularExpression, "L"), Some(4000));
+        assert_eq!(find(&mut c, RegularExpression, "L"), Some(4013));
+        assert_eq!(find(&mut c, RegularExpression, "L"), None);
+        c.set(0);
+        assert_eq!(find(&mut c, RegularExpression, "Léopard"), Some(4013));
+        assert_eq!(find(&mut c, RegularExpression, "Léopard"), None);
+        c.set(0);
+        assert_eq!(find(&mut c, RegularExpression, "老虎"), Some(4006));
+        assert_eq!(find(&mut c, RegularExpression, "老虎"), None);
+        c.set(0);
+        assert_eq!(find(&mut c, RegularExpression, "Tiger"), None);
+        c.set(0);
+        assert_eq!(find(&mut c, RegularExpression, "."), Some(0));
+        assert_eq!(find(&mut c, RegularExpression, "\\s"), Some(4005));
+        assert_eq!(find(&mut c, RegularExpression, "\\sLéopard\n.*"), Some(4012));
+    }
+
+    #[test]
     fn compare_cursor_str_small() {
         let a = Rope::from("Löwe 老虎 Léopard");
         let mut c = Cursor::new(&a, 0);
         let pat = "Löwe 老虎 Léopard";
-        assert!(compare_cursor_str(&mut c, pat));
+        assert!(compare_cursor_str(&mut c, pat).is_some());
         assert_eq!(c.pos(), pat.len());
         c.set(0);
         let pat = "Löwe";
-        assert!(compare_cursor_str(&mut c, pat));
+        assert!(compare_cursor_str(&mut c, pat).is_some());
         assert_eq!(c.pos(), pat.len());
         c.set(0);
         // Empty string is valid for compare_cursor_str (but not find)
         let pat = "";
-        assert!(compare_cursor_str(&mut c, pat));
+        assert!(compare_cursor_str(&mut c, pat).is_some());
         assert_eq!(c.pos(), pat.len());
         c.set(0);
-        assert!(!compare_cursor_str(&mut c, "Löwe 老虎 Léopardfoo"));
+        assert!(compare_cursor_str(&mut c, "Löwe 老虎 Léopardfoo").is_none());
     }
 
     #[test]
@@ -429,10 +480,10 @@ mod tests {
         s.push_str("Löwe 老虎 Léopard");
         let a = Rope::from(&s);
         let mut c = Cursor::new(&a, 0);
-        assert!(compare_cursor_str(&mut c, &s));
+        assert!(compare_cursor_str(&mut c, &s).is_some());
         assert_eq!(c.pos(), s.len());
         c.set(2000);
-        assert!(compare_cursor_str(&mut c, &s[2000..]));
+        assert!(compare_cursor_str(&mut c, &s[2000..]).is_some());
         assert_eq!(c.pos(), s.len());
     }
 }

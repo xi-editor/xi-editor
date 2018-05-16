@@ -125,52 +125,52 @@ impl View {
     }
 
     pub(crate) fn set_has_pending_render(&mut self, pending: bool) {
-        self.pending_render = pending
-    }
+    self.pending_render = pending
+}
 
     pub(crate) fn has_pending_render(&self) -> bool {
-        self.pending_render
-    }
+    self.pending_render
+}
 
     pub(crate) fn do_edit(&mut self, text: &Rope, cmd: ViewEvent) {
-        use self::ViewEvent::*;
-        match cmd {
-            Move(movement) => self.do_move(text, movement, false),
-            ModifySelection(movement) => self.do_move(text, movement, true),
-            SelectAll => self.select_all(text),
-            Scroll(range) => self.set_scroll(range.first, range.last),
-            AddSelectionAbove =>
-                self.add_selection_by_movement(text, Movement::Up),
-            AddSelectionBelow =>
-                self.add_selection_by_movement(text, Movement::Down),
-            Gesture { line, col, ty } =>
-                self.do_gesture(text, line, col, ty),
-            GotoLine { line } => self.goto_line(text, line),
-            FindNext { wrap_around, allow_same } =>         // todo
-                self.find_next(text, false,
-                               wrap_around.unwrap_or(false),
-                               allow_same.unwrap_or(false)),
-            FindPrevious { wrap_around } =>
-                self.find_next(text, true, wrap_around.unwrap_or(false), true),
-            Click(MouseAction { line, column, flags, click_count }) => {
-                // Deprecated (kept for client compatibility):
-                // should be removed in favor of do_gesture
-                eprintln!("Usage of click is deprecated; use do_gesture");
-                if (flags & FLAG_SELECT) != 0 {
-                    self.do_gesture(text, line, column, GestureType::RangeSelect)
-                } else if click_count == Some(2) {
-                    self.do_gesture(text, line, column, GestureType::WordSelect)
-                } else if click_count == Some(3) {
-                    self.do_gesture(text, line, column, GestureType::LineSelect)
-                } else {
-                    self.do_gesture(text, line, column, GestureType::PointSelect)
-                }
+    use self::ViewEvent::*;
+    match cmd {
+        Move(movement) => self.do_move(text, movement, false),
+        ModifySelection(movement) => self.do_move(text, movement, true),
+        SelectAll => self.select_all(text),
+        Scroll(range) => self.set_scroll(range.first, range.last),
+        AddSelectionAbove =>
+            self.add_selection_by_movement(text, Movement::Up),
+        AddSelectionBelow =>
+            self.add_selection_by_movement(text, Movement::Down),
+        Gesture { line, col, ty } =>
+            self.do_gesture(text, line, col, ty),
+        GotoLine { line } => self.goto_line(text, line),
+        FindNext { wrap_around, allow_same } =>         // todo
+            self.find_next(text, false,
+                           wrap_around.unwrap_or(false),
+                           allow_same.unwrap_or(false)),
+        FindPrevious { wrap_around } =>
+            self.find_next(text, true, wrap_around.unwrap_or(false), true),
+        Click(MouseAction { line, column, flags, click_count }) => {
+            // Deprecated (kept for client compatibility):
+            // should be removed in favor of do_gesture
+            eprintln!("Usage of click is deprecated; use do_gesture");
+            if (flags & FLAG_SELECT) != 0 {
+                self.do_gesture(text, line, column, GestureType::RangeSelect)
+            } else if click_count == Some(2) {
+                self.do_gesture(text, line, column, GestureType::WordSelect)
+            } else if click_count == Some(3) {
+                self.do_gesture(text, line, column, GestureType::LineSelect)
+            } else {
+                self.do_gesture(text, line, column, GestureType::PointSelect)
             }
-            Drag(MouseAction { line, column, .. }) =>
-                self.do_drag(text, line, column, Affinity::default()),
-            Cancel => self.do_cancel(text),
         }
+        Drag(MouseAction { line, column, .. }) =>
+            self.do_drag(text, line, column, Affinity::default()),
+        Cancel => self.do_cancel(text),
     }
+}
 
     fn do_gesture(&mut self, text: &Rope, line: u64, col: u64, ty: GestureType) {
         let line = line as usize;
@@ -335,22 +335,22 @@ impl View {
 
     /// Selects a specific range (eg. when the user performs SHIFT + click).
     pub fn select_range(&mut self, text: &Rope, offset: usize) {
-      if !self.is_point_in_selection(offset) {
-        let sel = {
-          let (last, rest) = self.sel_regions().split_last().unwrap();
-          let mut sel = Selection::new();
-          for &region in rest {
-            sel.add_region(region);
-          }
-          // TODO: small nit, merged region should be backward if end < start.
-          // This could be done by explicitly overriding, or by tweaking the
-          // merge logic.
-          sel.add_region(SelRegion::new(last.start, offset));
-          sel
-        };
-        self.set_selection(text, sel);
-        self.start_drag(offset, offset, offset);
-      }
+        if !self.is_point_in_selection(offset) {
+            let sel = {
+                let (last, rest) = self.sel_regions().split_last().unwrap();
+                let mut sel = Selection::new();
+                for &region in rest {
+                    sel.add_region(region);
+                }
+                // TODO: small nit, merged region should be backward if end < start.
+                // This could be done by explicitly overriding, or by tweaking the
+                // merge logic.
+                sel.add_region(SelRegion::new(last.start, offset));
+                sel
+            };
+            self.set_selection(text, sel);
+            self.start_drag(offset, offset, offset);
+        }
     }
 
     /// Selects the given region and supports multi selection.
@@ -405,8 +405,8 @@ impl View {
             let horiz = None;
             sel.add_region(
                 SelRegion::new(start, end)
-                    .with_horiz(horiz)
-                    .with_affinity(affinity)
+                  .with_horiz(horiz)
+                  .with_affinity(affinity)
             );
             sel
         });
@@ -455,12 +455,12 @@ impl View {
             // cursor
             let c = region.end;
             if (c > start_pos && c < pos) ||
-                (!region.is_upstream() && c == start_pos) ||
-                (region.is_upstream() && c == pos) ||
-                (c == pos && c == text.len() && self.line_of_offset(text, c) == line_num)
-            {
-                cursors.push(c - start_pos);
-            }
+              (!region.is_upstream() && c == start_pos) ||
+              (region.is_upstream() && c == pos) ||
+              (c == pos && c == text.len() && self.line_of_offset(text, c) == line_num)
+              {
+                  cursors.push(c - start_pos);
+              }
 
             // selection with interior
             let sel_start_ix = clamp(region.min(), start_pos, pos) - start_pos;
@@ -609,7 +609,7 @@ impl View {
                         let offset = self.offset_of_line(text, start_line);
                         let mut line_cursor = Cursor::new(text, offset);
                         let mut soft_breaks = self.breaks.as_ref().map(|breaks|
-                            Cursor::new(breaks, offset));
+                          Cursor::new(breaks, offset));
                         let mut rendered_lines = Vec::new();
                         for line_num in start_line..end_line {
                             let line = self.render_line(client, styles, text,
@@ -845,11 +845,11 @@ impl View {
     pub fn get_line_range(&self, text: &Rope, region: &SelRegion) -> Range<usize> {
         let (first_line, _) = self.offset_to_line_col(text, region.min());
         let (mut last_line, last_col) =
-            self.offset_to_line_col(text, region.max());
+        self.offset_to_line_col(text, region.max());
         if last_col == 0 && last_line > first_line {
             last_line -= 1;
         }
-        
+
         first_line..(last_line + 1)
     }
 
