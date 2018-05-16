@@ -20,6 +20,12 @@ use memchr::{memchr, memchr2, memchr3};
 
 use rope::{BaseMetric, RopeInfo};
 use tree::Cursor;
+use regex::RegexBuilder;
+use std::str;
+
+
+const REGEX_SIZE_LIMIT: usize = 10000;
+
 
 /// The result of a [`find`][find] operation.
 /// 
@@ -45,6 +51,8 @@ pub enum CaseMatching {
     /// reasonably well otherwise (it is currently defined in terms of the
     /// `to_lowercase` methods in the Rust standard library).
     CaseInsensitive,
+    /// Matching using search string as regular expression.
+    RegularExpression,
 }
 
 /// Finds a pattern string in the rope referenced by the cursor, starting at
@@ -58,7 +66,7 @@ pub enum CaseMatching {
 /// Can panic if `pat` is empty.
 pub fn find(cursor: &mut Cursor<RopeInfo>, cm: CaseMatching, pat: &str) -> Option<usize> {
     match find_progress(cursor, cm, pat, usize::max_value()) {
-        FindResult::Found(pos) => Some(pos),
+        FindResult::Found(start) => Some(start),
         FindResult::NotFound => None,
         FindResult::TryAgain => unreachable!("find_progress got stuck"),
     }
@@ -108,6 +116,11 @@ pub fn find_progress(cursor: &mut Cursor<RopeInfo>, cm: CaseMatching, pat: &str,
                 let scanner = |s: &str| scan_lowercase(c, s);
                 find_progress_iter(cursor, &pat_lower, &scanner, &matcher, num_steps)
             }
+        },
+        CaseMatching::RegularExpression => {
+          let matcher = compare_cursor_regex;
+          // regex scanner cannot check if regex is partially matching
+          find_progress_iter(cursor, pat, &|_| { Some(0) }, &matcher, num_steps)
         }
     }
 }
@@ -115,7 +128,7 @@ pub fn find_progress(cursor: &mut Cursor<RopeInfo>, cm: CaseMatching, pat: &str,
 // Run the core repeatedly until there is a result, up to a certain number of steps.
 fn find_progress_iter(cursor: &mut Cursor<RopeInfo>, pat: &str,
         scanner: &Fn(&str) -> Option<usize>,
-        matcher: &Fn(&mut Cursor<RopeInfo>, &str) -> bool,
+        matcher: &Fn(&mut Cursor<RopeInfo>, &str) -> Option<usize>,
         num_steps: usize
     ) -> FindResult
 {
@@ -134,7 +147,7 @@ fn find_progress_iter(cursor: &mut Cursor<RopeInfo>, pat: &str,
 // in the full rope.
 fn find_core(cursor: &mut Cursor<RopeInfo>, pat: &str,
         scanner: &Fn(&str) -> Option<usize>,
-        matcher: &Fn(&mut Cursor<RopeInfo>, &str) -> bool
+        matcher: &Fn(&mut Cursor<RopeInfo>, &str) -> Option<usize>
     ) -> FindResult
 {
     let orig_pos = cursor.pos();
@@ -142,13 +155,14 @@ fn find_core(cursor: &mut Cursor<RopeInfo>, pat: &str,
         if let Some(off) = scanner(&leaf[pos_in_leaf..]) {
             let candidate_pos = orig_pos + off;
             cursor.set(candidate_pos);
-            if matcher(cursor, pat) {
-                return FindResult::Found(candidate_pos);
-            } else {
+            match matcher(cursor, pat) {
+              Some(actual_pos) => return FindResult::Found(actual_pos),
+              None => {
                 // Advance cursor to next codepoint.
                 // Note: could be optimized in some cases but general case is sometimes needed.
                 cursor.set(candidate_pos);
                 cursor.next::<BaseMetric>();
+              }
             }
         } else {
             let _ = cursor.next_leaf();
@@ -163,48 +177,109 @@ fn find_core(cursor: &mut Cursor<RopeInfo>, pat: &str,
 /// Compare whether the substring beginning at the current cursor location
 /// is equal to the provided string. Leaves the cursor at an indeterminate
 /// position on failure, but the end of the string on success.
-pub fn compare_cursor_str(cursor: &mut Cursor<RopeInfo>, mut pat: &str) -> bool {
+pub fn compare_cursor_str(cursor: &mut Cursor<RopeInfo>, mut pat: &str) -> Option<usize> {
+    let start_position = cursor.pos();
     if pat.is_empty() {
-        return true;
+        return Some(start_position);
     }
     let success_pos = cursor.pos() + pat.len();
     while let Some((leaf, pos_in_leaf)) = cursor.get_leaf() {
         let n = min(pat.len(), leaf.len() - pos_in_leaf);
         if leaf.as_bytes()[pos_in_leaf..pos_in_leaf + n] != pat.as_bytes()[..n] {
-            return false;
+            return None;
         }
         pat = &pat[n..];
         if pat.is_empty() {
             cursor.set(success_pos);
-            return true;
+            return Some(start_position);
         }
         let _ = cursor.next_leaf();
     }
-    false
+    None
 }
 
 /// Like `compare_cursor_str` but case invariant (using to_lowercase() to
 /// normalize both strings before comparison).
-fn compare_cursor_str_casei(cursor: &mut Cursor<RopeInfo>, pat: &str) -> bool {
+fn compare_cursor_str_casei(cursor: &mut Cursor<RopeInfo>, pat: &str) -> Option<usize> {
+    let start_position = cursor.pos();
     let mut pat_iter = pat.chars();
     let mut c = pat_iter.next().unwrap();
     loop {
         if let Some(rope_c) = cursor.next_codepoint() {
             for lc_c in rope_c.to_lowercase() {
                 if c != lc_c {
-                    return false;
+                    return None;
                 }
                 if let Some(next_c) = pat_iter.next() {
                     c = next_c;
                 } else {
-                    return true;
+                    return Some(start_position);
                 }
             }
         } else {
             // end of string before pattern is complete
-            return false;
+            return None;
         }
     }
+}
+
+/// Compare whether the substring beginning at the cursor location matches
+/// the provided regular expression. The substring begins at the beginning
+/// of the leave/start of the line.
+/// If the regular expression can match multiple lines then all leaves are
+/// consumed and matched against the regular expression. Otherwise only the
+/// current leave is matched.
+fn compare_cursor_regex(cursor: &mut Cursor<RopeInfo>, pat: &str) -> Option<usize> {
+    if pat.is_empty() {
+        return Some(cursor.pos());
+    }
+
+    // create regex from untrusted input
+    match RegexBuilder::new(pat).size_limit(REGEX_SIZE_LIMIT).build() {
+        Ok(regex) => {
+            let mut text = String::new();
+            match is_multiline_regex(pat) {
+                true => {
+                    // consume all leaves to match regex
+                    while let Some((leaf, pos_in_leaf)) = cursor.get_leaf() {
+                        text.push_str(leaf);
+                        let _ = cursor.next_leaf();
+                    }
+                },
+                false => {
+                    // match regex only against single line/leaf
+                    match cursor.get_leaf() {
+                        Some((leaf, pos_in_leaf)) => {
+                            text.push_str(str::from_utf8(&leaf.as_bytes()[pos_in_leaf..]).unwrap());
+                        },
+                        _ => return None
+                    }
+                },
+            };
+
+            match regex.find(&text) {
+                Some(mat) => {
+                    // calculate start position based on where the match starts
+                    let start_position = cursor.pos() + mat.start();
+                    // update cursor and set to end of match
+                    let end_position = cursor.pos() + mat.end();
+                    cursor.set(end_position);
+                    return Some(start_position)
+                },
+                None => return None
+            }
+        },
+        _ => return None,
+    }
+}
+
+/// Checks if a regular expression can match multiple lines.
+fn is_multiline_regex(regex: &str) -> bool {
+    // regex characters that match line breaks
+    // todo: currently multiline mode is ignored
+    let multiline_indicators = vec!["\n", "\r", "[[:space:]]"];
+
+    multiline_indicators.iter().any(|&i| regex.contains(i))
 }
 
 /// Scan for a codepoint that, after conversion to lowercase, matches the probe.

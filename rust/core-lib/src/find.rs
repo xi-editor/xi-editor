@@ -11,6 +11,7 @@ use xi_rope::interval::Interval;
 use selection::{Selection, SelRegion};
 use xi_rope::tree::Metric;
 
+
 // might be used in the future to support multiple search queries
 //pub struct SearchQuery {
 //  id: usize,   // necessary?
