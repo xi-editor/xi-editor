@@ -43,7 +43,8 @@ use event_context::EventContext;
 use file::FileManager;
 use plugins::{PluginCatalog, PluginPid, Plugin, start_plugin_process};
 use plugin_rpc::{PluginNotification, PluginRequest};
-use rpc::{CoreNotification, CoreRequest, EditNotification, EditRequest};
+use rpc::{CoreNotification, CoreRequest, EditNotification, EditRequest,
+          PluginNotification as CorePluginNotification};
 use styles::ThemeStyleMap;
 use syntax::SyntaxDefinition;
 use view::View;
@@ -106,9 +107,9 @@ pub struct CoreState {
     pending_views: Vec<ViewId>,
     peer: Client,
     id_counter: Counter,
-    // only support one plugin during refactor
     plugins: PluginCatalog,
-    syntect: Option<Plugin>,
+    // for the time being we auto-start all plugins we find on launch.
+    running_plugins: Vec<Plugin>,
 }
 
 /// Initial setup and bookkeeping
@@ -132,7 +133,7 @@ impl CoreState {
             peer: Client::new(peer.clone()),
             id_counter: Counter::default(),
             plugins: PluginCatalog::new(&[]),
-            syntect: None,
+            running_plugins: Vec::new(),
         }
     }
 
@@ -169,8 +170,8 @@ impl CoreState {
         let theme_names = self.style_map.borrow().get_theme_names();
         self.peer.available_themes(theme_names);
 
-        // just during refactor, we manually start syntect at launch
-        if let Some(manifest) = self.plugins.get_named("syntect") {
+        // FIXME: temporary: we just launch every plugin we find at startup
+        for manifest in self.plugins.iter() {
             start_plugin_process(manifest.clone(),
                                  self.next_plugin_id(),
                                  self.self_ref.as_ref().unwrap().clone());
@@ -238,11 +239,8 @@ impl CoreState {
 
             let editor = self.editors.get(&buffer_id).unwrap();
             let info = self.file_manager.get_info(buffer_id);
+            let plugins = self.running_plugins.iter().collect::<Vec<_>>();
 
-            let mut plugins = Vec::new();
-            if let Some(syntect) = self.syntect.as_ref() {
-                plugins.push(syntect);
-            }
             EventContext {
                 view,
                 editor,
@@ -271,6 +269,7 @@ impl CoreState {
 
     pub(crate) fn client_notification(&mut self, cmd: CoreNotification) {
         use self::CoreNotification::*;
+        use self::CorePluginNotification as PN;
         match cmd {
             Edit(::rpc::EditCommand { view_id, cmd }) =>
                 self.do_edit(view_id, cmd),
@@ -284,8 +283,15 @@ impl CoreState {
                 self.do_set_theme(&theme_name),
             SaveTrace { destination, frontend_samples } =>
                 self.save_trace(&destination, frontend_samples),
-            Plugin(..) => (),
-                //self.do_plugin_cmd(cmd),
+            Plugin(cmd) =>
+                match cmd {
+                    PN::Start { view_id, plugin_name } =>
+                        self.do_start_plugin(view_id, &plugin_name),
+                    PN::Stop { view_id, plugin_name } =>
+                        self.do_stop_plugin(view_id, &plugin_name),
+                    PN::PluginRpc { .. } => ()
+                        //TODO: rethink custom plugin RPCs
+                }
             TracingConfig { enabled } =>
                 self.toggle_tracing(enabled),
             // handled at the top level
@@ -467,6 +473,34 @@ impl CoreState {
             .map(|mut ctx| ctx.with_editor(|ed, _, _| ed.get_config().to_table()))
             .ok_or(RemoteError::custom(404, format!("missing {}", view_id), None))
     }
+
+    fn do_start_plugin(&mut self, _view_id: ViewId, plugin: &str) {
+        if self.running_plugins.iter().any(|p| p.name == plugin) {
+            eprintln!("plugin {} already running", plugin);
+            return;
+        }
+
+        if let Some(manifest) = self.plugins.get_named(plugin) {
+            //TODO: lots of races possible here, we need to keep track of
+            //pending launches.
+            start_plugin_process(manifest.clone(),
+                                 self.next_plugin_id(),
+                                 self.self_ref.as_ref().unwrap().clone());
+        } else {
+            eprintln!("no plugin found with name '{}'", plugin);
+        }
+    }
+
+    fn do_stop_plugin(&mut self, _view_id: ViewId, plugin: &str) {
+        if let Some(p) = self.running_plugins.iter()
+            .position(|p| p.name == plugin)
+            .map(|ix| self.running_plugins.remove(ix)) {
+                //TODO: verify shutdown; kill if necessary
+                p.shutdown();
+                self.iter_groups().for_each(|mut cx| cx.plugin_stopped(&p));
+
+            }
+    }
 }
 
 /// Idle, tracing, and file event handling
@@ -580,9 +614,8 @@ impl CoreState {
     }
 
     fn toggle_tracing(&self, enabled: bool) {
-        let mut plugins = Vec::new();
-        if let Some(ref plugin) = self.syntect { plugins.push(plugin) };
-        plugins.iter().for_each(|plugin| plugin.toggle_tracing(enabled))
+        self.running_plugins.iter()
+            .for_each(|plugin| plugin.toggle_tracing(enabled))
     }
 
     fn save_trace<P>(&self, path: P, frontend_samples: Value)
@@ -593,10 +626,8 @@ impl CoreState {
         if let Ok(mut traces) = chrome_trace::decode(frontend_samples) {
             all_traces.append(&mut traces);
         }
-        let mut plugins = Vec::new();
-        if let Some(ref plugin) = self.syntect { plugins.push(plugin) };
 
-        for plugin in plugins {
+        for plugin in self.running_plugins.iter() {
             match plugin.collect_trace() {
                 Ok(json) => {
                     let mut trace = chrome_trace::decode(json).unwrap();
@@ -629,13 +660,12 @@ impl CoreState {
                                   plugin: Result<Plugin, io::Error>) {
         match plugin {
             Ok(plugin) => {
-                assert_eq!(&plugin.name, "syntect");
                 let init_info = self.iter_groups()
                     .map(|mut ctx| ctx.plugin_info())
                     .collect::<Vec<_>>();
                 plugin.initialize(init_info);
-                self.syntect = Some(plugin);
-                //TODO: notify views that plugin started
+                self.iter_groups().for_each(|mut cx| cx.plugin_started(&plugin));
+                self.running_plugins.push(plugin);
             }
             Err(e) => eprintln!("failed to start plugin {:?}", e),
         }
