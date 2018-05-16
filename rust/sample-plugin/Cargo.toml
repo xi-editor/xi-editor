@@ -1,0 +1,23 @@
+[package]
+name = "xi-sample-plugin"
+version = "0.0.0"
+license = "Apache-2.0"
+authors = ["Colin Rofls <colin@cmyr.net>"]
+repository = "https://github.com/google/xi-editor"
+description = "An example plugin, for testing and illustration"
+
+[dependencies]
+serde = "1.0"
+serde_derive = "1.0"
+
+[dependencies.xi-plugin-lib]
+path = "../plugin-lib"
+
+[dependencies.xi-core-lib]
+path = "../core-lib"
+
+[dependencies.xi-rope]
+path = "../rope"
+
+[dependencies.xi-trace]
+path = "../trace"
