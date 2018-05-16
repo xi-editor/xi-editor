@@ -366,6 +366,19 @@ impl<'a> EventContext<'a> {
 
     }
 
+    pub(crate) fn plugin_started(&mut self, plugin: &Plugin) {
+        self.client.plugin_started(self.view.borrow().view_id, &plugin.name)
+    }
+
+    pub(crate) fn plugin_stopped(&mut self, plugin: &Plugin) {
+        self.client.plugin_stopped(self.view.borrow().view_id, &plugin.name, 0);
+        self.with_editor(|ed, view, _| {
+            ed.get_layers_mut().remove_layer(plugin.id);
+            view.set_dirty(ed.get_buffer());
+        });
+        self.render();
+    }
+
     // TODO: remove support for sync updates
     pub(crate) fn do_plugin_update(&mut self, update: Result<Value, RpcError>,
                                     undo_group: usize) {

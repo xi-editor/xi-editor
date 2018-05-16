@@ -75,6 +75,10 @@ impl Plugin {
                                         }))
     }
 
+    pub fn shutdown(&self) {
+        self.peer.send_rpc_notification("shutdown", &json!({}));
+    }
+
     // TODO: rethink naming, does this need to be a vec?
     pub fn new_buffer(&self, info: &PluginBufferInfo) {
         self.peer.send_rpc_notification("new_buffer",
