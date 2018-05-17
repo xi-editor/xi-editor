@@ -20,7 +20,7 @@ use std::ops::Range;
 use serde_json::Value;
 
 use xi_rope::rope::{Rope, LinesMetric, RopeInfo};
-use xi_rope::delta::{Delta};
+use xi_rope::delta::Delta;
 use xi_rope::tree::Cursor;
 use xi_rope::breaks::{Breaks, BreaksInfo, BreaksMetric, BreaksBaseMetric};
 use xi_rope::interval::Interval;
@@ -789,7 +789,6 @@ impl View {
 
     pub fn do_find(&mut self, text: &Rope, chars: Option<String>,
                    case_sensitive: bool) -> Value {
-        // todo
         let mut from_sel = false;
         let search_string = if chars.is_some() {
             chars

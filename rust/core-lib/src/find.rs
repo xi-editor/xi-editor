@@ -1,3 +1,19 @@
+// Copyright 2018 Google Inc. All rights reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! Module for searching text.
+
 use std::cmp::{min,max};
 
 use serde_json::Value;
@@ -22,12 +38,10 @@ use xi_rope::tree::Metric;
 //  query_id: usize,      // id or reference to SearchQuery?
 //  highlight: Selection
 //}
-//
-
-
 
 const BACKWARDS_FIND_CHUNK_SIZE: usize = 32_768;
 
+/// Contains logic to search text
 pub struct Find {
     // todo: support multiple queries
     //  search_queries: Vec<SearchQuery>,
@@ -47,8 +61,6 @@ pub struct Find {
     /// Set of ranges that have already been searched for the currently active search string
     valid_search: IndexSet,
 }
-
-
 
 impl Find {
     pub fn new() -> Find {
