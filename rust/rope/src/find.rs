@@ -227,10 +227,10 @@ fn compare_cursor_str_casei(cursor: &mut Cursor<RopeInfo>, pat: &str) -> Option<
 
 /// Compare whether the substring beginning at the cursor location matches
 /// the provided regular expression. The substring begins at the beginning
-/// of the leave/start of the line.
+/// of the leaf/start of the line.
 /// If the regular expression can match multiple lines then all leaves are
 /// consumed and matched against the regular expression. Otherwise only the
-/// current leave is matched. Returns the start position of the match.
+/// current leaf is matched. Returns the start position of the match.
 fn compare_cursor_regex(cursor: &mut Cursor<RopeInfo>, pat: &str) -> Option<usize> {
     let orig_position = cursor.pos();
 
