@@ -27,13 +27,6 @@ use xi_rope::interval::Interval;
 use selection::{Selection, SelRegion};
 use xi_rope::tree::Metric;
 
-// might be used in the future to support multiple search queries
-//pub struct SearchQuery {
-//  id: usize,   // necessary?
-//  query: String,
-//  case_matching: CaseMatching // todo: add regex
-//}
-//
 //pub struct SearchOccurrence {
 //  query_id: usize,      // id or reference to SearchQuery?
 //  highlight: Selection
@@ -43,9 +36,6 @@ const BACKWARDS_FIND_CHUNK_SIZE: usize = 32_768;
 
 /// Contains logic to search text
 pub struct Find {
-    // todo: support multiple queries
-    //  search_queries: Vec<SearchQuery>,
-
     // todo: occurrences in separate type that references back to the search query (required for coloring, ...)
     //  occurrences: Vec<SearchOccurrence>,
 

@@ -73,7 +73,8 @@ pub struct View {
     scroll_to: Option<usize>,
 
     /// The state for finding text for this view.
-    find: Find,
+    /// Each instance represents a separate search query
+    find: Vec<Find>,
 }
 
 /// The visual width of the buffer for the purpose of word wrapping.
@@ -120,7 +121,7 @@ impl View {
             breaks: None,
             wrap_col: WrapWidth::None,
             lc_shadow: LineCacheShadow::default(),
-            find: Find::new(),
+            find: Vec::new(),
         }
     }
 
@@ -196,11 +197,15 @@ impl View {
 
     fn do_cancel(&mut self, text: &Rope) {
         self.collapse_selections(text);
-        self.find.unset();
+        for mut find in self.find.iter_mut() {
+            find.unset();
+        }
     }
 
     pub fn unset_find(&mut self) {
-        self.find.unset()
+        for mut find in self.find.iter_mut() {
+            find.unset();
+        }
     }
 
     fn goto_line(&mut self, text: &Rope, line: u64) {
@@ -470,14 +475,15 @@ impl View {
             }
         }
 
-        // todo
         let mut hls = Vec::new();
-        for search_occurrence in self.find.occurrences() {
-            for region in search_occurrence.regions_in_range(start_pos, pos) {
-                let sel_start_ix = clamp(region.min(), start_pos, pos) - start_pos;
-                let sel_end_ix = clamp(region.max(), start_pos, pos) - start_pos;
-                if sel_end_ix > sel_start_ix {
-                    hls.push((sel_start_ix, sel_end_ix));
+        for find in self.find.iter() {
+            for search_occurrence in find.occurrences() {
+                for region in search_occurrence.regions_in_range(start_pos, pos) {
+                    let sel_start_ix = clamp(region.min(), start_pos, pos) - start_pos;
+                    let sel_end_ix = clamp(region.max(), start_pos, pos) - start_pos;
+                    if sel_end_ix > sel_start_ix {
+                        hls.push((sel_start_ix, sel_end_ix));
+                    }
                 }
             }
         }
@@ -601,9 +607,14 @@ impl View {
                         let start_line = seg.our_line_num;
                         let end_line = start_line + seg.n;
 
-                        // todo
-                        if self.find.hls_dirty() {
-                            self.update_find_for_lines(text, start_line, end_line);
+                        // update find only for specified lines
+                        let start = self.offset_of_line(text, start_line);
+                        let end = self.offset_of_line(text, end_line);
+
+                        for find in self.find.iter_mut() {
+                            if find.hls_dirty() {
+                                find.update_find(text, start, end, true, false);
+                            }
                         }
 
                         let offset = self.offset_of_line(text, start_line);
@@ -633,7 +644,9 @@ impl View {
 
         client.update_view(self.view_id, &params);
         self.lc_shadow = b.build();
-        self.find.set_hls_dirty(false)
+        for find in self.find.iter_mut() {
+            find.set_hls_dirty(false)
+        }
     }
 
     /// Update front-end with any changes to view since the last time sent.
@@ -779,7 +792,9 @@ impl View {
         // the front-end, but perhaps not for async edits.
         self.drag_state = None;
 
-        self.find.update_highlights(text, last_text, delta);      // todo (or update_find for delta region?)
+        for find in self.find.iter_mut() {
+            find.update_highlights(text, last_text, delta);
+        }
 
         // Note: for committing plugin edits, we probably want to know the priority
         // of the delta so we can set the cursor before or after the edit, as needed.
@@ -804,15 +819,15 @@ impl View {
         };
 
         self.set_dirty(text);       // todo: only set lines with search results dirty
-        self.find.do_find(text, search_string, case_sensitive)
-    }
 
-    fn update_find_for_lines(&mut self, text: &Rope, first_line: usize, last_line: usize) {
-        let start = self.offset_of_line(text, first_line);
-        let end = self.offset_of_line(text, last_line);
-        self.find.update_find(text, start, end, true, false);
-    }
+        // todo: for now only a single search query is supported however in the future
+        // todo: the correct Find instance needs to be updated with the new parameters
+        if self.find.is_empty() {
+            self.find.push(Find::new())
+        }
 
+        self.find.first_mut().unwrap().do_find(text, search_string, case_sensitive)
+    }
 
     pub fn find_next(&mut self, text: &Rope, reverse: bool, wrap: bool, allow_same: bool) {
         self.select_next_occurrence(text, reverse, false, true, allow_same);
@@ -835,7 +850,12 @@ impl View {
             None => return,
         };
 
-        if let Some(occ) = self.find.next_occurrence(text, reverse, wrapped, stop_on_found, allow_same, sel) {
+        // select next occurrence that is closest to the current cursor position
+        let closest_occurrence = self.find.iter_mut().flat_map(|x|
+            x.next_occurrence(text, reverse, wrapped, stop_on_found, allow_same, sel)
+        ).min_by_key(|x| x.start);
+
+        if let Some(occ) = closest_occurrence {
             self.set_selection(text, occ);
         }
     }
