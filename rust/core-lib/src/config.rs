@@ -13,7 +13,6 @@
 // limitations under the License.
 
 use std::io::{self, Read};
-use std::borrow::Borrow;
 use std::error::Error;
 use std::ffi::OsStr;
 use std::fmt;
@@ -35,8 +34,6 @@ mod defaults {
     use super::*;
     pub const BASE: &str = include_str!("../assets/defaults.toml");
     pub const WINDOWS: &str = include_str!("../assets/windows.toml");
-    pub const YAML: &str = include_str!("../assets/yaml.toml");
-    pub const MAKEFILE: &str = include_str!("../assets/makefile.toml");
 
     /// A cache of loaded defaults.
     lazy_static! {
@@ -44,24 +41,6 @@ mod defaults {
             Mutex::new(HashMap::new())
         };
     }
-
-
-    /// config keys that are legal in most config files
-    pub const GENERAL_KEYS: &[&str] = &[
-        "tab_size",
-        "line_ending",
-        "translate_tabs_to_spaces",
-        "use_tab_stops",
-        "font_face",
-        "font_size",
-        "auto_indent",
-        "scroll_past_end",
-        "wrap_width",
-    ];
-    /// config keys that are only legal at the top level
-    pub const TOP_LEVEL_KEYS: &[&str] = &[
-        "plugin_search_path",
-    ];
 
     /// Given a domain, returns the default config for that domain,
     /// if it exists.
@@ -85,10 +64,6 @@ mod defaults {
                 }
                 Some(base)
             }
-            ConfigDomain::Syntax(SyntaxDefinition::Yaml) =>
-                Some(load(YAML)),
-            ConfigDomain::Syntax(SyntaxDefinition::Makefile) =>
-                Some(load(MAKEFILE)),
             _ => None,
         }
     }
@@ -123,10 +98,10 @@ pub enum ConfigDomain {
     SysOverride(BufferId),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all="snake_case")]
 /// The external RPC sends `ViewId`s, which we convert to `BufferId`s
 /// internally.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all="snake_case")]
 pub enum ConfigDomainExternal {
     General,
     Syntax(SyntaxDefinition),
@@ -247,36 +222,26 @@ impl ConfigPair {
 }
 
 impl ConfigManager {
-    pub fn set_config_dir<P: AsRef<Path>>(&mut self, path: P) {
-        self.config_dir = Some(path.as_ref().to_owned());
+    pub fn new(config_dir: Option<PathBuf>,
+               extras_dir: Option<PathBuf>) -> Self
+    {
+        let mut defaults = HashMap::new();
+        defaults.insert(ConfigDomain::General,
+                        ConfigPair::for_domain(ConfigDomain::General));
+        ConfigManager {
+            configs: defaults,
+            sources: HashMap::new(),
+            config_dir,
+            extras_dir,
+        }
     }
 
-    pub fn set_extras_dir<P: AsRef<Path>>(&mut self, path: P) {
-        self.extras_dir = Some(path.as_ref().to_owned())
-    }
-
-    // NOTE: search paths don't really fit the general config model;
-    // they're never exposed to the client, they can't be overridden on a
-    // per-buffer basis, and they can be appended to from a number of sources.
-    //
-    // There is a reasonable argument that they should not be part of the
-    // config system at all. For now, I'm treating them as a special case.
-    /// Returns the plugin_search_path.
-    pub fn plugin_search_path(&self) -> Vec<PathBuf> {
-        let val = self.get("plugin_search_path", ConfigDomain::General).unwrap();
-        let mut search_path: Vec<PathBuf> = serde_json::from_value(val.clone())
-            .unwrap();
-
-        // if there is user config dir, add plugins subdir to search path
-        if let Some(ref config_dir) = self.config_dir {
-            search_path.push(config_dir.join("plugins"));
-        }
-
-        // append the client provided extras path, if present
-        if let Some(ref sys_path) = self.extras_dir {
-            search_path.push(sys_path.into());
-        }
-        search_path
+    pub fn base_config_file_path(&self) -> Option<PathBuf> {
+        let config_file = self.config_dir.as_ref()
+            .map(|p| p.join("preferences.xiconfig"));
+        let exists = config_file.as_ref().map(|p| p.exists())
+            .unwrap_or(false);
+        if exists { config_file } else { None }
     }
 
     /// Sets the config for the given domain, removing any existing config.
@@ -320,10 +285,7 @@ impl ConfigManager {
         let path = path.as_ref();
 
         path.extension() == Some(OsStr::new("xiconfig")) &&
-            ConfigDomain::try_from_path(path).is_ok() &&
-            self.config_dir.as_ref()
-            .map(|p| Some(p.borrow()) == path.parent())
-            .unwrap_or(false)
+            ConfigDomain::try_from_path(path).is_ok()
     }
 
     fn check_table(&self, table: &Table) -> Result<(), ConfigError> {
@@ -365,35 +327,6 @@ impl ConfigManager {
 
     pub fn default_buffer_config(&self) -> BufferConfig {
         self.get_buffer_config(None, None)
-    }
-
-    /// Return the value for `key` in the `ConfigDomain` `domain`.
-    fn get<D>(&self, key: &str, domain: D) -> Option<&Value>
-        where D: Into<ConfigDomain>,
-    {
-        self.configs.get(&domain.into())
-            .and_then(|c| c.cache.get(key))
-    }
-}
-
-impl Default for ConfigManager {
-    fn default() -> ConfigManager {
-        // the domains for which we include defaults (platform defaults are
-        // rolled into `General` at runtime)
-        let defaults = vec![
-            ConfigDomain::General,
-            ConfigDomain::Syntax(SyntaxDefinition::Yaml),
-            ConfigDomain::Syntax(SyntaxDefinition::Makefile)
-        ].iter()
-        .map(|d| (*d, ConfigPair::for_domain(*d)))
-        .collect::<HashMap<_, _>>();
-
-        ConfigManager {
-            configs: defaults,
-            sources: HashMap::new(),
-            config_dir: None,
-            extras_dir: None,
-        }
     }
 }
 
@@ -545,16 +478,6 @@ pub fn init_config_dir(dir: &Path) -> io::Result<()> {
     Ok(())
 }
 
-pub fn iter_config_files(dir: &Path) -> io::Result<Box<Iterator<Item=PathBuf>>> {
-    let contents = dir.read_dir()?;
-    let iter = contents.flat_map(Result::ok)
-        .map(|p| p.path())
-        .filter(|p| {
-            p.extension().and_then(OsStr::to_str).unwrap_or("") == "xiconfig"
-        });
-    Ok(Box::new(iter))
-}
-
 /// Attempts to load a config from a file. The config's domain is determined
 /// by the file name.
 pub fn try_load_from_file(path: &Path) -> Result<(ConfigDomain, Table), ConfigError> {
@@ -610,30 +533,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_prepend_path() {
-        let mut manager = ConfigManager::default();
-        manager.set_config_dir("BASE_PATH");
-        let config = manager.default_buffer_config();
-        assert_eq!(config.items.tab_size, 4);
-        assert_eq!(manager.plugin_search_path(), vec![PathBuf::from("BASE_PATH/plugins")])
-    }
-
-    #[test]
-    fn test_loading_defaults() {
-        let manager = ConfigManager::default();
-        assert_eq!(manager.configs.len(), 3);
-        let key = SyntaxDefinition::Yaml.into();
-        assert!(manager.configs.contains_key(&key));
-        let yaml = manager.configs.get(&key).unwrap();
-        assert_eq!(yaml.cache.get("tab_size"), Some(&json!(2)));
-    }
-
-    #[test]
     fn test_overrides() {
         let user_config = table_from_toml_str(r#"tab_size = 42"#).unwrap();
         let rust_config = table_from_toml_str(r#"tab_size = 31"#).unwrap();
 
-        let mut manager = ConfigManager::default();
+        let mut manager = ConfigManager::new(None, None);
         manager.set_user_config(ConfigDomain::Syntax(SyntaxDefinition::Rust),
                                 rust_config, None).unwrap();
 
@@ -649,14 +553,6 @@ mod tests {
         let config = manager.default_buffer_config();
         assert_eq!(config.source.0.len(), 1);
         assert_eq!(config.items.tab_size, 42);
-        // yaml defaults set this to 2
-        let config = manager.get_buffer_config(SyntaxDefinition::Yaml, None);
-        assert_eq!(config.source.0.len(), 2);
-        assert_eq!(config.items.tab_size, 2);
-        let config = manager.get_buffer_config(SyntaxDefinition::Yaml, buffer_id);
-        assert_eq!(config.source.0.len(), 3);
-        assert_eq!(config.items.tab_size, 67);
-
         let config = manager.get_buffer_config(SyntaxDefinition::Rust, None);
         assert_eq!(config.items.tab_size, 31);
         let config = manager.get_buffer_config(SyntaxDefinition::Rust, buffer_id);
@@ -685,19 +581,6 @@ mod tests {
     }
 
     #[test]
-    fn test_should_load() {
-        let mut manager = ConfigManager::default();
-        let config_dir = PathBuf::from("/home/config/xi");
-        manager.set_config_dir(&config_dir);
-        assert!(manager.should_load_file(&config_dir.join("preferences.xiconfig")));
-        assert!(manager.should_load_file(&config_dir.join("rust.xiconfig")));
-        assert!(!manager.should_load_file(&config_dir.join("fake?.xiconfig")));
-        assert!(!manager.should_load_file(&config_dir.join("preferences.toml")));
-        assert!(!manager.should_load_file(Path::new("/home/rust.xiconfig")));
-        assert!(!manager.should_load_file(Path::new("/home/config/xi/subdir/rust.xiconfig")));
-    }
-
-    #[test]
     fn test_diff() {
         let conf1 = r#"
 tab_size = 42
@@ -720,7 +603,7 @@ translate_tabs_to_spaces = true
 
     #[test]
     fn test_updating_in_place() {
-        let mut manager = ConfigManager::default();
+        let mut manager = ConfigManager::new(None, None);
         assert_eq!(manager.default_buffer_config().items.font_size, 14.);
         let changes = json!({"font_size": 69, "font_face": "nice"})
             .as_object().unwrap().to_owned();

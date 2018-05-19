@@ -104,12 +104,12 @@ impl Handler for XiCore {
         // wait for client_started before setting up inner
         if let &ClientStarted { ref config_dir, ref client_extras_dir } = &rpc {
             assert!(self.is_waiting(), "client_started can only be sent once");
-            let state = CoreState::new(ctx.get_peer());
+            let state = CoreState::new(ctx.get_peer(), config_dir.clone(),
+                                      client_extras_dir.clone());
             let state = Arc::new(Mutex::new(state));
             *self = XiCore::Running(state);
             let weak_self = self.weak_self().unwrap();
-            self.inner().finish_setup(weak_self, config_dir.clone(),
-                                      client_extras_dir.clone());
+            self.inner().finish_setup(weak_self);
         }
 
         self.inner().client_notification(rpc);
@@ -185,7 +185,7 @@ pub fn dummy_weak_core() -> WeakXiCore {
     use xi_rpc::test_utils::DummyPeer;
     use xi_rpc::Peer;
     let peer = Box::new(DummyPeer);
-    let state = CoreState::new(&peer.box_clone());
+    let state = CoreState::new(&peer.box_clone(), None, None);
     let core = Arc::new(Mutex::new(state));
     WeakXiCore(Arc::downgrade(&core))
 }
