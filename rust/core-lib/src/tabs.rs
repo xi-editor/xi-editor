@@ -114,9 +114,29 @@ pub struct CoreState {
 
 /// Initial setup and bookkeeping
 impl CoreState {
-    pub(crate) fn new(peer: &RpcPeer) -> Self {
+    pub(crate) fn new(peer: &RpcPeer, config_dir: Option<PathBuf>,
+                      extras_dir: Option<PathBuf>) -> Self
+    {
         #[cfg(feature = "notify")]
-        let watcher = FileWatcher::new(peer.clone());
+        let mut watcher = FileWatcher::new(peer.clone());
+
+        if let Some(p) = config_dir.as_ref() {
+            if !p.exists() {
+                if let Err(e) = config::init_config_dir(p) {
+                    //TODO: report this error?
+                    eprintln!("error initing file based configs: {:?}", e);
+                }
+            }
+
+            #[cfg(feature = "notify")]
+            watcher.watch_filtered(p, true, CONFIG_EVENT_TOKEN,
+                                   |p| p.extension()
+                                   .and_then(OsStr::to_str)
+                                   .unwrap_or("") == "xiconfig" );
+        }
+
+        let config_manager = ConfigManager::new(config_dir, extras_dir);
+
         CoreState {
             views: BTreeMap::new(),
             editors: BTreeMap::new(),
@@ -127,7 +147,7 @@ impl CoreState {
             kill_ring: RefCell::new(Rope::from("")),
             style_map: RefCell::new(ThemeStyleMap::new()),
             width_cache: RefCell::new(WidthCache::new()),
-            config_manager: ConfigManager::default(),
+            config_manager,
             self_ref: None,
             pending_views: Vec::new(),
             peer: Client::new(peer.clone()),
@@ -149,23 +169,12 @@ impl CoreState {
         PluginPid(self.id_counter.next())
     }
 
-    pub(crate) fn finish_setup(&mut self, self_ref: WeakXiCore,
-                                config_dir: Option<PathBuf>,
-                                extras_dir: Option<PathBuf>) {
-
+    pub(crate) fn finish_setup(&mut self, self_ref: WeakXiCore) {
         self.self_ref = Some(self_ref);
-        if let Some(ref path) = extras_dir {
-            self.config_manager.set_extras_dir(path);
-        }
 
-        if let Some(ref path) = config_dir {
-            self.config_manager.set_config_dir(path);
-            //TODO: report this error
-            let _ = self.init_file_based_configs(&path);
+        if let Some(path) = self.config_manager.base_config_file_path() {
+            self.load_file_based_config(&path);
         }
-
-        let plugin_paths = self.config_manager.plugin_search_path();
-        self.plugins = PluginCatalog::from_paths(plugin_paths);
 
         let theme_names = self.style_map.borrow().get_theme_names();
         self.peer.available_themes(theme_names);
@@ -176,28 +185,6 @@ impl CoreState {
                                  self.next_plugin_id(),
                                  self.self_ref.as_ref().unwrap().clone());
         }
-    }
-
-    /// Checks for existence of config dir, loading config files and registering
-    /// for file system events if the directory exists and can be read.
-    fn init_file_based_configs(&mut self, config_dir: &Path) -> io::Result<()> {
-        //TODO: we don't do this at setup because we previously didn't
-        //know our config path at init time. we do now, so this can happen
-        //at init time.
-        let _t = trace_block("CoreState::init_file_config", &["core"]);
-        if !config_dir.exists() {
-            config::init_config_dir(config_dir)?;
-        }
-        let config_files = config::iter_config_files(config_dir)?;
-        config_files.for_each(|p| self.load_file_based_config(&p));
-
-        #[cfg(feature = "notify")]
-        self.file_manager.watcher()
-            .watch_filtered(config_dir, true, CONFIG_EVENT_TOKEN,
-                            |p| p.extension()
-                            .and_then(OsStr::to_str)
-                            .unwrap_or("") == "xiconfig" );
-        Ok(())
     }
 
     /// Attempt to load a config file.

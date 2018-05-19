@@ -433,7 +433,7 @@ mod tests {
         fn new<S: AsRef<str>>(s: S) -> Self {
             let view_id = ViewId(1);
             let buffer_id = BufferId(2);
-            let config_manager = ConfigManager::default();
+            let config_manager = ConfigManager::new(None, None);
             let view = RefCell::new(View::new(view_id, buffer_id));
             let editor = RefCell::new(
                 Editor::with_text(s, config_manager.default_buffer_config()));
