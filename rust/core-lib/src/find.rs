@@ -27,19 +27,12 @@ use xi_rope::interval::Interval;
 use selection::{Selection, SelRegion};
 use xi_rope::tree::Metric;
 
-//pub struct SearchOccurrence {
-//  query_id: usize,      // id or reference to SearchQuery?
-//  highlight: Selection
-//}
-
 const BACKWARDS_FIND_CHUNK_SIZE: usize = 32_768;
 
 /// Contains logic to search text
 pub struct Find {
-    // todo: occurrences in separate type that references back to the search query (required for coloring, ...)
-    //  occurrences: Vec<SearchOccurrence>,
+    // todo: link to search query so that search results can be correlated back to query
 
-    // todo: the following will be deprecated after adding support for multiple queries
     /// The occurrences, which determine the highlights, have been updated.
     hls_dirty: bool,
     /// The currently active search string
@@ -79,7 +72,6 @@ impl Find {
 
     pub fn update_highlights(&mut self, text: &Rope, last_text: &Rope,
                              delta: &Delta<RopeInfo>) {
-        // todo
         // Update search highlights for changed regions
         if self.search_string.is_some() {
             self.valid_search = self.valid_search.apply_delta(delta);
