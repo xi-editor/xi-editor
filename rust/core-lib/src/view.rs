@@ -818,7 +818,10 @@ impl View {
             })
         };
 
-        self.set_dirty(text);       // todo: only set lines with search results dirty
+        // todo: only set lines with search results dirty
+        // todo: if active and inactive highlights are supported then
+        // find_next, find_all, etc need to set affected lines dirty
+        self.set_dirty(text);
 
         // todo: for now only a single search query is supported however in the future
         // todo: the correct Find instance needs to be updated with the new parameters
