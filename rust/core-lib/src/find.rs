@@ -232,7 +232,10 @@ impl Find {
             }
 
             if reverse {
-                let next_occurrence = occurrences.regions_in_range(0, sel_start).last();
+                let next_occurrence = match sel_start.checked_sub(1) {
+                    Some(search_end) => occurrences.regions_in_range(0, search_end).last(),
+                    None => None
+                };
 
                 if next_occurrence.is_none() && !wrapped {
                     return occurrences.regions_in_range(0, text.len()).last();
@@ -240,7 +243,7 @@ impl Find {
 
                 next_occurrence
             } else {
-                let next_occurrence = occurrences.regions_in_range(sel_end, text.len()).first();
+                let next_occurrence = occurrences.regions_in_range(sel_end + 1, text.len()).first();
 
                 if next_occurrence.is_none() && !wrapped {
                     return occurrences.regions_in_range(0, text.len()).first();
