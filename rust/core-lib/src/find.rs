@@ -27,8 +27,6 @@ use xi_rope::interval::Interval;
 use selection::{Selection, SelRegion};
 use xi_rope::tree::Metric;
 
-const BACKWARDS_FIND_CHUNK_SIZE: usize = 32_768;
-
 /// Contains logic to search text
 pub struct Find {
     // todo: link to search query so that search results can be correlated back to query
@@ -48,8 +46,6 @@ pub struct Find {
 impl Find {
     pub fn new() -> Find {
         Find {
-            //      search_queries: Vec::new(),
-            //      occurrences: Vec::new(),
             hls_dirty: true,
             search_string: None,
             case_matching: CaseMatching::CaseInsensitive,
@@ -70,9 +66,8 @@ impl Find {
         self.hls_dirty = is_dirty
     }
 
-    pub fn update_highlights(&mut self, text: &Rope, last_text: &Rope,
-                             delta: &Delta<RopeInfo>) {
-        // Update search highlights for changed regions
+    pub fn update_highlights(&mut self, text: &Rope, delta: &Delta<RopeInfo>) {
+        // update search highlights for changed regions
         if self.search_string.is_some() {
             self.valid_search = self.valid_search.apply_delta(delta);
             let mut occurrences = self.occurrences.take().unwrap_or_else(Selection::new);
@@ -95,10 +90,11 @@ impl Find {
 
             // update find for the whole delta (is going to only update invalid regions)
             let (iv, _) = delta.summary();
-            self.update_find(text, iv.start(), iv.end(), true, false);
+            self.update_find(text, iv.start(), iv.end(), true);
         }
     }
 
+    /// Set search parameters and executes the search.
     pub fn do_find(&mut self, text: &Rope, search_string: Option<String>,
                    case_sensitive: bool) -> Value {
         if search_string.is_none() {
@@ -112,7 +108,8 @@ impl Find {
             return Value::Null;
         }
 
-        self.set_find(text, &search_string, case_sensitive);
+        self.set_find(&search_string, case_sensitive);
+        self.update_find(text, 0, text.len(), false);
 
         Value::String(search_string.to_string())
     }
@@ -125,11 +122,9 @@ impl Find {
         self.valid_search.clear();
     }
 
-    /// Sets find for the view, highlights occurrences in the current viewport
-    /// and selects the first occurrence relative to the last cursor.
-    fn set_find(&mut self, text: &Rope, search_string: &str,
+    /// Sets find parameters and search query.
+    fn set_find(&mut self, search_string: &str,
                 case_sensitive: bool) {
-        // todo: this will be removed once multiple queries are supported
         let case_matching = if case_sensitive {
             CaseMatching::Exact
         } else {
@@ -149,8 +144,8 @@ impl Find {
         self.case_matching = case_matching;
     }
 
-    pub fn update_find(&mut self, text: &Rope, start: usize, end: usize, include_slop: bool,
-                       stop_on_found: bool)
+    /// Execute the search on the provided text in the range provided by `start` and `end`.
+    pub fn update_find(&mut self, text: &Rope, start: usize, end: usize, include_slop: bool)
     {
         if self.search_string.is_none() {
             return;
@@ -161,7 +156,6 @@ impl Find {
         // the length of an occurrence)
         let slop = if include_slop { self.search_string.as_ref().unwrap().len() * 2 } else { 0 };
         let mut occurrences = self.occurrences.take().unwrap_or_else(Selection::new);
-        let mut searched_until = end;
         let mut invalidate_from = None;
 
         for (_start, end) in self.valid_search.minus_one_range(start, end) {
@@ -199,11 +193,6 @@ impl Find {
                     occurrences.delete_range(end, text_len, false);
                     break;
                 }
-
-                if stop_on_found {
-                    searched_until = end;
-                    break;
-                }
             }
         }
         self.occurrences = Some(occurrences);
@@ -224,75 +213,41 @@ impl Find {
             }
 
             // continue with the find for the current region
-            self.update_find(text, invalidate_from, end, false, false);
+            self.update_find(text, invalidate_from, end, false);
         } else {
-            self.valid_search.union_one_range(start, searched_until);
+            self.valid_search.union_one_range(start, end);
             self.hls_dirty = true;
         }
     }
 
-    pub fn next_occurrence(&mut self, text: &Rope, reverse: bool, wrapped: bool,
-                           stop_on_found: bool, allow_same: bool, sel: (usize, usize)) -> Option<SelRegion> {
-        let mut next_occurrence;
-        let (from, to) = if reverse != wrapped { (0, sel.0) } else { (sel.0, text.len()) };
+    /// Return the occurrence closest to the provided selection `sel`. If searched is reversed then
+    /// the occurrence closest to the start of the selection is returned. `wrapped` indicates that
+    /// if the end of the text is reached the search continues from the start.
+    pub fn next_occurrence(&self, text: &Rope, reverse: bool, wrapped: bool, sel: (usize, usize)) -> Option<SelRegion> {
+        let (sel_start, sel_end) = sel;
 
-        loop {
-            next_occurrence = self.occurrences.as_ref().and_then(|occurrences| {
-                if occurrences.len() == 0 {
-                    return None;
-                }
-                if wrapped { // wrap around file boundaries
-                    if reverse {
-                        occurrences.last()
-                    } else {
-                        occurrences.first()
-                    }
-                } else {
-                    let ix = occurrences.search(sel.0);
-                    if reverse {
-                        ix.checked_sub(1).and_then(|i| occurrences.get(i))
-                    } else {
-                        occurrences.get(ix).and_then(|oc| {
-                            // if possible, the current selection should be extended, instead of
-                            // jumping to the next occurrence
-                            if oc.end == sel.1 && !allow_same {
-                                occurrences.get(ix+1)
-                            } else {
-                                Some(oc)
-                            }
-                        })
-                    }
-                }
-            }).cloned();
-
-            let region = {
-                let mut unsearched = self.valid_search.minus_one_range(from, to);
-                if reverse { unsearched.next_back() } else { unsearched.next() }
-            };
-            if let Some((b, e)) = region {
-                if let Some(ref occurrence) = next_occurrence {
-                    if (reverse && occurrence.start >= e) || (!reverse && occurrence.end <= b) {
-                        break;
-                    }
-                }
-
-                if !reverse {
-                    self.update_find(text, b, e, false, stop_on_found);
-                } else {
-                    // when searching backward, the actual search isn't executed backwards, which is
-                    // why the search is executed in chunks
-                    let start = if e - b > BACKWARDS_FIND_CHUNK_SIZE {
-                        e - BACKWARDS_FIND_CHUNK_SIZE
-                    } else {
-                        b
-                    };
-                    self.update_find(text, start, e, false, false);
-                }
-            } else {
-                break;
+        self.occurrences.as_ref().and_then(|occurrences| {
+            if occurrences.len() == 0 {
+                return None;
             }
-        }
 
-        next_occurrence
+            if reverse {
+                let next_occurrence = occurrences.regions_in_range(0, sel_start).last();
+
+                if next_occurrence.is_none() && !wrapped {
+                    return occurrences.regions_in_range(0, text.len()).last();
+                }
+
+                next_occurrence
+            } else {
+                let next_occurrence = occurrences.regions_in_range(sel_end, text.len()).first();
+
+                if next_occurrence.is_none() && !wrapped {
+                    return occurrences.regions_in_range(0, text.len()).first();
+                }
+
+                next_occurrence
+            }
+        }).cloned()
     }
 }
