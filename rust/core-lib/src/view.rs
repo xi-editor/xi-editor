@@ -13,7 +13,6 @@
 // limitations under the License.
 
 use std::cmp::{min,max};
-use std::mem;
 use std::cell::RefCell;
 use std::ops::Range;
 
@@ -147,12 +146,10 @@ impl View {
             Gesture { line, col, ty } =>
                 self.do_gesture(text, line, col, ty),
             GotoLine { line } => self.goto_line(text, line),
-            FindNext { wrap_around, allow_same } =>         // todo
-                self.find_next(text, false,
-                               wrap_around.unwrap_or(false),
-                               allow_same.unwrap_or(false)),
+            FindNext { wrap_around, allow_same: _ } =>
+                self.find_next(text, false, wrap_around.unwrap_or(false)),
             FindPrevious { wrap_around } =>
-                self.find_next(text, true, wrap_around.unwrap_or(false), true),
+                self.find_next(text, true, wrap_around.unwrap_or(false)),
             Click(MouseAction { line, column, flags, click_count }) => {
                 // Deprecated (kept for client compatibility):
                 // should be removed in favor of do_gesture
@@ -475,6 +472,7 @@ impl View {
             }
         }
 
+        // todo: active highlights different style
         let mut hls = Vec::new();
         for find in self.find.iter() {
             for search_occurrence in find.occurrences() {
@@ -568,10 +566,7 @@ impl View {
         let mut ops = Vec::new();
         let mut line_num = 0;  // tracks old line cache
 
-        // Note: if we weren't doing mutable update_find_for_lines in the loop, we
-        // could just borrow self.lc_shadow instead of doing this.
-        let lc_shadow = mem::replace(&mut self.lc_shadow, LineCacheShadow::default());
-        for seg in lc_shadow.iter_with_plan(plan) {
+        for seg in self.lc_shadow.iter_with_plan(plan) {
             match seg.tactic {
                 RenderTactic::Discard => {
                     ops.push(self.build_update_op("invalidate", None, seg.n));
@@ -606,16 +601,6 @@ impl View {
                     } else {
                         let start_line = seg.our_line_num;
                         let end_line = start_line + seg.n;
-
-                        // update find only for specified lines
-                        let start = self.offset_of_line(text, start_line);
-                        let end = self.offset_of_line(text, end_line);
-
-                        for find in self.find.iter_mut() {
-                            if find.hls_dirty() {
-                                find.update_find(text, start, end, true, false);
-                            }
-                        }
 
                         let offset = self.offset_of_line(text, start_line);
                         let mut line_cursor = Cursor::new(text, offset);
@@ -792,8 +777,9 @@ impl View {
         // the front-end, but perhaps not for async edits.
         self.drag_state = None;
 
+        // update only find highlights affected by change
         for find in self.find.iter_mut() {
-            find.update_highlights(text, last_text, delta);
+            find.update_highlights(text, delta);
         }
 
         // Note: for committing plugin edits, we probably want to know the priority
@@ -818,11 +804,9 @@ impl View {
             })
         };
 
-        // todo: only set lines with search results dirty
-        // todo: if active and inactive highlights are supported then
-        // find_next, find_all, etc need to set affected lines dirty
         self.set_dirty(text);
 
+        // todo: this will be changed once multiple queries are supported
         // todo: for now only a single search query is supported however in the future
         // todo: the correct Find instance needs to be updated with the new parameters
         if self.find.is_empty() {
@@ -832,31 +816,33 @@ impl View {
         self.find.first_mut().unwrap().do_find(text, search_string, case_sensitive)
     }
 
-    pub fn find_next(&mut self, text: &Rope, reverse: bool, wrap: bool, allow_same: bool) {
-        self.select_next_occurrence(text, reverse, false, true, allow_same);
+    pub fn find_next(&mut self, text: &Rope, reverse: bool, wrap: bool) {
+        self.select_next_occurrence(text, reverse, false);
         if self.scroll_to.is_none() && wrap {
-            self.select_next_occurrence(text, reverse, true, true, allow_same);
+            self.select_next_occurrence(text, reverse, true);
         }
     }
 
     /// Select the next occurrence relative to the last cursor. `reverse` determines whether the
     /// next occurrence before (`true`) or after (`false`) the last cursor is selected. `wrapped`
-    /// indicates a search for the next occurrence past the end of the file. `stop_on_found`
-    /// determines whether the search should stop at the first found occurrence (does only apply
-    /// to forward search, i.e. reverse = false). If `allow_same` is set to `true` the current
-    /// selection is considered a valid next occurrence.
-    pub fn select_next_occurrence(&mut self, text: &Rope, reverse: bool, wrapped: bool,
-                                  stop_on_found: bool, allow_same: bool)
+    /// indicates a search for the next occurrence past the end of the file.
+    pub fn select_next_occurrence(&mut self, text: &Rope, reverse: bool, wrapped: bool)
     {
+        // select occurrence closest to last selection
         let sel = match self.sel_regions().last() {
             Some(sel) => (sel.min(), sel.max()),
             None => return,
         };
 
-        // select next occurrence that is closest to the current cursor position
-        let closest_occurrence = self.find.iter_mut().flat_map(|x|
-            x.next_occurrence(text, reverse, wrapped, stop_on_found, allow_same, sel)
-        ).min_by_key(|x| x.start);
+        // multiple queries; select closest occurrence
+        let closest_occurrence = self.find.iter().flat_map(|x|
+            x.next_occurrence(text, reverse, wrapped, sel)
+        ).min_by_key(|x| {
+            match reverse {
+                true => x.end,
+                false => x.start
+            }
+        });
 
         if let Some(occ) = closest_occurrence {
             self.set_selection(text, occ);
