@@ -1,0 +1,23 @@
+[package]
+name = "xi-lsp-lib"
+version = "0.1.0"
+repository = "https://github.com/google/xi-editor"
+description = "The library base for implementing LSP Plugins for Xi"
+authors = ["betterclever <paliwal.pranjal83@gmail.com>"]
+
+[dependencies]
+languageserver-types = "0"
+serde_json = "*"
+jsonrpc-lite = "*"
+
+[dependencies.xi-plugin-lib]
+path = "../plugin-lib"
+
+[dependencies.xi-core-lib]
+path = "../core-lib"
+
+[dependencies.xi-rope]
+path = "../rope"
+
+[dependencies.xi-trace]
+path = "../trace"
