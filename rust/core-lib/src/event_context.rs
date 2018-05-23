@@ -149,7 +149,7 @@ impl<'a> EventContext<'a> {
     pub(crate) fn do_plugin_cmd(&mut self, plugin: PluginId,
                                  cmd: PluginNotification) {
         use self::PluginNotification::*;
-
+        let viewID = self.view.borrow().view_id;
         match cmd {
             AddScopes { scopes } => {
                 let mut ed = self.editor.borrow_mut();
@@ -162,6 +162,9 @@ impl<'a> EventContext<'a> {
             Edit { edit } => self.with_editor(
                 |ed, _, _| ed.apply_plugin_edit(edit)),
             Alert { msg } => self.client.alert(&msg),
+            AddStatusItem { key, value, alignment }  => self.client.add_status_item(viewID, &key, &value, &alignment),
+            UpdateStatusItem { key, value } => self.client.update_status_item(viewID, &key, &value),
+            RemoveStatusItem { key } => self.client.remove_status_item(viewID, &key)
         };
         self.after_edit(&plugin.to_string());
         self.render_if_needed();
