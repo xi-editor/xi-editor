@@ -625,8 +625,6 @@ impl View {
             "pristine": pristine,
         });
 
-        eprintln!("params {:?}", params);
-
         client.update_view(self.view_id, &params);
         self.lc_shadow = b.build();
         for find in self.find.iter_mut() {
