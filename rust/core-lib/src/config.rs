@@ -37,7 +37,7 @@ mod defaults {
 
     /// A cache of loaded defaults.
     lazy_static! {
-        static ref LOADED: Mutex<HashMap<ConfigDomain, Option<Table>>> = {
+        static ref LOADED: Mutex<HashMap<ConfigDomain, Table>> = {
             Mutex::new(HashMap::new())
         };
     }
@@ -49,23 +49,32 @@ mod defaults {
     {
         let mut loaded = LOADED.lock().unwrap();
         let domain = domain.into();
-        loaded.entry(domain.clone()).or_insert_with(|| { load_for_domain(domain) })
-            .to_owned()
+        loaded.get(&domain).map(Table::to_owned)
     }
 
-    fn load_for_domain(domain: ConfigDomain) -> Option<Table> {
-        match domain {
-            ConfigDomain::General => {
-                let mut base = load(BASE);
-                if let Some(mut overrides) = platform_overrides() {
-                    for (k, v) in overrides.iter() {
-                        base.insert(k.to_owned(), v.to_owned());
-                    }
-                }
-                Some(base)
+    pub fn insert<D>(domain: D, table: Table)
+        where D: Into<ConfigDomain>,
+    {
+        let mut loaded = LOADED.lock().unwrap();
+        loaded.insert(domain.into(), table);
+    }
+
+    /// Removes any default config present for `domain`.
+    pub fn unload<D>(domain: D)
+        where D: Into<ConfigDomain>,
+    {
+        let mut loaded = LOADED.lock().unwrap();
+        loaded.remove(&domain.into());
+    }
+
+    pub fn load_base() {
+        let mut base = load(BASE);
+        if let Some(mut overrides) = platform_overrides() {
+            for (k, v) in overrides.iter() {
+                base.insert(k.to_owned(), v.to_owned());
             }
-            _ => None,
         }
+        insert(ConfigDomain::General, base);
     }
 
     fn platform_overrides() -> Option<Table> {
@@ -228,6 +237,7 @@ impl ConfigManager {
     pub fn new(config_dir: Option<PathBuf>,
                extras_dir: Option<PathBuf>) -> Self
     {
+        defaults::load_base();
         let mut defaults = HashMap::new();
         defaults.insert(ConfigDomain::General,
                         ConfigPair::for_domain(ConfigDomain::General));
@@ -256,7 +266,35 @@ impl ConfigManager {
             .collect()
     }
 
-    pub fn set_langauges(&mut self, languages: Languages) {
+    /// Set the available `LanguageDefinition`s. Overrides any previous values.
+    pub fn set_languages(&mut self, languages: Languages) {
+        // if any languages have been removed, remove their default settings
+        // we arguably don't need to do this, since with the language removed
+        // the settings for that language should be inaccessible? But this
+        // feels honest.
+        self.languages.difference(&languages)
+            .iter()
+            .for_each(|lang| defaults::unload(lang.name.clone()));
+
+        for language in languages.iter() {
+            let lang_id = language.name.clone();
+            if let Some(ref config) = language.default_config {
+                eprintln!("loaded config for {:?}: {:?}", &lang_id, config);
+                defaults::insert(lang_id.clone(), config.clone())
+            } else {
+                // if a lang still exists but has lost its default config?
+                defaults::unload(lang_id.clone());
+            }
+
+            let domain: ConfigDomain = lang_id.clone().into();
+            self.configs.entry(domain.clone())
+                .and_modify(|pair| {
+                    pair.base = defaults::defaults_for_domain(lang_id.clone());
+                    pair.rebuild();
+                })
+                .or_insert_with(|| ConfigPair::for_domain(domain));
+        }
+
         self.languages = languages;
     }
 
@@ -441,21 +479,6 @@ impl<T: PartialEq> PartialEq for Config<T> {
         self.items == other.items
     }
 }
-
-//impl ConfigDomain {
-    ///// Given a file path, attempts to parse the file name into a `ConfigDomain`.
-    ///// Returns an error if the file name does not correspond to a domain.
-    //pub fn try_from_path(path: &Path) -> Result<Self, ConfigError> {
-        //let file_stem = path.file_stem().unwrap().to_string_lossy();
-        //if file_stem == "preferences" {
-            //Ok(ConfigDomain::General)
-        //} else if let Some(syntax) = SyntaxDefinition::try_from_name(&file_stem) {
-            //Ok(syntax.into())
-        //} else {
-            //Err(ConfigError::UnknownDomain(file_stem.into_owned()))
-        //}
-    //}
-//}
 
 impl From<LanguageId> for ConfigDomain {
     fn from(src: LanguageId) -> ConfigDomain {

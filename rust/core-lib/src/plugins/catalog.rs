@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Keeping track of available plugins.
+
 use std::collections::HashMap;
 use std::fs;
 use std::io::{self, Read};
@@ -41,8 +43,9 @@ pub enum PluginLoadError {
 
 #[allow(dead_code)]
 impl <'a>PluginCatalog {
+    /// Loads any plugins discovered in these paths, replacing any existing
+    /// plugins.
     pub fn reload_from_paths(&mut self, paths: &[PathBuf]) {
-        eprintln!("loading plugins from {:?}", paths);
         self.items.clear();
         self.locations.clear();
         let all_manifests = find_all_manifests(paths);
@@ -121,10 +124,11 @@ fn load_manifest(path: &Path) -> Result<PluginDescription, PluginLoadError> {
     for lang in manifest.languages.iter_mut() {
         let lang_config_path = path.parent().unwrap()
             .join(&lang.name.as_ref())
-            .with_extension("xiconfig");
+            .with_extension("toml");
         if !lang_config_path.exists() { continue; }
         let lang_defaults = fs::read_to_string(&lang_config_path)?;
         let lang_defaults = table_from_toml_str(&lang_defaults)?;
+        eprintln!("loaded defaults {:?}", &lang_defaults);
         lang.default_config = Some(lang_defaults);
     }
     Ok(manifest)
