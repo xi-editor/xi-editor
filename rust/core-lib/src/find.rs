@@ -38,7 +38,7 @@ pub struct Find {
     /// The case matching setting for the currently active search
     case_matching: CaseMatching,
     /// The set of all known find occurrences (highlights)
-    occurrences: Option<Selection>,
+    occurrences: Selection,
     /// Set of ranges that have already been searched for the currently active search string
     valid_search: IndexSet,
 }
@@ -49,12 +49,12 @@ impl Find {
             hls_dirty: true,
             search_string: None,
             case_matching: CaseMatching::CaseInsensitive,
-            occurrences: None,
+            occurrences: Selection::new(),
             valid_search: IndexSet::new(),
         }
     }
 
-    pub fn occurrences(&self) -> &Option<Selection> {
+    pub fn occurrences(&self) -> &Selection {
         &self.occurrences
     }
 
@@ -70,23 +70,20 @@ impl Find {
         // update search highlights for changed regions
         if self.search_string.is_some() {
             self.valid_search = self.valid_search.apply_delta(delta);
-            let mut occurrences = self.occurrences.take().unwrap_or_else(Selection::new);
 
             // invalidate occurrences around deletion positions
             for DeltaRegion{ old_offset, new_offset, len } in delta.iter_deletions() {
                 self.valid_search.delete_range(new_offset, new_offset + len);
-                occurrences.delete_range(old_offset, old_offset + len, false);
+                self.occurrences.delete_range(old_offset, old_offset + len, false);
             }
 
-            occurrences = occurrences.apply_delta(delta, false, false);
+            self.occurrences = self.occurrences.apply_delta(delta, false, false);
 
             // invalidate occurrences around insert positions
             for DeltaRegion{ new_offset, len, .. } in delta.iter_inserts() {
                 self.valid_search.delete_range(new_offset, new_offset + len);
-                occurrences.delete_range(new_offset, new_offset + len, false);
+                self.occurrences.delete_range(new_offset, new_offset + len, false);
             }
-
-            self.occurrences = Some(occurrences);
 
             // update find for the whole delta (is going to only update invalid regions)
             let (iv, _) = delta.summary();
@@ -117,7 +114,7 @@ impl Find {
     /// Unsets the search and removes all highlights from the view.
     pub fn unset(&mut self) {
         self.search_string = None;
-        self.occurrences = None;
+        self.occurrences = Selection::new();
         self.hls_dirty = true;
         self.valid_search.clear();
     }
@@ -155,7 +152,6 @@ impl Find {
         // extend the search by twice the string length (twice, because case matching may increase
         // the length of an occurrence)
         let slop = if include_slop { self.search_string.as_ref().unwrap().len() * 2 } else { 0 };
-        let mut occurrences = self.occurrences.take().unwrap_or_else(Selection::new);
         let mut invalidate_from = None;
 
         for (_start, end) in self.valid_search.minus_one_range(start, end) {
@@ -173,8 +169,8 @@ impl Find {
                 let end = cursor.pos();
 
                 let region = SelRegion::new(start, end);
-                let prev_len = occurrences.len();
-                let (_, e) = occurrences.add_range_distinct(region);
+                let prev_len = self.occurrences.len();
+                let (_, e) = self.occurrences.add_range_distinct(region);
                 // in case of ambiguous search results (e.g. search "aba" in "ababa"),
                 // the search result closer to the beginning of the file wins
                 if e != end {
@@ -188,14 +184,14 @@ impl Find {
                 // add_range_distinct() above removes ambiguous regions after the added
                 // region, if something has been deleted, everything thereafter is
                 // invalidated
-                if occurrences.len() != prev_len + 1 {
+                if self.occurrences.len() != prev_len + 1 {
                     invalidate_from = Some(end);
-                    occurrences.delete_range(end, text_len, false);
+                    self.occurrences.delete_range(end, text_len, false);
                     break;
                 }
             }
         }
-        self.occurrences = Some(occurrences);
+
         if let Some(invalidate_from) = invalidate_from {
             self.valid_search.union_one_range(start, invalidate_from);
 
@@ -226,31 +222,29 @@ impl Find {
     pub fn next_occurrence(&self, text: &Rope, reverse: bool, wrapped: bool, sel: (usize, usize)) -> Option<SelRegion> {
         let (sel_start, sel_end) = sel;
 
-        self.occurrences.as_ref().and_then(|occurrences| {
-            if occurrences.len() == 0 {
-                return None;
+        if self.occurrences.len() == 0 {
+            return None;
+        }
+
+        if reverse {
+            let next_occurrence = match sel_start.checked_sub(1) {
+                Some(search_end) => self.occurrences.regions_in_range(0, search_end).last(),
+                None => None
+            };
+
+            if next_occurrence.is_none() && !wrapped {
+                return self.occurrences.regions_in_range(0, text.len()).last().cloned();
             }
 
-            if reverse {
-                let next_occurrence = match sel_start.checked_sub(1) {
-                    Some(search_end) => occurrences.regions_in_range(0, search_end).last(),
-                    None => None
-                };
+            next_occurrence.cloned()
+        } else {
+            let next_occurrence = self.occurrences.regions_in_range(sel_end + 1, text.len()).first();
 
-                if next_occurrence.is_none() && !wrapped {
-                    return occurrences.regions_in_range(0, text.len()).last();
-                }
-
-                next_occurrence
-            } else {
-                let next_occurrence = occurrences.regions_in_range(sel_end + 1, text.len()).first();
-
-                if next_occurrence.is_none() && !wrapped {
-                    return occurrences.regions_in_range(0, text.len()).first();
-                }
-
-                next_occurrence
+            if next_occurrence.is_none() && !wrapped {
+                return self.occurrences.regions_in_range(0, text.len()).first().cloned();
             }
-        }).cloned()
+
+            next_occurrence.cloned()
+        }
     }
 }

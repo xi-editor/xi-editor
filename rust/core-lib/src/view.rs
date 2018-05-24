@@ -475,13 +475,11 @@ impl View {
         // todo: active highlights different style
         let mut hls = Vec::new();
         for find in self.find.iter() {
-            for search_occurrence in find.occurrences() {
-                for region in search_occurrence.regions_in_range(start_pos, pos) {
-                    let sel_start_ix = clamp(region.min(), start_pos, pos) - start_pos;
-                    let sel_end_ix = clamp(region.max(), start_pos, pos) - start_pos;
-                    if sel_end_ix > sel_start_ix {
-                        hls.push((sel_start_ix, sel_end_ix));
-                    }
+            for region in find.occurrences().regions_in_range(start_pos, pos) {
+                let sel_start_ix = clamp(region.min(), start_pos, pos) - start_pos;
+                let sel_end_ix = clamp(region.max(), start_pos, pos) - start_pos;
+                if sel_end_ix > sel_start_ix {
+                    hls.push((sel_start_ix, sel_end_ix));
                 }
             }
         }
