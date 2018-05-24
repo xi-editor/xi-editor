@@ -14,19 +14,20 @@
 
 //! Very basic syntax detection.
 
-use std::fmt;
+use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use serde::de::{value, Deserialize, IntoDeserializer};
-use serde_json;
-
 use config::Table;
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct LanguageId(pub(crate) String);
+/// The canonical identifier for a particular `LanguageDefinition`.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct LanguageId(Arc<String>);
 
+/// Describes a `LanguageDefinition`. Although these are provided by plugins,
+/// they are a fundamental concept in core, used to determine things like
+/// plugin activations and active user config tables.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LanguageDefinition {
     pub name: LanguageId,
@@ -37,6 +38,7 @@ pub struct LanguageDefinition {
     pub default_config: Option<Table>,
 }
 
+/// A repository of all loaded `LanguageDefinition`s.
 #[derive(Debug, Default)]
 pub struct Languages {
     named: HashMap<LanguageId, Arc<LanguageDefinition>>,
@@ -62,87 +64,27 @@ impl Languages {
             .and_then(|ext| self.extensions.get(ext.to_str().unwrap_or_default()))
             .map(Arc::clone)
     }
-}
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[serde(rename_all = "lowercase")]
-pub enum SyntaxDefinition {
-    Plaintext, Markdown, Python, Rust, C, Go, Dart, Swift, Toml,
-    Json, Yaml, Cpp, Objc, Shell, Ruby, Javascript, Java, Php,
-    Perl, Makefile,
-}
-
-impl Default for SyntaxDefinition {
-    fn default() -> Self {
-        SyntaxDefinition::Plaintext
+    pub fn language_for_name(&self, name: &str) -> Option<Arc<LanguageDefinition>> {
+        self.named.get(name).map(Arc::clone)
     }
 }
 
-//FIXME: this should be Into<SyntaxDefinition> for AsRef<Path>, or something
-impl SyntaxDefinition {
-    pub fn new<'a, S: Into<Option<&'a str>>>(s: S) -> Self {
-        use self::SyntaxDefinition::*;
-        let s = s.into().unwrap_or("").to_lowercase();
-        if s == "makefile" { return Makefile }
-
-        match &*s.split('.').rev().nth(0).unwrap_or("") {
-            "rs" => Rust,
-            "md" | "mdown" => Markdown,
-            "py" => Python,
-            "c" | "h" => C,
-            "go" => Go,
-            "dart" => Dart,
-            "swift" => Swift,
-            "toml" => Toml,
-            "json" => Json,
-            "yaml" => Yaml,
-            "cc" => Cpp,
-            "m" => Objc,
-            "sh" | "zsh" => Shell,
-            "rb" => Ruby,
-            "js" => Javascript,
-            "java" | "jav" => Java,
-            "php" => Php,
-            "pl" => Perl,
-            _ => Plaintext,
-        }
-    }
-
-    /// Attempt to parse a name into a `SyntaxDefinition`.
-    ///
-    /// Note:
-    /// This uses serde deserialization under the hood; this governs what
-    /// names are expected to work.
-    pub fn try_from_name<S: AsRef<str>>(name: S) -> Option<Self> {
-        let r: Result<Self, value::Error> = Self::deserialize(
-            name.as_ref().into_deserializer());
-        r.ok()
+impl AsRef<str> for LanguageId {
+    fn as_ref(&self) -> &str {
+        self.0.as_ref()
     }
 }
 
-impl<S: AsRef<str>> From<S> for SyntaxDefinition {
-    fn from(s: S) -> Self {
-        SyntaxDefinition::new(s.as_ref())
+// let's us use &str to query a HashMap with `LanguageId` keys
+impl Borrow<str> for LanguageId {
+    fn borrow(&self) -> &str {
+        &self.0.as_ref()
     }
 }
 
-impl fmt::Display for SyntaxDefinition {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", serde_json::to_string(self).unwrap())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_syntax() {
-        assert_eq!(SyntaxDefinition::from("plugins.rs"), SyntaxDefinition::Rust);
-        assert_eq!(SyntaxDefinition::from("plugins.py"), SyntaxDefinition::Python);
-        assert_eq!(SyntaxDefinition::from("header.h"), SyntaxDefinition::C);
-        assert_eq!(SyntaxDefinition::from("main.ada"), SyntaxDefinition::Plaintext);
-        assert_eq!(SyntaxDefinition::from("build"), SyntaxDefinition::Plaintext);
-        assert_eq!(SyntaxDefinition::from("build.test.sh"), SyntaxDefinition::Shell);
+impl<'a> From<&'a str> for LanguageId {
+    fn from(src: &'a str) -> LanguageId {
+        LanguageId(Arc::new(src.into()))
     }
 }

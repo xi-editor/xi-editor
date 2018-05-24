@@ -34,7 +34,7 @@ use plugins::PluginId;
 use plugins::rpc::{PluginEdit, ScopeSpan, TextUnit, GetDataResponse};
 use selection::{Selection, SelRegion};
 use styles::ThemeStyleMap;
-use syntax::SyntaxDefinition;
+use syntax::LanguageId;
 use view::View;
 
 #[cfg(not(feature = "ledger"))]
@@ -83,7 +83,7 @@ pub struct Editor {
     #[allow(dead_code)]
     last_synced_rev: RevId,
 
-    syntax: SyntaxDefinition,
+    syntax: LanguageId,
     layers: Layers,
     config: BufferConfig,
 }
@@ -105,7 +105,7 @@ impl Editor {
 
         Editor {
             text: buffer,
-            syntax: SyntaxDefinition::default(),
+            syntax: LanguageId::default(),
             engine,
             last_rev_id,
             pristine_rev_id: last_rev_id,
@@ -190,8 +190,8 @@ impl Editor {
         &self.config
     }
 
-    /// Returns this `Editor`'s active `SyntaxDefinition`.
-    pub fn get_syntax(&self) -> &SyntaxDefinition {
+    /// Returns this `Editor`'s active `LanguageId`.
+    pub fn get_syntax(&self) -> &LanguageId {
         &self.syntax
     }
 

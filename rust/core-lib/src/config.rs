@@ -25,7 +25,7 @@ use serde::de::Deserialize;
 use serde_json::{self, Value};
 use toml;
 
-use syntax::SyntaxDefinition;
+use syntax::{LanguageId, Languages};
 use tabs::{BufferId, ViewId};
 
 /// Namespace for various default settings.
@@ -49,7 +49,7 @@ mod defaults {
     {
         let mut loaded = LOADED.lock().unwrap();
         let domain = domain.into();
-        loaded.entry(domain).or_insert_with(|| { load_for_domain(domain) })
+        loaded.entry(domain.clone()).or_insert_with(|| { load_for_domain(domain) })
             .to_owned()
     }
 
@@ -84,13 +84,13 @@ mod defaults {
 pub type Table = serde_json::Map<String, Value>;
 
 /// A `ConfigDomain` describes a level or category of user settings.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all="snake_case")]
 pub enum ConfigDomain {
     /// The general user preferences
     General,
     /// The overrides for a particular syntax.
-    Syntax(SyntaxDefinition),
+    Language(LanguageId),
     /// The user overrides for a particular buffer
     UserOverride(BufferId),
     /// The system's overrides for a particular buffer. Only used internally.
@@ -100,11 +100,13 @@ pub enum ConfigDomain {
 
 /// The external RPC sends `ViewId`s, which we convert to `BufferId`s
 /// internally.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all="snake_case")]
 pub enum ConfigDomainExternal {
     General,
-    Syntax(SyntaxDefinition),
+    //TODO: remove this old name
+    Syntax(LanguageId),
+    Language(LanguageId),
     UserOverride(ViewId),
 }
 
@@ -140,6 +142,7 @@ pub struct ConfigManager {
     configs: HashMap<ConfigDomain, ConfigPair>,
     /// A map of paths to file based configs.
     sources: HashMap<PathBuf, ConfigDomain>,
+    languages: Languages,
     /// If using file-based config, this is the base config directory
     /// (perhaps `$HOME/.config/xi`, by default).
     config_dir: Option<PathBuf>,
@@ -231,6 +234,7 @@ impl ConfigManager {
         ConfigManager {
             configs: defaults,
             sources: HashMap::new(),
+            languages: Languages::default(),
             config_dir,
             extras_dir,
         }
@@ -248,8 +252,17 @@ impl ConfigManager {
         let config_dir = self.config_dir.as_ref().map(|p| p.join("plugins"));
         [self.extras_dir.as_ref(), config_dir.as_ref()].iter()
             .flat_map(|p| p.map(|p| p.to_owned()))
-                .filter(|p| p.exists())
-                .collect()
+            .filter(|p| p.exists())
+            .collect()
+    }
+
+    pub fn set_langauges(&mut self, languages: Languages) {
+        self.languages = languages;
+    }
+
+    pub fn language_for_path(&self, path: &Path) -> Option<LanguageId> {
+        self.languages.language_for_path(path)
+            .map(|lang| lang.name.clone())
     }
 
     /// Sets the config for the given domain, removing any existing config.
@@ -259,8 +272,8 @@ impl ConfigManager {
         where P: Into<Option<PathBuf>>,
     {
         self.check_table(&new_config)?;
-        self.configs.entry(domain)
-            .or_insert_with(|| { ConfigPair::for_domain(domain) })
+        self.configs.entry(domain.clone())
+            .or_insert_with(|| { ConfigPair::for_domain(domain.clone()) })
             .set_table(new_config);
         path.into().map(|p| self.sources.insert(p, domain));
         Ok(())
@@ -273,10 +286,26 @@ impl ConfigManager {
                           -> Result<(), ConfigError>
     {
         self.check_table(&changes)?;
-        let conf = self.configs.entry(domain)
+        let conf = self.configs.entry(domain.clone())
             .or_insert_with(|| { ConfigPair::for_domain(domain) });
         conf.update_table(changes);
         Ok(())
+    }
+
+    pub fn domain_for_path(&self, path: &Path) -> Option<ConfigDomain> {
+        if path.extension().map(|e| e != "xiconfig").unwrap_or(true) {
+            return None;
+        }
+        match path.file_stem().and_then(|s| s.to_str()) {
+            Some("preferences") => Some(ConfigDomain::General),
+            Some(name) if self.languages.language_for_name(&name).is_some() => {
+                let lang = self.languages.language_for_name(&name)
+                    .map(|lang| lang.name.clone()).unwrap();
+                Some(ConfigDomain::Language(lang))
+            }
+            //TODO: plugin configs
+            _ => None,
+        }
     }
 
     /// If `path` points to a loaded config file, unloads the associated config.
@@ -287,13 +316,11 @@ impl ConfigManager {
         }
     }
 
+    //TODO: remove this whole fn
     /// Checks whether a given file should be loaded, i.e. whether it is a
     /// config file and whether it is in an expected location.
     pub fn should_load_file<P: AsRef<Path>>(&self, path: P) -> bool {
-        let path = path.as_ref();
-
-        path.extension() == Some(OsStr::new("xiconfig")) &&
-            ConfigDomain::try_from_path(path).is_ok()
+        path.as_ref().extension() == Some(OsStr::new("xiconfig"))
     }
 
     fn check_table(&self, table: &Table) -> Result<(), ConfigError> {
@@ -311,16 +338,16 @@ impl ConfigManager {
 
     /// Generates a snapshot of the current configuration for a particular
     /// view.
-    pub fn get_buffer_config<S, I>(&self, syntax: S, id: I) -> BufferConfig
-        where S: Into<Option<SyntaxDefinition>>,
+    pub fn get_buffer_config<S, I>(&self, lang: S, id: I) -> BufferConfig
+        where S: Into<Option<LanguageId>>,
               I: Into<Option<BufferId>>
     {
-        let syntax = syntax.into();
+        let lang = lang.into();
         let id = id.into();
         let mut configs = Vec::new();
 
         configs.push(self.configs.get(&ConfigDomain::General));
-        syntax.map(|s| configs.push(self.configs.get(&s.into())));
+        lang.map(|s| configs.push(self.configs.get(&s.into())));
         id.map(|v| configs.push(self.configs.get(&ConfigDomain::SysOverride(v))));
         id.map(|v| configs.push(self.configs.get(&ConfigDomain::UserOverride(v))));
 
@@ -415,24 +442,24 @@ impl<T: PartialEq> PartialEq for Config<T> {
     }
 }
 
-impl ConfigDomain {
-    /// Given a file path, attempts to parse the file name into a `ConfigDomain`.
-    /// Returns an error if the file name does not correspond to a domain.
-    pub fn try_from_path(path: &Path) -> Result<Self, ConfigError> {
-        let file_stem = path.file_stem().unwrap().to_string_lossy();
-        if file_stem == "preferences" {
-            Ok(ConfigDomain::General)
-        } else if let Some(syntax) = SyntaxDefinition::try_from_name(&file_stem) {
-            Ok(syntax.into())
-        } else {
-            Err(ConfigError::UnknownDomain(file_stem.into_owned()))
-        }
-    }
-}
+//impl ConfigDomain {
+    ///// Given a file path, attempts to parse the file name into a `ConfigDomain`.
+    ///// Returns an error if the file name does not correspond to a domain.
+    //pub fn try_from_path(path: &Path) -> Result<Self, ConfigError> {
+        //let file_stem = path.file_stem().unwrap().to_string_lossy();
+        //if file_stem == "preferences" {
+            //Ok(ConfigDomain::General)
+        //} else if let Some(syntax) = SyntaxDefinition::try_from_name(&file_stem) {
+            //Ok(syntax.into())
+        //} else {
+            //Err(ConfigError::UnknownDomain(file_stem.into_owned()))
+        //}
+    //}
+//}
 
-impl From<SyntaxDefinition> for ConfigDomain {
-    fn from(src: SyntaxDefinition) -> ConfigDomain {
-        ConfigDomain::Syntax(src)
+impl From<LanguageId> for ConfigDomain {
+    fn from(src: LanguageId) -> ConfigDomain {
+        ConfigDomain::Language(src)
     }
 }
 
@@ -488,18 +515,15 @@ pub fn init_config_dir(dir: &Path) -> io::Result<()> {
 
 /// Attempts to load a config from a file. The config's domain is determined
 /// by the file name.
-pub fn try_load_from_file(path: &Path) -> Result<(ConfigDomain, Table), ConfigError> {
-    let domain = ConfigDomain::try_from_path(path)?;
+pub fn try_load_from_file(path: &Path) -> Result<Table, ConfigError> {
     let mut file = fs::File::open(&path)?;
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
-    let table = table_from_toml_str(&contents)
-        .map_err(|e| ConfigError::Parse(path.to_owned(), e))?;
-
-    Ok((domain, table))
+    table_from_toml_str(&contents)
+        .map_err(|e| ConfigError::Parse(path.to_owned(), e))
 }
 
-fn table_from_toml_str(s: &str) -> Result<Table, toml::de::Error> {
+pub(crate) fn table_from_toml_str(s: &str) -> Result<Table, toml::de::Error> {
     let table = toml::from_str(&s)?;
     let table = from_toml_value(table).as_object()
         .unwrap()
@@ -545,8 +569,10 @@ mod tests {
         let user_config = table_from_toml_str(r#"tab_size = 42"#).unwrap();
         let rust_config = table_from_toml_str(r#"tab_size = 31"#).unwrap();
 
+        let rust_id: LanguageId = "Rust".into();
+
         let mut manager = ConfigManager::new(None, None);
-        manager.set_user_config(ConfigDomain::Syntax(SyntaxDefinition::Rust),
+        manager.set_user_config(ConfigDomain::Language(rust_id.clone()),
                                 rust_config, None).unwrap();
 
         manager.set_user_config(ConfigDomain::General, user_config, None)
@@ -561,31 +587,26 @@ mod tests {
         let config = manager.default_buffer_config();
         assert_eq!(config.source.0.len(), 1);
         assert_eq!(config.items.tab_size, 42);
-        let config = manager.get_buffer_config(SyntaxDefinition::Rust, None);
+        let config = manager.get_buffer_config(rust_id.clone(), None);
         assert_eq!(config.items.tab_size, 31);
-        let config = manager.get_buffer_config(SyntaxDefinition::Rust, buffer_id);
+        let config = manager.get_buffer_config(rust_id.clone(), buffer_id);
         assert_eq!(config.items.tab_size, 67);
 
         // user override trumps everything
         let changes = json!({"tab_size": 85}).as_object().unwrap().to_owned();
         manager.update_user_config(ConfigDomain::UserOverride(buffer_id), changes)
             .unwrap();
-        let config = manager.get_buffer_config(SyntaxDefinition::Rust, buffer_id);
+        let config = manager.get_buffer_config(rust_id.clone(), buffer_id);
         assert_eq!(config.items.tab_size, 85);
     }
 
     #[test]
     fn test_config_domain_serde() {
-        assert!(ConfigDomain::try_from_path(Path::new("hi/python.xiconfig")).is_ok());
-        assert!(ConfigDomain::try_from_path(Path::new("hi/preferences.xiconfig")).is_ok());
-        assert!(ConfigDomain::try_from_path(Path::new("hi/rust.xiconfig")).is_ok());
-        assert!(ConfigDomain::try_from_path(Path::new("hi/unknown.xiconfig")).is_err());
-
         assert_eq!(serde_json::to_string(&ConfigDomain::General).unwrap(), "\"general\"");
         let d = ConfigDomainExternal::UserOverride(ViewId(1));
         assert_eq!(serde_json::to_string(&d).unwrap(), "{\"user_override\":\"view-id-1\"}");
-        let d = ConfigDomain::Syntax(SyntaxDefinition::Swift);
-        assert_eq!(serde_json::to_string(&d).unwrap(), "{\"syntax\":\"swift\"}");
+        let d = ConfigDomain::Language("Swift".into());
+        assert_eq!(serde_json::to_string(&d).unwrap(), "{\"language\":\"Swift\"}");
     }
 
     #[test]
@@ -627,8 +648,8 @@ translate_tabs_to_spaces = true
 
         let changes = json!({"font_face": "Roboto"})
             .as_object().unwrap().to_owned();
-        manager.update_user_config(SyntaxDefinition::Dart.into(), changes).unwrap();
-        let config = manager.get_buffer_config(SyntaxDefinition::Dart, None);
+        manager.update_user_config(LanguageId::from("Dart").into(), changes).unwrap();
+        let config = manager.get_buffer_config(LanguageId::from("Dart"), None);
         assert_eq!(config.items.font_face, "Roboto");
     }
 }
