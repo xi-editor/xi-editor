@@ -625,7 +625,7 @@ impl View {
 
         client.update_view(self.view_id, &params);
         self.lc_shadow = b.build();
-        for find in self.find.iter_mut() {
+        for find in &mut self.find {
             find.set_hls_dirty(false)
         }
     }
@@ -774,7 +774,7 @@ impl View {
         self.drag_state = None;
 
         // update only find highlights affected by change
-        for find in self.find.iter_mut() {
+        for find in &mut self.find {
             find.update_highlights(text, delta);
         }
 
