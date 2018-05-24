@@ -325,6 +325,8 @@ impl<'a> EventContext<'a> {
                     view.set_dirty(&ed.get_buffer());
                 }
                 self.client.config_changed(view.view_id, &changes);
+                self.plugins.iter()
+                    .for_each(|plug| plug.config_changed(view.view_id, &changes));
             }
         }
         self.render()

@@ -30,6 +30,7 @@ use xi_rpc::{self, RpcPeer, RpcLoop};
 use xi_trace;
 
 use WeakXiCore;
+use config::Table;
 use tabs::ViewId;
 
 use self::rpc::{PluginUpdate, PluginBufferInfo};
@@ -117,7 +118,13 @@ where F: FnOnce(Result<Value, xi_rpc::Error>) + Send + 'static
     }
 
     pub fn collect_trace(&self) -> Result<Value, xi_rpc::Error> {
-        self.peer.send_rpc_request("collect_trace", &json!({}))
+       self.peer.send_rpc_request("collect_trace", &json!({}))
+    }
+
+    pub fn config_changed(&self, view_id: ViewId, changes: &Table) {
+        self.peer.send_rpc_notification("config_changed", 
+                                        &json!({"view_id": view_id, 
+                                                "changes": changes}))
     }
 }
 
