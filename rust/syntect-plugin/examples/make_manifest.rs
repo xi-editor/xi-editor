@@ -18,16 +18,19 @@ extern crate syntect;
 extern crate toml;
 extern crate  xi_core_lib as xi_core;
 
-use std::io::Write;
-use std::path::PathBuf;
-use std::fs::File;
+use std::io::{self, Write};
+use std::fs::{self, File};
+use std::path::{Path, PathBuf};
 
 use xi_core::plugin_manifest::*;
 use xi_core::LanguageDefinition;
 use syntect::parsing::{SyntaxSet, SyntaxDefinition};
 
+const OUT_FILE_NAME: &str = "gen_manifest.toml";
+const OUT_DIR: &str = "out";
 
-fn main() {
+fn main() -> Result<(), io::Error> {
+    if !Path::new(OUT_DIR).exists() {  fs::create_dir(OUT_DIR)?; }
     let syntax_set = SyntaxSet::load_defaults_newlines();
     let lang_defs = syntax_set.syntaxes().iter()
         .filter(|syntax| !syntax.file_extensions.is_empty())
@@ -45,13 +48,14 @@ fn main() {
     };
 
 	let toml_str = toml::to_string(&mani).unwrap();
-	let mut f = File::create("xi_manifest.toml").unwrap();
-    f.write_all(toml_str.as_ref()).unwrap();
+    let file_path = Path::new(OUT_DIR).join(OUT_FILE_NAME);
+	let mut f = File::create(file_path)?;
+    f.write_all(toml_str.as_ref())
 }
 
 fn lang_from_syn<'a>(src: &'a SyntaxDefinition) -> LanguageDefinition {
     LanguageDefinition {
-        name: src.name.clone(),
+        name: src.name.as_str().into(),
         extensions: src.file_extensions.clone(),
         first_line_match: src.first_line_match.clone(),
         scope: src.scope.to_string(),

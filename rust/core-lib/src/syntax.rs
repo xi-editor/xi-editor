@@ -68,6 +68,19 @@ impl Languages {
     pub fn language_for_name(&self, name: &str) -> Option<Arc<LanguageDefinition>> {
         self.named.get(name).map(Arc::clone)
     }
+
+    /// Returns a Vec of any `LanguageDefinition`s which exist
+    /// in `self` but not `other`.
+    pub fn difference(&self, other: &Languages) -> Vec<Arc<LanguageDefinition>> {
+        self.named.iter()
+            .filter(|(k, _)| !other.named.contains_key(*k))
+            .map(|(_, v)| v.clone())
+            .collect()
+    }
+
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item=&'a Arc<LanguageDefinition>> {
+        self.named.values()
+    }
 }
 
 impl AsRef<str> for LanguageId {
