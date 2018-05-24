@@ -23,7 +23,7 @@ use serde_json::{self, Value};
 
 use xi_rope::rope::{RopeDelta, Rope, LinesMetric};
 use super::PluginPid;
-use syntax::SyntaxDefinition;
+use syntax::LanguageId;
 use tabs::{BufferIdentifier, ViewIdentifier};
 use config::Table;
 
@@ -47,7 +47,7 @@ pub struct PluginBufferInfo {
     pub nb_lines: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
-    pub syntax: SyntaxDefinition,
+    pub syntax: LanguageId,
     pub config: Table,
 }
 
@@ -228,7 +228,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for PluginCommand<T>
 impl PluginBufferInfo {
     pub fn new(buffer_id: BufferIdentifier, views: &[ViewIdentifier],
                rev: u64, buf_size: usize, nb_lines: usize,
-               path: Option<PathBuf>, syntax: SyntaxDefinition,
+               path: Option<PathBuf>, syntax: LanguageId,
                config: Table) -> Self {
         //TODO: do make any current assertions about paths being valid utf-8? do we want to?
         let path = path.map(|p| p.to_str().unwrap().to_owned());
@@ -323,7 +323,7 @@ mod tests {
         };
         assert_eq!(val.rev, 1);
         assert_eq!(val.path, Some("some_path".to_owned()));
-        assert_eq!(val.syntax, SyntaxDefinition::Toml);
+        assert_eq!(val.syntax, "toml".into());
     }
 
     #[test]

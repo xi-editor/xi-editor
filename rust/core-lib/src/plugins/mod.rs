@@ -23,6 +23,7 @@ use std::io::BufReader;
 use std::path::Path;
 use std::process::{Child, Command as ProcCommand, Stdio};
 use std::thread;
+use std::sync::Arc;
 
 use serde_json::Value;
 
@@ -128,7 +129,7 @@ where F: FnOnce(Result<Value, xi_rpc::Error>) + Send + 'static
     }
 }
 
-pub(crate) fn start_plugin_process(plugin_desc: PluginDescription,
+pub(crate) fn start_plugin_process(plugin_desc: Arc<PluginDescription>,
                                     id: PluginId, core: WeakXiCore) {
     thread::spawn(move || {
         eprintln!("starting plugin {}", &plugin_desc.name);

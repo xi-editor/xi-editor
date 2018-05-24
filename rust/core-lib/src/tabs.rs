@@ -46,7 +46,6 @@ use plugin_rpc::{PluginNotification, PluginRequest};
 use rpc::{CoreNotification, CoreRequest, EditNotification, EditRequest,
           PluginNotification as CorePluginNotification};
 use styles::ThemeStyleMap;
-use syntax::SyntaxDefinition;
 use view::View;
 use width_cache::WidthCache;
 
@@ -152,7 +151,7 @@ impl CoreState {
             pending_views: Vec::new(),
             peer: Client::new(peer.clone()),
             id_counter: Counter::default(),
-            plugins: PluginCatalog::new(&[]),
+            plugins: PluginCatalog::default(),
             running_plugins: Vec::new(),
         }
     }
@@ -176,10 +175,12 @@ impl CoreState {
             self.load_file_based_config(&path);
         }
 
-        //FIXME: quickfix pending #672
+        // instead of having to do this here, config should just own
+        // the plugin catalog and reload automatically
         let plugin_paths = self.config_manager.get_plugin_paths();
-        self.plugins = PluginCatalog::from_paths(plugin_paths);
-
+        self.plugins.reload_from_paths(&plugin_paths);
+        let languages = self.plugins.make_languages_map();
+        self.config_manager.set_langauges(languages);
         let theme_names = self.style_map.borrow().get_theme_names();
         self.peer.available_themes(theme_names);
 
@@ -194,9 +195,11 @@ impl CoreState {
     /// Attempt to load a config file.
     fn load_file_based_config(&mut self, path: &Path) {
         let _t = trace_block("CoreState::load_config_file", &["core"]);
-        match config::try_load_from_file(&path) {
-            Ok((d, t)) => self.set_config(d, t, Some(path.to_owned())),
-            Err(e) => self.peer.alert(e.to_string()),
+        if let Some(domain) = self.config_manager.domain_for_path(path) {
+            match config::try_load_from_file(&path) {
+                Ok(table) => self.set_config(domain, table, Some(path.to_owned())),
+                Err(e) => self.peer.alert(e.to_string()),
+            }
         }
     }
 
@@ -366,7 +369,7 @@ impl CoreState {
         -> Result<Editor, RemoteError>
     {
         let rope = self.file_manager.open(path, buffer_id)?;
-        let syntax = SyntaxDefinition::new(path.to_str());
+        let syntax = self.config_manager.language_for_path(path);
         let config = self.config_manager.get_buffer_config(syntax, buffer_id);
         let editor = Editor::with_text(rope, config);
         Ok(editor)
@@ -392,9 +395,10 @@ impl CoreState {
             return;
         }
 
-        // hacky, syntax defs per-se are going away soon
-        let syntax = SyntaxDefinition::new(path.to_str());
+        let syntax = self.config_manager.language_for_path(path);
         let config = self.config_manager.get_buffer_config(syntax, buffer_id);
+        //TODO: rework how config changes are handled if a path changes.
+        //tldr; do the save first, then reload the config.
 
         let mut event_ctx = self.make_context(view_id).unwrap();
         event_ctx.after_save(path, config);
@@ -444,7 +448,8 @@ impl CoreState {
         // the client sends ViewId but we need BufferId so we do a dance
         let domain: ConfigDomain = match domain {
             ConfigDomainExternal::General => ConfigDomain::General,
-            ConfigDomainExternal::Syntax(s) => ConfigDomain::Syntax(s),
+            ConfigDomainExternal::Syntax(id) => ConfigDomain::Language(id),
+            ConfigDomainExternal::Language(id) => ConfigDomain::Language(id),
             ConfigDomainExternal::UserOverride(view_id) => {
                  match self.views.get(&view_id) {
                      Some(v) => ConfigDomain::UserOverride(v.borrow().buffer_id),
@@ -591,10 +596,10 @@ impl CoreState {
     fn handle_config_fs_event(&mut self, event: DebouncedEvent) {
         use self::DebouncedEvent::*;
         match event {
-            Create(ref path) | Write(ref path) => {
-                self.load_file_based_config(path)
-            }
-            Remove(ref path) => self.config_manager.remove_source(path),
+            Create(ref path) | Write(ref path) =>
+                self.load_file_based_config(path),
+            Remove(ref path) =>
+                self.config_manager.remove_source(path),
             Rename(ref old, ref new) => {
                 self.config_manager.remove_source(old);
                 let should_load = self.config_manager.should_load_file(new);
