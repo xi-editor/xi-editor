@@ -195,6 +195,11 @@ impl Editor {
         &self.syntax
     }
 
+    //TODO: temporary, this should be tracked in config manager
+    pub(crate) fn set_syntax(&mut self, language: LanguageId) {
+        self.syntax = language;
+    }
+
     // each outstanding plugin edit represents a rev_in_flight.
     pub fn increment_revs_in_flight(&mut self) {
         self.revs_in_flight += 1;

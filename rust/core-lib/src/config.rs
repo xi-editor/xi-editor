@@ -251,12 +251,33 @@ impl ConfigManager {
             let lang_id = language.name.clone();
             let domain: ConfigDomain = lang_id.into();
             let default_config = language.default_config.clone();
-            self.configs.entry(domain)
+            self.configs.entry(domain.clone())
                 .and_modify(|c| *c = c.new_with_base(default_config.clone()))
                 .or_insert_with(|| ConfigPair::with_base(default_config));
+            if let Some(table) = self.load_user_config_file(&domain) {
+                // we can't report this error because we don't have a
+                // handle to the peer :|
+                let _ = self.set_user_config(domain, table);
+            }
         }
-
         self.languages = languages;
+    }
+
+    //TODO: tabs.rs should look for user configs after setting languages
+    //or equivelant?
+    fn load_user_config_file(&self, domain: &ConfigDomain) -> Option<Table> {
+        let path = self.config_dir.as_ref()
+            .map(|p| p.join(domain.file_stem()).with_extension("xiconfig"))?;
+
+        if !path.exists() { return None; }
+
+        match try_load_from_file(&path) {
+            Ok(t) => Some(t),
+            Err(e) => {
+                eprintln!("Error loading config: {:?}", e);
+                None
+            }
+        }
     }
 
     pub fn language_for_path(&self, path: &Path) -> Option<LanguageId> {
@@ -429,6 +450,17 @@ impl<'de, T: Deserialize<'de>> Config<T> {
         match other {
             Some(other) => self.source.diff(&other.source),
             None => self.source.collate().into(),
+        }
+    }
+}
+
+impl ConfigDomain {
+    fn file_stem<'a>(&'a self) -> &'a str {
+        match self {
+            ConfigDomain::General => "preferences",
+            ConfigDomain::Language(lang) => lang.as_ref(),
+            ConfigDomain::UserOverride(_) | ConfigDomain::SysOverride(_) =>
+                "we don't have files",
         }
     }
 }
