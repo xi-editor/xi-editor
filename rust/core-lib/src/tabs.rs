@@ -197,20 +197,21 @@ impl CoreState {
         let _t = trace_block("CoreState::load_config_file", &["core"]);
         if let Some(domain) = self.config_manager.domain_for_path(path) {
             match config::try_load_from_file(&path) {
-                Ok(table) => self.set_config(domain, table, Some(path.to_owned())),
+                Ok(table) => self.set_config(domain, table),
                 Err(e) => self.peer.alert(e.to_string()),
             }
         }
     }
 
     /// Sets (overwriting) the config for a given domain.
-    fn set_config<P>(&mut self, domain: ConfigDomain, table: Table, path: P)
-        where P: Into<Option<PathBuf>>
-    {
-        if let Err(e) = self.config_manager.set_user_config(domain, table, path) {
+    fn set_config(&mut self, domain: ConfigDomain, table: Table) {
+        if let Err(e) = self.config_manager.set_user_config(domain, table) {
             self.peer.alert(format!("{}", &e));
+        } else {
+            self.after_config_change();
         }
     }
+
     /// Notify editors/views/plugins of config changes.
     fn after_config_change(&self) {
         self.iter_groups()
@@ -440,8 +441,6 @@ impl CoreState {
         });
     }
 
-    // NOTE: this is coming in from a direct RPC; unlike `set_config`, missing
-    // keys here are left in their current state (`set_config` clears missing keys)
     /// Updates the config for a given domain.
     fn do_modify_user_config(&mut self, domain: ConfigDomainExternal,
                              changes: Table) {
@@ -457,10 +456,9 @@ impl CoreState {
                 }
             }
         };
-        if let Err(e) = self.config_manager.update_user_config(domain, changes) {
-            self.peer.alert(e.to_string());
-        }
-        self.after_config_change();
+        let new_config = self.config_manager.table_for_update(domain.clone(),
+                                                              changes);
+        self.set_config(domain, new_config);
     }
 
     fn do_get_config(&self, view_id: ViewId) -> Result<Table, RemoteError> {
@@ -530,22 +528,13 @@ impl CoreState {
     fn handle_fs_events(&mut self) {
         let _t = trace_block("CoreState::handle_fs_events", &["core"]);
         let mut events = self.file_manager.watcher().take_events();
-        let mut config_changed = false;
 
         for (token, event) in events.drain(..) {
             match token {
                 OPEN_FILE_EVENT_TOKEN => self.handle_open_file_fs_event(event),
-                CONFIG_EVENT_TOKEN => {
-                    //TODO: we should(?) be more efficient about this update,
-                    // with config_manager returning whether it's necessary.
-                    self.handle_config_fs_event(event);
-                    config_changed = true;
-                }
+                CONFIG_EVENT_TOKEN => self.handle_config_fs_event(event),
                 _ => eprintln!("unexpected fs event token {:?}", token),
             }
-        }
-        if config_changed {
-            self.after_config_change();
         }
     }
 
@@ -599,13 +588,18 @@ impl CoreState {
             Create(ref path) | Write(ref path) =>
                 self.load_file_based_config(path),
             Remove(ref path) =>
-                self.config_manager.remove_source(path),
+                self.remove_config_at_path(path),
             Rename(ref old, ref new) => {
-                self.config_manager.remove_source(old);
-                let should_load = self.config_manager.should_load_file(new);
-                if should_load { self.load_file_based_config(new) }
+                self.remove_config_at_path(old);
+                self.load_file_based_config(new);
             }
             _ => (),
+        }
+    }
+
+    fn remove_config_at_path(&mut self, path: &Path) {
+        if let Some(domain) = self.config_manager.domain_for_path(path) {
+            self.set_config(domain, Table::default());
         }
     }
 
