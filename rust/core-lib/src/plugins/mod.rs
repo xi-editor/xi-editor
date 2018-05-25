@@ -118,7 +118,7 @@ where F: FnOnce(Result<Value, xi_rpc::Error>) + Send + 'static
     }
 
     pub fn collect_trace(&self) -> Result<Value, xi_rpc::Error> {
-       self.peer.send_rpc_request("collect_trace", &json!({}))
+        self.peer.send_rpc_request("collect_trace", &json!({}))
     }
 
     pub fn config_changed(&self, view_id: ViewId, changes: &Table) {
