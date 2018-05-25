@@ -128,7 +128,6 @@ fn load_manifest(path: &Path) -> Result<PluginDescription, PluginLoadError> {
         if !lang_config_path.exists() { continue; }
         let lang_defaults = fs::read_to_string(&lang_config_path)?;
         let lang_defaults = table_from_toml_str(&lang_defaults)?;
-        eprintln!("loaded defaults {:?}", &lang_defaults);
         lang.default_config = Some(lang_defaults);
     }
     Ok(manifest)
