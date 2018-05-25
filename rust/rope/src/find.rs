@@ -76,7 +76,7 @@ pub fn find(cursor: &mut Cursor<RopeInfo>, cm: CaseMatching, pat: &str) -> Optio
 /// 
 /// [find]: fn.find.html
 pub fn find_progress(cursor: &mut Cursor<RopeInfo>, cm: CaseMatching, pat: &str,
-                     num_steps: usize) -> FindResult
+    num_steps: usize) -> FindResult
 {
     match cm {
         CaseMatching::Exact => {
@@ -114,10 +114,10 @@ pub fn find_progress(cursor: &mut Cursor<RopeInfo>, cm: CaseMatching, pat: &str,
 
 // Run the core repeatedly until there is a result, up to a certain number of steps.
 fn find_progress_iter(cursor: &mut Cursor<RopeInfo>, pat: &str,
-                      scanner: &Fn(&str) -> Option<usize>,
-                      matcher: &Fn(&mut Cursor<RopeInfo>, &str) -> bool,
-                      num_steps: usize
-) -> FindResult
+        scanner: &Fn(&str) -> Option<usize>,
+        matcher: &Fn(&mut Cursor<RopeInfo>, &str) -> bool,
+        num_steps: usize
+    ) -> FindResult
 {
     for _ in 0..num_steps {
         match find_core(cursor, pat, scanner, matcher) {
@@ -133,9 +133,9 @@ fn find_progress_iter(cursor: &mut Cursor<RopeInfo>, pat: &str,
 // then a "matcher" which confirms that such a candidate actually matches
 // in the full rope.
 fn find_core(cursor: &mut Cursor<RopeInfo>, pat: &str,
-             scanner: &Fn(&str) -> Option<usize>,
-             matcher: &Fn(&mut Cursor<RopeInfo>, &str) -> bool
-) -> FindResult
+        scanner: &Fn(&str) -> Option<usize>,
+        matcher: &Fn(&mut Cursor<RopeInfo>, &str) -> bool
+    ) -> FindResult
 {
     let orig_pos = cursor.pos();
     if let Some((leaf, pos_in_leaf)) = cursor.get_leaf() {
