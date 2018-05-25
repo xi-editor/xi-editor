@@ -14,7 +14,6 @@
 
 use std::io::{self, Read};
 use std::error::Error;
-use std::ffi::OsStr;
 use std::fmt;
 use std::fs;
 use std::path::{PathBuf, Path};
@@ -115,8 +114,7 @@ pub struct ConfigPair {
 pub struct ConfigManager {
     /// A map of `ConfigPairs` (defaults + overrides) for all in-use domains.
     configs: HashMap<ConfigDomain, ConfigPair>,
-    /// A map of paths to file based configs.
-    sources: HashMap<PathBuf, ConfigDomain>,
+    /// The currently loaded `Languages`.
     languages: Languages,
     /// If using file-based config, this is the base config directory
     /// (perhaps `$HOME/.config/xi`, by default).
@@ -216,7 +214,6 @@ impl ConfigManager {
         defaults.insert(ConfigDomain::General, ConfigPair::with_base(base));
         ConfigManager {
             configs: defaults,
-            sources: HashMap::new(),
             languages: Languages::default(),
             config_dir,
             extras_dir,
@@ -268,31 +265,44 @@ impl ConfigManager {
     }
 
     /// Sets the config for the given domain, removing any existing config.
-    pub fn set_user_config<P>(&mut self, domain: ConfigDomain,
-                              new_config: Table, path: P)
-                              -> Result<(), ConfigError>
-        where P: Into<Option<PathBuf>>,
+    pub fn set_user_config(&mut self, domain: ConfigDomain, config: Table)
+        -> Result<(), ConfigError>
     {
-        self.check_table(&new_config)?;
+        self.check_table(&config)?;
         self.configs.entry(domain.clone())
             .or_insert_with(|| ConfigPair::with_base(None))
-            .set_table(new_config);
-        path.into().map(|p| self.sources.insert(p, domain));
+            .set_table(config);
         Ok(())
     }
 
-    /// Updates the config for the given domain. Existing keys which are
-    /// not in `changes` are untouched; existing keys for which `changes`
-    /// contains `Value::Null` are removed.
-    pub fn update_user_config(&mut self, domain: ConfigDomain, changes: Table)
-                          -> Result<(), ConfigError>
+    /// Returns the `Table` produced by applying `changes` to the current user
+    /// config for the given `ConfigDomain`.
+    ///
+    /// # Note:
+    ///
+    /// When the user modifys a config _file_, the whole file is read,
+    /// and we can just overwrite any existing user config with the newly
+    /// loaded one.
+    ///
+    /// When the client modifies a config via the RPC mechanism, however,
+    /// this isn't the case. Instead of sending all config settings with
+    /// each update, the client just sends the keys/values they would like
+    /// to change. When they would like to remove a previously set key,
+    /// they send `Null` as the value for that key.
+    ///
+    /// This function creates a new table which is the product of updating
+    /// any existing table by applying the client's changes. This new table can
+    /// then be passed to `Self::set_user_config(..)`, as if it were loaded
+    /// from disk.
+    pub(crate) fn table_for_update(&mut self, domain: ConfigDomain,
+                                   changes: Table) -> Table
     {
-        let new_config = self.configs.entry(domain.clone())
+        self.configs.entry(domain.clone())
             .or_insert_with(|| ConfigPair::with_base(None))
-            .table_for_update(changes);
-        self.set_user_config(domain, new_config, None)
+            .table_for_update(changes)
     }
 
+    /// Returns the `ConfigDomain` relevant to a given file, if one exists.
     pub fn domain_for_path(&self, path: &Path) -> Option<ConfigDomain> {
         if path.extension().map(|e| e != "xiconfig").unwrap_or(true) {
             return None;
@@ -307,21 +317,6 @@ impl ConfigManager {
             //TODO: plugin configs
             _ => None,
         }
-    }
-
-    /// If `path` points to a loaded config file, unloads the associated config.
-    pub fn remove_source(&mut self, source: &Path) {
-        if let Some(domain) = self.sources.remove(source) {
-            self.set_user_config(domain, Table::new(), None)
-                .expect("Empty table is always valid");
-        }
-    }
-
-    //TODO: remove this whole fn
-    /// Checks whether a given file should be loaded, i.e. whether it is a
-    /// config file and whether it is in an expected location.
-    pub fn should_load_file<P: AsRef<Path>>(&self, path: P) -> bool {
-        path.as_ref().extension() == Some(OsStr::new("xiconfig"))
     }
 
     fn check_table(&self, table: &Table) -> Result<(), ConfigError> {
@@ -559,16 +554,15 @@ mod tests {
         let rust_id: LanguageId = "Rust".into();
 
         let mut manager = ConfigManager::new(None, None);
-        manager.set_user_config(ConfigDomain::Language(rust_id.clone()),
-                                rust_config, None).unwrap();
+        manager.set_user_config(rust_id.clone().into(),
+                                rust_config).unwrap();
 
-        manager.set_user_config(ConfigDomain::General, user_config, None)
-            .unwrap();
+        manager.set_user_config(ConfigDomain::General, user_config).unwrap();
 
         let buffer_id = BufferId(1);
         // system override
         let changes = json!({"tab_size": 67}).as_object().unwrap().to_owned();
-        manager.update_user_config(ConfigDomain::SysOverride(buffer_id), changes)
+        manager.set_user_config(ConfigDomain::SysOverride(buffer_id), changes)
             .unwrap();
 
         let config = manager.default_buffer_config();
@@ -581,7 +575,7 @@ mod tests {
 
         // user override trumps everything
         let changes = json!({"tab_size": 85}).as_object().unwrap().to_owned();
-        manager.update_user_config(ConfigDomain::UserOverride(buffer_id), changes)
+        manager.set_user_config(ConfigDomain::UserOverride(buffer_id), changes)
             .unwrap();
         let config = manager.get_buffer_config(rust_id.clone(), buffer_id);
         assert_eq!(config.items.tab_size, 85);
@@ -623,19 +617,21 @@ translate_tabs_to_spaces = true
         assert_eq!(manager.default_buffer_config().items.font_size, 14.);
         let changes = json!({"font_size": 69, "font_face": "nice"})
             .as_object().unwrap().to_owned();
-        manager.update_user_config(ConfigDomain::General, changes).unwrap();
+        let table = manager.table_for_update(ConfigDomain::General, changes);
+        manager.set_user_config(ConfigDomain::General, table).unwrap();
         assert_eq!(manager.default_buffer_config().items.font_size, 69.);
 
         // null values in updates removes keys
         let changes = json!({"font_size": Value::Null})
             .as_object().unwrap().to_owned();
-        manager.update_user_config(ConfigDomain::General, changes).unwrap();
+        let table = manager.table_for_update(ConfigDomain::General, changes);
+        manager.set_user_config(ConfigDomain::General, table).unwrap();
         assert_eq!(manager.default_buffer_config().items.font_size, 14.);
         assert_eq!(manager.default_buffer_config().items.font_face, "nice");
 
         let changes = json!({"font_face": "Roboto"})
             .as_object().unwrap().to_owned();
-        manager.update_user_config(LanguageId::from("Dart").into(), changes).unwrap();
+        manager.set_user_config(LanguageId::from("Dart").into(), changes).unwrap();
         let config = manager.get_buffer_config(LanguageId::from("Dart"), None);
         assert_eq!(config.items.font_face, "Roboto");
     }
@@ -650,6 +646,7 @@ translate_tabs_to_spaces = true
                                                   lang_defaults.as_object().map(Table::clone));
 
         let lang_id: LanguageId = "Rust".into();
+        let domain: ConfigDomain = lang_id.clone().into();
         manager.set_languages(Languages::new(&[lang_def.clone()]));
 
         let config = manager.get_buffer_config(lang_id.clone(), None);
@@ -660,9 +657,9 @@ translate_tabs_to_spaces = true
         let config = manager.get_buffer_config(lang_id.clone(), None);
         assert_eq!(config.items.font_size, 14.);
 
-        manager.set_user_config(lang_id.clone().into(),
+        manager.set_user_config(domain.clone(),
                                 lang_overrides.as_object().map(Table::clone).unwrap(),
-                                None).unwrap();
+                                ).unwrap();
 
         let config = manager.get_buffer_config(lang_id.clone(), None);
         assert_eq!(config.items.font_size, 420.);
@@ -676,7 +673,8 @@ translate_tabs_to_spaces = true
             .as_object().unwrap().to_owned();
 
         // null key should void user setting, leave language default
-        manager.update_user_config(lang_id.clone().into(), changes).unwrap();
+        let table = manager.table_for_update(domain.clone(), changes);
+        manager.set_user_config(domain.clone(), table).unwrap();
         let config = manager.get_buffer_config(lang_id.clone(), None);
         assert_eq!(config.items.font_size, 69.);
 
