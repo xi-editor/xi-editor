@@ -101,3 +101,19 @@ impl<'a> From<&'a str> for LanguageId {
         LanguageId(Arc::new(src.into()))
     }
 }
+
+// for testing
+#[cfg(test)]
+impl LanguageDefinition {
+    pub(crate) fn simple(name: &str, exts: &[&str],
+                         scope: &str, config: Option<Table>) -> Self
+    {
+        LanguageDefinition {
+            name: name.into(),
+            extensions: exts.iter().map(|s| (*s).into()).collect(),
+            first_line_match: None,
+            scope: scope.into(),
+            default_config: config,
+        }
+    }
+}
