@@ -9,10 +9,10 @@ lang_configs = assets/*.toml
 out/syntect: $(lang_configs) out/gen_manifest.toml target/release/xi-syntect-plugin
 	mkdir -p out/syntect/bin
 	cp $(lang_configs) out/syntect
-	install target/release/xi-syntect-plugin out/syntect/bin
+	cp target/release/xi-syntect-plugin out/syntect/bin
 	cp out/gen_manifest.toml out/syntect/manifest.toml
 
-out/gen_manifest.toml: Cargo.toml Cargo.lock
+out/gen_manifest.toml: examples/make_manifest.rs Cargo.toml Cargo.lock
 	cargo run --release --example make_manifest
 
 target/release/xi-syntect-plugin: src/*.rs Cargo.toml Cargo.lock
@@ -20,11 +20,10 @@ target/release/xi-syntect-plugin: src/*.rs Cargo.toml Cargo.lock
 
 install: out/syntect
 	mkdir -p $(XI_PLUGIN_DIR)
-	cp -r out/syntect $(XI_PLUGIN_DIR)/syntect
+	cp -r out/syntect $(XI_PLUGIN_DIR)
 
 clean:
-	rm out/gen_manifest.toml
-	rmdir out
+	rm -rf out
 	cargo clean
 
-.PHONY: install
+.PHONY: clean install
