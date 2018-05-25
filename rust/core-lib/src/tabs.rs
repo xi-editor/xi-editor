@@ -200,6 +200,8 @@ impl CoreState {
                 Ok(table) => self.set_config(domain, table),
                 Err(e) => self.peer.alert(e.to_string()),
             }
+        } else {
+            self.peer.alert(format!("Unexpected config file {:?}", path));
         }
     }
 
@@ -371,8 +373,12 @@ impl CoreState {
     {
         let rope = self.file_manager.open(path, buffer_id)?;
         let syntax = self.config_manager.language_for_path(path);
-        let config = self.config_manager.get_buffer_config(syntax, buffer_id);
-        let editor = Editor::with_text(rope, config);
+        let config = self.config_manager.get_buffer_config(syntax.clone(),
+                                                           buffer_id);
+        let mut editor = Editor::with_text(rope, config);
+        if let Some(syntax) = syntax {
+            editor.set_syntax(syntax);
+        }
         Ok(editor)
     }
 
@@ -397,7 +403,12 @@ impl CoreState {
         }
 
         let syntax = self.config_manager.language_for_path(path);
-        let config = self.config_manager.get_buffer_config(syntax, buffer_id);
+        let config = self.config_manager.get_buffer_config(syntax.clone(),
+                                                           buffer_id);
+        // TODO: keep track of syntax in config manager, not in editor
+        if let Some(syntax) = syntax {
+            ed.borrow_mut().set_syntax(syntax);
+        }
         //TODO: rework how config changes are handled if a path changes.
         //tldr; do the save first, then reload the config.
 
