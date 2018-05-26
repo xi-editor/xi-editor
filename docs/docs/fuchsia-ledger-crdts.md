@@ -1,7 +1,7 @@
 ---
 layout: page
 title: CRDT - Using the Ledger for CRDTs
-site_nav_category_order: 205
+site_nav_category_order: 207
 is_site_nav_category2: true
 site_nav_category: docs
 ---

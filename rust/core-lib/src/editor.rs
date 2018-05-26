@@ -259,9 +259,9 @@ impl Editor {
     }
 
     /// generates a delta from a plugin's response and applies it to the buffer.
-    pub fn apply_plugin_edit(&mut self, edit: PluginEdit,
-                             undo_group: Option<usize>) {
+    pub fn apply_plugin_edit(&mut self, edit: PluginEdit) {
         let _t = trace_block("Editor::apply_plugin_edit", &["core"]);
+        let undo_group = edit.undo_group;
         if let Some(undo_group) = undo_group {
             // non-async edits modify their associated revision
             //TODO: get priority working, so that plugin edits don't

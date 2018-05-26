@@ -41,7 +41,8 @@ below.
 
 ### Building the core
 
-Xi targets 'recent stable Rust'. We recommend installing via [rustup](https://www.rustup.rs). The current minimum supported version is 1.22.
+Xi targets 'recent stable Rust'. We recommend installing via [rustup](https://www.rustup.rs).
+The current minimum supported version is 1.25, although we expect to require 1.26 shortly.
 
 To build the xi editor from the root directory of this repo:
 

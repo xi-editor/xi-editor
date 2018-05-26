@@ -17,7 +17,7 @@ use serde_json::{self, Value};
 use serde::Deserialize;
 
 use xi_core::{ViewIdentifier, PluginPid, BufferConfig, ConfigTable};
-use xi_core::plugin_rpc::{TextUnit, GetDataResponse, ScopeSpan, PluginBufferInfo};
+use xi_core::plugin_rpc::{TextUnit, PluginEdit, GetDataResponse, ScopeSpan, PluginBufferInfo};
 use xi_rope::rope::RopeDelta;
 use xi_trace::trace_block;
 
@@ -38,6 +38,7 @@ pub struct View<C> {
     // TODO: this is only public to avoid changing the syntect impl
     // this should go away with async edits
     pub rev: u64,
+    pub undo_group: Option<usize>,
     buf_size: usize,
     pub (crate) view_id: ViewIdentifier,
 }
@@ -61,14 +62,16 @@ impl<C: Cache> View<C> {
             plugin_id: plugin_id,
             view_id: view_id,
             rev: rev,
+            undo_group: None,
             buf_size: buf_size,
         }
     }
 
     pub (crate) fn update(&mut self, delta: Option<&RopeDelta>, new_len: usize,
-                       new_num_lines: usize, rev: u64) {
+                       new_num_lines: usize, rev: u64, undo_group: Option<usize>) {
         self.cache.update(delta, new_len, new_num_lines, rev);
         self.rev = rev;
+        self.undo_group = undo_group;
         self.buf_size = new_len;
     }
 
@@ -129,6 +132,19 @@ impl<C: Cache> View<C> {
             "scopes": scopes,
         });
         self.peer.send_rpc_notification("add_scopes", &params);
+    }
+
+    pub fn edit(&self, delta: RopeDelta, priority: u64, after_cursor: bool,
+                new_undo_group: bool, author: String) {
+
+        let undo_group = if new_undo_group { None } else { self.undo_group };
+        let edit = PluginEdit { rev: self.rev, delta, priority, after_cursor, undo_group, author };
+        let params = json!({
+            "plugin_id": self.plugin_id,
+            "view_id": self.view_id,
+            "edit": edit
+        });
+        self.peer.send_rpc_notification("edit", &params);
     }
 
     pub fn update_spans(&self, start: usize, len: usize, spans: &[ScopeSpan]) {

@@ -13,14 +13,13 @@
 // limitations under the License.
 
 use std::cmp::{min,max};
-use std::mem;
 use std::cell::RefCell;
 use std::ops::Range;
 
 use serde_json::Value;
 
 use xi_rope::rope::{Rope, LinesMetric, RopeInfo};
-use xi_rope::delta::{Delta};
+use xi_rope::delta::Delta;
 use xi_rope::tree::Cursor;
 use xi_rope::breaks::{Breaks, BreaksInfo, BreaksMetric, BreaksBaseMetric};
 use xi_rope::interval::Interval;
@@ -73,7 +72,8 @@ pub struct View {
     scroll_to: Option<usize>,
 
     /// The state for finding text for this view.
-    find: Find,
+    /// Each instance represents a separate search query
+    find: Vec<Find>,
 }
 
 /// The visual width of the buffer for the purpose of word wrapping.
@@ -120,57 +120,55 @@ impl View {
             breaks: None,
             wrap_col: WrapWidth::None,
             lc_shadow: LineCacheShadow::default(),
-            find: Find::new(),
+            find: Vec::new(),
         }
     }
 
     pub(crate) fn set_has_pending_render(&mut self, pending: bool) {
-    self.pending_render = pending
-}
+        self.pending_render = pending
+    }
 
     pub(crate) fn has_pending_render(&self) -> bool {
-    self.pending_render
-}
+        self.pending_render
+    }
 
     pub(crate) fn do_edit(&mut self, text: &Rope, cmd: ViewEvent) {
-    use self::ViewEvent::*;
-    match cmd {
-        Move(movement) => self.do_move(text, movement, false),
-        ModifySelection(movement) => self.do_move(text, movement, true),
-        SelectAll => self.select_all(text),
-        Scroll(range) => self.set_scroll(range.first, range.last),
-        AddSelectionAbove =>
-            self.add_selection_by_movement(text, Movement::Up),
-        AddSelectionBelow =>
-            self.add_selection_by_movement(text, Movement::Down),
-        Gesture { line, col, ty } =>
-            self.do_gesture(text, line, col, ty),
-        GotoLine { line } => self.goto_line(text, line),
-        FindNext { wrap_around, allow_same } =>         // todo
-            self.find_next(text, false,
-                           wrap_around.unwrap_or(false),
-                           allow_same.unwrap_or(false)),
-        FindPrevious { wrap_around } =>
-            self.find_next(text, true, wrap_around.unwrap_or(false), true),
-        Click(MouseAction { line, column, flags, click_count }) => {
-            // Deprecated (kept for client compatibility):
-            // should be removed in favor of do_gesture
-            eprintln!("Usage of click is deprecated; use do_gesture");
-            if (flags & FLAG_SELECT) != 0 {
-                self.do_gesture(text, line, column, GestureType::RangeSelect)
-            } else if click_count == Some(2) {
-                self.do_gesture(text, line, column, GestureType::WordSelect)
-            } else if click_count == Some(3) {
-                self.do_gesture(text, line, column, GestureType::LineSelect)
-            } else {
-                self.do_gesture(text, line, column, GestureType::PointSelect)
+        use self::ViewEvent::*;
+        match cmd {
+            Move(movement) => self.do_move(text, movement, false),
+            ModifySelection(movement) => self.do_move(text, movement, true),
+            SelectAll => self.select_all(text),
+            Scroll(range) => self.set_scroll(range.first, range.last),
+            AddSelectionAbove =>
+                self.add_selection_by_movement(text, Movement::Up),
+            AddSelectionBelow =>
+                self.add_selection_by_movement(text, Movement::Down),
+            Gesture { line, col, ty } =>
+                self.do_gesture(text, line, col, ty),
+            GotoLine { line } => self.goto_line(text, line),
+            FindNext { wrap_around, allow_same: _ } =>
+                self.find_next(text, false, wrap_around.unwrap_or(false)),
+            FindPrevious { wrap_around } =>
+                self.find_next(text, true, wrap_around.unwrap_or(false)),
+            Click(MouseAction { line, column, flags, click_count }) => {
+                // Deprecated (kept for client compatibility):
+                // should be removed in favor of do_gesture
+                eprintln!("Usage of click is deprecated; use do_gesture");
+                if (flags & FLAG_SELECT) != 0 {
+                    self.do_gesture(text, line, column, GestureType::RangeSelect)
+                } else if click_count == Some(2) {
+                    self.do_gesture(text, line, column, GestureType::WordSelect)
+                } else if click_count == Some(3) {
+                    self.do_gesture(text, line, column, GestureType::LineSelect)
+                } else {
+                    self.do_gesture(text, line, column, GestureType::PointSelect)
+                }
             }
+            Drag(MouseAction { line, column, .. }) =>
+                self.do_drag(text, line, column, Affinity::default()),
+            Cancel => self.do_cancel(text),
         }
-        Drag(MouseAction { line, column, .. }) =>
-            self.do_drag(text, line, column, Affinity::default()),
-        Cancel => self.do_cancel(text),
     }
-}
 
     fn do_gesture(&mut self, text: &Rope, line: u64, col: u64, ty: GestureType) {
         let line = line as usize;
@@ -196,11 +194,15 @@ impl View {
 
     fn do_cancel(&mut self, text: &Rope) {
         self.collapse_selections(text);
-        self.find.unset();
+        for mut find in self.find.iter_mut() {
+            find.unset();
+        }
     }
 
     pub fn unset_find(&mut self) {
-        self.find.unset()
+        for mut find in self.find.iter_mut() {
+            find.unset();
+        }
     }
 
     fn goto_line(&mut self, text: &Rope, line: u64) {
@@ -405,8 +407,8 @@ impl View {
             let horiz = None;
             sel.add_region(
                 SelRegion::new(start, end)
-                  .with_horiz(horiz)
-                  .with_affinity(affinity)
+                    .with_horiz(horiz)
+                    .with_affinity(affinity)
             );
             sel
         });
@@ -455,12 +457,12 @@ impl View {
             // cursor
             let c = region.end;
             if (c > start_pos && c < pos) ||
-              (!region.is_upstream() && c == start_pos) ||
-              (region.is_upstream() && c == pos) ||
-              (c == pos && c == text.len() && self.line_of_offset(text, c) == line_num)
-              {
-                  cursors.push(c - start_pos);
-              }
+                (!region.is_upstream() && c == start_pos) ||
+                (region.is_upstream() && c == pos) ||
+                (c == pos && c == text.len() && self.line_of_offset(text, c) == line_num)
+            {
+                cursors.push(c - start_pos);
+            }
 
             // selection with interior
             let sel_start_ix = clamp(region.min(), start_pos, pos) - start_pos;
@@ -470,10 +472,10 @@ impl View {
             }
         }
 
-        // todo
+        // todo: active highlights different style
         let mut hls = Vec::new();
-        for search_occurrence in self.find.occurrences() {
-            for region in search_occurrence.regions_in_range(start_pos, pos) {
+        for find in self.find.iter() {
+            for region in find.occurrences().regions_in_range(start_pos, pos) {
                 let sel_start_ix = clamp(region.min(), start_pos, pos) - start_pos;
                 let sel_end_ix = clamp(region.max(), start_pos, pos) - start_pos;
                 if sel_end_ix > sel_start_ix {
@@ -562,10 +564,7 @@ impl View {
         let mut ops = Vec::new();
         let mut line_num = 0;  // tracks old line cache
 
-        // Note: if we weren't doing mutable update_find_for_lines in the loop, we
-        // could just borrow self.lc_shadow instead of doing this.
-        let lc_shadow = mem::replace(&mut self.lc_shadow, LineCacheShadow::default());
-        for seg in lc_shadow.iter_with_plan(plan) {
+        for seg in self.lc_shadow.iter_with_plan(plan) {
             match seg.tactic {
                 RenderTactic::Discard => {
                     ops.push(self.build_update_op("invalidate", None, seg.n));
@@ -601,15 +600,10 @@ impl View {
                         let start_line = seg.our_line_num;
                         let end_line = start_line + seg.n;
 
-                        // todo
-                        if self.find.hls_dirty() {
-                            self.update_find_for_lines(text, start_line, end_line);
-                        }
-
                         let offset = self.offset_of_line(text, start_line);
                         let mut line_cursor = Cursor::new(text, offset);
                         let mut soft_breaks = self.breaks.as_ref().map(|breaks|
-                          Cursor::new(breaks, offset));
+                            Cursor::new(breaks, offset));
                         let mut rendered_lines = Vec::new();
                         for line_num in start_line..end_line {
                             let line = self.render_line(client, styles, text,
@@ -629,11 +623,11 @@ impl View {
             "pristine": pristine,
         });
 
-        eprintln!("params {:?}", params);
-
         client.update_view(self.view_id, &params);
         self.lc_shadow = b.build();
-        self.find.set_hls_dirty(false)
+        for find in &mut self.find {
+            find.set_hls_dirty(false)
+        }
     }
 
     /// Update front-end with any changes to view since the last time sent.
@@ -779,7 +773,10 @@ impl View {
         // the front-end, but perhaps not for async edits.
         self.drag_state = None;
 
-        self.find.update_highlights(text, last_text, delta);      // todo (or update_find for delta region?)
+        // update only find highlights affected by change
+        for find in &mut self.find {
+            find.update_highlights(text, delta);
+        }
 
         // Note: for committing plugin edits, we probably want to know the priority
         // of the delta so we can set the cursor before or after the edit, as needed.
@@ -789,7 +786,6 @@ impl View {
 
     pub fn do_find(&mut self, text: &Rope, chars: Option<String>,
                    case_sensitive: bool) -> Value {
-        // todo
         let mut from_sel = false;
         let search_string = if chars.is_some() {
             chars
@@ -804,39 +800,47 @@ impl View {
             })
         };
 
-        self.set_dirty(text);       // todo: only set lines with search results dirty
-        self.find.do_find(text, search_string, case_sensitive)
+        self.set_dirty(text);
+
+        // todo: this will be changed once multiple queries are supported
+        // todo: for now only a single search query is supported however in the future
+        // todo: the correct Find instance needs to be updated with the new parameters
+        if self.find.is_empty() {
+            self.find.push(Find::new())
+        }
+
+        self.find.first_mut().unwrap().do_find(text, search_string, case_sensitive)
     }
 
-    fn update_find_for_lines(&mut self, text: &Rope, first_line: usize, last_line: usize) {
-        let start = self.offset_of_line(text, first_line);
-        let end = self.offset_of_line(text, last_line);
-        self.find.update_find(text, start, end, true, false);
-    }
-
-
-    pub fn find_next(&mut self, text: &Rope, reverse: bool, wrap: bool, allow_same: bool) {
-        self.select_next_occurrence(text, reverse, false, true, allow_same);
+    pub fn find_next(&mut self, text: &Rope, reverse: bool, wrap: bool) {
+        self.select_next_occurrence(text, reverse, false);
         if self.scroll_to.is_none() && wrap {
-            self.select_next_occurrence(text, reverse, true, true, allow_same);
+            self.select_next_occurrence(text, reverse, true);
         }
     }
 
     /// Select the next occurrence relative to the last cursor. `reverse` determines whether the
     /// next occurrence before (`true`) or after (`false`) the last cursor is selected. `wrapped`
-    /// indicates a search for the next occurrence past the end of the file. `stop_on_found`
-    /// determines whether the search should stop at the first found occurrence (does only apply
-    /// to forward search, i.e. reverse = false). If `allow_same` is set to `true` the current
-    /// selection is considered a valid next occurrence.
-    pub fn select_next_occurrence(&mut self, text: &Rope, reverse: bool, wrapped: bool,
-                                  stop_on_found: bool, allow_same: bool)
+    /// indicates a search for the next occurrence past the end of the file.
+    pub fn select_next_occurrence(&mut self, text: &Rope, reverse: bool, wrapped: bool)
     {
+        // select occurrence closest to last selection
         let sel = match self.sel_regions().last() {
             Some(sel) => (sel.min(), sel.max()),
             None => return,
         };
 
-        if let Some(occ) = self.find.next_occurrence(text, reverse, wrapped, stop_on_found, allow_same, sel) {
+        // multiple queries; select closest occurrence
+        let closest_occurrence = self.find.iter().flat_map(|x|
+            x.next_occurrence(text, reverse, wrapped, sel)
+        ).min_by_key(|x| {
+            match reverse {
+                true => x.end,
+                false => x.start
+            }
+        });
+
+        if let Some(occ) = closest_occurrence {
             self.set_selection(text, occ);
         }
     }
@@ -844,8 +848,7 @@ impl View {
     /// Get the line range of a selected region.
     pub fn get_line_range(&self, text: &Rope, region: &SelRegion) -> Range<usize> {
         let (first_line, _) = self.offset_to_line_col(text, region.min());
-        let (mut last_line, last_col) =
-        self.offset_to_line_col(text, region.max());
+        let (mut last_line, last_col) = self.offset_to_line_col(text, region.max());
         if last_col == 0 && last_line > first_line {
             last_line -= 1;
         }

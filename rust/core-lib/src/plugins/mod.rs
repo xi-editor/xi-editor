@@ -30,6 +30,7 @@ use xi_rpc::{self, RpcPeer, RpcLoop};
 use xi_trace;
 
 use WeakXiCore;
+use config::Table;
 use tabs::ViewId;
 
 use self::rpc::{PluginUpdate, PluginBufferInfo};
@@ -75,6 +76,10 @@ impl Plugin {
                                         }))
     }
 
+    pub fn shutdown(&self) {
+        self.peer.send_rpc_notification("shutdown", &json!({}));
+    }
+
     // TODO: rethink naming, does this need to be a vec?
     pub fn new_buffer(&self, info: &PluginBufferInfo) {
         self.peer.send_rpc_notification("new_buffer",
@@ -114,6 +119,12 @@ where F: FnOnce(Result<Value, xi_rpc::Error>) + Send + 'static
 
     pub fn collect_trace(&self) -> Result<Value, xi_rpc::Error> {
         self.peer.send_rpc_request("collect_trace", &json!({}))
+    }
+
+    pub fn config_changed(&self, view_id: ViewId, changes: &Table) {
+        self.peer.send_rpc_notification("config_changed", 
+                                        &json!({"view_id": view_id, 
+                                                "changes": changes}))
     }
 }
 

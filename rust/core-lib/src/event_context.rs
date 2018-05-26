@@ -29,7 +29,7 @@ use xi_trace::trace_block;
 
 use rpc::{EditNotification, EditRequest, LineRange};
 use plugins::rpc::{ClientPluginInfo, PluginBufferInfo, PluginNotification,
-PluginRequest, PluginUpdate, UpdateResponse};
+                   PluginRequest, PluginUpdate};
 
 use styles::ThemeStyleMap;
 use config::{BufferConfig, ConfigManager};
@@ -98,8 +98,10 @@ impl<'a> EventContext<'a> {
         use self::EventDomain as E;
         let event: EventDomain = cmd.into();
         match event {
-            E::View(cmd) => self.with_view(
-                |view, text| view.do_edit(text, cmd)),
+            E::View(cmd) => {
+                    self.with_view(|view, text| view.do_edit(text, cmd));
+                    self.editor.borrow_mut().update_edit_type();
+                },
             E::Buffer(cmd) => self.with_editor(
                 |ed, view, kill_ring| ed.do_edit(view, kill_ring, cmd)),
             E::Special(cmd) => self.do_special(cmd),
@@ -156,7 +158,7 @@ impl<'a> EventContext<'a> {
                 |ed, view, _| ed.update_spans(view, plugin, start,
                                            len, spans, rev)),
             Edit { edit } => self.with_editor(
-                |ed, _, _| ed.apply_plugin_edit(edit, None)),
+                |ed, _, _| ed.apply_plugin_edit(edit)),
             Alert { msg } => self.client.alert(&msg),
         };
         self.after_edit(&plugin.to_string());
@@ -198,15 +200,17 @@ impl<'a> EventContext<'a> {
         let approx_size = delta.inserts_len() + (delta.els.len() * 10);
         let delta = if approx_size > MAX_SIZE_LIMIT { None } else { Some(delta) };
 
+        let undo_group = ed.get_active_undo_group();
         let update = PluginUpdate::new(
                 self.view.borrow().view_id,
                 ed.get_head_rev_token(),
                 delta,
                 new_len,
                 nb_lines,
+                Some(undo_group),
                 ed.get_edit_type().to_owned(),
                 author.into());
-        let undo_group = ed.get_active_undo_group();
+
 
         // we always increment and decrement regardless of whether we're
         // sending plugins, to ensure that GC runs.
@@ -218,7 +222,7 @@ impl<'a> EventContext<'a> {
             let id = plugin.id;
             let view_id = self.view.borrow().view_id;
             plugin.update(&update, move |resp| {
-                weak_core.handle_plugin_update(id, view_id, undo_group, resp);
+                weak_core.handle_plugin_update(id, view_id, resp);
             });
         });
         ed.dec_revs_in_flight();
@@ -323,6 +327,8 @@ impl<'a> EventContext<'a> {
                     view.set_dirty(&ed.get_buffer());
                 }
                 self.client.config_changed(view.view_id, &changes);
+                self.plugins.iter()
+                    .for_each(|plug| plug.config_changed(view.view_id, &changes));
             }
         }
         self.render()
@@ -366,18 +372,22 @@ impl<'a> EventContext<'a> {
 
     }
 
-    // TODO: remove support for sync updates
-    pub(crate) fn do_plugin_update(&mut self, update: Result<Value, RpcError>,
-                                    undo_group: usize) {
+    pub(crate) fn plugin_started(&mut self, plugin: &Plugin) {
+        self.client.plugin_started(self.view.borrow().view_id, &plugin.name)
+    }
 
-        match update.map(serde_json::from_value::<UpdateResponse>) {
-            Ok(Ok(UpdateResponse::Edit(edit))) => {
-                let author = edit.author.clone();
-                self.editor.borrow_mut().apply_plugin_edit(edit, Some(undo_group));
-                self.after_edit(&author);
-                self.render_if_needed();
-            }
-            Ok(Ok(UpdateResponse::Ack(_))) => (),
+    pub(crate) fn plugin_stopped(&mut self, plugin: &Plugin) {
+        self.client.plugin_stopped(self.view.borrow().view_id, &plugin.name, 0);
+        self.with_editor(|ed, view, _| {
+            ed.get_layers_mut().remove_layer(plugin.id);
+            view.set_dirty(ed.get_buffer());
+        });
+        self.render();
+    }
+
+    pub(crate) fn do_plugin_update(&mut self, update: Result<Value, RpcError>) {
+        match update.map(serde_json::from_value::<u64>) {
+            Ok(Ok(_)) => (),
             Ok(Err(err)) => eprintln!("plugin response json err: {:?}", err),
             Err(err) => eprintln!("plugin shutdown, do something {:?}", err),
         }
@@ -427,7 +437,7 @@ mod tests {
         fn new<S: AsRef<str>>(s: S) -> Self {
             let view_id = ViewId(1);
             let buffer_id = BufferId(2);
-            let config_manager = ConfigManager::default();
+            let config_manager = ConfigManager::new(None, None);
             let view = RefCell::new(View::new(view_id, buffer_id));
             let editor = RefCell::new(
                 Editor::with_text(s, config_manager.default_buffer_config()));

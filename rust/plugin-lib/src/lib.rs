@@ -37,7 +37,7 @@ use std::path::Path;
 use xi_rpc::{RpcLoop, ReadError};
 use xi_rope::rope::RopeDelta;
 use xi_core::ConfigTable;
-use xi_core::plugin_rpc::{PluginEdit, GetDataResponse, TextUnit};
+use xi_core::plugin_rpc::{GetDataResponse, TextUnit};
 
 use self::dispatch::Dispatcher;
 
@@ -105,11 +105,10 @@ pub trait Cache {
 pub trait Plugin {
     type Cache: Cache;
 
-    //TODO: async edits only; this is here for feature parity during initial hacking
-    /// Called when an edit has occured in the remote view. If the plugin wishes
-    /// to add its own edit, it may return `Some(edit)`.
+    /// Called when an edit has occurred in the remote view. If the plugin wishes
+    /// to add its own edit, it must do so using asynchronously via the edit notification.
     fn update(&mut self, view: &mut View<Self::Cache>, delta: Option<&RopeDelta>,
-              edit_type: String, author: String) -> Option<PluginEdit>;
+              edit_type: String, author: String);
     /// Called when a buffer has been saved to disk. The buffer's previous
     /// path, if one existed, is passed as `old_path`.
     fn did_save(&mut self, view: &mut View<Self::Cache>, old_path: Option<&Path>);
@@ -129,7 +128,7 @@ pub trait Plugin {
                       view: &mut View<Self::Cache>,
                       changes: &ConfigTable);
 
-    /// Called when the runloop is idle, if the plugin has prevoiusly
+    /// Called when the runloop is idle, if the plugin has previously
     /// asked to be scheduled via `View::schedule_idle()`. Plugins that
     /// are doing things like full document analysis can use this mechanism
     /// to perform their work incrementally while remaining responsive.

@@ -104,12 +104,12 @@ impl Handler for XiCore {
         // wait for client_started before setting up inner
         if let &ClientStarted { ref config_dir, ref client_extras_dir } = &rpc {
             assert!(self.is_waiting(), "client_started can only be sent once");
-            let state = CoreState::new(ctx.get_peer());
+            let state = CoreState::new(ctx.get_peer(), config_dir.clone(),
+                                      client_extras_dir.clone());
             let state = Arc::new(Mutex::new(state));
             *self = XiCore::Running(state);
             let weak_self = self.weak_self().unwrap();
-            self.inner().finish_setup(weak_self, config_dir.clone(),
-                                      client_extras_dir.clone());
+            self.inner().finish_setup(weak_self);
         }
 
         self.inner().client_notification(rpc);
@@ -144,15 +144,14 @@ impl WeakXiCore {
     /// Handles the result of an update sent to a plugin.
     ///
     /// All plugins must acknowledge when they are sent a new update, so that
-    /// core can track which revisiions are still 'live', that is can still
-    /// be the base revision for a delta. Once a plugin has acknowleged a new
+    /// core can track which revisions are still 'live', that is can still
+    /// be the base revision for a delta. Once a plugin has acknowledged a new
     /// revision, it can no longer send deltas against any older revision.
     pub fn handle_plugin_update(&self, plugin: PluginId, view: ViewId,
-                                undo_group: usize,
                                 response: Result<Value, RpcError>) {
         if let Some(core) = self.upgrade() {
             let _t = xi_trace::trace_block("WeakXiCore::plugin_update", &["core"]);
-            core.inner().plugin_update(plugin, view, undo_group, response);
+            core.inner().plugin_update(plugin, view, response);
         }
     }
 }
@@ -186,7 +185,7 @@ pub fn dummy_weak_core() -> WeakXiCore {
     use xi_rpc::test_utils::DummyPeer;
     use xi_rpc::Peer;
     let peer = Box::new(DummyPeer);
-    let state = CoreState::new(&peer.box_clone());
+    let state = CoreState::new(&peer.box_clone(), None, None);
     let core = Arc::new(Mutex::new(state));
     WeakXiCore(Arc::downgrade(&core))
 }

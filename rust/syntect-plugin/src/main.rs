@@ -28,7 +28,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use xi_core::{ViewIdentifier, ConfigTable};
-use xi_core::plugin_rpc::{ScopeSpan, PluginEdit};
+use xi_core::plugin_rpc::ScopeSpan;
 use xi_rope::rope::RopeDelta;
 use xi_rope::interval::Interval;
 use xi_rope::delta::Builder as EditBuilder;
@@ -36,7 +36,7 @@ use xi_trace::{trace, trace_block};
 use xi_plugin_lib::{Cache, Plugin, StateCache, View, mainloop};
 
 use syntect::parsing::{ParseState, ScopeStack, SyntaxSet, SCOPE_REPO,
-SyntaxDefinition, ScopeRepository};
+                       SyntaxDefinition, ScopeRepository};
 use stackmap::{StackMap, LookupResult};
 
 const LINES_PER_RPC: usize = 10;
@@ -179,7 +179,6 @@ impl PluginState {
         }
         self.spans_start = self.offset;
     }
-
 }
 
 type MyView = View<StateCache<LineState>>;
@@ -222,11 +221,10 @@ impl<'a> Syntect<'a> {
 
     /// Checks if a newline has been inserted, and if so inserts whitespace
     /// as necessary.
-    fn do_indentation(&mut self, view: &mut MyView, start: usize,
-                      end: usize, text: &str) -> Option<PluginEdit> {
+    fn do_indentation(&mut self, view: &mut MyView, start: usize, end: usize, text: &str) {
         let _t = trace_block("PluginState::do_indentation", &["syntect"]);
         // don't touch indentation if this is not a simple edit
-        if end != start { return None }
+        if end != start { return }
 
         let line_ending = view.get_config().line_ending.clone();
         let is_newline = line_ending == text;
@@ -237,10 +235,10 @@ impl<'a> Syntect<'a> {
             let use_spaces = view.get_config().translate_tabs_to_spaces;
             let tab_size = view.get_config().tab_size;
             let buf_size = view.get_buf_size();
-            let rev = view.rev;
-            if let Some(line) = view.get_line(line_num).ok() {
+
+            let result = if let Some(line) = view.get_line(line_num).ok() {
                 // do not send update if last line is empty string (contains only line ending)
-                if line == line_ending { return None }
+                if line == line_ending { return }
 
                 let indent = self.indent_for_next_line(
                     line, use_spaces, tab_size);
@@ -249,17 +247,18 @@ impl<'a> Syntect<'a> {
                 //TODO: view should have a `get_edit_builder` fn?
                 let mut builder = EditBuilder::new(buf_size);
                 builder.replace(interval, indent.into());
+
                 let delta = builder.build();
-                return Some(PluginEdit {
-                    rev: rev,
-                    delta: delta,
-                    priority: INDENTATION_PRIORITY,
-                    after_cursor: false,
-                    author: "syntect".to_owned(),
-                })
+                Some(delta)
+            } else {
+                None
+            };
+
+            if let Some(delta) = result {
+                view.edit(delta, INDENTATION_PRIORITY, false,
+                          false, String::from("syntect"));
             }
         }
-        None
     }
 
     /// Returns the string which should be inserted after the newline
@@ -269,7 +268,7 @@ impl<'a> Syntect<'a> {
         let leading_ws = prev_line.char_indices()
             .find(|&(_, c)| !c.is_whitespace())
             .or(prev_line.char_indices().last())
-            .map(|(idx, _)| unsafe { prev_line.slice_unchecked(0, idx) } )
+            .map(|(idx, _)| unsafe { prev_line.slice_unchecked(0, idx) })
             .unwrap_or("");
 
         if self.increase_indentation(prev_line) {
@@ -317,23 +316,21 @@ impl<'a> Plugin for Syntect<'a> {
         self.do_highlighting(view);
     }
 
-    fn config_changed(&mut self, _view: &mut View<Self::Cache>, _changes: &ConfigTable) {
-    }
+    fn config_changed(&mut self, _view: &mut View<Self::Cache>, _changes: &ConfigTable) {}
 
     fn update(&mut self, view: &mut View<Self::Cache>, delta: Option<&RopeDelta>,
-              _edit_type: String, _author: String) -> Option<PluginEdit> {
+              _edit_type: String, _author: String) {
         let _t = trace_block("Syntect::update", &["syntect"]);
         view.schedule_idle();
         let should_auto_indent = view.get_config().auto_indent;
-        if !should_auto_indent { return None }
+        if !should_auto_indent { return }
         if let Some(delta) = delta {
             let (iv, _) = delta.summary();
             if let Some(s) = delta.as_simple_insert() {
                 let s: String = s.into();
-                return self.do_indentation(view, iv.start(), iv.end(), &s)
+                self.do_indentation(view, iv.start(), iv.end(), &s);
             }
         }
-        None
     }
 
     fn idle(&mut self, view: &mut View<Self::Cache>) {
