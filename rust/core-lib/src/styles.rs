@@ -15,6 +15,7 @@
 //! Management of styles.
 
 use std::collections::HashMap;
+use std::path::Path;
 
 use serde_json::{self, Value};
 use syntect::highlighting::StyleModifier as SynStyleModifier;
@@ -219,5 +220,12 @@ impl ThemeStyleMap {
         self.map.insert(style.clone(), result);
         self.styles.push(style.clone());
         result
+    }
+
+    /// Load all themes inside themes folder and append it to
+    /// the default themes set
+    pub(crate) fn load_theme_set(&mut self, themes_dir: &Path) {
+        let mut custom_themes = ThemeSet::load_from_folder(themes_dir).unwrap();
+        self.themes.themes.append(&mut custom_themes.themes);
     }
 }
