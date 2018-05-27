@@ -487,6 +487,15 @@ impl ConfigManager {
         let _: BufferItems = serde_json::from_value(defaults.into())?;
         Ok(())
     }
+
+    /// Path to themes sub directory inside config directory.
+    pub(crate) fn get_themes_dir(&self) -> Option<PathBuf> {
+        let themes_dir = self.config_dir.as_ref()
+                                .map(|p| p.join("themes"));
+        let exists = themes_dir.as_ref()
+                                .map_or(false, |p| p.exists());
+        if exists { themes_dir } else { None }
+    }
 }
 
 impl TableStack {
