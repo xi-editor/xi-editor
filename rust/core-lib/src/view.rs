@@ -193,16 +193,19 @@ impl View {
     }
 
     fn do_cancel(&mut self, text: &Rope) {
-        self.collapse_selections(text);
-        for mut find in self.find.iter_mut() {
-            find.unset();
+        // if we have active find highlights, we don't collapse selections
+        if self.find.is_empty() {
+            self.collapse_selections(text);
+        } else {
+            self.unset_find();
         }
     }
 
-    pub fn unset_find(&mut self) {
+    pub(crate) fn unset_find(&mut self) {
         for mut find in self.find.iter_mut() {
             find.unset();
         }
+        self.find.clear();
     }
 
     fn goto_line(&mut self, text: &Rope, line: u64) {
