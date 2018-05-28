@@ -507,16 +507,19 @@ impl View {
         let style_spans = style_spans.subseq(Interval::new_closed_open(start, end));
 
         let mut ix = 0;
-        for &(sel_start, sel_end) in sel {
-            rendered_styles.push((sel_start as isize) - ix);
-            rendered_styles.push(sel_end as isize - sel_start as isize);
-            rendered_styles.push(0);
-            ix = sel_end as isize;
-        }
+        // we add the special find highlights (1) and selection (0) styles first.
+        // We add selection after find because we want it to be preferred if the
+        // same span exists in both sets (as when there is an active selection)
         for &(sel_start, sel_end) in hls {
             rendered_styles.push((sel_start as isize) - ix);
             rendered_styles.push(sel_end as isize - sel_start as isize);
             rendered_styles.push(1);
+            ix = sel_end as isize;
+        }
+        for &(sel_start, sel_end) in sel {
+            rendered_styles.push((sel_start as isize) - ix);
+            rendered_styles.push(sel_end as isize - sel_start as isize);
+            rendered_styles.push(0);
             ix = sel_end as isize;
         }
         for (iv, style) in style_spans.iter() {
