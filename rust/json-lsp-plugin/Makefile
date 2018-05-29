@@ -1,9 +1,9 @@
 # Makefile for installing the plugin on macOS and Linux
 
 # The 'official' name of this plugin, displayed in menus etc
-PLUGIN_NAME = JSON-LSP
+PLUGIN_NAME=json-lsp-plugin
 # the name of the plugin binary; this is the same as the name in Cargo.toml
-PLUGIN_BIN = json-lsp-plugin
+PLUGIN_BIN=json-lsp-plugin
 
 # On MacOS we just always assume that plugins are in the default location
 ifeq ($(shell uname -s), Darwin)

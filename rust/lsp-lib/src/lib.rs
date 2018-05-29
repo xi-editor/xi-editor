@@ -1,5 +1,5 @@
 extern crate jsonrpc_lite;
-extern crate languageserver_types as lsp;
+extern crate languageserver_types as lsp_types;
 #[macro_use]
 extern crate serde_json;
 extern crate xi_core_lib as xi_core;
@@ -28,7 +28,7 @@ impl<F: Send + FnOnce(Result<Value, Error>)> Callable for F {
     }
 }
 
-type Callback = Box<Callable>;
+pub type Callback = Box<Callable>;
 
 pub fn start_mainloop<P: Plugin>(plugin: &mut P)  {
     mainloop(plugin);
