@@ -244,6 +244,14 @@ impl ConfigManager {
         if exists { config_file } else { None }
     }
 
+    pub fn get_plugin_paths(&self) -> Vec<PathBuf> {
+        let config_dir = self.config_dir.as_ref().map(|p| p.join("plugins"));
+        [self.extras_dir.as_ref(), config_dir.as_ref()].iter()
+            .flat_map(|p| p.map(|p| p.to_owned()))
+                .filter(|p| p.exists())
+                .collect()
+    }
+
     /// Sets the config for the given domain, removing any existing config.
     pub fn set_user_config<P>(&mut self, domain: ConfigDomain,
                               new_config: Table, path: P)
