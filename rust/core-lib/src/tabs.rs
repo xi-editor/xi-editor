@@ -176,6 +176,10 @@ impl CoreState {
             self.load_file_based_config(&path);
         }
 
+        //FIXME: quickfix pending #672
+        let plugin_paths = self.config_manager.get_plugin_paths();
+        self.plugins = PluginCatalog::from_paths(plugin_paths);
+
         let theme_names = self.style_map.borrow().get_theme_names();
         self.peer.available_themes(theme_names);
 
