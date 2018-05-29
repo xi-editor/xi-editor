@@ -12,7 +12,9 @@ site_nav_category: docs
     - [Backend](#from-front-end-to-back-end)
         - [Edit Commands](#edit-namespace)
         - [Plugin Commands](#plugin-namespace)
+
     - [Frontend](#from-back-end-to-front-end)
+        - [Status Bar Commands](#status-bar-commands)
 
 ----
 
@@ -367,6 +369,27 @@ this writing, the following is valid json for a `Command` object:
         ]
     }
 ```
+
+### Status Bar Commands
+
+#### add_status_item
+
+`add_status_item { key: "my_key", value: "hello", alignment: "left" }`
+
+Adds a status item, which will be displayed on the frontend's status bar. The alignment key dictates whether this item appears on the left side or the right side of the bar. This alignment can only be set when the item is added.
+
+#### update_status_item
+
+`update_status_item { key: "my_key", value: "hello"}
+
+Update a status item with the specified key with the new value.
+
+#### remove_status_item
+
+`remove_status_item { key: "my_key" }
+
+Removes a status item from the front end.
+
 
 ## Other future extensions
 
