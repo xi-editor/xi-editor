@@ -43,7 +43,7 @@ impl LanguageServer {
         callback.call(Err(error));
     }
 
-    fn send_request(&mut self, method: &str, params: Params, completion: Callback) {
+     pub fn send_request(&mut self, method: &str, params: Params, completion: Callback) {
         
         let request = JsonRpc::request_with_params(Id::Num(self.next_id as i64), method, params);
         
@@ -62,9 +62,10 @@ impl LanguageServer {
         self.write(rpc.as_ref());
     }
 
-    fn send_notification(&mut self, method: &str, params: Params) {
+    pub fn send_notification(&mut self, method: &str, params: Params) {
         let notification = JsonRpc::notification_with_params(method, params);
         self.send_rpc(to_value(&notification).unwrap());
     }
 }
+
 

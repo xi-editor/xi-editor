@@ -1,3 +1,6 @@
+use lsp_types::InitializeParams;
+use jsonrpc_lite::{self,Params};
+use serde_json::Value;
 use std;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -12,7 +15,10 @@ use std::process::Command;
 use std::process::Stdio;
 use parse_helper;
 use std::io::{BufWriter, BufReader};
-use std::collections::HashMap;
+use std::process;
+use serde_json;
+use lsp_types::ClientCapabilities;
+
 
 pub struct LSPPlugin {
     language_server_ref: Arc<Mutex<LanguageServer>>,
@@ -36,6 +42,7 @@ impl LSPPlugin {
         eprintln!("arguments: {:?}", arguments);
 
         let mut process = Command::new(command)
+            .env("PATH", "/usr/local/bin")
             .args(arguments)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -56,12 +63,14 @@ impl LSPPlugin {
             let plugin_cloned = plugin.clone();
             std::thread::Builder::new()
                 .name("STDIN-Looper".to_string())
-                .spawn(move || loop {
+                .spawn(move || {
                     let mut reader = Box::new(BufReader::new(process.stdout.take().unwrap()));
-                    match parse_helper::read_message(&mut reader) {
-                        Ok(message_str) => plugin_cloned.handle_message(message_str.as_ref()),
-                        Err(err) => eprintln!("Error occurred {:?}", err),
-                    };
+                    loop {
+                        match parse_helper::read_message(&mut reader) {
+                            Ok(message_str) => plugin_cloned.handle_message(message_str.as_ref()),
+                            Err(err) => eprintln!("Error occurred {:?}", err),
+                        };
+                    } 
                 });
         }
 
@@ -74,7 +83,11 @@ impl LSPPlugin {
     }
 
     pub fn handle_message(&self, message: &str) {
+
+        eprintln!("Value from function: {:?}", message);
         let mut value = JsonRpc::parse(message).unwrap();
+        eprintln!("Value from function parsed: {:?}", value);
+        
         match value {
             JsonRpc::Request(obj) => eprintln!("client received unexpected request: {:?}", obj),
             JsonRpc::Notification(obj) => eprintln!("recv notification: {:?}", obj),
@@ -91,6 +104,20 @@ impl LSPPlugin {
                 lang_server.handle_error(id, error);
             }
         };
+    }
+
+    /// Sends a JSON-RPC request message with the provided method and parameters.
+    /// `completion` should be a callback which will be executed with the server's response.
+    pub fn send_request<CB>(&self, method: &str, params: Params, completion: CB)
+        where CB: 'static + Send + FnOnce(Result<Value, jsonrpc_lite::Error>) {
+            let mut inner = self.language_server_ref.lock().unwrap();
+            inner.send_request(method, params, Box::new(completion));
+    }
+
+    /// Sends a JSON-RPC notification message with the provided method and parameters.
+    pub fn send_notification(&self, method: &str, params: Params) {
+        let mut inner = self.language_server_ref.lock().unwrap();
+        inner.send_notification(method, params);
     }
 }
 
@@ -128,9 +155,34 @@ impl Plugin for LSPPlugin {
             let extension = path.extension().unwrap().to_str().unwrap().to_string();
             if self.file_extensions.contains(&extension) {
                 eprintln!("json file opened");
+                self.send_initialize();
             }
         }
     }
 
     fn config_changed(&mut self, _view: &mut View<Self::Cache>, _changes: &ConfigTable) {}
+}
+
+
+//Utils Methods for sending
+impl LSPPlugin {
+
+    pub fn send_initialize(&mut self) {
+        
+        let client_capabilities = ClientCapabilities::default();
+
+        let init_params = InitializeParams {
+            process_id: Some(process::id() as u64),
+            root_uri: None,
+            root_path: None,
+            initialization_options: None,
+            capabilities: client_capabilities,
+            trace: None
+        };
+
+        let params = Params::from(serde_json::to_value(init_params).unwrap());
+        self.send_request("initialize", params, |result| {
+            eprintln!("Received Response: {:?}", result);
+        });
+    }
 }
