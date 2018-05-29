@@ -135,8 +135,9 @@ impl<'a> EventContext<'a> {
         let result = match cmd {
             Cut => Ok(self.with_editor(|ed, view, _| ed.do_cut(view))),
             Copy => Ok(self.with_editor(|ed, view, _| ed.do_copy(view))),
-            Find { chars, case_sensitive } => Ok(self.with_view(
-                |view, text| view.do_find(text, chars, case_sensitive))),
+            Find { chars, case_sensitive, regex } => Ok(self.with_view(|view, text|
+                view.do_find(text, chars, case_sensitive, regex.unwrap_or_else(|| false))
+            )),
             // Replace
         };
         self.after_edit("core");

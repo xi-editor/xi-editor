@@ -93,7 +93,7 @@ impl Find {
 
     /// Set search parameters and executes the search.
     pub fn do_find(&mut self, text: &Rope, search_string: Option<String>,
-                   case_sensitive: bool) -> Value {
+                   case_sensitive: bool, regex: bool) -> Value {
         if search_string.is_none() {
             self.unset();
             return Value::Null;
@@ -105,7 +105,7 @@ impl Find {
             return Value::Null;
         }
 
-        self.set_find(&search_string, case_sensitive);
+        self.set_find(&search_string, case_sensitive, regex);
         self.update_find(text, 0, text.len(), false);
 
         Value::String(search_string.to_string())
@@ -120,13 +120,17 @@ impl Find {
     }
 
     /// Sets find parameters and search query.
-    fn set_find(&mut self, search_string: &str,
-                case_sensitive: bool) {
-        let case_matching = if case_sensitive {
-            CaseMatching::Exact
+    fn set_find(&mut self, search_string: &str, case_sensitive: bool, regex: bool) {
+        let case_matching = if regex {
+            CaseMatching::RegularExpression
         } else {
-            CaseMatching::CaseInsensitive
+            if case_sensitive {
+                CaseMatching::Exact
+            } else {
+                CaseMatching::CaseInsensitive
+            }
         };
+
 
         if let Some(ref s) = self.search_string {
             if s == search_string && case_matching == self.case_matching {

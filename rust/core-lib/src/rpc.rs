@@ -410,7 +410,7 @@ pub enum EditRequest {
     ///
     /// If `chars` is `None` and there is an active selection, returns
     /// the string value used for the search, else returns `Null`.
-    Find { chars: Option<String>, case_sensitive: bool },
+    Find { chars: Option<String>, case_sensitive: bool, regex: Option<bool> },
 }
 
 

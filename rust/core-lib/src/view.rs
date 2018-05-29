@@ -785,7 +785,7 @@ impl View {
     }
 
     pub fn do_find(&mut self, text: &Rope, chars: Option<String>,
-                   case_sensitive: bool) -> Value {
+                   case_sensitive: bool, regex: bool) -> Value {
         let mut from_sel = false;
         let search_string = if chars.is_some() {
             chars
@@ -809,7 +809,7 @@ impl View {
             self.find.push(Find::new())
         }
 
-        self.find.first_mut().unwrap().do_find(text, search_string, case_sensitive)
+        self.find.first_mut().unwrap().do_find(text, search_string, case_sensitive, regex)
     }
 
     pub fn find_next(&mut self, text: &Rope, reverse: bool, wrap: bool) {
