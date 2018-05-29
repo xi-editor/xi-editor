@@ -18,6 +18,7 @@ extern crate syntect;
 extern crate toml;
 extern crate  xi_core_lib as xi_core;
 
+
 use std::io::{self, Write};
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
@@ -25,30 +26,44 @@ use std::path::{Path, PathBuf};
 use xi_core::plugin_manifest::*;
 use xi_core::LanguageDefinition;
 use syntect::parsing::{SyntaxSet, SyntaxDefinition};
+use toml::Value;
 
-const OUT_FILE_NAME: &str = "gen_manifest.toml";
-const OUT_DIR: &str = "out";
+const OUT_FILE_NAME: &str = "generated_manifest.toml";
+
+/// Extracts the name and version from Cargo.toml
+fn parse_name_and_version() -> Result<(String, String), io::Error> {
+    eprintln!("exe: {:?}", ::std::env::current_exe());
+    let path = PathBuf::from("./Cargo.toml");
+    let toml_str = fs::read_to_string(path)?;
+    let value = toml_str.parse::<Value>().unwrap();
+    let package_table = value["package"].as_table().unwrap();
+    let name = package_table["name"].as_str().unwrap().to_string();
+    let version = package_table["version"].as_str().unwrap().to_string();
+    Ok((name, version))
+}
 
 fn main() -> Result<(), io::Error> {
-    if !Path::new(OUT_DIR).exists() {  fs::create_dir(OUT_DIR)?; }
     let syntax_set = SyntaxSet::load_defaults_newlines();
     let lang_defs = syntax_set.syntaxes().iter()
         .filter(|syntax| !syntax.file_extensions.is_empty())
         .map(lang_from_syn)
         .collect::<Vec<_>>();
 
+    let (name, version) = parse_name_and_version()?;
+    let exec_path = PathBuf::from(format!("./bin/{}", &name));
+
     let mani = PluginDescription {
-        name: "syntect".into(),
-        version: "0.1".into(),
+        name,
+        version,
         scope: PluginScope::Global,
-        exec_path: PathBuf::from("./bin/xi-syntect-plugin"),
+        exec_path,
         activations: vec![PluginActivation::Autorun],
         commands: vec![],
         languages: lang_defs,
     };
 
 	let toml_str = toml::to_string(&mani).unwrap();
-    let file_path = Path::new(OUT_DIR).join(OUT_FILE_NAME);
+    let file_path = Path::new(OUT_FILE_NAME);
 	let mut f = File::create(file_path)?;
     f.write_all(toml_str.as_ref())
 }
