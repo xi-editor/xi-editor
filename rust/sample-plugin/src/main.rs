@@ -78,8 +78,11 @@ impl Plugin for SamplePlugin {
             view.add_status_item("my_key_3", &format!("howdy {}", self.0), "right");
         }
         if self.0 == 100 {
-            view.remove_status_item("my_key");
+            view.remove_status_item("my_key_2");
             view.add_status_item("my_key_4", &format!("hiya {}", self.0), "left");
+        }
+        if self.0 == 200 {
+            view.remove_status_item("my_key_3");
         }
     }
 }
