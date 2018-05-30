@@ -110,12 +110,24 @@ pub struct ConfigPair {
     cache: Arc<Table>,
 }
 
+/// The language associated with a given buffer; this is always detected
+/// but can also be manually set by the user.
+#[derive(Debug, Clone)]
+struct LanguageTag {
+    detected: LanguageId,
+    user: Option<LanguageId>,
+}
+
 #[derive(Debug)]
 pub struct ConfigManager {
     /// A map of `ConfigPairs` (defaults + overrides) for all in-use domains.
     configs: HashMap<ConfigDomain, ConfigPair>,
     /// The currently loaded `Languages`.
     languages: Languages,
+    /// The language assigned to each buffer.
+    buffer_tags: HashMap<BufferId, LanguageTag>,
+    /// The configs for any open buffers
+    buffer_configs: HashMap<BufferId, BufferConfig>,
     /// If using file-based config, this is the base config directory
     /// (perhaps `$HOME/.config/xi`, by default).
     config_dir: Option<PathBuf>,
@@ -214,13 +226,16 @@ impl ConfigManager {
         defaults.insert(ConfigDomain::General, ConfigPair::with_base(base));
         ConfigManager {
             configs: defaults,
+            buffer_tags: HashMap::new(),
+            buffer_configs: HashMap::new(),
             languages: Languages::default(),
             config_dir,
             extras_dir,
         }
     }
 
-    pub fn base_config_file_path(&self) -> Option<PathBuf> {
+    /// The path of the user's config file, if present.
+    pub(crate) fn base_config_file_path(&self) -> Option<PathBuf> {
         let config_file = self.config_dir.as_ref()
             .map(|p| p.join("preferences.xiconfig"));
         let exists = config_file.as_ref().map(|p| p.exists())
@@ -228,12 +243,124 @@ impl ConfigManager {
         if exists { config_file } else { None }
     }
 
-    pub fn get_plugin_paths(&self) -> Vec<PathBuf> {
+    pub(crate) fn get_plugin_paths(&self) -> Vec<PathBuf> {
         let config_dir = self.config_dir.as_ref().map(|p| p.join("plugins"));
         [self.extras_dir.as_ref(), config_dir.as_ref()].iter()
             .flat_map(|p| p.map(|p| p.to_owned()))
             .filter(|p| p.exists())
             .collect()
+    }
+
+    /// Adds a new buffer to the config manager. The `path` argument is used
+    /// to determine the buffer's default language.
+    ///
+    /// # Note: The caller is responsible for ensuring the config manager is
+    /// notified every time a buffer is added or removed.
+    ///
+    /// # Panics:
+    ///
+    /// Panics if `id` already exists.
+    pub(crate) fn add_buffer(&mut self, id: BufferId, path: Option<&Path>) {
+        let lang = path.and_then(|p| self.language_for_path(p)).unwrap_or_default();
+        let lang_tag = LanguageTag::new(lang);
+        assert!(self.buffer_tags.insert(id, lang_tag).is_none());
+        self.update_buffer_config(id);
+    }
+
+    /// Updates the default language for the given buffer.
+    ///
+    /// # Panics:
+    ///
+    /// Panics if `id` does not exist.
+    pub(crate) fn update_buffer_path(&mut self, id: BufferId, path: &Path)
+        -> Option<Table>
+    {
+        assert!(self.buffer_tags.contains_key(&id));
+        let lang = self.language_for_path(path).unwrap_or_default();
+        let has_changed = self.buffer_tags.get_mut(&id)
+            .map(|tag| tag.set_detected(lang))
+            .unwrap();
+
+        if has_changed { self.update_buffer_config(id) } else { None }
+    }
+
+    /// Instructs the `ConfigManager` to stop tracking a given buffer.
+    ///
+    /// # Panics:
+    ///
+    /// Panics if `id` does not exist.
+    pub(crate) fn remove_buffer(&mut self, id: BufferId) {
+        self.buffer_tags.remove(&id).expect("remove key must exist");
+        self.buffer_configs.remove(&id);
+        // TODO: remove any overrides
+    }
+
+    /// Sets a specific language for the given buffer. This is used if the
+    /// user selects a specific language in the frontend, for instance.
+    #[allow(dead_code)]
+    pub(crate) fn override_language(&mut self, id: BufferId, new_lang: LanguageId) {
+        let has_changed = self.buffer_tags.get_mut(&id)
+            .map(|tag| tag.set_user(Some(new_lang)))
+            .expect("buffer must exist");
+        if has_changed {
+            self.update_buffer_config(id);
+        }
+    }
+
+    fn update_buffer_config(&mut self, id: BufferId) -> Option<Table> {
+        let new_config = self.generate_buffer_config(id);
+        let changes = new_config.changes_from(self.buffer_configs.get(&id));
+        self.buffer_configs.insert(id, new_config);
+        changes
+    }
+
+    fn update_all_buffer_configs(&mut self) -> Vec<(BufferId, Table)> {
+        self.buffer_configs.keys()
+            .cloned()
+            .collect::<Vec<_>>()
+            .into_iter()
+            .flat_map(|k| self.update_buffer_config(k).map(|c| (k, c)))
+            .collect::<Vec<_>>()
+    }
+
+    fn generate_buffer_config(&mut self, id: BufferId) -> BufferConfig {
+        // it's possible for a buffer to be tagged with since-removed language
+        let lang = self.buffer_tags.get(&id).map(LanguageTag::resolve)
+            .and_then(|name| self.languages.language_for_name(name))
+            .map(|l| l.name.clone());
+        let mut configs = Vec::new();
+
+        configs.push(self.configs.get(&ConfigDomain::General));
+        lang.map(|s| configs.push(self.configs.get(&s.into())));
+        configs.push(self.configs.get(&ConfigDomain::SysOverride(id)));
+        configs.push(self.configs.get(&ConfigDomain::UserOverride(id)));
+
+        let configs = configs.iter().flat_map(Option::iter)
+            .map(|c| c.cache.clone())
+            .rev()
+            .collect::<Vec<_>>();
+
+        let stack = TableStack(configs);
+        stack.into_config()
+    }
+
+    /// Returns a reference to the `BufferConfig` for this buffer.
+    ///
+    /// # Panics:
+    ///
+    /// Panics if `id` does not exist. The caller is responsible for ensuring
+    /// that the `ConfigManager` is kept up to date as buffers are added/removed.
+    pub(crate) fn get_buffer_config(&self, id: BufferId) -> &BufferConfig {
+        self.buffer_configs.get(&id).unwrap()
+    }
+
+    /// Returns the language associated with this buffer.
+    ///
+    /// # Panics:
+    ///
+    /// Panics if `id` does not exist.
+    pub(crate) fn get_buffer_language(&self, id: BufferId) -> LanguageId {
+        self.buffer_tags.get(&id).map(LanguageTag::resolve).unwrap()
     }
 
     /// Set the available `LanguageDefinition`s. Overrides any previous values.
@@ -260,11 +387,12 @@ impl ConfigManager {
                 let _ = self.set_user_config(domain, table);
             }
         }
+        //FIXME these changes are happening silently, which won't work once
+        //languages can by dynamically changed
         self.languages = languages;
+        self.update_all_buffer_configs();
     }
 
-    //TODO: tabs.rs should look for user configs after setting languages
-    //or equivelant?
     fn load_user_config_file(&self, domain: &ConfigDomain) -> Option<Table> {
         let path = self.config_dir.as_ref()
             .map(|p| p.join(domain.file_stem()).with_extension("xiconfig"))?;
@@ -286,14 +414,16 @@ impl ConfigManager {
     }
 
     /// Sets the config for the given domain, removing any existing config.
+    /// Returns a `Vec` of individual buffer config changes that result from
+    /// this update, or a `ConfigError` if `config` is poorly formed.
     pub fn set_user_config(&mut self, domain: ConfigDomain, config: Table)
-        -> Result<(), ConfigError>
+        -> Result<Vec<(BufferId, Table)>, ConfigError>
     {
         self.check_table(&config)?;
         self.configs.entry(domain.clone())
             .or_insert_with(|| ConfigPair::with_base(None))
             .set_table(config);
-        Ok(())
+        Ok(self.update_all_buffer_configs())
     }
 
     /// Returns the `Table` produced by applying `changes` to the current user
@@ -352,34 +482,6 @@ impl ConfigManager {
         }
         let _: BufferItems = serde_json::from_value(defaults.into())?;
         Ok(())
-    }
-
-    /// Generates a snapshot of the current configuration for a particular
-    /// view.
-    pub fn get_buffer_config<S, I>(&self, lang: S, id: I) -> BufferConfig
-        where S: Into<Option<LanguageId>>,
-              I: Into<Option<BufferId>>
-    {
-        let lang = lang.into();
-        let id = id.into();
-        let mut configs = Vec::new();
-
-        configs.push(self.configs.get(&ConfigDomain::General));
-        lang.map(|s| configs.push(self.configs.get(&s.into())));
-        id.map(|v| configs.push(self.configs.get(&ConfigDomain::SysOverride(v))));
-        id.map(|v| configs.push(self.configs.get(&ConfigDomain::UserOverride(v))));
-
-        let configs = configs.iter().flat_map(Option::iter)
-            .map(|c| c.cache.clone())
-            .rev()
-            .collect::<Vec<_>>();
-
-        let stack = TableStack(configs);
-        stack.into_config()
-    }
-
-    pub fn default_buffer_config(&self) -> BufferConfig {
-        self.get_buffer_config(None, None)
     }
 }
 
@@ -465,6 +567,31 @@ impl ConfigDomain {
     }
 }
 
+impl LanguageTag {
+    fn new(detected: LanguageId) -> Self {
+        LanguageTag { detected, user: None }
+    }
+
+    fn resolve(&self) -> LanguageId {
+        self.user.as_ref().map(LanguageId::clone)
+            .unwrap_or_else(|| self.detected.clone())
+    }
+
+    fn set_detected(&mut self, detected: LanguageId) -> bool {
+        let before = self.resolve();
+        self.detected = detected;
+        before != self.resolve()
+    }
+
+    #[allow(dead_code)]
+    fn set_user(&mut self, new_lang: Option<LanguageId>) -> bool {
+        let has_changed = self.user != new_lang;
+        self.user = new_lang;
+        has_changed
+    }
+}
+
+
 impl<T: PartialEq> PartialEq for Config<T> {
     fn eq(&self, other: &Config<T>) -> bool {
         self.items == other.items
@@ -520,7 +647,7 @@ impl From<serde_json::Error> for ConfigError {
 }
 
 /// Creates initial config directory structure
-pub fn init_config_dir(dir: &Path) -> io::Result<()> {
+pub(crate) fn init_config_dir(dir: &Path) -> io::Result<()> {
     let builder = fs::DirBuilder::new();
     builder.create(dir)?;
     builder.create(dir.join("plugins"))?;
@@ -529,7 +656,7 @@ pub fn init_config_dir(dir: &Path) -> io::Result<()> {
 
 /// Attempts to load a config from a file. The config's domain is determined
 /// by the file name.
-pub fn try_load_from_file(path: &Path) -> Result<Table, ConfigError> {
+pub(crate) fn try_load_from_file(path: &Path) -> Result<Table, ConfigError> {
     let mut file = fs::File::open(&path)?;
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
@@ -577,39 +704,47 @@ fn from_toml_value(value: toml::Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use syntax::LanguageDefinition;
 
     #[test]
     fn test_overrides() {
         let user_config = table_from_toml_str(r#"tab_size = 42"#).unwrap();
         let rust_config = table_from_toml_str(r#"tab_size = 31"#).unwrap();
 
+        let lang_def = rust_lang_def(None);
         let rust_id: LanguageId = "Rust".into();
 
-        let mut manager = ConfigManager::new(None, None);
-        manager.set_user_config(rust_id.clone().into(),
-                                rust_config).unwrap();
+        let buf_id_1 = BufferId(1); // no language
+        let buf_id_2 = BufferId(2); // just rust
+        let buf_id_3 = BufferId(3); // rust, + system overrides
 
+        let mut manager = ConfigManager::new(None, None);
+        manager.set_languages(Languages::new(&[lang_def]));
+        manager.set_user_config(rust_id.clone().into(), rust_config).unwrap();
         manager.set_user_config(ConfigDomain::General, user_config).unwrap();
 
-        let buffer_id = BufferId(1);
-        // system override
         let changes = json!({"tab_size": 67}).as_object().unwrap().to_owned();
-        manager.set_user_config(ConfigDomain::SysOverride(buffer_id), changes)
+        manager.set_user_config(ConfigDomain::SysOverride(buf_id_3), changes)
             .unwrap();
 
-        let config = manager.default_buffer_config();
+        manager.add_buffer(buf_id_1, None);
+        manager.add_buffer(buf_id_2, Some(Path::new("file.rs")));
+        manager.add_buffer(buf_id_3, Some(Path::new("file2.rs")));
+
+        // system override
+        let config = manager.get_buffer_config(buf_id_1).to_owned();
         assert_eq!(config.source.0.len(), 1);
         assert_eq!(config.items.tab_size, 42);
-        let config = manager.get_buffer_config(rust_id.clone(), None);
+        let config = manager.get_buffer_config(buf_id_2).to_owned();
         assert_eq!(config.items.tab_size, 31);
-        let config = manager.get_buffer_config(rust_id.clone(), buffer_id);
+        let config = manager.get_buffer_config(buf_id_3).to_owned();
         assert_eq!(config.items.tab_size, 67);
 
         // user override trumps everything
         let changes = json!({"tab_size": 85}).as_object().unwrap().to_owned();
-        manager.set_user_config(ConfigDomain::UserOverride(buffer_id), changes)
+        manager.set_user_config(ConfigDomain::UserOverride(buf_id_3), changes)
             .unwrap();
-        let config = manager.get_buffer_config(rust_id.clone(), buffer_id);
+        let config = manager.get_buffer_config(buf_id_3);
         assert_eq!(config.items.tab_size, 85);
     }
 
@@ -646,60 +781,63 @@ translate_tabs_to_spaces = true
     #[test]
     fn test_updating_in_place() {
         let mut manager = ConfigManager::new(None, None);
-        assert_eq!(manager.default_buffer_config().items.font_size, 14.);
+        let buf_id = BufferId(1);
+        manager.add_buffer(buf_id, None);
+        assert_eq!(manager.get_buffer_config(buf_id).items.font_size, 14.);
         let changes = json!({"font_size": 69, "font_face": "nice"})
             .as_object().unwrap().to_owned();
         let table = manager.table_for_update(ConfigDomain::General, changes);
         manager.set_user_config(ConfigDomain::General, table).unwrap();
-        assert_eq!(manager.default_buffer_config().items.font_size, 69.);
+        assert_eq!(manager.get_buffer_config(buf_id).items.font_size, 69.);
 
         // null values in updates removes keys
         let changes = json!({"font_size": Value::Null})
             .as_object().unwrap().to_owned();
         let table = manager.table_for_update(ConfigDomain::General, changes);
         manager.set_user_config(ConfigDomain::General, table).unwrap();
-        assert_eq!(manager.default_buffer_config().items.font_size, 14.);
-        assert_eq!(manager.default_buffer_config().items.font_face, "nice");
-
-        let changes = json!({"font_face": "Roboto"})
-            .as_object().unwrap().to_owned();
-        manager.set_user_config(LanguageId::from("Dart").into(), changes).unwrap();
-        let config = manager.get_buffer_config(LanguageId::from("Dart"), None);
-        assert_eq!(config.items.font_face, "Roboto");
+        assert_eq!(manager.get_buffer_config(buf_id).items.font_size, 14.);
+        assert_eq!(manager.get_buffer_config(buf_id).items.font_face, "nice");
     }
 
     #[test]
     fn lang_overrides() {
-        use syntax::LanguageDefinition;
         let mut manager = ConfigManager::new(None, None);
         let lang_defaults = json!({"font_size": 69, "font_face": "nice"});
         let lang_overrides = json!({"font_size": 420, "font_face": "cool"});
-        let lang_def = LanguageDefinition::simple("Rust", &["rs"], "source.rust",
-                                                  lang_defaults.as_object().map(Table::clone));
-
+        let lang_def = rust_lang_def(lang_defaults.as_object().map(Table::clone));
         let lang_id: LanguageId = "Rust".into();
         let domain: ConfigDomain = lang_id.clone().into();
-        manager.set_languages(Languages::new(&[lang_def.clone()]));
 
-        let config = manager.get_buffer_config(lang_id.clone(), None);
+        manager.set_languages(Languages::new(&[lang_def.clone()]));
+        assert_eq!(manager.languages.iter().count(), 1);
+
+        let buf_id = BufferId(1);
+        manager.add_buffer(buf_id, Some(Path::new("file.rs")));
+
+        let config = manager.get_buffer_config(buf_id).to_owned();
+        assert_eq!(config.source.0.len(), 2);
         assert_eq!(config.items.font_size, 69.);
 
         // removing language should remove default configs
         manager.set_languages(Languages::new(&[]));
-        let config = manager.get_buffer_config(lang_id.clone(), None);
+        assert_eq!(manager.languages.iter().count(), 0);
+
+        let config = manager.get_buffer_config(buf_id).to_owned();
+        assert_eq!(config.source.0.len(), 1);
         assert_eq!(config.items.font_size, 14.);
 
         manager.set_user_config(domain.clone(),
                                 lang_overrides.as_object().map(Table::clone).unwrap(),
                                 ).unwrap();
 
-        let config = manager.get_buffer_config(lang_id.clone(), None);
-        assert_eq!(config.items.font_size, 420.);
+        // user config for unknown language is ignored
+        let config = manager.get_buffer_config(buf_id).to_owned();
+        assert_eq!(config.items.font_size, 14.);
 
-        // setting defaults when a user config exists leaves user config intact
-        let config = manager.get_buffer_config(lang_id.clone(), None);
-        assert_eq!(config.items.font_size, 420.);
+        // user config trumps defaults when language exists
         manager.set_languages(Languages::new(&[lang_def.clone()]));
+        let config = manager.get_buffer_config(buf_id).to_owned();
+        assert_eq!(config.items.font_size, 420.);
 
         let changes = json!({"font_size": Value::Null})
             .as_object().unwrap().to_owned();
@@ -707,11 +845,15 @@ translate_tabs_to_spaces = true
         // null key should void user setting, leave language default
         let table = manager.table_for_update(domain.clone(), changes);
         manager.set_user_config(domain.clone(), table).unwrap();
-        let config = manager.get_buffer_config(lang_id.clone(), None);
+        let config = manager.get_buffer_config(buf_id).to_owned();
         assert_eq!(config.items.font_size, 69.);
 
         manager.set_languages(Languages::new(&[]));
-        let config = manager.get_buffer_config(lang_id.clone(), None);
+        let config = manager.get_buffer_config(buf_id);
         assert_eq!(config.items.font_size, 14.);
+    }
+
+    fn rust_lang_def<T: Into<Option<Table>>>(defaults: T) -> LanguageDefinition {
+        LanguageDefinition::simple("Rust", &["rs"], "source.rust", defaults.into())
     }
 }

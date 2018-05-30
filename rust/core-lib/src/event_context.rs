@@ -32,7 +32,7 @@ use plugins::rpc::{ClientPluginInfo, PluginBufferInfo, PluginNotification,
                    PluginRequest, PluginUpdate};
 
 use styles::ThemeStyleMap;
-use config::{BufferConfig, ConfigManager};
+use config::{BufferItems, Table};
 
 use WeakXiCore;
 use tabs::{BufferId, PluginId, ViewId, RENDER_VIEW_IDLE_MASK};
@@ -42,6 +42,7 @@ use edit_types::{EventDomain, SpecialEvent};
 use client::Client;
 use plugins::Plugin;
 use selection::SelRegion;
+use syntax::LanguageId;
 use view::View;
 use width_cache::WidthCache;
 
@@ -63,6 +64,8 @@ pub struct EventContext<'a> {
     pub(crate) buffer_id: BufferId,
     pub(crate) editor: &'a RefCell<Editor>,
     pub(crate) info: Option<&'a FileInfo>,
+    pub(crate) config: &'a BufferItems,
+    pub(crate) language: LanguageId,
     pub(crate) view: &'a RefCell<View>,
     pub(crate) siblings: Vec<&'a RefCell<View>>,
     pub(crate) plugins: Vec<&'a Plugin>,
@@ -77,12 +80,12 @@ impl<'a> EventContext<'a> {
     /// Executes a closure with mutable references to the editor and the view,
     /// common in edit actions that modify the text.
     pub(crate) fn with_editor<R, F>(&mut self, f: F) -> R
-        where F: FnOnce(&mut Editor, &mut View, &mut Rope) -> R
+        where F: FnOnce(&mut Editor, &mut View, &mut Rope, &BufferItems) -> R
     {
         let mut editor = self.editor.borrow_mut();
         let mut view = self.view.borrow_mut();
         let mut kill_ring = self.kill_ring.borrow_mut();
-        f(&mut editor, &mut view, &mut kill_ring)
+        f(&mut editor, &mut view, &mut kill_ring, &self.config)
     }
 
     /// Executes a closure with a mutable reference to the view and a reference
@@ -105,7 +108,7 @@ impl<'a> EventContext<'a> {
                     self.editor.borrow_mut().update_edit_type();
                 },
             E::Buffer(cmd) => self.with_editor(
-                |ed, view, kill_ring| ed.do_edit(view, kill_ring, cmd)),
+                |ed, view, k_ring, conf| ed.do_edit(view, k_ring, conf, cmd)),
             E::Special(cmd) => self.do_special(cmd),
         }
         self.after_edit("core");
@@ -121,7 +124,7 @@ impl<'a> EventContext<'a> {
                 }),
             SpecialEvent::DebugWrapWidth => self.debug_wrap_width(),
             SpecialEvent::DebugPrintSpans => self.with_editor(
-                |ed, view, _| {
+                |ed, view, _, _| {
                     let sel = view.sel_regions().last().unwrap();
                     let iv = Interval::new_closed_open(sel.min(), sel.max());
                     ed.get_layers().debug_print_spans(iv);
@@ -135,8 +138,8 @@ impl<'a> EventContext<'a> {
                                ) -> Result<Value, RemoteError> {
         use self::EditRequest::*;
         let result = match cmd {
-            Cut => Ok(self.with_editor(|ed, view, _| ed.do_cut(view))),
-            Copy => Ok(self.with_editor(|ed, view, _| ed.do_copy(view))),
+            Cut => Ok(self.with_editor(|ed, view, _, _| ed.do_cut(view))),
+            Copy => Ok(self.with_editor(|ed, view, _, _| ed.do_copy(view))),
         };
         self.after_edit("core");
         self.render_if_needed();
@@ -153,10 +156,10 @@ impl<'a> EventContext<'a> {
                 ed.get_layers_mut().add_scopes(plugin, scopes, &style_map);
             }
             UpdateSpans { start, len, spans, rev } => self.with_editor(
-                |ed, view, _| ed.update_spans(view, plugin, start,
+                |ed, view, _, _| ed.update_spans(view, plugin, start,
                                            len, spans, rev)),
             Edit { edit } => self.with_editor(
-                |ed, _, _| ed.apply_plugin_edit(edit)),
+                |ed, _, _, _| ed.apply_plugin_edit(edit)),
             Alert { msg } => self.client.alert(&msg),
             AddStatusItem { key, value, alignment }  => self.client.add_status_item(
                                                         self.view_id, &key, &value, &alignment),
@@ -274,7 +277,15 @@ impl<'a> EventContext<'a> {
 /// requires access to particular combinations of state. We isolate such
 /// special cases here.
 impl<'a> EventContext<'a> {
+    pub(crate) fn after_new_view(&mut self) {
+        self.with_editor(|ed, view, _, config| {
+            view.rewrap(ed.get_buffer(), config.wrap_width);
+            view.set_dirty(ed.get_buffer());
+        })
+    }
+
     pub(crate) fn finish_init(&mut self) {
+        self.after_new_view();
         if !self.plugins.is_empty() {
             let info = self.plugin_info();
             self.plugins.iter().for_each(|plugin| plugin.new_buffer(&info));
@@ -287,20 +298,17 @@ impl<'a> EventContext<'a> {
         self.client.available_plugins(self.view_id,
                                       &available_plugins);
 
-        let ed = self.editor.borrow();
-        let config = ed.get_config().to_table();
-        self.client.config_changed(self.view_id, &config);
+        let changes = serde_json::to_value(self.config).unwrap();
+        self.client.config_changed(self.view_id, changes.as_object().unwrap());
         self.render()
     }
 
-    pub(crate) fn after_save(&mut self, path: &Path, new_config: BufferConfig) {
+    pub(crate) fn after_save(&mut self, path: &Path) {
         // notify plugins
         self.plugins.iter().for_each(
             |plugin| plugin.did_save(self.view_id, path)
             );
-        if let Some(changes) = self.editor.borrow_mut().set_config(new_config) {
-            self.client.config_changed(self.view_id, &changes);
-        }
+
         self.editor.borrow_mut().set_pristine();
         self.with_view(|view, text| view.set_dirty(text));
         self.render()
@@ -314,29 +322,22 @@ impl<'a> EventContext<'a> {
         self.siblings.is_empty()
     }
 
-    pub(crate) fn config_changed(&mut self, config_manager: &ConfigManager) {
-        {
-            let mut ed = self.editor.borrow_mut();
-            let mut view = self.view.borrow_mut();
-            let syntax = ed.get_syntax().to_owned();
-            let new_config = config_manager.get_buffer_config(syntax,
-                                                              self.buffer_id);
-            if let Some(changes) = ed.set_config(new_config) {
-                if changes.contains_key("wrap_width") {
-                    let wrap_width = ed.get_config().items.wrap_width;
-                    view.rewrap(&ed.get_buffer(), wrap_width);
-                    view.set_dirty(&ed.get_buffer());
-                }
-                self.client.config_changed(self.view_id, &changes);
-                self.plugins.iter()
-                    .for_each(|plug| plug.config_changed(self.view_id, &changes));
-            }
+    pub(crate) fn config_changed(&mut self, changes: &Table) {
+        if changes.contains_key("wrap_width") {
+            self.with_editor(|ed, view, _, conf| {
+                view.rewrap(ed.get_buffer(), conf.wrap_width);
+                view.set_dirty(ed.get_buffer());
+            })
         }
+
+        self.client.config_changed(self.view_id, &changes);
+        self.plugins.iter()
+            .for_each(|plug| plug.config_changed(self.view_id, &changes));
         self.render()
     }
 
     pub(crate) fn reload(&mut self, text: Rope) {
-        self.with_editor(|ed, view, _| {
+        self.with_editor(|ed, view, _, _| {
             let new_len = text.len();
             view.collapse_selections(ed.get_buffer());
             view.unset_find();
@@ -361,14 +362,14 @@ impl<'a> EventContext<'a> {
             .map(|v| v.borrow().get_view_id())
             .collect();
 
-        let config = ed.get_config().to_table();
+        let changes = serde_json::to_value(self.config).unwrap();
         let path = self.info.map(|info| info.path.to_owned());
         PluginBufferInfo::new(self.buffer_id, &views,
                               ed.get_head_rev_token(),
                               ed.get_buffer().len(), nb_lines,
                               path,
-                              ed.get_syntax().clone(),
-                              config)
+                              self.language.clone(),
+                              changes.as_object().unwrap().to_owned())
     }
 
     pub(crate) fn plugin_started(&mut self, plugin: &Plugin) {
@@ -377,7 +378,7 @@ impl<'a> EventContext<'a> {
 
     pub(crate) fn plugin_stopped(&mut self, plugin: &Plugin) {
         self.client.plugin_stopped(self.view_id, &plugin.name, 0);
-        self.with_editor(|ed, view, _| {
+        self.with_editor(|ed, view, _, _| {
             ed.get_layers_mut().remove_layer(plugin.id);
             view.set_dirty(ed.get_buffer());
         });
@@ -418,6 +419,7 @@ impl<'a> EventContext<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use config::ConfigManager;
     use core::dummy_weak_core;
     use tabs::BufferId;
     use xi_rpc::test_utils::DummyPeer;
@@ -430,23 +432,24 @@ mod tests {
         kill_ring: RefCell<Rope>,
         style_map: RefCell<ThemeStyleMap>,
         width_cache: RefCell<WidthCache>,
+        config_manager: ConfigManager,
     }
 
     impl ContextHarness {
         fn new<S: AsRef<str>>(s: S) -> Self {
             let view_id = ViewId(1);
             let buffer_id = BufferId(2);
-            let config_manager = ConfigManager::new(None, None);
+            let mut config_manager = ConfigManager::new(None, None);
+            config_manager.add_buffer(buffer_id, None);
             let view = RefCell::new(View::new(view_id, buffer_id));
-            let editor = RefCell::new(
-                Editor::with_text(s, config_manager.default_buffer_config()));
+            let editor = RefCell::new(Editor::with_text(s));
             let client = Client::new(Box::new(DummyPeer));
             let core_ref = dummy_weak_core();
             let kill_ring = RefCell::new(Rope::from(""));
             let style_map = RefCell::new(ThemeStyleMap::new());
             let width_cache = RefCell::new(WidthCache::new());
-            ContextHarness { view, editor, client, core_ref,
-                             kill_ring, style_map, width_cache }
+            ContextHarness { view, editor, client, core_ref, kill_ring,
+                             style_map, width_cache, config_manager }
         }
 
         /// Renders the text and selections. cursors are represented with
@@ -472,11 +475,15 @@ mod tests {
         fn make_context<'a>(&'a self) -> EventContext<'a> {
             let view_id = ViewId(1);
             let buffer_id = self.view.borrow().get_buffer_id();
+            let config = self.config_manager.get_buffer_config(buffer_id);
+            let language = self.config_manager.get_buffer_language(buffer_id);
             EventContext {
                 view_id,
                 buffer_id,
                 view: &self.view,
                 editor: &self.editor,
+                config: &config.items,
+                language,
                 info: None,
                 siblings: Vec::new(),
                 plugins: Vec::new(),
