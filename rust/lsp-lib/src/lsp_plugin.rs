@@ -1,43 +1,32 @@
+use jsonrpc_lite::Error;
+use jsonrpc_lite::{self, Params};
+use language_server::LanguageServerClient;
+use lsp_types::ClientCapabilities;
 use lsp_types::InitializeParams;
-use jsonrpc_lite::{self,Params};
+use parse_helper;
+use serde_json;
 use serde_json::Value;
 use std;
-use std::sync::Arc;
-use std::sync::Mutex;
-use language_server::LanguageServer;
-use jsonrpc_lite::JsonRpc;
-use jsonrpc_lite::Id;
-use xi_plugin_lib::{Plugin, ChunkCache, View};
-use xi_rope::rope::RopeDelta;
-use xi_core::{ConfigTable};
+use std::io::{BufReader, BufWriter};
 use std::path::Path;
+use std::process;
 use std::process::Command;
 use std::process::Stdio;
-use parse_helper;
-use std::io::{BufWriter, BufReader};
-use std::process;
-use serde_json;
-use lsp_types::ClientCapabilities;
-
+use std::sync::Arc;
+use std::sync::Mutex;
+use url::Url;
+use xi_core::ConfigTable;
+use xi_plugin_lib::{ChunkCache, Plugin, View};
+use xi_rope::rope::RopeDelta;
 
 pub struct LSPPlugin {
-    language_server_ref: Arc<Mutex<LanguageServer>>,
-    file_extensions: Vec<String>
-}
-
-impl Clone for LSPPlugin {
-    fn clone(&self) -> Self {
-        LSPPlugin {
-            language_server_ref: self.language_server_ref.clone(),
-            file_extensions: self.file_extensions.clone()
-        }
-    }
+    language_server_ref: Arc<Mutex<LanguageServerClient>>,
+    is_initialized: bool,
+    file_extensions: Vec<String>,
 }
 
 impl LSPPlugin {
-
     pub fn new(command: &str, arguments: &[&str]) -> Self {
-
         eprintln!("command: {}", command);
         eprintln!("arguments: {:?}", arguments);
 
@@ -55,22 +44,26 @@ impl LSPPlugin {
         let writer = Box::new(BufWriter::new(process.stdin.take().unwrap()));
 
         let plugin = LSPPlugin {
-            language_server_ref : Arc::new(Mutex::new(LanguageServer::new(writer))),
-            file_extensions: vec!["json".to_string()]
+            language_server_ref: Arc::new(Mutex::new(LanguageServerClient::new(writer))),
+            is_initialized: false,
+            file_extensions: vec!["json".to_string()],
         };
 
         {
-            let plugin_cloned = plugin.clone();
+            let server_ref = plugin.language_server_ref.clone();
             std::thread::Builder::new()
                 .name("STDIN-Looper".to_string())
                 .spawn(move || {
                     let mut reader = Box::new(BufReader::new(process.stdout.take().unwrap()));
                     loop {
                         match parse_helper::read_message(&mut reader) {
-                            Ok(message_str) => plugin_cloned.handle_message(message_str.as_ref()),
+                            Ok(message_str) => {
+                                let mut server_locked = server_ref.lock().unwrap();
+                                server_locked.handle_message(message_str.as_ref());
+                            }
                             Err(err) => eprintln!("Error occurred {:?}", err),
                         };
-                    } 
+                    }
                 });
         }
 
@@ -82,36 +75,18 @@ impl LSPPlugin {
         lang_server.write(msg);
     }
 
-    pub fn handle_message(&self, message: &str) {
-
-        eprintln!("Value from function: {:?}", message);
-        let mut value = JsonRpc::parse(message).unwrap();
-        eprintln!("Value from function parsed: {:?}", value);
-        
-        match value {
-            JsonRpc::Request(obj) => eprintln!("client received unexpected request: {:?}", obj),
-            JsonRpc::Notification(obj) => eprintln!("recv notification: {:?}", obj),
-            JsonRpc::Success(ref obj) => {
-                let mut lang_server = self.language_server_ref.lock().unwrap();
-                let mut result = value.get_result().unwrap().to_owned();
-                let id = number_from_id(value.get_id().as_ref());
-                lang_server.handle_response(id, result);
-            }
-            JsonRpc::Error(ref obj) => {
-                let mut lang_server = self.language_server_ref.lock().unwrap();
-                let mut error = value.get_error().unwrap().to_owned();
-                let id = number_from_id(value.get_id().as_ref());
-                lang_server.handle_error(id, error);
-            }
-        };
-    }
-
     /// Sends a JSON-RPC request message with the provided method and parameters.
     /// `completion` should be a callback which will be executed with the server's response.
-    pub fn send_request<CB>(&self, method: &str, params: Params, completion: CB)
-        where CB: 'static + Send + FnOnce(Result<Value, jsonrpc_lite::Error>) {
-            let mut inner = self.language_server_ref.lock().unwrap();
-            inner.send_request(method, params, Box::new(completion));
+    pub fn send_request<CB>(
+        &self,
+        method: &str,
+        params: Params,
+        completion: CB,
+    ) where
+        CB: 'static + Send + FnOnce(Result<Value, jsonrpc_lite::Error>),
+    {
+        let mut inner = self.language_server_ref.lock().unwrap();
+        inner.send_request(method, params, Box::new(completion));
     }
 
     /// Sends a JSON-RPC notification message with the provided method and parameters.
@@ -121,22 +96,26 @@ impl LSPPlugin {
     }
 }
 
-fn number_from_id(id: Option<&Id>) -> usize {
-    let id = id.expect("response missing id field");
-    let id = match id {
-        &Id::Num(n) => n as u64,
-        &Id::Str(ref s) => u64::from_str_radix(s, 10).expect("failed to convert string id to u64"),
-        other => panic!("unexpected value for id field: {:?}", other),
-    };
+pub struct XiLSPPlugin(Arc<Mutex<LSPPlugin>>);
 
-    id as usize
+impl XiLSPPlugin {
+    pub fn new(command: &str, arguments: &[&str]) -> Self {
+        let plugin = LSPPlugin::new(command, arguments);
+        XiLSPPlugin(Arc::new(Mutex::new(plugin)))
+    }
 }
 
-impl Plugin for LSPPlugin {
+impl Plugin for XiLSPPlugin {
     type Cache = ChunkCache;
 
-    fn update(&mut self, view: &mut View<Self::Cache>, delta: Option<&RopeDelta>,
-              _edit_type: String, _author: String) {}
+    fn update(
+        &mut self,
+        view: &mut View<Self::Cache>,
+        delta: Option<&RopeDelta>,
+        _edit_type: String,
+        _author: String,
+    ) {
+    }
 
     fn did_save(&mut self, view: &mut View<Self::Cache>, _old: Option<&Path>) {
         eprintln!("saved view {}", view.get_id());
@@ -150,12 +129,33 @@ impl Plugin for LSPPlugin {
         eprintln!("new view {}", view.get_id());
 
         let name = view.get_path();
-    
+
         if let Some(path) = name {
             let extension = path.extension().unwrap().to_str().unwrap().to_string();
-            if self.file_extensions.contains(&extension) {
+
+            let mut plugin_ref = self.0.lock().unwrap();
+
+            if plugin_ref.file_extensions.contains(&extension) {
                 eprintln!("json file opened");
-                self.send_initialize();
+                //let documentURI = Url::parse(format!("file://{}", path.to_str().unwrap()).as_ref()).unwrap();
+
+                let plugin_arc_clone = self.0.clone();
+                if !plugin_ref.is_initialized {
+                    plugin_ref.send_initialize(
+                        None,
+                        Some(move |result: Result<Value, Error>| {
+                            let mut plugin_ref = plugin_arc_clone.lock().unwrap();
+
+                            if result.is_ok() {
+                                plugin_ref.is_initialized = true;
+                            }
+                            plugin_ref.send_did_open();
+                        }),
+                    );
+
+                } else {
+                    plugin_ref.send_did_open();
+                }
             }
         }
     }
@@ -163,26 +163,35 @@ impl Plugin for LSPPlugin {
     fn config_changed(&mut self, _view: &mut View<Self::Cache>, _changes: &ConfigTable) {}
 }
 
-
 //Utils Methods for sending
 impl LSPPlugin {
-
-    pub fn send_initialize(&mut self) {
-        
+    pub fn send_initialize<F>(&mut self, root_uri: Option<Url>, on_init: Option<F>)
+    where
+        F: 'static + Send + FnOnce(Result<Value, Error>) -> (),
+    {
         let client_capabilities = ClientCapabilities::default();
 
         let init_params = InitializeParams {
             process_id: Some(process::id() as u64),
-            root_uri: None,
+            root_uri: root_uri,
             root_path: None,
             initialization_options: None,
             capabilities: client_capabilities,
-            trace: None
+            trace: None,
         };
 
         let params = Params::from(serde_json::to_value(init_params).unwrap());
+
         self.send_request("initialize", params, |result| {
-            eprintln!("Received Response: {:?}", result);
+            if let Some(f) = on_init {
+                f(result.clone());
+            }
         });
     }
+
+    pub fn send_did_open(&mut self) {
+        eprintln!("DID OPEN CALLED")
+    }
+
+    pub fn request_diagonostics(&mut self) {}
 }

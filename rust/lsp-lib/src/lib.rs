@@ -1,6 +1,7 @@
 extern crate jsonrpc_lite;
 extern crate languageserver_types as lsp_types;
 #[macro_use]
+extern crate url;
 extern crate serde_json;
 extern crate xi_core_lib as xi_core;
 extern crate xi_plugin_lib;
@@ -17,8 +18,9 @@ pub mod language_server;
 pub mod lsp_plugin;
 
 pub use lsp_plugin::LSPPlugin;
+pub use lsp_plugin::XiLSPPlugin;
 
-trait Callable: Send {
+pub trait Callable: Send {
     fn call(self: Box<Self>, result: Result<Value, Error>);
 }
 
