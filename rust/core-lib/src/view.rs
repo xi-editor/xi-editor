@@ -45,8 +45,8 @@ type StyleMap = RefCell<ThemeStyleMap>;
 const FLAG_SELECT: u64 = 2;
 
 pub struct View {
-    pub view_id: ViewId,
-    pub buffer_id: BufferId,
+    view_id: ViewId,
+    buffer_id: BufferId,
 
     /// Tracks whether this view has been scheduled to render.
     /// We attempt to reduce duplicate renders by setting a small timeout
@@ -122,6 +122,14 @@ impl View {
             lc_shadow: LineCacheShadow::default(),
             find: Vec::new(),
         }
+    }
+
+    pub(crate) fn get_buffer_id(&self) -> BufferId {
+        self.buffer_id
+    }
+
+    pub(crate) fn get_view_id(&self) -> ViewId {
+        self.view_id
     }
 
     pub(crate) fn set_has_pending_render(&mut self, pending: bool) {

@@ -232,13 +232,15 @@ impl CoreState {
         -> Option<EventContext<'a>>
     {
         self.views.get(&view_id).map(|view| {
-            let buffer_id = view.borrow().buffer_id;
+            let buffer_id = view.borrow().get_buffer_id();
 
             let editor = self.editors.get(&buffer_id).unwrap();
             let info = self.file_manager.get_info(buffer_id);
             let plugins = self.running_plugins.iter().collect::<Vec<_>>();
 
             EventContext {
+                view_id,
+                buffer_id,
                 view,
                 editor,
                 info: info,
@@ -387,7 +389,7 @@ impl CoreState {
     {
         let _t = trace_block("CoreState::do_save", &["core"]);
         let path = path.as_ref();
-        let buffer_id = self.views.get(&view_id).map(|v| v.borrow().buffer_id);
+        let buffer_id = self.views.get(&view_id).map(|v| v.borrow().get_buffer_id());
         let buffer_id = match buffer_id {
             Some(id) => id,
             None => return,
@@ -422,7 +424,7 @@ impl CoreState {
             .unwrap_or(true);
 
         let buffer_id = self.views.remove(&view_id)
-            .map(|v| v.borrow().buffer_id);
+            .map(|v| v.borrow().get_buffer_id());
 
         if let Some(buffer_id) = buffer_id {
             if close_buffer {
@@ -460,12 +462,11 @@ impl CoreState {
             ConfigDomainExternal::General => ConfigDomain::General,
             ConfigDomainExternal::Syntax(id) => ConfigDomain::Language(id),
             ConfigDomainExternal::Language(id) => ConfigDomain::Language(id),
-            ConfigDomainExternal::UserOverride(view_id) => {
-                 match self.views.get(&view_id) {
-                     Some(v) => ConfigDomain::UserOverride(v.borrow().buffer_id),
+            ConfigDomainExternal::UserOverride(view_id) =>
+                match self.views.get(&view_id) {
+                     Some(v) => ConfigDomain::UserOverride(v.borrow().get_buffer_id()),
                      None => return,
                 }
-            }
         };
         let new_config = self.config_manager.table_for_update(domain.clone(),
                                                               changes);
@@ -583,8 +584,8 @@ impl CoreState {
                 // this is ugly; we don't map buffer_id -> view_id anywhere
                 // but we know we must have a view.
                 let view_id = self.views.values()
-                    .find(|v| v.borrow().buffer_id == buffer_id)
-                    .map(|v| v.borrow().view_id)
+                    .find(|v| v.borrow().get_buffer_id() == buffer_id)
+                    .map(|v| v.borrow().get_view_id())
                     .unwrap();
                 self.make_context(view_id).unwrap().reload(text);
             }
@@ -745,7 +746,7 @@ impl<'a, I> Iterator for Iter<'a, I> where I: Iterator<Item=&'a ViewId> {
             };
             let context = inner.make_context(*next_view).unwrap();
             context.siblings.iter().for_each(|sibl| {
-                let _ = seen.insert(sibl.borrow().view_id);
+                let _ = seen.insert(sibl.borrow().get_view_id());
             });
             return Some(context);
         }
