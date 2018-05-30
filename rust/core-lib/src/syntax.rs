@@ -65,8 +65,10 @@ impl Languages {
             .map(Arc::clone)
     }
 
-    pub fn language_for_name(&self, name: &str) -> Option<Arc<LanguageDefinition>> {
-        self.named.get(name).map(Arc::clone)
+    pub fn language_for_name<S>(&self, name: S) -> Option<Arc<LanguageDefinition>>
+        where S: AsRef<str>
+    {
+        self.named.get(name.as_ref()).map(Arc::clone)
     }
 
     /// Returns a Vec of any `LanguageDefinition`s which exist
