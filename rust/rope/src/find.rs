@@ -51,21 +51,20 @@ pub enum CaseMatching {
     /// reasonably well otherwise (it is currently defined in terms of the
     /// `to_lowercase` methods in the Rust standard library).
     CaseInsensitive,
-    /// Matching using search string as regular expression.
-    RegularExpression,
 }
 
 /// Finds a pattern string in the rope referenced by the cursor, starting at
 /// the current location of the cursor (and finding the first match). Both
 /// case sensitive and case insensitive matching is provided, controlled by
-/// the `cm` parameter.
+/// the `cm` parameter. The `regex` parameter controls whether the query
+/// should be considered as a regular expression.
 /// 
 /// On success, the cursor is updated to immediately follow the found string.
 /// On failure, the cursor's position is indeterminate.
 ///
 /// Can panic if `pat` is empty.
-pub fn find(cursor: &mut Cursor<RopeInfo>, cm: CaseMatching, pat: &str) -> Option<usize> {
-    match find_progress(cursor, cm, pat, usize::max_value()) {
+pub fn find(cursor: &mut Cursor<RopeInfo>, cm: CaseMatching, pat: &str, is_regex: bool) -> Option<usize> {
+    match find_progress(cursor, cm, pat, usize::max_value(), is_regex) {
         FindResult::Found(start) => Some(start),
         FindResult::NotFound => None,
         FindResult::TryAgain => unreachable!("find_progress got stuck"),
@@ -84,43 +83,45 @@ pub fn find(cursor: &mut Cursor<RopeInfo>, cm: CaseMatching, pat: &str) -> Optio
 /// 
 /// [find]: fn.find.html
 pub fn find_progress(cursor: &mut Cursor<RopeInfo>, cm: CaseMatching, pat: &str,
-    num_steps: usize) -> FindResult
+    num_steps: usize, is_regex: bool) -> FindResult
 {
-    match cm {
-        CaseMatching::Exact => {
-            let b = pat.as_bytes()[0];
-            let scanner = |s: &str| memchr(b, s.as_bytes());
-            let matcher = compare_cursor_str;
-            find_progress_iter(cursor, pat, &scanner, &matcher, num_steps)
-        }
-        CaseMatching::CaseInsensitive => {
-            let pat_lower = pat.to_lowercase();
-            let b = pat_lower.as_bytes()[0];
-            let matcher = compare_cursor_str_casei;
-            if b == b'i' {
-                // 0xC4 is first utf-8 byte of 'İ'
-                let scanner = |s: &str| memchr3(b'i', b'I', 0xC4, s.as_bytes());
-                find_progress_iter(cursor, &pat_lower, &scanner, &matcher, num_steps)
-            } else if b == b'k' {
-                // 0xE2 is first utf-8 byte of u+212A (kelvin sign)
-                let scanner = |s: &str| memchr3(b'k', b'K', 0xE2, s.as_bytes());
-                find_progress_iter(cursor, &pat_lower, &scanner, &matcher, num_steps)
-            } else if b >= b'a' && b <= b'z' {
-                let scanner = |s: &str| memchr2(b, b - 0x20, s.as_bytes());
-                find_progress_iter(cursor, &pat_lower, &scanner, &matcher, num_steps)
-            } else if b < 0x80 {
+    if is_regex {
+        // regex scanner cannot check if regex is partially matching
+        find_progress_iter(cursor, pat, &|_| { Some(0) },
+            &|cursor, pat| compare_cursor_regex(cursor, pat, cm), num_steps)
+    }
+    else {
+        match cm {
+            CaseMatching::Exact => {
+                let b = pat.as_bytes()[0];
                 let scanner = |s: &str| memchr(b, s.as_bytes());
-                find_progress_iter(cursor, &pat_lower, &scanner, &matcher, num_steps)
-            } else {
-                let c = pat.chars().next().unwrap();
-                let scanner = |s: &str| scan_lowercase(c, s);
-                find_progress_iter(cursor, &pat_lower, &scanner, &matcher, num_steps)
+                let matcher = compare_cursor_str;
+                find_progress_iter(cursor, pat, &scanner, &matcher, num_steps)
             }
-        },
-        CaseMatching::RegularExpression => {
-          let matcher = compare_cursor_regex;
-          // regex scanner cannot check if regex is partially matching
-          find_progress_iter(cursor, pat, &|_| { Some(0) }, &matcher, num_steps)
+            CaseMatching::CaseInsensitive => {
+                let pat_lower = pat.to_lowercase();
+                let b = pat_lower.as_bytes()[0];
+                let matcher = compare_cursor_str_casei;
+                if b == b'i' {
+                    // 0xC4 is first utf-8 byte of 'İ'
+                    let scanner = |s: &str| memchr3(b'i', b'I', 0xC4, s.as_bytes());
+                    find_progress_iter(cursor, &pat_lower, &scanner, &matcher, num_steps)
+                } else if b == b'k' {
+                    // 0xE2 is first utf-8 byte of u+212A (kelvin sign)
+                    let scanner = |s: &str| memchr3(b'k', b'K', 0xE2, s.as_bytes());
+                    find_progress_iter(cursor, &pat_lower, &scanner, &matcher, num_steps)
+                } else if b >= b'a' && b <= b'z' {
+                    let scanner = |s: &str| memchr2(b, b - 0x20, s.as_bytes());
+                    find_progress_iter(cursor, &pat_lower, &scanner, &matcher, num_steps)
+                } else if b < 0x80 {
+                    let scanner = |s: &str| memchr(b, s.as_bytes());
+                    find_progress_iter(cursor, &pat_lower, &scanner, &matcher, num_steps)
+                } else {
+                    let c = pat.chars().next().unwrap();
+                    let scanner = |s: &str| scan_lowercase(c, s);
+                    find_progress_iter(cursor, &pat_lower, &scanner, &matcher, num_steps)
+                }
+            }
         }
     }
 }
@@ -231,7 +232,7 @@ fn compare_cursor_str_casei(cursor: &mut Cursor<RopeInfo>, pat: &str) -> Option<
 /// If the regular expression can match multiple lines then all leaves are
 /// consumed and matched against the regular expression. Otherwise only the
 /// current leaf is matched. Returns the start position of the match.
-fn compare_cursor_regex(cursor: &mut Cursor<RopeInfo>, pat: &str) -> Option<usize> {
+fn compare_cursor_regex(cursor: &mut Cursor<RopeInfo>, pat: &str, cm: CaseMatching) -> Option<usize> {
     let orig_position = cursor.pos();
 
     if pat.is_empty() {
@@ -239,7 +240,12 @@ fn compare_cursor_regex(cursor: &mut Cursor<RopeInfo>, pat: &str) -> Option<usiz
     }
 
     // create regex from untrusted input
-    match RegexBuilder::new(pat).size_limit(REGEX_SIZE_LIMIT).build() {
+    let regex = RegexBuilder::new(pat)
+        .size_limit(REGEX_SIZE_LIMIT)
+        .case_insensitive(cm == CaseMatching::CaseInsensitive)
+        .build();
+
+    match regex {
         Ok(regex) => {
             let mut text = String::new();
 

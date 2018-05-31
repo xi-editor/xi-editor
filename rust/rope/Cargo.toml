@@ -12,7 +12,7 @@ memchr = "2.0"
 serde = "1.0"
 serde_derive = "1.0"
 unicode-segmentation = "1.2.1"
-regex = "0.2"
+regex = "1.0"
 
 [dev-dependencies]
 serde_test = "^1.0"

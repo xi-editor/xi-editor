@@ -37,6 +37,8 @@ pub struct Find {
     search_string: Option<String>,
     /// The case matching setting for the currently active search
     case_matching: CaseMatching,
+    /// The search query should be considered as regular expression
+    is_regex: bool,
     /// The set of all known find occurrences (highlights)
     occurrences: Selection,
     /// Set of ranges that have already been searched for the currently active search string
@@ -49,6 +51,7 @@ impl Find {
             hls_dirty: true,
             search_string: None,
             case_matching: CaseMatching::CaseInsensitive,
+            is_regex: false,
             occurrences: Selection::new(),
             valid_search: IndexSet::new(),
         }
@@ -93,7 +96,7 @@ impl Find {
 
     /// Set search parameters and executes the search.
     pub fn do_find(&mut self, text: &Rope, search_string: Option<String>,
-                   case_sensitive: bool, regex: bool) -> Value {
+                   case_sensitive: bool, is_regex: bool) -> Value {
         if search_string.is_none() {
             self.unset();
             return Value::Null;
@@ -105,7 +108,7 @@ impl Find {
             return Value::Null;
         }
 
-        self.set_find(&search_string, case_sensitive, regex);
+        self.set_find(&search_string, case_sensitive, is_regex);
         self.update_find(text, 0, text.len(), false);
 
         Value::String(search_string.to_string())
@@ -120,20 +123,16 @@ impl Find {
     }
 
     /// Sets find parameters and search query.
-    fn set_find(&mut self, search_string: &str, case_sensitive: bool, regex: bool) {
-        let case_matching = if regex {
-            CaseMatching::RegularExpression
+    fn set_find(&mut self, search_string: &str, case_sensitive: bool, is_regex: bool) {
+        let case_matching = if case_sensitive {
+            CaseMatching::Exact
         } else {
-            if case_sensitive {
-                CaseMatching::Exact
-            } else {
-                CaseMatching::CaseInsensitive
-            }
+            CaseMatching::CaseInsensitive
         };
 
 
         if let Some(ref s) = self.search_string {
-            if s == search_string && case_matching == self.case_matching {
+            if s == search_string && case_matching == self.case_matching && self.is_regex == is_regex {
                 // search parameters did not change
                 return;
             }
@@ -143,6 +142,7 @@ impl Find {
 
         self.search_string = Some(search_string.to_string());
         self.case_matching = case_matching;
+        self.is_regex = is_regex;
     }
 
     /// Execute the search on the provided text in the range provided by `start` and `end`.
@@ -169,7 +169,8 @@ impl Find {
             // aligned to codepoint boundaries.
             let text = text.subseq(Interval::new_closed_open(0, to));
             let mut cursor = Cursor::new(&text, from);
-            while let Some(start) = find(&mut cursor, self.case_matching, &search_string) {
+
+            while let Some(start) = find(&mut cursor, self.case_matching, &search_string, self.is_regex) {
                 let end = cursor.pos();
 
                 let region = SelRegion::new(start, end);
