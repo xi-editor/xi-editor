@@ -115,6 +115,11 @@ impl<C: Cache> View<C> {
         self.cache.get_line(&ctx, line_num)
     }
 
+    pub fn get_document(&mut self) -> Result<String, Error> {
+        let ctx = self.make_ctx();
+        self.cache.get_document(&ctx)
+    }
+
     pub fn offset_of_line(&mut self, line_num: usize) -> Result<usize, Error> {
         let ctx = self.make_ctx();
         self.cache.offset_of_line(&ctx, line_num)

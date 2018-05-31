@@ -112,6 +112,21 @@ impl Cache for ChunkCache {
 
     }
 
+    fn get_document<DS: DataSource>(&mut self, source: &DS) -> Result<String, Error> {
+        let mut result = String::new();
+        let mut cur_idx = 0;
+        while cur_idx < self.buf_size {
+            if self.contents.len() == 0 || cur_idx != self.offset {
+                let resp = source.get_data(cur_idx, TextUnit::Utf8,
+                                           CHUNK_SIZE, self.rev)?;
+                self.reset_chunk(resp);
+            }
+            result.push_str(&self.contents);
+            cur_idx = self.offset + self.contents.len();
+        }
+        Ok(result)
+    }
+
     fn offset_of_line<DS: DataSource>(&mut self, source: &DS, line_num: usize)
         -> Result<usize, Error>
     {
