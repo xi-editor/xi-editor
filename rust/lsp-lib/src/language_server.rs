@@ -7,12 +7,14 @@ use std::process;
 use serde_json;
 use serde_json::{Value, to_value};
 use jsonrpc_lite::{JsonRpc, Error, Id, Params};
-use lsp_types::{ClientCapabilities};
+use lsp_types::{ClientCapabilities, DidOpenTextDocumentParams, TextDocumentItem};
 
 pub struct LanguageServerClient {
     writer: Box<Write + Send>,
     pending: HashMap<usize, Callback>,
     next_id: usize,
+    pub is_initialized: bool,
+    pub file_extensions: Vec<String>,
 }
 
 fn prepare_lsp_json(msg: &Value) -> Result<String, serde_json::error::Error> {
@@ -36,7 +38,9 @@ impl LanguageServerClient {
         LanguageServerClient {
             writer,
             pending: HashMap::new(),
-            next_id: 1
+            next_id: 1,
+            is_initialized: false,
+            file_extensions: vec!["json".to_string()],
         }
     }
 
@@ -71,12 +75,12 @@ impl LanguageServerClient {
 
     pub fn handle_response(&mut self, id: usize, result: Value) {
         let callback = self.pending.remove(&id).expect(&format!("id {} missing from request table", id));
-        callback.call(Ok(result));
+        callback.call(self, Ok(result));
     }
 
     pub fn handle_error(&mut self, id: usize, error: Error) {
         let callback = self.pending.remove(&id).expect(&format!("id {} missing from request table", id));
-        callback.call(Err(error));
+        callback.call(self, Err(error));
     }
 
      pub fn send_request(&mut self, method: &str, params: Params, completion: Callback) {
@@ -105,31 +109,43 @@ impl LanguageServerClient {
 
 }
 
-// impl LanguageServerClient {
+impl LanguageServerClient {
 
-//     pub fn send_initialize<F>(&mut self, root_uri: Option<Url>, on_init: Callback)
-//     where
-//         F: 'static + Send + FnOnce(Result<Value, Error>) -> (),
-//     {
-//         let client_capabilities = ClientCapabilities::default();
+    pub fn send_initialize<CB>(&mut self, root_uri: Option<Url>, on_init: CB)
+    where
+        CB: 'static + Send + FnOnce(&mut LanguageServerClient, Result<Value, Error>)
+    {
+        let client_capabilities = ClientCapabilities::default();
 
-//         let init_params = InitializeParams {
-//             process_id: Some(process::id() as u64),
-//             root_uri: root_uri,
-//             root_path: None,
-//             initialization_options: None,
-//             capabilities: client_capabilities,
-//             trace: None,
-//         };
+        let init_params = InitializeParams {
+            process_id: Some(process::id() as u64),
+            root_uri: root_uri,
+            root_path: None,
+            initialization_options: None,
+            capabilities: client_capabilities,
+            trace: None,
+        };
 
-//         let params = Params::from(serde_json::to_value(init_params).unwrap());
+        let params = Params::from(serde_json::to_value(init_params).unwrap());
 
-//         self.send_request("initialize", params, on_init);
-//     }
+        self.send_request("initialize", params, Box::new(on_init));
+    }
 
-//     pub fn send_did_open(&mut self) {
-//         eprintln!("DID OPEN CALLED")
-//     }
+    pub fn send_did_open(&mut self, document_uri: Url) {
+        eprintln!("DID OPEN CALLED with documentURI {:?}", document_uri);
 
-//     pub fn request_diagonostics(&mut self) {}
-// }
+        let text_document_did_open_params = DidOpenTextDocumentParams{
+            text_document: TextDocumentItem {
+                language_id: "json".to_string(),
+                uri: document_uri,
+                version: 0,
+                text: "".to_string()
+            }
+        };
+
+        let params = Params::from(serde_json::to_value(text_document_did_open_params).unwrap());
+        self.send_notification("textDocument/didOpen", params);
+    }
+
+    pub fn request_diagonostics(&mut self) {}
+}
