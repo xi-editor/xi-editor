@@ -18,15 +18,15 @@ pub mod language_server;
 pub mod lsp_plugin;
 
 pub use lsp_plugin::LSPPlugin;
-pub use lsp_plugin::XiLSPPlugin;
+use language_server::LanguageServerClient;
 
 pub trait Callable: Send {
-    fn call(self: Box<Self>, result: Result<Value, Error>);
+    fn call(self: Box<Self>, client: &mut LanguageServerClient, result: Result<Value, Error>);
 }
 
-impl<F: Send + FnOnce(Result<Value, Error>)> Callable for F {
-    fn call(self: Box<F>, result: Result<Value, Error>) {
-        (*self)(result)
+impl<F: Send + FnOnce(&mut LanguageServerClient, Result<Value, Error>)> Callable for F {
+    fn call(self: Box<F>, client: &mut LanguageServerClient, result: Result<Value, Error>) {
+        (*self)(client, result)
     }
 }
 
