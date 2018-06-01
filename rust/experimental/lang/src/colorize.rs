@@ -16,7 +16,7 @@
 
 use std::fmt::Debug;
 
-use statestack::{State, NewState};
+use statestack::{NewState, State};
 
 pub trait Colorize {
     /// first state is for the highlighted span; size of highlighted span; next state
@@ -38,8 +38,8 @@ pub fn run_debug<C: Colorize>(c: &mut C, s: &str) {
         while i < line.len() {
             let (prevlen, s0, len, s1) = c.colorize(&line[i..], state);
             if prevlen > 0 {
-               println!("{}: {:?}", &line[i..i + prevlen], state);
-               i += prevlen;
+                println!("{}: {:?}", &line[i..i + prevlen], state);
+                i += prevlen;
             }
             println!("{}: {:?}", &line[i..i + len], s0);
             i += len;
@@ -65,7 +65,7 @@ impl<T: Debug> NewState<T> for DebugNewState {
 #[derive(Debug)]
 pub struct Style {
     pub fg_color: u32, // ARGB
-    pub font: u8, // bitflags, 1=bold, 2=underline, 4=italic
+    pub font: u8,      // bitflags, 1=bold, 2=underline, 4=italic
 }
 
 impl Default for Style {
@@ -79,14 +79,14 @@ impl Default for Style {
 
 pub struct StyleNewState<F> {
     to_style: F,
-    styles: Vec<Style>
+    styles: Vec<Style>,
 }
 
 impl<F> StyleNewState<F> {
     pub fn new(to_style: F) -> StyleNewState<F> {
         StyleNewState {
             to_style: to_style,
-            styles: vec![Style::default()]
+            styles: vec![Style::default()],
         }
     }
 

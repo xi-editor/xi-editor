@@ -15,15 +15,15 @@
 #[macro_use]
 extern crate serde_json;
 
-extern crate xi_rpc;
 extern crate xi_core_lib;
+extern crate xi_rpc;
 
 use std::io;
 
-use xi_rpc::{RpcLoop, ReadError};
-use xi_rpc::test_utils::{make_reader, test_channel};
-use xi_core_lib::XiCore;
 use xi_core_lib::test_helpers;
+use xi_core_lib::XiCore;
+use xi_rpc::test_utils::{make_reader, test_channel};
+use xi_rpc::{ReadError, RpcLoop};
 
 #[test]
 /// Tests that the handler responds to a standard startup sequence as expected.
@@ -31,8 +31,10 @@ fn test_startup() {
     let mut state = XiCore::new();
     let (tx, mut rx) = test_channel();
     let mut rpc_looper = RpcLoop::new(tx);
-    let json = make_reader(r#"{"method":"client_started","params":{}}
-{"method":"set_theme","params":{"theme_name":"InspiredGitHub"}}"#);
+    let json = make_reader(
+        r#"{"method":"client_started","params":{}}
+{"method":"set_theme","params":{"theme_name":"InspiredGitHub"}}"#,
+    );
     assert!(rpc_looper.mainloop(|| json, &mut state).is_ok());
     rx.expect_rpc("available_themes");
     rx.expect_rpc("theme_changed");
@@ -47,29 +49,30 @@ fn test_startup() {
     rx.expect_nothing();
 }
 
-
 #[test]
 /// Tests that the handler creates and destroys views and buffers
 fn test_state() {
     let mut state = XiCore::new();
 
     let write = io::sink();
-    let json = make_reader(r#"{"method":"client_started","params":{}}
+    let json = make_reader(
+        r#"{"method":"client_started","params":{}}
 {"method":"set_theme","params":{"theme_name":"InspiredGitHub"}}
-{"id":0,"method":"new_view","params":{}}"#);
+{"id":0,"method":"new_view","params":{}}"#,
+    );
     let mut rpc_looper = RpcLoop::new(write);
     rpc_looper.mainloop(|| json, &mut state).unwrap();
 
     {
         let state = state.inner();
-        assert_eq!(state._test_open_editors(),
-                   vec![test_helpers::new_buffer_id(2)]);
-        assert_eq!(state._test_open_views(),
-                   vec![test_helpers::new_view_id(1)]);
+        assert_eq!(
+            state._test_open_editors(),
+            vec![test_helpers::new_buffer_id(2)]
+        );
+        assert_eq!(state._test_open_views(), vec![test_helpers::new_view_id(1)]);
     }
 
-    let json = make_reader(
-        r#"{"method":"close_view","params":{"view_id":"view-id-1"}}"#);
+    let json = make_reader(r#"{"method":"close_view","params":{"view_id":"view-id-1"}}"#);
     rpc_looper.mainloop(|| json, &mut state).unwrap();
     {
         let state = state.inner();
@@ -77,10 +80,11 @@ fn test_state() {
         assert_eq!(state._test_open_editors(), Vec::new());
     }
 
-    let json = make_reader(r#"{"id":1,"method":"new_view","params":{}}
+    let json = make_reader(
+        r#"{"id":1,"method":"new_view","params":{}}
 {"id":2,"method":"new_view","params":{}}
-{"id":3,"method":"new_view","params":{}}"#);
-
+{"id":3,"method":"new_view","params":{}}"#,
+    );
 
     rpc_looper.mainloop(|| json, &mut state).unwrap();
     {
@@ -97,12 +101,17 @@ fn test_malformed_json() {
     let write = io::sink();
     let mut rpc_looper = RpcLoop::new(write);
     // malformed json: method should be in quotes.
-    let read = make_reader(r#"{"method":"client_started","params":{}}
-{"id":0,method:"new_view","params":{}}"#);
-    match rpc_looper.mainloop(|| read, &mut state).err()
-        .expect("malformed json exits with error") {
-            ReadError::Json(_) => (), // expected
-            err => panic!("Unexpected error: {:?}", err),
+    let read = make_reader(
+        r#"{"method":"client_started","params":{}}
+{"id":0,method:"new_view","params":{}}"#,
+    );
+    match rpc_looper
+        .mainloop(|| read, &mut state)
+        .err()
+        .expect("malformed json exits with error")
+    {
+        ReadError::Json(_) => (), // expected
+        err => panic!("Unexpected error: {:?}", err),
     }
     // read should have ended after first item
     {
@@ -122,9 +131,11 @@ fn test_movement_cmds() {
     let write = io::sink();
     let mut rpc_looper = RpcLoop::new(write);
     // init a new view
-    let json = make_reader(r#"{"method":"client_started","params":{}}
+    let json = make_reader(
+        r#"{"method":"client_started","params":{}}
 {"method":"set_theme","params":{"theme_name":"InspiredGitHub"}}
-{"id":0,"method":"new_view","params":{}}"#);
+{"id":0,"method":"new_view","params":{}}"#,
+    );
     assert!(rpc_looper.mainloop(|| json, &mut state).is_ok());
 
     let json = make_reader(MOVEMENT_RPCS);
@@ -139,9 +150,11 @@ fn test_text_commands() {
     let write = io::sink();
     let mut rpc_looper = RpcLoop::new(write);
     // init a new view
-    let json = make_reader(r#"{"method":"client_started","params":{}}
+    let json = make_reader(
+        r#"{"method":"client_started","params":{}}
 {"method":"set_theme","params":{"theme_name":"InspiredGitHub"}}
-{"id":0,"method":"new_view","params":{}}"#);
+{"id":0,"method":"new_view","params":{}}"#,
+    );
     assert!(rpc_looper.mainloop(|| json, &mut state).is_ok());
 
     let json = make_reader(TEXT_EDIT_RPCS);
@@ -154,15 +167,16 @@ fn test_other_edit_commands() {
     let write = io::sink();
     let mut rpc_looper = RpcLoop::new(write);
     // init a new view
-    let json = make_reader(r#"{"method":"client_started","params":{}}
+    let json = make_reader(
+        r#"{"method":"client_started","params":{}}
 {"method":"set_theme","params":{"theme_name":"InspiredGitHub"}}
-{"id":0,"method":"new_view","params":{}}"#);
+{"id":0,"method":"new_view","params":{}}"#,
+    );
     assert!(rpc_looper.mainloop(|| json, &mut state).is_ok());
 
     let json = make_reader(OTHER_EDIT_RPCS);
     rpc_looper.mainloop(|| json, &mut state).unwrap();
 }
-
 
 #[test]
 fn test_settings_commands() {
@@ -171,9 +185,10 @@ fn test_settings_commands() {
     let mut rpc_looper = RpcLoop::new(tx);
     // init a new view
     let json = make_reader(
-    r#"{"method":"client_started","params":{}}
+        r#"{"method":"client_started","params":{}}
 {"method":"set_theme","params":{"theme_name":"InspiredGitHub"}}
-{"id":0,"method":"new_view","params":{}}"#);
+{"id":0,"method":"new_view","params":{}}"#,
+    );
     assert!(rpc_looper.mainloop(|| json, &mut state).is_ok());
     rx.expect_rpc("available_themes");
     rx.expect_rpc("theme_changed");
@@ -208,8 +223,6 @@ fn test_settings_commands() {
     let resp = rx.expect_rpc("config_changed");
     assert_eq!(resp.0["params"]["changes"]["font_face"], json!("Papyrus"));
 }
-
-
 
 //TODO: test saving rpc
 //TODO: test plugin rpc
@@ -246,7 +259,8 @@ const MOVEMENT_RPCS: &str = r#"{"method":"edit","params":{"view_id":"view-id-1",
 {"method":"edit","params":{"view_id":"view-id-1","method":"add_selection_above","params":[]}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"add_selection_below","params":[]}}"#;
 
-const TEXT_EDIT_RPCS: &str = r#"{"method":"edit","params":{"view_id":"view-id-1","method":"insert","params":{"chars":"a"}}}
+const TEXT_EDIT_RPCS: &str =
+    r#"{"method":"edit","params":{"view_id":"view-id-1","method":"insert","params":{"chars":"a"}}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"delete_backward","params":[]}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"delete_forward","params":[]}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"delete_word_forward","params":[]}}

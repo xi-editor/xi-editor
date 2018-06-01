@@ -21,18 +21,17 @@ use xi_plugin_lib::caching_plugin::{self, PluginCtx, SpansBuilder};
 
 use std::env;
 
-mod rust;
 mod colorize;
-mod statestack;
 mod peg;
+mod rust;
+mod statestack;
 
+use colorize::{Colorize, Style, StyleNewState};
 use rust::RustColorize;
 use statestack::State;
-use colorize::{Style, StyleNewState, Colorize};
 
 fn add_style_span(builder: &mut SpansBuilder, style: &Style, start: usize, end: usize) {
-    builder.add_style_span(start, end,
-        style.fg_color, style.font);
+    builder.add_style_span(start, end, style.fg_color, style.font);
 }
 
 struct PluginState {
@@ -99,7 +98,11 @@ impl PluginState {
 
     fn flush_spans(&mut self, ctx: &mut PluginCtx) {
         if let Some(builder) = self.builder.take() {
-            ctx.set_fg_spans(self.spans_start, self.offset - self.spans_start, builder.build());
+            ctx.set_fg_spans(
+                self.spans_start,
+                self.offset - self.spans_start,
+                builder.build(),
+            );
         }
     }
 

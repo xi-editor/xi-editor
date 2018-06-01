@@ -16,26 +16,26 @@
 
 use std::io::{stdin, Read};
 
-use statestack::{State, Context, NewState};
 use colorize::{self, Colorize, DebugNewState, Style};
 use peg::*;
+use statestack::{Context, NewState, State};
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum StateEl {
     StrQuote,
     CharQuote,
-    Comment,  // One for each /*
+    Comment, // One for each /*
     CharConst,
     NumericLiteral,
     Invalid,
     Keyword,
     Operator,
     PrimType,
-    //RawStrHash,  // One for each hash in a raw string
-    //Block,    // One for each {
-    //Bracket,  // One for each [
-    //Paren,    // One for each (
-    // generics etc
+    /*RawStrHash,  // One for each hash in a raw string
+     *Block,    // One for each {
+     *Bracket,  // One for each [
+     *Paren,    // One for each (
+     * generics etc */
 }
 
 pub fn to_style(style: &mut Style, el: &StateEl) {
@@ -54,26 +54,72 @@ pub fn to_style(style: &mut Style, el: &StateEl) {
 
 // sorted for easy binary searching
 const RUST_KEYWORDS: &'static [&'static [u8]] = &[
-    b"Self", b"abstract", b"alignof", b"as", b"become", b"box", b"break",
-    b"const", b"continue", b"crate", b"default", b"do", b"else", b"enum",
-    b"extern", b"false", b"final", b"fn", b"for", b"if", b"impl", b"in", b"let",
-    b"loop", b"macro", b"match", b"mod", b"move", b"mut", b"offsetof",
-    b"override", b"priv", b"proc", b"pub", b"pure", b"ref", b"return", b"self",
-    b"sizeof", b"static", b"struct", b"super", b"trait", b"true", b"type",
-    b"typeof", b"union", b"unsafe", b"unsized", b"use", b"virtual", b"where",
-    b"while", b"yield"
+    b"Self",
+    b"abstract",
+    b"alignof",
+    b"as",
+    b"become",
+    b"box",
+    b"break",
+    b"const",
+    b"continue",
+    b"crate",
+    b"default",
+    b"do",
+    b"else",
+    b"enum",
+    b"extern",
+    b"false",
+    b"final",
+    b"fn",
+    b"for",
+    b"if",
+    b"impl",
+    b"in",
+    b"let",
+    b"loop",
+    b"macro",
+    b"match",
+    b"mod",
+    b"move",
+    b"mut",
+    b"offsetof",
+    b"override",
+    b"priv",
+    b"proc",
+    b"pub",
+    b"pure",
+    b"ref",
+    b"return",
+    b"self",
+    b"sizeof",
+    b"static",
+    b"struct",
+    b"super",
+    b"trait",
+    b"true",
+    b"type",
+    b"typeof",
+    b"union",
+    b"unsafe",
+    b"unsized",
+    b"use",
+    b"virtual",
+    b"where",
+    b"while",
+    b"yield",
 ];
 
 // sorted for easy binary searching
 const RUST_PRIM_TYPES: &'static [&'static [u8]] = &[
-    b"bool", b"char", b"f32", b"f64", b"i128", b"i16", b"i32", b"i64", b"i8",
-    b"isize", b"str", b"u128", b"u16", b"u32", b"u64", b"u8", b"usize"
+    b"bool", b"char", b"f32", b"f64", b"i128", b"i16", b"i32", b"i64", b"i8", b"isize", b"str",
+    b"u128", b"u16", b"u32", b"u64", b"u8", b"usize",
 ];
 
 const RUST_OPERATORS: &'static [&'static [u8]] = &[
-    b"!", b"%=", b"%", b"&=", b"&&", b"&", b"*=", b"*", b"+=", b"+", b"-=", b"-",
-    b"/=", b"/", b"<<=", b"<<", b">>=", b">>", b"^=", b"^", b"|=", b"||", b"|",
-    b"==", b"=", b"..", b"=>", b"<=", b"<", b">=", b">"
+    b"!", b"%=", b"%", b"&=", b"&&", b"&", b"*=", b"*", b"+=", b"+", b"-=", b"-", b"/=", b"/",
+    b"<<=", b"<<", b">>=", b">>", b"^=", b"^", b"|=", b"||", b"|", b"==", b"=", b"..", b"=>",
+    b"<=", b"<", b">=", b">",
 ];
 
 pub struct RustColorize<N> {
@@ -100,8 +146,9 @@ impl<N: NewState<StateEl>> RustColorize<N> {
             } else if b == b'\\' {
                 if let Some(len) = escape.p(&t[i..]) {
                     return (i, self.ctx.push(state, StateEl::CharConst), len, state);
-                } else if let Some(len) = 
-                        (FailIf(OneOf(b"\r\nbu")), OneChar(|_| true)).p(&t[i+1..]) {
+                } else if let Some(len) =
+                    (FailIf(OneOf(b"\r\nbu")), OneChar(|_| true)).p(&t[i + 1..])
+                {
                     return (i + 1, self.ctx.push(state, StateEl::Invalid), len, state);
                 }
             }
@@ -129,7 +176,10 @@ fn is_ident_continue(c: u8) -> bool {
 }
 
 fn ident(s: &[u8]) -> Option<usize> {
-    (OneByte(is_ident_start), ZeroOrMore(OneByte(is_ident_continue))).p(s)
+    (
+        OneByte(is_ident_start),
+        ZeroOrMore(OneByte(is_ident_continue)),
+    ).p(s)
 }
 
 // sequence of decimal digits with optional separator
@@ -138,7 +188,10 @@ fn raw_numeric(s: &[u8]) -> Option<usize> {
 }
 
 fn int_suffix(s: &[u8]) -> Option<usize> {
-    (Alt(b'u', b'i'), OneOf(&["8", "16", "32", "64", "128", "size"])).p(s)
+    (
+        Alt(b'u', b'i'),
+        OneOf(&["8", "16", "32", "64", "128", "size"]),
+    ).p(s)
 }
 
 // At least one P with any number of SEP mixed in. Note: this is also an example
@@ -148,7 +201,11 @@ struct OneOrMoreWithSep<P, SEP>(P, SEP);
 impl<P: Peg, SEP: Peg> Peg for OneOrMoreWithSep<P, SEP> {
     fn p(&self, s: &[u8]) -> Option<usize> {
         let OneOrMoreWithSep(ref p, ref sep) = *self;
-        (ZeroOrMore(Ref(sep)), Ref(p), ZeroOrMore(Alt(Ref(p), Ref(sep)))).p(s)
+        (
+            ZeroOrMore(Ref(sep)),
+            Ref(p),
+            ZeroOrMore(Alt(Ref(p), Ref(sep))),
+        ).p(s)
     }
 }
 
@@ -160,20 +217,21 @@ fn positive_nondecimal(s: &[u8]) -> Option<usize> {
             (b'o', OneOrMoreWithSep(Inclusive(b'0'..b'7'), b'_')),
             (b'b', OneOrMoreWithSep(Alt(b'0', b'1'), b'_')),
         ),
-        Optional(int_suffix)
+        Optional(int_suffix),
     ).p(s)
 }
 
 fn positive_decimal(s: &[u8]) -> Option<usize> {
     (
         raw_numeric,
-        Alt(int_suffix,
+        Alt(
+            int_suffix,
             (
                 Optional((b'.', FailIf(OneByte(is_ident_start)), Optional(raw_numeric))),
                 Optional((Alt(b'e', b'E'), Optional(Alt(b'+', b'-')), raw_numeric)),
-                Optional(Alt("f32", "f64"))
-            )
-        )
+                Optional(Alt("f32", "f64")),
+            ),
+        ),
     ).p(s)
 }
 
@@ -187,8 +245,8 @@ fn escape(s: &[u8]) -> Option<usize> {
         Alt3(
             OneOf(b"\\\'\"0nrt"),
             (b'x', Repeat(OneByte(is_hex_digit), 2)),
-            ("u{", Repeat(OneByte(is_hex_digit), 1..7), b'}')
-        )
+            ("u{", Repeat(OneByte(is_hex_digit), 1..7), b'}'),
+        ),
     ).p(s)
 }
 
@@ -196,7 +254,7 @@ fn char_literal(s: &[u8]) -> Option<usize> {
     (
         b'\'',
         Alt(OneChar(|c| c != '\\' && c != '\''), escape),
-        b'\''
+        b'\'',
     ).p(s)
 }
 
@@ -216,7 +274,7 @@ impl<N: NewState<StateEl>> Colorize for RustColorize<N> {
                 return (0, state, t.len(), state);
             }
             Some(StateEl::StrQuote) => return self.quoted_str(t, state),
-            _ => ()
+            _ => (),
         }
         let mut i = 0;
         while i < t.len() {
