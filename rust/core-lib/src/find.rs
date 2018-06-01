@@ -37,6 +37,8 @@ pub struct Find {
     search_string: Option<String>,
     /// The case matching setting for the currently active search
     case_matching: CaseMatching,
+    /// /// The search query should be considered as regular expression
+    is_regex: bool,
     /// The set of all known find occurrences (highlights)
     occurrences: Selection,
     /// Set of ranges that have already been searched for the currently active search string
@@ -49,6 +51,7 @@ impl Find {
             hls_dirty: true,
             search_string: None,
             case_matching: CaseMatching::CaseInsensitive,
+            is_regex: false,
             occurrences: Selection::new(),
             valid_search: IndexSet::new(),
         }
@@ -60,6 +63,18 @@ impl Find {
 
     pub fn hls_dirty(&self) -> bool {
         self.hls_dirty
+    }
+
+    pub fn search_string(&self) -> &Option<String> {
+        &self.search_string
+    }
+
+    pub fn is_case_sensitive(&self) -> bool {
+        self.case_matching == CaseMatching::Exact
+    }
+
+    pub fn is_regex(&self) -> bool {
+        self.is_regex
     }
 
     pub fn set_hls_dirty(&mut self, is_dirty: bool) {

@@ -137,8 +137,11 @@ impl<'a> EventContext<'a> {
         let result = match cmd {
             Cut => Ok(self.with_editor(|ed, view, _| ed.do_cut(view))),
             Copy => Ok(self.with_editor(|ed, view, _| ed.do_copy(view))),
-            Find { chars, case_sensitive } => Ok(self.with_view(
-                |view, text| view.do_find(text, chars, case_sensitive))),
+            Find { chars, case_sensitive } => {
+                let result = Ok(self.with_view(|view, text| view.do_find(text, chars, case_sensitive)));
+                self.send_find_status();
+                result
+            },
             // Replace
         };
         self.after_edit("core");
@@ -410,6 +413,10 @@ impl<'a> EventContext<'a> {
         view.request_lines(ed.get_buffer(), self.client, self.style_map,
                            ed.get_layers().get_merged(), first, last,
                            ed.is_pristine())
+    }
+
+    fn send_find_status(&mut self) {
+        self.view.borrow_mut().send_find_status(&self.client)
     }
 }
 
