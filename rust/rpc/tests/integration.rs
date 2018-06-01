@@ -16,12 +16,12 @@
 extern crate serde_json;
 extern crate xi_rpc;
 
-use std::time::Duration;
 use std::io;
+use std::time::Duration;
 
 use serde_json::Value;
-use xi_rpc::{Handler, RpcLoop, RpcCtx, RpcCall, RemoteError, ReadError};
-use xi_rpc::test_utils::{test_channel, make_reader};
+use xi_rpc::test_utils::{make_reader, test_channel};
+use xi_rpc::{Handler, ReadError, RemoteError, RpcCall, RpcCtx, RpcLoop};
 
 /// Handler that responds to requests with whatever params they sent.
 pub struct EchoHandler;
@@ -31,8 +31,7 @@ impl Handler for EchoHandler {
     type Notification = RpcCall;
     type Request = RpcCall;
     fn handle_notification(&mut self, ctx: &RpcCtx, rpc: Self::Notification) {}
-    fn handle_request(&mut self, ctx: &RpcCtx, rpc: Self::Request)
-                      -> Result<Value, RemoteError> {
+    fn handle_request(&mut self, ctx: &RpcCtx, rpc: Self::Request) -> Result<Value, RemoteError> {
         Ok(rpc.params)
     }
 }
@@ -72,8 +71,8 @@ fn test_recv_error() {
     let mut handler = EchoHandler;
     let (tx, mut rx) = test_channel();
     let mut rpc_looper = RpcLoop::new(tx);
-    let r = make_reader(
-        r#"{"id": 0, "method": "hullo","args": {"args": "should", "be": "params"}}"#);
+    let r =
+        make_reader(r#"{"id": 0, "method": "hullo","args": {"args": "should", "be": "params"}}"#);
     assert!(rpc_looper.mainloop(|| r, &mut handler).is_ok());
     let resp = rx.expect_response();
     assert!(resp.is_err(), "{:?}", resp);
@@ -84,8 +83,7 @@ fn test_bad_json_err() {
     // malformed json should cause the runloop to return an error.
     let mut handler = EchoHandler;
     let mut rpc_looper = RpcLoop::new(io::sink());
-    let r = make_reader(
-        r#"this is not valid json"#);
+    let r = make_reader(r#"this is not valid json"#);
     let exit = rpc_looper.mainloop(|| r, &mut handler);
     match exit {
         Err(ReadError::Json(_)) => (),

@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::io;
 use std::fmt;
+use std::io;
 
-use serde_json::{Value, Error as JsonError};
-use serde::de::{Deserializer, Deserialize};
-use serde::ser::{Serializer, Serialize};
+use serde::de::{Deserialize, Deserializer};
+use serde::ser::{Serialize, Serializer};
+use serde_json::{Error as JsonError, Value};
 
 /// The possible error outcomes when attempting to send a message.
 #[derive(Debug)]
@@ -66,8 +66,8 @@ pub enum ReadError {
 /// # extern crate xi_rpc;
 /// # extern crate serde_json;
 /// # fn main() {
-/// use xi_rpc::RemoteError;
 /// use serde_json::Value;
+/// use xi_rpc::RemoteError;
 ///
 /// let json = r#"{
 ///     "code": -32600,
@@ -76,9 +76,10 @@ pub enum ReadError {
 ///     }"#;
 ///
 /// let err = serde_json::from_str::<RemoteError>(&json).unwrap();
-/// assert_eq!(err,
-///            RemoteError::InvalidRequest(
-///                Some(Value::String("Additional details".into()))));
+/// assert_eq!(
+///     err,
+///     RemoteError::InvalidRequest(Some(Value::String("Additional details".into())))
+/// );
 /// # }
 /// ```
 ///
@@ -88,8 +89,8 @@ pub enum ReadError {
 /// # extern crate xi_rpc;
 /// # extern crate serde_json;
 /// # fn main() {
-/// use xi_rpc::RemoteError;
 /// use serde_json::Value;
+/// use xi_rpc::RemoteError;
 ///
 /// let json = r#"{
 ///     "code": 404,
@@ -108,7 +109,11 @@ pub enum RemoteError {
     /// clients.
     InvalidRequest(Option<Value>),
     /// A custom error, defined by the client.
-    Custom { code: i64, message: String, data: Option<Value> },
+    Custom {
+        code: i64,
+        message: String,
+        data: Option<Value>,
+    },
     /// An error that cannot be represented by an error object.
     ///
     /// This error is intended to accomodate clients that return arbitrary
@@ -119,12 +124,17 @@ pub enum RemoteError {
 impl RemoteError {
     /// Creates a new custom error.
     pub fn custom<S, V>(code: i64, message: S, data: V) -> Self
-        where S: AsRef<str>,
-              V: Into<Option<Value>>,
+    where
+        S: AsRef<str>,
+        V: Into<Option<Value>>,
     {
         let message = message.as_ref().into();
         let data = data.into();
-        RemoteError::Custom { code, message, data }
+        RemoteError::Custom {
+            code,
+            message,
+            data,
+        }
     }
 }
 
@@ -182,10 +192,10 @@ struct ErrorHelper {
     data: Option<Value>,
 }
 
-impl<'de> Deserialize<'de> for RemoteError
-{
+impl<'de> Deserialize<'de> for RemoteError {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where D: Deserializer<'de>
+    where
+        D: Deserializer<'de>,
     {
         let v = Value::deserialize(deserializer)?;
         let resp = match ErrorHelper::deserialize(&v) {
@@ -198,28 +208,35 @@ impl<'de> Deserialize<'de> for RemoteError
             _ => RemoteError::Custom {
                 code: resp.code,
                 message: resp.message,
-                data: resp.data
+                data: resp.data,
             },
         })
     }
 }
 
-impl Serialize for RemoteError
-{
+impl Serialize for RemoteError {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where S: Serializer
+    where
+        S: Serializer,
     {
         let (code, message, data) = match *self {
-             RemoteError::InvalidRequest(ref d) => (-32600, "Invalid request", d),
-             RemoteError::Custom { code, ref message, ref data } => {
-                 (code, message.as_ref(), data)
-             }
-             RemoteError::Unknown(_) => panic!("The 'Unknown' error variant is \
-                                               not intended for client use."),
+            RemoteError::InvalidRequest(ref d) => (-32600, "Invalid request", d),
+            RemoteError::Custom {
+                code,
+                ref message,
+                ref data,
+            } => (code, message.as_ref(), data),
+            RemoteError::Unknown(_) => {
+                panic!("The 'Unknown' error variant is not intended for client use.")
+            }
         };
         let message = message.to_owned();
         let data = data.to_owned();
-        let err = ErrorHelper { code, message, data };
+        let err = ErrorHelper {
+            code,
+            message,
+            data,
+        };
         err.serialize(serializer)
     }
 }
