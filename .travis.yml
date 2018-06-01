@@ -17,9 +17,13 @@ cache:
   directories:
     - $HOME/.cargo
 
+before_script:
+- rustup component add rustfmt-preview
+
 script:
   - cd rust
   - export CARGO_TARGET_DIR=/tmp/target
+  - cargo fmt --all -- --check
   - cargo build || exit
   - cargo build --manifest-path syntect-plugin/Cargo.toml || exit
   - for MANIFEST in Cargo.toml */Cargo.toml; do cargo test --manifest-path $MANIFEST || exit; done

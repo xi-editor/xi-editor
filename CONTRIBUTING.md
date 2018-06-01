@@ -15,6 +15,13 @@ us first through the issue tracker with your idea so that we can help out and
 possibly guide you. Coordinating up front makes it much easier to avoid
 frustration later on.
 
+### Development 
+
+Before writing any code make sure that [rustfmt](https://github.com/rust-lang-nursery/rustfmt)
+and [Clippy](https://github.com/rust-lang-nursery/rust-clippy)
+are installed as they are ran locally.
+
+
 ### Code reviews
 All submissions, including submissions by project members, require review. We
 use Github pull requests for this purpose.
