@@ -124,6 +124,14 @@ impl Client {
         self.0.send_rpc_notification("def_style", &style)
     }
 
+    pub fn find_status(&self, view_id: ViewId, queries: &Value) {
+        self.0.send_rpc_notification("find_status",
+                                     &json!({
+                                         "view_id": view_id,
+                                         "queries": queries,
+                                     }));
+    }
+
     /// Ask front-end to measure widths of strings.
     pub fn measure_width(&self, reqs: &[WidthReq])
         -> Result<Vec<Vec<f64>>, xi_rpc::Error>

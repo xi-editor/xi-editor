@@ -644,6 +644,23 @@ impl View {
         }
     }
 
+    /// Determines the current number of find results and search parameters to send them to
+    /// the frontend.
+    pub fn send_find_status(&self, client: &Client) {
+        // todo: optional attributes
+
+        let find_status: Vec<Value> = self.find.iter().map(|find| {
+            json!({
+                "chars": find.search_string(),
+                "case_sensitive": find.is_case_sensitive(),
+                "is_regex": find.is_regex(),
+                "matches": find.occurrences().len(),
+            })
+        }).collect();
+
+        client.find_status(self.view_id, &json!(find_status));
+    }
+
     /// Update front-end with any changes to view since the last time sent.
     /// The `pristine` argument indicates whether or not the buffer has
     /// unsaved changes.
@@ -791,6 +808,7 @@ impl View {
         for find in &mut self.find {
             find.update_highlights(text, delta);
         }
+
 
         // Note: for committing plugin edits, we probably want to know the priority
         // of the delta so we can set the cursor before or after the edit, as needed.
