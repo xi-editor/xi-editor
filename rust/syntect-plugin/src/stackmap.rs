@@ -22,7 +22,6 @@ use std::collections::HashMap;
 
 use syntect::parsing::Scope;
 
-
 #[derive(Debug, Default)]
 struct Node {
     value: Option<u32>,
@@ -47,7 +46,10 @@ pub enum LookupResult {
 
 impl Node {
     pub fn new(value: u32) -> Self {
-        Node { value: Some(value), children: HashMap::new() }
+        Node {
+            value: Some(value),
+            children: HashMap::new(),
+        }
     }
 
     fn get_value(&mut self, stack: &[Scope], next_id: u32) -> LookupResult {
@@ -56,7 +58,7 @@ impl Node {
         if stack.len() == 1 {
             if !self.children.contains_key(first) {
                 self.children.insert(first.to_owned(), Node::new(next_id));
-                return LookupResult::New(next_id)
+                return LookupResult::New(next_id);
             }
 
             // if key exists, value still might not be assigned:
@@ -64,17 +66,20 @@ impl Node {
             if needs_value {
                 let node = self.children.get_mut(first).unwrap();
                 node.value = Some(next_id);
-                return LookupResult::New(next_id)
+                return LookupResult::New(next_id);
             } else {
-               let value = self.children.get(first).unwrap().value.unwrap();
-                return LookupResult::Existing(value)
+                let value = self.children.get(first).unwrap().value.unwrap();
+                return LookupResult::Existing(value);
             }
         }
         // not the last item: recurse, creating node as necessary
         if self.children.get(first).is_none() {
             self.children.insert(first.to_owned(), Node::default());
         }
-        self.children.get_mut(first).unwrap().get_value(&stack[1..], next_id)
+        self.children
+            .get_mut(first)
+            .unwrap()
+            .get_value(&stack[1..], next_id)
     }
 }
 
@@ -87,8 +92,8 @@ impl StackMap {
             self.next_id += 1;
         }
         result
-        }
     }
+}
 
 impl LookupResult {
     pub fn is_new(&self) -> bool {
@@ -99,12 +104,11 @@ impl LookupResult {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use syntect::parsing::ScopeStack;
     use std::str::FromStr;
+    use syntect::parsing::ScopeStack;
 
     #[test]
     fn test_get_value() {
@@ -112,7 +116,10 @@ mod tests {
         let stack = ScopeStack::from_str("text.rust.test scope.level.three").unwrap();
         assert_eq!(stack.as_slice().len(), 2);
         assert_eq!(stackmap.get_value(stack.as_slice()), LookupResult::New(0));
-        assert_eq!(stackmap.get_value(stack.as_slice()), LookupResult::Existing(0));
+        assert_eq!(
+            stackmap.get_value(stack.as_slice()),
+            LookupResult::Existing(0)
+        );
         // we don't assign values to intermediate scopes during traversal
         let stack2 = ScopeStack::from_str("text.rust.test").unwrap();
         assert_eq!(stackmap.get_value(stack2.as_slice()), LookupResult::New(1));

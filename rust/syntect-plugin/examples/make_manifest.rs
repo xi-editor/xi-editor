@@ -16,17 +16,16 @@
 
 extern crate syntect;
 extern crate toml;
-extern crate  xi_core_lib as xi_core;
+extern crate xi_core_lib as xi_core;
 
-
-use std::io::{self, Write};
 use std::fs::{self, File};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
+use syntect::parsing::{SyntaxDefinition, SyntaxSet};
+use toml::Value;
 use xi_core::plugin_manifest::*;
 use xi_core::LanguageDefinition;
-use syntect::parsing::{SyntaxSet, SyntaxDefinition};
-use toml::Value;
 
 const OUT_FILE_NAME: &str = "generated_manifest.toml";
 
@@ -44,7 +43,9 @@ fn parse_name_and_version() -> Result<(String, String), io::Error> {
 
 fn main() -> Result<(), io::Error> {
     let syntax_set = SyntaxSet::load_defaults_newlines();
-    let lang_defs = syntax_set.syntaxes().iter()
+    let lang_defs = syntax_set
+        .syntaxes()
+        .iter()
         .filter(|syntax| !syntax.file_extensions.is_empty())
         .map(lang_from_syn)
         .collect::<Vec<_>>();
@@ -62,9 +63,9 @@ fn main() -> Result<(), io::Error> {
         languages: lang_defs,
     };
 
-	let toml_str = toml::to_string(&mani).unwrap();
+    let toml_str = toml::to_string(&mani).unwrap();
     let file_path = Path::new(OUT_FILE_NAME);
-	let mut f = File::create(file_path)?;
+    let mut f = File::create(file_path)?;
     f.write_all(toml_str.as_ref())
 }
 
@@ -77,4 +78,3 @@ fn lang_from_syn<'a>(src: &'a SyntaxDefinition) -> LanguageDefinition {
         default_config: None,
     }
 }
-

@@ -15,29 +15,29 @@
 //! A syntax highlighting plugin based on syntect.
 
 extern crate syntect;
-extern crate xi_plugin_lib;
 extern crate xi_core_lib as xi_core;
+extern crate xi_plugin_lib;
 extern crate xi_rope;
 extern crate xi_trace;
 
 mod stackmap;
 
-use std::sync::MutexGuard;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::MutexGuard;
 
-use xi_core::{ViewIdentifier, ConfigTable};
 use xi_core::plugin_rpc::ScopeSpan;
-use xi_rope::rope::RopeDelta;
-use xi_rope::interval::Interval;
+use xi_core::{ConfigTable, ViewIdentifier};
+use xi_plugin_lib::{mainloop, Cache, Plugin, StateCache, View};
 use xi_rope::delta::Builder as EditBuilder;
+use xi_rope::interval::Interval;
+use xi_rope::rope::RopeDelta;
 use xi_trace::{trace, trace_block};
-use xi_plugin_lib::{Cache, Plugin, StateCache, View, mainloop};
 
-use syntect::parsing::{ParseState, ScopeStack, SyntaxSet, SCOPE_REPO,
-                       SyntaxDefinition, ScopeRepository};
-use stackmap::{StackMap, LookupResult};
+use stackmap::{LookupResult, StackMap};
+use syntect::parsing::{ParseState, ScopeRepository, ScopeStack, SyntaxDefinition, SyntaxSet,
+                       SCOPE_REPO};
 
 const LINES_PER_RPC: usize = 10;
 const INDENTATION_PRIORITY: u64 = 100;
@@ -82,7 +82,8 @@ impl PluginState {
 
     // compute syntax for one line, also accumulating the style spans
     fn compute_syntax(&mut self, line: &str, state: LineState) -> LineState {
-        let (mut parse_state, mut scope_state) = state.or_else(|| self.initial_state.clone()).unwrap();
+        let (mut parse_state, mut scope_state) =
+            state.or_else(|| self.initial_state.clone()).unwrap();
         let ops = parse_state.parse_line(&line);
 
         let mut prev_cursor = 0;
@@ -93,7 +94,11 @@ impl PluginState {
                 let start = self.offset - self.spans_start + prev_cursor;
                 let end = start + (cursor - prev_cursor);
                 if start != end {
-                    let span = ScopeSpan { start, end, scope_id };
+                    let span = ScopeSpan {
+                        start,
+                        end,
+                        scope_id,
+                    };
                     self.spans.push(span);
                 }
             }
@@ -104,7 +109,11 @@ impl PluginState {
         let start = self.offset - self.spans_start + prev_cursor;
         let end = start + (line.len() - prev_cursor);
         let scope_id = self.identifier_for_stack(&scope_state, &repo);
-        let span = ScopeSpan { start, end, scope_id };
+        let span = ScopeSpan {
+            start,
+            end,
+            scope_id,
+        };
         self.spans.push(span);
         Some((parse_state, scope_state))
     }
@@ -116,7 +125,9 @@ impl PluginState {
         match identifier {
             LookupResult::Existing(id) => id,
             LookupResult::New(id) => {
-                let stack_strings = stack.as_slice().iter()
+                let stack_strings = stack
+                    .as_slice()
+                    .iter()
                     .map(|slice| repo.to_string(*slice))
                     .collect::<Vec<_>>();
                 self.new_scopes.push(stack_strings);
@@ -173,8 +184,11 @@ impl PluginState {
             self.new_scopes.clear();
         }
         if self.spans_start != self.offset {
-            ctx.update_spans(self.spans_start, self.offset - self.spans_start,
-                             &self.spans);
+            ctx.update_spans(
+                self.spans_start,
+                self.offset - self.spans_start,
+                &self.spans,
+            );
             self.spans.clear();
         }
         self.spans_start = self.offset;
@@ -211,7 +225,9 @@ impl<'a> Syntect<'a> {
     fn guess_syntax(&'a self, path: Option<&Path>) -> &'a SyntaxDefinition {
         let _t = trace_block("Syntect::guess_syntax", &["syntect"]);
         match path {
-            Some(path) => self.syntax_set.find_syntax_for_file(path)
+            Some(path) => self
+                .syntax_set
+                .find_syntax_for_file(path)
                 .ok()
                 .unwrap_or(None)
                 .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text()),
@@ -224,7 +240,9 @@ impl<'a> Syntect<'a> {
     fn do_indentation(&mut self, view: &mut MyView, start: usize, end: usize, text: &str) {
         let _t = trace_block("PluginState::do_indentation", &["syntect"]);
         // don't touch indentation if this is not a simple edit
-        if end != start { return }
+        if end != start {
+            return;
+        }
 
         let line_ending = view.get_config().line_ending.clone();
         let is_newline = line_ending == text;
@@ -238,10 +256,11 @@ impl<'a> Syntect<'a> {
 
             let result = if let Some(line) = view.get_line(line_num).ok() {
                 // do not send update if last line is empty string (contains only line ending)
-                if line == line_ending { return }
+                if line == line_ending {
+                    return;
+                }
 
-                let indent = self.indent_for_next_line(
-                    line, use_spaces, tab_size);
+                let indent = self.indent_for_next_line(line, use_spaces, tab_size);
                 let ix = start + text.len();
                 let interval = Interval::new_open_closed(ix, ix);
                 //TODO: view should have a `get_edit_builder` fn?
@@ -255,17 +274,24 @@ impl<'a> Syntect<'a> {
             };
 
             if let Some(delta) = result {
-                view.edit(delta, INDENTATION_PRIORITY, false,
-                          false, String::from("syntect"));
+                view.edit(
+                    delta,
+                    INDENTATION_PRIORITY,
+                    false,
+                    false,
+                    String::from("syntect"),
+                );
             }
         }
     }
 
     /// Returns the string which should be inserted after the newline
     /// to achieve the desired indentation level.
-    fn indent_for_next_line<'b>(&self, prev_line: &'b str, use_spaces: bool,
-                                tab_size: usize) -> Cow<'b, str> {
-        let leading_ws = prev_line.char_indices()
+    fn indent_for_next_line<'b>(
+        &self, prev_line: &'b str, use_spaces: bool, tab_size: usize,
+    ) -> Cow<'b, str> {
+        let leading_ws = prev_line
+            .char_indices()
             .find(|&(_, c)| !c.is_whitespace())
             .or(prev_line.char_indices().last())
             .map(|(idx, _)| unsafe { prev_line.slice_unchecked(0, idx) })
@@ -285,8 +311,7 @@ impl<'a> Syntect<'a> {
 
     /// Checks if the indent level should be increased.
     fn increase_indentation(&self, prev_line: &str) -> bool {
-        let trailing_char = prev_line.trim_right().chars()
-            .rev().next().unwrap_or(' ');
+        let trailing_char = prev_line.trim_right().chars().rev().next().unwrap_or(' ');
         // very naive heuristic for modifying indentation level.
         match trailing_char {
             '{' | ':' => true,
@@ -294,7 +319,6 @@ impl<'a> Syntect<'a> {
         }
     }
 }
-
 
 impl<'a> Plugin for Syntect<'a> {
     type Cache = StateCache<LineState>;
@@ -318,12 +342,16 @@ impl<'a> Plugin for Syntect<'a> {
 
     fn config_changed(&mut self, _view: &mut View<Self::Cache>, _changes: &ConfigTable) {}
 
-    fn update(&mut self, view: &mut View<Self::Cache>, delta: Option<&RopeDelta>,
-              _edit_type: String, _author: String) {
+    fn update(
+        &mut self, view: &mut View<Self::Cache>, delta: Option<&RopeDelta>, _edit_type: String,
+        _author: String,
+    ) {
         let _t = trace_block("Syntect::update", &["syntect"]);
         view.schedule_idle();
         let should_auto_indent = view.get_config().auto_indent;
-        if !should_auto_indent { return }
+        if !should_auto_indent {
+            return;
+        }
         if let Some(delta) = delta {
             let (iv, _) = delta.summary();
             if let Some(s) = delta.as_simple_insert() {
