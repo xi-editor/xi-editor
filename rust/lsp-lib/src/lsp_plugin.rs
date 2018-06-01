@@ -1,6 +1,5 @@
 use language_server::LanguageServerClient;
 use parse_helper;
-use url::Url;
 use std;
 use std::io::{BufReader, BufWriter};
 use std::path::Path;
@@ -8,6 +7,7 @@ use std::process::Command;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::Mutex;
+use url::Url;
 use xi_core::ConfigTable;
 use xi_plugin_lib::{ChunkCache, Plugin, View};
 use xi_rope::rope::RopeDelta;
@@ -15,7 +15,6 @@ use xi_rope::rope::RopeDelta;
 pub struct LSPPlugin(Arc<Mutex<LanguageServerClient>>);
 
 impl LSPPlugin {
-
     pub fn new(command: &str, arguments: &[&str]) -> Self {
         eprintln!("command: {}", command);
         eprintln!("arguments: {:?}", arguments);
@@ -55,7 +54,6 @@ impl LSPPlugin {
 
         plugin
     }
-
 }
 
 impl Plugin for LSPPlugin {
@@ -68,6 +66,7 @@ impl Plugin for LSPPlugin {
         _edit_type: String,
         _author: String,
     ) {
+        
     }
 
     fn did_save(&mut self, view: &mut View<Self::Cache>, _old: Option<&Path>) {
@@ -81,28 +80,28 @@ impl Plugin for LSPPlugin {
     fn new_view(&mut self, view: &mut View<Self::Cache>) {
         eprintln!("new view {}", view.get_id());
 
-        let name = view.get_path();
+        let document_text = view.get_document().unwrap();
+        let path = view.get_path().clone();
 
-        if let Some(path) = name {
-            let extension = path.extension().unwrap().to_str().unwrap().to_string();
+        if let Some(file_path) = path {
+            let extension = file_path.extension().unwrap().to_str().unwrap().to_string();
 
             let mut ls_client = self.0.lock().unwrap();
 
             if ls_client.file_extensions.contains(&extension) {
                 eprintln!("json file opened");
-                let document_uri = Url::parse(format!("file://{}", path.to_str().unwrap()).as_ref()).unwrap();
+                let document_uri =
+                    Url::parse(format!("file://{}", file_path.to_str().unwrap()).as_ref()).unwrap();
 
                 if !ls_client.is_initialized {
-                    ls_client.send_initialize( None, move |ls_client, result| {
-                            if result.is_ok() {
-                                ls_client.is_initialized = true;
-                                ls_client.send_did_open(document_uri);
-                            }
-                        },
-                    );
-
+                    ls_client.send_initialize(None, move |ls_client, result| {
+                        if result.is_ok() {
+                            ls_client.is_initialized = true;
+                            ls_client.send_did_open(document_uri, document_text);
+                        }
+                    });
                 } else {
-                    ls_client.send_did_open(document_uri);
+                    ls_client.send_did_open(document_uri, document_text);
                 }
             }
         }

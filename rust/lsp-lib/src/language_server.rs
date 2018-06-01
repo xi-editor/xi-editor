@@ -131,15 +131,15 @@ impl LanguageServerClient {
         self.send_request("initialize", params, Box::new(on_init));
     }
 
-    pub fn send_did_open(&mut self, document_uri: Url) {
-        eprintln!("DID OPEN CALLED with documentURI {:?}", document_uri);
+    pub fn send_did_open(&mut self, document_uri: Url, document_text: String) {
+        eprintln!("DID OPEN CALLED with documentURI {:?} \n document)_text {:?}", document_uri, document_text);
 
         let text_document_did_open_params = DidOpenTextDocumentParams{
             text_document: TextDocumentItem {
                 language_id: "json".to_string(),
                 uri: document_uri,
                 version: 0,
-                text: "".to_string()
+                text: document_text
             }
         };
 
