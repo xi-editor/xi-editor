@@ -12,21 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use xi_trace::Sample;
 use serde_json;
 use std::io::{Error as IOError, Read, Write};
+use xi_trace::Sample;
 
 #[derive(Debug)]
 pub enum Error {
     Io(IOError),
     Json(serde_json::Error),
-    DecodingFormat(String)
+    DecodingFormat(String),
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
 enum ChromeTraceArrayEntries {
-    Array(Vec<Sample>)
+    Array(Vec<Sample>),
 }
 
 /// This serializes the samples into the [Chrome trace event format](https://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=1&ved=0ahUKEwiJlZmDguXYAhUD4GMKHVmEDqIQFggpMAA&url=https%3A%2F%2Fdocs.google.com%2Fdocument%2Fd%2F1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU%2Fpreview&usg=AOvVaw0tBFlVbDVBikdzLqgrWK3g).
@@ -48,16 +48,14 @@ enum ChromeTraceArrayEntries {
 /// let mut serialized = Vec::<u8>::new();
 /// chrome_trace::serialize(samples.iter(), serialized);
 /// ```
-pub fn serialize<'a, W>(samples: &Vec<Sample>, output: W)
-    -> Result<(), Error> 
-    where W: Write
+pub fn serialize<'a, W>(samples: &Vec<Sample>, output: W) -> Result<(), Error>
+where
+    W: Write,
 {
     serde_json::to_writer(output, samples).map_err(|e| Error::Json(e))
 }
 
-pub fn to_value(samples: &Vec<Sample>)
-                -> Result<serde_json::Value, Error>
-{
+pub fn to_value(samples: &Vec<Sample>) -> Result<serde_json::Value, Error> {
     serde_json::to_value(samples).map_err(|e| Error::Json(e))
 }
 
@@ -66,7 +64,8 @@ pub fn decode(samples: serde_json::Value) -> Result<Vec<Sample>, Error> {
 }
 
 pub fn deserialize<R>(input: R) -> Result<Vec<Sample>, Error>
-    where R: Read
+where
+    R: Read,
 {
     serde_json::from_reader(input).map_err(|e| Error::Json(e))
 }
