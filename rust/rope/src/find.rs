@@ -22,7 +22,7 @@ use rope::{BaseMetric, RopeInfo};
 use tree::Cursor;
 
 /// The result of a [`find`][find] operation.
-/// 
+///
 /// [find]: fn.find.html
 pub enum FindResult {
     /// The pattern was found at this position.
@@ -51,7 +51,7 @@ pub enum CaseMatching {
 /// the current location of the cursor (and finding the first match). Both
 /// case sensitive and case insensitive matching is provided, controlled by
 /// the `cm` parameter.
-/// 
+///
 /// On success, the cursor is updated to immediately follow the found string.
 /// On failure, the cursor's position is indeterminate.
 ///
@@ -66,18 +66,18 @@ pub fn find(cursor: &mut Cursor<RopeInfo>, cm: CaseMatching, pat: &str) -> Optio
 
 /// A variant of [`find`][find] that makes a bounded amount of progress, then either
 /// returns or suspends (returning `TryAgain`).
-/// 
+///
 /// The `num_steps` parameter controls the number of "steps" processed per
 /// call. The unit of "step" is not formally defined but is typically
 /// scanning one leaf (using a memchr-like scan) or testing one candidate
 /// when scanning produces a result. It should be empirically tuned for a
 /// balance between overhead and impact on interactive performance, but the
 /// exact value is probably not critical.
-/// 
+///
 /// [find]: fn.find.html
-pub fn find_progress(cursor: &mut Cursor<RopeInfo>, cm: CaseMatching, pat: &str,
-    num_steps: usize) -> FindResult
-{
+pub fn find_progress(
+    cursor: &mut Cursor<RopeInfo>, cm: CaseMatching, pat: &str, num_steps: usize,
+) -> FindResult {
     match cm {
         CaseMatching::Exact => {
             let b = pat.as_bytes()[0];
@@ -113,12 +113,10 @@ pub fn find_progress(cursor: &mut Cursor<RopeInfo>, cm: CaseMatching, pat: &str,
 }
 
 // Run the core repeatedly until there is a result, up to a certain number of steps.
-fn find_progress_iter(cursor: &mut Cursor<RopeInfo>, pat: &str,
-        scanner: &Fn(&str) -> Option<usize>,
-        matcher: &Fn(&mut Cursor<RopeInfo>, &str) -> bool,
-        num_steps: usize
-    ) -> FindResult
-{
+fn find_progress_iter(
+    cursor: &mut Cursor<RopeInfo>, pat: &str, scanner: &Fn(&str) -> Option<usize>,
+    matcher: &Fn(&mut Cursor<RopeInfo>, &str) -> bool, num_steps: usize,
+) -> FindResult {
     for _ in 0..num_steps {
         match find_core(cursor, pat, scanner, matcher) {
             FindResult::TryAgain => (),
@@ -132,11 +130,10 @@ fn find_progress_iter(cursor: &mut Cursor<RopeInfo>, pat: &str,
 // scans through a single leaf searching for some prefix of the pattern,
 // then a "matcher" which confirms that such a candidate actually matches
 // in the full rope.
-fn find_core(cursor: &mut Cursor<RopeInfo>, pat: &str,
-        scanner: &Fn(&str) -> Option<usize>,
-        matcher: &Fn(&mut Cursor<RopeInfo>, &str) -> bool
-    ) -> FindResult
-{
+fn find_core(
+    cursor: &mut Cursor<RopeInfo>, pat: &str, scanner: &Fn(&str) -> Option<usize>,
+    matcher: &Fn(&mut Cursor<RopeInfo>, &str) -> bool,
+) -> FindResult {
     let orig_pos = cursor.pos();
     if let Some((leaf, pos_in_leaf)) = cursor.get_leaf() {
         if let Some(off) = scanner(&leaf[pos_in_leaf..]) {
@@ -158,7 +155,6 @@ fn find_core(cursor: &mut Cursor<RopeInfo>, pat: &str,
         FindResult::NotFound
     }
 }
-
 
 /// Compare whether the substring beginning at the current cursor location
 /// is equal to the provided string. Leaves the cursor at an indeterminate
@@ -219,10 +215,10 @@ fn scan_lowercase(probe: char, s: &str) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
+    use super::CaseMatching::{CaseInsensitive, Exact};
     use super::*;
-    use super::CaseMatching::{Exact, CaseInsensitive};
-    use tree::Cursor;
     use rope::Rope;
+    use tree::Cursor;
 
     #[test]
     fn find_small() {
