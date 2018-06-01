@@ -169,8 +169,9 @@ impl Find {
             // aligned to codepoint boundaries.
             let text = text.subseq(Interval::new_closed_open(0, to));
             let mut cursor = Cursor::new(&text, from);
+            let mut raw_lines = text.lines_raw(from, to);
 
-            while let Some(start) = find(&mut cursor, self.case_matching, &search_string, self.is_regex) {
+            while let Some(start) = find(&mut cursor, &mut raw_lines, self.case_matching, &search_string, self.is_regex) {
                 let end = cursor.pos();
 
                 let region = SelRegion::new(start, end);
@@ -199,6 +200,9 @@ impl Find {
                         cursor.set(end + 1);
                     }
                 }
+
+                // update line iterator so that line starts at current cursor position
+                raw_lines = text.lines_raw(cursor.pos(), to);
 
                 // add_range_distinct() above removes ambiguous regions after the added
                 // region, if something has been deleted, everything thereafter is
