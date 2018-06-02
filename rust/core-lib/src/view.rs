@@ -140,7 +140,7 @@ impl View {
         self.pending_render
     }
 
-    pub(crate) fn do_edit(&mut self, text: &Rope, cmd: ViewEvent) {
+    pub(crate) fn do_edit(&mut self, text: &Rope, cmd: ViewEvent, client: &Client) {
         use self::ViewEvent::*;
         match cmd {
             Move(movement) => self.do_move(text, movement, false),
