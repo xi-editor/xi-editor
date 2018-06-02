@@ -391,7 +391,9 @@ pub enum EditNotification {
     Uppercase,
     Lowercase,
     Indent,
-    Outdent
+    Outdent,
+    /// Signals whether the search dialog is closed or open
+    SearchDialog { open: bool },
 }
 
 /// The edit related requests.

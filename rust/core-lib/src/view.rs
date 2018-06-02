@@ -72,8 +72,12 @@ pub struct View {
     scroll_to: Option<usize>,
 
     /// The state for finding text for this view.
-    /// Each instance represents a separate search query
+    /// Each instance represents a separate search query.
     find: Vec<Find>,
+
+    /// Tracks whether the search dialog is open or not.
+    /// Search highlights are only shown when it is open.
+    search_dialog_open: bool,
 }
 
 /// The visual width of the buffer for the purpose of word wrapping.
@@ -121,6 +125,7 @@ impl View {
             wrap_col: WrapWidth::None,
             lc_shadow: LineCacheShadow::default(),
             find: Vec::new(),
+            search_dialog_open: false,
         }
     }
 
@@ -140,7 +145,7 @@ impl View {
         self.pending_render
     }
 
-    pub(crate) fn do_edit(&mut self, text: &Rope, cmd: ViewEvent) {
+    pub(crate) fn do_edit(&mut self, text: &Rope, cmd: ViewEvent, client: &Client) {
         use self::ViewEvent::*;
         match cmd {
             Move(movement) => self.do_move(text, movement, false),
@@ -175,6 +180,10 @@ impl View {
             Drag(MouseAction { line, column, .. }) =>
                 self.do_drag(text, line, column, Affinity::default()),
             Cancel => self.do_cancel(text),
+            SearchDialog { open } => {
+                self.search_dialog_open = open;
+                self.send_find_status(client);
+            }
         }
     }
 
