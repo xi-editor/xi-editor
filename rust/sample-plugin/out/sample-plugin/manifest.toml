@@ -1,5 +1,0 @@
-# The plugin manifest describes the plugin and its capabilities.
-# At the very least it must contain these three fields:
-name = "sample-plugin"
-version = "0.0"
-exec_path = "./bin/xi-sample-plugin"
