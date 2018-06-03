@@ -74,6 +74,10 @@ pub struct View {
     /// The state for finding text for this view.
     /// Each instance represents a separate search query
     find: Vec<Find>,
+
+    /// Tracks whether there has been changes in find results or find parameters.
+    /// This is used to determined whether FindStatus should be sent to the frontend.
+    find_changed: bool,
 }
 
 /// The visual width of the buffer for the purpose of word wrapping.
@@ -106,6 +110,22 @@ struct DragState {
     max: usize,
 }
 
+/// Information about search queries and number of matches for find
+#[derive(Serialize, Deserialize, Debug)]
+pub struct FindStatus {
+    /// The current search query.
+    chars: Option<String>,
+
+    /// Whether the active search is case matching.
+    case_sensitive: Option<bool>,
+
+    /// Whether the search query is considered as regular expression.
+    is_regex: Option<bool>,
+
+    /// Total number of matches.
+    matches: usize
+}
+
 impl View {
     pub fn new(view_id: ViewId, buffer_id: BufferId) -> View {
         View {
@@ -121,6 +141,7 @@ impl View {
             wrap_col: WrapWidth::None,
             lc_shadow: LineCacheShadow::default(),
             find: Vec::new(),
+            find_changed: false,
         }
     }
 
@@ -140,7 +161,7 @@ impl View {
         self.pending_render
     }
 
-    pub(crate) fn do_edit(&mut self, text: &Rope, cmd: ViewEvent, client: &Client) {
+    pub(crate) fn do_edit(&mut self, text: &Rope, cmd: ViewEvent) {
         use self::ViewEvent::*;
         match cmd {
             Move(movement) => self.do_move(text, movement, false),
@@ -154,6 +175,8 @@ impl View {
             Gesture { line, col, ty } =>
                 self.do_gesture(text, line, col, ty),
             GotoLine { line } => self.goto_line(text, line),
+            Find { chars, case_sensitive } =>
+                self.do_find(text, chars, case_sensitive),
             FindNext { wrap_around, allow_same: _ } =>
                 self.find_next(text, false, wrap_around.unwrap_or(false)),
             FindPrevious { wrap_around } =>
@@ -646,19 +669,17 @@ impl View {
 
     /// Determines the current number of find results and search parameters to send them to
     /// the frontend.
-    pub fn send_find_status(&self, client: &Client) {
-        // todo: optional attributes
+    pub fn find_status(&mut self) -> Vec<FindStatus> {
+        self.find_changed = false;
 
-        let find_status: Vec<Value> = self.find.iter().map(|find| {
-            json!({
-                "chars": find.search_string(),
-                "case_sensitive": find.is_case_sensitive(),
-                "is_regex": find.is_regex(),
-                "matches": find.occurrences().len(),
-            })
-        }).collect();
-
-        client.find_status(self.view_id, &json!(find_status));
+        self.find.iter().map(|find| {
+            FindStatus {
+                chars: find.search_string().clone(),
+                case_sensitive: Some(find.is_case_sensitive()),
+                is_regex: Some(find.is_regex()),
+                matches: find.occurrences().len(),
+            }
+        }).collect::<Vec<FindStatus>>()
     }
 
     /// Update front-end with any changes to view since the last time sent.
@@ -809,6 +830,10 @@ impl View {
             find.update_highlights(text, delta);
         }
 
+        // send updated find status only if there have been changes
+        if self.find_changed {
+            client.find_status(self.view_id, &json!(self.find_status()));
+        }
 
         // Note: for committing plugin edits, we probably want to know the priority
         // of the delta so we can set the cursor before or after the edit, as needed.
@@ -816,8 +841,7 @@ impl View {
         self.set_selection_for_edit(text, new_sel);
     }
 
-    pub fn do_find(&mut self, text: &Rope, chars: Option<String>,
-                   case_sensitive: bool) -> Value {
+    pub fn do_find(&mut self, text: &Rope, chars: Option<String>, case_sensitive: bool) {
         let mut from_sel = false;
         let search_string = if chars.is_some() {
             chars
@@ -833,15 +857,16 @@ impl View {
         };
 
         self.set_dirty(text);
+        self.find_changed = true;
 
         // todo: this will be changed once multiple queries are supported
         // todo: for now only a single search query is supported however in the future
         // todo: the correct Find instance needs to be updated with the new parameters
         if self.find.is_empty() {
-            self.find.push(Find::new())
+            self.find.push(Find::new());
         }
 
-        self.find.first_mut().unwrap().do_find(text, search_string, case_sensitive)
+        self.find.first_mut().unwrap().do_find(text, search_string, case_sensitive);
     }
 
     pub fn find_next(&mut self, text: &Rope, reverse: bool, wrap: bool) {
