@@ -89,11 +89,11 @@ impl<'a> EventContext<'a> {
     /// to the current text. This is common to most edits that just modify
     /// selection or viewport state.
     fn with_view<R, F>(&mut self, f: F) -> R
-        where F: FnOnce(&mut View, &Rope, &Client) -> R
+        where F: FnOnce(&mut View, &Rope) -> R
     {
         let editor = self.editor.borrow();
         let mut view = self.view.borrow_mut();
-        f(&mut view, editor.get_buffer(), &self.client)
+        f(&mut view, editor.get_buffer())
     }
 
     pub(crate) fn do_edit(&mut self, cmd: EditNotification) {
@@ -101,7 +101,7 @@ impl<'a> EventContext<'a> {
         let event: EventDomain = cmd.into();
         match event {
             E::View(cmd) => {
-                    self.with_view(|view, text, client| view.do_edit(text, cmd, client));
+                    self.with_view(|view, text| view.do_edit(text, cmd));
                     self.editor.borrow_mut().update_edit_type();
                 },
             E::Buffer(cmd) => self.with_editor(
@@ -115,7 +115,7 @@ impl<'a> EventContext<'a> {
     fn do_special(&mut self, cmd: SpecialEvent) {
         match cmd {
             SpecialEvent::DebugRewrap => self.with_view(
-                |view, text, _| {
+                |view, text| {
                     view.rewrap(text, 72);
                     view.set_dirty(text);
                 }),
@@ -137,13 +137,6 @@ impl<'a> EventContext<'a> {
         let result = match cmd {
             Cut => Ok(self.with_editor(|ed, view, _| ed.do_cut(view))),
             Copy => Ok(self.with_editor(|ed, view, _| ed.do_copy(view))),
-            Find { chars, case_sensitive } =>
-                Ok(self.with_view(|view, text, client| {
-                    let result = view.do_find(text, chars, case_sensitive);
-                    view.send_find_status(client);
-                    result
-                })),
-            // Replace
         };
         self.after_edit("core");
         self.render_if_needed();
@@ -305,7 +298,7 @@ impl<'a> EventContext<'a> {
             self.client.config_changed(self.view_id, &changes);
         }
         self.editor.borrow_mut().set_pristine();
-        self.with_view(|view, text, _| view.set_dirty(text));
+        self.with_view(|view, text| view.set_dirty(text));
         self.render()
     }
 
