@@ -44,6 +44,7 @@ extern crate syntect;
 extern crate toml;
 #[cfg(feature = "notify")]
 extern crate notify;
+extern crate memchr;
 
 extern crate xi_rope;
 extern crate xi_rpc;
@@ -89,6 +90,8 @@ pub mod config;
 pub mod watcher;
 pub mod line_cache_shadow;
 pub mod width_cache;
+pub mod whitespace;
+pub mod line_ending;
 
 pub mod rpc;
 

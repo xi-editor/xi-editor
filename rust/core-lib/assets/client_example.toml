@@ -36,3 +36,6 @@ wrap_width = 0
 
 # If true, wraps lines at the edge of the view. Overrides 'wrap_width'.
 word_wrap = false
+
+# Detect tab and newline settings on file open
+autodetect_whitespace = true
