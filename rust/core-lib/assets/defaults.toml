@@ -24,3 +24,5 @@ scroll_past_end = false
 wrap_width = 0
 
 word_wrap = false
+
+autodetect_whitespace = true
