@@ -37,6 +37,7 @@ use width_cache::WidthCache;
 use word_boundaries::WordCursor;
 use find::Find;
 use linewrap;
+use internal::find::FindStatus;
 
 type StyleMap = RefCell<ThemeStyleMap>;
 
@@ -75,8 +76,10 @@ pub struct View {
     /// Each instance represents a separate search query.
     find: Vec<Find>,
 
-    /// Tracks whether the search dialog is open or not.
-    /// Search highlights are only shown when it is open.
+    /// Tracks whether there has been changes in find results or find parameters.
+    /// This is used to determined whether FindStatus should be sent to the frontend.
+    find_changed: bool,
+
     search_dialog_open: bool,
 }
 
@@ -124,8 +127,9 @@ impl View {
             breaks: None,
             wrap_col: WrapWidth::None,
             lc_shadow: LineCacheShadow::default(),
-            find: Vec::new(),
             search_dialog_open: false,
+            find: Vec::new(),
+            find_changed: false,
         }
     }
 
@@ -145,7 +149,7 @@ impl View {
         self.pending_render
     }
 
-    pub(crate) fn do_edit(&mut self, text: &Rope, cmd: ViewEvent, client: &Client) {
+    pub(crate) fn do_edit(&mut self, text: &Rope, cmd: ViewEvent) {
         use self::ViewEvent::*;
         match cmd {
             Move(movement) => self.do_move(text, movement, false),
@@ -159,6 +163,8 @@ impl View {
             Gesture { line, col, ty } =>
                 self.do_gesture(text, line, col, ty),
             GotoLine { line } => self.goto_line(text, line),
+            Find { chars, case_sensitive } =>
+                self.do_find(text, chars, case_sensitive),
             FindNext { wrap_around, allow_same: _ } =>
                 self.find_next(text, false, wrap_around.unwrap_or(false)),
             FindPrevious { wrap_around } =>
@@ -182,7 +188,6 @@ impl View {
             Cancel => self.do_cancel(text),
             SearchDialog { open } => {
                 self.search_dialog_open = open;
-                self.send_find_status(client);
             }
         }
     }
@@ -655,19 +660,12 @@ impl View {
 
     /// Determines the current number of find results and search parameters to send them to
     /// the frontend.
-    pub fn send_find_status(&self, client: &Client) {
-        // todo: optional attributes
+    pub fn find_status(&mut self) -> Vec<FindStatus> {
+        self.find_changed = false;
 
-        let find_status: Vec<Value> = self.find.iter().map(|find| {
-            json!({
-                "chars": find.search_string(),
-                "case_sensitive": find.is_case_sensitive(),
-                "is_regex": find.is_regex(),
-                "matches": find.occurrences().len(),
-            })
-        }).collect();
-
-        client.find_status(self.view_id, &json!(find_status));
+        self.find.iter().map(|find| {
+            find.find_status()
+        }).collect::<Vec<FindStatus>>()
     }
 
     /// Update front-end with any changes to view since the last time sent.
@@ -818,6 +816,10 @@ impl View {
             find.update_highlights(text, delta);
         }
 
+        // send updated find status only if there have been changes
+        if self.find_changed {
+            client.find_status(self.view_id, &json!(self.find_status()));
+        }
 
         // Note: for committing plugin edits, we probably want to know the priority
         // of the delta so we can set the cursor before or after the edit, as needed.
@@ -825,8 +827,7 @@ impl View {
         self.set_selection_for_edit(text, new_sel);
     }
 
-    pub fn do_find(&mut self, text: &Rope, chars: Option<String>,
-                   case_sensitive: bool) -> Value {
+    pub fn do_find(&mut self, text: &Rope, chars: Option<String>, case_sensitive: bool) {
         let mut from_sel = false;
         let search_string = if chars.is_some() {
             chars
@@ -842,15 +843,16 @@ impl View {
         };
 
         self.set_dirty(text);
+        self.find_changed = true;
 
         // todo: this will be changed once multiple queries are supported
         // todo: for now only a single search query is supported however in the future
         // todo: the correct Find instance needs to be updated with the new parameters
         if self.find.is_empty() {
-            self.find.push(Find::new())
+            self.find.push(Find::new());
         }
 
-        self.find.first_mut().unwrap().do_find(text, search_string, case_sensitive)
+        self.find.first_mut().unwrap().do_find(text, search_string, case_sensitive);
     }
 
     pub fn find_next(&mut self, text: &Rope, reverse: bool, wrap: bool) {

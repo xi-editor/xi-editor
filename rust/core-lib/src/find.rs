@@ -16,8 +16,6 @@
 
 use std::cmp::{min,max};
 
-use serde_json::Value;
-
 use index_set::IndexSet;
 use xi_rope::delta::{Delta, DeltaRegion};
 use xi_rope::find::{find, CaseMatching};
@@ -26,6 +24,22 @@ use xi_rope::tree::Cursor;
 use xi_rope::interval::Interval;
 use selection::{Selection, SelRegion};
 use xi_rope::tree::Metric;
+
+/// Information about search queries and number of matches for find
+#[derive(Serialize, Deserialize, Debug)]
+pub struct FindStatus {
+    /// The current search query.
+    chars: Option<String>,
+
+    /// Whether the active search is case matching.
+    case_sensitive: Option<bool>,
+
+    /// Whether the search query is considered as regular expression.
+    is_regex: Option<bool>,
+
+    /// Total number of matches.
+    matches: usize
+}
 
 /// Contains logic to search text
 pub struct Find {
@@ -37,7 +51,7 @@ pub struct Find {
     search_string: Option<String>,
     /// The case matching setting for the currently active search
     case_matching: CaseMatching,
-    /// /// The search query should be considered as regular expression
+    /// The search query should be considered as regular expression
     is_regex: bool,
     /// The set of all known find occurrences (highlights)
     occurrences: Selection,
@@ -65,16 +79,13 @@ impl Find {
         self.hls_dirty
     }
 
-    pub fn search_string(&self) -> &Option<String> {
-        &self.search_string
-    }
-
-    pub fn is_case_sensitive(&self) -> bool {
-        self.case_matching == CaseMatching::Exact
-    }
-
-    pub fn is_regex(&self) -> bool {
-        self.is_regex
+    pub fn find_status(&self) -> FindStatus {
+        FindStatus {
+            chars: self.search_string.clone(),
+            case_sensitive: Some(self.case_matching == CaseMatching::Exact),
+            is_regex: Some(self.is_regex),
+            matches: self.occurrences.len(),
+        }
     }
 
     pub fn set_hls_dirty(&mut self, is_dirty: bool) {
@@ -107,23 +118,18 @@ impl Find {
     }
 
     /// Set search parameters and executes the search.
-    pub fn do_find(&mut self, text: &Rope, search_string: Option<String>,
-                   case_sensitive: bool) -> Value {
+    pub fn do_find(&mut self, text: &Rope, search_string: Option<String>, case_sensitive: bool) {
         if search_string.is_none() {
             self.unset();
-            return Value::Null;
         }
 
         let search_string = search_string.unwrap();
         if search_string.len() == 0 {
             self.unset();
-            return Value::Null;
         }
 
         self.set_find(&search_string, case_sensitive);
         self.update_find(text, 0, text.len(), false);
-
-        Value::String(search_string.to_string())
     }
 
     /// Unsets the search and removes all highlights from the view.
@@ -135,8 +141,7 @@ impl Find {
     }
 
     /// Sets find parameters and search query.
-    fn set_find(&mut self, search_string: &str,
-                case_sensitive: bool) {
+    fn set_find(&mut self, search_string: &str, case_sensitive: bool) {
         let case_matching = if case_sensitive {
             CaseMatching::Exact
         } else {

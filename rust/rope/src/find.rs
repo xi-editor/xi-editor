@@ -78,6 +78,11 @@ pub fn find(cursor: &mut Cursor<RopeInfo>, cm: CaseMatching, pat: &str) -> Optio
 pub fn find_progress(cursor: &mut Cursor<RopeInfo>, cm: CaseMatching, pat: &str,
     num_steps: usize) -> FindResult
 {
+    // empty search string
+    if pat.is_empty() {
+        return FindResult::NotFound
+    }
+
     match cm {
         CaseMatching::Exact => {
             let b = pat.as_bytes()[0];
