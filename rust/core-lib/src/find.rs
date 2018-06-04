@@ -79,12 +79,21 @@ impl Find {
         self.hls_dirty
     }
 
-    pub fn find_status(&self) -> FindStatus {
-        FindStatus {
-            chars: self.search_string.clone(),
-            case_sensitive: Some(self.case_matching == CaseMatching::Exact),
-            is_regex: Some(self.is_regex),
-            matches: self.occurrences.len(),
+    pub fn find_status(&self, matches_only: bool) -> FindStatus {
+        if matches_only {
+            FindStatus {
+                chars: None,
+                case_sensitive: None,
+                is_regex: None,
+                matches: self.occurrences.len(),
+            }
+        } else {
+            FindStatus {
+                chars: self.search_string.clone(),
+                case_sensitive: Some(self.case_matching == CaseMatching::Exact),
+                is_regex: Some(self.is_regex),
+                matches: self.occurrences.len(),
+            }
         }
     }
 
