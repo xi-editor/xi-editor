@@ -25,6 +25,22 @@ use xi_rope::interval::Interval;
 use selection::{Selection, SelRegion};
 use xi_rope::tree::Metric;
 
+/// Information about search queries and number of matches for find
+#[derive(Serialize, Deserialize, Debug)]
+pub struct FindStatus {
+    /// The current search query.
+    chars: Option<String>,
+
+    /// Whether the active search is case matching.
+    case_sensitive: Option<bool>,
+
+    /// Whether the search query is considered as regular expression.
+    is_regex: Option<bool>,
+
+    /// Total number of matches.
+    matches: usize
+}
+
 /// Contains logic to search text
 pub struct Find {
     // todo: link to search query so that search results can be correlated back to query
@@ -63,16 +79,13 @@ impl Find {
         self.hls_dirty
     }
 
-    pub fn search_string(&self) -> &Option<String> {
-        &self.search_string
-    }
-
-    pub fn is_case_sensitive(&self) -> bool {
-        self.case_matching == CaseMatching::Exact
-    }
-
-    pub fn is_regex(&self) -> bool {
-        self.is_regex
+    pub fn find_status(&self) -> FindStatus {
+        FindStatus {
+            chars: self.search_string.clone(),
+            case_sensitive: Some(self.case_matching == CaseMatching::Exact),
+            is_regex: Some(self.is_regex),
+            matches: self.occurrences.len(),
+        }
     }
 
     pub fn set_hls_dirty(&mut self, is_dirty: bool) {
