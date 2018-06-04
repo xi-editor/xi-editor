@@ -398,8 +398,8 @@ pub enum EditNotification {
     Lowercase,
     Indent,
     Outdent,
-    /// Signals whether the search dialog is closed or open
-    SearchDialog { open: bool },
+    /// Indicates whether find highlights should be rendered
+    HighlightFind { visible: bool },
 }
 
 /// The edit related requests.

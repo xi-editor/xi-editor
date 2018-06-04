@@ -80,7 +80,9 @@ pub struct View {
     /// This is used to determined whether FindStatus should be sent to the frontend.
     find_changed: bool,
 
-    search_dialog_open: bool,
+    /// Tracks whether find highlights should be rendered.
+    /// Highlights are only rendered when search dialog is open.
+    highlight_find: bool,
 }
 
 /// The visual width of the buffer for the purpose of word wrapping.
@@ -127,9 +129,9 @@ impl View {
             breaks: None,
             wrap_col: WrapWidth::None,
             lc_shadow: LineCacheShadow::default(),
-            search_dialog_open: false,
             find: Vec::new(),
             find_changed: false,
+            highlight_find: false,
         }
     }
 
@@ -186,8 +188,10 @@ impl View {
             Drag(MouseAction { line, column, .. }) =>
                 self.do_drag(text, line, column, Affinity::default()),
             Cancel => self.do_cancel(text),
-            SearchDialog { open } => {
-                self.search_dialog_open = open;
+            HighlightFind { visible } => {
+                self.highlight_find = visible;
+                self.find_changed = true;
+                self.set_dirty(text);
             }
         }
     }
@@ -497,14 +501,16 @@ impl View {
             }
         }
 
-        // todo: active highlights different style
         let mut hls = Vec::new();
-        for find in self.find.iter() {
-            for region in find.occurrences().regions_in_range(start_pos, pos) {
-                let sel_start_ix = clamp(region.min(), start_pos, pos) - start_pos;
-                let sel_end_ix = clamp(region.max(), start_pos, pos) - start_pos;
-                if sel_end_ix > sel_start_ix {
-                    hls.push((sel_start_ix, sel_end_ix));
+
+        if self.highlight_find {
+            for find in self.find.iter() {
+                for region in find.occurrences().regions_in_range(start_pos, pos) {
+                    let sel_start_ix = clamp(region.min(), start_pos, pos) - start_pos;
+                    let sel_end_ix = clamp(region.max(), start_pos, pos) - start_pos;
+                    if sel_end_ix > sel_start_ix {
+                        hls.push((sel_start_ix, sel_end_ix));
+                    }
                 }
             }
         }

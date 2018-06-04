@@ -38,7 +38,7 @@ pub(crate) enum ViewEvent {
     FindNext { wrap_around: Option<bool>, allow_same: Option<bool> },
     FindPrevious { wrap_around: Option<bool> },
     Cancel,
-    SearchDialog { open: bool },
+    HighlightFind { visible: bool },
 }
 
 /// Events that modify the buffer
@@ -207,7 +207,7 @@ impl From<EditNotification> for EventDomain {
             Lowercase => BufferEvent::Lowercase.into(),
             Indent => BufferEvent::Indent.into(),
             Outdent => BufferEvent::Outdent.into(),
-            SearchDialog { open } => ViewEvent::SearchDialog { open }.into(),
+            HighlightFind { visible } => ViewEvent::HighlightFind { visible }.into(),
         }
     }
 }
