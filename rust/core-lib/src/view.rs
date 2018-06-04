@@ -37,6 +37,7 @@ use width_cache::WidthCache;
 use word_boundaries::WordCursor;
 use find::Find;
 use linewrap;
+use internal::find::FindStatus;
 
 type StyleMap = RefCell<ThemeStyleMap>;
 
@@ -108,22 +109,6 @@ struct DragState {
 
     /// End of the region selected when drag was started.
     max: usize,
-}
-
-/// Information about search queries and number of matches for find
-#[derive(Serialize, Deserialize, Debug)]
-pub struct FindStatus {
-    /// The current search query.
-    chars: Option<String>,
-
-    /// Whether the active search is case matching.
-    case_sensitive: Option<bool>,
-
-    /// Whether the search query is considered as regular expression.
-    is_regex: Option<bool>,
-
-    /// Total number of matches.
-    matches: usize
 }
 
 impl View {
@@ -673,12 +658,7 @@ impl View {
         self.find_changed = false;
 
         self.find.iter().map(|find| {
-            FindStatus {
-                chars: find.search_string().clone(),
-                case_sensitive: Some(find.is_case_sensitive()),
-                is_regex: Some(find.is_regex()),
-                matches: find.occurrences().len(),
-            }
+            find.find_status()
         }).collect::<Vec<FindStatus>>()
     }
 
