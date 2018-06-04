@@ -33,7 +33,7 @@ use xi_plugin_lib::{Plugin, ChunkCache, View, mainloop, Error};
 /// intended to demonstrate how to edit a document; when the plugin is active,
 /// and the user inserts an exclamation mark, the plugin will capitalize the
 /// preceding word.
-struct SamplePlugin(usize);
+struct SamplePlugin;
 
 //NOTE: implementing the `Plugin` trait is the sole requirement of a plugin.
 // For more documentation, see `rust/plugin-lib` in this repo.
@@ -42,12 +42,10 @@ impl Plugin for SamplePlugin {
 
     fn new_view(&mut self, view: &mut View<Self::Cache>) {
         eprintln!("new view {}", view.get_id());
-        view.add_status_item("my_key", &format!("hello {}", self.0), "left");
     }
 
     fn did_close(&mut self, view: &View<Self::Cache>) {
         eprintln!("close view {}", view.get_id());
-        view.remove_status_item("my_key");
     }
 
     fn did_save(&mut self, view: &mut View<Self::Cache>, _old: Option<&Path>) {
@@ -70,19 +68,6 @@ impl Plugin for SamplePlugin {
             if text == "!" {
                 let _ = self.capitalize_word(view, iv.end());
             }
-        }
-        self.0 += 1;
-        view.update_status_item("my_key", &format!("hello {}", self.0));
-        if self.0 == 50 {
-            view.add_status_item("my_key_2", &format!("hi there {}", self.0), "left");
-            view.add_status_item("my_key_3", &format!("howdy {}", self.0), "right");
-        }
-        if self.0 == 100 {
-            view.remove_status_item("my_key_2");
-            view.add_status_item("my_key_4", &format!("hiya {}", self.0), "left");
-        }
-        if self.0 == 200 {
-            view.remove_status_item("my_key_3");
         }
     }
 }
@@ -122,6 +107,6 @@ impl SamplePlugin {
 }
 
 fn main() {
-    let mut plugin = SamplePlugin(0);
+    let mut plugin = SamplePlugin;
     mainloop(&mut plugin).unwrap();
 }

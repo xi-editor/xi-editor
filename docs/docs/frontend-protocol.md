@@ -380,13 +380,13 @@ Adds a status item, which will be displayed on the frontend's status bar. The al
 
 #### update_status_item
 
-`update_status_item { key: "my_key", value: "hello"}
+`update_status_item { key: "my_key", value: "hello"}`
 
 Update a status item with the specified key with the new value.
 
 #### remove_status_item
 
-`remove_status_item { key: "my_key" }
+`remove_status_item { key: "my_key" }`
 
 Removes a status item from the front end.
 
