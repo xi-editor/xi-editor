@@ -192,30 +192,30 @@ impl Find {
         // the length of an occurrence)
         let slop = if include_slop { self.search_string.as_ref().unwrap().len() * 2 } else { 0 };
 
-            let search_string = self.search_string.as_ref().unwrap();
+        let search_string = self.search_string.as_ref().unwrap();
 
-            // expand region to be able to find occurrences around the region's edges
-            let from = max(start, slop) - slop;
-            let to = min(end + slop, text.len());
+        // expand region to be able to find occurrences around the region's edges
+        let from = max(start, slop) - slop;
+        let to = min(end + slop, text.len());
 
-            // TODO: this interval might cut a unicode codepoint, make sure it is
-            // aligned to codepoint boundaries.
-            let sub_text = text.subseq(Interval::new_closed_open(0, to));
-            let mut find_cursor = Cursor::new(&sub_text, from);
-            while let Some(start) = find(&mut find_cursor, self.case_matching, &search_string) {
-                let end = find_cursor.pos();
+        // TODO: this interval might cut a unicode codepoint, make sure it is
+        // aligned to codepoint boundaries.
+        let sub_text = text.subseq(Interval::new_closed_open(0, to));
+        let mut find_cursor = Cursor::new(&sub_text, from);
+        while let Some(start) = find(&mut find_cursor, self.case_matching, &search_string) {
+            let end = find_cursor.pos();
 
-                let region = SelRegion::new(start, end);
-                let (_, e) = self.occurrences.add_range_distinct(region);
-                // in case of ambiguous search results (e.g. search "aba" in "ababa"),
-                // the search result closer to the beginning of the file wins
-                if e != end {
-                    // Skip the search result and keep the occurrence that is closer to
-                    // the beginning of the file. Re-align the cursor to the kept
-                    // occurrence
-                    find_cursor.set(e);
-                    continue;
-                }
+            let region = SelRegion::new(start, end);
+            let (_, e) = self.occurrences.add_range_distinct(region);
+            // in case of ambiguous search results (e.g. search "aba" in "ababa"),
+            // the search result closer to the beginning of the file wins
+            if e != end {
+                // Skip the search result and keep the occurrence that is closer to
+                // the beginning of the file. Re-align the cursor to the kept
+                // occurrence
+                find_cursor.set(e);
+                continue;
+            }
         }
 
         self.hls_dirty = true;
