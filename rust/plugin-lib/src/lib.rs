@@ -74,6 +74,10 @@ pub trait Cache {
     /// [`DataSource`]: trait.DataSource.html
     fn get_line<DS: DataSource>(&mut self, source: &DS, line_num: usize)
         -> Result<&str, Error>;
+    
+    /// Returns the entire contents of the remote document, fetching as needed.
+    fn get_document<DS: DataSource>(&mut self, source: &DS) -> Result<String, Error>; 
+
     /// Returns the offset of the line at `line_num`, zero-indexed, fetching
     /// data from `source` if needed.
     ///

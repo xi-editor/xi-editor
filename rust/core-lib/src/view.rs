@@ -78,11 +78,24 @@ pub struct View {
 
     /// Tracks whether there has been changes in find results or find parameters.
     /// This is used to determined whether FindStatus should be sent to the frontend.
-    find_changed: bool,
+    find_changed: FindStatusChange,
 
     /// Tracks whether find highlights should be rendered.
     /// Highlights are only rendered when search dialog is open.
     highlight_find: bool,
+}
+
+/// Indicates what changed in the find state.
+#[derive(PartialEq, Debug)]
+enum FindStatusChange {
+    /// None of the find parameters or number of matches changed.
+    None,
+
+    /// Find parameters and number of matches changed.
+    All,
+
+    /// Only number of matches changed
+    Matches
 }
 
 /// The visual width of the buffer for the purpose of word wrapping.
@@ -130,7 +143,7 @@ impl View {
             wrap_col: WrapWidth::None,
             lc_shadow: LineCacheShadow::default(),
             find: Vec::new(),
-            find_changed: false,
+            find_changed: FindStatusChange::None,
             highlight_find: false,
         }
     }
@@ -190,7 +203,7 @@ impl View {
             Cancel => self.do_cancel(text),
             HighlightFind { visible } => {
                 self.highlight_find = visible;
-                self.find_changed = true;
+                self.find_changed = FindStatusChange::All;
                 self.set_dirty(text);
             }
         }
@@ -594,6 +607,12 @@ impl View {
     {
         if !self.lc_shadow.needs_render(plan) { return; }
 
+        // send updated find status only if there have been changes
+        if self.find_changed != FindStatusChange::None {
+            let matches_only = self.find_changed == FindStatusChange::Matches;
+            client.find_status(self.view_id, &json!(self.find_status(matches_only)));
+        }
+
         let mut b = line_cache_shadow::Builder::new();
         let mut ops = Vec::new();
         let mut line_num = 0;  // tracks old line cache
@@ -666,11 +685,11 @@ impl View {
 
     /// Determines the current number of find results and search parameters to send them to
     /// the frontend.
-    pub fn find_status(&mut self) -> Vec<FindStatus> {
-        self.find_changed = false;
+    pub fn find_status(&mut self, matches_only: bool) -> Vec<FindStatus> {
+        self.find_changed = FindStatusChange::None;
 
         self.find.iter().map(|find| {
-            find.find_status()
+            find.find_status(matches_only)
         }).collect::<Vec<FindStatus>>()
     }
 
@@ -822,10 +841,7 @@ impl View {
             find.update_highlights(text, delta);
         }
 
-        // send updated find status only if there have been changes
-        if self.find_changed {
-            client.find_status(self.view_id, &json!(self.find_status()));
-        }
+        self.find_changed = FindStatusChange::Matches;
 
         // Note: for committing plugin edits, we probably want to know the priority
         // of the delta so we can set the cursor before or after the edit, as needed.
@@ -849,7 +865,7 @@ impl View {
         };
 
         self.set_dirty(text);
-        self.find_changed = true;
+        self.find_changed = FindStatusChange::Matches;
 
         // todo: this will be changed once multiple queries are supported
         // todo: for now only a single search query is supported however in the future
