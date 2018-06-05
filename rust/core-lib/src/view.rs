@@ -829,6 +829,8 @@ impl View {
             find.update_highlights(text, delta);
         }
 
+        self.find_changed = FindStatusChange::Matches;
+
         // Note: for committing plugin edits, we probably want to know the priority
         // of the delta so we can set the cursor before or after the edit, as needed.
         let new_sel = self.selection.apply_delta(delta, true, keep_selections);
