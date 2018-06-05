@@ -186,6 +186,11 @@ impl Plugin for LSPPlugin {
 
     fn did_save(&mut self, view: &mut View<Self::Cache>, _old: Option<&Path>) {
         eprintln!("saved view {}", view.get_id());
+
+        let document_text = view.get_document().unwrap();
+        let mut ls_client = self.0.lock().unwrap();
+        ls_client.send_did_save(view.get_id(), document_text);
+        
     }
 
     fn did_close(&mut self, view: &View<Self::Cache>) {
