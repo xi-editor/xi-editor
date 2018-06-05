@@ -1,10 +1,5 @@
 use jsonrpc_lite::{Error, Id, JsonRpc, Params};
-use lsp_types::InitializeParams;
-use lsp_types::{
-    ClientCapabilities, DidChangeTextDocumentParams, DidOpenTextDocumentParams, Range,
-    ServerCapabilities, TextDocumentContentChangeEvent, TextDocumentItem,
-    TextDocumentSyncCapability, TextDocumentSyncKind, VersionedTextDocumentIdentifier,
-};
+use lsp_types::*;
 use serde_json;
 use serde_json::{to_value, Value};
 use std::collections::HashMap;
@@ -197,7 +192,24 @@ impl LanguageServerClient {
         self.send_notification("textDocument/didChange", params);
     }
 
-    pub fn request_diagonostics(&mut self) {}
+
+    pub fn send_did_save(
+        &mut self,
+        view_id: ViewIdentifier,
+        _document_text: String
+    ) {
+        // Add support for sending document text as well. Currently missing in LSP types
+        // and is optional in LSP Specification
+        let text_document_did_save_params = DidSaveTextDocumentParams {
+            text_document: TextDocumentIdentifier {
+                uri: self.opened_documents.get(&view_id).unwrap().clone()
+            }
+        };
+
+        let params = Params::from(serde_json::to_value(text_document_did_save_params).unwrap());
+        self.send_notification("textDocument/didSave", params);
+    }
+
 }
 
 /// Helper methods to query the capabilities of the Language Server before making
@@ -206,6 +218,7 @@ impl LanguageServerClient {
 impl LanguageServerClient {
     /// Method to get the sync kind Supported by the Server
     pub fn get_sync_kind(&mut self) -> TextDocumentSyncKind {
+
         if let Some(capabilities) = self.server_capabilities.as_ref() {
             if let Some(sync) = capabilities.text_document_sync.as_ref() {
                 match sync {
