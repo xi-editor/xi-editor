@@ -1,9 +1,9 @@
-use std;
 use serde_json;
+use std;
 
 pub enum LSPHeader {
     ContentType,
-    ContentLength(usize)
+    ContentLength(usize),
 }
 
 // Error Types
@@ -13,7 +13,7 @@ pub enum ParseError {
     ParseInt(std::num::ParseIntError),
     Utf8(std::string::FromUtf8Error),
     Json(serde_json::Error),
-    Unknown(String)
+    Unknown(String),
 }
 
 impl From<std::io::Error> for ParseError {
@@ -45,7 +45,3 @@ impl From<String> for ParseError {
         ParseError::Unknown(s)
     }
 }
-
-
-
-
