@@ -161,8 +161,6 @@ impl Plugin for LSPPlugin {
         _author: String,
     ) {
         if let Some(d) = delta {
-            // Check if the delta is a simple insert operation
-            //let changes = try!( );
 
             let mut ls_client = self.0.lock().unwrap();
             let sync_kind = ls_client.get_sync_kind();
@@ -180,7 +178,7 @@ impl Plugin for LSPPlugin {
                 TextDocumentSyncKind::Incremental => match get_document_content_changes(d, view) {
                     Ok(result) => result,
                     Err(err) => {
-                        eprintln!("Error Occured. Sending Whole Doc");
+                        eprintln!("Error: {:?} Occured. Sending Whole Doc", err);
                         let text_document_content_change_event = TextDocumentContentChangeEvent {
                             range: None,
                             range_length: None,

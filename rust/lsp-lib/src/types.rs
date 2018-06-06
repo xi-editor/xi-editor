@@ -1,3 +1,6 @@
+use jsonrpc_lite::Error;
+use serde_json::Value;
+use language_server::LanguageServerClient;
 use serde_json;
 use std;
 
@@ -5,6 +8,18 @@ pub enum LSPHeader {
     ContentType,
     ContentLength(usize),
 }
+
+pub trait Callable: Send {
+    fn call(self: Box<Self>, client: &mut LanguageServerClient, result: Result<Value, Error>);
+}
+
+impl<F: Send + FnOnce(&mut LanguageServerClient, Result<Value, Error>)> Callable for F {
+    fn call(self: Box<F>, client: &mut LanguageServerClient, result: Result<Value, Error>) {
+        (*self)(client, result)
+    }
+}
+
+pub type Callback = Box<Callable>;
 
 // Error Types
 #[derive(Debug)]

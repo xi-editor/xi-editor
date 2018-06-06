@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::process;
 use url::Url;
 use xi_core::ViewIdentifier;
-use Callback;
+use types::Callback;
 
 pub type DoucmentURI = Url;
 
@@ -80,12 +80,12 @@ impl LanguageServerClient {
         match value {
             JsonRpc::Request(obj) => eprintln!("client received unexpected request: {:?}", obj),
             JsonRpc::Notification(obj) => eprintln!("\n\n recv notification: {:?} \n\n", obj),
-            JsonRpc::Success(ref obj) => {
+            JsonRpc::Success(_) => {
                 let mut result = value.get_result().unwrap().to_owned();
                 let id = number_from_id(value.get_id().as_ref());
                 self.handle_response(id, result);
             }
-            JsonRpc::Error(ref obj) => {
+            JsonRpc::Error(_) => {
                 let mut error = value.get_error().unwrap().to_owned();
                 let id = number_from_id(value.get_id().as_ref());
                 self.handle_error(id, error);
@@ -241,6 +241,7 @@ impl LanguageServerClient {
 
 /// Util Methods
 impl LanguageServerClient {
+    
     /// Get workspace root using the Workspace Identifier
     /// For example: Cargo.toml can be used to identify a Rust Workspace
     /// This method traverses up to file tree to return the path to the
@@ -260,16 +261,13 @@ impl LanguageServerClient {
                             }
                         }
                     }
-
-                    current_path = path;
                     
+                    current_path = path;
                 } else {
                     break;
                 }
-
             }
         }
-
         None
     }
 }

@@ -2,7 +2,6 @@ extern crate xi_lsp_lib;
 use xi_lsp_lib::{start_mainloop, LSPPlugin};
 
 fn main() {
-    
     // Assuming RLS is in default path i.e. ~/.cargo/bin/rls
     // TODO: Make this configurable
     let home_dir = std::env::home_dir();
