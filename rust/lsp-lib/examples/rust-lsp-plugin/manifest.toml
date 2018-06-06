@@ -1,0 +1,3 @@
+name = "rust-lsp-plugin"
+version = "0.0"
+exec_path="./bin/rust-lsp-plugin"
