@@ -22,7 +22,7 @@ out/$(PLUGIN_NAME): target/release/$(PLUGIN_BIN)
 target/release/$(PLUGIN_BIN): src/*.rs Cargo.toml Cargo.lock
 	cargo build --release
 
-install: manifest.toml target/release/$(PLUGIN_BIN)
+install: manifest.toml out/$(PLUGIN_NAME)
 	mkdir -p $(XI_PLUGIN_DIR)
 	cp -r out/$(PLUGIN_NAME) $(XI_PLUGIN_DIR)
 
