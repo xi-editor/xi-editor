@@ -181,6 +181,9 @@ pub enum PluginNotification {
     UpdateSpans { start: usize, len: usize, spans: Vec<ScopeSpan>, rev: u64 },
     Edit { edit: PluginEdit },
     Alert { msg: String },
+    AddStatusItem { key: String, value: String, alignment: String },
+    UpdateStatusItem { key: String, value: String  },
+    RemoveStatusItem { key: String }
 }
 
 /// Common wrapper for plugin-originating RPCs.

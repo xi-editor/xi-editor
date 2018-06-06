@@ -143,9 +143,30 @@ impl Client {
            .expect("failed to deserialize width response"))
     }
 
-
     pub fn alert<S: AsRef<str>>(&self, msg: S) {
         self.0.send_rpc_notification("alert", &json!({ "msg": msg.as_ref() }));
+    }
+
+    pub fn add_status_item(&self, view_id: ViewId, key: &str, value: &str, alignment: &str) {
+        self.0.send_rpc_notification("add_status_item", &json!(
+            {   "view_id": view_id,
+                "key": key,
+                "value": value,
+                "alignment": alignment
+            }));
+    }
+
+    pub fn update_status_item(&self, view_id: ViewId, key: &str, value: &str) {
+        self.0.send_rpc_notification("update_status_item", &json!(
+            {   "view_id": view_id,
+                "key": key,
+                "value": value,
+            }));
+    }
+
+    pub fn remove_status_item(&self, view_id: ViewId, key: &str) {
+        self.0.send_rpc_notification("remove_status_item", &json!(
+            {   "view_id": view_id, "key": key }));
     }
 
     pub fn schedule_idle(&self, token: usize) {

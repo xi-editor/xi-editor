@@ -175,6 +175,36 @@ impl<C: Cache> View<C> {
         self.peer.request_is_pending()
     }
 
+    pub fn add_status_item(&self, key: &str, value: &str, alignment: &str) {
+        let params = json!({
+            "plugin_id": self.plugin_id,
+            "view_id": self.view_id,
+            "key": key,
+            "value": value,
+            "alignment": alignment
+        });
+        self.peer.send_rpc_notification("add_status_item", &params);
+    }
+
+    pub fn update_status_item(&self, key: &str, value: &str) {
+        let params = json!({
+            "plugin_id": self.plugin_id,
+            "view_id": self.view_id,
+            "key": key,
+            "value": value
+        });
+        self.peer.send_rpc_notification("update_status_item", &params);
+    }
+
+    pub fn remove_status_item(&self, key: &str) {
+        let params = json!({
+            "plugin_id": self.plugin_id,
+            "view_id": self.view_id,
+            "key": key
+        });
+        self.peer.send_rpc_notification("remove_status_item", &params);
+    }
+
 }
 
 /// A simple wrapper type that acts as a `DataSource`.
