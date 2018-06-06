@@ -18,7 +18,8 @@ use std::cmp::min;
 
 use memchr::{memchr, memchr2, memchr3};
 
-use rope::{BaseMetric, RopeInfo};
+use rope::RopeInfo;
+use rope::BaseMetric;
 use tree::Cursor;
 use regex::RegexBuilder;
 use std::str;
@@ -176,12 +177,11 @@ fn find_core(cursor: &mut Cursor<RopeInfo>, lines: &mut LinesRaw, pat: &str,
     }
 }
 
-
 /// Compare whether the substring beginning at the current cursor location
 /// is equal to the provided string. Leaves the cursor at an indeterminate
 /// position on failure, but the end of the string on success. Returns the
 /// start position of the match.
-pub fn compare_cursor_str(cursor: &mut Cursor<RopeInfo>, lines: &mut LinesRaw, mut pat: &str) -> Option<usize> {
+pub fn compare_cursor_str(cursor: &mut Cursor<RopeInfo>, _lines: &mut LinesRaw, mut pat: &str) -> Option<usize> {
     let start_position = cursor.pos();
     if pat.is_empty() {
         return Some(start_position);
@@ -190,6 +190,8 @@ pub fn compare_cursor_str(cursor: &mut Cursor<RopeInfo>, lines: &mut LinesRaw, m
     while let Some((leaf, pos_in_leaf)) = cursor.get_leaf() {
         let n = min(pat.len(), leaf.len() - pos_in_leaf);
         if leaf.as_bytes()[pos_in_leaf..pos_in_leaf + n] != pat.as_bytes()[..n] {
+            cursor.set(start_position);
+            cursor.next::<BaseMetric>();
             return None;
         }
         pat = &pat[n..];
@@ -199,13 +201,15 @@ pub fn compare_cursor_str(cursor: &mut Cursor<RopeInfo>, lines: &mut LinesRaw, m
         }
         let _ = cursor.next_leaf();
     }
+    cursor.set(start_position);
+    cursor.next::<BaseMetric>();
     None
 }
 
 /// Like `compare_cursor_str` but case invariant (using to_lowercase() to
 /// normalize both strings before comparison). Returns the start position
 /// of the match.
-fn compare_cursor_str_casei(cursor: &mut Cursor<RopeInfo>, lines: &mut LinesRaw, pat: &str) -> Option<usize> {
+fn compare_cursor_str_casei(cursor: &mut Cursor<RopeInfo>, _lines: &mut LinesRaw, pat: &str) -> Option<usize> {
     let start_position = cursor.pos();
     let mut pat_iter = pat.chars();
     let mut c = pat_iter.next().unwrap();
@@ -213,6 +217,8 @@ fn compare_cursor_str_casei(cursor: &mut Cursor<RopeInfo>, lines: &mut LinesRaw,
         if let Some(rope_c) = cursor.next_codepoint() {
             for lc_c in rope_c.to_lowercase() {
                 if c != lc_c {
+                    cursor.set(start_position);
+                    cursor.next::<BaseMetric>();
                     return None;
                 }
                 if let Some(next_c) = pat_iter.next() {
@@ -223,6 +229,8 @@ fn compare_cursor_str_casei(cursor: &mut Cursor<RopeInfo>, lines: &mut LinesRaw,
             }
         } else {
             // end of string before pattern is complete
+            cursor.set(start_position);
+            cursor.next::<BaseMetric>();
             return None;
         }
     }
@@ -267,6 +275,8 @@ fn compare_cursor_regex(cursor: &mut Cursor<RopeInfo>, lines: &mut LinesRaw, pat
                 Some(mat) => {
                     // calculate start position based on where the match starts
                     let start_position = orig_position + mat.start();
+                    eprintln!("text {:?}", text);
+                    eprintln!("match {:?}", mat.start());
                     // update cursor and set to end of match
                     let end_position = orig_position + mat.end();
                     cursor.set(end_position);
@@ -309,7 +319,7 @@ fn scan_lowercase(probe: char, s: &str) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::CaseMatching::{Exact, CaseInsensitive, RegularExpression};
+    use super::CaseMatching::{Exact, CaseInsensitive};
     use tree::Cursor;
     use rope::Rope;
 
@@ -317,21 +327,22 @@ mod tests {
     fn find_small() {
         let a = Rope::from("Löwe 老虎 Léopard");
         let mut c = Cursor::new(&a, 0);
-        assert_eq!(find(&mut c, Exact, "L"), Some(0));
-        assert_eq!(find(&mut c, Exact, "L"), Some(13));
-        assert_eq!(find(&mut c, Exact, "L"), None);
+        let mut raw_lines = a.lines_raw(0, a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, "L", false), Some(0));
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, "L", false), Some(13));
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, "L", false), None);
         c.set(0);
-        assert_eq!(find(&mut c, Exact, "Léopard"), Some(13));
-        assert_eq!(find(&mut c, Exact, "Léopard"), None);
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, "Léopard", false), Some(13));
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, "Léopard", false), None);
         c.set(0);
         // Note: these two characters both start with 0xE8 in utf-8
-        assert_eq!(find(&mut c, Exact, "老虎"), Some(6));
-        assert_eq!(find(&mut c, Exact, "老虎"), None);
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, "老虎", false), Some(6));
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, "老虎", false), None);
         c.set(0);
-        assert_eq!(find(&mut c, Exact, "虎"), Some(9));
-        assert_eq!(find(&mut c, Exact, "虎"), None);
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, "虎", false), Some(9));
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, "虎", false), None);
         c.set(0);
-        assert_eq!(find(&mut c, Exact, "Tiger"), None);
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, "Tiger", false), None);
     }
 
     #[test]
@@ -343,96 +354,147 @@ mod tests {
         s.push_str("Löwe 老虎 Léopard");
         let a = Rope::from(&s);
         let mut c = Cursor::new(&a, 0);
-        assert_eq!(find(&mut c, Exact, "L"), Some(4000));
-        assert_eq!(find(&mut c, Exact, "L"), Some(4013));
-        assert_eq!(find(&mut c, Exact, "L"), None);
+        let mut raw_lines = a.lines_raw(0, a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, "L", false), Some(4000));
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, "L", false), Some(4013));
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, "L", false), None);
         c.set(0);
-        assert_eq!(find(&mut c, Exact, "Léopard"), Some(4013));
-        assert_eq!(find(&mut c, Exact, "Léopard"), None);
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, "Léopard", false), Some(4013));
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, "Léopard", false), None);
         c.set(0);
-        assert_eq!(find(&mut c, Exact, "老虎"), Some(4006));
-        assert_eq!(find(&mut c, Exact, "老虎"), None);
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, "老虎", false), Some(4006));
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, "老虎", false), None);
         c.set(0);
-        assert_eq!(find(&mut c, Exact, "虎"), Some(4009));
-        assert_eq!(find(&mut c, Exact, "虎"), None);
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, "虎", false), Some(4009));
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, "虎", false), None);
         c.set(0);
-        assert_eq!(find(&mut c, Exact, "Tiger"), None);
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, "Tiger", false), None);
     }
 
     #[test]
     fn find_casei_small() {
         let a = Rope::from("Löwe 老虎 Léopard");
         let mut c = Cursor::new(&a, 0);
-        assert_eq!(find(&mut c, CaseInsensitive, "l"), Some(0));
-        assert_eq!(find(&mut c, CaseInsensitive, "l"), Some(13));
-        assert_eq!(find(&mut c, CaseInsensitive, "l"), None);
+        let mut raw_lines = a.lines_raw(0, a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "l", false), Some(0));
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "l", false), Some(13));
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "l", false), None);
         c.set(0);
-        assert_eq!(find(&mut c, CaseInsensitive, "léopard"), Some(13));
-        assert_eq!(find(&mut c, CaseInsensitive, "léopard"), None);
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "léopard", false), Some(13));
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "léopard", false), None);
         c.set(0);
-        assert_eq!(find(&mut c, CaseInsensitive, "LÉOPARD"), Some(13));
-        assert_eq!(find(&mut c, CaseInsensitive, "LÉOPARD"), None);
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "LÉOPARD", false), Some(13));
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "LÉOPARD", false), None);
         c.set(0);
-        assert_eq!(find(&mut c, CaseInsensitive, "老虎"), Some(6));
-        assert_eq!(find(&mut c, CaseInsensitive, "老虎"), None);
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "老虎", false), Some(6));
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "老虎", false), None);
         c.set(0);
-        assert_eq!(find(&mut c, CaseInsensitive, "Tiger"), None);
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "Tiger", false), None);
     }
 
     #[test]
     fn find_casei_ascii_nonalpha() {
         let a = Rope::from("![cfg(test)]");
         let mut c = Cursor::new(&a, 0);
-        assert_eq!(find(&mut c, CaseInsensitive, "(test)"), Some(5));
+        let mut raw_lines = a.lines_raw(0, a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "(test)", false), Some(5));
         c.set(0);
-        assert_eq!(find(&mut c, CaseInsensitive, "(TEST)"), Some(5));
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "(TEST)", false), Some(5));
     }
 
     #[test]
     fn find_casei_special() {
         let a = Rope::from("İ");
         let mut c = Cursor::new(&a, 0);
-        assert_eq!(find(&mut c, CaseInsensitive, "i̇"), Some(0));
+        let mut raw_lines = a.lines_raw(0, a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "i̇", false), Some(0));
 
         let a = Rope::from("i̇");
         let mut c = Cursor::new(&a, 0);
-        assert_eq!(find(&mut c, CaseInsensitive, "İ"), Some(0));
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "İ", false), Some(0));
 
         let a = Rope::from("\u{212A}");
         let mut c = Cursor::new(&a, 0);
-        assert_eq!(find(&mut c, CaseInsensitive, "k"), Some(0));
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "k", false), Some(0));
 
         let a = Rope::from("k");
         let mut c = Cursor::new(&a, 0);
-        assert_eq!(find(&mut c, CaseInsensitive, "\u{212A}"), Some(0));
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "\u{212A}", false), Some(0));
     }
 
     #[test]
     fn find_casei_0xc4() {
         let a = Rope::from("\u{0100}I");
         let mut c = Cursor::new(&a, 0);
-        assert_eq!(find(&mut c, CaseInsensitive, "i"), Some(2));
+        let mut raw_lines = a.lines_raw(0, a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "i", false), Some(2));
+    }
+
+    #[test]
+    fn find_regex_small_casei() {
+        let a = Rope::from("Löwe 老虎 Léopard\nSecond line");
+        let mut c = Cursor::new(&a, 0);
+        let mut raw_lines = a.lines_raw(0, a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "L", true), Some(0));
+        raw_lines = a.lines_raw(c.pos(), a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "L", true), Some(13));
+        raw_lines = a.lines_raw(c.pos(), a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "L", true), Some(29));
+        c.set(0);
+        let mut raw_lines = a.lines_raw(0, a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "Léopard", true), Some(13));
+        raw_lines = a.lines_raw(c.pos(), a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "Léopard", true), None);
+        c.set(0);
+        let mut raw_lines = a.lines_raw(0, a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "老虎", true), Some(6));
+        raw_lines = a.lines_raw(c.pos(), a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "老虎", true), None);
+        c.set(0);
+        let mut raw_lines = a.lines_raw(0, a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "Tiger", true), None);
+        c.set(0);
+        let mut raw_lines = a.lines_raw(0, a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, ".", true), Some(0));
+        raw_lines = a.lines_raw(c.pos(), a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "\\s", true), Some(5));
+        raw_lines = a.lines_raw(c.pos(), a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "\\sLéopard\n.*", true), Some(12));
+        c.set(0);
+        let mut raw_lines = a.lines_raw(0, a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, "W", true), None);
     }
 
     #[test]
     fn find_regex_small() {
         let a = Rope::from("Löwe 老虎 Léopard\nSecond line");
         let mut c = Cursor::new(&a, 0);
-        assert_eq!(find(&mut c, RegularExpression, "L"), Some(0));
-        assert_eq!(find(&mut c, RegularExpression, "L"), Some(13));
-        assert_eq!(find(&mut c, RegularExpression, "L"), None);
+        let mut raw_lines = a.lines_raw(0, a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, "L", true), Some(0));
+        raw_lines = a.lines_raw(c.pos(), a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, "L", true), Some(13));
+        raw_lines = a.lines_raw(c.pos(), a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, "L", true), None);
         c.set(0);
-        assert_eq!(find(&mut c, RegularExpression, "Léopard"), Some(13));
-        assert_eq!(find(&mut c, RegularExpression, "Léopard"), None);
+        let mut raw_lines = a.lines_raw(0, a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, "Léopard", true), Some(13));
+        raw_lines = a.lines_raw(c.pos(), a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, "Léopard", true), None);
         c.set(0);
-        assert_eq!(find(&mut c, RegularExpression, "老虎"), Some(6));
-        assert_eq!(find(&mut c, RegularExpression, "老虎"), None);
+        let mut raw_lines = a.lines_raw(0, a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, "老虎", true), Some(6));
+        raw_lines = a.lines_raw(c.pos(), a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, "老虎", true), None);
         c.set(0);
-        assert_eq!(find(&mut c, RegularExpression, "Tiger"), None);
+        let mut raw_lines = a.lines_raw(0, a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, "Tiger", true), None);
         c.set(0);
-        assert_eq!(find(&mut c, RegularExpression, "."), Some(0));
-        assert_eq!(find(&mut c, RegularExpression, "\\s"), Some(5));
-        assert_eq!(find(&mut c, RegularExpression, "\\sLéopard\n.*"), Some(12));
+        let mut raw_lines = a.lines_raw(0, a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, ".", true), Some(0));
+        raw_lines = a.lines_raw(c.pos(), a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, "\\s", true), Some(5));
+        raw_lines = a.lines_raw(c.pos(), a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, "\\sLéopard\n.*", true), Some(12));
     }
 
     #[test]
@@ -444,21 +506,32 @@ mod tests {
         s.push_str("Löwe 老虎 Léopard\nSecond line");
         let a = Rope::from(&s);
         let mut c = Cursor::new(&a, 0);
-        assert_eq!(find(&mut c, RegularExpression, "L"), Some(4000));
-        assert_eq!(find(&mut c, RegularExpression, "L"), Some(4013));
-        assert_eq!(find(&mut c, RegularExpression, "L"), None);
+        let mut raw_lines = a.lines_raw(0, a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "L", true), Some(4000));
+        raw_lines = a.lines_raw(c.pos(), a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "L", true), Some(4013));
+        raw_lines = a.lines_raw(c.pos(), a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "L", true), Some(4029));
         c.set(0);
-        assert_eq!(find(&mut c, RegularExpression, "Léopard"), Some(4013));
-        assert_eq!(find(&mut c, RegularExpression, "Léopard"), None);
+        let mut raw_lines = a.lines_raw(0, a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "Léopard", true), Some(4013));
+        raw_lines = a.lines_raw(c.pos(), a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "Léopard", true), None);
         c.set(0);
-        assert_eq!(find(&mut c, RegularExpression, "老虎"), Some(4006));
-        assert_eq!(find(&mut c, RegularExpression, "老虎"), None);
+        let mut raw_lines = a.lines_raw(0, a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "老虎", true), Some(4006));
+        raw_lines = a.lines_raw(c.pos(), a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "老虎", true), None);
         c.set(0);
-        assert_eq!(find(&mut c, RegularExpression, "Tiger"), None);
+        let mut raw_lines = a.lines_raw(0, a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "Tiger", true), None);
         c.set(0);
-        assert_eq!(find(&mut c, RegularExpression, "."), Some(0));
-        assert_eq!(find(&mut c, RegularExpression, "\\s"), Some(4005));
-        assert_eq!(find(&mut c, RegularExpression, "\\sLéopard\n.*"), Some(4012));
+        let mut raw_lines = a.lines_raw(0, a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, ".", true), Some(0));
+        raw_lines = a.lines_raw(c.pos(), a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "\\s", true), Some(4005));
+        raw_lines = a.lines_raw(c.pos(), a.len());
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "\\sLéopard\n.*", true), Some(4012));
     }
 
     #[test]
@@ -466,19 +539,20 @@ mod tests {
         let a = Rope::from("Löwe 老虎 Léopard");
         let mut c = Cursor::new(&a, 0);
         let pat = "Löwe 老虎 Léopard";
-        assert!(compare_cursor_str(&mut c, pat).is_some());
+        let mut raw_lines = a.lines_raw(0, a.len());
+        assert!(compare_cursor_str(&mut c, &mut raw_lines, pat).is_some());
         assert_eq!(c.pos(), pat.len());
         c.set(0);
         let pat = "Löwe";
-        assert!(compare_cursor_str(&mut c, pat).is_some());
+        assert!(compare_cursor_str(&mut c, &mut raw_lines, pat).is_some());
         assert_eq!(c.pos(), pat.len());
         c.set(0);
         // Empty string is valid for compare_cursor_str (but not find)
         let pat = "";
-        assert!(compare_cursor_str(&mut c, pat).is_some());
+        assert!(compare_cursor_str(&mut c, &mut raw_lines, pat).is_some());
         assert_eq!(c.pos(), pat.len());
         c.set(0);
-        assert!(compare_cursor_str(&mut c, "Löwe 老虎 Léopardfoo").is_none());
+        assert!(compare_cursor_str(&mut c, &mut raw_lines, "Löwe 老虎 Léopardfoo").is_none());
     }
 
     #[test]
@@ -490,10 +564,11 @@ mod tests {
         s.push_str("Löwe 老虎 Léopard");
         let a = Rope::from(&s);
         let mut c = Cursor::new(&a, 0);
-        assert!(compare_cursor_str(&mut c, &s).is_some());
+        let mut raw_lines = a.lines_raw(0, a.len());
+        assert!(compare_cursor_str(&mut c, &mut raw_lines, &s).is_some());
         assert_eq!(c.pos(), s.len());
         c.set(2000);
-        assert!(compare_cursor_str(&mut c, &s[2000..]).is_some());
+        assert!(compare_cursor_str(&mut c, &mut raw_lines, &s[2000..]).is_some());
         assert_eq!(c.pos(), s.len());
     }
 }
