@@ -1,8 +1,7 @@
 extern crate jsonrpc_lite;
 extern crate languageserver_types as lsp_types;
-#[macro_use]
-extern crate url;
 extern crate serde_json;
+extern crate url;
 extern crate xi_core_lib as xi_core;
 extern crate xi_plugin_lib;
 extern crate xi_rope;

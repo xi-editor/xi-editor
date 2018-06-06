@@ -3,7 +3,10 @@ use lsp_types::*;
 use serde_json;
 use serde_json::{to_value, Value};
 use std::collections::HashMap;
+use std::ffi::OsStr;
 use std::io::Write;
+use std::path::Path;
+use std::path::PathBuf;
 use std::process;
 use url::Url;
 use xi_core::ViewIdentifier;
@@ -15,6 +18,8 @@ pub struct LanguageServerClient {
     writer: Box<Write + Send>,
     pending: HashMap<usize, Callback>,
     next_id: usize,
+    workspace_identifier: Option<String>,
+    language_id: String,
     pub is_initialized: bool,
     pub opened_documents: HashMap<ViewIdentifier, DoucmentURI>,
     pub server_capabilities: Option<ServerCapabilities>,
@@ -42,15 +47,22 @@ fn number_from_id(id: Option<&Id>) -> usize {
 }
 
 impl LanguageServerClient {
-    pub fn new(writer: Box<Write + Send>) -> Self {
+    pub fn new(
+        writer: Box<Write + Send>,
+        language_id: String,
+        file_extensions: Vec<String>,
+        workspace_identifier: Option<String>,
+    ) -> Self {
         LanguageServerClient {
             writer,
             pending: HashMap::new(),
             next_id: 1,
             is_initialized: false,
+            language_id,
             server_capabilities: None,
             opened_documents: HashMap::new(),
-            file_extensions: vec!["json".to_string()],
+            workspace_identifier,
+            file_extensions,
         }
     }
 
@@ -158,7 +170,7 @@ impl LanguageServerClient {
 
         let text_document_did_open_params = DidOpenTextDocumentParams {
             text_document: TextDocumentItem {
-                language_id: "json".to_string(),
+                language_id: self.language_id.clone(),
                 uri: document_uri,
                 version: 0,
                 text: document_text,
@@ -192,24 +204,18 @@ impl LanguageServerClient {
         self.send_notification("textDocument/didChange", params);
     }
 
-
-    pub fn send_did_save(
-        &mut self,
-        view_id: ViewIdentifier,
-        _document_text: String
-    ) {
+    pub fn send_did_save(&mut self, view_id: ViewIdentifier, _document_text: String) {
         // Add support for sending document text as well. Currently missing in LSP types
         // and is optional in LSP Specification
         let text_document_did_save_params = DidSaveTextDocumentParams {
             text_document: TextDocumentIdentifier {
-                uri: self.opened_documents.get(&view_id).unwrap().clone()
-            }
+                uri: self.opened_documents.get(&view_id).unwrap().clone(),
+            },
         };
 
         let params = Params::from(serde_json::to_value(text_document_did_save_params).unwrap());
         self.send_notification("textDocument/didSave", params);
     }
-
 }
 
 /// Helper methods to query the capabilities of the Language Server before making
@@ -218,7 +224,6 @@ impl LanguageServerClient {
 impl LanguageServerClient {
     /// Method to get the sync kind Supported by the Server
     pub fn get_sync_kind(&mut self) -> TextDocumentSyncKind {
-
         if let Some(capabilities) = self.server_capabilities.as_ref() {
             if let Some(sync) = capabilities.text_document_sync.as_ref() {
                 match sync {
@@ -231,5 +236,40 @@ impl LanguageServerClient {
         }
 
         return TextDocumentSyncKind::Full;
+    }
+}
+
+/// Util Methods
+impl LanguageServerClient {
+    /// Get workspace root using the Workspace Identifier
+    /// For example: Cargo.toml can be used to identify a Rust Workspace
+    /// This method traverses up to file tree to return the path to the
+    /// Workspace root folder
+    pub fn get_workspace_root(&mut self, document_path: &Path) -> Option<PathBuf> {
+        if let Some(identifier) = &self.workspace_identifier {
+            let identifier_os_str = OsStr::new(&identifier);
+            let mut current_path = document_path;
+            loop {
+                let parent_path = current_path.parent();
+                if let Some(path) = parent_path {
+
+                    for entry in path.read_dir().expect("Cannot read directory contents") {
+                        if let Ok(entry) = entry {
+                            if entry.file_name() == identifier_os_str {
+                                return Some(entry.path());
+                            }
+                        }
+                    }
+
+                    current_path = path;
+                    
+                } else {
+                    break;
+                }
+
+            }
+        }
+
+        None
     }
 }

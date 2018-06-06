@@ -96,7 +96,13 @@ fn get_document_content_changes<C: Cache>(
 }
 
 impl LSPPlugin {
-    pub fn new(command: &str, arguments: &[&str]) -> Self {
+    pub fn new(
+        command: &str,
+        arguments: &[&str],
+        file_extensions: Vec<String>,
+        workspace_identifier: Option<String>,
+        language_id: &str,
+    ) -> Self {
         eprintln!("command: {}", command);
         eprintln!("arguments: {:?}", arguments);
 
@@ -112,8 +118,13 @@ impl LSPPlugin {
         eprintln!("child_id: {}", child_id.unwrap());
 
         let writer = Box::new(BufWriter::new(process.stdin.take().unwrap()));
-
-        let plugin = LSPPlugin(Arc::new(Mutex::new(LanguageServerClient::new(writer))));
+        let language_id = String::from(language_id);
+        let plugin = LSPPlugin(Arc::new(Mutex::new(LanguageServerClient::new(
+            writer,
+            language_id,
+            file_extensions,
+            workspace_identifier
+        ))));
 
         {
             let server_ref = plugin.0.clone();
@@ -190,7 +201,6 @@ impl Plugin for LSPPlugin {
         let document_text = view.get_document().unwrap();
         let mut ls_client = self.0.lock().unwrap();
         ls_client.send_did_save(view.get_id(), document_text);
-        
     }
 
     fn did_close(&mut self, view: &View<Self::Cache>) {
@@ -202,6 +212,7 @@ impl Plugin for LSPPlugin {
 
         let document_text = view.get_document().unwrap();
         let path = view.get_path().clone();
+
         let view_id = view.get_id().clone();
 
         if let Some(file_path) = path {
@@ -210,15 +221,26 @@ impl Plugin for LSPPlugin {
             let mut ls_client = self.0.lock().unwrap();
 
             if ls_client.file_extensions.contains(&extension) {
-                eprintln!("json file opened");
                 let document_uri =
                     Url::parse(format!("file://{}", file_path.to_str().unwrap()).as_ref()).unwrap();
 
+                let workspace_root = ls_client.get_workspace_root(file_path);
+
+                let workspace_uri = match workspace_root {
+                    Some(path) => {
+                        Some(Url::parse(format!("file://{}", path.to_str().unwrap()).as_ref()).unwrap())
+                    }
+                    None => None,
+                };
+
+                eprintln!("workspace_uri {:?}", workspace_uri);
+
                 if !ls_client.is_initialized {
-                    ls_client.send_initialize(None, move |ls_client, result| {
+                    ls_client.send_initialize(workspace_uri, move |ls_client, result| {
                         if result.is_ok() {
                             let init_result: InitializeResult =
                                 serde_json::from_value(result.unwrap()).unwrap();
+                            
                             eprintln!("INIT RESULT: {:?}", init_result);
 
                             ls_client.server_capabilities = Some(init_result.capabilities);
