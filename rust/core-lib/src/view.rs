@@ -73,12 +73,16 @@ pub struct View {
     scroll_to: Option<usize>,
 
     /// The state for finding text for this view.
-    /// Each instance represents a separate search query
+    /// Each instance represents a separate search query.
     find: Vec<Find>,
 
     /// Tracks whether there has been changes in find results or find parameters.
     /// This is used to determined whether FindStatus should be sent to the frontend.
     find_changed: FindStatusChange,
+
+    /// Tracks whether find highlights should be rendered.
+    /// Highlights are only rendered when search dialog is open.
+    highlight_find: bool,
 }
 
 /// Indicates what changed in the find state.
@@ -140,6 +144,7 @@ impl View {
             lc_shadow: LineCacheShadow::default(),
             find: Vec::new(),
             find_changed: FindStatusChange::None,
+            highlight_find: false,
         }
     }
 
@@ -196,6 +201,11 @@ impl View {
             Drag(MouseAction { line, column, .. }) =>
                 self.do_drag(text, line, column, Affinity::default()),
             Cancel => self.do_cancel(text),
+            HighlightFind { visible } => {
+                self.highlight_find = visible;
+                self.find_changed = FindStatusChange::All;
+                self.set_dirty(text);
+            }
         }
     }
 
@@ -504,14 +514,16 @@ impl View {
             }
         }
 
-        // todo: active highlights different style
         let mut hls = Vec::new();
-        for find in self.find.iter() {
-            for region in find.occurrences().regions_in_range(start_pos, pos) {
-                let sel_start_ix = clamp(region.min(), start_pos, pos) - start_pos;
-                let sel_end_ix = clamp(region.max(), start_pos, pos) - start_pos;
-                if sel_end_ix > sel_start_ix {
-                    hls.push((sel_start_ix, sel_end_ix));
+
+        if self.highlight_find {
+            for find in self.find.iter() {
+                for region in find.occurrences().regions_in_range(start_pos, pos) {
+                    let sel_start_ix = clamp(region.min(), start_pos, pos) - start_pos;
+                    let sel_end_ix = clamp(region.max(), start_pos, pos) - start_pos;
+                    if sel_end_ix > sel_start_ix {
+                        hls.push((sel_start_ix, sel_end_ix));
+                    }
                 }
             }
         }
