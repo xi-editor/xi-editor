@@ -13,9 +13,9 @@
 // limitations under the License.
 
 use jsonrpc_lite::Error;
-use serde_json::Value;
 use language_server::LanguageServerClient;
 use serde_json;
+use serde_json::Value;
 use std;
 
 pub enum LSPHeader {
