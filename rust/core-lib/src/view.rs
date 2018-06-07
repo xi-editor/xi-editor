@@ -37,6 +37,7 @@ use width_cache::WidthCache;
 use word_boundaries::WordCursor;
 use find::Find;
 use linewrap;
+use internal::find::FindStatus;
 
 type StyleMap = RefCell<ThemeStyleMap>;
 
@@ -45,8 +46,8 @@ type StyleMap = RefCell<ThemeStyleMap>;
 const FLAG_SELECT: u64 = 2;
 
 pub struct View {
-    pub view_id: ViewId,
-    pub buffer_id: BufferId,
+    view_id: ViewId,
+    buffer_id: BufferId,
 
     /// Tracks whether this view has been scheduled to render.
     /// We attempt to reduce duplicate renders by setting a small timeout
@@ -72,8 +73,29 @@ pub struct View {
     scroll_to: Option<usize>,
 
     /// The state for finding text for this view.
-    /// Each instance represents a separate search query
+    /// Each instance represents a separate search query.
     find: Vec<Find>,
+
+    /// Tracks whether there has been changes in find results or find parameters.
+    /// This is used to determined whether FindStatus should be sent to the frontend.
+    find_changed: FindStatusChange,
+
+    /// Tracks whether find highlights should be rendered.
+    /// Highlights are only rendered when search dialog is open.
+    highlight_find: bool,
+}
+
+/// Indicates what changed in the find state.
+#[derive(PartialEq, Debug)]
+enum FindStatusChange {
+    /// None of the find parameters or number of matches changed.
+    None,
+
+    /// Find parameters and number of matches changed.
+    All,
+
+    /// Only number of matches changed
+    Matches
 }
 
 /// The visual width of the buffer for the purpose of word wrapping.
@@ -121,7 +143,17 @@ impl View {
             wrap_col: WrapWidth::None,
             lc_shadow: LineCacheShadow::default(),
             find: Vec::new(),
+            find_changed: FindStatusChange::None,
+            highlight_find: false,
         }
+    }
+
+    pub(crate) fn get_buffer_id(&self) -> BufferId {
+        self.buffer_id
+    }
+
+    pub(crate) fn get_view_id(&self) -> ViewId {
+        self.view_id
     }
 
     pub(crate) fn set_has_pending_render(&mut self, pending: bool) {
@@ -146,6 +178,8 @@ impl View {
             Gesture { line, col, ty } =>
                 self.do_gesture(text, line, col, ty),
             GotoLine { line } => self.goto_line(text, line),
+            Find { chars, case_sensitive, regex } =>
+                self.do_find(text, chars, case_sensitive, regex.unwrap_or_else(|| false)),
             FindNext { wrap_around, allow_same: _ } =>
                 self.find_next(text, false, wrap_around.unwrap_or(false)),
             FindPrevious { wrap_around } =>
@@ -167,6 +201,11 @@ impl View {
             Drag(MouseAction { line, column, .. }) =>
                 self.do_drag(text, line, column, Affinity::default()),
             Cancel => self.do_cancel(text),
+            HighlightFind { visible } => {
+                self.highlight_find = visible;
+                self.find_changed = FindStatusChange::All;
+                self.set_dirty(text);
+            }
         }
     }
 
@@ -193,16 +232,19 @@ impl View {
     }
 
     fn do_cancel(&mut self, text: &Rope) {
-        self.collapse_selections(text);
-        for mut find in self.find.iter_mut() {
-            find.unset();
+        // if we have active find highlights, we don't collapse selections
+        if self.find.is_empty() {
+            self.collapse_selections(text);
+        } else {
+            self.unset_find();
         }
     }
 
-    pub fn unset_find(&mut self) {
+    pub(crate) fn unset_find(&mut self) {
         for mut find in self.find.iter_mut() {
             find.unset();
         }
+        self.find.clear();
     }
 
     fn goto_line(&mut self, text: &Rope, line: u64) {
@@ -472,14 +514,16 @@ impl View {
             }
         }
 
-        // todo: active highlights different style
         let mut hls = Vec::new();
-        for find in self.find.iter() {
-            for region in find.occurrences().regions_in_range(start_pos, pos) {
-                let sel_start_ix = clamp(region.min(), start_pos, pos) - start_pos;
-                let sel_end_ix = clamp(region.max(), start_pos, pos) - start_pos;
-                if sel_end_ix > sel_start_ix {
-                    hls.push((sel_start_ix, sel_end_ix));
+
+        if self.highlight_find {
+            for find in self.find.iter() {
+                for region in find.occurrences().regions_in_range(start_pos, pos) {
+                    let sel_start_ix = clamp(region.min(), start_pos, pos) - start_pos;
+                    let sel_end_ix = clamp(region.max(), start_pos, pos) - start_pos;
+                    if sel_end_ix > sel_start_ix {
+                        hls.push((sel_start_ix, sel_end_ix));
+                    }
                 }
             }
         }
@@ -563,6 +607,12 @@ impl View {
     {
         if !self.lc_shadow.needs_render(plan) { return; }
 
+        // send updated find status only if there have been changes
+        if self.find_changed != FindStatusChange::None {
+            let matches_only = self.find_changed == FindStatusChange::Matches;
+            client.find_status(self.view_id, &json!(self.find_status(matches_only)));
+        }
+
         let mut b = line_cache_shadow::Builder::new();
         let mut ops = Vec::new();
         let mut line_num = 0;  // tracks old line cache
@@ -631,6 +681,16 @@ impl View {
         for find in &mut self.find {
             find.set_hls_dirty(false)
         }
+    }
+
+    /// Determines the current number of find results and search parameters to send them to
+    /// the frontend.
+    pub fn find_status(&mut self, matches_only: bool) -> Vec<FindStatus> {
+        self.find_changed = FindStatusChange::None;
+
+        self.find.iter().map(|find| {
+            find.find_status(matches_only)
+        }).collect::<Vec<FindStatus>>()
     }
 
     /// Update front-end with any changes to view since the last time sent.
@@ -781,14 +841,16 @@ impl View {
             find.update_highlights(text, delta);
         }
 
+        self.find_changed = FindStatusChange::Matches;
+
         // Note: for committing plugin edits, we probably want to know the priority
         // of the delta so we can set the cursor before or after the edit, as needed.
         let new_sel = self.selection.apply_delta(delta, true, keep_selections);
         self.set_selection_for_edit(text, new_sel);
     }
 
-    pub fn do_find(&mut self, text: &Rope, chars: Option<String>,
-                   case_sensitive: bool, is_regex: bool) -> Value {
+    pub fn do_find(&mut self, text: &Rope, chars: Option<String>, case_sensitive: bool,
+                   is_regex: bool) {
         let mut from_sel = false;
         let search_string = if chars.is_some() {
             chars
@@ -804,15 +866,16 @@ impl View {
         };
 
         self.set_dirty(text);
+        self.find_changed = FindStatusChange::Matches;
 
         // todo: this will be changed once multiple queries are supported
         // todo: for now only a single search query is supported however in the future
         // todo: the correct Find instance needs to be updated with the new parameters
         if self.find.is_empty() {
-            self.find.push(Find::new())
+            self.find.push(Find::new());
         }
 
-        self.find.first_mut().unwrap().do_find(text, search_string, case_sensitive, is_regex)
+        self.find.first_mut().unwrap().do_find(text, search_string, case_sensitive, is_regex);
     }
 
     pub fn find_next(&mut self, text: &Rope, reverse: bool, wrap: bool) {

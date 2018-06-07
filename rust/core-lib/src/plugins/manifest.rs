@@ -19,12 +19,12 @@ use std::path::PathBuf;
 use serde_json::{self, Value};
 use serde::Serialize;
 
-use syntax::SyntaxDefinition;
+use syntax::{LanguageDefinition, LanguageId};
 
 /// Describes attributes and capabilities of a plugin.
 ///
 /// Note: - these will eventually be loaded from manifest files.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct PluginDescription {
     pub name: String,
@@ -39,24 +39,26 @@ pub struct PluginDescription {
     pub activations: Vec<PluginActivation>,
     #[serde(default)]
     pub commands: Vec<Command>,
+    #[serde(default)]
+    pub languages: Vec<LanguageDefinition>,
 }
 
 /// `PluginActivation`s represent events that trigger running a plugin.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PluginActivation {
     /// Always run this plugin, when available.
     Autorun,
     /// Run this plugin if the provided SyntaxDefinition is active.
     #[allow(dead_code)]
-    OnSyntax(SyntaxDefinition),
+    OnSyntax(LanguageId),
     /// Run this plugin in response to a given command.
     #[allow(dead_code)]
     OnCommand,
 }
 
 /// Describes the scope of events a plugin receives.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PluginScope {
     /// The plugin receives events from multiple buffers.

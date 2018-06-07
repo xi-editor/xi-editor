@@ -115,6 +115,11 @@ impl<C: Cache> View<C> {
         self.cache.get_line(&ctx, line_num)
     }
 
+    pub fn get_document(&mut self) -> Result<String, Error> {
+        let ctx = self.make_ctx();
+        self.cache.get_document(&ctx)
+    }
+
     pub fn offset_of_line(&mut self, line_num: usize) -> Result<usize, Error> {
         let ctx = self.make_ctx();
         self.cache.offset_of_line(&ctx, line_num)
@@ -168,6 +173,36 @@ impl<C: Cache> View<C> {
     /// to reduce latency for bulk operations done in the background.
     pub fn request_is_pending(&self) -> bool {
         self.peer.request_is_pending()
+    }
+
+    pub fn add_status_item(&self, key: &str, value: &str, alignment: &str) {
+        let params = json!({
+            "plugin_id": self.plugin_id,
+            "view_id": self.view_id,
+            "key": key,
+            "value": value,
+            "alignment": alignment
+        });
+        self.peer.send_rpc_notification("add_status_item", &params);
+    }
+
+    pub fn update_status_item(&self, key: &str, value: &str) {
+        let params = json!({
+            "plugin_id": self.plugin_id,
+            "view_id": self.view_id,
+            "key": key,
+            "value": value
+        });
+        self.peer.send_rpc_notification("update_status_item", &params);
+    }
+
+    pub fn remove_status_item(&self, key: &str) {
+        let params = json!({
+            "plugin_id": self.plugin_id,
+            "view_id": self.view_id,
+            "key": key
+        });
+        self.peer.send_rpc_notification("remove_status_item", &params);
     }
 
 }

@@ -59,6 +59,12 @@ impl<S: Clone + Default> Cache for StateCache<S> {
         self.buf_cache.get_line(source, line_num)
     }
 
+    fn get_document<DS: DataSource>(&mut self, source: &DS)
+        -> Result<String, Error>
+    {
+        self.buf_cache.get_document(source)
+    }
+
     fn offset_of_line<DS: DataSource>(&mut self, source: &DS, line_num: usize)
         -> Result<usize, Error>
     {

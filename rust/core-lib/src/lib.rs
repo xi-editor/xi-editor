@@ -36,8 +36,6 @@ extern crate serde;
 extern crate serde_json;
 #[macro_use]
 extern crate serde_derive;
-#[macro_use]
-extern crate lazy_static;
 extern crate time;
 extern crate syntect;
 extern crate toml;
@@ -130,8 +128,9 @@ use apps_ledger_services_public::Ledger_Proxy;
 pub use config::{BufferItems as BufferConfig, Table as ConfigTable};
 pub use core::{XiCore, WeakXiCore};
 pub use plugins::rpc as plugin_rpc;
+pub use plugins::manifest as plugin_manifest;
 pub use plugins::PluginPid;
-pub use syntax::SyntaxDefinition;
+pub use syntax::{LanguageDefinition, LanguageId};
 pub use tabs::{BufferId, BufferIdentifier, ViewId, ViewIdentifier};
 pub use tabs::test_helpers as test_helpers;
 

@@ -14,89 +14,106 @@
 
 //! Very basic syntax detection.
 
-use std::fmt;
-use serde::de::{value, Deserialize, IntoDeserializer};
-use serde_json;
+use std::borrow::Borrow;
+use std::collections::HashMap;
+use std::path::Path;
+use std::sync::Arc;
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[serde(rename_all = "lowercase")]
-pub enum SyntaxDefinition {
-    Plaintext, Markdown, Python, Rust, C, Go, Dart, Swift, Toml,
-    Json, Yaml, Cpp, Objc, Shell, Ruby, Javascript, Java, Php,
-    Perl, Makefile,
+use config::Table;
+
+/// The canonical identifier for a particular `LanguageDefinition`.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct LanguageId(Arc<String>);
+
+/// Describes a `LanguageDefinition`. Although these are provided by plugins,
+/// they are a fundamental concept in core, used to determine things like
+/// plugin activations and active user config tables.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LanguageDefinition {
+    pub name: LanguageId,
+    pub extensions: Vec<String>,
+    pub first_line_match: Option<String>,
+    pub scope: String,
+    #[serde(skip)]
+    pub default_config: Option<Table>,
 }
 
-impl Default for SyntaxDefinition {
-    fn default() -> Self {
-        SyntaxDefinition::Plaintext
-    }
+/// A repository of all loaded `LanguageDefinition`s.
+#[derive(Debug, Default)]
+pub struct Languages {
+    named: HashMap<LanguageId, Arc<LanguageDefinition>>,
+    extensions: HashMap<String, Arc<LanguageDefinition>>,
 }
 
-//FIXME: this should be Into<SyntaxDefinition> for AsRef<Path>, or something
-impl SyntaxDefinition {
-    pub fn new<'a, S: Into<Option<&'a str>>>(s: S) -> Self {
-        use self::SyntaxDefinition::*;
-        let s = s.into().unwrap_or("").to_lowercase();
-        if s == "makefile" { return Makefile }
-
-        match &*s.split('.').rev().nth(0).unwrap_or("") {
-            "rs" => Rust,
-            "md" | "mdown" => Markdown,
-            "py" => Python,
-            "c" | "h" => C,
-            "go" => Go,
-            "dart" => Dart,
-            "swift" => Swift,
-            "toml" => Toml,
-            "json" => Json,
-            "yaml" => Yaml,
-            "cc" => Cpp,
-            "m" => Objc,
-            "sh" | "zsh" => Shell,
-            "rb" => Ruby,
-            "js" => Javascript,
-            "java" | "jav" => Java,
-            "php" => Php,
-            "pl" => Perl,
-            _ => Plaintext,
+impl Languages {
+    pub fn new(language_defs: &[LanguageDefinition]) -> Self {
+        let mut named = HashMap::new();
+        let mut extensions = HashMap::new();
+        for lang in language_defs.iter() {
+            let lang_arc = Arc::new(lang.clone());
+            named.insert(lang.name.clone(), lang_arc.clone());
+            for ext in lang.extensions.iter() {
+                extensions.insert(ext.clone(), lang_arc.clone());
+            }
         }
+        Languages { named, extensions }
     }
 
-    /// Attempt to parse a name into a `SyntaxDefinition`.
-    ///
-    /// Note:
-    /// This uses serde deserialization under the hood; this governs what
-    /// names are expected to work.
-    pub fn try_from_name<S: AsRef<str>>(name: S) -> Option<Self> {
-        let r: Result<Self, value::Error> = Self::deserialize(
-            name.as_ref().into_deserializer());
-        r.ok()
+    pub fn language_for_path(&self, path: &Path) -> Option<Arc<LanguageDefinition>> {
+        path.extension()
+            .and_then(|ext| self.extensions.get(ext.to_str().unwrap_or_default()))
+            .map(Arc::clone)
+    }
+
+    pub fn language_for_name(&self, name: &str) -> Option<Arc<LanguageDefinition>> {
+        self.named.get(name).map(Arc::clone)
+    }
+
+    /// Returns a Vec of any `LanguageDefinition`s which exist
+    /// in `self` but not `other`.
+    pub fn difference(&self, other: &Languages) -> Vec<Arc<LanguageDefinition>> {
+        self.named.iter()
+            .filter(|(k, _)| !other.named.contains_key(*k))
+            .map(|(_, v)| v.clone())
+            .collect()
+    }
+
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item=&'a Arc<LanguageDefinition>> {
+        self.named.values()
     }
 }
 
-impl<S: AsRef<str>> From<S> for SyntaxDefinition {
-    fn from(s: S) -> Self {
-        SyntaxDefinition::new(s.as_ref())
+impl AsRef<str> for LanguageId {
+    fn as_ref(&self) -> &str {
+        self.0.as_ref()
     }
 }
 
-impl fmt::Display for SyntaxDefinition {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", serde_json::to_string(self).unwrap())
+// let's us use &str to query a HashMap with `LanguageId` keys
+impl Borrow<str> for LanguageId {
+    fn borrow(&self) -> &str {
+        &self.0.as_ref()
     }
 }
 
+impl<'a> From<&'a str> for LanguageId {
+    fn from(src: &'a str) -> LanguageId {
+        LanguageId(Arc::new(src.into()))
+    }
+}
+
+// for testing
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_syntax() {
-        assert_eq!(SyntaxDefinition::from("plugins.rs"), SyntaxDefinition::Rust);
-        assert_eq!(SyntaxDefinition::from("plugins.py"), SyntaxDefinition::Python);
-        assert_eq!(SyntaxDefinition::from("header.h"), SyntaxDefinition::C);
-        assert_eq!(SyntaxDefinition::from("main.ada"), SyntaxDefinition::Plaintext);
-        assert_eq!(SyntaxDefinition::from("build"), SyntaxDefinition::Plaintext);
-        assert_eq!(SyntaxDefinition::from("build.test.sh"), SyntaxDefinition::Shell);
+impl LanguageDefinition {
+    pub(crate) fn simple(name: &str, exts: &[&str],
+                         scope: &str, config: Option<Table>) -> Self
+    {
+        LanguageDefinition {
+            name: name.into(),
+            extensions: exts.iter().map(|s| (*s).into()).collect(),
+            first_line_match: None,
+            scope: scope.into(),
+            default_config: config,
+        }
     }
 }

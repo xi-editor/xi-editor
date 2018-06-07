@@ -16,9 +16,6 @@
 
 use std::cmp::{min,max};
 
-use serde_json::Value;
-
-use index_set::IndexSet;
 use xi_rope::delta::{Delta, DeltaRegion};
 use xi_rope::find::{find, CaseMatching};
 use xi_rope::rope::{Rope, LinesMetric, RopeInfo};
@@ -26,6 +23,22 @@ use xi_rope::tree::Cursor;
 use xi_rope::interval::Interval;
 use selection::{Selection, SelRegion};
 use xi_rope::tree::Metric;
+
+/// Information about search queries and number of matches for find
+#[derive(Serialize, Deserialize, Debug)]
+pub struct FindStatus {
+    /// The current search query.
+    chars: Option<String>,
+
+    /// Whether the active search is case matching.
+    case_sensitive: Option<bool>,
+
+    /// Whether the search query is considered as regular expression.
+    is_regex: Option<bool>,
+
+    /// Total number of matches.
+    matches: usize
+}
 
 /// Contains logic to search text
 pub struct Find {
@@ -41,8 +54,6 @@ pub struct Find {
     is_regex: bool,
     /// The set of all known find occurrences (highlights)
     occurrences: Selection,
-    /// Set of ranges that have already been searched for the currently active search string
-    valid_search: IndexSet,
 }
 
 impl Find {
@@ -53,7 +64,6 @@ impl Find {
             case_matching: CaseMatching::CaseInsensitive,
             is_regex: false,
             occurrences: Selection::new(),
-            valid_search: IndexSet::new(),
         }
     }
 
@@ -65,6 +75,24 @@ impl Find {
         self.hls_dirty
     }
 
+    pub fn find_status(&self, matches_only: bool) -> FindStatus {
+        if matches_only {
+            FindStatus {
+                chars: None,
+                case_sensitive: None,
+                is_regex: None,
+                matches: self.occurrences.len(),
+            }
+        } else {
+            FindStatus {
+                chars: self.search_string.clone(),
+                case_sensitive: Some(self.case_matching == CaseMatching::Exact),
+                is_regex: Some(self.is_regex),
+                matches: self.occurrences.len(),
+            }
+        }
+    }
+
     pub fn set_hls_dirty(&mut self, is_dirty: bool) {
         self.hls_dirty = is_dirty
     }
@@ -72,11 +100,8 @@ impl Find {
     pub fn update_highlights(&mut self, text: &Rope, delta: &Delta<RopeInfo>) {
         // update search highlights for changed regions
         if self.search_string.is_some() {
-            self.valid_search = self.valid_search.apply_delta(delta);
-
             // invalidate occurrences around deletion positions
-            for DeltaRegion{ old_offset, new_offset, len } in delta.iter_deletions() {
-                self.valid_search.delete_range(new_offset, new_offset + len);
+            for DeltaRegion{ old_offset, new_offset: _, len } in delta.iter_deletions() {
                 self.occurrences.delete_range(old_offset, old_offset + len, false);
             }
 
@@ -84,34 +109,49 @@ impl Find {
 
             // invalidate occurrences around insert positions
             for DeltaRegion{ new_offset, len, .. } in delta.iter_inserts() {
-                self.valid_search.delete_range(new_offset, new_offset + len);
                 self.occurrences.delete_range(new_offset, new_offset + len, false);
             }
 
-            // update find for the whole delta (is going to only update invalid regions)
+            // update find for the whole delta and everything after
             let (iv, _) = delta.summary();
-            self.update_find(text, iv.start(), iv.end(), true);
+
+            // get last valid occurrence that was unaffected by the delta
+            let start = match self.occurrences.regions_in_range(0, iv.start()).last() {
+                Some(reg) => reg.end,
+                None => 0
+            };
+
+            // invalidate all search results from the point of the last valid search result until ...
+            let is_multi_line = LinesMetric::next(self.search_string.as_ref().unwrap(), 0).is_some();
+            if is_multi_line {
+                // ... the end of the file
+                self.occurrences.delete_range(iv.start(), text.len(), false);
+                self.update_find(text, start, text.len(), true);
+            } else {
+                // ... the end of the line
+                let mut cursor = Cursor::new(&text, iv.start());
+                if let Some(end_of_line) = cursor.next::<LinesMetric>() {
+                    self.occurrences.delete_range(iv.start(), end_of_line, false);
+                    self.update_find(text, start, end_of_line, true);
+                }
+            }
         }
     }
 
     /// Set search parameters and executes the search.
-    pub fn do_find(&mut self, text: &Rope, search_string: Option<String>,
-                   case_sensitive: bool, is_regex: bool) -> Value {
+    pub fn do_find(&mut self, text: &Rope, search_string: Option<String>, case_sensitive: bool,
+                   is_regex: bool) {
         if search_string.is_none() {
             self.unset();
-            return Value::Null;
         }
 
         let search_string = search_string.unwrap();
         if search_string.len() == 0 {
             self.unset();
-            return Value::Null;
         }
 
         self.set_find(&search_string, case_sensitive, is_regex);
         self.update_find(text, 0, text.len(), false);
-
-        Value::String(search_string.to_string())
     }
 
     /// Unsets the search and removes all highlights from the view.
@@ -119,7 +159,6 @@ impl Find {
         self.search_string = None;
         self.occurrences = Selection::new();
         self.hls_dirty = true;
-        self.valid_search.clear();
     }
 
     /// Sets find parameters and search query.
@@ -152,91 +191,56 @@ impl Find {
             return;
         }
 
-        let text_len = text.len();
         // extend the search by twice the string length (twice, because case matching may increase
         // the length of an occurrence)
         let slop = if include_slop { self.search_string.as_ref().unwrap().len() * 2 } else { 0 };
-        let mut invalidate_from = None;
 
-        for (_start, end) in self.valid_search.minus_one_range(start, end) {
-            let search_string = self.search_string.as_ref().unwrap();
+        let search_string = self.search_string.as_ref().unwrap();
 
-            // expand region to be able to find occurrences around the region's edges
-            let from = max(0, slop) - slop;
-            let to = min(end + slop, text.len());
+        // expand region to be able to find occurrences around the region's edges
+        let from = max(start, slop) - slop;
+        let to = min(end + slop, text.len());
 
-            // TODO: this interval might cut a unicode codepoint, make sure it is
-            // aligned to codepoint boundaries.
-            let text = text.subseq(Interval::new_closed_open(0, to));
-            let mut cursor = Cursor::new(&text, from);
-            let mut raw_lines = text.lines_raw(from, to);
+        // TODO: this interval might cut a unicode codepoint, make sure it is
+        // aligned to codepoint boundaries.
+        let sub_text = text.subseq(Interval::new_closed_open(0, to));
+        let mut find_cursor = Cursor::new(&sub_text, from);
+        let mut raw_lines = text.lines_raw(from, to);
 
-            while let Some(start) = find(&mut cursor, &mut raw_lines, self.case_matching, &search_string, self.is_regex) {
-                let end = cursor.pos();
+        while let Some(start) = find(&mut find_cursor, &mut raw_lines, self.case_matching, &search_string, self.is_regex) {
+            let end = find_cursor.pos();
 
-                let region = SelRegion::new(start, end);
-                let prev_len = self.occurrences.len();
-                let (_, e) = self.occurrences.add_range_distinct(region);
-                // in case of ambiguous search results (e.g. search "aba" in "ababa"),
-                // the search result closer to the beginning of the file wins
-                if e != end {
-                    // Skip the search result and keep the occurrence that is closer to
-                    // the beginning of the file. Re-align the cursor to the kept
-                    // occurrence
-                    cursor.set(e);
-                    continue;
-                }
+            let region = SelRegion::new(start, end);
+            let (_, e) = self.occurrences.add_range_distinct(region);
+            // in case of ambiguous search results (e.g. search "aba" in "ababa"),
+            // the search result closer to the beginning of the file wins
+            if e != end {
+                // Skip the search result and keep the occurrence that is closer to
+                // the beginning of the file. Re-align the cursor to the kept
+                // occurrence
+                find_cursor.set(e);
+                continue;
+            }
 
-                // in case current cursor matches search result (for example query a* matches)
-                // all cursor positions, then cursor needs to be increased so that search
-                // continues at next position. Otherwise, search will result in overflow since
-                // search will always repeat at current cursor position.
-                if start == end {
-                    // determine whether end of text is reached and stop search or increase
-                    // cursor manually
-                    if end + 1 >= text_len {
-                        break;
-                    } else {
-                        cursor.set(end + 1);
-                    }
-                }
-
-                // update line iterator so that line starts at current cursor position
-                raw_lines = text.lines_raw(cursor.pos(), to);
-
-                // add_range_distinct() above removes ambiguous regions after the added
-                // region, if something has been deleted, everything thereafter is
-                // invalidated
-                if self.occurrences.len() != prev_len + 1 {
-                    invalidate_from = Some(end);
-                    self.occurrences.delete_range(end, text_len, false);
+            // in case current cursor matches search result (for example query a* matches)
+            // all cursor positions, then cursor needs to be increased so that search
+            // continues at next position. Otherwise, search will result in overflow since
+            // search will always repeat at current cursor position.
+            if start == end {
+                // determine whether end of text is reached and stop search or increase
+                // cursor manually
+                if end + 1 >= text.len() {
                     break;
-                }
-            }
-        }
-
-        if let Some(invalidate_from) = invalidate_from {
-            self.valid_search.union_one_range(start, invalidate_from);
-
-            // invalidate all search results from the point of the ambiguous search result until ...
-            let is_multi_line = LinesMetric::next(self.search_string.as_ref().unwrap(), 0).is_some();
-            if is_multi_line {
-                // ... the end of the file
-                self.valid_search.delete_range(invalidate_from, text_len);
-            } else {
-                // ... the end of the line
-                let mut cursor = Cursor::new(&text, invalidate_from);
-                if let Some(end_of_line) = cursor.next::<LinesMetric>() {
-                    self.valid_search.delete_range(invalidate_from, end_of_line);
+                } else {
+                    find_cursor.set(end + 1);
                 }
             }
 
-            // continue with the find for the current region
-            self.update_find(text, invalidate_from, end, false);
-        } else {
-            self.valid_search.union_one_range(start, end);
-            self.hls_dirty = true;
+            // update line iterator so that line starts at current cursor position
+            raw_lines = sub_text.lines_raw(find_cursor.pos(), to);
         }
+
+        self.hls_dirty = true;
     }
 
     /// Return the occurrence closest to the provided selection `sel`. If searched is reversed then

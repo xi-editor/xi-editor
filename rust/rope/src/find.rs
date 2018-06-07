@@ -86,6 +86,11 @@ pub fn find(cursor: &mut Cursor<RopeInfo>, lines: &mut LinesRaw, cm: CaseMatchin
 pub fn find_progress(cursor: &mut Cursor<RopeInfo>, lines: &mut LinesRaw, cm: CaseMatching, pat: &str,
     num_steps: usize, is_regex: bool) -> FindResult
 {
+    // empty search string
+    if pat.is_empty() {
+        return FindResult::NotFound
+    }
+
     if is_regex {
         // regex scanner cannot check if regex is partially matching
         find_progress_iter(cursor, lines, pat, &|_| { Some(0) },
@@ -116,7 +121,8 @@ pub fn find_progress(cursor: &mut Cursor<RopeInfo>, lines: &mut LinesRaw, cm: Ca
                     find_progress_iter(cursor, lines, &pat_lower, &scanner, &matcher, num_steps)
                 } else if b < 0x80 {
                     let scanner = |s: &str| memchr(b, s.as_bytes());
-                    find_progress_iter(cursor, lines, &pat_lower, &scanner, &matcher, num_steps)
+                    let matcher = compare_cursor_str;
+                    find_progress_iter(cursor, lines, pat, &scanner, &matcher, num_steps)
                 } else {
                     let c = pat.chars().next().unwrap();
                     let scanner = |s: &str| scan_lowercase(c, s);
@@ -238,10 +244,10 @@ fn compare_cursor_str_casei(cursor: &mut Cursor<RopeInfo>, _lines: &mut LinesRaw
 
 /// Compare whether the substring beginning at the cursor location matches
 /// the provided regular expression. The substring begins at the beginning
-/// of the leaf/start of the line.
-/// If the regular expression can match multiple lines then all leaves are
-/// consumed and matched against the regular expression. Otherwise only the
-/// current leaf is matched. Returns the start position of the match.
+/// of the start of the line.
+/// If the regular expression can match multiple lines then the entire text
+/// is consumed and matched against the regular expression. Otherwise only
+/// the current line is matched. Returns the start position of the match.
 fn compare_cursor_regex(cursor: &mut Cursor<RopeInfo>, lines: &mut LinesRaw, pat: &str, cm: CaseMatching) -> Option<usize> {
     let orig_position = cursor.pos();
     let total_len = cursor.total_len();
@@ -275,8 +281,7 @@ fn compare_cursor_regex(cursor: &mut Cursor<RopeInfo>, lines: &mut LinesRaw, pat
                 Some(mat) => {
                     // calculate start position based on where the match starts
                     let start_position = orig_position + mat.start();
-                    eprintln!("text {:?}", text);
-                    eprintln!("match {:?}", mat.start());
+
                     // update cursor and set to end of match
                     let end_position = orig_position + mat.end();
                     cursor.set(end_position);

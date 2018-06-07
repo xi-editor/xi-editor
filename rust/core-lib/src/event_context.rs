@@ -35,7 +35,7 @@ use styles::ThemeStyleMap;
 use config::{BufferConfig, ConfigManager};
 
 use WeakXiCore;
-use tabs::{ViewId, PluginId, RENDER_VIEW_IDLE_MASK};
+use tabs::{BufferId, PluginId, ViewId, RENDER_VIEW_IDLE_MASK};
 use editor::Editor;
 use file::FileInfo;
 use edit_types::{EventDomain, SpecialEvent};
@@ -59,6 +59,8 @@ const RENDER_DELAY: Duration = Duration::from_millis(2);
 /// This is created dynamically for each event that arrives to the core,
 /// such as a user-initiated edit or style updates from a plugin.
 pub struct EventContext<'a> {
+    pub(crate) view_id: ViewId,
+    pub(crate) buffer_id: BufferId,
     pub(crate) editor: &'a RefCell<Editor>,
     pub(crate) info: Option<&'a FileInfo>,
     pub(crate) view: &'a RefCell<View>,
@@ -135,10 +137,6 @@ impl<'a> EventContext<'a> {
         let result = match cmd {
             Cut => Ok(self.with_editor(|ed, view, _| ed.do_cut(view))),
             Copy => Ok(self.with_editor(|ed, view, _| ed.do_copy(view))),
-            Find { chars, case_sensitive, regex } => Ok(self.with_view(|view, text|
-                view.do_find(text, chars, case_sensitive, regex.unwrap_or_else(|| false))
-            )),
-            // Replace
         };
         self.after_edit("core");
         self.render_if_needed();
@@ -148,7 +146,6 @@ impl<'a> EventContext<'a> {
     pub(crate) fn do_plugin_cmd(&mut self, plugin: PluginId,
                                  cmd: PluginNotification) {
         use self::PluginNotification::*;
-
         match cmd {
             AddScopes { scopes } => {
                 let mut ed = self.editor.borrow_mut();
@@ -161,6 +158,11 @@ impl<'a> EventContext<'a> {
             Edit { edit } => self.with_editor(
                 |ed, _, _| ed.apply_plugin_edit(edit)),
             Alert { msg } => self.client.alert(&msg),
+            AddStatusItem { key, value, alignment }  => self.client.add_status_item(
+                                                        self.view_id, &key, &value, &alignment),
+            UpdateStatusItem { key, value } => self.client.update_status_item(
+                                                        self.view_id, &key, &value),
+            RemoveStatusItem { key } => self.client.remove_status_item(self.view_id, &key)
         };
         self.after_edit(&plugin.to_string());
         self.render_if_needed();
@@ -203,7 +205,7 @@ impl<'a> EventContext<'a> {
 
         let undo_group = ed.get_active_undo_group();
         let update = PluginUpdate::new(
-                self.view.borrow().view_id,
+                self.view_id,
                 ed.get_head_rev_token(),
                 delta,
                 new_len,
@@ -221,7 +223,7 @@ impl<'a> EventContext<'a> {
             ed.increment_revs_in_flight();
             let weak_core = self.weak_core.clone();
             let id = plugin.id;
-            let view_id = self.view.borrow().view_id;
+            let view_id = self.view_id;
             plugin.update(&update, move |resp| {
                 weak_core.handle_plugin_update(id, view_id, resp);
             });
@@ -234,7 +236,7 @@ impl<'a> EventContext<'a> {
             let mut view = self.view.borrow_mut();
             if !view.has_pending_render() {
                 let timeout = Instant::now() + RENDER_DELAY;
-                let view_id: usize = view.view_id.into();
+                let view_id: usize = self.view_id.into();
                 let token = RENDER_VIEW_IDLE_MASK | view_id;
                 self.client.schedule_timer(timeout, token);
                 view.set_has_pending_render(true);
@@ -282,23 +284,22 @@ impl<'a> EventContext<'a> {
             ClientPluginInfo { name: plugin.name.clone(), running: true }
             )
             .collect::<Vec<_>>();
-        self.client.available_plugins(self.view.borrow().view_id,
+        self.client.available_plugins(self.view_id,
                                       &available_plugins);
 
         let ed = self.editor.borrow();
         let config = ed.get_config().to_table();
-        self.client.config_changed(self.view.borrow().view_id, &config);
+        self.client.config_changed(self.view_id, &config);
         self.render()
     }
 
     pub(crate) fn after_save(&mut self, path: &Path, new_config: BufferConfig) {
         // notify plugins
-        let view_id = self.view.borrow().view_id;
         self.plugins.iter().for_each(
-            |plugin| plugin.did_save(view_id, path)
+            |plugin| plugin.did_save(self.view_id, path)
             );
         if let Some(changes) = self.editor.borrow_mut().set_config(new_config) {
-            self.client.config_changed(view_id, &changes);
+            self.client.config_changed(self.view_id, &changes);
         }
         self.editor.borrow_mut().set_pristine();
         self.with_view(|view, text| view.set_dirty(text));
@@ -309,8 +310,7 @@ impl<'a> EventContext<'a> {
     pub(crate) fn close_view(&self) -> bool {
         // we probably want to notify plugins _before_ we close the view
         // TODO: determine what plugins we're stopping
-        let view_id = self.view.borrow().view_id;
-        self.plugins.iter().for_each(|plug| plug.close_view(view_id));
+        self.plugins.iter().for_each(|plug| plug.close_view(self.view_id));
         self.siblings.is_empty()
     }
 
@@ -320,16 +320,16 @@ impl<'a> EventContext<'a> {
             let mut view = self.view.borrow_mut();
             let syntax = ed.get_syntax().to_owned();
             let new_config = config_manager.get_buffer_config(syntax,
-                                                              view.buffer_id);
+                                                              self.buffer_id);
             if let Some(changes) = ed.set_config(new_config) {
                 if changes.contains_key("wrap_width") {
                     let wrap_width = ed.get_config().items.wrap_width;
                     view.rewrap(&ed.get_buffer(), wrap_width);
                     view.set_dirty(&ed.get_buffer());
                 }
-                self.client.config_changed(view.view_id, &changes);
+                self.client.config_changed(self.view_id, &changes);
                 self.plugins.iter()
-                    .for_each(|plug| plug.config_changed(view.view_id, &changes));
+                    .for_each(|plug| plug.config_changed(self.view_id, &changes));
             }
         }
         self.render()
@@ -358,27 +358,25 @@ impl<'a> EventContext<'a> {
         let nb_lines = ed.get_buffer().measure::<LinesMetric>() + 1;
         let views: Vec<ViewId> = iter::once(&self.view)
             .chain(self.siblings.iter())
-            .map(|v| v.borrow().view_id)
+            .map(|v| v.borrow().get_view_id())
             .collect();
-        let buffer_id = self.view.borrow().buffer_id;
 
         let config = ed.get_config().to_table();
         let path = self.info.map(|info| info.path.to_owned());
-        PluginBufferInfo::new(buffer_id, &views,
+        PluginBufferInfo::new(self.buffer_id, &views,
                               ed.get_head_rev_token(),
                               ed.get_buffer().len(), nb_lines,
                               path,
                               ed.get_syntax().clone(),
                               config)
-
     }
 
     pub(crate) fn plugin_started(&mut self, plugin: &Plugin) {
-        self.client.plugin_started(self.view.borrow().view_id, &plugin.name)
+        self.client.plugin_started(self.view_id, &plugin.name)
     }
 
     pub(crate) fn plugin_stopped(&mut self, plugin: &Plugin) {
-        self.client.plugin_stopped(self.view.borrow().view_id, &plugin.name, 0);
+        self.client.plugin_stopped(self.view_id, &plugin.name, 0);
         self.with_editor(|ed, view, _| {
             ed.get_layers_mut().remove_layer(plugin.id);
             view.set_dirty(ed.get_buffer());
@@ -472,7 +470,11 @@ mod tests {
         }
 
         fn make_context<'a>(&'a self) -> EventContext<'a> {
+            let view_id = ViewId(1);
+            let buffer_id = self.view.borrow().get_buffer_id();
             EventContext {
+                view_id,
+                buffer_id,
                 view: &self.view,
                 editor: &self.editor,
                 info: None,

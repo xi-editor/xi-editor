@@ -34,9 +34,11 @@ pub(crate) enum ViewEvent {
     Drag(MouseAction),
     Gesture { line: u64, col: u64, ty: GestureType },
     GotoLine { line: u64 },
+    Find { chars: Option<String>, case_sensitive: bool, regex: Option<bool> },
     FindNext { wrap_around: Option<bool>, allow_same: Option<bool> },
     FindPrevious { wrap_around: Option<bool> },
     Cancel,
+    HighlightFind { visible: bool },
 }
 
 /// Events that modify the buffer
@@ -191,6 +193,8 @@ impl From<EditNotification> for EventDomain {
                 ViewEvent::Gesture { line, col, ty }.into(),
             Undo => BufferEvent::Undo.into(),
             Redo => BufferEvent::Redo.into(),
+            Find { chars, case_sensitive, regex } =>
+                ViewEvent::Find { chars, case_sensitive, regex }.into(),
             FindNext { wrap_around, allow_same } =>
                 ViewEvent::FindNext { wrap_around, allow_same }.into(),
             FindPrevious { wrap_around } =>
@@ -203,6 +207,7 @@ impl From<EditNotification> for EventDomain {
             Lowercase => BufferEvent::Lowercase.into(),
             Indent => BufferEvent::Indent.into(),
             Outdent => BufferEvent::Outdent.into(),
+            HighlightFind { visible } => ViewEvent::HighlightFind { visible }.into(),
         }
     }
 }

@@ -4,12 +4,23 @@ XDG_CONFIG_HOME ?= $(HOME)/.config
 XI_CONFIG_DIR ?= $(XDG_CONFIG_HOME)/xi
 XI_PLUGIN_DIR ?= $(XI_CONFIG_DIR)/plugins
 
-target/release/xi-syntect-plugin:
+lang_configs = assets/*.toml
+
+out/syntect: $(lang_configs) target/release/xi-syntect-plugin
+	mkdir -p out/syntect/bin
+	cp $(lang_configs) out/syntect
+	cp target/release/xi-syntect-plugin out/syntect/bin
+	cp manifest.toml out/syntect/manifest.toml
+
+target/release/xi-syntect-plugin: src/*.rs Cargo.toml Cargo.lock
 	cargo build --release
 
-install: manifest.toml target/release/xi-syntect-plugin
-	install -d $(XI_PLUGIN_DIR)/syntect/bin
-	install manifest.toml $(XI_PLUGIN_DIR)/syntect
-	install target/release/xi-syntect-plugin $(XI_PLUGIN_DIR)/syntect/bin
+install: out/syntect
+	mkdir -p $(XI_PLUGIN_DIR)
+	cp -r out/syntect $(XI_PLUGIN_DIR)
 
-.PHONY: install
+clean:
+	rm -rf out
+	cargo clean
+
+.PHONY: clean install

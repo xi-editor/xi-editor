@@ -46,7 +46,6 @@ use plugin_rpc::{PluginNotification, PluginRequest};
 use rpc::{CoreNotification, CoreRequest, EditNotification, EditRequest,
           PluginNotification as CorePluginNotification};
 use styles::ThemeStyleMap;
-use syntax::SyntaxDefinition;
 use view::View;
 use width_cache::WidthCache;
 
@@ -152,7 +151,7 @@ impl CoreState {
             pending_views: Vec::new(),
             peer: Client::new(peer.clone()),
             id_counter: Counter::default(),
-            plugins: PluginCatalog::new(&[]),
+            plugins: PluginCatalog::default(),
             running_plugins: Vec::new(),
         }
     }
@@ -176,10 +175,12 @@ impl CoreState {
             self.load_file_based_config(&path);
         }
 
-        //FIXME: quickfix pending #672
+        // instead of having to do this here, config should just own
+        // the plugin catalog and reload automatically
         let plugin_paths = self.config_manager.get_plugin_paths();
-        self.plugins = PluginCatalog::from_paths(plugin_paths);
-
+        self.plugins.reload_from_paths(&plugin_paths);
+        let languages = self.plugins.make_languages_map();
+        self.config_manager.set_languages(languages);
         let theme_names = self.style_map.borrow().get_theme_names();
         self.peer.available_themes(theme_names);
 
@@ -194,20 +195,25 @@ impl CoreState {
     /// Attempt to load a config file.
     fn load_file_based_config(&mut self, path: &Path) {
         let _t = trace_block("CoreState::load_config_file", &["core"]);
-        match config::try_load_from_file(&path) {
-            Ok((d, t)) => self.set_config(d, t, Some(path.to_owned())),
-            Err(e) => self.peer.alert(e.to_string()),
+        if let Some(domain) = self.config_manager.domain_for_path(path) {
+            match config::try_load_from_file(&path) {
+                Ok(table) => self.set_config(domain, table),
+                Err(e) => self.peer.alert(e.to_string()),
+            }
+        } else {
+            self.peer.alert(format!("Unexpected config file {:?}", path));
         }
     }
 
     /// Sets (overwriting) the config for a given domain.
-    fn set_config<P>(&mut self, domain: ConfigDomain, table: Table, path: P)
-        where P: Into<Option<PathBuf>>
-    {
-        if let Err(e) = self.config_manager.set_user_config(domain, table, path) {
+    fn set_config(&mut self, domain: ConfigDomain, table: Table) {
+        if let Err(e) = self.config_manager.set_user_config(domain, table) {
             self.peer.alert(format!("{}", &e));
+        } else {
+            self.after_config_change();
         }
     }
+
     /// Notify editors/views/plugins of config changes.
     fn after_config_change(&self) {
         self.iter_groups()
@@ -226,13 +232,15 @@ impl CoreState {
         -> Option<EventContext<'a>>
     {
         self.views.get(&view_id).map(|view| {
-            let buffer_id = view.borrow().buffer_id;
+            let buffer_id = view.borrow().get_buffer_id();
 
             let editor = self.editors.get(&buffer_id).unwrap();
             let info = self.file_manager.get_info(buffer_id);
             let plugins = self.running_plugins.iter().collect::<Vec<_>>();
 
             EventContext {
+                view_id,
+                buffer_id,
                 view,
                 editor,
                 info: info,
@@ -366,9 +374,13 @@ impl CoreState {
         -> Result<Editor, RemoteError>
     {
         let rope = self.file_manager.open(path, buffer_id)?;
-        let syntax = SyntaxDefinition::new(path.to_str());
-        let config = self.config_manager.get_buffer_config(syntax, buffer_id);
-        let editor = Editor::with_text(rope, config);
+        let syntax = self.config_manager.language_for_path(path);
+        let config = self.config_manager.get_buffer_config(syntax.clone(),
+                                                           buffer_id);
+        let mut editor = Editor::with_text(rope, config);
+        if let Some(syntax) = syntax {
+            editor.set_syntax(syntax);
+        }
         Ok(editor)
     }
 
@@ -377,7 +389,7 @@ impl CoreState {
     {
         let _t = trace_block("CoreState::do_save", &["core"]);
         let path = path.as_ref();
-        let buffer_id = self.views.get(&view_id).map(|v| v.borrow().buffer_id);
+        let buffer_id = self.views.get(&view_id).map(|v| v.borrow().get_buffer_id());
         let buffer_id = match buffer_id {
             Some(id) => id,
             None => return,
@@ -392,9 +404,15 @@ impl CoreState {
             return;
         }
 
-        // hacky, syntax defs per-se are going away soon
-        let syntax = SyntaxDefinition::new(path.to_str());
-        let config = self.config_manager.get_buffer_config(syntax, buffer_id);
+        let syntax = self.config_manager.language_for_path(path);
+        let config = self.config_manager.get_buffer_config(syntax.clone(),
+                                                           buffer_id);
+        // TODO: keep track of syntax in config manager, not in editor
+        if let Some(syntax) = syntax {
+            ed.borrow_mut().set_syntax(syntax);
+        }
+        //TODO: rework how config changes are handled if a path changes.
+        //tldr; do the save first, then reload the config.
 
         let mut event_ctx = self.make_context(view_id).unwrap();
         event_ctx.after_save(path, config);
@@ -406,7 +424,7 @@ impl CoreState {
             .unwrap_or(true);
 
         let buffer_id = self.views.remove(&view_id)
-            .map(|v| v.borrow().buffer_id);
+            .map(|v| v.borrow().get_buffer_id());
 
         if let Some(buffer_id) = buffer_id {
             if close_buffer {
@@ -436,26 +454,23 @@ impl CoreState {
         });
     }
 
-    // NOTE: this is coming in from a direct RPC; unlike `set_config`, missing
-    // keys here are left in their current state (`set_config` clears missing keys)
     /// Updates the config for a given domain.
     fn do_modify_user_config(&mut self, domain: ConfigDomainExternal,
                              changes: Table) {
         // the client sends ViewId but we need BufferId so we do a dance
         let domain: ConfigDomain = match domain {
             ConfigDomainExternal::General => ConfigDomain::General,
-            ConfigDomainExternal::Syntax(s) => ConfigDomain::Syntax(s),
-            ConfigDomainExternal::UserOverride(view_id) => {
-                 match self.views.get(&view_id) {
-                     Some(v) => ConfigDomain::UserOverride(v.borrow().buffer_id),
+            ConfigDomainExternal::Syntax(id) => ConfigDomain::Language(id),
+            ConfigDomainExternal::Language(id) => ConfigDomain::Language(id),
+            ConfigDomainExternal::UserOverride(view_id) =>
+                match self.views.get(&view_id) {
+                     Some(v) => ConfigDomain::UserOverride(v.borrow().get_buffer_id()),
                      None => return,
                 }
-            }
         };
-        if let Err(e) = self.config_manager.update_user_config(domain, changes) {
-            self.peer.alert(e.to_string());
-        }
-        self.after_config_change();
+        let new_config = self.config_manager.table_for_update(domain.clone(),
+                                                              changes);
+        self.set_config(domain, new_config);
     }
 
     fn do_get_config(&self, view_id: ViewId) -> Result<Table, RemoteError> {
@@ -525,22 +540,13 @@ impl CoreState {
     fn handle_fs_events(&mut self) {
         let _t = trace_block("CoreState::handle_fs_events", &["core"]);
         let mut events = self.file_manager.watcher().take_events();
-        let mut config_changed = false;
 
         for (token, event) in events.drain(..) {
             match token {
                 OPEN_FILE_EVENT_TOKEN => self.handle_open_file_fs_event(event),
-                CONFIG_EVENT_TOKEN => {
-                    //TODO: we should(?) be more efficient about this update,
-                    // with config_manager returning whether it's necessary.
-                    self.handle_config_fs_event(event);
-                    config_changed = true;
-                }
+                CONFIG_EVENT_TOKEN => self.handle_config_fs_event(event),
                 _ => eprintln!("unexpected fs event token {:?}", token),
             }
-        }
-        if config_changed {
-            self.after_config_change();
         }
     }
 
@@ -578,8 +584,8 @@ impl CoreState {
                 // this is ugly; we don't map buffer_id -> view_id anywhere
                 // but we know we must have a view.
                 let view_id = self.views.values()
-                    .find(|v| v.borrow().buffer_id == buffer_id)
-                    .map(|v| v.borrow().view_id)
+                    .find(|v| v.borrow().get_buffer_id() == buffer_id)
+                    .map(|v| v.borrow().get_view_id())
                     .unwrap();
                 self.make_context(view_id).unwrap().reload(text);
             }
@@ -591,16 +597,21 @@ impl CoreState {
     fn handle_config_fs_event(&mut self, event: DebouncedEvent) {
         use self::DebouncedEvent::*;
         match event {
-            Create(ref path) | Write(ref path) => {
-                self.load_file_based_config(path)
-            }
-            Remove(ref path) => self.config_manager.remove_source(path),
+            Create(ref path) | Write(ref path) =>
+                self.load_file_based_config(path),
+            Remove(ref path) =>
+                self.remove_config_at_path(path),
             Rename(ref old, ref new) => {
-                self.config_manager.remove_source(old);
-                let should_load = self.config_manager.should_load_file(new);
-                if should_load { self.load_file_based_config(new) }
+                self.remove_config_at_path(old);
+                self.load_file_based_config(new);
             }
             _ => (),
+        }
+    }
+
+    fn remove_config_at_path(&mut self, path: &Path) {
+        if let Some(domain) = self.config_manager.domain_for_path(path) {
+            self.set_config(domain, Table::default());
         }
     }
 
@@ -735,7 +746,7 @@ impl<'a, I> Iterator for Iter<'a, I> where I: Iterator<Item=&'a ViewId> {
             };
             let context = inner.make_context(*next_view).unwrap();
             context.siblings.iter().for_each(|sibl| {
-                let _ = seen.insert(sibl.borrow().view_id);
+                let _ = seen.insert(sibl.borrow().get_view_id());
             });
             return Some(context);
         }

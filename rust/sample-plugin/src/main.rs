@@ -60,7 +60,6 @@ impl Plugin for SamplePlugin {
 
         //NOTE: example simple conditional edit. If this delta is
         //an insert of a single '!', we capitalize the preceding word.
-
         if let Some(delta) = delta {
             let (iv, _) = delta.summary();
             let text: String = delta.as_simple_insert()
