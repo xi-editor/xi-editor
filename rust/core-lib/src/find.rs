@@ -109,7 +109,9 @@ impl Find {
 
             // invalidate occurrences around insert positions
             for DeltaRegion{ new_offset, len, .. } in delta.iter_inserts() {
-                self.occurrences.delete_range(new_offset, new_offset + len, false);
+                // also invalidate previous occurrence since it might expand after insertion
+                // eg. for regex .* every insertion after match will be part of match
+                self.occurrences.delete_range(new_offset.checked_sub(1).unwrap_or(0), new_offset + len, false);
             }
 
             // update find for the whole delta and everything after
@@ -128,14 +130,18 @@ impl Find {
             if is_multi_line || is_multi_line_regex {
                 // ... the end of the file
                 self.occurrences.delete_range(iv.start(), text.len(), false);
-                self.update_find(text, start, text.len(), true);
+                self.update_find(text, start, text.len(), false);
             } else {
-                // ... the end of the line
+                // ... the end of the line including line break
                 let mut cursor = Cursor::new(&text, iv.start());
-                if let Some(end_of_line) = cursor.next::<LinesMetric>() {
-                    self.occurrences.delete_range(iv.start(), end_of_line, false);
-                    self.update_find(text, start, end_of_line, true);
-                }
+                let end_of_line = match cursor.next::<LinesMetric>() {
+                    Some(end) => end,
+                    None if cursor.pos() == text.len() => cursor.pos(),
+                    _ => return
+                };
+
+                self.occurrences.delete_range(iv.start(), end_of_line, false);
+                self.update_find(text, start, end_of_line, false);
             }
         }
     }
@@ -221,6 +227,7 @@ impl Find {
                 // the beginning of the file. Re-align the cursor to the kept
                 // occurrence
                 find_cursor.set(e);
+                raw_lines = text.lines_raw(find_cursor.pos(), to);
                 continue;
             }
 
@@ -239,7 +246,7 @@ impl Find {
             }
 
             // update line iterator so that line starts at current cursor position
-            raw_lines = sub_text.lines_raw(find_cursor.pos(), to);
+            raw_lines = text.lines_raw(find_cursor.pos(), to);
         }
 
         self.hls_dirty = true;

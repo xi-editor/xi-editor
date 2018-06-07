@@ -266,7 +266,7 @@ fn compare_cursor_regex(cursor: &mut Cursor<RopeInfo>, lines: &mut LinesRaw, pat
             let mut text = String::new();
 
             if is_multiline_regex(pat) {
-                // consume all of the text if regex is muli line matching
+                // consume all of the text if regex is multi line matching
                 text.extend(lines);
             } else {
                 match lines.next() {
