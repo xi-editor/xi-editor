@@ -303,7 +303,7 @@ fn compare_cursor_regex(cursor: &mut Cursor<RopeInfo>, lines: &mut LinesRaw, pat
 }
 
 /// Checks if a regular expression can match multiple lines.
-fn is_multiline_regex(regex: &str) -> bool {
+pub fn is_multiline_regex(regex: &str) -> bool {
     // regex characters that match line breaks
     // todo: currently multiline mode is ignored
     let multiline_indicators = vec![r"\n", r"\r", r"[[:space:]]"];

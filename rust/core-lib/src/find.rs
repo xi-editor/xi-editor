@@ -17,7 +17,7 @@
 use std::cmp::{min,max};
 
 use xi_rope::delta::{Delta, DeltaRegion};
-use xi_rope::find::{find, CaseMatching};
+use xi_rope::find::{find, is_multiline_regex, CaseMatching};
 use xi_rope::rope::{Rope, LinesMetric, RopeInfo};
 use xi_rope::tree::Cursor;
 use xi_rope::interval::Interval;
@@ -123,7 +123,10 @@ impl Find {
 
             // invalidate all search results from the point of the last valid search result until ...
             let is_multi_line = LinesMetric::next(self.search_string.as_ref().unwrap(), 0).is_some();
-            if is_multi_line {
+            let is_multi_line_regex = self.is_regex && is_multiline_regex(self.search_string.as_ref().unwrap());
+
+            eprintln!("multi {:?}", is_multi_line_regex);
+            if is_multi_line || is_multi_line_regex {
                 // ... the end of the file
                 self.occurrences.delete_range(iv.start(), text.len(), false);
                 self.update_find(text, start, text.len(), true);
