@@ -125,7 +125,6 @@ impl Find {
             let is_multi_line = LinesMetric::next(self.search_string.as_ref().unwrap(), 0).is_some();
             let is_multi_line_regex = self.is_regex && is_multiline_regex(self.search_string.as_ref().unwrap());
 
-            eprintln!("multi {:?}", is_multi_line_regex);
             if is_multi_line || is_multi_line_regex {
                 // ... the end of the file
                 self.occurrences.delete_range(iv.start(), text.len(), false);
