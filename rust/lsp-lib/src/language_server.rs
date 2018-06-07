@@ -22,9 +22,9 @@ use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process;
+use types::Callback;
 use url::Url;
 use xi_core::ViewIdentifier;
-use types::Callback;
 
 pub type DoucmentURI = Url;
 
@@ -255,7 +255,6 @@ impl LanguageServerClient {
 
 /// Util Methods
 impl LanguageServerClient {
-    
     /// Get workspace root using the Workspace Identifier
     /// For example: Cargo.toml can be used to identify a Rust Workspace
     /// This method traverses up to file tree to return the path to the
@@ -267,7 +266,6 @@ impl LanguageServerClient {
             loop {
                 let parent_path = current_path.parent();
                 if let Some(path) = parent_path {
-
                     for entry in path.read_dir().expect("Cannot read directory contents") {
                         if let Ok(entry) = entry {
                             if entry.file_name() == identifier_os_str {
@@ -275,7 +273,7 @@ impl LanguageServerClient {
                             }
                         }
                     }
-                    
+
                     current_path = path;
                 } else {
                     break;

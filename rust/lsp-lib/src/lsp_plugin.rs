@@ -19,8 +19,11 @@ use lsp_types::{
 use parse_helper;
 use serde_json;
 use std;
+use std::collections::HashMap;
+use std::ffi::OsStr;
 use std::io::{BufReader, BufWriter};
 use std::path::Path;
+use std::path::PathBuf;
 use std::process::Command;
 use std::process::Stdio;
 use std::sync::Arc;
@@ -31,7 +34,15 @@ use xi_plugin_lib::Error;
 use xi_plugin_lib::{Cache, ChunkCache, Plugin, View};
 use xi_rope::rope::RopeDelta;
 
-pub struct LSPPlugin(Arc<Mutex<LanguageServerClient>>);
+pub struct LSPPlugin {
+    language_id: String,
+    command: String,
+    supports_single_file: bool,
+    arguments: Vec<String>,
+    file_extensions: Vec<String>,
+    workspace_identifier: Option<String>,
+    language_server_clients: HashMap<String, Arc<Mutex<LanguageServerClient>>>,
+}
 
 fn get_position_of_offset<C: Cache>(view: &mut View<C>, offset: usize) -> Result<Position, Error> {
     let line_num = view.line_of_offset(offset)?;
@@ -109,58 +120,95 @@ fn get_document_content_changes<C: Cache>(
     }
 }
 
+pub fn get_workspace_root(workspace_identifier: &String, document_path: &Path) -> Option<PathBuf> {
+    let identifier_os_str = OsStr::new(&workspace_identifier);
+
+    let mut current_path = document_path;
+    loop {
+        let parent_path = current_path.parent();
+        if let Some(path) = parent_path {
+            for entry in path.read_dir().expect("Cannot read directory contents") {
+                if let Ok(entry) = entry {
+                    if entry.file_name() == identifier_os_str {
+                        return Some(entry.path());
+                    }
+                }
+            }
+
+            current_path = path;
+        } else {
+            break None;
+        }
+    }
+}
+
+fn start_new_server(
+    command: String,
+    arguments: Vec<String>,
+    file_extensions: Vec<String>,
+    workspace_identifier: Option<String>,
+    language_id: String,
+) -> Result<Arc<Mutex<LanguageServerClient>>, String> {
+    let mut process = Command::new(command)
+        .env("PATH", "/usr/local/bin")
+        .args(arguments)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("Error Occurred");
+
+    let child_id = Some(process.id());
+
+    let writer = Box::new(BufWriter::new(process.stdin.take().unwrap()));
+
+    let language_server_client = Arc::new(Mutex::new(LanguageServerClient::new(
+        writer,
+        language_id,
+        file_extensions,
+        workspace_identifier,
+    )));
+
+    {
+        let ls_client = language_server_client.clone();
+        let mut stdout = process.stdout;
+
+        std::thread::Builder::new()
+            .name("STDIN-Looper".to_string())
+            .spawn(move || {
+                let mut reader = Box::new(BufReader::new(stdout.take().unwrap()));
+                loop {
+                    match parse_helper::read_message(&mut reader) {
+                        Ok(message_str) => {
+                            let mut server_locked = ls_client.lock().unwrap();
+                            server_locked.handle_message(message_str.as_ref());
+                        }
+                        Err(err) => eprintln!("Error occurred {:?}", err),
+                    };
+                }
+            });
+    }
+
+    Ok(language_server_client)
+}
+
 impl LSPPlugin {
     pub fn new(
-        command: &str,
-        arguments: &[&str],
+        command: String,
+        arguments: Vec<String>,
         file_extensions: Vec<String>,
+        supports_single_file: bool,
         workspace_identifier: Option<String>,
-        language_id: &str,
+        language_id: String,
     ) -> Self {
-        eprintln!("command: {}", command);
-        eprintln!("arguments: {:?}", arguments);
-
-        let mut process = Command::new(command)
-            .env("PATH", "/usr/local/bin")
-            .args(arguments)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .expect("Error Occurred");
-
-        let child_id = Some(process.id());
-        eprintln!("child_id: {}", child_id.unwrap());
-
-        let writer = Box::new(BufWriter::new(process.stdin.take().unwrap()));
-        let language_id = String::from(language_id);
-        let plugin = LSPPlugin(Arc::new(Mutex::new(LanguageServerClient::new(
-            writer,
-            language_id,
+        LSPPlugin {
+            command,
+            arguments,
+            supports_single_file,
             file_extensions,
-            workspace_identifier
-        ))));
-
-        {
-            let server_ref = plugin.0.clone();
-            let mut stdout = process.stdout;
-
-            std::thread::Builder::new()
-                .name("STDIN-Looper".to_string())
-                .spawn(move || {
-                    let mut reader = Box::new(BufReader::new(stdout.take().unwrap()));
-                    loop {
-                        match parse_helper::read_message(&mut reader) {
-                            Ok(message_str) => {
-                                let mut server_locked = server_ref.lock().unwrap();
-                                server_locked.handle_message(message_str.as_ref());
-                            }
-                            Err(err) => eprintln!("Error occurred {:?}", err),
-                        };
-                    }
-                });
+            workspace_identifier,
+            language_id,
+            language_server_clients: HashMap::new(),
         }
-
-        plugin
     }
 }
 
@@ -174,8 +222,8 @@ impl Plugin for LSPPlugin {
         _edit_type: String,
         _author: String,
     ) {
-        if let Some(d) = delta {
-
+        
+        /* if let Some(d) = delta {
             let mut ls_client = self.0.lock().unwrap();
             let sync_kind = ls_client.get_sync_kind();
 
@@ -204,15 +252,15 @@ impl Plugin for LSPPlugin {
             };
 
             ls_client.send_did_change(view.get_id(), changes, view.rev);
-        }
+        } */
     }
 
     fn did_save(&mut self, view: &mut View<Self::Cache>, _old: Option<&Path>) {
         eprintln!("saved view {}", view.get_id());
 
-        let document_text = view.get_document().unwrap();
+        /* let document_text = view.get_document().unwrap();
         let mut ls_client = self.0.lock().unwrap();
-        ls_client.send_did_save(view.get_id(), document_text);
+        ls_client.send_did_save(view.get_id(), document_text); */
     }
 
     fn did_close(&mut self, view: &View<Self::Cache>) {
@@ -222,50 +270,131 @@ impl Plugin for LSPPlugin {
     fn new_view(&mut self, view: &mut View<Self::Cache>) {
         eprintln!("new view {}", view.get_id());
 
-        let document_text = view.get_document().unwrap();
         let path = view.get_path().clone();
-
         let view_id = view.get_id().clone();
 
         if let Some(file_path) = path {
             let extension = file_path.extension().unwrap().to_str().unwrap().to_string();
 
-            let mut ls_client = self.0.lock().unwrap();
-
-            if ls_client.file_extensions.contains(&extension) {
-                let document_uri =
-                    Url::parse(format!("file://{}", file_path.to_str().unwrap()).as_ref()).unwrap();
-
-                let workspace_root = ls_client.get_workspace_root(file_path);
-
-                let workspace_uri = match workspace_root {
-                    Some(path) => {
-                        Some(Url::parse(format!("file://{}", path.to_str().unwrap()).as_ref()).unwrap())
+            if (&self.file_extensions).contains(&extension) {
+                let workspace_root = match &self.workspace_identifier {
+                    Some(workspace_identifier) => {
+                        get_workspace_root(workspace_identifier, file_path)
                     }
                     None => None,
                 };
 
-                eprintln!("workspace_uri {:?}", workspace_uri);
+                let ls_client = self.get_lsclient_from_workspace_root(&workspace_root);
 
-                if !ls_client.is_initialized {
-                    ls_client.send_initialize(workspace_uri, move |ls_client, result| {
-                        if result.is_ok() {
-                            let init_result: InitializeResult =
-                                serde_json::from_value(result.unwrap()).unwrap();
-                            
-                            eprintln!("INIT RESULT: {:?}", init_result);
+                if let Some(ls_client) = ls_client {
+                    let workspace_uri = match workspace_root {
+                        Some(path) => Some(
+                            Url::parse(format!("file://{}", path.to_str().unwrap()).as_ref())
+                                .unwrap(),
+                        ),
+                        None => None,
+                    };
 
-                            ls_client.server_capabilities = Some(init_result.capabilities);
-                            ls_client.is_initialized = true;
-                            ls_client.send_did_open(view_id, document_uri, document_text);
-                        }
-                    });
-                } else {
-                    ls_client.send_did_open(view_id, document_uri, document_text);
+                    let ls_client = ls_client.lock().unwrap();
+                    eprintln!("workspace_uri {:?}", workspace_uri);
+
+                    let document_uri = Url::parse(
+                        format!("file://{}", file_path.to_str().unwrap()).as_ref(),
+                    ).unwrap();
+
+                    let document_text = view.get_document().unwrap();
+
+                    if !ls_client.is_initialized {
+                        ls_client.send_initialize(workspace_uri, move |ls_client, result| {
+                            if result.is_ok() {
+                                let init_result: InitializeResult =
+                                    serde_json::from_value(result.unwrap()).unwrap();
+
+                                eprintln!("INIT RESULT: {:?}", init_result);
+
+                                ls_client.server_capabilities = Some(init_result.capabilities);
+                                ls_client.is_initialized = true;
+                                ls_client.send_did_open(view_id, document_uri, document_text);
+                            }
+                        });
+                    } else {
+                        ls_client.send_did_open(view_id, document_uri, document_text);
+                    }
                 }
             }
         }
     }
 
     fn config_changed(&mut self, _view: &mut View<Self::Cache>, _changes: &ConfigTable) {}
+}
+
+/// Utils Methods
+impl LSPPlugin {
+    fn get_lsclient_from_workspace_root(
+        &mut self,
+        workspace_root: &Option<PathBuf>,
+    ) -> Option<Arc<Mutex<LanguageServerClient>>> {
+        match workspace_root {
+            Some(root) => {
+                let root = String::from(root.to_str().unwrap());
+                // Find existing client for same root
+                let language_server_clients = &self.language_server_clients;
+                let result = language_server_clients.get(&root);
+
+                match result {
+                    // Existing client found, use the same
+                    Some(client) => Some(client.clone()),
+                    // Not found. Start a new server and store in Map
+                    None => {
+                        let client = start_new_server(
+                            self.command.clone(),
+                            self.arguments.clone(),
+                            self.file_extensions.clone(),
+                            self.workspace_identifier.clone(),
+                            self.language_id.clone(),
+                        );
+
+                        match client {
+                            Ok(client) => {
+                                &self.language_server_clients.insert(root, client);
+                                Some(client)
+                            }
+                            Err(error) => None,
+                        }
+                    }
+                }
+            }
+            None => {
+                if self.supports_single_file {
+                    // We check if a generic client is running. Such a client
+                    // supports single files. For example, a json client or
+                    // a Python client
+                    match self.language_server_clients.get("generic") {
+                        // Found existing generic client
+                        Some(client) => Some(client.clone()),
+                        None => {
+                            let client = start_new_server(
+                                self.command,
+                                self.arguments,
+                                self.file_extensions,
+                                self.workspace_identifier,
+                                self.language_id,
+                            );
+
+                            match client {
+                                Ok(client) => {
+                                    self.language_server_clients
+                                        .insert(String::from("generic"), client);
+                                    Some(client)
+                                }
+                                Err(error) => None,
+                            }
+                        }
+                    }
+                } else {
+                    None
+                }
+            }
+        }
+    }
 }
