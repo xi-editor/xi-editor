@@ -121,8 +121,7 @@ pub fn find_progress(cursor: &mut Cursor<RopeInfo>, lines: &mut LinesRaw, cm: Ca
                     find_progress_iter(cursor, lines, &pat_lower, &scanner, &matcher, num_steps)
                 } else if b < 0x80 {
                     let scanner = |s: &str| memchr(b, s.as_bytes());
-                    let matcher = compare_cursor_str;
-                    find_progress_iter(cursor, lines, pat, &scanner, &matcher, num_steps)
+                    find_progress_iter(cursor, lines, &pat_lower, &scanner, &matcher, num_steps)
                 } else {
                     let c = pat.chars().next().unwrap();
                     let scanner = |s: &str| scan_lowercase(c, s);
