@@ -22,15 +22,16 @@ use std;
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::io::{BufReader, BufWriter};
+use std::option::NoneError;
 use std::path::Path;
-use std::path::PathBuf;
 use std::process::Command;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::Mutex;
+use types::Error;
 use url::Url;
 use xi_core::ConfigTable;
-use xi_plugin_lib::Error;
+use xi_plugin_lib::Error as PluginLibError;
 use xi_plugin_lib::{Cache, ChunkCache, Plugin, View};
 use xi_rope::rope::RopeDelta;
 
@@ -44,7 +45,10 @@ pub struct LSPPlugin {
     language_server_clients: HashMap<String, Arc<Mutex<LanguageServerClient>>>,
 }
 
-fn get_position_of_offset<C: Cache>(view: &mut View<C>, offset: usize) -> Result<Position, Error> {
+fn get_position_of_offset<C: Cache>(
+    view: &mut View<C>,
+    offset: usize,
+) -> Result<Position, PluginLibError> {
     let line_num = view.line_of_offset(offset)?;
     let line_offset = view.offset_of_line(line_num)?;
 
@@ -62,12 +66,10 @@ fn get_position_of_offset<C: Cache>(view: &mut View<C>, offset: usize) -> Result
 fn get_document_content_changes<C: Cache>(
     d: &RopeDelta,
     view: &mut View<C>,
-) -> Result<Vec<TextDocumentContentChangeEvent>, Error> {
+) -> Result<Vec<TextDocumentContentChangeEvent>, PluginLibError> {
     if let Some(node) = d.as_simple_insert() {
         let (interval, _) = d.summary();
         let text = String::from(node);
-
-        eprintln!("Text Inserted: {} ", text);
 
         let (start, end) = interval.start_end();
         let text_document_content_change_event = TextDocumentContentChangeEvent {
@@ -120,7 +122,10 @@ fn get_document_content_changes<C: Cache>(
     }
 }
 
-pub fn get_workspace_root(workspace_identifier: &String, document_path: &Path) -> Option<PathBuf> {
+pub fn get_workspace_root_uri(
+    workspace_identifier: &String,
+    document_path: &Path,
+) -> Result<Url, Error> {
     let identifier_os_str = OsStr::new(&workspace_identifier);
 
     let mut current_path = document_path;
@@ -130,14 +135,15 @@ pub fn get_workspace_root(workspace_identifier: &String, document_path: &Path) -
             for entry in path.read_dir().expect("Cannot read directory contents") {
                 if let Ok(entry) = entry {
                     if entry.file_name() == identifier_os_str {
-                        return Some(entry.path());
-                    }
+                        let path = entry.path();
+                        return Ok(Url::parse(format!("file://{}", path.to_str()?).as_ref())?);
+                    };
                 }
             }
 
             current_path = path;
         } else {
-            break None;
+            break Err(Error::NoneError);
         }
     }
 }
@@ -156,8 +162,6 @@ fn start_new_server(
         .stdout(Stdio::piped())
         .spawn()
         .expect("Error Occurred");
-
-    let child_id = Some(process.id());
 
     let writer = Box::new(BufWriter::new(process.stdin.take().unwrap()));
 
@@ -222,45 +226,76 @@ impl Plugin for LSPPlugin {
         _edit_type: String,
         _author: String,
     ) {
-        
-        /* if let Some(d) = delta {
-            let mut ls_client = self.0.lock().unwrap();
-            let sync_kind = ls_client.get_sync_kind();
-
-            let changes = match sync_kind {
-                TextDocumentSyncKind::None => return,
-                TextDocumentSyncKind::Full => {
-                    let text_document_content_change_event = TextDocumentContentChangeEvent {
-                        range: None,
-                        range_length: None,
-                        text: view.get_document().unwrap(),
-                    };
-                    vec![text_document_content_change_event]
-                }
-                TextDocumentSyncKind::Incremental => match get_document_content_changes(d, view) {
-                    Ok(result) => result,
-                    Err(err) => {
-                        eprintln!("Error: {:?} Occured. Sending Whole Doc", err);
-                        let text_document_content_change_event = TextDocumentContentChangeEvent {
-                            range: None,
-                            range_length: None,
-                            text: view.get_document().unwrap(),
-                        };
-                        vec![text_document_content_change_event]
+        if let Some(d) = delta {
+            if self.is_valid_view(view) {
+                let workspace_root_uri = match &self.workspace_identifier {
+                    Some(workspace_identifier) => {
+                        let path = view.get_path().clone().unwrap();
+                        get_workspace_root_uri(workspace_identifier, path).ok()
                     }
-                },
-            };
+                    None => None,
+                };
 
-            ls_client.send_did_change(view.get_id(), changes, view.rev);
-        } */
+                if let Some(ls_client) = self.get_lsclient_from_workspace_root(&workspace_root_uri)
+                {
+                    let mut ls_client = ls_client.lock().unwrap();
+                    let sync_kind = ls_client.get_sync_kind();
+
+                    let changes = match sync_kind {
+                        TextDocumentSyncKind::None => return,
+                        TextDocumentSyncKind::Full => {
+                            let text_document_content_change_event =
+                                TextDocumentContentChangeEvent {
+                                    range: None,
+                                    range_length: None,
+                                    text: view.get_document().unwrap(),
+                                };
+                            vec![text_document_content_change_event]
+                        }
+                        TextDocumentSyncKind::Incremental => {
+                            match get_document_content_changes(d, view) {
+                                Ok(result) => result,
+                                Err(err) => {
+                                    eprintln!("Error: {:?} Occured. Sending Whole Doc", err);
+                                    let text_document_content_change_event =
+                                        TextDocumentContentChangeEvent {
+                                            range: None,
+                                            range_length: None,
+                                            text: view.get_document().unwrap(),
+                                        };
+                                    vec![text_document_content_change_event]
+                                }
+                            }
+                        }
+                    };
+
+                    ls_client.send_did_change(view.get_id(), changes, view.rev);
+                }
+            }
+        }
     }
 
     fn did_save(&mut self, view: &mut View<Self::Cache>, _old: Option<&Path>) {
         eprintln!("saved view {}", view.get_id());
 
-        /* let document_text = view.get_document().unwrap();
-        let mut ls_client = self.0.lock().unwrap();
-        ls_client.send_did_save(view.get_id(), document_text); */
+        let document_text = view.get_document().unwrap();
+
+        if self.is_valid_view(view) {
+            let workspace_root_uri = match &self.workspace_identifier {
+                Some(workspace_identifier) => {
+                    let path = view.get_path().clone().unwrap();
+                    get_workspace_root_uri(workspace_identifier, path).ok()
+                }
+                None => None,
+            };
+
+            let ls_client = self.get_lsclient_from_workspace_root(&workspace_root_uri);
+
+            if let Some(ls_client) = ls_client {
+                let mut ls_client = ls_client.lock().unwrap();
+                ls_client.send_did_save(view.get_id(), document_text);
+            }
+        }
     }
 
     fn did_close(&mut self, view: &View<Self::Cache>) {
@@ -270,56 +305,43 @@ impl Plugin for LSPPlugin {
     fn new_view(&mut self, view: &mut View<Self::Cache>) {
         eprintln!("new view {}", view.get_id());
 
+        let document_text = view.get_document().unwrap();
         let path = view.get_path().clone();
         let view_id = view.get_id().clone();
 
-        if let Some(file_path) = path {
-            let extension = file_path.extension().unwrap().to_str().unwrap().to_string();
+        if self.is_valid_view(view) {
+            let path = path.unwrap();
 
-            if (&self.file_extensions).contains(&extension) {
-                let workspace_root = match &self.workspace_identifier {
-                    Some(workspace_identifier) => {
-                        get_workspace_root(workspace_identifier, file_path)
-                    }
-                    None => None,
-                };
+            let workspace_root_uri = match &self.workspace_identifier {
+                Some(workspace_identifier) => {
+                    get_workspace_root_uri(workspace_identifier, path).ok()
+                }
+                None => None,
+            };
 
-                let ls_client = self.get_lsclient_from_workspace_root(&workspace_root);
+            let ls_client = self.get_lsclient_from_workspace_root(&workspace_root_uri);
 
-                if let Some(ls_client) = ls_client {
-                    let workspace_uri = match workspace_root {
-                        Some(path) => Some(
-                            Url::parse(format!("file://{}", path.to_str().unwrap()).as_ref())
-                                .unwrap(),
-                        ),
-                        None => None,
-                    };
+            if let Some(ls_client) = ls_client {
+                let mut ls_client = ls_client.lock().unwrap();
 
-                    let ls_client = ls_client.lock().unwrap();
-                    eprintln!("workspace_uri {:?}", workspace_uri);
+                let document_uri =
+                    Url::parse(format!("file://{}", path.to_str().unwrap()).as_ref()).unwrap();
 
-                    let document_uri = Url::parse(
-                        format!("file://{}", file_path.to_str().unwrap()).as_ref(),
-                    ).unwrap();
+                if !ls_client.is_initialized {
+                    ls_client.send_initialize(workspace_root_uri, move |ls_client, result| {
+                        if result.is_ok() {
+                            let init_result: InitializeResult =
+                                serde_json::from_value(result.unwrap()).unwrap();
 
-                    let document_text = view.get_document().unwrap();
+                            eprintln!("INIT RESULT: {:?}", init_result);
 
-                    if !ls_client.is_initialized {
-                        ls_client.send_initialize(workspace_uri, move |ls_client, result| {
-                            if result.is_ok() {
-                                let init_result: InitializeResult =
-                                    serde_json::from_value(result.unwrap()).unwrap();
-
-                                eprintln!("INIT RESULT: {:?}", init_result);
-
-                                ls_client.server_capabilities = Some(init_result.capabilities);
-                                ls_client.is_initialized = true;
-                                ls_client.send_did_open(view_id, document_uri, document_text);
-                            }
-                        });
-                    } else {
-                        ls_client.send_did_open(view_id, document_uri, document_text);
-                    }
+                            ls_client.server_capabilities = Some(init_result.capabilities);
+                            ls_client.is_initialized = true;
+                            ls_client.send_did_open(view_id, document_uri, document_text);
+                        }
+                    });
+                } else {
+                    ls_client.send_did_open(view_id, document_uri, document_text);
                 }
             }
         }
@@ -332,20 +354,44 @@ impl Plugin for LSPPlugin {
 impl LSPPlugin {
     fn get_lsclient_from_workspace_root(
         &mut self,
-        workspace_root: &Option<PathBuf>,
+        workspace_root: &Option<Url>,
     ) -> Option<Arc<Mutex<LanguageServerClient>>> {
+
         match workspace_root {
             Some(root) => {
-                let root = String::from(root.to_str().unwrap());
+                let root = root.clone().into_string();
                 // Find existing client for same root
-                let language_server_clients = &self.language_server_clients;
-                let result = language_server_clients.get(&root);
+                let contains = self.language_server_clients.contains_key(&root);
 
-                match result {
-                    // Existing client found, use the same
-                    Some(client) => Some(client.clone()),
-                    // Not found. Start a new server and store in Map
-                    None => {
+                if !contains {
+                    let client = start_new_server(
+                        self.command.clone(),
+                        self.arguments.clone(),
+                        self.file_extensions.clone(),
+                        self.workspace_identifier.clone(),
+                        self.language_id.clone(),
+                    );
+
+                    match client {
+                        Ok(client) => {
+                            let client_clone = client.clone();
+                            self.language_server_clients.insert(root, client);
+                            Some(client_clone)
+                        }
+                        Err(_) => None,
+                    }
+                } else {
+                    Some(self.language_server_clients.get(&root).unwrap().clone())
+                }
+            }
+            None => {
+                if self.supports_single_file {
+                    // We check if a generic client is running. Such a client
+                    // supports single files. For example, a json client or
+                    // a Python client
+                    let contains = self.language_server_clients.contains_key("generic");
+
+                    if !contains {
                         let client = start_new_server(
                             self.command.clone(),
                             self.arguments.clone(),
@@ -356,45 +402,35 @@ impl LSPPlugin {
 
                         match client {
                             Ok(client) => {
-                                &self.language_server_clients.insert(root, client);
-                                Some(client)
+                                let client_clone = client.clone();
+                                self.language_server_clients
+                                    .insert("generic".to_owned(), client);
+                                Some(client_clone)
                             }
-                            Err(error) => None,
+                            Err(_) => None,
                         }
-                    }
-                }
-            }
-            None => {
-                if self.supports_single_file {
-                    // We check if a generic client is running. Such a client
-                    // supports single files. For example, a json client or
-                    // a Python client
-                    match self.language_server_clients.get("generic") {
-                        // Found existing generic client
-                        Some(client) => Some(client.clone()),
-                        None => {
-                            let client = start_new_server(
-                                self.command,
-                                self.arguments,
-                                self.file_extensions,
-                                self.workspace_identifier,
-                                self.language_id,
-                            );
-
-                            match client {
-                                Ok(client) => {
-                                    self.language_server_clients
-                                        .insert(String::from("generic"), client);
-                                    Some(client)
-                                }
-                                Err(error) => None,
-                            }
-                        }
+                    } else {
+                        Some(self.language_server_clients.get("generic").unwrap().clone())
                     }
                 } else {
                     None
                 }
             }
+        }
+    }
+
+    fn is_valid_view(&mut self, view: &View<ChunkCache>) -> bool {
+        if let Some(path) = view.get_path().clone() {
+            let result: Result<String, NoneError> =
+                do catch { path.extension()?.to_str()?.to_string() };
+
+            if let Ok(extension) = result {
+                self.file_extensions.contains(&extension)
+            } else {
+                false
+            }
+        } else {
+            false
         }
     }
 }

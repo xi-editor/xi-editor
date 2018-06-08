@@ -18,11 +18,12 @@ use xi_lsp_lib::{start_mainloop, LSPPlugin};
 fn main() {
     // TODO: Make path to plugin configurable
     let mut plugin = LSPPlugin::new(
-        "/usr/local/bin/vscode-json-languageserver",
-        &["--stdio"],
+        "/usr/local/bin/vscode-json-languageserver".to_string(),
+        vec!["--stdio".to_string()],
         vec!["json".to_string(), "jsonc".to_string()],
+        true,
         None,
-        "json",
+        "json".to_string(),
     );
 
     start_mainloop(&mut plugin);
