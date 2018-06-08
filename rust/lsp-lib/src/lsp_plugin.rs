@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use language_server::LanguageServerClient;
+//! Implementation of Language Server Plugin
+
+use language_server_client::LanguageServerClient;
 use lsp_types::{
     InitializeResult, Position, Range, TextDocumentContentChangeEvent, TextDocumentSyncKind,
 };
@@ -37,11 +39,13 @@ use xi_rope::rope::RopeDelta;
 
 use types::Config;
 
+/// Represents the state of the Language Server Plugin
 pub struct LSPPlugin {
     pub config: Config,
     language_server_clients: HashMap<String, Arc<Mutex<LanguageServerClient>>>,
 }
 
+/// Get LSP Style Utf-16 based position given the xi-core style utf-8 offset
 fn get_position_of_offset<C: Cache>(
     view: &mut View<C>,
     offset: usize,
@@ -60,6 +64,8 @@ fn get_position_of_offset<C: Cache>(
     })
 }
 
+/// Get contents changes of a document modeled according to Language Server Protocol
+/// given the RopeDelta
 fn get_document_content_changes<C: Cache>(
     delta: Option<&RopeDelta>,
     view: &mut View<C>,
@@ -155,6 +161,9 @@ pub fn get_workspace_root_uri(
     }
 }
 
+/// Start a new Language Server Process by spawning a process given the parameters
+/// Returns a Arc to the Language Server Client which abstracts connection to the
+/// server
 fn start_new_server(
     command: String,
     arguments: Vec<String>,
@@ -353,8 +362,13 @@ impl Plugin for LSPPlugin {
     fn config_changed(&mut self, _view: &mut View<Self::Cache>, _changes: &ConfigTable) {}
 }
 
-/// Utils Methods
+/// Util Methods
 impl LSPPlugin {
+
+    /// Get the Language Server Client given the Workspace root
+    /// This method checks if a language server is running at the specified root
+    /// and returns it else it tries to spawn a new language server and returns a
+    /// Arc reference to it
     fn get_lsclient_from_workspace_root(
         &mut self,
         language_id: String,
@@ -426,6 +440,8 @@ impl LSPPlugin {
         }
     }
 
+    /// Tries to get language for the View using the extension of the document.
+    /// Only searches for the languages supported by the Language Plugin
     fn get_language_for_view(&mut self, view: &View<ChunkCache>) -> Option<String> {
         if let Some(path) = view.get_path().clone() {
             let result: Result<String, NoneError> =
