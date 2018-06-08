@@ -16,7 +16,6 @@ extern crate xi_lsp_lib;
 #[macro_use]
 extern crate serde_json;
 
-use serde_json::{Value};
 use xi_lsp_lib::{start_mainloop, LSPPlugin, Config};
 
 fn main() {
