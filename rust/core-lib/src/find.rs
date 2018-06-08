@@ -23,6 +23,9 @@ use xi_rope::tree::Cursor;
 use xi_rope::interval::Interval;
 use selection::{Selection, SelRegion};
 use xi_rope::tree::Metric;
+use regex::{RegexBuilder, Regex};
+
+const REGEX_SIZE_LIMIT: usize = 1000000;
 
 /// Information about search queries and number of matches for find
 #[derive(Serialize, Deserialize, Debug)]
@@ -51,7 +54,7 @@ pub struct Find {
     /// The case matching setting for the currently active search
     case_matching: CaseMatching,
     /// The search query should be considered as regular expression
-    is_regex: bool,
+    regex: Option<Regex>,
     /// The set of all known find occurrences (highlights)
     occurrences: Selection,
 }
@@ -62,7 +65,7 @@ impl Find {
             hls_dirty: true,
             search_string: None,
             case_matching: CaseMatching::CaseInsensitive,
-            is_regex: false,
+            regex: None,
             occurrences: Selection::new(),
         }
     }
@@ -87,7 +90,7 @@ impl Find {
             FindStatus {
                 chars: self.search_string.clone(),
                 case_sensitive: Some(self.case_matching == CaseMatching::Exact),
-                is_regex: Some(self.is_regex),
+                is_regex: Some(self.regex.is_some()),
                 matches: self.occurrences.len(),
             }
         }
@@ -125,7 +128,7 @@ impl Find {
 
             // invalidate all search results from the point of the last valid search result until ...
             let is_multi_line = LinesMetric::next(self.search_string.as_ref().unwrap(), 0).is_some();
-            let is_multi_line_regex = self.is_regex && is_multiline_regex(self.search_string.as_ref().unwrap());
+            let is_multi_line_regex = self.regex.is_some() && is_multiline_regex(self.search_string.as_ref().unwrap());
 
             if is_multi_line || is_multi_line_regex {
                 // ... the end of the file
@@ -179,7 +182,7 @@ impl Find {
 
 
         if let Some(ref s) = self.search_string {
-            if s == search_string && case_matching == self.case_matching && self.is_regex == is_regex {
+            if s == search_string && case_matching == self.case_matching && self.regex.is_some() == is_regex {
                 // search parameters did not change
                 return;
             }
@@ -189,7 +192,18 @@ impl Find {
 
         self.search_string = Some(search_string.to_string());
         self.case_matching = case_matching;
-        self.is_regex = is_regex;
+
+        // create regex from untrusted input
+        self.regex = match is_regex {
+            false => None,
+            true => {
+                RegexBuilder::new(search_string)
+                    .size_limit(REGEX_SIZE_LIMIT)
+                    .case_insensitive(case_matching == CaseMatching::CaseInsensitive)
+                    .build()
+                    .ok()
+            }
+        };
     }
 
     /// Execute the search on the provided text in the range provided by `start` and `end`.
@@ -215,7 +229,7 @@ impl Find {
         let mut find_cursor = Cursor::new(&sub_text, from);
         let mut raw_lines = text.lines_raw(from, to);
 
-        while let Some(start) = find(&mut find_cursor, &mut raw_lines, self.case_matching, &search_string, self.is_regex) {
+        while let Some(start) = find(&mut find_cursor, &mut raw_lines, self.case_matching, &search_string, &self.regex) {
             let end = find_cursor.pos();
 
             let region = SelRegion::new(start, end);

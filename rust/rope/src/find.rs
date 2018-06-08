@@ -21,12 +21,9 @@ use memchr::{memchr, memchr2, memchr3};
 use rope::RopeInfo;
 use rope::BaseMetric;
 use tree::Cursor;
-use regex::RegexBuilder;
 use std::str;
 use rope::LinesRaw;
-
-const REGEX_SIZE_LIMIT: usize = 1000000;
-
+use regex::Regex;
 
 /// The result of a [`find`][find] operation.
 /// 
@@ -64,8 +61,8 @@ pub enum CaseMatching {
 /// On failure, the cursor's position is indeterminate.
 ///
 /// Can panic if `pat` is empty.
-pub fn find(cursor: &mut Cursor<RopeInfo>, lines: &mut LinesRaw, cm: CaseMatching, pat: &str, is_regex: bool) -> Option<usize> {
-    match find_progress(cursor, lines, cm, pat, usize::max_value(), is_regex) {
+pub fn find(cursor: &mut Cursor<RopeInfo>, lines: &mut LinesRaw, cm: CaseMatching, pat: &str, regex: &Option<Regex>) -> Option<usize> {
+    match find_progress(cursor, lines, cm, pat, usize::max_value(), regex) {
         FindResult::Found(start) => Some(start),
         FindResult::NotFound => None,
         FindResult::TryAgain => unreachable!("find_progress got stuck"),
@@ -84,48 +81,47 @@ pub fn find(cursor: &mut Cursor<RopeInfo>, lines: &mut LinesRaw, cm: CaseMatchin
 /// 
 /// [find]: fn.find.html
 pub fn find_progress(cursor: &mut Cursor<RopeInfo>, lines: &mut LinesRaw, cm: CaseMatching, pat: &str,
-    num_steps: usize, is_regex: bool) -> FindResult
+    num_steps: usize, regex: &Option<Regex>) -> FindResult
 {
     // empty search string
     if pat.is_empty() {
         return FindResult::NotFound
     }
 
-    if is_regex {
-        // regex scanner cannot check if regex is partially matching
-        find_progress_iter(cursor, lines, pat, &|_| { Some(0) },
-            &|cursor, lines, pat| compare_cursor_regex(cursor, lines, pat, cm), num_steps)
-    }
-    else {
-        match cm {
-            CaseMatching::Exact => {
-                let b = pat.as_bytes()[0];
-                let scanner = |s: &str| memchr(b, s.as_bytes());
-                let matcher = compare_cursor_str;
-                find_progress_iter(cursor, lines, pat, &scanner, &matcher, num_steps)
-            }
-            CaseMatching::CaseInsensitive => {
-                let pat_lower = pat.to_lowercase();
-                let b = pat_lower.as_bytes()[0];
-                let matcher = compare_cursor_str_casei;
-                if b == b'i' {
-                    // 0xC4 is first utf-8 byte of 'İ'
-                    let scanner = |s: &str| memchr3(b'i', b'I', 0xC4, s.as_bytes());
-                    find_progress_iter(cursor, lines, &pat_lower, &scanner, &matcher, num_steps)
-                } else if b == b'k' {
-                    // 0xE2 is first utf-8 byte of u+212A (kelvin sign)
-                    let scanner = |s: &str| memchr3(b'k', b'K', 0xE2, s.as_bytes());
-                    find_progress_iter(cursor, lines, &pat_lower, &scanner, &matcher, num_steps)
-                } else if b >= b'a' && b <= b'z' {
-                    let scanner = |s: &str| memchr2(b, b - 0x20, s.as_bytes());
-                    find_progress_iter(cursor, lines, &pat_lower, &scanner, &matcher, num_steps)
-                } else if b < 0x80 {
+    match regex {
+        Some(r) => find_progress_iter(cursor, lines, pat, &|_| { Some(0) },
+            &|cursor, lines, pat| compare_cursor_regex(cursor, lines, pat, &r), num_steps),
+        None => {
+            match cm {
+                CaseMatching::Exact => {
+                    let b = pat.as_bytes()[0];
                     let scanner = |s: &str| memchr(b, s.as_bytes());
-                    find_progress_iter(cursor, lines, &pat_lower, &scanner, &matcher, num_steps)
-                } else {
-                    let c = pat.chars().next().unwrap();
-                    let scanner = |s: &str| scan_lowercase(c, s);
-                    find_progress_iter(cursor, lines, &pat_lower, &scanner, &matcher, num_steps)
+                    let matcher = compare_cursor_str;
+                    find_progress_iter(cursor, lines, pat, &scanner, &matcher, num_steps)
+                }
+                CaseMatching::CaseInsensitive => {
+                    let pat_lower = pat.to_lowercase();
+                    let b = pat_lower.as_bytes()[0];
+                    let matcher = compare_cursor_str_casei;
+                    if b == b'i' {
+                        // 0xC4 is first utf-8 byte of 'İ'
+                        let scanner = |s: &str| memchr3(b'i', b'I', 0xC4, s.as_bytes());
+                        find_progress_iter(cursor, lines, &pat_lower, &scanner, &matcher, num_steps)
+                    } else if b == b'k' {
+                        // 0xE2 is first utf-8 byte of u+212A (kelvin sign)
+                        let scanner = |s: &str| memchr3(b'k', b'K', 0xE2, s.as_bytes());
+                        find_progress_iter(cursor, lines, &pat_lower, &scanner, &matcher, num_steps)
+                    } else if b >= b'a' && b <= b'z' {
+                        let scanner = |s: &str| memchr2(b, b - 0x20, s.as_bytes());
+                        find_progress_iter(cursor, lines, &pat_lower, &scanner, &matcher, num_steps)
+                    } else if b < 0x80 {
+                        let scanner = |s: &str| memchr(b, s.as_bytes());
+                        find_progress_iter(cursor, lines, &pat_lower, &scanner, &matcher, num_steps)
+                    } else {
+                        let c = pat.chars().next().unwrap();
+                        let scanner = |s: &str| scan_lowercase(c, s);
+                        find_progress_iter(cursor, lines, &pat_lower, &scanner, &matcher, num_steps)
+                    }
                 }
             }
         }
@@ -247,57 +243,41 @@ fn compare_cursor_str_casei(cursor: &mut Cursor<RopeInfo>, _lines: &mut LinesRaw
 /// If the regular expression can match multiple lines then the entire text
 /// is consumed and matched against the regular expression. Otherwise only
 /// the current line is matched. Returns the start position of the match.
-fn compare_cursor_regex(cursor: &mut Cursor<RopeInfo>, lines: &mut LinesRaw, pat: &str, cm: CaseMatching) -> Option<usize> {
+fn compare_cursor_regex(cursor: &mut Cursor<RopeInfo>, lines: &mut LinesRaw, pat: &str, regex: &Regex) -> Option<usize> {
     let orig_position = cursor.pos();
-    let total_len = cursor.total_len();
 
     if pat.is_empty() {
         return Some(orig_position);
     }
 
-    // create regex from untrusted input
-    let regex = RegexBuilder::new(pat)
-        .size_limit(REGEX_SIZE_LIMIT)
-        .case_insensitive(cm == CaseMatching::CaseInsensitive)
-        .build();
+    let mut text = String::new();
 
-    match regex {
-        Ok(regex) => {
-            let mut text = String::new();
+    if is_multiline_regex(pat) {
+        // consume all of the text if regex is multi line matching
+        text.extend(lines);
+    } else {
+        match lines.next() {
+            Some(line) => text.push_str(&line),
+            _ => return None
+        }
+    }
 
-            if is_multiline_regex(pat) {
-                // consume all of the text if regex is multi line matching
-                text.extend(lines);
-            } else {
-                match lines.next() {
-                    Some(line) => text.push_str(&line),
-                    _ => return None
-                }
-            }
+    // match regex against text
+    match regex.find(&text) {
+        Some(mat) => {
+            // calculate start position based on where the match starts
+            let start_position = orig_position + mat.start();
 
-            // match regex against text
-            match regex.find(&text) {
-                Some(mat) => {
-                    // calculate start position based on where the match starts
-                    let start_position = orig_position + mat.start();
+            // update cursor and set to end of match
+            let end_position = orig_position + mat.end();
+            cursor.set(end_position);
 
-                    // update cursor and set to end of match
-                    let end_position = orig_position + mat.end();
-                    cursor.set(end_position);
-
-                    return Some(start_position)
-                },
-                None => {
-                    cursor.set(orig_position + text.len());
-                    return None
-                }
-            }
+            return Some(start_position)
         },
-        _ => {
-            // move cursor to the end of the text to be searched stop the search
-            cursor.set(total_len);
+        None => {
+            cursor.set(orig_position + text.len());
             return None
-        },
+        }
     }
 }
 
