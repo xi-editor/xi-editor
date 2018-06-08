@@ -99,7 +99,7 @@ enum FindStatusChange {
     Matches
 }
 
-/// A size, in pixels.
+/// A size, in pixel units (not display pixels).
 #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Size {
     pub width: f64,
@@ -262,7 +262,6 @@ impl View {
     }
 
     pub fn set_size(&mut self, size: Size) {
-        eprintln!("set size {:?}", size);
         self.size = size;
     }
 

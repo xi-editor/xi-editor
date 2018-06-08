@@ -125,6 +125,14 @@ region is used to compute movement distance for page up and page down
 commands, and also controls the size of the fragment sent in the
 `update` method.
 
+#### resize
+
+`resize {width: 420, height: 400}`
+
+Notifies the backend that the size of the view has changed. This is
+used for word wrapping, if enabled. Width and height are specified
+in px units / points, not display pixels.
+
 #### click
 
 `click [42,31,0,1]`
