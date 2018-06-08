@@ -44,7 +44,7 @@ pub fn read_message<T: BufRead>(reader: &mut T) -> Result<String, ParseError> {
 
     loop {
         buffer.clear();
-        reader.read_line(&mut buffer);
+        let _resutl = reader.read_line(&mut buffer);
 
         match &buffer {
             s if s.trim().len() == 0 => break,
