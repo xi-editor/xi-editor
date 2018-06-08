@@ -61,54 +61,64 @@ fn get_position_of_offset<C: Cache>(
 }
 
 fn get_document_content_changes<C: Cache>(
-    d: &RopeDelta,
+    delta: Option<&RopeDelta>,
     view: &mut View<C>,
 ) -> Result<Vec<TextDocumentContentChangeEvent>, PluginLibError> {
-    if let Some(node) = d.as_simple_insert() {
-        let (interval, _) = d.summary();
-        let text = String::from(node);
+    if let Some(delta) = delta {
+        if let Some(node) = delta.as_simple_insert() {
+            let (interval, _) = delta.summary();
+            let text = String::from(node);
 
-        let (start, end) = interval.start_end();
-        let text_document_content_change_event = TextDocumentContentChangeEvent {
-            range: Some(Range {
-                start: get_position_of_offset(view, start)?,
-                end: get_position_of_offset(view, end)?,
-            }),
-            range_length: Some((end - start) as u64),
-            text,
-        };
+            let (start, end) = interval.start_end();
+            let text_document_content_change_event = TextDocumentContentChangeEvent {
+                range: Some(Range {
+                    start: get_position_of_offset(view, start)?,
+                    end: get_position_of_offset(view, end)?,
+                }),
+                range_length: Some((end - start) as u64),
+                text,
+            };
 
-        Ok(vec![text_document_content_change_event])
-    }
-    // Or a simple delete
-    else if d.is_simple_delete() {
-        let (interval, _) = d.summary();
-
-        let (start, end) = interval.start_end();
-
-        // Hack around sending VSCode Style Positions to Language Server.
-        // See this issue to understand: https://github.com/Microsoft/vscode/issues/23173
-        let mut end_position = get_position_of_offset(view, end)?;
-
-        if end_position.character == 0 {
-            let mut ep = get_position_of_offset(view, end - 1)?;
-            ep.character += 1;
-            end_position = ep;
+            Ok(vec![text_document_content_change_event])
         }
+        // Or a simple delete
+        else if delta.is_simple_delete() {
+            let (interval, _) = delta.summary();
 
-        let text_document_content_change_event = TextDocumentContentChangeEvent {
-            range: Some(Range {
-                start: get_position_of_offset(view, start)?,
-                end: end_position,
-            }),
-            range_length: Some((end - start) as u64),
-            text: String::new(),
-        };
+            let (start, end) = interval.start_end();
 
-        Ok(vec![text_document_content_change_event])
-    }
-    // Send the whole document again if it is not a trivial edit
-    else {
+            // Hack around sending VSCode Style Positions to Language Server.
+            // See this issue to understand: https://github.com/Microsoft/vscode/issues/23173
+            let mut end_position = get_position_of_offset(view, end)?;
+
+            if end_position.character == 0 {
+                let mut ep = get_position_of_offset(view, end - 1)?;
+                ep.character += 1;
+                end_position = ep;
+            }
+
+            let text_document_content_change_event = TextDocumentContentChangeEvent {
+                range: Some(Range {
+                    start: get_position_of_offset(view, start)?,
+                    end: end_position,
+                }),
+                range_length: Some((end - start) as u64),
+                text: String::new(),
+            };
+
+            Ok(vec![text_document_content_change_event])
+        }
+        // Send the whole document again if it is not a trivial edit
+        else {
+            let text_document_content_change_event = TextDocumentContentChangeEvent {
+                range: None,
+                range_length: None,
+                text: view.get_document()?,
+            };
+
+            Ok(vec![text_document_content_change_event])
+        }
+    } else {
         let text_document_content_change_event = TextDocumentContentChangeEvent {
             range: None,
             range_length: None,
@@ -211,55 +221,52 @@ impl Plugin for LSPPlugin {
         _edit_type: String,
         _author: String,
     ) {
-        if let Some(d) = delta {
-            if let Some(language_id) = self.get_language_for_view(view) {
-                let workspace_root_uri = {
-                    let config = &self.config.language_config.get_mut(&language_id).unwrap();
-                    match &config.workspace_identifier {
-                        Some(workspace_identifier) => {
-                            let path = view.get_path().clone().unwrap();
-                            get_workspace_root_uri(workspace_identifier, path).ok()
+        if let Some(language_id) = self.get_language_for_view(view) {
+            let workspace_root_uri = {
+                let config = &self.config.language_config.get_mut(&language_id).unwrap();
+                match &config.workspace_identifier {
+                    Some(workspace_identifier) => {
+                        let path = view.get_path().clone().unwrap();
+                        get_workspace_root_uri(workspace_identifier, path).ok()
+                    }
+                    None => None,
+                }
+            };
+
+            if let Some(ls_client) =
+                self.get_lsclient_from_workspace_root(language_id, &workspace_root_uri)
+            {
+                let mut ls_client = ls_client.lock().unwrap();
+                let sync_kind = ls_client.get_sync_kind();
+
+                let changes = match sync_kind {
+                    TextDocumentSyncKind::None => return,
+                    TextDocumentSyncKind::Full => {
+                        let text_document_content_change_event = TextDocumentContentChangeEvent {
+                            range: None,
+                            range_length: None,
+                            text: view.get_document().unwrap(),
+                        };
+                        vec![text_document_content_change_event]
+                    }
+                    TextDocumentSyncKind::Incremental => {
+                        match get_document_content_changes(delta, view) {
+                            Ok(result) => result,
+                            Err(err) => {
+                                eprintln!("Error: {:?} Occured. Sending Whole Doc", err);
+                                let text_document_content_change_event =
+                                    TextDocumentContentChangeEvent {
+                                        range: None,
+                                        range_length: None,
+                                        text: view.get_document().unwrap(),
+                                    };
+                                vec![text_document_content_change_event]
+                            }
                         }
-                        None => None,
                     }
                 };
 
-                if let Some(ls_client) =
-                    self.get_lsclient_from_workspace_root(language_id, &workspace_root_uri)
-                {
-                    let mut ls_client = ls_client.lock().unwrap();
-                    let sync_kind = ls_client.get_sync_kind();
-
-                    let changes = match sync_kind {
-                        TextDocumentSyncKind::None => return,
-                        TextDocumentSyncKind::Full => {
-                            let text_document_content_change_event =
-                                TextDocumentContentChangeEvent {
-                                    range: None,
-                                    range_length: None,
-                                    text: view.get_document().unwrap(),
-                                };
-                            vec![text_document_content_change_event]
-                        }
-                        TextDocumentSyncKind::Incremental => {
-                            match get_document_content_changes(d, view) {
-                                Ok(result) => result,
-                                Err(err) => {
-                                    eprintln!("Error: {:?} Occured. Sending Whole Doc", err);
-                                    let text_document_content_change_event =
-                                        TextDocumentContentChangeEvent {
-                                            range: None,
-                                            range_length: None,
-                                            text: view.get_document().unwrap(),
-                                        };
-                                    vec![text_document_content_change_event]
-                                }
-                            }
-                        }
-                    };
-
-                    ls_client.send_did_change(view.get_id(), changes, view.rev);
-                }
+                ls_client.send_did_change(view.get_id(), changes, view.rev);
             }
         }
     }

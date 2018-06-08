@@ -21,7 +21,6 @@ use url::ParseError as URLParseError;
 use jsonrpc_lite::Error as JsonRPCError;
 
 use std::option::NoneError;
-use serde_derive;
 
 pub enum LSPHeader {
     ContentType,
