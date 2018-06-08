@@ -21,14 +21,15 @@ fn main() {
     // TODO: Make this configurable
     let home_dir = std::env::home_dir();
     let mut rls_path = String::from(home_dir.unwrap().to_str().unwrap());
-    rls_path.push_str(".cargo/bin/rls");
+    rls_path.push_str("/.cargo/bin/rls");
 
     let mut plugin = LSPPlugin::new(
-        &rls_path,
-        &[],
+        rls_path,
+        vec![],
         vec!["rs".to_string()],
+        false,
         Some("Cargo.toml".to_string()),
-        "rust",
+        "rust".to_string(),
     );
 
     start_mainloop(&mut plugin);

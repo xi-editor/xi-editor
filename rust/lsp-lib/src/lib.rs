@@ -11,6 +11,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+#![feature(try_trait)]
+#![feature(catch_expr)]
 
 extern crate jsonrpc_lite;
 extern crate languageserver_types as lsp_types;

@@ -12,11 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use jsonrpc_lite::Error;
 use language_server::LanguageServerClient;
 use serde_json;
 use serde_json::Value;
 use std;
+use url::ParseError as URLParseError;
+use jsonrpc_lite::Error as JsonRPCError;
+
+use std::option::NoneError;
 
 pub enum LSPHeader {
     ContentType,
@@ -24,11 +27,11 @@ pub enum LSPHeader {
 }
 
 pub trait Callable: Send {
-    fn call(self: Box<Self>, client: &mut LanguageServerClient, result: Result<Value, Error>);
+    fn call(self: Box<Self>, client: &mut LanguageServerClient, result: Result<Value, JsonRPCError>);
 }
 
-impl<F: Send + FnOnce(&mut LanguageServerClient, Result<Value, Error>)> Callable for F {
-    fn call(self: Box<F>, client: &mut LanguageServerClient, result: Result<Value, Error>) {
+impl<F: Send + FnOnce(&mut LanguageServerClient, Result<Value, JsonRPCError>)> Callable for F {
+    fn call(self: Box<F>, client: &mut LanguageServerClient, result: Result<Value, JsonRPCError>) {
         (*self)(client, result)
     }
 }
@@ -72,5 +75,22 @@ impl From<std::num::ParseIntError> for ParseError {
 impl From<String> for ParseError {
     fn from(s: String) -> ParseError {
         ParseError::Unknown(s)
+    }
+}
+
+pub enum Error {
+    NoneError,
+    URLParseError(URLParseError)
+}
+
+impl From<NoneError> for Error {
+    fn from(_err: NoneError) -> Error {
+        Error::NoneError
+    }
+}
+
+impl From<URLParseError> for Error {
+    fn from(err: URLParseError) -> Error {
+        Error::URLParseError(err)
     }
 }

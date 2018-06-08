@@ -138,12 +138,17 @@ impl LanguageServerClient {
             Err(err) => panic!("Encoding Error {:?}", err),
         };
 
+        eprintln!("RPC: {:?}", rpc);
         self.write(rpc.as_ref());
     }
 
     pub fn send_notification(&mut self, method: &str, params: Params) {
         let notification = JsonRpc::notification_with_params(method, params);
-        self.send_rpc(to_value(&notification).unwrap());
+
+        let res = to_value(&notification).unwrap();
+        eprintln!("RESULT: {:?}", res);
+
+        self.send_rpc(res);
     }
 }
 
@@ -201,6 +206,7 @@ impl LanguageServerClient {
         changes: Vec<TextDocumentContentChangeEvent>,
         rev: u64,
     ) {
+
         let text_document_did_change_params = DidChangeTextDocumentParams {
             text_document: VersionedTextDocumentIdentifier {
                 uri: self.opened_documents.get(&view_id).unwrap().clone(),
@@ -213,8 +219,8 @@ impl LanguageServerClient {
             "\n\n params did_change_notif :\n {:?}\n\n",
             text_document_did_change_params
         );
-        let params = Params::from(serde_json::to_value(text_document_did_change_params).unwrap());
 
+        let params = Params::from(serde_json::to_value(text_document_did_change_params).unwrap());
         self.send_notification("textDocument/didChange", params);
     }
 
