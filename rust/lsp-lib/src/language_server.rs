@@ -50,6 +50,7 @@ fn prepare_lsp_json(msg: &Value) -> Result<String, serde_json::error::Error> {
 }
 
 fn number_from_id(id: Option<&Id>) -> usize {
+    
     let id = id.expect("response missing id field");
     let id = match id {
         &Id::Num(n) => n as u64,

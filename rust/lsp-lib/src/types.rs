@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashMap;
 use language_server::LanguageServerClient;
 use serde_json;
 use serde_json::Value;
@@ -20,6 +21,7 @@ use url::ParseError as URLParseError;
 use jsonrpc_lite::Error as JsonRPCError;
 
 use std::option::NoneError;
+use serde_derive;
 
 pub enum LSPHeader {
     ContentType,
@@ -38,6 +40,22 @@ impl<F: Send + FnOnce(&mut LanguageServerClient, Result<Value, JsonRPCError>)> C
 
 pub type Callback = Box<Callable>;
 
+#[derive(Serialize, Deserialize)]
+pub struct LanguageConfig {
+    pub language_name: String,
+    pub start_command: String,
+    pub start_arguments: Vec<String>,
+    pub extensions: Vec<String>,
+    pub supports_single_file: bool,
+    pub workspace_identifier: Option<String>
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct Config {
+    pub language_config: HashMap<String, LanguageConfig>
+}
+
+
 // Error Types
 #[derive(Debug)]
 pub enum ParseError {
@@ -47,6 +65,7 @@ pub enum ParseError {
     Json(serde_json::Error),
     Unknown(String),
 }
+
 
 impl From<std::io::Error> for ParseError {
     fn from(err: std::io::Error) -> ParseError {

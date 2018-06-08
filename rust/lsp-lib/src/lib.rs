@@ -14,9 +14,16 @@
 #![feature(try_trait)]
 #![feature(catch_expr)]
 
+#[macro_use]
+extern crate serde_derive;
+#[macro_use]
+extern crate serde_json;
+
+
 extern crate jsonrpc_lite;
 extern crate languageserver_types as lsp_types;
-extern crate serde_json;
+extern crate serde;
+
 extern crate url;
 extern crate xi_core_lib as xi_core;
 extern crate xi_plugin_lib;
@@ -30,6 +37,7 @@ pub mod lsp_plugin;
 pub mod parse_helper;
 pub mod types;
 pub use lsp_plugin::LSPPlugin;
+pub use types::Config;
 
 pub fn start_mainloop<P: Plugin>(plugin: &mut P) {
     mainloop(plugin);
