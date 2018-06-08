@@ -12,13 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Utility methods to parse the input from the Language Server
+
 use std::io::BufRead;
 use types::{LSPHeader, ParseError};
 
 const HEADER_CONTENT_LENGTH: &'static str = "content-length";
 const HEADER_CONTENT_TYPE: &'static str = "content-type";
 
-// To Parse header from the incoming input string
+/// parse header from the incoming input string
 fn parse_header(s: &str) -> Result<LSPHeader, ParseError> {
     let split: Vec<String> = s.split(": ").map(|s| s.trim().to_lowercase()).collect();
     if split.len() != 2 {
@@ -35,7 +37,7 @@ fn parse_header(s: &str) -> Result<LSPHeader, ParseError> {
     }
 }
 
-// Blocking call to read a message from the provided Buffered Reader
+/// Blocking call to read a message from the provided BufRead
 pub fn read_message<T: BufRead>(reader: &mut T) -> Result<String, ParseError> {
     let mut buffer = String::new();
     let mut content_length: Option<usize> = None;

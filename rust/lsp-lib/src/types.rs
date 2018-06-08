@@ -40,6 +40,7 @@ impl<F: Send + FnOnce(&mut LanguageServerClient, Result<Value, JsonRPCError>)> C
 pub type Callback = Box<Callable>;
 
 #[derive(Serialize, Deserialize)]
+/// Language Specific Configuration
 pub struct LanguageConfig {
     pub language_name: String,
     pub start_command: String,
@@ -49,6 +50,7 @@ pub struct LanguageConfig {
     pub workspace_identifier: Option<String>
 }
 
+/// Represents the config for the Language Plugin
 #[derive(Serialize, Deserialize)]
 pub struct Config {
     pub language_config: HashMap<String, LanguageConfig>
@@ -56,6 +58,8 @@ pub struct Config {
 
 
 // Error Types
+
+/// Type to represent errors occured while parsing LSP RPCs
 #[derive(Debug)]
 pub enum ParseError {
     Io(std::io::Error),
@@ -96,6 +100,9 @@ impl From<String> for ParseError {
     }
 }
 
+// TODO: Improve Error handling in module and add more types as necessary
+
+/// Types to represent errors in the module.
 pub enum Error {
     NoneError,
     URLParseError(URLParseError)

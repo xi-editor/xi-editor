@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Implementation for Language Server Client
+
 use jsonrpc_lite::{Error, Id, JsonRpc, Params};
 use lsp_types::*;
 use serde_json;
@@ -28,6 +30,7 @@ use xi_core::ViewIdentifier;
 
 pub type DoucmentURI = Url;
 
+/// A type to abstract communication with the language server
 pub struct LanguageServerClient {
     writer: Box<Write + Send>,
     pending: HashMap<usize, Callback>,
@@ -40,6 +43,9 @@ pub struct LanguageServerClient {
     pub file_extensions: Vec<String>,
 }
 
+
+/// Prepare Language Server Protocol style JSON String from 
+/// a serde_json object `Value`
 fn prepare_lsp_json(msg: &Value) -> Result<String, serde_json::error::Error> {
     let request = serde_json::to_string(&msg)?;
     Ok(format!(
@@ -49,6 +55,8 @@ fn prepare_lsp_json(msg: &Value) -> Result<String, serde_json::error::Error> {
     ))
 }
 
+/// Get numeric id from the request id. 
+/// TODO: Fix this hacky implementation
 fn number_from_id(id: Option<&Id>) -> usize {
     
     let id = id.expect("response missing id field");
@@ -153,7 +161,12 @@ impl LanguageServerClient {
     }
 }
 
+
+/// Methods to abstract sending notifications and requests to the language server
 impl LanguageServerClient {
+    
+    /// Send the Initialize Request given the Root URI of the 
+    /// Workspace. It is None for non-workspace projects.
     pub fn send_initialize<CB>(&mut self, root_uri: Option<Url>, on_init: CB)
     where
         CB: 'static + Send + FnOnce(&mut LanguageServerClient, Result<Value, Error>),
@@ -169,22 +182,17 @@ impl LanguageServerClient {
             trace: None,
         };
 
-        eprintln!("\nINIT PARAMS\n: {:?}", init_params);
         let params = Params::from(serde_json::to_value(init_params).unwrap());
-
         self.send_request("initialize", params, Box::new(on_init));
     }
 
+    /// Send textDocument/didOpen Notification to the Language Server 
     pub fn send_did_open(
         &mut self,
         view_id: ViewIdentifier,
         document_uri: Url,
         document_text: String,
     ) {
-        eprintln!(
-            "DID OPEN CALLED with documentURI {:?} \n document)_text {:?}",
-            document_uri, document_text
-        );
 
         self.opened_documents.insert(view_id, document_uri.clone());
 
@@ -201,6 +209,7 @@ impl LanguageServerClient {
         self.send_notification("textDocument/didOpen", params);
     }
 
+    /// Send textDocument/didChange Notification to the Language Server
     pub fn send_did_change(
         &mut self,
         view_id: ViewIdentifier,
@@ -225,6 +234,7 @@ impl LanguageServerClient {
         self.send_notification("textDocument/didChange", params);
     }
 
+    /// Send textDocument/didSave notification to the Language Server
     pub fn send_did_save(&mut self, view_id: ViewIdentifier, _document_text: String) {
         // Add support for sending document text as well. Currently missing in LSP types
         // and is optional in LSP Specification
@@ -243,6 +253,7 @@ impl LanguageServerClient {
 /// a request. For example: we can check if the Language Server supports sending
 /// incremental edits before proceeding to send one.
 impl LanguageServerClient {
+    
     /// Method to get the sync kind Supported by the Server
     pub fn get_sync_kind(&mut self) -> TextDocumentSyncKind {
         if let Some(capabilities) = self.server_capabilities.as_ref() {
@@ -262,6 +273,7 @@ impl LanguageServerClient {
 
 /// Util Methods
 impl LanguageServerClient {
+    
     /// Get workspace root using the Workspace Identifier
     /// For example: Cargo.toml can be used to identify a Rust Workspace
     /// This method traverses up to file tree to return the path to the
