@@ -1,7 +1,0 @@
-[package]
-name = "rust-lsp-plugin"
-version = "0.1.0"
-authors = ["betterclever <paliwal.pranjal83@gmail.com>"]
-
-[dependencies.xi-lsp-lib]
-path = "../../../lsp-lib"

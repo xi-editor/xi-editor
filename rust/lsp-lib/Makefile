@@ -1,9 +1,9 @@
 # Makefile for installing the plugin on macOS and Linux
 
 # The 'official' name of this plugin, displayed in menus etc
-PLUGIN_NAME=rust-lsp-plugin
+PLUGIN_NAME=xi-lsp-plugin
 # the name of the plugin binary; this is the same as the name in Cargo.toml
-PLUGIN_BIN=rust-lsp-plugin
+PLUGIN_BIN=xi-lsp-plugin
 
 # On MacOS we just always assume that plugins are in the default location
 ifeq ($(shell uname -s), Darwin)
@@ -15,7 +15,7 @@ XI_CONFIG_DIR ?= $(XDG_CONFIG_HOME)/xi
 XI_PLUGIN_DIR ?= $(XI_CONFIG_DIR)/plugins
 
 target/release/$(PLUGIN_BIN):
-	cargo build --release
+	cargo build  --bin xi-lsp-plugin --release
 
 install: manifest.toml target/release/$(PLUGIN_BIN)
 	install -d $(XI_PLUGIN_DIR)/$(PLUGIN_NAME)/bin

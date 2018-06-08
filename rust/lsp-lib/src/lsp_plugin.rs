@@ -35,13 +35,10 @@ use xi_plugin_lib::Error as PluginLibError;
 use xi_plugin_lib::{Cache, ChunkCache, Plugin, View};
 use xi_rope::rope::RopeDelta;
 
+use types::Config;
+
 pub struct LSPPlugin {
-    language_id: String,
-    command: String,
-    supports_single_file: bool,
-    arguments: Vec<String>,
-    file_extensions: Vec<String>,
-    workspace_identifier: Option<String>,
+    pub config: Config,
     language_server_clients: HashMap<String, Arc<Mutex<LanguageServerClient>>>,
 }
 
@@ -196,21 +193,9 @@ fn start_new_server(
 }
 
 impl LSPPlugin {
-    pub fn new(
-        command: String,
-        arguments: Vec<String>,
-        file_extensions: Vec<String>,
-        supports_single_file: bool,
-        workspace_identifier: Option<String>,
-        language_id: String,
-    ) -> Self {
+    pub fn new(config: Config) -> Self {
         LSPPlugin {
-            command,
-            arguments,
-            supports_single_file,
-            file_extensions,
-            workspace_identifier,
-            language_id,
+            config,
             language_server_clients: HashMap::new(),
         }
     }
@@ -227,16 +212,20 @@ impl Plugin for LSPPlugin {
         _author: String,
     ) {
         if let Some(d) = delta {
-            if self.is_valid_view(view) {
-                let workspace_root_uri = match &self.workspace_identifier {
-                    Some(workspace_identifier) => {
-                        let path = view.get_path().clone().unwrap();
-                        get_workspace_root_uri(workspace_identifier, path).ok()
+            if let Some(language_id) = self.get_language_for_view(view) {
+                let workspace_root_uri = {
+                    let config = &self.config.language_config.get_mut(&language_id).unwrap();
+                    match &config.workspace_identifier {
+                        Some(workspace_identifier) => {
+                            let path = view.get_path().clone().unwrap();
+                            get_workspace_root_uri(workspace_identifier, path).ok()
+                        }
+                        None => None,
                     }
-                    None => None,
                 };
 
-                if let Some(ls_client) = self.get_lsclient_from_workspace_root(&workspace_root_uri)
+                if let Some(ls_client) =
+                    self.get_lsclient_from_workspace_root(language_id, &workspace_root_uri)
                 {
                     let mut ls_client = ls_client.lock().unwrap();
                     let sync_kind = ls_client.get_sync_kind();
@@ -280,16 +269,19 @@ impl Plugin for LSPPlugin {
 
         let document_text = view.get_document().unwrap();
 
-        if self.is_valid_view(view) {
-            let workspace_root_uri = match &self.workspace_identifier {
-                Some(workspace_identifier) => {
-                    let path = view.get_path().clone().unwrap();
-                    get_workspace_root_uri(workspace_identifier, path).ok()
+        if let Some(language_id) = self.get_language_for_view(view) {
+            let workspace_root_uri = {
+                let config = self.config.language_config.get(&language_id).unwrap();
+                match &config.workspace_identifier {
+                    Some(workspace_identifier) => {
+                        let path = view.get_path().clone().unwrap();
+                        get_workspace_root_uri(workspace_identifier, path).ok()
+                    }
+                    None => None,
                 }
-                None => None,
             };
 
-            let ls_client = self.get_lsclient_from_workspace_root(&workspace_root_uri);
+            let ls_client = self.get_lsclient_from_workspace_root(language_id, &workspace_root_uri);
 
             if let Some(ls_client) = ls_client {
                 let mut ls_client = ls_client.lock().unwrap();
@@ -309,17 +301,21 @@ impl Plugin for LSPPlugin {
         let path = view.get_path().clone();
         let view_id = view.get_id().clone();
 
-        if self.is_valid_view(view) {
+        if let Some(language_id) = self.get_language_for_view(view) {
             let path = path.unwrap();
 
-            let workspace_root_uri = match &self.workspace_identifier {
-                Some(workspace_identifier) => {
-                    get_workspace_root_uri(workspace_identifier, path).ok()
+            let workspace_root_uri = {
+                let config = &self.config.language_config.get_mut(&language_id).unwrap();
+                match &config.workspace_identifier {
+                    Some(workspace_identifier) => {
+                        let path = view.get_path().clone().unwrap();
+                        get_workspace_root_uri(workspace_identifier, path).ok()
+                    }
+                    None => None,
                 }
-                None => None,
             };
 
-            let ls_client = self.get_lsclient_from_workspace_root(&workspace_root_uri);
+            let ls_client = self.get_lsclient_from_workspace_root(language_id, &workspace_root_uri);
 
             if let Some(ls_client) = ls_client {
                 let mut ls_client = ls_client.lock().unwrap();
@@ -354,9 +350,9 @@ impl Plugin for LSPPlugin {
 impl LSPPlugin {
     fn get_lsclient_from_workspace_root(
         &mut self,
+        language_id: String,
         workspace_root: &Option<Url>,
     ) -> Option<Arc<Mutex<LanguageServerClient>>> {
-
         match workspace_root {
             Some(root) => {
                 let root = root.clone().into_string();
@@ -364,12 +360,14 @@ impl LSPPlugin {
                 let contains = self.language_server_clients.contains_key(&root);
 
                 if !contains {
+                    let config = self.config.language_config.get(&language_id).unwrap();
+
                     let client = start_new_server(
-                        self.command.clone(),
-                        self.arguments.clone(),
-                        self.file_extensions.clone(),
-                        self.workspace_identifier.clone(),
-                        self.language_id.clone(),
+                        config.start_command.clone(),
+                        config.start_arguments.clone(),
+                        config.extensions.clone(),
+                        config.workspace_identifier.clone(),
+                        language_id,
                     );
 
                     match client {
@@ -385,7 +383,9 @@ impl LSPPlugin {
                 }
             }
             None => {
-                if self.supports_single_file {
+                let config = self.config.language_config.get(&language_id).unwrap();
+
+                if config.supports_single_file {
                     // We check if a generic client is running. Such a client
                     // supports single files. For example, a json client or
                     // a Python client
@@ -393,11 +393,11 @@ impl LSPPlugin {
 
                     if !contains {
                         let client = start_new_server(
-                            self.command.clone(),
-                            self.arguments.clone(),
-                            self.file_extensions.clone(),
-                            self.workspace_identifier.clone(),
-                            self.language_id.clone(),
+                            config.start_command.clone(),
+                            config.start_arguments.clone(),
+                            config.extensions.clone(),
+                            config.workspace_identifier.clone(),
+                            language_id,
                         );
 
                         match client {
@@ -419,18 +419,23 @@ impl LSPPlugin {
         }
     }
 
-    fn is_valid_view(&mut self, view: &View<ChunkCache>) -> bool {
+    fn get_language_for_view(&mut self, view: &View<ChunkCache>) -> Option<String> {
         if let Some(path) = view.get_path().clone() {
             let result: Result<String, NoneError> =
                 do catch { path.extension()?.to_str()?.to_string() };
 
             if let Ok(extension) = result {
-                self.file_extensions.contains(&extension)
+                for config in &self.config.language_config {
+                    if config.1.extensions.contains(&extension) {
+                        return Some(config.0.clone());
+                    }
+                }
+                None
             } else {
-                false
+                None
             }
         } else {
-            false
+            None
         }
     }
 }
