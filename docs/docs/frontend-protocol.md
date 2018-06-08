@@ -179,10 +179,8 @@ move_left_and_modify_selection
 move_right
 move_right_and_modify_selection
 scroll_page_up
-page_up
 page_up_and_modify_selection
 scroll_page_down
-page_down
 page_down_and_modify_selection
 ```
 
