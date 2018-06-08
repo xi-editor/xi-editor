@@ -573,16 +573,19 @@ impl LanguageTag {
     }
 
     fn resolve(&self) -> LanguageId {
-        self.user.as_ref().map(LanguageId::clone)
-            .unwrap_or_else(|| self.detected.clone())
+        self.user.as_ref().unwrap_or(&self.detected).clone()
     }
 
+    /// Set the detected language. Returns `true` if this changes the resolved
+    /// language.
     fn set_detected(&mut self, detected: LanguageId) -> bool {
         let before = self.resolve();
         self.detected = detected;
         before != self.resolve()
     }
 
+    /// Set the user-specified language. Returns `true` if this changes
+    /// the resolved language.
     #[allow(dead_code)]
     fn set_user(&mut self, new_lang: Option<LanguageId>) -> bool {
         let has_changed = self.user != new_lang;

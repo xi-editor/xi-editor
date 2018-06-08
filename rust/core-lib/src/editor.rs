@@ -439,7 +439,6 @@ impl Editor {
 
     fn insert_newline(&mut self, view: &View, config: &BufferItems) {
         self.this_edit_type = EditType::InsertChars;
-        //let text = self.config.items.line_ending.clone();
         self.insert(view, &config.line_ending);
     }
 
