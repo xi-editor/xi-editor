@@ -11,9 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#![feature(try_trait)]
-#![feature(catch_expr)]
-
 #[macro_use]
 extern crate serde_derive;
 extern crate serde_json;
@@ -31,7 +28,7 @@ extern crate xi_rope;
 use xi_plugin_lib::mainloop;
 use xi_plugin_lib::Plugin;
 
-pub mod language_server;
+pub mod language_server_client;
 pub mod lsp_plugin;
 pub mod parse_helper;
 pub mod types;
@@ -39,5 +36,6 @@ pub use lsp_plugin::LSPPlugin;
 pub use types::Config;
 
 pub fn start_mainloop<P: Plugin>(plugin: &mut P) {
-    mainloop(plugin);
+    // Unwrap to indicate that we want thread to Panic on failure
+    mainloop(plugin).unwrap();
 }

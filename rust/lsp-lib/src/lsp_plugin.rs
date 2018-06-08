@@ -24,7 +24,6 @@ use std;
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::io::{BufReader, BufWriter};
-use std::option::NoneError;
 use std::path::Path;
 use std::process::Command;
 use std::process::Stdio;
@@ -149,14 +148,17 @@ pub fn get_workspace_root_uri(
                 if let Ok(entry) = entry {
                     if entry.file_name() == identifier_os_str {
                         let path = entry.path();
-                        return Ok(Url::parse(format!("file://{}", path.to_str()?).as_ref())?);
+
+                        return Ok(Url::parse(
+                            format!("file://{}", path.to_str().unwrap()).as_ref(),
+                        )?);
                     };
                 }
             }
 
             current_path = path;
         } else {
-            break Err(Error::NoneError);
+            break Err(Error::PathError);
         }
     }
 }
@@ -172,7 +174,6 @@ fn start_new_server(
     language_id: String,
 ) -> Result<Arc<Mutex<LanguageServerClient>>, String> {
     let mut process = Command::new(command)
-        .env("PATH", "/usr/local/bin")
         .args(arguments)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -192,6 +193,7 @@ fn start_new_server(
         let ls_client = language_server_client.clone();
         let mut stdout = process.stdout;
 
+        // Unwrap to indicate that we want thread to panic on failure
         std::thread::Builder::new()
             .name("STDIN-Looper".to_string())
             .spawn(move || {
@@ -205,7 +207,7 @@ fn start_new_server(
                         Err(err) => eprintln!("Error occurred {:?}", err),
                     };
                 }
-            });
+            }).unwrap();
     }
 
     Ok(language_server_client)
@@ -364,7 +366,6 @@ impl Plugin for LSPPlugin {
 
 /// Util Methods
 impl LSPPlugin {
-
     /// Get the Language Server Client given the Workspace root
     /// This method checks if a language server is running at the specified root
     /// and returns it else it tries to spawn a new language server and returns a
@@ -441,19 +442,24 @@ impl LSPPlugin {
     }
 
     /// Tries to get language for the View using the extension of the document.
-    /// Only searches for the languages supported by the Language Plugin
+    /// Only searches for the languages supported by the Language Plugin as 
+    /// defined in the config
     fn get_language_for_view(&mut self, view: &View<ChunkCache>) -> Option<String> {
-        if let Some(path) = view.get_path().clone() {
-            let result: Result<String, NoneError> =
-                do catch { path.extension()?.to_str()?.to_string() };
 
-            if let Ok(extension) = result {
-                for config in &self.config.language_config {
-                    if config.1.extensions.contains(&extension) {
-                        return Some(config.0.clone());
+        // TODO: Make this cleaner using a better construct
+        if let Some(path) = view.get_path().clone() {
+            if let Some(extension) = path.extension() {
+                if let Some(extension) = extension.to_str() {
+                    let extension = extension.to_string();
+                    for config in &self.config.language_config {
+                        if config.1.extensions.contains(&extension) {
+                            return Some(config.0.clone());
+                        }
                     }
+                    None
+                } else {
+                    None
                 }
-                None
             } else {
                 None
             }

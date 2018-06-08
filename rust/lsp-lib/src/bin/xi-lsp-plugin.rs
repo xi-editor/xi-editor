@@ -20,11 +20,15 @@ use xi_lsp_lib::{start_mainloop, LSPPlugin, Config};
 
 fn main() {
 
+    // The specified language server must be in PATH. XCode does not use
+    // the PATH variable of your shell. See the answers below to modify PATH to 
+    // have language servers in PATH while running from XCode.
+    // https://stackoverflow.com/a/17394454 and https://stackoverflow.com/a/43043687
     let config = json!({
         "language_config": {
             "rust" : {
                 "language_name": "Rust",
-                "start_command": "/Users/betterclever/.cargo/bin/rls",
+                "start_command": "rls",
                 "start_arguments": [],
                 "extensions": ["rs"],
                 "supports_single_file": false,
@@ -32,7 +36,7 @@ fn main() {
             },
             "json": {
                 "language_name": "Json",
-                "start_command": "/usr/local/bin/vscode-json-languageserver",
+                "start_command": "vscode-json-languageserver",
                 "start_arguments": ["--stdio"],
                 "extensions": ["json", "jsonc"],
                 "supports_single_file": true,

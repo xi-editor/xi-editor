@@ -13,14 +13,13 @@
 // limitations under the License.
 
 use std::collections::HashMap;
-use language_server::LanguageServerClient;
+use language_server_client::LanguageServerClient;
 use serde_json;
 use serde_json::Value;
 use std;
 use url::ParseError as URLParseError;
 use jsonrpc_lite::Error as JsonRPCError;
 
-use std::option::NoneError;
 
 pub enum LSPHeader {
     ContentType,
@@ -104,14 +103,8 @@ impl From<String> for ParseError {
 
 /// Types to represent errors in the module.
 pub enum Error {
-    NoneError,
+    PathError,
     URLParseError(URLParseError)
-}
-
-impl From<NoneError> for Error {
-    fn from(_err: NoneError) -> Error {
-        Error::NoneError
-    }
 }
 
 impl From<URLParseError> for Error {
