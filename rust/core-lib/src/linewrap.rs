@@ -38,8 +38,7 @@ impl<'a> LineBreakCursor<'a> {
     fn new(text: &'a Rope, pos: usize) -> LineBreakCursor<'a> {
         let inner = Cursor::new(text, pos);
         let lb_iter = match inner.get_leaf() {
-            Some((s, offset)) if !s.is_empty() =>
-                LineBreakLeafIter::new(s.as_str(), offset),
+            Some((s, offset)) => LineBreakLeafIter::new(s.as_str(), offset),
             _ => LineBreakLeafIter::default()
         };
         LineBreakCursor {
@@ -344,7 +343,8 @@ pub fn rewrap_width(breaks: &mut Breaks, text: &Rope,
     // First, remove any breaks in edited section.
     let mut builder = BreakBuilder::new();
     builder.add_no_break(newsize);
-    breaks.edit(iv, builder.build());
+    let edit_iv = Interval::new_open_closed(iv.start(), iv.end());
+    breaks.edit(edit_iv, builder.build());
     // At this point, breaks is aligned with text.
 
     let mut start = iv.start();
