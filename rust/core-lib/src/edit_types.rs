@@ -40,6 +40,7 @@ pub(crate) enum ViewEvent {
     FindPrevious { wrap_around: Option<bool> },
     Cancel,
     HighlightFind { visible: bool },
+    SelectionForFind,
 }
 
 /// Events that modify the buffer
@@ -211,6 +212,7 @@ impl From<EditNotification> for EventDomain {
             Indent => BufferEvent::Indent.into(),
             Outdent => BufferEvent::Outdent.into(),
             HighlightFind { visible } => ViewEvent::HighlightFind { visible }.into(),
+            SelectionForFind => ViewEvent::SelectionForFind.into(),
         }
     }
 }

@@ -214,7 +214,8 @@ impl View {
                 self.highlight_find = visible;
                 self.find_changed = FindStatusChange::All;
                 self.set_dirty(text);
-            }
+            },
+            SelectionForFind => self.selection_for_find(text),
         }
     }
 
@@ -874,8 +875,44 @@ impl View {
         self.set_selection_for_edit(text, new_sel);
     }
 
-    pub fn do_find(&mut self, text: &Rope, chars: Option<String>, case_sensitive: bool,
-                   is_regex: bool) {
+    fn selection_for_find(&mut self, text: &Rope) {
+        // set last selection or word under current cursor as search query
+        let search_query = match self.selection.last() {
+            Some(region) => {
+                if !region.is_caret() {
+                    text.slice_to_string(region.min(), region.max())
+                } else {
+                    let (start, end) = {
+                        let mut word_cursor = WordCursor::new(text, region.max());
+                        word_cursor.select_word()
+                    };
+                    text.slice_to_string(start, end)
+                }
+            },
+            _ => return
+        };
+
+        self.find_changed = FindStatusChange::All;
+        self.set_dirty(text);
+
+        // todo: this will be changed once multiple queries are supported
+        // todo: for now only a single search query is supported however in the future
+        // todo: the correct Find instance needs to be updated with the new parameters
+        if self.find.is_empty() {
+            self.find.push(Find::new());
+        }
+
+        let find = self.find.first_mut().unwrap();
+        let cm = find.case_matching();
+
+        if self.highlight_find {
+            find.do_find(text, Some(search_query), cm, false);
+        } else {
+            find.set_find(&search_query, cm, false);
+        }
+    }
+
+    pub fn do_find(&mut self, text: &Rope, chars: Option<String>, case_sensitive: bool, is_regex: bool) {
         let mut from_sel = false;
         let search_string = if chars.is_some() {
             chars
