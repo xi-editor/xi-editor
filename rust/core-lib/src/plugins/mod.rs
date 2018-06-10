@@ -134,7 +134,6 @@ pub(crate) fn start_plugin_process(plugin_desc: Arc<PluginDescription>,
     thread::spawn(move || {
         eprintln!("starting plugin {}", &plugin_desc.name);
         let child = ProcCommand::new(&plugin_desc.exec_path)
-            .env("RUST_BACKTRACE", "full")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn();

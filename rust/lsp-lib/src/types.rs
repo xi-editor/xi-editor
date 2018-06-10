@@ -17,21 +17,22 @@ use language_server_client::LanguageServerClient;
 use serde_json;
 use serde_json::Value;
 use std;
-use url::ParseError as URLParseError;
-use jsonrpc_lite::Error as JsonRPCError;
+use url::ParseError as UrlParseError;
+use std::io::Error as IOError;
+use jsonrpc_lite::Error as JsonRpcError;
 
 
-pub enum LSPHeader {
+pub enum LspHeader {
     ContentType,
     ContentLength(usize),
 }
 
 pub trait Callable: Send {
-    fn call(self: Box<Self>, client: &mut LanguageServerClient, result: Result<Value, JsonRPCError>);
+    fn call(self: Box<Self>, client: &mut LanguageServerClient, result: Result<Value, JsonRpcError>);
 }
 
-impl<F: Send + FnOnce(&mut LanguageServerClient, Result<Value, JsonRPCError>)> Callable for F {
-    fn call(self: Box<F>, client: &mut LanguageServerClient, result: Result<Value, JsonRPCError>) {
+impl<F: Send + FnOnce(&mut LanguageServerClient, Result<Value, JsonRpcError>)> Callable for F {
+    fn call(self: Box<F>, client: &mut LanguageServerClient, result: Result<Value, JsonRpcError>) {
         (*self)(client, result)
     }
 }
@@ -104,11 +105,19 @@ impl From<String> for ParseError {
 /// Types to represent errors in the module.
 pub enum Error {
     PathError,
-    URLParseError(URLParseError)
+    FileUrlParseError,
+    IOError(IOError),
+    UrlParseError(UrlParseError)
 }
 
-impl From<URLParseError> for Error {
-    fn from(err: URLParseError) -> Error {
-        Error::URLParseError(err)
+impl From<UrlParseError> for Error {
+    fn from(err: UrlParseError) -> Error {
+        Error::UrlParseError(err)
+    }
+}
+
+impl From<IOError> for Error {
+    fn from(err: IOError) -> Error {
+        Error::IOError(err)
     }
 }

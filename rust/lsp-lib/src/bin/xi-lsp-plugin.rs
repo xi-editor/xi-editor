@@ -16,7 +16,7 @@ extern crate xi_lsp_lib;
 #[macro_use]
 extern crate serde_json;
 
-use xi_lsp_lib::{start_mainloop, LSPPlugin, Config};
+use xi_lsp_lib::{start_mainloop, LspPlugin, Config};
 
 fn main() {
 
@@ -45,7 +45,7 @@ fn main() {
     });
 
     let config: Config = serde_json::from_value(config).unwrap();
-    let mut plugin = LSPPlugin::new(config);
+    let mut plugin = LspPlugin::new(config);
 
     start_mainloop(&mut plugin);
 }
