@@ -32,16 +32,37 @@ use std::sync::Mutex;
 use types::Error;
 use url::Url;
 use xi_core::ConfigTable;
+use xi_core::ViewIdentifier;
 use xi_plugin_lib::Error as PluginLibError;
 use xi_plugin_lib::{Cache, ChunkCache, Plugin, View};
 use xi_rope::rope::RopeDelta;
 
 use types::Config;
 
+pub struct ViewInfo {
+    version: u64,
+    ls_identifier: String,
+}
+
 /// Represents the state of the Language Server Plugin
-pub struct LSPPlugin {
+pub struct LspPlugin {
     pub config: Config,
+    view_info: HashMap<ViewIdentifier, ViewInfo>,
     language_server_clients: HashMap<String, Arc<Mutex<LanguageServerClient>>>,
+}
+
+/// Counts the number of utf-16 code units in the given string.
+fn count_utf16(s: &str) -> usize {
+    let mut utf16_count = 0;
+    for &b in s.as_bytes() {
+        if (b as i8) >= -0x40 {
+            utf16_count += 1;
+        }
+        if b >= 0xf0 {
+            utf16_count += 1;
+        }
+    }
+    utf16_count
 }
 
 /// Get LSP Style Utf-16 based position given the xi-core style utf-8 offset
@@ -52,10 +73,7 @@ fn get_position_of_offset<C: Cache>(
     let line_num = view.line_of_offset(offset)?;
     let line_offset = view.offset_of_line(line_num)?;
 
-    let char_offset: usize = view.get_line(line_num)?[0..(offset - line_offset)]
-        .chars()
-        .map(char::len_utf16)
-        .sum();
+    let char_offset: usize = count_utf16(&(view.get_line(line_num)?[0..(offset - line_offset)]));
 
     Ok(Position {
         line: line_num as u64,
@@ -70,8 +88,11 @@ fn get_document_content_changes<C: Cache>(
     view: &mut View<C>,
 ) -> Result<Vec<TextDocumentContentChangeEvent>, PluginLibError> {
     if let Some(delta) = delta {
+        let (interval, _) = delta.summary();
+        let (start, end) = interval.start_end();
+
+        // TODO: Handle more trivial cases like typing when there's a selection or transpose
         if let Some(node) = delta.as_simple_insert() {
-            let (interval, _) = delta.summary();
             let text = String::from(node);
 
             let (start, end) = interval.start_end();
@@ -84,19 +105,18 @@ fn get_document_content_changes<C: Cache>(
                 text,
             };
 
-            Ok(vec![text_document_content_change_event])
+            return Ok(vec![text_document_content_change_event]);
         }
         // Or a simple delete
         else if delta.is_simple_delete() {
-            let (interval, _) = delta.summary();
-
-            let (start, end) = interval.start_end();
-
             // Hack around sending VSCode Style Positions to Language Server.
             // See this issue to understand: https://github.com/Microsoft/vscode/issues/23173
             let mut end_position = get_position_of_offset(view, end)?;
 
             if end_position.character == 0 {
+                // There is an assumption here that the line separator character is exactly
+                // 1 byte wide which is true for "\n" but it will be an issue if they are not
+                // for example for u+2028
                 let mut ep = get_position_of_offset(view, end - 1)?;
                 ep.character += 1;
                 end_position = ep;
@@ -111,29 +131,54 @@ fn get_document_content_changes<C: Cache>(
                 text: String::new(),
             };
 
-            Ok(vec![text_document_content_change_event])
+            return Ok(vec![text_document_content_change_event]);
         }
-        // Send the whole document again if it is not a trivial edit
-        else {
+    }
+
+    let text_document_content_change_event = TextDocumentContentChangeEvent {
+        range: None,
+        range_length: None,
+        text: view.get_document()?,
+    };
+
+    Ok(vec![text_document_content_change_event])
+}
+
+/// Get changes to be sent to server depending upon the type of Sync supported
+/// by server
+fn get_change_for_sync_kind(
+    sync_kind: TextDocumentSyncKind,
+    view: &mut View<ChunkCache>,
+    delta: Option<&RopeDelta>,
+) -> Option<Vec<TextDocumentContentChangeEvent>> {
+    match sync_kind {
+        TextDocumentSyncKind::None => None,
+        TextDocumentSyncKind::Full => {
             let text_document_content_change_event = TextDocumentContentChangeEvent {
                 range: None,
                 range_length: None,
-                text: view.get_document()?,
+                text: view.get_document().unwrap(),
             };
-
-            Ok(vec![text_document_content_change_event])
+            Some(vec![text_document_content_change_event])
         }
-    } else {
-        let text_document_content_change_event = TextDocumentContentChangeEvent {
-            range: None,
-            range_length: None,
-            text: view.get_document()?,
-        };
-
-        Ok(vec![text_document_content_change_event])
+        TextDocumentSyncKind::Incremental => match get_document_content_changes(delta, view) {
+            Ok(result) => Some(result),
+            Err(err) => {
+                eprintln!("Error: {:?} Occured. Sending Whole Doc", err);
+                let text_document_content_change_event = TextDocumentContentChangeEvent {
+                    range: None,
+                    range_length: None,
+                    text: view.get_document().unwrap(),
+                };
+                Some(vec![text_document_content_change_event])
+            }
+        },
     }
 }
 
+/// Get workspace root using the Workspace Identifier and the opened document path
+/// For example: Cargo.toml can be used to identify a Rust Workspace
+/// This method traverses up to file tree to return the path to the Workspace root folder
 pub fn get_workspace_root_uri(
     workspace_identifier: &String,
     document_path: &Path,
@@ -144,18 +189,13 @@ pub fn get_workspace_root_uri(
     loop {
         let parent_path = current_path.parent();
         if let Some(path) = parent_path {
-            for entry in path.read_dir().expect("Cannot read directory contents") {
+            for entry in path.read_dir()? {
                 if let Ok(entry) = entry {
                     if entry.file_name() == identifier_os_str {
-                        let path = entry.path();
-
-                        return Ok(Url::parse(
-                            format!("file://{}", path.to_str().unwrap()).as_ref(),
-                        )?);
+                        return Url::from_directory_path(path).map_err(|_| Error::FileUrlParseError);
                     };
                 }
             }
-
             current_path = path;
         } else {
             break Err(Error::PathError);
@@ -170,7 +210,6 @@ fn start_new_server(
     command: String,
     arguments: Vec<String>,
     file_extensions: Vec<String>,
-    workspace_identifier: Option<String>,
     language_id: String,
 ) -> Result<Arc<Mutex<LanguageServerClient>>, String> {
     let mut process = Command::new(command)
@@ -184,9 +223,8 @@ fn start_new_server(
 
     let language_server_client = Arc::new(Mutex::new(LanguageServerClient::new(
         writer,
-        language_id,
+        language_id.clone(),
         file_extensions,
-        workspace_identifier,
     )));
 
     {
@@ -195,7 +233,7 @@ fn start_new_server(
 
         // Unwrap to indicate that we want thread to panic on failure
         std::thread::Builder::new()
-            .name("STDIN-Looper".to_string())
+            .name(format!("{}-lsp-stdin-Looper", language_id))
             .spawn(move || {
                 let mut reader = Box::new(BufReader::new(stdout.take().unwrap()));
                 loop {
@@ -207,22 +245,24 @@ fn start_new_server(
                         Err(err) => eprintln!("Error occurred {:?}", err),
                     };
                 }
-            }).unwrap();
+            })
+            .unwrap();
     }
 
     Ok(language_server_client)
 }
 
-impl LSPPlugin {
+impl LspPlugin {
     pub fn new(config: Config) -> Self {
-        LSPPlugin {
+        LspPlugin {
             config,
+            view_info: HashMap::new(),
             language_server_clients: HashMap::new(),
         }
     }
 }
 
-impl Plugin for LSPPlugin {
+impl Plugin for LspPlugin {
     type Cache = ChunkCache;
 
     fn update(
@@ -232,52 +272,21 @@ impl Plugin for LSPPlugin {
         _edit_type: String,
         _author: String,
     ) {
-        if let Some(language_id) = self.get_language_for_view(view) {
-            let workspace_root_uri = {
-                let config = &self.config.language_config.get_mut(&language_id).unwrap();
-                match &config.workspace_identifier {
-                    Some(workspace_identifier) => {
-                        let path = view.get_path().clone().unwrap();
-                        get_workspace_root_uri(workspace_identifier, path).ok()
-                    }
-                    None => None,
-                }
-            };
+        let client_identifier = self.view_info.get_mut(&view.get_id());
+        if let Some(view_info) = client_identifier {
+            // This won't fail since we definitely have a client for the given
+            // client identifier
+            let ls_client = self
+                .language_server_clients
+                .get(&view_info.ls_identifier)
+                .unwrap();
+            let mut ls_client = ls_client.lock().unwrap();
 
-            if let Some(ls_client) =
-                self.get_lsclient_from_workspace_root(language_id, &workspace_root_uri)
-            {
-                let mut ls_client = ls_client.lock().unwrap();
-                let sync_kind = ls_client.get_sync_kind();
+            let sync_kind = ls_client.get_sync_kind();
 
-                let changes = match sync_kind {
-                    TextDocumentSyncKind::None => return,
-                    TextDocumentSyncKind::Full => {
-                        let text_document_content_change_event = TextDocumentContentChangeEvent {
-                            range: None,
-                            range_length: None,
-                            text: view.get_document().unwrap(),
-                        };
-                        vec![text_document_content_change_event]
-                    }
-                    TextDocumentSyncKind::Incremental => {
-                        match get_document_content_changes(delta, view) {
-                            Ok(result) => result,
-                            Err(err) => {
-                                eprintln!("Error: {:?} Occured. Sending Whole Doc", err);
-                                let text_document_content_change_event =
-                                    TextDocumentContentChangeEvent {
-                                        range: None,
-                                        range_length: None,
-                                        text: view.get_document().unwrap(),
-                                    };
-                                vec![text_document_content_change_event]
-                            }
-                        }
-                    }
-                };
-
-                ls_client.send_did_change(view.get_id(), changes, view.rev);
+            view_info.version += 1;
+            if let Some(changes) = get_change_for_sync_kind(sync_kind, view, delta) {
+                ls_client.send_did_change(view.get_id(), changes, view_info.version);
             }
         }
     }
@@ -287,24 +296,16 @@ impl Plugin for LSPPlugin {
 
         let document_text = view.get_document().unwrap();
 
-        if let Some(language_id) = self.get_language_for_view(view) {
-            let workspace_root_uri = {
-                let config = self.config.language_config.get(&language_id).unwrap();
-                match &config.workspace_identifier {
-                    Some(workspace_identifier) => {
-                        let path = view.get_path().clone().unwrap();
-                        get_workspace_root_uri(workspace_identifier, path).ok()
-                    }
-                    None => None,
-                }
-            };
-
-            let ls_client = self.get_lsclient_from_workspace_root(language_id, &workspace_root_uri);
-
-            if let Some(ls_client) = ls_client {
-                let mut ls_client = ls_client.lock().unwrap();
-                ls_client.send_did_save(view.get_id(), document_text);
-            }
+        let client_identifier = self.view_info.get(&view.get_id());
+        if let Some(view_info) = client_identifier {
+            // This won't fail since we definitely have a client for the given
+            // client identifier
+            let ls_client = self
+                .language_server_clients
+                .get(&view_info.ls_identifier)
+                .unwrap();
+            let mut ls_client = ls_client.lock().unwrap();
+            ls_client.send_did_save(view.get_id(), document_text);
         }
     }
 
@@ -319,11 +320,14 @@ impl Plugin for LSPPlugin {
         let path = view.get_path().clone();
         let view_id = view.get_id().clone();
 
+        // TODO: Use Language Idenitifier assigned by core when the
+        // implementation is settled
         if let Some(language_id) = self.get_language_for_view(view) {
             let path = path.unwrap();
 
             let workspace_root_uri = {
                 let config = &self.config.language_config.get_mut(&language_id).unwrap();
+
                 match &config.workspace_identifier {
                     Some(workspace_identifier) => {
                         let path = view.get_path().clone().unwrap();
@@ -333,21 +337,27 @@ impl Plugin for LSPPlugin {
                 }
             };
 
-            let ls_client = self.get_lsclient_from_workspace_root(language_id, &workspace_root_uri);
+            let result = self.get_lsclient_from_workspace_root(language_id, &workspace_root_uri);
 
-            if let Some(ls_client) = ls_client {
+            if let Some((identifier, ls_client)) = result {
+                self.view_info.insert(
+                    view.get_id(),
+                    ViewInfo {
+                        version: 0,
+                        ls_identifier: identifier,
+                    },
+                );
                 let mut ls_client = ls_client.lock().unwrap();
 
-                let document_uri =
-                    Url::parse(format!("file://{}", path.to_str().unwrap()).as_ref()).unwrap();
+                let document_uri = Url::from_file_path(path).unwrap();
 
                 if !ls_client.is_initialized {
                     ls_client.send_initialize(workspace_root_uri, move |ls_client, result| {
-                        if result.is_ok() {
+                        if let Ok(result) = result {
                             let init_result: InitializeResult =
-                                serde_json::from_value(result.unwrap()).unwrap();
+                                serde_json::from_value(result).unwrap();
 
-                            eprintln!("INIT RESULT: {:?}", init_result);
+                            eprintln!("Init Result: {:?}", init_result);
 
                             ls_client.server_capabilities = Some(init_result.capabilities);
                             ls_client.is_initialized = true;
@@ -365,7 +375,7 @@ impl Plugin for LSPPlugin {
 }
 
 /// Util Methods
-impl LSPPlugin {
+impl LspPlugin {
     /// Get the Language Server Client given the Workspace root
     /// This method checks if a language server is running at the specified root
     /// and returns it else it tries to spawn a new language server and returns a
@@ -374,97 +384,77 @@ impl LSPPlugin {
         &mut self,
         language_id: String,
         workspace_root: &Option<Url>,
-    ) -> Option<Arc<Mutex<LanguageServerClient>>> {
-        match workspace_root {
-            Some(root) => {
-                let root = root.clone().into_string();
-                // Find existing client for same root
-                let contains = self.language_server_clients.contains_key(&root);
+    ) -> Option<(String, Arc<Mutex<LanguageServerClient>>)> {
+        workspace_root
+            .clone()
+            .and_then(|r| Some(r.clone().into_string()))
+            .or_else(|| {
+                let config = self.config.language_config.get(&language_id).unwrap();
+                if config.supports_single_file {
+                    // A generic client is the one that supports single files i.e.
+                    // Non-Workspace projects as well
+                    Some(String::from("generic"))
+                } else {
+                    None
+                }
+            })
+            .and_then(|language_server_identifier| {
+                let contains = self
+                    .language_server_clients
+                    .contains_key(&language_server_identifier);
 
-                if !contains {
+                if contains {
+                    let client = self
+                        .language_server_clients
+                        .get(&language_server_identifier)
+                        .unwrap()
+                        .clone();
+
+                    Some((language_server_identifier, client))
+                } else {
                     let config = self.config.language_config.get(&language_id).unwrap();
 
                     let client = start_new_server(
                         config.start_command.clone(),
                         config.start_arguments.clone(),
                         config.extensions.clone(),
-                        config.workspace_identifier.clone(),
-                        language_id,
+                        language_id.clone(),
                     );
 
                     match client {
                         Ok(client) => {
                             let client_clone = client.clone();
-                            self.language_server_clients.insert(root, client);
-                            Some(client_clone)
+                            self.language_server_clients
+                                .insert(language_server_identifier.clone(), client);
+
+                            Some((language_server_identifier, client_clone))
                         }
-                        Err(_) => None,
-                    }
-                } else {
-                    Some(self.language_server_clients.get(&root).unwrap().clone())
-                }
-            }
-            None => {
-                let config = self.config.language_config.get(&language_id).unwrap();
-
-                if config.supports_single_file {
-                    // We check if a generic client is running. Such a client
-                    // supports single files. For example, a json client or
-                    // a Python client
-                    let contains = self.language_server_clients.contains_key("generic");
-
-                    if !contains {
-                        let client = start_new_server(
-                            config.start_command.clone(),
-                            config.start_arguments.clone(),
-                            config.extensions.clone(),
-                            config.workspace_identifier.clone(),
-                            language_id,
-                        );
-
-                        match client {
-                            Ok(client) => {
-                                let client_clone = client.clone();
-                                self.language_server_clients
-                                    .insert("generic".to_owned(), client);
-                                Some(client_clone)
-                            }
-                            Err(_) => None,
+                        Err(err) => {
+                            eprintln!(
+                                "Error occured while starting server for Language: {}: {:?}",
+                                language_id, err
+                            );
+                            None
                         }
-                    } else {
-                        Some(self.language_server_clients.get("generic").unwrap().clone())
                     }
-                } else {
-                    None
                 }
-            }
-        }
+            })
     }
 
     /// Tries to get language for the View using the extension of the document.
-    /// Only searches for the languages supported by the Language Plugin as 
+    /// Only searches for the languages supported by the Language Plugin as
     /// defined in the config
     fn get_language_for_view(&mut self, view: &View<ChunkCache>) -> Option<String> {
-
-        // TODO: Make this cleaner using a better construct
-        if let Some(path) = view.get_path().clone() {
-            if let Some(extension) = path.extension() {
-                if let Some(extension) = extension.to_str() {
-                    let extension = extension.to_string();
-                    for config in &self.config.language_config {
-                        if config.1.extensions.contains(&extension) {
-                            return Some(config.0.clone());
-                        }
+        view.get_path()
+            .and_then(|path| path.extension())
+            .and_then(|extension| extension.to_str())
+            .and_then(|extension_str| {
+                for (lang, config) in &self.config.language_config {
+                    if config.extensions.iter().any(|x| x == extension_str) {
+                        return Some(lang.clone());
                     }
-                    None
-                } else {
-                    None
                 }
-            } else {
                 None
-            }
-        } else {
-            None
-        }
+            })
     }
 }

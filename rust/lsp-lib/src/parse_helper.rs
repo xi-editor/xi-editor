@@ -15,20 +15,20 @@
 //! Utility methods to parse the input from the Language Server
 
 use std::io::BufRead;
-use types::{LSPHeader, ParseError};
+use types::{LspHeader, ParseError};
 
 const HEADER_CONTENT_LENGTH: &'static str = "content-length";
 const HEADER_CONTENT_TYPE: &'static str = "content-type";
 
 /// parse header from the incoming input string
-fn parse_header(s: &str) -> Result<LSPHeader, ParseError> {
-    let split: Vec<String> = s.split(": ").map(|s| s.trim().to_lowercase()).collect();
+fn parse_header(s: &str) -> Result<LspHeader, ParseError> {
+    let split: Vec<String> = s.splitn(2,": ").map(|s| s.trim().to_lowercase()).collect();
     if split.len() != 2 {
         return Err(ParseError::Unknown("Malformed".to_string()));
     };
     match split[0].as_ref() {
-        HEADER_CONTENT_TYPE => Ok(LSPHeader::ContentType),
-        HEADER_CONTENT_LENGTH => Ok(LSPHeader::ContentLength(usize::from_str_radix(
+        HEADER_CONTENT_TYPE => Ok(LspHeader::ContentType),
+        HEADER_CONTENT_LENGTH => Ok(LspHeader::ContentLength(usize::from_str_radix(
             &split[1], 10,
         )?)),
         _ => Err(ParseError::Unknown(
@@ -44,14 +44,14 @@ pub fn read_message<T: BufRead>(reader: &mut T) -> Result<String, ParseError> {
 
     loop {
         buffer.clear();
-        let _resutl = reader.read_line(&mut buffer);
+        let _result = reader.read_line(&mut buffer);
 
         match &buffer {
             s if s.trim().len() == 0 => break,
             s => {
                 match parse_header(s)? {
-                    LSPHeader::ContentLength(len) => content_length = Some(len),
-                    LSPHeader::ContentType => (),
+                    LspHeader::ContentLength(len) => content_length = Some(len),
+                    LspHeader::ContentType => (),
                 };
             }
         };

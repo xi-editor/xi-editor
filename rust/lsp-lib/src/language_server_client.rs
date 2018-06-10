@@ -19,32 +19,25 @@ use lsp_types::*;
 use serde_json;
 use serde_json::{to_value, Value};
 use std::collections::HashMap;
-use std::ffi::OsStr;
 use std::io::Write;
-use std::path::Path;
-use std::path::PathBuf;
 use std::process;
 use types::Callback;
 use url::Url;
 use xi_core::ViewIdentifier;
 
-pub type DoucmentURI = Url;
-
 /// A type to abstract communication with the language server
 pub struct LanguageServerClient {
     writer: Box<Write + Send>,
-    pending: HashMap<usize, Callback>,
-    next_id: usize,
-    workspace_identifier: Option<String>,
+    pending: HashMap<u64, Callback>,
+    next_id: u64,
     language_id: String,
     pub is_initialized: bool,
-    pub opened_documents: HashMap<ViewIdentifier, DoucmentURI>,
+    pub opened_documents: HashMap<ViewIdentifier, Url>,
     pub server_capabilities: Option<ServerCapabilities>,
     pub file_extensions: Vec<String>,
 }
 
-
-/// Prepare Language Server Protocol style JSON String from 
+/// Prepare Language Server Protocol style JSON String from
 /// a serde_json object `Value`
 fn prepare_lsp_json(msg: &Value) -> Result<String, serde_json::error::Error> {
     let request = serde_json::to_string(&msg)?;
@@ -55,18 +48,13 @@ fn prepare_lsp_json(msg: &Value) -> Result<String, serde_json::error::Error> {
     ))
 }
 
-/// Get numeric id from the request id. 
-/// TODO: Fix this hacky implementation
-fn number_from_id(id: Option<&Id>) -> usize {
-    
-    let id = id.expect("response missing id field");
-    let id = match id {
-        &Id::Num(n) => n as u64,
-        &Id::Str(ref s) => u64::from_str_radix(s, 10).expect("failed to convert string id to u64"),
-        other => panic!("unexpected value for id field: {:?}", other),
-    };
-
-    id as usize
+/// Get numeric id from the request id.
+fn number_from_id(id: Id) -> u64 {
+    match id {
+        Id::Num(n) => n as u64,
+        Id::Str(ref s) => u64::from_str_radix(s, 10).expect("failed to convert string id to u64"),
+        _ => panic!("unexpected value for id: None"),
+    }
 }
 
 impl LanguageServerClient {
@@ -74,7 +62,6 @@ impl LanguageServerClient {
         writer: Box<Write + Send>,
         language_id: String,
         file_extensions: Vec<String>,
-        workspace_identifier: Option<String>,
     ) -> Self {
         LanguageServerClient {
             writer,
@@ -84,7 +71,6 @@ impl LanguageServerClient {
             language_id,
             server_capabilities: None,
             opened_documents: HashMap::new(),
-            workspace_identifier,
             file_extensions,
         }
     }
@@ -98,38 +84,30 @@ impl LanguageServerClient {
     }
 
     pub fn handle_message(&mut self, message: &str) {
-        let value = JsonRpc::parse(message).unwrap();
-
-        match value {
-            JsonRpc::Request(obj) => eprintln!("client received unexpected request: {:?}", obj),
-            JsonRpc::Notification(obj) => eprintln!("\n\n recv notification: {:?} \n\n", obj),
-            JsonRpc::Success(_) => {
-                let mut result = value.get_result().unwrap().to_owned();
-                let id = number_from_id(value.get_id().as_ref());
-                self.handle_response(id, result);
+        match JsonRpc::parse(message) {
+            Ok(JsonRpc::Request(obj)) => eprintln!("client received unexpected request: {:?}", obj),
+            Ok(JsonRpc::Notification(obj)) => eprintln!("received notification: {:?}", obj),
+            Ok(value @ JsonRpc::Success(_)) => {
+                
+                let id = number_from_id(value.get_id().unwrap());
+                let result = value.get_result().unwrap();
+                self.handle_response(id, Ok(result.clone()));
             }
-            JsonRpc::Error(_) => {
-                let mut error = value.get_error().unwrap().to_owned();
-                let id = number_from_id(value.get_id().as_ref());
-                self.handle_error(id, error);
+            Ok(value @ JsonRpc::Error(_)) => {
+                let id = number_from_id(value.get_id().unwrap());
+                let error = value.get_error().unwrap();
+                self.handle_response(id, Err(error.clone()));
             }
-        };
+            Err(err) => eprintln!("Error in parsing incoming string: {}", err),
+        }
     }
 
-    pub fn handle_response(&mut self, id: usize, result: Value) {
+    pub fn handle_response(&mut self, id: u64, result: Result<Value, Error>) {
         let callback = self
             .pending
             .remove(&id)
             .expect(&format!("id {} missing from request table", id));
-        callback.call(self, Ok(result));
-    }
-
-    pub fn handle_error(&mut self, id: usize, error: Error) {
-        let callback = self
-            .pending
-            .remove(&id)
-            .expect(&format!("id {} missing from request table", id));
-        callback.call(self, Err(error));
+        callback.call(self, result);
     }
 
     pub fn send_request(&mut self, method: &str, params: Params, completion: Callback) {
@@ -161,11 +139,9 @@ impl LanguageServerClient {
     }
 }
 
-
 /// Methods to abstract sending notifications and requests to the language server
 impl LanguageServerClient {
-    
-    /// Send the Initialize Request given the Root URI of the 
+    /// Send the Initialize Request given the Root URI of the
     /// Workspace. It is None for non-workspace projects.
     pub fn send_initialize<CB>(&mut self, root_uri: Option<Url>, on_init: CB)
     where
@@ -186,14 +162,13 @@ impl LanguageServerClient {
         self.send_request("initialize", params, Box::new(on_init));
     }
 
-    /// Send textDocument/didOpen Notification to the Language Server 
+    /// Send textDocument/didOpen Notification to the Language Server
     pub fn send_did_open(
         &mut self,
         view_id: ViewIdentifier,
         document_uri: Url,
         document_text: String,
     ) {
-
         self.opened_documents.insert(view_id, document_uri.clone());
 
         let text_document_did_open_params = DidOpenTextDocumentParams {
@@ -214,13 +189,12 @@ impl LanguageServerClient {
         &mut self,
         view_id: ViewIdentifier,
         changes: Vec<TextDocumentContentChangeEvent>,
-        rev: u64,
+        version: u64,
     ) {
-
         let text_document_did_change_params = DidChangeTextDocumentParams {
             text_document: VersionedTextDocumentIdentifier {
                 uri: self.opened_documents.get(&view_id).unwrap().clone(),
-                version: Some(rev),
+                version: Some(version),
             },
             content_changes: changes,
         };
@@ -253,52 +227,15 @@ impl LanguageServerClient {
 /// a request. For example: we can check if the Language Server supports sending
 /// incremental edits before proceeding to send one.
 impl LanguageServerClient {
-    
     /// Method to get the sync kind Supported by the Server
     pub fn get_sync_kind(&mut self) -> TextDocumentSyncKind {
-        if let Some(capabilities) = self.server_capabilities.as_ref() {
-            if let Some(sync) = capabilities.text_document_sync.as_ref() {
-                match sync {
-                    TextDocumentSyncCapability::Kind(kind) => {
-                        return kind.to_owned();
-                    }
-                    TextDocumentSyncCapability::Options(_) => {}
-                }
-            }
+        match self
+            .server_capabilities
+            .as_ref()
+            .and_then(|c| c.text_document_sync.as_ref())
+        {
+            Some(&TextDocumentSyncCapability::Kind(kind)) => kind,
+            _ => TextDocumentSyncKind::Full,
         }
-
-        return TextDocumentSyncKind::Full;
-    }
-}
-
-/// Util Methods
-impl LanguageServerClient {
-    
-    /// Get workspace root using the Workspace Identifier
-    /// For example: Cargo.toml can be used to identify a Rust Workspace
-    /// This method traverses up to file tree to return the path to the
-    /// Workspace root folder
-    pub fn get_workspace_root(&mut self, document_path: &Path) -> Option<PathBuf> {
-        if let Some(identifier) = &self.workspace_identifier {
-            let identifier_os_str = OsStr::new(&identifier);
-            let mut current_path = document_path;
-            loop {
-                let parent_path = current_path.parent();
-                if let Some(path) = parent_path {
-                    for entry in path.read_dir().expect("Cannot read directory contents") {
-                        if let Ok(entry) = entry {
-                            if entry.file_name() == identifier_os_str {
-                                return Some(entry.path());
-                            }
-                        }
-                    }
-
-                    current_path = path;
-                } else {
-                    break;
-                }
-            }
-        }
-        None
     }
 }

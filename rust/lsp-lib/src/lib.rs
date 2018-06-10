@@ -32,7 +32,7 @@ pub mod language_server_client;
 pub mod lsp_plugin;
 pub mod parse_helper;
 pub mod types;
-pub use lsp_plugin::LSPPlugin;
+pub use lsp_plugin::LspPlugin;
 pub use types::Config;
 
 pub fn start_mainloop<P: Plugin>(plugin: &mut P) {
