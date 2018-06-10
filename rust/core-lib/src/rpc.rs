@@ -402,6 +402,7 @@ pub enum EditNotification {
     Outdent,
     /// Indicates whether find highlights should be rendered
     HighlightFind { visible: bool },
+    SelectionForFind,
 }
 
 /// The edit related requests.
