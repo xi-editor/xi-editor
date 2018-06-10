@@ -28,6 +28,7 @@ extern crate bytecount;
 extern crate memchr;
 extern crate serde;
 extern crate unicode_segmentation;
+extern crate regex;
 #[macro_use] extern crate serde_derive;
 #[cfg(test)] extern crate serde_test;
 #[cfg(test)] extern crate serde_json;

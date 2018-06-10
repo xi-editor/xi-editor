@@ -187,8 +187,8 @@ impl View {
             Gesture { line, col, ty } =>
                 self.do_gesture(text, line, col, ty),
             GotoLine { line } => self.goto_line(text, line),
-            Find { chars, case_sensitive } =>
-                self.do_find(text, chars, case_sensitive),
+            Find { chars, case_sensitive, regex } =>
+                self.do_find(text, chars, case_sensitive, regex.unwrap_or_else(|| false)),
             FindNext { wrap_around, allow_same: _ } =>
                 self.find_next(text, false, wrap_around.unwrap_or(false)),
             FindPrevious { wrap_around } =>
@@ -392,22 +392,22 @@ impl View {
 
     /// Selects a specific range (eg. when the user performs SHIFT + click).
     pub fn select_range(&mut self, text: &Rope, offset: usize) {
-      if !self.is_point_in_selection(offset) {
-        let sel = {
-          let (last, rest) = self.sel_regions().split_last().unwrap();
-          let mut sel = Selection::new();
-          for &region in rest {
-            sel.add_region(region);
-          }
-          // TODO: small nit, merged region should be backward if end < start.
-          // This could be done by explicitly overriding, or by tweaking the
-          // merge logic.
-          sel.add_region(SelRegion::new(last.start, offset));
-          sel
-        };
-        self.set_selection(text, sel);
-        self.start_drag(offset, offset, offset);
-      }
+        if !self.is_point_in_selection(offset) {
+            let sel = {
+                let (last, rest) = self.sel_regions().split_last().unwrap();
+                let mut sel = Selection::new();
+                for &region in rest {
+                    sel.add_region(region);
+                }
+                // TODO: small nit, merged region should be backward if end < start.
+                // This could be done by explicitly overriding, or by tweaking the
+                // merge logic.
+                sel.add_region(SelRegion::new(last.start, offset));
+                sel
+            };
+            self.set_selection(text, sel);
+            self.start_drag(offset, offset, offset);
+        }
     }
 
     /// Selects the given region and supports multi selection.
@@ -874,7 +874,8 @@ impl View {
         self.set_selection_for_edit(text, new_sel);
     }
 
-    pub fn do_find(&mut self, text: &Rope, chars: Option<String>, case_sensitive: bool) {
+    pub fn do_find(&mut self, text: &Rope, chars: Option<String>, case_sensitive: bool,
+                   is_regex: bool) {
         let mut from_sel = false;
         let search_string = if chars.is_some() {
             chars
@@ -899,7 +900,7 @@ impl View {
             self.find.push(Find::new());
         }
 
-        self.find.first_mut().unwrap().do_find(text, search_string, case_sensitive);
+        self.find.first_mut().unwrap().do_find(text, search_string, case_sensitive, is_regex);
     }
 
     pub fn find_next(&mut self, text: &Rope, reverse: bool, wrap: bool) {
@@ -938,12 +939,11 @@ impl View {
     /// Get the line range of a selected region.
     pub fn get_line_range(&self, text: &Rope, region: &SelRegion) -> Range<usize> {
         let (first_line, _) = self.offset_to_line_col(text, region.min());
-        let (mut last_line, last_col) =
-            self.offset_to_line_col(text, region.max());
+        let (mut last_line, last_col) = self.offset_to_line_col(text, region.max());
         if last_col == 0 && last_line > first_line {
             last_line -= 1;
         }
-        
+
         first_line..(last_line + 1)
     }
 }
