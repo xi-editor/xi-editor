@@ -388,7 +388,7 @@ pub enum EditNotification {
     ///
     /// If `chars` is `None` and there is an active selection, returns
     /// the string value used for the search, else returns `Null`.
-    Find { chars: Option<String>, case_sensitive: bool, regex: Option<bool> },
+    Find { chars: String, case_sensitive: bool, regex: Option<bool> },
     FindNext { wrap_around: Option<bool>, allow_same: Option<bool> },
     FindPrevious { wrap_around: Option<bool> },
     DebugRewrap,

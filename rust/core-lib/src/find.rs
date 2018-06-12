@@ -150,13 +150,8 @@ impl Find {
     }
 
     /// Set search parameters and executes the search.
-    pub fn do_find(&mut self, text: &Rope, search_string: Option<String>, case_sensitive: bool,
+    pub fn do_find(&mut self, text: &Rope, search_string: String, case_sensitive: bool,
                    is_regex: bool) {
-        if search_string.is_none() {
-            self.unset();
-        }
-
-        let search_string = search_string.unwrap();
         if search_string.len() == 0 {
             self.unset();
         }
