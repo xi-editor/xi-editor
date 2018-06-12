@@ -215,7 +215,8 @@ impl View {
                 self.find_changed = FindStatusChange::All;
                 self.set_dirty(text);
             },
-            SelectionForFind => self.selection_for_find(text),
+            SelectionForFind { case_sensitive } =>
+                self.selection_for_find(text, case_sensitive.unwrap_or(false)),
         }
     }
 
@@ -875,7 +876,7 @@ impl View {
         self.set_selection_for_edit(text, new_sel);
     }
 
-    fn selection_for_find(&mut self, text: &Rope) {
+    fn selection_for_find(&mut self, text: &Rope, case_sensitive: bool) {
         // set last selection or word under current cursor as search query
         let search_query = match self.selection.last() {
             Some(region) => {
@@ -902,14 +903,7 @@ impl View {
             self.find.push(Find::new());
         }
 
-        let find = self.find.first_mut().unwrap();
-        let cm = find.case_matching();
-
-        if self.highlight_find {
-            find.do_find(text, Some(search_query), cm, false);
-        } else {
-            find.set_find(&search_query, cm, false);
-        }
+        self.find.first_mut().unwrap().do_find(text, Some(search_query), case_sensitive, false);
     }
 
     pub fn do_find(&mut self, text: &Rope, chars: Option<String>, case_sensitive: bool, is_regex: bool) {

@@ -78,10 +78,6 @@ impl Find {
         self.hls_dirty
     }
 
-    pub fn case_matching(&self) -> bool {
-        self.case_matching == CaseMatching::Exact
-    }
-
     pub fn find_status(&self, matches_only: bool) -> FindStatus {
         if matches_only {
             FindStatus {
@@ -177,13 +173,12 @@ impl Find {
     }
 
     /// Sets find parameters and search query.
-    pub fn set_find(&mut self, search_string: &str, case_sensitive: bool, is_regex: bool) {
+    fn set_find(&mut self, search_string: &str, case_sensitive: bool, is_regex: bool) {
         let case_matching = if case_sensitive {
             CaseMatching::Exact
         } else {
             CaseMatching::CaseInsensitive
         };
-
 
         if let Some(ref s) = self.search_string {
             if s == search_string && case_matching == self.case_matching && self.regex.is_some() == is_regex {
