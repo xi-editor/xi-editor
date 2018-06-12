@@ -3,6 +3,7 @@ osx_image: xcode9.2
 
 rust:
   - 1.26.0
+  - nightly
 
 os:
   - linux
