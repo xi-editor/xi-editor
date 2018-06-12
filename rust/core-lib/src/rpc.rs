@@ -389,8 +389,8 @@ pub enum EditNotification {
     /// If `chars` is `None` and there is an active selection, returns
     /// the string value used for the search, else returns `Null`.
     Find { chars: String, case_sensitive: bool, regex: Option<bool> },
-    FindNext { wrap_around: Option<bool>, allow_same: Option<bool> },
-    FindPrevious { wrap_around: Option<bool> },
+    FindNext { wrap_around: Option<bool>, allow_same: Option<bool>, add_to_selection: Option<bool> },
+    FindPrevious { wrap_around: Option<bool>, allow_same: Option<bool>, add_to_selection: Option<bool> },
     DebugRewrap,
     DebugWrapWidth,
     /// Prints the style spans present in the active selection.

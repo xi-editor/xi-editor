@@ -189,10 +189,12 @@ impl View {
             GotoLine { line } => self.goto_line(text, line),
             Find { chars, case_sensitive, regex } =>
                 self.do_find(text, chars, case_sensitive, regex.unwrap_or_else(|| false)),
-            FindNext { wrap_around, allow_same: _ } =>
-                self.find_next(text, false, wrap_around.unwrap_or(false)),
-            FindPrevious { wrap_around } =>
-                self.find_next(text, true, wrap_around.unwrap_or(false)),
+            FindNext { wrap_around, allow_same, add_to_selection } =>
+                self.find_next(text, false, wrap_around.unwrap_or(false),
+                               allow_same.unwrap_or(false), add_to_selection.unwrap_or(false)),
+            FindPrevious { wrap_around, allow_same, add_to_selection } =>
+                self.find_next(text, true, wrap_around.unwrap_or(false),
+                               allow_same.unwrap_or(false), add_to_selection.unwrap_or(false)),
             Click(MouseAction { line, column, flags, click_count }) => {
                 // Deprecated (kept for client compatibility):
                 // should be removed in favor of do_gesture
@@ -920,24 +922,36 @@ impl View {
         self.find.first_mut().unwrap().do_find(text, chars, case_sensitive, is_regex);
     }
 
-    pub fn find_next(&mut self, text: &Rope, reverse: bool, wrap: bool) {
-        self.select_next_occurrence(text, reverse, false);
+    pub fn find_next(&mut self, text: &Rope, reverse: bool, wrap: bool, allow_same: bool,
+                     add_to_selection: bool) {
+        self.select_next_occurrence(text, reverse, false, allow_same, add_to_selection);
         if self.scroll_to.is_none() && wrap {
-            self.select_next_occurrence(text, reverse, true);
+            self.select_next_occurrence(text, reverse, true, allow_same, add_to_selection);
         }
     }
 
     /// Select the next occurrence relative to the last cursor. `reverse` determines whether the
     /// next occurrence before (`true`) or after (`false`) the last cursor is selected. `wrapped`
     /// indicates a search for the next occurrence past the end of the file.
-    pub fn select_next_occurrence(&mut self, text: &Rope, reverse: bool, wrapped: bool)
+    pub fn select_next_occurrence(&mut self, text: &Rope, reverse: bool, wrapped: bool,
+                                  allow_same: bool, add_to_selection: bool)
     {
         // select occurrence closest to last selection
         let sel = match self.sel_regions().last() {
-            Some(sel) => (sel.min(), sel.max()),
+            Some(sel) => {
+                if allow_same && sel.is_caret() {
+                    let (start, end) = {
+                        let mut word_cursor = WordCursor::new(text, sel.max());
+                        word_cursor.select_word()
+                    };
+                    (end, start)
+                } else {
+                    (sel.min(), sel.max())
+                }
+            },
             None => return,
         };
-
+        
         // multiple queries; select closest occurrence
         let closest_occurrence = self.find.iter().flat_map(|x|
             x.next_occurrence(text, reverse, wrapped, sel)
@@ -949,7 +963,13 @@ impl View {
         });
 
         if let Some(occ) = closest_occurrence {
-            self.set_selection(text, occ);
+            if add_to_selection {
+                let mut selection = self.selection.clone();
+                selection.add_region(occ);
+                self.set_selection(text, selection);
+            } else {
+                self.set_selection(text, occ);
+            }
         }
     }
 

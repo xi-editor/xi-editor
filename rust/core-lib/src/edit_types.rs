@@ -36,8 +36,8 @@ pub(crate) enum ViewEvent {
     Gesture { line: u64, col: u64, ty: GestureType },
     GotoLine { line: u64 },
     Find { chars: String, case_sensitive: bool, regex: Option<bool> },
-    FindNext { wrap_around: Option<bool>, allow_same: Option<bool> },
-    FindPrevious { wrap_around: Option<bool> },
+    FindNext { wrap_around: Option<bool>, allow_same: Option<bool>, add_to_selection: Option<bool> },
+    FindPrevious { wrap_around: Option<bool>, allow_same: Option<bool>, add_to_selection: Option<bool> },
     Cancel,
     HighlightFind { visible: bool },
     SelectionForFind { case_sensitive: Option<bool> },
@@ -199,10 +199,10 @@ impl From<EditNotification> for EventDomain {
             Redo => BufferEvent::Redo.into(),
             Find { chars, case_sensitive, regex } =>
                 ViewEvent::Find { chars, case_sensitive, regex }.into(),
-            FindNext { wrap_around, allow_same } =>
-                ViewEvent::FindNext { wrap_around, allow_same }.into(),
-            FindPrevious { wrap_around } =>
-                ViewEvent::FindPrevious { wrap_around }.into(),
+            FindNext { wrap_around, allow_same, add_to_selection } =>
+                ViewEvent::FindNext { wrap_around, allow_same, add_to_selection }.into(),
+            FindPrevious { wrap_around, allow_same, add_to_selection } =>
+                ViewEvent::FindPrevious { wrap_around, allow_same, add_to_selection }.into(),
             DebugRewrap => SpecialEvent::DebugRewrap.into(),
             DebugWrapWidth => SpecialEvent::DebugWrapWidth.into(),
             DebugPrintSpans => SpecialEvent::DebugPrintSpans.into(),
