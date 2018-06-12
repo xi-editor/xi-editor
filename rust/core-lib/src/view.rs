@@ -903,24 +903,10 @@ impl View {
             self.find.push(Find::new());
         }
 
-        self.find.first_mut().unwrap().do_find(text, Some(search_query), case_sensitive, false);
+        self.find.first_mut().unwrap().do_find(text, search_query, case_sensitive, false);
     }
 
-    pub fn do_find(&mut self, text: &Rope, chars: Option<String>, case_sensitive: bool, is_regex: bool) {
-        let mut from_sel = false;
-        let search_string = if chars.is_some() {
-            chars
-        } else {
-            self.sel_regions().last().and_then(|region| {
-                if region.is_caret() {
-                    None
-                } else {
-                    from_sel = true;
-                    Some(text.slice_to_string(region.min(), region.max()))
-                }
-            })
-        };
-
+    pub fn do_find(&mut self, text: &Rope, chars: String, case_sensitive: bool, is_regex: bool) {
         self.set_dirty(text);
         self.find_changed = FindStatusChange::Matches;
 
@@ -931,7 +917,7 @@ impl View {
             self.find.push(Find::new());
         }
 
-        self.find.first_mut().unwrap().do_find(text, search_string, case_sensitive, is_regex);
+        self.find.first_mut().unwrap().do_find(text, chars, case_sensitive, is_regex);
     }
 
     pub fn find_next(&mut self, text: &Rope, reverse: bool, wrap: bool) {

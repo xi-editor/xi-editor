@@ -35,7 +35,7 @@ pub(crate) enum ViewEvent {
     Drag(MouseAction),
     Gesture { line: u64, col: u64, ty: GestureType },
     GotoLine { line: u64 },
-    Find { chars: Option<String>, case_sensitive: bool, regex: Option<bool> },
+    Find { chars: String, case_sensitive: bool, regex: Option<bool> },
     FindNext { wrap_around: Option<bool>, allow_same: Option<bool> },
     FindPrevious { wrap_around: Option<bool> },
     Cancel,
