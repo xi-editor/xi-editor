@@ -2,16 +2,11 @@ language: rust
 osx_image: xcode9.2
 
 rust:
-  - stable
-  - nightly
+  - 1.26.0
 
 os:
   - linux
   - osx
-
-matrix:
-  allow_failures:
-    - rust: nightly
 
 cache:
   directories:
