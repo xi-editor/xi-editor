@@ -30,6 +30,7 @@ mod state_cache;
 mod base_cache;
 mod view;
 mod dispatch;
+mod core_proxy;
 
 use std::io;
 use std::path::Path;
@@ -44,6 +45,7 @@ use self::dispatch::Dispatcher;
 pub use view::View;
 pub use state_cache::StateCache;
 pub use base_cache::ChunkCache;
+pub use core_proxy::CoreProxy;
 
 /// Abstracts getting data from the peer. Mainly exists for mocking in tests.
 pub trait DataSource {
@@ -108,6 +110,12 @@ pub trait Cache {
 /// Users of this library must implement this trait for some type.
 pub trait Plugin {
     type Cache: Cache;
+
+    /// Called when the Plugin is initialized. The plugin receives CoreProxy
+    /// object that is a wrapper around the RPC Peer and can be used to call
+    /// related methods on the Core in a type-safe manner.
+    #[allow(unused_variables)]
+    fn initialize(&mut self, core: CoreProxy) {}
 
     /// Called when an edit has occurred in the remote view. If the plugin wishes
     /// to add its own edit, it must do so using asynchronously via the edit notification.

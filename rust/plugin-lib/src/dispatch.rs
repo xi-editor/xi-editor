@@ -21,6 +21,7 @@ use xi_core::{ViewId, PluginPid, ConfigTable};
 use xi_core::plugin_rpc::{PluginBufferInfo, PluginUpdate, HostRequest, HostNotification};
 use xi_rpc::{RpcCtx, RemoteError, Handler as RpcHandler};
 use xi_trace::{self, trace, trace_block, trace_block_payload};
+use core_proxy::CoreProxy;
 
 use super::{Plugin, View};
 
@@ -72,6 +73,10 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
         assert!(self.pid.is_none(), "initialize rpc received with existing pid");
         eprintln!("Initializing plugin {:?}", plugin_id);
         self.pid = Some(plugin_id);
+
+        let core_proxy = CoreProxy::new(ctx);
+        self.plugin.initialize(core_proxy);
+        
         self.do_new_buffer(ctx, buffers);
     }
 
