@@ -52,9 +52,9 @@ pub struct FileInfo {
 }
 
 pub enum FileError {
-    Io(io::Error),
-    UnknownEncoding,
-    HasChanged,
+    Io(io::Error, PathBuf),
+    UnknownEncoding(PathBuf),
+    HasChanged(PathBuf),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -111,7 +111,7 @@ impl FileManager {
         -> Result<Rope, FileError>
     {
         if !path.exists() {
-            let _ = File::create(path)?;
+            let _ = File::create(path).map_err(|e| FileError::Io(e, path.to_owned()))?;
         }
 
         let (rope, info) = try_load_file(path)?;
@@ -146,7 +146,7 @@ impl FileManager {
     fn save_new(&mut self, path: &Path, text: &Rope, id: BufferId)
         -> Result<(), FileError>
     {
-        try_save(path, text, CharacterEncoding::Utf8)?;
+        try_save(path, text, CharacterEncoding::Utf8).map_err(|e| FileError::Io(e, path.to_owned()))?;
         let info = FileInfo {
             encoding: CharacterEncoding::Utf8,
             path: path.to_owned(),
@@ -170,10 +170,10 @@ impl FileManager {
             #[cfg(feature = "notify")]
             self.watcher.unwatch(&prev_path, OPEN_FILE_EVENT_TOKEN);
         } else if self.file_info.get(&id).unwrap().has_changed {
-            return Err(FileError::HasChanged);
+            return Err(FileError::HasChanged(path.to_owned()));
         } else {
             let encoding = self.file_info.get(&id).unwrap().encoding;
-            try_save(path, text, encoding)?;
+            try_save(path, text, encoding).map_err(|e| FileError::Io(e, path.to_owned()))?;
             self.file_info.get_mut(&id).unwrap()
                 .mod_time = get_mod_time(path);
         }
@@ -186,13 +186,13 @@ where P: AsRef<Path>
 {
     // TODO: support for non-utf8
     // it's arguable that the rope crate should have file loading functionality
-    let mut f = File::open(path.as_ref())?;
-    let mod_time = f.metadata()?.modified().ok();
+    let mut f = File::open(path.as_ref()).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
+    let mod_time = f.metadata().map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?.modified().ok();
     let mut bytes = Vec::new();
-    f.read_to_end(&mut bytes)?;
+    f.read_to_end(&mut bytes).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
 
     let encoding = CharacterEncoding::guess(&bytes);
-    let rope = try_decode(bytes, encoding)?;
+    let rope = try_decode(bytes, encoding, path.as_ref())?;
     let info = FileInfo {
         encoding,
         mod_time,
@@ -218,12 +218,12 @@ fn try_save(path: &Path, text: &Rope, encoding: CharacterEncoding)
 }
 
 fn try_decode(bytes: Vec<u8>,
-              encoding: CharacterEncoding) -> Result<Rope, FileError> {
+              encoding: CharacterEncoding, path: &Path) -> Result<Rope, FileError> {
     match encoding {
         CharacterEncoding::Utf8 =>
-            Ok(Rope::from(str::from_utf8(&bytes)?)),
+            Ok(Rope::from(str::from_utf8(&bytes).map_err(|_e| FileError::UnknownEncoding(path.to_owned()))?)),
         CharacterEncoding::Utf8WithBom => {
-            let s = String::from_utf8(bytes).map_err(|e| e.utf8_error())?;
+            let s = String::from_utf8(bytes).map_err(|_e| FileError::UnknownEncoding(path.to_owned()))?;
             Ok(Rope::from(&s[UTF8_BOM.len()..]))
         }
     }
@@ -250,32 +250,62 @@ where P: AsRef<Path>
         .ok()
 }
 
-impl From<io::Error> for FileError {
-    fn from(src: io::Error) -> FileError {
-        FileError::Io(src)
-    }
-}
-
-impl From<str::Utf8Error> for FileError {
-    fn from(_: str::Utf8Error) -> FileError {
-        FileError::UnknownEncoding
-    }
-}
-
 impl From<FileError> for RemoteError {
-    fn from(_src: FileError) -> RemoteError {
+    fn from(src: FileError) -> RemoteError {
         //TODO: when we migrate to using the failure crate for error handling,
         // this should return a better message
-        RemoteError::custom(5, "failed to load file", None)
+		use std::error::Error;
+		let mut code = 0;
+		let mut message = String::new();
+		match src {
+			FileError::Io(e, p) => {
+				code = 5;
+				match p.to_str() {
+					Some(s) => {
+						message.push_str(e.description());
+						message.push_str(" ");
+						message.push_str(s);
+					},
+					None => {
+						message.push_str(e.description());
+					}
+				};
+			},
+			FileError::UnknownEncoding(p) => {
+				code = 6;
+				match p.to_str() {
+					Some(s) => {
+						message.push_str("Error decoding file: ");
+						message.push_str(s);
+					},
+					None => {
+						message.push_str("Error decoding file");
+					}
+				};
+			},
+			FileError::HasChanged(p) => {
+				code = 7;
+				match p.to_str() {
+					Some(s) => {
+						message.push_str("File has changed on disk: ");
+						message.push_str(s);
+					},
+					None => {
+						message.push_str("File has changed on disk");
+					}
+				};
+			}
+		};
+		RemoteError::custom(code, message, None)
     }
 }
 
 impl fmt::Display for FileError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            &FileError::Io(ref e) => write!(f, "{}", e),
-            &FileError::UnknownEncoding => write!(f, "Error decoding file"),
-            &FileError::HasChanged => write!(f, "File has changed on disk. \
+            &FileError::Io(ref e, ref _p) => write!(f, "{}", e),
+            &FileError::UnknownEncoding(ref _p) => write!(f, "Error decoding file"),
+            &FileError::HasChanged(ref _p) => write!(f, "File has changed on disk. \
             Please save elsewhere and reload the file."),
         }
     }
