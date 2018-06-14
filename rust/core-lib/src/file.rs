@@ -254,59 +254,29 @@ impl From<FileError> for RemoteError {
     fn from(src: FileError) -> RemoteError {
         //TODO: when we migrate to using the failure crate for error handling,
         // this should return a better message
-		use std::error::Error;
-		let mut code = 0;
-		let mut message = String::new();
-		match src {
-			FileError::Io(e, p) => {
-				code = 5;
-				match p.to_str() {
-					Some(s) => {
-						message.push_str(e.description());
-						message.push_str(" ");
-						message.push_str(s);
-					},
-					None => {
-						message.push_str(e.description());
-					}
-				};
-			},
-			FileError::UnknownEncoding(p) => {
-				code = 6;
-				match p.to_str() {
-					Some(s) => {
-						message.push_str("Error decoding file: ");
-						message.push_str(s);
-					},
-					None => {
-						message.push_str("Error decoding file");
-					}
-				};
-			},
-			FileError::HasChanged(p) => {
-				code = 7;
-				match p.to_str() {
-					Some(s) => {
-						message.push_str("File has changed on disk: ");
-						message.push_str(s);
-					},
-					None => {
-						message.push_str("File has changed on disk");
-					}
-				};
-			}
-		};
-		RemoteError::custom(code, message, None)
+        let code = src.error_code();
+        let message = src.to_string();
+        RemoteError::custom(code, message, None)
+    }
+}
+
+impl FileError {
+    fn error_code(&self) -> i64 {
+        match self {
+            &FileError::Io(_, _) => 5,
+            &FileError::UnknownEncoding(_) => 6,
+            &FileError::HasChanged(_) => 7
+        }
     }
 }
 
 impl fmt::Display for FileError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            &FileError::Io(ref e, ref _p) => write!(f, "{}", e),
-            &FileError::UnknownEncoding(ref _p) => write!(f, "Error decoding file"),
-            &FileError::HasChanged(ref _p) => write!(f, "File has changed on disk. \
-            Please save elsewhere and reload the file."),
+            &FileError::Io(ref e, ref p) => write!(f, "{}. File path: {:?}", e, p),
+            &FileError::UnknownEncoding(ref p) => write!(f, "Error decoding file: {:?}", p),
+            &FileError::HasChanged(ref p) => write!(f, "File has changed on disk. \
+            Please save elsewhere and reload the file. File path: {:?}", p)
         }
     }
 }
