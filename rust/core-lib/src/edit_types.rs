@@ -19,7 +19,7 @@
 //! the editor or view as appropriate.
 
 use movement::Movement;
-use rpc::{GestureType, LineRange, EditNotification, MouseAction, SelectionModifier};
+use rpc::{Position, GestureType, LineRange, EditNotification, MouseAction, SelectionModifier};
 use view::Size;
 
 
@@ -72,6 +72,7 @@ pub(crate) enum SpecialEvent {
     DebugPrintSpans,
     Resize(Size),
     RequestLines(LineRange),
+    RequestHover { request_id: usize, position: Option<Position> },
 }
 
 pub(crate) enum EventDomain {
@@ -225,6 +226,8 @@ impl From<EditNotification> for EventDomain {
             ReplaceNext => BufferEvent::ReplaceNext.into(),
             ReplaceAll => BufferEvent::ReplaceAll.into(),
             SelectionForReplace => ViewEvent::SelectionForReplace.into(),
+            RequestHover { request_id, position } =>
+                SpecialEvent::RequestHover { request_id, position }.into(),
         }
     }
 }

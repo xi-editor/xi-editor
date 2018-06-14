@@ -108,6 +108,7 @@ pub enum HostNotification {
     ConfigChanged { view_id: ViewId, changes: Table },
     NewBuffer { buffer_info: Vec<PluginBufferInfo> },
     DidClose { view_id: ViewId },
+    GetHover { view_id: ViewId, request_id: usize, position: Position },
     Shutdown(EmptyStruct),
     TracingConfig {enabled: bool},
 }
@@ -183,7 +184,49 @@ pub enum PluginNotification {
     Alert { msg: String },
     AddStatusItem { key: String, value: String, alignment: String },
     UpdateStatusItem { key: String, value: String  },
-    RemoveStatusItem { key: String }
+    RemoveStatusItem { key: String },
+    ShowHover { request_id: usize, result: Result<Hover, LanguageResponseError>, rev: u64 }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct Range {
+    pub start: PositionEnum,
+    pub end: PositionEnum
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum LanguageResponseError {
+    LanguageServerError(String),
+    PositionConversionError(String),
+    NullResponse,
+    FallbackResponse
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct Hover {
+    pub content: String,
+    pub range: Option<Range>
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct Position {
+    pub utf8_offset: usize,
+    pub line: usize,
+    pub col_utf8: usize,
+    pub col_utf16: usize
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "type")]
+pub enum PositionEnum {
+    Utf8Offset { offset: usize },
+    Utf16LineCol { line: usize, col: usize },
+    Utf8LineCol { line: usize, col: usize }
 }
 
 /// Common wrapper for plugin-originating RPCs.

@@ -788,12 +788,12 @@ impl View {
     // Of course, all these are identical for ASCII. For now we use UTF-8 code units
     // for simplicity.
 
-    pub fn offset_to_line_col(&self, text: &Rope, offset: usize) -> (usize, usize) {
+    pub(crate) fn offset_to_line_col(&self, text: &Rope, offset: usize) -> (usize, usize) {
         let line = self.line_of_offset(text, offset);
         (line, offset - self.offset_of_line(text, line))
     }
 
-    pub fn line_col_to_offset(&self, text: &Rope, line: usize, col: usize) -> usize {
+    pub(crate) fn line_col_to_offset(&self, text: &Rope, line: usize, col: usize) -> usize {
         let mut offset = self.offset_of_line(text, line).saturating_add(col);
         if offset >= text.len() {
             offset = text.len();
@@ -1050,6 +1050,16 @@ impl View {
         }
 
         first_line..(last_line + 1)
+    }
+
+    pub fn get_caret_offset(&self) -> Option<usize> {
+        match self.selection.len() {
+            1 if self.selection[0].is_caret() => {
+                let offset = self.selection[0].start;
+                Some(offset)
+            }
+            _ => None
+        }
     }
 }
 
