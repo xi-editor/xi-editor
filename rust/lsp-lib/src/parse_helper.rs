@@ -22,7 +22,7 @@ const HEADER_CONTENT_TYPE: &'static str = "content-type";
 
 /// parse header from the incoming input string
 fn parse_header(s: &str) -> Result<LspHeader, ParseError> {
-    let split: Vec<String> = s.splitn(2,": ").map(|s| s.trim().to_lowercase()).collect();
+    let split: Vec<String> = s.splitn(2, ": ").map(|s| s.trim().to_lowercase()).collect();
     if split.len() != 2 {
         return Err(ParseError::Unknown("Malformed".to_string()));
     };

@@ -203,6 +203,27 @@ indent
 outdent
 ```
 
+### Language Support Oriented features (in Edit Namespace)
+
+#### Hover
+Get Hover for a position in file. The request for *hover* is made as a notification. The client is forwarded result back via a `show_hover` rpc
+
+If position is skipped in the request, current cursor position will be used in core.
+
+```
+request_hover {
+    "request_id": number,
+    "position"?: Position
+}
+```
+
+```ts
+interface Position {
+    line: number,
+    column: number,
+}
+```
+
 ### Plugin namespace
 **Note:** plugin commands are in flux, and may change.
 
@@ -554,6 +575,26 @@ this writing, the following is valid json for a `Command` object:
             }
         ]
     }
+```
+
+### Language Support Specific Commands
+
+#### Show Hover
+
+`show_hover { request_id: number, result: Hover }`
+
+```ts
+interface Hover {
+    /// Markdown string to represent the text to be shown in popup
+    content: string
+    /// range to be highlighted while hover is active
+    range?: Range
+}
+
+interface Range {
+    start: number,
+    end: number
+}
 ```
 
 ### Status Bar Commands

@@ -14,6 +14,7 @@
 
 //! A container for the state relevant to a single event.
 
+
 use std::cell::RefCell;
 use std::iter;
 use std::path::Path;
@@ -23,13 +24,13 @@ use serde_json::{self, Value};
 
 use xi_rope::Rope;
 use xi_rope::interval::Interval;
-use xi_rope::rope::LinesMetric;
+use xi_rope::rope::{BaseMetric, LinesMetric, Utf16CodeUnitsMetric};
 use xi_rpc::{RemoteError, Error as RpcError};
 use xi_trace::trace_block;
 
-use rpc::{EditNotification, EditRequest, LineRange};
+use rpc::{EditNotification, EditRequest, LineRange, Position as ClientPosition};
 use plugins::rpc::{ClientPluginInfo, PluginBufferInfo, PluginNotification,
-                   PluginRequest, PluginUpdate};
+                   PluginRequest, PluginUpdate, Position, PositionEnum, Hover, Range};
 
 use styles::ThemeStyleMap;
 use config::{BufferItems, Table};
@@ -39,7 +40,7 @@ use tabs::{BufferId, PluginId, ViewId, RENDER_VIEW_IDLE_MASK};
 use editor::Editor;
 use file::FileInfo;
 use edit_types::{EventDomain, SpecialEvent};
-use client::Client;
+use client::{self, Client};
 use plugins::Plugin;
 use selection::SelRegion;
 use syntax::LanguageId;
@@ -99,6 +100,17 @@ impl<'a> EventContext<'a> {
         f(&mut view, editor.get_buffer())
     }
 
+    fn with_rope<R, F>(&mut self, f: F) -> R
+        where F: FnOnce(&Rope) -> R 
+    {
+        let editor = self.editor.borrow();
+        f(editor.get_buffer())
+    }
+
+    fn with_each_plugin<F: FnMut(&&Plugin)>(&self, f: F) {
+        self.plugins.iter().for_each(f)
+    }
+
     pub(crate) fn do_edit(&mut self, cmd: EditNotification) {
         use self::EventDomain as E;
         let event: EventDomain = cmd.into();
@@ -133,6 +145,8 @@ impl<'a> EventContext<'a> {
                 }),
             SpecialEvent::RequestLines(LineRange { first, last }) =>
                 self.do_request_lines(first as usize, last as usize),
+            SpecialEvent::RequestHover{ request_id, position } =>
+                self.do_request_hover(request_id, position)
         }
     }
 
@@ -169,7 +183,17 @@ impl<'a> EventContext<'a> {
             }
             UpdateStatusItem { key, value } => self.client.update_status_item(
                                                         self.view_id, &key, &value),
-            RemoveStatusItem { key } => self.client.remove_status_item(self.view_id, &key)
+            RemoveStatusItem { key } => self.client.remove_status_item(self.view_id, &key),
+            ShowHover { request_id, result, rev } => {
+                match result {
+                    Ok(res) => {
+                        let hover = self.get_hover_in_utf8_offset(res);
+                        eprintln!("HOVER FINAL: {:?}", hover);
+                        self.client.show_hover(self.view_id, request_id, hover)
+                    },
+                    Err(err) => eprintln!("Hover Response from Client Error {:?}", err)
+                }
+            },
         };
         self.after_edit(&plugin.to_string());
         self.render_if_needed();
@@ -414,6 +438,80 @@ impl<'a> EventContext<'a> {
         view.request_lines(ed.get_buffer(), self.client, self.style_map,
                            ed.get_layers().get_merged(), first, last,
                            ed.is_pristine())
+    }
+
+    fn do_request_hover(&mut self, request_id: usize, position: Option<ClientPosition>) {
+        if let Some(position) = self.get_resolved_position(position) {
+            eprintln!("Resolved Position : {:?}", position);
+            self.with_each_plugin(|p| p.get_hover(self.view_id, request_id, &position))
+        }
+    }
+    
+    // Gives the requested position in UTF-8 offset format to be sent to plugin
+    // If position is `None`, it tries to get the current Caret Position and use
+    // that instead
+    fn get_resolved_position(&mut self, position: Option<ClientPosition>) -> Option<Position> {
+        position.map(|p|
+            self.with_view(|view, text| view.line_col_to_offset(text, p.line, p.column)
+        )).or_else(|| self.view.borrow().get_caret_offset())
+        .map(|offset| self.get_position(offset))
+    }
+
+    fn get_position(&mut self, utf8_offset: usize) -> Position {
+        self.with_rope(|rope| {
+            let line = rope.line_of_offset(utf8_offset);
+            let offset_of_line = rope.offset_of_line(line);
+            let col_utf8 = utf8_offset - offset_of_line;
+            let col_utf16 = rope.convert_metrics::<BaseMetric, Utf16CodeUnitsMetric>(utf8_offset) -
+                rope.convert_metrics::<BaseMetric, Utf16CodeUnitsMetric>(offset_of_line);
+
+            Position {
+                utf8_offset,
+                line,
+                col_utf8,
+                col_utf16,
+            }                           
+        })
+    }
+
+    fn get_hover_in_utf8_offset(&mut self, hover: Hover) -> client::Hover {
+        eprintln!("HOVER: {:?}", hover);
+        client::Hover {
+            content: hover.content,
+            range: hover.range.map(|r| self.get_range_in_utf8_offset(r))
+        }
+    }
+
+    fn get_range_in_utf8_offset(&mut self, range: Range) -> client::Range {
+        client::Range {
+            start: self.get_utf8_offset_from_position_enum(range.start),
+            end: self.get_utf8_offset_from_position_enum(range.end),
+        }
+    }
+
+    fn get_utf8_offset_from_position_enum(&mut self, position: PositionEnum) -> usize {
+        match position {
+            PositionEnum::Utf8Offset { offset } => offset,
+            PositionEnum::Utf16LineCol { line, col } => {
+                self.with_rope(|rope| {
+                    let line_offset = rope.offset_of_line(line);
+                    let line_offset_utf16 = rope.convert_metrics::<BaseMetric, Utf16CodeUnitsMetric>(line_offset);
+                    let utf16_offset = line_offset_utf16 + col;
+                    let utf8_offset = rope.convert_metrics::<Utf16CodeUnitsMetric, BaseMetric>(utf16_offset);
+                    eprintln!("Line offset: {}\n Line offset UTF-16: {}\n UTF16-OFFSET: {}\n UTF8-OFFSET: {}\n ", 
+                        line_offset, line_offset_utf16, utf16_offset, utf8_offset
+                    );
+                    utf8_offset
+                })
+            },
+            PositionEnum::Utf8LineCol { line, col } => {
+                self.with_rope(|rope| {
+                    let line_offset = rope.offset_of_line(line);
+                    let utf8_offset = line_offset + col;
+                    utf8_offset
+                })
+            }
+        }
     }
 }
 

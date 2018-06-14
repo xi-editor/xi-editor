@@ -26,7 +26,7 @@ use serde::de::{self, Deserialize, Deserializer};
 use serde::ser::{self, Serialize, Serializer};
 
 use config::{Table, ConfigDomainExternal};
-use plugins::PlaceholderRpc;
+use plugins::{PlaceholderRpc};
 use tabs::ViewId;
 use view::Size;
 
@@ -322,6 +322,12 @@ pub struct MouseAction {
     pub click_count: Option<u64>,
 }
 
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+pub struct Position {
+    pub line: usize,
+    pub column: usize
+}
+
 /// Represents how the current selection is modified (used by find
 /// operations).
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
@@ -446,6 +452,7 @@ pub enum EditNotification {
     ReplaceNext,
     ReplaceAll,
     SelectionForReplace,
+    RequestHover { request_id: usize, position: Option<Position> },
 }
 
 /// The edit related requests.

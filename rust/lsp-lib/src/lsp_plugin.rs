@@ -14,10 +14,9 @@
 
 //! Implementation of Language Server Plugin
 
+use conversion_utils::*;
 use language_server_client::LanguageServerClient;
-use lsp_types::{
-    InitializeResult, Position, Range, TextDocumentContentChangeEvent, TextDocumentSyncKind,
-};
+use lsp_types::*;
 use parse_helper;
 use serde_json;
 use std;
@@ -29,15 +28,15 @@ use std::process::Command;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::Mutex;
+use types::Config;
 use types::Error;
 use url::Url;
 use xi_core::ConfigTable;
 use xi_core::ViewId;
-use xi_plugin_lib::Error as PluginLibError;
-use xi_plugin_lib::{Cache, ChunkCache, Plugin, View};
+use xi_plugin_lib::{
+    Cache, ChunkCache, CoreProxy, Error as PluginLibError, LanguageResponseError, Position as CorePosition, Plugin, View,
+};
 use xi_rope::rope::RopeDelta;
-
-use types::Config;
 
 pub struct ViewInfo {
     version: u64,
@@ -48,37 +47,8 @@ pub struct ViewInfo {
 pub struct LspPlugin {
     pub config: Config,
     view_info: HashMap<ViewId, ViewInfo>,
+    core: Option<CoreProxy>,
     language_server_clients: HashMap<String, Arc<Mutex<LanguageServerClient>>>,
-}
-
-/// Counts the number of utf-16 code units in the given string.
-fn count_utf16(s: &str) -> usize {
-    let mut utf16_count = 0;
-    for &b in s.as_bytes() {
-        if (b as i8) >= -0x40 {
-            utf16_count += 1;
-        }
-        if b >= 0xf0 {
-            utf16_count += 1;
-        }
-    }
-    utf16_count
-}
-
-/// Get LSP Style Utf-16 based position given the xi-core style utf-8 offset
-fn get_position_of_offset<C: Cache>(
-    view: &mut View<C>,
-    offset: usize,
-) -> Result<Position, PluginLibError> {
-    let line_num = view.line_of_offset(offset)?;
-    let line_offset = view.offset_of_line(line_num)?;
-
-    let char_offset: usize = count_utf16(&(view.get_line(line_num)?[0..(offset - line_offset)]));
-
-    Ok(Position {
-        line: line_num as u64,
-        character: char_offset as u64,
-    })
 }
 
 /// Get contents changes of a document modeled according to Language Server Protocol
@@ -109,10 +79,10 @@ fn get_document_content_changes<C: Cache>(
         }
         // Or a simple delete
         else if delta.is_simple_delete() {
-            // Hack around sending VSCode Style Positions to Language Server.
-            // See this issue to understand: https://github.com/Microsoft/vscode/issues/23173
             let mut end_position = get_position_of_offset(view, end)?;
 
+            // Hack around sending VSCode Style Positions to Language Server.
+            // See this issue to understand: https://github.com/Microsoft/vscode/issues/23173
             if end_position.character == 0 {
                 // There is an assumption here that the line separator character is exactly
                 // 1 byte wide which is true for "\n" but it will be an issue if they are not
@@ -192,7 +162,7 @@ pub fn get_workspace_root_uri(
             for entry in path.read_dir()? {
                 if let Ok(entry) = entry {
                     if entry.file_name() == identifier_os_str {
-                        return Url::from_directory_path(path).map_err(|_| Error::FileUrlParseError);
+                        return Url::from_file_path(path).map_err(|_| Error::FileUrlParseError);
                     };
                 }
             }
@@ -211,6 +181,7 @@ fn start_new_server(
     arguments: Vec<String>,
     file_extensions: Vec<String>,
     language_id: String,
+    core: CoreProxy,
 ) -> Result<Arc<Mutex<LanguageServerClient>>, String> {
     let mut process = Command::new(command)
         .args(arguments)
@@ -223,6 +194,7 @@ fn start_new_server(
 
     let language_server_client = Arc::new(Mutex::new(LanguageServerClient::new(
         writer,
+        core,
         language_id.clone(),
         file_extensions,
     )));
@@ -233,7 +205,7 @@ fn start_new_server(
 
         // Unwrap to indicate that we want thread to panic on failure
         std::thread::Builder::new()
-            .name(format!("{}-lsp-stdin-Looper", language_id))
+            .name(format!("{}-lsp-stdout-Looper", language_id))
             .spawn(move || {
                 let mut reader = Box::new(BufReader::new(stdout.take().unwrap()));
                 loop {
@@ -256,6 +228,7 @@ impl LspPlugin {
     pub fn new(config: Config) -> Self {
         LspPlugin {
             config,
+            core: None,
             view_info: HashMap::new(),
             language_server_clients: HashMap::new(),
         }
@@ -265,6 +238,10 @@ impl LspPlugin {
 impl Plugin for LspPlugin {
     type Cache = ChunkCache;
 
+    fn initialize(&mut self, core: CoreProxy) {
+        self.core = Some(core)
+    }
+
     fn update(
         &mut self,
         view: &mut View<Self::Cache>,
@@ -272,8 +249,8 @@ impl Plugin for LspPlugin {
         _edit_type: String,
         _author: String,
     ) {
-        let client_identifier = self.view_info.get_mut(&view.get_id());
-        if let Some(view_info) = client_identifier {
+        let view_info = self.view_info.get_mut(&view.get_id());
+        if let Some(view_info) = view_info {
             // This won't fail since we definitely have a client for the given
             // client identifier
             let ls_client = self
@@ -311,6 +288,15 @@ impl Plugin for LspPlugin {
 
     fn did_close(&mut self, view: &View<Self::Cache>) {
         eprintln!("close view {}", view.get_id());
+
+        if let Some(view_info) = self.view_info.get(&view.get_id()) {
+            let ls_client = self
+                .language_server_clients
+                .get(&view_info.ls_identifier)
+                .unwrap();
+            let mut ls_client = ls_client.lock().unwrap();
+            ls_client.send_did_close(view.get_id());
+        }
     }
 
     fn new_view(&mut self, view: &mut View<Self::Cache>) {
@@ -331,7 +317,9 @@ impl Plugin for LspPlugin {
                 match &config.workspace_identifier {
                     Some(workspace_identifier) => {
                         let path = view.get_path().clone().unwrap();
-                        get_workspace_root_uri(workspace_identifier, path).ok()
+                        let q = get_workspace_root_uri(workspace_identifier, path);
+                        eprintln!("PATH {:?}", q);
+                        q.ok()
                     }
                     None => None,
                 }
@@ -372,10 +360,43 @@ impl Plugin for LspPlugin {
     }
 
     fn config_changed(&mut self, _view: &mut View<Self::Cache>, _changes: &ConfigTable) {}
+
+    fn get_hover(
+        &mut self,
+        view: &mut View<Self::Cache>,
+        request_id: usize,
+        position: CorePosition,
+    ) {
+
+        let view_id = view.get_id();
+        let rev = view.rev;
+        let position_ls = Position {
+            line: position.line as u64,
+            character: position.col_utf16 as u64
+        };
+
+        self.with_language_server_for_view(view, |ls_client| {
+                ls_client.request_hover(
+                    view_id,
+                position_ls,
+                    move |ls_client, result| {
+                        let res = result
+                            .map_err(|e| LanguageResponseError::LanguageServerError(format!("{:?}", e)))
+                            .and_then(|h| {
+                                let hover: Option<Hover> = serde_json::from_value(h).unwrap();
+                                hover.ok_or(LanguageResponseError::NullResponse)
+                                    .and_then(core_hover_from_hover)
+                            });
+                        ls_client.core.display_hover(view_id, request_id, res, rev);
+                    },
+                );
+        });
+    }
 }
 
 /// Util Methods
 impl LspPlugin {
+
     /// Get the Language Server Client given the Workspace root
     /// This method checks if a language server is running at the specified root
     /// and returns it else it tries to spawn a new language server and returns a
@@ -399,6 +420,7 @@ impl LspPlugin {
                 }
             })
             .and_then(|language_server_identifier| {
+                eprintln!("LANGUAGE SERVER IDEN {}", language_server_identifier);
                 let contains = self
                     .language_server_clients
                     .contains_key(&language_server_identifier);
@@ -419,6 +441,8 @@ impl LspPlugin {
                         config.start_arguments.clone(),
                         config.extensions.clone(),
                         language_id.clone(),
+                        // Unwrap is safe
+                        self.core.clone().unwrap(),
                     );
 
                     match client {
@@ -456,5 +480,18 @@ impl LspPlugin {
                 }
                 None
             })
+    }
+
+    fn with_language_server_for_view<F, R>(&mut self, view: &View<ChunkCache>, f: F) -> Option<R>
+        where F: FnOnce(&mut LanguageServerClient) -> R {     
+            let view_info = if let Some(view_info) = self.view_info.get_mut(&view.get_id()) {
+                view_info
+            } else {
+                return None;
+            };
+
+            let ls_client_arc = self.language_server_clients.get(&view_info.ls_identifier).unwrap();
+            let mut ls_client = ls_client_arc.lock().unwrap();
+            Some(f(&mut ls_client))
     }
 }
