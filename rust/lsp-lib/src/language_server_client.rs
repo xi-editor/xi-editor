@@ -24,6 +24,7 @@ use std::process;
 use types::Callback;
 use url::Url;
 use xi_core::ViewId;
+use xi_plugin_lib::CoreProxy;
 
 /// A type to abstract communication with the language server
 pub struct LanguageServerClient {
@@ -31,6 +32,7 @@ pub struct LanguageServerClient {
     pending: HashMap<u64, Callback>,
     next_id: u64,
     language_id: String,
+    pub core: CoreProxy,
     pub is_initialized: bool,
     pub opened_documents: HashMap<ViewId, Url>,
     pub server_capabilities: Option<ServerCapabilities>,
@@ -60,6 +62,7 @@ fn number_from_id(id: Id) -> u64 {
 impl LanguageServerClient {
     pub fn new(
         writer: Box<Write + Send>,
+        core: CoreProxy,
         language_id: String,
         file_extensions: Vec<String>,
     ) -> Self {
@@ -68,6 +71,7 @@ impl LanguageServerClient {
             pending: HashMap::new(),
             next_id: 1,
             is_initialized: false,
+            core,
             language_id,
             server_capabilities: None,
             opened_documents: HashMap::new(),
@@ -88,7 +92,6 @@ impl LanguageServerClient {
             Ok(JsonRpc::Request(obj)) => eprintln!("client received unexpected request: {:?}", obj),
             Ok(JsonRpc::Notification(obj)) => eprintln!("received notification: {:?}", obj),
             Ok(value @ JsonRpc::Success(_)) => {
-                
                 let id = number_from_id(value.get_id().unwrap());
                 let result = value.get_result().unwrap();
                 self.handle_response(id, Ok(result.clone()));
@@ -220,6 +223,25 @@ impl LanguageServerClient {
 
         let params = Params::from(serde_json::to_value(text_document_did_save_params).unwrap());
         self.send_notification("textDocument/didSave", params);
+    }
+
+    pub fn request_hover_definition<CB>(
+        &mut self,
+        view_id: ViewIdentifier,
+        position: Position,
+        on_result: CB,
+    ) where
+        CB: 'static + Send + FnOnce(&mut LanguageServerClient, Result<Value, Error>),
+    {
+        let text_document_position_params = TextDocumentPositionParams {
+            text_document: TextDocumentIdentifier {
+                uri: self.opened_documents.get(&view_id).unwrap().clone(),
+            },
+            position,
+        };
+
+        let params = Params::from(serde_json::to_value(text_document_position_params).unwrap());
+        self.send_request("textDocument/hover", params, Box::new(on_result))
     }
 }
 

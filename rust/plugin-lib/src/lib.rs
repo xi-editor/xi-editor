@@ -21,10 +21,13 @@ extern crate xi_trace;
 extern crate xi_trace_dump;
 #[macro_use]
 extern crate serde_json;
+#[macro_use]
+extern crate serde_derive;
 extern crate serde;
 extern crate bytecount;
 extern crate rand;
 extern crate memchr;
+extern crate languageserver_types;
 
 mod state_cache;
 mod base_cache;
@@ -45,7 +48,8 @@ use self::dispatch::Dispatcher;
 pub use view::View;
 pub use state_cache::StateCache;
 pub use base_cache::ChunkCache;
-pub use core_proxy::CoreProxy;
+pub use core_proxy::{CoreProxy};
+pub use xi_core::plugin_rpc::{HoverResult, Range, Position};
 
 /// Abstracts getting data from the peer. Mainly exists for mocking in tests.
 pub trait DataSource {
@@ -145,6 +149,11 @@ pub trait Plugin {
     /// to perform their work incrementally while remaining responsive.
     #[allow(unused_variables)]
     fn idle(&mut self, view: &mut View<Self::Cache>) { }
+
+    /// Language Plugins specific methods
+    
+    #[allow(unused_variables)]
+    fn get_hover_definition(&mut self, view: &mut View<Self::Cache>, request_id: usize, position: Position) { }
 }
 
 #[derive(Debug)]

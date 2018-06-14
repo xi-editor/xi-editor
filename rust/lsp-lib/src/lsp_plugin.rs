@@ -15,6 +15,7 @@
 //! Implementation of Language Server Plugin
 
 use language_server_client::LanguageServerClient;
+use lsp_types::Hover;
 use lsp_types::{
     InitializeResult, Position, Range, TextDocumentContentChangeEvent, TextDocumentSyncKind,
 };
@@ -33,8 +34,12 @@ use types::Error;
 use url::Url;
 use xi_core::ConfigTable;
 use xi_core::ViewId;
+use xi_plugin_lib::CoreProxy;
+>>>>>>> aa07428... Initial Stage Hover RPC
 use xi_plugin_lib::Error as PluginLibError;
-use xi_plugin_lib::{Cache, ChunkCache, Plugin, View};
+use xi_plugin_lib::{
+    Cache, ChunkCache, HoverResult, Plugin, Position as CorePosition, Range as CoreRange, View,
+};
 use xi_rope::rope::RopeDelta;
 
 use types::Config;
@@ -48,6 +53,7 @@ pub struct ViewInfo {
 pub struct LspPlugin {
     pub config: Config,
     view_info: HashMap<ViewId, ViewInfo>,
+    core: Option<CoreProxy>,
     language_server_clients: HashMap<String, Arc<Mutex<LanguageServerClient>>>,
 }
 
@@ -79,6 +85,61 @@ fn get_position_of_offset<C: Cache>(
         line: line_num as u64,
         character: char_offset as u64,
     })
+}
+
+fn lsp_position_from_core_position<C: Cache>(
+    view: &mut View<C>,
+    position: CorePosition
+) -> Result<Position, PluginLibError> {
+
+    match position {
+        CorePosition::Utf8LineChar {line, character} => {
+            let line_text = view.get_line(line)?;
+            let char_offset: usize = line_text[0..character]
+                        .chars()
+                        .map(char::len_utf16)
+                        .sum();
+
+            Ok(Position{
+                line: line as u64,
+                character: char_offset as u64
+            })
+        },
+        CorePosition::Utf16LineChar {line, character} => Ok(Position{
+            line: line as u64,
+            character: character as u64,
+        }),
+        CorePosition::Utf8Offset(offset) => get_position_of_offset(view, offset)
+    }
+}
+
+/// Get xi-core format utf-8 offset using the the LSP Position
+#[allow(dead_code)]
+fn get_offset_of_position<C: Cache>(
+    view: &mut View<C>,
+    position: Position,
+) -> Result<usize, PluginLibError> {
+    let line_offset = view.offset_of_line(position.line as usize)?;
+
+    let char_lengths = view
+        .get_line(line_offset)?
+        .chars()
+        .map(|c| (c.len_utf8(), c.len_utf16()));
+
+    let mut cur_len_utf16 = 0;
+    let mut cur_len_utf8 = 0;
+
+    for length in char_lengths {
+        cur_len_utf16 += length.1;
+        cur_len_utf8 += length.0;
+        if cur_len_utf16 == (position.character as usize) {
+            return Ok(line_offset + cur_len_utf8);
+        }
+    }
+
+    Err(PluginLibError::Other(String::from(
+        "Cannot convert to offset",
+    )))
 }
 
 /// Get contents changes of a document modeled according to Language Server Protocol
@@ -211,6 +272,7 @@ fn start_new_server(
     arguments: Vec<String>,
     file_extensions: Vec<String>,
     language_id: String,
+    core: CoreProxy,
 ) -> Result<Arc<Mutex<LanguageServerClient>>, String> {
     let mut process = Command::new(command)
         .args(arguments)
@@ -223,6 +285,7 @@ fn start_new_server(
 
     let language_server_client = Arc::new(Mutex::new(LanguageServerClient::new(
         writer,
+        core,
         language_id.clone(),
         file_extensions,
     )));
@@ -256,6 +319,7 @@ impl LspPlugin {
     pub fn new(config: Config) -> Self {
         LspPlugin {
             config,
+            core: None,
             view_info: HashMap::new(),
             language_server_clients: HashMap::new(),
         }
@@ -265,6 +329,10 @@ impl LspPlugin {
 impl Plugin for LspPlugin {
     type Cache = ChunkCache;
 
+    fn initialize(&mut self, core: CoreProxy) {
+        self.core = Some(core)
+    }
+
     fn update(
         &mut self,
         view: &mut View<Self::Cache>,
@@ -272,8 +340,8 @@ impl Plugin for LspPlugin {
         _edit_type: String,
         _author: String,
     ) {
-        let client_identifier = self.view_info.get_mut(&view.get_id());
-        if let Some(view_info) = client_identifier {
+        let view_info = self.view_info.get_mut(&view.get_id());
+        if let Some(view_info) = view_info {
             // This won't fail since we definitely have a client for the given
             // client identifier
             let ls_client = self
@@ -372,6 +440,66 @@ impl Plugin for LspPlugin {
     }
 
     fn config_changed(&mut self, _view: &mut View<Self::Cache>, _changes: &ConfigTable) {}
+
+    fn get_hover_definition(
+        &mut self,
+        view: &mut View<Self::Cache>,
+        request_id: usize,
+        position: CorePosition,
+    ) {
+        let view_info = self.view_info.get_mut(&view.get_id());
+        if let Some(view_info) = view_info {
+            // This won't fail since we definitely have a client for the given
+            // client identifier
+            let ls_client = self
+                .language_server_clients
+                .get(&view_info.ls_identifier)
+                .unwrap();
+
+            let position_ls = lsp_position_from_core_position(view, position);
+
+            match position_ls {
+                Ok(position) => {
+                    let mut ls_client = ls_client.lock().unwrap();
+                    ls_client.request_hover_definition(
+                        view.get_id(),
+                        position,
+                        move |ls_client, result| match result {
+                            Ok(result) => {
+                                let hover: Hover = serde_json::from_value(result).unwrap();
+
+                                let hover_result = HoverResult {
+                                    request_id,
+                                    content: String::new(),
+                                    range: hover.range.and_then(|range| {
+                                        Some(CoreRange {
+                                            start: CorePosition::Utf16LineChar {
+                                                line: range.start.line as usize,
+                                                character: range.start.character as usize,
+                                            },
+                                            end: CorePosition::Utf16LineChar {
+                                                line: range.start.line as usize,
+                                                character: range.start.character as usize,
+                                            },
+                                        })
+                                    }),
+                                };
+
+                                ls_client
+                                    .core
+                                    .display_hover_result(request_id, Some(hover_result));
+                            }
+                            Err(err) => {
+                                eprintln!("Hover Response from LSP Error: {:?}", err);
+                                ls_client.core.display_hover_result(request_id, None);
+                            }
+                        },
+                    );
+                }
+                Err(_error) => {}
+            };
+        }
+    }
 }
 
 /// Util Methods
@@ -419,6 +547,8 @@ impl LspPlugin {
                         config.start_arguments.clone(),
                         config.extensions.clone(),
                         language_id.clone(),
+                        // Unwrap is safe
+                        self.core.clone().unwrap(),
                     );
 
                     match client {

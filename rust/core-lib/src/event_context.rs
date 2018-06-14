@@ -29,7 +29,7 @@ use xi_trace::trace_block;
 
 use rpc::{EditNotification, EditRequest, LineRange};
 use plugins::rpc::{ClientPluginInfo, PluginBufferInfo, PluginNotification,
-                   PluginRequest, PluginUpdate};
+                   PluginRequest, PluginUpdate, Position};
 
 use styles::ThemeStyleMap;
 use config::{BufferItems, Table};
@@ -39,7 +39,7 @@ use tabs::{BufferId, PluginId, ViewId, RENDER_VIEW_IDLE_MASK};
 use editor::Editor;
 use file::FileInfo;
 use edit_types::{EventDomain, SpecialEvent};
-use client::Client;
+use client::{Client, HoverResult as ClientHoverResult, Range as Utf8OffsetRange};
 use plugins::Plugin;
 use selection::SelRegion;
 use syntax::LanguageId;
@@ -74,6 +74,35 @@ pub struct EventContext<'a> {
     pub(crate) width_cache: &'a RefCell<WidthCache>,
     pub(crate) kill_ring: &'a RefCell<Rope>,
     pub(crate) weak_core: &'a WeakXiCore,
+}
+
+pub fn utf8_offset_from_position(view: &mut View, position: Position) -> Result<usize, Error> {
+    /* match position {
+        Position::Utf8Offset(offset) => offset,
+        Position::Utf8LineChar {line, character} => {
+    
+            let line_offset = view.offset_of_line(line as usize);
+            let char_lengths = view
+                .get_line(line_offset)
+                .chars()
+                .map(|c| (c.len_utf8(), c.len_utf16()));
+
+            let mut cur_len_utf16 = 0;
+            let mut cur_len_utf8 = 0;
+
+            for length in char_lengths {
+                cur_len_utf16 += length.1;
+                cur_len_utf8 += length.0;
+                if cur_len_utf16 == (character as usize) {
+                    return Ok(line_offset + cur_len_utf8);
+                }
+            }
+
+        },
+        Positon::Utf16LineChar {line, character} => {
+
+        }
+    } */
 }
 
 impl<'a> EventContext<'a> {
@@ -169,7 +198,19 @@ impl<'a> EventContext<'a> {
             }
             UpdateStatusItem { key, value } => self.client.update_status_item(
                                                         self.view_id, &key, &value),
-            RemoveStatusItem { key } => self.client.remove_status_item(self.view_id, &key)
+            RemoveStatusItem { key } => self.client.remove_status_item(self.view_id, &key),
+            HoverResult { result } => {
+                let hover_result = ClientHoverResult {
+                    request_id: result.request_id,
+                    content: result.content,
+                    range: result.range.and_then(|r| {
+                        let editor = self.editor.borrow();
+                        Some(Utf8OffsetRange {
+                            
+                        })
+                    })
+                };
+            }
         };
         self.after_edit(&plugin.to_string());
         self.render_if_needed();

@@ -22,7 +22,7 @@ use xi_rpc::{self, RpcPeer};
 use tabs::ViewId;
 use config::Table;
 use styles::ThemeSettings;
-use plugins::rpc::ClientPluginInfo;
+use plugins::rpc::{ClientPluginInfo, HoverResult as PluginHoverResult};
 use plugins::Command;
 
 /// An interface to the frontend.
@@ -35,6 +35,24 @@ pub struct WidthReq {
     pub id: usize,
     pub strings: Vec<String>,
 }
+
+pub struct Range {
+    // Utf-8 offsets will be sent to clients only
+    pub start: usize,
+    pub end: usize
+}
+
+pub struct HoverResult {
+    pub request_id: usize,
+    pub content: String,
+    pub range: Option<Range>
+}
+
+/* impl From<PluginHoverResult> for HoverResult {
+    fn from(result: PluginHoverResult) -> Self {
+        
+    }
+} */
 
 impl Client {
     pub fn new(peer: RpcPeer) -> Self {

@@ -108,6 +108,7 @@ pub enum HostNotification {
     ConfigChanged { view_id: ViewId, changes: Table },
     NewBuffer { buffer_info: Vec<PluginBufferInfo> },
     DidClose { view_id: ViewId },
+    GetHoverDefinition { view_id: ViewId, request_id: usize, position: Position },
     Shutdown(EmptyStruct),
     TracingConfig {enabled: bool},
 }
@@ -183,7 +184,32 @@ pub enum PluginNotification {
     Alert { msg: String },
     AddStatusItem { key: String, value: String, alignment: String },
     UpdateStatusItem { key: String, value: String  },
-    RemoveStatusItem { key: String }
+    RemoveStatusItem { key: String },
+    HoverResult { result: HoverResult }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "method", content = "params")]
+pub enum Position {
+    Utf8Offset(usize),
+    Utf16LineChar { line: usize, character: usize},
+    Utf8LineChar { line: usize, character: usize }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct Range {
+    pub start: Position,
+    pub end: Position
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct HoverResult {
+    pub request_id: usize,
+    pub content: String,
+    pub range: Option<Range>
 }
 
 /// Common wrapper for plugin-originating RPCs.
