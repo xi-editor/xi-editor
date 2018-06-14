@@ -189,7 +189,7 @@ impl View {
             GotoLine { line } => self.goto_line(text, line),
             Find { chars, case_sensitive, regex } =>
                 self.do_find(text, chars, case_sensitive, regex.unwrap_or_else(|| false)),
-            FindNext { wrap_around, allow_same: _ } =>
+            FindNext { wrap_around } =>
                 self.find_next(text, false, wrap_around.unwrap_or(false)),
             FindPrevious { wrap_around } =>
                 self.find_next(text, true, wrap_around.unwrap_or(false)),
