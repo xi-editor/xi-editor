@@ -29,7 +29,7 @@ use client::Client;
 use edit_types::ViewEvent;
 use line_cache_shadow::{self, LineCacheShadow, RenderPlan, RenderTactic};
 use movement::{Movement, region_movement, selection_movement};
-use rpc::{GestureType, MouseAction};
+use rpc::{GestureType, MouseAction, SelectionModifier};
 use styles::{Style, ThemeStyleMap};
 use selection::{Affinity, Selection, SelRegion};
 use tabs::{ViewId, BufferId};
@@ -189,12 +189,14 @@ impl View {
             GotoLine { line } => self.goto_line(text, line),
             Find { chars, case_sensitive, regex } =>
                 self.do_find(text, chars, case_sensitive, regex.unwrap_or_else(|| false)),
-            FindNext { wrap_around, allow_same, add_to_selection } =>
+            FindNext { wrap_around, allow_same, modify_selection } =>
                 self.find_next(text, false, wrap_around.unwrap_or(false),
-                               allow_same.unwrap_or(false), add_to_selection.unwrap_or(false)),
-            FindPrevious { wrap_around, allow_same, add_to_selection } =>
+                               allow_same.unwrap_or(false),
+                               &modify_selection.unwrap_or(SelectionModifier::Set)),
+            FindPrevious { wrap_around, allow_same, modify_selection } =>
                 self.find_next(text, true, wrap_around.unwrap_or(false),
-                               allow_same.unwrap_or(false), add_to_selection.unwrap_or(false)),
+                               allow_same.unwrap_or(false),
+                               &modify_selection.unwrap_or(SelectionModifier::Set)),
             Click(MouseAction { line, column, flags, click_count }) => {
                 // Deprecated (kept for client compatibility):
                 // should be removed in favor of do_gesture
@@ -923,10 +925,10 @@ impl View {
     }
 
     pub fn find_next(&mut self, text: &Rope, reverse: bool, wrap: bool, allow_same: bool,
-                     add_to_selection: bool) {
-        self.select_next_occurrence(text, reverse, false, allow_same, add_to_selection);
+                     modify_selection: &SelectionModifier) {
+        self.select_next_occurrence(text, reverse, false, allow_same, modify_selection);
         if self.scroll_to.is_none() && wrap {
-            self.select_next_occurrence(text, reverse, true, allow_same, add_to_selection);
+            self.select_next_occurrence(text, reverse, true, allow_same, modify_selection);
         }
     }
 
@@ -934,7 +936,7 @@ impl View {
     /// next occurrence before (`true`) or after (`false`) the last cursor is selected. `wrapped`
     /// indicates a search for the next occurrence past the end of the file.
     pub fn select_next_occurrence(&mut self, text: &Rope, reverse: bool, wrapped: bool,
-                                  allow_same: bool, add_to_selection: bool)
+                                  allow_same: bool, modify_selection: &SelectionModifier)
     {
         // select occurrence closest to last selection
         let sel = match self.sel_regions().last() {
@@ -963,12 +965,24 @@ impl View {
         });
 
         if let Some(occ) = closest_occurrence {
-            if add_to_selection {
-                let mut selection = self.selection.clone();
-                selection.add_region(occ);
-                self.set_selection(text, selection);
-            } else {
-                self.set_selection(text, occ);
+            match modify_selection {
+                SelectionModifier::Set => self.set_selection(text, occ),
+                SelectionModifier::Add => {
+                    let mut selection = self.selection.clone();
+                    selection.add_region(occ);
+                    self.set_selection(text, selection);
+                },
+                SelectionModifier::AddRemovingCurrent => {
+                    let mut selection = self.selection.clone();
+
+                    if let Some(last_selection) = self.selection.last() {
+                        selection.delete_range(last_selection.min(), last_selection.max(), false);
+                    }
+
+                    selection.add_region(occ);
+                    self.set_selection(text, selection);
+                }
+                _ => { }
             }
         }
     }

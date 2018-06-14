@@ -322,6 +322,17 @@ pub struct MouseAction {
     pub click_count: Option<u64>,
 }
 
+/// Represents how the current selection is modified (used by find
+/// operations).
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum SelectionModifier {
+    None,
+    Set,
+    Add,
+    AddRemovingCurrent
+}
+
 /// The edit-related notifications.
 ///
 /// Alongside the [`EditRequest`] members, these commands constitute
@@ -389,8 +400,8 @@ pub enum EditNotification {
     /// If `chars` is `None` and there is an active selection, returns
     /// the string value used for the search, else returns `Null`.
     Find { chars: String, case_sensitive: bool, regex: Option<bool> },
-    FindNext { wrap_around: Option<bool>, allow_same: Option<bool>, add_to_selection: Option<bool> },
-    FindPrevious { wrap_around: Option<bool>, allow_same: Option<bool>, add_to_selection: Option<bool> },
+    FindNext { wrap_around: Option<bool>, allow_same: Option<bool>, modify_selection: Option<SelectionModifier> },
+    FindPrevious { wrap_around: Option<bool>, allow_same: Option<bool>, modify_selection: Option<SelectionModifier> },
     DebugRewrap,
     DebugWrapWidth,
     /// Prints the style spans present in the active selection.
