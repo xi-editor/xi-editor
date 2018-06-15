@@ -187,8 +187,9 @@ impl View {
             Gesture { line, col, ty } =>
                 self.do_gesture(text, line, col, ty),
             GotoLine { line } => self.goto_line(text, line),
-            Find { chars, case_sensitive, regex } =>
-                self.do_find(text, chars, case_sensitive, regex.unwrap_or_else(|| false)),
+            Find { chars, case_sensitive, regex, whole_words } =>
+                self.do_find(text, chars, case_sensitive, regex.unwrap_or(false),
+                             whole_words.unwrap_or(false)),
             FindNext { wrap_around, allow_same, modify_selection } =>
                 self.find_next(text, false, wrap_around.unwrap_or(false),
                                allow_same.unwrap_or(false),
@@ -907,10 +908,11 @@ impl View {
             self.find.push(Find::new());
         }
 
-        self.find.first_mut().unwrap().do_find(text, search_query, case_sensitive, false);
+        self.find.first_mut().unwrap().do_find(text, search_query, case_sensitive, false, true);
     }
 
-    pub fn do_find(&mut self, text: &Rope, chars: String, case_sensitive: bool, is_regex: bool) {
+    pub fn do_find(&mut self, text: &Rope, chars: String, case_sensitive: bool, is_regex: bool,
+                   whole_words: bool) {
         self.set_dirty(text);
         self.find_changed = FindStatusChange::Matches;
 
@@ -921,7 +923,7 @@ impl View {
             self.find.push(Find::new());
         }
 
-        self.find.first_mut().unwrap().do_find(text, chars, case_sensitive, is_regex);
+        self.find.first_mut().unwrap().do_find(text, chars, case_sensitive, is_regex, whole_words);
     }
 
     pub fn find_next(&mut self, text: &Rope, reverse: bool, wrap: bool, allow_same: bool,

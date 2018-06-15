@@ -24,6 +24,7 @@ use xi_rope::interval::Interval;
 use selection::{Selection, SelRegion};
 use xi_rope::tree::Metric;
 use regex::{RegexBuilder, Regex};
+use word_boundaries::WordCursor;
 
 const REGEX_SIZE_LIMIT: usize = 1000000;
 
@@ -38,6 +39,9 @@ pub struct FindStatus {
 
     /// Whether the search query is considered as regular expression.
     is_regex: Option<bool>,
+
+    /// Query only matches whole words.
+    whole_words: Option<bool>,
 
     /// Total number of matches.
     matches: usize
@@ -55,6 +59,8 @@ pub struct Find {
     case_matching: CaseMatching,
     /// The search query should be considered as regular expression
     regex: Option<Regex>,
+    /// Query matches only whole words.
+    whole_words: bool,
     /// The set of all known find occurrences (highlights)
     occurrences: Selection,
 }
@@ -66,6 +72,7 @@ impl Find {
             search_string: None,
             case_matching: CaseMatching::CaseInsensitive,
             regex: None,
+            whole_words: false,
             occurrences: Selection::new(),
         }
     }
@@ -84,6 +91,7 @@ impl Find {
                 chars: None,
                 case_sensitive: None,
                 is_regex: None,
+                whole_words: None,
                 matches: self.occurrences.len(),
             }
         } else {
@@ -91,6 +99,7 @@ impl Find {
                 chars: self.search_string.clone(),
                 case_sensitive: Some(self.case_matching == CaseMatching::Exact),
                 is_regex: Some(self.regex.is_some()),
+                whole_words: Some(self.whole_words),
                 matches: self.occurrences.len(),
             }
         }
@@ -151,12 +160,12 @@ impl Find {
 
     /// Set search parameters and executes the search.
     pub fn do_find(&mut self, text: &Rope, search_string: String, case_sensitive: bool,
-                   is_regex: bool) {
+                   is_regex: bool, whole_words: bool) {
         if search_string.len() == 0 {
             self.unset();
         }
 
-        self.set_find(&search_string, case_sensitive, is_regex);
+        self.set_find(&search_string, case_sensitive, is_regex, whole_words);
         self.update_find(text, 0, text.len(), false);
     }
 
@@ -168,7 +177,7 @@ impl Find {
     }
 
     /// Sets find parameters and search query.
-    fn set_find(&mut self, search_string: &str, case_sensitive: bool, is_regex: bool) {
+    fn set_find(&mut self, search_string: &str, case_sensitive: bool, is_regex: bool, whole_words: bool) {
         let case_matching = if case_sensitive {
             CaseMatching::Exact
         } else {
@@ -176,7 +185,8 @@ impl Find {
         };
 
         if let Some(ref s) = self.search_string {
-            if s == search_string && case_matching == self.case_matching && self.regex.is_some() == is_regex {
+            if s == search_string && case_matching == self.case_matching &&
+                self.regex.is_some() == is_regex && self.whole_words == whole_words {
                 // search parameters did not change
                 return;
             }
@@ -186,6 +196,7 @@ impl Find {
 
         self.search_string = Some(search_string.to_string());
         self.case_matching = case_matching;
+        self.whole_words = whole_words;
 
         // create regex from untrusted input
         self.regex = match is_regex {
@@ -223,8 +234,14 @@ impl Find {
         let mut find_cursor = Cursor::new(&sub_text, from);
         let mut raw_lines = text.lines_raw(from, to);
 
-        while let Some(start) = find(&mut find_cursor, &mut raw_lines, self.case_matching, &search_string, &self.regex) {
+        while let Some(start) = find(&mut find_cursor, &mut raw_lines, self.case_matching,
+                                     &search_string, &self.regex) {
             let end = find_cursor.pos();
+
+            if self.whole_words && !self.is_matching_whole_words(text, start, end) {
+                raw_lines = text.lines_raw(find_cursor.pos(), to);
+                continue;
+            }
 
             let region = SelRegion::new(start, end);
             let (_, e) = self.occurrences.add_range_distinct(region);
@@ -304,5 +321,25 @@ impl Find {
 
             next_occurrence.cloned()
         }
+    }
+
+    /// Checks if the start and end of a match is matching whole words.
+    fn is_matching_whole_words(&self, text: &Rope, start: usize, end: usize) -> bool {
+        let mut word_end_cursor = WordCursor::new(text, end - 1);
+        let mut word_start_cursor = WordCursor::new(text, start + 1);
+
+        if let Some(start_boundary) = word_start_cursor.prev_boundary() {
+            if start_boundary != start {
+                return false;
+            }
+        }
+
+        if let Some(end_boundary) = word_end_cursor.next_boundary() {
+            if end_boundary != end {
+                return false;
+            }
+        }
+
+        true
     }
 }

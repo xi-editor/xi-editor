@@ -61,7 +61,8 @@ pub enum CaseMatching {
 /// On failure, the cursor's position is indeterminate.
 ///
 /// Can panic if `pat` is empty.
-pub fn find(cursor: &mut Cursor<RopeInfo>, lines: &mut LinesRaw, cm: CaseMatching, pat: &str, regex: &Option<Regex>) -> Option<usize> {
+pub fn find(cursor: &mut Cursor<RopeInfo>, lines: &mut LinesRaw, cm: CaseMatching, pat: &str,
+    regex: &Option<Regex>) -> Option<usize> {
     match find_progress(cursor, lines, cm, pat, usize::max_value(), regex) {
         FindResult::Found(start) => Some(start),
         FindResult::NotFound => None,
@@ -299,6 +300,7 @@ fn scan_lowercase(probe: char, s: &str) -> Option<usize> {
     }
     None
 }
+
 
 #[cfg(test)]
 mod tests {
