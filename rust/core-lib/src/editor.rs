@@ -349,13 +349,13 @@ impl Editor {
                 let tab_off = c & config.tab_size;
                 let tab_size = config.tab_size;
                 let tab_size = if tab_off == 0 { tab_size } else { tab_off };
+                let tab_start = region.start.saturating_sub(tab_size);
                 let preceded_by_spaces = region.start > 0 &&
-                    (region.start.saturating_sub(tab_size)..region.start)
-                    .all(|i| self.text.byte_at(i) == b' ');
+                    (tab_start..region.start).all(|i| self.text.byte_at(i) == b' ');
                 if preceded_by_spaces
                     && config.translate_tabs_to_spaces
                     && config.use_tab_stops {
-                    region.start - tab_size
+                    tab_start
                 } else {
                     self.text.prev_grapheme_offset(region.end)
                         .unwrap_or(region.end)
