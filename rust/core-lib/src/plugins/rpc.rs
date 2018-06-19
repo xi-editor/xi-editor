@@ -24,7 +24,7 @@ use serde_json::{self, Value};
 use xi_rope::rope::{RopeDelta, Rope, LinesMetric};
 use super::PluginPid;
 use syntax::LanguageId;
-use tabs::{BufferIdentifier, ViewIdentifier};
+use tabs::{BufferIdentifier, ViewId};
 use config::Table;
 
 //TODO: At the moment (May 08, 2017) this is all very much in flux.
@@ -41,7 +41,7 @@ pub struct PluginBufferInfo {
     /// The buffer's unique identifier.
     pub buffer_id: BufferIdentifier,
     /// The buffer's current views.
-    pub views: Vec<ViewIdentifier>,
+    pub views: Vec<ViewId>,
     pub rev: u64,
     pub buf_size: usize,
     pub nb_lines: usize,
@@ -63,7 +63,7 @@ pub struct ClientPluginInfo {
 /// A simple update, sent to a plugin.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PluginUpdate {
-    pub view_id: ViewIdentifier,
+    pub view_id: ViewId,
     /// The delta representing changes to the document.
     ///
     /// Note: Is `Some` in the general case; only if the delta involves
@@ -104,10 +104,10 @@ pub enum HostRequest {
 pub enum HostNotification {
     Ping(EmptyStruct),
     Initialize { plugin_id: PluginPid, buffer_info: Vec<PluginBufferInfo> },
-    DidSave { view_id: ViewIdentifier, path: PathBuf },
-    ConfigChanged { view_id: ViewIdentifier, changes: Table },
+    DidSave { view_id: ViewId, path: PathBuf },
+    ConfigChanged { view_id: ViewId, changes: Table },
     NewBuffer { buffer_info: Vec<PluginBufferInfo> },
-    DidClose { view_id: ViewIdentifier },
+    DidClose { view_id: ViewId },
     Shutdown(EmptyStruct),
     TracingConfig {enabled: bool},
 }
@@ -188,7 +188,7 @@ pub enum PluginNotification {
 
 /// Common wrapper for plugin-originating RPCs.
 pub struct PluginCommand<T> {
-    pub view_id: ViewIdentifier,
+    pub view_id: ViewId,
     pub plugin_id: PluginPid,
     pub cmd: T,
 }
@@ -212,7 +212,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for PluginCommand<T>
     {
         #[derive(Deserialize)]
         struct InnerIds {
-            view_id: ViewIdentifier,
+            view_id: ViewId,
             plugin_id: PluginPid,
         }
         #[derive(Deserialize)]
@@ -229,7 +229,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for PluginCommand<T>
 }
 
 impl PluginBufferInfo {
-    pub fn new(buffer_id: BufferIdentifier, views: &[ViewIdentifier],
+    pub fn new(buffer_id: BufferIdentifier, views: &[ViewId],
                rev: u64, buf_size: usize, nb_lines: usize,
                path: Option<PathBuf>, syntax: LanguageId,
                config: Table) -> Self {
@@ -242,7 +242,7 @@ impl PluginBufferInfo {
 }
 
 impl PluginUpdate {
-    pub fn new<D>(view_id: ViewIdentifier, rev: u64, delta: D, new_len: usize,
+    pub fn new<D>(view_id: ViewId, rev: u64, delta: D, new_len: usize,
                   new_line_count: usize, undo_group: Option<usize>, edit_type: String, author: String) -> Self
         where D: Into<Option<RopeDelta>>
     {

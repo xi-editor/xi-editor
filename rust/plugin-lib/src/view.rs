@@ -16,7 +16,7 @@ use std::path::{PathBuf, Path};
 use serde_json::{self, Value};
 use serde::Deserialize;
 
-use xi_core::{ViewIdentifier, PluginPid, BufferConfig, ConfigTable};
+use xi_core::{ViewId, PluginPid, BufferConfig, ConfigTable};
 use xi_core::plugin_rpc::{TextUnit, PluginEdit, GetDataResponse, ScopeSpan, PluginBufferInfo};
 use xi_rope::rope::RopeDelta;
 use xi_trace::trace_block;
@@ -40,7 +40,7 @@ pub struct View<C> {
     pub rev: u64,
     pub undo_group: Option<usize>,
     buf_size: usize,
-    pub (crate) view_id: ViewIdentifier,
+    pub (crate) view_id: ViewId,
 }
 
 impl<C: Cache> View<C> {
@@ -106,7 +106,7 @@ impl<C: Cache> View<C> {
         &mut self.cache
     }
 
-    pub fn get_id(&self) -> ViewIdentifier {
+    pub fn get_id(&self) -> ViewId {
         self.view_id.clone()
     }
 
@@ -210,7 +210,7 @@ impl<C: Cache> View<C> {
 /// A simple wrapper type that acts as a `DataSource`.
 pub struct FetchCtx {
     plugin_id: PluginPid,
-    view_id: ViewIdentifier,
+    view_id: ViewId,
     peer: RpcPeer,
 }
 

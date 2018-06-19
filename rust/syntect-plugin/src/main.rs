@@ -27,7 +27,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::Path;
 
-use xi_core::{ViewIdentifier, ConfigTable};
+use xi_core::{ViewId, ConfigTable};
 use xi_core::plugin_rpc::ScopeSpan;
 use xi_rope::rope::RopeDelta;
 use xi_rope::interval::Interval;
@@ -64,7 +64,7 @@ type LineState = Option<(ParseState, ScopeStack)>;
 
 /// The state of syntax highlighting for a collection of buffers.
 struct Syntect<'a> {
-    view_state: HashMap<ViewIdentifier, PluginState>,
+    view_state: HashMap<ViewId, PluginState>,
     syntax_set: &'a SyntaxSet,
 }
 
