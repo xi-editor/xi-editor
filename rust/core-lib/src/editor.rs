@@ -747,6 +747,19 @@ impl Editor {
         view.invalidate_styles(&self.text, start, end_offset);
     }
 
+    pub fn get_text_rope(&self, rev: RevToken) -> Option<Cow<Rope>> {
+        let text_cow = if rev == self.engine.get_head_rev_id().token() {
+            Cow::Borrowed(&self.text)
+        } else {
+            match self.engine.get_rev(rev) {
+                None => return None,
+                Some(text) => Cow::Owned(text)
+            }
+        };
+        
+        return Some(text_cow);
+    }
+
     pub fn plugin_get_data(&self, start: usize,
                            unit: TextUnit,
                            max_size: usize,

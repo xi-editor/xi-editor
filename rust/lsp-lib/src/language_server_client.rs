@@ -220,14 +220,13 @@ impl LanguageServerClient {
                 uri: self.opened_documents.get(&view_id).unwrap().clone(),
             },
         };
-
         let params = Params::from(serde_json::to_value(text_document_did_save_params).unwrap());
         self.send_notification("textDocument/didSave", params);
     }
 
     pub fn request_hover_definition<CB>(
         &mut self,
-        view_id: ViewIdentifier,
+        view_id: ViewId,
         position: Position,
         on_result: CB,
     ) where

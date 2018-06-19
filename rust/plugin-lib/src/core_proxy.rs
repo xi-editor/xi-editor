@@ -31,10 +31,11 @@ impl CoreProxy {
         }
     }
 
-    pub fn display_hover_result(&mut self, request_id: usize, result: Option<HoverResult>) {
+    pub fn display_hover_result(&mut self, request_id: usize, result: Option<HoverResult>, rev: u64) {
 
         let params = json!({
             "request_id": request_id,
+            "rev": rev,
             "result": result
         });
 

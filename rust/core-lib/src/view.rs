@@ -793,8 +793,66 @@ impl View {
         (line, offset - self.offset_of_line(text, line))
     }
 
+
+    pub fn offset_to_line_col_utf16(&self, text: &Rope, offset: usize) -> (usize, usize) {
+        let line_num = self.line_of_offset(text, offset);
+
+        let line_offset = self.offset_of_line(text, line_num);
+        let line_next_offset = self.offset_of_line(text, line_num + 1);
+
+        let line_string = text.slice_to_string(line_offset, line_next_offset);
+        let cols = line_string[0..(offset - line_offset)]
+            .chars()
+            .map(char::len_utf16)
+            .sum();
+
+        (line_num, cols)
+    }
+
     pub fn line_col_to_offset(&self, text: &Rope, line: usize, col: usize) -> usize {
         let mut offset = self.offset_of_line(text, line).saturating_add(col);
+        if offset >= text.len() {
+            offset = text.len();
+            if self.line_of_offset(text, offset) <= line {
+                return offset;
+            }
+        } else {
+            // Snap to grapheme cluster boundary
+            offset = text.prev_grapheme_offset(offset + 1).unwrap();
+        }
+
+        // clamp to end of line
+        let next_line_offset = self.offset_of_line(text, line + 1);
+        if offset >= next_line_offset {
+            if let Some(prev) = text.prev_grapheme_offset(next_line_offset) {
+                offset = prev;
+            }
+        }
+        offset
+    }
+
+    pub fn line_col_utf16_to_offset(&self, text: &Rope, line: usize, col: usize) -> usize {
+        let line_offset = self.offset_of_line(text, line);
+        let line_next_offset = self.offset_of_line(text, line + 1);
+
+        let line_string = text.slice_to_string(line_offset, line_next_offset);
+
+        let char_lengths = line_string.chars()
+                                .map(|c| (c.len_utf8(), c.len_utf16()));
+
+        let mut cur_len_utf16 = 0;
+        let mut cur_len_utf8 = 0;
+
+        for (utf8_length, utf16_length) in char_lengths {
+            cur_len_utf16 += utf16_length;
+            cur_len_utf8 += utf8_length;
+            if cur_len_utf16 == (col as usize) {
+                break;
+            }
+        }
+
+        let mut offset = line_offset + cur_len_utf8;
+
         if offset >= text.len() {
             offset = text.len();
             if self.line_of_offset(text, offset) <= line {

@@ -185,7 +185,7 @@ pub enum PluginNotification {
     AddStatusItem { key: String, value: String, alignment: String },
     UpdateStatusItem { key: String, value: String  },
     RemoveStatusItem { key: String },
-    HoverResult { result: HoverResult }
+    HoverResult { result: HoverResult, rev: u64 }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

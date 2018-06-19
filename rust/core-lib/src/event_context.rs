@@ -14,6 +14,7 @@
 
 //! A container for the state relevant to a single event.
 
+use internal::plugins::rpc::HoverResult;
 use std::cell::RefCell;
 use std::iter;
 use std::path::Path;
@@ -74,35 +75,6 @@ pub struct EventContext<'a> {
     pub(crate) width_cache: &'a RefCell<WidthCache>,
     pub(crate) kill_ring: &'a RefCell<Rope>,
     pub(crate) weak_core: &'a WeakXiCore,
-}
-
-pub fn utf8_offset_from_position(view: &mut View, position: Position) -> Result<usize, Error> {
-    /* match position {
-        Position::Utf8Offset(offset) => offset,
-        Position::Utf8LineChar {line, character} => {
-    
-            let line_offset = view.offset_of_line(line as usize);
-            let char_lengths = view
-                .get_line(line_offset)
-                .chars()
-                .map(|c| (c.len_utf8(), c.len_utf16()));
-
-            let mut cur_len_utf16 = 0;
-            let mut cur_len_utf8 = 0;
-
-            for length in char_lengths {
-                cur_len_utf16 += length.1;
-                cur_len_utf8 += length.0;
-                if cur_len_utf16 == (character as usize) {
-                    return Ok(line_offset + cur_len_utf8);
-                }
-            }
-
-        },
-        Positon::Utf16LineChar {line, character} => {
-
-        }
-    } */
 }
 
 impl<'a> EventContext<'a> {
@@ -199,22 +171,40 @@ impl<'a> EventContext<'a> {
             UpdateStatusItem { key, value } => self.client.update_status_item(
                                                         self.view_id, &key, &value),
             RemoveStatusItem { key } => self.client.remove_status_item(self.view_id, &key),
-            HoverResult { result } => {
-                let hover_result = ClientHoverResult {
-                    request_id: result.request_id,
-                    content: result.content,
-                    range: result.range.and_then(|r| {
-                        let editor = self.editor.borrow();
-                        Some(Utf8OffsetRange {
-                            
-                        })
-                    })
-                };
+            HoverResult { rev, result } => {
+                let _hover_result = self.get_client_hover_result(rev, result);
+
+                // Notify the client next
             }
         };
         self.after_edit(&plugin.to_string());
         self.render_if_needed();
     }
+
+    pub fn get_client_hover_result(&mut self, rev: u64, result: HoverResult) -> ClientHoverResult {
+        return ClientHoverResult {
+            request_id: result.request_id,
+            content: result.content,
+            range: result.range.and_then(|r| {
+                Some(Utf8OffsetRange {
+                    start: self.position_to_utf8_offset(rev, r.start)?,
+                    end: self.position_to_utf8_offset(rev, r.end)?
+                })
+            })
+        }
+    }
+
+    pub fn position_to_utf8_offset(&mut self, rev: u64, position: Position) -> Option<usize> {
+        self.with_editor(|ed, view, _, _| {
+            let rope = ed.get_text_rope(rev)?;
+            Some(match position {
+                Position::Utf8Offset(offset) => offset,
+                Position::Utf8LineChar {line, character} => view.line_col_to_offset(&rope, line, character),
+                Position::Utf16LineChar {line, character} => view.line_col_utf16_to_offset(&rope, line, character)
+            })
+        })
+    }
+
 
     pub(crate) fn do_plugin_cmd_sync(&mut self, _plugin: PluginId,
                                       cmd: PluginRequest) -> Value {

@@ -34,11 +34,9 @@ use types::Error;
 use url::Url;
 use xi_core::ConfigTable;
 use xi_core::ViewId;
-use xi_plugin_lib::CoreProxy;
->>>>>>> aa07428... Initial Stage Hover RPC
-use xi_plugin_lib::Error as PluginLibError;
 use xi_plugin_lib::{
-    Cache, ChunkCache, HoverResult, Plugin, Position as CorePosition, Range as CoreRange, View,
+    Cache, ChunkCache, CoreProxy, Error as PluginLibError, HoverResult, Plugin,
+    Position as CorePosition, Range as CoreRange, View,
 };
 use xi_rope::rope::RopeDelta;
 
@@ -89,27 +87,23 @@ fn get_position_of_offset<C: Cache>(
 
 fn lsp_position_from_core_position<C: Cache>(
     view: &mut View<C>,
-    position: CorePosition
+    position: CorePosition,
 ) -> Result<Position, PluginLibError> {
-
     match position {
-        CorePosition::Utf8LineChar {line, character} => {
+        CorePosition::Utf8LineChar { line, character } => {
             let line_text = view.get_line(line)?;
-            let char_offset: usize = line_text[0..character]
-                        .chars()
-                        .map(char::len_utf16)
-                        .sum();
+            let char_offset: usize = line_text[0..character].chars().map(char::len_utf16).sum();
 
-            Ok(Position{
+            Ok(Position {
                 line: line as u64,
-                character: char_offset as u64
+                character: char_offset as u64,
             })
-        },
-        CorePosition::Utf16LineChar {line, character} => Ok(Position{
+        }
+        CorePosition::Utf16LineChar { line, character } => Ok(Position {
             line: line as u64,
             character: character as u64,
         }),
-        CorePosition::Utf8Offset(offset) => get_position_of_offset(view, offset)
+        CorePosition::Utf8Offset(offset) => get_position_of_offset(view, offset),
     }
 }
 
@@ -447,6 +441,7 @@ impl Plugin for LspPlugin {
         request_id: usize,
         position: CorePosition,
     ) {
+        let rev = view.rev;
         let view_info = self.view_info.get_mut(&view.get_id());
         if let Some(view_info) = view_info {
             // This won't fail since we definitely have a client for the given
@@ -487,11 +482,11 @@ impl Plugin for LspPlugin {
 
                                 ls_client
                                     .core
-                                    .display_hover_result(request_id, Some(hover_result));
+                                    .display_hover_result(request_id, Some(hover_result), rev);
                             }
                             Err(err) => {
                                 eprintln!("Hover Response from LSP Error: {:?}", err);
-                                ls_client.core.display_hover_result(request_id, None);
+                                ls_client.core.display_hover_result(request_id, None, rev);
                             }
                         },
                     );

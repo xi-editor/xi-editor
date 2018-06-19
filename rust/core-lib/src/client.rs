@@ -22,7 +22,7 @@ use xi_rpc::{self, RpcPeer};
 use tabs::ViewId;
 use config::Table;
 use styles::ThemeSettings;
-use plugins::rpc::{ClientPluginInfo, HoverResult as PluginHoverResult};
+use plugins::rpc::{ClientPluginInfo};
 use plugins::Command;
 
 /// An interface to the frontend.
