@@ -32,7 +32,7 @@ use std::sync::Mutex;
 use types::Error;
 use url::Url;
 use xi_core::ConfigTable;
-use xi_core::ViewIdentifier;
+use xi_core::ViewId;
 use xi_plugin_lib::Error as PluginLibError;
 use xi_plugin_lib::{Cache, ChunkCache, Plugin, View};
 use xi_rope::rope::RopeDelta;
@@ -47,7 +47,7 @@ pub struct ViewInfo {
 /// Represents the state of the Language Server Plugin
 pub struct LspPlugin {
     pub config: Config,
-    view_info: HashMap<ViewIdentifier, ViewInfo>,
+    view_info: HashMap<ViewId, ViewInfo>,
     language_server_clients: HashMap<String, Arc<Mutex<LanguageServerClient>>>,
 }
 

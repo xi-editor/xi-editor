@@ -23,7 +23,7 @@ use std::io::Write;
 use std::process;
 use types::Callback;
 use url::Url;
-use xi_core::ViewIdentifier;
+use xi_core::ViewId;
 
 /// A type to abstract communication with the language server
 pub struct LanguageServerClient {
@@ -32,7 +32,7 @@ pub struct LanguageServerClient {
     next_id: u64,
     language_id: String,
     pub is_initialized: bool,
-    pub opened_documents: HashMap<ViewIdentifier, Url>,
+    pub opened_documents: HashMap<ViewId, Url>,
     pub server_capabilities: Option<ServerCapabilities>,
     pub file_extensions: Vec<String>,
 }
@@ -165,7 +165,7 @@ impl LanguageServerClient {
     /// Send textDocument/didOpen Notification to the Language Server
     pub fn send_did_open(
         &mut self,
-        view_id: ViewIdentifier,
+        view_id: ViewId,
         document_uri: Url,
         document_text: String,
     ) {
@@ -187,7 +187,7 @@ impl LanguageServerClient {
     /// Send textDocument/didChange Notification to the Language Server
     pub fn send_did_change(
         &mut self,
-        view_id: ViewIdentifier,
+        view_id: ViewId,
         changes: Vec<TextDocumentContentChangeEvent>,
         version: u64,
     ) {
@@ -209,7 +209,7 @@ impl LanguageServerClient {
     }
 
     /// Send textDocument/didSave notification to the Language Server
-    pub fn send_did_save(&mut self, view_id: ViewIdentifier, _document_text: String) {
+    pub fn send_did_save(&mut self, view_id: ViewId, _document_text: String) {
         // Add support for sending document text as well. Currently missing in LSP types
         // and is optional in LSP Specification
         let text_document_did_save_params = DidSaveTextDocumentParams {

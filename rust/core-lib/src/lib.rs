@@ -132,6 +132,6 @@ pub use plugins::rpc as plugin_rpc;
 pub use plugins::manifest as plugin_manifest;
 pub use plugins::PluginPid;
 pub use syntax::{LanguageDefinition, LanguageId};
-pub use tabs::{BufferId, BufferIdentifier, ViewId, ViewIdentifier};
+pub use tabs::{BufferId, BufferIdentifier, ViewId};
 pub use tabs::test_helpers as test_helpers;
 

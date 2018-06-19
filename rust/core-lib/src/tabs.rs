@@ -70,7 +70,6 @@ pub type PluginId = ::plugins::PluginPid;
 
 // old-style names; will be deprecated
 pub type BufferIdentifier = BufferId;
-pub type ViewIdentifier = ViewId;
 
 /// Totally arbitrary; we reserve this space for `ViewId`s
 pub(crate) const RENDER_VIEW_IDLE_MASK: usize = 1 << 25;
