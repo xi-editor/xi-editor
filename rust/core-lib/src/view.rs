@@ -222,6 +222,11 @@ impl View {
             },
             SelectionForFind { case_sensitive } =>
                 self.selection_for_find(text, case_sensitive.unwrap_or(false)),
+            Replace { chars, preserve_case } =>
+                self.set_replace(chars, preserve_case.unwrap_or(false)),
+            ReplaceNext => self.replace_next(),
+            ReplaceAll => self.replace_all(),
+            SelectionForReplace => self.selection_for_replace(),
         }
     }
 
@@ -972,6 +977,22 @@ impl View {
                 _ => { }
             }
         }
+    }
+
+    fn set_replace(&self, chars: String, preserve_case: bool) {
+
+    }
+
+    fn replace_next(&self) {
+
+    }
+
+    fn replace_all(&self) {
+
+    }
+
+    fn selection_for_replace(&self) {
+
     }
 
     /// Get the line range of a selected region.

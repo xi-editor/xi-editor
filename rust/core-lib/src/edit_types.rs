@@ -41,6 +41,10 @@ pub(crate) enum ViewEvent {
     Cancel,
     HighlightFind { visible: bool },
     SelectionForFind { case_sensitive: Option<bool> },
+    Replace { chars: String, preserve_case: Option<bool> },
+    ReplaceNext,
+    ReplaceAll,
+    SelectionForReplace,
 }
 
 /// Events that modify the buffer
@@ -214,6 +218,11 @@ impl From<EditNotification> for EventDomain {
             HighlightFind { visible } => ViewEvent::HighlightFind { visible }.into(),
             SelectionForFind { case_sensitive } =>
                 ViewEvent::SelectionForFind { case_sensitive }.into(),
+            Replace { chars, preserve_case } =>
+                ViewEvent::Replace { chars, preserve_case }.into(),
+            ReplaceNext => ViewEvent::ReplaceNext.into(),
+            ReplaceAll => ViewEvent::ReplaceAll.into(),
+            SelectionForReplace => ViewEvent::SelectionForReplace.into(),
         }
     }
 }
