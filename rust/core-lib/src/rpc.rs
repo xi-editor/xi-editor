@@ -394,11 +394,6 @@ pub enum EditNotification {
     Gesture { line: u64, col: u64, ty: GestureType},
     Undo,
     Redo,
-    /// Searches the document for `chars`, if present, falling back on
-    /// the last selection region if `chars` is `None`.
-    ///
-    /// If `chars` is `None` and there is an active selection, returns
-    /// the string value used for the search, else returns `Null`.
     Find { chars: String, case_sensitive: bool, regex: Option<bool>, whole_words: Option<bool> },
     FindNext { wrap_around: Option<bool>, allow_same: Option<bool>, modify_selection: Option<SelectionModifier> },
     FindPrevious { wrap_around: Option<bool>, allow_same: Option<bool>, modify_selection: Option<SelectionModifier> },
@@ -414,6 +409,10 @@ pub enum EditNotification {
     /// Indicates whether find highlights should be rendered
     HighlightFind { visible: bool },
     SelectionForFind { case_sensitive: Option<bool> },
+    Replace { chars: String, preserve_case: Option<bool> },
+    ReplaceNext,
+    ReplaceAll,
+    SelectionForReplace,
 }
 
 /// The edit related requests.
