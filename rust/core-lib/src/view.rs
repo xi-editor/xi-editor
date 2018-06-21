@@ -1109,6 +1109,16 @@ impl View {
 
         first_line..(last_line + 1)
     }
+
+    pub fn get_caret_offset(&self) -> Option<usize> {
+        match self.selection.len() {
+            1 if self.selection[0].is_caret() => {
+                let offset = self.selection[0].start;
+                Some(offset)
+            }
+            _ => None
+        }
+    }
 }
 
 // utility function to clamp a value within the given range

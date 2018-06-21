@@ -18,6 +18,7 @@
 //! This simplifies code elsewhere, and makes it easier to route events to
 //! the editor or view as appropriate.
 
+use internal::plugins::rpc::Position;
 use movement::Movement;
 use rpc::{GestureType, LineRange, EditNotification, MouseAction, SelectionModifier};
 use view::Size;
@@ -72,6 +73,7 @@ pub(crate) enum SpecialEvent {
     DebugPrintSpans,
     Resize(Size),
     RequestLines(LineRange),
+    RequestHoverDefinition { request_id: usize, position: Option<Position> }
 }
 
 pub(crate) enum EventDomain {
@@ -225,6 +227,8 @@ impl From<EditNotification> for EventDomain {
             ReplaceNext => BufferEvent::ReplaceNext.into(),
             ReplaceAll => BufferEvent::ReplaceAll.into(),
             SelectionForReplace => ViewEvent::SelectionForReplace.into(),
+            RequestHoverDefinition { request_id, position } =>
+                SpecialEvent::RequestHoverDefinition { request_id, position }.into()
         }
     }
 }

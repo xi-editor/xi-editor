@@ -19,6 +19,7 @@
 //!
 //! [Serde]: https://serde.rs
 
+use internal::plugins::rpc::Position;
 use std::path::PathBuf;
 
 use serde_json::{self, Value};
@@ -446,6 +447,7 @@ pub enum EditNotification {
     ReplaceNext,
     ReplaceAll,
     SelectionForReplace,
+    RequestHoverDefinition { request_id: usize, position: Option<Position> }
 }
 
 /// The edit related requests.

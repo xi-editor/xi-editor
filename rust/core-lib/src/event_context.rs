@@ -134,6 +134,8 @@ impl<'a> EventContext<'a> {
                 }),
             SpecialEvent::RequestLines(LineRange { first, last }) =>
                 self.do_request_lines(first as usize, last as usize),
+            SpecialEvent::RequestHoverDefinition{ request_id, position } =>
+                self.request_hover_definition(request_id, position)
         }
     }
 
@@ -445,6 +447,18 @@ impl<'a> EventContext<'a> {
         view.request_lines(ed.get_buffer(), self.client, self.style_map,
                            ed.get_layers().get_merged(), first, last,
                            ed.is_pristine())
+    }
+
+    fn request_hover_definition(&mut self, request_id: usize, position: Option<Position>) {
+        
+        let position = position.or_else(|| self.view.borrow().get_caret_offset()
+                            .and_then(|offset| Some(Position::Utf8Offset(offset))));
+
+        if let Some(position) = position {
+            self.plugins.iter().for_each(|p| {
+                p.get_hover_definition(self.view_id, request_id, &position)
+            })
+        }
     }
 }
 

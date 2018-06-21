@@ -188,7 +188,7 @@ pub enum PluginNotification {
     HoverResult { result: HoverResult, rev: u64 }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "method", content = "params")]
 pub enum Position {

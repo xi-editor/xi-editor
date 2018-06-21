@@ -36,12 +36,14 @@ pub struct WidthReq {
     pub strings: Vec<String>,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Range {
     // Utf-8 offsets will be sent to clients only
     pub start: usize,
     pub end: usize
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct HoverResult {
     pub request_id: usize,
     pub content: String,
@@ -194,6 +196,16 @@ impl Client {
     pub fn remove_status_item(&self, view_id: ViewId, key: &str) {
         self.0.send_rpc_notification("remove_status_item", &json!(
             {   "view_id": view_id, "key": key }));
+    }
+
+    pub fn show_hover_definition(&self, view_id: ViewId, request_id: usize, result: HoverResult) {
+        self.0.send_rpc_notification("show_hover_definition", &json!(
+            {
+                "view_id": view_id,
+                "request_id": request_id,
+                "result": result
+            }
+        ))
     }
 
     pub fn schedule_idle(&self, token: usize) {
