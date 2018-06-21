@@ -165,6 +165,7 @@ pub struct BufferItems {
     pub scroll_past_end: bool,
     pub wrap_width: usize,
     pub word_wrap: bool,
+    pub show_cursor_status: bool,
 }
 
 pub type BufferConfig = Config<BufferItems>;
