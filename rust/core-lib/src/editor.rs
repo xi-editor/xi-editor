@@ -651,19 +651,24 @@ impl Editor {
     fn replace_next(&mut self, view: &mut View) {
         if let Some(Replace { chars, preserve_case }) = view.get_replace() {
             // todo: implement preserve case
-            if view.sel_regions().is_empty() {
-                view.find_next(&self.text, false, true, true, &SelectionModifier::Set);
-            }
+            view.find_next(&self.text, false, true, true, &SelectionModifier::Set);
 
-            self.insert(view, chars);
+            match last_selection_region(view.sel_regions()) {
+                Some(_) => self.insert(view, chars),
+                None => return,
+            };
         }
     }
 
     fn replace_all(&mut self, view: &mut View) {
         if let Some(Replace { chars, preserve_case }) = view.get_replace() {
             // todo: implement preserve case
-            view.find_all();
-            self.insert(view, chars);
+            view.find_all(&self.text);
+            
+            match last_selection_region(view.sel_regions()) {
+                Some(_) => self.insert(view, chars),
+                None => return,
+            };
         }
     }
 
