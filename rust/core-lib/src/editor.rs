@@ -34,7 +34,8 @@ use plugins::PluginId;
 use plugins::rpc::{PluginEdit, ScopeSpan, TextUnit, GetDataResponse};
 use selection::{Selection, SelRegion};
 use styles::ThemeStyleMap;
-use view::View;
+use view::{View, Replace};
+use rpc::SelectionModifier;
 
 #[cfg(not(feature = "ledger"))]
 pub struct SyncStore;
@@ -647,6 +648,25 @@ impl Editor {
         self.insert(view, kill_ring.clone());
     }
 
+    fn replace_next(&mut self, view: &mut View) {
+        if let Some(Replace { chars, preserve_case }) = view.get_replace() {
+            // todo: implement preserve case
+            if view.sel_regions().is_empty() {
+                view.find_next(&self.text, false, true, true, &SelectionModifier::Set);
+            }
+
+            self.insert(view, chars);
+        }
+    }
+
+    fn replace_all(&mut self, view: &mut View) {
+        if let Some(Replace { chars, preserve_case }) = view.get_replace() {
+            // todo: implement preserve case
+            view.find_all();
+            self.insert(view, chars);
+        }
+    }
+
     fn transform_text<F: Fn(&str) -> String>(&mut self, view: &View,
                                              transform_function: F) {
         let mut builder = delta::Builder::new(self.text.len());
@@ -681,6 +701,8 @@ impl Editor {
             InsertTab => self.insert_tab(view, config),
             Insert(chars) => self.do_insert(view, &chars),
             Yank => self.yank(view, kill_ring),
+            ReplaceNext => self.replace_next(view),
+            ReplaceAll => self.replace_all(view),
         }
     }
 
