@@ -84,6 +84,9 @@ pub struct View {
     /// Tracks whether find highlights should be rendered.
     /// Highlights are only rendered when search dialog is open.
     highlight_find: bool,
+
+    /// The state for replacing matches for this view.
+    replace: Option<Replace>,
 }
 
 /// Indicates what changed in the find state.
@@ -97,6 +100,14 @@ enum FindStatusChange {
 
     /// Only number of matches changed
     Matches
+}
+
+/// Contains replacement string and replace options.
+#[derive(Debug, Default, PartialEq, Serialize, Deserialize, Clone)]
+pub struct Replace {
+    /// Replacement string.
+    pub chars: String,
+    pub preserve_case: bool
 }
 
 /// A size, in pixel units (not display pixels).
@@ -154,6 +165,7 @@ impl View {
             find: Vec::new(),
             find_changed: FindStatusChange::None,
             highlight_find: false,
+            replace: None,
         }
     }
 
@@ -163,6 +175,10 @@ impl View {
 
     pub(crate) fn get_view_id(&self) -> ViewId {
         self.view_id
+    }
+
+    pub(crate) fn get_replace(&self) -> Option<Replace> {
+        self.replace.clone()
     }
 
     pub(crate) fn set_has_pending_render(&mut self, pending: bool) {
@@ -198,6 +214,7 @@ impl View {
                 self.find_next(text, true, wrap_around.unwrap_or(false),
                                allow_same.unwrap_or(false),
                                &modify_selection.unwrap_or(SelectionModifier::Set)),
+            FindAll => self.find_all(),
             Click(MouseAction { line, column, flags, click_count }) => {
                 // Deprecated (kept for client compatibility):
                 // should be removed in favor of do_gesture
@@ -224,9 +241,7 @@ impl View {
                 self.selection_for_find(text, case_sensitive.unwrap_or(false)),
             Replace { chars, preserve_case } =>
                 self.set_replace(chars, preserve_case.unwrap_or(false)),
-            ReplaceNext => self.replace_next(),
-            ReplaceAll => self.replace_all(),
-            SelectionForReplace => self.selection_for_replace(),
+            SelectionForReplace => self.selection_for_replace(text),
         }
     }
 
@@ -931,11 +946,22 @@ impl View {
         self.find.first_mut().unwrap().do_find(text, chars, case_sensitive, is_regex, whole_words);
     }
 
+    /// Selects the next find match.
     pub fn find_next(&mut self, text: &Rope, reverse: bool, wrap: bool, allow_same: bool,
                      modify_selection: &SelectionModifier) {
         self.select_next_occurrence(text, reverse, false, allow_same, modify_selection);
         if self.scroll_to.is_none() && wrap {
             self.select_next_occurrence(text, reverse, true, allow_same, modify_selection);
+        }
+    }
+
+    /// Selects all find matches.
+    pub fn find_all(&mut self) {
+        self.selection.clear();
+        for find in self.find.iter() {
+            for &occurrence in find.occurrences().iter() {
+                self.selection.add_region(occurrence)
+            }
         }
     }
 
@@ -979,21 +1005,30 @@ impl View {
         }
     }
 
-    fn set_replace(&self, chars: String, preserve_case: bool) {
-
+    fn set_replace(&mut self, chars: String, preserve_case: bool) {
+        self.replace = Some(Replace { chars, preserve_case });
     }
 
-    fn replace_next(&self) {
+    fn selection_for_replace(&mut self, text: &Rope) {
+        // set last selection or word under current cursor as replacement string
+        let replacement = match self.selection.last() {
+            Some(region) => {
+                if !region.is_caret() {
+                    text.slice_to_string(region.min(), region.max())
+                } else {
+                    let (start, end) = {
+                        let mut word_cursor = WordCursor::new(text, region.max());
+                        word_cursor.select_word()
+                    };
+                    text.slice_to_string(start, end)
+                }
+            },
+            _ => return
+        };
 
+        self.set_replace(replacement, false);
     }
 
-    fn replace_all(&self) {
-
-    }
-
-    fn selection_for_replace(&self) {
-
-    }
 
     /// Get the line range of a selected region.
     pub fn get_line_range(&self, text: &Rope, region: &SelRegion) -> Range<usize> {

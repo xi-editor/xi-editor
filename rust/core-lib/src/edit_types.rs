@@ -38,12 +38,11 @@ pub(crate) enum ViewEvent {
     Find { chars: String, case_sensitive: bool, regex: Option<bool>, whole_words: Option<bool> },
     FindNext { wrap_around: Option<bool>, allow_same: Option<bool>, modify_selection: Option<SelectionModifier> },
     FindPrevious { wrap_around: Option<bool>, allow_same: Option<bool>, modify_selection: Option<SelectionModifier> },
+    FindAll,
     Cancel,
     HighlightFind { visible: bool },
     SelectionForFind { case_sensitive: Option<bool> },
     Replace { chars: String, preserve_case: Option<bool> },
-    ReplaceNext,
-    ReplaceAll,
     SelectionForReplace,
 }
 
@@ -62,6 +61,8 @@ pub(crate) enum BufferEvent {
     InsertNewline,
     InsertTab,
     Yank,
+    ReplaceNext,
+    ReplaceAll,
 }
 
 /// An event that needs special handling
@@ -207,6 +208,7 @@ impl From<EditNotification> for EventDomain {
                 ViewEvent::FindNext { wrap_around, allow_same, modify_selection }.into(),
             FindPrevious { wrap_around, allow_same, modify_selection } =>
                 ViewEvent::FindPrevious { wrap_around, allow_same, modify_selection }.into(),
+            FindAll => ViewEvent::FindAll.into(),
             DebugRewrap => SpecialEvent::DebugRewrap.into(),
             DebugWrapWidth => SpecialEvent::DebugWrapWidth.into(),
             DebugPrintSpans => SpecialEvent::DebugPrintSpans.into(),
@@ -220,8 +222,8 @@ impl From<EditNotification> for EventDomain {
                 ViewEvent::SelectionForFind { case_sensitive }.into(),
             Replace { chars, preserve_case } =>
                 ViewEvent::Replace { chars, preserve_case }.into(),
-            ReplaceNext => ViewEvent::ReplaceNext.into(),
-            ReplaceAll => ViewEvent::ReplaceAll.into(),
+            ReplaceNext => BufferEvent::ReplaceNext.into(),
+            ReplaceAll => BufferEvent::ReplaceAll.into(),
             SelectionForReplace => ViewEvent::SelectionForReplace.into(),
         }
     }
