@@ -15,10 +15,7 @@
 //! Implementation of Language Server Plugin
 
 use language_server_client::LanguageServerClient;
-use lsp_types::Hover;
-use lsp_types::{
-    InitializeResult, Position, Range, TextDocumentContentChangeEvent, TextDocumentSyncKind,
-};
+use lsp_types::*;
 use parse_helper;
 use serde_json;
 use std;
@@ -39,7 +36,6 @@ use xi_plugin_lib::{
     Position as CorePosition, Range as CoreRange, View,
 };
 use xi_rope::rope::RopeDelta;
-
 use types::Config;
 
 pub struct ViewInfo {
@@ -53,6 +49,27 @@ pub struct LspPlugin {
     view_info: HashMap<ViewId, ViewInfo>,
     core: Option<CoreProxy>,
     language_server_clients: HashMap<String, Arc<Mutex<LanguageServerClient>>>,
+}
+
+fn marked_string_to_string(marked_string: &MarkedString) -> String {
+    match *marked_string {
+        MarkedString::String(ref text) => text.to_owned(),
+        MarkedString::LanguageString(ref d) => {
+            format!("```{}\n{}```", d.language, d.value )
+        }
+    }
+}
+
+fn markdown_from_hover_contents(hover_contents: HoverContents) -> String {
+    match hover_contents {
+        HoverContents::Scalar(content) => marked_string_to_string(&content),
+        HoverContents::Array(content) => {
+            let res: Vec<String> = content.iter().map(|c|
+                marked_string_to_string(c)).collect();
+            res.join("\n")
+        },
+        HoverContents::Markup(content) => content.value
+    }
 }
 
 /// Counts the number of utf-16 code units in the given string.
@@ -462,10 +479,9 @@ impl Plugin for LspPlugin {
                         move |ls_client, result| match result {
                             Ok(result) => {
                                 let hover: Hover = serde_json::from_value(result).unwrap();
-
                                 let hover_result = HoverResult {
                                     request_id,
-                                    content: String::new(),
+                                    content: markdown_from_hover_contents(hover.contents),
                                     range: hover.range.and_then(|range| {
                                         Some(CoreRange {
                                             start: CorePosition::Utf16LineChar {
