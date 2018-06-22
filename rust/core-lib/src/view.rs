@@ -214,7 +214,7 @@ impl View {
                 self.find_next(text, true, wrap_around.unwrap_or(false),
                                allow_same.unwrap_or(false),
                                &modify_selection.unwrap_or(SelectionModifier::Set)),
-            FindAll => self.find_all(),
+            FindAll => self.find_all(text),
             Click(MouseAction { line, column, flags, click_count }) => {
                 // Deprecated (kept for client compatibility):
                 // should be removed in favor of do_gesture
@@ -956,13 +956,14 @@ impl View {
     }
 
     /// Selects all find matches.
-    pub fn find_all(&mut self) {
-        self.selection.clear();
+    pub fn find_all(&mut self, text: &Rope) {
+        let mut selection = Selection::new();
         for find in self.find.iter() {
             for &occurrence in find.occurrences().iter() {
-                self.selection.add_region(occurrence)
+                selection.add_region(occurrence);
             }
         }
+        self.set_selection(text, selection);
     }
 
     /// Select the next occurrence relative to the last cursor. `reverse` determines whether the
