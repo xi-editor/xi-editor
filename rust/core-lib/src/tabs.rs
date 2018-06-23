@@ -40,7 +40,7 @@ use client::Client;
 use config::{self, ConfigManager, ConfigDomain, ConfigDomainExternal, Table};
 use editor::Editor;
 use event_context::EventContext;
-use file::FileManager;
+use file::{FileError, FileManager};
 use plugins::{PluginCatalog, PluginPid, Plugin, start_plugin_process};
 use plugin_rpc::{PluginNotification, PluginRequest};
 use rpc::{CoreNotification, CoreRequest, EditNotification, EditRequest,
@@ -280,6 +280,8 @@ impl CoreState {
         match cmd {
             Edit(::rpc::EditCommand { view_id, cmd }) =>
                 self.do_edit(view_id, cmd),
+            NewViewAsync { file_path } =>
+                self.do_new_view_async(file_path),
             Save { view_id, file_path } =>
                 self.do_save(view_id, file_path),
             CloseView { view_id } =>
@@ -344,6 +346,29 @@ impl CoreState {
     fn do_new_view(&mut self, path: Option<PathBuf>)
         -> Result<Value, RemoteError>
     {
+        let (view_id, config) = self.do_new_view_impl(path.as_ref())?;
+        //NOTE: because this is a synchronous call, we have to return the
+        //view_id before we can send any events to this view. We use mark the
+        // viewa s pending and schedule the idle handler so that we can finish
+        // setting up this view on the next runloop pass.
+        self.pending_views.push((view_id, config));
+        self.peer.schedule_idle(NEW_VIEW_IDLE_TOKEN);
+
+        Ok(json!(view_id))
+    }
+
+    fn do_new_view_async(&mut self, path: Option<PathBuf>) {
+        match self.do_new_view_impl(path.as_ref()) {
+            Ok((view_id, config)) => {
+                self.peer.new_view(view_id, path.as_ref().map(PathBuf::as_path));
+                self.make_context(view_id).unwrap().finish_init(&config);
+            }
+            Err(e) => self.peer.alert(e.to_string()),
+        }
+    }
+
+    fn do_new_view_impl(&mut self,
+                        path: Option<&PathBuf>) -> Result<(ViewId, Table), FileError> {
         let view_id = self.next_view_id();
         let buffer_id = self.next_buffer_id();
 
@@ -362,14 +387,7 @@ impl CoreState {
             buffer_id,
             path.as_ref().map(|p| p.as_path()));
 
-        //NOTE: because this is a synchronous call, we have to return the
-        //view_id before we can send any events to this view. We use mark the
-        // viewa s pending and schedule the idle handler so that we can finish
-        // setting up this view on the next runloop pass.
-        self.pending_views.push((view_id, config));
-        self.peer.schedule_idle(NEW_VIEW_IDLE_TOKEN);
-
-        Ok(json!(view_id))
+        Ok((view_id, config))
     }
 
     fn do_save<P>(&mut self, view_id: ViewId, path: P)
