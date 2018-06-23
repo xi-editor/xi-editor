@@ -280,7 +280,7 @@ impl<'a> EventContext<'a> {
 /// special cases here.
 impl<'a> EventContext<'a> {
 
-    pub(crate) fn finish_init(&mut self) {
+    pub(crate) fn finish_init(&mut self, config: &Table) {
         if !self.plugins.is_empty() {
             let info = self.plugin_info();
             self.plugins.iter().for_each(|plugin| plugin.new_buffer(&info));
@@ -293,8 +293,7 @@ impl<'a> EventContext<'a> {
         self.client.available_plugins(self.view_id,
                                       &available_plugins);
 
-        let changes = serde_json::to_value(self.config).unwrap();
-        self.client.config_changed(self.view_id, changes.as_object().unwrap());
+        self.client.config_changed(self.view_id, config);
         self.update_wrap_state();
         self.render()
     }

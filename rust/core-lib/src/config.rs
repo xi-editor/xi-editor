@@ -252,8 +252,9 @@ impl ConfigManager {
             .collect()
     }
 
-    /// Adds a new buffer to the config manager. The `path` argument is used
-    /// to determine the buffer's default language.
+    /// Adds a new buffer to the config manager, and returns the initial config
+    /// `Table` for that buffer. The `path` argument is used to determine
+    /// the buffer's default language.
     ///
     /// # Note: The caller is responsible for ensuring the config manager is
     /// notified every time a buffer is added or removed.
@@ -261,11 +262,13 @@ impl ConfigManager {
     /// # Panics:
     ///
     /// Panics if `id` already exists.
-    pub(crate) fn add_buffer(&mut self, id: BufferId, path: Option<&Path>) {
+    pub(crate) fn add_buffer(&mut self, id: BufferId, path: Option<&Path>)
+        -> Table {
         let lang = path.and_then(|p| self.language_for_path(p)).unwrap_or_default();
         let lang_tag = LanguageTag::new(lang);
         assert!(self.buffer_tags.insert(id, lang_tag).is_none());
-        self.update_buffer_config(id);
+        self.update_buffer_config(id)
+            .expect("new buffer must always have config")
     }
 
     /// Updates the default language for the given buffer.

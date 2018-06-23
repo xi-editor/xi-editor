@@ -102,7 +102,7 @@ pub struct CoreState {
     /// it can be passed to plugins.
     self_ref: Option<WeakXiCore>,
     /// Views which need to have setup finished.
-    pending_views: Vec<ViewId>,
+    pending_views: Vec<(ViewId, Table)>,
     peer: Client,
     id_counter: Counter,
     plugins: PluginCatalog,
@@ -358,14 +358,15 @@ impl CoreState {
         self.editors.insert(buffer_id, editor);
         self.views.insert(view_id, view);
 
-        self.config_manager.add_buffer(buffer_id,
-                                       path.as_ref().map(|p| p.as_path()));
+        let config = self.config_manager.add_buffer(
+            buffer_id,
+            path.as_ref().map(|p| p.as_path()));
 
         //NOTE: because this is a synchronous call, we have to return the
         //view_id before we can send any events to this view. We use mark the
         // viewa s pending and schedule the idle handler so that we can finish
         // setting up this view on the next runloop pass.
-        self.pending_views.push(view_id);
+        self.pending_views.push((view_id, config));
         self.peer.schedule_idle(NEW_VIEW_IDLE_TOKEN);
 
         Ok(json!(view_id))
@@ -505,9 +506,9 @@ impl CoreState {
 
     fn finalize_new_views(&mut self) {
         let to_start = mem::replace(&mut self.pending_views, Vec::new());
-        to_start.iter().for_each(|id| {
+        to_start.iter().for_each(|(id, config)| {
             let mut edit_ctx = self.make_context(*id).unwrap();
-            edit_ctx.finish_init();
+            edit_ctx.finish_init(config);
         });
     }
 
