@@ -163,8 +163,11 @@ impl<'a> EventContext<'a> {
             Edit { edit } => self.with_editor(
                 |ed, _, _, _| ed.apply_plugin_edit(edit)),
             Alert { msg } => self.client.alert(&msg),
-            AddStatusItem { key, value, alignment }  => self.client.add_status_item(
-                                                        self.view_id, &key, &value, &alignment),
+            AddStatusItem { key, value, alignment }  => {
+            let plugin_name = &self.plugins.iter().find(|p| p.id == plugin).unwrap().name;
+            self.client.add_status_item(
+                                                        self.view_id, plugin_name, &key, &value, &alignment);
+            }
             UpdateStatusItem { key, value } => self.client.update_status_item(
                                                         self.view_id, &key, &value),
             RemoveStatusItem { key } => self.client.remove_status_item(self.view_id, &key)
