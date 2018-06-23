@@ -19,7 +19,7 @@ use std::time::Instant;
 use serde_json::{self, Value};
 use xi_rpc::{self, RpcPeer};
 
-use tabs::ViewId;
+use tabs::{ViewId};
 use config::Table;
 use styles::ThemeSettings;
 use plugins::rpc::ClientPluginInfo;
@@ -147,9 +147,10 @@ impl Client {
         self.0.send_rpc_notification("alert", &json!({ "msg": msg.as_ref() }));
     }
 
-    pub fn add_status_item(&self, view_id: ViewId, key: &str, value: &str, alignment: &str) {
+    pub fn add_status_item(&self, view_id: ViewId, plugin: &str, key: &str, value: &str, alignment: &str) {
         self.0.send_rpc_notification("add_status_item", &json!(
             {   "view_id": view_id,
+                "plugin": plugin,
                 "key": key,
                 "value": value,
                 "alignment": alignment
