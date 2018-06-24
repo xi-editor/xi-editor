@@ -164,9 +164,8 @@ impl<'a> EventContext<'a> {
                 |ed, _, _, _| ed.apply_plugin_edit(edit)),
             Alert { msg } => self.client.alert(&msg),
             AddStatusItem { key, value, alignment }  => {
-            let plugin_name = &self.plugins.iter().find(|p| p.id == plugin).unwrap().name;
-            self.client.add_status_item(
-                                                        self.view_id, plugin_name, &key, &value, &alignment);
+            	let plugin_name = &self.plugins.iter().find(|p| p.id == plugin).unwrap().name;
+            	self.client.add_status_item(self.view_id, plugin_name, &key, &value, &alignment);
             }
             UpdateStatusItem { key, value } => self.client.update_status_item(
                                                         self.view_id, &key, &value),
