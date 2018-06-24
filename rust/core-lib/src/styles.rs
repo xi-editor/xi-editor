@@ -21,12 +21,14 @@ use std::ffi::OsStr;
 use serde_json::{self, Value};
 use syntect::highlighting::StyleModifier as SynStyleModifier;
 use syntect::highlighting::{Color, Theme, ThemeSet, Highlighter};
+use syntect::LoadingError;
 
 pub use syntect::highlighting::ThemeSettings;
 
 const N_RESERVED_STYLES: usize = 2;
 const SYNTAX_PRIORITY_DEFAULT: u16 = 200;
 const SYNTAX_PRIORITY_LOWEST: u16 = 0;
+pub const DEFAULT_THEME: &str = "InspiredGitHub";
 
 #[derive(Clone, PartialEq, Eq, Default, Hash, Debug, Serialize, Deserialize)]
 /// A mergeable style. All values except priority are optional.
@@ -158,7 +160,7 @@ pub struct ThemeStyleMap {
 impl ThemeStyleMap {
     pub fn new(themes_dir: Option<PathBuf>) -> ThemeStyleMap {
         let mut themes = ThemeSet::load_defaults();
-        let theme_name = "InspiredGitHub".to_owned();
+        let theme_name = DEFAULT_THEME.to_owned();
         let theme = themes.themes.get(&theme_name).expect("missing theme").to_owned();
         let default_style = Style::default_for_theme(&theme);
 
@@ -227,27 +229,19 @@ impl ThemeStyleMap {
         result
     }
 
-    /// Load a single theme file. Updates if already present.
-    /// Returns true if change is made in a presently applied theme.
-    pub(crate) fn load_theme_file(&mut self, path: &Path) -> bool {
-        match ThemeSet::get_theme(path) {
-            Ok(custom_theme) => {
-                if let Some(filename) = path.file_stem().and_then(OsStr::to_str) {
-                    self.themes.themes.insert(filename.to_owned(), custom_theme);                    
-                    filename == self.get_theme_name()
-                } else { false }
-            }
-            Err(e) => { 
-                eprintln!("Error while loading a theme file {:?}",e);
-                false
-            },
-        }
+    pub(crate) fn remove_theme(&mut self, theme_name: &str) {
+        self.themes.themes.remove(theme_name);
     }
 
-    /// Simply remove the key from the map.
-    pub(crate) fn remove_theme(&mut self, path: &Path) {
-        if let Some(filename) = path.file_stem().and_then(OsStr::to_str) {
-            self.themes.themes.remove(filename);
+    /// Loads and inserts the theme into the `theme` map
+    /// given its path. Returns the theme's name.
+    pub(crate) fn insert_theme(&mut self, path: &Path) -> Result<String, LoadingError> {
+        let mut name = String::new();
+        let theme = ThemeSet::get_theme(path)?;
+        if let Some(theme_name) = path.file_stem().and_then(OsStr::to_str) {
+            self.themes.themes.insert(theme_name.to_owned(), theme);
+            name.push_str(&theme_name.to_owned());
         }
+        Ok(name)
     }
 }
