@@ -384,6 +384,8 @@ this writing, the following is valid json for a `Command` object:
 
 Adds a status item, which will be displayed on the frontend's status bar. The alignment key dictates whether this item appears on the left side or the right side of the bar. This alignment can only be set when the item is added.
 
+When sent, the RPC also sends the plugin name for which the status item belongs to. 
+
 #### update_status_item
 
 `update_status_item { key: "my_key", value: "hello"}`
