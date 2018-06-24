@@ -190,9 +190,9 @@ pub enum PluginNotification {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
-#[serde(tag = "method", content = "params")]
+#[serde(tag = "type")]
 pub enum Position {
-    Utf8Offset(usize),
+    Utf8Offset { offset: usize },
     Utf16LineChar { line: usize, character: usize},
     Utf8LineChar { line: usize, character: usize }
 }

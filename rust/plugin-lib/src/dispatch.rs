@@ -74,7 +74,7 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
         eprintln!("Initializing plugin {:?}", plugin_id);
         self.pid = Some(plugin_id);
 
-        let core_proxy = CoreProxy::new(ctx);
+        let core_proxy = CoreProxy::new(self.pid.unwrap(), ctx);
         self.plugin.initialize(core_proxy);
         
         self.do_new_buffer(ctx, buffers);

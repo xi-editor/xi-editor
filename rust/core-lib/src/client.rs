@@ -45,7 +45,6 @@ pub struct Range {
 
 #[derive(Serialize, Deserialize)]
 pub struct HoverResult {
-    pub request_id: usize,
     pub content: String,
     pub range: Option<Range>
 }

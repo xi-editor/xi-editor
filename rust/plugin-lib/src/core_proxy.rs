@@ -14,29 +14,34 @@
 
 //! A proxy for the methods on Core
 
+use xi_core::internal::plugins::PluginId;
+use xi_core::ViewId;
 use xi_rpc::{RpcCtx, RpcPeer};
 use xi_core::plugin_rpc::{HoverResult};
 
 #[derive(Clone)]
 pub struct CoreProxy {
-    pub peer: RpcPeer
+    plugin_id: PluginId, 
+    peer: RpcPeer
 }
 
 
 impl CoreProxy {
 
-    pub fn new(rpc_ctx: &RpcCtx) -> Self {
+    pub fn new(plugin_id: PluginId, rpc_ctx: &RpcCtx) -> Self {
         CoreProxy {
+            plugin_id,
             peer: rpc_ctx.get_peer().clone()
         }
     }
 
-    pub fn display_hover_result(&mut self, request_id: usize, result: Option<HoverResult>, rev: u64) {
+    pub fn display_hover_result(&mut self, view_id: ViewId, result: Option<HoverResult>, rev: u64) {
 
         let params = json!({
-            "request_id": request_id,
+            "plugin_id": self.plugin_id,
             "rev": rev,
-            "result": result
+            "result": result,
+            "view_id": view_id
         });
 
         self.peer.send_rpc_notification("hover_result", &params);

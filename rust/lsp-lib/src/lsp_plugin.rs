@@ -120,7 +120,7 @@ fn lsp_position_from_core_position<C: Cache>(
             line: line as u64,
             character: character as u64,
         }),
-        CorePosition::Utf8Offset(offset) => get_position_of_offset(view, offset),
+        CorePosition::Utf8Offset { offset } => get_position_of_offset(view, offset),
     }
 }
 
@@ -460,6 +460,7 @@ impl Plugin for LspPlugin {
     ) {
         let rev = view.rev;
         let view_info = self.view_info.get_mut(&view.get_id());
+        let view_id = view.get_id();
         if let Some(view_info) = view_info {
             // This won't fail since we definitely have a client for the given
             // client identifier
@@ -468,7 +469,9 @@ impl Plugin for LspPlugin {
                 .get(&view_info.ls_identifier)
                 .unwrap();
 
+            eprintln!("Postion : {:?}", position);
             let position_ls = lsp_position_from_core_position(view, position);
+            eprintln!("Postion LS : {:?}", position_ls);
 
             match position_ls {
                 Ok(position) => {
@@ -478,7 +481,11 @@ impl Plugin for LspPlugin {
                         position,
                         move |ls_client, result| match result {
                             Ok(result) => {
+
+                                eprintln!("Result {:?}", result);
                                 let hover: Hover = serde_json::from_value(result).unwrap();
+                                eprintln!("HOVER {:?}", hover);
+
                                 let hover_result = HoverResult {
                                     request_id,
                                     content: markdown_from_hover_contents(hover.contents),
@@ -496,13 +503,14 @@ impl Plugin for LspPlugin {
                                     }),
                                 };
 
+                                eprintln!("HR {:?}",hover_result);
                                 ls_client
                                     .core
-                                    .display_hover_result(request_id, Some(hover_result), rev);
+                                    .display_hover_result(view_id, Some(hover_result), rev);
                             }
                             Err(err) => {
                                 eprintln!("Hover Response from LSP Error: {:?}", err);
-                                ls_client.core.display_hover_result(request_id, None, rev);
+                                ls_client.core.display_hover_result(view_id, None, rev);
                             }
                         },
                     );

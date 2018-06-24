@@ -128,7 +128,6 @@ impl LanguageServerClient {
             Err(err) => panic!("Encoding Error {:?}", err),
         };
 
-        eprintln!("RPC: {:?}", rpc);
         self.write(rpc.as_ref());
     }
 
@@ -136,7 +135,6 @@ impl LanguageServerClient {
         let notification = JsonRpc::notification_with_params(method, params);
 
         let res = to_value(&notification).unwrap();
-        eprintln!("RESULT: {:?}", res);
 
         self.send_rpc(res);
     }
@@ -232,6 +230,7 @@ impl LanguageServerClient {
     ) where
         CB: 'static + Send + FnOnce(&mut LanguageServerClient, Result<Value, Error>),
     {
+        eprintln!("Opened Docs {:?}", self.opened_documents);
         let text_document_position_params = TextDocumentPositionParams {
             text_document: TextDocumentIdentifier {
                 uri: self.opened_documents.get(&view_id).unwrap().clone(),

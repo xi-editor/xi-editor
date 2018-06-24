@@ -174,8 +174,9 @@ impl<'a> EventContext<'a> {
                                                         self.view_id, &key, &value),
             RemoveStatusItem { key } => self.client.remove_status_item(self.view_id, &key),
             HoverResult { rev, result } => {
-                let _hover_result = self.get_client_hover_result(rev, result);
-
+                let request_id = result.request_id;
+                let hover_result = self.get_client_hover_result(rev, result);
+                self.client.show_hover_definition(self.view_id, request_id, hover_result);
                 // Notify the client next
             }
         };
@@ -185,7 +186,6 @@ impl<'a> EventContext<'a> {
 
     pub fn get_client_hover_result(&mut self, rev: u64, result: HoverResult) -> ClientHoverResult {
         return ClientHoverResult {
-            request_id: result.request_id,
             content: result.content,
             range: result.range.and_then(|r| {
                 Some(Utf8OffsetRange {
@@ -200,7 +200,7 @@ impl<'a> EventContext<'a> {
         self.with_editor(|ed, view, _, _| {
             let rope = ed.get_text_rope(rev)?;
             Some(match position {
-                Position::Utf8Offset(offset) => offset,
+                Position::Utf8Offset {offset} => offset,
                 Position::Utf8LineChar {line, character} => view.line_col_to_offset(&rope, line, character),
                 Position::Utf16LineChar {line, character} => view.line_col_utf16_to_offset(&rope, line, character)
             })
@@ -452,7 +452,7 @@ impl<'a> EventContext<'a> {
     fn request_hover_definition(&mut self, request_id: usize, position: Option<Position>) {
         
         let position = position.or_else(|| self.view.borrow().get_caret_offset()
-                            .and_then(|offset| Some(Position::Utf8Offset(offset))));
+                            .and_then(|offset| Some(Position::Utf8Offset{ offset })));
 
         if let Some(position) = position {
             self.plugins.iter().for_each(|p| {
