@@ -17,9 +17,9 @@ use std::path::PathBuf;
 
 use serde_json::{self, Value};
 
-use xi_core::plugin_rpc::{HostNotification, HostRequest, PluginBufferInfo, PluginUpdate};
-use xi_core::{ConfigTable, PluginPid, ViewIdentifier};
-use xi_rpc::{Handler as RpcHandler, RemoteError, RpcCtx};
+use xi_core::{ViewId, PluginPid, ConfigTable};
+use xi_core::plugin_rpc::{PluginBufferInfo, PluginUpdate, HostRequest, HostNotification};
+use xi_rpc::{RpcCtx, RemoteError, Handler as RpcHandler};
 use xi_trace::{self, trace, trace_block, trace_block_payload};
 
 use super::{Plugin, View};
@@ -55,7 +55,7 @@ macro_rules! bail_err {
 /// to the plugin,
 pub struct Dispatcher<'a, P: 'a + Plugin> {
     //TODO: when we add multi-view, this should be an Arc+Mutex/Rc+RefCell
-    views: HashMap<ViewIdentifier, View<P::Cache>>,
+    views: HashMap<ViewId, View<P::Cache>>,
     pid: Option<PluginPid>,
     plugin: &'a mut P,
 }
@@ -81,7 +81,7 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
         self.do_new_buffer(ctx, buffers);
     }
 
-    fn do_did_save(&mut self, view_id: ViewIdentifier, path: PathBuf) {
+    fn do_did_save(&mut self, view_id: ViewId, path: PathBuf) {
         let v = bail!(self.views.get_mut(&view_id), "did_save", self.pid, view_id);
         let prev_path = v.path.take();
         v.path = Some(path);
@@ -89,13 +89,8 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
             .did_save(v, prev_path.as_ref().map(PathBuf::as_path));
     }
 
-    fn do_config_changed(&mut self, view_id: ViewIdentifier, changes: ConfigTable) {
-        let v = bail!(
-            self.views.get_mut(&view_id),
-            "config_changed",
-            self.pid,
-            view_id
-        );
+    fn do_config_changed(&mut self, view_id: ViewId, changes: ConfigTable) {
+        let v = bail!(self.views.get_mut(&view_id), "config_changed", self.pid, view_id);
         self.plugin.config_changed(v, &changes);
         for (key, value) in changes.iter() {
             v.config_table.insert(key.to_owned(), value.to_owned());
@@ -116,7 +111,7 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
             });
     }
 
-    fn do_close(&mut self, view_id: ViewIdentifier) {
+    fn do_close(&mut self, view_id: ViewId) {
         {
             let v = bail!(self.views.get(&view_id), "close", self.pid, view_id);
             self.plugin.did_close(v);
@@ -206,8 +201,9 @@ impl<'a, P: Plugin> RpcHandler for Dispatcher<'a, P> {
     }
 
     fn idle(&mut self, _ctx: &RpcCtx, token: usize) {
-        let _t = trace_block_payload("Dispatcher::idle", &["plugin"], format!("token: {}", token));
-        let view_id: ViewIdentifier = token.into();
+        let _t = trace_block_payload("Dispatcher::idle", &["plugin"],
+                                     format!("token: {}", token));
+        let view_id: ViewId = token.into();
         let v = bail!(self.views.get_mut(&view_id), "idle", self.pid, view_id);
         self.plugin.idle(v);
     }

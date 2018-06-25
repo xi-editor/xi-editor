@@ -27,6 +27,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::MutexGuard;
 
+use xi_core::{ViewId, ConfigTable};
 use xi_core::plugin_rpc::ScopeSpan;
 use xi_core::{ConfigTable, ViewIdentifier};
 use xi_plugin_lib::{mainloop, Cache, Plugin, StateCache, View};
@@ -64,7 +65,7 @@ type LineState = Option<(ParseState, ScopeStack)>;
 
 /// The state of syntax highlighting for a collection of buffers.
 struct Syntect<'a> {
-    view_state: HashMap<ViewIdentifier, PluginState>,
+    view_state: HashMap<ViewId, PluginState>,
     syntax_set: &'a SyntaxSet,
 }
 

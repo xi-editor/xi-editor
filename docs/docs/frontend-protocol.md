@@ -12,7 +12,9 @@ site_nav_category: docs
     - [Backend](#from-front-end-to-back-end)
         - [Edit Commands](#edit-namespace)
         - [Plugin Commands](#plugin-namespace)
+
     - [Frontend](#from-back-end-to-front-end)
+        - [Status Bar Commands](#status-bar-commands)
 
 ----
 
@@ -123,6 +125,14 @@ region is used to compute movement distance for page up and page down
 commands, and also controls the size of the fragment sent in the
 `update` method.
 
+#### resize
+
+`resize {width: 420, height: 400}`
+
+Notifies the backend that the size of the view has changed. This is
+used for word wrapping, if enabled. Width and height are specified
+in px units / points, not display pixels.
+
 #### click
 
 `click [42,31,0,1]`
@@ -177,10 +187,8 @@ move_left_and_modify_selection
 move_right
 move_right_and_modify_selection
 scroll_page_up
-page_up
 page_up_and_modify_selection
 scroll_page_down
-page_down
 page_down_and_modify_selection
 ```
 
@@ -367,6 +375,27 @@ this writing, the following is valid json for a `Command` object:
         ]
     }
 ```
+
+### Status Bar Commands
+
+#### add_status_item
+
+`add_status_item { key: "my_key", value: "hello", alignment: "left" }`
+
+Adds a status item, which will be displayed on the frontend's status bar. The alignment key dictates whether this item appears on the left side or the right side of the bar. This alignment can only be set when the item is added.
+
+#### update_status_item
+
+`update_status_item { key: "my_key", value: "hello"}`
+
+Update a status item with the specified key with the new value.
+
+#### remove_status_item
+
+`remove_status_item { key: "my_key" }`
+
+Removes a status item from the front end.
+
 
 ## Other future extensions
 

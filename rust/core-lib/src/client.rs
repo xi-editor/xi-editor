@@ -124,6 +124,14 @@ impl Client {
         self.0.send_rpc_notification("def_style", &style)
     }
 
+    pub fn find_status(&self, view_id: ViewId, queries: &Value) {
+        self.0.send_rpc_notification("find_status",
+                                     &json!({
+                                         "view_id": view_id,
+                                         "queries": queries,
+                                     }));
+    }
+
     /// Ask front-end to measure widths of strings.
     pub fn measure_width(&self, reqs: &[WidthReq])
         -> Result<Vec<Vec<f64>>, xi_rpc::Error>
@@ -135,9 +143,30 @@ impl Client {
            .expect("failed to deserialize width response"))
     }
 
-
     pub fn alert<S: AsRef<str>>(&self, msg: S) {
         self.0.send_rpc_notification("alert", &json!({ "msg": msg.as_ref() }));
+    }
+
+    pub fn add_status_item(&self, view_id: ViewId, key: &str, value: &str, alignment: &str) {
+        self.0.send_rpc_notification("add_status_item", &json!(
+            {   "view_id": view_id,
+                "key": key,
+                "value": value,
+                "alignment": alignment
+            }));
+    }
+
+    pub fn update_status_item(&self, view_id: ViewId, key: &str, value: &str) {
+        self.0.send_rpc_notification("update_status_item", &json!(
+            {   "view_id": view_id,
+                "key": key,
+                "value": value,
+            }));
+    }
+
+    pub fn remove_status_item(&self, view_id: ViewId, key: &str) {
+        self.0.send_rpc_notification("remove_status_item", &json!(
+            {   "view_id": view_id, "key": key }));
     }
 
     pub fn schedule_idle(&self, token: usize) {

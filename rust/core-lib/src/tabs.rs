@@ -70,7 +70,6 @@ pub type PluginId = ::plugins::PluginPid;
 
 // old-style names; will be deprecated
 pub type BufferIdentifier = BufferId;
-pub type ViewIdentifier = ViewId;
 
 /// Totally arbitrary; we reserve this space for `ViewId`s
 pub(crate) const RENDER_VIEW_IDLE_MASK: usize = 1 << 25;
@@ -207,17 +206,22 @@ impl CoreState {
 
     /// Sets (overwriting) the config for a given domain.
     fn set_config(&mut self, domain: ConfigDomain, table: Table) {
-        if let Err(e) = self.config_manager.set_user_config(domain, table) {
-            self.peer.alert(format!("{}", &e));
-        } else {
-            self.after_config_change();
+        match self.config_manager.set_user_config(domain, table) {
+            Err(e) => self.peer.alert(format!("{}", &e)),
+            Ok(changes) => self.handle_config_changes(changes),
         }
     }
 
     /// Notify editors/views/plugins of config changes.
-    fn after_config_change(&self) {
-        self.iter_groups()
-            .for_each(|mut ctx| ctx.config_changed(&self.config_manager))
+    fn handle_config_changes(&self, changes: Vec<(BufferId, Table)>) {
+        for (id, table) in changes {
+            let view_id = self.views.values()
+                .find(|v| v.borrow().get_buffer_id() == id)
+                .map(|v| v.borrow().get_view_id())
+                .unwrap();
+
+            self.make_context(view_id).unwrap().config_changed(&table)
+        }
     }
 }
 
@@ -237,12 +241,16 @@ impl CoreState {
             let editor = self.editors.get(&buffer_id).unwrap();
             let info = self.file_manager.get_info(buffer_id);
             let plugins = self.running_plugins.iter().collect::<Vec<_>>();
+            let config = self.config_manager.get_buffer_config(buffer_id);
+            let language = self.config_manager.get_buffer_language(buffer_id);
 
             EventContext {
                 view_id,
                 buffer_id,
                 view,
                 editor,
+                config: &config.items,
+                language,
                 info: info,
                 siblings: Vec::new(),
                 plugins: plugins,
@@ -339,22 +347,20 @@ impl CoreState {
         let view_id = self.next_view_id();
         let buffer_id = self.next_buffer_id();
 
-        let editor = match path {
-            Some(path) => self.new_with_file(&path, buffer_id)?,
-            None => self.new_empty_buffer(),
+        let rope = match path.as_ref() {
+            Some(p) => self.file_manager.open(p, buffer_id)?,
+            None => Rope::from(""),
         };
 
-        let mut view = View::new(view_id, buffer_id);
-
-        let wrap_width = editor.get_config().items.wrap_width;
-        view.rewrap(editor.get_buffer(), wrap_width);
-        view.set_dirty(editor.get_buffer());
-
-        let editor = RefCell::new(editor);
-        let view = RefCell::new(view);
+        let editor = RefCell::new(Editor::with_text(rope));
+        let view = RefCell::new(View::new(view_id, buffer_id));
 
         self.editors.insert(buffer_id, editor);
         self.views.insert(view_id, view);
+
+        self.config_manager.add_buffer(buffer_id,
+                                       path.as_ref().map(|p| p.as_path()));
+
         //NOTE: because this is a synchronous call, we have to return the
         //view_id before we can send any events to this view. We use mark the
         // viewa s pending and schedule the idle handler so that we can finish
@@ -363,25 +369,6 @@ impl CoreState {
         self.peer.schedule_idle(NEW_VIEW_IDLE_TOKEN);
 
         Ok(json!(view_id))
-    }
-
-    fn new_empty_buffer(&mut self) -> Editor {
-        let config = self.config_manager.default_buffer_config();
-        Editor::new(config)
-    }
-
-    fn new_with_file(&mut self, path: &Path, buffer_id: BufferId)
-        -> Result<Editor, RemoteError>
-    {
-        let rope = self.file_manager.open(path, buffer_id)?;
-        let syntax = self.config_manager.language_for_path(path);
-        let config = self.config_manager.get_buffer_config(syntax.clone(),
-                                                           buffer_id);
-        let mut editor = Editor::with_text(rope, config);
-        if let Some(syntax) = syntax {
-            editor.set_syntax(syntax);
-        }
-        Ok(editor)
     }
 
     fn do_save<P>(&mut self, view_id: ViewId, path: P)
@@ -397,25 +384,19 @@ impl CoreState {
 
         let ed = self.editors.get(&buffer_id).unwrap();
 
-        let result = self.file_manager.save(path, ed.borrow().get_buffer(),
-                                            buffer_id);
-        if let Err(e) = result {
+        if let Err(e) = self.file_manager.save(path, ed.borrow().get_buffer(),
+                                               buffer_id) {
             self.peer.alert(e.to_string());
             return;
         }
 
-        let syntax = self.config_manager.language_for_path(path);
-        let config = self.config_manager.get_buffer_config(syntax.clone(),
-                                                           buffer_id);
-        // TODO: keep track of syntax in config manager, not in editor
-        if let Some(syntax) = syntax {
-            ed.borrow_mut().set_syntax(syntax);
-        }
-        //TODO: rework how config changes are handled if a path changes.
-        //tldr; do the save first, then reload the config.
+        self.make_context(view_id).unwrap().after_save(path);
 
-        let mut event_ctx = self.make_context(view_id).unwrap();
-        event_ctx.after_save(path, config);
+        // update the config _after_ sending save related events
+        let changes = self.config_manager.update_buffer_path(buffer_id, path);
+        if let Some(changes) = changes {
+            self.make_context(view_id).unwrap().config_changed(&changes);
+        }
     }
 
     fn do_close_view(&mut self, view_id: ViewId) {
@@ -430,6 +411,7 @@ impl CoreState {
             if close_buffer {
                 self.editors.remove(&buffer_id);
                 self.file_manager.close(buffer_id);
+                self.config_manager.remove_buffer(buffer_id);
             }
         }
     }
@@ -446,7 +428,7 @@ impl CoreState {
         }
 
         self.iter_groups().for_each(|mut edit_ctx| {
-            edit_ctx.with_editor(|ed, view, _| {
+            edit_ctx.with_editor(|ed, view, _, _| {
                 ed.theme_changed(&self.style_map.borrow());
                 view.set_dirty(ed.get_buffer());
             });
@@ -475,8 +457,8 @@ impl CoreState {
 
     fn do_get_config(&self, view_id: ViewId) -> Result<Table, RemoteError> {
         let _t = trace_block("CoreState::get_config", &["core"]);
-        self.make_context(view_id)
-            .map(|mut ctx| ctx.with_editor(|ed, _, _| ed.get_config().to_table()))
+        self.views.get(&view_id).map(|v| v.borrow().get_buffer_id())
+            .map(|id| self.config_manager.get_buffer_config(id).to_table())
             .ok_or(RemoteError::custom(404, format!("missing {}", view_id), None))
     }
 

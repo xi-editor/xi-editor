@@ -25,9 +25,10 @@ use serde_json::{self, Value};
 use serde::de::{self, Deserialize, Deserializer};
 use serde::ser::{self, Serialize, Serializer};
 
-use tabs::ViewId;
-use plugins::PlaceholderRpc;
 use config::{Table, ConfigDomainExternal};
+use plugins::PlaceholderRpc;
+use tabs::ViewId;
+use view::Size;
 
 // =============================================================================
 //  Command types
@@ -372,6 +373,7 @@ pub enum EditNotification {
     AddSelectionAbove,
     AddSelectionBelow,
     Scroll(LineRange),
+    Resize(Size),
     GotoLine { line: u64 },
     RequestLines(LineRange),
     Yank,
@@ -381,6 +383,12 @@ pub enum EditNotification {
     Gesture { line: u64, col: u64, ty: GestureType},
     Undo,
     Redo,
+    /// Searches the document for `chars`, if present, falling back on
+    /// the last selection region if `chars` is `None`.
+    ///
+    /// If `chars` is `None` and there is an active selection, returns
+    /// the string value used for the search, else returns `Null`.
+    Find { chars: String, case_sensitive: bool, regex: Option<bool> },
     FindNext { wrap_around: Option<bool>, allow_same: Option<bool> },
     FindPrevious { wrap_around: Option<bool> },
     DebugRewrap,
@@ -391,7 +399,10 @@ pub enum EditNotification {
     Uppercase,
     Lowercase,
     Indent,
-    Outdent
+    Outdent,
+    /// Indicates whether find highlights should be rendered
+    HighlightFind { visible: bool },
+    SelectionForFind { case_sensitive: Option<bool> },
 }
 
 /// The edit related requests.
@@ -405,12 +416,6 @@ pub enum EditRequest {
     /// Copies the active selection, returning their contents or
     /// or `Null` if the selection was empty.
     Copy,
-    /// Searches the document for `chars`, if present, falling back on
-    /// the last selection region if `chars` is `None`.
-    ///
-    /// If `chars` is `None` and there is an active selection, returns
-    /// the string value used for the search, else returns `Null`.
-    Find { chars: Option<String>, case_sensitive: bool },
 }
 
 

@@ -25,7 +25,7 @@ use xi_rope::engine::{Engine, RevId, RevToken};
 use xi_rope::spans::SpansBuilder;
 use xi_trace::trace_block;
 
-use config::{BufferConfig, Table};
+use config::BufferItems;
 use event_context::MAX_SIZE_LIMIT;
 use edit_types::BufferEvent;
 use layers::Layers;
@@ -34,7 +34,6 @@ use plugins::PluginId;
 use plugins::rpc::{PluginEdit, ScopeSpan, TextUnit, GetDataResponse};
 use selection::{Selection, SelRegion};
 use styles::ThemeStyleMap;
-use syntax::LanguageId;
 use view::View;
 
 #[cfg(not(feature = "ledger"))]
@@ -83,19 +82,17 @@ pub struct Editor {
     #[allow(dead_code)]
     last_synced_rev: RevId,
 
-    syntax: LanguageId,
     layers: Layers,
-    config: BufferConfig,
 }
 
 impl Editor {
     /// Creates a new `Editor` with a new empty buffer.
-    pub fn new(config: BufferConfig) -> Editor {
-        Self::with_text("", config)
+    pub fn new() -> Editor {
+        Self::with_text("")
     }
 
     /// Creates a new `Editor`, loading text into a new buffer.
-    pub fn with_text<T>(text: T, config: BufferConfig) -> Editor
+    pub fn with_text<T>(text: T) -> Editor
         where T: Into<Rope>,
     {
 
@@ -105,7 +102,6 @@ impl Editor {
 
         Editor {
             text: buffer,
-            syntax: LanguageId::default(),
             engine,
             last_rev_id,
             pristine_rev_id: last_rev_id,
@@ -120,7 +116,6 @@ impl Editor {
             last_edit_type: EditType::Other,
             this_edit_type: EditType::Other,
             layers: Layers::default(),
-            config,
             revs_in_flight: 0,
             sync_store: None,
             last_synced_rev: last_rev_id,
@@ -173,31 +168,6 @@ impl Editor {
         builder.replace(all_iv, text);
         self.add_delta(builder.build());
         self.set_pristine();
-    }
-
-    /// Sets the config for this buffer. If the new config differs
-    /// from the existing config, returns the modified items.
-    pub fn set_config(&mut self, conf: BufferConfig) -> Option<Table> {
-        if let Some(changes) = conf.changes_from(Some(&self.config)) {
-            self.config = conf;
-            Some(changes)
-        } else {
-            None
-        }
-    }
-
-    pub fn get_config(&self) -> &BufferConfig {
-        &self.config
-    }
-
-    /// Returns this `Editor`'s active `LanguageId`.
-    pub fn get_syntax(&self) -> &LanguageId {
-        &self.syntax
-    }
-
-    //TODO: temporary, this should be tracked in config manager
-    pub(crate) fn set_syntax(&mut self, language: LanguageId) {
-        self.syntax = language;
     }
 
     // each outstanding plugin edit represents a rev_in_flight.
@@ -365,7 +335,7 @@ impl Editor {
         }
     }
 
-    fn delete_backward(&mut self, view: &View) {
+    fn delete_backward(&mut self, view: &View, config: &BufferItems) {
         // TODO: this function is workable but probably overall code complexity
         // could be improved by implementing a "backspace" movement instead.
         let mut builder = delta::Builder::new(self.text.len());
@@ -374,18 +344,18 @@ impl Editor {
                 region.min()
             } else {
                 // backspace deletes max(1, tab_size) contiguous spaces
-                let (_, c) = view.offset_to_line_col(&self.text,
-                                                     region.start);
-                let use_spaces = self.config.items.translate_tabs_to_spaces;
-                let use_tab_stops = self.config.items.use_tab_stops;
-                let tab_size = self.config.items.tab_size;
-                let tab_off = c & tab_size;
+                let (_, c) = view.offset_to_line_col(&self.text, region.start);
+
+                let tab_off = c & config.tab_size;
+                let tab_size = config.tab_size;
                 let tab_size = if tab_off == 0 { tab_size } else { tab_off };
+                let tab_start = region.start.saturating_sub(tab_size);
                 let preceded_by_spaces = region.start > 0 &&
-                    (region.start.saturating_sub(tab_size)..region.start)
-                    .all(|i| self.text.byte_at(i) == b' ');
-                if preceded_by_spaces && use_spaces && use_tab_stops {
-                    region.start - tab_size
+                    (tab_start..region.start).all(|i| self.text.byte_at(i) == b' ');
+                if preceded_by_spaces
+                    && config.translate_tabs_to_spaces
+                    && config.use_tab_stops {
+                    tab_start
                 } else {
                     self.text.prev_grapheme_offset(region.end)
                         .unwrap_or(region.end)
@@ -467,15 +437,14 @@ impl Editor {
         saved
     }
 
-    fn insert_newline(&mut self, view: &View) {
+    fn insert_newline(&mut self, view: &View, config: &BufferItems) {
         self.this_edit_type = EditType::InsertChars;
-        let text = self.config.items.line_ending.clone();
-        self.insert(view, &text);
+        self.insert(view, &config.line_ending);
     }
 
-    fn insert_tab(&mut self, view: &View) {
+    fn insert_tab(&mut self, view: &View, config: &BufferItems) {
         let mut builder = delta::Builder::new(self.text.len());
-        let const_tab_text = self.get_tab_text(self.config.items.tab_size);
+        let const_tab_text = self.get_tab_text(config, None);
 
         for region in view.sel_regions() {
             let line_range = view.get_line_range(&self.text, region);
@@ -488,9 +457,9 @@ impl Editor {
                 }
             } else {
                 let (_, col) = view.offset_to_line_col(&self.text, region.start);
-                let mut tab_size = self.config.items.tab_size;
+                let mut tab_size = config.tab_size;
                 tab_size = tab_size - (col % tab_size);
-                let tab_text = self.get_tab_text(tab_size);
+                let tab_text = self.get_tab_text(config, Some(tab_size));
 
                 let iv = Interval::new_closed_open(region.min(), region.max());
                 builder.replace(iv, Rope::from(tab_text));
@@ -523,9 +492,10 @@ impl Editor {
     /// Preserves cursor position and current selection as much as possible.
     /// Tries to have behavior consistent with other editors like Atom,
     /// Sublime and VSCode, with non-caret selections not being modified.
-    fn modify_indent(&mut self, view: &View, direction: IndentDirection) {
+    fn modify_indent(&mut self, view: &View, config: &BufferItems,
+                     direction: IndentDirection) {
         let mut lines = BTreeSet::new();
-        let tab_text = self.get_tab_text(self.config.items.tab_size);
+        let tab_text = self.get_tab_text(config, None);
         for region in view.sel_regions() {
             let line_range = view.get_line_range(&self.text, region);
             for line in line_range {
@@ -572,8 +542,11 @@ impl Editor {
         self.add_delta(builder.build());
     }
 
-    fn get_tab_text(&self, tab_size: usize) -> &'static str {
-        let tab_text = if self.config.items.translate_tabs_to_spaces {
+    fn get_tab_text(&self, config: &BufferItems, tab_size: Option<usize>)
+        -> &'static str
+    {
+        let tab_size = tab_size.unwrap_or(config.tab_size);
+        let tab_text = if config.translate_tabs_to_spaces {
             n_spaces(tab_size)
         } else { "\t" };
 
@@ -691,21 +664,21 @@ impl Editor {
     }
 
     pub(crate) fn do_edit(&mut self, view: &mut View, kill_ring: &mut Rope,
-                          cmd: BufferEvent) {
+                          config: &BufferItems, cmd: BufferEvent) {
         use self::BufferEvent::*;
         match cmd {
             Delete { movement, kill } =>
                 self.delete_by_movement(view, movement, kill, kill_ring),
-            Backspace => self.delete_backward(view),
+            Backspace => self.delete_backward(view, config),
             Transpose => self.do_transpose(view),
             Undo => self.do_undo(),
             Redo => self.do_redo(),
             Uppercase => self.transform_text(view, |s| s.to_uppercase()),
             Lowercase => self.transform_text(view, |s| s.to_lowercase()),
-            Indent => self.modify_indent(view, IndentDirection::In),
-            Outdent => self.modify_indent(view, IndentDirection::Out),
-            InsertNewline => self.insert_newline(view),
-            InsertTab => self.insert_tab(view),
+            Indent => self.modify_indent(view, config, IndentDirection::In),
+            Outdent => self.modify_indent(view, config, IndentDirection::Out),
+            InsertNewline => self.insert_newline(view, config),
+            InsertTab => self.insert_tab(view, config),
             Insert(chars) => self.do_insert(view, &chars),
             Yank => self.yank(view, kill_ring),
         }

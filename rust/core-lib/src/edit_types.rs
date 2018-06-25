@@ -19,7 +19,8 @@
 //! the editor or view as appropriate.
 
 use movement::Movement;
-use ::rpc::{GestureType, LineRange, EditNotification, MouseAction};
+use rpc::{GestureType, LineRange, EditNotification, MouseAction};
+use view::Size;
 
 
 /// Events that only modify view state
@@ -34,9 +35,12 @@ pub(crate) enum ViewEvent {
     Drag(MouseAction),
     Gesture { line: u64, col: u64, ty: GestureType },
     GotoLine { line: u64 },
+    Find { chars: String, case_sensitive: bool, regex: Option<bool> },
     FindNext { wrap_around: Option<bool>, allow_same: Option<bool> },
     FindPrevious { wrap_around: Option<bool> },
     Cancel,
+    HighlightFind { visible: bool },
+    SelectionForFind { case_sensitive: Option<bool> },
 }
 
 /// Events that modify the buffer
@@ -61,6 +65,7 @@ pub(crate) enum SpecialEvent {
     DebugRewrap,
     DebugWrapWidth,
     DebugPrintSpans,
+    Resize(Size),
     RequestLines(LineRange),
 }
 
@@ -181,6 +186,7 @@ impl From<EditNotification> for EventDomain {
             AddSelectionAbove => ViewEvent::AddSelectionAbove.into(),
             AddSelectionBelow => ViewEvent::AddSelectionBelow.into(),
             Scroll(range) => ViewEvent::Scroll(range).into(),
+            Resize(size) => SpecialEvent::Resize(size).into(),
             GotoLine { line } => ViewEvent::GotoLine { line }.into(),
             RequestLines(range) => SpecialEvent::RequestLines(range).into(),
             Yank => BufferEvent::Yank.into(),
@@ -191,6 +197,8 @@ impl From<EditNotification> for EventDomain {
                 ViewEvent::Gesture { line, col, ty }.into(),
             Undo => BufferEvent::Undo.into(),
             Redo => BufferEvent::Redo.into(),
+            Find { chars, case_sensitive, regex } =>
+                ViewEvent::Find { chars, case_sensitive, regex }.into(),
             FindNext { wrap_around, allow_same } =>
                 ViewEvent::FindNext { wrap_around, allow_same }.into(),
             FindPrevious { wrap_around } =>
@@ -203,6 +211,9 @@ impl From<EditNotification> for EventDomain {
             Lowercase => BufferEvent::Lowercase.into(),
             Indent => BufferEvent::Indent.into(),
             Outdent => BufferEvent::Outdent.into(),
+            HighlightFind { visible } => ViewEvent::HighlightFind { visible }.into(),
+            SelectionForFind { case_sensitive } =>
+                ViewEvent::SelectionForFind { case_sensitive }.into(),
         }
     }
 }

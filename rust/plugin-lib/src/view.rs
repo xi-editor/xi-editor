@@ -16,8 +16,8 @@ use serde::Deserialize;
 use serde_json::{self, Value};
 use std::path::{Path, PathBuf};
 
-use xi_core::plugin_rpc::{GetDataResponse, PluginBufferInfo, PluginEdit, ScopeSpan, TextUnit};
-use xi_core::{BufferConfig, ConfigTable, PluginPid, ViewIdentifier};
+use xi_core::{ViewId, PluginPid, BufferConfig, ConfigTable};
+use xi_core::plugin_rpc::{TextUnit, PluginEdit, GetDataResponse, ScopeSpan, PluginBufferInfo};
 use xi_rope::rope::RopeDelta;
 use xi_trace::trace_block;
 
@@ -40,7 +40,7 @@ pub struct View<C> {
     pub rev: u64,
     pub undo_group: Option<usize>,
     buf_size: usize,
-    pub(crate) view_id: ViewIdentifier,
+    pub (crate) view_id: ViewId,
 }
 
 impl<C: Cache> View<C> {
@@ -113,13 +113,18 @@ impl<C: Cache> View<C> {
         &mut self.cache
     }
 
-    pub fn get_id(&self) -> ViewIdentifier {
+    pub fn get_id(&self) -> ViewId {
         self.view_id.clone()
     }
 
     pub fn get_line(&mut self, line_num: usize) -> Result<&str, Error> {
         let ctx = self.make_ctx();
         self.cache.get_line(&ctx, line_num)
+    }
+
+    pub fn get_document(&mut self) -> Result<String, Error> {
+        let ctx = self.make_ctx();
+        self.cache.get_document(&ctx)
     }
 
     pub fn offset_of_line(&mut self, line_num: usize) -> Result<usize, Error> {
@@ -188,12 +193,43 @@ impl<C: Cache> View<C> {
     pub fn request_is_pending(&self) -> bool {
         self.peer.request_is_pending()
     }
+
+    pub fn add_status_item(&self, key: &str, value: &str, alignment: &str) {
+        let params = json!({
+            "plugin_id": self.plugin_id,
+            "view_id": self.view_id,
+            "key": key,
+            "value": value,
+            "alignment": alignment
+        });
+        self.peer.send_rpc_notification("add_status_item", &params);
+    }
+
+    pub fn update_status_item(&self, key: &str, value: &str) {
+        let params = json!({
+            "plugin_id": self.plugin_id,
+            "view_id": self.view_id,
+            "key": key,
+            "value": value
+        });
+        self.peer.send_rpc_notification("update_status_item", &params);
+    }
+
+    pub fn remove_status_item(&self, key: &str) {
+        let params = json!({
+            "plugin_id": self.plugin_id,
+            "view_id": self.view_id,
+            "key": key
+        });
+        self.peer.send_rpc_notification("remove_status_item", &params);
+    }
+
 }
 
 /// A simple wrapper type that acts as a `DataSource`.
 pub struct FetchCtx {
     plugin_id: PluginPid,
-    view_id: ViewIdentifier,
+    view_id: ViewId,
     peer: RpcPeer,
 }
 
