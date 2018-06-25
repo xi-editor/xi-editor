@@ -87,6 +87,9 @@ pub struct View {
 
     /// The state for replacing matches for this view.
     replace: Option<Replace>,
+
+    /// Tracks whether the replacement string or replace parameters changed.
+    replace_changed: bool,
 }
 
 /// Indicates what changed in the find state.
@@ -166,6 +169,7 @@ impl View {
             find_changed: FindStatusChange::None,
             highlight_find: false,
             replace: None,
+            replace_changed: false,
         }
     }
 
@@ -653,6 +657,13 @@ impl View {
             client.find_status(self.view_id, &json!(self.find_status(matches_only)));
         }
 
+        // send updated replace status if changed
+        if self.replace_changed {
+            if let Some(replace) = self.get_replace() {
+                client.replace_status(self.view_id, &replace)
+            }
+        }
+
         let mut b = line_cache_shadow::Builder::new();
         let mut ops = Vec::new();
         let mut line_num = 0;  // tracks old line cache
@@ -1008,6 +1019,7 @@ impl View {
 
     fn set_replace(&mut self, chars: String, preserve_case: bool) {
         self.replace = Some(Replace { chars, preserve_case });
+        self.replace_changed = true;
     }
 
     fn selection_for_replace(&mut self, text: &Rope) {
