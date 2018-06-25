@@ -664,7 +664,7 @@ impl Editor {
         if let Some(Replace { chars, preserve_case }) = view.get_replace() {
             // todo: implement preserve case
             view.find_all(&self.text);
-            
+
             match last_selection_region(view.sel_regions()) {
                 Some(_) => self.insert(view, chars),
                 None => return,
