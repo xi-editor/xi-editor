@@ -380,7 +380,7 @@ this writing, the following is valid json for a `Command` object:
 
 #### add_status_item
 
-`add_status_item { key: "my_key", value: "hello", alignment: "left" }`
+`add_status_item { plugin, key: "my_key", value: "hello", alignment: "left" }`
 
 Adds a status item, which will be displayed on the frontend's status bar. The alignment key dictates whether this item appears on the left side or the right side of the bar. This alignment can only be set when the item is added.
 

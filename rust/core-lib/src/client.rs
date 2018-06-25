@@ -19,7 +19,7 @@ use std::time::Instant;
 use serde_json::{self, Value};
 use xi_rpc::{self, RpcPeer};
 
-use tabs::{ViewId};
+use tabs::ViewId;
 use config::Table;
 use styles::ThemeSettings;
 use plugins::rpc::ClientPluginInfo;
