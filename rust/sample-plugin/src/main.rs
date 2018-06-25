@@ -55,7 +55,10 @@ impl Plugin for SamplePlugin {
     fn config_changed(&mut self, _view: &mut View<Self::Cache>, _changes: &ConfigTable) {}
 
     fn update(
-        &mut self, view: &mut View<Self::Cache>, delta: Option<&RopeDelta>, _edit_type: String,
+        &mut self,
+        view: &mut View<Self::Cache>,
+        delta: Option<&RopeDelta>,
+        _edit_type: String,
         _author: String,
     ) {
         //NOTE: example simple conditional edit. If this delta is

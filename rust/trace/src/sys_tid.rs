@@ -22,7 +22,8 @@ pub fn current_tid() -> Result<u64, libc::c_int> {
     #[link(name = "pthread")]
     extern "C" {
         fn pthread_threadid_np(
-            thread: libc::pthread_t, thread_id: *mut libc::uint64_t,
+            thread: libc::pthread_t,
+            thread_id: *mut libc::uint64_t,
         ) -> libc::c_int;
     }
 

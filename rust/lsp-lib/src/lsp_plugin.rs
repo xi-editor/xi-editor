@@ -276,8 +276,7 @@ impl Plugin for LspPlugin {
         if let Some(view_info) = client_identifier {
             // This won't fail since we definitely have a client for the given
             // client identifier
-            let ls_client = self
-                .language_server_clients
+            let ls_client = self.language_server_clients
                 .get(&view_info.ls_identifier)
                 .unwrap();
             let mut ls_client = ls_client.lock().unwrap();
@@ -300,8 +299,7 @@ impl Plugin for LspPlugin {
         if let Some(view_info) = client_identifier {
             // This won't fail since we definitely have a client for the given
             // client identifier
-            let ls_client = self
-                .language_server_clients
+            let ls_client = self.language_server_clients
                 .get(&view_info.ls_identifier)
                 .unwrap();
             let mut ls_client = ls_client.lock().unwrap();
@@ -399,13 +397,11 @@ impl LspPlugin {
                 }
             })
             .and_then(|language_server_identifier| {
-                let contains = self
-                    .language_server_clients
+                let contains = self.language_server_clients
                     .contains_key(&language_server_identifier);
 
                 if contains {
-                    let client = self
-                        .language_server_clients
+                    let client = self.language_server_clients
                         .get(&language_server_identifier)
                         .unwrap()
                         .clone();

@@ -88,7 +88,6 @@ impl LanguageServerClient {
             Ok(JsonRpc::Request(obj)) => eprintln!("client received unexpected request: {:?}", obj),
             Ok(JsonRpc::Notification(obj)) => eprintln!("received notification: {:?}", obj),
             Ok(value @ JsonRpc::Success(_)) => {
-                
                 let id = number_from_id(value.get_id().unwrap());
                 let result = value.get_result().unwrap();
                 self.handle_response(id, Ok(result.clone()));
@@ -103,8 +102,7 @@ impl LanguageServerClient {
     }
 
     pub fn handle_response(&mut self, id: u64, result: Result<Value, Error>) {
-        let callback = self
-            .pending
+        let callback = self.pending
             .remove(&id)
             .expect(&format!("id {} missing from request table", id));
         callback.call(self, result);
@@ -163,12 +161,7 @@ impl LanguageServerClient {
     }
 
     /// Send textDocument/didOpen Notification to the Language Server
-    pub fn send_did_open(
-        &mut self,
-        view_id: ViewId,
-        document_uri: Url,
-        document_text: String,
-    ) {
+    pub fn send_did_open(&mut self, view_id: ViewId, document_uri: Url, document_text: String) {
         self.opened_documents.insert(view_id, document_uri.clone());
 
         let text_document_did_open_params = DidOpenTextDocumentParams {
@@ -229,8 +222,7 @@ impl LanguageServerClient {
 impl LanguageServerClient {
     /// Method to get the sync kind Supported by the Server
     pub fn get_sync_kind(&mut self) -> TextDocumentSyncKind {
-        match self
-            .server_capabilities
+        match self.server_capabilities
             .as_ref()
             .and_then(|c| c.text_document_sync.as_ref())
         {

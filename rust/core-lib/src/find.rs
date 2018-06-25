@@ -14,16 +14,16 @@
 
 //! Module for searching text.
 
-use std::cmp::{min,max};
+use std::cmp::{max, min};
 
+use regex::{Regex, RegexBuilder};
+use selection::{SelRegion, Selection};
 use xi_rope::delta::{Delta, DeltaRegion};
 use xi_rope::find::{find, is_multiline_regex, CaseMatching};
-use xi_rope::rope::{Rope, LinesMetric, RopeInfo};
-use xi_rope::tree::Cursor;
 use xi_rope::interval::Interval;
-use selection::{Selection, SelRegion};
+use xi_rope::rope::{LinesMetric, Rope, RopeInfo};
+use xi_rope::tree::Cursor;
 use xi_rope::tree::Metric;
-use regex::{RegexBuilder, Regex};
 
 const REGEX_SIZE_LIMIT: usize = 1000000;
 
@@ -40,13 +40,12 @@ pub struct FindStatus {
     is_regex: Option<bool>,
 
     /// Total number of matches.
-    matches: usize
+    matches: usize,
 }
 
 /// Contains logic to search text
 pub struct Find {
     // todo: link to search query so that search results can be correlated back to query
-
     /// The occurrences, which determine the highlights, have been updated.
     hls_dirty: bool,
     /// The currently active search string
@@ -104,17 +103,30 @@ impl Find {
         // update search highlights for changed regions
         if self.search_string.is_some() {
             // invalidate occurrences around deletion positions
-            for DeltaRegion{ old_offset, new_offset: _, len } in delta.iter_deletions() {
-                self.occurrences.delete_range(old_offset, old_offset + len, false);
+            for DeltaRegion {
+                old_offset,
+                new_offset: _,
+                len,
+            } in delta.iter_deletions()
+            {
+                self.occurrences
+                    .delete_range(old_offset, old_offset + len, false);
             }
 
             self.occurrences = self.occurrences.apply_delta(delta, false, false);
 
             // invalidate occurrences around insert positions
-            for DeltaRegion{ new_offset, len, .. } in delta.iter_inserts() {
+            for DeltaRegion {
+                new_offset, len, ..
+            } in delta.iter_inserts()
+            {
                 // also invalidate previous occurrence since it might expand after insertion
                 // eg. for regex .* every insertion after match will be part of match
-                self.occurrences.delete_range(new_offset.checked_sub(1).unwrap_or(0), new_offset + len, false);
+                self.occurrences.delete_range(
+                    new_offset.checked_sub(1).unwrap_or(0),
+                    new_offset + len,
+                    false,
+                );
             }
 
             // update find for the whole delta and everything after
@@ -123,12 +135,14 @@ impl Find {
             // get last valid occurrence that was unaffected by the delta
             let start = match self.occurrences.regions_in_range(0, iv.start()).last() {
                 Some(reg) => reg.end,
-                None => 0
+                None => 0,
             };
 
             // invalidate all search results from the point of the last valid search result until ...
-            let is_multi_line = LinesMetric::next(self.search_string.as_ref().unwrap(), 0).is_some();
-            let is_multi_line_regex = self.regex.is_some() && is_multiline_regex(self.search_string.as_ref().unwrap());
+            let is_multi_line =
+                LinesMetric::next(self.search_string.as_ref().unwrap(), 0).is_some();
+            let is_multi_line_regex =
+                self.regex.is_some() && is_multiline_regex(self.search_string.as_ref().unwrap());
 
             if is_multi_line || is_multi_line_regex {
                 // ... the end of the file
@@ -140,18 +154,24 @@ impl Find {
                 let end_of_line = match cursor.next::<LinesMetric>() {
                     Some(end) => end,
                     None if cursor.pos() == text.len() => cursor.pos(),
-                    _ => return
+                    _ => return,
                 };
 
-                self.occurrences.delete_range(iv.start(), end_of_line, false);
+                self.occurrences
+                    .delete_range(iv.start(), end_of_line, false);
                 self.update_find(text, start, end_of_line, false);
             }
         }
     }
 
     /// Set search parameters and executes the search.
-    pub fn do_find(&mut self, text: &Rope, search_string: String, case_sensitive: bool,
-                   is_regex: bool) {
+    pub fn do_find(
+        &mut self,
+        text: &Rope,
+        search_string: String,
+        case_sensitive: bool,
+        is_regex: bool,
+    ) {
         if search_string.len() == 0 {
             self.unset();
         }
@@ -176,7 +196,10 @@ impl Find {
         };
 
         if let Some(ref s) = self.search_string {
-            if s == search_string && case_matching == self.case_matching && self.regex.is_some() == is_regex {
+            if s == search_string
+                && case_matching == self.case_matching
+                && self.regex.is_some() == is_regex
+            {
                 // search parameters did not change
                 return;
             }
@@ -190,26 +213,27 @@ impl Find {
         // create regex from untrusted input
         self.regex = match is_regex {
             false => None,
-            true => {
-                RegexBuilder::new(search_string)
-                    .size_limit(REGEX_SIZE_LIMIT)
-                    .case_insensitive(case_matching == CaseMatching::CaseInsensitive)
-                    .build()
-                    .ok()
-            }
+            true => RegexBuilder::new(search_string)
+                .size_limit(REGEX_SIZE_LIMIT)
+                .case_insensitive(case_matching == CaseMatching::CaseInsensitive)
+                .build()
+                .ok(),
         };
     }
 
     /// Execute the search on the provided text in the range provided by `start` and `end`.
-    pub fn update_find(&mut self, text: &Rope, start: usize, end: usize, include_slop: bool)
-    {
+    pub fn update_find(&mut self, text: &Rope, start: usize, end: usize, include_slop: bool) {
         if self.search_string.is_none() {
             return;
         }
 
         // extend the search by twice the string length (twice, because case matching may increase
         // the length of an occurrence)
-        let slop = if include_slop { self.search_string.as_ref().unwrap().len() * 2 } else { 0 };
+        let slop = if include_slop {
+            self.search_string.as_ref().unwrap().len() * 2
+        } else {
+            0
+        };
 
         let search_string = self.search_string.as_ref().unwrap();
 
@@ -223,7 +247,13 @@ impl Find {
         let mut find_cursor = Cursor::new(&sub_text, from);
         let mut raw_lines = text.lines_raw(from, to);
 
-        while let Some(start) = find(&mut find_cursor, &mut raw_lines, self.case_matching, &search_string, &self.regex) {
+        while let Some(start) = find(
+            &mut find_cursor,
+            &mut raw_lines,
+            self.case_matching,
+            &search_string,
+            &self.regex,
+        ) {
             let end = find_cursor.pos();
 
             let region = SelRegion::new(start, end);
@@ -263,7 +293,13 @@ impl Find {
     /// Return the occurrence closest to the provided selection `sel`. If searched is reversed then
     /// the occurrence closest to the start of the selection is returned. `wrapped` indicates that
     /// if the end of the text is reached the search continues from the start.
-    pub fn next_occurrence(&self, text: &Rope, reverse: bool, wrapped: bool, sel: (usize, usize)) -> Option<SelRegion> {
+    pub fn next_occurrence(
+        &self,
+        text: &Rope,
+        reverse: bool,
+        wrapped: bool,
+        sel: (usize, usize),
+    ) -> Option<SelRegion> {
         let (sel_start, sel_end) = sel;
 
         if self.occurrences.len() == 0 {
@@ -273,19 +309,27 @@ impl Find {
         if reverse {
             let next_occurrence = match sel_start.checked_sub(1) {
                 Some(search_end) => self.occurrences.regions_in_range(0, search_end).last(),
-                None => None
+                None => None,
             };
 
             if next_occurrence.is_none() && !wrapped {
-                return self.occurrences.regions_in_range(0, text.len()).last().cloned();
+                return self.occurrences
+                    .regions_in_range(0, text.len())
+                    .last()
+                    .cloned();
             }
 
             next_occurrence.cloned()
         } else {
-            let next_occurrence = self.occurrences.regions_in_range(sel_end + 1, text.len()).first();
+            let next_occurrence = self.occurrences
+                .regions_in_range(sel_end + 1, text.len())
+                .first();
 
             if next_occurrence.is_none() && !wrapped {
-                return self.occurrences.regions_in_range(0, text.len()).first().cloned();
+                return self.occurrences
+                    .regions_in_range(0, text.len())
+                    .first()
+                    .cloned();
             }
 
             next_occurrence.cloned()

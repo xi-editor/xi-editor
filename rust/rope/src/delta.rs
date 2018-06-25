@@ -467,8 +467,7 @@ impl<N: NodeInfo> InsertDelta<N> {
     /// apply to the text.
     pub fn transform_shrink(&self, xform: &Subset) -> InsertDelta<N> {
         let mut m = xform.mapper(CountMatcher::Zero);
-        let els = self
-            .0
+        let els = self.0
             .els
             .iter()
             .map(|elem| match *elem {

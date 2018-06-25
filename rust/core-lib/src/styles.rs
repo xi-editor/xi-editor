@@ -18,7 +18,7 @@ use std::collections::HashMap;
 
 use serde_json::{self, Value};
 use syntect::highlighting::StyleModifier as SynStyleModifier;
-use syntect::highlighting::{Color, Theme, ThemeSet, Highlighter};
+use syntect::highlighting::{Color, Highlighter, Theme, ThemeSet};
 
 pub use syntect::highlighting::ThemeSettings;
 
@@ -53,13 +53,24 @@ pub struct Style {
 }
 
 impl Style {
-
     /// Creates a new `Style` by converting from a `Syntect::StyleModifier`.
     pub fn from_syntect_style_mod(style: &SynStyleModifier) -> Self {
-        let font_style = style.font_style.map(|s|s.bits()).unwrap_or_default();
-        let weight = if (font_style & 1) != 0 { Some(700) } else { None };
-        let underline = if (font_style & 2) != 0 { Some(true) } else { None };
-        let italic = if (font_style & 4) != 0 { Some(true) } else { None };
+        let font_style = style.font_style.map(|s| s.bits()).unwrap_or_default();
+        let weight = if (font_style & 1) != 0 {
+            Some(700)
+        } else {
+            None
+        };
+        let underline = if (font_style & 2) != 0 {
+            Some(true)
+        } else {
+            None
+        };
+        let italic = if (font_style & 4) != 0 {
+            Some(true)
+        } else {
+            None
+        };
 
         Self::new(
             SYNTAX_PRIORITY_DEFAULT,
@@ -70,14 +81,21 @@ impl Style {
             weight,
             underline,
             italic,
-            )
+        )
     }
 
-    pub fn new<O32, O16, OB>(priority: u16, fg_color: O32, bg_color: O32,
-                             weight: O16, underline: OB, italic: OB) -> Self
-        where O32: Into<Option<u32>>,
-              O16: Into<Option<u16>>,
-              OB: Into<Option<bool>>
+    pub fn new<O32, O16, OB>(
+        priority: u16,
+        fg_color: O32,
+        bg_color: O32,
+        weight: O16,
+        underline: OB,
+        italic: OB,
+    ) -> Self
+    where
+        O32: Into<Option<u32>>,
+        O16: Into<Option<u16>>,
+        OB: Into<Option<bool>>,
     {
         assert!(priority <= 1000);
         Style {
@@ -99,7 +117,8 @@ impl Style {
             None,
             None,
             None,
-            None)
+            None,
+        )
     }
 
     /// Creates a new style by combining attributes of `self` and `other`.
@@ -122,7 +141,7 @@ impl Style {
             p1.weight.or(p2.weight),
             p1.underline.or(p2.underline),
             p1.italic.or(p2.italic),
-            )
+        )
     }
 
     /// Encode this `Style`, setting the `id` property.
@@ -157,7 +176,11 @@ impl ThemeStyleMap {
     pub fn new() -> ThemeStyleMap {
         let themes = ThemeSet::load_defaults();
         let theme_name = "InspiredGitHub".to_owned();
-        let theme = themes.themes.get(&theme_name).expect("missing theme").to_owned();
+        let theme = themes
+            .themes
+            .get(&theme_name)
+            .expect("missing theme")
+            .to_owned();
         let default_style = Style::default_for_theme(&theme);
 
         ThemeStyleMap {
@@ -186,13 +209,13 @@ impl ThemeStyleMap {
         &self.theme.settings
     }
 
-    pub fn get_theme_names(&self) -> Vec<String>  {
+    pub fn get_theme_names(&self) -> Vec<String> {
         self.themes.themes.keys().cloned().collect()
     }
 
     pub fn set_theme(&mut self, theme_name: &str) -> Result<(), &'static str> {
         if theme_name == self.theme_name {
-            return Ok(())
+            return Ok(());
         }
         if let Some(new_theme) = self.themes.themes.get(theme_name) {
             self.theme = new_theme.to_owned();
@@ -202,7 +225,7 @@ impl ThemeStyleMap {
             self.styles = Vec::new();
             Ok(())
         } else {
-        Err("unknown theme")
+            Err("unknown theme")
         }
     }
 

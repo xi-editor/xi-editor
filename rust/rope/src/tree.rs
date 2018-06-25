@@ -399,8 +399,7 @@ impl<N: NodeInfo> Node<N> {
                     }
                     let child_iv = child.interval();
                     // easier just to use signed ints?
-                    let rec_iv = iv
-                        .intersect(child_iv.translate(offset))
+                    let rec_iv = iv.intersect(child_iv.translate(offset))
                         .translate_neg(offset);
                     child.push_subseq(b, rec_iv);
                     offset += child.len();

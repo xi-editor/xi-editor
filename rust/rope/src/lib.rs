@@ -24,12 +24,15 @@
 
 extern crate bytecount;
 extern crate memchr;
+extern crate regex;
 extern crate serde;
 extern crate unicode_segmentation;
-extern crate regex;
-#[macro_use] extern crate serde_derive;
-#[cfg(test)] extern crate serde_test;
-#[cfg(test)] extern crate serde_json;
+#[macro_use]
+extern crate serde_derive;
+#[cfg(test)]
+extern crate serde_json;
+#[cfg(test)]
+extern crate serde_test;
 
 pub mod breaks;
 pub mod delta;

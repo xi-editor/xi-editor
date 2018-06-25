@@ -335,8 +335,7 @@ impl Engine {
     /// A delta that, when applied to `base_rev`, results in the current head. Panics
     /// if there is not at least one edit.
     pub fn delta_rev_head(&self, base_rev: RevToken) -> Delta<RopeInfo> {
-        let ix = self
-            .find_rev_token(base_rev)
+        let ix = self.find_rev_token(base_rev)
             .expect("base revision not found");
         let prev_from_union = self.deletes_from_cur_union_for_index(ix);
         // TODO: this does 2 calls to Delta::synthesize and 1 to apply, this probably could be
@@ -355,10 +354,13 @@ impl Engine {
     /// Returns a tuple of a new `Revision` representing the edit based on the
     /// current head, a new text `Rope`, a new tombstones `Rope` and a new `deletes_from_union`.
     fn mk_new_rev(
-        &self, new_priority: usize, undo_group: usize, base_rev: RevToken, delta: Delta<RopeInfo>,
+        &self,
+        new_priority: usize,
+        undo_group: usize,
+        base_rev: RevToken,
+        delta: Delta<RopeInfo>,
     ) -> (Revision, Rope, Rope, Subset) {
-        let ix = self
-            .find_rev_token(base_rev)
+        let ix = self.find_rev_token(base_rev)
             .expect("base revision not found");
         let (ins_delta, deletes) = delta.factor();
 
@@ -440,7 +442,11 @@ impl Engine {
     // head revision, a token or a revision ID. Efficiency loss of token is negligible but
     // unfortunate.
     pub fn edit_rev(
-        &mut self, priority: usize, undo_group: usize, base_rev: RevToken, delta: Delta<RopeInfo>,
+        &mut self,
+        priority: usize,
+        undo_group: usize,
+        base_rev: RevToken,
+        delta: Delta<RopeInfo>,
     ) {
         let (new_rev, new_text, new_tombstones, new_deletes_from_union) =
             self.mk_new_rev(priority, undo_group, base_rev, delta);
@@ -486,16 +492,14 @@ impl Engine {
     // recompute the prefix up to where the history diverges, but it's not clear that's
     // even worth the code complexity.
     fn compute_undo(&self, groups: &BTreeSet<usize>) -> (Revision, Subset) {
-        let toggled_groups = self
-            .undone_groups
+        let toggled_groups = self.undone_groups
             .symmetric_difference(&groups)
             .cloned()
             .collect();
         let first_candidate = self.find_first_undo_candidate_index(&toggled_groups);
         // the `false` below: don't invert undos since our first_candidate is based on the current
         // undo set, not past
-        let mut deletes_from_union = self
-            .deletes_from_union_before_index(first_candidate, false)
+        let mut deletes_from_union = self.deletes_from_union_before_index(first_candidate, false)
             .into_owned();
 
         for rev in &self.revs[first_candidate..] {
@@ -556,11 +560,9 @@ impl Engine {
     }
 
     pub fn is_equivalent_revision(&self, base_rev: RevId, other_rev: RevId) -> bool {
-        let base_subset = self
-            .find_rev(base_rev)
+        let base_subset = self.find_rev(base_rev)
             .map(|rev_index| self.deletes_from_cur_union_for_index(rev_index));
-        let other_subset = self
-            .find_rev(other_rev)
+        let other_subset = self.find_rev(other_rev)
             .map(|rev_index| self.deletes_from_cur_union_for_index(rev_index));
 
         base_subset.is_some() && base_subset == other_subset
@@ -739,7 +741,9 @@ impl Engine {
 /// Move sections from text to tombstones and out of tombstones based on a new and old set of
 /// deletions
 fn shuffle_tombstones(
-    text: &Rope, tombstones: &Rope, old_deletes_from_union: &Subset,
+    text: &Rope,
+    tombstones: &Rope,
+    old_deletes_from_union: &Subset,
     new_deletes_from_union: &Subset,
 ) -> Rope {
     // Taking the complement of deletes_from_union leads to an interleaving valid for swapped text
@@ -758,7 +762,9 @@ fn shuffle_tombstones(
 /// Returns a tuple of a new text `Rope` and a new `Tombstones` rope described by
 /// `new_deletes_from_union`.
 fn shuffle(
-    text: &Rope, tombstones: &Rope, old_deletes_from_union: &Subset,
+    text: &Rope,
+    tombstones: &Rope,
+    old_deletes_from_union: &Subset,
     new_deletes_from_union: &Subset,
 ) -> (Rope, Rope) {
     // Delta that deletes the right bits from the text
@@ -863,7 +869,10 @@ struct DeltaOp {
 /// into an `InsertDelta`-based representation that does by working backward from the text and
 /// tombstones.
 fn compute_deltas(
-    revs: &[Revision], text: &Rope, tombstones: &Rope, deletes_from_union: &Subset,
+    revs: &[Revision],
+    text: &Rope,
+    tombstones: &Rope,
+    deletes_from_union: &Subset,
 ) -> Vec<DeltaOp> {
     let mut out = Vec::with_capacity(revs.len());
 
@@ -942,8 +951,12 @@ fn compute_transforms(revs: Vec<Revision>) -> Vec<(FullPriority, Subset)> {
 /// Rebase `b_new` on top of `expand_by` and return revision contents that can be appended as new
 /// revisions on top of the revisions represented by `expand_by`.
 fn rebase(
-    mut expand_by: Vec<(FullPriority, Subset)>, b_new: Vec<DeltaOp>, mut text: Rope,
-    mut tombstones: Rope, mut deletes_from_union: Subset, mut max_undo_so_far: usize,
+    mut expand_by: Vec<(FullPriority, Subset)>,
+    b_new: Vec<DeltaOp>,
+    mut text: Rope,
+    mut tombstones: Rope,
+    mut deletes_from_union: Subset,
+    mut max_undo_so_far: usize,
 ) -> (Vec<Revision>, Rope, Rope, Subset) {
     let mut out = Vec::with_capacity(b_new.len());
 
@@ -1596,8 +1609,7 @@ mod tests {
             0,
         );
 
-        let rebased_inserts: Vec<Subset> = revs
-            .into_iter()
+        let rebased_inserts: Vec<Subset> = revs.into_iter()
             .map(|c| match c.edit {
                 Contents::Edit { inserts, .. } => inserts,
                 Contents::Undo { .. } => panic!(),

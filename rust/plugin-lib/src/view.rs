@@ -16,8 +16,8 @@ use serde::Deserialize;
 use serde_json::{self, Value};
 use std::path::{Path, PathBuf};
 
-use xi_core::{ViewId, PluginPid, BufferConfig, ConfigTable};
-use xi_core::plugin_rpc::{TextUnit, PluginEdit, GetDataResponse, ScopeSpan, PluginBufferInfo};
+use xi_core::plugin_rpc::{GetDataResponse, PluginBufferInfo, PluginEdit, ScopeSpan, TextUnit};
+use xi_core::{BufferConfig, ConfigTable, PluginPid, ViewId};
 use xi_rope::rope::RopeDelta;
 use xi_trace::trace_block;
 
@@ -40,7 +40,7 @@ pub struct View<C> {
     pub rev: u64,
     pub undo_group: Option<usize>,
     buf_size: usize,
-    pub (crate) view_id: ViewId,
+    pub(crate) view_id: ViewId,
 }
 
 impl<C: Cache> View<C> {
@@ -73,7 +73,11 @@ impl<C: Cache> View<C> {
     }
 
     pub(crate) fn update(
-        &mut self, delta: Option<&RopeDelta>, new_len: usize, new_num_lines: usize, rev: u64,
+        &mut self,
+        delta: Option<&RopeDelta>,
+        new_len: usize,
+        new_num_lines: usize,
+        rev: u64,
         undo_group: Option<usize>,
     ) {
         self.cache.update(delta, new_len, new_num_lines, rev);
@@ -147,7 +151,11 @@ impl<C: Cache> View<C> {
     }
 
     pub fn edit(
-        &self, delta: RopeDelta, priority: u64, after_cursor: bool, new_undo_group: bool,
+        &self,
+        delta: RopeDelta,
+        priority: u64,
+        after_cursor: bool,
+        new_undo_group: bool,
         author: String,
     ) {
         let undo_group = if new_undo_group {
@@ -212,7 +220,8 @@ impl<C: Cache> View<C> {
             "key": key,
             "value": value
         });
-        self.peer.send_rpc_notification("update_status_item", &params);
+        self.peer
+            .send_rpc_notification("update_status_item", &params);
     }
 
     pub fn remove_status_item(&self, key: &str) {
@@ -221,9 +230,9 @@ impl<C: Cache> View<C> {
             "view_id": self.view_id,
             "key": key
         });
-        self.peer.send_rpc_notification("remove_status_item", &params);
+        self.peer
+            .send_rpc_notification("remove_status_item", &params);
     }
-
 }
 
 /// A simple wrapper type that acts as a `DataSource`.
@@ -235,7 +244,11 @@ pub struct FetchCtx {
 
 impl DataSource for FetchCtx {
     fn get_data(
-        &self, start: usize, unit: TextUnit, max_size: usize, rev: u64,
+        &self,
+        start: usize,
+        unit: TextUnit,
+        max_size: usize,
+        rev: u64,
     ) -> Result<GetDataResponse, Error> {
         let _t = trace_block("FetchCtx::get_data", &["plugin"]);
         let params = json!({
@@ -246,8 +259,7 @@ impl DataSource for FetchCtx {
             "max_size": max_size,
             "rev": rev,
         });
-        let result = self
-            .peer
+        let result = self.peer
             .send_rpc_request("get_data", &params)
             .map_err(|e| Error::RpcError(e))?;
         GetDataResponse::deserialize(result).map_err(|_| Error::WrongReturnType)

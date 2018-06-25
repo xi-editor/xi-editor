@@ -65,12 +65,10 @@ impl DummyReader {
     /// Panics if a non-response message is received, or if no message
     /// is received after a reasonable time.
     pub fn expect_response(&mut self) -> Response {
-        let raw = self
-            .next_timeout(Duration::from_secs(1))
+        let raw = self.next_timeout(Duration::from_secs(1))
             .expect("response should be received");
         let val = raw.as_ref().ok().map(|v| serde_json::to_string(&v.0));
-        let resp = raw
-            .map_err(|e| e.to_string())
+        let resp = raw.map_err(|e| e.to_string())
             .and_then(|r| r.into_response());
 
         match resp {
@@ -86,8 +84,7 @@ impl DummyReader {
     }
 
     pub fn expect_rpc(&mut self, method: &str) -> RpcObject {
-        let obj = self
-            .next_timeout(Duration::from_secs(1))
+        let obj = self.next_timeout(Duration::from_secs(1))
             .expect(&format!("expected rpc \"{}\"", method))
             .unwrap();
         assert_eq!(obj.get_method(), Some(method));

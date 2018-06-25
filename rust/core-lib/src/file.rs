@@ -15,15 +15,15 @@
 //! Interactions with the file system.
 
 use std::collections::HashMap;
-use std::io::{self, Read, Write};
 use std::fmt;
 use std::fs::File;
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::str;
 use std::time::SystemTime;
 
-use xi_rpc::RemoteError;
 use xi_rope::Rope;
+use xi_rpc::RemoteError;
 
 use tabs::BufferId;
 
@@ -60,7 +60,7 @@ pub enum FileError {
 #[derive(Debug, Clone, Copy)]
 pub enum CharacterEncoding {
     Utf8,
-    Utf8WithBom
+    Utf8WithBom,
 }
 
 impl FileManager {
@@ -107,9 +107,7 @@ impl FileManager {
         false
     }
 
-    pub fn open(&mut self, path: &Path, id: BufferId)
-        -> Result<Rope, FileError>
-    {
+    pub fn open(&mut self, path: &Path, id: BufferId) -> Result<Rope, FileError> {
         if !path.exists() {
             let _ = File::create(path).map_err(|e| FileError::Io(e, path.to_owned()))?;
         }
@@ -132,9 +130,7 @@ impl FileManager {
         }
     }
 
-    pub fn save(&mut self, path: &Path, text: &Rope, id: BufferId)
-        -> Result<(), FileError>
-    {
+    pub fn save(&mut self, path: &Path, text: &Rope, id: BufferId) -> Result<(), FileError> {
         let is_existing = self.file_info.contains_key(&id);
         if is_existing {
             self.save_existing(path, text, id)
@@ -143,10 +139,9 @@ impl FileManager {
         }
     }
 
-    fn save_new(&mut self, path: &Path, text: &Rope, id: BufferId)
-        -> Result<(), FileError>
-    {
-        try_save(path, text, CharacterEncoding::Utf8).map_err(|e| FileError::Io(e, path.to_owned()))?;
+    fn save_new(&mut self, path: &Path, text: &Rope, id: BufferId) -> Result<(), FileError> {
+        try_save(path, text, CharacterEncoding::Utf8)
+            .map_err(|e| FileError::Io(e, path.to_owned()))?;
         let info = FileInfo {
             encoding: CharacterEncoding::Utf8,
             path: path.to_owned(),
@@ -160,9 +155,7 @@ impl FileManager {
         Ok(())
     }
 
-    fn save_existing(&mut self, path: &Path, text: &Rope, id: BufferId)
-        -> Result<(), FileError>
-    {
+    fn save_existing(&mut self, path: &Path, text: &Rope, id: BufferId) -> Result<(), FileError> {
         let prev_path = self.file_info.get(&id).unwrap().path.clone();
         if prev_path != path {
             self.save_new(path, text, id)?;
@@ -174,22 +167,26 @@ impl FileManager {
         } else {
             let encoding = self.file_info.get(&id).unwrap().encoding;
             try_save(path, text, encoding).map_err(|e| FileError::Io(e, path.to_owned()))?;
-            self.file_info.get_mut(&id).unwrap()
-                .mod_time = get_mod_time(path);
+            self.file_info.get_mut(&id).unwrap().mod_time = get_mod_time(path);
         }
         Ok(())
     }
 }
 
 fn try_load_file<P>(path: P) -> Result<(Rope, FileInfo), FileError>
-where P: AsRef<Path>
+where
+    P: AsRef<Path>,
 {
     // TODO: support for non-utf8
     // it's arguable that the rope crate should have file loading functionality
     let mut f = File::open(path.as_ref()).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
-    let mod_time = f.metadata().map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?.modified().ok();
+    let mod_time = f.metadata()
+        .map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?
+        .modified()
+        .ok();
     let mut bytes = Vec::new();
-    f.read_to_end(&mut bytes).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
+    f.read_to_end(&mut bytes)
+        .map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
 
     let encoding = CharacterEncoding::guess(&bytes);
     let rope = try_decode(bytes, encoding, path.as_ref())?;
@@ -202,28 +199,27 @@ where P: AsRef<Path>
     Ok((rope, info))
 }
 
-fn try_save(path: &Path, text: &Rope, encoding: CharacterEncoding)
-    -> io::Result<()>
-{
+fn try_save(path: &Path, text: &Rope, encoding: CharacterEncoding) -> io::Result<()> {
     let mut f = File::create(path)?;
-        match encoding {
-            CharacterEncoding::Utf8WithBom => f.write_all(UTF8_BOM.as_bytes())?,
-            CharacterEncoding::Utf8 => (),
-        }
+    match encoding {
+        CharacterEncoding::Utf8WithBom => f.write_all(UTF8_BOM.as_bytes())?,
+        CharacterEncoding::Utf8 => (),
+    }
 
-        for chunk in text.iter_chunks(0, text.len()) {
-            f.write_all(chunk.as_bytes())?;
-        }
-        Ok(())
+    for chunk in text.iter_chunks(0, text.len()) {
+        f.write_all(chunk.as_bytes())?;
+    }
+    Ok(())
 }
 
-fn try_decode(bytes: Vec<u8>,
-              encoding: CharacterEncoding, path: &Path) -> Result<Rope, FileError> {
+fn try_decode(bytes: Vec<u8>, encoding: CharacterEncoding, path: &Path) -> Result<Rope, FileError> {
     match encoding {
-        CharacterEncoding::Utf8 =>
-            Ok(Rope::from(str::from_utf8(&bytes).map_err(|_e| FileError::UnknownEncoding(path.to_owned()))?)),
+        CharacterEncoding::Utf8 => Ok(Rope::from(
+            str::from_utf8(&bytes).map_err(|_e| FileError::UnknownEncoding(path.to_owned()))?
+        )),
         CharacterEncoding::Utf8WithBom => {
-            let s = String::from_utf8(bytes).map_err(|_e| FileError::UnknownEncoding(path.to_owned()))?;
+            let s =
+                String::from_utf8(bytes).map_err(|_e| FileError::UnknownEncoding(path.to_owned()))?;
             Ok(Rope::from(&s[UTF8_BOM.len()..]))
         }
     }
@@ -242,7 +238,8 @@ impl CharacterEncoding {
 /// Returns the modification timestamp for the file at a given path,
 /// if present.
 fn get_mod_time<P>(path: P) -> Option<SystemTime>
-where P: AsRef<Path>
+where
+    P: AsRef<Path>,
 {
     File::open(path)
         .and_then(|f| f.metadata())
@@ -265,7 +262,7 @@ impl FileError {
         match self {
             &FileError::Io(_, _) => 5,
             &FileError::UnknownEncoding(_) => 6,
-            &FileError::HasChanged(_) => 7
+            &FileError::HasChanged(_) => 7,
         }
     }
 }
@@ -275,9 +272,12 @@ impl fmt::Display for FileError {
         match self {
             &FileError::Io(ref e, ref p) => write!(f, "{}. File path: {:?}", e, p),
             &FileError::UnknownEncoding(ref p) => write!(f, "Error decoding file: {:?}", p),
-            &FileError::HasChanged(ref p) => write!(f, "File has changed on disk. \
-            Please save elsewhere and reload the file. File path: {:?}", p)
+            &FileError::HasChanged(ref p) => write!(
+                f,
+                "File has changed on disk. \
+                 Please save elsewhere and reload the file. File path: {:?}",
+                p
+            ),
         }
     }
 }
-

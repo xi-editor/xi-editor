@@ -181,8 +181,7 @@ impl<T> FixedLifoDeque<T> {
     #[inline]
     fn drop_excess_for_inserting(&mut self, n_to_be_inserted: usize) {
         if self.storage.len() + n_to_be_inserted > self.limit {
-            let overflow = self
-                .storage
+            let overflow = self.storage
                 .len()
                 .min(self.storage.len() + n_to_be_inserted - self.limit);
             self.storage.drain(..overflow);

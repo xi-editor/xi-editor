@@ -118,8 +118,7 @@ impl RpcObject {
     /// return a `String` containing an error message. The caller should
     /// print this message and exit.
     pub fn into_response(mut self) -> Result<Response, String> {
-        let _ = self
-            .get_id()
+        let _ = self.get_id()
             .ok_or("Response requires 'id' field.".to_string())?;
 
         if self.0.get("result").is_some() == self.0.get("error").is_some() {
@@ -132,8 +131,7 @@ impl RpcObject {
         match result {
             Some(r) => Ok(Ok(r)),
             None => {
-                let error = self
-                    .0
+                let error = self.0
                     .as_object_mut()
                     .and_then(|obj| obj.remove("error"))
                     .unwrap();

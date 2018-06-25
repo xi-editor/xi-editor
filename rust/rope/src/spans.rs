@@ -60,8 +60,7 @@ impl<T: Clone + Default> Leaf for SpansLeaf<T> {
     fn push_maybe_split(&mut self, other: &Self, iv: Interval) -> Option<Self> {
         let iv_start = iv.start();
         for span in &other.spans {
-            let span_iv = span
-                .iv
+            let span_iv = span.iv
                 .intersect(iv)
                 .translate_neg(iv_start)
                 .translate(self.len);
@@ -168,7 +167,10 @@ impl<T: Clone + Default> Spans<T> {
     // traverses all spans linearly. A more sophisticated approach would be to traverse
     // the tree, and only delve into subtrees that are transformed.
     pub fn transform<N: NodeInfo>(
-        &self, base_start: usize, base_end: usize, xform: &mut Transformer<N>,
+        &self,
+        base_start: usize,
+        base_end: usize,
+        xform: &mut Transformer<N>,
     ) -> Self {
         // TODO: maybe should take base as an Interval and figure out "after" from that
         let new_start = xform.transform(base_start, false);
@@ -323,8 +325,7 @@ impl<T: Clone + Default> Spans<T> {
 
 impl<T: Clone + Default + fmt::Debug> fmt::Debug for Spans<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let strs = self
-            .iter()
+        let strs = self.iter()
             .map(|(iv, val)| format!("{}: {:?}", iv, val))
             .collect::<Vec<String>>();
         write!(f, "len: {}\nspans:\n\t{}", self.len(), &strs.join("\n\t"))

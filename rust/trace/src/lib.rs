@@ -426,7 +426,10 @@ impl Sample {
     /// Constructs a Begin or End sample.  Should not be used directly.  Instead
     /// should be constructed via SampleGuard.
     pub fn new_duration_marker<S, C>(
-        name: S, categories: C, payload: Option<TracePayloadT>, event_type: SampleEventType,
+        name: S,
+        categories: C,
+        payload: Option<TracePayloadT>,
+        event_type: SampleEventType,
     ) -> Self
     where
         S: Into<StrCow>,
@@ -451,7 +454,11 @@ impl Sample {
 
     /// Constructs a Duration sample.  For use via xi_trace::closure.
     pub fn new_duration<S, C>(
-        name: S, categories: C, payload: Option<TracePayloadT>, start_ns: u64, duration_ns: u64,
+        name: S,
+        categories: C,
+        payload: Option<TracePayloadT>,
+        start_ns: u64,
+        duration_ns: u64,
     ) -> Self
     where
         S: Into<StrCow>,
@@ -753,7 +760,11 @@ impl Trace {
     }
 
     pub fn closure_payload<S, C, P, F, R>(
-        &self, name: S, categories: C, closure: F, payload: P,
+        &self,
+        name: S,
+        categories: C,
+        closure: F,
+        payload: P,
     ) -> R
     where
         S: Into<StrCow>,

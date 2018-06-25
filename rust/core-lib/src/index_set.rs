@@ -18,7 +18,7 @@
 // Note: this data structure has nontrivial overlap with Subset in the rope
 // crate. Maybe we don't need both.
 
-use std::cmp::{min, max};
+use std::cmp::{max, min};
 use xi_rope::delta::{Delta, Transformer};
 use xi_rope::rope::RopeInfo;
 
@@ -41,9 +41,7 @@ pub fn remove_n_at<T: Clone>(v: &mut Vec<T>, index: usize, n: usize) {
 impl IndexSet {
     /// Create a new, empty set.
     pub fn new() -> IndexSet {
-        IndexSet {
-            ranges: Vec::new(),
-        }
+        IndexSet { ranges: Vec::new() }
     }
 
     /// Clear the set.
@@ -91,7 +89,7 @@ impl IndexSet {
             if self.ranges[ix].0 < start {
                 if self.ranges[ix].1 > end {
                     let range = (end, self.ranges[ix].1);
-                    self.ranges.insert(ix+1, range);
+                    self.ranges.insert(ix + 1, range);
                 }
                 self.ranges[ix].1 = start;
             } else if self.ranges[ix].1 > end {
@@ -117,11 +115,7 @@ impl IndexSet {
         while !ranges.is_empty() && start >= ranges[0].1 {
             ranges = &ranges[1..];
         }
-        MinusIter {
-            ranges,
-            start,
-            end,
-        }
+        MinusIter { ranges, start, end }
     }
 
     /// Computes a new set based on applying a delta to the old set. Collapsed regions are removed
@@ -132,7 +126,7 @@ impl IndexSet {
         for &(start, end) in &self.ranges {
             let new_range = (
                 transformer.transform(start, false),
-                transformer.transform(end, false)
+                transformer.transform(end, false),
             );
             if new_range.0 == new_range.1 {
                 continue; // remove collapsed regions
@@ -224,7 +218,10 @@ mod tests {
         assert_eq!(e.minus_one_range(0, 4).collect::<Vec<_>>(), vec![(0, 3)]);
         assert_eq!(e.minus_one_range(4, 10).collect::<Vec<_>>(), vec![(5, 10)]);
         assert_eq!(e.minus_one_range(5, 10).collect::<Vec<_>>(), vec![(5, 10)]);
-        assert_eq!(e.minus_one_range(0, 10).collect::<Vec<_>>(), vec![(0, 3), (5, 10)]);
+        assert_eq!(
+            e.minus_one_range(0, 10).collect::<Vec<_>>(),
+            vec![(0, 3), (5, 10)]
+        );
     }
 
     #[test]
@@ -236,10 +233,19 @@ mod tests {
         assert_eq!(e.minus_one_range(3, 5).collect::<Vec<_>>(), vec![]);
         assert_eq!(e.minus_one_range(0, 3).collect::<Vec<_>>(), vec![(0, 3)]);
         assert_eq!(e.minus_one_range(0, 4).collect::<Vec<_>>(), vec![(0, 3)]);
-        assert_eq!(e.minus_one_range(4, 10).collect::<Vec<_>>(), vec![(5, 7), (9, 10)]);
-        assert_eq!(e.minus_one_range(5, 10).collect::<Vec<_>>(), vec![(5, 7), (9, 10)]);
+        assert_eq!(
+            e.minus_one_range(4, 10).collect::<Vec<_>>(),
+            vec![(5, 7), (9, 10)]
+        );
+        assert_eq!(
+            e.minus_one_range(5, 10).collect::<Vec<_>>(),
+            vec![(5, 7), (9, 10)]
+        );
         assert_eq!(e.minus_one_range(8, 10).collect::<Vec<_>>(), vec![(9, 10)]);
-        assert_eq!(e.minus_one_range(0, 10).collect::<Vec<_>>(), vec![(0, 3), (5, 7), (9, 10)]);
+        assert_eq!(
+            e.minus_one_range(0, 10).collect::<Vec<_>>(),
+            vec![(0, 3), (5, 7), (9, 10)]
+        );
     }
 
     #[test]
@@ -279,7 +285,10 @@ mod tests {
         assert_eq!(e.get_ranges(), &[(1, 5), (7, 9)]);
         e.union_one_range(4, 6);
         assert_eq!(e.get_ranges(), &[(1, 6), (7, 9)]);
-        assert_eq!(e.minus_one_range(0, 10).collect::<Vec<_>>(), vec![(0, 1), (6, 7), (9, 10)]);
+        assert_eq!(
+            e.minus_one_range(0, 10).collect::<Vec<_>>(),
+            vec![(0, 1), (6, 7), (9, 10)]
+        );
 
         e.clear();
         assert_eq!(e.get_ranges(), &[]);
@@ -314,7 +323,6 @@ mod tests {
         e.union_one_range(4, 6);
         e.delete_range(2, 4);
         assert_eq!(e.get_ranges(), &[(1, 2), (4, 6)]);
-
 
         let mut e = IndexSet::new();
         e.union_one_range(0, 10);

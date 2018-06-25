@@ -21,11 +21,11 @@
 
 use std::path::PathBuf;
 
-use serde_json::{self, Value};
 use serde::de::{self, Deserialize, Deserializer};
 use serde::ser::{self, Serialize, Serializer};
+use serde_json::{self, Value};
 
-use config::{Table, ConfigDomainExternal};
+use config::{ConfigDomainExternal, Table};
 use plugins::PlaceholderRpc;
 use tabs::ViewId;
 use view::Size;
@@ -197,14 +197,20 @@ pub enum CoreNotification {
     /// domain argument is `ConfigDomain::UserOverride(_)`, which
     /// represents non-persistent view-specific settings, such as when
     /// a user manually changes whitespace settings for a given view.
-    ModifyUserConfig { domain: ConfigDomainExternal, changes: Table },
+    ModifyUserConfig {
+        domain: ConfigDomainExternal,
+        changes: Table,
+    },
     /// Control whether the tracing infrastructure is enabled.
     /// This propagates to all peers that should respond by toggling its own
     /// infrastructure on/off.
-    TracingConfig {enabled: bool},
+    TracingConfig { enabled: bool },
     /// Save trace data to the given path.  The core will first send
     /// CoreRequest::CollectTrace to all peers to collect the samples.
-    SaveTrace { destination: PathBuf, frontend_samples: Value }
+    SaveTrace {
+        destination: PathBuf,
+        frontend_samples: Value,
+    },
 }
 
 /// The requests which make up the base of the protocol.
@@ -330,7 +336,9 @@ pub struct MouseAction {
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "method", content = "params")]
 pub enum EditNotification {
-    Insert { chars: String },
+    Insert {
+        chars: String,
+    },
     DeleteForward,
     DeleteBackward,
     DeleteWordForward,
@@ -374,13 +382,19 @@ pub enum EditNotification {
     AddSelectionBelow,
     Scroll(LineRange),
     Resize(Size),
-    GotoLine { line: u64 },
+    GotoLine {
+        line: u64,
+    },
     RequestLines(LineRange),
     Yank,
     Transpose,
     Click(MouseAction),
     Drag(MouseAction),
-    Gesture { line: u64, col: u64, ty: GestureType},
+    Gesture {
+        line: u64,
+        col: u64,
+        ty: GestureType,
+    },
     Undo,
     Redo,
     /// Searches the document for `chars`, if present, falling back on
@@ -388,9 +402,18 @@ pub enum EditNotification {
     ///
     /// If `chars` is `None` and there is an active selection, returns
     /// the string value used for the search, else returns `Null`.
-    Find { chars: String, case_sensitive: bool, regex: Option<bool> },
-    FindNext { wrap_around: Option<bool>, allow_same: Option<bool> },
-    FindPrevious { wrap_around: Option<bool> },
+    Find {
+        chars: String,
+        case_sensitive: bool,
+        regex: Option<bool>,
+    },
+    FindNext {
+        wrap_around: Option<bool>,
+        allow_same: Option<bool>,
+    },
+    FindPrevious {
+        wrap_around: Option<bool>,
+    },
     DebugRewrap,
     DebugWrapWidth,
     /// Prints the style spans present in the active selection.
@@ -401,8 +424,12 @@ pub enum EditNotification {
     Indent,
     Outdent,
     /// Indicates whether find highlights should be rendered
-    HighlightFind { visible: bool },
-    SelectionForFind { case_sensitive: Option<bool> },
+    HighlightFind {
+        visible: bool,
+    },
+    SelectionForFind {
+        case_sensitive: Option<bool>,
+    },
 }
 
 /// The edit related requests.
@@ -418,23 +445,32 @@ pub enum EditRequest {
     Copy,
 }
 
-
 /// The plugin related notifications.
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(tag = "command")]
 #[serde(rename_all = "snake_case")]
 pub enum PluginNotification {
-    Start { view_id: ViewId, plugin_name: String },
-    Stop { view_id: ViewId, plugin_name: String },
-    PluginRpc { view_id: ViewId, receiver: String, rpc: PlaceholderRpc },
+    Start {
+        view_id: ViewId,
+        plugin_name: String,
+    },
+    Stop {
+        view_id: ViewId,
+        plugin_name: String,
+    },
+    PluginRpc {
+        view_id: ViewId,
+        receiver: String,
+        rpc: PlaceholderRpc,
+    },
 }
 
 // Serialize / Deserialize
 
-impl<T: Serialize> Serialize for EditCommand<T>
-{
+impl<T: Serialize> Serialize for EditCommand<T> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where S: Serializer
+    where
+        S: Serializer,
     {
         let mut v = serde_json::to_value(&self.cmd).map_err(ser::Error::custom)?;
         v["params"]["view_id"] = json!(self.view_id);
@@ -442,10 +478,10 @@ impl<T: Serialize> Serialize for EditCommand<T>
     }
 }
 
-impl<'de, T: Deserialize<'de>> Deserialize<'de> for EditCommand<T>
-{
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for EditCommand<T> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where D: Deserializer<'de>
+    where
+        D: Deserializer<'de>,
     {
         #[derive(Deserialize)]
         struct InnerId {
@@ -459,7 +495,11 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for EditCommand<T>
         let remove_params = match v.get("params") {
             Some(&Value::Object(ref obj)) => obj.is_empty(),
             Some(&Value::Array(ref arr)) => arr.is_empty(),
-            Some(_) => return Err(de::Error::custom("'params' field, if present, must be object or array.")),
+            Some(_) => {
+                return Err(de::Error::custom(
+                    "'params' field, if present, must be object or array.",
+                ))
+            }
             None => false,
         };
 
@@ -472,10 +512,10 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for EditCommand<T>
     }
 }
 
-impl Serialize for MouseAction
-{
+impl Serialize for MouseAction {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where S: Serializer
+    where
+        S: Serializer,
     {
         #[derive(Serialize)]
         struct Helper(u64, u64, u64, Option<u64>);
@@ -485,36 +525,44 @@ impl Serialize for MouseAction
     }
 }
 
-impl<'de> Deserialize<'de> for MouseAction
-{
+impl<'de> Deserialize<'de> for MouseAction {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where D: Deserializer<'de>
+    where
+        D: Deserializer<'de>,
     {
         let v: Vec<u64> = Vec::deserialize(deserializer)?;
         let click_count = if v.len() == 4 { Some(v[3]) } else { None };
-        Ok(MouseAction { line: v[0], column: v[1], flags: v[2], click_count })
+        Ok(MouseAction {
+            line: v[0],
+            column: v[1],
+            flags: v[2],
+            click_count,
+        })
     }
 }
 
-impl Serialize for LineRange
-{
+impl Serialize for LineRange {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where S: Serializer
+    where
+        S: Serializer,
     {
         let as_tup = (self.first, self.last);
         as_tup.serialize(serializer)
     }
 }
 
-impl<'de> Deserialize<'de> for LineRange
-{
+impl<'de> Deserialize<'de> for LineRange {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where D: Deserializer<'de>
+    where
+        D: Deserializer<'de>,
     {
         #[derive(Deserialize)]
         struct TwoTuple(i64, i64);
 
         let tup = TwoTuple::deserialize(deserializer)?;
-        Ok(LineRange { first: tup.0, last: tup.1 })
+        Ok(LineRange {
+            first: tup.0,
+            last: tup.1,
+        })
     }
 }

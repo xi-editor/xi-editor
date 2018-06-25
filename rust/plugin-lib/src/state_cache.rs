@@ -56,20 +56,22 @@ impl<S: Clone + Default> Cache for StateCache<S> {
         self.buf_cache.get_line(source, line_num)
     }
 
-    fn get_document<DS: DataSource>(&mut self, source: &DS)
-        -> Result<String, Error>
-    {
+    fn get_document<DS: DataSource>(&mut self, source: &DS) -> Result<String, Error> {
         self.buf_cache.get_document(source)
     }
 
-    fn offset_of_line<DS: DataSource>(&mut self, source: &DS, line_num: usize)
-        -> Result<usize, Error>
-    {
+    fn offset_of_line<DS: DataSource>(
+        &mut self,
+        source: &DS,
+        line_num: usize,
+    ) -> Result<usize, Error> {
         self.buf_cache.offset_of_line(source, line_num)
     }
 
     fn line_of_offset<DS: DataSource>(
-        &mut self, source: &DS, offset: usize,
+        &mut self,
+        source: &DS,
+        offset: usize,
     ) -> Result<usize, Error> {
         self.buf_cache.line_of_offset(source, offset)
     }
@@ -163,8 +165,7 @@ impl<S: Clone + Default> StateCache<S> {
                 if line_num == self.buf_cache.num_lines {
                     None
                 } else {
-                    let offset = self
-                        .buf_cache
+                    let offset = self.buf_cache
                         .offset_of_line(source, line_num)
                         .expect("get_entry should validate inputs");
                     let new_ix = self.insert_entry(line_num, offset, None);

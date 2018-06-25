@@ -35,7 +35,7 @@ pub struct WidthCache {
 
 #[derive(Eq, PartialEq, Hash)]
 struct WidthCacheKey<'a> {
-    id: usize,  // style id
+    id: usize, // style id
     s: Cow<'a, str>,
 }
 
@@ -77,7 +77,6 @@ impl WidthCache {
 }
 
 impl<'a> WidthBatchReq<'a> {
-
     /// Request measurement of one string/style pair within the batch.
     pub fn request(&mut self, id: usize, s: &str) -> Token {
         let key = WidthCacheKey {
@@ -96,7 +95,10 @@ impl<'a> WidthBatchReq<'a> {
         let req_toks = &mut self.req_toks;
         let id_off = *self.req_ids.entry(id).or_insert_with(|| {
             let id_off = req.len();
-            req.push(WidthReq { id, strings: Vec::new() });
+            req.push(WidthReq {
+                id,
+                strings: Vec::new(),
+            });
             req_toks.push(Vec::new());
             id_off
         });

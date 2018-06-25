@@ -17,9 +17,9 @@ use std::path::PathBuf;
 
 use serde_json::{self, Value};
 
-use xi_core::{ViewId, PluginPid, ConfigTable};
-use xi_core::plugin_rpc::{PluginBufferInfo, PluginUpdate, HostRequest, HostNotification};
-use xi_rpc::{RpcCtx, RemoteError, Handler as RpcHandler};
+use xi_core::plugin_rpc::{HostNotification, HostRequest, PluginBufferInfo, PluginUpdate};
+use xi_core::{ConfigTable, PluginPid, ViewId};
+use xi_rpc::{Handler as RpcHandler, RemoteError, RpcCtx};
 use xi_trace::{self, trace, trace_block, trace_block_payload};
 
 use super::{Plugin, View};
@@ -70,7 +70,10 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
     }
 
     fn do_initialize(
-        &mut self, ctx: &RpcCtx, plugin_id: PluginPid, buffers: Vec<PluginBufferInfo>,
+        &mut self,
+        ctx: &RpcCtx,
+        plugin_id: PluginPid,
+        buffers: Vec<PluginBufferInfo>,
     ) {
         assert!(
             self.pid.is_none(),
@@ -90,7 +93,12 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
     }
 
     fn do_config_changed(&mut self, view_id: ViewId, changes: ConfigTable) {
-        let v = bail!(self.views.get_mut(&view_id), "config_changed", self.pid, view_id);
+        let v = bail!(
+            self.views.get_mut(&view_id),
+            "config_changed",
+            self.pid,
+            view_id
+        );
         self.plugin.config_changed(v, &changes);
         for (key, value) in changes.iter() {
             v.config_table.insert(key.to_owned(), value.to_owned());
@@ -201,8 +209,7 @@ impl<'a, P: Plugin> RpcHandler for Dispatcher<'a, P> {
     }
 
     fn idle(&mut self, _ctx: &RpcCtx, token: usize) {
-        let _t = trace_block_payload("Dispatcher::idle", &["plugin"],
-                                     format!("token: {}", token));
+        let _t = trace_block_payload("Dispatcher::idle", &["plugin"], format!("token: {}", token));
         let view_id: ViewId = token.into();
         let v = bail!(self.views.get_mut(&view_id), "idle", self.pid, view_id);
         self.plugin.idle(v);

@@ -90,24 +90,34 @@ pub struct PlanSegment {
 
 impl Builder {
     pub fn new() -> Builder {
-        Builder { spans: Vec::new(), dirty: false }
+        Builder {
+            spans: Vec::new(),
+            dirty: false,
+        }
     }
 
     pub fn build(self) -> LineCacheShadow {
-        LineCacheShadow { spans: self.spans, dirty: self.dirty }
+        LineCacheShadow {
+            spans: self.spans,
+            dirty: self.dirty,
+        }
     }
 
     pub fn add_span(&mut self, n: usize, start_line_num: usize, validity: u8) {
         if n > 0 {
             if let Some(last) = self.spans.last_mut() {
-                if last.validity == validity &&
-                    (validity == 0 || last.start_line_num + last.n == start_line_num)
+                if last.validity == validity
+                    && (validity == 0 || last.start_line_num + last.n == start_line_num)
                 {
                     last.n += n;
                     return;
                 }
             }
-            self.spans.push(Span { n, start_line_num, validity });
+            self.spans.push(Span {
+                n,
+                start_line_num,
+                validity,
+            });
         }
     }
 
@@ -162,14 +172,20 @@ impl LineCacheShadow {
         let mut line_num = 0;
         for span in &self.spans {
             if start > line_num {
-                b.add_span(min(span.n, start - line_num), span.start_line_num, span.validity);
+                b.add_span(
+                    min(span.n, start - line_num),
+                    span.start_line_num,
+                    span.validity,
+                );
             }
             let invalid_start = max(start, line_num);
             let invalid_end = min(end, line_num + span.n);
             if invalid_end > invalid_start {
-                b.add_span(invalid_end - invalid_start,
+                b.add_span(
+                    invalid_end - invalid_start,
                     span.start_line_num + (invalid_start - line_num),
-                    span.validity & !invalid);
+                    span.validity & !invalid,
+                );
             }
             if line_num + span.n > end {
                 let offset = end.saturating_sub(line_num);
@@ -182,9 +198,9 @@ impl LineCacheShadow {
     }
 
     pub fn needs_render(&self, plan: &RenderPlan) -> bool {
-        self.dirty || self.iter_with_plan(plan).any(|seg|
-            seg.tactic == RenderTactic::Render && seg.validity != ALL_VALID
-        )
+        self.dirty
+            || self.iter_with_plan(plan)
+                .any(|seg| seg.tactic == RenderTactic::Render && seg.validity != ALL_VALID)
     }
 
     pub fn spans(&self) -> &[Span] {
@@ -192,8 +208,14 @@ impl LineCacheShadow {
     }
 
     pub fn iter_with_plan<'a>(&'a self, plan: &'a RenderPlan) -> PlanIterator<'a> {
-        PlanIterator { lc_shadow: self, plan,
-            shadow_ix: 0, shadow_line_num: 0, plan_ix: 0, plan_line_num: 0 }
+        PlanIterator {
+            lc_shadow: self,
+            plan,
+            shadow_ix: 0,
+            shadow_line_num: 0,
+            plan_ix: 0,
+            plan_line_num: 0,
+        }
     }
 }
 
@@ -213,7 +235,10 @@ impl<'a> Iterator for PlanIterator<'a> {
         let shadow_span = &self.lc_shadow.spans[self.shadow_ix];
         let plan_span = &self.plan.spans[self.plan_ix];
         let start = max(self.shadow_line_num, self.plan_line_num);
-        let end = min(self.shadow_line_num + shadow_span.n, self.plan_line_num + plan_span.0);
+        let end = min(
+            self.shadow_line_num + shadow_span.n,
+            self.plan_line_num + plan_span.0,
+        );
         let result = PlanSegment {
             our_line_num: start,
             their_line_num: shadow_span.start_line_num + (start - self.shadow_line_num),
@@ -233,7 +258,6 @@ impl<'a> Iterator for PlanIterator<'a> {
         Some(result)
     }
 }
-
 
 impl RenderPlan {
     /// This function implements the policy of what to discard, what to preserve, and

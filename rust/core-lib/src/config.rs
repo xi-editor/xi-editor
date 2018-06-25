@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::io::{self, Read};
+use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::fs;
-use std::path::{PathBuf, Path};
-use std::collections::HashMap;
+use std::io::{self, Read};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde::de::Deserialize;
@@ -29,17 +29,15 @@ use tabs::{BufferId, ViewId};
 
 /// Loads the included base config settings.
 fn load_base_config() -> Table {
-
     fn load(default: &str) -> Table {
-        table_from_toml_str(default)
-            .expect("default configs must load")
+        table_from_toml_str(default).expect("default configs must load")
     }
 
     fn platform_overrides() -> Option<Table> {
         #[cfg(target_os = "windows")]
         {
             let win_toml: &str = include_str!("../assets/windows.toml");
-            return Some(load(win_toml))
+            return Some(load(win_toml));
         }
         None
     }
@@ -59,7 +57,7 @@ pub type Table = serde_json::Map<String, Value>;
 
 /// A `ConfigDomain` describes a level or category of user settings.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all="snake_case")]
+#[serde(rename_all = "snake_case")]
 pub enum ConfigDomain {
     /// The general user preferences
     General,
@@ -75,7 +73,7 @@ pub enum ConfigDomain {
 /// The external RPC sends `ViewId`s, which we convert to `BufferId`s
 /// internally.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all="snake_case")]
+#[serde(rename_all = "snake_case")]
 pub enum ConfigDomainExternal {
     General,
     //TODO: remove this old name
@@ -174,7 +172,11 @@ impl ConfigPair {
     fn with_base<T: Into<Option<Table>>>(table: T) -> Self {
         let base = table.into().map(Arc::new);
         let cache = base.clone().unwrap_or_default();
-        ConfigPair { base, cache, user: None }
+        ConfigPair {
+            base,
+            cache,
+            user: None,
+        }
     }
 
     /// Returns a new `ConfigPair` with the provided base and the current
@@ -194,7 +196,8 @@ impl ConfigPair {
     /// Returns the `Table` produced by updating `self.user` with the contents
     /// of `user`, deleting null entries.
     fn table_for_update(&self, user: Table) -> Table {
-        let mut new_user: Table = self.user.as_ref()
+        let mut new_user: Table = self.user
+            .as_ref()
             .map(|arc| arc.as_ref().clone())
             .unwrap_or_default();
         for (k, v) in user {
@@ -219,9 +222,7 @@ impl ConfigPair {
 }
 
 impl ConfigManager {
-    pub fn new(config_dir: Option<PathBuf>,
-               extras_dir: Option<PathBuf>) -> Self
-    {
+    pub fn new(config_dir: Option<PathBuf>, extras_dir: Option<PathBuf>) -> Self {
         let base = load_base_config();
         let mut defaults = HashMap::new();
         defaults.insert(ConfigDomain::General, ConfigPair::with_base(base));
@@ -237,16 +238,21 @@ impl ConfigManager {
 
     /// The path of the user's config file, if present.
     pub(crate) fn base_config_file_path(&self) -> Option<PathBuf> {
-        let config_file = self.config_dir.as_ref()
+        let config_file = self.config_dir
+            .as_ref()
             .map(|p| p.join("preferences.xiconfig"));
-        let exists = config_file.as_ref().map(|p| p.exists())
-            .unwrap_or(false);
-        if exists { config_file } else { None }
+        let exists = config_file.as_ref().map(|p| p.exists()).unwrap_or(false);
+        if exists {
+            config_file
+        } else {
+            None
+        }
     }
 
     pub(crate) fn get_plugin_paths(&self) -> Vec<PathBuf> {
         let config_dir = self.config_dir.as_ref().map(|p| p.join("plugins"));
-        [self.extras_dir.as_ref(), config_dir.as_ref()].iter()
+        [self.extras_dir.as_ref(), config_dir.as_ref()]
+            .iter()
             .flat_map(|p| p.map(|p| p.to_owned()))
             .filter(|p| p.exists())
             .collect()
@@ -262,7 +268,8 @@ impl ConfigManager {
     ///
     /// Panics if `id` already exists.
     pub(crate) fn add_buffer(&mut self, id: BufferId, path: Option<&Path>) {
-        let lang = path.and_then(|p| self.language_for_path(p)).unwrap_or_default();
+        let lang = path.and_then(|p| self.language_for_path(p))
+            .unwrap_or_default();
         let lang_tag = LanguageTag::new(lang);
         assert!(self.buffer_tags.insert(id, lang_tag).is_none());
         self.update_buffer_config(id);
@@ -273,16 +280,19 @@ impl ConfigManager {
     /// # Panics:
     ///
     /// Panics if `id` does not exist.
-    pub(crate) fn update_buffer_path(&mut self, id: BufferId, path: &Path)
-        -> Option<Table>
-    {
+    pub(crate) fn update_buffer_path(&mut self, id: BufferId, path: &Path) -> Option<Table> {
         assert!(self.buffer_tags.contains_key(&id));
         let lang = self.language_for_path(path).unwrap_or_default();
-        let has_changed = self.buffer_tags.get_mut(&id)
+        let has_changed = self.buffer_tags
+            .get_mut(&id)
             .map(|tag| tag.set_detected(lang))
             .unwrap();
 
-        if has_changed { self.update_buffer_config(id) } else { None }
+        if has_changed {
+            self.update_buffer_config(id)
+        } else {
+            None
+        }
     }
 
     /// Instructs the `ConfigManager` to stop tracking a given buffer.
@@ -300,7 +310,8 @@ impl ConfigManager {
     /// user selects a specific language in the frontend, for instance.
     #[allow(dead_code)]
     pub(crate) fn override_language(&mut self, id: BufferId, new_lang: LanguageId) {
-        let has_changed = self.buffer_tags.get_mut(&id)
+        let has_changed = self.buffer_tags
+            .get_mut(&id)
             .map(|tag| tag.set_user(Some(new_lang)))
             .expect("buffer must exist");
         if has_changed {
@@ -316,7 +327,8 @@ impl ConfigManager {
     }
 
     fn update_all_buffer_configs(&mut self) -> Vec<(BufferId, Table)> {
-        self.buffer_configs.keys()
+        self.buffer_configs
+            .keys()
             .cloned()
             .collect::<Vec<_>>()
             .into_iter()
@@ -326,7 +338,9 @@ impl ConfigManager {
 
     fn generate_buffer_config(&mut self, id: BufferId) -> BufferConfig {
         // it's possible for a buffer to be tagged with since-removed language
-        let lang = self.buffer_tags.get(&id).map(LanguageTag::resolve)
+        let lang = self.buffer_tags
+            .get(&id)
+            .map(LanguageTag::resolve)
             .and_then(|name| self.languages.language_for_name(name))
             .map(|l| l.name.clone());
         let mut configs = Vec::new();
@@ -336,7 +350,9 @@ impl ConfigManager {
         configs.push(self.configs.get(&ConfigDomain::SysOverride(id)));
         configs.push(self.configs.get(&ConfigDomain::UserOverride(id)));
 
-        let configs = configs.iter().flat_map(Option::iter)
+        let configs = configs
+            .iter()
+            .flat_map(Option::iter)
             .map(|c| c.cache.clone())
             .rev()
             .collect::<Vec<_>>();
@@ -367,7 +383,9 @@ impl ConfigManager {
     /// Set the available `LanguageDefinition`s. Overrides any previous values.
     pub fn set_languages(&mut self, languages: Languages) {
         // remove base configs for any removed languages
-        self.languages.difference(&languages).iter()
+        self.languages
+            .difference(&languages)
+            .iter()
             .for_each(|lang| {
                 let domain: ConfigDomain = lang.name.clone().into();
                 if let Some(pair) = self.configs.get_mut(&domain) {
@@ -379,7 +397,8 @@ impl ConfigManager {
             let lang_id = language.name.clone();
             let domain: ConfigDomain = lang_id.into();
             let default_config = language.default_config.clone();
-            self.configs.entry(domain.clone())
+            self.configs
+                .entry(domain.clone())
                 .and_modify(|c| *c = c.new_with_base(default_config.clone()))
                 .or_insert_with(|| ConfigPair::with_base(default_config));
             if let Some(table) = self.load_user_config_file(&domain) {
@@ -395,10 +414,13 @@ impl ConfigManager {
     }
 
     fn load_user_config_file(&self, domain: &ConfigDomain) -> Option<Table> {
-        let path = self.config_dir.as_ref()
+        let path = self.config_dir
+            .as_ref()
             .map(|p| p.join(domain.file_stem()).with_extension("xiconfig"))?;
 
-        if !path.exists() { return None; }
+        if !path.exists() {
+            return None;
+        }
 
         match try_load_from_file(&path) {
             Ok(t) => Some(t),
@@ -410,18 +432,22 @@ impl ConfigManager {
     }
 
     pub fn language_for_path(&self, path: &Path) -> Option<LanguageId> {
-        self.languages.language_for_path(path)
+        self.languages
+            .language_for_path(path)
             .map(|lang| lang.name.clone())
     }
 
     /// Sets the config for the given domain, removing any existing config.
     /// Returns a `Vec` of individual buffer config changes that result from
     /// this update, or a `ConfigError` if `config` is poorly formed.
-    pub fn set_user_config(&mut self, domain: ConfigDomain, config: Table)
-        -> Result<Vec<(BufferId, Table)>, ConfigError>
-    {
+    pub fn set_user_config(
+        &mut self,
+        domain: ConfigDomain,
+        config: Table,
+    ) -> Result<Vec<(BufferId, Table)>, ConfigError> {
         self.check_table(&config)?;
-        self.configs.entry(domain.clone())
+        self.configs
+            .entry(domain.clone())
             .or_insert_with(|| ConfigPair::with_base(None))
             .set_table(config);
         Ok(self.update_all_buffer_configs())
@@ -446,10 +472,9 @@ impl ConfigManager {
     /// any existing table by applying the client's changes. This new table can
     /// then be passed to `Self::set_user_config(..)`, as if it were loaded
     /// from disk.
-    pub(crate) fn table_for_update(&mut self, domain: ConfigDomain,
-                                   changes: Table) -> Table
-    {
-        self.configs.entry(domain.clone())
+    pub(crate) fn table_for_update(&mut self, domain: ConfigDomain, changes: Table) -> Table {
+        self.configs
+            .entry(domain.clone())
             .or_insert_with(|| ConfigPair::with_base(None))
             .table_for_update(changes)
     }
@@ -462,8 +487,10 @@ impl ConfigManager {
         match path.file_stem().and_then(|s| s.to_str()) {
             Some("preferences") => Some(ConfigDomain::General),
             Some(name) if self.languages.language_for_name(&name).is_some() => {
-                let lang = self.languages.language_for_name(&name)
-                    .map(|lang| lang.name.clone()).unwrap();
+                let lang = self.languages
+                    .language_for_name(&name)
+                    .map(|lang| lang.name.clone())
+                    .unwrap();
                 Some(ConfigDomain::Language(lang))
             }
             //TODO: plugin configs
@@ -472,13 +499,16 @@ impl ConfigManager {
     }
 
     fn check_table(&self, table: &Table) -> Result<(), ConfigError> {
-        let defaults = self.configs.get(&ConfigDomain::General)
+        let defaults = self.configs
+            .get(&ConfigDomain::General)
             .and_then(|pair| pair.base.clone())
             .expect("general domain must have defaults");
         let mut defaults: Table = defaults.as_ref().clone();
         for (k, v) in table.iter() {
             // changes can include 'null', which means clear field
-            if v.is_null() { continue }
+            if v.is_null() {
+                continue;
+            }
             defaults.insert(k.to_owned(), v.to_owned());
         }
         let _: BufferItems = serde_json::from_value(defaults.into())?;
@@ -489,8 +519,8 @@ impl ConfigManager {
 impl TableStack {
     /// Create a single table representing the final config values.
     fn collate(&self) -> Table {
-    // NOTE: This is fairly expensive; a future optimization would borrow
-    // from the underlying collections.
+        // NOTE: This is fairly expensive; a future optimization would borrow
+        // from the underlying collections.
         let mut out = Table::new();
         for table in &self.0 {
             for (k, v) in table.iter() {
@@ -506,7 +536,8 @@ impl TableStack {
 
     /// Converts the underlying tables into a static `Config` instance.
     fn into_config<T>(self) -> Config<T>
-        where for<'de> T: Deserialize<'de>
+    where
+        for<'de> T: Deserialize<'de>,
     {
         let out = self.collate();
         let items: T = serde_json::from_value(out.into()).unwrap();
@@ -519,7 +550,7 @@ impl TableStack {
     fn get<S: AsRef<str>>(&self, key: S) -> Option<&Value> {
         for table in &self.0 {
             if let Some(v) = table.get(key.as_ref()) {
-                return Some(v)
+                return Some(v);
             }
         }
         None
@@ -562,15 +593,17 @@ impl ConfigDomain {
         match self {
             ConfigDomain::General => "preferences",
             ConfigDomain::Language(lang) => lang.as_ref(),
-            ConfigDomain::UserOverride(_) | ConfigDomain::SysOverride(_) =>
-                "we don't have files",
+            ConfigDomain::UserOverride(_) | ConfigDomain::SysOverride(_) => "we don't have files",
         }
     }
 }
 
 impl LanguageTag {
     fn new(detected: LanguageId) -> Self {
-        LanguageTag { detected, user: None }
+        LanguageTag {
+            detected,
+            user: None,
+        }
     }
 
     fn resolve(&self) -> LanguageId {
@@ -594,7 +627,6 @@ impl LanguageTag {
         has_changed
     }
 }
-
 
 impl<T: PartialEq> PartialEq for Config<T> {
     fn eq(&self, other: &Config<T>) -> bool {
@@ -621,7 +653,7 @@ impl fmt::Display for ConfigError {
             UnknownDomain(ref s) => write!(f, "{}: {}", self.description(), s),
             Parse(ref p, ref e) => write!(f, "{} ({:?}), {:?}", self.description(), p, e),
             Io(ref e) => write!(f, "error loading config: {:?}", e),
-            UnexpectedItem( ref e ) => write!(f, "{}", e),
+            UnexpectedItem(ref e) => write!(f, "{}", e),
         }
     }
 }
@@ -630,10 +662,10 @@ impl Error for ConfigError {
     fn description(&self) -> &str {
         use self::ConfigError::*;
         match *self {
-            UnknownDomain( .. ) => "unknown domain",
-            Parse( _, ref e ) => e.description(),
-            Io( ref e ) => e.description(),
-            UnexpectedItem( ref e ) => e.description(),
+            UnknownDomain(..) => "unknown domain",
+            Parse(_, ref e) => e.description(),
+            Io(ref e) => e.description(),
+            UnexpectedItem(ref e) => e.description(),
         }
     }
 }
@@ -664,15 +696,12 @@ pub(crate) fn try_load_from_file(path: &Path) -> Result<Table, ConfigError> {
     let mut file = fs::File::open(&path)?;
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
-    table_from_toml_str(&contents)
-        .map_err(|e| ConfigError::Parse(path.to_owned(), e))
+    table_from_toml_str(&contents).map_err(|e| ConfigError::Parse(path.to_owned(), e))
 }
 
 pub(crate) fn table_from_toml_str(s: &str) -> Result<Table, toml::de::Error> {
     let table = toml::from_str(&s)?;
-    let table = from_toml_value(table).as_object()
-        .unwrap()
-        .to_owned();
+    let table = from_toml_value(table).as_object().unwrap().to_owned();
     Ok(table)
 }
 
@@ -724,11 +753,16 @@ mod tests {
 
         let mut manager = ConfigManager::new(None, None);
         manager.set_languages(Languages::new(&[lang_def]));
-        manager.set_user_config(rust_id.clone().into(), rust_config).unwrap();
-        manager.set_user_config(ConfigDomain::General, user_config).unwrap();
+        manager
+            .set_user_config(rust_id.clone().into(), rust_config)
+            .unwrap();
+        manager
+            .set_user_config(ConfigDomain::General, user_config)
+            .unwrap();
 
         let changes = json!({"tab_size": 67}).as_object().unwrap().to_owned();
-        manager.set_user_config(ConfigDomain::SysOverride(buf_id_3), changes)
+        manager
+            .set_user_config(ConfigDomain::SysOverride(buf_id_3), changes)
             .unwrap();
 
         manager.add_buffer(buf_id_1, None);
@@ -746,7 +780,8 @@ mod tests {
 
         // user override trumps everything
         let changes = json!({"tab_size": 85}).as_object().unwrap().to_owned();
-        manager.set_user_config(ConfigDomain::UserOverride(buf_id_3), changes)
+        manager
+            .set_user_config(ConfigDomain::UserOverride(buf_id_3), changes)
             .unwrap();
         let config = manager.get_buffer_config(buf_id_3);
         assert_eq!(config.items.tab_size, 85);
@@ -754,11 +789,20 @@ mod tests {
 
     #[test]
     fn test_config_domain_serde() {
-        assert_eq!(serde_json::to_string(&ConfigDomain::General).unwrap(), "\"general\"");
+        assert_eq!(
+            serde_json::to_string(&ConfigDomain::General).unwrap(),
+            "\"general\""
+        );
         let d = ConfigDomainExternal::UserOverride(ViewId(1));
-        assert_eq!(serde_json::to_string(&d).unwrap(), "{\"user_override\":\"view-id-1\"}");
+        assert_eq!(
+            serde_json::to_string(&d).unwrap(),
+            "{\"user_override\":\"view-id-1\"}"
+        );
         let d = ConfigDomain::Language("Swift".into());
-        assert_eq!(serde_json::to_string(&d).unwrap(), "{\"language\":\"Swift\"}");
+        assert_eq!(
+            serde_json::to_string(&d).unwrap(),
+            "{\"language\":\"Swift\"}"
+        );
     }
 
     #[test]
@@ -789,16 +833,24 @@ translate_tabs_to_spaces = true
         manager.add_buffer(buf_id, None);
         assert_eq!(manager.get_buffer_config(buf_id).items.font_size, 14.);
         let changes = json!({"font_size": 69, "font_face": "nice"})
-            .as_object().unwrap().to_owned();
+            .as_object()
+            .unwrap()
+            .to_owned();
         let table = manager.table_for_update(ConfigDomain::General, changes);
-        manager.set_user_config(ConfigDomain::General, table).unwrap();
+        manager
+            .set_user_config(ConfigDomain::General, table)
+            .unwrap();
         assert_eq!(manager.get_buffer_config(buf_id).items.font_size, 69.);
 
         // null values in updates removes keys
-        let changes = json!({"font_size": Value::Null})
-            .as_object().unwrap().to_owned();
+        let changes = json!({ "font_size": Value::Null })
+            .as_object()
+            .unwrap()
+            .to_owned();
         let table = manager.table_for_update(ConfigDomain::General, changes);
-        manager.set_user_config(ConfigDomain::General, table).unwrap();
+        manager
+            .set_user_config(ConfigDomain::General, table)
+            .unwrap();
         assert_eq!(manager.get_buffer_config(buf_id).items.font_size, 14.);
         assert_eq!(manager.get_buffer_config(buf_id).items.font_face, "nice");
     }
@@ -830,9 +882,12 @@ translate_tabs_to_spaces = true
         assert_eq!(config.source.0.len(), 1);
         assert_eq!(config.items.font_size, 14.);
 
-        manager.set_user_config(domain.clone(),
-                                lang_overrides.as_object().map(Table::clone).unwrap(),
-                                ).unwrap();
+        manager
+            .set_user_config(
+                domain.clone(),
+                lang_overrides.as_object().map(Table::clone).unwrap(),
+            )
+            .unwrap();
 
         // user config for unknown language is ignored
         let config = manager.get_buffer_config(buf_id).to_owned();
@@ -843,8 +898,10 @@ translate_tabs_to_spaces = true
         let config = manager.get_buffer_config(buf_id).to_owned();
         assert_eq!(config.items.font_size, 420.);
 
-        let changes = json!({"font_size": Value::Null})
-            .as_object().unwrap().to_owned();
+        let changes = json!({ "font_size": Value::Null })
+            .as_object()
+            .unwrap()
+            .to_owned();
 
         // null key should void user setting, leave language default
         let table = manager.table_for_update(domain.clone(), changes);

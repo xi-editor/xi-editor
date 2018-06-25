@@ -27,8 +27,8 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::MutexGuard;
 
-use xi_core::{ViewId, ConfigTable};
 use xi_core::plugin_rpc::ScopeSpan;
+use xi_core::{ConfigTable, ViewId};
 use xi_core::{ConfigTable, ViewIdentifier};
 use xi_plugin_lib::{mainloop, Cache, Plugin, StateCache, View};
 use xi_rope::delta::Builder as EditBuilder;
@@ -37,8 +37,9 @@ use xi_rope::rope::RopeDelta;
 use xi_trace::{trace, trace_block};
 
 use stackmap::{LookupResult, StackMap};
-use syntect::parsing::{ParseState, ScopeRepository, ScopeStack, SyntaxDefinition, SyntaxSet,
-                       SCOPE_REPO};
+use syntect::parsing::{
+    ParseState, ScopeRepository, ScopeStack, SyntaxDefinition, SyntaxSet, SCOPE_REPO,
+};
 
 const LINES_PER_RPC: usize = 10;
 const INDENTATION_PRIORITY: u64 = 100;
@@ -226,8 +227,7 @@ impl<'a> Syntect<'a> {
     fn guess_syntax(&'a self, path: Option<&Path>) -> &'a SyntaxDefinition {
         let _t = trace_block("Syntect::guess_syntax", &["syntect"]);
         match path {
-            Some(path) => self
-                .syntax_set
+            Some(path) => self.syntax_set
                 .find_syntax_for_file(path)
                 .ok()
                 .unwrap_or(None)
@@ -289,7 +289,10 @@ impl<'a> Syntect<'a> {
     /// Returns the string which should be inserted after the newline
     /// to achieve the desired indentation level.
     fn indent_for_next_line<'b>(
-        &self, prev_line: &'b str, use_spaces: bool, tab_size: usize,
+        &self,
+        prev_line: &'b str,
+        use_spaces: bool,
+        tab_size: usize,
     ) -> Cow<'b, str> {
         let leading_ws = prev_line
             .char_indices()
@@ -344,7 +347,10 @@ impl<'a> Plugin for Syntect<'a> {
     fn config_changed(&mut self, _view: &mut View<Self::Cache>, _changes: &ConfigTable) {}
 
     fn update(
-        &mut self, view: &mut View<Self::Cache>, delta: Option<&RopeDelta>, _edit_type: String,
+        &mut self,
+        view: &mut View<Self::Cache>,
+        delta: Option<&RopeDelta>,
+        _edit_type: String,
         _author: String,
     ) {
         let _t = trace_block("Syntect::update", &["syntect"]);

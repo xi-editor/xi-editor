@@ -119,8 +119,7 @@ impl Cache for ChunkCache {
         let mut cur_idx = 0;
         while cur_idx < self.buf_size {
             if self.contents.len() == 0 || cur_idx != self.offset {
-                let resp = source.get_data(cur_idx, TextUnit::Utf8,
-                                           CHUNK_SIZE, self.rev)?;
+                let resp = source.get_data(cur_idx, TextUnit::Utf8, CHUNK_SIZE, self.rev)?;
                 self.reset_chunk(resp);
             }
             result.push_str(&self.contents);
@@ -129,10 +128,14 @@ impl Cache for ChunkCache {
         Ok(result)
     }
 
-    fn offset_of_line<DS: DataSource>(&mut self, source: &DS, line_num: usize)
-        -> Result<usize, Error>
-    {
-        if line_num > self.num_lines { return Err(Error::BadRequest) }
+    fn offset_of_line<DS: DataSource>(
+        &mut self,
+        source: &DS,
+        line_num: usize,
+    ) -> Result<usize, Error> {
+        if line_num > self.num_lines {
+            return Err(Error::BadRequest);
+        }
         match self.cached_offset_of_line(line_num) {
             Some(offset) => Ok(offset),
             None => {
@@ -144,7 +147,9 @@ impl Cache for ChunkCache {
     }
 
     fn line_of_offset<DS: DataSource>(
-        &mut self, source: &DS, offset: usize,
+        &mut self,
+        source: &DS,
+        offset: usize,
     ) -> Result<usize, Error> {
         if offset > self.buf_size {
             return Err(Error::BadRequest);
@@ -249,8 +254,7 @@ impl ChunkCache {
         };
 
         // then clear line_offsets up to and including offset
-        self.line_offsets = self
-            .line_offsets
+        self.line_offsets = self.line_offsets
             .iter()
             .filter(|i| **i > offset)
             .map(|i| i - offset)
@@ -333,8 +337,7 @@ impl ChunkCache {
                 .iter_mut()
                 .for_each(|off| *off += ins_offset - self_off);
 
-            let split_idx = self
-                .line_offsets
+            let split_idx = self.line_offsets
                 .binary_search(&new_offsets[0])
                 .err()
                 .expect("new index cannot be occupied");
@@ -355,8 +358,7 @@ impl ChunkCache {
         let has_newline = memchr(b'\n', &self.contents.as_bytes()[start..end]).is_some();
         // a bit too fancy: only reallocate if we need to remove an item
         if has_newline {
-            self.line_offsets = self
-                .line_offsets
+            self.line_offsets = self.line_offsets
                 .iter()
                 .filter_map(|off| match *off {
                     x if x < start => Some(x),
@@ -441,10 +443,13 @@ mod tests {
 
     impl DataSource for MockDataSource {
         fn get_data(
-            &self, start: usize, unit: TextUnit, _max_size: usize, _rev: u64,
+            &self,
+            start: usize,
+            unit: TextUnit,
+            _max_size: usize,
+            _rev: u64,
         ) -> Result<GetDataResponse, Error> {
-            let offset = unit
-                .resolve_offset(&self.0, start)
+            let offset = unit.resolve_offset(&self.0, start)
                 .ok_or(Error::Other("unable to resolve offset".into()))?;
             let first_line = self.0.line_of_offset(offset);
             let first_line_offset = offset - self.0.offset_of_line(first_line);

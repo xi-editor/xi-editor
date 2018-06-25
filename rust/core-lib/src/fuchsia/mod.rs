@@ -15,7 +15,7 @@
 pub mod ledger;
 pub mod sync;
 
-use magenta::{Vmo, Status};
+use magenta::{Status, Vmo};
 
 // TODO: move this into magenta-rs?
 pub fn read_entire_vmo(vmo: &Vmo) -> Result<Vec<u8>, Status> {

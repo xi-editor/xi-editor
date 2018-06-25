@@ -15,7 +15,6 @@
 extern crate serde_derive;
 extern crate serde_json;
 
-
 extern crate jsonrpc_lite;
 extern crate languageserver_types as lsp_types;
 extern crate serde;
