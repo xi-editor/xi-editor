@@ -936,19 +936,13 @@ impl View {
     /// next occurrence before (`true`) or after (`false`) the last cursor is selected. `wrapped`
     /// indicates a search for the next occurrence past the end of the file.
     pub fn select_next_occurrence(&mut self, text: &Rope, reverse: bool, wrapped: bool,
-                                  allow_same: bool, modify_selection: &SelectionModifier)
-    {
-        // select occurrence closest to last selection
-        let sel = match self.sel_regions().last() {
-            Some(sel) => {
-                if allow_same && sel.is_caret() {
-                    let (start, end) = {
-                        let mut word_cursor = WordCursor::new(text, sel.max());
-                        word_cursor.select_word()
-                    };
-                    (end, start)
-                } else {
-                    (sel.min(), sel.max())
+                                  allow_same: bool, modify_selection: &SelectionModifier) {
+        let mut sel = self.selection.clone();
+        match self.sel_regions().last() {
+            Some(last_sel) => {
+                // add selection for cursor to prevent that it becomes the current occurrence
+                if !allow_same && last_sel.is_caret() {
+                    sel.add_region(SelRegion::new(last_sel.min(), last_sel.max()));
                 }
             },
             None => return,
@@ -956,7 +950,7 @@ impl View {
         
         // multiple queries; select closest occurrence
         let closest_occurrence = self.find.iter().flat_map(|x|
-            x.next_occurrence(text, reverse, wrapped, sel)
+            x.next_occurrence(text, reverse, wrapped, &sel)
         ).min_by_key(|x| {
             match reverse {
                 true => x.end,
@@ -976,7 +970,9 @@ impl View {
                     let mut selection = self.selection.clone();
 
                     if let Some(last_selection) = self.selection.last() {
-                        selection.delete_range(last_selection.min(), last_selection.max(), false);
+                        if !last_selection.is_caret() {
+                            selection.delete_range(last_selection.min(), last_selection.max(), false);
+                        }
                     }
 
                     selection.add_region(occ);
