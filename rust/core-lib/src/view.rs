@@ -660,7 +660,7 @@ impl View {
         // send updated replace status if changed
         if self.replace_changed {
             if let Some(replace) = self.get_replace() {
-                client.replace_status(self.view_id, &replace)
+                client.replace_status(self.view_id, &json!(replace))
             }
         }
 
@@ -1039,6 +1039,7 @@ impl View {
             _ => return
         };
 
+        self.set_dirty(text);
         self.set_replace(replacement, false);
     }
 
