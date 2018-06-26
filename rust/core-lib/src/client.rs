@@ -24,7 +24,6 @@ use config::Table;
 use styles::ThemeSettings;
 use plugins::rpc::ClientPluginInfo;
 use plugins::Command;
-use internal::view::Replace;
 
 /// An interface to the frontend.
 pub struct Client(RpcPeer);
@@ -133,11 +132,11 @@ impl Client {
                                      }));
     }
 
-    pub fn replace_status(&self, view_id: ViewId, replace: &Replace) {
+    pub fn replace_status(&self, view_id: ViewId, replace: &Value) {
         self.0.send_rpc_notification("replace_status",
                                     &json!({
                                         "view_id": view_id,
-                                        "status": &json!(replace),
+                                        "status": replace,
                                     }));
     }
 

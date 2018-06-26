@@ -649,7 +649,7 @@ impl Editor {
     }
 
     fn replace_next(&mut self, view: &mut View) {
-        if let Some(Replace { chars, preserve_case }) = view.get_replace() {
+        if let Some(Replace { chars, .. }) = view.get_replace() {
             // todo: implement preserve case
             view.find_next(&self.text, false, true, true, &SelectionModifier::Set);
 
@@ -661,7 +661,7 @@ impl Editor {
     }
 
     fn replace_all(&mut self, view: &mut View) {
-        if let Some(Replace { chars, preserve_case }) = view.get_replace() {
+        if let Some(Replace { chars, .. }) = view.get_replace() {
             // todo: implement preserve case
             view.find_all(&self.text);
 
