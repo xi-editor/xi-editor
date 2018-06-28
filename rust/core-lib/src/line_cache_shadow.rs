@@ -106,9 +106,7 @@ impl Builder {
     pub fn add_span(&mut self, n: usize, start_line_num: usize, validity: u8) {
         if n > 0 {
             if let Some(last) = self.spans.last_mut() {
-                if last.validity == validity
-                    && (validity == 0 || last.start_line_num + last.n == start_line_num)
-                {
+                if last.validity == validity && (validity == 0 || last.start_line_num + last.n == start_line_num) {
                     last.n += n;
                     return;
                 }
@@ -172,11 +170,7 @@ impl LineCacheShadow {
         let mut line_num = 0;
         for span in &self.spans {
             if start > line_num {
-                b.add_span(
-                    min(span.n, start - line_num),
-                    span.start_line_num,
-                    span.validity,
-                );
+                b.add_span(min(span.n, start - line_num), span.start_line_num, span.validity);
             }
             let invalid_start = max(start, line_num);
             let invalid_end = min(end, line_num + span.n);
@@ -235,10 +229,7 @@ impl<'a> Iterator for PlanIterator<'a> {
         let shadow_span = &self.lc_shadow.spans[self.shadow_ix];
         let plan_span = &self.plan.spans[self.plan_ix];
         let start = max(self.shadow_line_num, self.plan_line_num);
-        let end = min(
-            self.shadow_line_num + shadow_span.n,
-            self.plan_line_num + plan_span.0,
-        );
+        let end = min(self.shadow_line_num + shadow_span.n, self.plan_line_num + plan_span.0);
         let result = PlanSegment {
             our_line_num: start,
             their_line_num: shadow_span.start_line_num + (start - self.shadow_line_num),

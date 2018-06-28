@@ -141,13 +141,7 @@ impl FileWatcher {
         self.watch_impl(path, recursive, token, Some(filter));
     }
 
-    fn watch_impl(
-        &mut self,
-        path: &Path,
-        recursive: bool,
-        token: WatchToken,
-        filter: Option<Box<PathFilter>>,
-    ) {
+    fn watch_impl(&mut self, path: &Path, recursive: bool, token: WatchToken, filter: Option<Box<PathFilter>>) {
         let path = match path.canonicalize() {
             Ok(ref p) => p.to_owned(),
             Err(e) => {
@@ -181,10 +175,7 @@ impl FileWatcher {
     pub fn unwatch(&mut self, path: &Path, token: WatchToken) {
         let mut state = self.state.lock().unwrap();
 
-        let idx = state
-            .watchees
-            .iter()
-            .position(|w| w.token == token && w.path == path);
+        let idx = state.watchees.iter().position(|w| w.token == token && w.path == path);
 
         if let Some(idx) = idx {
             let removed = state.watchees.remove(idx);
@@ -235,14 +226,12 @@ impl Watchee {
     fn wants_event(&self, event: &DebouncedEvent) -> bool {
         use self::DebouncedEvent::*;
         match *event {
-            NoticeWrite(ref p) | NoticeRemove(ref p) | Create(ref p) | Write(ref p)
-            | Chmod(ref p) | Remove(ref p) => self.applies_to_path(p),
+            NoticeWrite(ref p) | NoticeRemove(ref p) | Create(ref p) | Write(ref p) | Chmod(ref p) | Remove(ref p) => {
+                self.applies_to_path(p)
+            }
             Rename(ref p1, ref p2) => self.applies_to_path(p1) || self.applies_to_path(p2),
             Rescan => false,
-            Error(_, ref opt_p) => opt_p
-                .as_ref()
-                .map(|p| self.applies_to_path(p))
-                .unwrap_or(false),
+            Error(_, ref opt_p) => opt_p.as_ref().map(|p| self.applies_to_path(p)).unwrap_or(false),
         }
     }
 
@@ -420,9 +409,7 @@ mod tests {
             {
                 fs::create_dir_all(path).expect("failed to create directory");
             } else {
-                let parent = path.parent()
-                    .expect("failed to get parent directory")
-                    .to_owned();
+                let parent = path.parent().expect("failed to get parent directory").to_owned();
                 if !parent.exists() {
                     fs::create_dir_all(parent).expect("failed to create parent directory");
                 }
@@ -482,9 +469,7 @@ mod tests {
         assert!(w.applies_to_path(&PathBuf::from("/hi/there/friend.txt")));
         assert!(w.applies_to_path(&PathBuf::from("/hi/there/")));
 
-        w.filter = Some(Box::new(|p| {
-            p.extension().and_then(OsStr::to_str) == Some("txt")
-        }));
+        w.filter = Some(Box::new(|p| p.extension().and_then(OsStr::to_str) == Some("txt")));
         assert!(w.applies_to_path(&PathBuf::from("/hi/there/dear/friend.txt")));
         assert!(w.applies_to_path(&PathBuf::from("/hi/there/friend.txt")));
         assert!(!w.applies_to_path(&PathBuf::from("/hi/there/")));
@@ -524,14 +509,8 @@ mod tests {
         assert_eq!(
             events,
             vec![
-                (
-                    2.into(),
-                    DebouncedEvent::NoticeWrite(tmp.mkpath("adir/dir2/file")),
-                ),
-                (
-                    2.into(),
-                    DebouncedEvent::Write(tmp.mkpath("adir/dir2/file")),
-                ),
+                (2.into(), DebouncedEvent::NoticeWrite(tmp.mkpath("adir/dir2/file"))),
+                (2.into(), DebouncedEvent::Write(tmp.mkpath("adir/dir2/file"))),
             ]
         );
     }

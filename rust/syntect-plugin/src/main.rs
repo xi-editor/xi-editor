@@ -37,9 +37,7 @@ use xi_rope::rope::RopeDelta;
 use xi_trace::{trace, trace_block};
 
 use stackmap::{LookupResult, StackMap};
-use syntect::parsing::{
-    ParseState, ScopeRepository, ScopeStack, SyntaxDefinition, SyntaxSet, SCOPE_REPO,
-};
+use syntect::parsing::{ParseState, ScopeRepository, ScopeStack, SyntaxDefinition, SyntaxSet, SCOPE_REPO};
 
 const LINES_PER_RPC: usize = 10;
 const INDENTATION_PRIORITY: u64 = 100;
@@ -84,8 +82,7 @@ impl PluginState {
 
     // compute syntax for one line, also accumulating the style spans
     fn compute_syntax(&mut self, line: &str, state: LineState) -> LineState {
-        let (mut parse_state, mut scope_state) =
-            state.or_else(|| self.initial_state.clone()).unwrap();
+        let (mut parse_state, mut scope_state) = state.or_else(|| self.initial_state.clone()).unwrap();
         let ops = parse_state.parse_line(&line);
 
         let mut prev_cursor = 0;
@@ -96,11 +93,7 @@ impl PluginState {
                 let start = self.offset - self.spans_start + prev_cursor;
                 let end = start + (cursor - prev_cursor);
                 if start != end {
-                    let span = ScopeSpan {
-                        start,
-                        end,
-                        scope_id,
-                    };
+                    let span = ScopeSpan { start, end, scope_id };
                     self.spans.push(span);
                 }
             }
@@ -111,11 +104,7 @@ impl PluginState {
         let start = self.offset - self.spans_start + prev_cursor;
         let end = start + (line.len() - prev_cursor);
         let scope_id = self.identifier_for_stack(&scope_state, &repo);
-        let span = ScopeSpan {
-            start,
-            end,
-            scope_id,
-        };
+        let span = ScopeSpan { start, end, scope_id };
         self.spans.push(span);
         Some((parse_state, scope_state))
     }
@@ -186,11 +175,7 @@ impl PluginState {
             self.new_scopes.clear();
         }
         if self.spans_start != self.offset {
-            ctx.update_spans(
-                self.spans_start,
-                self.offset - self.spans_start,
-                &self.spans,
-            );
+            ctx.update_spans(self.spans_start, self.offset - self.spans_start, &self.spans);
             self.spans.clear();
         }
         self.spans_start = self.offset;
@@ -275,25 +260,14 @@ impl<'a> Syntect<'a> {
             };
 
             if let Some(delta) = result {
-                view.edit(
-                    delta,
-                    INDENTATION_PRIORITY,
-                    false,
-                    false,
-                    String::from("syntect"),
-                );
+                view.edit(delta, INDENTATION_PRIORITY, false, false, String::from("syntect"));
             }
         }
     }
 
     /// Returns the string which should be inserted after the newline
     /// to achieve the desired indentation level.
-    fn indent_for_next_line<'b>(
-        &self,
-        prev_line: &'b str,
-        use_spaces: bool,
-        tab_size: usize,
-    ) -> Cow<'b, str> {
+    fn indent_for_next_line<'b>(&self, prev_line: &'b str, use_spaces: bool, tab_size: usize) -> Cow<'b, str> {
         let leading_ws = prev_line
             .char_indices()
             .find(|&(_, c)| !c.is_whitespace())
@@ -346,13 +320,7 @@ impl<'a> Plugin for Syntect<'a> {
 
     fn config_changed(&mut self, _view: &mut View<Self::Cache>, _changes: &ConfigTable) {}
 
-    fn update(
-        &mut self,
-        view: &mut View<Self::Cache>,
-        delta: Option<&RopeDelta>,
-        _edit_type: String,
-        _author: String,
-    ) {
+    fn update(&mut self, view: &mut View<Self::Cache>, delta: Option<&RopeDelta>, _edit_type: String, _author: String) {
         let _t = trace_block("Syntect::update", &["syntect"]);
         view.schedule_idle();
         let should_auto_indent = view.get_config().auto_indent;

@@ -230,8 +230,7 @@ impl Editor {
         }
         self.last_edit_type = self.this_edit_type;
         let priority = 0x10000;
-        self.engine
-            .edit_rev(priority, undo_group, head_rev_id.token(), delta);
+        self.engine.edit_rev(priority, undo_group, head_rev_id.token(), delta);
         self.text = self.engine.get_head().clone();
     }
 
@@ -348,14 +347,12 @@ impl Editor {
                 let tab_size = config.tab_size;
                 let tab_size = if tab_off == 0 { tab_size } else { tab_off };
                 let tab_start = region.start.saturating_sub(tab_size);
-                let preceded_by_spaces = region.start > 0
-                    && (tab_start..region.start).all(|i| self.text.byte_at(i) == b' ');
+                let preceded_by_spaces =
+                    region.start > 0 && (tab_start..region.start).all(|i| self.text.byte_at(i) == b' ');
                 if preceded_by_spaces && config.translate_tabs_to_spaces && config.use_tab_stops {
                     tab_start
                 } else {
-                    self.text
-                        .prev_grapheme_offset(region.end)
-                        .unwrap_or(region.end)
+                    self.text.prev_grapheme_offset(region.end).unwrap_or(region.end)
                 }
             };
 
@@ -377,13 +374,7 @@ impl Editor {
     /// the region.
     ///
     /// If `save` is set, save the deleted text into the kill ring.
-    fn delete_by_movement(
-        &mut self,
-        view: &View,
-        movement: Movement,
-        save: bool,
-        kill_ring: &mut Rope,
-    ) {
+    fn delete_by_movement(&mut self, view: &View, movement: Movement, save: bool, kill_ring: &mut Rope) {
         // We compute deletions as a selection because the merge logic
         // is convenient. Another possibility would be to make the delta
         // builder able to handle overlapping deletions (with union semantics).
@@ -595,10 +586,7 @@ impl Editor {
 
     fn sel_region_to_interval_and_rope(&self, region: SelRegion) -> (Interval, Rope) {
         let as_interval = Interval::new_closed_open(region.min(), region.max());
-        let interval_rope = Rope::from(
-            self.text
-                .slice_to_string(as_interval.start(), as_interval.end()),
-        );
+        let interval_rope = Rope::from(self.text.slice_to_string(as_interval.start(), as_interval.end()));
         (as_interval, interval_rope)
     }
 
@@ -606,8 +594,7 @@ impl Editor {
         let mut builder = delta::Builder::new(self.text.len());
         let mut last = 0;
         let mut optional_previous_selection: Option<(Interval, Rope)> =
-            last_selection_region(view.sel_regions())
-                .map(|&region| self.sel_region_to_interval_and_rope(region));
+            last_selection_region(view.sel_regions()).map(|&region| self.sel_region_to_interval_and_rope(region));
 
         for &region in view.sel_regions() {
             if region.is_caret() {
@@ -618,8 +605,8 @@ impl Editor {
                 if let Some(end) = self.text.next_grapheme_offset(middle) {
                     if start >= last {
                         let interval = Interval::new_closed_open(start, end);
-                        let swapped = self.text.slice_to_string(middle, end)
-                            + &self.text.slice_to_string(start, middle);
+                        let swapped =
+                            self.text.slice_to_string(middle, end) + &self.text.slice_to_string(start, middle);
                         builder.replace(interval, Rope::from(swapped));
                         last = end;
                     }
@@ -657,13 +644,7 @@ impl Editor {
         }
     }
 
-    pub(crate) fn do_edit(
-        &mut self,
-        view: &mut View,
-        kill_ring: &mut Rope,
-        config: &BufferItems,
-        cmd: BufferEvent,
-    ) {
+    pub(crate) fn do_edit(&mut self, view: &mut View, kill_ring: &mut Rope, config: &BufferItems, cmd: BufferEvent) {
         use self::BufferEvent::*;
         match cmd {
             Delete { movement, kill } => self.delete_by_movement(view, movement, kill, kill_ring),

@@ -115,11 +115,7 @@ impl<'a> LineBreakIterator<'a> {
             }
         } else {
             let (lb, len) = linebreak_property_str(s, 0);
-            LineBreakIterator {
-                s,
-                ix: len,
-                state: lb,
-            }
+            LineBreakIterator { s, ix: len, state: lb }
         }
     }
 }
@@ -502,10 +498,7 @@ mod tests {
         );
 
         // LB15
-        assert_eq!(
-            vec![(3, true)],
-            LineBreakIterator::new("\" [").collect::<Vec<_>>()
-        );
+        assert_eq!(vec![(3, true)], LineBreakIterator::new("\" [").collect::<Vec<_>>());
 
         // LB17
         assert_eq!(

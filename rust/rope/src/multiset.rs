@@ -65,10 +65,7 @@ impl SubsetBuilder {
     /// non-empty range with `begin` not before the largest range or segment added
     /// so far. Gaps will be filled with a 0-count segment.
     pub fn add_range(&mut self, begin: usize, end: usize, count: usize) {
-        assert!(
-            begin >= self.total_len,
-            "ranges must be added in non-decreasing order"
-        );
+        assert!(begin >= self.total_len, "ranges must be added in non-decreasing order");
         // assert!(begin < end, "ranges added must be non-empty: [{},{})", begin, end);
         if begin >= end {
             return;
@@ -239,10 +236,7 @@ impl Subset {
                 let mut to_be_consumed = oseg.len;
                 while to_be_consumed > 0 {
                     if cur_seg.len == 0 {
-                        cur_seg = seg_iter
-                            .next()
-                            .expect("self must cover all 0-regions of other")
-                            .clone();
+                        cur_seg = seg_iter.next().expect("self must cover all 0-regions of other").clone();
                     }
                     // consume as much of the segment as possible and necessary
                     let to_consume = cmp::min(cur_seg.len, to_be_consumed);
@@ -252,15 +246,8 @@ impl Subset {
                 }
             }
         }
-        assert_eq!(
-            cur_seg.len, 0,
-            "the 0-regions of other must be the size of self"
-        );
-        assert_eq!(
-            seg_iter.next(),
-            None,
-            "the 0-regions of other must be the size of self"
-        );
+        assert_eq!(cur_seg.len, 0, "the 0-regions of other must be the size of self");
+        assert_eq!(seg_iter.next(), None, "the 0-regions of other must be the size of self");
         sb.build()
     }
 
@@ -352,7 +339,7 @@ impl Subset {
     pub fn mapper(&self, matcher: CountMatcher) -> Mapper {
         Mapper {
             range_iter: self.range_iter(matcher),
-            last_i: 0, // indices only need to be in non-decreasing order, not increasing
+            last_i: 0,         // indices only need to be in non-decreasing order, not increasing
             cur_range: (0, 0), // will immediately try to consume next range
             subset_amount_consumed: 0,
         }
@@ -435,9 +422,7 @@ impl<'a> Iterator for ZipIter<'a> {
     fn next(&mut self) -> Option<ZipSegment> {
         match (self.a_segs.get(self.a_i), self.b_segs.get(self.b_i)) {
             (None, None) => None,
-            (None, Some(_)) | (Some(_), None) => {
-                panic!("can't zip Subsets of different base lengths.")
-            }
+            (None, Some(_)) | (Some(_), None) => panic!("can't zip Subsets of different base lengths."),
             (
                 Some(&Segment {
                     len: a_len,
@@ -464,11 +449,7 @@ impl<'a> Iterator for ZipIter<'a> {
                     self.b_consumed - self.consumed
                 };
                 self.consumed += len;
-                Some(ZipSegment {
-                    len,
-                    a_count,
-                    b_count,
-                })
+                Some(ZipSegment { len, a_count, b_count })
             }
         }
     }

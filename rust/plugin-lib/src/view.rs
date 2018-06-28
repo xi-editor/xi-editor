@@ -150,19 +150,9 @@ impl<C: Cache> View<C> {
         self.peer.send_rpc_notification("add_scopes", &params);
     }
 
-    pub fn edit(
-        &self,
-        delta: RopeDelta,
-        priority: u64,
-        after_cursor: bool,
-        new_undo_group: bool,
-        author: String,
-    ) {
-        let undo_group = if new_undo_group {
-            None
-        } else {
-            self.undo_group
-        };
+    pub fn edit(&self, delta: RopeDelta, priority: u64, after_cursor: bool, new_undo_group: bool, author: String) {
+        let undo_group =
+            if new_undo_group { None } else { self.undo_group };
         let edit = PluginEdit {
             rev: self.rev,
             delta,
@@ -220,8 +210,7 @@ impl<C: Cache> View<C> {
             "key": key,
             "value": value
         });
-        self.peer
-            .send_rpc_notification("update_status_item", &params);
+        self.peer.send_rpc_notification("update_status_item", &params);
     }
 
     pub fn remove_status_item(&self, key: &str) {
@@ -230,8 +219,7 @@ impl<C: Cache> View<C> {
             "view_id": self.view_id,
             "key": key
         });
-        self.peer
-            .send_rpc_notification("remove_status_item", &params);
+        self.peer.send_rpc_notification("remove_status_item", &params);
     }
 }
 
@@ -243,13 +231,7 @@ pub struct FetchCtx {
 }
 
 impl DataSource for FetchCtx {
-    fn get_data(
-        &self,
-        start: usize,
-        unit: TextUnit,
-        max_size: usize,
-        rev: u64,
-    ) -> Result<GetDataResponse, Error> {
+    fn get_data(&self, start: usize, unit: TextUnit, max_size: usize, rev: u64) -> Result<GetDataResponse, Error> {
         let _t = trace_block("FetchCtx::get_data", &["plugin"]);
         let params = json!({
             "plugin_id": self.plugin_id,

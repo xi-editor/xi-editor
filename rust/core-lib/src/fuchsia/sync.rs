@@ -54,12 +54,7 @@ impl SyncStore {
     ///
     /// Returns a sync store and schedules the loading of initial
     /// state and subscribes to state updates for this document.
-    pub fn new(
-        mut page: Page_Proxy,
-        key: Vec<u8>,
-        updates: Sender<SyncMsg>,
-        buffer: BufferIdentifier,
-    ) -> SyncStore {
+    pub fn new(mut page: Page_Proxy, key: Vec<u8>, updates: Sender<SyncMsg>, buffer: BufferIdentifier) -> SyncStore {
         let (s1, s2) = Channel::create(ChannelOpts::Normal).unwrap();
         let watcher_client = PageWatcher_Client::from_handle(s1.into_handle());
         let watcher_client_ptr = ::fidl::InterfacePtr {
@@ -117,9 +112,7 @@ impl SyncStore {
             let buffer = self.buffer.clone();
             ready_future.with(move |res| match res {
                 Ok(ledger::OK) => {
-                    done_chan
-                        .send(SyncMsg::TransactionReady { buffer })
-                        .unwrap();
+                    done_chan.send(SyncMsg::TransactionReady { buffer }).unwrap();
                 }
                 Ok(err_status) => eprintln!("Ledger failed to start transaction: {:?}", err_status),
                 Err(err) => eprintln!("FIDL failed on starting transaction: {:?}", err),
@@ -171,10 +164,7 @@ pub struct SyncUpdater<W: Write> {
 
 impl<W: Write + Send + 'static> SyncUpdater<W> {
     pub fn new(container_ref: BufferContainerRef<W>, chan: Receiver<SyncMsg>) -> SyncUpdater<W> {
-        SyncUpdater {
-            container_ref,
-            chan,
-        }
+        SyncUpdater { container_ref, chan }
     }
 
     /// Run this in a thread, it will return when it encounters an error
@@ -191,16 +181,9 @@ impl<W: Write + Send + 'static> SyncUpdater<W> {
                         editor.transaction_ready();
                     }
                 }
-                SyncMsg::NewState {
-                    new_buf,
-                    done,
-                    buffer,
-                } => {
+                SyncMsg::NewState { new_buf, done, buffer } => {
                     let mut container = self.container_ref.lock();
-                    match (
-                        container.editor_for_buffer_mut(&buffer),
-                        buf_to_state(&new_buf),
-                    ) {
+                    match (container.editor_for_buffer_mut(&buffer), buf_to_state(&new_buf)) {
                         (Some(mut editor), Ok(new_state)) => {
                             editor.merge_new_state(new_state);
                             if let Some(promise) = done {
@@ -283,9 +266,7 @@ impl ConflictResolverFactory for ConflictResolverFactoryServer {
     /// Our resolvers are the same for every page
     fn new_conflict_resolver(&mut self, _page_id: Vec<u8>, resolver: ConflictResolver_Server) {
         let _ = fidl::Server::new(
-            ConflictResolverServer {
-                key: self.key.clone(),
-            },
+            ConflictResolverServer { key: self.key.clone() },
             resolver.into_channel(),
         ).spawn();
     }
@@ -296,11 +277,8 @@ impl ConflictResolverFactory_Stub for ConflictResolverFactoryServer {
 }
 impl_fidl_stub!(ConflictResolverFactoryServer: ConflictResolverFactory_Stub);
 
-fn state_from_snapshot<F>(
-    snapshot: ::fidl::InterfacePtr<PageSnapshot_Client>,
-    key: Vec<u8>,
-    done: F,
-) where
+fn state_from_snapshot<F>(snapshot: ::fidl::InterfacePtr<PageSnapshot_Client>, key: Vec<u8>, done: F)
+where
     F: Send + FnOnce(Result<Option<Engine>, ()>) + 'static,
 {
     assert_eq!(PageSnapshot_Metadata::VERSION, snapshot.version);
@@ -367,12 +345,8 @@ impl ConflictResolver for ConflictResolverServer {
                         new_value,
                         priority: Priority_Eager,
                     };
-                    assert_eq!(
-                        MergeResultProvider_Metadata::VERSION,
-                        result_provider.version
-                    );
-                    let mut result_provider_proxy =
-                        MergeResultProvider_new_Proxy(result_provider.inner);
+                    assert_eq!(MergeResultProvider_Metadata::VERSION, result_provider.version);
+                    let mut result_provider_proxy = MergeResultProvider_new_Proxy(result_provider.inner);
                     result_provider_proxy.merge(vec![merged]);
                     result_provider_proxy.done().with(ledger_crash_callback);
                 }

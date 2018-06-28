@@ -27,11 +27,7 @@ pub enum LspHeader {
 }
 
 pub trait Callable: Send {
-    fn call(
-        self: Box<Self>,
-        client: &mut LanguageServerClient,
-        result: Result<Value, JsonRpcError>,
-    );
+    fn call(self: Box<Self>, client: &mut LanguageServerClient, result: Result<Value, JsonRpcError>);
 }
 
 impl<F: Send + FnOnce(&mut LanguageServerClient, Result<Value, JsonRpcError>)> Callable for F {

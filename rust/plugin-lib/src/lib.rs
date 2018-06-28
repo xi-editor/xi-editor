@@ -47,13 +47,7 @@ pub use view::View;
 
 /// Abstracts getting data from the peer. Mainly exists for mocking in tests.
 pub trait DataSource {
-    fn get_data(
-        &self,
-        start: usize,
-        unit: TextUnit,
-        max_size: usize,
-        rev: u64,
-    ) -> Result<GetDataResponse, Error>;
+    fn get_data(&self, start: usize, unit: TextUnit, max_size: usize, rev: u64) -> Result<GetDataResponse, Error>;
 }
 
 /// A generic interface for types that cache a remote document.
@@ -89,11 +83,7 @@ pub trait Cache {
     ///
     /// Returns an error if `line_num` is greater than the total number of lines
     /// in the document, or if there is a problem communicating with `source`.
-    fn offset_of_line<DS: DataSource>(
-        &mut self,
-        source: &DS,
-        line_num: usize,
-    ) -> Result<usize, Error>;
+    fn offset_of_line<DS: DataSource>(&mut self, source: &DS, line_num: usize) -> Result<usize, Error>;
     /// Returns the index of the line containing `offset`, fetching
     /// data from `source` if needed.
     ///
@@ -101,11 +91,7 @@ pub trait Cache {
     ///
     /// Returns an error if `offset` is greater than the total length of
     /// the document, or if there is a problem communicating with `source`.
-    fn line_of_offset<DS: DataSource>(
-        &mut self,
-        source: &DS,
-        offset: usize,
-    ) -> Result<usize, Error>;
+    fn line_of_offset<DS: DataSource>(&mut self, source: &DS, offset: usize) -> Result<usize, Error>;
     /// Updates the cache by applying this delta.
     fn update(&mut self, delta: Option<&RopeDelta>, buf_size: usize, num_lines: usize, rev: u64);
     /// Flushes any state held by this cache.
@@ -120,13 +106,7 @@ pub trait Plugin {
 
     /// Called when an edit has occurred in the remote view. If the plugin wishes
     /// to add its own edit, it must do so using asynchronously via the edit notification.
-    fn update(
-        &mut self,
-        view: &mut View<Self::Cache>,
-        delta: Option<&RopeDelta>,
-        edit_type: String,
-        author: String,
-    );
+    fn update(&mut self, view: &mut View<Self::Cache>, delta: Option<&RopeDelta>, edit_type: String, author: String);
     /// Called when a buffer has been saved to disk. The buffer's previous
     /// path, if one existed, is passed as `old_path`.
     fn did_save(&mut self, view: &mut View<Self::Cache>, old_path: Option<&Path>);

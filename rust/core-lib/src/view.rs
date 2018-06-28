@@ -192,9 +192,7 @@ impl View {
                 wrap_around,
                 allow_same: _,
             } => self.find_next(text, false, wrap_around.unwrap_or(false)),
-            FindPrevious { wrap_around } => {
-                self.find_next(text, true, wrap_around.unwrap_or(false))
-            }
+            FindPrevious { wrap_around } => self.find_next(text, true, wrap_around.unwrap_or(false)),
             Click(MouseAction {
                 line,
                 column,
@@ -214,18 +212,14 @@ impl View {
                     self.do_gesture(text, line, column, GestureType::PointSelect)
                 }
             }
-            Drag(MouseAction { line, column, .. }) => {
-                self.do_drag(text, line, column, Affinity::default())
-            }
+            Drag(MouseAction { line, column, .. }) => self.do_drag(text, line, column, Affinity::default()),
             Cancel => self.do_cancel(text),
             HighlightFind { visible } => {
                 self.highlight_find = visible;
                 self.find_changed = FindStatusChange::All;
                 self.set_dirty(text);
             }
-            SelectionForFind { case_sensitive } => {
-                self.selection_for_find(text, case_sensitive.unwrap_or(false))
-            }
+            SelectionForFind { case_sensitive } => self.selection_for_find(text, case_sensitive.unwrap_or(false)),
         }
     }
 
@@ -364,8 +358,7 @@ impl View {
         } else {
             line_cache_shadow::CURSOR_VALID | line_cache_shadow::STYLES_VALID
         };
-        self.lc_shadow
-            .partial_invalidate(first_line, last_line, invalid);
+        self.lc_shadow.partial_invalidate(first_line, last_line, invalid);
     }
 
     fn add_selection_by_movement(&mut self, text: &Rope, movement: Movement) {
@@ -472,11 +465,7 @@ impl View {
                 (drag_state.min, max(offset, drag_state.max))
             };
             let horiz = None;
-            sel.add_region(
-                SelRegion::new(start, end)
-                    .with_horiz(horiz)
-                    .with_affinity(affinity),
-            );
+            sel.add_region(SelRegion::new(start, end).with_horiz(horiz).with_affinity(affinity));
             sel
         });
 
@@ -562,15 +551,7 @@ impl View {
             }
         }
 
-        let styles = self.render_styles(
-            client,
-            styles,
-            start_pos,
-            pos,
-            &selections,
-            &hls,
-            style_spans,
-        );
+        let styles = self.render_styles(client, styles, start_pos, pos, &selections, &hls, style_spans);
 
         let mut result = json!({
             "text": &l_str,
@@ -707,9 +688,7 @@ impl View {
 
                         let offset = self.offset_of_line(text, start_line);
                         let mut line_cursor = Cursor::new(text, offset);
-                        let mut soft_breaks = self.breaks
-                            .as_ref()
-                            .map(|breaks| Cursor::new(breaks, offset));
+                        let mut soft_breaks = self.breaks.as_ref().map(|breaks| Cursor::new(breaks, offset));
                         let mut rendered_lines = Vec::new();
                         for line_num in start_line..end_line {
                             let line = self.render_line(
@@ -905,9 +884,7 @@ impl View {
             match self.wrap_col {
                 WrapWidth::None => (),
                 WrapWidth::Bytes(col) => linewrap::rewrap(breaks, text, iv, new_len, col),
-                WrapWidth::Width(px) => {
-                    linewrap::rewrap_width(breaks, text, width_cache, client, iv, new_len, px)
-                }
+                WrapWidth::Width(px) => linewrap::rewrap_width(breaks, text, width_cache, client, iv, new_len, px),
             }
         }
         if self.breaks.is_some() {

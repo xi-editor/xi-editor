@@ -76,10 +76,7 @@ impl Node {
         if self.children.get(first).is_none() {
             self.children.insert(first.to_owned(), Node::default());
         }
-        self.children
-            .get_mut(first)
-            .unwrap()
-            .get_value(&stack[1..], next_id)
+        self.children.get_mut(first).unwrap().get_value(&stack[1..], next_id)
     }
 }
 
@@ -116,10 +113,7 @@ mod tests {
         let stack = ScopeStack::from_str("text.rust.test scope.level.three").unwrap();
         assert_eq!(stack.as_slice().len(), 2);
         assert_eq!(stackmap.get_value(stack.as_slice()), LookupResult::New(0));
-        assert_eq!(
-            stackmap.get_value(stack.as_slice()),
-            LookupResult::Existing(0)
-        );
+        assert_eq!(stackmap.get_value(stack.as_slice()), LookupResult::Existing(0));
         // we don't assign values to intermediate scopes during traversal
         let stack2 = ScopeStack::from_str("text.rust.test").unwrap();
         assert_eq!(stackmap.get_value(stack2.as_slice()), LookupResult::New(1));

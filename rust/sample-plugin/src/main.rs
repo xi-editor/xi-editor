@@ -54,21 +54,12 @@ impl Plugin for SamplePlugin {
 
     fn config_changed(&mut self, _view: &mut View<Self::Cache>, _changes: &ConfigTable) {}
 
-    fn update(
-        &mut self,
-        view: &mut View<Self::Cache>,
-        delta: Option<&RopeDelta>,
-        _edit_type: String,
-        _author: String,
-    ) {
+    fn update(&mut self, view: &mut View<Self::Cache>, delta: Option<&RopeDelta>, _edit_type: String, _author: String) {
         //NOTE: example simple conditional edit. If this delta is
         //an insert of a single '!', we capitalize the preceding word.
         if let Some(delta) = delta {
             let (iv, _) = delta.summary();
-            let text: String = delta
-                .as_simple_insert()
-                .map(String::from)
-                .unwrap_or_default();
+            let text: String = delta.as_simple_insert().map(String::from).unwrap_or_default();
             if text == "!" {
                 let _ = self.capitalize_word(view, iv.end());
             }

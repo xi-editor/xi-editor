@@ -333,9 +333,7 @@ impl Serialize for DeltaElement<RopeInfo> {
                 el.serialize_field(end)?;
                 el.end()
             }
-            DeltaElement::Insert(ref node) => {
-                serializer.serialize_newtype_variant("DeltaElement", 1, "insert", node)
-            }
+            DeltaElement::Insert(ref node) => serializer.serialize_newtype_variant("DeltaElement", 1, "insert", node),
         }
     }
 }
@@ -747,13 +745,7 @@ impl<'a> Iterator for LinesRaw<'a> {
             if self.fragment.is_empty() {
                 match self.inner.next() {
                     Some(chunk) => self.fragment = chunk,
-                    None => {
-                        return if result.is_empty() {
-                            None
-                        } else {
-                            Some(result)
-                        }
-                    }
+                    None => return if result.is_empty() { None } else { Some(result) },
                 }
                 if self.fragment.is_empty() {
                     // can only happen on empty input
@@ -822,10 +814,7 @@ mod tests {
     #[test]
     fn lines_raw_small() {
         let a = Rope::from("a\nb\nc");
-        assert_eq!(
-            vec!["a\n", "b\n", "c"],
-            a.lines_raw_all().collect::<Vec<_>>()
-        );
+        assert_eq!(vec!["a\n", "b\n", "c"], a.lines_raw_all().collect::<Vec<_>>());
 
         let a = Rope::from("a\nb\n");
         assert_eq!(vec!["a\n", "b\n"], a.lines_raw_all().collect::<Vec<_>>());
@@ -898,14 +887,8 @@ mod tests {
         let r = r + Rope::from(&b[MIN_LEAF..]);
         //println!("{:?}", r.iter_chunks().collect::<Vec<_>>());
 
-        assert_eq!(
-            vec![a.as_str(), b.as_str()],
-            r.lines_raw_all().collect::<Vec<_>>()
-        );
-        assert_eq!(
-            vec![&a[..line_len], &b[..line_len]],
-            r.lines_all().collect::<Vec<_>>()
-        );
+        assert_eq!(vec![a.as_str(), b.as_str()], r.lines_raw_all().collect::<Vec<_>>());
+        assert_eq!(vec![&a[..line_len], &b[..line_len]], r.lines_all().collect::<Vec<_>>());
         assert_eq!(
             String::from(&r).lines().collect::<Vec<_>>(),
             r.lines_all().collect::<Vec<_>>()

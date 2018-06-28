@@ -124,10 +124,7 @@ impl IndexSet {
         let mut ranges: Vec<(usize, usize)> = Vec::new();
         let mut transformer = Transformer::new(delta);
         for &(start, end) in &self.ranges {
-            let new_range = (
-                transformer.transform(start, false),
-                transformer.transform(end, false),
-            );
+            let new_range = (transformer.transform(start, false), transformer.transform(end, false));
             if new_range.0 == new_range.1 {
                 continue; // remove collapsed regions
             }
@@ -218,10 +215,7 @@ mod tests {
         assert_eq!(e.minus_one_range(0, 4).collect::<Vec<_>>(), vec![(0, 3)]);
         assert_eq!(e.minus_one_range(4, 10).collect::<Vec<_>>(), vec![(5, 10)]);
         assert_eq!(e.minus_one_range(5, 10).collect::<Vec<_>>(), vec![(5, 10)]);
-        assert_eq!(
-            e.minus_one_range(0, 10).collect::<Vec<_>>(),
-            vec![(0, 3), (5, 10)]
-        );
+        assert_eq!(e.minus_one_range(0, 10).collect::<Vec<_>>(), vec![(0, 3), (5, 10)]);
     }
 
     #[test]
@@ -233,14 +227,8 @@ mod tests {
         assert_eq!(e.minus_one_range(3, 5).collect::<Vec<_>>(), vec![]);
         assert_eq!(e.minus_one_range(0, 3).collect::<Vec<_>>(), vec![(0, 3)]);
         assert_eq!(e.minus_one_range(0, 4).collect::<Vec<_>>(), vec![(0, 3)]);
-        assert_eq!(
-            e.minus_one_range(4, 10).collect::<Vec<_>>(),
-            vec![(5, 7), (9, 10)]
-        );
-        assert_eq!(
-            e.minus_one_range(5, 10).collect::<Vec<_>>(),
-            vec![(5, 7), (9, 10)]
-        );
+        assert_eq!(e.minus_one_range(4, 10).collect::<Vec<_>>(), vec![(5, 7), (9, 10)]);
+        assert_eq!(e.minus_one_range(5, 10).collect::<Vec<_>>(), vec![(5, 7), (9, 10)]);
         assert_eq!(e.minus_one_range(8, 10).collect::<Vec<_>>(), vec![(9, 10)]);
         assert_eq!(
             e.minus_one_range(0, 10).collect::<Vec<_>>(),

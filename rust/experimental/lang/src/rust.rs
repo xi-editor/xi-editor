@@ -112,14 +112,13 @@ const RUST_KEYWORDS: &'static [&'static [u8]] = &[
 
 // sorted for easy binary searching
 const RUST_PRIM_TYPES: &'static [&'static [u8]] = &[
-    b"bool", b"char", b"f32", b"f64", b"i128", b"i16", b"i32", b"i64", b"i8", b"isize", b"str",
-    b"u128", b"u16", b"u32", b"u64", b"u8", b"usize",
+    b"bool", b"char", b"f32", b"f64", b"i128", b"i16", b"i32", b"i64", b"i8", b"isize", b"str", b"u128", b"u16",
+    b"u32", b"u64", b"u8", b"usize",
 ];
 
 const RUST_OPERATORS: &'static [&'static [u8]] = &[
-    b"!", b"%=", b"%", b"&=", b"&&", b"&", b"*=", b"*", b"+=", b"+", b"-=", b"-", b"/=", b"/",
-    b"<<=", b"<<", b">>=", b">>", b"^=", b"^", b"|=", b"||", b"|", b"==", b"=", b"..", b"=>",
-    b"<=", b"<", b">=", b">",
+    b"!", b"%=", b"%", b"&=", b"&&", b"&", b"*=", b"*", b"+=", b"+", b"-=", b"-", b"/=", b"/", b"<<=", b"<<", b">>=",
+    b">>", b"^=", b"^", b"|=", b"||", b"|", b"==", b"=", b"..", b"=>", b"<=", b"<", b">=", b">",
 ];
 
 pub struct RustColorize<N> {
@@ -146,9 +145,7 @@ impl<N: NewState<StateEl>> RustColorize<N> {
             } else if b == b'\\' {
                 if let Some(len) = escape.p(&t[i..]) {
                     return (i, self.ctx.push(state, StateEl::CharConst), len, state);
-                } else if let Some(len) =
-                    (FailIf(OneOf(b"\r\nbu")), OneChar(|_| true)).p(&t[i + 1..])
-                {
+                } else if let Some(len) = (FailIf(OneOf(b"\r\nbu")), OneChar(|_| true)).p(&t[i + 1..]) {
                     return (i + 1, self.ctx.push(state, StateEl::Invalid), len, state);
                 }
             }
@@ -176,10 +173,7 @@ fn is_ident_continue(c: u8) -> bool {
 }
 
 fn ident(s: &[u8]) -> Option<usize> {
-    (
-        OneByte(is_ident_start),
-        ZeroOrMore(OneByte(is_ident_continue)),
-    ).p(s)
+    (OneByte(is_ident_start), ZeroOrMore(OneByte(is_ident_continue))).p(s)
 }
 
 // sequence of decimal digits with optional separator
@@ -188,10 +182,7 @@ fn raw_numeric(s: &[u8]) -> Option<usize> {
 }
 
 fn int_suffix(s: &[u8]) -> Option<usize> {
-    (
-        Alt(b'u', b'i'),
-        OneOf(&["8", "16", "32", "64", "128", "size"]),
-    ).p(s)
+    (Alt(b'u', b'i'), OneOf(&["8", "16", "32", "64", "128", "size"])).p(s)
 }
 
 // At least one P with any number of SEP mixed in. Note: this is also an example
@@ -201,11 +192,7 @@ struct OneOrMoreWithSep<P, SEP>(P, SEP);
 impl<P: Peg, SEP: Peg> Peg for OneOrMoreWithSep<P, SEP> {
     fn p(&self, s: &[u8]) -> Option<usize> {
         let OneOrMoreWithSep(ref p, ref sep) = *self;
-        (
-            ZeroOrMore(Ref(sep)),
-            Ref(p),
-            ZeroOrMore(Alt(Ref(p), Ref(sep))),
-        ).p(s)
+        (ZeroOrMore(Ref(sep)), Ref(p), ZeroOrMore(Alt(Ref(p), Ref(sep)))).p(s)
     }
 }
 
@@ -251,11 +238,7 @@ fn escape(s: &[u8]) -> Option<usize> {
 }
 
 fn char_literal(s: &[u8]) -> Option<usize> {
-    (
-        b'\'',
-        Alt(OneChar(|c| c != '\\' && c != '\''), escape),
-        b'\'',
-    ).p(s)
+    (b'\'', Alt(OneChar(|c| c != '\\' && c != '\''), escape), b'\'').p(s)
 }
 
 impl<N: NewState<StateEl>> Colorize for RustColorize<N> {

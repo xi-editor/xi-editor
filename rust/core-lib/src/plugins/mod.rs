@@ -45,8 +45,7 @@ pub type PluginName = String;
 ///
 /// Note: two instances of the same executable will have different identifiers.
 /// Note: this identifier is distinct from the OS's process id.
-#[derive(Serialize, Deserialize, Default, Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd,
-         Ord)]
+#[derive(Serialize, Deserialize, Default, Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PluginPid(pub(crate) usize);
 
 pub type PluginId = PluginPid;
@@ -138,11 +137,7 @@ impl Plugin {
     }
 }
 
-pub(crate) fn start_plugin_process(
-    plugin_desc: Arc<PluginDescription>,
-    id: PluginId,
-    core: WeakXiCore,
-) {
+pub(crate) fn start_plugin_process(plugin_desc: Arc<PluginDescription>, id: PluginId, core: WeakXiCore) {
     thread::spawn(move || {
         eprintln!("starting plugin {}", &plugin_desc.name);
         let child = ProcCommand::new(&plugin_desc.exec_path)

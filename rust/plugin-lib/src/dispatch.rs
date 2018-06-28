@@ -69,16 +69,8 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
         }
     }
 
-    fn do_initialize(
-        &mut self,
-        ctx: &RpcCtx,
-        plugin_id: PluginPid,
-        buffers: Vec<PluginBufferInfo>,
-    ) {
-        assert!(
-            self.pid.is_none(),
-            "initialize rpc received with existing pid"
-        );
+    fn do_initialize(&mut self, ctx: &RpcCtx, plugin_id: PluginPid, buffers: Vec<PluginBufferInfo>) {
+        assert!(self.pid.is_none(), "initialize rpc received with existing pid");
         eprintln!("Initializing plugin {:?}", plugin_id);
         self.pid = Some(plugin_id);
         self.do_new_buffer(ctx, buffers);
@@ -88,17 +80,11 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
         let v = bail!(self.views.get_mut(&view_id), "did_save", self.pid, view_id);
         let prev_path = v.path.take();
         v.path = Some(path);
-        self.plugin
-            .did_save(v, prev_path.as_ref().map(PathBuf::as_path));
+        self.plugin.did_save(v, prev_path.as_ref().map(PathBuf::as_path));
     }
 
     fn do_config_changed(&mut self, view_id: ViewId, changes: ConfigTable) {
-        let v = bail!(
-            self.views.get_mut(&view_id),
-            "config_changed",
-            self.pid,
-            view_id
-        );
+        let v = bail!(self.views.get_mut(&view_id), "config_changed", self.pid, view_id);
         self.plugin.config_changed(v, &changes);
         for (key, value) in changes.iter() {
             v.config_table.insert(key.to_owned(), value.to_owned());
@@ -185,10 +171,7 @@ impl<'a, P: Plugin> RpcHandler for Dispatcher<'a, P> {
         use self::HostNotification::*;
         let _t = trace_block("Dispatcher::handle_notif", &["plugin"]);
         match rpc {
-            Initialize {
-                plugin_id,
-                buffer_info,
-            } => self.do_initialize(ctx, plugin_id, buffer_info),
+            Initialize { plugin_id, buffer_info } => self.do_initialize(ctx, plugin_id, buffer_info),
             DidSave { view_id, path } => self.do_did_save(view_id, path),
             ConfigChanged { view_id, changes } => self.do_config_changed(view_id, changes),
             NewBuffer { buffer_info } => self.do_new_buffer(ctx, buffer_info),

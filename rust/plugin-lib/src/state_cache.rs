@@ -60,19 +60,11 @@ impl<S: Clone + Default> Cache for StateCache<S> {
         self.buf_cache.get_document(source)
     }
 
-    fn offset_of_line<DS: DataSource>(
-        &mut self,
-        source: &DS,
-        line_num: usize,
-    ) -> Result<usize, Error> {
+    fn offset_of_line<DS: DataSource>(&mut self, source: &DS, line_num: usize) -> Result<usize, Error> {
         self.buf_cache.offset_of_line(source, line_num)
     }
 
-    fn line_of_offset<DS: DataSource>(
-        &mut self,
-        source: &DS,
-        offset: usize,
-    ) -> Result<usize, Error> {
+    fn line_of_offset<DS: DataSource>(&mut self, source: &DS, offset: usize) -> Result<usize, Error> {
         self.buf_cache.line_of_offset(source, offset)
     }
 
@@ -101,14 +93,12 @@ impl<S: Clone + Default> StateCache<S> {
     /// at index `i` is an exact match, while `Err(i)` means the entry would be
     /// inserted at `i`.
     fn find_line(&self, line_num: usize) -> Result<usize, usize> {
-        self.state_cache
-            .binary_search_by(|probe| probe.line_num.cmp(&line_num))
+        self.state_cache.binary_search_by(|probe| probe.line_num.cmp(&line_num))
     }
 
     /// Find an entry in the cache by offset. Similar to `find_line`.
     pub fn find_offset(&self, offset: usize) -> Result<usize, usize> {
-        self.state_cache
-            .binary_search_by(|probe| probe.offset.cmp(&offset))
+        self.state_cache.binary_search_by(|probe| probe.offset.cmp(&offset))
     }
 
     /// Get the state from the nearest cache entry at or before given line number.
@@ -217,11 +207,7 @@ impl<S: Clone + Default> StateCache<S> {
 
     /// Compute the gap that would result after deleting the given entry.
     fn compute_gap(&self, ix: usize) -> usize {
-        let before = if ix == 0 {
-            0
-        } else {
-            self.state_cache[ix - 1].offset
-        };
+        let before = if ix == 0 { 0 } else { self.state_cache[ix - 1].offset };
         let after = if let Some(item) = self.state_cache.get(ix + 1) {
             item.offset
         } else {
@@ -235,14 +221,7 @@ impl<S: Clone + Default> StateCache<S> {
     fn truncate_cache(&mut self, offset: usize) {
         let (line_num, ix) = match self.find_offset(offset) {
             Ok(ix) => (self.state_cache[ix].line_num, ix + 1),
-            Err(ix) => (
-                if ix == 0 {
-                    0
-                } else {
-                    self.state_cache[ix - 1].line_num
-                },
-                ix,
-            ),
+            Err(ix) => (if ix == 0 { 0 } else { self.state_cache[ix - 1].line_num }, ix),
         };
         self.truncate_frontier(line_num);
         self.state_cache.truncate(ix);

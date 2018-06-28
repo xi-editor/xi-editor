@@ -748,24 +748,12 @@ impl Trace {
         let result = closure();
         let end = time::precise_time_ns();
         if self.is_enabled() {
-            self.record(Sample::new_duration(
-                name,
-                categories,
-                None,
-                start,
-                end - start,
-            ));
+            self.record(Sample::new_duration(name, categories, None, start, end - start));
         }
         result
     }
 
-    pub fn closure_payload<S, C, P, F, R>(
-        &self,
-        name: S,
-        categories: C,
-        closure: F,
-        payload: P,
-    ) -> R
+    pub fn closure_payload<S, C, P, F, R>(&self, name: S, categories: C, closure: F, payload: P) -> R
     where
         S: Into<StrCow>,
         C: Into<CategoriesT>,
@@ -1181,24 +1169,12 @@ mod tests {
 
         assert_eq!(snapshot[0].name, "process_name");
         assert_eq!(
-            snapshot[0]
-                .args
-                .as_ref()
-                .unwrap()
-                .metadata_name
-                .as_ref()
-                .is_some(),
+            snapshot[0].args.as_ref().unwrap().metadata_name.as_ref().is_some(),
             true
         );
         assert_eq!(snapshot[1].name, "thread_name");
         assert_eq!(
-            snapshot[1]
-                .args
-                .as_ref()
-                .unwrap()
-                .metadata_name
-                .as_ref()
-                .is_some(),
+            snapshot[1].args.as_ref().unwrap().metadata_name.as_ref().is_some(),
             true
         );
         assert_eq!(snapshot[2].name, "x");
@@ -1243,11 +1219,7 @@ mod tests {
                     "y",
                     &["test"],
                     || {
-                        trace.instant_payload(
-                            "b",
-                            &["test"],
-                            to_payload("test_get_samples_nested_trace"),
-                        );
+                        trace.instant_payload("b", &["test"], to_payload("test_get_samples_nested_trace"));
                     },
                     to_payload("test_get_samples_nested_trace"),
                 );
@@ -1263,24 +1235,12 @@ mod tests {
 
         assert_eq!(snapshot[0].name, "process_name");
         assert_eq!(
-            snapshot[0]
-                .args
-                .as_ref()
-                .unwrap()
-                .metadata_name
-                .as_ref()
-                .is_some(),
+            snapshot[0].args.as_ref().unwrap().metadata_name.as_ref().is_some(),
             true
         );
         assert_eq!(snapshot[1].name, "thread_name");
         assert_eq!(
-            snapshot[1]
-                .args
-                .as_ref()
-                .unwrap()
-                .metadata_name
-                .as_ref()
-                .is_some(),
+            snapshot[1].args.as_ref().unwrap().metadata_name.as_ref().is_some(),
             true
         );
         assert_eq!(snapshot[2].name, "a");
@@ -1319,11 +1279,7 @@ mod tests {
                     &["test"],
                     || {
                         std::thread::sleep(std::time::Duration::new(0, 1000));
-                        trace.instant_payload(
-                            "b",
-                            &["test"],
-                            to_payload("test_get_sorted_samples"),
-                        );
+                        trace.instant_payload("b", &["test"], to_payload("test_get_sorted_samples"));
                     },
                     to_payload("test_get_sorted_samples"),
                 );
@@ -1339,24 +1295,12 @@ mod tests {
 
         assert_eq!(snapshot[0].name, "process_name");
         assert_eq!(
-            snapshot[0]
-                .args
-                .as_ref()
-                .unwrap()
-                .metadata_name
-                .as_ref()
-                .is_some(),
+            snapshot[0].args.as_ref().unwrap().metadata_name.as_ref().is_some(),
             true
         );
         assert_eq!(snapshot[1].name, "thread_name");
         assert_eq!(
-            snapshot[1]
-                .args
-                .as_ref()
-                .unwrap()
-                .metadata_name
-                .as_ref()
-                .is_some(),
+            snapshot[1].args.as_ref().unwrap().metadata_name.as_ref().is_some(),
             true
         );
         assert_eq!(snapshot[2].name, "x");
@@ -1406,11 +1350,7 @@ mod tests {
     fn bench_trace_instant_with_payload(b: &mut Bencher) {
         let trace = Trace::enabled(Config::default());
         b.iter(|| {
-            black_box(trace.instant_payload(
-                "something",
-                &["benchmark"],
-                to_payload("some description of the trace"),
-            ))
+            black_box(trace.instant_payload("something", &["benchmark"], to_payload("some description of the trace")))
         });
     }
 
@@ -1433,11 +1373,7 @@ mod tests {
     fn bench_trace_block_payload(b: &mut Bencher) {
         let trace = Trace::enabled(Config::default());
         b.iter(|| {
-            black_box(trace.block_payload(
-                "something",
-                &["benchmark"],
-                to_payload(("some payload for the block")),
-            ));
+            black_box(trace.block_payload("something", &["benchmark"], to_payload(("some payload for the block"))));
         });
     }
 

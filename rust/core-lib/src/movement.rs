@@ -111,13 +111,7 @@ fn scroll_height(view: &View) -> isize {
 }
 
 /// Compute the result of movement on one selection region.
-pub fn region_movement(
-    m: Movement,
-    r: SelRegion,
-    view: &View,
-    text: &Rope,
-    modify: bool,
-) -> SelRegion {
+pub fn region_movement(m: Movement, r: SelRegion, view: &View, text: &Rope, modify: bool) -> SelRegion {
     let (offset, horiz) = match m {
         Movement::Left => {
             if r.is_caret() || modify {
@@ -223,13 +217,7 @@ pub fn region_movement(
 ///
 /// If `modify` is `true`, the selections are modified, otherwise the results
 /// of individual region movements become carets.
-pub fn selection_movement(
-    m: Movement,
-    s: &Selection,
-    view: &View,
-    text: &Rope,
-    modify: bool,
-) -> Selection {
+pub fn selection_movement(m: Movement, s: &Selection, view: &View, text: &Rope, modify: bool) -> Selection {
     let mut result = Selection::new();
     for &r in s.iter() {
         let new_region = region_movement(m, r, view, text, modify);

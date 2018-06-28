@@ -59,20 +59,12 @@ impl Layers {
     }
 
     /// Adds the provided scopes to the layer's lookup table.
-    pub fn add_scopes(
-        &mut self,
-        layer: PluginPid,
-        scopes: Vec<Vec<String>>,
-        style_map: &ThemeStyleMap,
-    ) {
+    pub fn add_scopes(&mut self, layer: PluginPid, scopes: Vec<Vec<String>>, style_map: &ThemeStyleMap) {
         let _t = trace_block("Layers::AddScopes", &["core"]);
         if self.create_if_missing(layer).is_err() {
             return;
         }
-        self.layers
-            .get_mut(&layer)
-            .unwrap()
-            .add_scopes(scopes, style_map);
+        self.layers.get_mut(&layer).unwrap().add_scopes(scopes, style_map);
     }
 
     /// Applies the delta to all layers, inserting empty intervals
@@ -95,10 +87,7 @@ impl Layers {
         if self.create_if_missing(layer).is_err() {
             return;
         }
-        self.layers
-            .get_mut(&layer)
-            .unwrap()
-            .update_scopes(iv, &spans);
+        self.layers.get_mut(&layer).unwrap().update_scopes(iv, &spans);
         self.resolve_styles(iv);
     }
 
@@ -169,8 +158,7 @@ impl Layers {
             return Err(());
         }
         if !self.layers.contains_key(&layer_id) {
-            self.layers
-                .insert(layer_id, ScopeLayer::new(self.merged.len()));
+            self.layers.insert(layer_id, ScopeLayer::new(self.merged.len()));
         }
         Ok(())
     }
@@ -219,11 +207,7 @@ impl ScopeLayer {
                 .map(|s| Scope::new(&s))
                 .filter(|result| match *result {
                     Err(ref err) => {
-                        eprintln!(
-                            "failed to resolve scope {}\nErr: {:?}",
-                            &stack.join(" "),
-                            err
-                        );
+                        eprintln!("failed to resolve scope {}\nErr: {:?}", &stack.join(" "), err);
                         false
                     }
                     _ => true,
@@ -238,11 +222,7 @@ impl ScopeLayer {
         self.style_lookup.append(&mut new_styles);
     }
 
-    fn styles_for_stacks(
-        &mut self,
-        stacks: &[Vec<Scope>],
-        style_map: &ThemeStyleMap,
-    ) -> Vec<Style> {
+    fn styles_for_stacks(&mut self, stacks: &[Vec<Scope>], style_map: &ThemeStyleMap) -> Vec<Style> {
         //let style_map = style_map.borrow();
         let highlighter = style_map.get_highlighter();
         let mut new_styles = Vec::new();
@@ -303,9 +283,7 @@ impl ScopeLayer {
         {
             // distinct adjacent scopes can often resolve to the same style,
             // so we combine them when building the styles.
-            let style_eq = |i1: &u32, i2: &u32| {
-                self.style_lookup[*i1 as usize] == self.style_lookup[*i2 as usize]
-            };
+            let style_eq = |i1: &u32, i2: &u32| self.style_lookup[*i1 as usize] == self.style_lookup[*i2 as usize];
 
             while let Some((p_iv, p_val)) = prev {
                 match spans_iter.next() {

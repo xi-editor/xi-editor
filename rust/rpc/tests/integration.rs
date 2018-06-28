@@ -71,8 +71,7 @@ fn test_recv_error() {
     let mut handler = EchoHandler;
     let (tx, mut rx) = test_channel();
     let mut rpc_looper = RpcLoop::new(tx);
-    let r =
-        make_reader(r#"{"id": 0, "method": "hullo","args": {"args": "should", "be": "params"}}"#);
+    let r = make_reader(r#"{"id": 0, "method": "hullo","args": {"args": "should", "be": "params"}}"#);
     assert!(rpc_looper.mainloop(|| r, &mut handler).is_ok());
     let resp = rx.expect_response();
     assert!(resp.is_err(), "{:?}", resp);

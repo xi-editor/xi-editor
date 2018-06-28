@@ -60,10 +60,7 @@ impl<T: Clone + Default> Leaf for SpansLeaf<T> {
     fn push_maybe_split(&mut self, other: &Self, iv: Interval) -> Option<Self> {
         let iv_start = iv.start();
         for span in &other.spans {
-            let span_iv = span.iv
-                .intersect(iv)
-                .translate_neg(iv_start)
-                .translate(self.len);
+            let span_iv = span.iv.intersect(iv).translate_neg(iv_start).translate(self.len);
             if !span_iv.is_empty() {
                 self.spans.push(Span {
                     iv: span_iv,
@@ -166,12 +163,7 @@ impl<T: Clone + Default> Spans<T> {
     // Note: this implementation is not efficient for very large Spans objects, as it
     // traverses all spans linearly. A more sophisticated approach would be to traverse
     // the tree, and only delve into subtrees that are transformed.
-    pub fn transform<N: NodeInfo>(
-        &self,
-        base_start: usize,
-        base_end: usize,
-        xform: &mut Transformer<N>,
-    ) -> Self {
+    pub fn transform<N: NodeInfo>(&self, base_start: usize, base_end: usize, xform: &mut Transformer<N>) -> Self {
         // TODO: maybe should take base as an Interval and figure out "after" from that
         let new_start = xform.transform(base_start, false);
         let new_end = xform.transform(base_end, true);
@@ -224,11 +216,7 @@ impl<T: Clone + Default> Spans<T> {
                 break;
             } else if next_red.is_none() != next_blue.is_none() {
                 // one side is exhausted; append remaining items from other side.
-                let iter = if next_red.is_some() {
-                    iter_red
-                } else {
-                    iter_blue
-                };
+                let iter = if next_red.is_some() { iter_red } else { iter_blue };
                 // add this item
                 let (iv, val) = next_red.or(next_blue).unwrap();
                 sb.add_span(iv, f(val, None));
@@ -313,9 +301,7 @@ impl<T: Clone + Default> Spans<T> {
         let mut b = TreeBuilder::new();
         for elem in &delta.els {
             match elem {
-                &DeltaElement::Copy(beg, end) => {
-                    b.push(self.subseq(Interval::new_closed_open(beg, end)))
-                }
+                &DeltaElement::Copy(beg, end) => b.push(self.subseq(Interval::new_closed_open(beg, end))),
                 &DeltaElement::Insert(ref n) => b.push(SpansBuilder::new(n.len()).build()),
             }
         }

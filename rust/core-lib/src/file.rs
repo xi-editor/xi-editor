@@ -140,8 +140,7 @@ impl FileManager {
     }
 
     fn save_new(&mut self, path: &Path, text: &Rope, id: BufferId) -> Result<(), FileError> {
-        try_save(path, text, CharacterEncoding::Utf8)
-            .map_err(|e| FileError::Io(e, path.to_owned()))?;
+        try_save(path, text, CharacterEncoding::Utf8).map_err(|e| FileError::Io(e, path.to_owned()))?;
         let info = FileInfo {
             encoding: CharacterEncoding::Utf8,
             path: path.to_owned(),
@@ -218,8 +217,7 @@ fn try_decode(bytes: Vec<u8>, encoding: CharacterEncoding, path: &Path) -> Resul
             str::from_utf8(&bytes).map_err(|_e| FileError::UnknownEncoding(path.to_owned()))?
         )),
         CharacterEncoding::Utf8WithBom => {
-            let s =
-                String::from_utf8(bytes).map_err(|_e| FileError::UnknownEncoding(path.to_owned()))?;
+            let s = String::from_utf8(bytes).map_err(|_e| FileError::UnknownEncoding(path.to_owned()))?;
             Ok(Rope::from(&s[UTF8_BOM.len()..]))
         }
     }

@@ -42,9 +42,7 @@ fn quote_str(s: &str) -> String {
 }
 
 fn check_breaks(s: &str, breaks: &[usize]) -> bool {
-    let my_breaks = LineBreakIterator::new(s)
-        .map(|(bk, _hard)| bk)
-        .collect::<Vec<_>>();
+    let my_breaks = LineBreakIterator::new(s).map(|(bk, _hard)| bk).collect::<Vec<_>>();
     if my_breaks != breaks {
         println!("failed case: \"{}\"", quote_str(s));
         println!("expected {:?} actual {:?}", breaks, my_breaks);

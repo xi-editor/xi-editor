@@ -128,11 +128,7 @@ impl Cache for ChunkCache {
         Ok(result)
     }
 
-    fn offset_of_line<DS: DataSource>(
-        &mut self,
-        source: &DS,
-        line_num: usize,
-    ) -> Result<usize, Error> {
+    fn offset_of_line<DS: DataSource>(&mut self, source: &DS, line_num: usize) -> Result<usize, Error> {
         if line_num > self.num_lines {
             return Err(Error::BadRequest);
         }
@@ -146,18 +142,11 @@ impl Cache for ChunkCache {
         }
     }
 
-    fn line_of_offset<DS: DataSource>(
-        &mut self,
-        source: &DS,
-        offset: usize,
-    ) -> Result<usize, Error> {
+    fn line_of_offset<DS: DataSource>(&mut self, source: &DS, offset: usize) -> Result<usize, Error> {
         if offset > self.buf_size {
             return Err(Error::BadRequest);
         }
-        if self.contents.len() == 0
-            || offset < self.offset
-            || offset > self.offset + self.contents.len()
-        {
+        if self.contents.len() == 0 || offset < self.offset || offset > self.offset + self.contents.len() {
             let resp = source.get_data(offset, TextUnit::Utf8, CHUNK_SIZE, self.rev)?;
             self.reset_chunk(resp);
         }
@@ -333,9 +322,7 @@ impl ChunkCache {
         if has_newline {
             let mut new_offsets = Vec::new();
             newline_offsets(&String::from(text), &mut new_offsets);
-            new_offsets
-                .iter_mut()
-                .for_each(|off| *off += ins_offset - self_off);
+            new_offsets.iter_mut().for_each(|off| *off += ins_offset - self_off);
 
             let split_idx = self.line_offsets
                 .binary_search(&new_offsets[0])
@@ -476,41 +463,25 @@ mod tests {
         c.buf_size = 2;
         c.contents = "oh".into();
 
-        let d = Delta::simple_edit(
-            Interval::new_closed_open(0, 0),
-            "yay".into(),
-            c.contents.len(),
-        );
+        let d = Delta::simple_edit(Interval::new_closed_open(0, 0), "yay".into(), c.contents.len());
         c.update(Some(&d), d.new_document_len(), 1, 1);
         assert_eq!(&c.contents, "yayoh");
         assert_eq!(c.offset, 0);
 
-        let d = Delta::simple_edit(
-            Interval::new_closed_open(0, 0),
-            "ahh".into(),
-            c.contents.len(),
-        );
+        let d = Delta::simple_edit(Interval::new_closed_open(0, 0), "ahh".into(), c.contents.len());
         c.update(Some(&d), d.new_document_len(), 1, 2);
 
         assert_eq!(&c.contents, "ahhyayoh");
         assert_eq!(c.offset, 0);
 
-        let d = Delta::simple_edit(
-            Interval::new_closed_open(2, 2),
-            "_oops_".into(),
-            c.contents.len(),
-        );
+        let d = Delta::simple_edit(Interval::new_closed_open(2, 2), "_oops_".into(), c.contents.len());
         assert_eq!(d.els.len(), 3);
         c.update(Some(&d), d.new_document_len(), 1, 3);
 
         assert_eq!(&c.contents, "ah_oops_hyayoh");
         assert_eq!(c.offset, 0);
 
-        let d = Delta::simple_edit(
-            Interval::new_closed_open(9, 9),
-            "fin".into(),
-            c.contents.len(),
-        );
+        let d = Delta::simple_edit(Interval::new_closed_open(9, 9), "fin".into(), c.contents.len());
         c.update(Some(&d), d.new_document_len(), 1, 5);
 
         assert_eq!(&c.contents, "ah_oops_hfinyayoh");
@@ -596,11 +567,7 @@ mod tests {
         c.update(Some(&d), d.new_document_len(), 3, 1);
         assert_eq!(c.line_offsets, vec![4, 9]);
 
-        let d = Delta::simple_edit(
-            Interval::new_closed_open(4, 4),
-            "one\nmore".into(),
-            c.contents.len(),
-        );
+        let d = Delta::simple_edit(Interval::new_closed_open(4, 4), "one\nmore".into(), c.contents.len());
         assert!(d.as_simple_insert().is_some());
         c.update(Some(&d), d.new_document_len(), 4, 2);
         assert_eq!(&c.contents, "two\none\nmoreline\nbreakssome");
@@ -656,18 +623,11 @@ mod tests {
         // reset and fetch the middle, so we have an offset:
         let _ = c.offset_of_line(&source, 0);
         c.clear_up_to(5);
-        assert_eq!(
-            &c.contents,
-            &"this\nhas\nfive nice\nsour\nlines!"[5..CHUNK_SIZE]
-        );
+        assert_eq!(&c.contents, &"this\nhas\nfive nice\nsour\nlines!"[5..CHUNK_SIZE]);
         assert_eq!(c.offset, 5);
         assert_eq!(c.first_line, 1);
         //assert_eq!(c.offset_of_line(&source, 2).unwrap(), 9);
-        let d = Delta::simple_edit(
-            Interval::new_closed_open(6, 10),
-            "".into(),
-            c.contents.len() + c.offset,
-        );
+        let d = Delta::simple_edit(Interval::new_closed_open(6, 10), "".into(), c.contents.len() + c.offset);
         assert!(d.is_simple_delete());
         c.update(Some(&d), d.new_document_len(), 4, 1);
         source.0 = "this\nhive nice\nsour\nlines!".into();
@@ -705,10 +665,7 @@ mod tests {
         assert_eq!(c.num_lines, 4);
         assert_eq!(c.get_line(&source, 0).unwrap(), "this\n");
         assert_eq!(c.contents, test_str[..CHUNK_SIZE]);
-        assert_eq!(
-            c.get_line(&source, 1).unwrap(),
-            "has one big line in the middle\n"
-        );
+        assert_eq!(c.get_line(&source, 1).unwrap(), "has one big line in the middle\n");
         // fetches are always in an interval of CHUNK_SIZE. because getting this line
         // requres multiple fetches, contents is truncated at the start of the line.
         assert_eq!(c.contents, test_str[5..CHUNK_SIZE * 3]);

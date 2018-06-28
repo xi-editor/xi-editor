@@ -42,10 +42,7 @@ use event_context::EventContext;
 use file::FileManager;
 use plugin_rpc::{PluginNotification, PluginRequest};
 use plugins::{start_plugin_process, Plugin, PluginCatalog, PluginPid};
-use rpc::{
-    CoreNotification, CoreRequest, EditNotification, EditRequest,
-    PluginNotification as CorePluginNotification,
-};
+use rpc::{CoreNotification, CoreRequest, EditNotification, EditRequest, PluginNotification as CorePluginNotification};
 use styles::ThemeStyleMap;
 use view::View;
 use width_cache::WidthCache;
@@ -113,11 +110,7 @@ pub struct CoreState {
 
 /// Initial setup and bookkeeping
 impl CoreState {
-    pub(crate) fn new(
-        peer: &RpcPeer,
-        config_dir: Option<PathBuf>,
-        extras_dir: Option<PathBuf>,
-    ) -> Self {
+    pub(crate) fn new(peer: &RpcPeer, config_dir: Option<PathBuf>, extras_dir: Option<PathBuf>) -> Self {
         #[cfg(feature = "notify")]
         let mut watcher = FileWatcher::new(peer.clone());
 
@@ -204,8 +197,7 @@ impl CoreState {
                 Err(e) => self.peer.alert(e.to_string()),
             }
         } else {
-            self.peer
-                .alert(format!("Unexpected config file {:?}", path));
+            self.peer.alert(format!("Unexpected config file {:?}", path));
         }
     }
 
@@ -290,14 +282,8 @@ impl CoreState {
                 frontend_samples,
             } => self.save_trace(&destination, frontend_samples),
             Plugin(cmd) => match cmd {
-                PN::Start {
-                    view_id,
-                    plugin_name,
-                } => self.do_start_plugin(view_id, &plugin_name),
-                PN::Stop {
-                    view_id,
-                    plugin_name,
-                } => self.do_stop_plugin(view_id, &plugin_name),
+                PN::Start { view_id, plugin_name } => self.do_start_plugin(view_id, &plugin_name),
+                PN::Stop { view_id, plugin_name } => self.do_stop_plugin(view_id, &plugin_name),
                 PN::PluginRpc { .. } => (), //TODO: rethink custom plugin RPCs
             },
             TracingConfig { enabled } => self.toggle_tracing(enabled),
@@ -329,11 +315,7 @@ impl CoreState {
             edit_ctx.do_edit_sync(cmd)
         } else {
             // TODO: some custom error tpye that can Into<RemoteError>
-            Err(RemoteError::custom(
-                404,
-                format!("missing view {:?}", view_id),
-                None,
-            ))
+            Err(RemoteError::custom(404, format!("missing view {:?}", view_id), None))
         }
     }
 
@@ -379,9 +361,7 @@ impl CoreState {
 
         let ed = self.editors.get(&buffer_id).unwrap();
 
-        if let Err(e) = self.file_manager
-            .save(path, ed.borrow().get_buffer(), buffer_id)
-        {
+        if let Err(e) = self.file_manager.save(path, ed.borrow().get_buffer(), buffer_id) {
             self.peer.alert(e.to_string());
             return;
         }
@@ -396,13 +376,9 @@ impl CoreState {
     }
 
     fn do_close_view(&mut self, view_id: ViewId) {
-        let close_buffer = self.make_context(view_id)
-            .map(|ctx| ctx.close_view())
-            .unwrap_or(true);
+        let close_buffer = self.make_context(view_id).map(|ctx| ctx.close_view()).unwrap_or(true);
 
-        let buffer_id = self.views
-            .remove(&view_id)
-            .map(|v| v.borrow().get_buffer_id());
+        let buffer_id = self.views.remove(&view_id).map(|v| v.borrow().get_buffer_id());
 
         if let Some(buffer_id) = buffer_id {
             if close_buffer {
@@ -445,8 +421,7 @@ impl CoreState {
                 None => return,
             },
         };
-        let new_config = self.config_manager
-            .table_for_update(domain.clone(), changes);
+        let new_config = self.config_manager.table_for_update(domain.clone(), changes);
         self.set_config(domain, new_config);
     }
 
@@ -456,11 +431,7 @@ impl CoreState {
             .get(&view_id)
             .map(|v| v.borrow().get_buffer_id())
             .map(|id| self.config_manager.get_buffer_config(id).to_table())
-            .ok_or(RemoteError::custom(
-                404,
-                format!("missing {}", view_id),
-                None,
-            ))
+            .ok_or(RemoteError::custom(404, format!("missing {}", view_id), None))
     }
 
     fn do_start_plugin(&mut self, _view_id: ViewId, plugin: &str) {
@@ -501,9 +472,7 @@ impl CoreState {
         match token {
             NEW_VIEW_IDLE_TOKEN => self.finalize_new_views(),
             WATCH_IDLE_TOKEN => self.handle_fs_events(),
-            other if (other & RENDER_VIEW_IDLE_MASK) != 0 => {
-                self.handle_render_timer(other ^ RENDER_VIEW_IDLE_MASK)
-            }
+            other if (other & RENDER_VIEW_IDLE_MASK) != 0 => self.handle_render_timer(other ^ RENDER_VIEW_IDLE_MASK),
             other => panic!("unexpected idle token {}", other),
         };
     }
@@ -649,12 +618,9 @@ impl CoreState {
     pub(crate) fn plugin_connect(&mut self, plugin: Result<Plugin, io::Error>) {
         match plugin {
             Ok(plugin) => {
-                let init_info = self.iter_groups()
-                    .map(|mut ctx| ctx.plugin_info())
-                    .collect::<Vec<_>>();
+                let init_info = self.iter_groups().map(|mut ctx| ctx.plugin_info()).collect::<Vec<_>>();
                 plugin.initialize(init_info);
-                self.iter_groups()
-                    .for_each(|mut cx| cx.plugin_started(&plugin));
+                self.iter_groups().for_each(|mut cx| cx.plugin_started(&plugin));
                 self.running_plugins.push(plugin);
             }
             Err(e) => eprintln!("failed to start plugin {:?}", e),

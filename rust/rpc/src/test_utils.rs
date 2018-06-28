@@ -68,8 +68,7 @@ impl DummyReader {
         let raw = self.next_timeout(Duration::from_secs(1))
             .expect("response should be received");
         let val = raw.as_ref().ok().map(|v| serde_json::to_string(&v.0));
-        let resp = raw.map_err(|e| e.to_string())
-            .and_then(|r| r.into_response());
+        let resp = raw.map_err(|e| e.to_string()).and_then(|r| r.into_response());
 
         match resp {
             Err(msg) => panic!("Bad response: {:?}. {}", val, msg),

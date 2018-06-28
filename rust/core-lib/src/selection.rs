@@ -42,9 +42,7 @@ impl Selection {
 
     /// Creates a selection with a single region.
     pub fn new_simple(region: SelRegion) -> Selection {
-        Selection {
-            regions: vec![region],
-        }
+        Selection { regions: vec![region] }
     }
 
     /// Clear the selection.
@@ -188,12 +186,7 @@ impl Selection {
     ///
     /// Whether or not the preceding selections are restored depends on the keep_selections
     /// value (only set to true on transpose).
-    pub fn apply_delta(
-        &self,
-        delta: &Delta<RopeInfo>,
-        after: bool,
-        keep_selections: bool,
-    ) -> Selection {
+    pub fn apply_delta(&self, delta: &Delta<RopeInfo>, after: bool, keep_selections: bool) -> Selection {
         let mut result = Selection::new();
         let mut transformer = Transformer::new(delta);
         for region in self.iter() {
@@ -329,8 +322,7 @@ impl SelRegion {
     // Indicate whether this region should merge with the next.
     // Assumption: regions are sorted (self.min() <= other.min())
     fn should_merge(self, other: SelRegion) -> bool {
-        other.min() < self.max()
-            || ((self.is_caret() || other.is_caret()) && other.min() == self.max())
+        other.min() < self.max() || ((self.is_caret() || other.is_caret()) && other.min() == self.max())
     }
 
     fn merge_with(self, other: SelRegion) -> SelRegion {

@@ -150,27 +150,17 @@ impl From<EditNotification> for EventDomain {
             MoveWordLeft => ViewEvent::Move(Movement::LeftWord).into(),
             MoveWordLeftAndModifySelection => ViewEvent::ModifySelection(Movement::LeftWord).into(),
             MoveWordRight => ViewEvent::Move(Movement::RightWord).into(),
-            MoveWordRightAndModifySelection => {
-                ViewEvent::ModifySelection(Movement::RightWord).into()
-            }
+            MoveWordRightAndModifySelection => ViewEvent::ModifySelection(Movement::RightWord).into(),
             MoveToBeginningOfParagraph => ViewEvent::Move(Movement::StartOfParagraph).into(),
             MoveToEndOfParagraph => ViewEvent::Move(Movement::EndOfParagraph).into(),
             MoveToLeftEndOfLine => ViewEvent::Move(Movement::LeftOfLine).into(),
-            MoveToLeftEndOfLineAndModifySelection => {
-                ViewEvent::ModifySelection(Movement::LeftOfLine).into()
-            }
+            MoveToLeftEndOfLineAndModifySelection => ViewEvent::ModifySelection(Movement::LeftOfLine).into(),
             MoveToRightEndOfLine => ViewEvent::Move(Movement::RightOfLine).into(),
-            MoveToRightEndOfLineAndModifySelection => {
-                ViewEvent::ModifySelection(Movement::RightOfLine).into()
-            }
+            MoveToRightEndOfLineAndModifySelection => ViewEvent::ModifySelection(Movement::RightOfLine).into(),
             MoveToBeginningOfDocument => ViewEvent::Move(Movement::StartOfDocument).into(),
-            MoveToBeginningOfDocumentAndModifySelection => {
-                ViewEvent::ModifySelection(Movement::StartOfDocument).into()
-            }
+            MoveToBeginningOfDocumentAndModifySelection => ViewEvent::ModifySelection(Movement::StartOfDocument).into(),
             MoveToEndOfDocument => ViewEvent::Move(Movement::EndOfDocument).into(),
-            MoveToEndOfDocumentAndModifySelection => {
-                ViewEvent::ModifySelection(Movement::EndOfDocument).into()
-            }
+            MoveToEndOfDocumentAndModifySelection => ViewEvent::ModifySelection(Movement::EndOfDocument).into(),
             ScrollPageUp => ViewEvent::Move(Movement::UpPage).into(),
             PageUpAndModifySelection => ViewEvent::ModifySelection(Movement::UpPage).into(),
             ScrollPageDown => ViewEvent::Move(Movement::DownPage).into(),
@@ -215,9 +205,7 @@ impl From<EditNotification> for EventDomain {
             Indent => BufferEvent::Indent.into(),
             Outdent => BufferEvent::Outdent.into(),
             HighlightFind { visible } => ViewEvent::HighlightFind { visible }.into(),
-            SelectionForFind { case_sensitive } => {
-                ViewEvent::SelectionForFind { case_sensitive }.into()
-            }
+            SelectionForFind { case_sensitive } => ViewEvent::SelectionForFind { case_sensitive }.into(),
         }
     }
 }

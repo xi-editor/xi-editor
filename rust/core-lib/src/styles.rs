@@ -56,21 +56,9 @@ impl Style {
     /// Creates a new `Style` by converting from a `Syntect::StyleModifier`.
     pub fn from_syntect_style_mod(style: &SynStyleModifier) -> Self {
         let font_style = style.font_style.map(|s| s.bits()).unwrap_or_default();
-        let weight = if (font_style & 1) != 0 {
-            Some(700)
-        } else {
-            None
-        };
-        let underline = if (font_style & 2) != 0 {
-            Some(true)
-        } else {
-            None
-        };
-        let italic = if (font_style & 4) != 0 {
-            Some(true)
-        } else {
-            None
-        };
+        let weight = if (font_style & 1) != 0 { Some(700) } else { None };
+        let underline = if (font_style & 2) != 0 { Some(true) } else { None };
+        let italic = if (font_style & 4) != 0 { Some(true) } else { None };
 
         Self::new(
             SYNTAX_PRIORITY_DEFAULT,
@@ -176,11 +164,7 @@ impl ThemeStyleMap {
     pub fn new() -> ThemeStyleMap {
         let themes = ThemeSet::load_defaults();
         let theme_name = "InspiredGitHub".to_owned();
-        let theme = themes
-            .themes
-            .get(&theme_name)
-            .expect("missing theme")
-            .to_owned();
+        let theme = themes.themes.get(&theme_name).expect("missing theme").to_owned();
         let default_style = Style::default_for_theme(&theme);
 
         ThemeStyleMap {

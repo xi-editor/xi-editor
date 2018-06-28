@@ -286,10 +286,7 @@ mod tests {
         let command: Command = serde_json::from_str(&json).unwrap();
         assert_eq!(command.title, "Test Command");
         assert_eq!(command.args[0].arg_type, ArgumentType::Bool);
-        assert_eq!(
-            command.rpc_cmd.params_ref()["non_arg"],
-            "plugin supplied value"
-        );
+        assert_eq!(command.rpc_cmd.params_ref()["non_arg"], "plugin supplied value");
         assert_eq!(command.args[1].options.clone().unwrap()[1].value, json!(10));
     }
 }

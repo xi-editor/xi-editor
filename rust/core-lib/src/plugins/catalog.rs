@@ -116,17 +116,11 @@ fn load_manifest(path: &Path) -> Result<PluginDescription, PluginLoadError> {
     let mut manifest: PluginDescription = toml::from_str(&contents)?;
     // normalize relative paths
     if manifest.exec_path.starts_with("./") {
-        manifest.exec_path = path.parent()
-            .unwrap()
-            .join(manifest.exec_path)
-            .canonicalize()?;
+        manifest.exec_path = path.parent().unwrap().join(manifest.exec_path).canonicalize()?;
     }
 
     for lang in manifest.languages.iter_mut() {
-        let lang_config_path = path.parent()
-            .unwrap()
-            .join(&lang.name.as_ref())
-            .with_extension("toml");
+        let lang_config_path = path.parent().unwrap().join(&lang.name.as_ref()).with_extension("toml");
         if !lang_config_path.exists() {
             continue;
         }

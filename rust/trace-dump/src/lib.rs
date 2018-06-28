@@ -13,10 +13,7 @@
 // limitations under the License.
 
 #![cfg_attr(feature = "benchmarks", feature(test))]
-#![cfg_attr(
-    feature = "cargo-clippy",
-    allow(if_same_then_else, needless_bool, needless_pass_by_value, ptr_arg)
-)]
+#![cfg_attr(feature = "cargo-clippy", allow(if_same_then_else, needless_bool, needless_pass_by_value, ptr_arg))]
 
 extern crate xi_trace;
 
@@ -116,12 +113,7 @@ mod tests {
         trace.instant("sample1", &["test", "chrome"]);
         trace.instant_payload("sample2", &["test", "chrome"], to_payload("payload 2"));
         trace.instant_payload("sample3", &["test", "chrome"], to_payload("payload 3"));
-        trace.closure_payload(
-            "sample4",
-            &["test", "chrome"],
-            || (),
-            to_payload("payload 4"),
-        );
+        trace.closure_payload("sample4", &["test", "chrome"], || (), to_payload("payload 4"));
 
         let samples = trace.samples_cloned_unsorted();
 
@@ -139,11 +131,7 @@ mod tests {
         use chrome_trace::*;
 
         let mut serialized = Vec::<u8>::new();
-        let samples = [xi_trace::Sample::new_instant(
-            "trace1",
-            &["benchmark", "test"],
-            None,
-        )];
+        let samples = [xi_trace::Sample::new_instant("trace1", &["benchmark", "test"], None)];
         b.iter(|| {
             serialized.clear();
             serialize(samples.iter(), &mut serialized).unwrap();
@@ -160,11 +148,7 @@ mod tests {
         let mut samples = [
             Sample::new_instant("trace1", &["benchmark", "test"], None),
             Sample::new_instant("trace2", &["benchmark"], None),
-            Sample::new_duration(
-                "trace3",
-                &["benchmark"],
-                Some(to_payload("some payload"), 0),
-            ),
+            Sample::new_duration("trace3", &["benchmark"], Some(to_payload("some payload"), 0)),
             Sample::new_instant("trace4", &["benchmark"], None),
         ];
 

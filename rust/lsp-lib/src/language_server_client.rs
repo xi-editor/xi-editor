@@ -41,11 +41,7 @@ pub struct LanguageServerClient {
 /// a serde_json object `Value`
 fn prepare_lsp_json(msg: &Value) -> Result<String, serde_json::error::Error> {
     let request = serde_json::to_string(&msg)?;
-    Ok(format!(
-        "Content-Length: {}\r\n\r\n{}",
-        request.len(),
-        request
-    ))
+    Ok(format!("Content-Length: {}\r\n\r\n{}", request.len(), request))
 }
 
 /// Get numeric id from the request id.
@@ -58,11 +54,7 @@ fn number_from_id(id: Id) -> u64 {
 }
 
 impl LanguageServerClient {
-    pub fn new(
-        writer: Box<Write + Send>,
-        language_id: String,
-        file_extensions: Vec<String>,
-    ) -> Self {
+    pub fn new(writer: Box<Write + Send>, language_id: String, file_extensions: Vec<String>) -> Self {
         LanguageServerClient {
             writer,
             pending: HashMap::new(),
@@ -76,9 +68,7 @@ impl LanguageServerClient {
     }
 
     pub fn write(&mut self, msg: &str) {
-        self.writer
-            .write_all(msg.as_bytes())
-            .expect("error writing to stdin");
+        self.writer.write_all(msg.as_bytes()).expect("error writing to stdin");
 
         self.writer.flush().expect("error flushing child stdin");
     }
@@ -178,12 +168,7 @@ impl LanguageServerClient {
     }
 
     /// Send textDocument/didChange Notification to the Language Server
-    pub fn send_did_change(
-        &mut self,
-        view_id: ViewId,
-        changes: Vec<TextDocumentContentChangeEvent>,
-        version: u64,
-    ) {
+    pub fn send_did_change(&mut self, view_id: ViewId, changes: Vec<TextDocumentContentChangeEvent>, version: u64) {
         let text_document_did_change_params = DidChangeTextDocumentParams {
             text_document: VersionedTextDocumentIdentifier {
                 uri: self.opened_documents.get(&view_id).unwrap().clone(),

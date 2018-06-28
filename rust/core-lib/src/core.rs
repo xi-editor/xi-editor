@@ -108,11 +108,7 @@ impl Handler for XiCore {
         } = &rpc
         {
             assert!(self.is_waiting(), "client_started can only be sent once");
-            let state = CoreState::new(
-                ctx.get_peer(),
-                config_dir.clone(),
-                client_extras_dir.clone(),
-            );
+            let state = CoreState::new(ctx.get_peer(), config_dir.clone(), client_extras_dir.clone());
             let state = Arc::new(Mutex::new(state));
             *self = XiCore::Running(state);
             let weak_self = self.weak_self().unwrap();
@@ -152,12 +148,7 @@ impl WeakXiCore {
     /// core can track which revisions are still 'live', that is can still
     /// be the base revision for a delta. Once a plugin has acknowledged a new
     /// revision, it can no longer send deltas against any older revision.
-    pub fn handle_plugin_update(
-        &self,
-        plugin: PluginId,
-        view: ViewId,
-        response: Result<Value, RpcError>,
-    ) {
+    pub fn handle_plugin_update(&self, plugin: PluginId, view: ViewId, response: Result<Value, RpcError>) {
         if let Some(core) = self.upgrade() {
             let _t = xi_trace::trace_block("WeakXiCore::plugin_update", &["core"]);
             core.inner().plugin_update(plugin, view, response);
@@ -177,8 +168,7 @@ impl Handler for WeakXiCore {
             cmd,
         } = rpc;
         if let Some(core) = self.upgrade() {
-            core.inner()
-                .plugin_notification(ctx, view_id, plugin_id, cmd)
+            core.inner().plugin_notification(ctx, view_id, plugin_id, cmd)
         }
     }
 

@@ -103,28 +103,36 @@ mod bench {
     #[bench]
     fn max_lb_chars_hi(b: &mut Bencher) {
         b.iter(|| {
-            max_lb_chars("\\u{1F680}\\u{1F680}\\u{1F680}\\u{1F680}\\u{1F680}\\u{1F680}\\u{1F680}\\u{1F680}\\u{1F680}\\u{1F680}")
+            max_lb_chars(
+                "\\u{1F680}\\u{1F680}\\u{1F680}\\u{1F680}\\u{1F680}\\u{1F680}\\u{1F680}\\u{1F680}\\u{1F680}\\u{1F680}",
+            )
         });
     }
 
     #[bench]
     fn max_lb_hi(b: &mut Bencher) {
         b.iter(|| {
-            max_lb("\\u{1F680}\\u{1F680}\\u{1F680}\\u{1F680}\\u{1F680}\\u{1F680}\\u{1F680}\\u{1F680}\\u{1F680}\\u{1F680}")
+            max_lb(
+                "\\u{1F680}\\u{1F680}\\u{1F680}\\u{1F680}\\u{1F680}\\u{1F680}\\u{1F680}\\u{1F680}\\u{1F680}\\u{1F680}",
+            )
         });
     }
 
     #[bench]
     fn max_lb_lo(b: &mut Bencher) {
         b.iter(|| {
-            max_lb("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+            max_lb(
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            )
         });
     }
 
     #[bench]
     fn max_lb_chars_lo(b: &mut Bencher) {
         b.iter(|| {
-            max_lb_chars("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+            max_lb_chars(
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            )
         });
     }
 

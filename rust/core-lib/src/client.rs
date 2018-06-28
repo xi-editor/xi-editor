@@ -156,8 +156,7 @@ impl Client {
     }
 
     pub fn alert<S: AsRef<str>>(&self, msg: S) {
-        self.0
-            .send_rpc_notification("alert", &json!({ "msg": msg.as_ref() }));
+        self.0.send_rpc_notification("alert", &json!({ "msg": msg.as_ref() }));
     }
 
     pub fn add_status_item(&self, view_id: ViewId, key: &str, value: &str, alignment: &str) {

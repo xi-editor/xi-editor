@@ -15,9 +15,7 @@
 //! Implementation of Language Server Plugin
 
 use language_server_client::LanguageServerClient;
-use lsp_types::{
-    InitializeResult, Position, Range, TextDocumentContentChangeEvent, TextDocumentSyncKind,
-};
+use lsp_types::{InitializeResult, Position, Range, TextDocumentContentChangeEvent, TextDocumentSyncKind};
 use parse_helper;
 use serde_json;
 use std;
@@ -66,10 +64,7 @@ fn count_utf16(s: &str) -> usize {
 }
 
 /// Get LSP Style Utf-16 based position given the xi-core style utf-8 offset
-fn get_position_of_offset<C: Cache>(
-    view: &mut View<C>,
-    offset: usize,
-) -> Result<Position, PluginLibError> {
+fn get_position_of_offset<C: Cache>(view: &mut View<C>, offset: usize) -> Result<Position, PluginLibError> {
     let line_num = view.line_of_offset(offset)?;
     let line_offset = view.offset_of_line(line_num)?;
 
@@ -179,10 +174,7 @@ fn get_change_for_sync_kind(
 /// Get workspace root using the Workspace Identifier and the opened document path
 /// For example: Cargo.toml can be used to identify a Rust Workspace
 /// This method traverses up to file tree to return the path to the Workspace root folder
-pub fn get_workspace_root_uri(
-    workspace_identifier: &String,
-    document_path: &Path,
-) -> Result<Url, Error> {
+pub fn get_workspace_root_uri(workspace_identifier: &String, document_path: &Path) -> Result<Url, Error> {
     let identifier_os_str = OsStr::new(&workspace_identifier);
 
     let mut current_path = document_path;
@@ -265,20 +257,12 @@ impl LspPlugin {
 impl Plugin for LspPlugin {
     type Cache = ChunkCache;
 
-    fn update(
-        &mut self,
-        view: &mut View<Self::Cache>,
-        delta: Option<&RopeDelta>,
-        _edit_type: String,
-        _author: String,
-    ) {
+    fn update(&mut self, view: &mut View<Self::Cache>, delta: Option<&RopeDelta>, _edit_type: String, _author: String) {
         let client_identifier = self.view_info.get_mut(&view.get_id());
         if let Some(view_info) = client_identifier {
             // This won't fail since we definitely have a client for the given
             // client identifier
-            let ls_client = self.language_server_clients
-                .get(&view_info.ls_identifier)
-                .unwrap();
+            let ls_client = self.language_server_clients.get(&view_info.ls_identifier).unwrap();
             let mut ls_client = ls_client.lock().unwrap();
 
             let sync_kind = ls_client.get_sync_kind();
@@ -299,9 +283,7 @@ impl Plugin for LspPlugin {
         if let Some(view_info) = client_identifier {
             // This won't fail since we definitely have a client for the given
             // client identifier
-            let ls_client = self.language_server_clients
-                .get(&view_info.ls_identifier)
-                .unwrap();
+            let ls_client = self.language_server_clients.get(&view_info.ls_identifier).unwrap();
             let mut ls_client = ls_client.lock().unwrap();
             ls_client.send_did_save(view.get_id(), document_text);
         }
@@ -352,8 +334,7 @@ impl Plugin for LspPlugin {
                 if !ls_client.is_initialized {
                     ls_client.send_initialize(workspace_root_uri, move |ls_client, result| {
                         if let Ok(result) = result {
-                            let init_result: InitializeResult =
-                                serde_json::from_value(result).unwrap();
+                            let init_result: InitializeResult = serde_json::from_value(result).unwrap();
 
                             eprintln!("Init Result: {:?}", init_result);
 
@@ -397,8 +378,7 @@ impl LspPlugin {
                 }
             })
             .and_then(|language_server_identifier| {
-                let contains = self.language_server_clients
-                    .contains_key(&language_server_identifier);
+                let contains = self.language_server_clients.contains_key(&language_server_identifier);
 
                 if contains {
                     let client = self.language_server_clients

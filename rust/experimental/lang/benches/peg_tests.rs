@@ -92,14 +92,9 @@ mod nom_benches {
     named!(
         nom_num<()>,
         do_parse!(
-            opt!(char!('-'))
-                >> alt!(map!(char!('0'), |_| ()) | digits)
-                >> opt!(do_parse!(char!('.') >> digits >> ()))
+            opt!(char!('-')) >> alt!(map!(char!('0'), |_| ()) | digits) >> opt!(do_parse!(char!('.') >> digits >> ()))
                 >> opt!(do_parse!(
-                    alt!(char!('e') | char!('E'))
-                        >> opt!(alt!(char!('+') | char!('-')))
-                        >> digits
-                        >> ()
+                    alt!(char!('e') | char!('E')) >> opt!(alt!(char!('+') | char!('-'))) >> digits >> ()
                 )) >> ()
         )
     );
@@ -125,10 +120,7 @@ mod combine_benches {
             optional((token(b'.'), take_while1(is_digit))),
             optional((
                 token(b'e').or(token(b'E')),
-                token(b'-')
-                    .map(Some)
-                    .or(token(b'+').map(Some))
-                    .or(value(None)),
+                token(b'-').map(Some).or(token(b'+').map(Some)).or(value(None)),
                 take_while1(is_digit),
             )),
         ).map(|_| ())
@@ -137,10 +129,7 @@ mod combine_benches {
 
     #[bench]
     fn bench_combine(b: &mut Bencher) {
-        assert_eq!(
-            parser(my_number).parse(TEST_STR.as_bytes()),
-            Ok(((), &b""[..]))
-        );
+        assert_eq!(parser(my_number).parse(TEST_STR.as_bytes()), Ok(((), &b""[..])));
         b.iter(|| parser(my_number).parse(test::black_box(TEST_STR.as_bytes())))
     }
 }
@@ -156,11 +145,7 @@ fn my_number(s: &[u8]) -> Option<usize> {
         Optional('-'),
         Alt('0', OneOrMore(OneByte(is_digit))),
         Optional(('.', OneOrMore(OneByte(is_digit)))),
-        Optional((
-            Alt('e', 'E'),
-            Optional(Alt('-', '+')),
-            OneOrMore(OneByte(is_digit)),
-        )),
+        Optional((Alt('e', 'E'), Optional(Alt('-', '+')), OneOrMore(OneByte(is_digit)))),
     ).p(s)
 }
 

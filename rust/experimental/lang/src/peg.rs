@@ -82,8 +82,7 @@ fn decode_utf8(s: &[u8]) -> Option<(char, usize)> {
         if (b2 as i8) > -0x40 || (b3 as i8) > -0x40 || (b4 as i8) > -0x40 {
             return None;
         }
-        let cp =
-            ((b as u32) << 18) + ((b2 as u32) << 12) + ((b3 as u32) << 6) + (b4 as u32) - 0x3c82080;
+        let cp = ((b as u32) << 18) + ((b2 as u32) << 12) + ((b3 as u32) << 6) + (b4 as u32) - 0x3c82080;
         if cp < 0x10000 {
             return None;
         } // overlong encoding

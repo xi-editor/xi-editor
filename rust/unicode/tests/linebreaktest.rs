@@ -15,9 +15,7 @@ fn line_break_test() {
     let mut reader = BufReader::new(file);
     let mut buffer = String::new();
 
-    reader
-        .read_to_string(&mut buffer)
-        .expect("failed to read test file.");
+    reader.read_to_string(&mut buffer).expect("failed to read test file.");
 
     let mut failed_tests = Vec::new();
 
@@ -25,9 +23,7 @@ fn line_break_test() {
         let test = full_test.split('#').next().unwrap().trim();
 
         let (string, breaks) = parse_test(test);
-        let xi_lb = LineBreakIterator::new(&string)
-            .map(|(idx, _)| idx)
-            .collect::<Vec<_>>();
+        let xi_lb = LineBreakIterator::new(&string).map(|(idx, _)| idx).collect::<Vec<_>>();
 
         if xi_lb != breaks {
             failed_tests.push((full_test.to_string(), breaks, xi_lb));

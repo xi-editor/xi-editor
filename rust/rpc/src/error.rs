@@ -130,11 +130,7 @@ impl RemoteError {
     {
         let message = message.as_ref().into();
         let data = data.into();
-        RemoteError::Custom {
-            code,
-            message,
-            data,
-        }
+        RemoteError::Custom { code, message, data }
     }
 }
 
@@ -226,17 +222,11 @@ impl Serialize for RemoteError {
                 ref message,
                 ref data,
             } => (code, message.as_ref(), data),
-            RemoteError::Unknown(_) => {
-                panic!("The 'Unknown' error variant is not intended for client use.")
-            }
+            RemoteError::Unknown(_) => panic!("The 'Unknown' error variant is not intended for client use."),
         };
         let message = message.to_owned();
         let data = data.to_owned();
-        let err = ErrorHelper {
-            code,
-            message,
-            data,
-        };
+        let err = ErrorHelper { code, message, data };
         err.serialize(serializer)
     }
 }

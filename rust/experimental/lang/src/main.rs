@@ -98,11 +98,7 @@ impl PluginState {
 
     fn flush_spans(&mut self, ctx: &mut PluginCtx) {
         if let Some(builder) = self.builder.take() {
-            ctx.set_fg_spans(
-                self.spans_start,
-                self.offset - self.spans_start,
-                builder.build(),
-            );
+            ctx.set_fg_spans(self.spans_start, self.offset - self.spans_start, builder.build());
         }
     }
 

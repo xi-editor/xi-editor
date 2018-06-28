@@ -27,9 +27,7 @@ use xi_rope::Rope;
 use xi_rpc::{Error as RpcError, RemoteError};
 use xi_trace::trace_block;
 
-use plugins::rpc::{
-    ClientPluginInfo, PluginBufferInfo, PluginNotification, PluginRequest, PluginUpdate,
-};
+use plugins::rpc::{ClientPluginInfo, PluginBufferInfo, PluginNotification, PluginRequest, PluginUpdate};
 use rpc::{EditNotification, EditRequest, LineRange};
 
 use config::{BufferItems, Table};
@@ -110,9 +108,7 @@ impl<'a> EventContext<'a> {
                 self.with_view(|view, text| view.do_edit(text, cmd));
                 self.editor.borrow_mut().update_edit_type();
             }
-            E::Buffer(cmd) => {
-                self.with_editor(|ed, view, k_ring, conf| ed.do_edit(view, k_ring, conf, cmd))
-            }
+            E::Buffer(cmd) => self.with_editor(|ed, view, k_ring, conf| ed.do_edit(view, k_ring, conf, cmd)),
             E::Special(cmd) => self.do_special(cmd),
         }
         self.after_edit("core");
@@ -160,25 +156,15 @@ impl<'a> EventContext<'a> {
                 let style_map = self.style_map.borrow();
                 ed.get_layers_mut().add_scopes(plugin, scopes, &style_map);
             }
-            UpdateSpans {
-                start,
-                len,
-                spans,
-                rev,
-            } => self.with_editor(|ed, view, _, _| {
-                ed.update_spans(view, plugin, start, len, spans, rev)
-            }),
+            UpdateSpans { start, len, spans, rev } => {
+                self.with_editor(|ed, view, _, _| ed.update_spans(view, plugin, start, len, spans, rev))
+            }
             Edit { edit } => self.with_editor(|ed, _, _, _| ed.apply_plugin_edit(edit)),
             Alert { msg } => self.client.alert(&msg),
-            AddStatusItem {
-                key,
-                value,
-                alignment,
-            } => self.client
-                .add_status_item(self.view_id, &key, &value, &alignment),
-            UpdateStatusItem { key, value } => {
-                self.client.update_status_item(self.view_id, &key, &value)
+            AddStatusItem { key, value, alignment } => {
+                self.client.add_status_item(self.view_id, &key, &value, &alignment)
             }
+            UpdateStatusItem { key, value } => self.client.update_status_item(self.view_id, &key, &value),
             RemoveStatusItem { key } => self.client.remove_status_item(self.view_id, &key),
         };
         self.after_edit(&plugin.to_string());
@@ -194,11 +180,7 @@ impl<'a> EventContext<'a> {
                 unit,
                 max_size,
                 rev,
-            } => json!(
-                self.editor
-                    .borrow()
-                    .plugin_get_data(start, unit, max_size, rev)
-            ),
+            } => json!(self.editor.borrow().plugin_get_data(start, unit, max_size, rev)),
             GetSelections => json!("not implemented"),
         }
     }
@@ -313,9 +295,7 @@ impl<'a> EventContext<'a> {
     pub(crate) fn finish_init(&mut self) {
         if !self.plugins.is_empty() {
             let info = self.plugin_info();
-            self.plugins
-                .iter()
-                .for_each(|plugin| plugin.new_buffer(&info));
+            self.plugins.iter().for_each(|plugin| plugin.new_buffer(&info));
         }
 
         let available_plugins = self.plugins
@@ -325,12 +305,10 @@ impl<'a> EventContext<'a> {
                 running: true,
             })
             .collect::<Vec<_>>();
-        self.client
-            .available_plugins(self.view_id, &available_plugins);
+        self.client.available_plugins(self.view_id, &available_plugins);
 
         let changes = serde_json::to_value(self.config).unwrap();
-        self.client
-            .config_changed(self.view_id, changes.as_object().unwrap());
+        self.client.config_changed(self.view_id, changes.as_object().unwrap());
         self.update_wrap_state();
         self.render()
     }
@@ -350,9 +328,7 @@ impl<'a> EventContext<'a> {
     pub(crate) fn close_view(&self) -> bool {
         // we probably want to notify plugins _before_ we close the view
         // TODO: determine what plugins we're stopping
-        self.plugins
-            .iter()
-            .for_each(|plug| plug.close_view(self.view_id));
+        self.plugins.iter().for_each(|plug| plug.close_view(self.view_id));
         self.siblings.is_empty()
     }
 
@@ -560,13 +536,9 @@ mod tests {
     fn smoke_test() {
         let harness = ContextHarness::new("");
         let mut ctx = harness.make_context();
-        ctx.do_edit(EditNotification::Insert {
-            chars: "hello".into(),
-        });
+        ctx.do_edit(EditNotification::Insert { chars: "hello".into() });
         ctx.do_edit(EditNotification::Insert { chars: " ".into() });
-        ctx.do_edit(EditNotification::Insert {
-            chars: "world".into(),
-        });
+        ctx.do_edit(EditNotification::Insert { chars: "world".into() });
         ctx.do_edit(EditNotification::Insert { chars: "!".into() });
         assert_eq!(harness.debug_render(), "hello world!|");
         ctx.do_edit(EditNotification::MoveWordLeft);
@@ -849,9 +821,7 @@ mod tests {
         let harness = ContextHarness::new("");
         let mut ctx = harness.make_context();
         // Single indent and outdent test
-        ctx.do_edit(EditNotification::Insert {
-            chars: "hello".into(),
-        });
+        ctx.do_edit(EditNotification::Insert { chars: "hello".into() });
         ctx.do_edit(EditNotification::Indent);
         assert_eq!(harness.debug_render(), "    hello|");
         ctx.do_edit(EditNotification::Outdent);
@@ -872,9 +842,7 @@ mod tests {
         ctx.do_edit(EditNotification::MoveToEndOfDocument);
         ctx.do_edit(EditNotification::Indent);
         ctx.do_edit(EditNotification::InsertNewline);
-        ctx.do_edit(EditNotification::Insert {
-            chars: "world".into(),
-        });
+        ctx.do_edit(EditNotification::Insert { chars: "world".into() });
         assert_eq!(harness.debug_render(), "    hello\nworld|");
 
         ctx.do_edit(EditNotification::MoveWordLeft);

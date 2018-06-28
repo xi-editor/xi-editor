@@ -279,8 +279,7 @@ impl<W: Write + Send> RpcLoop<W> {
                     };
                     if json.is_response() {
                         let id = json.get_id().unwrap();
-                        let _resp =
-                            trace_block_payload("read loop response", &["rpc"], format!("{}", id));
+                        let _resp = trace_block_payload("read loop response", &["rpc"], format!("{}", id));
                         match json.into_response() {
                             Ok(resp) => {
                                 let resp = resp.map_err(Error::from);
@@ -372,9 +371,7 @@ where
 
         // we don't want to block indefinitely if there's no current idle work,
         // because idle work could be scheduled from another thread.
-        let idle_timeout = time_to_next_timer
-            .unwrap_or(MAX_IDLE_WAIT)
-            .min(MAX_IDLE_WAIT);
+        let idle_timeout = time_to_next_timer.unwrap_or(MAX_IDLE_WAIT).min(MAX_IDLE_WAIT);
 
         if let Some(result) = peer.get_rx_timeout(idle_timeout) {
             return result;
@@ -409,10 +406,7 @@ impl<W: Write + Send + 'static> Peer for RawPeer<W> {
             "method": method,
             "params": params,
         })) {
-            eprintln!(
-                "send error on send_rpc_notification method {}: {}",
-                method, e
-            );
+            eprintln!("send error on send_rpc_notification method {}: {}", method, e);
         }
     }
 
@@ -595,9 +589,7 @@ mod tests {
     #[test]
     fn test_parse_notif() {
         let reader = MessageReader::default();
-        let json = reader
-            .parse(r#"{"method": "hi", "params": {"words": "plz"}}"#)
-            .unwrap();
+        let json = reader.parse(r#"{"method": "hi", "params": {"words": "plz"}}"#).unwrap();
         assert!(!json.is_response());
         let rpc = json.into_rpc::<Value, Value>().unwrap();
         match rpc {
