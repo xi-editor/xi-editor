@@ -263,12 +263,20 @@ impl Find {
     /// Return the occurrence closest to the provided selection `sel`. If searched is reversed then
     /// the occurrence closest to the start of the selection is returned. `wrapped` indicates that
     /// if the end of the text is reached the search continues from the start.
-    pub fn next_occurrence(&self, text: &Rope, reverse: bool, wrapped: bool, sel: (usize, usize)) -> Option<SelRegion> {
-        let (sel_start, sel_end) = sel;
-
+    pub fn next_occurrence(&self, text: &Rope, reverse: bool, wrapped: bool, sel: &Selection) -> Option<SelRegion> {
         if self.occurrences.len() == 0 {
             return None;
         }
+
+        let (sel_start, sel_end) = match sel.last() {
+            Some(last) if last.is_caret() =>
+                // if last selection is caret then allow the current position to be part of the occurrence
+                (last.min(), last.max()),
+            Some(last) if !last.is_caret() =>
+                // if the last selection is not a caret then continue searching after the caret
+                (last.min(), last.max() + 1),
+            _ => (0, 0)
+        };
 
         if reverse {
             let next_occurrence = match sel_start.checked_sub(1) {
@@ -277,15 +285,21 @@ impl Find {
             };
 
             if next_occurrence.is_none() && !wrapped {
-                return self.occurrences.regions_in_range(0, text.len()).last().cloned();
+                // get previous unselected occurrence
+                return self.occurrences.regions_in_range(0, text.len()).iter().cloned().filter(|o| {
+                    sel.regions_in_range(o.min(), o.max()).is_empty()
+                }).collect::<Vec<SelRegion>>().last().cloned();
             }
 
             next_occurrence.cloned()
         } else {
-            let next_occurrence = self.occurrences.regions_in_range(sel_end + 1, text.len()).first();
+            let next_occurrence = self.occurrences.regions_in_range(sel_end, text.len()).first();
 
             if next_occurrence.is_none() && !wrapped {
-                return self.occurrences.regions_in_range(0, text.len()).first().cloned();
+                // get next unselected occurrence
+                return self.occurrences.regions_in_range(0, text.len()).iter().cloned().filter(|o| {
+                    sel.regions_in_range(o.min(), o.max()).is_empty()
+                }).collect::<Vec<SelRegion>>().first().cloned();
             }
 
             next_occurrence.cloned()
