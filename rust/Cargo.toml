@@ -16,3 +16,17 @@ path = "core-lib"
 
 [dependencies.xi-rpc]
 path = "rpc"
+
+[workspace]
+members = [
+  "core-lib",
+  "lsp-lib",
+  "plugin-lib",
+  "rope",
+  "rpc",
+  "sample-plugin",
+  "syntect-plugin",
+  "trace",
+  "trace-dump",
+  "unicode",
+]
