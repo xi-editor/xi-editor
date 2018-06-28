@@ -29,7 +29,6 @@ use std::sync::MutexGuard;
 
 use xi_core::plugin_rpc::ScopeSpan;
 use xi_core::{ConfigTable, ViewId};
-use xi_core::{ConfigTable, ViewIdentifier};
 use xi_plugin_lib::{mainloop, Cache, Plugin, StateCache, View};
 use xi_rope::delta::Builder as EditBuilder;
 use xi_rope::interval::Interval;
