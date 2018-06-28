@@ -17,7 +17,7 @@
 use xi_core::internal::plugins::PluginId;
 use xi_core::ViewId;
 use xi_rpc::{RpcCtx, RpcPeer};
-use xi_core::plugin_rpc::{HoverResult};
+use xi_core::plugin_rpc::{HoverResult, DefinitionResult};
 
 #[derive(Clone)]
 pub struct CoreProxy {
@@ -35,15 +35,20 @@ impl CoreProxy {
         }
     }
 
-    pub fn display_hover_result(&mut self, view_id: ViewId, result: Option<HoverResult>, rev: u64) {
+    pub fn display_hover_result(&mut self, view_id: ViewId, request_id: usize, result: Option<HoverResult>, rev: u64) {
 
         let params = json!({
             "plugin_id": self.plugin_id,
             "rev": rev,
+            "request_id": request_id,
             "result": result,
             "view_id": view_id
         });
 
         self.peer.send_rpc_notification("hover_result", &params);
+    }
+
+    pub fn display_definition(&mut self, view_id: ViewId, request_id: usize, reuslt: Option<DefinitionResult>, rev: u64) {
+
     }
 }

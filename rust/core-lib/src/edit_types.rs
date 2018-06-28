@@ -73,7 +73,8 @@ pub(crate) enum SpecialEvent {
     DebugPrintSpans,
     Resize(Size),
     RequestLines(LineRange),
-    RequestHoverDefinition { request_id: usize, position: Option<Position> }
+    RequestHover { request_id: usize, position: Option<Position> },
+    RequestDefinition { request_id: usize, position: Option<Position> }
 }
 
 pub(crate) enum EventDomain {
@@ -227,8 +228,10 @@ impl From<EditNotification> for EventDomain {
             ReplaceNext => BufferEvent::ReplaceNext.into(),
             ReplaceAll => BufferEvent::ReplaceAll.into(),
             SelectionForReplace => ViewEvent::SelectionForReplace.into(),
-            RequestHoverDefinition { request_id, position } =>
-                SpecialEvent::RequestHoverDefinition { request_id, position }.into()
+            RequestHover { request_id, position } =>
+                SpecialEvent::RequestHover { request_id, position }.into(),
+            RequestDefinition { request_id, position } =>
+                SpecialEvent::RequestDefinition { request_id, position }.into()
         }
     }
 }

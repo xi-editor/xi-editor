@@ -27,16 +27,18 @@ use std::process::Command;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::Mutex;
+use types::Config;
+use types::DefinitionResult;
 use types::Error;
 use url::Url;
 use xi_core::ConfigTable;
 use xi_core::ViewId;
 use xi_plugin_lib::{
-    Cache, ChunkCache, CoreProxy, Error as PluginLibError, HoverResult, Plugin,
+    Cache, ChunkCache, CoreProxy, DefinitionResult as CoreDefinitionResult,
+    Error as PluginLibError, HoverResult, Location as CoreLocation, Plugin,
     Position as CorePosition, Range as CoreRange, View,
 };
 use xi_rope::rope::RopeDelta;
-use types::Config;
 
 pub struct ViewInfo {
     version: u64,
@@ -54,9 +56,7 @@ pub struct LspPlugin {
 fn marked_string_to_string(marked_string: &MarkedString) -> String {
     match *marked_string {
         MarkedString::String(ref text) => text.to_owned(),
-        MarkedString::LanguageString(ref d) => {
-            format!("```{}\n{}```", d.language, d.value )
-        }
+        MarkedString::LanguageString(ref d) => format!("```{}\n{}```", d.language, d.value),
     }
 }
 
@@ -64,11 +64,10 @@ fn markdown_from_hover_contents(hover_contents: HoverContents) -> String {
     match hover_contents {
         HoverContents::Scalar(content) => marked_string_to_string(&content),
         HoverContents::Array(content) => {
-            let res: Vec<String> = content.iter().map(|c|
-                marked_string_to_string(c)).collect();
+            let res: Vec<String> = content.iter().map(|c| marked_string_to_string(c)).collect();
             res.join("\n")
-        },
-        HoverContents::Markup(content) => content.value
+        }
+        HoverContents::Markup(content) => content.value,
     }
 }
 
@@ -124,33 +123,36 @@ fn lsp_position_from_core_position<C: Cache>(
     }
 }
 
-/// Get xi-core format utf-8 offset using the the LSP Position
-#[allow(dead_code)]
-fn get_offset_of_position<C: Cache>(
-    view: &mut View<C>,
-    position: Position,
-) -> Result<usize, PluginLibError> {
-    let line_offset = view.offset_of_line(position.line as usize)?;
-
-    let char_lengths = view
-        .get_line(line_offset)?
-        .chars()
-        .map(|c| (c.len_utf8(), c.len_utf16()));
-
-    let mut cur_len_utf16 = 0;
-    let mut cur_len_utf8 = 0;
-
-    for length in char_lengths {
-        cur_len_utf16 += length.1;
-        cur_len_utf8 += length.0;
-        if cur_len_utf16 == (position.character as usize) {
-            return Ok(line_offset + cur_len_utf8);
-        }
+fn core_position_from_position(position: Position) -> CorePosition {
+    CorePosition::Utf16LineChar {
+        line: position.line as usize,
+        character: position.character as usize,
     }
+}
 
-    Err(PluginLibError::Other(String::from(
-        "Cannot convert to offset",
-    )))
+fn core_range_from_range(range: Range) -> CoreRange {
+    CoreRange {
+        start: core_position_from_position(range.start),
+        end: core_position_from_position(range.end),
+    }
+}
+
+fn core_location_from_location(location: &Location) -> CoreLocation {
+    CoreLocation {
+        path: location.uri.to_file_path().unwrap(),
+        range: core_range_from_range(location.range),
+    }
+}
+
+fn core_definition_from_definition(definition: DefinitionResult) -> Option<CoreDefinitionResult> {
+    match definition {
+        DefinitionResult::Location(location) => Some(CoreDefinitionResult::Location { 
+            location: core_location_from_location(&location) }),
+        DefinitionResult::Locations(locations) => Some(CoreDefinitionResult::Locations { 
+            locations: locations.iter().map(|l| core_location_from_location(l)).collect()
+        }),
+        DefinitionResult::Null => None
+    }
 }
 
 /// Get contents changes of a document modeled according to Language Server Protocol
@@ -452,7 +454,7 @@ impl Plugin for LspPlugin {
 
     fn config_changed(&mut self, _view: &mut View<Self::Cache>, _changes: &ConfigTable) {}
 
-    fn get_hover_definition(
+    fn get_hover(
         &mut self,
         view: &mut View<Self::Cache>,
         request_id: usize,
@@ -473,49 +475,87 @@ impl Plugin for LspPlugin {
             let position_ls = lsp_position_from_core_position(view, position);
             eprintln!("Postion LS : {:?}", position_ls);
 
+            let mut ls_client = ls_client.lock().unwrap();
             match position_ls {
                 Ok(position) => {
-                    let mut ls_client = ls_client.lock().unwrap();
                     ls_client.request_hover_definition(
                         view.get_id(),
                         position,
                         move |ls_client, result| match result {
                             Ok(result) => {
-
-                                eprintln!("Result {:?}", result);
                                 let hover: Hover = serde_json::from_value(result).unwrap();
-                                eprintln!("HOVER {:?}", hover);
-
                                 let hover_result = HoverResult {
-                                    request_id,
                                     content: markdown_from_hover_contents(hover.contents),
-                                    range: hover.range.and_then(|range| {
-                                        Some(CoreRange {
-                                            start: CorePosition::Utf16LineChar {
-                                                line: range.start.line as usize,
-                                                character: range.start.character as usize,
-                                            },
-                                            end: CorePosition::Utf16LineChar {
-                                                line: range.start.line as usize,
-                                                character: range.start.character as usize,
-                                            },
-                                        })
-                                    }),
+                                    range: hover.range.map(|range| core_range_from_range(range)),
                                 };
 
-                                eprintln!("HR {:?}",hover_result);
-                                ls_client
-                                    .core
-                                    .display_hover_result(view_id, Some(hover_result), rev);
+                                ls_client.core.display_hover_result(
+                                    view_id,
+                                    request_id,
+                                    Some(hover_result),
+                                    rev,
+                                );
                             }
                             Err(err) => {
-                                eprintln!("Hover Response from LSP Error: {:?}", err);
-                                ls_client.core.display_hover_result(view_id, None, rev);
+                                eprintln!("Hover Response from Server Error: {:?}", err);
+                                ls_client
+                                    .core
+                                    .display_hover_result(view_id, request_id, None, rev);
                             }
                         },
                     );
                 }
-                Err(_error) => {}
+                Err(error) => {
+                    eprintln!("Can't convert location to offset. Error {:?}", error);
+                    ls_client.core.display_hover_result(view_id, request_id, None, rev);
+                }
+            };
+        }
+    }
+
+    fn get_definition(
+        &mut self,
+        view: &mut View<Self::Cache>,
+        request_id: usize,
+        position: CorePosition,
+    ) {
+        let view_id = view.get_id();
+        let view_info = self.view_info.get_mut(&view_id);
+        let rev = view.rev;
+
+        if let Some(view_info) = view_info {
+            let ls_client = self
+                .language_server_clients
+                .get(&view_info.ls_identifier)
+                .unwrap();
+
+            let mut ls_client = ls_client.lock().unwrap();
+            let position_ls = lsp_position_from_core_position(view, position);
+            match position_ls {
+                Ok(position) => {
+                    ls_client.request_hover_definition(
+                        view.get_id(),
+                        position,
+                        move |ls_client, result| match result {
+                            Ok(result) => {
+                                let result: DefinitionResult =
+                                    serde_json::from_value(result).unwrap();
+
+                                let core_definition_result = core_definition_from_definition(result);
+                                ls_client.core.
+                                    display_definition(view_id, request_id, core_definition_result, rev);
+                            }
+                            Err(err) => {
+                                eprintln!("Definition Response from Server Error: {:?}", err);
+                                ls_client.core.display_definition(view_id, request_id, None, rev);
+                            }
+                        },
+                    );
+                }
+                Err(error) => {
+                    eprintln!("Can't convert location to offset. Error {:?}", error);
+                    ls_client.core.display_definition(view_id, request_id, None, rev);
+                }
             };
         }
     }

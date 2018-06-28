@@ -108,7 +108,8 @@ pub enum HostNotification {
     ConfigChanged { view_id: ViewId, changes: Table },
     NewBuffer { buffer_info: Vec<PluginBufferInfo> },
     DidClose { view_id: ViewId },
-    GetHoverDefinition { view_id: ViewId, request_id: usize, position: Position },
+    GetHover { view_id: ViewId, request_id: usize, position: Position },
+    GetDefinition { view_id: ViewId, request_id: usize, position: Position },
     Shutdown(EmptyStruct),
     TracingConfig {enabled: bool},
 }
@@ -185,7 +186,8 @@ pub enum PluginNotification {
     AddStatusItem { key: String, value: String, alignment: String },
     UpdateStatusItem { key: String, value: String  },
     RemoveStatusItem { key: String },
-    HoverResult { result: HoverResult, rev: u64 }
+    HoverResult { request_id: usize, result: Option<HoverResult>, rev: u64 },
+    DefinitionResult { request_id: usize, result: Option<DefinitionResult>, rev: u64}
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -207,9 +209,23 @@ pub struct Range {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct HoverResult {
-    pub request_id: usize,
     pub content: String,
     pub range: Option<Range>
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "type")]
+pub enum DefinitionResult {
+    Location { location: Location },
+    Locations { locations: Vec<Location> }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct Location {
+    pub path: PathBuf,
+    pub range: Range
 }
 
 /// Common wrapper for plugin-originating RPCs.

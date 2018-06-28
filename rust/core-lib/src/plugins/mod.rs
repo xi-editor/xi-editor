@@ -128,8 +128,15 @@ impl Plugin {
                                                 "changes": changes}))
     }
 
-    pub fn get_hover_definition(&self, view_id: ViewId, request_id: usize, position: &Position) {
-        self.peer.send_rpc_notification("get_hover_definition", 
+    pub fn get_hover(&self, view_id: ViewId, request_id: usize, position: &Position) {
+        self.peer.send_rpc_notification("get_hover", 
+                                        &json!({"view_id": view_id,
+                                                "request_id": request_id,
+                                                "position": position}))
+    }
+
+    pub fn get_definition(&self, view_id: ViewId, request_id: usize, position: &Position) {
+        self.peer.send_rpc_notification("get_definition", 
                                         &json!({"view_id": view_id,
                                                 "request_id": request_id,
                                                 "position": position}))

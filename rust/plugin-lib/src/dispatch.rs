@@ -123,9 +123,14 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
 
     }
 
-    fn do_get_hover_definition(&mut self, view_id: ViewId, request_id: usize, position: Position) {
-        let v = bail!(self.views.get_mut(&view_id), "get_hover_definition", self.pid, view_id);
-        self.plugin.get_hover_definition(v, request_id, position)
+    fn do_get_hover(&mut self, view_id: ViewId, request_id: usize, position: Position) {
+        let v = bail!(self.views.get_mut(&view_id), "get_hover", self.pid, view_id);
+        self.plugin.get_hover(v, request_id, position)
+    }
+
+    fn do_get_definition(&mut self, view_id: ViewId, request_id: usize, position: Position) {
+        let v = bail!(self.views.get_mut(&view_id), "get_definition", self.pid, view_id);
+        self.plugin.get_definition(v, request_id, position)
     }
 
     fn do_tracing_config(&mut self, enabled: bool) {
@@ -190,8 +195,10 @@ impl<'a, P: Plugin> RpcHandler for Dispatcher<'a, P> {
                 self.do_shutdown(),
             TracingConfig { enabled } =>
                 self.do_tracing_config(enabled),
-            GetHoverDefinition {  view_id, request_id, position } =>
-                self.do_get_hover_definition(view_id, request_id, position),
+            GetHover {  view_id, request_id, position } =>
+                self.do_get_hover(view_id, request_id, position),
+            GetDefinition { view_id, request_id, position } =>
+                self.do_get_definition(view_id, request_id, position),
             Ping ( .. ) => (),
         }
     }

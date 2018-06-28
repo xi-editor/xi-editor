@@ -14,6 +14,7 @@
 
 use std::collections::HashMap;
 use language_server_client::LanguageServerClient;
+use lsp_types::*;
 use serde_json;
 use serde_json::Value;
 use std;
@@ -120,4 +121,13 @@ impl From<IOError> for Error {
     fn from(err: IOError) -> Error {
         Error::IOError(err)
     }
+}
+
+// Definition Result
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(untagged)]
+pub enum DefinitionResult {
+    Location(Location),
+    Locations(Vec<Location>),
+    Null
 }
