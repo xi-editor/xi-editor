@@ -939,7 +939,7 @@ impl View {
                                   _allow_same: bool, modify_selection: &SelectionModifier) {
         // multiple queries; select closest occurrence
         let closest_occurrence = self.find.iter().flat_map(|x|
-            x.next_occurrence(text, reverse, wrapped, &self.selection.clone())
+            x.next_occurrence(text, reverse, wrapped, &self.selection)
         ).min_by_key(|x| {
             match reverse {
                 true => x.end,
