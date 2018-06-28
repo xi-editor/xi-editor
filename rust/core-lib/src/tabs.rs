@@ -280,8 +280,11 @@ impl CoreState {
         match cmd {
             Edit(::rpc::EditCommand { view_id, cmd }) =>
                 self.do_edit(view_id, cmd),
-            NewViewAsync { file_path } =>
-                self.do_new_view_async(file_path),
+            NewViewAsync { file_path } => {
+                // this can also be called internally, in which case we want
+                // to have the return value
+                let _ = self.do_new_view_async(file_path);
+            }
             Save { view_id, file_path } =>
                 self.do_save(view_id, file_path),
             CloseView { view_id } =>
@@ -357,14 +360,18 @@ impl CoreState {
         Ok(json!(view_id))
     }
 
-    fn do_new_view_async(&mut self, path: Option<PathBuf>) {
-        match self.do_new_view_impl(path.as_ref()) {
+    fn do_new_view_async(&mut self, path: Option<PathBuf>)
+        -> Result<ViewId, FileError>
+    {
+        let result = self.do_new_view_impl(path.as_ref());
+        match result.as_ref() {
             Ok((view_id, config)) => {
-                self.peer.new_view(view_id, path.as_ref().map(PathBuf::as_path));
-                self.make_context(view_id).unwrap().finish_init(&config);
+                self.peer.new_view(*view_id, path.as_ref().map(PathBuf::as_path));
+                self.make_context(*view_id).unwrap().finish_init(config);
             }
             Err(e) => self.peer.alert(e.to_string()),
         }
+        result.map(|(id, _)| id)
     }
 
     fn do_new_view_impl(&mut self,
