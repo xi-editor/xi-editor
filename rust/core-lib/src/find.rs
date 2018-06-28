@@ -268,10 +268,14 @@ impl Find {
             return None;
         }
 
-        // last selection is used to find next occurrence
         let (sel_start, sel_end) = match sel.last() {
-            Some(last) => (last.min(), last.max()),
-            None => (0, 0)
+            Some(last) if last.is_caret() =>
+                // if last selection is caret then allow the current position to be part of the occurrence
+                (last.min(), last.max()),
+            Some(last) if !last.is_caret() =>
+                // if the last selection is not a caret then continue searching after the caret
+                (last.min(), last.max() + 1),
+            _ => (0, 0)
         };
 
         if reverse {
@@ -281,7 +285,7 @@ impl Find {
             };
 
             if next_occurrence.is_none() && !wrapped {
-                // get last unselected occurrence
+                // get previous unselected occurrence
                 return self.occurrences.regions_in_range(0, text.len()).iter().cloned().filter(|o| {
                     sel.regions_in_range(o.min(), o.max()).is_empty()
                 }).collect::<Vec<SelRegion>>().last().cloned();
@@ -289,10 +293,10 @@ impl Find {
 
             next_occurrence.cloned()
         } else {
-            let next_occurrence = self.occurrences.regions_in_range(sel_end + 1, text.len()).first();
+            let next_occurrence = self.occurrences.regions_in_range(sel_end, text.len()).first();
 
             if next_occurrence.is_none() && !wrapped {
-                // get first unselected occurrence
+                // get next unselected occurrence
                 return self.occurrences.regions_in_range(0, text.len()).iter().cloned().filter(|o| {
                     sel.regions_in_range(o.min(), o.max()).is_empty()
                 }).collect::<Vec<SelRegion>>().first().cloned();

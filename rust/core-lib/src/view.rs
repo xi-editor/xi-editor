@@ -936,21 +936,10 @@ impl View {
     /// next occurrence before (`true`) or after (`false`) the last cursor is selected. `wrapped`
     /// indicates a search for the next occurrence past the end of the file.
     pub fn select_next_occurrence(&mut self, text: &Rope, reverse: bool, wrapped: bool,
-                                  allow_same: bool, modify_selection: &SelectionModifier) {
-        let mut sel = self.selection.clone();
-        match self.sel_regions().last() {
-            Some(last_sel) => {
-                // add selection for cursor to prevent that it becomes the current occurrence
-                if !allow_same && last_sel.is_caret() {
-                    sel.add_region(SelRegion::new(last_sel.min(), last_sel.max()));
-                }
-            },
-            None => return,
-        };
-        
+                                  _allow_same: bool, modify_selection: &SelectionModifier) {
         // multiple queries; select closest occurrence
         let closest_occurrence = self.find.iter().flat_map(|x|
-            x.next_occurrence(text, reverse, wrapped, &sel)
+            x.next_occurrence(text, reverse, wrapped, &self.selection.clone())
         ).min_by_key(|x| {
             match reverse {
                 true => x.end,
