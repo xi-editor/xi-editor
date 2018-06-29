@@ -210,10 +210,8 @@ impl Editor {
         let head_rev_id = self.engine.get_head_rev_id();
         let undo_group;
 
-        if self.this_edit_type == self.last_edit_type
-            && self.this_edit_type != EditType::Other
-            && self.this_edit_type != EditType::Transpose
-            && !self.live_undos.is_empty()
+        if self.this_edit_type == self.last_edit_type && self.this_edit_type != EditType::Other
+            && self.this_edit_type != EditType::Transpose && !self.live_undos.is_empty()
         {
             undo_group = *self.live_undos.last().unwrap();
         } else {

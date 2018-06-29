@@ -83,8 +83,7 @@ impl Cache for ChunkCache {
         }
 
         // if chunk does not include the start of this line, fetch and reset everything
-        if self.contents.len() == 0
-            || line_num < self.first_line
+        if self.contents.len() == 0 || line_num < self.first_line
             || (line_num == self.first_line && self.first_line_offset > 0)
             || (line_num > self.first_line + self.line_offsets.len())
         {

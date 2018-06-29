@@ -213,9 +213,9 @@ fn try_save(path: &Path, text: &Rope, encoding: CharacterEncoding) -> io::Result
 
 fn try_decode(bytes: Vec<u8>, encoding: CharacterEncoding, path: &Path) -> Result<Rope, FileError> {
     match encoding {
-        CharacterEncoding::Utf8 => Ok(Rope::from(
-            str::from_utf8(&bytes).map_err(|_e| FileError::UnknownEncoding(path.to_owned()))?
-        )),
+        CharacterEncoding::Utf8 => {
+            Ok(Rope::from(str::from_utf8(&bytes).map_err(|_e| FileError::UnknownEncoding(path.to_owned()))?))
+        }
         CharacterEncoding::Utf8WithBom => {
             let s = String::from_utf8(bytes).map_err(|_e| FileError::UnknownEncoding(path.to_owned()))?;
             Ok(Rope::from(&s[UTF8_BOM.len()..]))

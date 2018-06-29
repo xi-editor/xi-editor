@@ -528,12 +528,8 @@ impl Sample {
 
 impl PartialEq for Sample {
     fn eq(&self, other: &Sample) -> bool {
-        self.timestamp_us == other.timestamp_us
-            && self.name == other.name
-            && self.categories == other.categories
-            && self.pid == other.pid
-            && self.tid == other.tid
-            && self.event_type == other.event_type
+        self.timestamp_us == other.timestamp_us && self.name == other.name && self.categories == other.categories
+            && self.pid == other.pid && self.tid == other.tid && self.event_type == other.event_type
             && self.args == other.args
     }
 }

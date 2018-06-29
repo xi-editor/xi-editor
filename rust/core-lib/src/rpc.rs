@@ -328,6 +328,17 @@ pub struct MouseAction {
     pub click_count: Option<u64>,
 }
 
+/// Represents how the current selection is modified (used by find
+/// operations).
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum SelectionModifier {
+    None,
+    Set,
+    Add,
+    AddRemovingCurrent,
+}
+
 /// The edit-related notifications.
 ///
 /// Alongside the [`EditRequest`] members, these commands constitute
@@ -406,13 +417,17 @@ pub enum EditNotification {
         chars: String,
         case_sensitive: bool,
         regex: Option<bool>,
+        whole_words: Option<bool>,
     },
     FindNext {
         wrap_around: Option<bool>,
         allow_same: Option<bool>,
+        modify_selection: Option<SelectionModifier>,
     },
     FindPrevious {
         wrap_around: Option<bool>,
+        allow_same: Option<bool>,
+        modify_selection: Option<SelectionModifier>,
     },
     DebugRewrap,
     DebugWrapWidth,

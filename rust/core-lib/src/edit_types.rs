@@ -19,7 +19,7 @@
 //! the editor or view as appropriate.
 
 use movement::Movement;
-use rpc::{EditNotification, GestureType, LineRange, MouseAction};
+use rpc::{EditNotification, GestureType, LineRange, MouseAction, SelectionModifier};
 use view::Size;
 
 /// Events that only modify view state
@@ -44,13 +44,17 @@ pub(crate) enum ViewEvent {
         chars: String,
         case_sensitive: bool,
         regex: Option<bool>,
+        whole_words: Option<bool>,
     },
     FindNext {
         wrap_around: Option<bool>,
         allow_same: Option<bool>,
+        modify_selection: Option<SelectionModifier>,
     },
     FindPrevious {
         wrap_around: Option<bool>,
+        allow_same: Option<bool>,
+        modify_selection: Option<SelectionModifier>,
     },
     Cancel,
     HighlightFind {
@@ -183,19 +187,31 @@ impl From<EditNotification> for EventDomain {
                 chars,
                 case_sensitive,
                 regex,
+                whole_words,
             } => ViewEvent::Find {
                 chars,
                 case_sensitive,
                 regex,
+                whole_words,
             }.into(),
             FindNext {
                 wrap_around,
                 allow_same,
+                modify_selection,
             } => ViewEvent::FindNext {
                 wrap_around,
                 allow_same,
+                modify_selection,
             }.into(),
-            FindPrevious { wrap_around } => ViewEvent::FindPrevious { wrap_around }.into(),
+            FindPrevious {
+                wrap_around,
+                allow_same,
+                modify_selection,
+            } => ViewEvent::FindPrevious {
+                wrap_around,
+                allow_same,
+                modify_selection,
+            }.into(),
             DebugRewrap => SpecialEvent::DebugRewrap.into(),
             DebugWrapWidth => SpecialEvent::DebugWrapWidth.into(),
             DebugPrintSpans => SpecialEvent::DebugPrintSpans.into(),
