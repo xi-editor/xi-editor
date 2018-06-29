@@ -27,7 +27,7 @@ fmt() {
 main () {
 	check_rustfmt
     
-    local check_opt='--write-mode=check'
+    local check_opt='--write-mode=diff'
     
     if [[ "$TRAVIS_RUST_VERSION" == "nightly" ]]; then
         check_opt='--check'

@@ -23,8 +23,10 @@ use edit_types::ViewEvent;
 use find::Find;
 use internal::find::FindStatus;
 use line_cache_shadow::{self, LineCacheShadow, RenderPlan, RenderTactic};
-use movement::{Movement, region_movement, selection_movement};
+use linewrap;
+use movement::{region_movement, selection_movement, Movement};
 use rpc::{GestureType, MouseAction, SelectionModifier};
+use selection::{Affinity, SelRegion, Selection};
 use styles::{Style, ThemeStyleMap};
 use tabs::{BufferId, ViewId};
 use width_cache::WidthCache;
@@ -181,18 +183,46 @@ impl View {
             AddSelectionBelow => self.add_selection_by_movement(text, Movement::Down),
             Gesture { line, col, ty } => self.do_gesture(text, line, col, ty),
             GotoLine { line } => self.goto_line(text, line),
-            Find { chars, case_sensitive, regex, whole_words } =>
-                self.do_find(text, chars, case_sensitive, regex.unwrap_or(false),
-                             whole_words.unwrap_or(false)),
-            FindNext { wrap_around, allow_same, modify_selection } =>
-                self.find_next(text, false, wrap_around.unwrap_or(false),
-                               allow_same.unwrap_or(false),
-                               &modify_selection.unwrap_or(SelectionModifier::Set)),
-            FindPrevious { wrap_around, allow_same, modify_selection } =>
-                self.find_next(text, true, wrap_around.unwrap_or(false),
-                               allow_same.unwrap_or(false),
-                               &modify_selection.unwrap_or(SelectionModifier::Set)),
-            Click(MouseAction { line, column, flags, click_count }) => {
+            Find {
+                chars,
+                case_sensitive,
+                regex,
+                whole_words,
+            } => self.do_find(
+                text,
+                chars,
+                case_sensitive,
+                regex.unwrap_or(false),
+                whole_words.unwrap_or(false),
+            ),
+            FindNext {
+                wrap_around,
+                allow_same,
+                modify_selection,
+            } => self.find_next(
+                text,
+                false,
+                wrap_around.unwrap_or(false),
+                allow_same.unwrap_or(false),
+                &modify_selection.unwrap_or(SelectionModifier::Set),
+            ),
+            FindPrevious {
+                wrap_around,
+                allow_same,
+                modify_selection,
+            } => self.find_next(
+                text,
+                true,
+                wrap_around.unwrap_or(false),
+                allow_same.unwrap_or(false),
+                &modify_selection.unwrap_or(SelectionModifier::Set),
+            ),
+            Click(MouseAction {
+                line,
+                column,
+                flags,
+                click_count,
+            }) => {
                 // Deprecated (kept for client compatibility):
                 // should be removed in favor of do_gesture
                 eprintln!("Usage of click is deprecated; use do_gesture");
@@ -515,8 +545,7 @@ impl View {
         for region in self.selection.regions_in_range(start_pos, pos) {
             // cursor
             let c = region.end;
-            if (c > start_pos && c < pos)
-                || (!region.is_upstream() && c == start_pos)
+            if (c > start_pos && c < pos) || (!region.is_upstream() && c == start_pos)
                 || (region.is_upstream() && c == pos)
                 || (c == pos && c == text.len() && self.line_of_offset(text, c) == line_num)
             {
@@ -935,11 +964,13 @@ impl View {
             self.find.push(Find::new());
         }
 
-        self.find.first_mut().unwrap().do_find(text, search_query, case_sensitive, false, true);
+        self.find
+            .first_mut()
+            .unwrap()
+            .do_find(text, search_query, case_sensitive, false, true);
     }
 
-    pub fn do_find(&mut self, text: &Rope, chars: String, case_sensitive: bool, is_regex: bool,
-                   whole_words: bool) {
+    pub fn do_find(&mut self, text: &Rope, chars: String, case_sensitive: bool, is_regex: bool, whole_words: bool) {
         self.set_dirty(text);
         self.find_changed = FindStatusChange::Matches;
 
@@ -950,11 +981,20 @@ impl View {
             self.find.push(Find::new());
         }
 
-        self.find.first_mut().unwrap().do_find(text, chars, case_sensitive, is_regex, whole_words);
+        self.find
+            .first_mut()
+            .unwrap()
+            .do_find(text, chars, case_sensitive, is_regex, whole_words);
     }
 
-    pub fn find_next(&mut self, text: &Rope, reverse: bool, wrap: bool, allow_same: bool,
-                     modify_selection: &SelectionModifier) {
+    pub fn find_next(
+        &mut self,
+        text: &Rope,
+        reverse: bool,
+        wrap: bool,
+        allow_same: bool,
+        modify_selection: &SelectionModifier,
+    ) {
         self.select_next_occurrence(text, reverse, false, allow_same, modify_selection);
         if self.scroll_to.is_none() && wrap {
             self.select_next_occurrence(text, reverse, true, allow_same, modify_selection);
@@ -964,13 +1004,19 @@ impl View {
     /// Select the next occurrence relative to the last cursor. `reverse` determines whether the
     /// next occurrence before (`true`) or after (`false`) the last cursor is selected. `wrapped`
     /// indicates a search for the next occurrence past the end of the file.
-    pub fn select_next_occurrence(&mut self, text: &Rope, reverse: bool, wrapped: bool,
-                                  _allow_same: bool, modify_selection: &SelectionModifier) {
+    pub fn select_next_occurrence(
+        &mut self,
+        text: &Rope,
+        reverse: bool,
+        wrapped: bool,
+        _allow_same: bool,
+        modify_selection: &SelectionModifier,
+    ) {
         // multiple queries; select closest occurrence
-        let closest_occurrence = self.find.iter().flat_map(|x|
-            x.next_occurrence(text, reverse, wrapped, &self.selection)
-        ).min_by_key(|x| {
-            match reverse {
+        let closest_occurrence = self.find
+            .iter()
+            .flat_map(|x| x.next_occurrence(text, reverse, wrapped, &self.selection))
+            .min_by_key(|x| match reverse {
                 true => x.end,
                 false => x.start,
             });
@@ -982,7 +1028,7 @@ impl View {
                     let mut selection = self.selection.clone();
                     selection.add_region(occ);
                     self.set_selection(text, selection);
-                },
+                }
                 SelectionModifier::AddRemovingCurrent => {
                     let mut selection = self.selection.clone();
 
@@ -995,7 +1041,7 @@ impl View {
                     selection.add_region(occ);
                     self.set_selection(text, selection);
                 }
-                _ => { }
+                _ => {}
             }
         }
     }

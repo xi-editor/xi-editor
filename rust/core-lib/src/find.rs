@@ -17,7 +17,6 @@
 use std::cmp::{max, min};
 
 use regex::{Regex, RegexBuilder};
-use regex::{Regex, RegexBuilder};
 use selection::{SelRegion, Selection};
 use word_boundaries::WordCursor;
 use xi_rope::delta::{Delta, DeltaRegion};
