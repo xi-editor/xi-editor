@@ -185,6 +185,24 @@ impl LanguageServerClient {
         self.send_notification("textDocument/didOpen", params);
     }
 
+    /// Send textDocument/didClose Notification to the Language Server
+    pub fn send_did_close(
+        &mut self,
+        view_id: ViewId
+    ) {
+        let uri = self.opened_documents.get(&view_id).unwrap().clone();
+        let text_document_did_close_params = DidCloseTextDocumentParams {
+            text_document: TextDocumentIdentifier {
+                uri: uri
+            },
+        };
+
+        let params = Params::from(serde_json::to_value(text_document_did_close_params).unwrap());
+        self.send_notification("textDocument/didClose", params);
+
+        self.opened_documents.remove(&view_id);
+    }
+
     /// Send textDocument/didChange Notification to the Language Server
     pub fn send_did_change(
         &mut self,

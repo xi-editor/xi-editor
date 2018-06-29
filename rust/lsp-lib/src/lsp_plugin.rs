@@ -392,6 +392,15 @@ impl Plugin for LspPlugin {
 
     fn did_close(&mut self, view: &View<Self::Cache>) {
         eprintln!("close view {}", view.get_id());
+
+        if let Some(view_info) = self.view_info.get(&view.get_id()) {
+            let ls_client = self
+                .language_server_clients
+                .get(&view_info.ls_identifier)
+                .unwrap();
+            let mut ls_client = ls_client.lock().unwrap();
+            ls_client.send_did_close(view.get_id());
+        }
     }
 
     fn new_view(&mut self, view: &mut View<Self::Cache>) {
