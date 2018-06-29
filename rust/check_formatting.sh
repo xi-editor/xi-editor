@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 
 GIT_ROOT="$(git rev-parse --show-toplevel)"
@@ -50,7 +50,7 @@ main () {
             continue
         fi
 
-        if [[ $i == "$GIT_ROOT/rust/experimental" ]]; then 
+        if [[ $i = "$GIT_ROOT/rust/experimental" ]]; then 
             cd "$i/lang"
             fmt "$check_opt"
             cd ../../
