@@ -35,7 +35,7 @@ use url::Url;
 use xi_core::ConfigTable;
 use xi_core::ViewId;
 use xi_plugin_lib::{
-    Cache, ChunkCache, CoreProxy, Error as PluginLibError, HoverResult, Plugin,
+    Cache, ChunkCache, CoreProxy, Error as PluginLibError, LanguageResponseError, Plugin,
     Position as CorePosition, View,
 };
 use xi_rope::rope::RopeDelta;
@@ -395,40 +395,49 @@ impl Plugin for LspPlugin {
                                 let hover: Option<Hover> = serde_json::from_value(result).unwrap();
                                 match hover {
                                     Some(hover) => {
-                                        let hover_result = HoverResult {
-                                            content: markdown_from_hover_contents(hover.contents),
-                                            range: hover
-                                                .range
-                                                .map(|range| core_range_from_range(range)),
-                                        };
-
-                                        eprintln!("Hover Response from Server  {:?}", hover_result);
+                                        eprintln!("Hover Response from Server  {:?}", hover);
+                                        let hover_result = core_hover_result_from_hover(hover);
                                         ls_client.core.display_hover_result(
                                             view_id,
                                             request_id,
-                                            Some(hover_result),
+                                            hover_result,
                                             rev,
                                         );
                                     }
-                                    None => ls_client
-                                        .core
-                                        .display_hover_result(view_id, request_id, None, rev),
+                                    None => ls_client.core.display_hover_result(
+                                        view_id,
+                                        request_id,
+                                        Err(LanguageResponseError::NullResponse),
+                                        rev,
+                                    ),
                                 }
                             }
                             Err(err) => {
                                 eprintln!("Hover Response from Server Error: {:?}", err);
-                                ls_client
-                                    .core
-                                    .display_hover_result(view_id, request_id, None, rev);
+                                ls_client.core.display_hover_result(
+                                    view_id,
+                                    request_id,
+                                    Err(LanguageResponseError::LanguageServerError(format!(
+                                        "{:?}",
+                                        err
+                                    ))),
+                                    rev,
+                                );
                             }
                         },
                     );
                 }
                 Err(error) => {
                     eprintln!("Can't convert location to offset. Error {:?}", error);
-                    ls_client
-                        .core
-                        .display_hover_result(view_id, request_id, None, rev);
+                    ls_client.core.display_hover_result(
+                        view_id,
+                        request_id,
+                        Err(LanguageResponseError::PositionConversionError(format!(
+                            "{:?}",
+                            error
+                        ))),
+                        rev,
+                    );
                 }
             };
         }
@@ -464,6 +473,7 @@ impl Plugin for LspPlugin {
 
                                 let core_definition_result =
                                     core_definition_from_definition(result);
+
                                 ls_client.core.display_definition(
                                     view_id,
                                     request_id,
@@ -473,18 +483,30 @@ impl Plugin for LspPlugin {
                             }
                             Err(err) => {
                                 eprintln!("Definition Response from Server Error: {:?}", err);
-                                ls_client
-                                    .core
-                                    .display_definition(view_id, request_id, None, rev);
+                                ls_client.core.display_definition(
+                                    view_id,
+                                    request_id,
+                                    Err(LanguageResponseError::LanguageServerError(format!(
+                                        "{:?}",
+                                        err
+                                    ))),
+                                    rev,
+                                );
                             }
                         },
                     );
                 }
                 Err(error) => {
                     eprintln!("Can't convert location to offset. Error {:?}", error);
-                    ls_client
-                        .core
-                        .display_definition(view_id, request_id, None, rev);
+                    ls_client.core.display_definition(
+                        view_id,
+                        request_id,
+                        Err(LanguageResponseError::PositionConversionError(format!(
+                            "{:?}",
+                            error
+                        ))),
+                        rev,
+                    );
                 }
             };
         }

@@ -13,30 +13,33 @@
 // limitations under the License.
 
 //! A proxy for the methods on Core
-
+use serde_json;
 use xi_core::internal::plugins::PluginId;
+use xi_core::plugin_rpc::{DefinitionResult, HoverResult, LanguageResponseError};
 use xi_core::ViewId;
 use xi_rpc::{RpcCtx, RpcPeer};
-use xi_core::plugin_rpc::{HoverResult, DefinitionResult};
 
 #[derive(Clone)]
 pub struct CoreProxy {
-    plugin_id: PluginId, 
-    peer: RpcPeer
+    plugin_id: PluginId,
+    peer: RpcPeer,
 }
 
-
 impl CoreProxy {
-
     pub fn new(plugin_id: PluginId, rpc_ctx: &RpcCtx) -> Self {
         CoreProxy {
             plugin_id,
-            peer: rpc_ctx.get_peer().clone()
+            peer: rpc_ctx.get_peer().clone(),
         }
     }
 
-    pub fn display_hover_result(&mut self, view_id: ViewId, request_id: usize, result: Option<HoverResult>, rev: u64) {
-
+    pub fn display_hover_result(
+        &mut self,
+        view_id: ViewId,
+        request_id: usize,
+        result: Result<HoverResult, LanguageResponseError>,
+        rev: u64,
+    ) {
         let params = json!({
             "plugin_id": self.plugin_id,
             "rev": rev,
@@ -48,7 +51,22 @@ impl CoreProxy {
         self.peer.send_rpc_notification("hover_result", &params);
     }
 
-    pub fn display_definition(&mut self, view_id: ViewId, request_id: usize, reuslt: Option<DefinitionResult>, rev: u64) {
+    pub fn display_definition(
+        &mut self,
+        view_id: ViewId,
+        request_id: usize,
+        result: Result<DefinitionResult, LanguageResponseError>,
+        rev: u64,
+    ) {
+        let params = json!({
+            "plugin_id": self.plugin_id,
+            "rev": rev,
+            "request_id": request_id,
+            "result": result,
+            "view_id": view_id
+        });
 
+        self.peer
+            .send_rpc_notification("definition_result", &params);
     }
 }

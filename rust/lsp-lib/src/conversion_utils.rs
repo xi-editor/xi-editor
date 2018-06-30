@@ -1,10 +1,11 @@
 use lsp_types::*;
-use xi_plugin_lib::{
-    Cache, ChunkCache, CoreProxy, DefinitionResult as CoreDefinitionResult,
-    Error as PluginLibError, HoverResult, Location as CoreLocation, Plugin,
-    Position as CorePosition, Range as CoreRange, View,
-};
 use types::DefinitionResult;
+use xi_plugin_lib::HoverResult;
+use xi_plugin_lib::LanguageResponseError;
+use xi_plugin_lib::{
+    Cache, DefinitionResult as CoreDefinitionResult, Error as PluginLibError,
+    Location as CoreLocation, Position as CorePosition, Range as CoreRange, View,
+};
 
 pub fn marked_string_to_string(marked_string: &MarkedString) -> String {
     match *marked_string {
@@ -13,14 +14,21 @@ pub fn marked_string_to_string(marked_string: &MarkedString) -> String {
     }
 }
 
-pub fn markdown_from_hover_contents(hover_contents: HoverContents) -> String {
-    match hover_contents {
+pub fn markdown_from_hover_contents(
+    hover_contents: HoverContents,
+) -> Result<String, LanguageResponseError> {
+    let res = match hover_contents {
         HoverContents::Scalar(content) => marked_string_to_string(&content),
         HoverContents::Array(content) => {
             let res: Vec<String> = content.iter().map(|c| marked_string_to_string(c)).collect();
             res.join("\n")
         }
         HoverContents::Markup(content) => content.value,
+    };
+    if res.is_empty() {
+        Err(LanguageResponseError::FallbackResponse)
+    } else {
+        Ok(res)
     }
 }
 
@@ -97,17 +105,26 @@ pub fn core_location_from_location(location: &Location) -> CoreLocation {
     }
 }
 
-pub fn core_definition_from_definition(definition: DefinitionResult) -> Option<CoreDefinitionResult> {
+pub fn core_definition_from_definition(
+    definition: DefinitionResult,
+) -> Result<CoreDefinitionResult, LanguageResponseError> {
     match definition {
-        DefinitionResult::Location(location) => Some(CoreDefinitionResult::Location {
+        DefinitionResult::Location(location) => Ok(CoreDefinitionResult::Location {
             location: core_location_from_location(&location),
         }),
-        DefinitionResult::Locations(locations) => Some(CoreDefinitionResult::Locations {
+        DefinitionResult::Locations(locations) => Ok(CoreDefinitionResult::Locations {
             locations: locations
                 .iter()
                 .map(|l| core_location_from_location(l))
                 .collect(),
         }),
-        DefinitionResult::Null => None,
+        DefinitionResult::Null => Err(LanguageResponseError::NullResponse),
     }
+}
+
+pub fn core_hover_result_from_hover(hover: Hover) -> Result<HoverResult, LanguageResponseError> {
+    Ok(HoverResult {
+        content: markdown_from_hover_contents(hover.contents)?,
+        range: hover.range.map(|range| core_range_from_range(range)),
+    })
 }

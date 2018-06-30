@@ -15,7 +15,6 @@
 extern crate serde_derive;
 extern crate serde_json;
 
-
 extern crate jsonrpc_lite;
 extern crate languageserver_types as lsp_types;
 extern crate serde;
@@ -28,10 +27,10 @@ extern crate xi_rope;
 use xi_plugin_lib::mainloop;
 use xi_plugin_lib::Plugin;
 
+pub mod conversion_utils;
 pub mod language_server_client;
 pub mod lsp_plugin;
 pub mod parse_helper;
-pub mod conversion_utils;
 pub mod types;
 pub use lsp_plugin::LspPlugin;
 pub use types::Config;

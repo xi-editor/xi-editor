@@ -22,7 +22,7 @@ const HEADER_CONTENT_TYPE: &'static str = "content-type";
 
 /// parse header from the incoming input string
 fn parse_header(s: &str) -> Result<LspHeader, ParseError> {
-    let split: Vec<String> = s.splitn(2,": ").map(|s| s.trim().to_lowercase()).collect();
+    let split: Vec<String> = s.splitn(2, ": ").map(|s| s.trim().to_lowercase()).collect();
     if split.len() != 2 {
         return Err(ParseError::Unknown("Malformed".to_string()));
     };
@@ -59,7 +59,7 @@ pub fn read_message<T: BufRead>(reader: &mut T) -> Result<String, ParseError> {
 
     let content_length =
         content_length.ok_or(format!("missing content-length header: {}", buffer))?;
-    
+
     let mut body_buffer = vec![0; content_length];
     reader.read_exact(&mut body_buffer)?;
 

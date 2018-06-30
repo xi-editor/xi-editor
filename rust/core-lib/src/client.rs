@@ -197,7 +197,7 @@ impl Client {
             {   "view_id": view_id, "key": key }));
     }
 
-    pub fn show_hover(&self, view_id: ViewId, request_id: usize, result: Option<HoverResult>) {
+    pub fn show_hover(&self, view_id: ViewId, request_id: usize, result: HoverResult) {
         self.0.send_rpc_notification("show_hover", &json!(
             {
                 "view_id": view_id,

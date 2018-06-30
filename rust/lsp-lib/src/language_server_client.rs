@@ -164,12 +164,7 @@ impl LanguageServerClient {
     }
 
     /// Send textDocument/didOpen Notification to the Language Server
-    pub fn send_did_open(
-        &mut self,
-        view_id: ViewId,
-        document_uri: Url,
-        document_text: String,
-    ) {
+    pub fn send_did_open(&mut self, view_id: ViewId, document_uri: Url, document_text: String) {
         self.opened_documents.insert(view_id, document_uri.clone());
 
         let text_document_did_open_params = DidOpenTextDocumentParams {
@@ -186,15 +181,10 @@ impl LanguageServerClient {
     }
 
     /// Send textDocument/didClose Notification to the Language Server
-    pub fn send_did_close(
-        &mut self,
-        view_id: ViewId
-    ) {
+    pub fn send_did_close(&mut self, view_id: ViewId) {
         let uri = self.opened_documents.get(&view_id).unwrap().clone();
         let text_document_did_close_params = DidCloseTextDocumentParams {
-            text_document: TextDocumentIdentifier {
-                uri: uri
-            },
+            text_document: TextDocumentIdentifier { uri: uri },
         };
 
         let params = Params::from(serde_json::to_value(text_document_did_close_params).unwrap());
@@ -260,12 +250,8 @@ impl LanguageServerClient {
         self.send_request("textDocument/hover", params, Box::new(on_result))
     }
 
-    pub fn request_definition<CB>(
-        &mut self,
-        view_id: ViewId,
-        position: Position,
-        on_result: CB,
-    ) where
+    pub fn request_definition<CB>(&mut self, view_id: ViewId, position: Position, on_result: CB)
+    where
         CB: 'static + Send + FnOnce(&mut LanguageServerClient, Result<Value, Error>),
     {
         eprintln!("Opened Docs {:?}", self.opened_documents);
@@ -278,7 +264,7 @@ impl LanguageServerClient {
 
         let params = Params::from(serde_json::to_value(text_document_position_params).unwrap());
         self.send_request("textDocument/definition", params, Box::new(on_result))
-    }   
+    }
 }
 
 /// Helper methods to query the capabilities of the Language Server before making

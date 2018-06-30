@@ -186,8 +186,8 @@ pub enum PluginNotification {
     AddStatusItem { key: String, value: String, alignment: String },
     UpdateStatusItem { key: String, value: String  },
     RemoveStatusItem { key: String },
-    HoverResult { request_id: usize, result: Option<HoverResult>, rev: u64 },
-    DefinitionResult { request_id: usize, result: Option<DefinitionResult>, rev: u64}
+    HoverResult { request_id: usize, result: Result<HoverResult, LanguageResponseError>, rev: u64 },
+    DefinitionResult { request_id: usize, result: Result<DefinitionResult, LanguageResponseError>, rev: u64}
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -204,6 +204,15 @@ pub enum Position {
 pub struct Range {
     pub start: Position,
     pub end: Position
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum LanguageResponseError {
+    LanguageServerError(String),
+    PositionConversionError(String),
+    NullResponse,
+    FallbackResponse
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

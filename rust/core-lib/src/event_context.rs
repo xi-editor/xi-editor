@@ -175,9 +175,13 @@ impl<'a> EventContext<'a> {
             UpdateStatusItem { key, value } => self.client.update_status_item(
                                                         self.view_id, &key, &value),
             RemoveStatusItem { key } => self.client.remove_status_item(self.view_id, &key),
-            HoverResult { request_id, result, rev } => {      
-                let hover_result = result.map(|r| self.get_client_hover_result(rev, r));
-                self.client.show_hover(self.view_id, request_id, hover_result);
+            HoverResult { request_id, result, rev } => {
+                match result {
+                    Ok(res) => self.client.show_hover(self.view_id,
+                                            request_id, 
+                                            self.get_client_hover_result(rev, res)),
+                    Err(err) => eprintln!("Hover Response from Client Error {:?}", err)
+                }
             },
             DefinitionResult { request_id, result, rev } => {      
                 // TODO: Handle result
