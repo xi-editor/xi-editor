@@ -40,6 +40,15 @@ fn main() {
                 "start_arguments": ["--stdio"],
                 "extensions": ["json", "jsonc"],
                 "supports_single_file": true,
+            },
+            // Install with: npm install -g javascript-typescript-langserver
+            "typescript": {
+                "language_name": "Typescript",
+                "start_command": "javascript-typescript-stdio",
+                "start_arguments": [],
+                "extensions": ["ts", "js", "jsx", "tsx"],
+                "supports_single_file": true,
+                "workspace_identifier": "package.json"
             }
         }
     });

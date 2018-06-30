@@ -59,7 +59,7 @@ pub fn read_message<T: BufRead>(reader: &mut T) -> Result<String, ParseError> {
 
     let content_length =
         content_length.ok_or(format!("missing content-length header: {}", buffer))?;
-
+    
     let mut body_buffer = vec![0; content_length];
     reader.read_exact(&mut body_buffer)?;
 

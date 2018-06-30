@@ -104,6 +104,7 @@ impl From<String> for ParseError {
 // TODO: Improve Error handling in module and add more types as necessary
 
 /// Types to represent errors in the module.
+#[derive(Debug)]
 pub enum Error {
     PathError,
     FileUrlParseError,

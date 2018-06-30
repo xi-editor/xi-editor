@@ -421,7 +421,9 @@ impl Plugin for LspPlugin {
                 match &config.workspace_identifier {
                     Some(workspace_identifier) => {
                         let path = view.get_path().clone().unwrap();
-                        get_workspace_root_uri(workspace_identifier, path).ok()
+                        let q = get_workspace_root_uri(workspace_identifier, path);
+                        eprintln!("PATH {:?}", q);
+                        q.ok()
                     }
                     None => None,
                 }
@@ -498,6 +500,7 @@ impl Plugin for LspPlugin {
                                     range: hover.range.map(|range| core_range_from_range(range)),
                                 };
 
+                                eprintln!("Hover Response from Server  {:?}", hover_result);
                                 ls_client.core.display_hover_result(
                                     view_id,
                                     request_id,
@@ -595,6 +598,8 @@ impl LspPlugin {
                 }
             })
             .and_then(|language_server_identifier| {
+
+                eprintln!("LANGUAGE SERVER IDEN {}", language_server_identifier);
                 let contains = self
                     .language_server_clients
                     .contains_key(&language_server_identifier);
