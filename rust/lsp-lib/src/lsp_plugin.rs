@@ -146,12 +146,16 @@ fn core_location_from_location(location: &Location) -> CoreLocation {
 
 fn core_definition_from_definition(definition: DefinitionResult) -> Option<CoreDefinitionResult> {
     match definition {
-        DefinitionResult::Location(location) => Some(CoreDefinitionResult::Location { 
-            location: core_location_from_location(&location) }),
-        DefinitionResult::Locations(locations) => Some(CoreDefinitionResult::Locations { 
-            locations: locations.iter().map(|l| core_location_from_location(l)).collect()
+        DefinitionResult::Location(location) => Some(CoreDefinitionResult::Location {
+            location: core_location_from_location(&location),
         }),
-        DefinitionResult::Null => None
+        DefinitionResult::Locations(locations) => Some(CoreDefinitionResult::Locations {
+            locations: locations
+                .iter()
+                .map(|l| core_location_from_location(l))
+                .collect(),
+        }),
+        DefinitionResult::Null => None,
     }
 }
 
@@ -266,7 +270,7 @@ pub fn get_workspace_root_uri(
             for entry in path.read_dir()? {
                 if let Ok(entry) = entry {
                     if entry.file_name() == identifier_os_str {
-                        return Url::from_directory_path(path).map_err(|_| Error::FileUrlParseError);
+                        return Url::from_file_path(entry.path()).map_err(|_| Error::FileUrlParseError);
                     };
                 }
             }
@@ -494,19 +498,28 @@ impl Plugin for LspPlugin {
                         position,
                         move |ls_client, result| match result {
                             Ok(result) => {
-                                let hover: Hover = serde_json::from_value(result).unwrap();
-                                let hover_result = HoverResult {
-                                    content: markdown_from_hover_contents(hover.contents),
-                                    range: hover.range.map(|range| core_range_from_range(range)),
-                                };
+                                let hover: Option<Hover> = serde_json::from_value(result).unwrap();
+                                match hover {
+                                    Some(hover) => {
+                                        let hover_result = HoverResult {
+                                            content: markdown_from_hover_contents(hover.contents),
+                                            range: hover
+                                                .range
+                                                .map(|range| core_range_from_range(range)),
+                                        };
 
-                                eprintln!("Hover Response from Server  {:?}", hover_result);
-                                ls_client.core.display_hover_result(
-                                    view_id,
-                                    request_id,
-                                    Some(hover_result),
-                                    rev,
-                                );
+                                        eprintln!("Hover Response from Server  {:?}", hover_result);
+                                        ls_client.core.display_hover_result(
+                                            view_id,
+                                            request_id,
+                                            Some(hover_result),
+                                            rev,
+                                        );
+                                    }
+                                    None => ls_client
+                                        .core
+                                        .display_hover_result(view_id, request_id, None, rev),
+                                }
                             }
                             Err(err) => {
                                 eprintln!("Hover Response from Server Error: {:?}", err);
@@ -519,7 +532,9 @@ impl Plugin for LspPlugin {
                 }
                 Err(error) => {
                     eprintln!("Can't convert location to offset. Error {:?}", error);
-                    ls_client.core.display_hover_result(view_id, request_id, None, rev);
+                    ls_client
+                        .core
+                        .display_hover_result(view_id, request_id, None, rev);
                 }
             };
         }
@@ -553,20 +568,29 @@ impl Plugin for LspPlugin {
                                 let result: DefinitionResult =
                                     serde_json::from_value(result).unwrap();
 
-                                let core_definition_result = core_definition_from_definition(result);
-                                ls_client.core.
-                                    display_definition(view_id, request_id, core_definition_result, rev);
+                                let core_definition_result =
+                                    core_definition_from_definition(result);
+                                ls_client.core.display_definition(
+                                    view_id,
+                                    request_id,
+                                    core_definition_result,
+                                    rev,
+                                );
                             }
                             Err(err) => {
                                 eprintln!("Definition Response from Server Error: {:?}", err);
-                                ls_client.core.display_definition(view_id, request_id, None, rev);
+                                ls_client
+                                    .core
+                                    .display_definition(view_id, request_id, None, rev);
                             }
                         },
                     );
                 }
                 Err(error) => {
                     eprintln!("Can't convert location to offset. Error {:?}", error);
-                    ls_client.core.display_definition(view_id, request_id, None, rev);
+                    ls_client
+                        .core
+                        .display_definition(view_id, request_id, None, rev);
                 }
             };
         }
@@ -598,7 +622,6 @@ impl LspPlugin {
                 }
             })
             .and_then(|language_server_identifier| {
-
                 eprintln!("LANGUAGE SERVER IDEN {}", language_server_identifier);
                 let contains = self
                     .language_server_clients

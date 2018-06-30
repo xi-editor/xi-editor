@@ -156,7 +156,7 @@ impl LanguageServerClient {
             root_path: None,
             initialization_options: None,
             capabilities: client_capabilities,
-            trace: None,
+            trace: Some(TraceOption::Messages),
         };
 
         let params = Params::from(serde_json::to_value(init_params).unwrap());
