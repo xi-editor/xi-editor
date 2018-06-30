@@ -31,6 +31,7 @@ use xi_plugin_lib::Plugin;
 pub mod language_server_client;
 pub mod lsp_plugin;
 pub mod parse_helper;
+pub mod conversion_utils;
 pub mod types;
 pub use lsp_plugin::LspPlugin;
 pub use types::Config;
