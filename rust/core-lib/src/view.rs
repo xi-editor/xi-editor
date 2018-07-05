@@ -974,7 +974,10 @@ impl View {
                 selection.add_region(occurrence);
             }
         }
-        self.set_selection(text, selection);
+
+        if !selection.is_empty() { // todo: invalidate so that nothing selected accidentally replaced
+            self.set_selection(text, selection);
+        }
     }
 
     /// Select the next occurrence relative to the last cursor. `reverse` determines whether the
@@ -1042,7 +1045,6 @@ impl View {
         self.set_dirty(text);
         self.set_replace(replacement, false);
     }
-
 
     /// Get the line range of a selected region.
     pub fn get_line_range(&self, text: &Rope, region: &SelRegion) -> Range<usize> {

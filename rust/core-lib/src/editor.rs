@@ -648,22 +648,21 @@ impl Editor {
         self.insert(view, kill_ring.clone());
     }
 
-    fn replace_next(&mut self, view: &mut View) {
+    fn replace(&mut self, view: &mut View, replace_all: bool) {
         if let Some(Replace { chars, .. }) = view.get_replace() {
             // todo: implement preserve case
-            view.find_next(&self.text, false, true, true, &SelectionModifier::Set);
+            // store old selection because in case nothing is found the selection will be preserved
+            let mut old_selection = Selection::new();
+            for &region in view.sel_regions() {
+                old_selection.add_region(region);
+            }
+            view.collapse_selections(&self.text);
 
-            match last_selection_region(view.sel_regions()) {
-                Some(_) => self.insert(view, chars),
-                None => return,
-            };
-        }
-    }
-
-    fn replace_all(&mut self, view: &mut View) {
-        if let Some(Replace { chars, .. }) = view.get_replace() {
-            // todo: implement preserve case
-            view.find_all(&self.text);
+            if replace_all {
+                view.find_all(&self.text);
+            } else {
+                view.find_next(&self.text, false, true, true, &SelectionModifier::Set);
+            }
 
             match last_selection_region(view.sel_regions()) {
                 Some(_) => self.insert(view, chars),
@@ -706,8 +705,8 @@ impl Editor {
             InsertTab => self.insert_tab(view, config),
             Insert(chars) => self.do_insert(view, &chars),
             Yank => self.yank(view, kill_ring),
-            ReplaceNext => self.replace_next(view),
-            ReplaceAll => self.replace_all(view),
+            ReplaceNext => self.replace(view, false),
+            ReplaceAll => self.replace(view, true),
         }
     }
 
