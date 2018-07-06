@@ -22,6 +22,3 @@ serde_json = { version = "1.0", optional = true }
 serde_derive = "1.0"
 serde = "1.0"
 libc = "0.2"
-
-[profile.bench]
-lto = true
