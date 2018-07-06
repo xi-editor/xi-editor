@@ -372,75 +372,46 @@ impl Plugin for LspPlugin {
         let rev = view.rev;
         let view_info = self.view_info.get_mut(&view.get_id());
         let view_id = view.get_id();
-        if let Some(view_info) = view_info {
-            // This won't fail since we definitely have a client for the given
-            // client identifier
-            let ls_client = self
-                .language_server_clients
-                .get(&view_info.ls_identifier)
-                .unwrap();
 
-            eprintln!("Postion : {:?}", position);
-            let position_ls = lsp_position_from_core_position(view, position);
-            eprintln!("Postion LS : {:?}", position_ls);
+        let view_info = if let Some(view_info) = view_info {
+            view_info
+        } else {
+            return;
+        };
 
-            let mut ls_client = ls_client.lock().unwrap();
-            match position_ls {
-                Ok(position) => {
-                    ls_client.request_hover_definition(
-                        view.get_id(),
-                        position,
-                        move |ls_client, result| match result {
-                            Ok(result) => {
-                                let hover: Option<Hover> = serde_json::from_value(result).unwrap();
-                                match hover {
-                                    Some(hover) => {
-                                        eprintln!("Hover Response from Server  {:?}", hover);
-                                        let hover_result = core_hover_result_from_hover(hover);
-                                        ls_client.core.display_hover_result(
-                                            view_id,
-                                            request_id,
-                                            hover_result,
-                                            rev,
-                                        );
-                                    }
-                                    None => ls_client.core.display_hover_result(
-                                        view_id,
-                                        request_id,
-                                        Err(LanguageResponseError::NullResponse),
-                                        rev,
-                                    ),
-                                }
-                            }
-                            Err(err) => {
-                                eprintln!("Hover Response from Server Error: {:?}", err);
-                                ls_client.core.display_hover_result(
-                                    view_id,
-                                    request_id,
-                                    Err(LanguageResponseError::LanguageServerError(format!(
-                                        "{:?}",
-                                        err
-                                    ))),
-                                    rev,
-                                );
-                            }
-                        },
-                    );
-                }
-                Err(error) => {
-                    eprintln!("Can't convert location to offset. Error {:?}", error);
-                    ls_client.core.display_hover_result(
-                        view_id,
-                        request_id,
-                        Err(LanguageResponseError::PositionConversionError(format!(
-                            "{:?}",
-                            error
-                        ))),
-                        rev,
-                    );
-                }
-            };
-        }
+        // This won't fail since we definitely have a client for the given
+        // client identifier
+        let ls_client = self
+            .language_server_clients
+            .get(&view_info.ls_identifier)
+            .unwrap();
+
+        let position_ls = lsp_position_from_core_position(view, position);
+        let mut ls_client = ls_client.lock().unwrap();
+
+        match position_ls {
+            Ok(position) => {
+                ls_client.request_hover_definition(
+                    view_id,
+                    position,
+                    move |ls_client, result| {
+                        let res = result
+                            .map_err(|e| LanguageResponseError::LanguageServerError(format!("{:?}", e)))
+                            .and_then(|h| {
+                                let hover: Option<Hover> = serde_json::from_value(h).unwrap();
+                                hover.ok_or(LanguageResponseError::NullResponse)
+                                    .and_then(core_hover_result_from_hover)
+                            });
+                        ls_client.core.display_hover_result(view_id, request_id, res, rev);
+                    },
+                );
+            }
+            Err(error) => {
+                eprintln!("Can't convert location to offset. Error {:?}", error);
+                let err = LanguageResponseError::PositionConversionError(format!("{:?}",error));
+                ls_client.core.display_hover_result(view_id, request_id, Err(err), rev);
+            }
+        };
     }
 
     fn get_definition(
@@ -453,63 +424,38 @@ impl Plugin for LspPlugin {
         let view_info = self.view_info.get_mut(&view_id);
         let rev = view.rev;
 
-        if let Some(view_info) = view_info {
-            let ls_client = self
-                .language_server_clients
-                .get(&view_info.ls_identifier)
-                .unwrap();
+        let view_info = if let Some(view_info) = view_info { view_info } else { return; };
 
-            let mut ls_client = ls_client.lock().unwrap();
-            let position_ls = lsp_position_from_core_position(view, position);
-            match position_ls {
-                Ok(position) => {
-                    ls_client.request_hover_definition(
-                        view.get_id(),
-                        position,
-                        move |ls_client, result| match result {
-                            Ok(result) => {
-                                let result: DefinitionResult =
-                                    serde_json::from_value(result).unwrap();
+        let ls_client = self
+            .language_server_clients
+            .get(&view_info.ls_identifier)
+            .unwrap();
 
-                                let core_definition_result =
-                                    core_definition_from_definition(result);
-
-                                ls_client.core.display_definition(
-                                    view_id,
-                                    request_id,
-                                    core_definition_result,
-                                    rev,
-                                );
-                            }
-                            Err(err) => {
-                                eprintln!("Definition Response from Server Error: {:?}", err);
-                                ls_client.core.display_definition(
-                                    view_id,
-                                    request_id,
-                                    Err(LanguageResponseError::LanguageServerError(format!(
-                                        "{:?}",
-                                        err
-                                    ))),
-                                    rev,
-                                );
-                            }
-                        },
-                    );
-                }
-                Err(error) => {
-                    eprintln!("Can't convert location to offset. Error {:?}", error);
-                    ls_client.core.display_definition(
-                        view_id,
-                        request_id,
-                        Err(LanguageResponseError::PositionConversionError(format!(
-                            "{:?}",
-                            error
-                        ))),
-                        rev,
-                    );
-                }
-            };
-        }
+        let mut ls_client = ls_client.lock().unwrap();
+        let position_ls = lsp_position_from_core_position(view, position);
+        match position_ls {
+            Ok(position) => {
+                ls_client.request_hover_definition(
+                    view.get_id(),
+                    position,
+                    move |ls_client, result|  {
+                        let res = result
+                            .map_err(|e| LanguageResponseError::LanguageServerError(format!("{:?}", e)))
+                            .and_then(|h| {
+                                let definition: DefinitionResult = serde_json::from_value(h).unwrap();
+                                core_definition_from_definition(definition)
+                            });
+                        
+                        ls_client.core.display_definition(view_id, request_id, res, rev);
+                    }
+                );
+            }
+            Err(error) => {
+                eprintln!("Can't convert location to offset. Error {:?}", error);
+                let err = LanguageResponseError::PositionConversionError(format!("{:?}",error));
+                ls_client.core.display_hover_result(view_id, request_id, Err(err), rev);
+            }
+        };
     }
 }
 

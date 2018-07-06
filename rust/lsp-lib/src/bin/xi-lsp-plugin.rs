@@ -25,6 +25,7 @@ fn main() {
     // https://stackoverflow.com/a/17394454 and https://stackoverflow.com/a/43043687
     let config = json!({
         "language_config": {
+            // Install instructions here: https://github.com/rust-lang-nursery/rls
             "rust" : {
                 "language_name": "Rust",
                 "start_command": "rls",
@@ -33,6 +34,7 @@ fn main() {
                 "supports_single_file": false,
                 "workspace_identifier": "Cargo.toml"
             },
+            // Install with: npm install -g vscode-json-languageserver
             "json": {
                 "language_name": "Json",
                 "start_command": "vscode-json-languageserver",

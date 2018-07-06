@@ -13,7 +13,6 @@
 // limitations under the License.
 
 //! A proxy for the methods on Core
-use serde_json;
 use xi_core::internal::plugins::PluginId;
 use xi_core::plugin_rpc::{DefinitionResult, HoverResult, LanguageResponseError};
 use xi_core::ViewId;
@@ -66,7 +65,6 @@ impl CoreProxy {
             "view_id": view_id
         });
 
-        self.peer
-            .send_rpc_notification("definition_result", &params);
+        self.peer.send_rpc_notification("definition_result", &params);
     }
 }
