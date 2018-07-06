@@ -30,3 +30,6 @@ members = [
   "trace-dump",
   "unicode",
 ]
+
+[profile.bench]
+lto = true
