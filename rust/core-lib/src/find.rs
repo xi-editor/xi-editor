@@ -145,7 +145,8 @@ impl Find {
                 self.update_find(text, start, text.len(), false);
             } else {
                 // ... the end of the line including line break
-                let mut cursor = Cursor::new(&text, iv.start());
+                let mut cursor = Cursor::new(&text, iv.end());
+
                 let end_of_line = match cursor.next::<LinesMetric>() {
                     Some(end) => end,
                     None if cursor.pos() == text.len() => cursor.pos(),
