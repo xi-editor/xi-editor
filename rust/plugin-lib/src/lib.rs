@@ -155,6 +155,9 @@ pub trait Plugin {
 
     #[allow(unused_variables)]
     fn get_definition(&mut self, view: &mut View<Self::Cache>, request_id: usize, position: Position) { }
+
+    #[allow(unused_variables)]
+    fn get_completion(&mut self, view: &mut View<Self::Cache>, request_id: usize, position: Position) { }
 }
 
 #[derive(Debug)]

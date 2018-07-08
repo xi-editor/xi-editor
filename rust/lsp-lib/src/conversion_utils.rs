@@ -109,13 +109,13 @@ pub fn core_definition_from_definition(
     definition: DefinitionResult,
 ) -> Result<CoreDefinitionResult, LanguageResponseError> {
     match definition {
-        DefinitionResult::Location(location) => Ok(CoreDefinitionResult::Location {
-            location: core_location_from_location(&location),
+        DefinitionResult::Location(location) => Ok(CoreDefinitionResult {
+            locations: vec![core_location_from_location(&location)],
         }),
-        DefinitionResult::Locations(locations) => Ok(CoreDefinitionResult::Locations {
+        DefinitionResult::Locations(locations) => Ok(CoreDefinitionResult {
             locations: locations
                 .iter()
-                .map(|l| core_location_from_location(l))
+                .map(core_location_from_location)
                 .collect(),
         }),
         DefinitionResult::Null => Err(LanguageResponseError::NullResponse),

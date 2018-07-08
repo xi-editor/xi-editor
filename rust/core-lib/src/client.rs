@@ -44,16 +44,22 @@ pub struct Range {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct Location {
+    pub document_uri: String,
+    pub range: Range
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct HoverResult {
     pub content: String,
     pub range: Option<Range>
 }
 
-/* impl From<PluginHoverResult> for HoverResult {
-    fn from(result: PluginHoverResult) -> Self {
-        
-    }
-} */
+#[derive(Serialize, Deserialize)]
+pub struct DefinitionResult {
+    pub locations: Vec<Location>
+}
+
 
 impl Client {
     pub fn new(peer: RpcPeer) -> Self {
@@ -199,6 +205,16 @@ impl Client {
 
     pub fn show_hover(&self, view_id: ViewId, request_id: usize, result: HoverResult) {
         self.0.send_rpc_notification("show_hover", &json!(
+            {
+                "view_id": view_id,
+                "request_id": request_id,
+                "result": result
+            }
+        ))
+    }
+
+    pub fn show_definition(&self, view_id: ViewId, request_id: usize, result: DefinitionResult) {
+        self.0.send_rpc_notification("show_definition", &json!(
             {
                 "view_id": view_id,
                 "request_id": request_id,

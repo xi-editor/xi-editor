@@ -14,7 +14,7 @@
 
 //! A container for the state relevant to a single event.
 
-use internal::plugins::rpc::HoverResult;
+
 use std::cell::RefCell;
 use std::iter;
 use std::path::Path;
@@ -40,8 +40,9 @@ use tabs::{BufferId, PluginId, ViewId, RENDER_VIEW_IDLE_MASK};
 use editor::Editor;
 use file::FileInfo;
 use edit_types::{EventDomain, SpecialEvent};
-use client::{Client, HoverResult as ClientHoverResult, Range as Utf8OffsetRange};
+use client::{self, Client, Range as Utf8OffsetRange};
 use plugins::Plugin;
+use plugins::rpc::{HoverResult, Location, DefinitionResult, LanguageResponseError};
 use selection::SelRegion;
 use syntax::LanguageId;
 use view::View;
@@ -183,30 +184,57 @@ impl<'a> EventContext<'a> {
                     Err(err) => eprintln!("Hover Response from Client Error {:?}", err)
                 }
             },
-            DefinitionResult { request_id, result, rev } => {      
-                // TODO: Handle result
+            DefinitionResult { request_id, result, rev } => {
+                match result.and_then(|definition| self.get_client_definition(rev, definition)) {
+                    Ok(res) => self.client.show_definition(self.view_id, request_id, res),
+                    Err(err) => eprintln!("Definition Response from Client Error {:?}", err)                    
+                }
             }
         };
         self.after_edit(&plugin.to_string());
         self.render_if_needed();
     }
 
-    pub fn get_client_hover_result(&mut self, rev: u64, result: HoverResult) -> ClientHoverResult {
-        return ClientHoverResult {
+    pub fn get_client_definition(&mut self, rev: u64, result: DefinitionResult) -> Result<client::DefinitionResult, LanguageResponseError> {
+        
+        let result: Result<Vec<client::Location>, _> = result.locations.iter().map(|l| {
+            self.location_to_utf8_offset_format(rev, l)
+                .ok_or(LanguageResponseError::PositionConversionError(
+                    "Position to Utf8 Conversion Error".to_owned()
+                ))
+        }).collect();
+        
+        Ok(client::DefinitionResult {
+                locations: result?
+        })
+    }
+
+    pub fn get_client_hover_result(&mut self, rev: u64, result: HoverResult) -> client::HoverResult {
+        return client::HoverResult {
             content: result.content,
             range: result.range.and_then(|r| {
                 Some(Utf8OffsetRange {
-                    start: self.position_to_utf8_offset(rev, r.start)?,
-                    end: self.position_to_utf8_offset(rev, r.end)?
+                    start: self.position_to_utf8_offset(rev, &r.start)?,
+                    end: self.position_to_utf8_offset(rev, &r.end)?
                 })
             })
         }
     }
 
-    pub fn position_to_utf8_offset(&mut self, rev: u64, position: Position) -> Option<usize> {
+    pub fn location_to_utf8_offset_format(&mut self, rev: u64, location: &Location) -> Option<client::Location> {
+        Some(client::Location {
+            document_uri: location.path.to_str()?.to_owned(),
+            range: Utf8OffsetRange {
+                start: self.position_to_utf8_offset(rev, &location.range.start)?,
+                end: self.position_to_utf8_offset(rev, &location.range.end)?
+            }
+        })
+    }
+
+    pub fn position_to_utf8_offset(&mut self, rev: u64, position: &Position) -> Option<usize> {
         self.with_editor(|ed, view, _, _| {
             let rope = ed.get_text_rope(rev)?;
-            Some(match position {
+            Some(match *position {
                 Position::Utf8Offset {offset} => offset,
                 Position::Utf8LineChar {line, character} => view.line_col_to_offset(&rope, line, character),
                 Position::Utf16LineChar {line, character} => view.line_col_utf16_to_offset(&rope, line, character)
