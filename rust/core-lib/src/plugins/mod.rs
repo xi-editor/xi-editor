@@ -106,7 +106,7 @@ impl Plugin {
     }
 
     pub fn update<F>(&self, update: &PluginUpdate, callback: F)
-where F: FnOnce(Result<Value, xi_rpc::Error>) + Send + 'static
+        where F: FnOnce(Result<Value, xi_rpc::Error>) + Send + 'static
     {
         self.peer.send_rpc_request_async("update", &json!(update),
                                          Box::new(callback))
@@ -123,8 +123,8 @@ where F: FnOnce(Result<Value, xi_rpc::Error>) + Send + 'static
     }
 
     pub fn config_changed(&self, view_id: ViewId, changes: &Table) {
-        self.peer.send_rpc_notification("config_changed", 
-                                        &json!({"view_id": view_id, 
+        self.peer.send_rpc_notification("config_changed",
+                                        &json!({"view_id": view_id,
                                                 "changes": changes}))
     }
 }
@@ -145,7 +145,7 @@ pub(crate) fn start_plugin_process(plugin_desc: Arc<PluginDescription>,
                 let mut looper = RpcLoop::new(child_stdin);
                 let peer: RpcPeer = Box::new(looper.get_raw_peer());
                 let name = plugin_desc.name.clone();
-peer.send_rpc_notification("ping", &Value::Array(Vec::new()));
+                peer.send_rpc_notification("ping", &Value::Array(Vec::new()));
                 let plugin = Plugin { peer, process: child, name, id };
 
                 // set tracing immediately
@@ -154,10 +154,10 @@ peer.send_rpc_notification("ping", &Value::Array(Vec::new()));
                 }
 
                 core.plugin_connect(Ok(plugin));
-                //TODO: we could be logging plugin exit results
                 let mut core = core;
-                let _ = looper.mainloop(|| BufReader::new(child_stdout),
-                                        &mut core);
+                let err = looper.mainloop(|| BufReader::new(child_stdout),
+                                          &mut core);
+                core.plugin_exit(id, err);
             }
             Err(err) => core.plugin_connect(Err(err)),
         }
