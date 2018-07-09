@@ -31,7 +31,7 @@ use serde::de::{Deserialize, Deserializer};
 use serde::ser::{Serialize, Serializer};
 use serde_json::Value;
 
-use xi_rpc::{self, RpcPeer, RpcCtx, RemoteError};
+use xi_rpc::{self, RpcPeer, RpcCtx, RemoteError, ReadError};
 use xi_rope::Rope;
 use xi_trace::{self, trace_block};
 
@@ -486,9 +486,12 @@ impl CoreState {
             .map(|ix| self.running_plugins.remove(ix)) {
                 //TODO: verify shutdown; kill if necessary
                 p.shutdown();
-                self.iter_groups().for_each(|mut cx| cx.plugin_stopped(&p));
-
+                self.after_stop_plugin(&p);
             }
+    }
+
+    fn after_stop_plugin(&mut self, plugin: &Plugin) {
+        self.iter_groups().for_each(|mut cx| cx.plugin_stopped(plugin));
     }
 }
 
@@ -653,6 +656,17 @@ impl CoreState {
                 self.running_plugins.push(plugin);
             }
             Err(e) => eprintln!("failed to start plugin {:?}", e),
+        }
+    }
+
+    pub(crate) fn plugin_exit(&mut self, id: PluginId,
+                              error: Result<(), ReadError>) {
+        eprintln!("plugin {:?} exited with result {:?}", id, error);
+        let running_idx = self.running_plugins.iter()
+            .position(|p| p.id == id);
+        if let Some(idx) = running_idx {
+            let plugin = self.running_plugins.remove(idx);
+            self.after_stop_plugin(&plugin);
         }
     }
 

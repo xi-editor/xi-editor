@@ -17,7 +17,7 @@ use std::io;
 
 use serde_json::Value;
 
-use xi_rpc::{RpcCtx, Handler, RemoteError, Error as RpcError};
+use xi_rpc::{RpcCtx, Handler, RemoteError, Error as RpcError, ReadError};
 use xi_trace;
 
 use plugin_rpc::{PluginCommand, PluginNotification, PluginRequest};
@@ -138,6 +138,13 @@ impl WeakXiCore {
     pub fn plugin_connect(&self, plugin: Result<Plugin, io::Error>) {
         if let Some(core) = self.upgrade() {
             core.inner().plugin_connect(plugin)
+        }
+    }
+
+    /// Called from a plugin runloop thread when the runloop exits.
+    pub fn plugin_exit(&self, plugin: PluginId, error: Result<(), ReadError>) {
+        if let Some(core) = self.upgrade() {
+            core.inner().plugin_exit(plugin, error)
         }
     }
 
