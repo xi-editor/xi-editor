@@ -398,16 +398,27 @@ pub enum EditNotification {
     Gesture { line: u64, col: u64, ty: GestureType},
     Undo,
     Redo,
-    Find { chars: String, case_sensitive: bool, regex: Option<bool>, whole_words: Option<bool> },
+    Find {
+        chars: String,
+        case_sensitive: bool,
+        #[serde(default)]
+        regex: bool,
+        #[serde(default)]
+        whole_words: bool
+    },
     FindNext {
-        wrap_around: Option<bool>,
-        allow_same: Option<bool>,
+        #[serde(default)]
+        wrap_around: bool,
+        #[serde(default)]
+        allow_same: bool,
         #[serde(default)]
         modify_selection: SelectionModifier
     },
     FindPrevious {
-        wrap_around: Option<bool>,
-        allow_same: Option<bool>,
+        #[serde(default)]
+        wrap_around: bool,
+        #[serde(default)]
+        allow_same: bool,
         #[serde(default)]
         modify_selection: SelectionModifier
     },
@@ -423,8 +434,15 @@ pub enum EditNotification {
     Outdent,
     /// Indicates whether find highlights should be rendered
     HighlightFind { visible: bool },
-    SelectionForFind { case_sensitive: Option<bool> },
-    Replace { chars: String, preserve_case: Option<bool> },
+    SelectionForFind {
+        #[serde(default)]
+        case_sensitive: bool
+    },
+    Replace {
+        chars: String,
+        #[serde(default)]
+        preserve_case: bool
+    },
     ReplaceNext,
     ReplaceAll,
     SelectionForReplace,
