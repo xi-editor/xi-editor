@@ -208,16 +208,11 @@ impl View {
                 self.do_gesture(text, line, col, ty),
             GotoLine { line } => self.goto_line(text, line),
             Find { chars, case_sensitive, regex, whole_words } =>
-                self.do_find(text, chars, case_sensitive, regex.unwrap_or(false),
-                             whole_words.unwrap_or(false)),
+                self.do_find(text, chars, case_sensitive, regex, whole_words),
             FindNext { wrap_around, allow_same, modify_selection } =>
-                self.find_next(text, false, wrap_around.unwrap_or(false),
-                               allow_same.unwrap_or(false),
-                               &modify_selection),
+                self.find_next(text, false, wrap_around, allow_same, &modify_selection),
             FindPrevious { wrap_around, allow_same, modify_selection } =>
-                self.find_next(text, true, wrap_around.unwrap_or(false),
-                               allow_same.unwrap_or(false),
-                               &modify_selection),
+                self.find_next(text, true, wrap_around, allow_same, &modify_selection),
             FindAll => self.find_all(text),
             Click(MouseAction { line, column, flags, click_count }) => {
                 // Deprecated (kept for client compatibility):
@@ -242,9 +237,9 @@ impl View {
                 self.set_dirty(text);
             },
             SelectionForFind { case_sensitive } =>
-                self.selection_for_find(text, case_sensitive.unwrap_or(false)),
+                self.selection_for_find(text, case_sensitive),
             Replace { chars, preserve_case } =>
-                self.set_replace(chars, preserve_case.unwrap_or(false)),
+                self.set_replace(chars, preserve_case),
             SelectionForReplace => self.selection_for_replace(text),
         }
     }
