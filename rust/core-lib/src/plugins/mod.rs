@@ -131,35 +131,42 @@ impl Plugin {
 
 pub(crate) fn start_plugin_process(plugin_desc: Arc<PluginDescription>,
                                     id: PluginId, core: WeakXiCore) {
-    thread::spawn(move || {
-        eprintln!("starting plugin {}", &plugin_desc.name);
-        let child = ProcCommand::new(&plugin_desc.exec_path)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn();
 
-        match child {
-            Ok(mut child) => {
-                let child_stdin = child.stdin.take().unwrap();
-                let child_stdout = child.stdout.take().unwrap();
-                let mut looper = RpcLoop::new(child_stdin);
-                let peer: RpcPeer = Box::new(looper.get_raw_peer());
-                let name = plugin_desc.name.clone();
-                peer.send_rpc_notification("ping", &Value::Array(Vec::new()));
-                let plugin = Plugin { peer, process: child, name, id };
+    let spawn_result = thread::Builder::new()
+        .name(format!("<{}> core host thread", &plugin_desc.name))
+        .spawn(move || {
+            eprintln!("starting plugin {}", &plugin_desc.name);
+            let child = ProcCommand::new(&plugin_desc.exec_path)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .spawn();
 
-                // set tracing immediately
-                if xi_trace::is_enabled() {
-                    plugin.toggle_tracing(true);
+            match child {
+                Ok(mut child) => {
+                    let child_stdin = child.stdin.take().unwrap();
+                    let child_stdout = child.stdout.take().unwrap();
+                    let mut looper = RpcLoop::new(child_stdin);
+                    let peer: RpcPeer = Box::new(looper.get_raw_peer());
+                    let name = plugin_desc.name.clone();
+                    peer.send_rpc_notification("ping", &Value::Array(Vec::new()));
+                    let plugin = Plugin { peer, process: child, name, id };
+
+                    // set tracing immediately
+                    if xi_trace::is_enabled() {
+                        plugin.toggle_tracing(true);
+                    }
+
+                    core.plugin_connect(Ok(plugin));
+                    let mut core = core;
+                    let err = looper.mainloop(|| BufReader::new(child_stdout),
+                    &mut core);
+                    core.plugin_exit(id, err);
                 }
-
-                core.plugin_connect(Ok(plugin));
-                let mut core = core;
-                let err = looper.mainloop(|| BufReader::new(child_stdout),
-                                          &mut core);
-                core.plugin_exit(id, err);
+                Err(err) => core.plugin_connect(Err(err)),
             }
-            Err(err) => core.plugin_connect(Err(err)),
-        }
-    });
+        });
+
+    if let Err(err) = spawn_result {
+        eprintln!("thread spawn failed for {}, {:?}", id, err);
+    }
 }
