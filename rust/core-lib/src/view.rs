@@ -213,11 +213,11 @@ impl View {
             FindNext { wrap_around, allow_same, modify_selection } =>
                 self.find_next(text, false, wrap_around.unwrap_or(false),
                                allow_same.unwrap_or(false),
-                               &modify_selection.unwrap_or(SelectionModifier::Set)),
+                               &modify_selection),
             FindPrevious { wrap_around, allow_same, modify_selection } =>
                 self.find_next(text, true, wrap_around.unwrap_or(false),
                                allow_same.unwrap_or(false),
-                               &modify_selection.unwrap_or(SelectionModifier::Set)),
+                               &modify_selection),
             FindAll => self.find_all(text),
             Click(MouseAction { line, column, flags, click_count }) => {
                 // Deprecated (kept for client compatibility):
