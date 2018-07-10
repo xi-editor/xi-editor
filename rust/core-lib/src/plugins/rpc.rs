@@ -235,58 +235,6 @@ pub struct Location {
     pub range: Range
 }
 
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "snake_case")]
-pub struct CompletionItem {
-    pub label: String,
-    pub kind: Option<CompletionItemKind>,
-    pub detail: Option<String>,
-    pub documentation: Option<String>,
-    pub sort_text: Option<String>,
-    pub filter_text: Option<String>,
-    pub primary_edit: TextEdit,
-    pub secondary_edits: Option<Vec<TextEdit>>
-}
-
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "snake_case")]
-pub struct TextEdit {
-    pub range: Range,
-    pub new_text: String 
-}
-
-/// The kind of a completion entry.
-#[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Clone, Copy)]
-pub enum CompletionItemKind {
-    Text,
-    Method,
-    Function,
-    Constructor,
-    Field,
-    Variable,
-    Class,
-    Interface,
-    Module,
-    Property,
-    Unit,
-    Value,
-    Enum,
-    Keyword,
-    Snippet,
-    Color,
-    File,
-    Reference,
-    Folder,
-    EnumMember,
-    Constant,
-    Struct,
-    Event,
-    Operator,
-    TypeParameter,
-}
-
 /// Common wrapper for plugin-originating RPCs.
 pub struct PluginCommand<T> {
     pub view_id: ViewId,

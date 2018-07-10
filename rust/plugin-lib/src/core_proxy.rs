@@ -32,6 +32,39 @@ impl CoreProxy {
         }
     }
 
+    pub fn add_status_item(&mut self, view_id: &ViewId, key: &String, value: &String, alignment: &str) {
+        let params = json!({
+            "plugin_id": self.plugin_id,
+            "view_id": view_id,
+            "key": key,
+            "value": value,
+            "alignment": alignment
+        });
+
+        self.peer.send_rpc_notification("add_status_item", &params)
+    }
+
+    pub fn update_status_item(&mut self, view_id: &ViewId, key: &String, value: &String) {
+        let params = json!({
+            "plugin_id": self.plugin_id,
+            "view_id": view_id,
+            "key": key,
+            "value": value
+        });
+
+        self.peer.send_rpc_notification("update_status_item", &params)
+    }
+
+    pub fn remove_status_item(&mut self, view_id: &ViewId, key: &String) {
+        let params = json!({
+            "plugin_id": self.plugin_id,
+            "view_id": view_id,
+            "key": key
+        });
+
+        self.peer.send_rpc_notification("remove_status_item", &params)
+    }
+
     pub fn display_hover_result(
         &mut self,
         view_id: ViewId,

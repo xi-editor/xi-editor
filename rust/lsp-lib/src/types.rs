@@ -21,7 +21,6 @@ use std;
 use std::collections::HashMap;
 use std::io::Error as IOError;
 use url::ParseError as UrlParseError;
-use lsp_types::CompletionResponse;
 
 pub enum LspHeader {
     ContentType,

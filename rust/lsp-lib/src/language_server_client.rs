@@ -18,7 +18,7 @@ use jsonrpc_lite::{Error, Id, JsonRpc, Params};
 use lsp_types::*;
 use serde_json;
 use serde_json::{to_value, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::process;
 use types::Callback;
@@ -32,6 +32,7 @@ pub struct LanguageServerClient {
     pending: HashMap<u64, Callback>,
     next_id: u64,
     language_id: String,
+    pub status_items: HashSet<String>,
     pub core: CoreProxy,
     pub is_initialized: bool,
     pub opened_documents: HashMap<ViewId, Url>,
@@ -72,6 +73,7 @@ impl LanguageServerClient {
             next_id: 1,
             is_initialized: false,
             core,
+            status_items: HashSet::new(),
             language_id,
             server_capabilities: None,
             opened_documents: HashMap::new(),
@@ -90,7 +92,9 @@ impl LanguageServerClient {
     pub fn handle_message(&mut self, message: &str) {
         match JsonRpc::parse(message) {
             Ok(JsonRpc::Request(obj)) => eprintln!("client received unexpected request: {:?}", obj),
-            Ok(JsonRpc::Notification(obj)) => eprintln!("received notification: {:?}", obj),
+            Ok(value @ JsonRpc::Notification(_)) => {
+                self.handle_notification(value.get_method().unwrap(), value.get_params().unwrap())
+            },
             Ok(value @ JsonRpc::Success(_)) => {
                 let id = number_from_id(value.get_id().unwrap());
                 let result = value.get_result().unwrap();
@@ -113,6 +117,94 @@ impl LanguageServerClient {
         callback.call(self, result);
     }
 
+    pub fn handle_notification(&mut self, method: &str, params: Params) {
+        eprintln!("Method: {}, params: {:?}", method, params);
+        match method {
+            "window/showMessage" => {
+
+            },
+            "window/logMessage" => {
+
+            },
+            "textDocument/publishDiagnostics" => {
+
+            },
+            "telemetry/event" => {
+
+            },
+            misc @ _ => match self.language_id.to_lowercase().as_ref() {
+                "rust" => match misc {
+                    "window/progress" => {
+                        match params {
+                            Params::Map(m) => {
+                                let done = m.get("done").unwrap_or(&Value::Bool(false));
+                                eprintln!("DONE: {}", done);
+                                if let Value::Bool(done) = done {
+                                    let id: String = serde_json::from_value(m.get("id").unwrap().clone()).unwrap();
+                                    if *done {
+                                        self.remove_status_item(&id);
+                                    } else {
+                                        // Add or update item
+                                        let mut value = String::new();
+                                        
+                                        if m.contains_key("title") {
+                                            if let Value::String(s) = &m.get("title").unwrap() {
+                                                 value.push_str(&format!("{} ", s));
+                                            }
+                                        }
+                                        if m.contains_key("percentage") {
+                                            if let Value::Number(n) = &m.get("percentage").unwrap() {
+                                                 value.push_str(&format!("{} %", (n.as_f64().unwrap()*100.00).round()));
+                                            }
+                                        }
+                                        if m.contains_key("message") {
+                                            if let Value::String(s) = &m.get("message").unwrap() {
+                                                 value.push_str(s);
+                                            }
+                                        }
+
+                                        if self.status_items.contains(&id) {
+                                            self.update_status_item(id, &value);
+                                        } else {
+                                            self.add_status_item(id, &value, "left");
+                                        }                         
+                                    }
+                                }
+                            },
+                            _ => eprintln!("Unexpected type")
+                        }
+                    },
+                    _ => eprintln!("Unknown Notification from RLS: {} ", misc)
+                },
+                _ => {
+                    eprintln!("Unknown notification: {}", misc)
+                }
+            }
+        }
+
+        
+    }
+
+    fn remove_status_item(&mut self, id: &String) {
+        self.status_items.remove(id);
+        for view_id in self.opened_documents.keys() {
+            self.core.remove_status_item(view_id, id);
+        }
+    }
+
+    fn add_status_item(&mut self, id: String, value: &String, alignment: &str) {
+        self.status_items.insert(id.clone());
+        for view_id in self.opened_documents.keys() {
+            self.core.add_status_item(view_id, &id, value, alignment);
+        }
+    }
+
+    fn update_status_item(&mut self, id: String, value: &String) {
+        for view_id in self.opened_documents.keys() {
+            self.core.update_status_item(view_id, &id, value);
+        }
+    } 
+
     pub fn send_request(&mut self, method: &str, params: Params, completion: Callback) {
         let request = JsonRpc::request_with_params(Id::Num(self.next_id as i64), method, params);
 
@@ -133,9 +225,7 @@ impl LanguageServerClient {
 
     pub fn send_notification(&mut self, method: &str, params: Params) {
         let notification = JsonRpc::notification_with_params(method, params);
-
         let res = to_value(&notification).unwrap();
-
         self.send_rpc(res);
     }
 }
@@ -156,7 +246,7 @@ impl LanguageServerClient {
             root_path: None,
             initialization_options: None,
             capabilities: client_capabilities,
-            trace: Some(TraceOption::Messages),
+            trace: Some(TraceOption::Verbose),
         };
 
         let params = Params::from(serde_json::to_value(init_params).unwrap());
