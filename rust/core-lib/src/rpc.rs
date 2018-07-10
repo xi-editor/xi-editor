@@ -333,6 +333,10 @@ pub enum SelectionModifier {
     AddRemovingCurrent
 }
 
+impl Default for SelectionModifier {
+    fn default() -> SelectionModifier { SelectionModifier::Set }
+}
+
 /// The edit-related notifications.
 ///
 /// Alongside the [`EditRequest`] members, these commands constitute
@@ -395,8 +399,18 @@ pub enum EditNotification {
     Undo,
     Redo,
     Find { chars: String, case_sensitive: bool, regex: Option<bool>, whole_words: Option<bool> },
-    FindNext { wrap_around: Option<bool>, allow_same: Option<bool>, modify_selection: Option<SelectionModifier> },
-    FindPrevious { wrap_around: Option<bool>, allow_same: Option<bool>, modify_selection: Option<SelectionModifier> },
+    FindNext {
+        wrap_around: Option<bool>,
+        allow_same: Option<bool>,
+        #[serde(default)]
+        modify_selection: SelectionModifier
+    },
+    FindPrevious {
+        wrap_around: Option<bool>,
+        allow_same: Option<bool>,
+        #[serde(default)]
+        modify_selection: SelectionModifier
+    },
     FindAll,
     DebugRewrap,
     DebugWrapWidth,
