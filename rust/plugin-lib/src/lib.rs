@@ -47,7 +47,7 @@ pub use view::View;
 pub use state_cache::StateCache;
 pub use base_cache::ChunkCache;
 pub use core_proxy::CoreProxy;
-pub use xi_core::plugin_rpc::{HoverResult, Range, Position, Location, DefinitionResult, LanguageResponseError};
+pub use xi_core::plugin_rpc::{Hover, Range, Position, Location, Definition, LanguageResponseError};
 
 /// Abstracts getting data from the peer. Mainly exists for mocking in tests.
 pub trait DataSource {

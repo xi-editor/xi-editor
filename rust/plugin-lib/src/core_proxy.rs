@@ -14,7 +14,7 @@
 
 //! A proxy for the methods on Core
 use xi_core::internal::plugins::PluginId;
-use xi_core::plugin_rpc::{DefinitionResult, HoverResult, LanguageResponseError};
+use xi_core::plugin_rpc::{Definition, Hover, LanguageResponseError};
 use xi_core::ViewId;
 use xi_rpc::{RpcCtx, RpcPeer};
 
@@ -32,7 +32,7 @@ impl CoreProxy {
         }
     }
 
-    pub fn add_status_item(&mut self, view_id: &ViewId, key: &String, value: &String, alignment: &str) {
+    pub fn add_status_item(&mut self, view_id: &ViewId, key: &str, value: &str, alignment: &str) {
         let params = json!({
             "plugin_id": self.plugin_id,
             "view_id": view_id,
@@ -44,7 +44,7 @@ impl CoreProxy {
         self.peer.send_rpc_notification("add_status_item", &params)
     }
 
-    pub fn update_status_item(&mut self, view_id: &ViewId, key: &String, value: &String) {
+    pub fn update_status_item(&mut self, view_id: &ViewId, key: &str, value: &str) {
         let params = json!({
             "plugin_id": self.plugin_id,
             "view_id": view_id,
@@ -55,7 +55,7 @@ impl CoreProxy {
         self.peer.send_rpc_notification("update_status_item", &params)
     }
 
-    pub fn remove_status_item(&mut self, view_id: &ViewId, key: &String) {
+    pub fn remove_status_item(&mut self, view_id: &ViewId, key: &str) {
         let params = json!({
             "plugin_id": self.plugin_id,
             "view_id": view_id,
@@ -65,11 +65,11 @@ impl CoreProxy {
         self.peer.send_rpc_notification("remove_status_item", &params)
     }
 
-    pub fn display_hover_result(
+    pub fn display_hover(
         &mut self,
         view_id: ViewId,
         request_id: usize,
-        result: Result<HoverResult, LanguageResponseError>,
+        result: Result<Hover, LanguageResponseError>,
         rev: u64,
     ) {
         let params = json!({
@@ -80,14 +80,14 @@ impl CoreProxy {
             "view_id": view_id
         });
 
-        self.peer.send_rpc_notification("hover_result", &params);
+        self.peer.send_rpc_notification("show_hover", &params);
     }
 
     pub fn display_definition(
         &mut self,
         view_id: ViewId,
         request_id: usize,
-        result: Result<DefinitionResult, LanguageResponseError>,
+        result: Result<Definition, LanguageResponseError>,
         rev: u64,
     ) {
         let params = json!({
@@ -98,6 +98,6 @@ impl CoreProxy {
             "view_id": view_id
         });
 
-        self.peer.send_rpc_notification("definition_result", &params);
+        self.peer.send_rpc_notification("show_definition", &params);
     }
 }

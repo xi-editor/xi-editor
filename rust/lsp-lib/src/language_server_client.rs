@@ -132,76 +132,34 @@ impl LanguageServerClient {
             "telemetry/event" => {
 
             },
-            misc @ _ => match self.language_id.to_lowercase().as_ref() {
-                "rust" => match misc {
-                    "window/progress" => {
-                        match params {
-                            Params::Map(m) => {
-                                let done = m.get("done").unwrap_or(&Value::Bool(false));
-                                eprintln!("DONE: {}", done);
-                                if let Value::Bool(done) = done {
-                                    let id: String = serde_json::from_value(m.get("id").unwrap().clone()).unwrap();
-                                    if *done {
-                                        self.remove_status_item(&id);
-                                    } else {
-                                        // Add or update item
-                                        let mut value = String::new();
-                                        
-                                        if m.contains_key("title") {
-                                            if let Value::String(s) = &m.get("title").unwrap() {
-                                                 value.push_str(&format!("{} ", s));
-                                            }
-                                        }
-                                        if m.contains_key("percentage") {
-                                            if let Value::Number(n) = &m.get("percentage").unwrap() {
-                                                 value.push_str(&format!("{} %", (n.as_f64().unwrap()*100.00).round()));
-                                            }
-                                        }
-                                        if m.contains_key("message") {
-                                            if let Value::String(s) = &m.get("message").unwrap() {
-                                                 value.push_str(s);
-                                            }
-                                        }
-
-                                        if self.status_items.contains(&id) {
-                                            self.update_status_item(id, &value);
-                                        } else {
-                                            self.add_status_item(id, &value, "left");
-                                        }                         
-                                    }
-                                }
-                            },
-                            _ => eprintln!("Unexpected type")
-                        }
-                    },
-                    _ => eprintln!("Unknown Notification from RLS: {} ", misc)
-                },
-                _ => {
-                    eprintln!("Unknown notification: {}", misc)
-                }
-            }
-        }
-
-        
+            _ => self.handle_misc_notification(method, params)
+        }        
     }
 
-    fn remove_status_item(&mut self, id: &String) {
+    pub fn handle_misc_notification(&mut self, method: &str, params: Params) {
+        match self.language_id.to_lowercase().as_ref() {
+            "rust" => self.handle_rust_misc_notification(method, params),
+            _ => eprintln!("Unknown notification: {}", method)
+        }
+    }
+
+    fn remove_status_item(&mut self, id: &str) {
         self.status_items.remove(id);
         for view_id in self.opened_documents.keys() {
             self.core.remove_status_item(view_id, id);
         }
     }
 
-    fn add_status_item(&mut self, id: String, value: &String, alignment: &str) {
-        self.status_items.insert(id.clone());
+    fn add_status_item(&mut self, id: &str, value: &str, alignment: &str) {
+        self.status_items.insert(id.to_string());
         for view_id in self.opened_documents.keys() {
-            self.core.add_status_item(view_id, &id, value, alignment);
+            self.core.add_status_item(view_id, id, value, alignment);
         }
     }
 
-    fn update_status_item(&mut self, id: String, value: &String) {
+    fn update_status_item(&mut self, id: &str, value: &str) {
         for view_id in self.opened_documents.keys() {
-            self.core.update_status_item(view_id, &id, value);
+            self.core.update_status_item(view_id, id, value);
         }
     } 
 
@@ -320,7 +278,7 @@ impl LanguageServerClient {
         self.send_notification("textDocument/didSave", params);
     }
 
-    pub fn request_hover_definition<CB>(
+    pub fn request_hover<CB>(
         &mut self,
         view_id: ViewId,
         position: Position,
@@ -384,6 +342,55 @@ impl LanguageServerClient {
         {
             Some(&TextDocumentSyncCapability::Kind(kind)) => kind,
             _ => TextDocumentSyncKind::Full,
+        }
+    }
+}
+
+/// Language Specific Notification handling implementations
+impl LanguageServerClient {
+
+    pub fn handle_rust_misc_notification(&mut self, method: &str, params: Params) {
+        match method {
+            "window/progress" => {
+                match params {
+                    Params::Map(m) => {
+                        let done = m.get("done").unwrap_or(&Value::Bool(false));
+                        if let Value::Bool(done) = done {
+                            let id: String = serde_json::from_value(m.get("id").unwrap().clone()).unwrap();
+                            if *done {
+                                self.remove_status_item(&id);
+                            } else {
+                                // Add or update item
+                                let mut value = String::new();
+                                
+                                if m.contains_key("title") {
+                                    if let Value::String(s) = &m.get("title").unwrap() {
+                                            value.push_str(&format!("{} ", s));
+                                    }
+                                }
+                                if m.contains_key("percentage") {
+                                    if let Value::Number(n) = &m.get("percentage").unwrap() {
+                                            value.push_str(&format!("{} %", (n.as_f64().unwrap()*100.00).round()));
+                                    }
+                                }
+                                if m.contains_key("message") {
+                                    if let Value::String(s) = &m.get("message").unwrap() {
+                                            value.push_str(s);
+                                    }
+                                }
+
+                                if self.status_items.contains(&id) {
+                                    self.update_status_item(&id, &value);
+                                } else {
+                                    self.add_status_item(&id, &value, "left");
+                                }                         
+                            }
+                        }
+                    },
+                    _ => eprintln!("Unexpected type")
+                }
+            },
+            _ => eprintln!("Unknown Notification from RLS: {} ", method)
         }
     }
 }

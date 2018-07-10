@@ -1,20 +1,36 @@
+// Copyright 2018 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! Utility functions meant for converting types from LSP to Core format
+//! and vice-versa
+
 use lsp_types::*;
 use types::DefinitionResult;
-use xi_plugin_lib::HoverResult;
-use xi_plugin_lib::LanguageResponseError;
 use xi_plugin_lib::{
-    Cache, DefinitionResult as CoreDefinitionResult, Error as PluginLibError,
-    Location as CoreLocation, Position as CorePosition, Range as CoreRange, View,
+    Cache, Definition as CoreDefinition, Error as PluginLibError, Hover as CoreHover,
+    LanguageResponseError, Location as CoreLocation, Position as CorePosition, Range as CoreRange,
+    View,
 };
 
-pub fn marked_string_to_string(marked_string: &MarkedString) -> String {
+pub(crate) fn marked_string_to_string(marked_string: &MarkedString) -> String {
     match *marked_string {
         MarkedString::String(ref text) => text.to_owned(),
         MarkedString::LanguageString(ref d) => format!("```{}\n{}\n```", d.language, d.value),
     }
 }
 
-pub fn markdown_from_hover_contents(
+pub(crate) fn markdown_from_hover_contents(
     hover_contents: HoverContents,
 ) -> Result<String, LanguageResponseError> {
     let res = match hover_contents {
@@ -33,7 +49,7 @@ pub fn markdown_from_hover_contents(
 }
 
 /// Counts the number of utf-16 code units in the given string.
-pub fn count_utf16(s: &str) -> usize {
+pub(crate) fn count_utf16(s: &str) -> usize {
     let mut utf16_count = 0;
     for &b in s.as_bytes() {
         if (b as i8) >= -0x40 {
@@ -47,14 +63,14 @@ pub fn count_utf16(s: &str) -> usize {
 }
 
 /// Get LSP Style Utf-16 based position given the xi-core style utf-8 offset
-pub fn get_position_of_offset<C: Cache>(
+pub(crate) fn get_position_of_offset<C: Cache>(
     view: &mut View<C>,
     offset: usize,
 ) -> Result<Position, PluginLibError> {
     let line_num = view.line_of_offset(offset)?;
     let line_offset = view.offset_of_line(line_num)?;
 
-    let char_offset: usize = count_utf16(&(view.get_line(line_num)?[0..(offset - line_offset)]));
+    let char_offset = count_utf16(&(view.get_line(line_num)?[0..(offset - line_offset)]));
 
     Ok(Position {
         line: line_num as u64,
@@ -62,7 +78,7 @@ pub fn get_position_of_offset<C: Cache>(
     })
 }
 
-pub fn lsp_position_from_core_position<C: Cache>(
+pub(crate) fn lsp_position_from_core_position<C: Cache>(
     view: &mut View<C>,
     position: CorePosition,
 ) -> Result<Position, PluginLibError> {
@@ -84,46 +100,43 @@ pub fn lsp_position_from_core_position<C: Cache>(
     }
 }
 
-pub fn core_position_from_position(position: Position) -> CorePosition {
+pub(crate) fn core_position_from_position(position: Position) -> CorePosition {
     CorePosition::Utf16LineChar {
         line: position.line as usize,
         character: position.character as usize,
     }
 }
 
-pub fn core_range_from_range(range: Range) -> CoreRange {
+pub(crate) fn core_range_from_range(range: Range) -> CoreRange {
     CoreRange {
         start: core_position_from_position(range.start),
         end: core_position_from_position(range.end),
     }
 }
 
-pub fn core_location_from_location(location: &Location) -> CoreLocation {
+pub(crate) fn core_location_from_location(location: &Location) -> CoreLocation {
     CoreLocation {
         path: location.uri.to_file_path().unwrap(),
         range: core_range_from_range(location.range),
     }
 }
 
-pub fn core_definition_from_definition(
+pub(crate) fn core_definition_from_definition(
     definition: DefinitionResult,
-) -> Result<CoreDefinitionResult, LanguageResponseError> {
+) -> Result<CoreDefinition, LanguageResponseError> {
     match definition {
-        DefinitionResult::Location(location) => Ok(CoreDefinitionResult {
+        DefinitionResult::Location(location) => Ok(CoreDefinition {
             locations: vec![core_location_from_location(&location)],
         }),
-        DefinitionResult::Locations(locations) => Ok(CoreDefinitionResult {
-            locations: locations
-                .iter()
-                .map(core_location_from_location)
-                .collect(),
+        DefinitionResult::Locations(locations) => Ok(CoreDefinition {
+            locations: locations.iter().map(core_location_from_location).collect(),
         }),
         DefinitionResult::Null => Err(LanguageResponseError::NullResponse),
     }
 }
 
-pub fn core_hover_result_from_hover(hover: Hover) -> Result<HoverResult, LanguageResponseError> {
-    Ok(HoverResult {
+pub(crate) fn core_hover_from_hover(hover: Hover) -> Result<CoreHover, LanguageResponseError> {
+    Ok(CoreHover {
         content: markdown_from_hover_contents(hover.contents)?,
         range: hover.range.map(|range| core_range_from_range(range)),
     })

@@ -394,7 +394,7 @@ impl Plugin for LspPlugin {
 
         match position_ls {
             Ok(position) => {
-                ls_client.request_hover_definition(
+                ls_client.request_hover(
                     view_id,
                     position,
                     move |ls_client, result| {
@@ -403,16 +403,16 @@ impl Plugin for LspPlugin {
                             .and_then(|h| {
                                 let hover: Option<Hover> = serde_json::from_value(h).unwrap();
                                 hover.ok_or(LanguageResponseError::NullResponse)
-                                    .and_then(core_hover_result_from_hover)
+                                    .and_then(core_hover_from_hover)
                             });
-                        ls_client.core.display_hover_result(view_id, request_id, res, rev);
+                        ls_client.core.display_hover(view_id, request_id, res, rev);
                     },
                 );
             }
             Err(error) => {
                 eprintln!("Can't convert location to offset. Error {:?}", error);
                 let err = LanguageResponseError::PositionConversionError(format!("{:?}",error));
-                ls_client.core.display_hover_result(view_id, request_id, Err(err), rev);
+                ls_client.core.display_hover(view_id, request_id, Err(err), rev);
             }
         };
     }
@@ -440,7 +440,7 @@ impl Plugin for LspPlugin {
         match position_ls {
             Ok(position) => {
                 
-                ls_client.request_hover_definition(
+                ls_client.request_definition(
                     view.get_id(),
                     position,
                     move |ls_client, result|  {
@@ -450,7 +450,6 @@ impl Plugin for LspPlugin {
                                 let definition: DefinitionResult = serde_json::from_value(h).unwrap();
                                 core_definition_from_definition(definition)
                             });
-                        
                         ls_client.core.display_definition(view_id, request_id, res, rev);
                     }
                 );
@@ -458,7 +457,7 @@ impl Plugin for LspPlugin {
             Err(error) => {
                 eprintln!("Can't convert location to offset. Error {:?}", error);
                 let err = LanguageResponseError::PositionConversionError(format!("{:?}",error));
-                ls_client.core.display_hover_result(view_id, request_id, Err(err), rev);
+                ls_client.core.display_definition(view_id, request_id, Err(err), rev);
             }
         };
     }

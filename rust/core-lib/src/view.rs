@@ -788,28 +788,12 @@ impl View {
     // Of course, all these are identical for ASCII. For now we use UTF-8 code units
     // for simplicity.
 
-    pub fn offset_to_line_col(&self, text: &Rope, offset: usize) -> (usize, usize) {
+    pub(crate) fn offset_to_line_col(&self, text: &Rope, offset: usize) -> (usize, usize) {
         let line = self.line_of_offset(text, offset);
         (line, offset - self.offset_of_line(text, line))
     }
 
-
-    pub fn offset_to_line_col_utf16(&self, text: &Rope, offset: usize) -> (usize, usize) {
-        let line_num = self.line_of_offset(text, offset);
-
-        let line_offset = self.offset_of_line(text, line_num);
-        let line_next_offset = self.offset_of_line(text, line_num + 1);
-
-        let line_string = text.slice_to_string(line_offset, line_next_offset);
-        let cols = line_string[0..(offset - line_offset)]
-            .chars()
-            .map(char::len_utf16)
-            .sum();
-
-        (line_num, cols)
-    }
-
-    pub fn line_col_to_offset(&self, text: &Rope, line: usize, col: usize) -> usize {
+    pub(crate) fn line_col_to_offset(&self, text: &Rope, line: usize, col: usize) -> usize {
         let mut offset = self.offset_of_line(text, line).saturating_add(col);
         if offset >= text.len() {
             offset = text.len();
@@ -831,7 +815,8 @@ impl View {
         offset
     }
 
-    pub fn line_col_utf16_to_offset(&self, text: &Rope, line: usize, col: usize) -> usize {
+    // FIXME: The utilities should ideally be implemented using Metric in Rope
+    pub(crate) fn line_col_utf16_to_offset(&self, text: &Rope, line: usize, col: usize) -> usize {
         let line_offset = self.offset_of_line(text, line);
         let line_next_offset = self.offset_of_line(text, line + 1);
 
@@ -851,26 +836,7 @@ impl View {
             }
         }
 
-        let mut offset = line_offset + cur_len_utf8;
-
-        if offset >= text.len() {
-            offset = text.len();
-            if self.line_of_offset(text, offset) <= line {
-                return offset;
-            }
-        } else {
-            // Snap to grapheme cluster boundary
-            offset = text.prev_grapheme_offset(offset + 1).unwrap();
-        }
-
-        // clamp to end of line
-        let next_line_offset = self.offset_of_line(text, line + 1);
-        if offset >= next_line_offset {
-            if let Some(prev) = text.prev_grapheme_offset(next_line_offset) {
-                offset = prev;
-            }
-        }
-        offset
+        return self.line_col_to_offset(text, line, cur_len_utf8);
     }
 
     // use own breaks if present, or text if not (no line wrapping)

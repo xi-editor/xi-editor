@@ -19,7 +19,6 @@
 //!
 //! [Serde]: https://serde.rs
 
-use internal::plugins::rpc::Position;
 use std::path::PathBuf;
 
 use serde_json::{self, Value};
@@ -27,7 +26,7 @@ use serde::de::{self, Deserialize, Deserializer};
 use serde::ser::{self, Serialize, Serializer};
 
 use config::{Table, ConfigDomainExternal};
-use plugins::PlaceholderRpc;
+use plugins::{PlaceholderRpc, rpc::Position};
 use tabs::ViewId;
 use view::Size;
 
