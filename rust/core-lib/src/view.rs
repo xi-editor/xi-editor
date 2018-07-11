@@ -210,10 +210,10 @@ impl View {
             Find { chars, case_sensitive, regex, whole_words } =>
                 self.do_find(text, chars, case_sensitive, regex, whole_words),
             FindNext { wrap_around, allow_same, modify_selection } =>
-                self.find_next(text, false, wrap_around, allow_same, &modify_selection),
+                self.do_find_next(text, false, wrap_around, allow_same, &modify_selection),
             FindPrevious { wrap_around, allow_same, modify_selection } =>
-                self.find_next(text, true, wrap_around, allow_same, &modify_selection),
-            FindAll => self.find_all(text),
+                self.do_find_next(text, true, wrap_around, allow_same, &modify_selection),
+            FindAll => self.do_find_all(text),
             Click(MouseAction { line, column, flags, click_count }) => {
                 // Deprecated (kept for client compatibility):
                 // should be removed in favor of do_gesture
@@ -237,10 +237,10 @@ impl View {
                 self.set_dirty(text);
             },
             SelectionForFind { case_sensitive } =>
-                self.selection_for_find(text, case_sensitive),
+                self.do_selection_for_find(text, case_sensitive),
             Replace { chars, preserve_case } =>
-                self.set_replace(chars, preserve_case),
-            SelectionForReplace => self.selection_for_replace(text),
+                self.do_set_replace(chars, preserve_case),
+            SelectionForReplace => self.do_selection_for_replace(text),
         }
     }
 
@@ -907,7 +907,7 @@ impl View {
         self.set_selection_for_edit(text, new_sel);
     }
 
-    fn selection_for_find(&mut self, text: &Rope, case_sensitive: bool) {
+    fn do_selection_for_find(&mut self, text: &Rope, case_sensitive: bool) {
         // set last selection or word under current cursor as search query
         let search_query = match self.selection.last() {
             Some(region) => {
@@ -953,7 +953,7 @@ impl View {
     }
 
     /// Selects the next find match.
-    pub fn find_next(&mut self, text: &Rope, reverse: bool, wrap: bool, allow_same: bool,
+    pub fn do_find_next(&mut self, text: &Rope, reverse: bool, wrap: bool, allow_same: bool,
                      modify_selection: &SelectionModifier) {
         self.select_next_occurrence(text, reverse, false, allow_same, modify_selection);
         if self.scroll_to.is_none() && wrap {
@@ -962,7 +962,7 @@ impl View {
     }
 
     /// Selects all find matches.
-    pub fn find_all(&mut self, text: &Rope) {
+    pub fn do_find_all(&mut self, text: &Rope) {
         let mut selection = Selection::new();
         for find in self.find.iter() {
             for &occurrence in find.occurrences().iter() {
@@ -1015,12 +1015,12 @@ impl View {
         }
     }
 
-    fn set_replace(&mut self, chars: String, preserve_case: bool) {
+    fn do_set_replace(&mut self, chars: String, preserve_case: bool) {
         self.replace = Some(Replace { chars, preserve_case });
         self.replace_changed = true;
     }
 
-    fn selection_for_replace(&mut self, text: &Rope) {
+    fn do_selection_for_replace(&mut self, text: &Rope) {
         // set last selection or word under current cursor as replacement string
         let replacement = match self.selection.last() {
             Some(region) => {
@@ -1038,7 +1038,7 @@ impl View {
         };
 
         self.set_dirty(text);
-        self.set_replace(replacement, false);
+        self.do_set_replace(replacement, false);
     }
 
     /// Get the line range of a selected region.
