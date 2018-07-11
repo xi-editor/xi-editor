@@ -659,9 +659,9 @@ impl Editor {
             view.collapse_selections(&self.text);
 
             if replace_all {
-                view.find_all(&self.text);
+                view.do_find_all(&self.text);
             } else {
-                view.find_next(&self.text, false, true, true, &SelectionModifier::Set);
+                view.do_find_next(&self.text, false, true, true, &SelectionModifier::Set);
             }
 
             match last_selection_region(view.sel_regions()) {
