@@ -36,6 +36,43 @@ pub struct WidthReq {
     pub strings: Vec<String>,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+/// Range to be sent to client specified in utf-8 offsets
+pub struct Range {
+    // Utf-8 offsets will be sent to clients only
+    pub start: usize,
+    pub end: usize
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+/// A location to be sent to client using utf-8 offset range and
+/// document uri based on Url crate in Rust
+pub struct Location {
+    pub document_uri: String,
+    pub range: Range
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+/// The result of hover request from the client.
+/// The `content` is a Markdown string to be rendered by the client
+/// `range` represents tha range in a document to be highlighted
+/// while hover is active.
+pub struct Hover {
+    pub content: String,
+    pub range: Option<Range>
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+/// The result of the definition request from the client.
+/// `locations` represent the all possible locations for 
+/// a symbol definition. Client must present a View to show
+/// all related locations to client and ask core to resolve the
+/// handling of a selection from the options. 
+pub struct Definition {
+    pub locations: Vec<Location>
+}
+
+
 impl Client {
     pub fn new(peer: RpcPeer) -> Self {
         Client(peer)
@@ -176,6 +213,26 @@ impl Client {
     pub fn remove_status_item(&self, view_id: ViewId, key: &str) {
         self.0.send_rpc_notification("remove_status_item", &json!(
             {   "view_id": view_id, "key": key }));
+    }
+
+    pub fn show_hover(&self, view_id: ViewId, request_id: usize, result: Hover) {
+        self.0.send_rpc_notification("show_hover", &json!(
+            {
+                "view_id": view_id,
+                "request_id": request_id,
+                "result": result
+            }
+        ))
+    }
+
+    pub fn show_definition(&self, view_id: ViewId, request_id: usize, result: Definition) {
+        self.0.send_rpc_notification("show_definition", &json!(
+            {
+                "view_id": view_id,
+                "request_id": request_id,
+                "result": result
+            }
+        ))
     }
 
     pub fn schedule_idle(&self, token: usize) {

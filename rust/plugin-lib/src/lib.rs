@@ -25,11 +25,13 @@ extern crate serde;
 extern crate bytecount;
 extern crate rand;
 extern crate memchr;
+extern crate languageserver_types;
 
 mod state_cache;
 mod base_cache;
 mod view;
 mod dispatch;
+mod core_proxy;
 
 use std::io;
 use std::path::Path;
@@ -44,6 +46,8 @@ use self::dispatch::Dispatcher;
 pub use view::View;
 pub use state_cache::StateCache;
 pub use base_cache::ChunkCache;
+pub use core_proxy::CoreProxy;
+pub use xi_core::plugin_rpc::{Hover, Range, Position, Location, Definition, LanguageResponseError};
 
 /// Abstracts getting data from the peer. Mainly exists for mocking in tests.
 pub trait DataSource {
@@ -109,6 +113,11 @@ pub trait Cache {
 pub trait Plugin {
     type Cache: Cache;
 
+    /// Called when the Plugin is initialized. The plugin receives CoreProxy
+    /// object that is a wrapper around the RPC Peer and can be used to call
+    /// related methods on the Core in a type-safe manner.
+    fn initialize(&mut self, _core: CoreProxy) {}
+
     /// Called when an edit has occurred in the remote view. If the plugin wishes
     /// to add its own edit, it must do so using asynchronously via the edit notification.
     fn update(&mut self, view: &mut View<Self::Cache>, delta: Option<&RopeDelta>,
@@ -138,6 +147,14 @@ pub trait Plugin {
     /// to perform their work incrementally while remaining responsive.
     #[allow(unused_variables)]
     fn idle(&mut self, view: &mut View<Self::Cache>) { }
+
+    /// Language Plugins specific methods
+    
+    #[allow(unused_variables)]
+    fn get_hover(&mut self, view: &mut View<Self::Cache>, request_id: usize, position: Position) { }
+
+    #[allow(unused_variables)]
+    fn get_definition(&mut self, view: &mut View<Self::Cache>, request_id: usize, position: Position) { }
 }
 
 #[derive(Debug)]

@@ -108,6 +108,8 @@ pub enum HostNotification {
     ConfigChanged { view_id: ViewId, changes: Table },
     NewBuffer { buffer_info: Vec<PluginBufferInfo> },
     DidClose { view_id: ViewId },
+    GetHover { view_id: ViewId, request_id: usize, position: Position },
+    GetDefinition { view_id: ViewId, request_id: usize, position: Position },
     Shutdown(EmptyStruct),
     TracingConfig {enabled: bool},
 }
@@ -161,10 +163,10 @@ pub enum TextUnit {
     Line,
 }
 
+/// RPC requests sent from plugins.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "method", content = "params")]
-/// RPC requests sent from plugins.
 pub enum PluginRequest {
     GetData { start: usize, unit: TextUnit, max_size: usize, rev: u64 },
     LineCount,
@@ -172,10 +174,10 @@ pub enum PluginRequest {
 }
 
 
+/// RPC commands sent from plugins.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "method", content = "params")]
-/// RPC commands sent from plugins.
 pub enum PluginNotification {
     AddScopes { scopes: Vec<Vec<String>> },
     UpdateSpans { start: usize, len: usize, spans: Vec<ScopeSpan>, rev: u64 },
@@ -183,7 +185,66 @@ pub enum PluginNotification {
     Alert { msg: String },
     AddStatusItem { key: String, value: String, alignment: String },
     UpdateStatusItem { key: String, value: String  },
-    RemoveStatusItem { key: String }
+    RemoveStatusItem { key: String },
+    ShowHover { request_id: usize, result: Result<Hover, LanguageResponseError>, rev: u64 },
+    ShowDefinition { request_id: usize, result: Result<Definition, LanguageResponseError>, rev: u64},
+}
+
+/// Position formats that can be sent/received from to Plugins
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "type")]
+pub enum Position {
+    Utf8Offset { offset: usize },
+    Utf16LineChar { line: usize, character: usize},
+    Utf8LineChar { line: usize, character: usize },
+}
+
+/// Specifies a range in a document
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct Range {
+    pub start: Position,
+    pub end: Position,
+}
+
+/// Error formats for possible errors while making Language Support
+/// specific requests
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum LanguageResponseError {
+    LanguageServerError(String),
+    PositionConversionError(String),
+    NullResponse,
+    FallbackResponse,
+}
+
+/// Type to represent result of a Hover Request
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct Hover {
+    /// Markdown string of the content to be shown
+    pub content: String,
+    /// Range to be highlighted while the hover is active
+    pub range: Option<Range>,
+}
+
+/// Result of a definition request
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct Definition {
+    /// Locations of all the possible definitions of the symbol
+    pub locations: Vec<Location>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+/// Represents a location in a text document
+pub struct Location {
+    /// Path of the file represented by the location
+    pub path: PathBuf,
+    /// Range in the file that is referred by this location
+    pub range: Range,
 }
 
 /// Common wrapper for plugin-originating RPCs.

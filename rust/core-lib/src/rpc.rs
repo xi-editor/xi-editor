@@ -26,7 +26,7 @@ use serde::de::{self, Deserialize, Deserializer};
 use serde::ser::{self, Serialize, Serializer};
 
 use config::{Table, ConfigDomainExternal};
-use plugins::PlaceholderRpc;
+use plugins::{PlaceholderRpc, rpc::Position};
 use tabs::ViewId;
 use view::Size;
 
@@ -446,6 +446,8 @@ pub enum EditNotification {
     ReplaceNext,
     ReplaceAll,
     SelectionForReplace,
+    RequestHover { request_id: usize, position: Option<Position> },
+    RequestDefinition { request_id: usize, position: Option<Position> }
 }
 
 /// The edit related requests.

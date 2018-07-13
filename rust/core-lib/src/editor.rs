@@ -747,11 +747,7 @@ impl Editor {
         view.invalidate_styles(&self.text, start, end_offset);
     }
 
-    pub fn plugin_get_data(&self, start: usize,
-                           unit: TextUnit,
-                           max_size: usize,
-                           rev: RevToken) -> Option<GetDataResponse> {
-        let _t = trace_block("Editor::plugin_get_data", &["core"]);
+    pub(crate) fn get_rev(&self, rev: RevToken) -> Option<Cow<Rope>> {
         let text_cow = if rev == self.engine.get_head_rev_id().token() {
             Cow::Borrowed(&self.text)
         } else {
@@ -760,6 +756,16 @@ impl Editor {
                 Some(text) => Cow::Owned(text)
             }
         };
+        
+        Some(text_cow)
+    }
+
+    pub fn plugin_get_data(&self, start: usize,
+                           unit: TextUnit,
+                           max_size: usize,
+                           rev: RevToken) -> Option<GetDataResponse> {
+        let _t = trace_block("Editor::plugin_get_data", &["core"]);
+        let text_cow = self.get_rev(rev)?;
         let text = &text_cow;
         // convert our offset into a valid byte offset
         let offset = unit.resolve_offset(text.borrow(), start)?;

@@ -788,12 +788,12 @@ impl View {
     // Of course, all these are identical for ASCII. For now we use UTF-8 code units
     // for simplicity.
 
-    pub fn offset_to_line_col(&self, text: &Rope, offset: usize) -> (usize, usize) {
+    pub(crate) fn offset_to_line_col(&self, text: &Rope, offset: usize) -> (usize, usize) {
         let line = self.line_of_offset(text, offset);
         (line, offset - self.offset_of_line(text, line))
     }
 
-    pub fn line_col_to_offset(&self, text: &Rope, line: usize, col: usize) -> usize {
+    pub(crate) fn line_col_to_offset(&self, text: &Rope, line: usize, col: usize) -> usize {
         let mut offset = self.offset_of_line(text, line).saturating_add(col);
         if offset >= text.len() {
             offset = text.len();
@@ -813,6 +813,30 @@ impl View {
             }
         }
         offset
+    }
+
+    // FIXME: The utilities should ideally be implemented using Metric in Rope
+    pub(crate) fn line_col_utf16_to_offset(&self, text: &Rope, line: usize, col: usize) -> usize {
+        let line_offset = self.offset_of_line(text, line);
+        let line_next_offset = self.offset_of_line(text, line + 1);
+
+        let line_string = text.slice_to_string(line_offset, line_next_offset);
+
+        let char_lengths = line_string.chars()
+                                .map(|c| (c.len_utf8(), c.len_utf16()));
+
+        let mut cur_len_utf16 = 0;
+        let mut cur_len_utf8 = 0;
+
+        for (utf8_length, utf16_length) in char_lengths {
+            cur_len_utf16 += utf16_length;
+            cur_len_utf8 += utf8_length;
+            if cur_len_utf16 == (col as usize) {
+                break;
+            }
+        }
+
+        return self.line_col_to_offset(text, line, cur_len_utf8);
     }
 
     // use own breaks if present, or text if not (no line wrapping)
@@ -1050,6 +1074,16 @@ impl View {
         }
 
         first_line..(last_line + 1)
+    }
+
+    pub fn get_caret_offset(&self) -> Option<usize> {
+        match self.selection.len() {
+            1 if self.selection[0].is_caret() => {
+                let offset = self.selection[0].start;
+                Some(offset)
+            }
+            _ => None
+        }
     }
 }
 

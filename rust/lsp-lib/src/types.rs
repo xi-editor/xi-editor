@@ -12,15 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
+use jsonrpc_lite::Error as JsonRpcError;
 use language_server_client::LanguageServerClient;
+use lsp_types::*;
 use serde_json;
 use serde_json::Value;
 use std;
-use url::ParseError as UrlParseError;
+use std::collections::HashMap;
 use std::io::Error as IOError;
-use jsonrpc_lite::Error as JsonRpcError;
-
+use url::ParseError as UrlParseError;
 
 pub enum LspHeader {
     ContentType,
@@ -28,7 +28,11 @@ pub enum LspHeader {
 }
 
 pub trait Callable: Send {
-    fn call(self: Box<Self>, client: &mut LanguageServerClient, result: Result<Value, JsonRpcError>);
+    fn call(
+        self: Box<Self>,
+        client: &mut LanguageServerClient,
+        result: Result<Value, JsonRpcError>,
+    );
 }
 
 impl<F: Send + FnOnce(&mut LanguageServerClient, Result<Value, JsonRpcError>)> Callable for F {
@@ -47,15 +51,14 @@ pub struct LanguageConfig {
     pub start_arguments: Vec<String>,
     pub extensions: Vec<String>,
     pub supports_single_file: bool,
-    pub workspace_identifier: Option<String>
+    pub workspace_identifier: Option<String>,
 }
 
 /// Represents the config for the Language Plugin
 #[derive(Serialize, Deserialize)]
 pub struct Config {
-    pub language_config: HashMap<String, LanguageConfig>
+    pub language_config: HashMap<String, LanguageConfig>,
 }
-
 
 // Error Types
 
@@ -68,7 +71,6 @@ pub enum ParseError {
     Json(serde_json::Error),
     Unknown(String),
 }
-
 
 impl From<std::io::Error> for ParseError {
     fn from(err: std::io::Error) -> ParseError {
@@ -103,11 +105,12 @@ impl From<String> for ParseError {
 // TODO: Improve Error handling in module and add more types as necessary
 
 /// Types to represent errors in the module.
+#[derive(Debug)]
 pub enum Error {
     PathError,
     FileUrlParseError,
     IOError(IOError),
-    UrlParseError(UrlParseError)
+    UrlParseError(UrlParseError),
 }
 
 impl From<UrlParseError> for Error {
@@ -120,4 +123,13 @@ impl From<IOError> for Error {
     fn from(err: IOError) -> Error {
         Error::IOError(err)
     }
+}
+
+// Definition Result
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(untagged)]
+pub enum DefinitionResult {
+    Location(Location),
+    Locations(Vec<Location>),
+    Null,
 }

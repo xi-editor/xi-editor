@@ -14,6 +14,7 @@
 
 //! A container for the state relevant to a single event.
 
+
 use std::cell::RefCell;
 use std::iter;
 use std::path::Path;
@@ -29,7 +30,7 @@ use xi_trace::trace_block;
 
 use rpc::{EditNotification, EditRequest, LineRange};
 use plugins::rpc::{ClientPluginInfo, PluginBufferInfo, PluginNotification,
-                   PluginRequest, PluginUpdate};
+                   PluginRequest, PluginUpdate, Position};
 
 use styles::ThemeStyleMap;
 use config::{BufferItems, Table};
@@ -39,8 +40,9 @@ use tabs::{BufferId, PluginId, ViewId, RENDER_VIEW_IDLE_MASK};
 use editor::Editor;
 use file::FileInfo;
 use edit_types::{EventDomain, SpecialEvent};
-use client::Client;
+use client::{self, Client, Range as Utf8OffsetRange};
 use plugins::Plugin;
+use plugins::rpc::{Hover, Location, Definition, LanguageResponseError};
 use selection::SelRegion;
 use syntax::LanguageId;
 use view::View;
@@ -99,6 +101,10 @@ impl<'a> EventContext<'a> {
         f(&mut view, editor.get_buffer())
     }
 
+    fn with_each_plugin<F: FnMut(&&Plugin)>(&self, f: F) {
+        self.plugins.iter().for_each(f)
+    }
+
     pub(crate) fn do_edit(&mut self, cmd: EditNotification) {
         use self::EventDomain as E;
         let event: EventDomain = cmd.into();
@@ -133,6 +139,10 @@ impl<'a> EventContext<'a> {
                 }),
             SpecialEvent::RequestLines(LineRange { first, last }) =>
                 self.do_request_lines(first as usize, last as usize),
+            SpecialEvent::RequestHover{ request_id, position } =>
+                self.do_request_hover(request_id, position),
+            SpecialEvent::RequestDefinition{ request_id, position } =>
+                self.do_request_defintion(request_id, position)
         }
     }
 
@@ -169,11 +179,72 @@ impl<'a> EventContext<'a> {
             }
             UpdateStatusItem { key, value } => self.client.update_status_item(
                                                         self.view_id, &key, &value),
-            RemoveStatusItem { key } => self.client.remove_status_item(self.view_id, &key)
+            RemoveStatusItem { key } => self.client.remove_status_item(self.view_id, &key),
+            ShowHover { request_id, result, rev } => {
+                match result {
+                    Ok(res) => self.client.show_hover(self.view_id,
+                                            request_id, 
+                                            self.get_client_hover(rev, res)),
+                    Err(err) => eprintln!("Hover Response from Client Error {:?}", err)
+                }
+            },
+            ShowDefinition { request_id, result, rev } => {
+                match result.and_then(|definition| self.get_client_definition(rev, definition)) {
+                    Ok(res) => self.client.show_definition(self.view_id, request_id, res),
+                    Err(err) => eprintln!("Definition Response from Client Error {:?}", err)                    
+                }
+            }
         };
         self.after_edit(&plugin.to_string());
         self.render_if_needed();
     }
+
+    fn get_client_definition(&mut self, rev: u64, result: Definition) -> Result<client::Definition, LanguageResponseError> {
+        let result: Result<Vec<client::Location>, _> = result.locations.iter().map(|l| {
+            self.location_to_utf8_offset_format(rev, l)
+                .ok_or(LanguageResponseError::PositionConversionError(
+                    "Position to Utf8 Conversion Error".to_owned()
+                ))
+        }).collect();
+        
+        Ok(client::Definition {
+                locations: result?
+        })
+    }
+
+    fn get_client_hover(&mut self, rev: u64, result: Hover) -> client::Hover {
+        client::Hover {
+            content: result.content,
+            range: result.range.and_then(|r| {
+                Some(Utf8OffsetRange {
+                    start: self.position_to_utf8_offset(rev, &r.start)?,
+                    end: self.position_to_utf8_offset(rev, &r.end)?
+                })
+            })
+        }
+    }
+
+    fn location_to_utf8_offset_format(&mut self, rev: u64, location: &Location) -> Option<client::Location> {
+        Some(client::Location {
+            document_uri: location.path.to_str()?.to_owned(),
+            range: Utf8OffsetRange {
+                start: self.position_to_utf8_offset(rev, &location.range.start)?,
+                end: self.position_to_utf8_offset(rev, &location.range.end)?
+            }
+        })
+    }
+
+    fn position_to_utf8_offset(&mut self, rev: u64, position: &Position) -> Option<usize> {
+        self.with_editor(|ed, view, _, _| {
+            let rope = ed.get_rev(rev)?;
+            Some(match *position {
+                Position::Utf8Offset {offset} => offset,
+                Position::Utf8LineChar {line, character} => view.line_col_to_offset(&rope, line, character),
+                Position::Utf16LineChar {line, character} => view.line_col_utf16_to_offset(&rope, line, character)
+            })
+        })
+    }
+
 
     pub(crate) fn do_plugin_cmd_sync(&mut self, _plugin: PluginId,
                                       cmd: PluginRequest) -> Value {
@@ -414,6 +485,25 @@ impl<'a> EventContext<'a> {
         view.request_lines(ed.get_buffer(), self.client, self.style_map,
                            ed.get_layers().get_merged(), first, last,
                            ed.is_pristine())
+    }
+
+    fn do_request_hover(&mut self, request_id: usize, position: Option<Position>) {
+        if let Some(position) = self.get_resolved_position(position) {
+            self.with_each_plugin(|p| p.get_hover(self.view_id, request_id,&position))
+        }
+    }
+
+    fn do_request_defintion(&mut self, request_id: usize, position: Option<Position>) {
+        if let Some(position) = self.get_resolved_position(position) {
+            self.with_each_plugin(|p| p.get_definition(self.view_id, request_id,&position))
+        }
+    }
+
+    /// If position is None, it tries to resolve the current cursor position and use that
+    /// as a position
+    fn get_resolved_position(&mut self, position: Option<Position>) -> Option<Position> {
+         position.or_else(|| self.view.borrow().get_caret_offset()
+                            .and_then(|offset| Some(Position::Utf8Offset{ offset })))
     }
 }
 
