@@ -25,12 +25,18 @@ use selection::{Selection, SelRegion};
 use xi_rope::tree::Metric;
 use regex::{RegexBuilder, Regex};
 use word_boundaries::WordCursor;
+use serde::de::{Deserialize, Deserializer};
+use serde::ser::{Serialize, Serializer};
+use std::fmt;
 
 const REGEX_SIZE_LIMIT: usize = 1000000;
 
 /// Information about search queries and number of matches for find
 #[derive(Serialize, Deserialize, Debug)]
 pub struct FindStatus {
+    /// Identifier for the current search query.
+    id: FindId,
+
     /// The current search query.
     chars: Option<String>,
 
@@ -47,10 +53,54 @@ pub struct FindStatus {
     matches: usize
 }
 
+/// ID to uniquely identify a search query.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FindId(pub(crate) usize);
+
+// todo: most duplication from ViewId
+impl<'a> From<&'a str> for FindId {
+    fn from(s: &'a str) -> Self {
+        let ord = s.trim_left_matches("find-id-");
+        let ident = usize::from_str_radix(ord, 10)
+            .expect("FindId parsing should never fail");
+        FindId(ident)
+    }
+}
+
+impl From<String> for FindId {
+    fn from(s: String) -> Self {
+        s.as_str().into()
+    }
+}
+
+impl fmt::Display for FindId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "find-id-{}", self.0)
+    }
+}
+
+impl Serialize for FindId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where S: Serializer
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for FindId
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where D: Deserializer<'de>
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(s.into())
+    }
+}
+
 /// Contains logic to search text
 pub struct Find {
-    // todo: link to search query so that search results can be correlated back to query
-
+    // Uniquely identifies this search query.
+    id: FindId,
     /// The occurrences, which determine the highlights, have been updated.
     hls_dirty: bool,
     /// The currently active search string
@@ -66,8 +116,9 @@ pub struct Find {
 }
 
 impl Find {
-    pub fn new() -> Find {
+    pub fn new(id: FindId) -> Find {
         Find {
+            id: id,
             hls_dirty: true,
             search_string: None,
             case_matching: CaseMatching::CaseInsensitive,
@@ -88,6 +139,7 @@ impl Find {
     pub fn find_status(&self, matches_only: bool) -> FindStatus {
         if matches_only {
             FindStatus {
+                id: self.id,
                 chars: None,
                 case_sensitive: None,
                 is_regex: None,
@@ -96,6 +148,7 @@ impl Find {
             }
         } else {
             FindStatus {
+                id: self.id,
                 chars: self.search_string.clone(),
                 case_sensitive: Some(self.case_matching == CaseMatching::Exact),
                 is_regex: Some(self.regex.is_some()),

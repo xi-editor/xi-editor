@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use std::cmp::{min,max};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::ops::Range;
 
 use serde_json::Value;
@@ -37,6 +37,7 @@ use width_cache::WidthCache;
 use word_boundaries::WordCursor;
 use find::{Find, FindStatus};
 use linewrap;
+use internal::find::{FindId, FindStatus};
 
 type StyleMap = RefCell<ThemeStyleMap>;
 
@@ -76,6 +77,9 @@ pub struct View {
     /// Each instance represents a separate search query.
     find: Vec<Find>,
 
+    /// Tracks the IDs for additional search queries in find.
+    find_id_counter: Counter,
+
     /// Tracks whether there has been changes in find results or find parameters.
     /// This is used to determined whether FindStatus should be sent to the frontend.
     find_changed: FindStatusChange,
@@ -110,6 +114,18 @@ pub struct Replace {
     /// Replacement string.
     pub chars: String,
     pub preserve_case: bool
+}
+
+// todo: also used in tab.rs
+#[derive(Debug, Default)]
+struct Counter(Cell<usize>);
+
+impl Counter {
+    fn next(&self) -> usize {
+        let n = self.0.get();
+        self.0.set(n + 1);
+        n + 1
+    }
 }
 
 /// A size, in pixel units (not display pixels).
@@ -177,6 +193,7 @@ impl View {
             wrap_col: WrapWidth::None,
             lc_shadow: LineCacheShadow::default(),
             find: Vec::new(),
+            find_id_counter: Counter::default(),
             find_changed: FindStatusChange::None,
             highlight_find: false,
             replace: None,
@@ -974,14 +991,16 @@ impl View {
         self.find_changed = FindStatusChange::All;
         self.set_dirty(text);
 
-        // todo: this will be changed once multiple queries are supported
-        // todo: for now only a single search query is supported however in the future
-        // todo: the correct Find instance needs to be updated with the new parameters
         if self.find.is_empty() {
-            self.find.push(Find::new());
+            self.add_find();
         }
 
         self.find.first_mut().unwrap().do_find(text, &search_query, case_sensitive, false, true);
+    }
+
+    fn add_find(&mut self) {
+        let id = FindId(self.find_id_counter.next());
+        self.find.push(Find::new(id));
     }
 
     pub fn do_find(&mut self, text: &Rope, chars: String, case_sensitive: bool, is_regex: bool,
@@ -993,7 +1012,7 @@ impl View {
         // todo: for now only a single search query is supported however in the future
         // todo: the correct Find instance needs to be updated with the new parameters
         if self.find.is_empty() {
-            self.find.push(Find::new());
+            self.add_find();
         }
 
         self.find.first_mut().unwrap().do_find(text, &chars, case_sensitive, is_regex, whole_words);
