@@ -25,7 +25,7 @@ xi-rpc = { path = "../rpc", version = "0.2.0" }
 [dependencies.syntect]
 version = "2.0"
 default-features = false
-features = ["assets","dump-load-rs"]
+features = ["assets","dump-load-rs","dump-create"]
 
 [target."cfg(target_os = \"fuchsia\")".dependencies]
 sha2 = "0.7"

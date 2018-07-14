@@ -138,8 +138,7 @@ impl CoreState {
 
         let config_manager = ConfigManager::new(config_dir, extras_dir);
 
-        let themes_dir = config_manager.get_themes_dir();
-        if let Some(p) = themes_dir.as_ref() {
+        if let Some(p) = config_manager.get_themes_dir().as_ref() {
             #[cfg(feature = "notify")]
             watcher.watch_filtered(p, true, THEME_FILE_EVENT_TOKEN,
                                    |p| p.extension()
@@ -155,7 +154,7 @@ impl CoreState {
             #[cfg(not(feature = "notify"))]
             file_manager: FileManager::new(),
             kill_ring: RefCell::new(Rope::from("")),
-            style_map: RefCell::new(ThemeStyleMap::new(themes_dir)),
+            style_map: RefCell::new(ThemeStyleMap::new()),
             width_cache: RefCell::new(WidthCache::new()),
             config_manager,
             self_ref: None,
@@ -184,6 +183,10 @@ impl CoreState {
 
         if let Some(path) = self.config_manager.base_config_file_path() {
             self.load_file_based_config(&path);
+        }
+
+        if let Some(path) = self.config_manager.get_themes_dir() {
+            self.style_map.borrow_mut().load_theme_dir(path);
         }
 
         // instead of having to do this here, config should just own
@@ -629,12 +632,11 @@ impl CoreState {
         match event {
             Create(ref path) | Write(ref path) => 
                 self.load_theme_file(path),
-            Remove(ref path) => {
-                self.remove_theme(path);
-            },
+            Remove(ref path) => 
+                self.remove_theme(path),
             Rename(ref old, ref new) => {
-                self.load_theme_file(new);
                 self.remove_theme(old);
+                self.load_theme_file(new);
             }
             _ => ()
         }
@@ -645,25 +647,24 @@ impl CoreState {
     /// Load a single theme file. Updates if already present.
     fn load_theme_file(&mut self, path: &Path) {
         let _t = trace_block("CoreState::load_theme_file", &["core"]);
-        match self.style_map.borrow_mut().insert_theme(path) {
-            Ok(name) => {
-                //If the updated theme is the presently applied one.
-                if &name == self.style_map.borrow().get_theme_name() {
-                    if self.style_map.borrow_mut().set_theme(&name).is_ok() {
-                        self.notify_client_and_update_views();
-                    }
+        let result = self.style_map.borrow_mut().insert_theme(path);
+
+        //If the updated theme is the presently applied one.
+        if let Some(name) = result {
+            if &name == self.style_map.borrow().get_theme_name() {
+                if self.style_map.borrow_mut().set_theme(&name).is_ok() {
+                    self.notify_client_and_update_views();
                 }
-            },
-            Err(e) => eprintln!("Error while loading theme file: {:?}",e),
+            }
         }
     }
 
     fn remove_theme(&mut self, path: &Path) {
-        if let Some(theme_name) = path.file_stem().and_then(OsStr::to_str) {
-            self.style_map.borrow_mut().remove_theme(theme_name);
+        let result = self.style_map.borrow_mut().remove_theme(path);
 
-            // Set default theme if the removed theme was the 
-            // current one.
+        // Set default theme if the removed theme was the 
+        // current one.
+        if let Some(theme_name) = result {
             if theme_name == self.style_map.borrow().get_theme_name() {
                 self.do_set_theme(DEFAULT_THEME);
             }
