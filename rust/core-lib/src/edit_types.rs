@@ -58,6 +58,7 @@ pub(crate) enum BufferEvent {
     Indent,
     Outdent,
     Insert(String),
+    Paste(String),
     InsertNewline,
     InsertTab,
     Yank,
@@ -105,6 +106,8 @@ impl From<EditNotification> for EventDomain {
         match src {
             Insert { chars } =>
                 BufferEvent::Insert(chars).into(),
+            Paste { chars } =>
+                BufferEvent::Paste(chars).into(),
             DeleteForward =>
                 BufferEvent::Delete {
                     movement: Movement::Right,

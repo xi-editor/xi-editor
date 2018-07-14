@@ -352,6 +352,7 @@ impl Default for SelectionModifier {
 #[serde(tag = "method", content = "params")]
 pub enum EditNotification {
     Insert { chars: String },
+    Paste { chars: String },
     DeleteForward,
     DeleteBackward,
     DeleteWordForward,
