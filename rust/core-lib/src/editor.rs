@@ -18,7 +18,7 @@ use std::collections::BTreeSet;
 
 use serde_json::Value;
 
-use xi_rope::rope::{Rope, RopeInfo, LinesMetric};
+use xi_rope::rope::{Rope, RopeInfo, LinesMetric, count_newlines};
 use xi_rope::interval::Interval;
 use xi_rope::delta::{self, Delta, Transformer};
 use xi_rope::engine::{Engine, RevId, RevToken};
@@ -554,11 +554,24 @@ impl Editor {
         tab_text
     }
 
-    // TODO: insert from keyboard or input method shouldn't break undo group,
-    // but paste should.
     fn do_insert(&mut self, view: &View, chars: &str) {
         self.this_edit_type = EditType::InsertChars;
         self.insert(view, chars);
+    }
+
+    fn do_paste(&mut self, view: &View, chars: &str) {
+        if view.sel_regions().len() == 1
+            || view.sel_regions().len() != count_lines(chars)
+        {
+            self.insert(view, chars);
+        } else {
+            let mut builder = delta::Builder::new(self.text.len());
+            for (sel, line) in view.sel_regions().iter().zip(chars.lines()) {
+                let iv = Interval::new_closed_open(sel.min(), sel.max());
+                builder.replace(iv, line.into());
+            }
+            self.add_delta(builder.build());
+        }
     }
 
     pub(crate) fn do_cut(&mut self, view: &mut View) -> Value {
@@ -704,6 +717,7 @@ impl Editor {
             InsertNewline => self.insert_newline(view, config),
             InsertTab => self.insert_tab(view, config),
             Insert(chars) => self.do_insert(view, &chars),
+            Paste(chars) => self.do_paste(view, &chars),
             Yank => self.yank(view, kill_ring),
             ReplaceNext => self.replace(view, false),
             ReplaceAll => self.replace(view, true),
@@ -817,4 +831,13 @@ fn n_spaces(n: usize) -> &'static str {
     let spaces = "                                ";
     assert!(n <= spaces.len());
     &spaces[..n]
+}
+
+/// Counts the number of lines in the string, not including any trailing newline.
+fn count_lines(s: &str) -> usize {
+    let mut newlines = count_newlines(s);
+    if s.as_bytes().last() == Some(&0xa) {
+        newlines -= 1;
+    }
+    1 + newlines
 }

@@ -106,7 +106,16 @@ inner methods described below:
 
 `insert {"chars":"A"}`
 
-Inserts the `chars` string at the current cursor location.
+Inserts the `chars` string at the current cursor locations.
+
+#### paste
+
+`paste {"chars": "password"}`
+
+Inserts the `chars` string at the current cursor locations. If there are
+multiple cursors and `chars` has the same number of lines as there are
+cursors, one line will be inserted at each cursor, in order; otherwise the full
+string will be inserted at each cursor.
 
 #### cancel_operation
 

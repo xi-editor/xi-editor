@@ -267,7 +267,7 @@ impl Metric<RopeInfo> for LinesMetric {
 
 // Low level functions
 
-fn count_newlines(s: &str) -> usize {
+pub fn count_newlines(s: &str) -> usize {
     bytecount::count(s.as_bytes(), b'\n')
 }
 
