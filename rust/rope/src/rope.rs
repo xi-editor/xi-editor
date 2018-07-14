@@ -328,7 +328,7 @@ impl Metric<RopeInfo> for Utf16CodeUnitsMetric {
 
 // Low level functions
 
-fn count_newlines(s: &str) -> usize {
+pub fn count_newlines(s: &str) -> usize {
     bytecount::count(s.as_bytes(), b'\n')
 }
 
