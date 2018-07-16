@@ -124,6 +124,7 @@ impl Leaf for String {
 #[derive(Clone, Copy)]
 pub struct RopeInfo {
     lines: usize,
+    utf16_size: usize,
 }
 
 impl NodeInfo for RopeInfo {
@@ -131,17 +132,20 @@ impl NodeInfo for RopeInfo {
 
     fn accumulate(&mut self, other: &Self) {
         self.lines += other.lines;
+        self.utf16_size += other.utf16_size;
     }
 
     fn compute_info(s: &String) -> Self {
         RopeInfo {
             lines: count_newlines(s),
+            utf16_size: count_utf16_code_units(s),
         }
     }
 
     fn identity() -> Self {
         RopeInfo {
             lines: 0,
+            utf16_size: 0,
         }
     }
 }
@@ -265,10 +269,80 @@ impl Metric<RopeInfo> for LinesMetric {
     fn can_fragment() -> bool { true }
 }
 
+#[derive(Clone, Copy)]
+pub struct Utf16CodeUnitsMetric(usize);
+
+impl Metric<RopeInfo> for Utf16CodeUnitsMetric {
+    fn measure(info: &RopeInfo, _: usize) -> usize {
+        info.utf16_size
+    }
+
+    fn is_boundary(s: &String, offset: usize) -> bool {
+        s.is_char_boundary(offset)
+    }
+
+    fn to_base_units(s: &String, in_measured_units: usize) -> usize {
+        let mut cur_len_utf16 = 0;
+        let mut cur_len_utf8 = 0;
+        for u in s.chars() {
+            cur_len_utf16 += u.len_utf16();
+            cur_len_utf8 += u.len_utf8();
+            if cur_len_utf16 >= in_measured_units {
+                break;
+            }
+        }
+        cur_len_utf8
+    }
+
+    fn from_base_units(s: &String, in_base_units: usize) -> usize {
+        count_utf16_code_units(&s[..in_base_units])
+    }
+
+    fn prev(s: &String, offset: usize) -> Option<usize> {
+        if offset == 0 {
+            // I think it's a precondition that this will never be called
+            // with offset == 0, but be defensive.
+            None
+        } else {
+            let mut len = 1;
+            while !s.is_char_boundary(offset - len) {
+                len += 1;
+            }
+            Some(offset - len)
+        }
+    }
+
+    fn next(s: &String, offset: usize) -> Option<usize> {
+        if offset == s.len() {
+            // I think it's a precondition that this will never be called
+            // with offset == s.len(), but be defensive.
+            None
+        } else {
+            let b = s.as_bytes()[offset];
+            Some(offset + len_utf8_from_first_byte(b))
+        }
+    }
+
+    fn can_fragment() -> bool { false }
+}
+
 // Low level functions
 
 fn count_newlines(s: &str) -> usize {
     bytecount::count(s.as_bytes(), b'\n')
+}
+
+fn count_utf16_code_units(s: &str) -> usize {
+    let mut utf16_count = 0;
+    for &b in s.as_bytes() {
+        if (b as i8) >= -0x40 {
+            utf16_count += 1;
+        }
+        if b >= 0xf0 {
+            utf16_count += 1;
+        }
+    }
+    utf16_count
 }
 
 fn find_leaf_split_for_bulk(s: &str) -> usize {
