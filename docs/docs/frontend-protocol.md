@@ -36,11 +36,11 @@ from core: {"id":0,"result": "view-id-1"}
 `client_started {"config_dir" "some/path"?, "client_extras_dir":
 "some/other/path"?}`
 
- Sent by the client immediately after establishing the core connection. This is
- used to perform initial setup. The two arguments are optional; the `config_dir`
- points to a directory where the user's config files and plugins live, and the
- `client_extras_dir` points to a directory where the frontend can package
- additional resources, such as bundled plugins.
+Sent by the client immediately after establishing the core connection. This is
+used to perform initial setup. The two arguments are optional; the `config_dir`
+points to a directory where the user's config files and plugins live, and the
+`client_extras_dir` points to a directory where the frontend can package
+additional resources, such as bundled plugins.
 
 ### new_view
 
@@ -73,7 +73,7 @@ note for `new_view`. Errors are not currently reported.
 
 `set_theme {"theme_name": "InspiredGitHub"}`
 
-Requests that core change the theme. If the change succeeds the client
+Requests that core changes the theme. If the change succeeds the client
 will receive a `theme_changed` notification.
 
 ### modify_user_config
@@ -240,6 +240,74 @@ plugin_rpc {"view_id": "view-id-1", "receiver": "syntect",
 Sends a custom rpc command to the named receiver. This may be a notification
 or a request.
 
+
+### Find and replace methods
+
+#### find
+
+`find {"chars": "a", "case_sensitive": false, "regex": false, "whole_words": true}`
+Parameters `regex` and `whole_words` are optional and by default `false`.
+
+Sets the current search query and options.
+
+#### find_next and find_previous
+
+`find_next {"wrap_around": true, "allow_same": false, "modify_selection": "set"}`
+`find_previous {"wrap_around": true, "allow_same": false, "modify_selection": "set"}`
+All parameters are optional. Boolean parameters are by default `false` and `modify_selection`
+is `set` by default. Supported options for `modify_selection` are:
+* `none`: the selection is not modified
+* `set`: the next/previous match will be set as the new selection
+* `add`: the next/previous match will be added to the current selection
+* `add_remove_current`: the previously added selection will be removed and the next/previous 
+match will be added to the current selection
+
+Selects the next/previous occurrence matching the search query.
+
+#### find_all
+
+`find_all { }`
+
+Selects all occurrences matching the search query.
+
+#### highlight_find
+
+`highlight_find {"visible": true}`
+
+Shows/hides active search highlights.
+
+#### selection_for_find
+
+`selection_for_find {"case_sensitive": false}`
+The parameter `case_sensitive` is optional and `false` if not set.
+
+Sets the current selection as the search query.
+
+#### replace
+
+`replace {"chars": "a", "preserve_case": false}`
+The parameter `preserve_case` is currently not implemented and ignored.
+
+Sets the replacement string.
+
+#### selection_for_replace
+
+`selection_for_replace {"case_sensitive": false}`
+The parameter `case_sensitive` is optional and `false` if not set.
+
+Sets the current selection as the replacement string.
+
+#### replace_next
+
+`replace_next { }`
+
+Replaces the next matching occurrence with the replacement string.
+
+#### replace_all
+
+`replace_all { }`
+
+Replaces all matching occurrences with the replacement string.
 
 ## From back-end to front-end
 
@@ -491,22 +559,35 @@ this writing, the following is valid json for a `Command` object:
 
 #### add_status_item
 
-`add_status_item { source: "status_example", key: "my_key", value: "hello", alignment: "left" }`
+`add_status_item { "source": "status_example", "key": "my_key", "value": "hello", "alignment": "left" }`
 
 Adds a status item, which will be displayed on the frontend's status bar. Status items have a reference to whichever plugin added them. The alignment key dictates whether this item appears on the left side or the right side of the bar. This alignment can only be set when the item is added.
 
 #### update_status_item
 
-`update_status_item { key: "my_key", value: "hello"}`
+`update_status_item { "key": "my_key", "value": "hello"}`
 
 Update a status item with the specified key with the new value.
 
 #### remove_status_item
 
-`remove_status_item { key: "my_key" }`
+`remove_status_item { "key": "my_key" }`
 
 Removes a status item from the front end.
 
+### Find and replace commands
+
+#### find_status
+
+`find_status {"view_id": "view-id-1", "queries": [{"chars": "a", "case_sensitive": false, "is_regex": false, "whole_words": true, "matches": 6}]}`
+
+Notifies the client about the current search queries and search options.
+
+#### replace_status
+
+`replace {"view_id": "view-id-1", "status": {"chars": "a", "preserve_case": false}}`
+
+Notifies the client about the current replacement string and replace options.
 
 ## Other future extensions
 
@@ -517,8 +598,6 @@ Things the protocol will need to cover:
 * Minimal invalidation.
 
 * General configuration options (word wrap, etc).
-
-* Many more commands (find, replace).
 
 * Display of autocomplete options.
 
