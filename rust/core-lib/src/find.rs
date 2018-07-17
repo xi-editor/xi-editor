@@ -103,15 +103,15 @@ pub struct Find {
     id: FindId,
     /// The occurrences, which determine the highlights, have been updated.
     hls_dirty: bool,
-    /// The currently active search string
+    /// The currently active search string.
     search_string: Option<String>,
-    /// The case matching setting for the currently active search
+    /// The case matching setting for the currently active search.
     case_matching: CaseMatching,
-    /// The search query should be considered as regular expression
+    /// The search query should be considered as regular expression.
     regex: Option<Regex>,
     /// Query matches only whole words.
     whole_words: bool,
-    /// The set of all known find occurrences (highlights)
+    /// The set of all known find occurrences (highlights).
     occurrences: Selection,
 }
 
@@ -126,6 +126,10 @@ impl Find {
             whole_words: false,
             occurrences: Selection::new(),
         }
+    }
+
+    pub fn id(&self) -> FindId {
+        self.id
     }
 
     pub fn occurrences(&self) -> &Selection {

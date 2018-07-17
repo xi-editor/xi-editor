@@ -19,7 +19,7 @@
 //! the editor or view as appropriate.
 
 use movement::Movement;
-use rpc::{Position, GestureType, LineRange, EditNotification, MouseAction, SelectionModifier};
+use rpc::{Position, GestureType, LineRange, EditNotification, MouseAction, SelectionModifier, FindQuery};
 use view::Size;
 
 
@@ -35,7 +35,7 @@ pub(crate) enum ViewEvent {
     Drag(MouseAction),
     Gesture { line: u64, col: u64, ty: GestureType },
     GotoLine { line: u64 },
-    Find { chars: String, case_sensitive: bool, regex: bool, whole_words: bool },
+    Find { queries: Vec<FindQuery> },
     FindNext { wrap_around: bool, allow_same: bool, modify_selection: SelectionModifier },
     FindPrevious { wrap_around: bool, allow_same: bool, modify_selection: SelectionModifier },
     FindAll,
@@ -209,8 +209,8 @@ impl From<EditNotification> for EventDomain {
                 ViewEvent::Gesture { line, col, ty }.into(),
             Undo => BufferEvent::Undo.into(),
             Redo => BufferEvent::Redo.into(),
-            Find { chars, case_sensitive, regex, whole_words } =>
-                ViewEvent::Find { chars, case_sensitive, regex, whole_words }.into(),
+            Find { queries } =>
+                ViewEvent::Find { queries }.into(),
             FindNext { wrap_around, allow_same, modify_selection } =>
                 ViewEvent::FindNext { wrap_around, allow_same, modify_selection }.into(),
             FindPrevious { wrap_around, allow_same, modify_selection } =>
