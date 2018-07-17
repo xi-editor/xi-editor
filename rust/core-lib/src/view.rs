@@ -29,7 +29,7 @@ use client::Client;
 use edit_types::ViewEvent;
 use line_cache_shadow::{self, LineCacheShadow, RenderPlan, RenderTactic};
 use movement::{Movement, region_movement, selection_movement};
-use rpc::{GestureType, MouseAction, SelectionModifier};
+use rpc::{GestureType, MouseAction, SelectionModifier, FindQuery};
 use styles::{Style, ThemeStyleMap};
 use selection::{Affinity, Selection, SelRegion};
 use tabs::{ViewId, BufferId};
@@ -235,8 +235,8 @@ impl View {
             Gesture { line, col, ty } =>
                 self.do_gesture(text, line, col, ty),
             GotoLine { line } => self.goto_line(text, line),
-            Find { chars, case_sensitive, regex, whole_words } =>
-                self.do_find(text, chars, case_sensitive, regex, whole_words),
+            Find { queries } =>
+                self.do_find(text, queries),
             FindNext { wrap_around, allow_same, modify_selection } =>
                 self.do_find_next(text, false, wrap_around, allow_same, &modify_selection),
             FindPrevious { wrap_around, allow_same, modify_selection } =>
@@ -1003,19 +1003,32 @@ impl View {
         self.find.push(Find::new(id));
     }
 
-    pub fn do_find(&mut self, text: &Rope, chars: String, case_sensitive: bool, is_regex: bool,
-                   whole_words: bool) {
+    pub fn do_find(&mut self, text: &Rope, queries: Vec<FindQuery>) {
         self.set_dirty(text);
         self.find_changed = FindStatusChange::Matches;
 
-        // todo: this will be changed once multiple queries are supported
-        // todo: for now only a single search query is supported however in the future
-        // todo: the correct Find instance needs to be updated with the new parameters
-        if self.find.is_empty() {
-            self.add_find();
+        for query in &queries {
+            let pos = match query.id {
+                Some(id) => {
+                    // update existing query
+                    match self.find.iter().position(|f| f.id() == id) {
+                        Some(p) => p,
+                        None => return
+                    }
+                }
+                None => {
+                    // add new query
+                    self.add_find();
+                    self.find.len() - 1
+                }
+            };
+
+            self.find.get_mut(pos).unwrap().do_find(text, query.chars.clone(), query.case_sensitive,
+                                                    query.regex, query.whole_words)
         }
 
-        self.find.first_mut().unwrap().do_find(text, &chars, case_sensitive, is_regex, whole_words);
+        // remove deleted queries
+        self.find.retain(|f| queries.iter().position(|q| q.id == Some(f.id())).is_some());
     }
 
     /// Selects the next find match.

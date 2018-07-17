@@ -29,6 +29,7 @@ use config::{Table, ConfigDomainExternal};
 use plugins::PlaceholderRpc;
 use tabs::ViewId;
 use view::Size;
+use internal::find::FindId;
 use syntax::LanguageId;
 
 // =============================================================================
@@ -350,6 +351,18 @@ impl Default for SelectionModifier {
     fn default() -> SelectionModifier { SelectionModifier::Set }
 }
 
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct FindQuery {
+    pub id: Option<FindId>,
+    pub chars: String,
+    pub case_sensitive: bool,
+    #[serde(default)]
+    pub regex: bool,
+    #[serde(default)]
+    pub whole_words: bool
+}
+
 /// The edit-related notifications.
 ///
 /// Alongside the [`EditRequest`] members, these commands constitute
@@ -412,14 +425,7 @@ pub enum EditNotification {
     Gesture { line: u64, col: u64, ty: GestureType},
     Undo,
     Redo,
-    Find {
-        chars: String,
-        case_sensitive: bool,
-        #[serde(default)]
-        regex: bool,
-        #[serde(default)]
-        whole_words: bool
-    },
+    Find { queries: Vec<FindQuery> },
     FindNext {
         #[serde(default)]
         wrap_around: bool,
