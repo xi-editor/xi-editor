@@ -991,11 +991,13 @@ impl View {
         self.find_changed = FindStatusChange::All;
         self.set_dirty(text);
 
-        if self.find.is_empty() {
+        // set selection as search query for first find if no additional search queries are used
+        // otherwise add new find with selection as search query
+        if self.find.len() != 1 {
             self.add_find();
         }
 
-        self.find.first_mut().unwrap().do_find(text, &search_query, case_sensitive, false, true);
+        self.find.last_mut().unwrap().do_find(text, search_query, case_sensitive, false, true);
     }
 
     fn add_find(&mut self) {
