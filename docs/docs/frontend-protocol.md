@@ -73,7 +73,7 @@ note for `new_view`. Errors are not currently reported.
 
 `set_theme {"theme_name": "InspiredGitHub"}`
 
-Requests that core changes the theme. If the change succeeds the client
+Requests that core change the theme. If the change succeeds the client
 will receive a `theme_changed` notification.
 
 ### modify_user_config
@@ -255,7 +255,8 @@ Sets the current search query and options.
 `find_next {"wrap_around": true, "allow_same": false, "modify_selection": "set"}`
 `find_previous {"wrap_around": true, "allow_same": false, "modify_selection": "set"}`
 All parameters are optional. Boolean parameters are by default `false` and `modify_selection`
-is `set` by default. Supported options for `modify_selection` are:
+is `set` by default. If `allow_same` is set to `true` the current selection is considered a
+valid next occurrence. Supported options for `modify_selection` are:
 * `none`: the selection is not modified
 * `set`: the next/previous match will be set as the new selection
 * `add`: the next/previous match will be added to the current selection
@@ -585,7 +586,7 @@ Notifies the client about the current search queries and search options.
 
 #### replace_status
 
-`replace {"view_id": "view-id-1", "status": {"chars": "a", "preserve_case": false}}`
+`replace_status {"view_id": "view-id-1", "status": {"chars": "a", "preserve_case": false}}`
 
 Notifies the client about the current replacement string and replace options.
 
