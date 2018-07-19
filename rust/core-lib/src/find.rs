@@ -57,7 +57,7 @@ pub struct FindStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FindId(pub(crate) usize);
 
-// todo: most duplication from ViewId
+// todo: mostly duplication from ViewId
 impl<'a> From<&'a str> for FindId {
     fn from(s: &'a str) -> Self {
         let ord = s.trim_left_matches("find-id-");
