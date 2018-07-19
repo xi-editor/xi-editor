@@ -1009,6 +1009,9 @@ impl View {
         self.set_dirty(text);
         self.find_changed = FindStatusChange::Matches;
 
+        // remove deleted queries
+        self.find.retain(|f| queries.iter().position(|q| q.id == Some(f.id())).is_some());
+        
         for query in &queries {
             let pos = match query.id {
                 Some(id) => {
@@ -1028,9 +1031,6 @@ impl View {
             self.find.get_mut(pos).unwrap().do_find(text, query.chars.clone(), query.case_sensitive,
                                                     query.regex, query.whole_words)
         }
-
-        // remove deleted queries
-        self.find.retain(|f| queries.iter().position(|q| q.id == Some(f.id())).is_some());
     }
 
     /// Selects the next find match.
