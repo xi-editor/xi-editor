@@ -1157,4 +1157,40 @@ mod tests {
         let rope = Rope::from("hi\ni'm\nfour\nlines");
         rope.offset_of_line(5);
     }
+
+    #[test]
+    fn utf16_code_units_metric() {
+        let rope = Rope::from("hi\ni'm\nfour\nlines");
+        let utf16_units = rope.measure::<Utf16CodeUnitsMetric>();
+        assert_eq!(utf16_units, 17);
+
+        // position after 'f' in four
+        let utf8_offset = 9;
+        let utf16_units = rope.convert_metrics::<BaseMetric, Utf16CodeUnitsMetric>(utf8_offset);
+        assert_eq!(utf16_units, 9);
+
+        let utf8_offset = rope.convert_metrics::<Utf16CodeUnitsMetric, BaseMetric>(utf16_units);
+        assert_eq!(utf8_offset, 9);
+
+        let rope_with_emoji = Rope::from("hi\ni'm\n😀 four\nlines");
+        let utf16_units = rope_with_emoji.measure::<Utf16CodeUnitsMetric>();
+        
+        assert_eq!(utf16_units, 20);
+
+        // position after 'f' in four
+        let utf8_offset = 13;
+        let utf16_units = rope_with_emoji.convert_metrics::<BaseMetric, Utf16CodeUnitsMetric>(utf8_offset);
+        assert_eq!(utf16_units, 11);
+
+        let utf8_offset = rope_with_emoji.convert_metrics::<Utf16CodeUnitsMetric, BaseMetric>(utf16_units);
+        assert_eq!(utf8_offset, 13);
+
+        //for next line
+        let utf8_offset = 19;
+        let utf16_units = rope_with_emoji.convert_metrics::<BaseMetric, Utf16CodeUnitsMetric>(utf8_offset);
+        assert_eq!(utf16_units, 17);
+
+        let utf8_offset = rope_with_emoji.convert_metrics::<Utf16CodeUnitsMetric, BaseMetric>(utf16_units);
+        assert_eq!(utf8_offset, 19);
+    }
 }
