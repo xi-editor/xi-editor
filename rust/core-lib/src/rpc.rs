@@ -26,7 +26,7 @@ use serde::de::{self, Deserialize, Deserializer};
 use serde::ser::{self, Serialize, Serializer};
 
 use config::{Table, ConfigDomainExternal};
-use plugins::{PlaceholderRpc};
+use plugins::PlaceholderRpc;
 use tabs::ViewId;
 use view::Size;
 

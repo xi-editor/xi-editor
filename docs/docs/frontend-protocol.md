@@ -581,21 +581,7 @@ this writing, the following is valid json for a `Command` object:
 
 #### Show Hover
 
-`show_hover { request_id: number, result: Hover }`
-
-```ts
-interface Hover {
-    /// Markdown string to represent the text to be shown in popup
-    content: string
-    /// range to be highlighted while hover is active
-    range?: Range
-}
-
-interface Range {
-    start: number,
-    end: number
-}
-```
+`show_hover { request_id: number, result: string }`
 
 ### Status Bar Commands
 

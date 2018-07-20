@@ -14,9 +14,9 @@
 
 //! A proxy for the methods on Core
 use xi_core::internal::plugins::PluginId;
-use xi_core::plugin_rpc::{Hover, LanguageResponseError};
+use xi_core::plugin_rpc::Hover;
 use xi_core::ViewId;
-use xi_rpc::{RpcCtx, RpcPeer};
+use xi_rpc::{RpcCtx, RpcPeer, RemoteError};
 
 #[derive(Clone)]
 pub struct CoreProxy {
@@ -69,7 +69,7 @@ impl CoreProxy {
         &mut self,
         view_id: ViewId,
         request_id: usize,
-        result: Result<Hover, LanguageResponseError>,
+        result: Result<Hover, RemoteError>,
         rev: u64,
     ) {
         let params = json!({

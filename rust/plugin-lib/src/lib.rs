@@ -47,7 +47,7 @@ pub use view::View;
 pub use state_cache::StateCache;
 pub use base_cache::ChunkCache;
 pub use core_proxy::CoreProxy;
-pub use xi_core::plugin_rpc::{Hover, Range, Position, PositionEnum, LanguageResponseError};
+pub use xi_core::plugin_rpc::{Hover, Range, CorePosition, PluginPosition};
 
 /// Abstracts getting data from the peer. Mainly exists for mocking in tests.
 pub trait DataSource {
@@ -152,7 +152,7 @@ pub trait Plugin {
     /// Language Plugins specific methods
     
     #[allow(unused_variables)]
-    fn get_hover(&mut self, view: &mut View<Self::Cache>, request_id: usize, position: Position) { }
+    fn get_hover(&mut self, view: &mut View<Self::Cache>, request_id: usize, position: CorePosition) { }
 }
 
 #[derive(Debug)]

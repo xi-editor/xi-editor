@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use serde_json::{self, Value};
 
 use xi_core::{ViewId, PluginPid, ConfigTable};
-use xi_core::plugin_rpc::{PluginBufferInfo, Position, PluginUpdate, HostRequest, HostNotification};
+use xi_core::plugin_rpc::{PluginBufferInfo, CorePosition, PluginUpdate, HostRequest, HostNotification};
 use xi_rpc::{RpcCtx, RemoteError, Handler as RpcHandler};
 use xi_trace::{self, trace, trace_block, trace_block_payload};
 use core_proxy::CoreProxy;
@@ -123,7 +123,7 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
 
     }
 
-    fn do_get_hover(&mut self, view_id: ViewId, request_id: usize, position: Position) {
+    fn do_get_hover(&mut self, view_id: ViewId, request_id: usize, position: CorePosition) {
         let v = bail!(self.views.get_mut(&view_id), "get_hover", self.pid, view_id);
         self.plugin.get_hover(v, request_id, position)
     }
