@@ -29,12 +29,12 @@ use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::Mutex;
 use types::Config;
-use types::Error;
+use types::{Error, LanguageResponseError};
 use url::Url;
 use xi_core::ConfigTable;
 use xi_core::ViewId;
 use xi_plugin_lib::{
-    Cache, ChunkCache, CoreProxy, Error as PluginLibError, LanguageResponseError, Position as CorePosition, Plugin, View,
+    Cache, ChunkCache, CoreProxy, Error as PluginLibError, CorePosition, Plugin, View,
 };
 use xi_rope::rope::RopeDelta;
 
@@ -150,7 +150,7 @@ fn get_change_for_sync_kind(
 /// For example: Cargo.toml can be used to identify a Rust Workspace
 /// This method traverses up to file tree to return the path to the Workspace root folder
 pub fn get_workspace_root_uri(
-    workspace_identifier: &String,
+    workspace_identifier: &str,
     document_path: &Path,
 ) -> Result<Url, Error> {
     let identifier_os_str = OsStr::new(&workspace_identifier);
@@ -260,7 +260,6 @@ impl Plugin for LspPlugin {
             let mut ls_client = ls_client.lock().unwrap();
 
             let sync_kind = ls_client.get_sync_kind();
-
             view_info.version += 1;
             if let Some(changes) = get_change_for_sync_kind(sync_kind, view, delta) {
                 ls_client.send_did_change(view.get_id(), changes, view_info.version);
@@ -272,31 +271,16 @@ impl Plugin for LspPlugin {
         eprintln!("saved view {}", view.get_id());
 
         let document_text = view.get_document().unwrap();
-
-        let client_identifier = self.view_info.get(&view.get_id());
-        if let Some(view_info) = client_identifier {
-            // This won't fail since we definitely have a client for the given
-            // client identifier
-            let ls_client = self
-                .language_server_clients
-                .get(&view_info.ls_identifier)
-                .unwrap();
-            let mut ls_client = ls_client.lock().unwrap();
+        self.with_language_server_for_view(view, |ls_client| {
             ls_client.send_did_save(view.get_id(), document_text);
-        }
+        });
     }
 
     fn did_close(&mut self, view: &View<Self::Cache>) {
         eprintln!("close view {}", view.get_id());
-
-        if let Some(view_info) = self.view_info.get(&view.get_id()) {
-            let ls_client = self
-                .language_server_clients
-                .get(&view_info.ls_identifier)
-                .unwrap();
-            let mut ls_client = ls_client.lock().unwrap();
-            ls_client.send_did_close(view.get_id());
-        }
+        self.with_language_server_for_view(view, |ls_client| {
+            ls_client.send_did_close(view.get_id());    
+        });
     }
 
     fn new_view(&mut self, view: &mut View<Self::Cache>) {
@@ -314,15 +298,11 @@ impl Plugin for LspPlugin {
             let workspace_root_uri = {
                 let config = &self.config.language_config.get_mut(&language_id).unwrap();
 
-                match &config.workspace_identifier {
-                    Some(workspace_identifier) => {
-                        let path = view.get_path().clone().unwrap();
-                        let q = get_workspace_root_uri(workspace_identifier, path);
-                        eprintln!("PATH {:?}", q);
-                        q.ok()
-                    }
-                    None => None,
-                }
+                config.workspace_identifier.clone().and_then(|identifier| {
+                    let path = view.get_path().clone().unwrap();
+                    let q = get_workspace_root_uri(&identifier, path);
+                    q.ok()
+                })
             };
 
             let result = self.get_lsclient_from_workspace_root(language_id, &workspace_root_uri);
@@ -344,8 +324,6 @@ impl Plugin for LspPlugin {
                         if let Ok(result) = result {
                             let init_result: InitializeResult =
                                 serde_json::from_value(result).unwrap();
-
-                            eprintln!("Init Result: {:?}", init_result);
 
                             ls_client.server_capabilities = Some(init_result.capabilities);
                             ls_client.is_initialized = true;
@@ -386,7 +364,8 @@ impl Plugin for LspPlugin {
                                 let hover: Option<Hover> = serde_json::from_value(h).unwrap();
                                 hover.ok_or(LanguageResponseError::NullResponse)
                                     .and_then(core_hover_from_hover)
-                            });
+                            })
+                            .map_err(|e| e.into());
                         ls_client.core.display_hover(view_id, request_id, res, rev);
                     },
                 );
@@ -420,7 +399,6 @@ impl LspPlugin {
                 }
             })
             .and_then(|language_server_identifier| {
-                eprintln!("LANGUAGE SERVER IDEN {}", language_server_identifier);
                 let contains = self
                     .language_server_clients
                     .contains_key(&language_server_identifier);

@@ -22,6 +22,7 @@ use serde::ser::{self, Serialize, Serializer};
 use serde_json::{self, Value};
 
 use xi_rope::rope::{RopeDelta, Rope, LinesMetric};
+use xi_rpc::RemoteError;
 use super::PluginPid;
 use syntax::LanguageId;
 use tabs::{BufferIdentifier, ViewId};
@@ -108,7 +109,7 @@ pub enum HostNotification {
     ConfigChanged { view_id: ViewId, changes: Table },
     NewBuffer { buffer_info: Vec<PluginBufferInfo> },
     DidClose { view_id: ViewId },
-    GetHover { view_id: ViewId, request_id: usize, position: Position },
+    GetHover { view_id: ViewId, request_id: usize, position: CorePosition },
     Shutdown(EmptyStruct),
     TracingConfig {enabled: bool},
 }
@@ -185,25 +186,19 @@ pub enum PluginNotification {
     AddStatusItem { key: String, value: String, alignment: String },
     UpdateStatusItem { key: String, value: String  },
     RemoveStatusItem { key: String },
-    ShowHover { request_id: usize, result: Result<Hover, LanguageResponseError>, rev: u64 }
+    ShowHover { request_id: usize, result: Result<Hover, RemoteError>, rev: u64 },
 }
 
+/// Range expressed in terms of PluginPosition. Meant to be sent from
+/// plugin to core.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct Range {
-    pub start: PositionEnum,
-    pub end: PositionEnum
+    pub start: PluginPosition,
+    pub end: PluginPosition
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "snake_case")]
-pub enum LanguageResponseError {
-    LanguageServerError(String),
-    PositionConversionError(String),
-    NullResponse,
-    FallbackResponse
-}
-
+/// Hover Item sent from Plugin to Core
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct Hover {
@@ -211,19 +206,27 @@ pub struct Hover {
     pub range: Option<Range>
 }
 
+/// Plugins are sent locations in multiple formats to facilitate
+/// all actual conversion at only one place.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
-pub struct Position {
-    pub utf8_offset: usize,
+pub struct CorePosition {
+    /// UTF-8 Offset
+    pub offset: usize,
+    /// Line Number
     pub line: usize,
+    /// UTF-8 byte to the position in line
     pub col_utf8: usize,
+    /// UTF-16 Code Units offset to the position in line
     pub col_utf16: usize
 }
 
+/// Plugins can send their locations in any of the supported formats
+/// in this enums. They are converted to UTF-8 offsets in the Core
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
-pub enum PositionEnum {
+pub enum PluginPosition {
     Utf8Offset { offset: usize },
     Utf16LineCol { line: usize, col: usize },
     Utf8LineCol { line: usize, col: usize }

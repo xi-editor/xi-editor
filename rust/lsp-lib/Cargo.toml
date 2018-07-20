@@ -23,5 +23,8 @@ path = "../core-lib"
 [dependencies.xi-rope]
 path = "../rope"
 
+[dependencies.xi-rpc]
+path = "../rpc"
+
 [dependencies.xi-trace]
 path = "../trace"

@@ -22,7 +22,7 @@ use xi_rpc::{self, RpcPeer};
 use tabs::ViewId;
 use config::Table;
 use styles::ThemeSettings;
-use plugins::rpc::{ClientPluginInfo};
+use plugins::rpc::ClientPluginInfo;
 use plugins::Command;
 
 /// An interface to the frontend.
@@ -34,18 +34,6 @@ pub struct Client(RpcPeer);
 pub struct WidthReq {
     pub id: usize,
     pub strings: Vec<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Range {
-    pub start: usize,
-    pub end: usize
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Hover {
-    pub content: String,
-    pub range: Option<Range>
 }
 
 impl Client {
@@ -190,7 +178,7 @@ impl Client {
             {   "view_id": view_id, "key": key }));
     }
 
-    pub fn show_hover(&self, view_id: ViewId, request_id: usize, result: Hover) {
+    pub fn show_hover(&self, view_id: ViewId, request_id: usize, result: String) {
         self.0.send_rpc_notification("show_hover", &json!(
             {
                 "view_id": view_id,

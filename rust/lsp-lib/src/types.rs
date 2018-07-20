@@ -20,6 +20,7 @@ use std;
 use std::collections::HashMap;
 use std::io::Error as IOError;
 use url::ParseError as UrlParseError;
+use xi_rpc::RemoteError;
 
 pub enum LspHeader {
     ContentType,
@@ -121,5 +122,27 @@ impl From<UrlParseError> for Error {
 impl From<IOError> for Error {
     fn from(err: IOError) -> Error {
         Error::IOError(err)
+    }
+}
+
+/// Possible Errors that can occur while handling Language Plugins
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum LanguageResponseError {
+    LanguageServerError(String),
+    NullResponse,
+    FallbackResponse
+}
+
+impl Into<RemoteError> for LanguageResponseError {
+    fn into(self) -> RemoteError {
+        match self {
+            LanguageResponseError::NullResponse => 
+                    RemoteError::custom(0, "null response from server", None),
+            LanguageResponseError::FallbackResponse => 
+                    RemoteError::custom(1, "fallback response from server", None),
+            LanguageResponseError::LanguageServerError(error) => 
+                    RemoteError::custom(2, "language server error occured", Some(Value::String(error)))
+        }
     }
 }

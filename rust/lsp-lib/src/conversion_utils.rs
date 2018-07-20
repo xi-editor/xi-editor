@@ -18,9 +18,9 @@
 use lsp_types::*;
 use xi_plugin_lib::{
     Cache, Error as PluginLibError, Hover as CoreHover,
-    LanguageResponseError, Range as CoreRange,
-    PositionEnum, View
+    Range as CoreRange, PluginPosition, View
 };
+use types::LanguageResponseError;
 
 pub(crate) fn marked_string_to_string(marked_string: &MarkedString) -> String {
     match *marked_string {
@@ -78,8 +78,8 @@ pub(crate) fn get_position_of_offset<C: Cache>(
 }
 
 
-pub(crate) fn position_enum_from_position(position: Position) -> PositionEnum {
-    PositionEnum::Utf16LineCol {
+pub(crate) fn plugin_position_from_position(position: Position) -> PluginPosition {
+    PluginPosition::Utf16LineCol {
         line: position.line as usize,
         col: position.character as usize,
     }
@@ -87,8 +87,8 @@ pub(crate) fn position_enum_from_position(position: Position) -> PositionEnum {
 
 pub(crate) fn core_range_from_range(range: Range) -> CoreRange {
     CoreRange {
-        start: position_enum_from_position(range.start),
-        end: position_enum_from_position(range.end),
+        start: plugin_position_from_position(range.start),
+        end: plugin_position_from_position(range.end),
     }
 }
 
