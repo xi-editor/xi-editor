@@ -468,24 +468,6 @@ impl Editor {
         }
         self.this_edit_type = EditType::InsertChars;
         self.add_delta(builder.build());
-
-        // What follows is old indent code, retained because it will be useful for
-        // indent action (Sublime no longer does indent on non-caret selections).
-        /*
-            let (first_line, _) = view.offset_to_line_col(&self.text, view.sel_min());
-            let (last_line, last_col) =
-                view.offset_to_line_col(&self.text, view.sel_max());
-            let last_line = if last_col == 0 && last_line > first_line {
-                last_line
-            } else {
-                last_line + 1
-            };
-            for line in first_line..last_line {
-                let offset = view.line_col_to_offset(&self.text, line, 0);
-                let iv = Interval::new_closed_open(offset, offset);
-                self.add_simple_edit(iv, Rope::from(n_spaces(TAB_SIZE)));
-            }
-        */
     }
 
     /// Indents or outdents lines based on selection and user's tab settings.
@@ -563,9 +545,7 @@ impl Editor {
 
     pub(crate) fn do_cut(&mut self, view: &mut View) -> Value {
         let result = self.do_copy(view);
-        // This copy is just to make the borrow checker happy, could be optimized.
-        let deletions = view.sel_regions().to_vec();
-        self.delete_sel_regions(&deletions);
+        self.delete_sel_regions(&view.sel_regions());
         result
     }
 
