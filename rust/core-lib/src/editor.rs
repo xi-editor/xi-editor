@@ -139,8 +139,8 @@ impl Editor {
         self.engine.get_head_rev_id().token()
     }
 
-    pub(crate) fn get_edit_type(&self) -> &str {
-        self.this_edit_type.json_string()
+    pub(crate) fn get_edit_type(&self) -> EditType {
+        self.this_edit_type
     }
 
     pub(crate) fn get_active_undo_group(&self) -> usize {
@@ -210,9 +210,7 @@ impl Editor {
         let head_rev_id = self.engine.get_head_rev_id();
         let undo_group;
 
-        if self.this_edit_type == self.last_edit_type
-            && self.this_edit_type != EditType::Other
-            && self.this_edit_type != EditType::Transpose
+        if !self.this_edit_type.breaks_undo_group(self.last_edit_type)
             && !self.live_undos.is_empty()
         {
             undo_group = *self.live_undos.last().unwrap();
@@ -439,18 +437,27 @@ impl Editor {
     }
 
     fn insert_newline(&mut self, view: &View, config: &BufferItems) {
-        self.this_edit_type = EditType::InsertChars;
+        self.this_edit_type = EditType::InsertNewline;
         self.insert(view, &config.line_ending);
     }
 
     fn insert_tab(&mut self, view: &View, config: &BufferItems) {
+        self.this_edit_type = EditType::InsertChars;
         let mut builder = delta::Builder::new(self.text.len());
         let const_tab_text = self.get_tab_text(config, None);
+
+        if view.sel_regions().len() > 1 {
+            // if we indent multiple regions or multiple lines (below),
+            // we treat this as an indentation adjustment; otherwise it is
+            // just inserting text.
+            self.this_edit_type = EditType::Indent;
+        }
 
         for region in view.sel_regions() {
             let line_range = view.get_line_range(&self.text, region);
 
             if line_range.len() > 1 {
+                self.this_edit_type = EditType::Indent;
                 for line in line_range {
                     let offset = view.line_col_to_offset(&self.text, line, 0);
                     let iv = Interval::new_closed_open(offset, offset);
@@ -466,7 +473,6 @@ impl Editor {
                 builder.replace(iv, Rope::from(tab_text));
             }
         }
-        self.this_edit_type = EditType::InsertChars;
         self.add_delta(builder.build());
     }
 
@@ -477,6 +483,7 @@ impl Editor {
     /// Sublime and VSCode, with non-caret selections not being modified.
     fn modify_indent(&mut self, view: &View, config: &BufferItems,
                      direction: IndentDirection) {
+        self.this_edit_type = EditType::Indent;
         let mut lines = BTreeSet::new();
         let tab_text = self.get_tab_text(config, None);
         for region in view.sel_regions() {
@@ -781,10 +788,19 @@ impl Editor {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Copy)]
-enum EditType {
+#[derive(PartialEq, Eq, Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EditType {
+    /// A catchall for edits that don't fit elsewhere, and which should
+    /// always have their own undo groups; used for things like cut/copy/paste.
     Other,
+    /// An insert from the keyboard/IME (not a paste or a yank).
+    #[serde(rename = "insert")]
     InsertChars,
+    #[serde(rename = "newline")]
+    InsertNewline,
+    /// An indentation adjustment.
+    Indent,
     Delete,
     Undo,
     Redo,
@@ -792,17 +808,15 @@ enum EditType {
 }
 
 impl EditType {
-    pub fn json_string(&self) -> &'static str {
-        match *self {
-            EditType::InsertChars => "insert",
-            EditType::Delete => "delete",
-            EditType::Undo => "undo",
-            EditType::Redo => "redo",
-            EditType::Transpose => "transpose",
-            _ => "other",
+    /// Checks whether a new undo group should be created between two edits.
+    fn breaks_undo_group(self, previous: EditType) -> bool {
+        if self == EditType::Other || self == EditType::Transpose {
+            return true;
         }
+        self != previous
     }
 }
+
 
 fn last_selection_region(regions: &[SelRegion]) -> Option<&SelRegion> {
     for region in regions.iter().rev() {

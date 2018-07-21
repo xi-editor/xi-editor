@@ -218,6 +218,12 @@ impl<'a> EventContext<'a> {
         let delta = if approx_size > MAX_SIZE_LIMIT { None } else { Some(delta) };
 
         let undo_group = ed.get_active_undo_group();
+        //TODO: we want to just put EditType on the wire, but don't want
+        //to update the plugin lib quite yet.
+        let edit_type_str = serde_json::to_string(&ed.get_edit_type())
+            .unwrap()
+            .trim_matches('"')
+            .to_string();
         let update = PluginUpdate::new(
                 self.view_id,
                 ed.get_head_rev_token(),
@@ -225,7 +231,7 @@ impl<'a> EventContext<'a> {
                 new_len,
                 nb_lines,
                 Some(undo_group),
-                ed.get_edit_type().to_owned(),
+                edit_type_str,
                 author.into());
 
 
