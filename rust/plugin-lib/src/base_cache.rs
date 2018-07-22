@@ -77,7 +77,7 @@ impl Cache for ChunkCache {
     fn get_line<DS>(&mut self, source: &DS, line_num: usize) -> Result<&str, Error>
         where DS: DataSource
     {
-        if line_num > self.num_lines { return Err(Error::BadRequest) }
+        if line_num >= self.num_lines { return Err(Error::BadRequest) }
 
         // if chunk does not include the start of this line, fetch and reset everything
         if self.contents.len() == 0
@@ -648,6 +648,26 @@ mod tests {
         assert_eq!(c.contents, test_str[5..CHUNK_SIZE*3]);
         assert_eq!(c.get_line(&source, 3).unwrap(), "yay!");
         assert_eq!(c.first_line, 3);
+    }
+
+    // if get_line is passed a line (0-indexed) that == the total number of lines
+    // (1-indexed) we should always be returning a ::BadRequest error.
+    #[test]
+    fn get_last_line() {
+        let base_document = "\
+            one\n\
+            two\n
+            three\n\
+            four";
+        let source = MockDataSource(base_document.into());
+        let mut c = ChunkCache::default();
+        let delta = Delta::simple_edit(
+            Interval::new_closed_open(0,0), base_document.into(), 0);
+        c.update(Some(&delta), base_document.len(), 4, 0);
+        match c.get_line(&source, 4) {
+            Err(Error::BadRequest) => (),
+            other => assert!(false, "expected BadRequest, found {:?}", other),
+        };
     }
 
     #[test]
