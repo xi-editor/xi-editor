@@ -31,6 +31,10 @@
     unreadable_literal,
 ))]
 
+#[macro_use]
+extern crate log;
+extern crate fern;
+extern crate chrono;
 extern crate regex;
 extern crate serde;
 #[macro_use]

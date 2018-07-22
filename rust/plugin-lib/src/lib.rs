@@ -27,6 +27,11 @@ extern crate rand;
 extern crate memchr;
 extern crate languageserver_types;
 
+#[macro_use]
+extern crate log;
+extern crate fern;
+extern crate chrono;
+
 mod state_cache;
 mod base_cache;
 mod view;
@@ -164,8 +169,30 @@ pub enum Error {
     Other(String),
 }
 
+fn init_logger() -> Result<(),fern::InitError> {
+    Ok(fern::Dispatch::new()
+        // Perform allocation-free log formatting
+        .format(|out, message, record| {
+            out.finish(format_args!(
+                "{}[{}][{}] {}",
+                chrono::Local::now().format("[%Y-%m-%d][%H:%M:%S]"),
+                record.target(),
+                record.level(),
+                message
+            ))
+        })
+        // Add blanket level filter -
+        .level(log::LevelFilter::Debug)
+        .chain(io::stderr())
+        //.chain(fern::log_file("xi-core.log")?)
+        // Apply globally
+        .apply()?)
+}
+
 /// Run `plugin` until it exits, blocking the current thread.
 pub fn mainloop<P: Plugin>(plugin: &mut P) -> Result<(), ReadError> {
+    
+    init_logger();
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut rpc_looper = RpcLoop::new(stdout);

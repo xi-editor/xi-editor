@@ -159,7 +159,7 @@ impl PluginManager {
         for plugin in self.global_plugins.values() {
             match plugin.request_traces() {
                 Ok(result) => gathered_results.push(result),
-                Err(e) => eprintln!("trace {:?}, {:?}", plugin.get_identifier(), e),
+                Err(e) => warn!("trace {:?}, {:?}", plugin.get_identifier(), e),
             }
         }
 
@@ -170,7 +170,7 @@ impl PluginManager {
             assert!(processed_plugins.insert(plugin.get_identifier()));
             match plugin.request_traces() {
                 Ok(result) => gathered_results.push(result),
-                Err(e) => eprintln!("trace {:?}, {:?}", plugin.get_identifier(), e),
+                Err(e) => warn!("trace {:?}, {:?}", plugin.get_identifier(), e),
             }
         }
 
@@ -189,7 +189,7 @@ impl PluginManager {
                 plug.rpc_notification("custom_command", &inner);
             }
             None => {
-                eprintln!("missing plugin {} for command {}", receiver, method);
+                error!("missing plugin {} for command {}", receiver, method);
             }
         }
     }
@@ -248,7 +248,7 @@ impl PluginManager {
                                                           plugin_ref, commands);
                     }
                 }
-                Err(err) => eprintln!("failed to start plugin {}:\n {:?}",
+                Err(err) => error!("failed to start plugin {}:\n {:?}",
                                      plugin_name, err),
             }
         });
@@ -271,7 +271,7 @@ impl PluginManager {
             let _ = self.running_for_view_mut(view_id)
                 .map(|running| running.insert(plugin_name.to_owned(), plugin_ref));
         } else {
-            eprintln!("launch of plugin {} failed, no buffer for view {}",
+            error!("launch of plugin {} failed, no buffer for view {}",
                        plugin_name, view_id);
             plugin_ref.shutdown();
         }
@@ -501,7 +501,7 @@ impl PluginManagerRef {
 
     /// Called when a document's syntax definition has changed.
     pub fn document_syntax_changed(&self, view_id: ViewId, init_info: PluginBufferInfo) {
-        eprintln!("document_syntax_changed {}", view_id);
+        info!("document_syntax_changed {}", view_id);
 
         let start_keys = self.activatable_plugins(view_id).iter()
             .map(|p| p.to_owned())
@@ -607,11 +607,11 @@ impl PluginManagerRef {
     /// Batch run a group of plugins (as on creating a new view, for instance)
     fn start_plugins(&self, view_id: ViewId,
                      init_info: &PluginBufferInfo, plugin_names: &Vec<String>) {
-        eprintln!("starting plugins for {}", view_id);
+        info!("starting plugins for {}", view_id);
         for plugin_name in plugin_names.iter() {
             match self.start_plugin(view_id, init_info, plugin_name) {
-                Ok(_) => eprintln!("starting plugin {}", plugin_name),
-                Err(err) => eprintln!("unable to start plugin {}, err: {:?}",
+                Ok(_) => info!("starting plugin {}", plugin_name),
+                Err(err) => error!("unable to start plugin {}, err: {:?}",
                                        plugin_name, err),
             }
         }

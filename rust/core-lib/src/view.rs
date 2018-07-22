@@ -217,7 +217,7 @@ impl View {
             Click(MouseAction { line, column, flags, click_count }) => {
                 // Deprecated (kept for client compatibility):
                 // should be removed in favor of do_gesture
-                eprintln!("Usage of click is deprecated; use do_gesture");
+                warn!("Usage of click is deprecated; use do_gesture");
                 if (flags & FLAG_SELECT) != 0 {
                     self.do_gesture(text, line, column, GestureType::RangeSelect)
                 } else if click_count == Some(2) {
