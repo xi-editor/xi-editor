@@ -95,7 +95,7 @@ impl LanguageServerClient {
 
     pub fn handle_message(&mut self, message: &str) {
         match JsonRpc::parse(message) {
-            Ok(JsonRpc::Request(obj)) => eprintln!("client received unexpected request: {:?}", obj),
+            Ok(JsonRpc::Request(obj)) => trace!("client received unexpected request: {:?}", obj),
             Ok(value @ JsonRpc::Notification(_)) => {
                 self.handle_notification(value.get_method().unwrap(), value.get_params().unwrap())
             },
@@ -109,7 +109,7 @@ impl LanguageServerClient {
                 let error = value.get_error().unwrap();
                 self.handle_response(id, Err(error.clone()));
             }
-            Err(err) => eprintln!("Error in parsing incoming string: {}", err),
+            Err(err) => error!("Error in parsing incoming string: {}", err),
         }
     }
 
@@ -182,6 +182,7 @@ impl LanguageServerClient {
             Err(err) => panic!("Encoding Error {:?}", err),
         };
 
+        trace!("Sending RPC: {:?}", rpc);
         self.write(rpc.as_ref());
     }
 

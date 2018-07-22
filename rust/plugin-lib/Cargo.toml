@@ -14,6 +14,9 @@ languageserver-types = "0.41.0"
 bytecount = "0.3.1"
 rand = "0.4"
 memchr = "2.0"
+chrono = "0.4.4"
+log = "0.4.3"
+fern = "0.5.6"
 
 [dependencies.xi-trace]
 path = "../trace"

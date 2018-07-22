@@ -90,7 +90,7 @@ impl Plugin for LspPlugin {
     }
 
     fn did_save(&mut self, view: &mut View<Self::Cache>, _old: Option<&Path>) {
-        eprintln!("saved view {}", view.get_id());
+        trace!("saved view {}", view.get_id());
 
         let document_text = view.get_document().unwrap();
         self.with_language_server_for_view(view, |ls_client| {
@@ -99,14 +99,15 @@ impl Plugin for LspPlugin {
     }
 
     fn did_close(&mut self, view: &View<Self::Cache>) {
-        eprintln!("close view {}", view.get_id());
+        trace!("close view {}", view.get_id());
+        
         self.with_language_server_for_view(view, |ls_client| {
             ls_client.send_did_close(view.get_id());    
         });
     }
 
     fn new_view(&mut self, view: &mut View<Self::Cache>) {
-        eprintln!("new view {}", view.get_id());
+        trace!("new view {}", view.get_id());
 
         let document_text = view.get_document().unwrap();
         let path = view.get_path().clone();
@@ -146,6 +147,8 @@ impl Plugin for LspPlugin {
                         if let Ok(result) = result {
                             let init_result: InitializeResult =
                                 serde_json::from_value(result).unwrap();
+
+                            debug!("Init Result: {:?}", init_result);
 
                             ls_client.server_capabilities = Some(init_result.capabilities);
                             ls_client.is_initialized = true;
@@ -271,7 +274,7 @@ impl LspPlugin {
                             Some((language_server_identifier, client_clone))
                         }
                         Err(err) => {
-                            eprintln!(
+                            error!(
                                 "Error occured while starting server for Language: {}: {:?}",
                                 language_id, err
                             );

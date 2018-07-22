@@ -51,9 +51,9 @@ impl <'a>PluginCatalog {
         let all_manifests = find_all_manifests(paths);
         for manifest_path in all_manifests.iter() {
             match load_manifest(manifest_path) {
-                Err(e) => eprintln!("error loading plugin {:?}", e),
+                Err(e) => warn!("error loading plugin {:?}", e),
                 Ok(manifest) => {
-                    eprintln!("loaded {}", manifest.name);
+                    info!("loaded {}", manifest.name);
                     let manifest = Arc::new(manifest);
                     self.items.insert(manifest.name.clone(), manifest.clone());
                     self.locations.insert(manifest_path.clone(), manifest);
@@ -102,7 +102,7 @@ fn find_all_manifests(paths: &[PathBuf]) -> Vec<PathBuf> {
                  .filter(|f| f.exists())
                  .for_each(|f| manifest_paths.push(f.to_owned())));
          if let Err(e) = result {
-             eprintln!("error reading plugin path {:?}, {:?}", path, e);
+             error!("error reading plugin path {:?}, {:?}", path, e);
          }
     }
     manifest_paths

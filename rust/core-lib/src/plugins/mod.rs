@@ -142,7 +142,7 @@ pub(crate) fn start_plugin_process(plugin_desc: Arc<PluginDescription>,
     let spawn_result = thread::Builder::new()
         .name(format!("<{}> core host thread", &plugin_desc.name))
         .spawn(move || {
-            eprintln!("starting plugin {}", &plugin_desc.name);
+            info!("starting plugin {}", &plugin_desc.name);
             let child = ProcCommand::new(&plugin_desc.exec_path)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
@@ -174,6 +174,6 @@ pub(crate) fn start_plugin_process(plugin_desc: Arc<PluginDescription>,
         });
 
     if let Err(err) = spawn_result {
-        eprintln!("thread spawn failed for {}, {:?}", id, err);
+        error!("thread spawn failed for {}, {:?}", id, err);
     }
 }
