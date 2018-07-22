@@ -198,7 +198,8 @@ impl Cache for ChunkCache {
 
 impl ChunkCache {
     /// Returns the offset of the provided `line_num` if it can be determined
-    /// without fetching data.
+    /// without fetching data. The offset of line 0 is always 0, and there
+    /// is an implicit line at the last offset in the buffer.
     fn cached_offset_of_line(&self, line_num: usize) -> Option<usize> {
         if line_num < self.first_line { return None }
 
@@ -342,9 +343,9 @@ impl ChunkCache {
         if has_newline {
             self.line_offsets = self.line_offsets.iter()
                 .filter_map(|off| match *off {
-                    x if x < start => Some(x),
-                    x if x >= start && x < end => None,
-                    x if x >= end => Some(x - del_size),
+                    x if x <= start => Some(x),
+                    x if x > start && x <= end => None,
+                    x if x > end => Some(x - del_size),
                     hmm => panic!("invariant violated {} {} {}?", start, end, hmm),
                 })
             .collect();
@@ -567,6 +568,79 @@ mod tests {
     }
 
     #[test]
+    fn cached_offset_of_line() {
+        let data = GetDataResponse {
+            chunk: "zer\none\ntwo\ntri".into(),
+            offset: 0,
+            first_line: 0,
+            first_line_offset: 0,
+        };
+        // ensure that the manual num_lines we set below is the same we would
+        // receive on the wire
+        assert_eq!(Rope::from(&data.chunk).measure::<LinesMetric>() + 1, 4);
+        let mut c = ChunkCache::default();
+        c.buf_size = data.chunk.len();
+        c.num_lines = 4;
+        c.reset_chunk(data);
+        assert_eq!(&c.contents, "zer\none\ntwo\ntri");
+        assert_eq!(&c.line_offsets, &[4, 8, 12]);
+
+        assert_eq!(c.cached_offset_of_line(0), Some(0));
+        assert_eq!(c.cached_offset_of_line(1), Some(4));
+        assert_eq!(c.cached_offset_of_line(2), Some(8));
+        assert_eq!(c.cached_offset_of_line(3), Some(12));
+        assert_eq!(c.cached_offset_of_line(4), Some(15));
+        assert_eq!(c.cached_offset_of_line(5), None);
+
+        // delete a newline, and see that line_offsets is correctly updated
+        let delta = Delta::simple_edit(Interval::new_open_closed(3, 4), "".into(), c.buf_size);
+        assert!(delta.is_simple_delete());
+        c.update(Some(&delta), delta.new_document_len(), 3, 1);
+        assert_eq!(&c.contents, "zerone\ntwo\ntri");
+        assert_eq!(&c.line_offsets, &[7, 11]);
+
+        assert_eq!(c.cached_offset_of_line(0), Some(0));
+        assert_eq!(c.cached_offset_of_line(1), Some(7));
+        assert_eq!(c.cached_offset_of_line(2), Some(11));
+        assert_eq!(c.cached_offset_of_line(3), Some(14));
+        assert_eq!(c.cached_offset_of_line(4), None);
+    }
+
+    #[test]
+    fn simple_delete() {
+        let data = GetDataResponse {
+            chunk: "zer\none\ntwo\ntri".into(),
+            offset: 0,
+            first_line: 0,
+            first_line_offset: 0,
+        };
+        // ensure that the manual num_lines we set below is the same we would
+        // receive on the wire
+        assert_eq!(Rope::from(&data.chunk).measure::<LinesMetric>() + 1, 4);
+        let mut c = ChunkCache::default();
+        c.buf_size = data.chunk.len();
+        c.num_lines = 4;
+        c.reset_chunk(data);
+
+        assert_eq!(&c.contents, "zer\none\ntwo\ntri");
+        assert_eq!(&c.line_offsets, &[4, 8, 12]);
+
+        let delta = Delta::simple_edit(Interval::new_open_closed(3, 4),
+            "".into(), c.buf_size);
+        assert!(delta.is_simple_delete());
+        let (iv, _) = delta.summary();
+        let start = iv.start();
+        let end = iv.end();
+        assert_eq!((start, end), (3, 4));
+        assert_eq!(c.offset, 0);
+        c.simple_delete(start, end);
+
+        assert_eq!(&c.line_offsets, &[7, 11]);
+
+
+    }
+
+    #[test]
     fn simple_edits_with_offset() {
         let mut source = MockDataSource("this\nhas\nfour\nlines!".into());
         let mut c = ChunkCache::default();
@@ -677,5 +751,36 @@ mod tests {
         assert_eq!(c.offset_of_line(&source, 3).unwrap(), 14);
         assert_eq!(c.offset_of_line(&source, 4).unwrap(), 20);
         assert!(c.offset_of_line(&source, 5).is_err());
+    }
+
+    #[test]
+    fn get_line_regression() {
+        let base_document = r#"fn main() {
+    let one = "one";
+    let two = "two";
+}"#;
+
+        let edited_document = r#"fn main() {
+    let one = "one";
+    let two = "two";}"#;
+
+        let mut source = MockDataSource(base_document.into());
+        let mut c = ChunkCache::default();
+        let delta = Delta::simple_edit(
+            Interval::new_closed_open(0,0), base_document.into(), 0);
+
+        c.update(Some(&delta), base_document.len(), 4, 0);
+        assert_eq!(c.get_line(&source, 0).unwrap(), "fn main() {\n");
+        assert_eq!(c.get_line(&source, 1).unwrap(), "    let one = \"one\";\n");
+        assert_eq!(c.get_line(&source, 2).unwrap(), "    let two = \"two\";\n");
+        assert_eq!(c.get_line(&source, 3).unwrap(), "}");
+
+        let delta = Delta::simple_edit(Interval::new_open_closed(53, 54), "".into(), c.buf_size);
+        c.update(Some(&delta), base_document.len() - 1, 3, 1);
+        source.0 = edited_document.into();
+        assert_eq!(c.get_line(&source, 0).unwrap(), "fn main() {\n");
+        assert_eq!(c.get_line(&source, 1).unwrap(), "    let one = \"one\";\n");
+        assert_eq!(c.get_line(&source, 2).unwrap(), "    let two = \"two\";}");
+        assert!(c.get_line(&source, 3).is_err());
     }
 }
