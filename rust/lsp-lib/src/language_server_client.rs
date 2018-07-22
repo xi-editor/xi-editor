@@ -85,8 +85,8 @@ impl LanguageServerClient {
 
     pub fn handle_message(&mut self, message: &str) {
         match JsonRpc::parse(message) {
-            Ok(JsonRpc::Request(obj)) => eprintln!("client received unexpected request: {:?}", obj),
-            Ok(JsonRpc::Notification(obj)) => eprintln!("received notification: {:?}", obj),
+            Ok(JsonRpc::Request(obj)) => trace!("client received unexpected request: {:?}", obj),
+            Ok(JsonRpc::Notification(obj)) => trace!("received notification: {:?}", obj),
             Ok(value @ JsonRpc::Success(_)) => {
                 
                 let id = number_from_id(value.get_id().unwrap());
@@ -98,7 +98,7 @@ impl LanguageServerClient {
                 let error = value.get_error().unwrap();
                 self.handle_response(id, Err(error.clone()));
             }
-            Err(err) => eprintln!("Error in parsing incoming string: {}", err),
+            Err(err) => error!("Error in parsing incoming string: {}", err),
         }
     }
 
@@ -125,16 +125,13 @@ impl LanguageServerClient {
             Err(err) => panic!("Encoding Error {:?}", err),
         };
 
-        eprintln!("RPC: {:?}", rpc);
+        trace!("Sending RPC: {:?}", rpc);
         self.write(rpc.as_ref());
     }
 
     pub fn send_notification(&mut self, method: &str, params: Params) {
         let notification = JsonRpc::notification_with_params(method, params);
-
         let res = to_value(&notification).unwrap();
-        eprintln!("RESULT: {:?}", res);
-
         self.send_rpc(res);
     }
 }
@@ -198,11 +195,6 @@ impl LanguageServerClient {
             },
             content_changes: changes,
         };
-
-        eprintln!(
-            "\n\n params did_change_notif :\n {:?}\n\n",
-            text_document_did_change_params
-        );
 
         let params = Params::from(serde_json::to_value(text_document_did_change_params).unwrap());
         self.send_notification("textDocument/didChange", params);

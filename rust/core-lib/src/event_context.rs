@@ -21,6 +21,8 @@ use std::time::{Duration, Instant};
 
 use serde_json::{self, Value};
 
+use log;
+
 use xi_rope::Rope;
 use xi_rope::interval::Interval;
 use xi_rope::rope::LinesMetric;
@@ -124,7 +126,7 @@ impl<'a> EventContext<'a> {
                 }
             }
             SpecialEvent::DebugRewrap | SpecialEvent::DebugWrapWidth =>
-                eprintln!("debug wrapping methods are removed, use the config system"),
+                warn!("debug wrapping methods are removed, use the config system"),
             SpecialEvent::DebugPrintSpans => self.with_editor(
                 |ed, view, _, _| {
                     let sel = view.sel_regions().last().unwrap();
@@ -383,8 +385,8 @@ impl<'a> EventContext<'a> {
     pub(crate) fn do_plugin_update(&mut self, update: Result<Value, RpcError>) {
         match update.map(serde_json::from_value::<u64>) {
             Ok(Ok(_)) => (),
-            Ok(Err(err)) => eprintln!("plugin response json err: {:?}", err),
-            Err(err) => eprintln!("plugin shutdown, do something {:?}", err),
+            Ok(Err(err)) => error!("plugin response json err: {:?}", err),
+            Err(err) => error!("plugin shutdown, do something {:?}", err),
         }
         self.editor.borrow_mut().dec_revs_in_flight();
     }

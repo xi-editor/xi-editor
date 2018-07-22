@@ -164,7 +164,7 @@ fn get_change_for_sync_kind(
         TextDocumentSyncKind::Incremental => match get_document_content_changes(delta, view) {
             Ok(result) => Some(result),
             Err(err) => {
-                eprintln!("Error: {:?} Occured. Sending Whole Doc", err);
+                warn!("Error: {:?} Occured. Sending Whole Doc", err);
                 let text_document_content_change_event = TextDocumentContentChangeEvent {
                     range: None,
                     range_length: None,
@@ -242,7 +242,7 @@ fn start_new_server(
                             let mut server_locked = ls_client.lock().unwrap();
                             server_locked.handle_message(message_str.as_ref());
                         }
-                        Err(err) => eprintln!("Error occurred {:?}", err),
+                        Err(err) => error!("Error occurred {:?}", err),
                     };
                 }
             })
@@ -292,7 +292,7 @@ impl Plugin for LspPlugin {
     }
 
     fn did_save(&mut self, view: &mut View<Self::Cache>, _old: Option<&Path>) {
-        eprintln!("saved view {}", view.get_id());
+        trace!("saved view {}", view.get_id());
 
         let document_text = view.get_document().unwrap();
 
@@ -310,11 +310,11 @@ impl Plugin for LspPlugin {
     }
 
     fn did_close(&mut self, view: &View<Self::Cache>) {
-        eprintln!("close view {}", view.get_id());
+        trace!("close view {}", view.get_id());
     }
 
     fn new_view(&mut self, view: &mut View<Self::Cache>) {
-        eprintln!("new view {}", view.get_id());
+        trace!("new view {}", view.get_id());
 
         let document_text = view.get_document().unwrap();
         let path = view.get_path().clone();
@@ -357,7 +357,7 @@ impl Plugin for LspPlugin {
                             let init_result: InitializeResult =
                                 serde_json::from_value(result).unwrap();
 
-                            eprintln!("Init Result: {:?}", init_result);
+                            debug!("Init Result: {:?}", init_result);
 
                             ls_client.server_capabilities = Some(init_result.capabilities);
                             ls_client.is_initialized = true;
@@ -430,7 +430,7 @@ impl LspPlugin {
                             Some((language_server_identifier, client_clone))
                         }
                         Err(err) => {
-                            eprintln!(
+                            error!(
                                 "Error occured while starting server for Language: {}: {:?}",
                                 language_id, err
                             );

@@ -122,7 +122,7 @@ impl CoreState {
             if !p.exists() {
                 if let Err(e) = config::init_config_dir(p) {
                     //TODO: report this error?
-                    eprintln!("error initing file based configs: {:?}", e);
+                    error!("error initing file based configs: {:?}", e);
                 }
             }
 
@@ -465,7 +465,7 @@ impl CoreState {
 
     fn do_start_plugin(&mut self, _view_id: ViewId, plugin: &str) {
         if self.running_plugins.iter().any(|p| p.name == plugin) {
-            eprintln!("plugin {} already running", plugin);
+            info!("plugin {} already running", plugin);
             return;
         }
 
@@ -476,7 +476,7 @@ impl CoreState {
                                  self.next_plugin_id(),
                                  self.self_ref.as_ref().unwrap().clone());
         } else {
-            eprintln!("no plugin found with name '{}'", plugin);
+            warn!("no plugin found with name '{}'", plugin);
         }
     }
 
@@ -531,7 +531,7 @@ impl CoreState {
             match token {
                 OPEN_FILE_EVENT_TOKEN => self.handle_open_file_fs_event(event),
                 CONFIG_EVENT_TOKEN => self.handle_config_fs_event(event),
-                _ => eprintln!("unexpected fs event token {:?}", token),
+                _ => warn!("unexpected fs event token {:?}", token),
             }
         }
     }
@@ -548,7 +548,7 @@ impl CoreState {
                 Create(ref path) |
                 Write(ref path) => path,
             other => {
-                eprintln!("Event in open file {:?}", other);
+                debug!("Event in open file {:?}", other);
                 return;
             }
         };
@@ -621,7 +621,7 @@ impl CoreState {
                     let mut trace = chrome_trace::decode(json).unwrap();
                     all_traces.append(&mut trace);
                 }
-                Err(e) => eprintln!("trace error {:?}", e),
+                Err(e) => error!("trace error {:?}", e),
             }
         }
 
@@ -630,13 +630,13 @@ impl CoreState {
         let mut trace_file = match File::create(path.as_ref()) {
             Ok(f) => f,
             Err(e) => {
-                eprintln!("error saving trace {:?}", e);
+                error!("error saving trace {:?}", e);
                 return;
             }
         };
 
         if let Err(e) = chrome_trace::serialize(&all_traces, &mut trace_file) {
-            eprintln!("error saving trace {:?}", e);
+            error!("error saving trace {:?}", e);
         }
     }
 }
@@ -655,13 +655,13 @@ impl CoreState {
                 self.iter_groups().for_each(|mut cx| cx.plugin_started(&plugin));
                 self.running_plugins.push(plugin);
             }
-            Err(e) => eprintln!("failed to start plugin {:?}", e),
+            Err(e) => error!("failed to start plugin {:?}", e),
         }
     }
 
     pub(crate) fn plugin_exit(&mut self, id: PluginId,
                               error: Result<(), ReadError>) {
-        eprintln!("plugin {:?} exited with result {:?}", id, error);
+        warn!("plugin {:?} exited with result {:?}", id, error);
         let running_idx = self.running_plugins.iter()
             .position(|p| p.id == id);
         if let Some(idx) = running_idx {

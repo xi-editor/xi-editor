@@ -20,6 +20,9 @@ xi-trace-dump = { path = "../trace-dump", version = "0.1.0" }
 xi-rope = { path = "../rope", version = "0.2" }
 xi-unicode = { path = "../unicode", version = "0.1.0" }
 xi-rpc = { path = "../rpc", version = "0.2.0" }
+fern = "0.5.6"
+log = "0.4.3"
+chrono = "0.4.4"
 
 [dependencies.syntect]
 version = "2.0"

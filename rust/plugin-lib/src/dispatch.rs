@@ -30,7 +30,7 @@ macro_rules! bail {
     ($opt:expr, $method:expr, $pid:expr, $view:expr) => ( match $opt {
         Some(t) => t,
         None => {
-            eprintln!("{:?} missing {:?} for {:?}", $pid, $view, $method);
+            warn!("{:?} missing {:?} for {:?}", $pid, $view, $method);
             return
         }
     })
@@ -42,7 +42,7 @@ macro_rules! bail_err {
     ($opt:expr, $method:expr, $pid:expr, $view:expr) => ( match $opt {
         Some(t) => t,
         None => {
-            eprintln!("{:?} missing {:?} for {:?}", $pid, $view, $method);
+            warn!("{:?} missing {:?} for {:?}", $pid, $view, $method);
             return Err(RemoteError::custom(404, "missing view", None))
         }
     })
@@ -71,7 +71,7 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
                      buffers: Vec<PluginBufferInfo>)
     {
         assert!(self.pid.is_none(), "initialize rpc received with existing pid");
-        eprintln!("Initializing plugin {:?}", plugin_id);
+        info!("Initializing plugin {:?}", plugin_id);
         self.pid = Some(plugin_id);
 
         let core_proxy = CoreProxy::new(ctx);
@@ -118,7 +118,7 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
     }
 
     fn do_shutdown(&mut self) {
-        eprintln!("rust plugin lib does not shutdown");
+        info!("rust plugin lib does not shutdown");
         //TODO: handle shutdown
 
     }
@@ -128,11 +128,11 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
 
         if enabled {
             xi_trace::enable_tracing();
-            eprintln!("Enabling tracing in global plugin {:?}", self.pid);
+            info!("Enabling tracing in global plugin {:?}", self.pid);
             trace("enable tracing", &["plugin"]);
         } else {
             xi_trace::disable_tracing();
-            eprintln!("Disabling tracing in global plugin {:?}",  self.pid);
+            info!("Disabling tracing in global plugin {:?}",  self.pid);
             trace("enable tracing", &["plugin"]);
         }
     }
