@@ -20,6 +20,9 @@ use serde_json::Value;
 use xi_rpc::{RpcCtx, Handler, RemoteError, Error as RpcError, ReadError};
 use xi_trace;
 
+use log;
+use fern;
+use chrono;
 use plugin_rpc::{PluginCommand, PluginNotification, PluginRequest};
 use plugins::{Plugin, PluginId};
 use rpc::*;
@@ -40,6 +43,27 @@ pub enum XiCore {
     Running(Arc<Mutex<CoreState>>),
 }
 
+fn init_logger() -> Result<(),fern::InitError> {
+    Ok(fern::Dispatch::new()
+        // Perform allocation-free log formatting
+        .format(|out, message, record| {
+            out.finish(format_args!(
+                "{}[{}][{}] {}",
+                chrono::Local::now().format("[%Y-%m-%d][%H:%M:%S]"),
+                record.target(),
+                record.level(),
+                message
+            ))
+        })
+        // Add blanket level filter -
+        .level(log::LevelFilter::Debug)
+        .chain(io::stderr())
+        //.chain(fern::log_file("xi-core.log")?)
+        // Apply globally
+        .apply()?)
+}
+
+
 /// A weak reference to the main state. This is passed to plugin threads.
 #[derive(Clone)]
 pub struct WeakXiCore(Weak<Mutex<CoreState>>);
@@ -47,6 +71,7 @@ pub struct WeakXiCore(Weak<Mutex<CoreState>>);
 #[allow(dead_code)]
 impl XiCore {
     pub fn new() -> Self {
+        init_logger();
         XiCore::Waiting
     }
 
@@ -95,7 +120,7 @@ impl Handler for XiCore {
                 true => xi_trace::enable_tracing(),
                 false => xi_trace::disable_tracing(),
             }
-            eprintln!("tracing in core = {:?}", enabled);
+            info!("tracing in core = {:?}", enabled);
             if self.is_waiting() {
                 return;
             }

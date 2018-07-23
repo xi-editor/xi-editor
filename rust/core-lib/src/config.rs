@@ -24,6 +24,8 @@ use serde::de::Deserialize;
 use serde_json::{self, Value};
 use toml;
 
+use log;
+
 use syntax::{LanguageId, Languages};
 use tabs::{BufferId, ViewId};
 
@@ -406,7 +408,7 @@ impl ConfigManager {
         match try_load_from_file(&path) {
             Ok(t) => Some(t),
             Err(e) => {
-                eprintln!("Error loading config: {:?}", e);
+                error!("Error loading config: {:?}", e);
                 None
             }
         }
