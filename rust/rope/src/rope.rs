@@ -285,11 +285,11 @@ impl Metric<RopeInfo> for Utf16CodeUnitsMetric {
         let mut cur_len_utf16 = 0;
         let mut cur_len_utf8 = 0;
         for u in s.chars() {
-            cur_len_utf16 += u.len_utf16();
-            cur_len_utf8 += u.len_utf8();
             if cur_len_utf16 >= in_measured_units {
                 break;
             }
+            cur_len_utf16 += u.len_utf16();
+            cur_len_utf8 += u.len_utf8();
         }
         cur_len_utf8
     }
