@@ -485,7 +485,7 @@ mod tests {
             let client = Client::new(Box::new(DummyPeer));
             let core_ref = dummy_weak_core();
             let kill_ring = RefCell::new(Rope::from(""));
-            let style_map = RefCell::new(ThemeStyleMap::new());
+            let style_map = RefCell::new(ThemeStyleMap::new(None));
             let width_cache = RefCell::new(WidthCache::new());
             ContextHarness { view, editor, client, core_ref, kill_ring,
                              style_map, width_cache, config_manager }
