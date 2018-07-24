@@ -621,13 +621,15 @@ impl View {
 
         if self.highlight_find {
             for find in self.find.iter() {
+                let mut cur_hls = Vec::new();
                 for region in find.occurrences().regions_in_range(start_pos, pos) {
                     let sel_start_ix = clamp(region.min(), start_pos, pos) - start_pos;
                     let sel_end_ix = clamp(region.max(), start_pos, pos) - start_pos;
                     if sel_end_ix > sel_start_ix {
-                        hls.push((sel_start_ix, sel_end_ix));
+                        cur_hls.push((sel_start_ix, sel_end_ix));
                     }
                 }
+                hls.push(cur_hls);
             }
         }
 
@@ -647,21 +649,23 @@ impl View {
 
     pub fn render_styles(&self, client: &Client, styles: &StyleMap,
                          start: usize, end: usize, sel: &[(usize, usize)],
-                         hls: &[(usize, usize)],
+                         hls: &Vec<Vec<(usize, usize)>>,
                          style_spans: &Spans<Style>) -> Vec<isize>
     {
         let mut rendered_styles = Vec::new();
         let style_spans = style_spans.subseq(Interval::new_closed_open(start, end));
 
         let mut ix = 0;
-        // we add the special find highlights (1) and selection (0) styles first.
+        // we add the special find highlights (1 to N) and selection (0) styles first.
         // We add selection after find because we want it to be preferred if the
         // same span exists in both sets (as when there is an active selection)
-        for &(sel_start, sel_end) in hls {
-            rendered_styles.push((sel_start as isize) - ix);
-            rendered_styles.push(sel_end as isize - sel_start as isize);
-            rendered_styles.push(1);
-            ix = sel_end as isize;
+        for (index, cur_find_hls) in hls.iter().enumerate() {
+            for &(sel_start, sel_end) in cur_find_hls {
+                rendered_styles.push((sel_start as isize) - ix);
+                rendered_styles.push(sel_end as isize - sel_start as isize);
+                rendered_styles.push(index as isize + 1);
+                ix = sel_end as isize;
+            }
         }
         for &(sel_start, sel_end) in sel {
             rendered_styles.push((sel_start as isize) - ix);
@@ -1011,7 +1015,7 @@ impl View {
 
         // remove deleted queries
         self.find.retain(|f| queries.iter().position(|q| q.id == Some(f.id())).is_some());
-        
+
         for query in &queries {
             let pos = match query.id {
                 Some(id) => {
