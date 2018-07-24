@@ -1065,13 +1065,30 @@ impl View {
     /// indicates a search for the next occurrence past the end of the file.
     pub fn select_next_occurrence(&mut self, text: &Rope, reverse: bool, wrapped: bool,
                                   _allow_same: bool, modify_selection: &SelectionModifier) {
+        let (cur_start, cur_end) = match self.selection.last() {
+            Some(sel) => (sel.min(), sel.max()),
+            _ => (0, 0)
+        };
+
         // multiple queries; select closest occurrence
-        let closest_occurrence = self.find.iter().flat_map(|x|
+        let mut closest_occurrence = self.find.iter().flat_map(|x|
             x.next_occurrence(text, reverse, wrapped, &self.selection)
         ).min_by_key(|x| {
             match reverse {
-                true => x.end,
-                false => x.start
+                true => {
+                    if x.end > cur_start {
+                        2 * text.len() - x.end
+                    } else {
+                        cur_start - x.end
+                    }
+                },
+                false => {
+                    if x.start < cur_end {
+                        x.start + text.len()
+                    } else {
+                        x.start - cur_end
+                    }
+                }
             }
         });
 
