@@ -138,7 +138,8 @@ impl CoreState {
 
         let config_manager = ConfigManager::new(config_dir, extras_dir);
 
-        if let Some(p) = config_manager.get_themes_dir().as_ref() {
+        let themes_dir = config_manager.get_themes_dir();
+        if let Some(p) = themes_dir.as_ref() {
             #[cfg(feature = "notify")]
             watcher.watch_filtered(p, true, THEME_FILE_EVENT_TOKEN,
                                    |p| p.extension()
@@ -154,7 +155,7 @@ impl CoreState {
             #[cfg(not(feature = "notify"))]
             file_manager: FileManager::new(),
             kill_ring: RefCell::new(Rope::from("")),
-            style_map: RefCell::new(ThemeStyleMap::new()),
+            style_map: RefCell::new(ThemeStyleMap::new(themes_dir)),
             width_cache: RefCell::new(WidthCache::new()),
             config_manager,
             self_ref: None,
@@ -630,32 +631,54 @@ impl CoreState {
     fn handle_themes_fs_event(&mut self, event: DebouncedEvent) {
         use self::DebouncedEvent::*;
         match event {
-            Create(ref path) | Write(ref path) => 
+            Create(ref path) | Write(ref path) =>
                 self.load_theme_file(path),
-            Remove(ref path) => 
+            Remove(ref path) =>
                 self.remove_theme(path),
             Rename(ref old, ref new) => {
                 self.remove_theme(old);
                 self.load_theme_file(new);
-            }
+            },
+            Chmod(ref path) => {
+                if !self.theme_file_loaded(path) {
+                    self.load_theme_file(path);
+                }
+            },
             _ => ()
         }
         let theme_names = self.style_map.borrow().get_theme_names();
         self.peer.available_themes(theme_names);
     }
 
+    fn theme_file_loaded(&mut self, path: &Path) -> bool {
+        if let Some(theme_name) = path.file_stem()
+            .and_then(OsStr::to_str)
+        {
+            self.style_map.borrow()
+                .contains_theme(theme_name)
+        } else { false }
+    }
+
     /// Load a single theme file. Updates if already present.
     fn load_theme_file(&mut self, path: &Path) {
         let _t = trace_block("CoreState::load_theme_file", &["core"]);
-        let result = self.style_map.borrow_mut().insert_theme(path);
 
-        //If the updated theme is the presently applied one.
-        if let Some(name) = result {
-            if &name == self.style_map.borrow().get_theme_name() {
-                if self.style_map.borrow_mut().set_theme(&name).is_ok() {
-                    self.notify_client_and_update_views();
+        let result = self.style_map.borrow_mut()
+            .insert_theme(path);
+
+        match result {
+            Ok(theme_name) => {
+                if theme_name == self.style_map.borrow()
+                    .get_theme_name()
+                {
+                    if self.style_map.borrow_mut()
+                        .set_theme(&theme_name).is_ok() 
+                    {
+                        self.notify_client_and_update_views();
+                    }
                 }
-            }
+            },
+            Err(e) => eprintln!("Error while loading theme: {:?}", e),
         }
     }
 
