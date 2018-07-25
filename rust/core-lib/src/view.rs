@@ -1071,7 +1071,7 @@ impl View {
         };
 
         // multiple queries; select closest occurrence
-        let mut closest_occurrence = self.find.iter().flat_map(|x|
+        let closest_occurrence = self.find.iter().flat_map(|x|
             x.next_occurrence(text, reverse, wrapped, &self.selection)
         ).min_by_key(|x| {
             match reverse {

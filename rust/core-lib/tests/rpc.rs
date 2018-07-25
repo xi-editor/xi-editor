@@ -265,6 +265,8 @@ const TEXT_EDIT_RPCS: &str = r#"{"method":"edit","params":{"view_id":"view-id-1"
 {"method":"edit","params":{"view_id":"view-id-1","method":"indent","params":[]}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"outdent","params":[]}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"duplicate_line","params":[]}}
+{"method":"edit","params":{"view_id":"view-id-1","method":"replace_next","params":[]}}
+{"method":"edit","params":{"view_id":"view-id-1","method":"replace_all","params":[]}}
 {"id":2,"method":"edit","params":{"view_id":"view-id-1","method":"cut","params":[]}}"#;
 
 const OTHER_EDIT_RPCS: &str = r#"{"method":"edit","params":{"view_id":"view-id-1","method":"scroll","params":[0,1]}}
@@ -278,9 +280,14 @@ const OTHER_EDIT_RPCS: &str = r#"{"method":"edit","params":{"view_id":"view-id-1
 {"method":"edit","params":{"view_id":"view-id-1","method":"gesture","params":{"line": 1, "col": 2, "ty": "word_select"}}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"gesture","params":{"line": 1, "col": 2, "ty": "multi_line_select"}}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"gesture","params":{"line": 1, "col": 2, "ty": "multi_word_select"}}}
-{"method":"edit","params":{"view_id":"view-id-1","method":"find","params":{"case_sensitive":false,"chars":"m"}}}
+{"method":"edit","params":{"view_id":"view-id-1","method":"find","params":{"queries": [{"case_sensitive":false,"chars":"m"}]}}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"find_next","params":{"wrap_around":true}}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"find_previous","params":{"wrap_around":true}}}
+{"method":"edit","params":{"view_id":"view-id-1","method":"find_all","params":[]}}
+{"method":"edit","params":{"view_id":"view-id-1","method":"highlight_find","params":{"visible":true}}}
+{"method":"edit","params":{"view_id":"view-id-1","method":"selection_for_find","params":{"case_sensitive":true}}}
+{"method":"edit","params":{"view_id":"view-id-1","method":"replace","params":{"chars":"a"}}}
+{"method":"edit","params":{"view_id":"view-id-1","method":"selection_for_replace","params":[]}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"debug_rewrap","params":[]}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"debug_print_spans","params":[]}}
 {"id":3,"method":"edit","params":{"view_id":"view-id-1","method":"copy","params":[]}}"#;
