@@ -64,7 +64,7 @@ fn build_tree_short_lines(b: &mut Bencher) {
 }
 
 #[bench]
-fn build_tree_few_short_lines(b: &mut Bencher) {
+fn build_tree_few_big_lines(b: &mut Bencher) {
     let mut t = TreeBuilder::new();
     b.iter(|| t.push_str(&build_few_big_lines(1_000)));
 }
@@ -82,7 +82,7 @@ fn build_tree_short_lines_stack(b: &mut Bencher) {
 }
 
 #[bench]
-fn build_tree_few_short_lines_stack(b: &mut Bencher) {
+fn build_tree_few_big_lines_stack(b: &mut Bencher) {
     let mut t = TreeBuilder::new();
     b.iter(|| t.push_str_stacked(&build_few_big_lines(1_000)));
 }
