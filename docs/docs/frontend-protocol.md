@@ -306,8 +306,12 @@ or a request.
 
 #### find
 
-`find {"chars": "a", "case_sensitive": false, "regex": false, "whole_words": true}`
-Parameters `regex` and `whole_words` are optional and by default `false`.
+Find supports multiple search queries.
+
+`find [{"id": "find-id-1", "chars": "a", "case_sensitive": false, "regex": false, "whole_words": true}]`
+Parameters `regex` and `whole_words` are optional and by default `false`. `id` is an optional parameter
+used to uniquely identify a search query. If left empty, the query is considered as a new query and 
+the backend will generate a new ID.
 
 Sets the current search query and options.
 
@@ -666,7 +670,9 @@ Removes a status item from the front end.
 
 #### find_status
 
-`find_status {"view_id": "view-id-1", "queries": [{"chars": "a", "case_sensitive": false, "is_regex": false, "whole_words": true, "matches": 6}]}`
+Find supports multiple search queries.
+
+`find_status {"view_id": "view-id-1", "queries": [{"id": "find-id-1", "chars": "a", "case_sensitive": false, "is_regex": false, "whole_words": true, "matches": 6}]}`
 
 Notifies the client about the current search queries and search options.
 
