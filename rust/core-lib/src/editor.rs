@@ -804,10 +804,9 @@ pub enum EditType {
 impl EditType {
     /// Checks whether a new undo group should be created between two edits.
     fn breaks_undo_group(self, previous: EditType) -> bool {
-        if self == EditType::Other || self == EditType::Transpose {
-            return true;
-        }
-        self != previous
+        self == EditType::Other
+        || self == EditType::Transpose
+        || self != previous
     }
 }
 
