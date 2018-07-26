@@ -953,6 +953,7 @@ dependencies = [
  "xi-core-lib 0.2.0",
  "xi-plugin-lib 0.1.0",
  "xi-rope 0.2.0",
+ "xi-rpc 0.2.0",
  "xi-trace 0.1.0",
 ]
 

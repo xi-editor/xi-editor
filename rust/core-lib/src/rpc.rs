@@ -434,6 +434,10 @@ pub enum EditNotification {
     DebugWrapWidth,
     /// Prints the style spans present in the active selection.
     DebugPrintSpans,
+    CompletionsShow,
+    CompletionsCancel,
+    CompletionsSelect { index: usize },
+    CompletionsInsert { index: usize },
     CancelOperation,
     Uppercase,
     Lowercase,

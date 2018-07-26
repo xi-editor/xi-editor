@@ -39,6 +39,7 @@ pub(crate) enum ViewEvent {
     FindNext { wrap_around: bool, allow_same: bool, modify_selection: SelectionModifier },
     FindPrevious { wrap_around: bool, allow_same: bool, modify_selection: SelectionModifier },
     FindAll,
+    CompletionsCancel,
     Cancel,
     HighlightFind { visible: bool },
     SelectionForFind { case_sensitive: bool },
@@ -64,6 +65,7 @@ pub(crate) enum BufferEvent {
     Yank,
     ReplaceNext,
     ReplaceAll,
+    CompletionsInsert { index: usize },
 }
 
 /// An event that needs special handling
@@ -71,6 +73,8 @@ pub(crate) enum SpecialEvent {
     DebugRewrap,
     DebugWrapWidth,
     DebugPrintSpans,
+    CompletionsShow,
+    CompletionsSelect { index: usize },
     Resize(Size),
     RequestLines(LineRange),
     RequestHover { request_id: usize, position: Option<Position> },
@@ -216,6 +220,12 @@ impl From<EditNotification> for EventDomain {
             DebugRewrap => SpecialEvent::DebugRewrap.into(),
             DebugWrapWidth => SpecialEvent::DebugWrapWidth.into(),
             DebugPrintSpans => SpecialEvent::DebugPrintSpans.into(),
+            CompletionsShow => SpecialEvent::CompletionsShow.into(),
+            CompletionsCancel => ViewEvent::CompletionsCancel.into(),
+            CompletionsSelect { index } =>
+                SpecialEvent::CompletionsSelect { index }.into(),
+            CompletionsInsert { index } =>
+                BufferEvent::CompletionsInsert { index }.into(),
             CancelOperation => ViewEvent::Cancel.into(),
             Uppercase => BufferEvent::Uppercase.into(),
             Lowercase => BufferEvent::Lowercase.into(),

@@ -134,6 +134,15 @@ impl Plugin {
                                                 "request_id": request_id,
                                                 "position": position}))
     }
+
+    pub fn completions(&self, view_id: ViewId, request_id: usize, pos: usize) {
+        self.peer.send_rpc_notification("completions",
+                                         &json!({
+                                             "view_id": view_id,
+                                             "pos": pos,
+                                             "request_id": request_id,
+                                         }))
+    }
 }
 
 pub(crate) fn start_plugin_process(plugin_desc: Arc<PluginDescription>,

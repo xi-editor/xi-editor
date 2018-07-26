@@ -142,6 +142,10 @@ pub trait Plugin {
                       view: &mut View<Self::Cache>,
                       changes: &ConfigTable);
 
+    #[allow(unused_variables)]
+    fn completions(&mut self, view: &mut View<Self::Cache>,
+                   request_id: usize, pos: usize) { }
+
     /// Called when the runloop is idle, if the plugin has previously
     /// asked to be scheduled via `View::schedule_idle()`. Plugins that
     /// are doing things like full document analysis can use this mechanism
@@ -150,7 +154,6 @@ pub trait Plugin {
     fn idle(&mut self, view: &mut View<Self::Cache>) { }
 
     /// Language Plugins specific methods
-    
     #[allow(unused_variables)]
     fn get_hover(&mut self, view: &mut View<Self::Cache>, request_id: usize, position: usize) { }
 }

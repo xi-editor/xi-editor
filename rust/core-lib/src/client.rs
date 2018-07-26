@@ -20,6 +20,7 @@ use serde_json::{self, Value};
 use xi_rpc::{self, RpcPeer};
 
 use tabs::ViewId;
+use completions::ClientCompletionItem;
 use config::Table;
 use styles::ThemeSettings;
 use plugins::rpc::ClientPluginInfo;
@@ -153,6 +154,24 @@ impl Client {
 
     pub fn alert<S: AsRef<str>>(&self, msg: S) {
         self.0.send_rpc_notification("alert", &json!({ "msg": msg.as_ref() }));
+    }
+
+    /// if `completions` is present but empty, a 'no completions available' message
+    /// should be shown.
+    pub fn completions(&self, view_id: ViewId, pos: usize, selected: usize,
+                       completions: Vec<ClientCompletionItem>) {
+        self.0.send_rpc_notification("completions",
+                                     &json!({
+                                         "view_id": view_id,
+                                         "pos": pos,
+                                         "selected": selected,
+                                         "items": completions,
+                                     }))
+    }
+
+    pub fn hide_completions(&self, view_id: ViewId) {
+        self.0.send_rpc_notification("hide_completions",
+                                     &json!({"view_id": view_id}))
     }
 
     pub fn add_status_item(&self, view_id: ViewId, source: &str, key: &str, value: &str, alignment: &str) {

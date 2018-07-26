@@ -708,6 +708,8 @@ impl Editor {
             Yank => self.yank(view, kill_ring),
             ReplaceNext => self.replace(view, false),
             ReplaceAll => self.replace(view, true),
+            CompletionsInsert { index } =>
+                eprintln!("completions insert ({})", index),
         }
     }
 
