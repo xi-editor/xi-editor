@@ -306,7 +306,7 @@ impl TextUnit {
         let text = text.borrow();
         match *self {
             TextUnit::Utf8 => {
-                if offset >= text.len() {
+                if offset > text.len() {
                     None
                 } else {
                     if text.is_codepoint_boundary(offset) {
