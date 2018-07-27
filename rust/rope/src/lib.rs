@@ -42,6 +42,7 @@ pub mod spans;
 pub mod multiset;
 pub mod engine;
 pub mod find;
+pub mod rope_delta_helpers;
 #[cfg(test)]
 mod test_helpers;
 
