@@ -33,6 +33,7 @@ pub mod language_server_client;
 pub mod lsp_plugin;
 pub mod parse_helper;
 pub mod types;
+mod utils;
 pub use lsp_plugin::LspPlugin;
 pub use types::Config;
 
