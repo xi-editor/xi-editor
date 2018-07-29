@@ -124,7 +124,7 @@ pub enum SyncMsg {
     Stop
 }
 
-/// We want to be able to register to recieve events from inside the
+/// We want to be able to register to receive events from inside the
 /// `SyncStore`/`SyncContainer` but from there we don't have access to the
 /// Mutex that holds the container, so we give channel Senders to all the
 /// futures so that they can all trigger events in one place that does have

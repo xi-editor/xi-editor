@@ -32,7 +32,7 @@ fn parse_header(s: &str) -> Result<LspHeader, ParseError> {
             &split[1], 10,
         )?)),
         _ => Err(ParseError::Unknown(
-            "Unknown parse error occured".to_string(),
+            "Unknown parse error occurred".to_string(),
         )),
     }
 }
