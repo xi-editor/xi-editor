@@ -35,7 +35,7 @@ pub enum Error {
 /// The possible error outcomes when attempting to read a message.
 #[derive(Debug)]
 pub enum ReadError {
-    /// An error occured in the underlying stream
+    /// An error occurred in the underlying stream
     Io(io::Error),
     /// The message was not valid JSON.
     Json(JsonError),
@@ -111,7 +111,7 @@ pub enum RemoteError {
     Custom { code: i64, message: String, data: Option<Value> },
     /// An error that cannot be represented by an error object.
     ///
-    /// This error is intended to accomodate clients that return arbitrary
+    /// This error is intended to accommodate clients that return arbitrary
     /// error values. It should not be used for new errors.
     Unknown(Value),
 }

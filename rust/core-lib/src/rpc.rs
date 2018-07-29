@@ -304,7 +304,7 @@ pub enum GestureType {
 ///
 /// Several core protocol commands use a params array to pass arguments
 /// which are named, internally. this type use custom Serialize /
-/// Deserialize impls to accomodate this.
+/// Deserialize impls to accommodate this.
 #[derive(PartialEq, Eq, Debug)]
 pub struct LineRange {
     pub first: i64,

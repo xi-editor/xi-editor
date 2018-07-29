@@ -62,7 +62,7 @@ pub struct Config {
 
 // Error Types
 
-/// Type to represent errors occured while parsing LSP RPCs
+/// Type to represent errors occurred while parsing LSP RPCs
 #[derive(Debug)]
 pub enum ParseError {
     Io(std::io::Error),
