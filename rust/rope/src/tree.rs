@@ -905,6 +905,19 @@ mod test {
     }
 
     #[test]
+    fn eq_rope_with_stack() {
+        let n = 2_000;
+        let s = build_triangle(n);
+        let mut builder_default = TreeBuilder::new();
+        let mut builder_stacked = TreeBuilder::new();
+        builder_default.push_str(&s);
+        builder_stacked.push_str_stacked(&s);
+        let tree_default = builder_default.build();
+        let tree_stacked = builder_stacked.build();
+        assert_eq!(tree_default, tree_stacked);
+    }
+
+    #[test]
     fn cursor_next_triangle() {
         let n = 2_000;
         let text = Rope::from(build_triangle(n));
