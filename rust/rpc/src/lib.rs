@@ -35,6 +35,9 @@ extern crate serde;
 extern crate crossbeam;
 extern crate xi_trace;
 
+#[macro_use]
+extern crate log;
+
 mod parse;
 mod error;
 
@@ -157,7 +160,7 @@ struct PanicGuard<'a, W: Write + 'static>(&'a RawPeer<W>);
 impl<'a, W: Write + 'static> Drop for PanicGuard<'a, W> {
     fn drop(&mut self) {
        if thread::panicking() {
-           eprintln!("panic guard hit, closing runloop");
+           error!("panic guard hit, closing runloop");
            self.0.disconnect();
         }
     }
@@ -296,7 +299,7 @@ impl<W: Write + Send> RpcLoop<W> {
                                 self.peer.handle_response(id, resp);
                             }
                             Err(msg) => {
-                                eprintln!("failed to parse response: {}", msg);
+                                error!("failed to parse response: {}", msg);
                                 self.peer.handle_response(
                                     id, Err(Error::InvalidResponse));
                             }
@@ -427,7 +430,7 @@ impl<W: Write + Send + 'static> Peer for RawPeer<W> {
             "method": method,
             "params": params,
         })) {
-            eprintln!("send error on send_rpc_notification method {}: {}",
+            error!("send error on send_rpc_notification method {}: {}",
                        method, e);
         }
     }
@@ -479,7 +482,7 @@ impl<W:Write> RawPeer<W> {
             Err(error) => response["error"] = json!(error),
         };
         if let Err(e) = self.send(&response) {
-            eprintln!("error {} sending response to RPC {:?}", e, id);
+            error!("error {} sending response to RPC {:?}", e, id);
         }
     }
 
@@ -510,7 +513,7 @@ impl<W:Write> RawPeer<W> {
         };
         match handler {
             Some(responsehandler) => responsehandler.invoke(resp),
-            None => eprintln!("id {} not found in pending", id)
+            None => warn!("id {} not found in pending", id)
         }
     }
 

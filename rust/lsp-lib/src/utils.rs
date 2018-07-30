@@ -115,7 +115,7 @@ pub fn get_change_for_sync_kind(
         TextDocumentSyncKind::Incremental => match get_document_content_changes(delta, view) {
             Ok(result) => Some(result),
             Err(err) => {
-                eprintln!("Error: {:?} Occured. Sending Whole Doc", err);
+                warn!("Error: {:?} Occured. Sending Whole Doc", err);
                 let text_document_content_change_event = TextDocumentContentChangeEvent {
                     range: None,
                     range_length: None,
@@ -197,7 +197,7 @@ pub fn start_new_server(
                             let mut server_locked = ls_client.lock().unwrap();
                             server_locked.handle_message(message_str.as_ref());
                         }
-                        Err(err) => eprintln!("Error occurred {:?}", err),
+                        Err(err) => error!("Error occurred {:?}", err),
                     };
                 }
             })
