@@ -29,9 +29,11 @@ extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 
-#[cfg(feature = "chrome_trace_event")]
-#[macro_use]
+#[cfg(all(not(test), feature = "chrome_trace_event"))]
 extern crate serde_json;
+
+#[cfg(test)]
+#[macro_use] extern crate serde_json;
 
 #[cfg(all(test, feature = "benchmarks"))]
 extern crate test;
