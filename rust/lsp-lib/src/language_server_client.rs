@@ -122,7 +122,7 @@ impl LanguageServerClient {
     }
 
     pub fn handle_notification(&mut self, method: &str, params: Params) {
-        eprintln!("Method: {}, params: {:?}", method, params);
+        trace!("Notification Received =>\n Method: {}, params: {:?}", method, params);
         match method {
             "window/showMessage" => {
 
@@ -143,7 +143,7 @@ impl LanguageServerClient {
     pub fn handle_misc_notification(&mut self, method: &str, params: Params) {
         match self.language_id.to_lowercase().as_ref() {
             "rust" => self.handle_rust_misc_notification(method, params),
-            _ => eprintln!("Unknown notification: {}", method)
+            _ => warn!("Unknown notification: {}", method)
         }
     }
 
@@ -350,10 +350,10 @@ impl LanguageServerClient {
                             }
                         }
                     },
-                    _ => eprintln!("Unexpected type")
+                    _ => warn!("Unexpected type")
                 }
             },
-            _ => eprintln!("Unknown Notification from RLS: {} ", method)
+            _ => warn!("Unknown Notification from RLS: {} ", method)
         }
     }
 }

@@ -21,8 +21,6 @@ use std::time::{Duration, Instant};
 
 use serde_json::{self, Value};
 
-use log;
-
 use xi_rope::Rope;
 use xi_rope::interval::Interval;
 use xi_rope::rope::LinesMetric;
@@ -442,7 +440,7 @@ impl<'a> EventContext<'a> {
                 // TODO: Get Range from hover here and use it to highlight text
                 self.client.show_hover(self.view_id, request_id, hover.content)
             },
-            Err(err) => eprintln!("Hover Response from Client Error {:?}", err)
+            Err(err) => warn!("Hover Response from Client Error {:?}", err)
         }
     }
      

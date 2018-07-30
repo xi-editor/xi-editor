@@ -43,28 +43,6 @@ mod utils;
 pub use lsp_plugin::LspPlugin;
 pub use types::Config;
 
-fn init_logger() -> Result<(),fern::InitError> {
-    Ok(fern::Dispatch::new()
-        // Perform allocation-free log formatting
-        .format(|out, message, record| {
-            out.finish(format_args!(
-                "{}[{}][{}] {}",
-                chrono::Local::now().format("[%Y-%m-%d][%H:%M:%S]"),
-                record.target(),
-                record.level(),
-                message
-            ))
-        })
-        // Add blanket level filter -
-        .level(log::LevelFilter::Trace)
-        .chain(std::io::stderr())
-        //.chain(fern::log_file("xi-core.log")?)
-        // Apply globally
-        .apply()?)
-}
-
 pub fn start_mainloop<P: Plugin>(plugin: &mut P) {
-    // Unwrap to indicate that we want thread to Panic on failure
-    init_logger();
     mainloop(plugin).unwrap();
 }
