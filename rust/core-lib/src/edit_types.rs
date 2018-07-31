@@ -44,6 +44,7 @@ pub(crate) enum ViewEvent {
     SelectionForFind { case_sensitive: bool },
     Replace { chars: String, preserve_case: bool },
     SelectionForReplace,
+    SelectionIntoLines,
 }
 
 /// Events that modify the buffer
@@ -231,6 +232,7 @@ impl From<EditNotification> for EventDomain {
             SelectionForReplace => ViewEvent::SelectionForReplace.into(),
             RequestHover { request_id, position } =>
                 SpecialEvent::RequestHover { request_id, position }.into(),
+            SelectionIntoLines => ViewEvent::SelectionIntoLines.into(),
         }
     }
 }
