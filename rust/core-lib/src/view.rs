@@ -241,6 +241,7 @@ impl View {
             Replace { chars, preserve_case } =>
                 self.do_set_replace(chars, preserve_case),
             SelectionForReplace => self.do_selection_for_replace(text),
+            SelectionIntoLines => self.split_selection_into_lines(text),
         }
     }
 
@@ -465,6 +466,34 @@ impl View {
         let end = self.line_col_to_offset(text, line + 1, 0);
 
         self.select_region(text, offset, SelRegion::new(start, end), multi_select);
+    }
+
+    /// Splits current selections into lines.
+    pub fn split_selection_into_lines(&mut self, text: &Rope) {
+        let mut selection = Selection::new();
+
+        for region in self.selection.regions_in_range(0, text.len()) {
+            let mut cursor = Cursor::new(&text, region.min());
+
+            while cursor.pos() < region.max() {
+                let sel_start = cursor.pos();
+                let end_of_line = match cursor.next::<LinesMetric>() {
+                    Some(end) => {
+                        if end >= region.max() {
+                            region.max()
+                        } else {
+                            max(0, end - 1)
+                        }
+                    },
+                    None if cursor.pos() == text.len() => cursor.pos(),
+                    _ => break
+                };
+
+                selection.add_region(SelRegion::new(sel_start, end_of_line));
+            }
+        }
+
+        self.set_selection_raw(text, selection);
     }
 
     /// Starts a drag operation.
