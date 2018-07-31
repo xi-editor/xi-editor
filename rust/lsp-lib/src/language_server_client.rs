@@ -21,6 +21,7 @@ use serde_json::{to_value, Value};
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::process;
+use result_queue::ResultQueue;
 use types::Callback;
 use url::Url;
 use xi_core::ViewId;
@@ -32,6 +33,7 @@ pub struct LanguageServerClient {
     pending: HashMap<u64, Callback>,
     next_id: u64,
     language_id: String,
+    pub result_queue: ResultQueue,
     pub status_items: HashSet<String>,
     pub core: CoreProxy,
     pub is_initialized: bool,
@@ -64,6 +66,7 @@ impl LanguageServerClient {
     pub fn new(
         writer: Box<Write + Send>,
         core: CoreProxy,
+        result_queue: ResultQueue,
         language_id: String,
         file_extensions: Vec<String>,
     ) -> Self {
@@ -73,6 +76,7 @@ impl LanguageServerClient {
             next_id: 1,
             is_initialized: false,
             core,
+            result_queue,
             status_items: HashSet::new(),
             language_id,
             server_capabilities: None,

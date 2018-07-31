@@ -14,6 +14,7 @@
 
 use jsonrpc_lite::Error as JsonRpcError;
 use language_server_client::LanguageServerClient;
+use lsp_types::*;
 use serde_json;
 use serde_json::Value;
 use std;
@@ -145,4 +146,9 @@ impl Into<RemoteError> for LanguageResponseError {
                     RemoteError::custom(2, "language server error occured", Some(Value::String(error)))
         }
     }
+}
+
+#[derive(Debug)]
+pub enum LspResponse {
+    Hover(Hover)
 }
