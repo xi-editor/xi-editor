@@ -1,3 +1,4 @@
+use result_queue::ResultQueue;
 use conversion_utils::*;
 use language_server_client::LanguageServerClient;
 use lsp_types::*;
@@ -148,6 +149,7 @@ pub fn start_new_server(
     file_extensions: Vec<String>,
     language_id: String,
     core: CoreProxy,
+    result_queue: ResultQueue,
 ) -> Result<Arc<Mutex<LanguageServerClient>>, String> {
     let mut process = Command::new(command)
         .args(arguments)
@@ -161,6 +163,7 @@ pub fn start_new_server(
     let language_server_client = Arc::new(Mutex::new(LanguageServerClient::new(
         writer,
         core,
+        result_queue,
         language_id.clone(),
         file_extensions,
     )));

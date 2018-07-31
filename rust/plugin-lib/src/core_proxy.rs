@@ -82,4 +82,9 @@ impl CoreProxy {
 
         self.peer.send_rpc_notification("show_hover", &params);
     }
+
+    pub fn schedule_idle(&mut self, view_id: ViewId) {
+        let token: usize = view_id.into();
+        self.peer.schedule_idle(token);
+    }
 }

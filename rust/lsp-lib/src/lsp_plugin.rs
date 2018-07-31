@@ -14,6 +14,7 @@
 
 //! Implementation of Language Server Plugin
 
+use result_queue::ResultQueue;
 use conversion_utils::*;
 use language_server_client::LanguageServerClient;
 use lsp_types::*;
@@ -22,7 +23,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::Mutex;
-use types::{Config, LanguageResponseError};
+use types::{Config, LspResponse, LanguageResponseError};
 use url::Url;
 use utils::*;
 use xi_core::ConfigTable;
@@ -40,6 +41,7 @@ pub struct LspPlugin {
     pub config: Config,
     view_info: HashMap<ViewId, ViewInfo>,
     core: Option<CoreProxy>,
+    result_queue: ResultQueue,
     language_server_clients: HashMap<String, Arc<Mutex<LanguageServerClient>>>,
 }
 
@@ -48,6 +50,7 @@ impl LspPlugin {
         LspPlugin {
             config,
             core: None,
+            result_queue: ResultQueue::new(),
             view_info: HashMap::new(),
             language_server_clients: HashMap::new(),
         }
@@ -181,14 +184,24 @@ impl Plugin for LspPlugin {
                             .map_err(|e| LanguageResponseError::LanguageServerError(format!("{:?}", e)))
                             .and_then(|h| {
                                 let hover: Option<Hover> = serde_json::from_value(h).unwrap();
-                                hover.ok_or(LanguageResponseError::NullResponse)
-                                    .and_then(core_hover_from_hover)
-                            })
-                            .map_err(|e| e.into());
-                        ls_client.core.display_hover(view_id, request_id, res, rev);
+                                match hover {
+                                    Some(hover) => Ok(LspResponse::Hover(hover)),
+                                    None => Err(LanguageResponseError::NullResponse)
+                                }
+                            });
+
+                        ls_client.result_queue.push_result(request_id, res);
+                        //ls_client.core.display_hover(view_id, request_id, res, rev);
                     },
                 );
         });
+    }
+
+    fn idle(&mut self, view: &mut View<Self::Cache>) {
+        let result = self.result_queue.pop_result();
+        if let Some(result) = result {
+            
+        }
     }
 }
 
@@ -232,7 +245,6 @@ impl LspPlugin {
                     Some((language_server_identifier, client))
                 } else {
                     let config = self.config.language_config.get(&language_id).unwrap();
-
                     let client = start_new_server(
                         config.start_command.clone(),
                         config.start_arguments.clone(),
@@ -240,6 +252,7 @@ impl LspPlugin {
                         language_id.clone(),
                         // Unwrap is safe
                         self.core.clone().unwrap(),
+                        self.result_queue.clone(),
                     );
 
                     match client {
