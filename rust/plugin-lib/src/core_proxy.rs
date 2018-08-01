@@ -69,12 +69,10 @@ impl CoreProxy {
         &mut self,
         view_id: ViewId,
         request_id: usize,
-        result: Result<Hover, RemoteError>,
-        rev: u64,
+        result: Result<Hover, RemoteError>
     ) {
         let params = json!({
             "plugin_id": self.plugin_id,
-            "rev": rev,
             "request_id": request_id,
             "result": result,
             "view_id": view_id

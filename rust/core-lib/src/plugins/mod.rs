@@ -34,7 +34,7 @@ use WeakXiCore;
 use config::Table;
 use tabs::ViewId;
 
-use self::rpc::{PluginUpdate, PluginBufferInfo, CorePosition};
+use self::rpc::{PluginUpdate, PluginBufferInfo};
 
 pub use self::manifest::{PluginDescription, Command, PlaceholderRpc};
 pub(crate) use self::catalog::PluginCatalog;
@@ -128,7 +128,7 @@ impl Plugin {
                                                 "changes": changes}))
     }
 
-    pub fn get_hover(&self, view_id: ViewId, request_id: usize, position: &CorePosition) {
+    pub fn get_hover(&self, view_id: ViewId, request_id: usize, position: usize) {
         self.peer.send_rpc_notification("get_hover", 
                                         &json!({"view_id": view_id,
                                                 "request_id": request_id,
