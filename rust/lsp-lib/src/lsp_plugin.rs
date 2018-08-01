@@ -28,7 +28,7 @@ use url::Url;
 use utils::*;
 use xi_core::ConfigTable;
 use xi_core::ViewId;
-use xi_plugin_lib::{ChunkCache, CoreProxy, CorePosition, Plugin, View};
+use xi_plugin_lib::{ChunkCache, CoreProxy, Plugin, View};
 use xi_rope::rope::RopeDelta;
 
 pub struct ViewInfo {
@@ -165,42 +165,49 @@ impl Plugin for LspPlugin {
         &mut self,
         view: &mut View<Self::Cache>,
         request_id: usize,
-        position: CorePosition,
+        position: usize,
     ) {
 
         let view_id = view.get_id();
-        let rev = view.rev;
-        let position_ls = Position {
-            line: position.line as u64,
-            character: position.col_utf16 as u64
-        };
+        let position_ls = get_position_of_offset(view, position);
 
         self.with_language_server_for_view(view, |ls_client| {
-                ls_client.request_hover(
-                    view_id,
-                position_ls,
-                    move |ls_client, result| {
-                        let res = result
-                            .map_err(|e| LanguageResponseError::LanguageServerError(format!("{:?}", e)))
-                            .and_then(|h| {
-                                let hover: Option<Hover> = serde_json::from_value(h).unwrap();
-                                match hover {
-                                    Some(hover) => Ok(LspResponse::Hover(hover)),
-                                    None => Err(LanguageResponseError::NullResponse)
-                                }
-                            });
 
-                        ls_client.result_queue.push_result(request_id, res);
-                        //ls_client.core.display_hover(view_id, request_id, res, rev);
-                    },
-                );
+                match position_ls {
+                    Ok(position) => ls_client.request_hover(
+                        view_id,
+                        position,
+                        move |ls_client, result| {
+                            let res = result
+                                .map_err(|e| LanguageResponseError::LanguageServerError(format!("{:?}", e)))
+                                .and_then(|h| {
+                                    let hover: Option<Hover> = serde_json::from_value(h).unwrap();
+                                    hover.ok_or(LanguageResponseError::NullResponse)
+                                });
+                            
+                            ls_client.result_queue.push_result(request_id, LspResponse::Hover(res));
+                            ls_client.core.schedule_idle(view_id);
+                        },
+                    ),
+                    Err(err) => {
+                        ls_client.result_queue.push_result(request_id, LspResponse::Hover(Err(err.into())));
+                        ls_client.core.schedule_idle(view_id);
+                    }
+                }
+                    
         });
     }
 
     fn idle(&mut self, view: &mut View<Self::Cache>) {
         let result = self.result_queue.pop_result();
-        if let Some(result) = result {
-            
+        if let Some((request_id, reponse)) = result {
+            match reponse {
+                LspResponse::Hover(res) => {
+                    let res = res.and_then(|h| core_hover_from_hover(view, h)).map_err(|e| e.into());
+                    self.with_language_server_for_view(view, |ls_client| 
+                            ls_client.core.display_hover(view.get_id(), request_id, res));
+                }
+            }
         }
     }
 }

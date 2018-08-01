@@ -21,6 +21,7 @@ use std;
 use std::collections::HashMap;
 use std::io::Error as IOError;
 use url::ParseError as UrlParseError;
+use xi_plugin_lib::Error as PluginLibError;
 use xi_rpc::RemoteError;
 
 pub enum LspHeader {
@@ -127,12 +128,18 @@ impl From<IOError> for Error {
 }
 
 /// Possible Errors that can occur while handling Language Plugins
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug)]
 pub enum LanguageResponseError {
     LanguageServerError(String),
+    PluginLibError(PluginLibError),
     NullResponse,
-    FallbackResponse
+    FallbackResponse,
+}
+
+impl From<PluginLibError> for LanguageResponseError {
+    fn from(error: PluginLibError) -> Self {
+        LanguageResponseError::PluginLibError(error)
+    }
 }
 
 impl Into<RemoteError> for LanguageResponseError {
@@ -143,12 +150,14 @@ impl Into<RemoteError> for LanguageResponseError {
             LanguageResponseError::FallbackResponse => 
                     RemoteError::custom(1, "fallback response from server", None),
             LanguageResponseError::LanguageServerError(error) => 
-                    RemoteError::custom(2, "language server error occured", Some(Value::String(error)))
+                    RemoteError::custom(2, "language server error occured", Some(Value::String(error))),
+            LanguageResponseError::PluginLibError(error) =>
+                    RemoteError::custom(3, "Plugin Lib Error", Some(Value::String(format!("{:?}",error)))),
         }
     }
 }
 
 #[derive(Debug)]
 pub enum LspResponse {
-    Hover(Hover)
+    Hover(Result<Hover, LanguageResponseError>)
 }

@@ -23,13 +23,13 @@ use serde_json::{self, Value};
 
 use xi_rope::Rope;
 use xi_rope::interval::Interval;
-use xi_rope::rope::{BaseMetric, LinesMetric, Utf16CodeUnitsMetric};
+use xi_rope::rope::LinesMetric;
 use xi_rpc::{RemoteError, Error as RpcError};
 use xi_trace::trace_block;
 
 use rpc::{EditNotification, EditRequest, LineRange, Position as ClientPosition};
 use plugins::rpc::{ClientPluginInfo, PluginBufferInfo, PluginNotification,
-                   PluginRequest, PluginUpdate, CorePosition, Hover};
+                   PluginRequest, PluginUpdate, Hover};
 
 use styles::ThemeStyleMap;
 use config::{BufferItems, Table};
@@ -176,7 +176,7 @@ impl<'a> EventContext<'a> {
             UpdateStatusItem { key, value } => self.client.update_status_item(
                                                         self.view_id, &key, &value),
             RemoveStatusItem { key } => self.client.remove_status_item(self.view_id, &key),
-            ShowHover { request_id, result, rev } => self.do_show_hover(request_id, result, rev),
+            ShowHover { request_id, result } => self.do_show_hover(request_id, result),
         };
         self.after_edit(&plugin.to_string());
         self.render_if_needed();
@@ -430,11 +430,11 @@ impl<'a> EventContext<'a> {
 
     fn do_request_hover(&mut self, request_id: usize, position: Option<ClientPosition>) {
         if let Some(position) = self.get_resolved_position(position) {
-            self.with_each_plugin(|p| p.get_hover(self.view_id, request_id, &position))
+            self.with_each_plugin(|p| p.get_hover(self.view_id, request_id, position))
         }
     }
 
-    fn do_show_hover(&mut self, request_id: usize, hover: Result<Hover, RemoteError>, _rev: u64) {
+    fn do_show_hover(&mut self, request_id: usize, hover: Result<Hover, RemoteError>) {
         match hover {
             Ok(hover) => {
                 // TODO: Get Range from hover here and use it to highlight text
@@ -447,28 +447,10 @@ impl<'a> EventContext<'a> {
     /// Gives the requested position in UTF-8 offset format to be sent to plugin
     /// If position is `None`, it tries to get the current Caret Position and use
     /// that instead
-    fn get_resolved_position(&mut self, position: Option<ClientPosition>) -> Option<CorePosition> {
+    fn get_resolved_position(&mut self, position: Option<ClientPosition>) -> Option<usize> {
         position.map(|p|
             self.with_view(|view, text| view.line_col_to_offset(text, p.line, p.column)
         )).or_else(|| self.view.borrow().get_caret_offset())
-        .map(|offset| self.offset_to_core_position(offset))
-    }
-
-    fn offset_to_core_position(&mut self, offset: usize) -> CorePosition {
-        self.with_view(|_, text| {
-            let line = text.line_of_offset(offset);
-            let offset_of_line = text.offset_of_line(line);
-            let col_utf8 = offset - offset_of_line;
-            let col_utf16 = text.convert_metrics::<BaseMetric, Utf16CodeUnitsMetric>(offset) -
-                text.convert_metrics::<BaseMetric, Utf16CodeUnitsMetric>(offset_of_line);
-
-            CorePosition {
-                offset,
-                line,
-                col_utf8,
-                col_utf16,
-            }                           
-        })
     }
 }
 

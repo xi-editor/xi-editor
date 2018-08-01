@@ -16,11 +16,8 @@
 //! and vice-versa
 
 use lsp_types::*;
-use xi_plugin_lib::{
-    Cache, Error as PluginLibError, Hover as CoreHover,
-    Range as CoreRange, PluginPosition, View
-};
 use types::LanguageResponseError;
+use xi_plugin_lib::{Cache, Error as PluginLibError, Hover as CoreHover, Range as CoreRange, View};
 
 pub(crate) fn marked_string_to_string(marked_string: &MarkedString) -> String {
     match *marked_string {
@@ -77,24 +74,45 @@ pub(crate) fn get_position_of_offset<C: Cache>(
     })
 }
 
+pub(crate) fn offset_of_position<C: Cache>(
+    view: &mut View<C>,
+    position: Position,
+) -> Result<usize, PluginLibError> {
+    let line_offset = view.offset_of_line(position.line as usize);
 
-pub(crate) fn plugin_position_from_position(position: Position) -> PluginPosition {
-    PluginPosition::Utf16LineCol {
-        line: position.line as usize,
-        col: position.character as usize,
+    let mut cur_len_utf16 = 0;
+    let mut cur_len_utf8 = 0;
+
+    for u in view.get_line(position.line as usize)?.chars() {
+        if cur_len_utf16 >= (position.character as usize) {
+            break;
+        }
+        cur_len_utf16 += u.len_utf16();
+        cur_len_utf8 += u.len_utf8();
     }
+
+    Ok(cur_len_utf8 + line_offset?)
 }
 
-pub(crate) fn core_range_from_range(range: Range) -> CoreRange {
-    CoreRange {
-        start: plugin_position_from_position(range.start),
-        end: plugin_position_from_position(range.end),
-    }
+pub(crate) fn core_range_from_range<C: Cache>(
+    view: &mut View<C>,
+    range: Range,
+) -> Result<CoreRange, PluginLibError> {
+    Ok(CoreRange {
+        start: offset_of_position(view, range.start)?,
+        end: offset_of_position(view, range.end)?,
+    })
 }
 
-pub(crate) fn core_hover_from_hover(hover: Hover) -> Result<CoreHover, LanguageResponseError> {
+pub(crate) fn core_hover_from_hover<C: Cache>(
+    view: &mut View<C>,
+    hover: Hover,
+) -> Result<CoreHover, LanguageResponseError> {
     Ok(CoreHover {
         content: markdown_from_hover_contents(hover.contents)?,
-        range: hover.range.map(|range| core_range_from_range(range)),
+        range: match hover.range {
+            Some(range) => Some(core_range_from_range(view, range)?),
+            None => None,
+        },
     })
 }
