@@ -29,8 +29,11 @@ use config::{Table, ConfigDomainExternal};
 use plugins::PlaceholderRpc;
 use tabs::ViewId;
 use view::Size;
+<<<<<<< HEAD
 use internal::find::FindId;
 use syntax::LanguageId;
+=======
+>>>>>>> Use usize as ID for Find
 
 // =============================================================================
 //  Command types
@@ -354,7 +357,7 @@ impl Default for SelectionModifier {
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct FindQuery {
-    pub id: Option<FindId>,
+    pub id: Option<usize>,
     pub chars: String,
     pub case_sensitive: bool,
     #[serde(default)]

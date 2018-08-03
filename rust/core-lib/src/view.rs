@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use std::cmp::{min,max};
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::ops::Range;
 
 use serde_json::Value;
@@ -32,12 +32,12 @@ use movement::{Movement, region_movement, selection_movement};
 use rpc::{GestureType, MouseAction, SelectionModifier, FindQuery};
 use styles::{Style, ThemeStyleMap};
 use selection::{Affinity, Selection, SelRegion};
-use tabs::{ViewId, BufferId};
+use tabs::{ViewId, BufferId, Counter};
 use width_cache::WidthCache;
 use word_boundaries::WordCursor;
 use find::{Find, FindStatus};
 use linewrap;
-use internal::find::{FindId, FindStatus};
+use internal::find::FindStatus;
 
 type StyleMap = RefCell<ThemeStyleMap>;
 
@@ -114,18 +114,6 @@ pub struct Replace {
     /// Replacement string.
     pub chars: String,
     pub preserve_case: bool
-}
-
-// todo: also used in tab.rs
-#[derive(Debug, Default)]
-struct Counter(Cell<usize>);
-
-impl Counter {
-    fn next(&self) -> usize {
-        let n = self.0.get();
-        self.0.set(n + 1);
-        n + 1
-    }
 }
 
 /// A size, in pixel units (not display pixels).
@@ -1005,7 +993,7 @@ impl View {
     }
 
     fn add_find(&mut self) {
-        let id = FindId(self.find_id_counter.next());
+        let id = self.find_id_counter.next();
         self.find.push(Find::new(id));
     }
 
