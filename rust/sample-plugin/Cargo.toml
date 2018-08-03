@@ -21,3 +21,6 @@ path = "../rope"
 
 [dependencies.xi-trace]
 path = "../trace"
+
+[dependencies.xi-rpc]
+path = "../rpc"

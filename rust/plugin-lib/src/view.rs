@@ -17,11 +17,11 @@ use serde_json::{self, Value};
 use serde::Deserialize;
 
 use xi_core::{ViewId, PluginPid, BufferConfig, ConfigTable};
-use xi_core::plugin_rpc::{TextUnit, PluginEdit, GetDataResponse, ScopeSpan, PluginBufferInfo};
+use xi_core::plugin_rpc::{CompletionResponse, TextUnit, PluginEdit,
+GetDataResponse, ScopeSpan, PluginBufferInfo};
 use xi_rope::rope::RopeDelta;
 use xi_trace::trace_block;
-
-use xi_rpc::RpcPeer;
+use xi_rpc::{RpcPeer, RemoteError};
 
 use super::{Cache, Error, DataSource};
 
@@ -173,6 +173,18 @@ impl<C: Cache> View<C> {
     /// to reduce latency for bulk operations done in the background.
     pub fn request_is_pending(&self) -> bool {
         self.peer.request_is_pending()
+    }
+
+    pub fn completions(&self, id: usize, response: Result<CompletionResponse, RemoteError>)
+    {
+        let params = json!({
+            "view_id": self.view_id,
+            "plugin_id": self.plugin_id,
+            "request_id": id,
+            "response": response,
+        });
+
+        self.peer.send_rpc_notification("completions", &params);
     }
 
     pub fn add_status_item(&self, key: &str, value: &str, alignment: &str) {

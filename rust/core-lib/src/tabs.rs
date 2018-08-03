@@ -751,10 +751,10 @@ impl<'a, I> Iterator for Iter<'a, I> where I: Iterator<Item=&'a ViewId> {
 }
 
 #[derive(Debug, Default)]
-struct Counter(Cell<usize>);
+pub(crate) struct Counter(Cell<usize>);
 
 impl Counter {
-    fn next(&self) -> usize {
+    pub(crate) fn next(&self) -> usize {
         let n = self.0.get();
         self.0.set(n + 1);
         n + 1

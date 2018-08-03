@@ -28,7 +28,8 @@ use xi_rpc::{RemoteError, Error as RpcError};
 use xi_trace::trace_block;
 
 use rpc::{EditNotification, EditRequest, LineRange, Position as ClientPosition};
-use plugins::rpc::{ClientPluginInfo, PluginBufferInfo, PluginNotification,
+use plugins::rpc::{ClientPluginInfo, CompletionResponse,
+                   PluginBufferInfo, PluginNotification,
                    PluginRequest, PluginUpdate, Hover};
 
 use styles::ThemeStyleMap;
@@ -138,7 +139,10 @@ impl<'a> EventContext<'a> {
             SpecialEvent::RequestLines(LineRange { first, last }) =>
                 self.do_request_lines(first as usize, last as usize),
             SpecialEvent::RequestHover{ request_id, position } =>
-                self.do_request_hover(request_id, position)
+                self.do_request_hover(request_id, position),
+            SpecialEvent::CompletionsShow => self.do_show_completions(),
+            SpecialEvent::CompletionsSelect { index } =>
+                eprintln!("completion select ({})", index),
         }
     }
 
@@ -168,6 +172,8 @@ impl<'a> EventContext<'a> {
                                            len, spans, rev)),
             Edit { edit } => self.with_editor(
                 |ed, _, _, _| ed.apply_plugin_edit(edit)),
+            Completions { request_id, response } =>
+                self.do_completions_response(plugin, request_id, response),
             Alert { msg } => self.client.alert(&msg),
             AddStatusItem { key, value, alignment }  => {
             	let plugin_name = &self.plugins.iter().find(|p| p.id == plugin).unwrap().name;
@@ -428,6 +434,32 @@ impl<'a> EventContext<'a> {
                            ed.is_pristine())
     }
 
+    fn do_show_completions(&self) {
+        if !self.view.borrow().can_show_completions() { return }
+        let rev = self.editor.borrow().get_head_rev_token();
+        let mut view = self.view.borrow_mut();
+        let state = view.prepare_completions(rev);
+        self.plugins.iter()
+            .for_each(|plug| {
+                state.add_pending(plug.id);
+                plug.completions(self.view_id, state.id, state.pos);
+            });
+    }
+
+    fn do_completions_response(&self,
+                               plugin: PluginId,
+                               completion_id: usize,
+                               result: Result<CompletionResponse, RemoteError>)
+    {
+        if let Some(state) = self.view.borrow_mut().get_completion_state() {
+            if state.id == completion_id {
+                state.handle_response(plugin, result)
+            }
+        } else {
+            eprintln!("discarding stale completions");
+        }
+    }
+
     fn do_request_hover(&mut self, request_id: usize, position: Option<ClientPosition>) {
         if let Some(position) = self.get_resolved_position(position) {
             self.with_each_plugin(|p| p.get_hover(self.view_id, request_id, position))
@@ -443,7 +475,7 @@ impl<'a> EventContext<'a> {
             Err(err) => eprintln!("Hover Response from Client Error {:?}", err)
         }
     }
-     
+
     /// Gives the requested position in UTF-8 offset format to be sent to plugin
     /// If position is `None`, it tries to get the current Caret Position and use
     /// that instead

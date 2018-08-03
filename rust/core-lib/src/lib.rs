@@ -69,6 +69,7 @@ use ledger_includes::*;
 #[path=""]
 pub mod internal {
     pub mod client;
+    pub mod completions;
     pub mod core;
     pub mod tabs;
     pub mod editor;
@@ -98,6 +99,7 @@ pub mod internal {
 pub mod rpc;
 
 use internal::tabs;
+use internal::completions;
 use internal::core;
 use internal::client;
 use internal::edit_types;
