@@ -241,7 +241,7 @@ impl View {
             Replace { chars, preserve_case } =>
                 self.do_set_replace(chars, preserve_case),
             SelectionForReplace => self.do_selection_for_replace(text),
-            SelectionIntoLines => self.split_selection_into_lines(text),
+            SelectionIntoLines => self.do_split_selection_into_lines(text),
         }
     }
 
@@ -469,27 +469,31 @@ impl View {
     }
 
     /// Splits current selections into lines.
-    pub fn split_selection_into_lines(&mut self, text: &Rope) {
+    fn do_split_selection_into_lines(&mut self, text: &Rope) {
         let mut selection = Selection::new();
 
-        for region in self.selection.regions_in_range(0, text.len()) {
-            let mut cursor = Cursor::new(&text, region.min());
+        for region in self.selection.iter() {
+            if region.is_caret() {
+                selection.add_region(SelRegion::new(region.max(), region.max()));
+            } else {
+                let mut cursor = Cursor::new(&text, region.min());
 
-            while cursor.pos() < region.max() {
-                let sel_start = cursor.pos();
-                let end_of_line = match cursor.next::<LinesMetric>() {
-                    Some(end) => {
-                        if end >= region.max() {
-                            region.max()
-                        } else {
-                            max(0, end - 1)
-                        }
-                    },
-                    None if cursor.pos() == text.len() => cursor.pos(),
-                    _ => break
-                };
+                while cursor.pos() < region.max() {
+                    let sel_start = cursor.pos();
+                    let end_of_line = match cursor.next::<LinesMetric>() {
+                        Some(end) => {
+                            if end >= region.max() {
+                                max(0, region.max() - 1)
+                            } else {
+                                max(0, end - 1)
+                            }
+                        },
+                        None if cursor.pos() == text.len() => cursor.pos(),
+                        _ => break
+                    };
 
-                selection.add_region(SelRegion::new(sel_start, end_of_line));
+                    selection.add_region(SelRegion::new(sel_start, end_of_line));
+                }
             }
         }
 
