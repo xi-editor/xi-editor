@@ -489,12 +489,18 @@ impl ConfigManager {
     }
 
     /// Path to themes sub directory inside config directory.
+    /// Creates one if not present.
     pub(crate) fn get_themes_dir(&self) -> Option<PathBuf> {
         let themes_dir = self.config_dir.as_ref()
             .map(|p| p.join("themes"));
-        let exists = themes_dir.as_ref()
-            .map_or(false, |p| p.exists());
-        if exists { themes_dir } else { None }
+
+        if let Some(p) = themes_dir {
+            if p.exists() { return Some(p); }
+            if fs::DirBuilder::new().create(&p).is_ok() {
+               return Some(p);
+            }
+        }
+        None
     }
 }
 
