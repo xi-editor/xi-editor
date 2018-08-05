@@ -186,9 +186,8 @@ impl CoreState {
             self.load_file_based_config(&path);
         }
 
-        if let Some(path) = self.config_manager.get_themes_dir() {
-            self.style_map.borrow_mut().load_theme_dir(path);
-        }
+        // Load the custom theme files.
+        self.style_map.borrow_mut().load_theme_dir();
 
         // instead of having to do this here, config should just own
         // the plugin catalog and reload automatically
@@ -437,8 +436,8 @@ impl CoreState {
         //Set only if requested theme is different from the 
         //current one.
         if theme_name != self.style_map.borrow().get_theme_name() {
-           if self.style_map.borrow_mut().set_theme(&theme_name).is_err() {
-                //TODO: report error
+           if let Err(e) = self.style_map.borrow_mut().set_theme(&theme_name) {
+                error!("error setting theme: {:?}, {:?}",theme_name, e);
                 return;
            }
         }
@@ -633,39 +632,26 @@ impl CoreState {
         match event {
             Create(ref path) | Write(ref path) =>
                 self.load_theme_file(path),
-            Remove(ref path) =>
+            NoticeRemove(ref path) =>
                 self.remove_theme(path),
             Rename(ref old, ref new) => {
                 self.remove_theme(old);
                 self.load_theme_file(new);
             },
-            Chmod(ref path) => {
-                if !self.theme_file_loaded(path) {
-                    self.load_theme_file(path);
-                }
-            },
+            Chmod(ref path) | Remove(ref path) =>
+                self.style_map.borrow_mut()
+                    .sync_dir(path.parent()),
             _ => ()
         }
         let theme_names = self.style_map.borrow().get_theme_names();
         self.peer.available_themes(theme_names);
     }
 
-    fn theme_file_loaded(&mut self, path: &Path) -> bool {
-        if let Some(theme_name) = path.file_stem()
-            .and_then(OsStr::to_str)
-        {
-            self.style_map.borrow()
-                .contains_theme(theme_name)
-        } else { false }
-    }
-
     /// Load a single theme file. Updates if already present.
     fn load_theme_file(&mut self, path: &Path) {
         let _t = trace_block("CoreState::load_theme_file", &["core"]);
 
-        let result = self.style_map.borrow_mut()
-            .insert_theme(path);
-
+        let result = self.style_map.borrow_mut().load_theme(path);
         match result {
             Ok(theme_name) => {
                 if theme_name == self.style_map.borrow()
@@ -678,7 +664,7 @@ impl CoreState {
                     }
                 }
             },
-            Err(e) => eprintln!("Error while loading theme: {:?}", e),
+            Err(e) => error!("Error loading theme file: {:?}, {:?}", path, e),
         }
     }
 

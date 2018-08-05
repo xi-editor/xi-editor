@@ -14,15 +14,16 @@
 
 //! Management of styles.
 
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::fs;
+use std::iter::FromIterator;
+use std::path::{Path, PathBuf};
 
 use serde_json::{self, Value};
+use syntect::dumps::{dump_to_file, from_dump_file};
 use syntect::highlighting::StyleModifier as SynStyleModifier;
-use syntect::highlighting::{Color, Theme, ThemeSet, Highlighter};
-use syntect::dumps::{from_dump_file, dump_to_file};
+use syntect::highlighting::{Color, Highlighter, Theme, ThemeSet};
 use syntect::LoadingError;
 
 pub use syntect::highlighting::ThemeSettings;
@@ -157,8 +158,12 @@ pub struct ThemeStyleMap {
     // It's not obvious we actually have to store the style, we seem to only need it
     // as the key in the map.
     styles: Vec<Style>,
+    themes_dir: Option<PathBuf>,
     cache_dir: Option<PathBuf>,
     caching_enabled: bool,
+
+    // Maintaining all theme paths for comparison on an fs event.
+    state: HashSet<PathBuf>,
 }
 
 impl ThemeStyleMap {
@@ -167,7 +172,8 @@ impl ThemeStyleMap {
         let theme_name = DEFAULT_THEME.to_owned();
         let theme = themes.themes.get(&theme_name).expect("missing theme").to_owned();
         let default_style = Style::default_for_theme(&theme);
-        let (caching_enabled, cache_dir) = init_cache_dir(themes_dir);
+        let cache_dir = None;
+        let caching_enabled = true;
 
         ThemeStyleMap {
             themes,
@@ -176,8 +182,10 @@ impl ThemeStyleMap {
             default_style,
             map: HashMap::new(),
             styles: Vec::new(),
+            themes_dir,
             cache_dir,
             caching_enabled,
+            state: HashSet::new(),
         }
     }
 
@@ -233,12 +241,14 @@ impl ThemeStyleMap {
         result
     }
 
-    /// Delete key from the themes map.
+    /// Delete key and the corresponding dump file from the themes map.
     pub(crate) fn remove_theme(&mut self, path: &Path) -> Option<String> {
+        validate_theme_file(path).ok()?;
+
         let theme_name = path.file_stem().and_then(OsStr::to_str)?;
         self.themes.themes.remove(theme_name);
+        self.state.remove(path);
 
-        //Delete dump file
         let dump_p = self.get_dump_path(theme_name)?;
         if dump_p.exists() {
             let _ = fs::remove_file(dump_p);
@@ -248,100 +258,136 @@ impl ThemeStyleMap {
     }
 
     /// Load all themes inside the given directory.
-    pub(crate) fn load_theme_dir(&mut self, themes_dir: PathBuf) {
-        match ThemeSet::discover_theme_paths(themes_dir) {
-            Ok(themes) => {
-                for theme_p in themes.iter() {
-                    //This is called at startup
-                    //We need to filter out dumps
-                    //whose theme files were changed
-                    //when editor was closed.
-                    self.load_theme(theme_p);
-                }
-            },
-            Err(e) => eprintln!("Error while loading themes dir: {:?}",e)
-        }
-    }
+    pub(crate) fn load_theme_dir(&mut self) {
+        if let Some(themes_dir) = self.themes_dir.clone() {
+            match ThemeSet::discover_theme_paths(themes_dir) {
+                Ok(themes) => {
+                    self.caching_enabled = self.caching_enabled && self.init_cache_dir();
 
-    fn load_theme(&mut self, theme_p: &Path) {
-        match self.try_load_from_dump(theme_p) {
-            Some((k, v)) => {
-                self.themes.themes.insert(k, v);
-            },
-            None => {
-                let _ = self.insert_theme(theme_p);
+                    for theme_p in themes.iter() {
+                        match self.try_load_from_dump(theme_p) {
+                            Some((k, v)) => {
+                                self.insert_to_map(k, v, theme_p);
+                            }
+                            None => {
+                                let _ = self.load_theme(theme_p);
+                            }
+                        }
+                    }
+                }
+                Err(e) => error!("Error loading themes dir: {:?}", e),
             }
         }
     }
 
-    // A wrapper around `from_dump_file`
-    // to validate the state of dump file.
-    fn try_load_from_dump(&self, theme_p: &Path)
-        -> Option<(String, Theme)>
-    {
-        if !self.caching_enabled { return None; }
+    /// A wrapper around `from_dump_file`
+    /// to validate the state of dump file.
+    /// Invalidates if mod time of dump is less
+    /// than the original one.
+    fn try_load_from_dump(&self, theme_p: &Path) -> Option<(String, Theme)> {
+        if !self.caching_enabled {
+            return None;
+        }
 
-        let theme_name = theme_p.file_stem()
-            .and_then(OsStr::to_str)?;
+        let theme_name = theme_p.file_stem().and_then(OsStr::to_str)?;
 
         let dump_p = self.get_dump_path(theme_name)?;
 
-        if !&dump_p.exists() { return None; }
+        if !&dump_p.exists() {
+            return None;
+        }
 
-        let mod_t = fs::metadata(&dump_p)
-            .and_then(|md| md.modified()).ok()?;
-        let mod_t_org = fs::metadata(theme_p)
-            .and_then(|md| md.modified()).ok()?;
+        //NOTE: `try_load_from_dump` will return `None` if the file at
+        //`dump_p` or `theme_p` is deleted before the execution of this fn.
+        let mod_t = fs::metadata(&dump_p).and_then(|md| md.modified()).ok()?;
+        let mod_t_orig = fs::metadata(theme_p).and_then(|md| md.modified()).ok()?;
 
-        match mod_t.duration_since(mod_t_org) {
-            Ok(_) => {
-                from_dump_file(&dump_p).ok()
-                    .map(|t| 
-                    (theme_name.to_owned(), t))
-            },
-            Err(_) => {
-                // Delete dump file
-                let _ = fs::remove_file(&dump_p);
-                None
-            }
+        if mod_t >= mod_t_orig {
+            from_dump_file(&dump_p)
+                .ok()
+                .map(|t| (theme_name.to_owned(), t))
+        } else {
+            // Delete dump file
+            let _ = fs::remove_file(&dump_p);
+            None
         }
     }
 
-    /// Insert theme into the map.
-    /// Store binary dump in a file with `tmdump` extension.
-    pub(crate) fn insert_theme(&mut self, theme_p: &Path)
-        -> Result<String, LoadingError>
-    {
+    /// Loads theme using syntect's `get_theme` fn to our `theme` map.
+    /// Stores binary dump in a file with `tmdump` extension, only if
+    /// caching is enabled.
+    pub(crate) fn load_theme(&mut self, theme_p: &Path) -> Result<String, LoadingError> {
+        validate_theme_file(theme_p)?;
         let theme = ThemeSet::get_theme(theme_p)?;
-        let theme_name = theme_p.file_stem()
+        let theme_name = theme_p
+            .file_stem()
             .and_then(OsStr::to_str)
             .ok_or(LoadingError::BadPath)?;
 
         if self.caching_enabled {
-            if let Some(dump_p) = self.get_dump_path(theme_name) 
-            {
+            if let Some(dump_p) = self.get_dump_path(theme_name) {
                 let _ = dump_to_file(&theme, dump_p);
             }
         }
-        self.themes.themes.insert(theme_name.to_owned(), theme);
-
+        self.insert_to_map(theme_name.to_owned(), theme, theme_p);
         Ok(theme_name.to_owned())
     }
 
+    fn insert_to_map(&mut self, k: String, v: Theme, p: &Path) {
+        self.themes.themes.insert(k, v);
+
+        //Maintain a record for future syncing
+        self.state.insert(p.to_path_buf());
+    }
+
+    /// Returns dump's path corresponding to the given theme name.
     fn get_dump_path(&self, theme_name: &str) -> Option<PathBuf> {
-        self.cache_dir.as_ref()
-            .map(|p| p.join(theme_name)
-            .with_extension("tmdump"))
+        self.cache_dir
+            .as_ref()
+            .map(|p| p.join(theme_name).with_extension("tmdump"))
+    }
+
+    /// Compare the stored file paths in `self.state`
+    /// to the present ones.
+    pub(crate) fn sync_dir(&mut self, dir: Option<&Path>) {
+        if let Some(themes_dir) = dir {
+            if let Ok(paths) = ThemeSet::discover_theme_paths(themes_dir) {
+                let current_state = HashSet::from_iter(paths.into_iter());
+                let maintained_state = self.state.clone();
+
+                let to_insert = current_state.difference(&maintained_state);
+                for path in to_insert {
+                    let _ = self.load_theme(path);
+                }
+
+                let to_remove = maintained_state.difference(&current_state);
+                for path in to_remove {
+                    self.remove_theme(path);
+                }
+            }
+        }
+    }
+
+    /// Creates the cache dir returns true
+    /// if it is successfully initialized or
+    /// already exists.
+    fn init_cache_dir(&mut self) -> bool {
+        self.cache_dir = self.themes_dir.clone().map(|p| p.join("cache"));
+
+        if let Some(ref p) = self.cache_dir {
+            if p.exists() {
+                return true;
+            }
+            fs::DirBuilder::new().create(&p).is_ok()
+        } else {
+            false
+        }
     }
 }
 
-fn init_cache_dir(themes_dir: Option<PathBuf>)
-    -> (bool, Option<PathBuf>) 
-{
-    if let Some(p) = themes_dir {
-        let cache_dir = p.join("cache");
-        if cache_dir.exists() { return (true, Some(cache_dir)); }
-
-        (fs::DirBuilder::new().create(&cache_dir).is_ok(), Some(cache_dir))
-    } else { (false, None) }
+/// Used to remove files with extension other than `tmTheme`.
+fn validate_theme_file(path: &Path) -> Result<bool, LoadingError> {
+    path.extension()
+        .map(|e| e != "tmTheme")
+        .ok_or(LoadingError::BadPath)
 }
