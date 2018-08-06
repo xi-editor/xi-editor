@@ -474,20 +474,15 @@ impl View {
 
         for region in self.selection.iter() {
             if region.is_caret() {
-                selection.add_region(SelRegion::new(region.max(), region.max()));
+                selection.add_region(SelRegion::caret(region.max()));
             } else {
                 let mut cursor = Cursor::new(&text, region.min());
 
                 while cursor.pos() < region.max() {
                     let sel_start = cursor.pos();
                     let end_of_line = match cursor.next::<LinesMetric>() {
-                        Some(end) => {
-                            if end >= region.max() {
-                                max(0, region.max() - 1)
-                            } else {
-                                max(0, end - 1)
-                            }
-                        },
+                        Some(end) if end >= region.max() => max(0, region.max() - 1),
+                        Some(end) => max(0, end - 1),
                         None if cursor.pos() == text.len() => cursor.pos(),
                         _ => break
                     };
