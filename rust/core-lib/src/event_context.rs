@@ -29,7 +29,7 @@ use xi_trace::trace_block;
 
 use rpc::{EditNotification, EditRequest, LineRange, Position as ClientPosition};
 use plugins::rpc::{ClientPluginInfo, PluginBufferInfo, PluginNotification,
-                   PluginRequest, PluginUpdate, Hover};
+                   PluginRequest, PluginUpdate, Hover, Location};
 
 use styles::ThemeStyleMap;
 use config::{BufferItems, Table};
@@ -138,7 +138,9 @@ impl<'a> EventContext<'a> {
             SpecialEvent::RequestLines(LineRange { first, last }) =>
                 self.do_request_lines(first as usize, last as usize),
             SpecialEvent::RequestHover{ request_id, position } =>
-                self.do_request_hover(request_id, position)
+                self.do_request_definition(request_id, position),
+            SpecialEvent::RequestDefinition { request_id, position } =>
+                self.do_request_definition(request_id, position),
         }
     }
 
@@ -177,6 +179,7 @@ impl<'a> EventContext<'a> {
                                                         self.view_id, &key, &value),
             RemoveStatusItem { key } => self.client.remove_status_item(self.view_id, &key),
             ShowHover { request_id, result } => self.do_show_hover(request_id, result),
+            HandleDefinition { request_id, result } => self.do_handle_definition(request_id, result),
         };
         self.after_edit(&plugin.to_string());
         self.render_if_needed();
@@ -434,6 +437,12 @@ impl<'a> EventContext<'a> {
         }
     }
 
+    fn do_request_definition(&mut self, request_id: usize, position: Option<ClientPosition>) {
+        if let Some(position) = self.get_resolved_position(position) {
+            self.with_each_plugin(|p| p.get_definition(self.view_id, request_id, position))
+        }
+    }
+
     fn do_show_hover(&mut self, request_id: usize, hover: Result<Hover, RemoteError>) {
         match hover {
             Ok(hover) => {
@@ -441,6 +450,15 @@ impl<'a> EventContext<'a> {
                 self.client.show_hover(self.view_id, request_id, hover.content)
             },
             Err(err) => warn!("Hover Response from Client Error {:?}", err)
+        }
+    }
+
+    fn do_handle_definition(&mut self, request_id: usize, definition: Result<Vec<Location>, RemoteError>) {
+        match definition {
+            Ok(definition) => {
+
+            },
+            Err(err) => eprintln!("Definition Response error {:?}", err)
         }
     }
      

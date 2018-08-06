@@ -134,6 +134,13 @@ impl Plugin {
                                                 "request_id": request_id,
                                                 "position": position}))
     }
+
+    pub fn get_definition(&self, view_id: ViewId, request_id: usize, position: usize) {
+        self.peer.send_rpc_notification("get_definition", 
+                                        &json!({"view_id": view_id,
+                                                "request_id": request_id,
+                                                "position": position}))
+    }
 }
 
 pub(crate) fn start_plugin_process(plugin_desc: Arc<PluginDescription>,

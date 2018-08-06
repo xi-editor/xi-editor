@@ -157,7 +157,15 @@ impl Into<RemoteError> for LanguageResponseError {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(untagged)]
+pub enum Definition {
+    Location(Location),
+    Locations(Vec<Location>),
+}
+
 #[derive(Debug)]
 pub enum LspResponse {
-    Hover(Result<Hover, LanguageResponseError>)
+    Hover(Result<Hover, LanguageResponseError>),
+    Definition(Result<Definition, LanguageResponseError>)
 }

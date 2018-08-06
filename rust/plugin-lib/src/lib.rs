@@ -36,6 +36,7 @@ mod view;
 mod dispatch;
 mod core_proxy;
 
+use xi_core::ViewId;
 use std::io;
 use std::path::Path;
 
@@ -46,11 +47,13 @@ use xi_core::plugin_rpc::{GetDataResponse, TextUnit};
 
 use self::dispatch::Dispatcher;
 
+
+pub use dispatch::PluginContext;
 pub use view::View;
 pub use state_cache::StateCache;
 pub use base_cache::ChunkCache;
 pub use core_proxy::CoreProxy;
-pub use xi_core::plugin_rpc::{Hover, Range};
+pub use xi_core::plugin_rpc::{Hover, Location, Range};
 
 /// Abstracts getting data from the peer. Mainly exists for mocking in tests.
 pub trait DataSource {
@@ -150,12 +153,15 @@ pub trait Plugin {
     /// are doing things like full document analysis can use this mechanism
     /// to perform their work incrementally while remaining responsive.
     #[allow(unused_variables)]
-    fn idle(&mut self, view: &mut View<Self::Cache>) { }
+    fn idle(&mut self, view_id: ViewId, plugin_context: &mut PluginContext<Self::Cache>) { }
 
     /// Language Plugins specific methods
     
     #[allow(unused_variables)]
     fn get_hover(&mut self, view: &mut View<Self::Cache>, request_id: usize, position: usize) { }
+
+    #[allow(unused_variables)]
+    fn get_definition(&mut self, view: &mut View<Self::Cache>, request_id: usize, position: usize) { }
 }
 
 #[derive(Debug)]

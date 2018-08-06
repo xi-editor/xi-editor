@@ -110,6 +110,7 @@ pub enum HostNotification {
     NewBuffer { buffer_info: Vec<PluginBufferInfo> },
     DidClose { view_id: ViewId },
     GetHover { view_id: ViewId, request_id: usize, position: usize },
+    GetDefinition { view_id: ViewId, request_id: usize, position: usize },
     Shutdown(EmptyStruct),
     TracingConfig {enabled: bool},
 }
@@ -187,12 +188,12 @@ pub enum PluginNotification {
     UpdateStatusItem { key: String, value: String  },
     RemoveStatusItem { key: String },
     ShowHover { request_id: usize, result: Result<Hover, RemoteError> },
+    HandleDefinition { request_id: usize, result: Result<Vec<Location>, RemoteError> }
 }
 
-/// Range expressed in terms of PluginPosition. Meant to be sent from
+/// Range expressed in terms of UTF-8 offsets. Meant to be sent from
 /// plugin to core.
 #[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "snake_case")]
 pub struct Range {
     pub start: usize,
     pub end: usize,
@@ -200,10 +201,15 @@ pub struct Range {
 
 /// Hover Item sent from Plugin to Core
 #[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "snake_case")]
 pub struct Hover {
     pub content: String,
     pub range: Option<Range>
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Location {
+    pub file_uri: PathBuf,
+    pub range: Range
 }
 
 /// Common wrapper for plugin-originating RPCs.

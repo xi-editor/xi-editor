@@ -14,21 +14,21 @@
 
 //! Implementation of Language Server Plugin
 
-use result_queue::ResultQueue;
 use conversion_utils::*;
 use language_server_client::LanguageServerClient;
 use lsp_types::*;
+use result_queue::ResultQueue;
 use serde_json;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::Mutex;
-use types::{Config, LspResponse, LanguageResponseError};
+use types::{Config, Definition, LanguageResponseError, LspResponse};
 use url::Url;
 use utils::*;
 use xi_core::ConfigTable;
 use xi_core::ViewId;
-use xi_plugin_lib::{ChunkCache, CoreProxy, Plugin, View};
+use xi_plugin_lib::{ChunkCache, CoreProxy, Plugin, PluginContext, View};
 use xi_rope::rope::RopeDelta;
 
 pub struct ViewInfo {
@@ -93,16 +93,15 @@ impl Plugin for LspPlugin {
         trace!("saved view {}", view.get_id());
 
         let document_text = view.get_document().unwrap();
-        self.with_language_server_for_view(view, |ls_client| {
+        self.with_language_server_for_view_id(view.get_id(), |ls_client| {
             ls_client.send_did_save(view.get_id(), document_text);
         });
     }
 
     fn did_close(&mut self, view: &View<Self::Cache>) {
         trace!("close view {}", view.get_id());
-        
-        self.with_language_server_for_view(view, |ls_client| {
-            ls_client.send_did_close(view.get_id());    
+        self.with_language_server_for_view_id(view.get_id(), |ls_client| {
+            ls_client.send_did_close(view.get_id());
         });
     }
 
@@ -164,60 +163,96 @@ impl Plugin for LspPlugin {
 
     fn config_changed(&mut self, _view: &mut View<Self::Cache>, _changes: &ConfigTable) {}
 
-    fn get_hover(
-        &mut self,
-        view: &mut View<Self::Cache>,
-        request_id: usize,
-        position: usize,
-    ) {
-
+    fn get_hover(&mut self, view: &mut View<Self::Cache>, request_id: usize, position: usize) {
         let view_id = view.get_id();
         let position_ls = get_position_of_offset(view, position);
 
-        self.with_language_server_for_view(view, |ls_client| {
+        self.with_language_server_for_view_id(view.get_id(), |ls_client| match position_ls {
+            Ok(position) => ls_client.request_hover(view_id, position, move |ls_client, result| {
+                let res = result
+                    .map_err(|e| LanguageResponseError::LanguageServerError(format!("{:?}", e)))
+                    .and_then(|h| {
+                        let hover: Option<Hover> = serde_json::from_value(h).unwrap();
+                        hover.ok_or(LanguageResponseError::NullResponse)
+                    });
 
-                match position_ls {
-                    Ok(position) => ls_client.request_hover(
-                        view_id,
-                        position,
-                        move |ls_client, result| {
-                            let res = result
-                                .map_err(|e| LanguageResponseError::LanguageServerError(format!("{:?}", e)))
-                                .and_then(|h| {
-                                    let hover: Option<Hover> = serde_json::from_value(h).unwrap();
-                                    hover.ok_or(LanguageResponseError::NullResponse)
-                                });
-                            
-                            ls_client.result_queue.push_result(request_id, LspResponse::Hover(res));
-                            ls_client.core.schedule_idle(view_id);
-                        },
-                    ),
-                    Err(err) => {
-                        ls_client.result_queue.push_result(request_id, LspResponse::Hover(Err(err.into())));
-                        ls_client.core.schedule_idle(view_id);
-                    }
-                }
-                    
+                ls_client
+                    .result_queue
+                    .push_result(request_id, LspResponse::Hover(res));
+                ls_client.core.schedule_idle(view_id);
+            }),
+            Err(err) => {
+                ls_client
+                    .result_queue
+                    .push_result(request_id, LspResponse::Hover(Err(err.into())));
+                ls_client.core.schedule_idle(view_id);
+            }
         });
     }
 
-    fn idle(&mut self, view: &mut View<Self::Cache>) {
+    fn get_definition(&mut self, view: &mut View<Self::Cache>, request_id: usize, position: usize) {
+        let view_id = view.get_id();
+        let position_ls = get_position_of_offset(view, position);
+
+        self.with_language_server_for_view_id(view.get_id(), |ls_client| match position_ls {
+            Ok(position) => ls_client.request_definition(view_id, position, move |ls_client, result| {
+                let res = result
+                    .map_err(|e| LanguageResponseError::LanguageServerError(format!("{:?}", e)))
+                    .and_then(|d| {
+                        let definition: Option<Definition> = serde_json::from_value(d).unwrap();
+                        definition.ok_or(LanguageResponseError::NullResponse)
+                    });
+
+                ls_client
+                    .result_queue
+                    .push_result(request_id, LspResponse::Definition(res));
+                ls_client.core.schedule_idle(view_id);
+            }),
+            Err(err) => {
+                ls_client
+                    .result_queue
+                    .push_result(request_id, LspResponse::Definition(Err(err.into())));
+                ls_client.core.schedule_idle(view_id);
+            }
+        });
+    }
+
+    fn idle(&mut self, view_id: ViewId, plugin_context: &mut PluginContext<Self::Cache>) {
         let result = self.result_queue.pop_result();
-        if let Some((request_id, reponse)) = result {
-            match reponse {
+        
+        if let Some((request_id, response)) = result {
+            match response {
                 LspResponse::Hover(res) => {
-                    let res = res.and_then(|h| core_hover_from_hover(view, h)).map_err(|e| e.into());
-                    self.with_language_server_for_view(view, |ls_client| 
-                            ls_client.core.display_hover(view.get_id(), request_id, res));
+                    let res = res
+                        .and_then(|h| core_hover_from_hover(plugin_context, h))
+                        .map_err(|e| e.into());
+                    self.with_language_server_for_view_id(view_id, |ls_client| {
+                        ls_client.core.display_hover(view_id, request_id, res)
+                    });
+                },
+                LspResponse::Definition(res) => {
+                    let res = res
+                        .and_then(|d| core_definition_from_definition(plugin_context, d))
+                        .map_err(|e| e.into());
+                    self.with_language_server_for_view_id(view_id, |ls_client| {
+                        ls_client.core.handle_definition(view_id, request_id, res)
+                    });
                 }
             }
         }
+
+        let prime_view = match plugin_context.get_view(&view_id) {
+            Some(view) => view,
+            None => {
+                eprintln!("View not found for id: {}", view_id);
+                return;
+            }
+        };
     }
 }
 
 /// Util Methods
 impl LspPlugin {
-
     /// Get the Language Server Client given the Workspace root
     /// This method checks if a language server is running at the specified root
     /// and returns it else it tries to spawn a new language server and returns a
@@ -302,16 +337,21 @@ impl LspPlugin {
             })
     }
 
-    fn with_language_server_for_view<F, R>(&mut self, view: &View<ChunkCache>, f: F) -> Option<R>
-        where F: FnOnce(&mut LanguageServerClient) -> R {     
-            let view_info = if let Some(view_info) = self.view_info.get_mut(&view.get_id()) {
-                view_info
-            } else {
-                return None;
-            };
+    fn with_language_server_for_view_id<F, R>(&mut self, view_id: ViewId, f: F) -> Option<R>
+    where
+        F: FnOnce(&mut LanguageServerClient) -> R,
+    {
+        let view_info = if let Some(view_info) = self.view_info.get_mut(&view_id) {
+            view_info
+        } else {
+            return None;
+        };
 
-            let ls_client_arc = self.language_server_clients.get(&view_info.ls_identifier).unwrap();
-            let mut ls_client = ls_client_arc.lock().unwrap();
-            Some(f(&mut ls_client))
+        let ls_client_arc = self
+            .language_server_clients
+            .get(&view_info.ls_identifier)
+            .unwrap();
+        let mut ls_client = ls_client_arc.lock().unwrap();
+        Some(f(&mut ls_client))
     }
 }

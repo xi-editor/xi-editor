@@ -14,9 +14,9 @@
 
 //! A proxy for the methods on Core
 use xi_core::internal::plugins::PluginId;
-use xi_core::plugin_rpc::Hover;
+use xi_core::plugin_rpc::{Hover, Location};
 use xi_core::ViewId;
-use xi_rpc::{RpcCtx, RpcPeer, RemoteError};
+use xi_rpc::{RemoteError, RpcCtx, RpcPeer};
 
 #[derive(Clone)]
 pub struct CoreProxy {
@@ -52,7 +52,8 @@ impl CoreProxy {
             "value": value
         });
 
-        self.peer.send_rpc_notification("update_status_item", &params)
+        self.peer
+            .send_rpc_notification("update_status_item", &params)
     }
 
     pub fn remove_status_item(&mut self, view_id: &ViewId, key: &str) {
@@ -62,14 +63,15 @@ impl CoreProxy {
             "key": key
         });
 
-        self.peer.send_rpc_notification("remove_status_item", &params)
+        self.peer
+            .send_rpc_notification("remove_status_item", &params)
     }
 
     pub fn display_hover(
         &mut self,
         view_id: ViewId,
         request_id: usize,
-        result: Result<Hover, RemoteError>
+        result: Result<Hover, RemoteError>,
     ) {
         let params = json!({
             "plugin_id": self.plugin_id,
@@ -79,6 +81,22 @@ impl CoreProxy {
         });
 
         self.peer.send_rpc_notification("show_hover", &params);
+    }
+
+    pub fn handle_definition(
+        &mut self,
+        view_id: ViewId,
+        request_id: usize,
+        result: Result<Vec<Location>, RemoteError>,
+    ) {
+        let params = json!({
+            "plugin_id": self.plugin_id,
+            "request_id": request_id,
+            "result": result,
+            "view_id": view_id
+        });
+
+        self.peer.send_rpc_notification("handle_definition", &params);
     }
 
     pub fn schedule_idle(&mut self, view_id: ViewId) {

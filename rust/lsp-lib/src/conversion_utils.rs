@@ -16,8 +16,15 @@
 //! and vice-versa
 
 use lsp_types::*;
-use types::LanguageResponseError;
-use xi_plugin_lib::{Cache, Error as PluginLibError, Hover as CoreHover, Range as CoreRange, View};
+use std::fs::File;
+use std::io::Read;
+use types::{Definition, LanguageResponseError};
+use xi_plugin_lib::{
+    Cache, Error as PluginLibError, Hover as CoreHover, Location as CoreLocation,
+    Range as CoreRange, View,
+};
+use xi_rope::rope::{BaseMetric, LinesMetric, Utf16CodeUnitsMetric};
+use xi_rope::Rope;
 
 pub(crate) fn marked_string_to_string(marked_string: &MarkedString) -> String {
     match *marked_string {
@@ -114,5 +121,44 @@ pub(crate) fn core_hover_from_hover<C: Cache>(
             Some(range) => Some(core_range_from_range(view, range)?),
             None => None,
         },
+    })
+}
+
+fn position_to_offset(rope: &mut Rope, position: Position) -> usize {
+    let line_utf16_offset =
+        rope.convert_metrics::<LinesMetric, Utf16CodeUnitsMetric>(position.line as usize);
+    let utf16_offset = line_utf16_offset + (position.character as usize);
+    rope.convert_metrics::<Utf16CodeUnitsMetric, BaseMetric>(utf16_offset)
+}
+
+pub(crate) fn core_location_from_location(location: &Location) -> CoreLocation {
+    let path = location.uri.to_file_path().unwrap();
+    let mut f = File::open(&path).expect("can't find file");
+
+    let mut contents = String::new();
+    f.read_to_string(&mut contents).expect("can't read file");
+    let mut rope = Rope::from(&contents);
+
+    eprintln!("Location: {:?}", location);
+    
+    let start = position_to_offset(&mut rope, location.range.start);
+    let end = position_to_offset(&mut rope, location.range.end);
+    //let s = rope.slice_to_string(start, end);
+    eprintln!("Converted to: start: {} end: {}",start, end);
+    CoreLocation {
+        file_uri: path,
+        range: CoreRange { start, end },
+    }
+}
+
+pub(crate) fn core_definition_from_definition(
+    definition: Definition,
+) -> Result<Vec<CoreLocation>, LanguageResponseError> {
+    eprintln!("DEFINITION: {:?}", definition);
+    Ok(match definition {
+        Definition::Location(location) => vec![core_location_from_location(&location)],
+        Definition::Locations(locations) => {
+            locations.iter().map(core_location_from_location).collect()
+        }
     })
 }
