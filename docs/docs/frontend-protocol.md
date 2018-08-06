@@ -340,6 +340,12 @@ Replaces the next matching occurrence with the replacement string.
 
 Replaces all matching occurrences with the replacement string.
 
+#### split_selection_into_lines
+
+`split_selection_into_lines { }`
+
+Splits all current selections into lines.
+
 ## From back-end to front-end
 
 ### View update protocol
