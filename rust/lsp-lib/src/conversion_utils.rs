@@ -15,15 +15,14 @@
 //! Utility functions meant for converting types from LSP to Core format
 //! and vice-versa
 
-use url::Url;
-use xi_core::ViewId;
 use lsp_types::*;
 use std::fs::File;
 use std::io::Read;
 use types::{Definition, LanguageResponseError};
+use xi_core::ViewId;
 use xi_plugin_lib::{
-    Cache, Error as PluginLibError, Hover as CoreHover, Location as CoreLocation,
-    PluginContext, Range as CoreRange, View,
+    Cache, Error as PluginLibError, Hover as CoreHover, Location as CoreLocation, PluginContext,
+    Range as CoreRange, View,
 };
 use xi_rope::rope::{BaseMetric, LinesMetric, Utf16CodeUnitsMetric};
 use xi_rope::Rope;
@@ -118,7 +117,9 @@ pub(crate) fn core_hover_from_hover<C: Cache>(
     view_id: ViewId,
     hover: Hover,
 ) -> Result<CoreHover, LanguageResponseError> {
-    let view = plugin_context.get_view(&view_id).ok_or(PluginLibError::Other("View not found".to_owned()))?;
+    let view = plugin_context
+        .get_view(&view_id)
+        .ok_or(PluginLibError::Other("View not found".to_owned()))?;
     Ok(CoreHover {
         content: markdown_from_hover_contents(hover.contents)?,
         range: match hover.range {
@@ -128,48 +129,60 @@ pub(crate) fn core_hover_from_hover<C: Cache>(
     })
 }
 
-fn position_to_offset(rope: &mut Rope, position: Position) -> usize {
+fn offset_of_position_from_rope(rope: &mut Rope, position: Position) -> usize {
     let line_utf16_offset =
         rope.convert_metrics::<LinesMetric, Utf16CodeUnitsMetric>(position.line as usize);
     let utf16_offset = line_utf16_offset + (position.character as usize);
     rope.convert_metrics::<Utf16CodeUnitsMetric, BaseMetric>(utf16_offset)
 }
-
-pub(crate) fn core_location_from_location<C: Cache>(plugin_context: &mut PluginContext<C>, location: &Location) -> CoreLocation {
-    let path = location.uri.to_file_path().unwrap();
+ 
+pub(crate) fn core_location_from_location<C: Cache>(
+    plugin_context: &mut PluginContext<C>,
+    location: &Location,
+) -> Result<CoreLocation, LanguageResponseError> {
+    let path = location.uri.to_file_path()?;
     let view = plugin_context.get_view_for_path(&path);
-    
-    let contents = match view {
-        Some(view) => view.get_document().unwrap(),
+
+    let (start, end) = match view {
+        Some(view) => {
+            let start = offset_of_position(view, location.range.start)?;
+            let end = offset_of_position(view, location.range.end)?;
+            (start, end)
+        },
         None => {
-            let mut f = File::open(&path).expect("can't find file");
+            let mut f = File::open(&path)?;
 
             let mut contents = String::new();
-            f.read_to_string(&mut contents).expect("can't read file");
-            contents
+            f.read_to_string(&mut contents)?;
+            
+            let mut rope = Rope::from(contents);
+
+            let start = offset_of_position_from_rope(&mut rope, location.range.start);
+            let end = offset_of_position_from_rope(&mut rope, location.range.end);
+            (start, end)
         }
     };
 
-    let mut rope = Rope::from(contents);
-    eprintln!("Location: {:?}", location);    
-    let start = position_to_offset(&mut rope, location.range.start);
-    let end = position_to_offset(&mut rope, location.range.end);
-    //let s = rope.slice_to_string(start, end);
-    eprintln!("Converted to: start: {} end: {}",start, end);
-    CoreLocation {
+    Ok(CoreLocation {
         file_uri: path,
         range: CoreRange { start, end },
-    }
+    })
 }
 
 pub(crate) fn core_definition_from_definition<C: Cache>(
-    plugin_context: &mut PluginContext<C> ,definition: Definition,
+    plugin_context: &mut PluginContext<C>,
+    definition: Definition,
 ) -> Result<Vec<CoreLocation>, LanguageResponseError> {
-    eprintln!("DEFINITION: {:?}", definition);
     Ok(match definition {
-        Definition::Location(location) => vec![core_location_from_location(plugin_context, &location)],
+        Definition::Location(location) => {
+            vec![core_location_from_location(plugin_context, &location)?]
+        }
         Definition::Locations(locations) => {
-            locations.iter().map(|l| core_location_from_location(plugin_context, l)).collect()
+            let locations: Result<Vec<CoreLocation>, LanguageResponseError> = locations
+                .iter()
+                .map(|l| core_location_from_location(plugin_context, l))
+                .collect();
+            locations?
         }
     })
 }

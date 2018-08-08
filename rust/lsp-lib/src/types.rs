@@ -132,6 +132,8 @@ impl From<IOError> for Error {
 pub enum LanguageResponseError {
     LanguageServerError(String),
     PluginLibError(PluginLibError),
+    IOError(IOError),
+    MiscError,
     NullResponse,
     FallbackResponse,
 }
@@ -139,6 +141,18 @@ pub enum LanguageResponseError {
 impl From<PluginLibError> for LanguageResponseError {
     fn from(error: PluginLibError) -> Self {
         LanguageResponseError::PluginLibError(error)
+    }
+}
+
+impl From<()> for LanguageResponseError {
+    fn from(_error: ()) -> Self {
+        LanguageResponseError::MiscError
+    }
+}
+
+impl From<IOError> for LanguageResponseError {
+    fn from(error: IOError) -> Self {
+        LanguageResponseError::IOError(error)
     }
 }
 
@@ -153,6 +167,10 @@ impl Into<RemoteError> for LanguageResponseError {
                     RemoteError::custom(2, "language server error occured", Some(Value::String(error))),
             LanguageResponseError::PluginLibError(error) =>
                     RemoteError::custom(3, "Plugin Lib Error", Some(Value::String(format!("{:?}",error)))),
+            LanguageResponseError::IOError(error) =>
+                    RemoteError::custom(4, "I/O Error", Some(Value::String(format!("{:?}",error)))),
+            LanguageResponseError::MiscError =>
+                    RemoteError::custom(5, "Unknown error occured", None),
         }
     }
 }

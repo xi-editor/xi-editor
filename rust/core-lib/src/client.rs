@@ -22,7 +22,7 @@ use xi_rpc::{self, RpcPeer};
 use tabs::ViewId;
 use config::Table;
 use styles::ThemeSettings;
-use plugins::rpc::ClientPluginInfo;
+use plugins::rpc::{ClientPluginInfo, Location};
 use plugins::Command;
 
 /// An interface to the frontend.
@@ -180,6 +180,16 @@ impl Client {
 
     pub fn show_hover(&self, view_id: ViewId, request_id: usize, result: String) {
         self.0.send_rpc_notification("show_hover", &json!(
+            {
+                "view_id": view_id,
+                "request_id": request_id,
+                "result": result
+            }
+        ))
+    }
+
+    pub fn handle_definition(&self, view_id: ViewId, request_id: usize, result: Vec<Location>) {
+        self.0.send_rpc_notification("handle_definition", &json!(
             {
                 "view_id": view_id,
                 "request_id": request_id,

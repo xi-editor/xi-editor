@@ -31,6 +31,17 @@ use xi_core::ViewId;
 use xi_plugin_lib::{ChunkCache, CoreProxy, Plugin, PluginContext, View};
 use xi_rope::rope::RopeDelta;
 
+/// Convenience for unwrapping a view, when handling RPC notifications.
+macro_rules! bail {
+    ($opt:expr, $view:expr) => ( match $opt {
+        Some(t) => t,
+        None => {
+            eprintln!("Path undefined for View {:?}", $view);
+            return
+        }
+    })
+}
+
 pub struct ViewInfo {
     version: u64,
     ls_identifier: String,
@@ -72,6 +83,7 @@ impl Plugin for LspPlugin {
         _author: String,
     ) {
         let view_info = self.view_info.get_mut(&view.get_id());
+        let uri = bail!(get_view_uri(view), view.get_id());
         if let Some(view_info) = view_info {
             // This won't fail since we definitely have a client for the given
             // client identifier
@@ -84,7 +96,6 @@ impl Plugin for LspPlugin {
             let sync_kind = ls_client.get_sync_kind();
             view_info.version += 1;
             if let Some(changes) = get_change_for_sync_kind(sync_kind, view, delta) {
-                let uri = get_view_uri(view);
                 ls_client.send_did_change(uri, changes, view_info.version);
             }
         }
@@ -94,7 +105,7 @@ impl Plugin for LspPlugin {
         trace!("saved view {}", view.get_id());
 
         let document_text = view.get_document().unwrap();
-        let uri = get_view_uri(view);
+        let uri = bail!(get_view_uri(view), view.get_id());
         self.with_language_server_for_view_id(view.get_id(), |ls_client| {
             ls_client.send_did_save(uri, document_text);
         });
@@ -102,7 +113,7 @@ impl Plugin for LspPlugin {
 
     fn did_close(&mut self, view: &View<Self::Cache>) {
         trace!("close view {}", view.get_id());
-        let uri = get_view_uri(view);
+        let uri = bail!(get_view_uri(view), view.get_id());
         self.with_language_server_for_view_id(view.get_id(), |ls_client| {
             ls_client.send_did_close(view.get_id(), uri);
         });
@@ -168,7 +179,7 @@ impl Plugin for LspPlugin {
 
     fn get_hover(&mut self, view: &mut View<Self::Cache>, request_id: usize, position: usize) {
         let view_id = view.get_id();
-        let uri = get_view_uri(view);
+        let uri = bail!(get_view_uri(view), view.get_id());
         let position_ls = get_position_of_offset(view, position);
 
         self.with_language_server_for_view_id(view.get_id(), |ls_client| match position_ls {
@@ -197,7 +208,7 @@ impl Plugin for LspPlugin {
     fn get_definition(&mut self, view: &mut View<Self::Cache>, request_id: usize, position: usize) {
         let view_id = view.get_id();
         let position_ls = get_position_of_offset(view, position);
-        let uri = get_view_uri(view);
+        let uri = bail!(get_view_uri(view), view.get_id());
 
         self.with_language_server_for_view_id(view.get_id(), |ls_client| match position_ls {
             Ok(position) => ls_client.request_definition(uri, position, move |ls_client, result| {
@@ -246,14 +257,6 @@ impl Plugin for LspPlugin {
                 }
             }
         }
-
-        let prime_view = match plugin_context.get_view(&view_id) {
-            Some(view) => view,
-            None => {
-                eprintln!("View not found for id: {}", view_id);
-                return;
-            }
-        };
     }
 }
 

@@ -138,7 +138,7 @@ impl<'a> EventContext<'a> {
             SpecialEvent::RequestLines(LineRange { first, last }) =>
                 self.do_request_lines(first as usize, last as usize),
             SpecialEvent::RequestHover{ request_id, position } =>
-                self.do_request_definition(request_id, position),
+                self.do_request_hover(request_id, position),
             SpecialEvent::RequestDefinition { request_id, position } =>
                 self.do_request_definition(request_id, position),
         }
@@ -456,7 +456,7 @@ impl<'a> EventContext<'a> {
     fn do_handle_definition(&mut self, request_id: usize, definition: Result<Vec<Location>, RemoteError>) {
         match definition {
             Ok(definition) => {
-
+                self.client.handle_definition(self.view_id, request_id, definition);
             },
             Err(err) => eprintln!("Definition Response error {:?}", err)
         }

@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::path::Path;
 use Cache;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -53,24 +52,19 @@ macro_rules! bail_err {
 /// Handles raw RPCs from core, updating state and forwarding calls
 /// to the plugin,
 pub struct Dispatcher<'a, P: 'a + Plugin> {
-    //TODO: when we add multi-view, this should be an Arc+Mutex/Rc+RefCell
-    //views: HashMap<ViewId, View<P::Cache>>,
-    plugin_context: PluginContext<<P>::Cache>,
+    views: HashMap<ViewId, View<P::Cache>>,
     pid: Option<PluginPid>,
     plugin: &'a mut P,
 }
 
-pub struct PluginContext<C: Cache> {
-    views: HashMap<ViewId, View<C>>,
+/// Provides access to all active views.
+pub struct PluginContext<'a, C: 'a + Cache> {
+    //TODO: when we add multi-view, this should be an Arc+Mutex/Rc+RefCell
+    views: & 'a mut HashMap<ViewId, View<C>>,
 }
 
-impl<C: Cache> PluginContext<C> {
-    pub(crate) fn new() -> Self {
-        PluginContext {
-            views: HashMap::new()
-        }
-    }
-
+impl<'a, C: Cache> PluginContext<'a, C> {
+    
     pub fn with_view<F, R>(&mut self, view_id: &ViewId, f: F) -> Option<R> 
         where F: FnOnce(&mut View<C>) -> R {
         let view = self.views.get_mut(view_id);
@@ -102,7 +96,7 @@ impl<C: Cache> PluginContext<C> {
 impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
     pub (crate) fn new(plugin: &'a mut P) -> Self {
         Dispatcher {
-            plugin_context: PluginContext::new(),
+            views: HashMap::new(),
             pid: None,
             plugin: plugin,
         }
@@ -123,14 +117,14 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
     }
 
     fn do_did_save(&mut self, view_id: ViewId, path: PathBuf) {
-        let v = bail!(self.plugin_context.get_view(&view_id), "did_save", self.pid, view_id);
+        let v = bail!(self.views.get_mut(&view_id), "did_save", self.pid, view_id);
         let prev_path = v.path.take();
         v.path = Some(path);
         self.plugin.did_save(v, prev_path.as_ref().map(PathBuf::as_path));
     }
 
     fn do_config_changed(&mut self, view_id: ViewId, changes: ConfigTable) {
-        let v = bail!(self.plugin_context.get_view(&view_id), "config_changed", self.pid, view_id);
+        let v = bail!(self.views.get_mut(&view_id), "config_changed", self.pid, view_id);
         self.plugin.config_changed(v, &changes);
         for (key, value) in changes.iter() {
             v.config_table.insert(key.to_owned(), value.to_owned());
@@ -146,17 +140,17 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
             .for_each(|view| {
                 let mut view = view;
                 self.plugin.new_view(&mut view);
-                self.plugin_context.insert_view(view);
+                self.views.insert(view.get_id(), view);
             });
 
     }
 
     fn do_close(&mut self, view_id: ViewId) {
         {
-            let v = bail!(self.plugin_context.get_view(&view_id), "close", self.pid, view_id);
+            let v = bail!(self.views.get_mut(&view_id), "close", self.pid, view_id);
             self.plugin.did_close(v);
         }
-        self.plugin_context.remove_view(&view_id);
+        self.views.remove(&view_id);
     }
 
     fn do_shutdown(&mut self) {
@@ -166,12 +160,12 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
     }
 
     fn do_get_hover(&mut self, view_id: ViewId, request_id: usize, position: usize) {
-        let v = bail!(self.plugin_context.get_view(&view_id), "get_hover", self.pid, view_id);
+        let v = bail!(self.views.get_mut(&view_id), "get_hover", self.pid, view_id);
         self.plugin.get_hover(v, request_id, position)
     }
 
     fn do_get_definition(&mut self, view_id: ViewId, request_id: usize, position: usize) {
-        let v = bail!(self.plugin_context.get_view(&view_id), "get_definition", self.pid, view_id);
+        let v = bail!(self.views.get_mut(&view_id), "get_definition", self.pid, view_id);
         self.plugin.get_definition(v, request_id, position)
     }
 
@@ -194,7 +188,7 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
         let PluginUpdate {
             view_id, delta, new_len, new_line_count, rev, undo_group, edit_type, author,
         } = update;
-        let v = bail_err!(self.plugin_context.get_view(&view_id), "update",
+        let v = bail_err!(self.views.get_mut(&view_id), "update",
                           self.pid, view_id);
         v.update(delta.as_ref(), new_len, new_line_count, rev, undo_group);
         self.plugin.update(v, delta.as_ref(), edit_type, author);
@@ -261,8 +255,10 @@ impl<'a, P: Plugin> RpcHandler for Dispatcher<'a, P> {
         let _t = trace_block_payload("Dispatcher::idle", &["plugin"],
                                      format!("token: {}", token));
         let view_id: ViewId = token.into();
-        //let v = bail!(self.plugin_context.get_view(&view_id), "idle", self.pid, view_id);
-        self.plugin.idle(view_id, &mut self.plugin_context);
+        
+        let Dispatcher { ref mut views, .. } = self;
+        let mut ctx = PluginContext { views: views };
+        self.plugin.idle(view_id, &mut ctx);
     }
 }
 

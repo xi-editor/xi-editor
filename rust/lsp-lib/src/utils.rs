@@ -208,8 +208,6 @@ pub fn start_new_server(
 }
 
 /// Helper Method to get Url of the View path
-/// Panics: If view does not have a path or the given path
-/// can not be converted to Url
-pub fn get_view_uri<C: Cache>(view: &View<C>) -> Url {
-    Url::from_file_path(view.get_path().unwrap().clone()).expect("Can't convert View Path to Url")
+pub fn get_view_uri<C: Cache>(view: &View<C>) -> Option<Url> {
+    view.get_path().and_then(|p| Url::from_file_path(p).ok())
 }

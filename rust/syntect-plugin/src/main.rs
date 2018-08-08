@@ -33,7 +33,7 @@ use xi_rope::rope::RopeDelta;
 use xi_rope::interval::Interval;
 use xi_rope::delta::Builder as EditBuilder;
 use xi_trace::{trace, trace_block};
-use xi_plugin_lib::{Cache, Plugin, StateCache, View, mainloop};
+use xi_plugin_lib::{Cache, Plugin, PluginContext, StateCache, View, mainloop};
 
 use syntect::parsing::{ParseState, ScopeStack, SyntaxSet, SCOPE_REPO,
                        SyntaxDefinition, ScopeRepository};
@@ -333,7 +333,15 @@ impl<'a> Plugin for Syntect<'a> {
         }
     }
 
-    fn idle(&mut self, view: &mut View<Self::Cache>) {
+    fn idle(&mut self, view_id: ViewId, plugin_context: &mut PluginContext<Self::Cache>) {
+        let view = match plugin_context.get_view(&view_id) {
+            Some(view) => view,
+            None => {
+                eprintln!("View with ViewId {} not found", view_id);
+                return;
+            }
+        };
+
         let state = self.view_state.get_mut(&view.get_id()).unwrap();
         for _ in 0..LINES_PER_RPC {
             if !state.highlight_one_line(view) {
