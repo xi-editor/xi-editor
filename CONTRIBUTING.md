@@ -25,13 +25,16 @@ subject to the following rules:
 
 * Managing issues and merging trivial PR's (comments, doc fixes, etc) are fine.
 
-* A Google-employed project member should approve all nontrivial PR's by non-Googlers.
+* Every patch should be approved by a collaborator other than the author.
 
 * We wait for CI to be green, unless there is a really compelling reason.
 
 * If the PR author has commit privs, then they should merge after approval (this
   gives the author a chance to make last-minute fixes). Otherwise, the approver
   generally merges.
+
+If your name does not already appear in the [AUTHORS] file, please feel free to
+add it as part of your patch.
 
 ### Code of conduct
 
