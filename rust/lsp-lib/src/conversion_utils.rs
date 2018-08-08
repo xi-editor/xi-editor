@@ -15,13 +15,15 @@
 //! Utility functions meant for converting types from LSP to Core format
 //! and vice-versa
 
+use url::Url;
+use xi_core::ViewId;
 use lsp_types::*;
 use std::fs::File;
 use std::io::Read;
 use types::{Definition, LanguageResponseError};
 use xi_plugin_lib::{
     Cache, Error as PluginLibError, Hover as CoreHover, Location as CoreLocation,
-    Range as CoreRange, View,
+    PluginContext, Range as CoreRange, View,
 };
 use xi_rope::rope::{BaseMetric, LinesMetric, Utf16CodeUnitsMetric};
 use xi_rope::Rope;
@@ -112,9 +114,11 @@ pub(crate) fn core_range_from_range<C: Cache>(
 }
 
 pub(crate) fn core_hover_from_hover<C: Cache>(
-    view: &mut View<C>,
+    plugin_context: &mut PluginContext<C>,
+    view_id: ViewId,
     hover: Hover,
 ) -> Result<CoreHover, LanguageResponseError> {
+    let view = plugin_context.get_view(&view_id).ok_or(PluginLibError::Other("View not found".to_owned()))?;
     Ok(CoreHover {
         content: markdown_from_hover_contents(hover.contents)?,
         range: match hover.range {
@@ -131,16 +135,23 @@ fn position_to_offset(rope: &mut Rope, position: Position) -> usize {
     rope.convert_metrics::<Utf16CodeUnitsMetric, BaseMetric>(utf16_offset)
 }
 
-pub(crate) fn core_location_from_location(location: &Location) -> CoreLocation {
+pub(crate) fn core_location_from_location<C: Cache>(plugin_context: &mut PluginContext<C>, location: &Location) -> CoreLocation {
     let path = location.uri.to_file_path().unwrap();
-    let mut f = File::open(&path).expect("can't find file");
-
-    let mut contents = String::new();
-    f.read_to_string(&mut contents).expect("can't read file");
-    let mut rope = Rope::from(&contents);
-
-    eprintln!("Location: {:?}", location);
+    let view = plugin_context.get_view_for_path(&path);
     
+    let contents = match view {
+        Some(view) => view.get_document().unwrap(),
+        None => {
+            let mut f = File::open(&path).expect("can't find file");
+
+            let mut contents = String::new();
+            f.read_to_string(&mut contents).expect("can't read file");
+            contents
+        }
+    };
+
+    let mut rope = Rope::from(contents);
+    eprintln!("Location: {:?}", location);    
     let start = position_to_offset(&mut rope, location.range.start);
     let end = position_to_offset(&mut rope, location.range.end);
     //let s = rope.slice_to_string(start, end);
@@ -151,14 +162,14 @@ pub(crate) fn core_location_from_location(location: &Location) -> CoreLocation {
     }
 }
 
-pub(crate) fn core_definition_from_definition(
-    definition: Definition,
+pub(crate) fn core_definition_from_definition<C: Cache>(
+    plugin_context: &mut PluginContext<C> ,definition: Definition,
 ) -> Result<Vec<CoreLocation>, LanguageResponseError> {
     eprintln!("DEFINITION: {:?}", definition);
     Ok(match definition {
-        Definition::Location(location) => vec![core_location_from_location(&location)],
+        Definition::Location(location) => vec![core_location_from_location(plugin_context, &location)],
         Definition::Locations(locations) => {
-            locations.iter().map(core_location_from_location).collect()
+            locations.iter().map(|l| core_location_from_location(plugin_context, l)).collect()
         }
     })
 }

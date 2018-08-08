@@ -84,7 +84,8 @@ impl Plugin for LspPlugin {
             let sync_kind = ls_client.get_sync_kind();
             view_info.version += 1;
             if let Some(changes) = get_change_for_sync_kind(sync_kind, view, delta) {
-                ls_client.send_did_change(view.get_id(), changes, view_info.version);
+                let uri = get_view_uri(view);
+                ls_client.send_did_change(uri, changes, view_info.version);
             }
         }
     }
@@ -93,15 +94,17 @@ impl Plugin for LspPlugin {
         trace!("saved view {}", view.get_id());
 
         let document_text = view.get_document().unwrap();
+        let uri = get_view_uri(view);
         self.with_language_server_for_view_id(view.get_id(), |ls_client| {
-            ls_client.send_did_save(view.get_id(), document_text);
+            ls_client.send_did_save(uri, document_text);
         });
     }
 
     fn did_close(&mut self, view: &View<Self::Cache>) {
         trace!("close view {}", view.get_id());
+        let uri = get_view_uri(view);
         self.with_language_server_for_view_id(view.get_id(), |ls_client| {
-            ls_client.send_did_close(view.get_id());
+            ls_client.send_did_close(view.get_id(), uri);
         });
     }
 
@@ -165,10 +168,11 @@ impl Plugin for LspPlugin {
 
     fn get_hover(&mut self, view: &mut View<Self::Cache>, request_id: usize, position: usize) {
         let view_id = view.get_id();
+        let uri = get_view_uri(view);
         let position_ls = get_position_of_offset(view, position);
 
         self.with_language_server_for_view_id(view.get_id(), |ls_client| match position_ls {
-            Ok(position) => ls_client.request_hover(view_id, position, move |ls_client, result| {
+            Ok(position) => ls_client.request_hover(uri, position, move |ls_client, result| {
                 let res = result
                     .map_err(|e| LanguageResponseError::LanguageServerError(format!("{:?}", e)))
                     .and_then(|h| {
@@ -193,9 +197,10 @@ impl Plugin for LspPlugin {
     fn get_definition(&mut self, view: &mut View<Self::Cache>, request_id: usize, position: usize) {
         let view_id = view.get_id();
         let position_ls = get_position_of_offset(view, position);
+        let uri = get_view_uri(view);
 
         self.with_language_server_for_view_id(view.get_id(), |ls_client| match position_ls {
-            Ok(position) => ls_client.request_definition(view_id, position, move |ls_client, result| {
+            Ok(position) => ls_client.request_definition(uri, position, move |ls_client, result| {
                 let res = result
                     .map_err(|e| LanguageResponseError::LanguageServerError(format!("{:?}", e)))
                     .and_then(|d| {
@@ -224,7 +229,7 @@ impl Plugin for LspPlugin {
             match response {
                 LspResponse::Hover(res) => {
                     let res = res
-                        .and_then(|h| core_hover_from_hover(plugin_context, h))
+                        .and_then(|h| core_hover_from_hover(plugin_context, view_id, h))
                         .map_err(|e| e.into());
                     self.with_language_server_for_view_id(view_id, |ls_client| {
                         ls_client.core.display_hover(view_id, request_id, res)
@@ -235,6 +240,7 @@ impl Plugin for LspPlugin {
                         .and_then(|d| core_definition_from_definition(plugin_context, d))
                         .map_err(|e| e.into());
                     self.with_language_server_for_view_id(view_id, |ls_client| {
+                        
                         ls_client.core.handle_definition(view_id, request_id, res)
                     });
                 }

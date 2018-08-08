@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::path::Path;
 use Cache;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -86,6 +87,15 @@ impl<C: Cache> PluginContext<C> {
 
     pub fn remove_view(&mut self, view_id: &ViewId) {
         self.views.remove(view_id);
+    }
+
+    pub fn get_view_for_path(&mut self, path_buf: &PathBuf) -> Option<&mut View<C>> {
+        for view in self.views.values_mut() {
+            if view.get_path() == Some(path_buf.as_path()) {
+                return Some(view)
+            }
+        }
+        None
     }
 }
 

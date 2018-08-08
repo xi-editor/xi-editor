@@ -13,7 +13,6 @@
 // limitations under the License.
 
 //! Implementation for Language Server Client
-
 use jsonrpc_lite::{Error, Id, JsonRpc, Params};
 use lsp_types::*;
 use serde_json;
@@ -37,7 +36,7 @@ pub struct LanguageServerClient {
     pub status_items: HashSet<String>,
     pub core: CoreProxy,
     pub is_initialized: bool,
-    pub opened_documents: HashMap<ViewId, Url>,
+    pub opened_documents: HashSet<ViewId>,
     pub server_capabilities: Option<ServerCapabilities>,
     pub file_extensions: Vec<String>,
 }
@@ -80,7 +79,7 @@ impl LanguageServerClient {
             status_items: HashSet::new(),
             language_id,
             server_capabilities: None,
-            opened_documents: HashMap::new(),
+            opened_documents: HashSet::new(),
             file_extensions,
         }
     }
@@ -149,21 +148,21 @@ impl LanguageServerClient {
 
     fn remove_status_item(&mut self, id: &str) {
         self.status_items.remove(id);
-        for view_id in self.opened_documents.keys() {
-            self.core.remove_status_item(view_id, id);
+        for view_id in self.opened_documents.iter() {
+            self.core.remove_status_item(&view_id, id);
         }
     }
 
     fn add_status_item(&mut self, id: &str, value: &str, alignment: &str) {
         self.status_items.insert(id.to_string());
-        for view_id in self.opened_documents.keys() {
-            self.core.add_status_item(view_id, id, value, alignment);
+        for view_id in self.opened_documents.iter() {
+            self.core.add_status_item(&view_id, id, value, alignment);
         }
     }
 
     fn update_status_item(&mut self, id: &str, value: &str) {
-        for view_id in self.opened_documents.keys() {
-            self.core.update_status_item(view_id, id, value);
+        for view_id in self.opened_documents.iter() {
+            self.core.update_status_item(&view_id, id, value);
         }
     } 
 
@@ -218,7 +217,7 @@ impl LanguageServerClient {
 
     /// Send textDocument/didOpen Notification to the Language Server
     pub fn send_did_open(&mut self, view_id: ViewId, document_uri: Url, document_text: String) {
-        self.opened_documents.insert(view_id, document_uri.clone());
+        self.opened_documents.insert(view_id);
 
         let text_document_did_open_params = DidOpenTextDocumentParams {
             text_document: TextDocumentItem {
@@ -234,8 +233,7 @@ impl LanguageServerClient {
     }
 
     /// Send textDocument/didClose Notification to the Language Server
-    pub fn send_did_close(&mut self, view_id: ViewId) {
-        let uri = self.opened_documents.get(&view_id).unwrap().clone();
+    pub fn send_did_close(&mut self, view_id: ViewId, uri: Url) {
         let text_document_did_close_params = DidCloseTextDocumentParams {
             text_document: TextDocumentIdentifier { uri: uri },
         };
@@ -249,13 +247,13 @@ impl LanguageServerClient {
     /// Send textDocument/didChange Notification to the Language Server
     pub fn send_did_change(
         &mut self,
-        view_id: ViewId,
+        uri: Url,
         changes: Vec<TextDocumentContentChangeEvent>,
         version: u64,
     ) {
         let text_document_did_change_params = DidChangeTextDocumentParams {
             text_document: VersionedTextDocumentIdentifier {
-                uri: self.opened_documents.get(&view_id).unwrap().clone(),
+                uri,
                 version: Some(version),
             },
             content_changes: changes,
@@ -266,13 +264,11 @@ impl LanguageServerClient {
     }
 
     /// Send textDocument/didSave notification to the Language Server
-    pub fn send_did_save(&mut self, view_id: ViewId, _document_text: String) {
+    pub fn send_did_save(&mut self, uri: Url, _document_text: String) {
         // Add support for sending document text as well. Currently missing in LSP types
         // and is optional in LSP Specification
         let text_document_did_save_params = DidSaveTextDocumentParams {
-            text_document: TextDocumentIdentifier {
-                uri: self.opened_documents.get(&view_id).unwrap().clone(),
-            },
+            text_document: TextDocumentIdentifier { uri }
         };
         let params = Params::from(serde_json::to_value(text_document_did_save_params).unwrap());
         self.send_notification("textDocument/didSave", params);
@@ -280,16 +276,14 @@ impl LanguageServerClient {
 
     pub fn request_hover<CB>(
         &mut self,
-        view_id: ViewId,
+        uri: Url,
         position: Position,
         on_result: CB,
     ) where
         CB: 'static + Send + FnOnce(&mut LanguageServerClient, Result<Value, Error>),
     {
         let text_document_position_params = TextDocumentPositionParams {
-            text_document: TextDocumentIdentifier {
-                uri: self.opened_documents.get(&view_id).unwrap().clone(),
-            },
+            text_document: TextDocumentIdentifier { uri },
             position,
         };
 
@@ -299,16 +293,14 @@ impl LanguageServerClient {
 
     pub fn request_definition<CB>(
         &mut self,
-        view_id: ViewId,
+        uri: Url,
         position: Position,
         on_result: CB,
     ) where
         CB: 'static + Send + FnOnce(&mut LanguageServerClient, Result<Value, Error>),
     {
         let text_document_position_params = TextDocumentPositionParams {
-            text_document: TextDocumentIdentifier {
-                uri: self.opened_documents.get(&view_id).unwrap().clone(),
-            },
+            text_document: TextDocumentIdentifier { uri },
             position,
         };
 
