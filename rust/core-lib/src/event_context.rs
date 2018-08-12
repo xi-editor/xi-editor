@@ -344,17 +344,13 @@ impl<'a> EventContext<'a> {
     }
 
     pub(crate) fn reload(&mut self, text: Rope) {
+        //TODO: It would be nice if we could preserve the existing selections,
+        //but to do that correctly we would need to compute a real delta between
+        //the old and new buffers, so that selections could be transformed
         self.with_editor(|ed, view, _, _| {
-            let new_len = text.len();
-            view.collapse_selections(ed.get_buffer());
+            view.set_selection(ed.get_buffer(), SelRegion::caret(0));
             view.unset_find();
-            let prev_sel = view.sel_regions().first().map(|s| s.clone());
             ed.reload(text);
-            if let Some(prev_sel) = prev_sel {
-                let offset = prev_sel.start.min(new_len);
-                let sel = SelRegion::caret(offset);
-                view.set_selection(ed.get_buffer(), sel);
-            }
         });
 
         self.after_edit("core");
