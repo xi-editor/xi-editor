@@ -24,12 +24,7 @@ extern crate xi_rpc;
 use xi_core_lib::XiCore;
 use xi_rpc::RpcLoop;
 
-fn main() {
-    let mut state = XiCore::new();
-    let stdin = io::stdin();
-    let stdout = io::stdout();
-    let mut rpc_looper = RpcLoop::new(stdout);
-
+fn setup_logging() -> Result<(), fern::InitError> {
     let level_filter = match std::env::var("XI_LOG") {
         Ok(level) => match level.to_lowercase().as_ref() {
             "trace" => log::LevelFilter::Trace,
@@ -52,8 +47,20 @@ fn main() {
         })
         .level(level_filter)
         .chain(std::io::stderr())
-        .chain(fern::log_file("xi-core.log").expect("Unable to open log file for xi-core"))
-        .apply().expect("Failed to start logging");
+        .chain(fern::log_file("xi-core.log")?)
+        .apply()?;
+    Ok(())
+}
+
+fn main() {
+    let mut state = XiCore::new();
+    let stdin = io::stdin();
+    let stdout = io::stdout();
+    let mut rpc_looper = RpcLoop::new(stdout);
+
+    if let Err(e) = setup_logging() {
+        eprintln!("[ERROR] setup_logging returned error, logging disabled: {:?}", e);
+    }
 
     match rpc_looper.mainloop(|| stdin.lock(), &mut state) {
         Ok(_) => (),
