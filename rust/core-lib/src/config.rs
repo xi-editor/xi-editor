@@ -673,6 +673,7 @@ pub(crate) fn init_config_dir(dir: &Path) -> io::Result<()> {
     let builder = fs::DirBuilder::new();
     builder.create(dir)?;
     builder.create(dir.join("plugins"))?;
+    builder.create(dir.join("themes"))?;
     Ok(())
 }
 
