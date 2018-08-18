@@ -15,6 +15,7 @@
 //! Requests and notifications from the core to front-ends.
 
 use std::time::Instant;
+use std::path::Path;
 
 use serde_json::{self, Value};
 use xi_rpc::{self, RpcPeer};
@@ -39,6 +40,16 @@ pub struct WidthReq {
 impl Client {
     pub fn new(peer: RpcPeer) -> Self {
         Client(peer)
+    }
+
+    /// Instructs the client to open a new view. `path`, if present, is for
+    /// informational purposes only; the client doesn't do any i/o.
+    pub fn new_view(&self, view_id: ViewId, path: Option<&Path>) {
+        self.0.send_rpc_notification("new_view",
+                                     &json!({
+                                         "view_id": view_id,
+                                         "path": path,
+                                     }));
     }
 
     pub fn update_view(&self, view_id: ViewId, update: &Value) {

@@ -173,6 +173,15 @@ pub enum CoreNotification {
     /// # }
     /// ```
     Plugin(PluginNotification),
+    /// Tells `xi-core` to create a new view. On success, the client
+    /// will receive a `new_view` notification. If `file_path` is included,
+    /// core will attempt to open that file in the new view.
+    ///
+    /// If the file can't be opened, the core will send an `alert`.
+    NewViewAsync {
+        #[serde(default)]
+        file_path: Option<PathBuf>,
+    },
     /// Tells `xi-core` to close the specified view.
     CloseView { view_id: ViewId },
     /// Tells `xi-core` to save the contents of the specified view's
