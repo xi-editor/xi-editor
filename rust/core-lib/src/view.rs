@@ -1063,10 +1063,10 @@ impl View {
             x.next_occurrence(text, reverse, wrapped, &self.selection)
         ).min_by_key(|x| {
             match reverse {
-                true if x.end > cur_start => 2 * text.len() - x.end,
-                true => cur_start - x.end,
-                false if x.start < cur_end => x.start + text.len(),
-                false => x.start - cur_end
+                true if x.end > cur_end => 2 * text.len() - x.end,
+                true => cur_end - x.end,
+                false if x.start < cur_start => x.start + text.len(),
+                false => x.start - cur_start
             }
         });
 
