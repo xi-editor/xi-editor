@@ -1,4 +1,4 @@
-// Copyright 2017 Google Inc. All rights reserved.
+// Copyright 2017 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -140,13 +140,13 @@ impl Layers {
             let spans = layer.scope_spans.subseq(iv);
             let styles = layer.style_spans.subseq(iv);
             if spans.iter().next().is_some() {
-                eprintln!("scopes for layer {:?}:", id);
+                info!("scopes for layer {:?}:", id);
                 for (iv, val) in spans.iter() {
-                    eprintln!("{}: {:?}", iv, layer.stack_lookup[*val as usize]);
+                    info!("{}: {:?}", iv, layer.stack_lookup[*val as usize]);
                 }
-                eprintln!("styles:");
+                info!("styles:");
                 for (iv, val) in styles.iter() {
-                    eprintln!("{}: {:?}", iv, val);
+                    info!("{}: {:?}", iv, val);
                 }
             }
         }
@@ -206,7 +206,7 @@ impl ScopeLayer {
             let scopes = stack.iter().map(|s| Scope::new(&s))
                 .filter(|result| match *result {
                     Err(ref err) => {
-                        eprintln!("failed to resolve scope {}\nErr: {:?}",
+                        warn!("failed to resolve scope {}\nErr: {:?}",
                                    &stack.join(" "),
                                    err);
                         false

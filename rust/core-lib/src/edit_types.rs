@@ -1,4 +1,4 @@
-// Copyright 2018 Google Inc. All rights reserved.
+// Copyright 2018 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@
 //! the editor or view as appropriate.
 
 use movement::Movement;
-use rpc::{GestureType, LineRange, EditNotification, MouseAction, SelectionModifier};
+use rpc::{Position, GestureType, LineRange, EditNotification, MouseAction, SelectionModifier};
 use view::Size;
 
 
@@ -44,6 +44,7 @@ pub(crate) enum ViewEvent {
     SelectionForFind { case_sensitive: bool },
     Replace { chars: String, preserve_case: bool },
     SelectionForReplace,
+    SelectionIntoLines,
 }
 
 /// Events that modify the buffer
@@ -58,6 +59,7 @@ pub(crate) enum BufferEvent {
     Indent,
     Outdent,
     Insert(String),
+    Paste(String),
     InsertNewline,
     InsertTab,
     Yank,
@@ -72,6 +74,7 @@ pub(crate) enum SpecialEvent {
     DebugPrintSpans,
     Resize(Size),
     RequestLines(LineRange),
+    RequestHover { request_id: usize, position: Option<Position> },
 }
 
 pub(crate) enum EventDomain {
@@ -104,6 +107,8 @@ impl From<EditNotification> for EventDomain {
         match src {
             Insert { chars } =>
                 BufferEvent::Insert(chars).into(),
+            Paste { chars } =>
+                BufferEvent::Paste(chars).into(),
             DeleteForward =>
                 BufferEvent::Delete {
                     movement: Movement::Right,
@@ -225,6 +230,9 @@ impl From<EditNotification> for EventDomain {
             ReplaceNext => BufferEvent::ReplaceNext.into(),
             ReplaceAll => BufferEvent::ReplaceAll.into(),
             SelectionForReplace => ViewEvent::SelectionForReplace.into(),
+            RequestHover { request_id, position } =>
+                SpecialEvent::RequestHover { request_id, position }.into(),
+            SelectionIntoLines => ViewEvent::SelectionIntoLines.into(),
         }
     }
 }

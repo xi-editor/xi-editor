@@ -1,4 +1,4 @@
-// Copyright 2017 Google Inc. All rights reserved.
+// Copyright 2017 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -127,6 +127,13 @@ impl Plugin {
                                         &json!({"view_id": view_id,
                                                 "changes": changes}))
     }
+
+    pub fn get_hover(&self, view_id: ViewId, request_id: usize, position: usize) {
+        self.peer.send_rpc_notification("get_hover", 
+                                        &json!({"view_id": view_id,
+                                                "request_id": request_id,
+                                                "position": position}))
+    }
 }
 
 pub(crate) fn start_plugin_process(plugin_desc: Arc<PluginDescription>,
@@ -135,7 +142,7 @@ pub(crate) fn start_plugin_process(plugin_desc: Arc<PluginDescription>,
     let spawn_result = thread::Builder::new()
         .name(format!("<{}> core host thread", &plugin_desc.name))
         .spawn(move || {
-            eprintln!("starting plugin {}", &plugin_desc.name);
+            info!("starting plugin {}", &plugin_desc.name);
             let child = ProcCommand::new(&plugin_desc.exec_path)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
@@ -167,6 +174,6 @@ pub(crate) fn start_plugin_process(plugin_desc: Arc<PluginDescription>,
         });
 
     if let Err(err) = spawn_result {
-        eprintln!("thread spawn failed for {}, {:?}", id, err);
+        error!("thread spawn failed for {}, {:?}", id, err);
     }
 }

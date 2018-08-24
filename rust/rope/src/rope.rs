@@ -1,4 +1,4 @@
-// Copyright 2016 Google Inc. All rights reserved.
+// Copyright 2016 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -330,7 +330,7 @@ impl Metric<RopeInfo> for Utf16CodeUnitsMetric {
 
 // Low level functions
 
-fn count_newlines(s: &str) -> usize {
+pub fn count_newlines(s: &str) -> usize {
     bytecount::count(s.as_bytes(), b'\n')
 }
 

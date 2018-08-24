@@ -1,4 +1,4 @@
-// Copyright 2016 Google Inc. All rights reserved.
+// Copyright 2016 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -217,7 +217,7 @@ impl View {
             Click(MouseAction { line, column, flags, click_count }) => {
                 // Deprecated (kept for client compatibility):
                 // should be removed in favor of do_gesture
-                eprintln!("Usage of click is deprecated; use do_gesture");
+                warn!("Usage of click is deprecated; use do_gesture");
                 if (flags & FLAG_SELECT) != 0 {
                     self.do_gesture(text, line, column, GestureType::RangeSelect)
                 } else if click_count == Some(2) {
@@ -241,6 +241,7 @@ impl View {
             Replace { chars, preserve_case } =>
                 self.do_set_replace(chars, preserve_case),
             SelectionForReplace => self.do_selection_for_replace(text),
+            SelectionIntoLines => self.do_split_selection_into_lines(text),
         }
     }
 
@@ -465,6 +466,33 @@ impl View {
         let end = self.line_col_to_offset(text, line + 1, 0);
 
         self.select_region(text, offset, SelRegion::new(start, end), multi_select);
+    }
+
+    /// Splits current selections into lines.
+    fn do_split_selection_into_lines(&mut self, text: &Rope) {
+        let mut selection = Selection::new();
+
+        for region in self.selection.iter() {
+            if region.is_caret() {
+                selection.add_region(SelRegion::caret(region.max()));
+            } else {
+                let mut cursor = Cursor::new(&text, region.min());
+
+                while cursor.pos() < region.max() {
+                    let sel_start = cursor.pos();
+                    let end_of_line = match cursor.next::<LinesMetric>() {
+                        Some(end) if end >= region.max() => max(0, region.max() - 1),
+                        Some(end) => max(0, end - 1),
+                        None if cursor.pos() == text.len() => cursor.pos(),
+                        _ => break
+                    };
+
+                    selection.add_region(SelRegion::new(sel_start, end_of_line));
+                }
+            }
+        }
+
+        self.set_selection_raw(text, selection);
     }
 
     /// Starts a drag operation.
@@ -788,12 +816,12 @@ impl View {
     // Of course, all these are identical for ASCII. For now we use UTF-8 code units
     // for simplicity.
 
-    pub fn offset_to_line_col(&self, text: &Rope, offset: usize) -> (usize, usize) {
+    pub(crate) fn offset_to_line_col(&self, text: &Rope, offset: usize) -> (usize, usize) {
         let line = self.line_of_offset(text, offset);
         (line, offset - self.offset_of_line(text, line))
     }
 
-    pub fn line_col_to_offset(&self, text: &Rope, line: usize, col: usize) -> usize {
+    pub(crate) fn line_col_to_offset(&self, text: &Rope, line: usize, col: usize) -> usize {
         let mut offset = self.offset_of_line(text, line).saturating_add(col);
         if offset >= text.len() {
             offset = text.len();
@@ -1050,6 +1078,16 @@ impl View {
         }
 
         first_line..(last_line + 1)
+    }
+
+    pub fn get_caret_offset(&self) -> Option<usize> {
+        match self.selection.len() {
+            1 if self.selection[0].is_caret() => {
+                let offset = self.selection[0].start;
+                Some(offset)
+            }
+            _ => None
+        }
     }
 }
 

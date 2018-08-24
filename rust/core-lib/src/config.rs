@@ -1,4 +1,4 @@
-// Copyright 2017 Google Inc. All rights reserved.
+// Copyright 2017 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -406,7 +406,7 @@ impl ConfigManager {
         match try_load_from_file(&path) {
             Ok(t) => Some(t),
             Err(e) => {
-                eprintln!("Error loading config: {:?}", e);
+                error!("Error loading config: {:?}", e);
                 None
             }
         }
@@ -486,6 +486,21 @@ impl ConfigManager {
         }
         let _: BufferItems = serde_json::from_value(defaults.into())?;
         Ok(())
+    }
+
+    /// Path to themes sub directory inside config directory.
+    /// Creates one if not present.
+    pub(crate) fn get_themes_dir(&self) -> Option<PathBuf> {
+        let themes_dir = self.config_dir.as_ref()
+            .map(|p| p.join("themes"));
+
+        if let Some(p) = themes_dir {
+            if p.exists() { return Some(p); }
+            if fs::DirBuilder::new().create(&p).is_ok() {
+               return Some(p);
+            }
+        }
+        None
     }
 }
 

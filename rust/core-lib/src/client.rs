@@ -1,4 +1,4 @@
-// Copyright 2018 Google Inc. All rights reserved.
+// Copyright 2018 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -176,6 +176,16 @@ impl Client {
     pub fn remove_status_item(&self, view_id: ViewId, key: &str) {
         self.0.send_rpc_notification("remove_status_item", &json!(
             {   "view_id": view_id, "key": key }));
+    }
+
+    pub fn show_hover(&self, view_id: ViewId, request_id: usize, result: String) {
+        self.0.send_rpc_notification("show_hover", &json!(
+            {
+                "view_id": view_id,
+                "request_id": request_id,
+                "result": result
+            }
+        ))
     }
 
     pub fn schedule_idle(&self, token: usize) {

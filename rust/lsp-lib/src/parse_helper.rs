@@ -1,4 +1,4 @@
-// Copyright 2018 Google LLC
+// Copyright 2018 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ const HEADER_CONTENT_TYPE: &'static str = "content-type";
 
 /// parse header from the incoming input string
 fn parse_header(s: &str) -> Result<LspHeader, ParseError> {
-    let split: Vec<String> = s.splitn(2,": ").map(|s| s.trim().to_lowercase()).collect();
+    let split: Vec<String> = s.splitn(2, ": ").map(|s| s.trim().to_lowercase()).collect();
     if split.len() != 2 {
         return Err(ParseError::Unknown("Malformed".to_string()));
     };
@@ -32,7 +32,7 @@ fn parse_header(s: &str) -> Result<LspHeader, ParseError> {
             &split[1], 10,
         )?)),
         _ => Err(ParseError::Unknown(
-            "Unknown parse error occured".to_string(),
+            "Unknown parse error occurred".to_string(),
         )),
     }
 }

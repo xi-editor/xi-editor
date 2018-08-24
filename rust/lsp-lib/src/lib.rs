@@ -1,4 +1,4 @@
-// Copyright 2018 Google LLC
+// Copyright 2018 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,6 +15,10 @@
 extern crate serde_derive;
 extern crate serde_json;
 
+#[macro_use]
+extern crate log;
+extern crate fern;
+extern crate chrono;
 
 extern crate jsonrpc_lite;
 extern crate languageserver_types as lsp_types;
@@ -24,18 +28,21 @@ extern crate url;
 extern crate xi_core_lib as xi_core;
 extern crate xi_plugin_lib;
 extern crate xi_rope;
+extern crate xi_rpc;
 
 use xi_plugin_lib::mainloop;
 use xi_plugin_lib::Plugin;
 
+pub mod conversion_utils;
 pub mod language_server_client;
 pub mod lsp_plugin;
 pub mod parse_helper;
 pub mod types;
+mod result_queue;
+mod utils;
 pub use lsp_plugin::LspPlugin;
 pub use types::Config;
 
 pub fn start_mainloop<P: Plugin>(plugin: &mut P) {
-    // Unwrap to indicate that we want thread to Panic on failure
     mainloop(plugin).unwrap();
 }

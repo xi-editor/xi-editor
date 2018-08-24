@@ -1,4 +1,4 @@
-// Copyright 2018 Google LLC
+// Copyright 2018 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -28,6 +28,9 @@ extern crate time;
 extern crate serde_derive;
 
 extern crate serde;
+
+#[macro_use]
+extern crate log;
 
 extern crate libc;
 
@@ -600,7 +603,7 @@ fn exe_name() -> Option<String> {
                     match full_path_str {
                         Ok(s) => Some(s),
                         Err(e) => {
-                            eprintln!("Failed to get string representation: {:?}", e);
+                            warn!("Failed to get string representation: {:?}", e);
                             None
                         },
                     }
@@ -608,7 +611,7 @@ fn exe_name() -> Option<String> {
             }
         },
         Err(ref e) => {
-            eprintln!("Failed to get path to current exe: {:?}", e);
+            warn!("Failed to get path to current exe: {:?}", e);
             None
         },
     }

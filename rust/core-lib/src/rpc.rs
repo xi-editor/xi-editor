@@ -1,4 +1,4 @@
-// Copyright 2016 Google Inc. All rights reserved.
+// Copyright 2016 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -304,7 +304,7 @@ pub enum GestureType {
 ///
 /// Several core protocol commands use a params array to pass arguments
 /// which are named, internally. this type use custom Serialize /
-/// Deserialize impls to accomodate this.
+/// Deserialize impls to accommodate this.
 #[derive(PartialEq, Eq, Debug)]
 pub struct LineRange {
     pub first: i64,
@@ -320,6 +320,12 @@ pub struct MouseAction {
     pub column: u64,
     pub flags: u64,
     pub click_count: Option<u64>,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+pub struct Position {
+    pub line: usize,
+    pub column: usize
 }
 
 /// Represents how the current selection is modified (used by find
@@ -346,6 +352,7 @@ impl Default for SelectionModifier {
 #[serde(tag = "method", content = "params")]
 pub enum EditNotification {
     Insert { chars: String },
+    Paste { chars: String },
     DeleteForward,
     DeleteBackward,
     DeleteWordForward,
@@ -446,6 +453,8 @@ pub enum EditNotification {
     ReplaceNext,
     ReplaceAll,
     SelectionForReplace,
+    RequestHover { request_id: usize, position: Option<Position> },
+    SelectionIntoLines,
 }
 
 /// The edit related requests.

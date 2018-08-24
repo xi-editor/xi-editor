@@ -106,7 +106,16 @@ inner methods described below:
 
 `insert {"chars":"A"}`
 
-Inserts the `chars` string at the current cursor location.
+Inserts the `chars` string at the current cursor locations.
+
+#### paste
+
+`paste {"chars": "password"}`
+
+Inserts the `chars` string at the current cursor locations. If there are
+multiple cursors and `chars` has the same number of lines as there are
+cursors, one line will be inserted at each cursor, in order; otherwise the full
+string will be inserted at each cursor.
 
 #### cancel_operation
 
@@ -203,6 +212,27 @@ indent
 outdent
 ```
 
+### Language Support Oriented features (in Edit Namespace)
+
+#### Hover
+Get Hover for a position in file. The request for *hover* is made as a notification. The client is forwarded result back via a `show_hover` rpc
+
+If position is skipped in the request, current cursor position will be used in core.
+
+```
+request_hover {
+    "request_id": number,
+    "position"?: Position
+}
+```
+
+```ts
+interface Position {
+    line: number,
+    column: number,
+}
+```
+
 ### Plugin namespace
 **Note:** plugin commands are in flux, and may change.
 
@@ -260,7 +290,7 @@ valid next occurrence. Supported options for `modify_selection` are:
 * `none`: the selection is not modified
 * `set`: the next/previous match will be set as the new selection
 * `add`: the next/previous match will be added to the current selection
-* `add_remove_current`: the previously added selection will be removed and the next/previous 
+* `add_remove_current`: the previously added selection will be removed and the next/previous
 match will be added to the current selection
 
 Selects the next/previous occurrence matching the search query.
@@ -309,6 +339,12 @@ Replaces the next matching occurrence with the replacement string.
 `replace_all { }`
 
 Replaces all matching occurrences with the replacement string.
+
+#### selection_into_lines
+
+`selection_into_lines { }`
+
+Splits all current selections into lines.
 
 ## From back-end to front-end
 
@@ -555,6 +591,12 @@ this writing, the following is valid json for a `Command` object:
         ]
     }
 ```
+
+### Language Support Specific Commands
+
+#### Show Hover
+
+`show_hover { request_id: number, result: string }`
 
 ### Status Bar Commands
 

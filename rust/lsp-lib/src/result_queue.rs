@@ -12,34 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use libc;
+use std::collections::VecDeque;
+use types::LspResponse;
+use std::sync::{Arc, Mutex};
 
-#[cfg(all(target_family = "unix", not(target_os = "fuchsia")))]
-#[inline]
-pub fn current_pid() -> u64 {
-    extern {
-        fn getpid() -> libc::pid_t;
+#[derive(Clone, Debug, Default)]
+pub struct ResultQueue(Arc<Mutex<VecDeque<(usize, LspResponse)>>>);
+
+impl ResultQueue {
+
+    pub fn new() -> Self {
+        ResultQueue(Arc::new(Mutex::new(VecDeque::new())))
     }
 
-    unsafe {
-        getpid() as u64
-    }
-}
-
-#[cfg(target_os = "fuchsia")]
-pub fn current_pid() -> u64 {
-    // TODO: implement for fuchsia (does getpid work?)
-    0
-}
-
-#[cfg(target_family = "windows")]
-#[inline]
-pub fn current_pid() -> u64 {
-    extern {
-        fn GetCurrentProcessId() -> libc::c_ulong;
+    pub fn push_result(&mut self, request_id: usize, response: LspResponse) {
+        let mut queue = self.0.lock().unwrap();
+        queue.push_back((request_id, response));
     }
 
-    unsafe {
-        GetCurrentProcessId() as u64
+    pub fn pop_result(&mut self) -> Option<(usize, LspResponse)> {
+        let mut queue = self.0.lock().unwrap();
+        queue.pop_front()
     }
 }

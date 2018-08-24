@@ -1,4 +1,4 @@
-// Copyright 2018 Google Inc. All rights reserved.
+// Copyright 2018 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ macro_rules! bail {
     ($opt:expr, $method:expr, $pid:expr, $view:expr) => ( match $opt {
         Some(t) => t,
         None => {
-            eprintln!("{:?} missing {:?} for {:?}", $pid, $view, $method);
+            warn!("{:?} missing {:?} for {:?}", $pid, $view, $method);
             return
         }
     })
@@ -42,7 +42,7 @@ macro_rules! bail_err {
     ($opt:expr, $method:expr, $pid:expr, $view:expr) => ( match $opt {
         Some(t) => t,
         None => {
-            eprintln!("{:?} missing {:?} for {:?}", $pid, $view, $method);
+            warn!("{:?} missing {:?} for {:?}", $pid, $view, $method);
             return Err(RemoteError::custom(404, "missing view", None))
         }
     })
@@ -71,10 +71,10 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
                      buffers: Vec<PluginBufferInfo>)
     {
         assert!(self.pid.is_none(), "initialize rpc received with existing pid");
-        eprintln!("Initializing plugin {:?}", plugin_id);
+        info!("Initializing plugin {:?}", plugin_id);
         self.pid = Some(plugin_id);
 
-        let core_proxy = CoreProxy::new(ctx);
+        let core_proxy = CoreProxy::new(self.pid.unwrap(), ctx);
         self.plugin.initialize(core_proxy);
         
         self.do_new_buffer(ctx, buffers);
@@ -118,9 +118,14 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
     }
 
     fn do_shutdown(&mut self) {
-        eprintln!("rust plugin lib does not shutdown");
+        info!("rust plugin lib does not shutdown");
         //TODO: handle shutdown
 
+    }
+
+    fn do_get_hover(&mut self, view_id: ViewId, request_id: usize, position: usize) {
+        let v = bail!(self.views.get_mut(&view_id), "get_hover", self.pid, view_id);
+        self.plugin.get_hover(v, request_id, position)
     }
 
     fn do_tracing_config(&mut self, enabled: bool) {
@@ -128,11 +133,11 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
 
         if enabled {
             xi_trace::enable_tracing();
-            eprintln!("Enabling tracing in global plugin {:?}", self.pid);
+            info!("Enabling tracing in global plugin {:?}", self.pid);
             trace("enable tracing", &["plugin"]);
         } else {
             xi_trace::disable_tracing();
-            eprintln!("Disabling tracing in global plugin {:?}",  self.pid);
+            info!("Disabling tracing in global plugin {:?}",  self.pid);
             trace("enable tracing", &["plugin"]);
         }
     }
@@ -185,6 +190,8 @@ impl<'a, P: Plugin> RpcHandler for Dispatcher<'a, P> {
                 self.do_shutdown(),
             TracingConfig { enabled } =>
                 self.do_tracing_config(enabled),
+            GetHover {  view_id, request_id, position } =>
+                self.do_get_hover(view_id, request_id, position),
             Ping ( .. ) => (),
         }
     }

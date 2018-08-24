@@ -1,4 +1,4 @@
-// Copyright 2017 Google Inc. All rights reserved.
+// Copyright 2017 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ use serde::ser::{self, Serialize, Serializer};
 use serde_json::{self, Value};
 
 use xi_rope::rope::{RopeDelta, Rope, LinesMetric};
+use xi_rpc::RemoteError;
 use super::PluginPid;
 use syntax::LanguageId;
 use tabs::{BufferIdentifier, ViewId};
@@ -108,6 +109,7 @@ pub enum HostNotification {
     ConfigChanged { view_id: ViewId, changes: Table },
     NewBuffer { buffer_info: Vec<PluginBufferInfo> },
     DidClose { view_id: ViewId },
+    GetHover { view_id: ViewId, request_id: usize, position: usize },
     Shutdown(EmptyStruct),
     TracingConfig {enabled: bool},
 }
@@ -183,7 +185,25 @@ pub enum PluginNotification {
     Alert { msg: String },
     AddStatusItem { key: String, value: String, alignment: String },
     UpdateStatusItem { key: String, value: String  },
-    RemoveStatusItem { key: String }
+    RemoveStatusItem { key: String },
+    ShowHover { request_id: usize, result: Result<Hover, RemoteError> },
+}
+
+/// Range expressed in terms of PluginPosition. Meant to be sent from
+/// plugin to core.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct Range {
+    pub start: usize,
+    pub end: usize,
+}
+
+/// Hover Item sent from Plugin to Core
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct Hover {
+    pub content: String,
+    pub range: Option<Range>
 }
 
 /// Common wrapper for plugin-originating RPCs.
@@ -260,7 +280,7 @@ impl TextUnit {
         let text = text.borrow();
         match *self {
             TextUnit::Utf8 => {
-                if offset >= text.len() {
+                if offset > text.len() {
                     None
                 } else {
                     if text.is_codepoint_boundary(offset) {
