@@ -466,8 +466,12 @@ impl<N: NodeInfo> TreeBuilder<N> {
         TreeBuilder(None)
     }
 
-    // TODO: more sophisticated implementation, so pushing a sequence
-    // is amortized O(n), rather than O(n log n) as now.
+    /// Push a node on the accumulating tree by concatenating it.
+    ///
+    /// This method is O(log n), where `n` is the amount of nodes already in the accumulating tree.
+    /// The worst case happens when all nodes having exactly MAX_CHILDREN children
+    /// and the node being pushed is a leaf or equivalently has height 1.
+    /// Then `log n` nodes have to be created before the leaf can be added, to keep all leaves on the same height.
     pub fn push(&mut self, n: Node<N>) {
         match self.0.take() {
             None => self.0 = Some(n),
