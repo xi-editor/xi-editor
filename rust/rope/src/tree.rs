@@ -479,6 +479,13 @@ impl<N: NodeInfo> TreeBuilder<N> {
         }
     }
 
+    /// Add leaves to accumulating tree.
+    ///
+    /// Creates a height sorted stack of nodes first.
+    /// Given this stack, it pushes the nodes in descending height.
+    /// This method is amortized O(n) where n is the size of the accumulating tree.
+    /// The worst case: there is one node for which the call to `push` is the worst case scenario
+    /// and the all the other nodes can be added without in constant time
     pub fn push_leaves(&mut self, leaves: Vec<N::L>) {
         let mut stack: Vec<Vec<Node<N>>> = Vec::new();
         for leaf in leaves {
