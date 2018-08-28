@@ -320,6 +320,8 @@ impl CoreState {
             //TODO: why is this a request?? make a notification?
             GetConfig { view_id } =>
                 self.do_get_config(view_id).map(|c| json!(c)),
+            DebugGetContents { view_id } =>
+                self.do_get_contents(view_id).map(|c| json!(c)),
         }
     }
 
@@ -461,6 +463,13 @@ impl CoreState {
         self.views.get(&view_id).map(|v| v.borrow().get_buffer_id())
             .map(|id| self.config_manager.get_buffer_config(id).to_table())
             .ok_or(RemoteError::custom(404, format!("missing {}", view_id), None))
+    }
+
+    fn do_get_contents(&self, view_id: ViewId) -> Result<Rope, RemoteError> {
+        self.make_context(view_id)
+            .map(|ctx| ctx.editor.borrow().get_buffer().to_owned())
+            .ok_or_else(
+                || RemoteError::custom(404, format!("No view for id {}", view_id), None))
     }
 
     fn do_start_plugin(&mut self, _view_id: ViewId, plugin: &str) {
