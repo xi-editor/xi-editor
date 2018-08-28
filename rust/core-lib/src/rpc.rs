@@ -248,6 +248,10 @@ pub enum CoreRequest {
     NewView { file_path: Option<String> },
     /// Returns the current collated config object for the given view.
     GetConfig { view_id: ViewId },
+    /// Returns the contents of the buffer for a given `ViewId`.
+    /// In the future this might also be used to return structured data (such
+    /// as for printing).
+    DebugGetContents { view_id: ViewId },
 }
 
 /// A helper type, which extracts the `view_id` field from edit
