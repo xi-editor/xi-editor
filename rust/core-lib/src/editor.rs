@@ -345,7 +345,7 @@ impl Editor {
                 // backspace deletes max(1, tab_size) contiguous spaces
                 let (_, c) = view.offset_to_line_col(&self.text, region.start);
 
-                let tab_off = c & config.tab_size;
+                let tab_off = c % config.tab_size;
                 let tab_size = config.tab_size;
                 let tab_size = if tab_off == 0 { tab_size } else { tab_off };
                 let tab_start = region.start.saturating_sub(tab_size);
