@@ -117,6 +117,18 @@ multiple cursors and `chars` has the same number of lines as there are
 cursors, one line will be inserted at each cursor, in order; otherwise the full
 string will be inserted at each cursor.
 
+#### copy 
+
+`copy -> String|Null`
+
+Copies the active selection, returning their contents or `Null` if the selection was empty.
+
+#### cut 
+
+`cut -> String|Null`
+
+Cut the active selection, returning their contents or `Null` if the selection was empty.
+
 #### cancel_operation
 
 `cancel_operation`
