@@ -513,6 +513,14 @@ use the new theme to set colors as appropriate. The `Theme` object is
 directly serialized from a [`syntect::highlighting::ThemeSettings`](https://github.com/trishume/syntect/blob/master/src/highlighting/theme.rs#L27)
 instance.
 
+
+#### available_themes
+
+`available_themes {"themes": ["InspiredGitHub"]}`
+
+Notifies the client of the available themes.
+
+
 #### config_changed
 
 `config_changed {"view_id": "view-id-1", "changes": {} }`
