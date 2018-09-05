@@ -559,7 +559,7 @@ impl View {
             pos
         }).unwrap_or(text.len());
 
-        let l_str = text.slice_to_string(start_pos, pos);
+        let l_str = text.slice_to_string(start_pos..pos);
         let mut cursors = Vec::new();
         let mut selections = Vec::new();
         for region in self.selection.regions_in_range(start_pos, pos) {
@@ -940,13 +940,13 @@ impl View {
         let search_query = match self.selection.last() {
             Some(region) => {
                 if !region.is_caret() {
-                    text.slice_to_string(region.min(), region.max())
+                    text.slice_to_string(region)
                 } else {
                     let (start, end) = {
                         let mut word_cursor = WordCursor::new(text, region.max());
                         word_cursor.select_word()
                     };
-                    text.slice_to_string(start, end)
+                    text.slice_to_string(start..end)
                 }
             },
             _ => return
@@ -1053,13 +1053,13 @@ impl View {
         let replacement = match self.selection.last() {
             Some(region) => {
                 if !region.is_caret() {
-                    text.slice_to_string(region.min(), region.max())
+                    text.slice_to_string(region)
                 } else {
                     let (start, end) = {
                         let mut word_cursor = WordCursor::new(text, region.max());
                         word_cursor.select_word()
                     };
-                    text.slice_to_string(start, end)
+                    text.slice_to_string(start..end)
                 }
             },
             _ => return

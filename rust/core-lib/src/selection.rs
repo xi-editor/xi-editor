@@ -16,6 +16,8 @@
 
 use std::cmp::{min, max};
 use std::ops::Deref;
+use std::ops::Bound;
+use std::ops::RangeBounds;
 
 use index_set::remove_n_at;
 use xi_rope::delta::{Delta, Transformer};
@@ -345,6 +347,17 @@ impl SelRegion {
         // Could try to preserve horiz/affinity from one of the
         // sources, but very likely not worth it.
         SelRegion::new(start, end)
+    }
+}
+
+// Returns `[start..end)`
+impl<'a> RangeBounds<usize> for &'a SelRegion {
+    fn start_bound(&self) -> Bound<&usize> {
+        Bound::Included(&self.start)
+    }
+    
+    fn end_bound(&self) -> Bound<&usize> {
+        Bound::Excluded(&self.end)
     }
 }
 

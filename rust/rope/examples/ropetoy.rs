@@ -20,16 +20,16 @@ use xi_rope::Rope;
 
 fn main() {
     let mut a = Rope::from("hello.");
-    a.edit_str(5, 6, "!");
+    a.edit_str(5..6, "!");
     for i in 0..1000000 {
         let l = a.len();
-        a.edit_str(l, l, &(i.to_string() + "\n"));
+        a.edit_str(l..l, &(i.to_string() + "\n"));
     }
     let l = a.len();
-    for s in a.clone().iter_chunks(1000, 3000) {
+    for s in a.clone().iter_chunks(1000..3000) {
         println!("chunk {:?}", s);
     }
-    a.edit_str(1000, l, "");
+    a.edit_str(1000..l, "");
     //a = a.subrange(0, 1000);
     println!("{:?}", String::from(a));
 }

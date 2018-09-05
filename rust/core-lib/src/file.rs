@@ -211,7 +211,7 @@ fn try_save(path: &Path, text: &Rope, encoding: CharacterEncoding)
             CharacterEncoding::Utf8 => (),
         }
 
-        for chunk in text.iter_chunks(0, text.len()) {
+        for chunk in text.iter_chunks(..text.len()) {
             f.write_all(chunk.as_bytes())?;
         }
         Ok(())
