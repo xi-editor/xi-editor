@@ -459,6 +459,7 @@ pub enum EditNotification {
     SelectionForReplace,
     RequestHover { request_id: usize, position: Option<Position> },
     SelectionIntoLines,
+    DuplicateLine,
 }
 
 /// The edit related requests.

@@ -65,6 +65,7 @@ pub(crate) enum BufferEvent {
     Yank,
     ReplaceNext,
     ReplaceAll,
+    DuplicateLine,
 }
 
 /// An event that needs special handling
@@ -233,6 +234,7 @@ impl From<EditNotification> for EventDomain {
             RequestHover { request_id, position } =>
                 SpecialEvent::RequestHover { request_id, position }.into(),
             SelectionIntoLines => ViewEvent::SelectionIntoLines.into(),
+            DuplicateLine => BufferEvent::DuplicateLine.into(),
         }
     }
 }
