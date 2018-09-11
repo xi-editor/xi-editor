@@ -663,6 +663,10 @@ impl<'a> Iterator for ChunkIter<'a> {
 }
 
 impl TreeBuilder<RopeInfo> {
+    /// Push a string on the accumulating tree in the naive way.
+    ///
+    /// Splits the provided string in chunks that fit in a leaf
+    /// and pushes the leaves one by one onto the tree by calling.
     pub fn push_str(&mut self, mut s: &str) {
         if s.len() <= MAX_LEAF {
             if !s.is_empty() {
@@ -681,6 +685,10 @@ impl TreeBuilder<RopeInfo> {
         }
     }
 
+    ///Push a string on the accumulating tree in an optimized fashion.
+    ///
+    /// Splits the string into leaves first and
+    /// then pushes all the leaves onto the accumulating tree in one go.
     pub fn push_str_stacked(&mut self, s: &str) {
         let leaves = split_as_leaves(s);
         self.push_leaves(leaves);
