@@ -685,10 +685,11 @@ impl TreeBuilder<RopeInfo> {
         }
     }
 
-    ///Push a string on the accumulating tree in an optimized fashion.
+    /// Push a string on the accumulating tree in an optimized fashion.
     ///
     /// Splits the string into leaves first and
     /// then pushes all the leaves onto the accumulating tree in one go.
+    #[cfg(test)]
     pub fn push_str_stacked(&mut self, s: &str) {
         let leaves = split_as_leaves(s);
         self.push_leaves(leaves);
