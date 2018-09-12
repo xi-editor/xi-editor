@@ -1172,6 +1172,23 @@ impl View {
         self.do_set_replace(replacement.into_owned(), false);
     }
 
+    // Get the offsets for a line.
+    pub fn get_line_offset(&self, text: &Rope, line: usize) -> (usize, usize) {
+        let start = self.line_col_to_offset(text, line, 0);
+
+        eprintln!("{:?}", start);
+
+        let mut end = text.len();
+        // calculate end of line
+        let next_line_offset = self.offset_of_line(text, line + 1);
+        if line < self.line_of_offset(text, end) {
+            if let Some(prev) = text.prev_grapheme_offset(next_line_offset) {
+                end = prev;
+            }
+        }
+        (start, end)
+    }
+
     /// Get the line range of a selected region.
     pub fn get_line_range(&self, text: &Rope, region: &SelRegion) -> Range<usize> {
         let (first_line, _) = self.offset_to_line_col(text, region.min());

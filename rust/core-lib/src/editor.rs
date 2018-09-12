@@ -543,7 +543,70 @@ impl Editor {
         self.add_delta(builder.build());
     }
 
-    fn get_tab_text(&self, config: &BufferItems, tab_size: Option<usize>) -> &'static str {
+    fn move_line(&mut self, view: &View, movement: Movement) {
+        let mut builder = delta::Builder::new(self.text.len());
+        let mut lines = BTreeSet::new();
+
+        for region in view.sel_regions() {
+            let line_range = view.get_line_range(&self.text, region);
+            for line in line_range {
+                lines.insert(line);
+            }
+        }
+
+        for line in lines {
+            eprintln!("{:?}", line);
+            let mut swap_line;
+            match movement {
+                Movement::Up => {
+                    swap_line = if line == 0 { return } else { line - 1 };
+                    let (line_start, line_end) = view.get_line_offset(&self.text, line);
+                    let (swap_line_start, swap_line_end) = view.get_line_offset(&self.text, swap_line);
+
+                    eprintln!("{:?} {:?}", line_start, line_end);
+                    eprintln!("{:?} {:?}", swap_line_start, swap_line_end);
+
+                    let swap_interval = Interval::new_closed_closed(swap_line_start, swap_line_end);
+                    let interval = Interval::new_closed_closed(line_start, line_end);
+
+                    builder.replace(swap_interval, Rope::from(self.text.slice_to_string(
+                        interval.start(), interval.end())));
+                    builder.replace(interval, Rope::from(self.text.slice_to_string(
+                        swap_interval.start(), swap_interval.end())));
+                }
+                Movement::Down => {
+                    swap_line =
+                    if line == view.line_of_offset(&self.text, self.text.len()) {
+                        return
+                    } else { line + 1 };
+
+                    let (line_start, line_end) = view.get_line_offset(&self.text, line);
+                    let (swap_line_start, swap_line_end) = view.get_line_offset(&self.text, swap_line);
+
+                    eprintln!("{:?} {:?}", line_start, line_end);
+                    eprintln!("{:?} {:?}", swap_line_start, swap_line_end);
+
+                    let interval = Interval::new_closed_closed(line_start, line_end);
+                    let swap_interval = Interval::new_closed_closed(swap_line_start, swap_line_end);
+
+                    builder.replace(interval, Rope::from(self.text.slice_to_string(
+                        swap_interval.start(), swap_interval.end())));
+                    builder.replace(swap_interval, Rope::from(self.text.slice_to_string(
+                        interval.start(), interval.end())));
+                }
+                _ => { return }
+            }
+        }
+
+        if !builder.is_empty() {
+            self.this_edit_type = EditType::Transpose;
+            self.add_delta(builder.build());
+        }
+    }
+
+    fn get_tab_text(&self, config: &BufferItems, tab_size: Option<usize>)
+        -> &'static str
+    {
         let tab_size = tab_size.unwrap_or(config.tab_size);
         let tab_text = if config.translate_tabs_to_spaces { n_spaces(tab_size) } else { "\t" };
 
@@ -840,6 +903,8 @@ impl Editor {
             Capitalize => self.capitalize_text(view),
             Indent => self.modify_indent(view, config, IndentDirection::In),
             Outdent => self.modify_indent(view, config, IndentDirection::Out),
+            MoveLineUp => self.move_line(view, Movement::Up),
+            MoveLineDown => self.move_line(view, Movement::Down),
             InsertNewline => self.insert_newline(view, config),
             InsertTab => self.insert_tab(view, config),
             Insert(chars) => self.do_insert(view, config, &chars),
