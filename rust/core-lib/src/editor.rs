@@ -543,7 +543,7 @@ impl Editor {
         self.add_delta(builder.build());
     }
 
-    fn move_line(&mut self, view: &View, movement: Movement) {
+    fn move_line(&mut self, view: &View, config: &BufferItems, movement: Movement) {
         let mut builder = delta::Builder::new(self.text.len());
         let mut lines = BTreeSet::new();
 
@@ -555,24 +555,28 @@ impl Editor {
         }
 
         for line in lines {
-            eprintln!("{:?}", line);
             let mut swap_line;
             match movement {
                 Movement::Up => {
                     swap_line = if line == 0 { return } else { line - 1 };
-                    let (line_start, line_end) = view.get_line_offset(&self.text, line);
+
                     let (swap_line_start, swap_line_end) = view.get_line_offset(&self.text, swap_line);
+                    let (_, line_end) = view.get_line_offset(&self.text, line);
+                    let mut saved_text = self.text.slice_to_string(swap_line_start, swap_line_end);
 
-                    eprintln!("{:?} {:?}", line_start, line_end);
-                    eprintln!("{:?} {:?}", swap_line_start, swap_line_end);
+                    let swap_iv = Interval::new_closed_closed(swap_line_start, swap_line_end);
+                    builder.delete(swap_iv);
 
-                    let swap_interval = Interval::new_closed_closed(swap_line_start, swap_line_end);
-                    let interval = Interval::new_closed_closed(line_start, line_end);
-
-                    builder.replace(swap_interval, Rope::from(self.text.slice_to_string(
-                        interval.start(), interval.end())));
-                    builder.replace(interval, Rope::from(self.text.slice_to_string(
-                        swap_interval.start(), swap_interval.end())));
+                    let swapped_iv = Interval::new_closed_closed(line_end, line_end);
+                    if line_end == self.text.len() {
+                        // Add line end if moving last line
+                        if let Some(line_end) = saved_text.pop() {
+                            saved_text.insert(0, line_end);
+                            builder.replace(swapped_iv, Rope::from(saved_text));
+                        }
+                    } else {
+                        builder.replace(swapped_iv, Rope::from(saved_text));
+                    }
                 }
                 Movement::Down => {
                     swap_line =
@@ -580,19 +584,22 @@ impl Editor {
                         return
                     } else { line + 1 };
 
-                    let (line_start, line_end) = view.get_line_offset(&self.text, line);
                     let (swap_line_start, swap_line_end) = view.get_line_offset(&self.text, swap_line);
+                    let (line_start, _) = view.get_line_offset(&self.text, line);
+                    let saved_text = self.text.slice_to_string(swap_line_start, swap_line_end);
 
-                    eprintln!("{:?} {:?}", line_start, line_end);
-                    eprintln!("{:?} {:?}", swap_line_start, swap_line_end);
+                    let swapped_iv = Interval::new_closed_closed(line_start, line_start);
+                    let swap_iv;
+                    if swap_line_end == self.text.len() {
+                        // Remove newline from line leading to last
+                        swap_iv = Interval::new_closed_closed(swap_line_start - 1, swap_line_end);
+                        builder.replace(swapped_iv, Rope::from(saved_text + &config.line_ending));
+                    } else {
+                        swap_iv = Interval::new_closed_closed(swap_line_start, swap_line_end);
+                        builder.replace(swapped_iv, Rope::from(saved_text));
+                    }
 
-                    let interval = Interval::new_closed_closed(line_start, line_end);
-                    let swap_interval = Interval::new_closed_closed(swap_line_start, swap_line_end);
-
-                    builder.replace(interval, Rope::from(self.text.slice_to_string(
-                        swap_interval.start(), swap_interval.end())));
-                    builder.replace(swap_interval, Rope::from(self.text.slice_to_string(
-                        interval.start(), interval.end())));
+                    builder.delete(swap_iv);
                 }
                 _ => { return }
             }
@@ -903,8 +910,8 @@ impl Editor {
             Capitalize => self.capitalize_text(view),
             Indent => self.modify_indent(view, config, IndentDirection::In),
             Outdent => self.modify_indent(view, config, IndentDirection::Out),
-            MoveLineUp => self.move_line(view, Movement::Up),
-            MoveLineDown => self.move_line(view, Movement::Down),
+            MoveLineUp => self.move_line(view, config, Movement::Up),
+            MoveLineDown => self.move_line(view, config, Movement::Down),
             InsertNewline => self.insert_newline(view, config),
             InsertTab => self.insert_tab(view, config),
             Insert(chars) => self.do_insert(view, config, &chars),
