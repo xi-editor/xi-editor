@@ -579,6 +579,8 @@ impl Rope {
     /// of the chunks is indeterminate but for large strings will generally be
     /// in the range of 511-1024 bytes.
     ///
+    /// The range will be shrunk, if necessary, to the nearest codepoint boundaries.
+    ///
     /// The empty string will yield a single empty slice. In all other cases, the
     /// slices will be nonempty.
     ///
@@ -598,6 +600,8 @@ impl Rope {
     /// An iterator over the raw lines. The lines, except the last, include the
     /// terminating newline.
     ///
+    /// The range will be shrunk, if necessary, to the nearest codepoint boundaries.
+    ///
     /// The return type is a `Cow<str>`, and in most cases the lines are slices
     /// borrowed from the rope.
     pub fn lines_raw<T>(&self, range: T) -> LinesRaw 
@@ -614,6 +618,8 @@ impl Rope {
     /// Lines are ended with either Unix (`\n`) or MS-DOS (`\r\n`) style line endings.
     /// The line ending is stripped from the resulting string. The final line ending
     /// is optional.
+    ///
+    /// The range will be shrunk, if necessary, to the nearest codepoint boundaries.
     ///
     /// The return type is a `Cow<str>`, and in most cases the lines are slices borrowed
     /// from the rope.
@@ -676,13 +682,25 @@ impl<'a> Iterator for ChunkIter<'a> {
     type Item = &'a str;
 
     fn next(&mut self) -> Option<&'a str> {
+        while !self.cursor.is_boundary::<BaseMetric>() {
+            let npos = self.cursor.pos() + 1;
+            self.cursor.set(npos);
+        }
+
         if self.cursor.pos() >= self.end {
             return None;
         }
+
         let (leaf, start_pos) = self.cursor.get_leaf().unwrap();
         let len = min(self.end - self.cursor.pos(), leaf.len() - start_pos);
+
+        let mut end = start_pos + len;
+        while !leaf.is_char_boundary(end) {
+            end -= 1;
+        }
+
         self.cursor.next_leaf();
-        Some(&leaf[start_pos..start_pos + len])
+        Some(&leaf[start_pos .. end])
     }
 }
 
@@ -1255,5 +1273,16 @@ mod tests {
         let utf8_offset =
             rope_with_emoji.convert_metrics::<Utf16CodeUnitsMetric, BaseMetric>(utf16_units);
         assert_eq!(utf8_offset, 19);
+    }
+
+    #[test]
+    fn iter_on_char_boundary() {
+        let r = Rope::from("aaa🙉");
+        let mut iter = r.iter_chunks(0, 5);
+        assert_eq!(iter.next(), Some("aaa"));
+
+        let r = Rope::from("🙉aaa");
+        let mut iter = r.iter_chunks(1, r.len());
+        assert_eq!(iter.next(), Some("aaa"));
     }
 }
