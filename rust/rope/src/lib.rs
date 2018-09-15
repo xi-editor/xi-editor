@@ -43,6 +43,7 @@ pub mod multiset;
 pub mod engine;
 pub mod find;
 pub mod compare;
+pub mod diff;
 #[cfg(test)]
 mod test_helpers;
 
