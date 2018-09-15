@@ -696,6 +696,7 @@ impl TreeBuilder<RopeInfo> {
     }
 }
 
+#[cfg(test)]
 fn split_as_leaves(mut s: &str) -> Vec<String> {
     let mut nodes = Vec::new();
     while !s.is_empty() {
