@@ -21,6 +21,7 @@ use serde_json::Value;
 use xi_rope::rope::{Rope, RopeInfo, LinesMetric, count_newlines};
 use xi_rope::interval::Interval;
 use xi_rope::delta::{self, Delta, Transformer};
+use xi_rope::diff::{Diff, LineHashDiff};
 use xi_rope::engine::{Engine, RevId, RevToken};
 use xi_rope::spans::SpansBuilder;
 use xi_trace::{trace_block, trace_payload};
@@ -179,10 +180,8 @@ impl Editor {
     /// Sets this Editor's contents to `text`, preserving undo state and cursor
     /// position when possible.
     pub fn reload(&mut self, text: Rope) {
-        let mut builder = delta::Builder::new(self.text.len());
-        let all_iv = Interval::new(0, self.text.len());
-        builder.replace(all_iv, text);
-        self.add_delta(builder.build());
+        let delta = LineHashDiff::compute_delta(self.get_buffer(), &text);
+        self.add_delta(delta);
         self.set_pristine();
     }
 
