@@ -706,14 +706,12 @@ impl Editor {
 
         for (start, end) in to_duplicate {
             // insert duplicates
-            let duplicated_text = self.text.slice_to_string(start..end);
             let iv = Interval::new_closed_open(start, start);
+            builder.replace(iv, self.text.slice(start..end));
 
             // last line does not have new line character so it needs to be manually added
             if end == self.text.len() {
-                builder.replace(iv, Rope::from(duplicated_text + &config.line_ending))
-            } else {
-                builder.replace(iv, Rope::from(duplicated_text))
+                builder.replace(iv, Rope::from(&config.line_ending))
             }
         }
 
