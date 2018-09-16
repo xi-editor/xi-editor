@@ -8,7 +8,7 @@ rust:
 os:
   - linux
   - osx
-  
+
 matrix:
   allow_failures:
     - rust: nightly
@@ -20,5 +20,6 @@ cache:
 script:
   - cd rust
   - export CARGO_TARGET_DIR=/tmp/target
+  - export RUST_BACKTRACE=1
   - cargo build --all || exit
   - cargo test --all || exit
