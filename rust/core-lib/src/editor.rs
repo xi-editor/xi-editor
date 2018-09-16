@@ -687,29 +687,33 @@ impl Editor {
 
     fn duplicate_line(&mut self, view: &View, config: &BufferItems) {
         let mut builder = delta::Builder::new(self.text.len());
-        // get affected lines
-        let mut lines = BTreeSet::new();
+        // get affected lines or regions
+        let mut to_duplicate = BTreeSet::new();
+
         for region in view.sel_regions() {
-            let line_range = view.get_line_range(&self.text, region);
-            for line in line_range {
-                lines.insert(line);
+            if region.is_caret() {
+                let (first_line, _) = view.offset_to_line_col(&self.text, region.min());
+                let line_start = view.offset_of_line(&self.text, first_line);
+                let mut cursor = Cursor::new(&self.text, line_start);
+
+                if let Some(line_end) = cursor.next::<LinesMetric>() {
+                    to_duplicate.insert((line_start, line_end));
+                }
+            } else {
+                to_duplicate.insert((region.min(), region.max()));
             }
         }
-        for line in lines {
-            // insert duplicates before selected line
-            let line_start = view.offset_of_line(&self.text, line);
-            let mut cursor = Cursor::new(&self.text, line_start);
 
-            if let Some(line_end) = cursor.next::<LinesMetric>() {
-                let duplicated_text = self.text.slice_to_string(line_start..line_end);
-                let iv = Interval::new_closed_open(line_start, line_start);
+        for (start, end) in to_duplicate {
+            // insert duplicates
+            let duplicated_text = self.text.slice_to_string(start..end);
+            let iv = Interval::new_closed_open(start, start);
 
-                // last line does not have new line character so it needs to be manually added
-                if line_end == self.text.len() {
-                    builder.replace(iv, Rope::from(duplicated_text + &config.line_ending))
-                } else {
-                    builder.replace(iv, Rope::from(duplicated_text))
-                }
+            // last line does not have new line character so it needs to be manually added
+            if end == self.text.len() {
+                builder.replace(iv, Rope::from(duplicated_text + &config.line_ending))
+            } else {
+                builder.replace(iv, Rope::from(duplicated_text))
             }
         }
 
