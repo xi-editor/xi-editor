@@ -44,7 +44,6 @@ use edit_types::{EventDomain, SpecialEvent};
 use recorder::Recorder;
 use client::Client;
 use plugins::Plugin;
-use selection::SelRegion;
 use syntax::LanguageId;
 use view::View;
 use width_cache::WidthCache;
@@ -421,15 +420,7 @@ impl<'a> EventContext<'a> {
     }
 
     pub(crate) fn reload(&mut self, text: Rope) {
-        //TODO: It would be nice if we could preserve the existing selections,
-        //but to do that correctly we would need to compute a real delta between
-        //the old and new buffers, so that selections could be transformed
-        self.with_editor(|ed, view, _, _| {
-            view.set_selection(ed.get_buffer(), SelRegion::caret(0));
-            view.unset_find();
-            ed.reload(text);
-        });
-
+        self.with_editor(|ed, _, _, _| ed.reload(text));
         self.after_edit("core");
         self.render();
     }
