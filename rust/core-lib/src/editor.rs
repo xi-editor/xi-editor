@@ -602,7 +602,7 @@ impl Editor {
 
     fn sel_region_to_interval_and_rope(&self, region: SelRegion) -> (Interval, Rope) {
         let as_interval = Interval::new_closed_open(region.min(), region.max());
-        let interval_rope = Rope::from(self.text.subseq(as_interval));
+        let interval_rope = self.text.subseq(as_interval);
         (as_interval, interval_rope)
     }
 
