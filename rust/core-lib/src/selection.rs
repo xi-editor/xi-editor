@@ -350,14 +350,14 @@ impl SelRegion {
     }
 }
 
-// Returns `[start..end)`
+// Returns `[min..max)`
 impl<'a> RangeBounds<usize> for &'a SelRegion {
     fn start_bound(&self) -> Bound<&usize> {
-        Bound::Included(&self.start)
+        Bound::Included(min(&self.start, &self.end))
     }
     
     fn end_bound(&self) -> Bound<&usize> {
-        Bound::Excluded(&self.end)
+        Bound::Excluded(max(&self.start, &self.end))
     }
 }
 
