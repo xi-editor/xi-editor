@@ -579,7 +579,7 @@ impl<N: NodeInfo> Builder<N> {
     pub fn delete(&mut self, interval: Interval) {
         // TODO: doesn't handle interval types other than closed_open
         let (start, end) = interval.start_end();
-        assert!(start >= self.last_offset, "Delta builder: intervals not properly sorted");
+        assert!(start >= self.last_offset, "Delta builder: intervals not properly sorted ({} >= {})", start, self.last_offset);
         if start > self.last_offset {
             self.delta.els.push(DeltaElement::Copy(self.last_offset, start));
         }
