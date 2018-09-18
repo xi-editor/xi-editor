@@ -708,6 +708,16 @@ impl fmt::Debug for Rope {
     }
 }
 
+impl fmt::Display for Rope {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if f.alternate() {
+            write!(f, "{}", String::from(self))
+        } else {
+            write!(f, "Rope({})", String::from(self))
+        }
+    }
+}
+
 impl Add<Rope> for Rope {
     type Output = Rope;
     fn add(self, rhs: Rope) -> Rope {
@@ -1174,7 +1184,7 @@ mod tests {
 
         let rope_with_emoji = Rope::from("hi\ni'm\n😀 four\nlines");
         let utf16_units = rope_with_emoji.measure::<Utf16CodeUnitsMetric>();
-        
+
         assert_eq!(utf16_units, 20);
 
         // position after 'f' in four
@@ -1192,5 +1202,15 @@ mod tests {
 
         let utf8_offset = rope_with_emoji.convert_metrics::<Utf16CodeUnitsMetric, BaseMetric>(utf16_units);
         assert_eq!(utf8_offset, 19);
+    }
+
+    #[test]
+    fn display() {
+        let rope = Rope::from("hi\ni'm\nfour\nlines");
+        let display_fmt_alt = "hi\ni'm\nfour\nlines";
+        assert_eq!(&format!("{:#}", rope), display_fmt_alt);
+
+        let display_fmt = "Rope(hi\ni'm\nfour\nlines)";
+        assert_eq!(&format!("{}", rope), display_fmt);
     }
 }
