@@ -14,16 +14,9 @@
 
 //! Fast comparison of rope regions, principally for diffing.
 
-#[cfg(target_arch = "x86")]
-use std::arch::x86::*;
-#[cfg(target_arch = "x86_64")]
-use std::arch::x86_64::*;
-
 use rope::{BaseMetric, Rope, RopeInfo};
 use tree::{Cursor};
 
-// https://software.intel.com/sites/landingpage/IntrinsicsGuide/#text=_mm_cmpestrm
-const SSID_OPTS: i32 = _SIDD_UBYTE_OPS | _SIDD_CMP_EQUAL_EACH | _SIDD_UNIT_MASK | _SIDD_NEGATIVE_POLARITY;
 
 const SSE_STRIDE: usize = 16;
 
@@ -36,48 +29,73 @@ const SSE_STRIDE: usize = 16;
 /// # Examples
 ///
 /// ```
-/// use xi_rope::compare::fast_cmpestr_mask;
+/// # use xi_rope::compare::fast_cmpestr_mask;
+/// # if is_x86_feature_detected!("sse4.2") {
 /// let one = "aaaaaaaaaaaaaaaa";
 /// let two = "aa3aaaaa9aaaEaaa";
 /// let exp = "0001000100000100";
-/// let result = format!("{:016b}", fast_cmpestr_mask(one.as_bytes(), two.as_bytes()));
+/// let mask = unsafe { fast_cmpestr_mask(one.as_bytes(), two.as_bytes()) };
+/// let result = format!("{:016b}", mask);
 /// assert_eq!(result.as_str(), exp);
+/// # }
 /// ```
 ///
 #[inline(always)]
 #[doc(hidden)]
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-pub fn fast_cmpestr_mask(one: &[u8], two: &[u8]) -> i32 {
-    debug_assert_eq!(one.len(), 16);
-    debug_assert_eq!(two.len(), 16);
-    unsafe {
-        let onev = _mm_loadu_si128(one.as_ptr() as *const _);
-        let twov = _mm_loadu_si128(two.as_ptr() as *const _);
-        let mask = _mm_cmpestrm(onev, 16, twov, 16, SSID_OPTS);
-        _mm_movemask_epi8(mask)
-    }
+#[cfg(target_arch = "x86_64")]
+pub unsafe fn fast_cmpestr_mask(one: &[u8], two: &[u8]) -> i32 {
+    use std::arch::x86_64::*;
+
+    // https://software.intel.com/sites/landingpage/IntrinsicsGuide/#text=_mm_cmpestrm
+    const SSID_OPTS: i32 = _SIDD_CMP_EQUAL_EACH | _SIDD_NEGATIVE_POLARITY;
+
+    debug_assert!(is_x86_feature_detected!("sse4.2"));
+    debug_assert_eq!(one.len(), SSE_STRIDE);
+    debug_assert_eq!(two.len(), SSE_STRIDE);
+
+    let onev = _mm_loadu_si128(one.as_ptr() as *const _);
+    let twov = _mm_loadu_si128(two.as_ptr() as *const _);
+    let mask = _mm_cmpestrm(onev, SSE_STRIDE as i32, twov, SSE_STRIDE as i32, SSID_OPTS);
+    _mm_cvtsi128_si32(mask)
 }
 
 /// Returns the lowest `i` for which `one[i] != two[i]`, if one exists.
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub fn ne_idx(one: &[u8], two: &[u8]) -> Option<usize> {
+    if is_x86_feature_detected!("sse4.2") {
+        ne_idx_simd(one, two)
+    } else {
+        ne_idx_fallback(one, two)
+    }
+}
+
+/// Returns the lowest `i` such that `one[one.len()-i] != two[two.len()-i]`,
+/// if one exists.
+pub fn ne_idx_rev(one: &[u8], two: &[u8]) -> Option<usize> {
+    if is_x86_feature_detected!("sse4.2") {
+        ne_idx_rev_simd(one, two)
+    } else {
+        ne_idx_rev_fallback(one, two)
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[allow(dead_code)]
+#[doc(hidden)]
+pub fn ne_idx_simd(one: &[u8], two: &[u8]) -> Option<usize> {
     let min_len = one.len().min(two.len());
     let mut idx = 0;
     loop {
         let mask: i32;
         // if slice is less than 16 bytes we manually pad it
         if idx + SSE_STRIDE >= min_len {
-            let mut one_buf: [u8; 16] = [0; 16];
-            let mut two_buf: [u8; 16] = [0; 16];
-            let mut temp_idx = 0;
-            for i in idx..min_len {
-                one_buf[temp_idx] = one[i];
-                two_buf[temp_idx] = two[i];
-                temp_idx += 1;
-            }
-            mask = fast_cmpestr_mask(&one_buf, &two_buf);
+            let mut one_buf: [u8; SSE_STRIDE] = [0; SSE_STRIDE];
+            let mut two_buf: [u8; SSE_STRIDE] = [0; SSE_STRIDE];
+            one_buf[..min_len-idx].copy_from_slice(&one[idx..min_len]);
+            two_buf[..min_len-idx].copy_from_slice(&two[idx..min_len]);
+            mask = unsafe { fast_cmpestr_mask(&one_buf, &two_buf) };
         } else {
-            mask = fast_cmpestr_mask(&one[idx..idx+SSE_STRIDE], &two[idx..idx+SSE_STRIDE]);
+            mask = unsafe { fast_cmpestr_mask(&one[idx..idx+SSE_STRIDE],
+                                              &two[idx..idx+SSE_STRIDE]) };
         }
         let i = mask.trailing_zeros() as usize;
         if i != 32 { return Some(idx + i); }
@@ -87,10 +105,10 @@ pub fn ne_idx(one: &[u8], two: &[u8]) -> Option<usize> {
     None
 }
 
-/// Returns the lowest `i` such that `one[one.len()-i] != two[two.len()-i]`,
-/// if one exists.
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-pub fn ne_idx_rev(one: &[u8], two: &[u8]) -> Option<usize> {
+#[cfg(target_arch = "x86_64")]
+#[allow(dead_code)]
+#[doc(hidden)]
+pub fn ne_idx_rev_simd(one: &[u8], two: &[u8]) -> Option<usize> {
     let min_len = one.len().min(two.len());
     let one = &one[one.len() - min_len..];
     let two = &two[two.len() - min_len..];
@@ -99,29 +117,21 @@ pub fn ne_idx_rev(one: &[u8], two: &[u8]) -> Option<usize> {
     loop {
         let mask: i32;
         if idx < SSE_STRIDE {
-            let mut one_buf: [u8; 16] = [0; 16];
-            let mut two_buf: [u8; 16] = [0; 16];
-            let mut temp_idx = SSE_STRIDE - idx;
-            for i in 0..idx {
-                one_buf[temp_idx] = one[i];
-                two_buf[temp_idx] = two[i];
-                temp_idx += 1;
-            }
-            mask = fast_cmpestr_mask(&one_buf, &two_buf);
+            let mut one_buf: [u8; SSE_STRIDE] = [0; SSE_STRIDE];
+            let mut two_buf: [u8; SSE_STRIDE] = [0; SSE_STRIDE];
+            one_buf[SSE_STRIDE - idx..].copy_from_slice(&one[..idx]);
+            two_buf[SSE_STRIDE - idx..].copy_from_slice(&two[..idx]);
+            mask = unsafe { fast_cmpestr_mask(&one_buf, &two_buf) };
         } else {
-            mask = fast_cmpestr_mask(&one[idx-SSE_STRIDE..idx], &two[idx-SSE_STRIDE..idx]);
+            mask = unsafe { fast_cmpestr_mask(&one[idx-SSE_STRIDE..idx],
+                                              &two[idx-SSE_STRIDE..idx]) };
         }
-        let i = mask.leading_zeros() as usize - 16;
-        if i != 16 { return Some(min_len - (idx - i)); }
+        let i = mask.leading_zeros() as usize - SSE_STRIDE;
+        if i != SSE_STRIDE { return Some(min_len - (idx - i)); }
         if idx < SSE_STRIDE { break; }
         idx -= SSE_STRIDE;
     }
     None
-}
-
-#[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
-pub fn ne_idx(one: &[u8], two: &[u8]) -> Option<usize> {
-    ne_idx_fallback(one, two)
 }
 
 #[inline]
@@ -134,18 +144,12 @@ pub fn ne_idx_fallback(one: &[u8], two: &[u8]) -> Option<usize> {
     None
 }
 
-
-#[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
-pub fn ne_idx_rev(one: &[u8], two: &[u8]) -> Option<usize> {
-    ne_idx_rev_fallback(one, two)
-}
-
 #[inline]
 #[allow(dead_code)]
 #[doc(hidden)]
 pub fn ne_idx_rev_fallback(one: &[u8], two: &[u8]) -> Option<usize> {
     let min_len =  one.len().min(two.len());
-    for i in 1..min_len {
+    for i in 1..min_len + 1 {
         if one[one.len()-i] != two[two.len()-i] { return Some(i - 1); }
     }
     None
@@ -362,13 +366,24 @@ mod tests {
         let two = "aaaa";
         let tre = "aaba";
         let fur = "";
-        assert!(ne_idx(one.as_bytes(), two.as_bytes()).is_none());
         assert!(ne_idx_fallback(one.as_bytes(), two.as_bytes()).is_none());
-        assert_eq!(ne_idx(one.as_bytes(), tre.as_bytes()), Some(2));
         assert_eq!(ne_idx_fallback(one.as_bytes(), tre.as_bytes()), Some(2));
-        assert_eq!(ne_idx(one.as_bytes(), fur.as_bytes()), None);
         assert_eq!(ne_idx_fallback(one.as_bytes(), fur.as_bytes()), None);
     }
+
+    #[test]
+    #[cfg(all(target_arch = "x86_64", target_feature = "sse4.2"))]
+    fn ne_len_simd() {
+        // we should only match up to the length of the shortest input
+        let one = "aaaaaa";
+        let two = "aaaa";
+        let tre = "aaba";
+        let fur = "";
+        assert!(ne_idx_simd(one.as_bytes(), two.as_bytes()).is_none());
+        assert_eq!(ne_idx_simd(one.as_bytes(), tre.as_bytes()), Some(2));
+        assert_eq!(ne_idx_simd(one.as_bytes(), fur.as_bytes()), None);
+    }
+
 
     #[test]
     fn ne_len_rev() {
@@ -376,12 +391,21 @@ mod tests {
         let two = "aaaa";
         let tre = "aaba";
         let fur = "";
-        assert!(ne_idx_rev(one.as_bytes(), two.as_bytes()).is_none());
         assert!(ne_idx_rev_fallback(one.as_bytes(), two.as_bytes()).is_none());
-        assert_eq!(ne_idx_rev(one.as_bytes(), tre.as_bytes()), Some(1));
         assert_eq!(ne_idx_rev_fallback(one.as_bytes(), tre.as_bytes()), Some(1));
-        assert_eq!(ne_idx_rev(one.as_bytes(), fur.as_bytes()), None);
         assert_eq!(ne_idx_rev_fallback(one.as_bytes(), fur.as_bytes()), None);
+    }
+
+    #[test]
+    #[cfg(all(target_arch = "x86_64", target_feature = "sse4.2"))]
+    fn ne_len_rev_simd() {
+        let one = "aaaaaa";
+        let two = "aaaa";
+        let tre = "aaba";
+        let fur = "";
+        assert!(ne_idx_rev_simd(one.as_bytes(), two.as_bytes()).is_none());
+        assert_eq!(ne_idx_rev_simd(one.as_bytes(), tre.as_bytes()), Some(1));
+        assert_eq!(ne_idx_rev_simd(one.as_bytes(), fur.as_bytes()), None);
     }
 
     #[test]
@@ -394,8 +418,10 @@ mod tests {
 	    101, 119, 58, 58, 123, 83, 101, 32, 118, 105, 101,
 	    119, 58, 58, 86, 105, 101, 119, 59, 10];
 
-	assert_eq!(ne_idx_rev(one, two), Some(1));
 	assert_eq!(ne_idx_rev_fallback(one, two), Some(1));
+        if is_x86_feature_detected!("sse4.2") {
+            assert_eq!(ne_idx_rev_simd(one, two), Some(1));
+        }
     }
 
     fn make_lines(n: usize) -> String {
@@ -529,7 +555,7 @@ mod tests {
     }
 
     #[test]
-    fn find_left_utf8_rev() {
+    fn find_left_utf8() {
         let zer = Rope::from("baaaa");
         let one = Rope::from("🍄aaaa"); // F0 9F 8D 84 61 61 61 61;
         let two = Rope::from("🙄aaaa"); // F0 9F 99 84 61 61 61 61;
@@ -546,5 +572,19 @@ mod tests {
         let mut scanner = RopeScanner::new(&one, &tri);
         let result = scanner.find_ne_char_left(one.len(), tri.len(), None);
         assert_eq!(result, 4);
+    }
+
+    #[test]
+    fn ne_idx_rev_utf8() {
+        // there was a weird failure in `find_left_utf8` non_simd, drilling down:
+        let zer = "baaaa";
+        let one = "🍄aaaa"; // F0 9F 8D 84 61 61 61 61;
+        let two = "🙄aaaa"; // F0 9F 99 84 61 61 61 61;
+        if is_x86_feature_detected!("sse4.2") {
+            assert_eq!(ne_idx_rev_simd(zer.as_bytes(), one.as_bytes()), Some(4));
+            assert_eq!(ne_idx_rev_simd(one.as_bytes(), two.as_bytes()), Some(5));
+        }
+        assert_eq!(ne_idx_rev_fallback(zer.as_bytes(), one.as_bytes()), Some(4));
+        assert_eq!(ne_idx_rev_fallback(one.as_bytes(), two.as_bytes()), Some(5));
     }
 }
