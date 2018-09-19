@@ -21,5 +21,5 @@ script:
   - cd rust
   - export CARGO_TARGET_DIR=/tmp/target
   - export RUST_BACKTRACE=1
-  - cargo build --all || exit
+  - RUSTFLAGS="-D warnings" cargo check --all || exit
   - cargo test --all || exit
