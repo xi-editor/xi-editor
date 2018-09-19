@@ -431,9 +431,10 @@ impl View {
             sel.add_region(SelRegion::new(last.start, offset));
             sel
         };
+        let min = sel.last().unwrap().start;
         self.set_selection(text, sel);
-        self.start_drag(offset, offset, offset);
-    }
+        self.start_drag(offset, min, offset);
+}
 
     /// Selects the given region and supports multi selection.
     fn select_region(&mut self, text: &Rope, offset: usize, region: SelRegion, multi_select: bool) {
