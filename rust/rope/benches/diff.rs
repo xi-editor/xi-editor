@@ -14,8 +14,7 @@ static BREAKS_STR: &str = include_str!("../src/breaks.rs");
 
 #[bench]
 fn ne_idx_sw(b: &mut Bencher) {
-    let one: String = [EDITOR_STR, VIEW_STR, INTERVAL_STR, BREAKS_STR].iter()
-        .fold(String::new(), |mut acc, s| { acc.push_str(s); acc });
+    let one: String = [EDITOR_STR, VIEW_STR, INTERVAL_STR, BREAKS_STR].concat();
     let mut two = one.clone();
     unsafe {
         let b = two.as_bytes_mut();
@@ -31,8 +30,7 @@ fn ne_idx_sw(b: &mut Bencher) {
 
 #[bench]
 fn ne_idx_hw(b: &mut Bencher) {
-    let one: String = [EDITOR_STR, VIEW_STR, INTERVAL_STR, BREAKS_STR].iter()
-        .fold(String::new(), |mut acc, s| { acc.push_str(s); acc });
+    let one: String = [EDITOR_STR, VIEW_STR, INTERVAL_STR, BREAKS_STR].concat();
     let mut two = one.clone();
     unsafe {
         let b = two.as_bytes_mut();
@@ -41,15 +39,14 @@ fn ne_idx_hw(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        compare::ne_idx(one.as_bytes(), one.as_bytes());
-        compare::ne_idx(one.as_bytes(), two.as_bytes());
+        compare::ne_idx_simd(one.as_bytes(), one.as_bytes());
+        compare::ne_idx_simd(one.as_bytes(), two.as_bytes());
     })
 }
 
 #[bench]
 fn ne_idx_sw_rev(b: &mut Bencher) {
-    let one: String = [EDITOR_STR, VIEW_STR, INTERVAL_STR, BREAKS_STR].iter()
-        .fold(String::new(), |mut acc, s| { acc.push_str(s); acc });
+    let one: String = [EDITOR_STR, VIEW_STR, INTERVAL_STR, BREAKS_STR].concat();
     let mut two = one.clone();
     unsafe {
         let b = two.as_bytes_mut();
@@ -65,8 +62,7 @@ fn ne_idx_sw_rev(b: &mut Bencher) {
 
 #[bench]
 fn ne_idx_hw_rev(b: &mut Bencher) {
-    let one: String = [EDITOR_STR, VIEW_STR, INTERVAL_STR, BREAKS_STR].iter()
-        .fold(String::new(), |mut acc, s| { acc.push_str(s); acc });
+    let one: String = [EDITOR_STR, VIEW_STR, INTERVAL_STR, BREAKS_STR].concat();
     let mut two = one.clone();
     unsafe {
         let b = two.as_bytes_mut();
@@ -75,7 +71,7 @@ fn ne_idx_hw_rev(b: &mut Bencher) {
     }
 
     b.iter(|| {
-        compare::ne_idx_rev(one.as_bytes(), one.as_bytes());
-        compare::ne_idx_rev(one.as_bytes(), two.as_bytes());
+        compare::ne_idx_rev_simd(one.as_bytes(), one.as_bytes());
+        compare::ne_idx_rev_simd(one.as_bytes(), two.as_bytes());
     })
 }
