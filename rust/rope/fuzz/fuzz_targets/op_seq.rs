@@ -18,7 +18,7 @@ fuzz_target!(|data: &[u8]| {
         println!("{:?}", seq);
 
         for (i,op) in seq.iter().enumerate() {
-            let head_rev = engine.get_head_rev_id();
+            let head_rev = engine.get_head_rev_id().token();
             match *op {
                 EngineOp::Edit(ref d) => engine.edit_rev(0,i,head_rev,d.clone()),
                 EngineOp::Undo(ref groups) => engine.undo(groups.clone())

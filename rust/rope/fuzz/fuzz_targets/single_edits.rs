@@ -1,3 +1,5 @@
+//! Minimal fuzz target, applying simple edits to a base rope.
+
 #![no_main]
 #[macro_use] extern crate libfuzzer_sys;
 extern crate xi_rope;
@@ -14,7 +16,8 @@ fuzz_target!(|data: &[u8]| {
     let mut engine = Engine::new(initial.clone());
     if let Ok(d) = gen_delta(&mut s, initial.len()) {
         let raw_apply = d.apply(&initial);
-        engine.edit_rev(0, 0, 0, d);
+        let head_token = engine.get_head_rev_id().token();
+        engine.edit_rev(0, 0, head_token, d);
         assert_eq!(String::from(raw_apply), String::from(engine.get_head()));
     }
 });

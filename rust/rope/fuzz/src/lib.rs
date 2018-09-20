@@ -6,6 +6,9 @@ use xi_rope::interval::{Interval};
 use std::cmp::min;
 use std::collections::BTreeSet;
 
+#[cfg(test)]
+mod trophies;
+
 #[derive(Debug)]
 pub enum ParseError {
     NoMoreData,
