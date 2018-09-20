@@ -691,16 +691,20 @@ impl Editor {
         let mut to_duplicate = BTreeSet::new();
 
         for region in view.sel_regions() {
-            if region.is_caret() {
-                let (first_line, _) = view.offset_to_line_col(&self.text, region.min());
-                let line_start = view.offset_of_line(&self.text, first_line);
-                let mut cursor = Cursor::new(&self.text, line_start);
+            let (first_line, _) = view.offset_to_line_col(&self.text, region.min());
+            let line_start = view.offset_of_line(&self.text, first_line);
 
-                if let Some(line_end) = cursor.next::<LinesMetric>() {
-                    to_duplicate.insert((line_start, line_end));
+            let mut cursor = match region.is_caret() {
+                true => Cursor::new(&self.text, line_start),
+                false => {  // duplicate all lines together that are part of the same selections
+                    let (last_line, _) = view.offset_to_line_col(&self.text, region.max());
+                    let line_end = view.offset_of_line(&self.text, last_line);
+                    Cursor::new(&self.text, line_end)
                 }
-            } else {
-                to_duplicate.insert((region.min(), region.max()));
+            };
+
+            if let Some(line_end) = cursor.next::<LinesMetric>() {
+                to_duplicate.insert((line_start, line_end));
             }
         }
 
