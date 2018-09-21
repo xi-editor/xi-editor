@@ -438,9 +438,9 @@ impl View {
             sel.add_region(SelRegion::new(last.start, offset));
             sel
         };
-        let min = sel.last().unwrap().start;
+        let range_start = sel.last().unwrap().start;
         self.set_selection(text, sel);
-        self.start_drag(offset, min, offset, SelectionGranularity::Point, false);
+        self.start_drag(range_start, range_start, range_start, SelectionGranularity::Point, false);
 }
 
     /// Selects the given region and supports multi selection.
