@@ -719,7 +719,7 @@ impl Editor {
             }
         }
 
-        self.this_edit_type = EditType::InsertChars;
+        self.this_edit_type = EditType::Other;
         self.add_delta(builder.build());
     }
 
