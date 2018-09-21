@@ -134,6 +134,16 @@ enum WrapWidth {
     Width(f64),
 }
 
+/// The smallest unit of text that a gesture can select
+pub enum SelectionGranularity {
+    /// Selects any point or character range
+    Point,
+    /// Selects one word at a time
+    Word,
+    /// Selects one line at a time
+    Line
+}
+
 /// State required to resolve a drag gesture into a selection.
 struct DragState {
     /// All the selection regions other than the one being dragged.
@@ -148,6 +158,8 @@ struct DragState {
 
     /// End of the region selected when drag was started.
     max: usize,
+
+    granularity: SelectionGranularity,
 }
 
 impl View {
@@ -252,7 +264,7 @@ impl View {
         match ty {
             GestureType::PointSelect => {
                 self.set_selection(text, SelRegion::caret(offset));
-                self.start_drag(offset, offset, offset);
+                self.start_drag(offset, offset, offset, SelectionGranularity::Point);
             },
             GestureType::RangeSelect => self.select_range(text, offset),
             GestureType::ToggleSel => self.toggle_sel(text, offset),
@@ -334,6 +346,7 @@ impl View {
             offset,
             min: offset,
             max: offset,
+            granularity: SelectionGranularity::Point,
         });
         let region = SelRegion::caret(offset);
         selection.add_region(region);
@@ -433,11 +446,11 @@ impl View {
         };
         let min = sel.last().unwrap().start;
         self.set_selection(text, sel);
-        self.start_drag(offset, min, offset);
+        self.start_drag(offset, min, offset, SelectionGranularity::Point);
 }
 
     /// Selects the given region and supports multi selection.
-    fn select_region(&mut self, text: &Rope, offset: usize, region: SelRegion, multi_select: bool) {
+    fn select_region(&mut self, text: &Rope, region: SelRegion, multi_select: bool) {
         let mut selection = match multi_select {
             true => self.selection.clone(),
             false => Selection::new(),
@@ -445,8 +458,6 @@ impl View {
 
         selection.add_region(region);
         self.set_selection(text, selection);
-
-        self.start_drag(offset, region.start, region.end);
     }
 
     /// Selects an entire word and supports multi selection.
@@ -456,7 +467,8 @@ impl View {
             word_cursor.select_word()
         };
 
-        self.select_region(text, offset, SelRegion::new(start, end), multi_select);
+        self.select_region(text, SelRegion::new(start, end), multi_select);
+        self.start_drag(offset, start, end, SelectionGranularity::Word);
     }
 
     /// Selects an entire line and supports multi selection.
@@ -464,7 +476,8 @@ impl View {
         let start = self.line_col_to_offset(text, line, 0);
         let end = self.line_col_to_offset(text, line + 1, 0);
 
-        self.select_region(text, offset, SelRegion::new(start, end), multi_select);
+        self.select_region(text, SelRegion::new(start, end), multi_select);
+        self.start_drag(offset, start, end, SelectionGranularity::Line);
     }
 
     /// Splits current selections into lines.
@@ -495,9 +508,9 @@ impl View {
     }
 
     /// Starts a drag operation.
-    pub fn start_drag(&mut self, offset: usize, min: usize, max: usize) {
+    pub fn start_drag(&mut self, offset: usize, min: usize, max: usize, granularity: SelectionGranularity) {
         let base_sel = Selection::new();
-        self.drag_state = Some(DragState { base_sel, offset, min, max });
+        self.drag_state = Some(DragState { base_sel, offset, min, max, granularity });
     }
 
     /// Does a drag gesture, setting the selection from a combination of the drag
@@ -506,11 +519,22 @@ impl View {
         let offset = self.line_col_to_offset(text, line as usize, col as usize);
         let new_sel = self.drag_state.as_ref().map(|drag_state| {
             let mut sel = drag_state.base_sel.clone();
-            // TODO: on double or triple click, quantize offset to requested granularity.
+            // Determine which word or line the cursor is in
+            let (unit_start, unit_end) = match drag_state.granularity {
+                SelectionGranularity::Point => (offset, offset),
+                SelectionGranularity::Word => {
+                    let mut word_cursor = WordCursor::new(text, offset);
+                    word_cursor.select_word()
+                },
+                SelectionGranularity::Line => (
+                    self.line_col_to_offset(text, line as usize, 0),
+                    self.line_col_to_offset(text, (line as usize) + 1, 0)
+                )
+            };
             let (start, end) = if offset < drag_state.offset {
-                (drag_state.max, min(offset, drag_state.min))
+                (drag_state.max, min(unit_start, drag_state.min))
             } else {
-                (drag_state.min, max(offset, drag_state.max))
+                (drag_state.min, max(unit_end, drag_state.max))
             };
             let horiz = None;
             sel.add_region(
