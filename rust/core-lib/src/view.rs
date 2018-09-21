@@ -264,7 +264,7 @@ impl View {
         match ty {
             GestureType::PointSelect => {
                 self.set_selection(text, SelRegion::caret(offset));
-                self.start_drag(offset, offset, offset, SelectionGranularity::Point);
+                self.start_drag(offset, offset, offset, SelectionGranularity::Point, false);
             },
             GestureType::RangeSelect => self.select_range(text, offset),
             GestureType::ToggleSel => self.toggle_sel(text, offset),
@@ -341,16 +341,10 @@ impl View {
                 return;
             }
         }
-        self.drag_state = Some(DragState {
-            base_sel: selection.clone(),
-            offset,
-            min: offset,
-            max: offset,
-            granularity: SelectionGranularity::Point,
-        });
         let region = SelRegion::caret(offset);
         selection.add_region(region);
         self.set_selection_raw(text, selection);
+        self.start_drag(offset, offset, offset, SelectionGranularity::Point, true)
     }
 
     /// Move the selection by the given movement. Return value is the offset of
@@ -446,7 +440,7 @@ impl View {
         };
         let min = sel.last().unwrap().start;
         self.set_selection(text, sel);
-        self.start_drag(offset, min, offset, SelectionGranularity::Point);
+        self.start_drag(offset, min, offset, SelectionGranularity::Point, false);
 }
 
     /// Selects the given region and supports multi selection.
@@ -468,7 +462,7 @@ impl View {
         };
 
         self.select_region(text, SelRegion::new(start, end), multi_select);
-        self.start_drag(offset, start, end, SelectionGranularity::Word);
+        self.start_drag(offset, start, end, SelectionGranularity::Word, multi_select);
     }
 
     /// Selects an entire line and supports multi selection.
@@ -477,7 +471,7 @@ impl View {
         let end = self.line_col_to_offset(text, line + 1, 0);
 
         self.select_region(text, SelRegion::new(start, end), multi_select);
-        self.start_drag(offset, start, end, SelectionGranularity::Line);
+        self.start_drag(offset, start, end, SelectionGranularity::Line, multi_select);
     }
 
     /// Splits current selections into lines.
@@ -508,8 +502,11 @@ impl View {
     }
 
     /// Starts a drag operation.
-    pub fn start_drag(&mut self, offset: usize, min: usize, max: usize, granularity: SelectionGranularity) {
-        let base_sel = Selection::new();
+    pub fn start_drag(&mut self, offset: usize, min: usize, max: usize, granularity: SelectionGranularity, multi_select: bool) {
+        let base_sel = match multi_select {
+            true => self.selection.clone(),
+            false => Selection::new()
+        };
         self.drag_state = Some(DragState { base_sel, offset, min, max, granularity });
     }
 
