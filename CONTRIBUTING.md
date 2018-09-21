@@ -1,11 +1,8 @@
 # Contributing
 
 The xi-editor project is committed to fostering and preserving a
-diverse, welcoming community. To this end we follow the 
-[Fuchsia Code of Conduct](https://fuchsia.googlesource.com/docs/+/master/CODE_OF_CONDUCT.md).
-More simply, we ask that you be be respectful and considerate of
-other contributors and participants, regardless of their level of
-experience or expertise.
+diverse, welcoming community; all participants are expected to
+follow the [Code of Conduct](https://github.com/xi-editor/xi-editor/blob/master/CODE_OF_CONDUCT.md).
 
 - [Getting Started](#getting-started)
     - [Very first steps](#very-first-steps)
@@ -126,7 +123,7 @@ Before pressing the 'Create pull request' button,
 
 - _Run the tests_. It's easy to accidentally break something with even a small 
  change, so always run the tests locally before submitting (or updating) a PR.
- You can run all checks locally with the `xi-editor/rust/run_all_checks` script.
+ You can run all checks locally with the `xi-editor/rust/run_all_checks`. script.
 
 - _Add a message for your reviewers_. When submitting a PR, take advantage
  of the opportunity to include a message. Your goal here should be to help
