@@ -268,7 +268,7 @@ impl<'a> Syntect<'a> {
         let leading_ws = prev_line.char_indices()
             .find(|&(_, c)| !c.is_whitespace())
             .or(prev_line.char_indices().last())
-            .map(|(idx, _)| unsafe { prev_line.slice_unchecked(0, idx) })
+            .map(|(idx, _)| unsafe { prev_line.get_unchecked(0..idx) })
             .unwrap_or("");
 
         if self.increase_indentation(prev_line) {
