@@ -23,3 +23,7 @@ script:
   - export RUST_BACKTRACE=1
   - RUSTFLAGS="-D warnings" cargo check --all || exit
   - cargo test --all || exit
+
+after_success:
+  - cd rust
+  - ./travis-after-success.sh

@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+# Script to compare benches in Travis CI
+# Inspiration and most of the code taken from https://sunjay.ca/2017/04/27/rust-benchmark-comparison-travis
+
+set -e
+set -x
+
+# The Travis environment variables behave like so:
+# TRAVIS_BRANCH
+#   - if PR build, this is the pr base branch
+#   - if push build, this is the branch that was pushed
+# TRAVIS_PULL_REQUEST_BRANCH
+#   - if PR build, this is the "target" of the pr, i.e. not the base branch
+#   - if push build, this is blank
+#
+# Example:
+# You open a PR with base `master`, and PR branch `foo`
+# During a PR build:
+#     TRAVIS_BRANCH=master
+#     TRAVIS_PULL_REQUEST_BRANCH=foo
+# During a push build:
+#     TRAVIS_BRANCH=foo
+#     TRAVIS_PULL_REQUEST_BRANCH=
+
+
+# Make sure it is a PR build and we are running nightly
+if [ -z "$TRAVIS_PULL_REQUEST_BRANCH" ] || ["$TRAVIS_RUST_VERSION" != "nightly"]; then
+    exit
+fi
+
+REMOTE_URL="$(git config --get remote.origin.url)"
+
+# Clone the repository fresh..for some reason checking out master fails
+# from a normal PR build's provided directory
+cd ${TRAVIS_BUILD_DIR}/..
+git clone ${REMOTE_URL} "${TRAVIS_REPO_SLUG}-bench"
+cd  "${TRAVIS_REPO_SLUG}-bench"
+
+cargo install cargo-benchcmp || true
+
+# Bench PR target
+git checkout -f "$TRAVIS_BRANCH"
+cargo bench --all --verbose | tee previous-benchmark
+
+# Bench PR source
+git checkout -f "$TRAVIS_PULL_REQUEST_BRANCH"
+cargo bench --all --verbose | tee current-benchmark
+
+# Compare
+cargo benchcmp previous-benchmark current-benchmark
