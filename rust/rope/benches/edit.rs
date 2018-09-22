@@ -67,10 +67,10 @@ fn benchmark_file_load_few_big_lines(b: &mut Bencher) {
 #[bench]
 fn benchmark_char_insertion_one_line_edit_str(b: &mut Bencher) {
     let mut text = Rope::from("b".repeat(100));
-    let mut length = 100;
+    let mut offset = 100;
     b.iter(|| {
-        text.edit_str(length, length, "a");
-        length += 1;
+        text.edit_str(offset..=offset, "a");
+        offset += 1;
     });
 }
 
@@ -78,33 +78,33 @@ fn benchmark_char_insertion_one_line_edit_str(b: &mut Bencher) {
 fn benchmark_paste_into_line(b: &mut Bencher) {
     let mut text = Rope::from(build_short_lines(50_000));
     let insertion = "a".repeat(50);
-    let mut insertion_point = 100;
+    let mut offset = 100;
     b.iter(|| {
-        text.edit_str(insertion_point, insertion_point, &insertion);
-        insertion_point += 150;
+        text.edit_str(offset..=offset, &insertion);
+        offset += 150;
     });
 }
 
 #[bench]
 fn benchmark_insert_newline(b: &mut Bencher) {
     let mut text = Rope::from(build_few_big_lines(1_000_000));
-    let mut pos = 1000;
+    let mut offset = 1000;
     b.iter(|| {
-        text.edit_str(pos, pos, "\n");
-        pos += 1001;
+        text.edit_str(offset..=offset, "\n");
+        offset += 1001;
     });
 }
 
 #[bench]
 fn benchmark_overwrite_into_line(b: &mut Bencher) {
     let mut text = Rope::from(build_short_lines(50_000));
-    let mut insertion_point = 100;
+    let mut offset = 100;
     let insertion = "a".repeat(50);
     b.iter(|| {
         // TODO: if the method runs too quickly, this may generate a fault
         // since there's an upper limit to how many times this can run.
-        text.edit_str(insertion_point, insertion_point + 20, &insertion);
-        insertion_point += 30;
+        text.edit_str(offset..=offset + 20, &insertion);
+        offset += 30;
     });
 }
 
@@ -113,9 +113,9 @@ fn benchmark_triangle_concat_inplace(b: &mut Bencher) {
     let mut text = Rope::from("");
     let insertion = build_triangle(10_000);
     let insertion_len = insertion.len();
-    let mut pos = 0;
+    let mut offset = 0;
     b.iter(|| {
-        text.edit_str(pos, pos, &insertion);
-        pos += insertion_len;
+        text.edit_str(offset..=offset, &insertion);
+        offset += insertion_len;
     });
 }
