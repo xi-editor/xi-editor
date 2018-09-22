@@ -42,7 +42,7 @@ below.
 ### Building the core
 
 Xi targets 'recent stable Rust'. We recommend installing via [rustup](https://www.rustup.rs).
-The current minimum supported version is 1.26.
+The current minimum supported version is 1.28.
 
 To build the xi editor from the root directory of this repo:
 
@@ -84,7 +84,7 @@ experimental GL-based front-end in Rust.
 
 There are notes (I wouldn’t call it
 documentation at this point) on the protocol at
-[frontend.md](http://google.github.io/xi-editor/docs/frontend-protocol.html). If you're working on a front-end, feel free to
+[frontend.md](https://xi-editor.github.io/xi-editor/docs/frontend-protocol.html). If you're working on a front-end, feel free to
 send a PR to add it to the above list.
 
 ## Design decisions

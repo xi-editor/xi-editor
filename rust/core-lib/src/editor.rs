@@ -424,7 +424,7 @@ impl Editor {
         let mut saved = None;
         for region in sel_regions {
             if !region.is_caret() {
-                let val = self.text.slice_to_string(region.min(), region.max());
+                let val = self.text.slice_to_string(region);
                 match saved {
                     None => saved = Some(val),
                     Some(ref mut s) => {
@@ -519,8 +519,7 @@ impl Editor {
             let tab_offset = view.line_col_to_offset(&self.text, line,
                                                      tab_text.len());
             let interval = Interval::new_closed_open(offset, tab_offset);
-            let leading_slice = self.text.slice_to_string(interval.start(),
-                                                          interval.end());
+            let leading_slice = self.text.slice_to_string(interval.start()..interval.end());
             if leading_slice == tab_text {
                 builder.delete(interval);
             } else if let Some(first_char_col) = leading_slice.find(|c: char| !c.is_whitespace()) {
@@ -603,8 +602,7 @@ impl Editor {
 
     fn sel_region_to_interval_and_rope(&self, region: SelRegion) -> (Interval, Rope) {
         let as_interval = Interval::new_closed_open(region.min(), region.max());
-        let interval_rope = Rope::from(self.text.slice_to_string(
-            as_interval.start(), as_interval.end()));
+        let interval_rope = self.text.subseq(as_interval);
         (as_interval, interval_rope)
     }
 
@@ -624,8 +622,8 @@ impl Editor {
                 if let Some(end) = self.text.next_grapheme_offset(middle) {
                     if start >= last {
                         let interval = Interval::new_closed_open(start, end);
-                        let swapped = self.text.slice_to_string(middle, end) +
-                                      &self.text.slice_to_string(start, middle);
+                        let swapped = self.text.slice_to_string(middle..end) +
+                                      &self.text.slice_to_string(start..middle);
                         builder.replace(interval, Rope::from(swapped));
                         last = end;
                     }
@@ -677,8 +675,7 @@ impl Editor {
         let mut builder = delta::Builder::new(self.text.len());
 
         for region in view.sel_regions() {
-            let selected_text = self.text.slice_to_string(region.min(),
-                                                          region.max());
+            let selected_text = self.text.slice_to_string(region);
             let interval = Interval::new_closed_open(region.min(), region.max());
             builder.replace(interval, Rope::from(transform_function(&selected_text)));
         }
@@ -690,33 +687,39 @@ impl Editor {
 
     fn duplicate_line(&mut self, view: &View, config: &BufferItems) {
         let mut builder = delta::Builder::new(self.text.len());
-        // get affected lines
-        let mut lines = BTreeSet::new();
+        // get affected lines or regions
+        let mut to_duplicate = BTreeSet::new();
+
         for region in view.sel_regions() {
-            let line_range = view.get_line_range(&self.text, region);
-            for line in line_range {
-                lines.insert(line);
-            }
-        }
-        for line in lines {
-            // insert duplicates before selected line
-            let line_start = view.offset_of_line(&self.text, line);
-            let mut cursor = Cursor::new(&self.text, line_start);
+            let (first_line, _) = view.offset_to_line_col(&self.text, region.min());
+            let line_start = view.offset_of_line(&self.text, first_line);
+
+            let mut cursor = match region.is_caret() {
+                true => Cursor::new(&self.text, line_start),
+                false => {  // duplicate all lines together that are part of the same selections
+                    let (last_line, _) = view.offset_to_line_col(&self.text, region.max());
+                    let line_end = view.offset_of_line(&self.text, last_line);
+                    Cursor::new(&self.text, line_end)
+                }
+            };
 
             if let Some(line_end) = cursor.next::<LinesMetric>() {
-                let duplicated_text = self.text.slice_to_string(line_start, line_end);
-                let iv = Interval::new_closed_open(line_start, line_start);
-
-                // last line does not have new line character so it needs to be manually added
-                if line_end == self.text.len() {
-                    builder.replace(iv, Rope::from(duplicated_text + &config.line_ending))
-                } else {
-                    builder.replace(iv, Rope::from(duplicated_text))
-                }
+                to_duplicate.insert((line_start, line_end));
             }
         }
 
-        self.this_edit_type = EditType::InsertChars;
+        for (start, end) in to_duplicate {
+            // insert duplicates
+            let iv = Interval::new_closed_open(start, start);
+            builder.replace(iv, self.text.slice(start..end));
+
+            // last line does not have new line character so it needs to be manually added
+            if end == self.text.len() {
+                builder.replace(iv, Rope::from(&config.line_ending))
+            }
+        }
+
+        self.this_edit_type = EditType::Other;
         self.add_delta(builder.build());
     }
 
@@ -814,7 +817,7 @@ impl Editor {
             end_off = text.prev_codepoint_offset(end_off + 1).unwrap();
         }
 
-        let chunk = text.slice_to_string(offset, end_off);
+        let chunk = text.slice_to_string(offset..end_off);
         let first_line = text.line_of_offset(offset);
         let first_line_offset = offset - text.offset_of_line(first_line);
 

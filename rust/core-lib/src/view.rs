@@ -419,23 +419,22 @@ impl View {
 
     /// Selects a specific range (eg. when the user performs SHIFT + click).
     pub fn select_range(&mut self, text: &Rope, offset: usize) {
-        if !self.is_point_in_selection(offset) {
-            let sel = {
-                let (last, rest) = self.sel_regions().split_last().unwrap();
-                let mut sel = Selection::new();
-                for &region in rest {
-                    sel.add_region(region);
-                }
-                // TODO: small nit, merged region should be backward if end < start.
-                // This could be done by explicitly overriding, or by tweaking the
-                // merge logic.
-                sel.add_region(SelRegion::new(last.start, offset));
-                sel
-            };
-            self.set_selection(text, sel);
-            self.start_drag(offset, offset, offset);
-        }
-    }
+        let sel = {
+            let (last, rest) = self.sel_regions().split_last().unwrap();
+            let mut sel = Selection::new();
+            for &region in rest {
+                sel.add_region(region);
+            }
+            // TODO: small nit, merged region should be backward if end < start.
+            // This could be done by explicitly overriding, or by tweaking the
+            // merge logic.
+            sel.add_region(SelRegion::new(last.start, offset));
+            sel
+        };
+        let min = sel.last().unwrap().start;
+        self.set_selection(text, sel);
+        self.start_drag(offset, min, offset);
+}
 
     /// Selects the given region and supports multi selection.
     fn select_region(&mut self, text: &Rope, offset: usize, region: SelRegion, multi_select: bool) {
@@ -559,7 +558,7 @@ impl View {
             pos
         }).unwrap_or(text.len());
 
-        let l_str = text.slice_to_string(start_pos, pos);
+        let l_str = text.slice_to_string(start_pos..pos);
         let mut cursors = Vec::new();
         let mut selections = Vec::new();
         for region in self.selection.regions_in_range(start_pos, pos) {
@@ -940,13 +939,13 @@ impl View {
         let search_query = match self.selection.last() {
             Some(region) => {
                 if !region.is_caret() {
-                    text.slice_to_string(region.min(), region.max())
+                    text.slice_to_string(region)
                 } else {
                     let (start, end) = {
                         let mut word_cursor = WordCursor::new(text, region.max());
                         word_cursor.select_word()
                     };
-                    text.slice_to_string(start, end)
+                    text.slice_to_string(start..end)
                 }
             },
             _ => return
@@ -1053,13 +1052,13 @@ impl View {
         let replacement = match self.selection.last() {
             Some(region) => {
                 if !region.is_caret() {
-                    text.slice_to_string(region.min(), region.max())
+                    text.slice_to_string(region)
                 } else {
                     let (start, end) = {
                         let mut word_cursor = WordCursor::new(text, region.max());
                         word_cursor.select_word()
                     };
-                    text.slice_to_string(start, end)
+                    text.slice_to_string(start..end)
                 }
             },
             _ => return

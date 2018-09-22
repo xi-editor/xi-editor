@@ -1161,7 +1161,7 @@ mod tests {
             trace.closure_payload("y", &["test"], || {
                 trace.instant_payload("b", &["test"], to_payload("test_get_samples_nested_trace"));
             }, to_payload("test_get_samples_nested_trace"));
-            trace.block_payload("z", &["test"], to_payload("test_get_samples_nested_trace"));
+            let _ = trace.block_payload("z", &["test"], to_payload("test_get_samples_nested_trace"));
             trace.instant_payload("c", &["test"], to_payload("test_get_samples_nested_trace"));
         }, to_payload("test_get_samples_nested_trace"));
 
@@ -1205,7 +1205,7 @@ mod tests {
                 std::thread::sleep(std::time::Duration::new(0, 1000));
                 trace.instant_payload("b", &["test"], to_payload("test_get_sorted_samples"));
             }, to_payload("test_get_sorted_samples"));
-            trace.block_payload("z", &["test"], to_payload("test_get_sorted_samples"));
+            let _ = trace.block_payload("z", &["test"], to_payload("test_get_sorted_samples"));
             trace.instant("c", &["test"]);
         }, to_payload("test_get_sorted_samples"));
 
