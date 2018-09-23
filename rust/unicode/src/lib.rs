@@ -190,6 +190,51 @@ impl LineBreakLeafIter {
     }
 }
 
+fn is_in_asc_list<T: std::cmp::PartialOrd>(c: T, list: &[T], start: usize, end: usize) -> bool {
+    if c == list[start] || c == list[end] {
+        return true;
+    }
+    if end - start <= 1 {
+        return false;
+    }
+
+    let mid = (start + end) / 2;
+
+    if c >= list[mid] {
+        return is_in_asc_list(c, &list, mid, end);
+    } else {
+        return is_in_asc_list(c, &list, start, mid);
+    }
+}
+
+pub fn is_variation_selector(c: char) -> bool {
+    c >= '\u{FE00}' && c <= '\u{FE0F}'
+}
+
+pub fn is_regional_indicator_symbol(c: char) -> bool {
+    c >= '\u{1F1E6}' && c <= '\u{1F1FF}'
+}
+
+pub fn is_emoji_modifier(c: char) -> bool {
+    c >= '\u{1F3FB}' && c <= '\u{1F3FF}'
+}
+
+pub fn is_emoji_combining_enclosing_keycap(c: char) -> bool { c == '\u{20E3}' }
+
+pub fn is_emoji(c: char) -> bool { is_in_asc_list(c, &EMOJI_TABLE, 0, EMOJI_TABLE.len()) }
+
+pub fn is_keycap_base(c: char) -> bool { ('0' <= c && c <= '9') || c == '#' || c == '*' }
+
+pub fn is_emoji_modifier_base(c: char) -> bool {
+    is_in_asc_list(c, &EMOJI_MODIFIER_BASE_TABLE, 0, EMOJI_MODIFIER_BASE_TABLE.len())
+}
+
+pub fn is_tag_spec_char(c: char) -> bool { '\u{E0020}' <= c && c <= '\u{E007E}' }
+
+pub fn is_emoji_cancel_tag(c: char) -> bool { c == '\u{E007F}' }
+
+pub fn is_zwj(c: char) -> bool { c == '\u{200D}' }
+
 #[cfg(test)]
 mod tests {
     use linebreak_property;
