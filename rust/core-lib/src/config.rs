@@ -41,7 +41,10 @@ fn load_base_config() -> Table {
             let win_toml: &str = include_str!("../assets/windows.toml");
             return Some(load(win_toml))
         }
-        None
+        #[cfg(not(target_os = "windows"))]
+        {
+            None
+        }
     }
 
     let base_toml: &str = include_str!("../assets/defaults.toml");
