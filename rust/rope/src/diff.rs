@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use compare::RopeScanner;
 use delta::{Delta, DeltaElement};
 use interval::Interval;
-use rope::{Rope, RopeInfo, RopeDelta};
+use rope::{LinesMetric, Rope, RopeInfo, RopeDelta};
 use tree::{Node, NodeInfo};
 
 use memchr::memchr;
@@ -66,56 +66,71 @@ impl Diff<RopeInfo> for LineHashDiff {
             return builder.to_delta(base, target);
         }
 
-        //TODO: because of how `lines_raw` returns Cows, we can't easily build
-        //the lookup table without allocating. The eventual solution would be to have
-        //a custom iter on the rope that returns suitable chunks.
+        // TODO: because of how `lines_raw` returns Cows, we can't easily build
+        // the lookup table without allocating. The eventual solution would be
+        // to have a custom iter on the rope that returns suitable chunks.
         let base_string = String::from(base);
         let line_hashes = make_line_hashes(&base_string, MIN_SIZE);
 
-        let mut offset = start_offset;
+        let line_count = target.measure::<LinesMetric>() + 1;
+        let mut matches = Vec::with_capacity(line_count);
 
-        // When we find a matching region, we extend it forwards and backwards.
-        // we keep track of how far forward we extend it each time, to avoid
-        // having a subsequent scan extend backwards over the same region.
-        let mut prev_targ_end = start_offset;
-        let mut prev_base_end = 0;
+        let mut targ_line_offset = 0;
+        let mut prev_base = 0;
 
+        let mut needs_subseq = false;
         for line in target.lines_raw(start_offset..target_end) {
             let non_ws = non_ws_offset(&line);
-            if offset + non_ws < prev_targ_end {
-                // no-op, but we don't break because we still want to bump offset
-            } else if line.len() - non_ws >= MIN_SIZE {
+            if line.len() - non_ws >= MIN_SIZE {
                 if let Some(base_off) = line_hashes.get(&line[non_ws..]) {
-                    let targ_off = offset + non_ws;
-                    let (left_dist, mut right_dist) = fast_expand_match(base, target,
-                                                                        *base_off,
-                                                                        targ_off,
-                                                                        prev_targ_end);
-                    if targ_off + right_dist > target_end {
-                        // don't let last match expand past target_end
-                        right_dist = target_end - targ_off;
+                    let targ_off = targ_line_offset + non_ws;
+                    matches.push((start_offset + targ_off, *base_off));
+                    if *base_off < prev_base {
+                        needs_subseq = true;
                     }
-                    let targ_start = targ_off - left_dist;
-                    let base_start = base_off - left_dist;
-                    let len = left_dist + right_dist;
-
-                    // other parts of the code (Delta::factor) require that delta ops
-                    // be in non-decreasing order, so we only actually copy a region
-                    // when this is true. This algorithm was initially designed without
-                    // this constraint; a better design would prioritize early matches,
-                    // and more efficiently avoid searching in disallowed regions.
-                    if base_start >= prev_base_end {
-                        builder.copy(base_start, targ_start, len);
-                        prev_targ_end = targ_start + len;
-                        prev_base_end = base_start + len;
-                    }
+                    prev_base = *base_off;
                 }
             }
-            offset += line.len();
+            targ_line_offset += line.len();
+        }
+
+        // we now have an ordered list of matches and their positions.
+        // to ensure that our delta only copies non-decreasing base regions,
+        // we take the longest increasing subsequence.
+        // TODO: a possible optimization here would be to expand matches
+        // to adjacent lines first? this would be at best a small win though..
+
+        let longest_subseq = if needs_subseq {
+            longest_increasing_region_set(&matches)
+        } else {
+            matches
+        };
+
+        // for each matching region, we extend it forwards and backwards.
+        // we keep track of how far forward we extend it each time, to avoid
+        // having a subsequent scan extend backwards over the same region.
+        let mut prev_end = start_offset;
+
+        for (targ_off, base_off) in longest_subseq {
+            if targ_off <= prev_end { continue; }
+            let (left_dist, mut right_dist) = expand_match(base, target, base_off,
+                                                           targ_off, prev_end);
+            if targ_off + right_dist > target_end {
+                // don't let last match expand past target_end
+                right_dist = target_end - targ_off;
+            }
+
+            let targ_start = targ_off - left_dist;
+            let base_start = base_off - left_dist;
+            let len = left_dist + right_dist;
+            prev_end = targ_start + len;
+
+            builder.copy(base_start, targ_start, len);
         }
 
         if diff_end > 0 {
-            builder.copy(base.len() - diff_end, target.len() - diff_end, diff_end);
+            builder.copy(base.len() - diff_end,
+            target.len() - diff_end, diff_end);
         }
 
         builder.to_delta(base, target)
@@ -128,7 +143,7 @@ impl Diff<RopeInfo> for LineHashDiff {
 /// The return value is a pair of offsets, each of which represents an absolute
 /// distance. That is to say, the position of the start and end boundaries
 /// relative to the input offset.
-fn fast_expand_match(base: &Rope, target: &Rope, base_off: usize, targ_off: usize,
+fn expand_match(base: &Rope, target: &Rope, base_off: usize, targ_off: usize,
                 prev_match_targ_end: usize) -> (usize, usize) {
 
     let mut scanner = RopeScanner::new(base, target);
@@ -137,6 +152,48 @@ fn fast_expand_match(base: &Rope, target: &Rope, base_off: usize, targ_off: usiz
     debug_assert!(start <= max_left, "{} <= {}", start, max_left);
     let end = scanner.find_ne_char_right(base_off, targ_off, None);
     (start.min(max_left), end)
+}
+
+/// Finds the longest increasing subset of copyable regions. This is essentially
+/// the longest increasing subsequence problem. This implementation is adapted
+/// from https://codereview.stackexchange.com/questions/187337/longest-increasing-subsequence-algorithm
+fn longest_increasing_region_set(items: &[(usize, usize)]) -> Vec<(usize, usize)> {
+    let mut result = vec![0];
+    let mut prev_chain = vec![0; items.len()];
+
+    for i in 1..items.len() {
+        // If the next item is greater than the last item of the current longest
+        // subsequence, push its index at the end of the result and continue.
+        let last_idx = *result.last().unwrap();
+        if items[last_idx].1 < items[i].1 {
+            prev_chain[i] = last_idx;
+            result.push(i);
+            continue;
+        }
+
+        let next_idx = match result.binary_search_by(
+            |&j| items[j].1.cmp(&items[i].1)) {
+                Ok(_) => continue, // we ignore duplicates
+                Err(idx) => idx,
+        };
+
+        if &items[i].1 < &items[result[next_idx]].1 {
+            if next_idx > 0 {
+                prev_chain[i] = result[next_idx - 1];
+            }
+            result[next_idx] = i;
+        }
+    }
+
+    // walk backwards from the last item in result to build the final sequence
+    let mut u = result.len();
+    let mut v = *result.last().unwrap();
+    while u != 0 {
+        u -= 1;
+        result[u] = v;
+        v = prev_chain[v];
+    }
+    result.iter().map(|i| items[*i]).collect()
 }
 
 #[inline]
