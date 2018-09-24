@@ -208,7 +208,7 @@ fn is_in_asc_list<T: std::cmp::PartialOrd>(c: T, list: &[T], start: usize, end: 
 }
 
 pub fn is_variation_selector(c: char) -> bool {
-    c >= '\u{FE00}' && c <= '\u{FE0F}'
+    (c >= '\u{FE00}' && c <= '\u{FE0F}') || (c >= '\u{E0100}' && c <= '\u{E01EF}')
 }
 
 pub fn is_regional_indicator_symbol(c: char) -> bool {
@@ -221,12 +221,12 @@ pub fn is_emoji_modifier(c: char) -> bool {
 
 pub fn is_emoji_combining_enclosing_keycap(c: char) -> bool { c == '\u{20E3}' }
 
-pub fn is_emoji(c: char) -> bool { is_in_asc_list(c, &EMOJI_TABLE, 0, EMOJI_TABLE.len()) }
+pub fn is_emoji(c: char) -> bool { is_in_asc_list(c, &EMOJI_TABLE, 0, EMOJI_TABLE.len() - 1) }
 
 pub fn is_keycap_base(c: char) -> bool { ('0' <= c && c <= '9') || c == '#' || c == '*' }
 
 pub fn is_emoji_modifier_base(c: char) -> bool {
-    is_in_asc_list(c, &EMOJI_MODIFIER_BASE_TABLE, 0, EMOJI_MODIFIER_BASE_TABLE.len())
+    is_in_asc_list(c, &EMOJI_MODIFIER_BASE_TABLE, 0, EMOJI_MODIFIER_BASE_TABLE.len() - 1)
 }
 
 pub fn is_tag_spec_char(c: char) -> bool { '\u{E0020}' <= c && c <= '\u{E007E}' }
