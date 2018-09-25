@@ -392,7 +392,7 @@ impl Editor {
 
                         match state {
                             State::Start => {
-                                delete_code_point_count = 1; // TODO: Better Char Count // TODO: unwrap
+                                delete_code_point_count = 1;
                                 if code_point == '\n' {
                                     state = State::LF;
                                 } else if is_variation_selector(code_point) {
