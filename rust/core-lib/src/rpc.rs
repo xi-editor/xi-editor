@@ -117,7 +117,7 @@ pub enum CoreNotification {
     /// use xi_core::rpc::*;
     /// # fn main() {
     /// let edit = EditCommand {
-    ///     view_id: "view-id-1".into(),
+    ///     view_id: 1.into(),
     ///     cmd: EditNotification::Insert { chars: "hello!".into() },
     /// };
     /// let rpc = CoreNotification::Edit(edit);
@@ -157,7 +157,7 @@ pub enum CoreNotification {
     /// # fn main() {
     /// let rpc = CoreNotification::Plugin(
     ///     PluginNotification::Start {
-    ///         view_id: "view-id-1".into(),
+    ///         view_id: 1.into(),
     ///         plugin_name: "syntect".into(),
     ///     });
     ///

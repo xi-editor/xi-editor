@@ -27,7 +27,7 @@ use std::io;
 use std::mem;
 use std::path::{Path, PathBuf};
 
-use serde::de::{Deserialize, Deserializer};
+use serde::de::{self, Deserialize, Deserializer, Unexpected};
 use serde::ser::{Serialize, Serializer};
 use serde_json::Value;
 
@@ -849,21 +849,6 @@ impl Counter {
     }
 }
 
-impl<'a> From<&'a str> for ViewId {
-    fn from(s: &'a str) -> Self {
-        let ord = s.trim_left_matches("view-id-");
-        let ident = usize::from_str_radix(ord, 10)
-            .expect("ViewId parsing should never fail");
-        ViewId(ident)
-    }
-}
-
-impl From<String> for ViewId {
-    fn from(s: String) -> Self {
-        s.as_str().into()
-    }
-}
-
 // these two only exist so that we can use ViewIds as idle tokens
 impl From<usize> for ViewId {
     fn from(src: usize) -> ViewId {
@@ -897,7 +882,11 @@ impl<'de> Deserialize<'de> for ViewId
         where D: Deserializer<'de>
     {
         let s = String::deserialize(deserializer)?;
-        Ok(s.into())
+        let ord = s.trim_left_matches("view-id-");
+        match usize::from_str_radix(ord, 10) {
+            Ok(id) => Ok(ViewId(id)),
+            Err(_) => Err(de::Error::invalid_value(Unexpected::Str(&s), &"view id")),
+        }
     }
 }
 
@@ -910,5 +899,21 @@ impl fmt::Display for BufferId {
 impl BufferId {
     pub fn new(val: usize) -> Self {
         BufferId(val)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde::Deserialize;
+
+    use super::ViewId;
+
+    #[test]
+    fn test_deserialize_view_id() {
+        let de = json!("view-id-1");
+        assert_eq!(ViewId::deserialize(&de).unwrap(), ViewId(1));
+
+        let de = json!("not-a-view-id");
+        assert!(ViewId::deserialize(&de).unwrap_err().is_data());
     }
 }
