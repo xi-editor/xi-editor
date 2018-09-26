@@ -101,7 +101,7 @@ impl<N: NodeInfo> Delta<N> {
                     end < self.base_len
                 } else if let DeltaElement::Copy(b1, e1) = self.els[1] {
                     // Deletion in middle
-                    end < b1 && e1 == self.base_len
+                   self.els.len() == 2 && end < b1 && e1 == self.base_len
                 } else {
                     false
                 }
@@ -693,7 +693,7 @@ impl<'a, N: NodeInfo> Iterator for DeletionsIter<'a, N> {
 mod tests {
     use serde_json;
     use rope::{Rope, RopeInfo};
-    use delta::{Delta, Builder, DeltaRegion};
+    use delta::{Delta, Builder, DeltaRegion, DeltaElement};
     use interval::Interval;
     use test_helpers::find_deletions;
 
@@ -830,6 +830,17 @@ mod tests {
         let builder = Builder::<RopeInfo>::new(10);
         let d = builder.build();
         assert_eq!(false, d.is_simple_delete());
+
+        let delta = Delta {
+            els: vec![
+                DeltaElement::Copy(0, 10),
+                DeltaElement::Copy(12, 20),
+                DeltaElement::Insert(Rope::from("hi")),
+            ],
+            base_len: 20,
+        };
+
+        assert!(!delta.is_simple_delete());
     }
 
     #[test]
