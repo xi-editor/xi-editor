@@ -36,13 +36,15 @@ fn load_base_config() -> Table {
     }
 
     fn platform_overrides() -> Option<Table> {
-        #[cfg(target_os = "windows")]
-        {
-            let win_toml: &str = include_str!("../assets/windows.toml");
-            return Some(load(win_toml))
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
+        if cfg!(test) {
+            // Exit early if we are in tests and never have platform overrides.
+            // This makes sure we have a stable test environment.
+            None
+        } else if cfg!(windows) {
+            let toml = include_str!("../assets/windows.toml");
+            Some(load(toml))
+        } else {
+            // All other platorms
             None
         }
     }
