@@ -756,6 +756,15 @@ impl<'a> From<&'a Rope> for String {
     }
 }
 
+impl fmt::Display for Rope {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for s in self.iter_chunks(..) {
+            write!(f, "{}", s)?;
+        }
+        Ok(())
+    }
+}
+
 impl fmt::Debug for Rope {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if f.alternate() {
