@@ -1,4 +1,4 @@
-// Copyright 2016 The xi-editor Authors.
+// Copyright 2016 Google Inc. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,36 +14,36 @@
 
 //! Trees for text.
 
-#![cfg_attr(feature = "cargo-clippy", allow(
-    collapsible_if,
-    len_without_is_empty,
-    many_single_char_names,
-    needless_range_loop,
-    new_without_default_derive,
-    should_implement_trait,
-    wrong_self_convention,
-))]
+#![cfg_attr(
+    feature = "cargo-clippy",
+    allow(
+        collapsible_if, len_without_is_empty, many_single_char_names, needless_range_loop, new_without_default_derive,
+        should_implement_trait, wrong_self_convention
+    )
+)]
 
 extern crate bytecount;
 extern crate memchr;
+extern crate regex;
 extern crate serde;
 extern crate unicode_segmentation;
-extern crate regex;
-#[macro_use] extern crate serde_derive;
-#[cfg(test)] extern crate serde_test;
-#[cfg(test)] extern crate serde_json;
+#[macro_use]
+extern crate serde_derive;
+#[cfg(test)]
+extern crate serde_json;
+#[cfg(test)]
+extern crate serde_test;
 
-pub mod tree;
 pub mod breaks;
-pub mod interval;
 pub mod delta;
-pub mod rope;
-pub mod spans;
-pub mod multiset;
 pub mod engine;
 pub mod find;
-pub mod compare;
+pub mod interval;
+pub mod multiset;
+pub mod rope;
+pub mod spans;
 #[cfg(test)]
 mod test_helpers;
+pub mod tree;
 
 pub use rope::Rope;

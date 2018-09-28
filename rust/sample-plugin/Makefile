@@ -14,13 +14,12 @@ XDG_CONFIG_HOME ?= $(HOME)/.config
 XI_CONFIG_DIR ?= $(XDG_CONFIG_HOME)/xi
 XI_PLUGIN_DIR ?= $(XI_CONFIG_DIR)/plugins
 
-out/$(PLUGIN_NAME): $(PLUGIN_BIN)
+out/$(PLUGIN_NAME): target/release/$(PLUGIN_BIN)
 	mkdir -p out/$(PLUGIN_NAME)/bin
-	cp ../target/release/$(PLUGIN_BIN) out/$(PLUGIN_NAME)/bin
+	cp target/release/$(PLUGIN_BIN) out/$(PLUGIN_NAME)/bin
 	cp manifest.toml out/$(PLUGIN_NAME)/manifest.toml
 
-.PHONY: $(PLUGIN_BIN)
-$(PLUGIN_BIN):
+target/release/$(PLUGIN_BIN): src/*.rs Cargo.toml Cargo.lock
 	cargo build --release
 
 install: manifest.toml out/$(PLUGIN_NAME)

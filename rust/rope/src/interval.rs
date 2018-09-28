@@ -1,4 +1,4 @@
-// Copyright 2016 The xi-editor Authors.
+// Copyright 2016 Google Inc. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
 
 //! Intervals that can be open or closed at the ends.
 
-use std::cmp::{min, max};
+use std::cmp::{max, min};
 use std::fmt;
 
 // Invariant: end >= start
@@ -23,8 +23,8 @@ use std::fmt;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Interval {
-    start: u64,  // 2 * the actual value + 1 if open
-    end: u64,    // 2 * the actual value + 1 if closed
+    start: u64, // 2 * the actual value + 1 if open
+    end: u64,   // 2 * the actual value + 1 if closed
 }
 
 impl fmt::Display for Interval {
@@ -51,7 +51,7 @@ impl fmt::Debug for Interval {
 }
 
 impl Interval {
-    pub fn new(start: usize, start_closed : bool, end: usize, end_closed: bool) -> Interval {
+    pub fn new(start: usize, start_closed: bool, end: usize, end_closed: bool) -> Interval {
         let start = (start as u64) * 2 + if start_closed { 0 } else { 1 };
         let end = (end as u64) * 2 + if end_closed { 1 } else { 0 };
         Interval {
@@ -134,14 +134,15 @@ impl Interval {
     // smallest interval that encloses both inputs; if the inputs are
     // disjoint, then it fills in the hole.
     pub fn union(&self, other: Interval) -> Interval {
-        if self.is_empty() { return other; }
-        if other.is_empty() { return *self; }
+        if self.is_empty() {
+            return other;
+        }
+        if other.is_empty() {
+            return *self;
+        }
         let start = min(self.start, other.start);
         let end = max(self.end, other.end);
-        Interval {
-            start,
-            end,
-        }
+        Interval { start, end }
     }
 
     // the first half of self - other
@@ -305,26 +306,31 @@ mod tests {
 
     #[test]
     fn intersect() {
-        assert_eq!(Interval::new_closed_open(2, 3),
-            Interval::new_open_open(1, 3).intersect(
-                Interval::new_closed_closed(2, 4)));
-        assert!(Interval::new_closed_open(1, 2).intersect(
-            Interval::new_closed_closed(2, 43))
-                .is_empty());
+        assert_eq!(
+            Interval::new_closed_open(2, 3),
+            Interval::new_open_open(1, 3).intersect(Interval::new_closed_closed(2, 4))
+        );
+        assert!(
+            Interval::new_closed_open(1, 2)
+                .intersect(Interval::new_closed_closed(2, 43))
+                .is_empty()
+        );
     }
 
     #[test]
     fn prefix() {
-        assert_eq!(Interval::new_open_open(1, 2),
-            Interval::new_open_open(1, 4).prefix(
-                Interval::new_closed_closed(2, 3)));
+        assert_eq!(
+            Interval::new_open_open(1, 2),
+            Interval::new_open_open(1, 4).prefix(Interval::new_closed_closed(2, 3))
+        );
     }
 
     #[test]
     fn suffix() {
-        assert_eq!(Interval::new_open_open(3, 4),
-            Interval::new_open_open(1, 4).suffix(
-                Interval::new_closed_closed(2, 3)));
+        assert_eq!(
+            Interval::new_open_open(3, 4),
+            Interval::new_open_open(1, 4).suffix(Interval::new_closed_closed(2, 3))
+        );
     }
 
     #[test]

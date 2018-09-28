@@ -14,13 +14,12 @@ XDG_CONFIG_HOME ?= $(HOME)/.config
 XI_CONFIG_DIR ?= $(XDG_CONFIG_HOME)/xi
 XI_PLUGIN_DIR ?= $(XI_CONFIG_DIR)/plugins
 
-.PHONY: $(PLUGIN_BIN)
-$(PLUGIN_BIN):
+target/release/$(PLUGIN_BIN):
 	cargo build  --bin xi-lsp-plugin --release
 
-install: manifest.toml $(PLUGIN_BIN)
+install: manifest.toml target/release/$(PLUGIN_BIN)
 	install -d $(XI_PLUGIN_DIR)/$(PLUGIN_NAME)/bin
 	install manifest.toml $(XI_PLUGIN_DIR)/$(PLUGIN_NAME)
-	install ../target/release/$(PLUGIN_BIN) $(XI_PLUGIN_DIR)/$(PLUGIN_NAME)/bin
+	install target/release/$(PLUGIN_BIN) $(XI_PLUGIN_DIR)/$(PLUGIN_NAME)/bin
 
 .PHONY: install

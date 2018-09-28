@@ -1,4 +1,4 @@
-// Copyright 2017 The xi-editor Authors.
+// Copyright 2017 Google Inc. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -21,18 +21,17 @@ use xi_plugin_lib::caching_plugin::{self, PluginCtx, SpansBuilder};
 
 use std::env;
 
-mod rust;
 mod colorize;
-mod statestack;
 mod peg;
+mod rust;
+mod statestack;
 
+use colorize::{Colorize, Style, StyleNewState};
 use rust::RustColorize;
 use statestack::State;
-use colorize::{Style, StyleNewState, Colorize};
 
 fn add_style_span(builder: &mut SpansBuilder, style: &Style, start: usize, end: usize) {
-    builder.add_style_span(start, end,
-        style.fg_color, style.font);
+    builder.add_style_span(start, end, style.fg_color, style.font);
 }
 
 struct PluginState {

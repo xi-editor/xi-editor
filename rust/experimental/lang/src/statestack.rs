@@ -1,4 +1,4 @@
-// Copyright 2017 The xi-editor Authors.
+// Copyright 2017 Google Inc. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::hash::Hash;
 use std::collections::HashMap;
+use std::hash::Hash;
 
 /// An entire state stack is represented as a single integer.
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -78,11 +78,14 @@ impl<T: Clone + Hash + Eq, N: NewState<T>> Context<T, N> {
         let mut new = false;
         let result = {
             let entries = &mut self.entries;
-            self.next.entry((s, el.clone())).or_insert_with(|| {
-                new = true;
-                entries.push(Entry { tos: el, prev: s });
-                State(entries.len())
-            }).clone()
+            self.next
+                .entry((s, el.clone()))
+                .or_insert_with(|| {
+                    new = true;
+                    entries.push(Entry { tos: el, prev: s });
+                    State(entries.len())
+                })
+                .clone()
         };
         if new {
             let contents = self.to_vec(result);

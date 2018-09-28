@@ -1,4 +1,4 @@
-// Copyright 2017 The xi-editor Authors.
+// Copyright 2017 Google Inc. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -25,9 +25,7 @@ pub struct WordCursor<'a> {
 impl<'a> WordCursor<'a> {
     pub fn new(text: &'a Rope, pos: usize) -> WordCursor<'a> {
         let inner = Cursor::new(text, pos);
-        WordCursor {
-            inner,
-        }
+        WordCursor { inner }
     }
 
     /// Get previous boundary, and set the cursor at the boundary found.
@@ -137,8 +135,8 @@ impl<'a> WordCursor<'a> {
 #[derive(PartialEq, Eq)]
 enum WordBoundary {
     Interior,
-    Start,  // a boundary indicating the end of a word
-    End,  // a boundary indicating the start of a word
+    Start, // a boundary indicating the end of a word
+    End,   // a boundary indicating the start of a word
     Both,
 }
 
@@ -157,8 +155,8 @@ impl WordBoundary {
 }
 
 fn classify_boundary(prev: WordProperty, next: WordProperty) -> WordBoundary {
-    use self::WordProperty::*;
     use self::WordBoundary::*;
+    use self::WordProperty::*;
     match (prev, next) {
         (Lf, _) => Both,
         (_, Lf) => Both,
@@ -173,8 +171,8 @@ fn classify_boundary(prev: WordProperty, next: WordProperty) -> WordBoundary {
 }
 
 fn classify_boundary_initial(prev: WordProperty, next: WordProperty) -> WordBoundary {
-    use self::WordProperty::*;
     use self::WordBoundary::*;
+    use self::WordProperty::*;
     match (prev, next) {
         (Lf, Other) => Start,
         (Other, Lf) => End,
@@ -193,7 +191,7 @@ enum WordProperty {
     Lf,
     Space,
     Punctuation,
-    Other,  // includes letters and all of non-ascii unicode
+    Other, // includes letters and all of non-ascii unicode
 }
 
 fn get_word_property(codepoint: char) -> WordProperty {

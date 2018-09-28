@@ -1,4 +1,4 @@
-// Copyright 2016 The xi-editor Authors.
+// Copyright 2016 Google Inc. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -225,7 +225,8 @@ impl<N: NodeInfo> Node<N> {
     }
 
     /// Returns the first child with a positive measure, starting from the `j`th.
-    /// Also, returns the offset we have skipped; note that if it returns `None`in the first component, we skip all the children.
+    /// Also, returns the offset we have skipped; note that if it returns `None`in the first
+    /// component, we skip all the children.
     fn next_positive_measure_child<M: Metric<N>>(&self, j: usize) -> (Option<usize>, usize) {
         let children = self.get_children();
         let mut offset = 0;
@@ -398,9 +399,7 @@ impl<N: NodeInfo> Node<N> {
                     }
                     let child_iv = child.interval();
                     // easier just to use signed ints?
-                    let rec_iv = iv
-                        .intersect(child_iv.translate(offset))
-                        .translate_neg(offset);
+                    let rec_iv = iv.intersect(child_iv.translate(offset)).translate_neg(offset);
                     child.push_subseq(b, rec_iv);
                     offset += child.len();
                 }
@@ -466,49 +465,12 @@ impl<N: NodeInfo> TreeBuilder<N> {
         TreeBuilder(None)
     }
 
-    /// Push a node on the accumulating tree by concatenating it.
-    ///
-    /// This method is O(log n), where `n` is the amount of nodes already in the accumulating tree.
-    /// The worst case happens when all nodes having exactly MAX_CHILDREN children
-    /// and the node being pushed is a leaf or equivalently has height 1.
-    /// Then `log n` nodes have to be created before the leaf can be added, to keep all leaves on the same height.
+    // TODO: more sophisticated implementation, so pushing a sequence
+    // is amortized O(n), rather than O(n log n) as now.
     pub fn push(&mut self, n: Node<N>) {
         match self.0.take() {
             None => self.0 = Some(n),
             Some(buf) => self.0 = Some(Node::concat(buf, n)),
-        }
-    }
-
-    /// Add leaves to accumulating tree.
-    ///
-    /// Creates a stack of node lists, where all the nodes in a list have uniform node height.
-    /// The stack is height sorted in ascending order.
-    /// The length of any list in the stack is at most MAX_CHILDREN -1.
-    ///
-    /// Example of this kind of stack if MAX_CHILDREN = 3:
-    /// let n_i be some node of height i. Let the front of the array represent the top of the stack.
-    /// [[n_1, n_1], [n_2], [n_3, n_3]]
-    ///
-    /// The nodes in the stack are pushed on the accumulating tree one by one in the end.
-    pub fn push_leaves(&mut self, leaves: Vec<N::L>) {
-        let mut stack: Vec<Vec<Node<N>>> = Vec::new();
-        for leaf in leaves {
-            let mut new = Node::from_leaf(leaf);
-            loop {
-                if stack.last().map_or(true, |r| r[0].height() != new.height()) {
-                    stack.push(Vec::new());
-                }
-                stack.last_mut().unwrap().push(new);
-                if stack.last().unwrap().len() < MAX_CHILDREN {
-                    break;
-                }
-                new = Node::from_nodes(stack.pop().unwrap())
-            }
-        }
-        for v in stack {
-            for r in v {
-                self.push(r)
-            }
         }
     }
 
@@ -565,8 +527,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
     pub fn set(&mut self, position: usize) {
         self.position = position;
         if let Some(l) = self.leaf {
-            if self.position >= self.offset_of_leaf && self.position < self.offset_of_leaf + l.len()
-            {
+            if self.position >= self.offset_of_leaf && self.position < self.offset_of_leaf + l.len() {
                 return;
             }
         }
@@ -702,9 +663,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
         if let Some(l) = self.leaf {
             let offset_in_leaf = self.position - self.offset_of_leaf;
             if let Some(offset_in_leaf) = M::next(l, offset_in_leaf) {
-                if offset_in_leaf == l.len()
-                    && self.offset_of_leaf + offset_in_leaf != self.root.len()
-                {
+                if offset_in_leaf == l.len() && self.offset_of_leaf + offset_in_leaf != self.root.len() {
                     let _ = self.next_leaf();
                 } else {
                     self.position = self.offset_of_leaf + offset_in_leaf;
@@ -920,19 +879,6 @@ mod test {
     }
 
     #[test]
-    fn eq_rope_with_stack() {
-        let n = 2_000;
-        let s = build_triangle(n);
-        let mut builder_default = TreeBuilder::new();
-        let mut builder_stacked = TreeBuilder::new();
-        builder_default.push_str(&s);
-        builder_stacked.push_str_stacked(&s);
-        let tree_default = builder_default.build();
-        let tree_stacked = builder_stacked.build();
-        assert_eq!(tree_default, tree_stacked);
-    }
-
-    #[test]
     fn cursor_next_triangle() {
         let n = 2_000;
         let text = Rope::from(build_triangle(n));
@@ -940,9 +886,7 @@ mod test {
         let mut cursor = Cursor::new(&text, 0);
         let mut prev_offset = cursor.pos();
         for i in 1..(n + 1) as usize {
-            let offset = cursor
-                .next::<LinesMetric>()
-                .expect("arrived at the end too soon");
+            let offset = cursor.next::<LinesMetric>().expect("arrived at the end too soon");
             assert_eq!(offset - prev_offset, i);
             prev_offset = offset;
         }
@@ -973,10 +917,7 @@ mod test {
             let mut c = Cursor::new(&r, i);
             let it = c.next::<LinesMetric>();
             let pos = c.pos();
-            assert!(
-                s.as_bytes()[i..pos - 1].iter().all(|c| *c != b'\n'),
-                "missed linebreak"
-            );
+            assert!(s.as_bytes()[i..pos - 1].iter().all(|c| *c != b'\n'), "missed linebreak");
             if pos < s.len() {
                 assert!(it.is_some(), "must be Some(_)");
                 assert!(s.as_bytes()[pos - 1] == b'\n', "not a linebreak");
@@ -1000,10 +941,7 @@ mod test {
             let mut c = Cursor::new(&r, i);
             let it = c.prev::<LinesMetric>();
             let pos = c.pos();
-            assert!(
-                s.as_bytes()[pos..i].iter().all(|c| *c != b'\n'),
-                "missed linebreak"
-            );
+            assert!(s.as_bytes()[pos..i].iter().all(|c| *c != b'\n'), "missed linebreak");
 
             if i == 0 && s.as_bytes()[i] == b'\n' {
                 assert_eq!(pos, 0);

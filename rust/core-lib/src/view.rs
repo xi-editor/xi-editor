@@ -1,4 +1,4 @@
-// Copyright 2016 The xi-editor Authors.
+// Copyright 2016 Google Inc. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,35 +12,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::cmp::{min,max};
 use std::cell::RefCell;
+use std::cmp::{max, min};
 use std::ops::Range;
 
 use serde_json::Value;
 
-use xi_rope::rope::{Rope, LinesMetric, RopeInfo};
-use xi_rope::delta::Delta;
-use xi_rope::tree::Cursor;
-use xi_rope::breaks::{Breaks, BreaksInfo, BreaksMetric, BreaksBaseMetric};
-use xi_rope::interval::Interval;
-use xi_rope::spans::Spans;
-use xi_trace::trace_block;
 use client::Client;
 use edit_types::ViewEvent;
+use find::Find;
+use internal::find::FindStatus;
 use line_cache_shadow::{self, LineCacheShadow, RenderPlan, RenderTactic};
-use movement::{Movement, region_movement, selection_movement};
+use linewrap;
+use movement::{region_movement, selection_movement, Movement};
 use rpc::{GestureType, MouseAction, SelectionModifier};
+use selection::{Affinity, SelRegion, Selection};
 use styles::{Style, ThemeStyleMap};
-use selection::{Affinity, Selection, SelRegion};
-use tabs::{ViewId, BufferId};
+use tabs::{BufferId, ViewId};
 use width_cache::WidthCache;
 use word_boundaries::WordCursor;
-use find::Find;
-use linewrap;
-use internal::find::FindStatus;
+use xi_rope::breaks::{Breaks, BreaksBaseMetric, BreaksInfo, BreaksMetric};
+use xi_rope::delta::Delta;
+use xi_rope::interval::Interval;
+use xi_rope::rope::{LinesMetric, Rope, RopeInfo};
+use xi_rope::spans::Spans;
+use xi_rope::tree::Cursor;
+use xi_trace::trace_block;
 
 type StyleMap = RefCell<ThemeStyleMap>;
-
 
 /// A flag used to indicate when legacy actions should modify selections
 const FLAG_SELECT: u64 = 2;
@@ -84,12 +83,6 @@ pub struct View {
     /// Tracks whether find highlights should be rendered.
     /// Highlights are only rendered when search dialog is open.
     highlight_find: bool,
-
-    /// The state for replacing matches for this view.
-    replace: Option<Replace>,
-
-    /// Tracks whether the replacement string or replace parameters changed.
-    replace_changed: bool,
 }
 
 /// Indicates what changed in the find state.
@@ -102,15 +95,7 @@ enum FindStatusChange {
     All,
 
     /// Only number of matches changed
-    Matches
-}
-
-/// Contains replacement string and replace options.
-#[derive(Debug, Default, PartialEq, Serialize, Deserialize, Clone)]
-pub struct Replace {
-    /// Replacement string.
-    pub chars: String,
-    pub preserve_case: bool
+    Matches,
 }
 
 /// A size, in pixel units (not display pixels).
@@ -134,16 +119,6 @@ enum WrapWidth {
     Width(f64),
 }
 
-/// The smallest unit of text that a gesture can select
-pub enum SelectionGranularity {
-    /// Selects any point or character range
-    Point,
-    /// Selects one word at a time
-    Word,
-    /// Selects one line at a time
-    Line
-}
-
 /// State required to resolve a drag gesture into a selection.
 struct DragState {
     /// All the selection regions other than the one being dragged.
@@ -158,8 +133,6 @@ struct DragState {
 
     /// End of the region selected when drag was started.
     max: usize,
-
-    granularity: SelectionGranularity,
 }
 
 impl View {
@@ -180,8 +153,6 @@ impl View {
             find: Vec::new(),
             find_changed: FindStatusChange::None,
             highlight_find: false,
-            replace: None,
-            replace_changed: false,
         }
     }
 
@@ -191,10 +162,6 @@ impl View {
 
     pub(crate) fn get_view_id(&self) -> ViewId {
         self.view_id
-    }
-
-    pub(crate) fn get_replace(&self) -> Option<Replace> {
-        self.replace.clone()
     }
 
     pub(crate) fn set_has_pending_render(&mut self, pending: bool) {
@@ -212,24 +179,53 @@ impl View {
             ModifySelection(movement) => self.do_move(text, movement, true),
             SelectAll => self.select_all(text),
             Scroll(range) => self.set_scroll(range.first, range.last),
-            AddSelectionAbove =>
-                self.add_selection_by_movement(text, Movement::Up),
-            AddSelectionBelow =>
-                self.add_selection_by_movement(text, Movement::Down),
-            Gesture { line, col, ty } =>
-                self.do_gesture(text, line, col, ty),
+            AddSelectionAbove => self.add_selection_by_movement(text, Movement::Up),
+            AddSelectionBelow => self.add_selection_by_movement(text, Movement::Down),
+            Gesture { line, col, ty } => self.do_gesture(text, line, col, ty),
             GotoLine { line } => self.goto_line(text, line),
-            Find { chars, case_sensitive, regex, whole_words } =>
-                self.do_find(text, chars, case_sensitive, regex, whole_words),
-            FindNext { wrap_around, allow_same, modify_selection } =>
-                self.do_find_next(text, false, wrap_around, allow_same, &modify_selection),
-            FindPrevious { wrap_around, allow_same, modify_selection } =>
-                self.do_find_next(text, true, wrap_around, allow_same, &modify_selection),
-            FindAll => self.do_find_all(text),
-            Click(MouseAction { line, column, flags, click_count }) => {
+            Find {
+                chars,
+                case_sensitive,
+                regex,
+                whole_words,
+            } => self.do_find(
+                text,
+                chars,
+                case_sensitive,
+                regex.unwrap_or(false),
+                whole_words.unwrap_or(false),
+            ),
+            FindNext {
+                wrap_around,
+                allow_same,
+                modify_selection,
+            } => self.find_next(
+                text,
+                false,
+                wrap_around.unwrap_or(false),
+                allow_same.unwrap_or(false),
+                &modify_selection.unwrap_or(SelectionModifier::Set),
+            ),
+            FindPrevious {
+                wrap_around,
+                allow_same,
+                modify_selection,
+            } => self.find_next(
+                text,
+                true,
+                wrap_around.unwrap_or(false),
+                allow_same.unwrap_or(false),
+                &modify_selection.unwrap_or(SelectionModifier::Set),
+            ),
+            Click(MouseAction {
+                line,
+                column,
+                flags,
+                click_count,
+            }) => {
                 // Deprecated (kept for client compatibility):
                 // should be removed in favor of do_gesture
-                warn!("Usage of click is deprecated; use do_gesture");
+                eprintln!("Usage of click is deprecated; use do_gesture");
                 if (flags & FLAG_SELECT) != 0 {
                     self.do_gesture(text, line, column, GestureType::RangeSelect)
                 } else if click_count == Some(2) {
@@ -240,20 +236,14 @@ impl View {
                     self.do_gesture(text, line, column, GestureType::PointSelect)
                 }
             }
-            Drag(MouseAction { line, column, .. }) =>
-                self.do_drag(text, line, column, Affinity::default()),
+            Drag(MouseAction { line, column, .. }) => self.do_drag(text, line, column, Affinity::default()),
             Cancel => self.do_cancel(text),
             HighlightFind { visible } => {
                 self.highlight_find = visible;
                 self.find_changed = FindStatusChange::All;
                 self.set_dirty(text);
-            },
-            SelectionForFind { case_sensitive } =>
-                self.do_selection_for_find(text, case_sensitive),
-            Replace { chars, preserve_case } =>
-                self.do_set_replace(chars, preserve_case),
-            SelectionForReplace => self.do_selection_for_replace(text),
-            SelectionIntoLines => self.do_split_selection_into_lines(text),
+            }
+            SelectionForFind { case_sensitive } => self.selection_for_find(text, case_sensitive.unwrap_or(false)),
         }
     }
 
@@ -264,18 +254,14 @@ impl View {
         match ty {
             GestureType::PointSelect => {
                 self.set_selection(text, SelRegion::caret(offset));
-                self.start_drag(offset, offset, offset, SelectionGranularity::Point, false);
-            },
+                self.start_drag(offset, offset, offset);
+            }
             GestureType::RangeSelect => self.select_range(text, offset),
             GestureType::ToggleSel => self.toggle_sel(text, offset),
-            GestureType::LineSelect =>
-                self.select_line(text, offset, line, false),
-            GestureType::WordSelect =>
-                self.select_word(text, offset, false),
-            GestureType::MultiLineSelect =>
-                self.select_line(text, offset, line, true),
-            GestureType::MultiWordSelect =>
-                self.select_word(text, offset, true)
+            GestureType::LineSelect => self.select_line(text, offset, line, false),
+            GestureType::WordSelect => self.select_word(text, offset, false),
+            GestureType::MultiLineSelect => self.select_line(text, offset, line, true),
+            GestureType::MultiWordSelect => self.select_word(text, offset, true),
         }
     }
 
@@ -341,10 +327,15 @@ impl View {
                 return;
             }
         }
+        self.drag_state = Some(DragState {
+            base_sel: selection.clone(),
+            offset,
+            min: offset,
+            max: offset,
+        });
         let region = SelRegion::caret(offset);
         selection.add_region(region);
         self.set_selection_raw(text, selection);
-        self.start_drag(offset, offset, offset, SelectionGranularity::Point, true)
     }
 
     /// Move the selection by the given movement. Return value is the offset of
@@ -354,8 +345,7 @@ impl View {
     /// of individual region movements become carets.
     pub fn do_move(&mut self, text: &Rope, movement: Movement, modify: bool) {
         self.drag_state = None;
-        let new_sel = selection_movement(movement, &self.selection,
-                                         self, text, modify);
+        let new_sel = selection_movement(movement, &self.selection, self, text, modify);
         self.set_selection(text, new_sel);
     }
 
@@ -399,8 +389,7 @@ impl View {
         let mut sel = Selection::new();
         for &region in self.sel_regions() {
             sel.add_region(region);
-            let new_region = region_movement(movement, region, self,
-                                             &text, false);
+            let new_region = region_movement(movement, region, self, &text, false);
             sel.add_region(new_region);
         }
         self.set_selection(text, sel);
@@ -413,7 +402,8 @@ impl View {
         let first_line = self.line_of_offset(text, start);
         let (mut last_line, last_col) = self.offset_to_line_col(text, end);
         last_line += if last_col > 0 { 1 } else { 0 };
-        self.lc_shadow.partial_invalidate(first_line, last_line, line_cache_shadow::STYLES_VALID);
+        self.lc_shadow
+            .partial_invalidate(first_line, last_line, line_cache_shadow::STYLES_VALID);
     }
 
     /// Select entire buffer.
@@ -426,25 +416,26 @@ impl View {
 
     /// Selects a specific range (eg. when the user performs SHIFT + click).
     pub fn select_range(&mut self, text: &Rope, offset: usize) {
-        let sel = {
-            let (last, rest) = self.sel_regions().split_last().unwrap();
-            let mut sel = Selection::new();
-            for &region in rest {
-                sel.add_region(region);
-            }
-            // TODO: small nit, merged region should be backward if end < start.
-            // This could be done by explicitly overriding, or by tweaking the
-            // merge logic.
-            sel.add_region(SelRegion::new(last.start, offset));
-            sel
-        };
-        let range_start = sel.last().unwrap().start;
-        self.set_selection(text, sel);
-        self.start_drag(range_start, range_start, range_start, SelectionGranularity::Point, false);
-}
+        if !self.is_point_in_selection(offset) {
+            let sel = {
+                let (last, rest) = self.sel_regions().split_last().unwrap();
+                let mut sel = Selection::new();
+                for &region in rest {
+                    sel.add_region(region);
+                }
+                // TODO: small nit, merged region should be backward if end < start.
+                // This could be done by explicitly overriding, or by tweaking the
+                // merge logic.
+                sel.add_region(SelRegion::new(last.start, offset));
+                sel
+            };
+            self.set_selection(text, sel);
+            self.start_drag(offset, offset, offset);
+        }
+    }
 
     /// Selects the given region and supports multi selection.
-    fn select_region(&mut self, text: &Rope, region: SelRegion, multi_select: bool) {
+    fn select_region(&mut self, text: &Rope, offset: usize, region: SelRegion, multi_select: bool) {
         let mut selection = match multi_select {
             true => self.selection.clone(),
             false => Selection::new(),
@@ -452,6 +443,8 @@ impl View {
 
         selection.add_region(region);
         self.set_selection(text, selection);
+
+        self.start_drag(offset, region.start, region.end);
     }
 
     /// Selects an entire word and supports multi selection.
@@ -461,8 +454,7 @@ impl View {
             word_cursor.select_word()
         };
 
-        self.select_region(text, SelRegion::new(start, end), multi_select);
-        self.start_drag(offset, start, end, SelectionGranularity::Word, multi_select);
+        self.select_region(text, offset, SelRegion::new(start, end), multi_select);
     }
 
     /// Selects an entire line and supports multi selection.
@@ -470,44 +462,18 @@ impl View {
         let start = self.line_col_to_offset(text, line, 0);
         let end = self.line_col_to_offset(text, line + 1, 0);
 
-        self.select_region(text, SelRegion::new(start, end), multi_select);
-        self.start_drag(offset, start, end, SelectionGranularity::Line, multi_select);
-    }
-
-    /// Splits current selections into lines.
-    fn do_split_selection_into_lines(&mut self, text: &Rope) {
-        let mut selection = Selection::new();
-
-        for region in self.selection.iter() {
-            if region.is_caret() {
-                selection.add_region(SelRegion::caret(region.max()));
-            } else {
-                let mut cursor = Cursor::new(&text, region.min());
-
-                while cursor.pos() < region.max() {
-                    let sel_start = cursor.pos();
-                    let end_of_line = match cursor.next::<LinesMetric>() {
-                        Some(end) if end >= region.max() => max(0, region.max() - 1),
-                        Some(end) => max(0, end - 1),
-                        None if cursor.pos() == text.len() => cursor.pos(),
-                        _ => break
-                    };
-
-                    selection.add_region(SelRegion::new(sel_start, end_of_line));
-                }
-            }
-        }
-
-        self.set_selection_raw(text, selection);
+        self.select_region(text, offset, SelRegion::new(start, end), multi_select);
     }
 
     /// Starts a drag operation.
-    pub fn start_drag(&mut self, offset: usize, min: usize, max: usize, granularity: SelectionGranularity, multi_select: bool) {
-        let base_sel = match multi_select {
-            true => self.selection.clone(),
-            false => Selection::new()
-        };
-        self.drag_state = Some(DragState { base_sel, offset, min, max, granularity });
+    pub fn start_drag(&mut self, offset: usize, min: usize, max: usize) {
+        let base_sel = Selection::new();
+        self.drag_state = Some(DragState {
+            base_sel,
+            offset,
+            min,
+            max,
+        });
     }
 
     /// Does a drag gesture, setting the selection from a combination of the drag
@@ -516,29 +482,14 @@ impl View {
         let offset = self.line_col_to_offset(text, line as usize, col as usize);
         let new_sel = self.drag_state.as_ref().map(|drag_state| {
             let mut sel = drag_state.base_sel.clone();
-            // Determine which word or line the cursor is in
-            let (unit_start, unit_end) = match drag_state.granularity {
-                SelectionGranularity::Point => (offset, offset),
-                SelectionGranularity::Word => {
-                    let mut word_cursor = WordCursor::new(text, offset);
-                    word_cursor.select_word()
-                },
-                SelectionGranularity::Line => (
-                    self.line_col_to_offset(text, line as usize, 0),
-                    self.line_col_to_offset(text, (line as usize) + 1, 0)
-                )
-            };
+            // TODO: on double or triple click, quantize offset to requested granularity.
             let (start, end) = if offset < drag_state.offset {
-                (drag_state.max, min(unit_start, drag_state.min))
+                (drag_state.max, min(offset, drag_state.min))
             } else {
-                (drag_state.min, max(unit_end, drag_state.max))
+                (drag_state.min, max(offset, drag_state.max))
             };
             let horiz = None;
-            sel.add_region(
-                SelRegion::new(start, end)
-                    .with_horiz(horiz)
-                    .with_affinity(affinity)
-            );
+            sel.add_region(SelRegion::new(start, end).with_horiz(horiz).with_affinity(affinity));
             sel
         });
 
@@ -566,29 +517,37 @@ impl View {
     }
 
     // Render a single line, and advance cursors to next line.
-    fn render_line(&self, client: &Client, styles: &StyleMap,
-                   text: &Rope, start_of_line: &mut Cursor<RopeInfo>,
-                   soft_breaks: Option<&mut Cursor<BreaksInfo>>,
-                   style_spans: &Spans<Style>, line_num: usize) -> Value
-    {
+    fn render_line(
+        &self,
+        client: &Client,
+        styles: &StyleMap,
+        text: &Rope,
+        start_of_line: &mut Cursor<RopeInfo>,
+        soft_breaks: Option<&mut Cursor<BreaksInfo>>,
+        style_spans: &Spans<Style>,
+        line_num: usize,
+    ) -> Value {
         let start_pos = start_of_line.pos();
-        let pos = soft_breaks.map_or(start_of_line.next::<LinesMetric>(), |bc| {
-            let pos = bc.next::<BreaksMetric>();
-            // if using breaks update cursor
-            if let Some(pos) = pos { start_of_line.set(pos) }
-            pos
-        }).unwrap_or(text.len());
+        let pos = soft_breaks
+            .map_or(start_of_line.next::<LinesMetric>(), |bc| {
+                let pos = bc.next::<BreaksMetric>();
+                // if using breaks update cursor
+                if let Some(pos) = pos {
+                    start_of_line.set(pos)
+                }
+                pos
+            })
+            .unwrap_or(text.len());
 
-        let l_str = text.slice_to_string(start_pos..pos);
+        let l_str = text.slice_to_string(start_pos, pos);
         let mut cursors = Vec::new();
         let mut selections = Vec::new();
         for region in self.selection.regions_in_range(start_pos, pos) {
             // cursor
             let c = region.end;
-            if (c > start_pos && c < pos) ||
-                (!region.is_upstream() && c == start_pos) ||
-                (region.is_upstream() && c == pos) ||
-                (c == pos && c == text.len() && self.line_of_offset(text, c) == line_num)
+            if (c > start_pos && c < pos) || (!region.is_upstream() && c == start_pos)
+                || (region.is_upstream() && c == pos)
+                || (c == pos && c == text.len() && self.line_of_offset(text, c) == line_num)
             {
                 cursors.push(c - start_pos);
             }
@@ -615,8 +574,7 @@ impl View {
             }
         }
 
-        let styles = self.render_styles(client, styles, start_pos, pos,
-                                        &selections, &hls, style_spans);
+        let styles = self.render_styles(client, styles, start_pos, pos, &selections, &hls, style_spans);
 
         let mut result = json!({
             "text": &l_str,
@@ -629,11 +587,16 @@ impl View {
         result
     }
 
-    pub fn render_styles(&self, client: &Client, styles: &StyleMap,
-                         start: usize, end: usize, sel: &[(usize, usize)],
-                         hls: &[(usize, usize)],
-                         style_spans: &Spans<Style>) -> Vec<isize>
-    {
+    pub fn render_styles(
+        &self,
+        client: &Client,
+        styles: &StyleMap,
+        start: usize,
+        end: usize,
+        sel: &[(usize, usize)],
+        hls: &[(usize, usize)],
+        style_spans: &Spans<Style>,
+    ) -> Vec<isize> {
         let mut rendered_styles = Vec::new();
         let style_spans = style_spans.subseq(Interval::new_closed_open(start, end));
 
@@ -663,8 +626,7 @@ impl View {
         rendered_styles
     }
 
-    fn get_or_def_style_id(&self, client: &Client, style_map: &StyleMap,
-                           style: &Style) -> usize {
+    fn get_or_def_style_id(&self, client: &Client, style_map: &StyleMap, style: &Style) -> usize {
         let mut style_map = style_map.borrow_mut();
         if let Some(ix) = style_map.lookup(style) {
             return ix;
@@ -688,11 +650,18 @@ impl View {
         update
     }
 
-    fn send_update_for_plan(&mut self, text: &Rope, client: &Client,
-                            styles: &StyleMap, style_spans: &Spans<Style>,
-                            plan: &RenderPlan, pristine: bool)
-    {
-        if !self.lc_shadow.needs_render(plan) { return; }
+    fn send_update_for_plan(
+        &mut self,
+        text: &Rope,
+        client: &Client,
+        styles: &StyleMap,
+        style_spans: &Spans<Style>,
+        plan: &RenderPlan,
+        pristine: bool,
+    ) {
+        if !self.lc_shadow.needs_render(plan) {
+            return;
+        }
 
         // send updated find status only if there have been changes
         if self.find_changed != FindStatusChange::None {
@@ -700,16 +669,9 @@ impl View {
             client.find_status(self.view_id, &json!(self.find_status(matches_only)));
         }
 
-        // send updated replace status if changed
-        if self.replace_changed {
-            if let Some(replace) = self.get_replace() {
-                client.replace_status(self.view_id, &json!(replace))
-            }
-        }
-
         let mut b = line_cache_shadow::Builder::new();
         let mut ops = Vec::new();
-        let mut line_num = 0;  // tracks old line cache
+        let mut line_num = 0; // tracks old line cache
 
         for seg in self.lc_shadow.iter_with_plan(plan) {
             match seg.tactic {
@@ -749,14 +711,18 @@ impl View {
 
                         let offset = self.offset_of_line(text, start_line);
                         let mut line_cursor = Cursor::new(text, offset);
-                        let mut soft_breaks = self.breaks.as_ref().map(|breaks|
-                            Cursor::new(breaks, offset));
+                        let mut soft_breaks = self.breaks.as_ref().map(|breaks| Cursor::new(breaks, offset));
                         let mut rendered_lines = Vec::new();
                         for line_num in start_line..end_line {
-                            let line = self.render_line(client, styles, text,
-                                                        &mut line_cursor,
-                                                        soft_breaks.as_mut(),
-                                                        style_spans, line_num);
+                            let line = self.render_line(
+                                client,
+                                styles,
+                                text,
+                                &mut line_cursor,
+                                soft_breaks.as_mut(),
+                                style_spans,
+                                line_num,
+                            );
                             rendered_lines.push(line);
                         }
                         ops.push(self.build_update_op("ins", Some(rendered_lines), seg.n));
@@ -782,22 +748,26 @@ impl View {
     pub fn find_status(&mut self, matches_only: bool) -> Vec<FindStatus> {
         self.find_changed = FindStatusChange::None;
 
-        self.find.iter().map(|find| {
-            find.find_status(matches_only)
-        }).collect::<Vec<FindStatus>>()
+        self.find
+            .iter()
+            .map(|find| find.find_status(matches_only))
+            .collect::<Vec<FindStatus>>()
     }
 
     /// Update front-end with any changes to view since the last time sent.
     /// The `pristine` argument indicates whether or not the buffer has
     /// unsaved changes.
-    pub fn render_if_dirty(&mut self, text: &Rope, client: &Client,
-                           styles: &StyleMap, style_spans: &Spans<Style>,
-                           pristine: bool)
-    {
+    pub fn render_if_dirty(
+        &mut self,
+        text: &Rope,
+        client: &Client,
+        styles: &StyleMap,
+        style_spans: &Spans<Style>,
+        pristine: bool,
+    ) {
         let height = self.line_of_offset(text, text.len()) + 1;
         let plan = RenderPlan::create(height, self.first_line, self.height);
-        self.send_update_for_plan(text, client, styles,
-                                  style_spans, &plan, pristine);
+        self.send_update_for_plan(text, client, styles, style_spans, &plan, pristine);
         if let Some(new_scroll_pos) = self.scroll_to.take() {
             let (line, col) = self.offset_to_line_col(text, new_scroll_pos);
             client.scroll_to(self.view_id, line, col);
@@ -805,14 +775,20 @@ impl View {
     }
 
     // Send the requested lines even if they're outside the current scroll region.
-    pub fn request_lines(&mut self, text: &Rope, client: &Client,
-                         styles: &StyleMap, style_spans: &Spans<Style>,
-                         first_line: usize, last_line: usize, pristine: bool) {
+    pub fn request_lines(
+        &mut self,
+        text: &Rope,
+        client: &Client,
+        styles: &StyleMap,
+        style_spans: &Spans<Style>,
+        first_line: usize,
+        last_line: usize,
+        pristine: bool,
+    ) {
         let height = self.line_of_offset(text, text.len()) + 1;
         let mut plan = RenderPlan::create(height, self.first_line, self.height);
         plan.request_lines(first_line, last_line);
-        self.send_update_for_plan(text, client, styles,
-                                  style_spans, &plan, pristine);
+        self.send_update_for_plan(text, client, styles, style_spans, &plan, pristine);
     }
 
     /// Invalidates front-end's entire line cache, forcing a full render at the next
@@ -836,12 +812,12 @@ impl View {
     // Of course, all these are identical for ASCII. For now we use UTF-8 code units
     // for simplicity.
 
-    pub(crate) fn offset_to_line_col(&self, text: &Rope, offset: usize) -> (usize, usize) {
+    pub fn offset_to_line_col(&self, text: &Rope, offset: usize) -> (usize, usize) {
         let line = self.line_of_offset(text, offset);
         (line, offset - self.offset_of_line(text, line))
     }
 
-    pub(crate) fn line_col_to_offset(&self, text: &Rope, line: usize, col: usize) -> usize {
+    pub fn line_col_to_offset(&self, text: &Rope, line: usize, col: usize) -> usize {
         let mut offset = self.offset_of_line(text, line).saturating_add(col);
         if offset >= text.len() {
             offset = text.len();
@@ -868,19 +844,15 @@ impl View {
     /// Returns the visible line number containing the given offset.
     pub fn line_of_offset(&self, text: &Rope, offset: usize) -> usize {
         match self.breaks {
-            Some(ref breaks) => {
-                breaks.convert_metrics::<BreaksBaseMetric, BreaksMetric>(offset)
-            }
-            None => text.line_of_offset(offset)
+            Some(ref breaks) => breaks.convert_metrics::<BreaksBaseMetric, BreaksMetric>(offset),
+            None => text.line_of_offset(offset),
         }
     }
 
     /// Returns the byte offset corresponding to the line `line`.
     pub fn offset_of_line(&self, text: &Rope, line: usize) -> usize {
         match self.breaks {
-            Some(ref breaks) => {
-                breaks.convert_metrics::<BreaksMetric, BreaksBaseMetric>(line)
-            }
+            Some(ref breaks) => breaks.convert_metrics::<BreaksMetric, BreaksBaseMetric>(line),
             None => {
                 // sanitize input
                 let line = line.min(text.measure::<LinesMetric>() + 1);
@@ -900,32 +872,42 @@ impl View {
 
     /// Generate line breaks based on width measurement. Currently batch-mode,
     /// and currently in a debugging state.
-    pub(crate) fn wrap_width(&mut self, text: &Rope, width_cache: &mut WidthCache,
-                             client: &Client, style_spans: &Spans<Style>)
-    {
+    pub(crate) fn wrap_width(
+        &mut self,
+        text: &Rope,
+        width_cache: &mut WidthCache,
+        client: &Client,
+        style_spans: &Spans<Style>,
+    ) {
         let _t = trace_block("View::wrap_width", &["core"]);
-        self.breaks = Some(linewrap::linewrap_width(text, width_cache,
-                                                    style_spans, client,
-                                                    self.size.width));
+        self.breaks = Some(linewrap::linewrap_width(
+            text,
+            width_cache,
+            style_spans,
+            client,
+            self.size.width,
+        ));
         self.wrap_col = WrapWidth::Width(self.size.width);
     }
 
     /// Updates the view after the text has been modified by the given `delta`.
     /// This method is responsible for updating the cursors, and also for
     /// recomputing line wraps.
-    pub fn after_edit(&mut self, text: &Rope, last_text: &Rope,
-                      delta: &Delta<RopeInfo>, client: &Client,
-                      width_cache: &mut WidthCache, keep_selections: bool)
-    {
+    pub fn after_edit(
+        &mut self,
+        text: &Rope,
+        last_text: &Rope,
+        delta: &Delta<RopeInfo>,
+        client: &Client,
+        width_cache: &mut WidthCache,
+        keep_selections: bool,
+    ) {
         let (iv, new_len) = delta.summary();
         if let Some(breaks) = self.breaks.as_mut() {
             match self.wrap_col {
                 WrapWidth::None => (),
-                WrapWidth::Bytes(col) => linewrap::rewrap(breaks, text, iv,
-                                                          new_len, col),
-                WrapWidth::Width(px) =>
-                    linewrap::rewrap_width(breaks, text, width_cache,
-                                           client, iv, new_len, px),
+                WrapWidth::Bytes(col) => linewrap::rewrap(breaks, text, iv, new_len, col),
+                WrapWidth::Width(px) => linewrap::rewrap_width(breaks, text, width_cache, client, iv, new_len, px),
             }
         }
         if self.breaks.is_some() {
@@ -955,21 +937,21 @@ impl View {
         self.set_selection_for_edit(text, new_sel);
     }
 
-    fn do_selection_for_find(&mut self, text: &Rope, case_sensitive: bool) {
+    fn selection_for_find(&mut self, text: &Rope, case_sensitive: bool) {
         // set last selection or word under current cursor as search query
         let search_query = match self.selection.last() {
             Some(region) => {
                 if !region.is_caret() {
-                    text.slice_to_string(region)
+                    text.slice_to_string(region.min(), region.max())
                 } else {
                     let (start, end) = {
                         let mut word_cursor = WordCursor::new(text, region.max());
                         word_cursor.select_word()
                     };
-                    text.slice_to_string(start..end)
+                    text.slice_to_string(start, end)
                 }
-            },
-            _ => return
+            }
+            _ => return,
         };
 
         self.find_changed = FindStatusChange::All;
@@ -982,11 +964,13 @@ impl View {
             self.find.push(Find::new());
         }
 
-        self.find.first_mut().unwrap().do_find(text, search_query, case_sensitive, false, true);
+        self.find
+            .first_mut()
+            .unwrap()
+            .do_find(text, search_query, case_sensitive, false, true);
     }
 
-    pub fn do_find(&mut self, text: &Rope, chars: String, case_sensitive: bool, is_regex: bool,
-                   whole_words: bool) {
+    pub fn do_find(&mut self, text: &Rope, chars: String, case_sensitive: bool, is_regex: bool, whole_words: bool) {
         self.set_dirty(text);
         self.find_changed = FindStatusChange::Matches;
 
@@ -997,46 +981,45 @@ impl View {
             self.find.push(Find::new());
         }
 
-        self.find.first_mut().unwrap().do_find(text, chars, case_sensitive, is_regex, whole_words);
+        self.find
+            .first_mut()
+            .unwrap()
+            .do_find(text, chars, case_sensitive, is_regex, whole_words);
     }
 
-    /// Selects the next find match.
-    pub fn do_find_next(&mut self, text: &Rope, reverse: bool, wrap: bool, allow_same: bool,
-                     modify_selection: &SelectionModifier) {
+    pub fn find_next(
+        &mut self,
+        text: &Rope,
+        reverse: bool,
+        wrap: bool,
+        allow_same: bool,
+        modify_selection: &SelectionModifier,
+    ) {
         self.select_next_occurrence(text, reverse, false, allow_same, modify_selection);
         if self.scroll_to.is_none() && wrap {
             self.select_next_occurrence(text, reverse, true, allow_same, modify_selection);
         }
     }
 
-    /// Selects all find matches.
-    pub fn do_find_all(&mut self, text: &Rope) {
-        let mut selection = Selection::new();
-        for find in self.find.iter() {
-            for &occurrence in find.occurrences().iter() {
-                selection.add_region(occurrence);
-            }
-        }
-
-        if !selection.is_empty() { // todo: invalidate so that nothing selected accidentally replaced
-            self.set_selection(text, selection);
-        }
-    }
-
     /// Select the next occurrence relative to the last cursor. `reverse` determines whether the
     /// next occurrence before (`true`) or after (`false`) the last cursor is selected. `wrapped`
     /// indicates a search for the next occurrence past the end of the file.
-    pub fn select_next_occurrence(&mut self, text: &Rope, reverse: bool, wrapped: bool,
-                                  _allow_same: bool, modify_selection: &SelectionModifier) {
+    pub fn select_next_occurrence(
+        &mut self,
+        text: &Rope,
+        reverse: bool,
+        wrapped: bool,
+        _allow_same: bool,
+        modify_selection: &SelectionModifier,
+    ) {
         // multiple queries; select closest occurrence
-        let closest_occurrence = self.find.iter().flat_map(|x|
-            x.next_occurrence(text, reverse, wrapped, &self.selection)
-        ).min_by_key(|x| {
-            match reverse {
+        let closest_occurrence = self.find
+            .iter()
+            .flat_map(|x| x.next_occurrence(text, reverse, wrapped, &self.selection))
+            .min_by_key(|x| match reverse {
                 true => x.end,
-                false => x.start
-            }
-        });
+                false => x.start,
+            });
 
         if let Some(occ) = closest_occurrence {
             match modify_selection {
@@ -1045,7 +1028,7 @@ impl View {
                     let mut selection = self.selection.clone();
                     selection.add_region(occ);
                     self.set_selection(text, selection);
-                },
+                }
                 SelectionModifier::AddRemovingCurrent => {
                     let mut selection = self.selection.clone();
 
@@ -1058,35 +1041,9 @@ impl View {
                     selection.add_region(occ);
                     self.set_selection(text, selection);
                 }
-                _ => { }
+                _ => {}
             }
         }
-    }
-
-    fn do_set_replace(&mut self, chars: String, preserve_case: bool) {
-        self.replace = Some(Replace { chars, preserve_case });
-        self.replace_changed = true;
-    }
-
-    fn do_selection_for_replace(&mut self, text: &Rope) {
-        // set last selection or word under current cursor as replacement string
-        let replacement = match self.selection.last() {
-            Some(region) => {
-                if !region.is_caret() {
-                    text.slice_to_string(region)
-                } else {
-                    let (start, end) = {
-                        let mut word_cursor = WordCursor::new(text, region.max());
-                        word_cursor.select_word()
-                    };
-                    text.slice_to_string(start..end)
-                }
-            },
-            _ => return
-        };
-
-        self.set_dirty(text);
-        self.do_set_replace(replacement, false);
     }
 
     /// Get the line range of a selected region.
@@ -1098,16 +1055,6 @@ impl View {
         }
 
         first_line..(last_line + 1)
-    }
-
-    pub fn get_caret_offset(&self) -> Option<usize> {
-        match self.selection.len() {
-            1 if self.selection[0].is_caret() => {
-                let offset = self.selection[0].start;
-                Some(offset)
-            }
-            _ => None
-        }
     }
 }
 

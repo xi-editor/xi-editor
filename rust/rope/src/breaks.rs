@@ -1,4 +1,4 @@
-// Copyright 2016 The xi-editor Authors.
+// Copyright 2016 Google Inc. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,10 +15,10 @@
 //! A module for representing a set of breaks, typically used for
 //! storing the result of line breaking.
 
+use interval::Interval;
 use std::cmp::min;
 use std::mem;
-use tree::{Node, Leaf, NodeInfo, Metric, TreeBuilder};
-use interval::Interval;
+use tree::{Leaf, Metric, Node, NodeInfo, TreeBuilder};
 
 // Breaks represents a set of indexes. A motivating use is storing line breaks.
 pub type Breaks = Node<BreaksInfo>;
@@ -28,12 +28,12 @@ pub type Breaks = Node<BreaksInfo>;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct BreaksLeaf {
-    len: usize,  // measured in base units
-    data: Vec<usize>,  // each is a delta relative to start of leaf; sorted
+    len: usize,       // measured in base units
+    data: Vec<usize>, // each is a delta relative to start of leaf; sorted
 }
 
 #[derive(Clone)]
-pub struct BreaksInfo(usize);  // number of breaks
+pub struct BreaksInfo(usize); // number of breaks
 
 impl Leaf for BreaksLeaf {
     fn len(&self) -> usize {
@@ -59,7 +59,7 @@ impl Leaf for BreaksLeaf {
         if self.data.len() <= 64 {
             None
         } else {
-            let splitpoint = self.data.len() / 2;  // number of breaks
+            let splitpoint = self.data.len() / 2; // number of breaks
             let splitpoint_units = self.data[splitpoint - 1];
             // TODO: use Vec::split_off(), it's nicer
             let mut new = Vec::with_capacity(self.data.len() - splitpoint);
@@ -152,7 +152,9 @@ impl Metric<BreaksInfo> for BreaksMetric {
         None
     }
 
-    fn can_fragment() -> bool { true }
+    fn can_fragment() -> bool {
+        true
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -183,7 +185,9 @@ impl Metric<BreaksInfo> for BreaksBaseMetric {
         BreaksMetric::next(l, offset)
     }
 
-    fn can_fragment() -> bool { true }
+    fn can_fragment() -> bool {
+        true
+    }
 }
 
 // Additional functions specific to breaks
@@ -192,10 +196,7 @@ impl Breaks {
     // a length with no break, useful in edit operations; for
     // other use cases, use the builder.
     pub fn new_no_break(len: usize) -> Breaks {
-        let leaf = BreaksLeaf {
-            len,
-            data: vec![],
-        };
+        let leaf = BreaksLeaf { len, data: vec![] };
         Node::from_leaf(leaf)
     }
 }
@@ -240,9 +241,9 @@ impl BreakBuilder {
 
 #[cfg(test)]
 mod tests {
-    use breaks::{BreaksLeaf, BreaksInfo, BreaksMetric, BreakBuilder};
-    use tree::{Node, Cursor};
+    use breaks::{BreakBuilder, BreaksInfo, BreaksLeaf, BreaksMetric};
     use interval::Interval;
+    use tree::{Cursor, Node};
 
     fn gen(n: usize) -> Node<BreaksInfo> {
         let mut node = Node::default();

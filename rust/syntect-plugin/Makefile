@@ -6,14 +6,13 @@ XI_PLUGIN_DIR ?= $(XI_CONFIG_DIR)/plugins
 
 lang_configs = assets/*.toml
 
-out/syntect: $(lang_configs) xi-syntect-plugin
+out/syntect: $(lang_configs) target/release/xi-syntect-plugin
 	mkdir -p out/syntect/bin
 	cp $(lang_configs) out/syntect
-	cp ../target/release/xi-syntect-plugin out/syntect/bin
+	cp target/release/xi-syntect-plugin out/syntect/bin
 	cp manifest.toml out/syntect/manifest.toml
 
-.PHONY: xi-syntect-plugin
-xi-syntect-plugin:
+target/release/xi-syntect-plugin: src/*.rs Cargo.toml Cargo.lock
 	cargo build --release
 
 install: out/syntect

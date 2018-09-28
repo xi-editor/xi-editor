@@ -1,4 +1,4 @@
-// Copyright 2017 The xi-editor Authors.
+// Copyright 2017 Google Inc. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 pub mod ledger;
 pub mod sync;
 
-use magenta::{Vmo, Status};
+use magenta::{Status, Vmo};
 
 // TODO: move this into magenta-rs?
 pub fn read_entire_vmo(vmo: &Vmo) -> Result<Vec<u8>, Status> {

@@ -1,4 +1,4 @@
-// Copyright 2016 The xi-editor Authors.
+// Copyright 2016 Google Inc. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,25 +18,23 @@ use std::collections::BTreeSet;
 
 use serde_json::Value;
 
-use xi_rope::rope::{Rope, RopeInfo, LinesMetric, count_newlines};
-use xi_rope::interval::Interval;
 use xi_rope::delta::{self, Delta, Transformer};
 use xi_rope::engine::{Engine, RevId, RevToken};
+use xi_rope::interval::Interval;
+use xi_rope::rope::{LinesMetric, Rope, RopeInfo};
 use xi_rope::spans::SpansBuilder;
 use xi_trace::trace_block;
-use xi_rope::tree::Cursor;
 
 use config::BufferItems;
-use event_context::MAX_SIZE_LIMIT;
 use edit_types::BufferEvent;
+use event_context::MAX_SIZE_LIMIT;
 use layers::Layers;
-use movement::{Movement, region_movement};
+use movement::{region_movement, Movement};
+use plugins::rpc::{GetDataResponse, PluginEdit, ScopeSpan, TextUnit};
 use plugins::PluginId;
-use plugins::rpc::{PluginEdit, ScopeSpan, TextUnit, GetDataResponse};
-use selection::{Selection, SelRegion};
+use selection::{SelRegion, Selection};
 use styles::ThemeStyleMap;
-use view::{View, Replace};
-use rpc::SelectionModifier;
+use view::View;
 
 #[cfg(not(feature = "ledger"))]
 pub struct SyncStore;
@@ -49,7 +47,7 @@ const MAX_UNDOS: usize = 20;
 
 enum IndentDirection {
     In,
-    Out
+    Out,
 }
 
 pub struct Editor {
@@ -95,9 +93,9 @@ impl Editor {
 
     /// Creates a new `Editor`, loading text into a new buffer.
     pub fn with_text<T>(text: T) -> Editor
-        where T: Into<Rope>,
+    where
+        T: Into<Rope>,
     {
-
         let engine = Engine::new(text.into());
         let buffer = engine.get_head().clone();
         let last_rev_id = engine.get_head_rev_id();
@@ -140,8 +138,8 @@ impl Editor {
         self.engine.get_head_rev_id().token()
     }
 
-    pub(crate) fn get_edit_type(&self) -> EditType {
-        self.this_edit_type
+    pub(crate) fn get_edit_type(&self) -> &str {
+        self.this_edit_type.json_string()
     }
 
     pub(crate) fn get_active_undo_group(&self) -> usize {
@@ -158,8 +156,8 @@ impl Editor {
     }
 
     pub(crate) fn is_pristine(&self) -> bool {
-        self.engine.is_equivalent_revision(self.pristine_rev_id,
-                                           self.engine.get_head_rev_id())
+        self.engine
+            .is_equivalent_revision(self.pristine_rev_id, self.engine.get_head_rev_id())
     }
 
     /// Sets this Editor's contents to `text`, preserving undo state and cursor
@@ -185,7 +183,8 @@ impl Editor {
     }
 
     fn insert<T>(&mut self, view: &View, text: T)
-        where T: Into<Rope>
+    where
+        T: Into<Rope>,
     {
         let rope = text.into();
         let mut builder = delta::Builder::new(self.text.len());
@@ -211,8 +210,8 @@ impl Editor {
         let head_rev_id = self.engine.get_head_rev_id();
         let undo_group;
 
-        if !self.this_edit_type.breaks_undo_group(self.last_edit_type)
-            && !self.live_undos.is_empty()
+        if self.this_edit_type == self.last_edit_type && self.this_edit_type != EditType::Other
+            && self.this_edit_type != EditType::Transpose && !self.live_undos.is_empty()
         {
             undo_group = *self.live_undos.last().unwrap();
         } else {
@@ -241,11 +240,10 @@ impl Editor {
             // non-async edits modify their associated revision
             //TODO: get priority working, so that plugin edits don't
             // necessarily move cursor
-            self.engine.edit_rev(edit.priority as usize, undo_group,
-                                 edit.rev, edit.delta);
+            self.engine
+                .edit_rev(edit.priority as usize, undo_group, edit.rev, edit.delta);
             self.text = self.engine.get_head().clone();
-        }
-        else {
+        } else {
             self.add_delta(edit.delta);
         }
     }
@@ -253,8 +251,7 @@ impl Editor {
     /// Commits the current delta. If the buffer has changed, returns
     /// a 3-tuple containing the delta representing the changes, the previous
     /// buffer, and a bool indicating whether selections should be preserved.
-    pub(crate) fn commit_delta(&mut self)
-        -> Option<(Delta<RopeInfo>, Rope, bool)> {
+    pub(crate) fn commit_delta(&mut self) -> Option<(Delta<RopeInfo>, Rope, bool)> {
         let _t = trace_block("Editor::commit_delta", &["core"]);
 
         if self.engine.get_head_rev_id() == self.last_rev_id {
@@ -265,8 +262,7 @@ impl Editor {
         let delta = self.engine.delta_rev_head(last_token);
         // TODO (performance): it's probably quicker to stash last_text
         // rather than resynthesize it.
-        let last_text = self.engine.get_rev(last_token)
-            .expect("last_rev not found");
+        let last_text = self.engine.get_rev(last_token).expect("last_rev not found");
 
         let keep_selections = self.this_edit_type == EditType::Transpose;
         self.layers.update_all(&delta);
@@ -304,7 +300,7 @@ impl Editor {
     }
 
     /// See `Engine::set_session_id`. Only useful for Fuchsia sync.
-    pub fn set_session_id(&mut self, session: (u64,u32)) {
+    pub fn set_session_id(&mut self, session: (u64, u32)) {
         self.engine.set_session_id(session);
     }
 
@@ -314,8 +310,7 @@ impl Editor {
     }
 
     #[cfg(not(feature = "ledger"))]
-    pub fn sync_state_changed(&mut self) {
-    }
+    pub fn sync_state_changed(&mut self) {}
 
     #[cfg(feature = "ledger")]
     pub fn sync_state_changed(&mut self) {
@@ -346,20 +341,17 @@ impl Editor {
                 // backspace deletes max(1, tab_size) contiguous spaces
                 let (_, c) = view.offset_to_line_col(&self.text, region.start);
 
-                let tab_off = c % config.tab_size;
+                let tab_off = c & config.tab_size;
                 let tab_size = config.tab_size;
                 let tab_size = if tab_off == 0 { tab_size } else { tab_off };
                 let tab_start = region.start.saturating_sub(tab_size);
-                let preceded_by_spaces = region.start > 0 &&
-                    (tab_start..region.start).all(|i| self.text.byte_at(i) == b' ');
-                if preceded_by_spaces
-                    && config.translate_tabs_to_spaces
-                    && config.use_tab_stops {
+                let preceded_by_spaces =
+                    region.start > 0 && (tab_start..region.start).all(|i| self.text.byte_at(i) == b' ');
+                if preceded_by_spaces && config.translate_tabs_to_spaces && config.use_tab_stops {
                     tab_start
                 } else {
-                    self.text.prev_grapheme_offset(region.end)
-                        .unwrap_or(region.end)
-               }
+                    self.text.prev_grapheme_offset(region.end).unwrap_or(region.end)
+                }
             };
 
             let iv = Interval::new_closed_open(start, region.max());
@@ -380,24 +372,21 @@ impl Editor {
     /// the region.
     ///
     /// If `save` is set, save the deleted text into the kill ring.
-    fn delete_by_movement(&mut self, view: &View, movement: Movement,
-                          save: bool, kill_ring: &mut Rope) {
+    fn delete_by_movement(&mut self, view: &View, movement: Movement, save: bool, kill_ring: &mut Rope) {
         // We compute deletions as a selection because the merge logic
         // is convenient. Another possibility would be to make the delta
         // builder able to handle overlapping deletions (with union semantics).
         let mut deletions = Selection::new();
         for &r in view.sel_regions() {
             if r.is_caret() {
-                let new_region = region_movement(movement, r, view,
-                                                 &self.text, true);
+                let new_region = region_movement(movement, r, view, &self.text, true);
                 deletions.add_region(new_region);
             } else {
                 deletions.add_region(r);
             }
         }
         if save {
-            let saved = self.extract_sel_regions(&deletions)
-                .unwrap_or_default();
+            let saved = self.extract_sel_regions(&deletions).unwrap_or_default();
             *kill_ring = saved.into();
         }
         self.delete_sel_regions(&deletions);
@@ -424,7 +413,7 @@ impl Editor {
         let mut saved = None;
         for region in sel_regions {
             if !region.is_caret() {
-                let val = self.text.slice_to_string(region);
+                let val = self.text.slice_to_string(region.min(), region.max());
                 match saved {
                     None => saved = Some(val),
                     Some(ref mut s) => {
@@ -438,27 +427,18 @@ impl Editor {
     }
 
     fn insert_newline(&mut self, view: &View, config: &BufferItems) {
-        self.this_edit_type = EditType::InsertNewline;
+        self.this_edit_type = EditType::InsertChars;
         self.insert(view, &config.line_ending);
     }
 
     fn insert_tab(&mut self, view: &View, config: &BufferItems) {
-        self.this_edit_type = EditType::InsertChars;
         let mut builder = delta::Builder::new(self.text.len());
         let const_tab_text = self.get_tab_text(config, None);
-
-        if view.sel_regions().len() > 1 {
-            // if we indent multiple regions or multiple lines (below),
-            // we treat this as an indentation adjustment; otherwise it is
-            // just inserting text.
-            self.this_edit_type = EditType::Indent;
-        }
 
         for region in view.sel_regions() {
             let line_range = view.get_line_range(&self.text, region);
 
             if line_range.len() > 1 {
-                self.this_edit_type = EditType::Indent;
                 for line in line_range {
                     let offset = view.line_col_to_offset(&self.text, line, 0);
                     let iv = Interval::new_closed_open(offset, offset);
@@ -474,17 +454,33 @@ impl Editor {
                 builder.replace(iv, Rope::from(tab_text));
             }
         }
+        self.this_edit_type = EditType::InsertChars;
         self.add_delta(builder.build());
-    }
+
+        // What follows is old indent code, retained because it will be useful for
+        // indent action (Sublime no longer does indent on non-caret selections).
+        /*
+            let (first_line, _) = view.offset_to_line_col(&self.text, view.sel_min());
+            let (last_line, last_col) =
+                view.offset_to_line_col(&self.text, view.sel_max());
+            let last_line = if last_col == 0 && last_line > first_line {
+                last_line
+            } else {
+                last_line + 1
+            };
+            for line in first_line..last_line {
+                let offset = view.line_col_to_offset(&self.text, line, 0);
+                let iv = Interval::new_closed_open(offset, offset);
+                self.add_simple_edit(iv, Rope::from(n_spaces(TAB_SIZE)));
+            }
+        */    }
 
     /// Indents or outdents lines based on selection and user's tab settings.
     /// Uses a BTreeSet to holds the collection of lines to modify.
     /// Preserves cursor position and current selection as much as possible.
     /// Tries to have behavior consistent with other editors like Atom,
     /// Sublime and VSCode, with non-caret selections not being modified.
-    fn modify_indent(&mut self, view: &View, config: &BufferItems,
-                     direction: IndentDirection) {
-        self.this_edit_type = EditType::Indent;
+    fn modify_indent(&mut self, view: &View, config: &BufferItems, direction: IndentDirection) {
         let mut lines = BTreeSet::new();
         let tab_text = self.get_tab_text(config, None);
         for region in view.sel_regions() {
@@ -494,10 +490,9 @@ impl Editor {
             }
         }
         match direction {
-            IndentDirection::In =>  self.indent(view, lines, tab_text),
-            IndentDirection::Out => self.outdent(view, lines, tab_text)
-         };
-
+            IndentDirection::In => self.indent(view, lines, tab_text),
+            IndentDirection::Out => self.outdent(view, lines, tab_text),
+        };
     }
 
     fn indent(&mut self, view: &View, lines: BTreeSet<usize>, tab_text: &str) {
@@ -506,7 +501,6 @@ impl Editor {
             let offset = view.line_col_to_offset(&self.text, line, 0);
             let interval = Interval::new_closed_open(offset, offset);
             builder.replace(interval, Rope::from(tab_text));
-
         }
         self.this_edit_type = EditType::InsertChars;
         self.add_delta(builder.build());
@@ -516,10 +510,9 @@ impl Editor {
         let mut builder = delta::Builder::new(self.text.len());
         for line in lines {
             let offset = view.line_col_to_offset(&self.text, line, 0);
-            let tab_offset = view.line_col_to_offset(&self.text, line,
-                                                     tab_text.len());
+            let tab_offset = view.line_col_to_offset(&self.text, line, tab_text.len());
             let interval = Interval::new_closed_open(offset, tab_offset);
-            let leading_slice = self.text.slice_to_string(interval.start()..interval.end());
+            let leading_slice = self.text.slice_to_string(interval.start(), interval.end());
             if leading_slice == tab_text {
                 builder.delete(interval);
             } else if let Some(first_char_col) = leading_slice.find(|c: char| !c.is_whitespace()) {
@@ -532,40 +525,29 @@ impl Editor {
         self.add_delta(builder.build());
     }
 
-    fn get_tab_text(&self, config: &BufferItems, tab_size: Option<usize>)
-        -> &'static str
-    {
+    fn get_tab_text(&self, config: &BufferItems, tab_size: Option<usize>) -> &'static str {
         let tab_size = tab_size.unwrap_or(config.tab_size);
         let tab_text = if config.translate_tabs_to_spaces {
             n_spaces(tab_size)
-        } else { "\t" };
+        } else {
+            "\t"
+        };
 
         tab_text
     }
 
+    // TODO: insert from keyboard or input method shouldn't break undo group,
+    // but paste should.
     fn do_insert(&mut self, view: &View, chars: &str) {
         self.this_edit_type = EditType::InsertChars;
         self.insert(view, chars);
     }
 
-    fn do_paste(&mut self, view: &View, chars: &str) {
-        if view.sel_regions().len() == 1
-            || view.sel_regions().len() != count_lines(chars)
-        {
-            self.insert(view, chars);
-        } else {
-            let mut builder = delta::Builder::new(self.text.len());
-            for (sel, line) in view.sel_regions().iter().zip(chars.lines()) {
-                let iv = Interval::new_closed_open(sel.min(), sel.max());
-                builder.replace(iv, line.into());
-            }
-            self.add_delta(builder.build());
-        }
-    }
-
     pub(crate) fn do_cut(&mut self, view: &mut View) -> Value {
         let result = self.do_copy(view);
-        self.delete_sel_regions(&view.sel_regions());
+        // This copy is just to make the borrow checker happy, could be optimized.
+        let deletions = view.sel_regions().to_vec();
+        self.delete_sel_regions(&deletions);
         result
     }
 
@@ -602,16 +584,15 @@ impl Editor {
 
     fn sel_region_to_interval_and_rope(&self, region: SelRegion) -> (Interval, Rope) {
         let as_interval = Interval::new_closed_open(region.min(), region.max());
-        let interval_rope = self.text.subseq(as_interval);
+        let interval_rope = Rope::from(self.text.slice_to_string(as_interval.start(), as_interval.end()));
         (as_interval, interval_rope)
     }
 
     fn do_transpose(&mut self, view: &View) {
         let mut builder = delta::Builder::new(self.text.len());
         let mut last = 0;
-        let mut optional_previous_selection : Option<(Interval, Rope)> =
-            last_selection_region(view.sel_regions()).map(
-                |&region| self.sel_region_to_interval_and_rope(region));
+        let mut optional_previous_selection: Option<(Interval, Rope)> =
+            last_selection_region(view.sel_regions()).map(|&region| self.sel_region_to_interval_and_rope(region));
 
         for &region in view.sel_regions() {
             if region.is_caret() {
@@ -622,8 +603,8 @@ impl Editor {
                 if let Some(end) = self.text.next_grapheme_offset(middle) {
                     if start >= last {
                         let interval = Interval::new_closed_open(start, end);
-                        let swapped = self.text.slice_to_string(middle..end) +
-                                      &self.text.slice_to_string(start..middle);
+                        let swapped =
+                            self.text.slice_to_string(middle, end) + &self.text.slice_to_string(start, middle);
                         builder.replace(interval, Rope::from(swapped));
                         last = end;
                     }
@@ -647,35 +628,11 @@ impl Editor {
         self.insert(view, kill_ring.clone());
     }
 
-    fn replace(&mut self, view: &mut View, replace_all: bool) {
-        if let Some(Replace { chars, .. }) = view.get_replace() {
-            // todo: implement preserve case
-            // store old selection because in case nothing is found the selection will be preserved
-            let mut old_selection = Selection::new();
-            for &region in view.sel_regions() {
-                old_selection.add_region(region);
-            }
-            view.collapse_selections(&self.text);
-
-            if replace_all {
-                view.do_find_all(&self.text);
-            } else {
-                view.do_find_next(&self.text, false, true, true, &SelectionModifier::Set);
-            }
-
-            match last_selection_region(view.sel_regions()) {
-                Some(_) => self.insert(view, chars),
-                None => return,
-            };
-        }
-    }
-
-    fn transform_text<F: Fn(&str) -> String>(&mut self, view: &View,
-                                             transform_function: F) {
+    fn transform_text<F: Fn(&str) -> String>(&mut self, view: &View, transform_function: F) {
         let mut builder = delta::Builder::new(self.text.len());
 
         for region in view.sel_regions() {
-            let selected_text = self.text.slice_to_string(region);
+            let selected_text = self.text.slice_to_string(region.min(), region.max());
             let interval = Interval::new_closed_open(region.min(), region.max());
             builder.replace(interval, Rope::from(transform_function(&selected_text)));
         }
@@ -685,50 +642,10 @@ impl Editor {
         }
     }
 
-    fn duplicate_line(&mut self, view: &View, config: &BufferItems) {
-        let mut builder = delta::Builder::new(self.text.len());
-        // get affected lines or regions
-        let mut to_duplicate = BTreeSet::new();
-
-        for region in view.sel_regions() {
-            let (first_line, _) = view.offset_to_line_col(&self.text, region.min());
-            let line_start = view.offset_of_line(&self.text, first_line);
-
-            let mut cursor = match region.is_caret() {
-                true => Cursor::new(&self.text, line_start),
-                false => {  // duplicate all lines together that are part of the same selections
-                    let (last_line, _) = view.offset_to_line_col(&self.text, region.max());
-                    let line_end = view.offset_of_line(&self.text, last_line);
-                    Cursor::new(&self.text, line_end)
-                }
-            };
-
-            if let Some(line_end) = cursor.next::<LinesMetric>() {
-                to_duplicate.insert((line_start, line_end));
-            }
-        }
-
-        for (start, end) in to_duplicate {
-            // insert duplicates
-            let iv = Interval::new_closed_open(start, start);
-            builder.replace(iv, self.text.slice(start..end));
-
-            // last line does not have new line character so it needs to be manually added
-            if end == self.text.len() {
-                builder.replace(iv, Rope::from(&config.line_ending))
-            }
-        }
-
-        self.this_edit_type = EditType::Other;
-        self.add_delta(builder.build());
-    }
-
-    pub(crate) fn do_edit(&mut self, view: &mut View, kill_ring: &mut Rope,
-                          config: &BufferItems, cmd: BufferEvent) {
+    pub(crate) fn do_edit(&mut self, view: &mut View, kill_ring: &mut Rope, config: &BufferItems, cmd: BufferEvent) {
         use self::BufferEvent::*;
         match cmd {
-            Delete { movement, kill } =>
-                self.delete_by_movement(view, movement, kill, kill_ring),
+            Delete { movement, kill } => self.delete_by_movement(view, movement, kill, kill_ring),
             Backspace => self.delete_backward(view, config),
             Transpose => self.do_transpose(view),
             Undo => self.do_undo(),
@@ -740,11 +657,7 @@ impl Editor {
             InsertNewline => self.insert_newline(view, config),
             InsertTab => self.insert_tab(view, config),
             Insert(chars) => self.do_insert(view, &chars),
-            Paste(chars) => self.do_paste(view, &chars),
             Yank => self.yank(view, kill_ring),
-            ReplaceNext => self.replace(view, false),
-            ReplaceAll => self.replace(view, true),
-            DuplicateLine => self.duplicate_line(view, config),
         }
     }
 
@@ -756,25 +669,29 @@ impl Editor {
         self.text.measure::<LinesMetric>() + 1
     }
 
-    pub fn update_spans(&mut self, view: &mut View, plugin: PluginId,
-                        start: usize, len: usize, spans: Vec<ScopeSpan>,
-                        rev: RevToken) {
+    pub fn update_spans(
+        &mut self,
+        view: &mut View,
+        plugin: PluginId,
+        start: usize,
+        len: usize,
+        spans: Vec<ScopeSpan>,
+        rev: RevToken,
+    ) {
         let _t = trace_block("Editor::update_spans", &["core"]);
         // TODO: more protection against invalid input
         let mut start = start;
         let mut end_offset = start + len;
         let mut sb = SpansBuilder::new(len);
         for span in spans {
-            sb.add_span(Interval::new_open_open(span.start, span.end),
-                        span.scope_id);
+            sb.add_span(Interval::new_open_open(span.start, span.end), span.scope_id);
         }
         let mut spans = sb.build();
         if rev != self.engine.get_head_rev_id().token() {
             let delta = self.engine.delta_rev_head(rev);
             let mut transformer = Transformer::new(&delta);
             let new_start = transformer.transform(start, false);
-            if !transformer.interval_untouched(
-                Interval::new_closed_closed(start, end_offset)) {
+            if !transformer.interval_untouched(Interval::new_closed_closed(start, end_offset)) {
                 spans = spans.transform(start, end_offset, &mut transformer);
             }
             start = new_start;
@@ -785,25 +702,22 @@ impl Editor {
         view.invalidate_styles(&self.text, start, end_offset);
     }
 
-    pub(crate) fn get_rev(&self, rev: RevToken) -> Option<Cow<Rope>> {
+    pub fn plugin_get_data(
+        &self,
+        start: usize,
+        unit: TextUnit,
+        max_size: usize,
+        rev: RevToken,
+    ) -> Option<GetDataResponse> {
+        let _t = trace_block("Editor::plugin_get_data", &["core"]);
         let text_cow = if rev == self.engine.get_head_rev_id().token() {
             Cow::Borrowed(&self.text)
         } else {
             match self.engine.get_rev(rev) {
                 None => return None,
-                Some(text) => Cow::Owned(text)
+                Some(text) => Cow::Owned(text),
             }
         };
-        
-        Some(text_cow)
-    }
-
-    pub fn plugin_get_data(&self, start: usize,
-                           unit: TextUnit,
-                           max_size: usize,
-                           rev: RevToken) -> Option<GetDataResponse> {
-        let _t = trace_block("Editor::plugin_get_data", &["core"]);
-        let text_cow = self.get_rev(rev)?;
         let text = &text_cow;
         // convert our offset into a valid byte offset
         let offset = unit.resolve_offset(text.borrow(), start)?;
@@ -817,27 +731,23 @@ impl Editor {
             end_off = text.prev_codepoint_offset(end_off + 1).unwrap();
         }
 
-        let chunk = text.slice_to_string(offset..end_off);
+        let chunk = text.slice_to_string(offset, end_off);
         let first_line = text.line_of_offset(offset);
         let first_line_offset = offset - text.offset_of_line(first_line);
 
-        Some(GetDataResponse { chunk, offset, first_line, first_line_offset })
+        Some(GetDataResponse {
+            chunk,
+            offset,
+            first_line,
+            first_line_offset,
+        })
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Copy, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum EditType {
-    /// A catchall for edits that don't fit elsewhere, and which should
-    /// always have their own undo groups; used for things like cut/copy/paste.
+#[derive(PartialEq, Eq, Clone, Copy)]
+enum EditType {
     Other,
-    /// An insert from the keyboard/IME (not a paste or a yank).
-    #[serde(rename = "insert")]
     InsertChars,
-    #[serde(rename = "newline")]
-    InsertNewline,
-    /// An indentation adjustment.
-    Indent,
     Delete,
     Undo,
     Redo,
@@ -845,14 +755,17 @@ pub enum EditType {
 }
 
 impl EditType {
-    /// Checks whether a new undo group should be created between two edits.
-    fn breaks_undo_group(self, previous: EditType) -> bool {
-        self == EditType::Other
-        || self == EditType::Transpose
-        || self != previous
+    pub fn json_string(&self) -> &'static str {
+        match *self {
+            EditType::InsertChars => "insert",
+            EditType::Delete => "delete",
+            EditType::Undo => "undo",
+            EditType::Redo => "redo",
+            EditType::Transpose => "transpose",
+            _ => "other",
+        }
     }
 }
-
 
 fn last_selection_region(regions: &[SelRegion]) -> Option<&SelRegion> {
     for region in regions.iter().rev() {
@@ -867,13 +780,4 @@ fn n_spaces(n: usize) -> &'static str {
     let spaces = "                                ";
     assert!(n <= spaces.len());
     &spaces[..n]
-}
-
-/// Counts the number of lines in the string, not including any trailing newline.
-fn count_lines(s: &str) -> usize {
-    let mut newlines = count_newlines(s);
-    if s.as_bytes().last() == Some(&0xa) {
-        newlines -= 1;
-    }
-    1 + newlines
 }

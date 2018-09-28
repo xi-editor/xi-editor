@@ -1,4 +1,4 @@
-// Copyright 2017 The xi-editor Authors.
+// Copyright 2017 Google Inc. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,18 +16,16 @@
 //! module so that it is easier to add other sync stores later.
 
 use std::io::Write;
-use std::sync::mpsc::{Sender, Receiver, RecvError};
-
-use log;
+use std::sync::mpsc::{Receiver, RecvError, Sender};
 
 use apps_ledger_services_public::*;
+use fidl::{self, Future, Promise};
 use fuchsia::read_entire_vmo;
-use fidl::{Promise, Future, self};
 use magenta::{Channel, ChannelOpts, HandleBase};
 use serde_json;
 
-use super::ledger::{ledger_crash_callback, self};
-use tabs::{BufferIdentifier, BufferContainerRef};
+use super::ledger::{self, ledger_crash_callback};
+use tabs::{BufferContainerRef, BufferIdentifier};
 use xi_rope::engine::Engine;
 
 // TODO switch these to bincode
@@ -56,8 +54,7 @@ impl SyncStore {
     ///
     /// Returns a sync store and schedules the loading of initial
     /// state and subscribes to state updates for this document.
-    pub fn new(mut page: Page_Proxy, key: Vec<u8>, updates: Sender<SyncMsg>,
-            buffer: BufferIdentifier) -> SyncStore {
+    pub fn new(mut page: Page_Proxy, key: Vec<u8>, updates: Sender<SyncMsg>, buffer: BufferIdentifier) -> SyncStore {
         let (s1, s2) = Channel::create(ChannelOpts::Normal).unwrap();
         let watcher_client = PageWatcher_Client::from_handle(s1.into_handle());
         let watcher_client_ptr = ::fidl::InterfacePtr {
@@ -65,26 +62,42 @@ impl SyncStore {
             version: PageWatcher_Metadata::VERSION,
         };
 
-        let watcher = PageWatcherServer { updates: updates.clone(), buffer: buffer.clone() };
+        let watcher = PageWatcherServer {
+            updates: updates.clone(),
+            buffer: buffer.clone(),
+        };
         let _ = fidl::Server::new(watcher, s2).spawn();
 
         let (mut snap, snap_request) = PageSnapshot_new_pair();
-        page.get_snapshot(snap_request, Some(key.clone()), Some(watcher_client_ptr)).with(ledger_crash_callback);
+        page.get_snapshot(snap_request, Some(key.clone()), Some(watcher_client_ptr))
+            .with(ledger_crash_callback);
 
         let initial_state_chan = updates.clone();
         let initial_buffer = buffer.clone();
         snap.get(key.clone()).with(move |raw_res| {
             match raw_res.map(|res| ledger::value_result(res)) {
                 Ok(Ok(Some(buf))) => {
-                    initial_state_chan.send(SyncMsg::NewState { buffer: initial_buffer, new_buf: buf, done: None }).unwrap();
-                },
+                    initial_state_chan
+                        .send(SyncMsg::NewState {
+                            buffer: initial_buffer,
+                            new_buf: buf,
+                            done: None,
+                        })
+                        .unwrap();
+                }
                 Ok(Ok(None)) => (), // No initial state saved yet
-                Err(err) => error!("FIDL failed on initial response: {:?}", err),
-                Ok(Err(err)) => error!("Ledger failed to retrieve key: {:?}", err),
+                Err(err) => eprintln!("FIDL failed on initial response: {:?}", err),
+                Ok(Err(err)) => eprintln!("Ledger failed to retrieve key: {:?}", err),
             }
         });
 
-        SyncStore { page, key, updates, buffer, transaction_pending: false }
+        SyncStore {
+            page,
+            key,
+            updates,
+            buffer,
+            transaction_pending: false,
+        }
     }
 
     /// Called whenever this app changed its own state and would like to
@@ -97,22 +110,25 @@ impl SyncStore {
             let ready_future = self.page.start_transaction();
             let done_chan = self.updates.clone();
             let buffer = self.buffer.clone();
-            ready_future.with(move |res| {
-                match res {
-                    Ok(ledger::OK) => {
-                        done_chan.send(SyncMsg::TransactionReady { buffer }).unwrap();
-                    },
-                    Ok(err_status) => error!("Ledger failed to start transaction: {:?}", err_status),
-                    Err(err) => error!("FIDL failed on starting transaction: {:?}", err),
+            ready_future.with(move |res| match res {
+                Ok(ledger::OK) => {
+                    done_chan.send(SyncMsg::TransactionReady { buffer }).unwrap();
                 }
+                Ok(err_status) => eprintln!("Ledger failed to start transaction: {:?}", err_status),
+                Err(err) => eprintln!("FIDL failed on starting transaction: {:?}", err),
             });
         }
     }
 
     /// Should be called in SyncContainer::transaction_ready to persist the current state.
     pub fn commit_transaction(&mut self, state: &Engine) {
-        assert!(self.transaction_pending, "must call state_changed (and wait) before commit");
-        self.page.put(self.key.clone(), state_to_buf(state)).with(ledger_crash_callback);
+        assert!(
+            self.transaction_pending,
+            "must call state_changed (and wait) before commit"
+        );
+        self.page
+            .put(self.key.clone(), state_to_buf(state))
+            .with(ledger_crash_callback);
         self.page.commit().with(ledger_crash_callback);
         self.transaction_pending = false;
     }
@@ -120,13 +136,19 @@ impl SyncStore {
 
 /// All the different asynchronous events the updater thread needs to listen for and act on
 pub enum SyncMsg {
-    NewState { buffer: BufferIdentifier, new_buf: Vec<u8>, done: Option<Promise<Option<PageSnapshot_Server>, fidl::Error>> },
-    TransactionReady { buffer: BufferIdentifier },
+    NewState {
+        buffer: BufferIdentifier,
+        new_buf: Vec<u8>,
+        done: Option<Promise<Option<PageSnapshot_Server>, fidl::Error>>,
+    },
+    TransactionReady {
+        buffer: BufferIdentifier,
+    },
     /// Shut down the updater thread
-    Stop
+    Stop,
 }
 
-/// We want to be able to register to receive events from inside the
+/// We want to be able to register to recieve events from inside the
 /// `SyncStore`/`SyncContainer` but from there we don't have access to the
 /// Mutex that holds the container, so we give channel Senders to all the
 /// futures so that they can all trigger events in one place that does have
@@ -147,12 +169,12 @@ impl<W: Write + Send + 'static> SyncUpdater<W> {
 
     /// Run this in a thread, it will return when it encounters an error
     /// reading the channel or when the `Stop` message is recieved.
-    pub fn work(&self) -> Result<(),RecvError> {
+    pub fn work(&self) -> Result<(), RecvError> {
         loop {
             let msg = self.chan.recv()?;
             match msg {
                 SyncMsg::Stop => return Ok(()),
-                SyncMsg::TransactionReady { buffer }=> {
+                SyncMsg::TransactionReady { buffer } => {
                     let mut container = self.container_ref.lock();
                     // if the buffer was closed, hopefully the page connection was as well, which I hope aborts transactions
                     if let Some(mut editor) = container.editor_for_buffer_mut(&buffer) {
@@ -169,7 +191,7 @@ impl<W: Write + Send + 'static> SyncUpdater<W> {
                             }
                         }
                         (None, _) => (), // buffer was closed
-                        (_, Err(err)) => error!("Ledger was set to invalid state: {:?}", err),
+                        (_, Err(err)) => eprintln!("Ledger was set to invalid state: {:?}", err),
                     }
                 }
             }
@@ -183,15 +205,25 @@ struct PageWatcherServer {
 }
 
 impl PageWatcher for PageWatcherServer {
-    fn on_change(&mut self, page_change: PageChange, result_state: ResultState) -> Future<Option<PageSnapshot_Server>, fidl::Error> {
+    fn on_change(
+        &mut self,
+        page_change: PageChange,
+        result_state: ResultState,
+    ) -> Future<Option<PageSnapshot_Server>, fidl::Error> {
         let (future, done) = Future::make_promise();
 
         let value_opt = page_change.changes.get(0).and_then(|c| c.value.as_ref());
         if let (ledger::RESULT_COMPLETED, Some(value_vmo)) = (result_state, value_opt) {
             let new_buf = read_entire_vmo(value_vmo).expect("failed to read key Vmo");
-            self.updates.send(SyncMsg::NewState { buffer: self.buffer.clone(), new_buf, done: Some(done) }).unwrap();
+            self.updates
+                .send(SyncMsg::NewState {
+                    buffer: self.buffer.clone(),
+                    new_buf,
+                    done: Some(done),
+                })
+                .unwrap();
         } else {
-            error!("Xi state corrupted, should have one key but has multiple.");
+            eprintln!("Xi state corrupted, should have one key but has multiple.");
             // I don't think this should be a FIDL-level error, so set okay
             done.set_ok(None);
         }
@@ -217,7 +249,9 @@ pub fn start_conflict_resolver_factory(ledger: &mut Ledger_Proxy, key: Vec<u8>) 
 
     let _ = fidl::Server::new(ConflictResolverFactoryServer { key }, s2).spawn();
 
-    ledger.set_conflict_resolver_factory(Some(resolver_client_ptr)).with(ledger_crash_callback);
+    ledger
+        .set_conflict_resolver_factory(Some(resolver_client_ptr))
+        .with(ledger_crash_callback);
 }
 
 struct ConflictResolverFactoryServer {
@@ -231,7 +265,10 @@ impl ConflictResolverFactory for ConflictResolverFactoryServer {
 
     /// Our resolvers are the same for every page
     fn new_conflict_resolver(&mut self, _page_id: Vec<u8>, resolver: ConflictResolver_Server) {
-        let _ = fidl::Server::new(ConflictResolverServer { key: self.key.clone() }, resolver.into_channel()).spawn();
+        let _ = fidl::Server::new(
+            ConflictResolverServer { key: self.key.clone() },
+            resolver.into_channel(),
+        ).spawn();
     }
 }
 
@@ -241,7 +278,9 @@ impl ConflictResolverFactory_Stub for ConflictResolverFactoryServer {
 impl_fidl_stub!(ConflictResolverFactoryServer: ConflictResolverFactory_Stub);
 
 fn state_from_snapshot<F>(snapshot: ::fidl::InterfacePtr<PageSnapshot_Client>, key: Vec<u8>, done: F)
-        where F: Send + FnOnce(Result<Option<Engine>,()>) + 'static {
+where
+    F: Send + FnOnce(Result<Option<Engine>, ()>) + 'static,
+{
     assert_eq!(PageSnapshot_Metadata::VERSION, snapshot.version);
     let mut snapshot_proxy = PageSnapshot_new_Proxy(snapshot.inner);
     // TODO get a reference when too big
@@ -250,9 +289,18 @@ fn state_from_snapshot<F>(snapshot: ::fidl::InterfacePtr<PageSnapshot_Client>, k
             // the .ok() has the behavior of acting like invalid state is empty
             // and thus deleting invalid state and overwriting it with good state
             Ok(Ok(Some(buf))) => Ok(buf_to_state(&buf).ok()),
-            Ok(Ok(None)) => { info!("No state in conflicting page"); Ok(None) },
-            Err(err) => { warn!("FIDL failed on initial response: {:?}", err); Err(()) },
-            Ok(Err(err)) => { warn!("Ledger failed to retrieve key: {:?}", err); Err(()) },
+            Ok(Ok(None)) => {
+                eprintln!("No state in conflicting page");
+                Ok(None)
+            }
+            Err(err) => {
+                eprintln!("FIDL failed on initial response: {:?}", err);
+                Err(())
+            }
+            Ok(Err(err)) => {
+                eprintln!("Ledger failed to retrieve key: {:?}", err);
+                Err(())
+            }
         };
         done(state);
     });
@@ -263,11 +311,13 @@ struct ConflictResolverServer {
 }
 
 impl ConflictResolver for ConflictResolverServer {
-    fn resolve(&mut self,
+    fn resolve(
+        &mut self,
         left: ::fidl::InterfacePtr<PageSnapshot_Client>,
         right: ::fidl::InterfacePtr<PageSnapshot_Client>,
         _common_version: Option<::fidl::InterfacePtr<PageSnapshot_Client>>,
-        result_provider: ::fidl::InterfacePtr<MergeResultProvider_Client>) {
+        result_provider: ::fidl::InterfacePtr<MergeResultProvider_Client>,
+    ) {
         // TODO in the futures-rs future, do this in parallel with Future combinators
         let key2 = self.key.clone();
         state_from_snapshot(left, self.key.clone(), move |e1_opt| {
@@ -277,7 +327,7 @@ impl ConflictResolver for ConflictResolverServer {
                     (Ok(Some(mut e1)), Ok(Some(e2))) => {
                         e1.merge(&e2);
                         Some(e1)
-                    },
+                    }
                     // one engine didn't exist yet, I'm not sure if Ledger actually generates a conflict in this case
                     (Ok(Some(e)), Ok(None)) | (Ok(None), Ok(Some(e))) => Some(e),
                     // failed to get one of the engines, we can't do the merge properly

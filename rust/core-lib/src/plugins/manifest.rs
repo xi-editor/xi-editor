@@ -1,4 +1,4 @@
-// Copyright 2017 The xi-editor Authors.
+// Copyright 2017 Google Inc. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,8 +16,8 @@
 
 use std::path::PathBuf;
 
-use serde_json::{self, Value};
 use serde::Serialize;
+use serde_json::{self, Value};
 
 use syntax::{LanguageDefinition, LanguageId};
 
@@ -83,7 +83,6 @@ pub struct Command {
     pub args: Vec<CommandArgument>,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// A user provided argument to a plugin command.
 pub struct CommandArgument {
@@ -101,7 +100,12 @@ pub struct CommandArgument {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ArgumentType {
-    Number, Int, PosInt, Bool, String, Choice
+    Number,
+    Int,
+    PosInt,
+    Bool,
+    String,
+    Choice,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -126,30 +130,49 @@ pub struct PlaceholderRpc {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum RpcType {
-    Notification, Request
+    Notification,
+    Request,
 }
 
 impl Command {
-    pub fn new<S, V>(title: S, description: S,
-                     rpc_cmd: PlaceholderRpc, args: V) -> Self
-    where S: AsRef<str>,
-          V: Into<Option<Vec<CommandArgument>>> {
+    pub fn new<S, V>(title: S, description: S, rpc_cmd: PlaceholderRpc, args: V) -> Self
+    where
+        S: AsRef<str>,
+        V: Into<Option<Vec<CommandArgument>>>,
+    {
         let title = title.as_ref().to_owned();
         let description = description.as_ref().to_owned();
         let args = args.into().unwrap_or_else(Vec::new);
-        Command { title, description, rpc_cmd, args }
+        Command {
+            title,
+            description,
+            rpc_cmd,
+            args,
+        }
     }
 }
 
 impl CommandArgument {
-    pub fn new<S: AsRef<str>>(title: S, description: S, key: S,
-                              arg_type: ArgumentType,
-                              options: Option<Vec<ArgumentOption>>) -> Self {
+    pub fn new<S: AsRef<str>>(
+        title: S,
+        description: S,
+        key: S,
+        arg_type: ArgumentType,
+        options: Option<Vec<ArgumentOption>>,
+    ) -> Self {
         let key = key.as_ref().to_owned();
         let title = title.as_ref().to_owned();
         let description = description.as_ref().to_owned();
-        if arg_type == ArgumentType::Choice { assert!(options.is_some()) }
-        CommandArgument { title, description, key, arg_type, options }
+        if arg_type == ArgumentType::Choice {
+            assert!(options.is_some())
+        }
+        CommandArgument {
+            title,
+            description,
+            key,
+            arg_type,
+            options,
+        }
     }
 }
 
@@ -163,14 +186,23 @@ impl ArgumentOption {
 
 impl PlaceholderRpc {
     pub fn new<S, V>(method: S, params: V, request: bool) -> Self
-        where S: AsRef<str>,
-              V: Into<Option<Value>>
+    where
+        S: AsRef<str>,
+        V: Into<Option<Value>>,
     {
         let method = method.as_ref().to_owned();
         let params = params.into().unwrap_or(json!({}));
-        let rpc_type = if request { RpcType::Request } else { RpcType::Notification };
+        let rpc_type = if request {
+            RpcType::Request
+        } else {
+            RpcType::Notification
+        };
 
-        PlaceholderRpc { method, params, rpc_type }
+        PlaceholderRpc {
+            method,
+            params,
+            rpc_type,
+        }
     }
 
     pub fn is_request(&self) -> bool {

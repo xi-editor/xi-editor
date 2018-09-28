@@ -1,4 +1,4 @@
-// Copyright 2017 The xi-editor Authors.
+// Copyright 2017 Google Inc. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ use std::sync::Arc;
 
 use toml;
 
-use super::{PluginName, PluginDescription};
+use super::{PluginDescription, PluginName};
 use config::table_from_toml_str;
 use syntax::Languages;
 
@@ -42,7 +42,7 @@ pub enum PluginLoadError {
 }
 
 #[allow(dead_code)]
-impl <'a>PluginCatalog {
+impl<'a> PluginCatalog {
     /// Loads any plugins discovered in these paths, replacing any existing
     /// plugins.
     pub fn reload_from_paths(&mut self, paths: &[PathBuf]) {
@@ -51,9 +51,9 @@ impl <'a>PluginCatalog {
         let all_manifests = find_all_manifests(paths);
         for manifest_path in all_manifests.iter() {
             match load_manifest(manifest_path) {
-                Err(e) => warn!("error loading plugin {:?}", e),
+                Err(e) => eprintln!("error loading plugin {:?}", e),
                 Ok(manifest) => {
-                    info!("loaded {}", manifest.name);
+                    eprintln!("loaded {}", manifest.name);
                     let manifest = Arc::new(manifest);
                     self.items.insert(manifest.name.clone(), manifest.clone());
                     self.locations.insert(manifest_path.clone(), manifest);
@@ -63,20 +63,21 @@ impl <'a>PluginCatalog {
     }
 
     pub fn make_languages_map(&self) -> Languages {
-        let all_langs = self.items.values()
+        let all_langs = self.items
+            .values()
             .flat_map(|plug| plug.languages.iter().cloned())
             .collect::<Vec<_>>();
         Languages::new(all_langs.as_slice())
     }
 
     /// Returns an iterator over all plugins in the catalog, in arbitrary order.
-    pub fn iter(&'a self) -> impl Iterator<Item=Arc<PluginDescription>> + 'a {
-       self.items.values().cloned()
+    pub fn iter(&'a self) -> impl Iterator<Item = Arc<PluginDescription>> + 'a {
+        self.items.values().cloned()
     }
 
     /// Returns an iterator over all plugin names in the catalog,
     /// in arbitrary order.
-    pub fn iter_names(&'a self) -> impl Iterator<Item=&'a PluginName> {
+    pub fn iter_names(&'a self) -> impl Iterator<Item = &'a PluginName> {
         self.items.keys()
     }
 
@@ -95,15 +96,15 @@ fn find_all_manifests(paths: &[PathBuf]) -> Vec<PathBuf> {
             continue;
         }
 
-         let result = path.read_dir()
-             .map(|dir|
-                 dir.flat_map(|item| item.map(|p| p.path()).ok())
-                 .map(|dir| dir.join("manifest.toml"))
-                 .filter(|f| f.exists())
-                 .for_each(|f| manifest_paths.push(f.to_owned())));
-         if let Err(e) = result {
-             error!("error reading plugin path {:?}, {:?}", path, e);
-         }
+        let result = path.read_dir().map(|dir| {
+            dir.flat_map(|item| item.map(|p| p.path()).ok())
+                .map(|dir| dir.join("manifest.toml"))
+                .filter(|f| f.exists())
+                .for_each(|f| manifest_paths.push(f.to_owned()))
+        });
+        if let Err(e) = result {
+            eprintln!("error reading plugin path {:?}, {:?}", path, e);
+        }
     }
     manifest_paths
 }
@@ -115,17 +116,14 @@ fn load_manifest(path: &Path) -> Result<PluginDescription, PluginLoadError> {
     let mut manifest: PluginDescription = toml::from_str(&contents)?;
     // normalize relative paths
     if manifest.exec_path.starts_with("./") {
-        manifest.exec_path = path.parent()
-            .unwrap()
-            .join(manifest.exec_path)
-            .canonicalize()?;
+        manifest.exec_path = path.parent().unwrap().join(manifest.exec_path).canonicalize()?;
     }
 
     for lang in manifest.languages.iter_mut() {
-        let lang_config_path = path.parent().unwrap()
-            .join(&lang.name.as_ref())
-            .with_extension("toml");
-        if !lang_config_path.exists() { continue; }
+        let lang_config_path = path.parent().unwrap().join(&lang.name.as_ref()).with_extension("toml");
+        if !lang_config_path.exists() {
+            continue;
+        }
         let lang_defaults = fs::read_to_string(&lang_config_path)?;
         let lang_defaults = table_from_toml_str(&lang_defaults)?;
         lang.default_config = Some(lang_defaults);

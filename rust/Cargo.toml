@@ -10,29 +10,9 @@ repository = "https://github.com/google/xi-editor"
 [dependencies]
 serde = "1.0"
 serde_json = "1.0"
-chrono = "0.4.5"
-fern = "0.5.6"
-log = "0.4.3"
 
 [dependencies.xi-core-lib]
 path = "core-lib"
 
 [dependencies.xi-rpc]
 path = "rpc"
-
-[workspace]
-members = [
-  "core-lib",
-  "lsp-lib",
-  "plugin-lib",
-  "rope",
-  "rpc",
-  "sample-plugin",
-  "syntect-plugin",
-  "trace",
-  "trace-dump",
-  "unicode",
-]
-
-[profile.bench]
-lto = true

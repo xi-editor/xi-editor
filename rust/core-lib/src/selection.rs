@@ -1,4 +1,4 @@
-// Copyright 2017 The xi-editor Authors.
+// Copyright 2017 Google Inc. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,10 +14,8 @@
 
 //! Data structures representing (multiple) selections and cursors.
 
-use std::cmp::{min, max};
+use std::cmp::{max, min};
 use std::ops::Deref;
-use std::ops::Bound;
-use std::ops::RangeBounds;
 
 use index_set::remove_n_at;
 use xi_rope::delta::{Delta, Transformer};
@@ -44,9 +42,7 @@ impl Selection {
 
     /// Creates a selection with a single region.
     pub fn new_simple(region: SelRegion) -> Selection {
-        Selection {
-            regions: vec![region]
-        }
+        Selection { regions: vec![region] }
     }
 
     /// Clear the selection.
@@ -134,8 +130,10 @@ impl Selection {
         if !delete_adjacent && self.regions[first].max() == start {
             first += 1;
         }
-        if last < self.regions.len() && ((delete_adjacent && self.regions[last].min() <= end)
-           || (!delete_adjacent && self.regions[last].min() < end)) {
+        if last < self.regions.len()
+            && ((delete_adjacent && self.regions[last].min() <= end)
+                || (!delete_adjacent && self.regions[last].min() < end))
+        {
             last += 1;
         }
         remove_n_at(&mut self.regions, first, last - first);
@@ -216,7 +214,6 @@ impl Selection {
         }
         result
     }
-
 }
 
 /// Implementing the Deref trait allows callers to easily test `is_empty`, iterate
@@ -294,18 +291,12 @@ impl SelRegion {
 
     /// Returns a region with the given horizontal position.
     pub fn with_horiz(self, horiz: Option<HorizPos>) -> Self {
-        Self {
-            horiz,
-            ..self
-        }
+        Self { horiz, ..self }
     }
 
     /// Returns a region with the given affinity.
     pub fn with_affinity(self, affinity: Affinity) -> Self {
-        Self {
-            affinity,
-            ..self
-        }
+        Self { affinity, ..self }
     }
 
     /// Gets the earliest offset within the region, ie the minimum of both edges.
@@ -331,8 +322,7 @@ impl SelRegion {
     // Indicate whether this region should merge with the next.
     // Assumption: regions are sorted (self.min() <= other.min())
     fn should_merge(self, other: SelRegion) -> bool {
-        other.min() < self.max() ||
-            ((self.is_caret() || other.is_caret()) && other.min() == self.max())
+        other.min() < self.max() || ((self.is_caret() || other.is_caret()) && other.min() == self.max())
     }
 
     fn merge_with(self, other: SelRegion) -> SelRegion {
@@ -350,17 +340,6 @@ impl SelRegion {
     }
 }
 
-// Returns `[min..max)`
-impl<'a> RangeBounds<usize> for &'a SelRegion {
-    fn start_bound(&self) -> Bound<&usize> {
-        Bound::Included(min(&self.start, &self.end))
-    }
-    
-    fn end_bound(&self) -> Bound<&usize> {
-        Bound::Excluded(max(&self.start, &self.end))
-    }
-}
-
 impl From<SelRegion> for Selection {
     fn from(region: SelRegion) -> Self {
         Self::new_simple(region)
@@ -369,7 +348,7 @@ impl From<SelRegion> for Selection {
 
 #[cfg(test)]
 mod tests {
-    use super::{Selection, SelRegion};
+    use super::{SelRegion, Selection};
     use std::ops::Deref;
 
     fn r(start: usize, end: usize) -> SelRegion {

@@ -1,4 +1,4 @@
-// Copyright 2016 The xi-editor Authors.
+// Copyright 2016 Google Inc. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,8 +16,8 @@
 
 extern crate xi_rpc;
 
-use std::thread;
 use std::sync::mpsc;
+use std::thread;
 
 /*
 use xi_rpc::chan::Chan;
@@ -48,12 +48,12 @@ pub fn test_mpsc() {
     let n_iter = 1000000;
     let (chan1s, chan1) = mpsc::channel();
     let (chan2s, chan2) = mpsc::channel();
-    let thread1 = thread::spawn(move|| {
+    let thread1 = thread::spawn(move || {
         for _ in 0..n_iter {
             chan2s.send(chan1.recv()).unwrap();
         }
     });
-    let thread2 = thread::spawn(move|| {
+    let thread2 = thread::spawn(move || {
         for _ in 0..n_iter {
             chan1s.send(42).unwrap();
             let _ = chan2.recv();

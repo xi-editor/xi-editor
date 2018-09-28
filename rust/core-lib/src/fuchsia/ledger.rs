@@ -1,4 +1,4 @@
-// Copyright 2017 The xi-editor Authors.
+// Copyright 2017 Google Inc. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,10 +16,10 @@
 // TODO merge with equivalent module in fuchsia/rust_ledger_example into a library?
 
 use apps_ledger_services_public::*;
-use fuchsia::read_entire_vmo;
 use fidl::Error;
-use magenta::{Vmo, self};
-use sha2::{Sha256, Digest};
+use fuchsia::read_entire_vmo;
+use magenta::{self, Vmo};
+use sha2::{Digest, Sha256};
 
 // Rust emits a warning if matched-on constants aren't all-caps
 pub const OK: Status = Status_Ok;
@@ -46,7 +46,7 @@ pub fn value_result(res: (Status, Option<Vmo>)) -> Result<Option<Vec<u8>>, Value
         (OK, Some(vmo)) => {
             let buffer = read_entire_vmo(&vmo).map_err(ValueError::Vmo)?;
             Ok(Some(buffer))
-        },
+        }
         (KEY_NOT_FOUND, _) => Ok(None),
         (NEEDS_FETCH, _) => Err(ValueError::NeedsFetch),
         (status, _) => Err(ValueError::LedgerFail(status)),

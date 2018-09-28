@@ -1,4 +1,4 @@
-// Copyright 2016 The xi-editor Authors.
+// Copyright 2016 Google Inc. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -31,8 +31,6 @@
     unreadable_literal,
 ))]
 
-#[macro_use]
-extern crate log;
 extern crate regex;
 extern crate serde;
 #[macro_use]
@@ -130,7 +128,6 @@ use apps_ledger_services_public::Ledger_Proxy;
 
 pub use config::{BufferItems as BufferConfig, Table as ConfigTable};
 pub use core::{XiCore, WeakXiCore};
-pub use editor::EditType;
 pub use plugins::rpc as plugin_rpc;
 pub use plugins::manifest as plugin_manifest;
 pub use plugins::PluginPid;

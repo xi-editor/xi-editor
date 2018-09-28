@@ -36,11 +36,11 @@ from core: {"id":0,"result": "view-id-1"}
 `client_started {"config_dir" "some/path"?, "client_extras_dir":
 "some/other/path"?}`
 
-Sent by the client immediately after establishing the core connection. This is
-used to perform initial setup. The two arguments are optional; the `config_dir`
-points to a directory where the user's config files and plugins live, and the
-`client_extras_dir` points to a directory where the frontend can package
-additional resources, such as bundled plugins.
+ Sent by the client immediately after establishing the core connection. This is
+ used to perform initial setup. The two arguments are optional; the `config_dir`
+ points to a directory where the user's config files and plugins live, and the
+ `client_extras_dir` points to a directory where the frontend can package
+ additional resources, such as bundled plugins.
 
 ### new_view
 
@@ -106,28 +106,7 @@ inner methods described below:
 
 `insert {"chars":"A"}`
 
-Inserts the `chars` string at the current cursor locations.
-
-#### paste
-
-`paste {"chars": "password"}`
-
-Inserts the `chars` string at the current cursor locations. If there are
-multiple cursors and `chars` has the same number of lines as there are
-cursors, one line will be inserted at each cursor, in order; otherwise the full
-string will be inserted at each cursor.
-
-#### copy 
-
-`copy -> String|Null`
-
-Copies the active selection, returning their contents or `Null` if the selection was empty.
-
-#### cut 
-
-`cut -> String|Null`
-
-Cut the active selection, returning their contents or `Null` if the selection was empty.
+Inserts the `chars` string at the current cursor location.
 
 #### cancel_operation
 
@@ -199,7 +178,6 @@ that takes a "movement" enum as a parameter.
 delete_backward
 delete_forward
 insert_newline
-duplicate_line
 move_up
 move_up_and_modify_selection
 move_down
@@ -223,27 +201,6 @@ uppercase
 lowercase
 indent
 outdent
-```
-
-### Language Support Oriented features (in Edit Namespace)
-
-#### Hover
-Get Hover for a position in file. The request for *hover* is made as a notification. The client is forwarded result back via a `show_hover` rpc
-
-If position is skipped in the request, current cursor position will be used in core.
-
-```
-request_hover {
-    "request_id": number,
-    "position"?: Position
-}
-```
-
-```ts
-interface Position {
-    line: number,
-    column: number,
-}
 ```
 
 ### Plugin namespace
@@ -284,145 +241,28 @@ Sends a custom rpc command to the named receiver. This may be a notification
 or a request.
 
 
-### Find and replace methods
-
-#### find
-
-`find {"chars": "a", "case_sensitive": false, "regex": false, "whole_words": true}`
-Parameters `regex` and `whole_words` are optional and by default `false`.
-
-Sets the current search query and options.
-
-#### find_next and find_previous
-
-`find_next {"wrap_around": true, "allow_same": false, "modify_selection": "set"}`
-`find_previous {"wrap_around": true, "allow_same": false, "modify_selection": "set"}`
-All parameters are optional. Boolean parameters are by default `false` and `modify_selection`
-is `set` by default. If `allow_same` is set to `true` the current selection is considered a
-valid next occurrence. Supported options for `modify_selection` are:
-* `none`: the selection is not modified
-* `set`: the next/previous match will be set as the new selection
-* `add`: the next/previous match will be added to the current selection
-* `add_remove_current`: the previously added selection will be removed and the next/previous
-match will be added to the current selection
-
-Selects the next/previous occurrence matching the search query.
-
-#### find_all
-
-`find_all { }`
-
-Selects all occurrences matching the search query.
-
-#### highlight_find
-
-`highlight_find {"visible": true}`
-
-Shows/hides active search highlights.
-
-#### selection_for_find
-
-`selection_for_find {"case_sensitive": false}`
-The parameter `case_sensitive` is optional and `false` if not set.
-
-Sets the current selection as the search query.
-
-#### replace
-
-`replace {"chars": "a", "preserve_case": false}`
-The parameter `preserve_case` is currently not implemented and ignored.
-
-Sets the replacement string.
-
-#### selection_for_replace
-
-`selection_for_replace {"case_sensitive": false}`
-The parameter `case_sensitive` is optional and `false` if not set.
-
-Sets the current selection as the replacement string.
-
-#### replace_next
-
-`replace_next { }`
-
-Replaces the next matching occurrence with the replacement string.
-
-#### replace_all
-
-`replace_all { }`
-
-Replaces all matching occurrences with the replacement string.
-
-#### selection_into_lines
-
-`selection_into_lines { }`
-
-Splits all current selections into lines.
-
 ## From back-end to front-end
 
-### View update protocol
+**Note:** The following three methods are used to update the view's contents. For
+a more detailed explanation see [Xi view update protocol](#xi-view-update-protocol).
 
-The following three methods are used to update the view's contents. The design
-of the view update protocol, has a few particular goals in mind:
-
-- Keep everything async.
-- Keep network traffic minimal.
-- Allow the front-end to retain as much information as possible (including text
-  if only cursors are updated).
-- Allow the front-end to use small amounts of memory even when document is
-  large.
-
-Conceptually, the core maintains a full view of the document, which can be
-considered an array of lines. Each line consists of the *text* (a string), a set
-of *cursor* locations, and a structure representing *style* information. Many
-operations update this view, at which point the core sends an `update`
-notification to the front-end.
-
-The front-end maintains a *cache* of this view. Some lines will be present,
-others will be missing. A cache is consistent with the true state when all
-present lines match.
-
-To optimize communication, the core keeps some state about the client. One bit
-of this state is the *scroll window;* in general, the core tries to proactively
-update all lines within this window (plus a certain amount of slop on top and
-bottom). In addition, the core maintains a set of lines in the client's cache.
-If a line changes, the update need only be communicated if it is in this set.
-This set is conservative; if a line is missing in the actual cache held by the
-front-end (evicted to save memory), no great harm is done updating it. The
-frontend reports this scroll window to the core by using the `scroll` method of
-the `edit` notification.
-
-#### def_style
+#### set_style
 
 ```
-def_style
+set_style
   id: number
-  fg_color?: number // 32-bit ARGB (word-order) value
-  bg_color?: number // 32-bit ARGB (word-order) value, default 0
+  fg_color?: number // 32-bit RGBA value
+  bg_color?: number // 32-bit RGBA value, default 0
   weight?: number // 100..900, default 400
   italic?: boolean  // default false
   underline?: boolean // default false
 ```
-
-(It's not hard to imagine more style properties such as typeface, size, OpenType
-features, etc).
-
-The guarantee on `id` is that it is not currently in use in any lines in the
-view. However, in practice, it will probably just count up. It can also be
-assumed to be small, so using it as an index into a dense array is reasonable.
-
-There are two reserved style IDs, so new style IDs will begin at 2. Style ID 0
-is reserved for selections and ID 1 is reserved for find results.
 
 #### scroll_to
 
 ```
 scroll_to: [number, number]  // line, column (in utf-8 code units)
 ```
-
-This notification indicates that the frontend should scroll its cursor to the
-given line and column.
 
 #### update
 
@@ -440,39 +280,6 @@ interface Op {
 }
 ```
 
-The `pristine` flag indicates whether or not, after this update, this document
-has unsaved changes.
-
-The `rev` field is not present in current builds, but will be at some point in
-the future.
-
-An update request can be seen as a function from the old client cache state to a
-new one. During evaluation, maintain an index (`old_ix`) into the old `lines`
-array, initially 0, and a new lines array, initially empty. [Note that this
-document specifies the semantics. The actual implementation will almost
-certainly represent at least initial and trailing sequences of invalid lines by
-their count; and the editing operations may be more efficiently done in-place
-than by copying from the old state to the new].
-
-The "copy" op appends the `n` lines `[old_ix: old_ix + n]` to the new lines
-array, and increments `old_ix` by `n`.
-
-The "skip" op increments `old_ix` by `n`.
-
-The "invalidate" op appends n invalid lines to the new lines array.
-
-The "ins" op appends new lines, specified by the "`lines`" parameter, specified
-in more detail below. For this op, `n` must equal `lines.length` (alternative:
-make n optional in this case). It does not update `old_ix`.
-
-The "update" op updates the cursor and/or style of n existing lines. As in
-"ins", n must equal lines.length. It also increments `old_ix` by `n`.
-
-**Note:** The "update" op is not currently used by core.
-
-In all cases, n is guaranteed positive and nonzero (as a consequence, any line
-present in the old state is copied at most once to the new state).
-
 ```
 interface Line {
   text?: string  // present when op is "update"
@@ -480,42 +287,6 @@ interface Line {
   styles?: number[]  // length is a multiple of 3, see below
 }
 ```
-
-The interpretation of a line is different for "update" or "ins" ops. In an "ins"
-op, text is always present, and missing cursor or styles properties are
-interpreted as empty (no cursors on that line, no styles).
-
-In an "update" op, then the text property is absent from the line, and text is
-copied from the previous state (or left invalid if the previous state is
-invalid), and the cursor and styles are updated if present. To delete cursors
-from a line, the core sets the cursor property to the empty list.
-
-The styles property represents style spans, in an efficient encoding. It is
-conceptually an array of triples (though flattened, so triple at is
-`styles[i*3]`, `styles[i*3 + 1]`, `styles[i*3 + 2]`). The first element of the
-triple is the start index (in utf-8 code units), but encoded as a delta relative
-to the *end* of the last span (or relative to 0 for the first triple). It may be
-negative, if spans overlap. The second element is the length (in utf-8 code
-units). It is guaranteed nonzero and positive. The third element is a style id.
-The core guarantees that any style id sent in a styles property will have
-previously been set in a set_style request.
-
-The number of lines in the new lines array always matches the view as maintained
-by the core. Another way of saying this is that adding all "`n`" values except
-for "skip" operations is the number of lines. [Discussion: the last line always
-represents a partial line, so an empty document is one empty line. But I think
-the initial state should be the empty array. Then, the empty array represents
-the state that no updates have been processed].
-
-```
-interface Line {
-  text?: string  // present when op is "update"
-  cursor?: number[]  // utf-8 code point offsets, in increasing order
-  styles?: number[]  // length is a multiple of 3, see below
-}
-```
-
----
 
 #### theme_changed
 
@@ -525,14 +296,6 @@ Notifies the client that the theme has been changed. The client should
 use the new theme to set colors as appropriate. The `Theme` object is
 directly serialized from a [`syntect::highlighting::ThemeSettings`](https://github.com/trishume/syntect/blob/master/src/highlighting/theme.rs#L27)
 instance.
-
-
-#### available_themes
-
-`available_themes {"themes": ["InspiredGitHub"]}`
-
-Notifies the client of the available themes.
-
 
 #### config_changed
 
@@ -613,45 +376,26 @@ this writing, the following is valid json for a `Command` object:
     }
 ```
 
-### Language Support Specific Commands
-
-#### Show Hover
-
-`show_hover { request_id: number, result: string }`
-
 ### Status Bar Commands
 
 #### add_status_item
 
-`add_status_item { "source": "status_example", "key": "my_key", "value": "hello", "alignment": "left" }`
+`add_status_item { key: "my_key", value: "hello", alignment: "left" }`
 
-Adds a status item, which will be displayed on the frontend's status bar. Status items have a reference to whichever plugin added them. The alignment key dictates whether this item appears on the left side or the right side of the bar. This alignment can only be set when the item is added.
+Adds a status item, which will be displayed on the frontend's status bar. The alignment key dictates whether this item appears on the left side or the right side of the bar. This alignment can only be set when the item is added.
 
 #### update_status_item
 
-`update_status_item { "key": "my_key", "value": "hello"}`
+`update_status_item { key: "my_key", value: "hello"}`
 
 Update a status item with the specified key with the new value.
 
 #### remove_status_item
 
-`remove_status_item { "key": "my_key" }`
+`remove_status_item { key: "my_key" }`
 
 Removes a status item from the front end.
 
-### Find and replace commands
-
-#### find_status
-
-`find_status {"view_id": "view-id-1", "queries": [{"chars": "a", "case_sensitive": false, "is_regex": false, "whole_words": true, "matches": 6}]}`
-
-Notifies the client about the current search queries and search options.
-
-#### replace_status
-
-`replace_status {"view_id": "view-id-1", "status": {"chars": "a", "preserve_case": false}}`
-
-Notifies the client about the current replacement string and replace options.
 
 ## Other future extensions
 
@@ -663,6 +407,98 @@ Things the protocol will need to cover:
 
 * General configuration options (word wrap, etc).
 
+* Many more commands (find, replace).
+
 * Display of autocomplete options.
 
 * ...
+
+---
+
+# Xi view update protocol
+
+This document describes a proposal for a new protocol for sending view updates from the core to the front-end.
+
+## Background
+
+Goals: keep everything async. Keep network traffic minimal. Allow front-end to retain as much information as possible (including text if only cursors are updated). Allow front-end to use small amounts of memory even when document is large.
+
+Conceptually, the core maintains a full view of the document, which can be considered an array of lines. Each line consists of the *text* (a string), a set of *cursor* locations, and a structure representing *style* information. Many operations update this view, at which point the core sends a notification to the front-end.
+
+The front-end maintains a *cache* of this view. Some lines will be present, others will be missing. A cache is consistent with the true state when all present lines match.
+
+To optimize communication, the core keeps some state about the client. One bit of this state is the *scroll window;* in general, the core tries to proactively update all lines within this window (plus a certain amount of slop on top and bottom). In addition, the core maintains a set of lines in the client's cache. If a line changes, the update need only be communicated if it is in this set. This set is conservative; if a line is missing in the actual cache held by the front-end (evicted to save memory), no great harm is done updating it.
+
+## Requests from core to front-end
+
+```
+set_style
+  id: number
+  fg_color?: number // 32-bit RGBA value
+  bg_color?: number // 32-bit RGBA value, default 0
+  weight?: number // 100..900, default 400
+  italic?: boolean  // default false
+  underline?: boolean // default false
+```
+
+It's not hard to imagine more style properties (typeface, size, OpenType features, etc).
+
+The guarantee on id is that it is not currently in use in any lines in the view. However, in practice, it will probably just count up. It can also be assumed to be small, so using it as an index into a dense array is reasonable.
+
+Discussion question: should the scope of set_style be to a tab, or to the global session?
+
+Style number 0 is reserved for selections. Discussion question: should other styles be reserved, like 1 for find results?
+
+```
+scroll_to: [number, number]  // line, column (in utf-8 code units)
+```
+
+```
+update
+  rev?: number
+  ops: Op[]
+  view-id: string
+  pristine: bool
+
+interface Op {
+  op: "copy" | "skip" | "invalidate" | "update" | "ins"
+  n: number  // number of lines affected
+  lines?: Line[]  // only present when op is "update" or "ins"
+}
+```
+
+The `pristine` flag indicates whether or not, after this update, this document has unsaved changes.
+
+The `rev` field is not present in current builds, but will be at some point in the future.
+
+An update request can be seen as a function from the old client cache state to a new one. During evaluation, maintain an index (`old_ix`) into the old `lines` array, initially 0, and a new lines array, initially empty. [Note that this document specifies the semantics. The actual implementation will almost certainly represent at least initial and trailing sequences of invalid lines by their count; and the editing operations may be more efficiently done in-place than by copying from the old state to the new].
+
+The "copy" op appends the `n` lines `[old_ix: old_ix + n]` to the new lines array, and increments `old_ix` by `n`.
+
+The "skip" op increments `old_ix` by `n`.
+
+The "invalidate" op appends n invalid lines to the new lines array.
+
+The "ins" op appends new lines, specified by the "`lines`" parameter, specified in more detail below. For this op, `n` must equal `lines.length` (alternative: make n optional in this case). It does not update `old_ix`.
+
+The "update" op updates the cursor and/or style of n existing lines. As in "ins", n must equal lines.length. It also increments `old_ix` by `n`.
+
+**Note:** The "update" op is not currently used by core.
+
+In all cases, n is guaranteed positive and nonzero (as a consequence, any line present in the old state is copied at most once to the new state).
+
+```
+interface Line {
+  text?: string  // present when op is "update"
+  cursor?: number[]  // utf-8 code point offsets, in increasing order
+  styles?: number[]  // length is a multiple of 3, see below
+}
+```
+
+The interpretation of a line is different for "update" or "ins" ops. In an "ins" op, text is always present, and missing cursor or styles properties are interpreted as empty (no cursors on that line, no styles).
+
+In an "update" op, then the text property is absent from the line, and text is copied from the previous state (or left invalid if the previous state is invalid), and the cursor and styles are updated if present. To delete cursors from a line, the core sets the cursor property to the empty list.
+
+The styles property represents style spans, in an efficient encoding. It is conceptually an array of triples (though flattened, so triple at is `styles[i*3]`, `styles[i*3 + 1]`, `styles[i*3 + 2]`). The first element of the triple is the start index (in utf-8 code units), but encoded as a delta relative to the *end* of the last span (or relative to 0 for the first triple). It may be negative, if spans overlap. The second element is the length (in utf-8 code units). It is guaranteed nonzero and positive. The third element is a style id. The core guarantees that any style id sent in a styles property will have previously been set in a set_style request.
+
+The number of lines in the new lines array always matches the view as maintained by the core. Another way of saying this is that adding all "`n`" values except for "skip" operations is the number of lines. [Discussion: the last line always represents a partial line, so an empty document is one empty line. But I think the initial state should be the empty array. Then, the empty array represents the state that no updates have been processed].
