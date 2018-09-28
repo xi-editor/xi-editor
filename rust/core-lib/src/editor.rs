@@ -386,9 +386,9 @@ impl Editor {
 
                     while state != State::Finished && tmp_offset > 0 {
                         let mut cursor = Cursor::new(&self.text, tmp_offset);
-                        let code_point = cursor.prev_codepoint().unwrap(); // TODO: unwrap
+                        let code_point = cursor.prev_codepoint().unwrap_or('0');
 
-                        tmp_offset = self.text.prev_codepoint_offset(tmp_offset).unwrap(); // TODO: unwrap
+                        tmp_offset = self.text.prev_codepoint_offset(tmp_offset).unwrap_or(0);
 
                         match state {
                             State::Start => {
@@ -524,7 +524,7 @@ impl Editor {
 
                     let mut start = region.end;
                     while delete_code_point_count > 0 {
-                        start = self.text.prev_codepoint_offset(start).unwrap();
+                        start = self.text.prev_codepoint_offset(start).unwrap_or(0);
                         delete_code_point_count -= 1;
                     }
                     start
