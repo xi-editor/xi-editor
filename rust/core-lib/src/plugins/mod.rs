@@ -14,30 +14,30 @@
 
 //! Plugins and related functionality.
 
-pub mod rpc;
-pub mod manifest;
 mod catalog;
+pub mod manifest;
+pub mod rpc;
 
 use std::fmt;
 use std::io::BufReader;
 use std::path::Path;
 use std::process::{Child, Command as ProcCommand, Stdio};
-use std::thread;
 use std::sync::Arc;
+use std::thread;
 
 use serde_json::Value;
 
-use xi_rpc::{self, RpcPeer, RpcLoop};
+use xi_rpc::{self, RpcLoop, RpcPeer};
 use xi_trace;
 
-use WeakXiCore;
 use config::Table;
 use tabs::ViewId;
+use WeakXiCore;
 
-use self::rpc::{PluginUpdate, PluginBufferInfo};
+use self::rpc::{PluginBufferInfo, PluginUpdate};
 
-pub use self::manifest::{PluginDescription, Command, PlaceholderRpc};
 pub(crate) use self::catalog::PluginCatalog;
+pub use self::manifest::{Command, PlaceholderRpc, PluginDescription};
 
 pub type PluginName = String;
 
@@ -45,8 +45,7 @@ pub type PluginName = String;
 ///
 /// Note: two instances of the same executable will have different identifiers.
 /// Note: this identifier is distinct from the OS's process id.
-#[derive(Serialize, Deserialize, Default, Debug, Clone, Copy, Hash,
-         PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Serialize, Deserialize, Default, Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PluginPid(pub(crate) usize);
 
 pub type PluginId = PluginPid;
@@ -70,11 +69,13 @@ impl Plugin {
     //and should only send the plugin_id. We can just use the existing 'new_buffer'
     // RPC for adding views
     pub fn initialize(&self, info: Vec<PluginBufferInfo>) {
-        self.peer.send_rpc_notification("initialize",
-                                        &json!({
+        self.peer.send_rpc_notification(
+            "initialize",
+            &json!({
                                          "plugin_id": self.id,
                                          "buffer_info": info,
-                                        }))
+                                        }),
+        )
     }
 
     pub fn shutdown(&self) {
@@ -83,39 +84,44 @@ impl Plugin {
 
     // TODO: rethink naming, does this need to be a vec?
     pub fn new_buffer(&self, info: &PluginBufferInfo) {
-        self.peer.send_rpc_notification("new_buffer",
-                                        &json!({
+        self.peer.send_rpc_notification(
+            "new_buffer",
+            &json!({
                                             "buffer_info": [info],
-                                        }))
+                                        }),
+        )
     }
 
     pub fn close_view(&self, view_id: ViewId) {
-        self.peer.send_rpc_notification("did_close",
-                                        &json!({
+        self.peer.send_rpc_notification(
+            "did_close",
+            &json!({
                                             "view_id": view_id,
-                                        }))
-
+                                        }),
+        )
     }
 
     pub fn did_save(&self, view_id: ViewId, path: &Path) {
-        self.peer.send_rpc_notification("did_save",
-                                        &json!({
+        self.peer.send_rpc_notification(
+            "did_save",
+            &json!({
                                             "view_id": view_id,
                                             "path": path,
-                                        }))
+                                        }),
+        )
     }
 
     pub fn update<F>(&self, update: &PluginUpdate, callback: F)
-        where F: FnOnce(Result<Value, xi_rpc::Error>) + Send + 'static
+    where
+        F: FnOnce(Result<Value, xi_rpc::Error>) + Send + 'static,
     {
-        self.peer.send_rpc_request_async("update", &json!(update),
-                                         Box::new(callback))
+        self.peer
+            .send_rpc_request_async("update", &json!(update), Box::new(callback))
     }
 
-
     pub fn toggle_tracing(&self, enabled: bool) {
-        self.peer.send_rpc_notification("tracing_config",
-                                        &json!({"enabled": enabled}))
+        self.peer
+            .send_rpc_notification("tracing_config", &json!({ "enabled": enabled }))
     }
 
     pub fn collect_trace(&self) -> Result<Value, xi_rpc::Error> {
@@ -123,22 +129,24 @@ impl Plugin {
     }
 
     pub fn config_changed(&self, view_id: ViewId, changes: &Table) {
-        self.peer.send_rpc_notification("config_changed",
-                                        &json!({"view_id": view_id,
-                                                "changes": changes}))
+        self.peer.send_rpc_notification(
+            "config_changed",
+            &json!({"view_id": view_id,
+                                                "changes": changes}),
+        )
     }
 
     pub fn get_hover(&self, view_id: ViewId, request_id: usize, position: usize) {
-        self.peer.send_rpc_notification("get_hover", 
-                                        &json!({"view_id": view_id,
+        self.peer.send_rpc_notification(
+            "get_hover",
+            &json!({"view_id": view_id,
                                                 "request_id": request_id,
-                                                "position": position}))
+                                                "position": position}),
+        )
     }
 }
 
-pub(crate) fn start_plugin_process(plugin_desc: Arc<PluginDescription>,
-                                    id: PluginId, core: WeakXiCore) {
-
+pub(crate) fn start_plugin_process(plugin_desc: Arc<PluginDescription>, id: PluginId, core: WeakXiCore) {
     let spawn_result = thread::Builder::new()
         .name(format!("<{}> core host thread", &plugin_desc.name))
         .spawn(move || {
@@ -156,7 +164,12 @@ pub(crate) fn start_plugin_process(plugin_desc: Arc<PluginDescription>,
                     let peer: RpcPeer = Box::new(looper.get_raw_peer());
                     let name = plugin_desc.name.clone();
                     peer.send_rpc_notification("ping", &Value::Array(Vec::new()));
-                    let plugin = Plugin { peer, process: child, name, id };
+                    let plugin = Plugin {
+                        peer,
+                        process: child,
+                        name,
+                        id,
+                    };
 
                     // set tracing immediately
                     if xi_trace::is_enabled() {
@@ -165,8 +178,7 @@ pub(crate) fn start_plugin_process(plugin_desc: Arc<PluginDescription>,
 
                     core.plugin_connect(Ok(plugin));
                     let mut core = core;
-                    let err = looper.mainloop(|| BufReader::new(child_stdout),
-                    &mut core);
+                    let err = looper.mainloop(|| BufReader::new(child_stdout), &mut core);
                     core.plugin_exit(id, err);
                 }
                 Err(err) => core.plugin_connect(Err(err)),

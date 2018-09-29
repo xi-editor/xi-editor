@@ -32,7 +32,7 @@ fn setup_logging() -> Result<(), fern::InitError> {
             _ => log::LevelFilter::Info,
         },
         // Default to info
-        Err(_) => log::LevelFilter::Info
+        Err(_) => log::LevelFilter::Info,
     };
 
     fern::Dispatch::new()

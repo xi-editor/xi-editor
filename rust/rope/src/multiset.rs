@@ -17,10 +17,10 @@
 use std::cmp;
 
 // These two imports are for the `apply` method only.
-use tree::{Node, NodeInfo, TreeBuilder};
 use interval::Interval;
-use std::slice;
 use std::fmt;
+use std::slice;
+use tree::{Node, NodeInfo, TreeBuilder};
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 struct Segment {
@@ -70,7 +70,7 @@ impl SubsetBuilder {
         if begin >= end {
             return;
         }
-        let len = end-begin;
+        let len = end - begin;
         let cur_total_len = self.total_len;
 
         // add 0-count segment to fill any gap
@@ -95,11 +95,13 @@ impl SubsetBuilder {
             }
         }
 
-        self.segments.push(Segment {len, count});
+        self.segments.push(Segment { len, count });
     }
 
     pub fn build(self) -> Subset {
-        Subset { segments: self.segments }
+        Subset {
+            segments: self.segments,
+        }
     }
 }
 
@@ -117,7 +119,7 @@ impl CountMatcher {
         match self {
             CountMatcher::Zero => (seg.count == 0),
             CountMatcher::NonZero => (seg.count != 0),
-            CountMatcher::All => true
+            CountMatcher::All => true,
         }
     }
 }
@@ -162,7 +164,11 @@ impl Subset {
 
     /// Count the total length of all the segments matching `matcher`.
     pub fn count(&self, matcher: CountMatcher) -> usize {
-        self.segments.iter().filter(|seg| matcher.matches(seg)).map(|seg| seg.len).sum()
+        self.segments
+            .iter()
+            .filter(|seg| matcher.matches(seg))
+            .map(|seg| seg.len)
+            .sum()
     }
 
     /// Convenience alias for `self.count(CountMatcher::All)`
@@ -191,7 +197,12 @@ impl Subset {
     pub fn subtract(&self, other: &Subset) -> Subset {
         let mut sb = SubsetBuilder::new();
         for zseg in self.zip(other) {
-            assert!(zseg.a_count >= zseg.b_count, "can't subtract {} from {}", zseg.a_count, zseg.b_count);
+            assert!(
+                zseg.a_count >= zseg.b_count,
+                "can't subtract {} from {}",
+                zseg.a_count,
+                zseg.b_count
+            );
             sb.push_segment(zseg.len, zseg.a_count - zseg.b_count);
         }
         sb.build()
@@ -216,7 +227,7 @@ impl Subset {
     fn transform(&self, other: &Subset, union: bool) -> Subset {
         let mut sb = SubsetBuilder::new();
         let mut seg_iter = self.segments.iter();
-        let mut cur_seg = Segment {len: 0, count: 0};
+        let mut cur_seg = Segment { len: 0, count: 0 };
         for oseg in &other.segments {
             if oseg.count > 0 {
                 sb.push_segment(oseg.len, if union { oseg.count } else { 0 });
@@ -228,8 +239,8 @@ impl Subset {
                         cur_seg = seg_iter.next().expect("self must cover all 0-regions of other").clone();
                     }
                     // consume as much of the segment as possible and necessary
-                    let to_consume = cmp::min(cur_seg.len,to_be_consumed);
-                    sb.push_segment(to_consume,cur_seg.count);
+                    let to_consume = cmp::min(cur_seg.len, to_be_consumed);
+                    sb.push_segment(to_consume, cur_seg.count);
                     to_be_consumed -= to_consume;
                     cur_seg.len -= to_consume;
                 }
@@ -328,8 +339,8 @@ impl Subset {
     pub fn mapper(&self, matcher: CountMatcher) -> Mapper {
         Mapper {
             range_iter: self.range_iter(matcher),
-            last_i: 0, // indices only need to be in non-decreasing order, not increasing
-            cur_range: (0,0), // will immediately try to consume next range
+            last_i: 0,         // indices only need to be in non-decreasing order, not increasing
+            cur_range: (0, 0), // will immediately try to consume next range
             subset_amount_consumed: 0,
         }
     }
@@ -357,9 +368,7 @@ impl fmt::Debug for Subset {
             }
             Ok(())
         } else {
-            f.debug_tuple("Subset")
-                .field(&self.segments)
-                .finish()
+            f.debug_tuple("Subset").field(&self.segments).finish()
         }
     }
 }
@@ -414,20 +423,33 @@ impl<'a> Iterator for ZipIter<'a> {
         match (self.a_segs.get(self.a_i), self.b_segs.get(self.b_i)) {
             (None, None) => None,
             (None, Some(_)) | (Some(_), None) => panic!("can't zip Subsets of different base lengths."),
-            (Some(&Segment {len: a_len, count: a_count}), Some(&Segment {len: b_len, count: b_count})) => {
+            (
+                Some(&Segment {
+                    len: a_len,
+                    count: a_count,
+                }),
+                Some(&Segment {
+                    len: b_len,
+                    count: b_count,
+                }),
+            ) => {
                 let len = if a_len + self.a_consumed == b_len + self.b_consumed {
-                    self.a_consumed += a_len; self.a_i += 1;
-                    self.b_consumed += b_len; self.b_i += 1;
+                    self.a_consumed += a_len;
+                    self.a_i += 1;
+                    self.b_consumed += b_len;
+                    self.b_i += 1;
                     self.a_consumed - self.consumed
                 } else if a_len + self.a_consumed < b_len + self.b_consumed {
-                    self.a_consumed += a_len; self.a_i += 1;
+                    self.a_consumed += a_len;
+                    self.a_i += 1;
                     self.a_consumed - self.consumed
                 } else {
-                    self.b_consumed += b_len; self.b_i += 1;
+                    self.b_consumed += b_len;
+                    self.b_i += 1;
                     self.b_consumed - self.consumed
                 };
                 self.consumed += len;
-                Some(ZipSegment {len, a_count, b_count})
+                Some(ZipSegment { len, a_count, b_count })
             }
         }
     }
@@ -437,7 +459,7 @@ pub struct Mapper<'a> {
     range_iter: RangeIter<'a>,
     // Not actually necessary for computation, just for dynamic checking of invariant
     last_i: usize,
-    cur_range: (usize,usize),
+    cur_range: (usize, usize),
     pub subset_amount_consumed: usize,
 }
 
@@ -459,8 +481,12 @@ impl<'a> Mapper<'a> {
     /// the total cost to be O(n) where `n = max(calls,ranges)` over all times
     /// called on a single `Mapper`.
     pub fn doc_index_to_subset(&mut self, i: usize) -> usize {
-        assert!(i >= self.last_i,
-            "method must be called with i in non-decreasing order. i={}<{}=last_i", i, self.last_i);
+        assert!(
+            i >= self.last_i,
+            "method must be called with i in non-decreasing order. i={}<{}=last_i",
+            i,
+            self.last_i
+        );
         self.last_i = i;
 
         while i >= self.cur_range.1 {
@@ -471,7 +497,7 @@ impl<'a> Mapper<'a> {
                 None => {
                     // ensure we don't try to consume any more
                     self.cur_range = (usize::max_value(), usize::max_value());
-                    return self.subset_amount_consumed
+                    return self.subset_amount_consumed;
                 }
             }
         }
@@ -479,7 +505,8 @@ impl<'a> Mapper<'a> {
         if i >= self.cur_range.0 {
             let dist_in_range = i - self.cur_range.0;
             dist_in_range + self.subset_amount_consumed
-        } else { // not in the subset
+        } else {
+            // not in the subset
             self.subset_amount_consumed
         }
     }
@@ -495,8 +522,23 @@ mod tests {
     #[test]
     fn test_apply() {
         let mut sb = SubsetBuilder::new();
-        for &(b, e) in &[(0, 1), (2, 4), (6, 11), (13, 14), (15, 18), (19, 23), (24, 26), (31, 32),
-                (33, 35), (36, 37), (40, 44), (45, 48), (49, 51), (52, 57), (58, 59)] {
+        for &(b, e) in &[
+            (0, 1),
+            (2, 4),
+            (6, 11),
+            (13, 14),
+            (15, 18),
+            (19, 23),
+            (24, 26),
+            (31, 32),
+            (33, 35),
+            (36, 37),
+            (40, 44),
+            (45, 48),
+            (49, 51),
+            (52, 57),
+            (58, 59),
+        ] {
             sb.add_range(b, e, 1);
         }
         sb.pad_to_len(TEST_STR.len());
@@ -578,17 +620,35 @@ mod tests {
 
     #[test]
     fn transform() {
-        transform_case("02345678BCDFGHKLNOPQRTUVXZbcefghjlmnopqrstwx", "027CDGKLOTUbcegopqrw",
-            "01279ACDEGIJKLMOSTUWYabcdegikopqruvwyz");
-        transform_case("01234678DHIKLMNOPQRUWZbcdhjostvy", "136KLPQZvy",
-            "13569ABCEFGJKLPQSTVXYZaefgiklmnpqruvwxyz");
-        transform_case("0125789BDEFIJKLMNPVXabdjmrstuwy", "12BIJVXjmrstu",
-            "12346ABCGHIJOQRSTUVWXYZcefghijklmnopqrstuvxz");
-        transform_case("12456789ABCEFGJKLMNPQRSTUVXYadefghkrtwxz", "15ACEFGKLPRUVYdhrtx",
-            "0135ACDEFGHIKLOPRUVWYZbcdhijlmnopqrstuvxy");
-        transform_case("0128ABCDEFGIJMNOPQXYZabcfgijkloqruvy", "2CEFGMZabijloruvy",
-            "2345679CEFGHKLMRSTUVWZabdehijlmnoprstuvwxyz");
-        transform_case("01245689ABCDGJKLMPQSTWXYbcdfgjlmnosvy", "01245ABCDJLQSWXYgsv",
-            "0123457ABCDEFHIJLNOQRSUVWXYZaeghikpqrstuvwxz");
+        transform_case(
+            "02345678BCDFGHKLNOPQRTUVXZbcefghjlmnopqrstwx",
+            "027CDGKLOTUbcegopqrw",
+            "01279ACDEGIJKLMOSTUWYabcdegikopqruvwyz",
+        );
+        transform_case(
+            "01234678DHIKLMNOPQRUWZbcdhjostvy",
+            "136KLPQZvy",
+            "13569ABCEFGJKLPQSTVXYZaefgiklmnpqruvwxyz",
+        );
+        transform_case(
+            "0125789BDEFIJKLMNPVXabdjmrstuwy",
+            "12BIJVXjmrstu",
+            "12346ABCGHIJOQRSTUVWXYZcefghijklmnopqrstuvxz",
+        );
+        transform_case(
+            "12456789ABCEFGJKLMNPQRSTUVXYadefghkrtwxz",
+            "15ACEFGKLPRUVYdhrtx",
+            "0135ACDEFGHIKLOPRUVWYZbcdhijlmnopqrstuvxy",
+        );
+        transform_case(
+            "0128ABCDEFGIJMNOPQXYZabcfgijkloqruvy",
+            "2CEFGMZabijloruvy",
+            "2345679CEFGHKLMRSTUVWZabdehijlmnoprstuvwxyz",
+        );
+        transform_case(
+            "01245689ABCDGJKLMPQSTWXYbcdfgjlmnosvy",
+            "01245ABCDJLQSWXYgsv",
+            "0123457ABCDEFHIJLNOQRSUVWXYZaeghikpqrstuvwxz",
+        );
     }
 }

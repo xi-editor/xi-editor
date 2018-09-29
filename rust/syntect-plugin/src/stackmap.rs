@@ -22,7 +22,6 @@ use std::collections::HashMap;
 
 use syntect::parsing::Scope;
 
-
 #[derive(Debug, Default)]
 struct Node {
     value: Option<u32>,
@@ -47,7 +46,10 @@ pub enum LookupResult {
 
 impl Node {
     pub fn new(value: u32) -> Self {
-        Node { value: Some(value), children: HashMap::new() }
+        Node {
+            value: Some(value),
+            children: HashMap::new(),
+        }
     }
 
     fn get_value(&mut self, stack: &[Scope], next_id: u32) -> LookupResult {
@@ -56,7 +58,7 @@ impl Node {
         if stack.len() == 1 {
             if !self.children.contains_key(first) {
                 self.children.insert(first.to_owned(), Node::new(next_id));
-                return LookupResult::New(next_id)
+                return LookupResult::New(next_id);
             }
 
             // if key exists, value still might not be assigned:
@@ -64,10 +66,10 @@ impl Node {
             if needs_value {
                 let node = self.children.get_mut(first).unwrap();
                 node.value = Some(next_id);
-                return LookupResult::New(next_id)
+                return LookupResult::New(next_id);
             } else {
-               let value = self.children.get(first).unwrap().value.unwrap();
-                return LookupResult::Existing(value)
+                let value = self.children.get(first).unwrap().value.unwrap();
+                return LookupResult::Existing(value);
             }
         }
         // not the last item: recurse, creating node as necessary
@@ -87,8 +89,8 @@ impl StackMap {
             self.next_id += 1;
         }
         result
-        }
     }
+}
 
 impl LookupResult {
     pub fn is_new(&self) -> bool {
@@ -99,12 +101,11 @@ impl LookupResult {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use syntect::parsing::ScopeStack;
     use std::str::FromStr;
+    use syntect::parsing::ScopeStack;
 
     #[test]
     fn test_get_value() {

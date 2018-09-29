@@ -22,9 +22,9 @@ extern crate xi_unicode;
 
 use xi_unicode::{LineBreakIterator, LineBreakLeafIter};
 
+use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufReader;
-use std::fs::File;
 
 fn quote_str(s: &str) -> String {
     let mut result = String::new();
@@ -42,9 +42,7 @@ fn quote_str(s: &str) -> String {
 }
 
 fn check_breaks(s: &str, breaks: &[usize]) -> bool {
-    let my_breaks = LineBreakIterator::new(s)
-        .map(|(bk, _hard)| bk)
-        .collect::<Vec<_>>();
+    let my_breaks = LineBreakIterator::new(s).map(|(bk, _hard)| bk).collect::<Vec<_>>();
     if my_breaks != breaks {
         println!("failed case: \"{}\"", quote_str(s));
         println!("expected {:?} actual {:?}", breaks, my_breaks);
@@ -80,7 +78,9 @@ fn run_test(filename: &str, lb: bool) -> std::io::Result<()> {
     let mut total = 0;
     loop {
         let mut line = String::new();
-        if reader.read_line(&mut line)? == 0 { break };
+        if reader.read_line(&mut line)? == 0 {
+            break;
+        };
         let mut s = String::new();
         let mut breaks = Vec::new();
         for token in line.split_whitespace() {
@@ -95,9 +95,13 @@ fn run_test(filename: &str, lb: bool) -> std::io::Result<()> {
         }
         total += 1;
         if lb {
-            if check_lb(&s) { pass += 1; }
+            if check_lb(&s) {
+                pass += 1;
+            }
         } else {
-            if check_breaks(&s, &breaks) { pass += 1; }
+            if check_breaks(&s, &breaks) {
+                pass += 1;
+            }
         }
     }
     println!("{}/{} pass", pass, total);

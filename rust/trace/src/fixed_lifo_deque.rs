@@ -57,7 +57,7 @@ impl<T> FixedLifoDeque<T> {
     pub fn with_limit(n: usize) -> Self {
         FixedLifoDeque {
             storage: VecDeque::with_capacity(n),
-            limit: n
+            limit: n,
         }
     }
 
@@ -139,7 +139,8 @@ impl<T> FixedLifoDeque<T> {
     #[inline]
     #[cfg(feature = "collections_range")]
     pub fn drain<R>(&mut self, range: R) -> Drain<T>
-        where R : RangeArgument<usize>
+    where
+        R: RangeArgument<usize>,
     {
         self.storage.drain(range)
     }
@@ -151,7 +152,8 @@ impl<T> FixedLifoDeque<T> {
 
     #[inline]
     pub fn contains(&self, x: &T) -> bool
-        where T: PartialEq<T>
+    where
+        T: PartialEq<T>,
     {
         self.storage.contains(x)
     }
@@ -179,7 +181,10 @@ impl<T> FixedLifoDeque<T> {
     #[inline]
     fn drop_excess_for_inserting(&mut self, n_to_be_inserted: usize) {
         if self.storage.len() + n_to_be_inserted > self.limit {
-            let overflow = self.storage.len().min(self.storage.len() + n_to_be_inserted - self.limit);
+            let overflow = self
+                .storage
+                .len()
+                .min(self.storage.len() + n_to_be_inserted - self.limit);
             self.storage.drain(..overflow);
         }
     }
@@ -226,7 +231,7 @@ impl<T> FixedLifoDeque<T> {
     pub fn split_off(&mut self, at: usize) -> FixedLifoDeque<T> {
         FixedLifoDeque {
             storage: self.storage.split_off(at),
-            limit: self.limit
+            limit: self.limit,
         }
     }
 
@@ -240,7 +245,8 @@ impl<T> FixedLifoDeque<T> {
 
     #[inline]
     pub fn retain<F>(&mut self, f: F)
-        where F: FnMut(&T) -> bool
+    where
+        F: FnMut(&T) -> bool,
     {
         self.storage.retain(f);
     }
