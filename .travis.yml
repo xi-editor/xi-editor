@@ -16,6 +16,9 @@ matrix:
 cache:
   directories:
     - $HOME/.cargo
+  
+before_script:
+  - rustup component add rustfmt-preview
 
 script:
   - cd rust
@@ -23,3 +26,4 @@ script:
   - export RUST_BACKTRACE=1
   - RUSTFLAGS="-D warnings" cargo check --all || exit
   - cargo test --all || exit
+  - cargo fmt -- --check || exit
