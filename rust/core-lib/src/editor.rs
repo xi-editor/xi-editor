@@ -596,19 +596,26 @@ impl Editor {
 
         for &region in view.sel_regions() {
             if region.is_caret() {
-                let middle = region.end;
-                let start = self.text.prev_grapheme_offset(middle).unwrap_or(0);
-                // Note: this matches Sublime's behavior. Cocoa would swap last
+                let mut middle = region.end;
+                let mut start = self.text.prev_grapheme_offset(middle).unwrap_or(0);
+                let mut end = self.text.next_grapheme_offset(middle).unwrap_or(middle);
+
+                // Note: this matches Emac's behavior. It swaps last
                 // two characters of line if at end of line.
-                if let Some(end) = self.text.next_grapheme_offset(middle) {
-                    if start >= last {
-                        let interval = Interval::new_closed_open(start, end);
-                        let before =  self.text.slice_to_cow(start..middle);
-                        let after = self.text.slice_to_cow(middle..end);
-                        let swapped: String = [after, before].concat();
-                        builder.replace(interval, Rope::from(swapped));
-                        last = end;
+                if start >= last {
+                    let end_line_offset = view.offset_of_line(&self.text, view.line_of_offset(&self.text, end));
+                    if end == middle || end == end_line_offset {
+                        middle = start;
+                        start = self.text.prev_grapheme_offset(middle).unwrap_or(0);
+                        end = middle.wrapping_add(1);
                     }
+
+                    let interval = Interval::new_closed_open(start, end);
+                    let before =  self.text.slice_to_cow(start..middle);
+                    let after = self.text.slice_to_cow(middle..end);
+                    let swapped: String = [after, before].concat();
+                    builder.replace(interval, Rope::from(swapped));
+                    last = end;
                 }
             } else if let Some(previous_selection) = optional_previous_selection {
                 let current_interval = self.sel_region_to_interval_and_rope(region);
