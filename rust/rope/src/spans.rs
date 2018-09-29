@@ -16,13 +16,13 @@
 //! annotations. It is parameterized over a data type, so can be used for
 //! storing different annotations.
 
+use std::fmt;
 use std::marker::PhantomData;
 use std::mem;
-use std::fmt;
 
-use tree::{Leaf, Node, NodeInfo, TreeBuilder, Cursor};
 use delta::{Delta, DeltaElement, Transformer};
 use interval::Interval;
+use tree::{Cursor, Leaf, Node, NodeInfo, TreeBuilder};
 
 const MIN_LEAF: usize = 32;
 const MAX_LEAF: usize = 64;
@@ -37,7 +37,7 @@ pub struct Span<T: Clone> {
 
 #[derive(Clone, Default)]
 pub struct SpansLeaf<T: Clone> {
-    len: usize,  // measured in base units
+    len: usize, // measured in base units
     spans: Vec<Span<T>>,
 }
 
@@ -73,7 +73,7 @@ impl<T: Clone + Default> Leaf for SpansLeaf<T> {
         if self.spans.len() <= MAX_LEAF {
             None
         } else {
-            let splitpoint = self.spans.len() / 2;  // number of spans
+            let splitpoint = self.spans.len() / 2; // number of spans
             let splitpoint_units = self.spans[splitpoint].iv.start();
             let mut new = self.spans.split_off(splitpoint);
             for span in &mut new {
@@ -98,7 +98,7 @@ impl<T: Clone + Default> NodeInfo for SpansInfo<T> {
     }
 
     fn compute_info(l: &SpansLeaf<T>) -> Self {
-        let mut iv = Interval::new_closed_open(0, 0);  // should be Interval::default?
+        let mut iv = Interval::new_closed_open(0, 0); // should be Interval::default?
         for span in &l.spans {
             iv = iv.union(span.iv);
         }
@@ -163,8 +163,7 @@ impl<T: Clone + Default> Spans<T> {
     // Note: this implementation is not efficient for very large Spans objects, as it
     // traverses all spans linearly. A more sophisticated approach would be to traverse
     // the tree, and only delve into subtrees that are transformed.
-    pub fn transform<N: NodeInfo>(&self, base_start: usize, base_end: usize,
-            xform: &mut Transformer<N>) -> Self {
+    pub fn transform<N: NodeInfo>(&self, base_start: usize, base_end: usize, xform: &mut Transformer<N>) -> Self {
         // TODO: maybe should take base as an Interval and figure out "after" from that
         let new_start = xform.transform(base_start, false);
         let new_end = xform.transform(base_end, true);
@@ -195,8 +194,9 @@ impl<T: Clone + Default> Spans<T> {
     /// Panics if `self` and `other` have different lengths.
     ///
     pub fn merge<F, O>(&self, other: &Self, mut f: F) -> Spans<O>
-        where F: FnMut(&T, Option<&T>) -> O,
-              O: Clone + Default
+    where
+        F: FnMut(&T, Option<&T>) -> O,
+        O: Clone + Default,
     {
         //TODO: confirm that this is sensible behaviour
         assert_eq!(self.len(), other.len());
@@ -301,10 +301,8 @@ impl<T: Clone + Default> Spans<T> {
         let mut b = TreeBuilder::new();
         for elem in &delta.els {
             match elem {
-                &DeltaElement::Copy(beg, end) =>
-                    b.push(self.subseq(Interval::new_closed_open(beg, end))),
-                &DeltaElement::Insert(ref n) =>
-                    b.push(SpansBuilder::new(n.len()).build()),
+                &DeltaElement::Copy(beg, end) => b.push(self.subseq(Interval::new_closed_open(beg, end))),
+                &DeltaElement::Insert(ref n) => b.push(SpansBuilder::new(n.len()).build()),
             }
         }
         *self = b.build();
@@ -313,10 +311,10 @@ impl<T: Clone + Default> Spans<T> {
 
 impl<T: Clone + Default + fmt::Debug> fmt::Debug for Spans<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let strs = self.iter().map(|(iv, val)| {
-            format!("{}: {:?}", iv, val)
-        })
-        .collect::<Vec<String>>();
+        let strs = self
+            .iter()
+            .map(|(iv, val)| format!("{}: {:?}", iv, val))
+            .collect::<Vec<String>>();
         write!(f, "len: {}\nspans:\n\t{}", self.len(), &strs.join("\n\t"))
     }
 }
@@ -326,7 +324,9 @@ impl<'a, T: Clone + Default> Iterator for SpanIter<'a, T> {
 
     fn next(&mut self) -> Option<(Interval, &'a T)> {
         if let Some((leaf, start_pos)) = self.cursor.get_leaf() {
-            if leaf.spans.is_empty() { return None; }
+            if leaf.spans.is_empty() {
+                return None;
+            }
             let leaf_start = self.cursor.pos() - start_pos;
             let span = &leaf.spans[self.ix];
             self.ix += 1;

@@ -19,11 +19,11 @@ use std::borrow::Cow;
 use std::cmp::{max, min};
 use std::fmt;
 use std::ops::Add;
+use std::ops::Bound;
+use std::ops::RangeBounds;
 use std::str;
 use std::str::FromStr;
 use std::string::ParseError;
-use std::ops::Bound;
-use std::ops::RangeBounds;
 
 use delta::{Delta, DeltaElement};
 use interval::Interval;
@@ -413,9 +413,7 @@ impl Serialize for DeltaElement<RopeInfo> {
                 el.serialize_field(end)?;
                 el.end()
             }
-            DeltaElement::Insert(ref node) => {
-                serializer.serialize_newtype_variant("DeltaElement", 1, "insert", node)
-            }
+            DeltaElement::Insert(ref node) => serializer.serialize_newtype_variant("DeltaElement", 1, "insert", node),
         }
     }
 }
@@ -480,8 +478,9 @@ impl Rope {
     /// Note: `edit` and `edit_str` may be merged, using traits.
     ///
     /// Time complexity: O(log n)
-    pub fn edit_str<T>(&mut self, range: T, new: &str) 
-        where T: RangeBounds<usize> 
+    pub fn edit_str<T>(&mut self, range: T, new: &str)
+    where
+        T: RangeBounds<usize>,
     {
         let (start, end) = self.extract_range(range);
 
@@ -496,8 +495,9 @@ impl Rope {
     }
 
     /// Returns a new Rope with the contents of the provided range.
-    pub fn slice<T>(&self, range: T) -> Rope 
-        where T: RangeBounds<usize>
+    pub fn slice<T>(&self, range: T) -> Rope
+    where
+        T: RangeBounds<usize>,
     {
         let (start, end) = self.extract_range(range);
 
@@ -584,8 +584,9 @@ impl Rope {
     ///
     /// Time complexity: technically O(n log n), but the constant factor is so
     /// tiny it is effectively O(n). This iterator does not allocate.
-    pub fn iter_chunks<T>(&self, range: T) -> ChunkIter 
-        where T: RangeBounds<usize>
+    pub fn iter_chunks<T>(&self, range: T) -> ChunkIter
+    where
+        T: RangeBounds<usize>,
     {
         let (start, end) = self.extract_range(range);
 
@@ -600,8 +601,9 @@ impl Rope {
     ///
     /// The return type is a `Cow<str>`, and in most cases the lines are slices
     /// borrowed from the rope.
-    pub fn lines_raw<T>(&self, range: T) -> LinesRaw 
-        where T: RangeBounds<usize>
+    pub fn lines_raw<T>(&self, range: T) -> LinesRaw
+    where
+        T: RangeBounds<usize>,
     {
         LinesRaw {
             inner: self.iter_chunks(range),
@@ -620,10 +622,11 @@ impl Rope {
     ///
     /// The semantics are intended to match `str::lines()`.
     pub fn lines<T>(&self, range: T) -> Lines
-        where T: RangeBounds<usize>
+    where
+        T: RangeBounds<usize>,
     {
         Lines {
-            inner: self.lines_raw(range)
+            inner: self.lines_raw(range),
         }
     }
 
@@ -636,8 +639,9 @@ impl Rope {
 
     // TODO: this should be a Cow
     // TODO: a case can be made to hang this on Cursor instead
-    pub fn slice_to_string<T>(&self, range: T) -> String 
-        where T: RangeBounds<usize>
+    pub fn slice_to_string<T>(&self, range: T) -> String
+    where
+        T: RangeBounds<usize>,
     {
         let mut result = String::new();
         for chunk in self.iter_chunks(range) {
@@ -645,10 +649,11 @@ impl Rope {
         }
         result
     }
-    
+
     /// Extracts start and end bounds from a range
     fn extract_range<T>(&self, range: T) -> (usize, usize)
-        where T: RangeBounds<usize>
+    where
+        T: RangeBounds<usize>,
     {
         let start = match range.start_bound() {
             Bound::Included(n) => *n,
@@ -889,13 +894,7 @@ impl<'a> Iterator for LinesRaw<'a> {
             if self.fragment.is_empty() {
                 match self.inner.next() {
                     Some(chunk) => self.fragment = chunk,
-                    None => {
-                        return if result.is_empty() {
-                            None
-                        } else {
-                            Some(result)
-                        }
-                    }
+                    None => return if result.is_empty() { None } else { Some(result) },
                 }
                 if self.fragment.is_empty() {
                     // can only happen on empty input
@@ -981,33 +980,45 @@ mod tests {
     fn lines_small() {
         let a = Rope::from("a\nb\nc");
         assert_eq!(vec!["a", "b", "c"], a.lines(..).collect::<Vec<_>>());
-        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(),
-        a.lines(..).collect::<Vec<_>>());
+        assert_eq!(
+            String::from(&a).lines().collect::<Vec<_>>(),
+            a.lines(..).collect::<Vec<_>>()
+        );
 
         let a = Rope::from("a\nb\n");
         assert_eq!(vec!["a", "b"], a.lines(..).collect::<Vec<_>>());
-        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(),
-        a.lines(..).collect::<Vec<_>>());
+        assert_eq!(
+            String::from(&a).lines().collect::<Vec<_>>(),
+            a.lines(..).collect::<Vec<_>>()
+        );
 
         let a = Rope::from("\n");
         assert_eq!(vec![""], a.lines(..).collect::<Vec<_>>());
-        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(),
-        a.lines(..).collect::<Vec<_>>());
+        assert_eq!(
+            String::from(&a).lines().collect::<Vec<_>>(),
+            a.lines(..).collect::<Vec<_>>()
+        );
 
         let a = Rope::from("");
         assert_eq!(0, a.lines(..).count());
-        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(),
-        a.lines(..).collect::<Vec<_>>());
+        assert_eq!(
+            String::from(&a).lines().collect::<Vec<_>>(),
+            a.lines(..).collect::<Vec<_>>()
+        );
 
         let a = Rope::from("a\r\nb\r\nc");
         assert_eq!(vec!["a", "b", "c"], a.lines(..).collect::<Vec<_>>());
-        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(),
-        a.lines(..).collect::<Vec<_>>());
+        assert_eq!(
+            String::from(&a).lines().collect::<Vec<_>>(),
+            a.lines(..).collect::<Vec<_>>()
+        );
 
         let a = Rope::from("a\rb\rc");
         assert_eq!(vec!["a\rb\rc"], a.lines(..).collect::<Vec<_>>());
-        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(),
-               a.lines(..).collect::<Vec<_>>());
+        assert_eq!(
+            String::from(&a).lines().collect::<Vec<_>>(),
+            a.lines(..).collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -1028,8 +1039,10 @@ mod tests {
 
         assert_eq!(vec![a.as_str(), b.as_str()], r.lines_raw(..).collect::<Vec<_>>());
         assert_eq!(vec![&a[..line_len], &b[..line_len]], r.lines(..).collect::<Vec<_>>());
-        assert_eq!(String::from(&r).lines().collect::<Vec<_>>(),
-                   r.lines(..).collect::<Vec<_>>());
+        assert_eq!(
+            String::from(&r).lines().collect::<Vec<_>>(),
+            r.lines(..).collect::<Vec<_>>()
+        );
 
         // additional tests for line indexing
         assert_eq!(a.len(), r.offset_of_line(1));
@@ -1247,22 +1260,18 @@ mod tests {
 
         // position after 'f' in four
         let utf8_offset = 13;
-        let utf16_units =
-            rope_with_emoji.convert_metrics::<BaseMetric, Utf16CodeUnitsMetric>(utf8_offset);
+        let utf16_units = rope_with_emoji.convert_metrics::<BaseMetric, Utf16CodeUnitsMetric>(utf8_offset);
         assert_eq!(utf16_units, 11);
 
-        let utf8_offset =
-            rope_with_emoji.convert_metrics::<Utf16CodeUnitsMetric, BaseMetric>(utf16_units);
+        let utf8_offset = rope_with_emoji.convert_metrics::<Utf16CodeUnitsMetric, BaseMetric>(utf16_units);
         assert_eq!(utf8_offset, 13);
 
         //for next line
         let utf8_offset = 19;
-        let utf16_units =
-            rope_with_emoji.convert_metrics::<BaseMetric, Utf16CodeUnitsMetric>(utf8_offset);
+        let utf16_units = rope_with_emoji.convert_metrics::<BaseMetric, Utf16CodeUnitsMetric>(utf8_offset);
         assert_eq!(utf16_units, 17);
 
-        let utf8_offset =
-            rope_with_emoji.convert_metrics::<Utf16CodeUnitsMetric, BaseMetric>(utf16_units);
+        let utf8_offset = rope_with_emoji.convert_metrics::<Utf16CodeUnitsMetric, BaseMetric>(utf16_units);
         assert_eq!(utf8_offset, 19);
     }
 }

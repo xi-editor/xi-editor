@@ -398,9 +398,7 @@ impl<N: NodeInfo> Node<N> {
                     }
                     let child_iv = child.interval();
                     // easier just to use signed ints?
-                    let rec_iv = iv
-                        .intersect(child_iv.translate(offset))
-                        .translate_neg(offset);
+                    let rec_iv = iv.intersect(child_iv.translate(offset)).translate_neg(offset);
                     child.push_subseq(b, rec_iv);
                     offset += child.len();
                 }
@@ -565,8 +563,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
     pub fn set(&mut self, position: usize) {
         self.position = position;
         if let Some(l) = self.leaf {
-            if self.position >= self.offset_of_leaf && self.position < self.offset_of_leaf + l.len()
-            {
+            if self.position >= self.offset_of_leaf && self.position < self.offset_of_leaf + l.len() {
                 return;
             }
         }
@@ -702,9 +699,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
         if let Some(l) = self.leaf {
             let offset_in_leaf = self.position - self.offset_of_leaf;
             if let Some(offset_in_leaf) = M::next(l, offset_in_leaf) {
-                if offset_in_leaf == l.len()
-                    && self.offset_of_leaf + offset_in_leaf != self.root.len()
-                {
+                if offset_in_leaf == l.len() && self.offset_of_leaf + offset_in_leaf != self.root.len() {
                     let _ = self.next_leaf();
                 } else {
                     self.position = self.offset_of_leaf + offset_in_leaf;
@@ -940,9 +935,7 @@ mod test {
         let mut cursor = Cursor::new(&text, 0);
         let mut prev_offset = cursor.pos();
         for i in 1..(n + 1) as usize {
-            let offset = cursor
-                .next::<LinesMetric>()
-                .expect("arrived at the end too soon");
+            let offset = cursor.next::<LinesMetric>().expect("arrived at the end too soon");
             assert_eq!(offset - prev_offset, i);
             prev_offset = offset;
         }
@@ -973,10 +966,7 @@ mod test {
             let mut c = Cursor::new(&r, i);
             let it = c.next::<LinesMetric>();
             let pos = c.pos();
-            assert!(
-                s.as_bytes()[i..pos - 1].iter().all(|c| *c != b'\n'),
-                "missed linebreak"
-            );
+            assert!(s.as_bytes()[i..pos - 1].iter().all(|c| *c != b'\n'), "missed linebreak");
             if pos < s.len() {
                 assert!(it.is_some(), "must be Some(_)");
                 assert!(s.as_bytes()[pos - 1] == b'\n', "not a linebreak");
@@ -1000,10 +990,7 @@ mod test {
             let mut c = Cursor::new(&r, i);
             let it = c.prev::<LinesMetric>();
             let pos = c.pos();
-            assert!(
-                s.as_bytes()[pos..i].iter().all(|c| *c != b'\n'),
-                "missed linebreak"
-            );
+            assert!(s.as_bytes()[pos..i].iter().all(|c| *c != b'\n'), "missed linebreak");
 
             if i == 0 && s.as_bytes()[i] == b'\n' {
                 assert_eq!(pos, 0);

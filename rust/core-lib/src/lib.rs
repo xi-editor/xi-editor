@@ -14,22 +14,25 @@
 
 //! The main library for xi-core.
 
-#![cfg_attr(feature = "cargo-clippy", allow(
-    boxed_local,
-    cast_lossless,
-    collapsible_if,
-    let_and_return,
-    map_entry,
-    match_as_ref,
-    match_bool,
-    needless_pass_by_value,
-    new_without_default,
-    new_without_default_derive,
-    or_fun_call,
-    ptr_arg,
-    too_many_arguments,
-    unreadable_literal,
-))]
+#![cfg_attr(
+    feature = "cargo-clippy",
+    allow(
+        boxed_local,
+        cast_lossless,
+        collapsible_if,
+        let_and_return,
+        map_entry,
+        match_as_ref,
+        match_bool,
+        needless_pass_by_value,
+        new_without_default,
+        new_without_default_derive,
+        or_fun_call,
+        ptr_arg,
+        too_many_arguments,
+        unreadable_literal,
+    )
+)]
 
 #[macro_use]
 extern crate log;
@@ -39,11 +42,11 @@ extern crate serde;
 extern crate serde_json;
 #[macro_use]
 extern crate serde_derive;
-extern crate time;
-extern crate syntect;
-extern crate toml;
 #[cfg(feature = "notify")]
 extern crate notify;
+extern crate syntect;
+extern crate time;
+extern crate toml;
 
 extern crate xi_rope;
 extern crate xi_rpc;
@@ -68,73 +71,72 @@ use ledger_includes::*;
 ///
 /// These internals are not part of the public API (for the purpose of binding to
 /// a front-end), but are exposed here, largely so they appear in documentation.
-#[path=""]
+#[path = ""]
 pub mod internal {
     pub mod client;
+    pub mod config;
     pub mod core;
-    pub mod tabs;
-    pub mod editor;
     pub mod edit_types;
+    pub mod editor;
     pub mod event_context;
     pub mod file;
     pub mod find;
-    pub mod view;
-    pub mod linewrap;
-    pub mod plugins;
     #[cfg(feature = "ledger")]
     pub mod fuchsia;
-    pub mod styles;
-    pub mod word_boundaries;
     pub mod index_set;
-    pub mod selection;
-    pub mod movement;
-    pub mod syntax;
     pub mod layers;
-    pub mod config;
+    pub mod line_cache_shadow;
+    pub mod linewrap;
+    pub mod movement;
+    pub mod plugins;
+    pub mod selection;
+    pub mod styles;
+    pub mod syntax;
+    pub mod tabs;
+    pub mod view;
     #[cfg(feature = "notify")]
     pub mod watcher;
-    pub mod line_cache_shadow;
     pub mod width_cache;
+    pub mod word_boundaries;
 }
 
 pub mod rpc;
 
-use internal::tabs;
-use internal::core;
 use internal::client;
+use internal::config;
+use internal::core;
 use internal::edit_types;
 use internal::editor;
 use internal::event_context;
 use internal::file;
 use internal::find;
-use internal::view;
-use internal::linewrap;
-use internal::plugins;
-use internal::styles;
-use internal::word_boundaries;
-use internal::index_set;
-use internal::selection;
-use internal::movement;
-use internal::syntax;
-use internal::layers;
-use internal::config;
-#[cfg(feature = "notify")]
-use internal::watcher;
-use internal::line_cache_shadow;
-use internal::width_cache;
 #[cfg(feature = "ledger")]
 use internal::fuchsia;
+use internal::index_set;
+use internal::layers;
+use internal::line_cache_shadow;
+use internal::linewrap;
+use internal::movement;
+use internal::plugins;
+use internal::selection;
+use internal::styles;
+use internal::syntax;
+use internal::tabs;
+use internal::view;
+#[cfg(feature = "notify")]
+use internal::watcher;
+use internal::width_cache;
+use internal::word_boundaries;
 
 #[cfg(feature = "ledger")]
 use apps_ledger_services_public::Ledger_Proxy;
 
 pub use config::{BufferItems as BufferConfig, Table as ConfigTable};
-pub use core::{XiCore, WeakXiCore};
+pub use core::{WeakXiCore, XiCore};
 pub use editor::EditType;
-pub use plugins::rpc as plugin_rpc;
 pub use plugins::manifest as plugin_manifest;
+pub use plugins::rpc as plugin_rpc;
 pub use plugins::PluginPid;
 pub use syntax::{LanguageDefinition, LanguageId};
+pub use tabs::test_helpers;
 pub use tabs::{BufferId, BufferIdentifier, ViewId};
-pub use tabs::test_helpers as test_helpers;
-
