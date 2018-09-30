@@ -290,6 +290,7 @@ impl Editor {
         let delta = self.engine.delta_rev_head(last_token);
         // TODO (performance): it's probably quicker to stash last_text
         // rather than resynthesize it.
+
         let last_text = self.engine.get_rev(last_token).expect("last_rev not found");
 
         // Transpose can rotate characters inside of a selection; this is why it's an Inside edit.
@@ -300,9 +301,9 @@ impl Editor {
             _ => InsertDrift::Default,
         };
         self.layers.update_all(&delta);
-
         self.last_rev_id = self.engine.get_head_rev_id();
         self.sync_state_changed();
+
         Some((delta, last_text, drift))
     }
 
@@ -543,72 +544,108 @@ impl Editor {
         self.add_delta(builder.build());
     }
 
-    fn move_line(&mut self, view: &View, config: &BufferItems, movement: Movement) {
+    fn move_line_up(&mut self, view: &mut View, config: &BufferItems) {
         let mut builder = delta::Builder::new(self.text.len());
-        let mut lines = BTreeSet::new();
+        // get affected lines or regions
+        let to_move = self.get_adjacent_selected_line_ranges(view);
 
-        for region in view.sel_regions() {
-            let line_range = view.get_line_range(&self.text, region);
-            for line in line_range {
-                lines.insert(line);
+        for (start_line, end_line) in to_move {
+            let last_line = view.line_of_offset(&self.text, self.text.len());
+            // don't move if first line
+            if start_line == 0 { continue }
+             // line to swap moved lines/regions with
+            let swap_line = start_line - 1;
+            let (_, end) = view.get_line_offset(&self.text, end_line);
+            let (swap_start, swap_end) = view.get_line_offset(&self.text, swap_line);
+
+            let swap_iv = Interval::new_closed_closed(swap_start, swap_end);
+            let iv = Interval::new_closed_open(end, end);
+            let mut saved_text = Rope::from(self.text.slice_to_string(swap_start..swap_end));
+
+            // adjusts newline character for last line
+            if end_line == last_line {
+                saved_text = Rope::from(&config.line_ending) + saved_text.slice(0..saved_text.len() - 1);
+            }
+
+            builder.delete(swap_iv);
+            builder.replace(iv, saved_text);
+        }
+        // If selection contains the last offset, we use the before caret edit type.
+        if view.sel_regions().last().unwrap().end == self.text.len() {
+            self.this_edit_type = EditType::CaretBefore;
+        } else {
+            self.this_edit_type = EditType::Other;
+        }
+        self.add_delta(builder.build());
+    }
+
+    fn move_line_down(&mut self, view: &mut View, config: &BufferItems) {
+        let mut builder = delta::Builder::new(self.text.len());
+        // get affected lines or regions
+        let to_move = self.get_adjacent_selected_line_ranges(view);
+
+        for (start_line, end_line) in to_move {
+            let last_line = view.line_of_offset(&self.text, self.text.len());
+            // don't move if last line
+            if end_line == last_line {
+                continue
+            }
+             // line to swap moved lines/regions with
+            let swap_line = end_line + 1;
+            let start = view.line_col_to_offset(&self.text, start_line, 0);
+            let (swap_start, swap_end) = view.get_line_offset(&self.text, swap_line);
+
+            let mut swap_iv = Interval::new_closed_closed(swap_start, swap_end);
+            let iv = Interval::new_closed_open(start, start);
+            let mut saved_text = Rope::from(self.text.slice_to_string(swap_start..swap_end));
+
+            // add newline character if swapping last line
+            if swap_line == last_line {
+                saved_text = saved_text + Rope::from(&config.line_ending);
+                swap_iv = Interval::new_closed_closed(swap_start - 1, swap_end);
+            }
+
+            builder.replace(iv, saved_text);
+            builder.delete(swap_iv);
+        }
+        self.this_edit_type = EditType::Other;
+        self.add_delta(builder.build());
+    }
+
+     /// Returns an ordered list of line ranges in the current selection,
+    /// combining adjacent ranges; e.g. 1..2 and 3..4 becomes 1..4.
+    fn get_adjacent_selected_line_ranges(&self, view: &View) -> Vec<(usize, usize)> {
+        let mut ranges = Vec::new();
+        let mut prev_sel: Option<(usize, usize)> = None;
+        let line_range_iter = view
+            .sel_regions()
+            .iter()
+            .map(|sel| view.get_line_range(self.get_buffer(), sel));
+
+        for range in line_range_iter {
+            // the range of a single line is represented as n..n+1; we just want
+            // n..n.
+            let start = range.start;
+            let end = range.end - 1;
+            eprintln!("{:?} {:?} ", start, end);
+            if let Some((p_start, p_end)) = prev_sel.take() {
+                // Lines selected are continuous, thus we merge them.
+                // e.g 1..2 and 2..3 becomes 1..3
+                if start - p_end <= 1 {
+                    prev_sel = Some((p_start, end));
+                } else {
+                    ranges.push((p_start, p_end));
+                    prev_sel = Some((start, end));
+                }
+            } else {
+                prev_sel = Some((start, end));
             }
         }
 
-        for line in lines {
-            let mut swap_line;
-            match movement {
-                Movement::Up => {
-                    swap_line = if line == 0 { return } else { line - 1 };
-
-                    let (swap_line_start, swap_line_end) = view.get_line_offset(&self.text, swap_line);
-                    let (_, line_end) = view.get_line_offset(&self.text, line);
-                    let mut saved_text = self.text.slice_to_string(swap_line_start, swap_line_end);
-
-                    let swap_iv = Interval::new_closed_closed(swap_line_start, swap_line_end);
-                    builder.delete(swap_iv);
-
-                    let swapped_iv = Interval::new_closed_closed(line_end, line_end);
-                    if line_end == self.text.len() {
-                        // Add line end if moving last line
-                        if let Some(line_end) = saved_text.pop() {
-                            saved_text.insert(0, line_end);
-                            builder.replace(swapped_iv, Rope::from(saved_text));
-                        }
-                    } else {
-                        builder.replace(swapped_iv, Rope::from(saved_text));
-                    }
-                }
-                Movement::Down => {
-                    swap_line =
-                    if line == view.line_of_offset(&self.text, self.text.len()) {
-                        return
-                    } else { line + 1 };
-
-                    let (swap_line_start, swap_line_end) = view.get_line_offset(&self.text, swap_line);
-                    let (line_start, _) = view.get_line_offset(&self.text, line);
-                    let saved_text = self.text.slice_to_string(swap_line_start, swap_line_end);
-
-                    let swapped_iv = Interval::new_closed_closed(line_start, line_start);
-                    let swap_iv;
-                    if swap_line_end == self.text.len() {
-                        // Remove newline from line leading to last
-                        swap_iv = Interval::new_closed_closed(swap_line_start - 1, swap_line_end);
-                        builder.replace(swapped_iv, Rope::from(saved_text + &config.line_ending));
-                    } else {
-                        swap_iv = Interval::new_closed_closed(swap_line_start, swap_line_end);
-                        builder.replace(swapped_iv, Rope::from(saved_text));
-                    }
-
-                    builder.delete(swap_iv);
-                }
-                _ => { return }
-            }
+        if let Some(last) = prev_sel.take() {
+            ranges.push(last);
         }
-
-        if !builder.is_empty() {
-            self.this_edit_type = EditType::Transpose;
-            self.add_delta(builder.build());
-        }
+        ranges
     }
 
     fn get_tab_text(&self, config: &BufferItems, tab_size: Option<usize>)
@@ -910,8 +947,8 @@ impl Editor {
             Capitalize => self.capitalize_text(view),
             Indent => self.modify_indent(view, config, IndentDirection::In),
             Outdent => self.modify_indent(view, config, IndentDirection::Out),
-            MoveLineUp => self.move_line(view, config, Movement::Up),
-            MoveLineDown => self.move_line(view, config, Movement::Down),
+            MoveLineUp => self.move_line_up(view, config),
+            MoveLineDown => self.move_line_down(view, config),
             InsertNewline => self.insert_newline(view, config),
             InsertTab => self.insert_tab(view, config),
             Insert(chars) => self.do_insert(view, config, &chars),
@@ -1015,6 +1052,10 @@ pub enum EditType {
     /// A catchall for edits that don't fit elsewhere, and which should
     /// always have their own undo groups; used for things like cut/copy/paste.
     Other,
+    /// An edit that is which inserts text after the caret, thus placing the caret
+    /// before inserted text.
+    /// Only used with a special move line up case.
+    CaretBefore,
     /// An insert from the keyboard/IME (not a paste or a yank).
     #[serde(rename = "insert")]
     InsertChars,

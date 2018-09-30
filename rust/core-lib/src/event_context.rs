@@ -258,6 +258,7 @@ impl<'a> EventContext<'a> {
         let _t = trace_block("EventContext::after_edit", &["core"]);
 
         let mut ed = self.editor.borrow_mut();
+
         let (delta, last_text, drift) = match ed.commit_delta() {
             Some(edit_info) => edit_info,
             None => return,
@@ -282,6 +283,7 @@ impl<'a> EventContext<'a> {
     fn update_views(&self, ed: &Editor, delta: &RopeDelta, last_text: &Rope, drift: InsertDrift) {
         let mut width_cache = self.width_cache.borrow_mut();
         let iter_views = iter::once(&self.view).chain(self.siblings.iter());
+
         iter_views.for_each(|view| {
             view.borrow_mut().after_edit(
                 ed.get_buffer(),

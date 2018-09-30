@@ -946,6 +946,7 @@ impl View {
     /// Updates the view after the text has been modified by the given `delta`.
     /// This method is responsible for updating the cursors, and also for
     /// recomputing line wraps.
+<<<<<<< HEAD
     pub fn after_edit(
         &mut self,
         text: &Rope,
@@ -955,6 +956,12 @@ impl View {
         width_cache: &mut WidthCache,
         drift: InsertDrift,
     ) {
+=======
+    pub fn after_edit(&mut self, text: &Rope, last_text: &Rope,
+                      delta: &Delta<RopeInfo>, client: &Client,
+                      width_cache: &mut WidthCache, keep_selections: bool, after_caret: bool)
+    {
+>>>>>>> Refined line move behavior
         let (iv, new_len) = delta.summary();
         if let Some(breaks) = self.breaks.as_mut() {
             match self.wrap_col {
@@ -988,7 +995,11 @@ impl View {
 
         // Note: for committing plugin edits, we probably want to know the priority
         // of the delta so we can set the cursor before or after the edit, as needed.
+<<<<<<< HEAD
         let new_sel = self.selection.apply_delta(delta, true, drift);
+=======
+        let new_sel = self.selection.apply_delta(delta, !after_caret, keep_selections);
+>>>>>>> Refined line move behavior
         self.set_selection_for_edit(text, new_sel);
     }
 
