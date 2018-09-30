@@ -1030,6 +1030,7 @@ pub fn samples_cloned_sorted() -> Vec<Sample> {
 }
 
 #[cfg(test)]
+#[cfg_attr(rustfmt, rustfmt_skip)]
 mod tests {
     use super::*;
     #[cfg(feature = "benchmarks")]
