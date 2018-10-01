@@ -15,8 +15,7 @@
 //! Fast comparison of rope regions, principally for diffing.
 
 use rope::{BaseMetric, Rope, RopeInfo};
-use tree::{Cursor};
-
+use tree::Cursor;
 
 const SSE_STRIDE: usize = 16;
 
@@ -90,17 +89,20 @@ pub fn ne_idx_simd(one: &[u8], two: &[u8]) -> Option<usize> {
         if idx + SSE_STRIDE >= min_len {
             let mut one_buf: [u8; SSE_STRIDE] = [0; SSE_STRIDE];
             let mut two_buf: [u8; SSE_STRIDE] = [0; SSE_STRIDE];
-            one_buf[..min_len-idx].copy_from_slice(&one[idx..min_len]);
-            two_buf[..min_len-idx].copy_from_slice(&two[idx..min_len]);
+            one_buf[..min_len - idx].copy_from_slice(&one[idx..min_len]);
+            two_buf[..min_len - idx].copy_from_slice(&two[idx..min_len]);
             mask = unsafe { fast_cmpestr_mask(&one_buf, &two_buf) };
         } else {
-            mask = unsafe { fast_cmpestr_mask(&one[idx..idx+SSE_STRIDE],
-                                              &two[idx..idx+SSE_STRIDE]) };
+            mask = unsafe { fast_cmpestr_mask(&one[idx..idx + SSE_STRIDE], &two[idx..idx + SSE_STRIDE]) };
         }
         let i = mask.trailing_zeros() as usize;
-        if i != 32 { return Some(idx + i); }
+        if i != 32 {
+            return Some(idx + i);
+        }
         idx += SSE_STRIDE;
-        if idx >= min_len { break; }
+        if idx >= min_len {
+            break;
+        }
     }
     None
 }
@@ -123,12 +125,15 @@ pub fn ne_idx_rev_simd(one: &[u8], two: &[u8]) -> Option<usize> {
             two_buf[SSE_STRIDE - idx..].copy_from_slice(&two[..idx]);
             mask = unsafe { fast_cmpestr_mask(&one_buf, &two_buf) };
         } else {
-            mask = unsafe { fast_cmpestr_mask(&one[idx-SSE_STRIDE..idx],
-                                              &two[idx-SSE_STRIDE..idx]) };
+            mask = unsafe { fast_cmpestr_mask(&one[idx - SSE_STRIDE..idx], &two[idx - SSE_STRIDE..idx]) };
         }
         let i = mask.leading_zeros() as usize - SSE_STRIDE;
-        if i != SSE_STRIDE { return Some(min_len - (idx - i)); }
-        if idx < SSE_STRIDE { break; }
+        if i != SSE_STRIDE {
+            return Some(min_len - (idx - i));
+        }
+        if idx < SSE_STRIDE {
+            break;
+        }
         idx -= SSE_STRIDE;
     }
     None
@@ -139,7 +144,9 @@ pub fn ne_idx_rev_simd(one: &[u8], two: &[u8]) -> Option<usize> {
 #[doc(hidden)]
 pub fn ne_idx_fallback(one: &[u8], two: &[u8]) -> Option<usize> {
     for i in 0..one.len().min(two.len()) {
-        if one[i] != two[i] { return Some(i); }
+        if one[i] != two[i] {
+            return Some(i);
+        }
     }
     None
 }
@@ -148,9 +155,11 @@ pub fn ne_idx_fallback(one: &[u8], two: &[u8]) -> Option<usize> {
 #[allow(dead_code)]
 #[doc(hidden)]
 pub fn ne_idx_rev_fallback(one: &[u8], two: &[u8]) -> Option<usize> {
-    let min_len =  one.len().min(two.len());
+    let min_len = one.len().min(two.len());
     for i in 1..min_len + 1 {
-        if one[one.len()-i] != two[two.len()-i] { return Some(i - 1); }
+        if one[one.len() - i] != two[two.len() - i] {
+            return Some(i - 1);
+        }
     }
     None
 }
@@ -194,7 +203,8 @@ impl<'a> RopeScanner<'a> {
     /// assert_eq!(scanner.find_ne_char_left(one.len(), two.len(), 2), 2);
     /// ```
     pub fn find_ne_char_left<T>(&mut self, base_off: usize, targ_off: usize, stop: T) -> usize
-        where T: Into<Option<usize>>
+    where
+        T: Into<Option<usize>>,
     {
         let stop = stop.into().unwrap_or(usize::max_value());
         self.base.set(base_off);
@@ -213,8 +223,7 @@ impl<'a> RopeScanner<'a> {
         self.target_chunk = &target_leaf[..target_leaf_off];
 
         loop {
-            if let Some(mut idx) = ne_idx_rev(self.base_chunk.as_bytes(),
-                    self.target_chunk.as_bytes()) {
+            if let Some(mut idx) = ne_idx_rev(self.base_chunk.as_bytes(), self.target_chunk.as_bytes()) {
                 // find nearest codepoint boundary
                 while idx > 1 && !self.base_chunk.is_char_boundary(self.base_chunk.len() - idx) {
                     idx -= 1;
@@ -222,11 +231,13 @@ impl<'a> RopeScanner<'a> {
                 return stop.min(self.scanned + idx);
             }
             let scan_len = self.target_chunk.len().min(self.base_chunk.len());
-            self.base_chunk = &self.base_chunk[..self.base_chunk.len()-scan_len];
-            self.target_chunk = &self.target_chunk[..self.target_chunk.len()-scan_len];
+            self.base_chunk = &self.base_chunk[..self.base_chunk.len() - scan_len];
+            self.target_chunk = &self.target_chunk[..self.target_chunk.len() - scan_len];
             self.scanned += scan_len;
 
-            if stop <= self.scanned { break; }
+            if stop <= self.scanned {
+                break;
+            }
             self.load_prev_chunk();
             if self.base_chunk.is_empty() || self.target_chunk.is_empty() {
                 break;
@@ -254,7 +265,8 @@ impl<'a> RopeScanner<'a> {
     /// assert_eq!(scanner.find_ne_char_right(0, 0, 3), 3);
     /// ```
     pub fn find_ne_char_right<T>(&mut self, base_off: usize, targ_off: usize, stop: T) -> usize
-        where T: Into<Option<usize>>
+    where
+        T: Into<Option<usize>>,
     {
         let stop = stop.into().unwrap_or(usize::max_value());
         self.base.set(base_off);
@@ -271,8 +283,7 @@ impl<'a> RopeScanner<'a> {
         self.target_chunk = &target_leaf[target_leaf_off..];
 
         loop {
-            if let Some(mut idx) = ne_idx(self.base_chunk.as_bytes(),
-                    self.target_chunk.as_bytes()) {
+            if let Some(mut idx) = ne_idx(self.base_chunk.as_bytes(), self.target_chunk.as_bytes()) {
                 while idx > 0 && !self.base_chunk.is_char_boundary(idx) {
                     idx -= 1;
                 }
@@ -283,7 +294,9 @@ impl<'a> RopeScanner<'a> {
             self.target_chunk = &self.target_chunk[scan_len..];
             debug_assert!(self.base_chunk.is_empty() || self.target_chunk.is_empty());
             self.scanned += scan_len;
-            if stop <= self.scanned { break; }
+            if stop <= self.scanned {
+                break;
+            }
             self.load_next_chunk();
             if self.base_chunk.is_empty() || self.target_chunk.is_empty() {
                 break;
@@ -323,7 +336,6 @@ impl<'a> RopeScanner<'a> {
         let end = self.find_ne_char_left(b_end, t_end, unscanned);
         (start, end)
     }
-
 
     fn load_prev_chunk(&mut self) {
         if self.base_chunk.is_empty() {
@@ -384,7 +396,6 @@ mod tests {
         assert_eq!(ne_idx_simd(one.as_bytes(), fur.as_bytes()), None);
     }
 
-
     #[test]
     fn ne_len_rev() {
         let one = "aaaaaa";
@@ -410,15 +421,15 @@ mod tests {
 
     #[test]
     fn ne_rev_regression1() {
-	let one: &[u8] = &[
-	    101, 119, 58, 58, 123, 83, 116, 121, 108, 101, 44,
-	    32, 86, 105, 101, 119, 125, 59, 10, 10];
+        let one: &[u8] = &[
+            101, 119, 58, 58, 123, 83, 116, 121, 108, 101, 44, 32, 86, 105, 101, 119, 125, 59, 10, 10,
+        ];
 
-	let two: &[u8] = &[
-	    101, 119, 58, 58, 123, 83, 101, 32, 118, 105, 101,
-	    119, 58, 58, 86, 105, 101, 119, 59, 10];
+        let two: &[u8] = &[
+            101, 119, 58, 58, 123, 83, 101, 32, 118, 105, 101, 119, 58, 58, 86, 105, 101, 119, 59, 10,
+        ];
 
-	assert_eq!(ne_idx_rev_fallback(one, two), Some(1));
+        assert_eq!(ne_idx_rev_fallback(one, two), Some(1));
         if is_x86_feature_detected!("sse4.2") {
             assert_eq!(ne_idx_rev_simd(one, two), Some(1));
         }
@@ -435,7 +446,7 @@ mod tests {
 
     #[test]
     fn scanner_right_simple() {
-        let rope =   Rope::from("aaaaaaaaaaaaaaaa");
+        let rope = Rope::from("aaaaaaaaaaaaaaaa");
         let chunk1 = Rope::from("aaaaaaaaaaaaaaaa");
         let chunk2 = Rope::from("baaaaaaaaaaaaaaa");
         let chunk3 = Rope::from("abaaaaaaaaaaaaaa");
@@ -463,7 +474,7 @@ mod tests {
 
     #[test]
     fn scanner_left_simple() {
-        let rope =   Rope::from("aaaaaaaaaaaaaaaa");
+        let rope = Rope::from("aaaaaaaaaaaaaaaa");
         let chunk1 = Rope::from("aaaaaaaaaaaaaaaa");
         let chunk2 = Rope::from("aaaaaaaaaaaaaaba");
         let chunk3 = Rope::from("aaaaaaaaaaaaaaab");
@@ -491,7 +502,7 @@ mod tests {
 
     #[test]
     fn scan_left_ne_lens() {
-        let rope =   Rope::from("aaaaaaaaaaaaaaaa");
+        let rope = Rope::from("aaaaaaaaaaaaaaaa");
         let chunk1 = Rope::from("aaaaaaaaaaaaa");
         let chunk2 = Rope::from("aaaaaaaaaaaaab");
 
@@ -559,7 +570,7 @@ mod tests {
         let zer = Rope::from("baaaa");
         let one = Rope::from("🍄aaaa"); // F0 9F 8D 84 61 61 61 61;
         let two = Rope::from("🙄aaaa"); // F0 9F 99 84 61 61 61 61;
-        let tri = Rope::from("🝄aaaa");  // F0 AF 8D 84 61 61 61 61;
+        let tri = Rope::from("🝄aaaa"); // F0 AF 8D 84 61 61 61 61;
 
         let mut scanner = RopeScanner::new(&zer, &one);
         let result = scanner.find_ne_char_left(zer.len(), one.len(), None);

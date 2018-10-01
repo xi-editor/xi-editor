@@ -26,9 +26,7 @@ pub(crate) fn marked_string_to_string(marked_string: &MarkedString) -> String {
     }
 }
 
-pub(crate) fn markdown_from_hover_contents(
-    hover_contents: HoverContents,
-) -> Result<String, LanguageResponseError> {
+pub(crate) fn markdown_from_hover_contents(hover_contents: HoverContents) -> Result<String, LanguageResponseError> {
     let res = match hover_contents {
         HoverContents::Scalar(content) => marked_string_to_string(&content),
         HoverContents::Array(content) => {
@@ -59,10 +57,7 @@ pub(crate) fn count_utf16(s: &str) -> usize {
 }
 
 /// Get LSP Style Utf-16 based position given the xi-core style utf-8 offset
-pub(crate) fn get_position_of_offset<C: Cache>(
-    view: &mut View<C>,
-    offset: usize,
-) -> Result<Position, PluginLibError> {
+pub(crate) fn get_position_of_offset<C: Cache>(view: &mut View<C>, offset: usize) -> Result<Position, PluginLibError> {
     let line_num = view.line_of_offset(offset)?;
     let line_offset = view.offset_of_line(line_num)?;
 
@@ -74,10 +69,7 @@ pub(crate) fn get_position_of_offset<C: Cache>(
     })
 }
 
-pub(crate) fn offset_of_position<C: Cache>(
-    view: &mut View<C>,
-    position: Position,
-) -> Result<usize, PluginLibError> {
+pub(crate) fn offset_of_position<C: Cache>(view: &mut View<C>, position: Position) -> Result<usize, PluginLibError> {
     let line_offset = view.offset_of_line(position.line as usize);
 
     let mut cur_len_utf16 = 0;
@@ -94,10 +86,7 @@ pub(crate) fn offset_of_position<C: Cache>(
     Ok(cur_len_utf8 + line_offset?)
 }
 
-pub(crate) fn core_range_from_range<C: Cache>(
-    view: &mut View<C>,
-    range: Range,
-) -> Result<CoreRange, PluginLibError> {
+pub(crate) fn core_range_from_range<C: Cache>(view: &mut View<C>, range: Range) -> Result<CoreRange, PluginLibError> {
     Ok(CoreRange {
         start: offset_of_position(view, range.start)?,
         end: offset_of_position(view, range.end)?,

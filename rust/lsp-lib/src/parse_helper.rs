@@ -28,12 +28,8 @@ fn parse_header(s: &str) -> Result<LspHeader, ParseError> {
     };
     match split[0].as_ref() {
         HEADER_CONTENT_TYPE => Ok(LspHeader::ContentType),
-        HEADER_CONTENT_LENGTH => Ok(LspHeader::ContentLength(usize::from_str_radix(
-            &split[1], 10,
-        )?)),
-        _ => Err(ParseError::Unknown(
-            "Unknown parse error occurred".to_string(),
-        )),
+        HEADER_CONTENT_LENGTH => Ok(LspHeader::ContentLength(usize::from_str_radix(&split[1], 10)?)),
+        _ => Err(ParseError::Unknown("Unknown parse error occurred".to_string())),
     }
 }
 
@@ -57,8 +53,7 @@ pub fn read_message<T: BufRead>(reader: &mut T) -> Result<String, ParseError> {
         };
     }
 
-    let content_length =
-        content_length.ok_or(format!("missing content-length header: {}", buffer))?;
+    let content_length = content_length.ok_or(format!("missing content-length header: {}", buffer))?;
 
     let mut body_buffer = vec![0; content_length];
     reader.read_exact(&mut body_buffer)?;
