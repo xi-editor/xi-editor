@@ -963,6 +963,7 @@ fn rebase(
 }
 
 #[cfg(test)]
+#[cfg_attr(rustfmt, rustfmt_skip)]
 mod tests {
     use delta::{Builder, Delta};
     use engine::*;
