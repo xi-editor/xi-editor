@@ -7,9 +7,9 @@
 //     http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
+// distributed under the License is distributed on an "AS IS" BASIS,
 // limitations under the License.
 
 use std::borrow::{Borrow, Cow};
@@ -545,7 +545,7 @@ impl Editor {
     }
 
     fn move_line_up(&mut self, view: &mut View, config: &BufferItems) {
-        let mut builder = delta::Builder::new(self.text.len());
+        let mut builder = DeltaBuilder::new(self.text.len());
         // get affected lines or regions
         let to_move = self.get_adjacent_selected_line_ranges(view);
 
@@ -555,32 +555,27 @@ impl Editor {
             if start_line == 0 { continue }
              // line to swap moved lines/regions with
             let swap_line = start_line - 1;
-            let (_, end) = view.get_line_offset(&self.text, end_line);
             let (swap_start, swap_end) = view.get_line_offset(&self.text, swap_line);
 
-            let swap_iv = Interval::new_closed_closed(swap_start, swap_end);
-            let iv = Interval::new_closed_open(end, end);
-            let mut saved_text = Rope::from(self.text.slice_to_string(swap_start..swap_end));
+            let swap_iv = Interval::new(swap_start, swap_end);
+            builder.delete(swap_iv);
 
+            let (start, _) = view.get_line_offset(&self.text, end_line + 1);
+            let mut iv = Interval::new(start, start);
+            let mut saved_text = Rope::from(self.text.slice_to_cow(swap_start..swap_end));
             // adjusts newline character for last line
             if end_line == last_line {
+                iv = Interval::new(self.text.len(), self.text.len());
                 saved_text = Rope::from(&config.line_ending) + saved_text.slice(0..saved_text.len() - 1);
             }
-
-            builder.delete(swap_iv);
             builder.replace(iv, saved_text);
         }
-        // If selection contains the last offset, we use the before caret edit type.
-        if view.sel_regions().last().unwrap().end == self.text.len() {
-            self.this_edit_type = EditType::CaretBefore;
-        } else {
-            self.this_edit_type = EditType::Other;
-        }
+        self.this_edit_type = EditType::CaretBefore;
         self.add_delta(builder.build());
     }
 
     fn move_line_down(&mut self, view: &mut View, config: &BufferItems) {
-        let mut builder = delta::Builder::new(self.text.len());
+        let mut builder = DeltaBuilder::new(self.text.len());
         // get affected lines or regions
         let to_move = self.get_adjacent_selected_line_ranges(view);
 
@@ -595,14 +590,14 @@ impl Editor {
             let start = view.line_col_to_offset(&self.text, start_line, 0);
             let (swap_start, swap_end) = view.get_line_offset(&self.text, swap_line);
 
-            let mut swap_iv = Interval::new_closed_closed(swap_start, swap_end);
-            let iv = Interval::new_closed_open(start, start);
-            let mut saved_text = Rope::from(self.text.slice_to_string(swap_start..swap_end));
+            let mut swap_iv = Interval::new(swap_start, swap_end);
+            let iv = Interval::new(start, start);
+            let mut saved_text = Rope::from(self.text.slice_to_cow(swap_start..swap_end));
 
             // add newline character if swapping last line
             if swap_line == last_line {
                 saved_text = saved_text + Rope::from(&config.line_ending);
-                swap_iv = Interval::new_closed_closed(swap_start - 1, swap_end);
+                swap_iv = Interval::new(swap_start - 1, swap_end);
             }
 
             builder.replace(iv, saved_text);
@@ -627,7 +622,6 @@ impl Editor {
             // n..n.
             let start = range.start;
             let end = range.end - 1;
-            eprintln!("{:?} {:?} ", start, end);
             if let Some((p_start, p_end)) = prev_sel.take() {
                 // Lines selected are continuous, thus we merge them.
                 // e.g 1..2 and 2..3 becomes 1..3
@@ -645,6 +639,7 @@ impl Editor {
         if let Some(last) = prev_sel.take() {
             ranges.push(last);
         }
+        eprintln!("{:?}", ranges);
         ranges
     }
 
