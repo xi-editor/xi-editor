@@ -52,7 +52,7 @@ pub struct FindStatus {
 
 /// Contains logic to search text
 pub struct Find {
-    // Uniquely identifies this search query.
+    /// Uniquely identifies this search query.
     id: usize,
     /// The occurrences, which determine the highlights, have been updated.
     hls_dirty: bool,
