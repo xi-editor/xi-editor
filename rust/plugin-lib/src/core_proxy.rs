@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! A proxy for the methods on Core
-use xi_core::internal::plugins::PluginId;
+use xi_core::plugins::PluginId;
 use xi_core::plugin_rpc::Hover;
 use xi_core::ViewId;
 use xi_rpc::{RpcCtx, RpcPeer, RemoteError};
