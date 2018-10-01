@@ -12,19 +12,19 @@ using modern software engineering techniques. It is initially built for
 Mac OS X, using Cocoa for the user interface. There are also frontends for
 other operating systems available from third-party developers.
 
-Goals include:
+**GOALS include:**
 
-* ***Incredibly high performance***. All editing operations should commit and paint
+* ***Incredibly high performance:***. All editing operations should commit and paint
   in under 16ms. The editor should never make you wait for anything.
 
-* ***Beauty***. The editor should fit well on a modern desktop, and not look like a
+* ***Beauty:***. The editor should fit well on a modern desktop, and not look like a
   throwback from the ’80s or ’90s. Text drawing should be done with the best
   technology available (Core Text on Mac, DirectWrite on Windows, etc.), and
   support Unicode fully.
 
-* ***Reliability***. Crashing, hanging, or losing work should never happen.
+* ***Reliability:***. Crashing, hanging, or losing work should never happen.
 
-* ***Developer friendliness***. It should be easy to customize xi editor, whether
+* ***Developer friendliness:***. It should be easy to customize xi editor, whether
   by adding plug-ins or hacking on the core.
 
 Please refer to the [November 2017 roadmap](https://github.com/google/xi-editor/issues/437)
@@ -34,12 +34,12 @@ Screenshot (will need to be updated as syntax coloring and UI polish is added):
 
 ![xi screenshot](/docs/docs/img/xi-mac-screenshot.png?raw=true)
 
-## Getting started
+## Getting started::
 
 This repository is the core only. You'll also need a front-end, from the list
 below.
 
-### Building the core
+### Building the core:
 
 Xi targets 'recent stable Rust'. We recommend installing via [rustup](https://www.rustup.rs).
 The current minimum supported version is 1.28.
@@ -87,44 +87,44 @@ documentation at this point) on the protocol at
 [frontend.md](https://xi-editor.github.io/xi-editor/docs/frontend-protocol.html). If you're working on a front-end, feel free to
 send a PR to add it to the above list.
 
-## Design decisions
+## Design decisions:
 
 Here are some of the design decisions, and motivation why they should
 contribute to the above goals:
 
-* ***Separation into front-end and back-end modules***. The front-end is responsible for presenting the user interface and
+* ***Separation into front-end and back-end modules:***. The front-end is responsible for presenting the user interface and
   drawing a screen full of text. The back-end (also known as “core”) holds the file buffers and is
   responsible for all potentially expensive editing operations.
 
-* ***Native UI***. Cross-platform UI toolkits never look and feel quite right. The
+* ***Native UI:***. Cross-platform UI toolkits never look and feel quite right. The
   best technology for building a UI is the native framework of the platform.
   On Mac, that’s Cocoa.
 
-* ***Rust***. The back-end needs to be extremely performant. In particular, it
+* ***Rust:***. The back-end needs to be extremely performant. In particular, it
   should use little more memory than the buffers being edited. That level of
   performance is possible in C++, but Rust offers a much more reliable, and
   in many ways, higher level programming platform.
 
-* ***A persistent rope data structure***. Persistent ropes are efficient even for
+* ***A persistent rope data structure:***. Persistent ropes are efficient even for
   very large files. In addition, they present a simple interface to their
   clients - conceptually, they're a sequence of characters just like a string,
   and the client need not be aware of any internal structure.
 
-* ***Asynchronous operations***. The editor should never, ever block and prevent the
+* ***Asynchronous operations:***. The editor should never, ever block and prevent the
   user from getting their work done. For example, autosave will spawn a
   thread with a snapshot of the current editor buffer (the persistent rope
   data structure is copy-on-write so this operation is nearly free), which can
   then proceed to write out to disk at its leisure, while the buffer is still
   fully editable.
 
-* ***Plug-ins over scripting***. Most text editors have an associated scripting
+* ***Plug-ins over scripting:***. Most text editors have an associated scripting
   language for extending functionality. However, these languages are usually
   both more arcane and less powerful than “real” languages. The xi editor will
   communicate with plugins through pipes, letting them be written in any
   language, and making it easier to integrate with other systems such as
   version control, deeper static analyzers of code, etc.
 
-* ***JSON***. The protocol for front-end / back-end communication, as well as
+* ***JSON:***. The protocol for front-end / back-end communication, as well as
   between the back-end and plug-ins, is based on simple JSON messages. I
   considered binary formats, but the actual improvement in performance would
   be completely in the noise. Using JSON considerably lowers friction for
@@ -132,7 +132,7 @@ contribute to the above goals:
   languages, and there are plenty of the libraries available for the other
   ones.
 
-## Current status
+## Current status:
 
 This is still a project in its early stages. The Mac build has basic editing
 functionality (it was used to write this README), but looks very spare and
@@ -140,11 +140,11 @@ is still missing essentials such as auto-indent. At the moment, it’s expected
 that its main community will be developers interested in hacking on a text
 editor.
 
-## Authors
+## Authors:
 
-The main author is Raph Levien.
+The main author is **Raph Levien**!!
 
-## Contributions
+## Contributions:
 
 We gladly accept contributions via GitHub pull requests, as long as the author
 has signed the Google Contributor License. Please see
@@ -154,7 +154,7 @@ If you are interested in contributing but not sure where to start, there is
 an active IRC channel at #xi on irc.mozilla.org. There is also a subreddit at
 [/r/xi_editor](https://www.reddit.com/r/xi_editor/).
 
-### Disclaimer
+### Disclaimer:
 
 This is not an official Google product (experimental or otherwise), it
 is just code that happens to be owned by Google.
