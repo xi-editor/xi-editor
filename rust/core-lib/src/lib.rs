@@ -14,22 +14,25 @@
 
 //! The main library for xi-core.
 
-#![cfg_attr(feature = "cargo-clippy", allow(
-    boxed_local,
-    cast_lossless,
-    collapsible_if,
-    let_and_return,
-    map_entry,
-    match_as_ref,
-    match_bool,
-    needless_pass_by_value,
-    new_without_default,
-    new_without_default_derive,
-    or_fun_call,
-    ptr_arg,
-    too_many_arguments,
-    unreadable_literal,
-))]
+#![cfg_attr(
+    feature = "cargo-clippy",
+    allow(
+        boxed_local,
+        cast_lossless,
+        collapsible_if,
+        let_and_return,
+        map_entry,
+        match_as_ref,
+        match_bool,
+        needless_pass_by_value,
+        new_without_default,
+        new_without_default_derive,
+        or_fun_call,
+        ptr_arg,
+        too_many_arguments,
+        unreadable_literal,
+    )
+)]
 
 #[macro_use]
 extern crate log;
@@ -39,11 +42,11 @@ extern crate serde;
 extern crate serde_json;
 #[macro_use]
 extern crate serde_derive;
-extern crate time;
-extern crate syntect;
-extern crate toml;
 #[cfg(feature = "notify")]
 extern crate notify;
+extern crate syntect;
+extern crate time;
+extern crate toml;
 
 extern crate xi_rope;
 extern crate xi_rpc;
@@ -65,44 +68,42 @@ mod ledger_includes {
 use ledger_includes::*;
 
 pub mod client;
+pub mod config;
 pub mod core;
-pub mod tabs;
-pub mod editor;
 pub mod edit_types;
+pub mod editor;
 pub mod event_context;
 pub mod file;
 pub mod find;
-pub mod view;
-pub mod linewrap;
-pub mod plugins;
 #[cfg(feature = "ledger")]
 pub mod fuchsia;
-pub mod styles;
-pub mod word_boundaries;
 pub mod index_set;
-pub mod selection;
-pub mod movement;
-pub mod syntax;
 pub mod layers;
-pub mod config;
+pub mod line_cache_shadow;
+pub mod linewrap;
+pub mod movement;
+pub mod plugins;
+pub mod selection;
+pub mod styles;
+pub mod syntax;
+pub mod tabs;
+pub mod view;
 #[cfg(feature = "notify")]
 pub mod watcher;
-pub mod line_cache_shadow;
 pub mod width_cache;
+pub mod word_boundaries;
 
 pub mod rpc;
-
 
 #[cfg(feature = "ledger")]
 use apps_ledger_services_public::Ledger_Proxy;
 
 pub use config::{BufferItems as BufferConfig, Table as ConfigTable};
-pub use core::{XiCore, WeakXiCore};
+pub use core::{WeakXiCore, XiCore};
 pub use editor::EditType;
-pub use plugins::rpc as plugin_rpc;
 pub use plugins::manifest as plugin_manifest;
+pub use plugins::rpc as plugin_rpc;
 pub use plugins::PluginPid;
 pub use syntax::{LanguageDefinition, LanguageId};
+pub use tabs::test_helpers;
 pub use tabs::{BufferId, BufferIdentifier, ViewId};
-pub use tabs::test_helpers as test_helpers;
-

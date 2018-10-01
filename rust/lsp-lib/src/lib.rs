@@ -17,8 +17,8 @@ extern crate serde_json;
 
 #[macro_use]
 extern crate log;
-extern crate fern;
 extern crate chrono;
+extern crate fern;
 
 extern crate jsonrpc_lite;
 extern crate languageserver_types as lsp_types;
@@ -37,8 +37,8 @@ pub mod conversion_utils;
 pub mod language_server_client;
 pub mod lsp_plugin;
 pub mod parse_helper;
-pub mod types;
 mod result_queue;
+pub mod types;
 mod utils;
 pub use lsp_plugin::LspPlugin;
 pub use types::Config;

@@ -30,11 +30,7 @@ pub enum LspHeader {
 }
 
 pub trait Callable: Send {
-    fn call(
-        self: Box<Self>,
-        client: &mut LanguageServerClient,
-        result: Result<Value, JsonRpcError>,
-    );
+    fn call(self: Box<Self>, client: &mut LanguageServerClient, result: Result<Value, JsonRpcError>);
 }
 
 impl<F: Send + FnOnce(&mut LanguageServerClient, Result<Value, JsonRpcError>)> Callable for F {
@@ -145,19 +141,19 @@ impl From<PluginLibError> for LanguageResponseError {
 impl Into<RemoteError> for LanguageResponseError {
     fn into(self) -> RemoteError {
         match self {
-            LanguageResponseError::NullResponse => 
-                    RemoteError::custom(0, "null response from server", None),
-            LanguageResponseError::FallbackResponse => 
-                    RemoteError::custom(1, "fallback response from server", None),
-            LanguageResponseError::LanguageServerError(error) => 
-                    RemoteError::custom(2, "language server error occured", Some(Value::String(error))),
-            LanguageResponseError::PluginLibError(error) =>
-                    RemoteError::custom(3, "Plugin Lib Error", Some(Value::String(format!("{:?}",error)))),
+            LanguageResponseError::NullResponse => RemoteError::custom(0, "null response from server", None),
+            LanguageResponseError::FallbackResponse => RemoteError::custom(1, "fallback response from server", None),
+            LanguageResponseError::LanguageServerError(error) => {
+                RemoteError::custom(2, "language server error occured", Some(Value::String(error)))
+            }
+            LanguageResponseError::PluginLibError(error) => {
+                RemoteError::custom(3, "Plugin Lib Error", Some(Value::String(format!("{:?}", error))))
+            }
         }
     }
 }
 
 #[derive(Debug)]
 pub enum LspResponse {
-    Hover(Result<Hover, LanguageResponseError>)
+    Hover(Result<Hover, LanguageResponseError>),
 }
