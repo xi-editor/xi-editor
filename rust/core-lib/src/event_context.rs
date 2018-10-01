@@ -479,6 +479,7 @@ impl<'a> EventContext<'a> {
 }
 
 #[cfg(test)]
+#[cfg_attr(rustfmt, rustfmt_skip)]
 mod tests {
     use super::*;
     use config::ConfigManager;

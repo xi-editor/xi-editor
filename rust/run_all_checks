@@ -1,5 +1,14 @@
 #!/bin/bash
 
+
+printf 'Checking fmt warnings:\n'
+
+
+if ! (cargo fmt -- --check); then
+    printf '\n Cargo fmt failed. Please run it.\n'
+    exit $?
+fi
+
 printf 'Checking compiler warnings:\n'
 
 if ! (RUSTFLAGS="-D warnings" cargo check --all); then
