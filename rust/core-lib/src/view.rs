@@ -35,9 +35,8 @@ use selection::{Affinity, Selection, SelRegion};
 use tabs::{ViewId, BufferId};
 use width_cache::WidthCache;
 use word_boundaries::WordCursor;
-use find::Find;
+use find::{Find, FindStatus};
 use linewrap;
-use internal::find::FindStatus;
 
 type StyleMap = RefCell<ThemeStyleMap>;
 
