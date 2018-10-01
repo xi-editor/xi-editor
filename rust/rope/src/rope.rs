@@ -1295,10 +1295,7 @@ mod tests {
         let cow = rope.slice_to_cow(..);
 
         assert!(short_text.len() <= 1024);
-        assert_eq!(
-            cow,
-            Cow::Borrowed(short_text) as Cow<str>
-        );
+        assert_eq!(cow, Cow::Borrowed(short_text) as Cow<str>);
     }
 
     #[test]
@@ -1311,10 +1308,7 @@ mod tests {
         let cow = rope.slice_to_cow(..);
 
         assert!(long_text.len() > 1024);
-        assert_eq!(
-            cow,
-            Cow::Owned(long_text) as Cow<str>
-        );
+        assert_eq!(cow, Cow::Owned(long_text) as Cow<str>);
     }
 
     #[test]
@@ -1327,9 +1321,6 @@ mod tests {
         let cow = rope.slice_to_cow(..500);
 
         assert!(long_text.len() > 1024);
-        assert_eq!(
-            cow,
-            Cow::Borrowed(&long_text[..500])
-        );
+        assert_eq!(cow, Cow::Borrowed(&long_text[..500]));
     }
 }
