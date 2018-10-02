@@ -398,7 +398,7 @@ impl Editor {
         if save {
             let saved = self.extract_sel_regions(&deletions)
                 .unwrap_or_default();
-            *kill_ring = saved.into();
+            *kill_ring = saved.as_ref().into();
         }
         self.delete_sel_regions(&deletions);
     }
@@ -420,7 +420,7 @@ impl Editor {
 
     /// Extracts non-caret selection regions into a string,
     /// joining multiple regions with newlines.
-    fn extract_sel_regions(&self, sel_regions: &[SelRegion]) -> Option<String> {
+    fn extract_sel_regions(&self, sel_regions: &[SelRegion]) -> Option<Cow<str>> {
         let mut saved = None;
         for region in sel_regions {
             if !region.is_caret() {
@@ -428,8 +428,8 @@ impl Editor {
                 match saved {
                     None => saved = Some(val),
                     Some(ref mut s) => {
-                        s.push('\n');
-                        s.push_str(&val);
+                        s.to_mut().push('\n');
+                        s.to_mut().push_str(&val);
                     }
                 }
             }
@@ -571,7 +571,7 @@ impl Editor {
 
     pub(crate) fn do_copy(&self, view: &View) -> Value {
         if let Some(val) = self.extract_sel_regions(view.sel_regions()) {
-            Value::String(val)
+            Value::String(val.as_ref().to_owned())
         } else {
             Value::Null
         }
@@ -622,8 +622,9 @@ impl Editor {
                 if let Some(end) = self.text.next_grapheme_offset(middle) {
                     if start >= last {
                         let interval = Interval::new_closed_open(start, end);
-                        let swapped = self.text.slice_to_string(middle..end) +
-                                      &self.text.slice_to_string(start..middle);
+                        let swapped: String = format!("{}{}",
+                                              self.text.slice_to_string(middle..end).as_ref(),
+                                              self.text.slice_to_string(start..middle).as_ref());
                         builder.replace(interval, Rope::from(swapped));
                         last = end;
                     }
@@ -817,7 +818,7 @@ impl Editor {
             end_off = text.prev_codepoint_offset(end_off + 1).unwrap();
         }
 
-        let chunk = text.slice_to_string(offset..end_off);
+        let chunk = text.slice_to_string(offset..end_off).as_ref().to_owned();
         let first_line = text.line_of_offset(offset);
         let first_line_offset = offset - text.offset_of_line(first_line);
 

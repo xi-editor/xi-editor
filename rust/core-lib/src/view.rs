@@ -981,7 +981,7 @@ impl View {
             self.find.push(Find::new());
         }
 
-        self.find.first_mut().unwrap().do_find(text, search_query, case_sensitive, false, true);
+        self.find.first_mut().unwrap().do_find(text, &search_query, case_sensitive, false, true);
     }
 
     pub fn do_find(&mut self, text: &Rope, chars: String, case_sensitive: bool, is_regex: bool,
@@ -996,7 +996,7 @@ impl View {
             self.find.push(Find::new());
         }
 
-        self.find.first_mut().unwrap().do_find(text, chars, case_sensitive, is_regex, whole_words);
+        self.find.first_mut().unwrap().do_find(text, &chars, case_sensitive, is_regex, whole_words);
     }
 
     /// Selects the next find match.
@@ -1085,7 +1085,7 @@ impl View {
         };
 
         self.set_dirty(text);
-        self.do_set_replace(replacement, false);
+        self.do_set_replace(replacement.as_ref().to_owned(), false);
     }
 
     /// Get the line range of a selected region.
