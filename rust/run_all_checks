@@ -2,7 +2,7 @@
 
 printf 'Checking compiler warnings:\n'
 
-if ! (RUSTFLAGS="-D warnings" cargo check); then
+if ! (RUSTFLAGS="-D warnings" cargo check --all); then
     printf '\nCargo check produced errors. Exiting.\n'
     exit $?
 fi

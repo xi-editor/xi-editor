@@ -117,7 +117,7 @@ pub enum CoreNotification {
     /// use xi_core::rpc::*;
     /// # fn main() {
     /// let edit = EditCommand {
-    ///     view_id: "view-id-1".into(),
+    ///     view_id: 1.into(),
     ///     cmd: EditNotification::Insert { chars: "hello!".into() },
     /// };
     /// let rpc = CoreNotification::Edit(edit);
@@ -125,8 +125,8 @@ pub enum CoreNotification {
     ///     "method": "edit",
     ///     "params": {
     ///         "method": "insert",
+    ///         "view_id": "view-id-1",
     ///         "params": {
-    ///             "view_id": "view-id-1",
     ///             "chars": "hello!",
     ///         }
     ///     }
@@ -157,7 +157,7 @@ pub enum CoreNotification {
     /// # fn main() {
     /// let rpc = CoreNotification::Plugin(
     ///     PluginNotification::Start {
-    ///         view_id: "view-id-1".into(),
+    ///         view_id: 1.into(),
     ///         plugin_name: "syntect".into(),
     ///     });
     ///
@@ -494,7 +494,7 @@ impl<T: Serialize> Serialize for EditCommand<T>
         where S: Serializer
     {
         let mut v = serde_json::to_value(&self.cmd).map_err(ser::Error::custom)?;
-        v["params"]["view_id"] = json!(self.view_id);
+        v["view_id"] = json!(self.view_id);
         v.serialize(serializer)
     }
 }
@@ -573,5 +573,28 @@ impl<'de> Deserialize<'de> for LineRange
 
         let tup = TwoTuple::deserialize(deserializer)?;
         Ok(LineRange { first: tup.0, last: tup.1 })
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tabs::ViewId;
+
+    #[test]
+    fn test_serialize_edit_command() {
+        // Ensure that an EditCommand can be serialized and then correctly deserialized.
+        let message: String = "hello world".into();
+        let edit = EditCommand {
+            view_id: ViewId(1),
+            cmd: EditNotification::Insert { chars: message.clone() },
+        };
+        let json = serde_json::to_string(&edit).unwrap();
+        let cmd: EditCommand<EditNotification> = serde_json::from_str(&json).unwrap();
+        assert_eq!(cmd.view_id, edit.view_id);
+        if let EditNotification::Insert{ chars } = cmd.cmd {
+            assert_eq!(chars, message);
+        }
     }
 }
