@@ -634,7 +634,7 @@ impl Rope {
         leaf.as_bytes()[pos]
     }
 
-    pub fn slice_to_string<T>(&self, range: T) -> Cow<str>
+    pub fn slice_to_cow<T>(&self, range: T) -> Cow<str>
         where T: RangeBounds<usize>
     {
         let mut iter = self.iter_chunks(range);
@@ -761,7 +761,7 @@ impl From<Rope> for String {
 
 impl<'a> From<&'a Rope> for String {
     fn from(r: &Rope) -> String {
-        r.slice_to_string(..).as_ref().to_owned()
+        r.slice_to_cow(..).as_ref().to_owned()
     }
 }
 
