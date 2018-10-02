@@ -37,6 +37,7 @@ use selection::{Selection, SelRegion};
 use styles::ThemeStyleMap;
 use view::{View, Replace};
 use rpc::SelectionModifier;
+use word_boundaries::WordCursor;
 
 #[cfg(not(feature = "ledger"))]
 pub struct SyncStore;
@@ -685,6 +686,48 @@ impl Editor {
         }
     }
 
+    // capitalization behaviour is similar to behaviour in XCode
+    fn capitalize_text(&mut self, view: &mut View) {
+        let mut builder = delta::Builder::new(self.text.len());
+        let mut final_selection = Selection::new();
+
+        for &region in view.sel_regions() {
+            final_selection.add_region(SelRegion::new(region.max(), region.max()));
+            let mut word_cursor = WordCursor::new(&self.text, region.min());
+
+            loop {
+                // capitalize each word in the current selection
+                let (start, end) = word_cursor.select_word();
+
+                if start < end {
+                    let interval = Interval::new_closed_open(start, end);
+                    let word = self.text.slice_to_string(start..end);
+
+                    // first letter is uppercase, remaining letters are lowercase
+                    let (first_char, rest) = word.split_at(1);
+                    let mut capitalized_text = String::from("");
+                    capitalized_text.push_str(&first_char.to_uppercase());
+                    capitalized_text.push_str(&rest.to_lowercase());
+                    builder.replace(interval, Rope::from(capitalized_text));
+                }
+
+                if word_cursor.next_boundary().is_none() || end > region.max() {
+                    break;
+                }
+            }
+        }
+
+        if !builder.is_empty() {
+            self.this_edit_type = EditType::Other;
+            self.add_delta(builder.build());
+        }
+
+        // at the end of the transformation carets are located at the end of the words that were
+        // transformed last in the selections
+        view.collapse_selections(&self.text);
+        view.set_selection(&self.text, final_selection);
+    }
+
     fn duplicate_line(&mut self, view: &View, config: &BufferItems) {
         let mut builder = delta::Builder::new(self.text.len());
         // get affected lines or regions
@@ -735,6 +778,7 @@ impl Editor {
             Redo => self.do_redo(),
             Uppercase => self.transform_text(view, |s| s.to_uppercase()),
             Lowercase => self.transform_text(view, |s| s.to_lowercase()),
+            Capitalize => self.capitalize_text(view),
             Indent => self.modify_indent(view, config, IndentDirection::In),
             Outdent => self.modify_indent(view, config, IndentDirection::Out),
             InsertNewline => self.insert_newline(view, config),

@@ -441,6 +441,7 @@ pub enum EditNotification {
     CancelOperation,
     Uppercase,
     Lowercase,
+    Capitalize,
     Indent,
     Outdent,
     /// Indicates whether find highlights should be rendered
