@@ -221,6 +221,7 @@ The following methods act by modifying the current selection.
 ```
 uppercase
 lowercase
+capitalize
 indent
 outdent
 ```
