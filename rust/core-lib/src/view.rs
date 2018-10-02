@@ -1085,7 +1085,7 @@ impl View {
         };
 
         self.set_dirty(text);
-        self.do_set_replace(replacement.as_ref().to_owned(), false);
+        self.do_set_replace(replacement.into_owned(), false);
     }
 
     /// Get the line range of a selected region.

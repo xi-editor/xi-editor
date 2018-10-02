@@ -571,7 +571,7 @@ impl Editor {
 
     pub(crate) fn do_copy(&self, view: &View) -> Value {
         if let Some(val) = self.extract_sel_regions(view.sel_regions()) {
-            Value::String(val.as_ref().to_owned())
+            Value::String(val.into_owned())
         } else {
             Value::Null
         }
@@ -617,7 +617,7 @@ impl Editor {
             if region.is_caret() {
                 let middle = region.end;
                 let start = self.text.prev_grapheme_offset(middle).unwrap_or(0);
-                // Note: this matches Su_stringblime's behavior. Cocoa would swap last
+                // Note: this matches Sublime's behavior. Cocoa would swap last
                 // two characters of line if at end of line.
                 if let Some(end) = self.text.next_grapheme_offset(middle) {
                     if start >= last {
