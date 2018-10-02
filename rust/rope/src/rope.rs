@@ -634,18 +634,27 @@ impl Rope {
         leaf.as_bytes()[pos]
     }
 
-    // TODO: this should be a Cow
-    // TODO: a case can be made to hang this on Cursor instead
-    pub fn slice_to_string<T>(&self, range: T) -> String 
+    pub fn slice_to_string<T>(&self, range: T) -> Cow<str>
         where T: RangeBounds<usize>
     {
-        let mut result = String::new();
-        for chunk in self.iter_chunks(range) {
-            result.push_str(chunk);
+        let mut iter = self.iter_chunks(range);
+        let first = iter.next();
+        let second = iter.next();
+
+        match (first, second) {
+            (None, None) => Cow::from(""),
+            (Some(s), None) => Cow::from(s),
+            (Some(one), Some(two)) => {
+                let mut result = [one, two].concat();
+                for chunk in iter {
+                    result.push_str(chunk);
+                }
+                Cow::from(result)
+            }
+            (None, Some(_)) => unreachable!(),
         }
-        result
     }
-    
+
     /// Extracts start and end bounds from a range
     fn extract_range<T>(&self, range: T) -> (usize, usize)
         where T: RangeBounds<usize>
@@ -752,7 +761,7 @@ impl From<Rope> for String {
 
 impl<'a> From<&'a Rope> for String {
     fn from(r: &Rope) -> String {
-        r.slice_to_string(..)
+        r.slice_to_string(..).as_ref().to_owned()
     }
 }
 
