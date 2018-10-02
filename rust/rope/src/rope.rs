@@ -761,7 +761,7 @@ impl From<Rope> for String {
 
 impl<'a> From<&'a Rope> for String {
     fn from(r: &Rope) -> String {
-        r.slice_to_cow(..).as_ref().to_owned()
+        r.slice_to_cow(..).into_owned()
     }
 }
 
@@ -1276,7 +1276,7 @@ mod tests {
     }
 
     #[test]
-    fn slice_to_cow_small() {
+    fn slice_to_cow_small_string() {
         let short_text = "hi, i'm a small piece of text.";
 
         let rope = Rope::from(short_text);
@@ -1291,7 +1291,7 @@ mod tests {
     }
 
     #[test]
-    fn slice_to_cow_long() {
+    fn slice_to_cow_long_string_long_slice() {
         // 32 char long string, repeat it 33 times so it is longer than 1024 bytes
         let long_text = "1234567812345678123456781234567812345678123456781234567812345678".repeat(33);
 
@@ -1303,6 +1303,22 @@ mod tests {
         assert_eq!(
             cow,
             Cow::Owned(long_text) as Cow<str>
+        );
+    }
+
+    #[test]
+    fn slice_to_cow_long_string_short_slice() {
+        // 32 char long string, repeat it 33 times so it is longer than 1024 bytes
+        let long_text = "1234567812345678123456781234567812345678123456781234567812345678".repeat(33);
+
+        let rope = Rope::from(&long_text);
+
+        let cow = rope.slice_to_cow(..500);
+
+        assert!(long_text.len() > 1024);
+        assert_eq!(
+            cow,
+            Cow::Borrowed(&long_text[..500])
         );
     }
 }
