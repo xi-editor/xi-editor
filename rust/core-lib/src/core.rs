@@ -1,4 +1,4 @@
-// Copyright 2018 Google Inc. All rights reserved.
+// Copyright 2018 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -39,6 +39,7 @@ pub enum XiCore {
     Waiting,
     Running(Arc<Mutex<CoreState>>),
 }
+
 
 /// A weak reference to the main state. This is passed to plugin threads.
 #[derive(Clone)]
@@ -95,7 +96,7 @@ impl Handler for XiCore {
                 true => xi_trace::enable_tracing(),
                 false => xi_trace::disable_tracing(),
             }
-            eprintln!("tracing in core = {:?}", enabled);
+            info!("tracing in core = {:?}", enabled);
             if self.is_waiting() {
                 return;
             }

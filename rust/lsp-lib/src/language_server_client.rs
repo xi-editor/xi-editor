@@ -1,4 +1,4 @@
-// Copyright 2018 Google LLC
+// Copyright 2018 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ use serde_json::{to_value, Value};
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::process;
+use result_queue::ResultQueue;
 use types::Callback;
 use url::Url;
 use xi_core::ViewId;
@@ -32,6 +33,7 @@ pub struct LanguageServerClient {
     pending: HashMap<u64, Callback>,
     next_id: u64,
     language_id: String,
+    pub result_queue: ResultQueue,
     pub status_items: HashSet<String>,
     pub core: CoreProxy,
     pub is_initialized: bool,
@@ -64,6 +66,7 @@ impl LanguageServerClient {
     pub fn new(
         writer: Box<Write + Send>,
         core: CoreProxy,
+        result_queue: ResultQueue,
         language_id: String,
         file_extensions: Vec<String>,
     ) -> Self {
@@ -73,6 +76,7 @@ impl LanguageServerClient {
             next_id: 1,
             is_initialized: false,
             core,
+            result_queue,
             status_items: HashSet::new(),
             language_id,
             server_capabilities: None,
@@ -91,7 +95,7 @@ impl LanguageServerClient {
 
     pub fn handle_message(&mut self, message: &str) {
         match JsonRpc::parse(message) {
-            Ok(JsonRpc::Request(obj)) => eprintln!("client received unexpected request: {:?}", obj),
+            Ok(JsonRpc::Request(obj)) => trace!("client received unexpected request: {:?}", obj),
             Ok(value @ JsonRpc::Notification(_)) => {
                 self.handle_notification(value.get_method().unwrap(), value.get_params().unwrap())
             },
@@ -105,7 +109,7 @@ impl LanguageServerClient {
                 let error = value.get_error().unwrap();
                 self.handle_response(id, Err(error.clone()));
             }
-            Err(err) => eprintln!("Error in parsing incoming string: {}", err),
+            Err(err) => error!("Error in parsing incoming string: {}", err),
         }
     }
 
@@ -118,7 +122,7 @@ impl LanguageServerClient {
     }
 
     pub fn handle_notification(&mut self, method: &str, params: Params) {
-        eprintln!("Method: {}, params: {:?}", method, params);
+        trace!("Notification Received =>\n Method: {}, params: {:?}", method, params);
         match method {
             "window/showMessage" => {
 
@@ -139,7 +143,7 @@ impl LanguageServerClient {
     pub fn handle_misc_notification(&mut self, method: &str, params: Params) {
         match self.language_id.to_lowercase().as_ref() {
             "rust" => self.handle_rust_misc_notification(method, params),
-            _ => eprintln!("Unknown notification: {}", method)
+            _ => warn!("Unknown notification: {}", method)
         }
     }
 
@@ -178,6 +182,7 @@ impl LanguageServerClient {
             Err(err) => panic!("Encoding Error {:?}", err),
         };
 
+        trace!("Sending RPC: {:?}", rpc);
         self.write(rpc.as_ref());
     }
 
@@ -345,10 +350,10 @@ impl LanguageServerClient {
                             }
                         }
                     },
-                    _ => eprintln!("Unexpected type")
+                    _ => warn!("Unexpected type")
                 }
             },
-            _ => eprintln!("Unknown Notification from RLS: {} ", method)
+            _ => warn!("Unknown Notification from RLS: {} ", method)
         }
     }
 }

@@ -1,4 +1,4 @@
-// Copyright 2018 Google LLC
+// Copyright 2018 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,28 +14,21 @@
 
 //! Implementation of Language Server Plugin
 
+use result_queue::ResultQueue;
 use conversion_utils::*;
 use language_server_client::LanguageServerClient;
 use lsp_types::*;
-use parse_helper;
 use serde_json;
-use std;
 use std::collections::HashMap;
-use std::ffi::OsStr;
-use std::io::{BufReader, BufWriter};
 use std::path::Path;
-use std::process::Command;
-use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::Mutex;
-use types::Config;
-use types::{Error, LanguageResponseError};
+use types::{Config, LspResponse, LanguageResponseError};
 use url::Url;
+use utils::*;
 use xi_core::ConfigTable;
 use xi_core::ViewId;
-use xi_plugin_lib::{
-    Cache, ChunkCache, CoreProxy, Error as PluginLibError, CorePosition, Plugin, View,
-};
+use xi_plugin_lib::{ChunkCache, CoreProxy, Plugin, View};
 use xi_rope::rope::RopeDelta;
 
 pub struct ViewInfo {
@@ -48,180 +41,8 @@ pub struct LspPlugin {
     pub config: Config,
     view_info: HashMap<ViewId, ViewInfo>,
     core: Option<CoreProxy>,
+    result_queue: ResultQueue,
     language_server_clients: HashMap<String, Arc<Mutex<LanguageServerClient>>>,
-}
-
-/// Get contents changes of a document modeled according to Language Server Protocol
-/// given the RopeDelta
-fn get_document_content_changes<C: Cache>(
-    delta: Option<&RopeDelta>,
-    view: &mut View<C>,
-) -> Result<Vec<TextDocumentContentChangeEvent>, PluginLibError> {
-    if let Some(delta) = delta {
-        let (interval, _) = delta.summary();
-        let (start, end) = interval.start_end();
-
-        // TODO: Handle more trivial cases like typing when there's a selection or transpose
-        if let Some(node) = delta.as_simple_insert() {
-            let text = String::from(node);
-
-            let (start, end) = interval.start_end();
-            let text_document_content_change_event = TextDocumentContentChangeEvent {
-                range: Some(Range {
-                    start: get_position_of_offset(view, start)?,
-                    end: get_position_of_offset(view, end)?,
-                }),
-                range_length: Some((end - start) as u64),
-                text,
-            };
-
-            return Ok(vec![text_document_content_change_event]);
-        }
-        // Or a simple delete
-        else if delta.is_simple_delete() {
-            let mut end_position = get_position_of_offset(view, end)?;
-
-            // Hack around sending VSCode Style Positions to Language Server.
-            // See this issue to understand: https://github.com/Microsoft/vscode/issues/23173
-            if end_position.character == 0 {
-                // There is an assumption here that the line separator character is exactly
-                // 1 byte wide which is true for "\n" but it will be an issue if they are not
-                // for example for u+2028
-                let mut ep = get_position_of_offset(view, end - 1)?;
-                ep.character += 1;
-                end_position = ep;
-            }
-
-            let text_document_content_change_event = TextDocumentContentChangeEvent {
-                range: Some(Range {
-                    start: get_position_of_offset(view, start)?,
-                    end: end_position,
-                }),
-                range_length: Some((end - start) as u64),
-                text: String::new(),
-            };
-
-            return Ok(vec![text_document_content_change_event]);
-        }
-    }
-
-    let text_document_content_change_event = TextDocumentContentChangeEvent {
-        range: None,
-        range_length: None,
-        text: view.get_document()?,
-    };
-
-    Ok(vec![text_document_content_change_event])
-}
-
-/// Get changes to be sent to server depending upon the type of Sync supported
-/// by server
-fn get_change_for_sync_kind(
-    sync_kind: TextDocumentSyncKind,
-    view: &mut View<ChunkCache>,
-    delta: Option<&RopeDelta>,
-) -> Option<Vec<TextDocumentContentChangeEvent>> {
-    match sync_kind {
-        TextDocumentSyncKind::None => None,
-        TextDocumentSyncKind::Full => {
-            let text_document_content_change_event = TextDocumentContentChangeEvent {
-                range: None,
-                range_length: None,
-                text: view.get_document().unwrap(),
-            };
-            Some(vec![text_document_content_change_event])
-        }
-        TextDocumentSyncKind::Incremental => match get_document_content_changes(delta, view) {
-            Ok(result) => Some(result),
-            Err(err) => {
-                eprintln!("Error: {:?} Occured. Sending Whole Doc", err);
-                let text_document_content_change_event = TextDocumentContentChangeEvent {
-                    range: None,
-                    range_length: None,
-                    text: view.get_document().unwrap(),
-                };
-                Some(vec![text_document_content_change_event])
-            }
-        },
-    }
-}
-
-/// Get workspace root using the Workspace Identifier and the opened document path
-/// For example: Cargo.toml can be used to identify a Rust Workspace
-/// This method traverses up to file tree to return the path to the Workspace root folder
-pub fn get_workspace_root_uri(
-    workspace_identifier: &str,
-    document_path: &Path,
-) -> Result<Url, Error> {
-    let identifier_os_str = OsStr::new(&workspace_identifier);
-
-    let mut current_path = document_path;
-    loop {
-        let parent_path = current_path.parent();
-        if let Some(path) = parent_path {
-            for entry in path.read_dir()? {
-                if let Ok(entry) = entry {
-                    if entry.file_name() == identifier_os_str {
-                        return Url::from_file_path(path).map_err(|_| Error::FileUrlParseError);
-                    };
-                }
-            }
-            current_path = path;
-        } else {
-            break Err(Error::PathError);
-        }
-    }
-}
-
-/// Start a new Language Server Process by spawning a process given the parameters
-/// Returns a Arc to the Language Server Client which abstracts connection to the
-/// server
-fn start_new_server(
-    command: String,
-    arguments: Vec<String>,
-    file_extensions: Vec<String>,
-    language_id: String,
-    core: CoreProxy,
-) -> Result<Arc<Mutex<LanguageServerClient>>, String> {
-    let mut process = Command::new(command)
-        .args(arguments)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect("Error Occurred");
-
-    let writer = Box::new(BufWriter::new(process.stdin.take().unwrap()));
-
-    let language_server_client = Arc::new(Mutex::new(LanguageServerClient::new(
-        writer,
-        core,
-        language_id.clone(),
-        file_extensions,
-    )));
-
-    {
-        let ls_client = language_server_client.clone();
-        let mut stdout = process.stdout;
-
-        // Unwrap to indicate that we want thread to panic on failure
-        std::thread::Builder::new()
-            .name(format!("{}-lsp-stdout-Looper", language_id))
-            .spawn(move || {
-                let mut reader = Box::new(BufReader::new(stdout.take().unwrap()));
-                loop {
-                    match parse_helper::read_message(&mut reader) {
-                        Ok(message_str) => {
-                            let mut server_locked = ls_client.lock().unwrap();
-                            server_locked.handle_message(message_str.as_ref());
-                        }
-                        Err(err) => eprintln!("Error occurred {:?}", err),
-                    };
-                }
-            })
-            .unwrap();
-    }
-
-    Ok(language_server_client)
 }
 
 impl LspPlugin {
@@ -229,6 +50,7 @@ impl LspPlugin {
         LspPlugin {
             config,
             core: None,
+            result_queue: ResultQueue::new(),
             view_info: HashMap::new(),
             language_server_clients: HashMap::new(),
         }
@@ -268,7 +90,7 @@ impl Plugin for LspPlugin {
     }
 
     fn did_save(&mut self, view: &mut View<Self::Cache>, _old: Option<&Path>) {
-        eprintln!("saved view {}", view.get_id());
+        trace!("saved view {}", view.get_id());
 
         let document_text = view.get_document().unwrap();
         self.with_language_server_for_view(view, |ls_client| {
@@ -277,14 +99,15 @@ impl Plugin for LspPlugin {
     }
 
     fn did_close(&mut self, view: &View<Self::Cache>) {
-        eprintln!("close view {}", view.get_id());
+        trace!("close view {}", view.get_id());
+        
         self.with_language_server_for_view(view, |ls_client| {
             ls_client.send_did_close(view.get_id());    
         });
     }
 
     fn new_view(&mut self, view: &mut View<Self::Cache>) {
-        eprintln!("new view {}", view.get_id());
+        trace!("new view {}", view.get_id());
 
         let document_text = view.get_document().unwrap();
         let path = view.get_path().clone();
@@ -325,6 +148,8 @@ impl Plugin for LspPlugin {
                             let init_result: InitializeResult =
                                 serde_json::from_value(result).unwrap();
 
+                            debug!("Init Result: {:?}", init_result);
+
                             ls_client.server_capabilities = Some(init_result.capabilities);
                             ls_client.is_initialized = true;
                             ls_client.send_did_open(view_id, document_uri, document_text);
@@ -343,33 +168,50 @@ impl Plugin for LspPlugin {
         &mut self,
         view: &mut View<Self::Cache>,
         request_id: usize,
-        position: CorePosition,
+        position: usize,
     ) {
 
         let view_id = view.get_id();
-        let rev = view.rev;
-        let position_ls = Position {
-            line: position.line as u64,
-            character: position.col_utf16 as u64
-        };
+        let position_ls = get_position_of_offset(view, position);
 
         self.with_language_server_for_view(view, |ls_client| {
-                ls_client.request_hover(
-                    view_id,
-                position_ls,
-                    move |ls_client, result| {
-                        let res = result
-                            .map_err(|e| LanguageResponseError::LanguageServerError(format!("{:?}", e)))
-                            .and_then(|h| {
-                                let hover: Option<Hover> = serde_json::from_value(h).unwrap();
-                                hover.ok_or(LanguageResponseError::NullResponse)
-                                    .and_then(core_hover_from_hover)
-                            })
-                            .map_err(|e| e.into());
-                        ls_client.core.display_hover(view_id, request_id, res, rev);
-                    },
-                );
+
+                match position_ls {
+                    Ok(position) => ls_client.request_hover(
+                        view_id,
+                        position,
+                        move |ls_client, result| {
+                            let res = result
+                                .map_err(|e| LanguageResponseError::LanguageServerError(format!("{:?}", e)))
+                                .and_then(|h| {
+                                    let hover: Option<Hover> = serde_json::from_value(h).unwrap();
+                                    hover.ok_or(LanguageResponseError::NullResponse)
+                                });
+                            
+                            ls_client.result_queue.push_result(request_id, LspResponse::Hover(res));
+                            ls_client.core.schedule_idle(view_id);
+                        },
+                    ),
+                    Err(err) => {
+                        ls_client.result_queue.push_result(request_id, LspResponse::Hover(Err(err.into())));
+                        ls_client.core.schedule_idle(view_id);
+                    }
+                }
+                    
         });
+    }
+
+    fn idle(&mut self, view: &mut View<Self::Cache>) {
+        let result = self.result_queue.pop_result();
+        if let Some((request_id, reponse)) = result {
+            match reponse {
+                LspResponse::Hover(res) => {
+                    let res = res.and_then(|h| core_hover_from_hover(view, h)).map_err(|e| e.into());
+                    self.with_language_server_for_view(view, |ls_client| 
+                            ls_client.core.display_hover(view.get_id(), request_id, res));
+                }
+            }
+        }
     }
 }
 
@@ -413,7 +255,6 @@ impl LspPlugin {
                     Some((language_server_identifier, client))
                 } else {
                     let config = self.config.language_config.get(&language_id).unwrap();
-
                     let client = start_new_server(
                         config.start_command.clone(),
                         config.start_arguments.clone(),
@@ -421,6 +262,7 @@ impl LspPlugin {
                         language_id.clone(),
                         // Unwrap is safe
                         self.core.clone().unwrap(),
+                        self.result_queue.clone(),
                     );
 
                     match client {
@@ -432,7 +274,7 @@ impl LspPlugin {
                             Some((language_server_identifier, client_clone))
                         }
                         Err(err) => {
-                            eprintln!(
+                            error!(
                                 "Error occured while starting server for Language: {}: {:?}",
                                 language_id, err
                             );

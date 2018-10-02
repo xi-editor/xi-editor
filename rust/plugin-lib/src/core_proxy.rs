@@ -1,4 +1,4 @@
-// Copyright 2018 Google LLC
+// Copyright 2018 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! A proxy for the methods on Core
-use xi_core::internal::plugins::PluginId;
+use xi_core::plugins::PluginId;
 use xi_core::plugin_rpc::Hover;
 use xi_core::ViewId;
 use xi_rpc::{RpcCtx, RpcPeer, RemoteError};
@@ -69,17 +69,20 @@ impl CoreProxy {
         &mut self,
         view_id: ViewId,
         request_id: usize,
-        result: Result<Hover, RemoteError>,
-        rev: u64,
+        result: Result<Hover, RemoteError>
     ) {
         let params = json!({
             "plugin_id": self.plugin_id,
-            "rev": rev,
             "request_id": request_id,
             "result": result,
             "view_id": view_id
         });
 
         self.peer.send_rpc_notification("show_hover", &params);
+    }
+
+    pub fn schedule_idle(&mut self, view_id: ViewId) {
+        let token: usize = view_id.into();
+        self.peer.schedule_idle(token);
     }
 }

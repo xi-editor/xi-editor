@@ -1,4 +1,4 @@
-// Copyright 2018 Google Inc. All rights reserved.
+// Copyright 2018 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use serde_json::{self, Value};
 
 use xi_core::{ViewId, PluginPid, ConfigTable};
-use xi_core::plugin_rpc::{PluginBufferInfo, CorePosition, PluginUpdate, HostRequest, HostNotification};
+use xi_core::plugin_rpc::{PluginBufferInfo, PluginUpdate, HostRequest, HostNotification};
 use xi_rpc::{RpcCtx, RemoteError, Handler as RpcHandler};
 use xi_trace::{self, trace, trace_block, trace_block_payload};
 use core_proxy::CoreProxy;
@@ -30,7 +30,7 @@ macro_rules! bail {
     ($opt:expr, $method:expr, $pid:expr, $view:expr) => ( match $opt {
         Some(t) => t,
         None => {
-            eprintln!("{:?} missing {:?} for {:?}", $pid, $view, $method);
+            warn!("{:?} missing {:?} for {:?}", $pid, $view, $method);
             return
         }
     })
@@ -42,7 +42,7 @@ macro_rules! bail_err {
     ($opt:expr, $method:expr, $pid:expr, $view:expr) => ( match $opt {
         Some(t) => t,
         None => {
-            eprintln!("{:?} missing {:?} for {:?}", $pid, $view, $method);
+            warn!("{:?} missing {:?} for {:?}", $pid, $view, $method);
             return Err(RemoteError::custom(404, "missing view", None))
         }
     })
@@ -71,7 +71,7 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
                      buffers: Vec<PluginBufferInfo>)
     {
         assert!(self.pid.is_none(), "initialize rpc received with existing pid");
-        eprintln!("Initializing plugin {:?}", plugin_id);
+        info!("Initializing plugin {:?}", plugin_id);
         self.pid = Some(plugin_id);
 
         let core_proxy = CoreProxy::new(self.pid.unwrap(), ctx);
@@ -118,12 +118,12 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
     }
 
     fn do_shutdown(&mut self) {
-        eprintln!("rust plugin lib does not shutdown");
+        info!("rust plugin lib does not shutdown");
         //TODO: handle shutdown
 
     }
 
-    fn do_get_hover(&mut self, view_id: ViewId, request_id: usize, position: CorePosition) {
+    fn do_get_hover(&mut self, view_id: ViewId, request_id: usize, position: usize) {
         let v = bail!(self.views.get_mut(&view_id), "get_hover", self.pid, view_id);
         self.plugin.get_hover(v, request_id, position)
     }
@@ -133,11 +133,11 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
 
         if enabled {
             xi_trace::enable_tracing();
-            eprintln!("Enabling tracing in global plugin {:?}", self.pid);
+            info!("Enabling tracing in global plugin {:?}", self.pid);
             trace("enable tracing", &["plugin"]);
         } else {
             xi_trace::disable_tracing();
-            eprintln!("Disabling tracing in global plugin {:?}",  self.pid);
+            info!("Disabling tracing in global plugin {:?}",  self.pid);
             trace("enable tracing", &["plugin"]);
         }
     }

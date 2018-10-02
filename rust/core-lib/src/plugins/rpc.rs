@@ -1,4 +1,4 @@
-// Copyright 2017 Google Inc. All rights reserved.
+// Copyright 2017 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -109,7 +109,7 @@ pub enum HostNotification {
     ConfigChanged { view_id: ViewId, changes: Table },
     NewBuffer { buffer_info: Vec<PluginBufferInfo> },
     DidClose { view_id: ViewId },
-    GetHover { view_id: ViewId, request_id: usize, position: CorePosition },
+    GetHover { view_id: ViewId, request_id: usize, position: usize },
     Shutdown(EmptyStruct),
     TracingConfig {enabled: bool},
 }
@@ -186,7 +186,7 @@ pub enum PluginNotification {
     AddStatusItem { key: String, value: String, alignment: String },
     UpdateStatusItem { key: String, value: String  },
     RemoveStatusItem { key: String },
-    ShowHover { request_id: usize, result: Result<Hover, RemoteError>, rev: u64 },
+    ShowHover { request_id: usize, result: Result<Hover, RemoteError> },
 }
 
 /// Range expressed in terms of PluginPosition. Meant to be sent from
@@ -194,8 +194,8 @@ pub enum PluginNotification {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct Range {
-    pub start: PluginPosition,
-    pub end: PluginPosition
+    pub start: usize,
+    pub end: usize,
 }
 
 /// Hover Item sent from Plugin to Core
@@ -204,32 +204,6 @@ pub struct Range {
 pub struct Hover {
     pub content: String,
     pub range: Option<Range>
-}
-
-/// Plugins are sent locations in multiple formats to facilitate
-/// all actual conversion at only one place.
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "snake_case")]
-pub struct CorePosition {
-    /// UTF-8 Offset
-    pub offset: usize,
-    /// Line Number
-    pub line: usize,
-    /// UTF-8 byte to the position in line
-    pub col_utf8: usize,
-    /// UTF-16 Code Units offset to the position in line
-    pub col_utf16: usize
-}
-
-/// Plugins can send their locations in any of the supported formats
-/// in this enums. They are converted to UTF-8 offsets in the Core
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "snake_case")]
-#[serde(tag = "type")]
-pub enum PluginPosition {
-    Utf8Offset { offset: usize },
-    Utf16LineCol { line: usize, col: usize },
-    Utf8LineCol { line: usize, col: usize }
 }
 
 /// Common wrapper for plugin-originating RPCs.
@@ -306,7 +280,7 @@ impl TextUnit {
         let text = text.borrow();
         match *self {
             TextUnit::Utf8 => {
-                if offset >= text.len() {
+                if offset > text.len() {
                     None
                 } else {
                     if text.is_codepoint_boundary(offset) {
@@ -379,7 +353,7 @@ mod tests {
     fn test_de_plugin_rpc() {
         let json = r#"{"method": "alert", "params": {"view_id": "view-id-1", "plugin_id": 42, "msg": "ahhh!"}}"#;
         let de: PluginCommand<PluginNotification> = serde_json::from_str(json).unwrap();
-        assert_eq!(de.view_id, "view-id-1".into());
+        assert_eq!(de.view_id, ViewId(1));
         assert_eq!(de.plugin_id, PluginPid(42));
         match de.cmd {
             PluginNotification::Alert { ref msg } if msg == "ahhh!" => (),

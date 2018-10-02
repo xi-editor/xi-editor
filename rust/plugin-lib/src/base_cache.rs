@@ -1,4 +1,4 @@
-// Copyright 2018 Google Inc. All rights reserved.
+// Copyright 2018 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -433,7 +433,7 @@ mod tests {
             if offset > self.0.len() {
                 Err(Error::Other("offset too big".into()))
             } else {
-                let chunk = self.0.slice_to_string(offset, end_off);
+                let chunk = self.0.slice_to_string(offset..end_off);
                 Ok(GetDataResponse { chunk, offset, first_line, first_line_offset })
             }
         }

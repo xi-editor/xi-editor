@@ -1,4 +1,4 @@
-// Copyright 2017 Google Inc. All rights reserved.
+// Copyright 2017 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -262,6 +262,7 @@ const TEXT_EDIT_RPCS: &str = r#"{"method":"edit","params":{"view_id":"view-id-1"
 {"method":"edit","params":{"view_id":"view-id-1","method":"lowercase","params":[]}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"indent","params":[]}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"outdent","params":[]}}
+{"method":"edit","params":{"view_id":"view-id-1","method":"duplicate_line","params":[]}}
 {"id":2,"method":"edit","params":{"view_id":"view-id-1","method":"cut","params":[]}}"#;
 
 const OTHER_EDIT_RPCS: &str = r#"{"method":"edit","params":{"view_id":"view-id-1","method":"scroll","params":[0,1]}}

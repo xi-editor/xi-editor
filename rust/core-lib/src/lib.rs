@@ -1,4 +1,4 @@
-// Copyright 2016 Google Inc. All rights reserved.
+// Copyright 2016 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -31,6 +31,8 @@
     unreadable_literal,
 ))]
 
+#[macro_use]
+extern crate log;
 extern crate regex;
 extern crate serde;
 #[macro_use]
@@ -62,72 +64,41 @@ mod ledger_includes {
 #[cfg(feature = "ledger")]
 use ledger_includes::*;
 
-/// Internal data structures and logic.
-///
-/// These internals are not part of the public API (for the purpose of binding to
-/// a front-end), but are exposed here, largely so they appear in documentation.
-#[path=""]
-pub mod internal {
-    pub mod client;
-    pub mod core;
-    pub mod tabs;
-    pub mod editor;
-    pub mod edit_types;
-    pub mod event_context;
-    pub mod file;
-    pub mod find;
-    pub mod view;
-    pub mod linewrap;
-    pub mod plugins;
-    #[cfg(feature = "ledger")]
-    pub mod fuchsia;
-    pub mod styles;
-    pub mod word_boundaries;
-    pub mod index_set;
-    pub mod selection;
-    pub mod movement;
-    pub mod syntax;
-    pub mod layers;
-    pub mod config;
-    #[cfg(feature = "notify")]
-    pub mod watcher;
-    pub mod line_cache_shadow;
-    pub mod width_cache;
-}
+pub mod client;
+pub mod core;
+pub mod tabs;
+pub mod editor;
+pub mod edit_types;
+pub mod event_context;
+pub mod file;
+pub mod find;
+pub mod view;
+pub mod linewrap;
+pub mod plugins;
+#[cfg(feature = "ledger")]
+pub mod fuchsia;
+pub mod styles;
+pub mod word_boundaries;
+pub mod index_set;
+pub mod selection;
+pub mod movement;
+pub mod syntax;
+pub mod layers;
+pub mod config;
+#[cfg(feature = "notify")]
+pub mod watcher;
+pub mod line_cache_shadow;
+pub mod width_cache;
 
 pub mod rpc;
 
-use internal::tabs;
-use internal::core;
-use internal::client;
-use internal::edit_types;
-use internal::editor;
-use internal::event_context;
-use internal::file;
-use internal::find;
-use internal::view;
-use internal::linewrap;
-use internal::plugins;
-use internal::styles;
-use internal::word_boundaries;
-use internal::index_set;
-use internal::selection;
-use internal::movement;
-use internal::syntax;
-use internal::layers;
-use internal::config;
-#[cfg(feature = "notify")]
-use internal::watcher;
-use internal::line_cache_shadow;
-use internal::width_cache;
-#[cfg(feature = "ledger")]
-use internal::fuchsia;
 
 #[cfg(feature = "ledger")]
 use apps_ledger_services_public::Ledger_Proxy;
 
 pub use config::{BufferItems as BufferConfig, Table as ConfigTable};
 pub use core::{XiCore, WeakXiCore};
+pub use editor::EditType;
 pub use plugins::rpc as plugin_rpc;
 pub use plugins::manifest as plugin_manifest;
 pub use plugins::PluginPid;

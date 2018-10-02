@@ -1,4 +1,4 @@
-// Copyright 2018 Google Inc. All rights reserved.
+// Copyright 2018 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -211,7 +211,7 @@ fn try_save(path: &Path, text: &Rope, encoding: CharacterEncoding)
             CharacterEncoding::Utf8 => (),
         }
 
-        for chunk in text.iter_chunks(0, text.len()) {
+        for chunk in text.iter_chunks(..text.len()) {
             f.write_all(chunk.as_bytes())?;
         }
         Ok(())

@@ -1,4 +1,4 @@
-// Copyright 2018 Google LLC
+// Copyright 2018 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -28,6 +28,9 @@ extern crate time;
 extern crate serde_derive;
 
 extern crate serde;
+
+#[macro_use]
+extern crate log;
 
 extern crate libc;
 
@@ -600,7 +603,7 @@ fn exe_name() -> Option<String> {
                     match full_path_str {
                         Ok(s) => Some(s),
                         Err(e) => {
-                            eprintln!("Failed to get string representation: {:?}", e);
+                            warn!("Failed to get string representation: {:?}", e);
                             None
                         },
                     }
@@ -608,7 +611,7 @@ fn exe_name() -> Option<String> {
             }
         },
         Err(ref e) => {
-            eprintln!("Failed to get path to current exe: {:?}", e);
+            warn!("Failed to get path to current exe: {:?}", e);
             None
         },
     }
@@ -1158,7 +1161,7 @@ mod tests {
             trace.closure_payload("y", &["test"], || {
                 trace.instant_payload("b", &["test"], to_payload("test_get_samples_nested_trace"));
             }, to_payload("test_get_samples_nested_trace"));
-            trace.block_payload("z", &["test"], to_payload("test_get_samples_nested_trace"));
+            let _ = trace.block_payload("z", &["test"], to_payload("test_get_samples_nested_trace"));
             trace.instant_payload("c", &["test"], to_payload("test_get_samples_nested_trace"));
         }, to_payload("test_get_samples_nested_trace"));
 
@@ -1202,7 +1205,7 @@ mod tests {
                 std::thread::sleep(std::time::Duration::new(0, 1000));
                 trace.instant_payload("b", &["test"], to_payload("test_get_sorted_samples"));
             }, to_payload("test_get_sorted_samples"));
-            trace.block_payload("z", &["test"], to_payload("test_get_sorted_samples"));
+            let _ = trace.block_payload("z", &["test"], to_payload("test_get_sorted_samples"));
             trace.instant("c", &["test"]);
         }, to_payload("test_get_sorted_samples"));
 

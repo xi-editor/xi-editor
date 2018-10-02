@@ -1,4 +1,4 @@
-// Copyright 2016 Google Inc. All rights reserved.
+// Copyright 2016 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -99,7 +99,7 @@ pub fn linewrap(text: &Rope, cols: usize) -> Breaks {
     builder.add_no_break(text.len() - last_break_pos);
     let result = builder.build();
     let time_ms = (time::now() - start_time).num_nanoseconds().unwrap() as f64 * 1e-6;
-    eprintln!("time to wrap {} bytes: {:.2}ms", text.len(), time_ms);
+    debug!("time to wrap {} bytes: {:.2}ms", text.len(), time_ms);
     result
 }
 
@@ -160,7 +160,7 @@ pub fn rewrap(breaks: &mut Breaks, text: &Rope, iv: Interval, newsize: usize, co
         }
         builder.add_no_break(inval_end - last_break_pos);
         let time_ms = (time::now() - start_time).num_nanoseconds().unwrap() as f64 * 1e-6;
-        eprintln!("time to wrap {} bytes: {:.2}ms (not counting build+edit)",
+        debug!("time to wrap {} bytes: {:.2}ms (not counting build+edit)",
             inval_end - inval_start, time_ms);
         (Interval::new_open_closed(inval_start, inval_end + (end - start) - newsize), builder.build())
     };
@@ -226,7 +226,7 @@ impl<'a> RewrapCtx<'a> {
         while pos < self.max_offset && self.pot_breaks.len() < MAX_POT_BREAKS {
             let (next, hard) = self.lb_cursor.next();
             // TODO: avoid allocating string
-            let word = self.text.slice_to_string(pos, next);
+            let word = self.text.slice_to_string(pos..next);
             let tok = req.request(style_id, &word);
             pos = next;
             self.pot_breaks.push(PotentialBreak { pos, tok, hard });

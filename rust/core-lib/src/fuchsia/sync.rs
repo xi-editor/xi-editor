@@ -1,4 +1,4 @@
-// Copyright 2017 Google Inc. All rights reserved.
+// Copyright 2017 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,6 +17,8 @@
 
 use std::io::Write;
 use std::sync::mpsc::{Sender, Receiver, RecvError};
+
+use log;
 
 use apps_ledger_services_public::*;
 use fuchsia::read_entire_vmo;
@@ -77,8 +79,8 @@ impl SyncStore {
                     initial_state_chan.send(SyncMsg::NewState { buffer: initial_buffer, new_buf: buf, done: None }).unwrap();
                 },
                 Ok(Ok(None)) => (), // No initial state saved yet
-                Err(err) => eprintln!("FIDL failed on initial response: {:?}", err),
-                Ok(Err(err)) => eprintln!("Ledger failed to retrieve key: {:?}", err),
+                Err(err) => error!("FIDL failed on initial response: {:?}", err),
+                Ok(Err(err)) => error!("Ledger failed to retrieve key: {:?}", err),
             }
         });
 
@@ -100,8 +102,8 @@ impl SyncStore {
                     Ok(ledger::OK) => {
                         done_chan.send(SyncMsg::TransactionReady { buffer }).unwrap();
                     },
-                    Ok(err_status) => eprintln!("Ledger failed to start transaction: {:?}", err_status),
-                    Err(err) => eprintln!("FIDL failed on starting transaction: {:?}", err),
+                    Ok(err_status) => error!("Ledger failed to start transaction: {:?}", err_status),
+                    Err(err) => error!("FIDL failed on starting transaction: {:?}", err),
                 }
             });
         }
@@ -124,7 +126,7 @@ pub enum SyncMsg {
     Stop
 }
 
-/// We want to be able to register to recieve events from inside the
+/// We want to be able to register to receive events from inside the
 /// `SyncStore`/`SyncContainer` but from there we don't have access to the
 /// Mutex that holds the container, so we give channel Senders to all the
 /// futures so that they can all trigger events in one place that does have
@@ -167,7 +169,7 @@ impl<W: Write + Send + 'static> SyncUpdater<W> {
                             }
                         }
                         (None, _) => (), // buffer was closed
-                        (_, Err(err)) => eprintln!("Ledger was set to invalid state: {:?}", err),
+                        (_, Err(err)) => error!("Ledger was set to invalid state: {:?}", err),
                     }
                 }
             }
@@ -189,7 +191,7 @@ impl PageWatcher for PageWatcherServer {
             let new_buf = read_entire_vmo(value_vmo).expect("failed to read key Vmo");
             self.updates.send(SyncMsg::NewState { buffer: self.buffer.clone(), new_buf, done: Some(done) }).unwrap();
         } else {
-            eprintln!("Xi state corrupted, should have one key but has multiple.");
+            error!("Xi state corrupted, should have one key but has multiple.");
             // I don't think this should be a FIDL-level error, so set okay
             done.set_ok(None);
         }
@@ -248,9 +250,9 @@ fn state_from_snapshot<F>(snapshot: ::fidl::InterfacePtr<PageSnapshot_Client>, k
             // the .ok() has the behavior of acting like invalid state is empty
             // and thus deleting invalid state and overwriting it with good state
             Ok(Ok(Some(buf))) => Ok(buf_to_state(&buf).ok()),
-            Ok(Ok(None)) => { eprintln!("No state in conflicting page"); Ok(None) },
-            Err(err) => { eprintln!("FIDL failed on initial response: {:?}", err); Err(()) },
-            Ok(Err(err)) => { eprintln!("Ledger failed to retrieve key: {:?}", err); Err(()) },
+            Ok(Ok(None)) => { info!("No state in conflicting page"); Ok(None) },
+            Err(err) => { warn!("FIDL failed on initial response: {:?}", err); Err(()) },
+            Ok(Err(err)) => { warn!("Ledger failed to retrieve key: {:?}", err); Err(()) },
         };
         done(state);
     });

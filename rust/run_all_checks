@@ -1,0 +1,30 @@
+#!/bin/bash
+
+printf 'Checking compiler warnings:\n'
+
+if ! (RUSTFLAGS="-D warnings" cargo check --all); then
+    printf '\nCargo check produced errors. Exiting.\n'
+    exit $?
+fi
+
+printf 'Check passed!\n'
+printf 'Running "cargo test --all"\n'
+
+if ! (cargo test --all); then
+    exit $?
+fi
+
+printf 'Tests passed!\n'
+printf 'Running benchmarks ("rustup run nightly cargo bench --all"):\n'
+
+if !(rustup run nightly cargo --version); then
+    printf 'Running benchmarks requires a nightly compiler. Try `rustup install nightly`?\n'
+    exit 1
+fi
+
+if !(rustup run nightly cargo bench --all); then
+    printf 'Running benchmarks failed.\n'
+    exit $?
+fi
+
+printf 'All checks passed.\n'

@@ -1,4 +1,4 @@
-// Copyright 2018 Google Inc. All rights reserved.
+// Copyright 2018 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -44,6 +44,7 @@ pub(crate) enum ViewEvent {
     SelectionForFind { case_sensitive: bool },
     Replace { chars: String, preserve_case: bool },
     SelectionForReplace,
+    SelectionIntoLines,
 }
 
 /// Events that modify the buffer
@@ -58,11 +59,13 @@ pub(crate) enum BufferEvent {
     Indent,
     Outdent,
     Insert(String),
+    Paste(String),
     InsertNewline,
     InsertTab,
     Yank,
     ReplaceNext,
     ReplaceAll,
+    DuplicateLine,
 }
 
 /// An event that needs special handling
@@ -105,6 +108,8 @@ impl From<EditNotification> for EventDomain {
         match src {
             Insert { chars } =>
                 BufferEvent::Insert(chars).into(),
+            Paste { chars } =>
+                BufferEvent::Paste(chars).into(),
             DeleteForward =>
                 BufferEvent::Delete {
                     movement: Movement::Right,
@@ -228,6 +233,8 @@ impl From<EditNotification> for EventDomain {
             SelectionForReplace => ViewEvent::SelectionForReplace.into(),
             RequestHover { request_id, position } =>
                 SpecialEvent::RequestHover { request_id, position }.into(),
+            SelectionIntoLines => ViewEvent::SelectionIntoLines.into(),
+            DuplicateLine => BufferEvent::DuplicateLine.into(),
         }
     }
 }

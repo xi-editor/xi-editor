@@ -1,4 +1,4 @@
-// Copyright 2017 Google Inc. All rights reserved.
+// Copyright 2017 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -144,7 +144,7 @@ impl FileWatcher {
         let path = match path.canonicalize() {
             Ok(ref p) => p.to_owned(),
             Err(e) => {
-                eprintln!("error watching {:?}: {:?}", path, e);
+                warn!("error watching {:?}: {:?}", path, e);
                 return
             }
         };
@@ -156,7 +156,7 @@ impl FileWatcher {
 
         if !state.watchees.iter().any(|w2| w.path == w2.path) {
             if let Err(e) = self.inner.watch(&w.path, mode) {
-                eprintln!("watching error {:?}", e);
+                warn!("watching error {:?}", e);
             }
         }
 
@@ -177,7 +177,7 @@ impl FileWatcher {
             let removed = state.watchees.remove(idx);
             if !state.watchees.iter().any(|w| w.path == removed.path) {
                 if let Err(e) = self.inner.unwatch(&removed.path) {
-                    eprintln!("unwatching error {:?}", e);
+                    warn!("unwatching error {:?}", e);
                 }
             }
             //TODO: Ideally we would be tracking what paths we're watching with
@@ -201,7 +201,7 @@ impl FileWatcher {
 
                 for (path, mode) in to_add {
                     if let Err(e) = self.inner.watch(&path, mode) {
-                        eprintln!("watching error {:?}", e);
+                        warn!("watching error {:?}", e);
                     }
                 }
             }
