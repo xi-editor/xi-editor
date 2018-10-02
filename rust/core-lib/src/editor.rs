@@ -398,7 +398,7 @@ impl Editor {
         if save {
             let saved = self.extract_sel_regions(&deletions)
                 .unwrap_or_default();
-            *kill_ring = saved.as_ref().into();
+            *kill_ring = Rope::from(saved);
         }
         self.delete_sel_regions(&deletions);
     }
@@ -424,7 +424,7 @@ impl Editor {
         let mut saved = None;
         for region in sel_regions {
             if !region.is_caret() {
-                let val = self.text.slice_to_string(region);
+                let val = self.text.slice_to_cow(region);
                 match saved {
                     None => saved = Some(val),
                     Some(ref mut s) => {
@@ -519,7 +519,7 @@ impl Editor {
             let tab_offset = view.line_col_to_offset(&self.text, line,
                                                      tab_text.len());
             let interval = Interval::new_closed_open(offset, tab_offset);
-            let leading_slice = self.text.slice_to_string(interval.start()..interval.end());
+            let leading_slice = self.text.slice_to_cow(interval.start()..interval.end());
             if leading_slice == tab_text {
                 builder.delete(interval);
             } else if let Some(first_char_col) = leading_slice.find(|c: char| !c.is_whitespace()) {
@@ -617,14 +617,14 @@ impl Editor {
             if region.is_caret() {
                 let middle = region.end;
                 let start = self.text.prev_grapheme_offset(middle).unwrap_or(0);
-                // Note: this matches Sublime's behavior. Cocoa would swap last
+                // Note: this matches Su_stringblime's behavior. Cocoa would swap last
                 // two characters of line if at end of line.
                 if let Some(end) = self.text.next_grapheme_offset(middle) {
                     if start >= last {
                         let interval = Interval::new_closed_open(start, end);
-                        let swapped: String = format!("{}{}",
-                                              self.text.slice_to_string(middle..end).as_ref(),
-                                              self.text.slice_to_string(start..middle).as_ref());
+                        let before =  self.text.slice_to_cow(start..middle);
+                        let after = self.text.slice_to_cow(middle..end);
+                        let swapped: String = [after, before].concat();
                         builder.replace(interval, Rope::from(swapped));
                         last = end;
                     }
@@ -676,7 +676,7 @@ impl Editor {
         let mut builder = delta::Builder::new(self.text.len());
 
         for region in view.sel_regions() {
-            let selected_text = self.text.slice_to_string(region);
+            let selected_text = self.text.slice_to_cow(region);
             let interval = Interval::new_closed_open(region.min(), region.max());
             builder.replace(interval, Rope::from(transform_function(&selected_text)));
         }
@@ -818,7 +818,7 @@ impl Editor {
             end_off = text.prev_codepoint_offset(end_off + 1).unwrap();
         }
 
-        let chunk = text.slice_to_string(offset..end_off).as_ref().to_owned();
+        let chunk = text.slice_to_cow(offset..end_off).into_owned();
         let first_line = text.line_of_offset(offset);
         let first_line_offset = offset - text.offset_of_line(first_line);
 
