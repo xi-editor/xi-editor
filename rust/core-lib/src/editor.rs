@@ -705,9 +705,7 @@ impl Editor {
 
                     // first letter is uppercase, remaining letters are lowercase
                     let (first_char, rest) = word.split_at(1);
-                    let mut capitalized_text = String::from("");
-                    capitalized_text.push_str(&first_char.to_uppercase());
-                    capitalized_text.push_str(&rest.to_lowercase());
+                    let capitalized_text = [first_char.to_uppercase(), rest.to_lowercase()].concat();
                     builder.replace(interval, Rope::from(capitalized_text));
                 }
 
