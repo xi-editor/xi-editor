@@ -102,14 +102,14 @@ impl<'a> LineBreakIterator<'a> {
     pub fn new(s: &str) -> LineBreakIterator {
         if s.is_empty() {
             LineBreakIterator {
-                s: s,
+                s,
                 ix: 1,  // LB2, don't break; sot takes priority for empty string
                 state: 0,
             }
         } else {
             let (lb, len) = linebreak_property_str(s, 0);
             LineBreakIterator {
-                s: s,
+                s,
                 ix: len,
                 state: lb,
             }
@@ -157,8 +157,8 @@ impl LineBreakLeafIter {
     /// indication may go away, this may not be useful in actual application.
     /// If end of leaf is found, return leaf's len. This does not indicate
     /// a break, as that requires at least one more codepoint of context.
-    /// If it is a break, then subsequent next call will return an offset of
-    /// 0. EOT is always a break, so in the EOT case it's up to the caller
+    /// If it is a break, then subsequent next call will return an offset of 0.
+    /// EOT is always a break, so in the EOT case it's up to the caller
     /// to figure that out.
     ///
     /// For consistent results, always supply same `s` until end of leaf is

@@ -1,0 +1,24 @@
+# These are the base default settings. Settings here may be overriden
+# for a given platform. Not all keys here are necessarily intended to
+# be exposed to the user; for a sample user preferences file, see
+# `client_example.toml` in this directory.
+
+tab_size = 4
+
+translate_tabs_to_spaces = true
+
+use_tab_stops = true
+
+plugin_search_path = []
+
+font_face = "InconsolataGo"
+
+font_size = 14
+
+line_ending = "\n"
+
+auto_indent = false
+
+scroll_past_end = false
+
+wrap_width = 0

@@ -21,22 +21,77 @@ use std::str::FromStr;
 use std::string::ParseError;
 use std::fmt;
 use std::str;
+use std::ops::Add;
 
 use tree::{Leaf, Node, NodeInfo, Metric, TreeBuilder, Cursor};
+use delta::{Delta, DeltaElement};
 use interval::Interval;
 
 use bytecount;
-use memchr::memchr;
-use serde::ser::{Serialize, Serializer};
+use memchr::{memrchr, memchr};
+use serde::ser::{Serialize, Serializer, SerializeStruct, SerializeTupleVariant};
 use serde::de::{Deserialize, Deserializer};
 
 const MIN_LEAF: usize = 511;
 const MAX_LEAF: usize = 1024;
 
-/// The main rope data structure. It is implemented as a b-tree with simply
-/// `String` as the leaf type. The base metric counts UTF-8 code units
-/// (bytes) and has boundaries at code points.
+/// A rope data structure.
+///
+/// A [rope](https://en.wikipedia.org/wiki/Rope_(data_structure)) is a data structure
+/// for strings, specialized for incremental editing operations. Most operations
+/// (such as insert, delete, substring) are O(log n). This module provides an immutable
+/// (also known as [persistent](https://en.wikipedia.org/wiki/Persistent_data_structure))
+/// version of Ropes, and if there are many copies of similar strings, the common parts
+/// are shared.
+///
+/// Internally, the implementation uses reference counting (not thread safe, though
+/// it would be easy enough to modify to use `Arc` instead of `Rc` if that were
+/// required). Mutations are generally copy-on-write, though in-place edits are
+/// supported as an optimization when only one reference exists, making the
+/// implementation as efficient as a mutable version.
+///
+/// Also note: in addition to the `From` traits described below, this module
+/// implements `From<Rope> for String` and `From<&Rope> for String`, for easy
+/// conversions in both directions.
+///
+/// # Examples
+///
+/// Create a `Rope` from a `String`:
+///
+/// ```rust
+/// # use xi_rope::Rope;
+/// let a = Rope::from("hello ");
+/// let b = Rope::from("world");
+/// assert_eq!("hello world", String::from(a.clone() + b.clone()));
+/// assert!("hello world" == String::from(a + b));
+/// ```
+///
+/// Get a slice of a `Rope`:
+///
+/// ```rust
+/// # use xi_rope::Rope;
+/// let a = Rope::from("hello world");
+/// let b = a.slice(1, 9);
+/// assert_eq!("ello wor", String::from(&b));
+/// let c = b.slice(1, 7);
+/// assert_eq!("llo wo", String::from(c));
+/// ```
+///
+/// Replace part of a `Rope`:
+///
+/// ```rust
+/// # use xi_rope::Rope;
+/// let mut a = Rope::from("hello world");
+/// a.edit_str(1, 9, "era");
+/// assert_eq!("herald", String::from(a));
+/// ```
 pub type Rope = Node<RopeInfo>;
+
+/// Represents a transform from one rope to another.
+pub type RopeDelta = Delta<RopeInfo>;
+
+/// An element in a `RopeDelta`.
+pub type RopeDeltaElement = DeltaElement<RopeInfo>;
 
 impl Leaf for String {
     fn len(&self) -> usize {
@@ -88,9 +143,18 @@ impl NodeInfo for RopeInfo {
     }
 }
 
+//TODO: document metrics, based on https://github.com/google/xi-editor/issues/456
+//See ../docs/MetricsAndBoundaries.md for more information.
 #[derive(Clone, Copy)]
 pub struct BaseMetric(());
 
+/// Measured unit is utf8 code unit.
+/// Base unit is utf8 code unit.
+/// Boundary is atomic and determined by codepoint boundary.
+/// Atomicity is implicit, putting the offset
+/// between two utf8 code units that form a code point is considered invalid.
+/// For example, take a string that starts with a 0xC2 byte.
+/// Then offset=1 is invalid.
 impl Metric<RopeInfo> for BaseMetric {
     fn measure(_: &RopeInfo, len: usize) -> usize {
         len
@@ -138,6 +202,9 @@ impl Metric<RopeInfo> for BaseMetric {
     }
 }
 
+/// Given the inital byte of a UTF-8 codepoint, returns the number of
+/// bytes required to represent the codepoint.
+/// RFC reference : https://tools.ietf.org/html/rfc3629#section-4
 pub fn len_utf8_from_first_byte(b: u8) -> usize {
     match b {
         b if b < 0x80 => 1,
@@ -150,6 +217,9 @@ pub fn len_utf8_from_first_byte(b: u8) -> usize {
 #[derive(Clone, Copy)]
 pub struct LinesMetric(usize);  // number of lines
 
+/// Measured unit is newline amount.
+/// Base unit is utf8 code unit.
+/// Boundary is trailing and determined by a newline char.
 impl Metric<RopeInfo> for LinesMetric {
     fn measure(info: &RopeInfo, _: usize) -> usize {
         info.lines
@@ -180,7 +250,7 @@ impl Metric<RopeInfo> for LinesMetric {
     }
 
     fn prev(s: &String, offset: usize) -> Option<usize> {
-        s.as_bytes()[..offset].iter().rposition(|&c| c == b'\n')
+        memrchr(b'\n', &s.as_bytes()[..offset])
             .map(|pos| pos + 1)
     }
 
@@ -209,7 +279,7 @@ fn find_leaf_split_for_merge(s: &str) -> usize {
 // Try to split at newline boundary (leaning left), if not, then split at codepoint
 fn find_leaf_split(s: &str, minsplit: usize) -> usize {
     let mut splitpoint = min(MAX_LEAF, s.len() - MIN_LEAF);
-    match s.as_bytes()[minsplit - 1..splitpoint].iter().rposition(|&c| c == b'\n') {
+    match memrchr(b'\n', &s.as_bytes()[minsplit - 1..splitpoint]) {
         Some(pos) => minsplit + pos,
         None => {
             while !s.is_char_boundary(splitpoint) {
@@ -248,7 +318,86 @@ impl<'de> Deserialize<'de> for Rope {
     }
 }
 
+impl Serialize for DeltaElement<RopeInfo> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where S: Serializer
+    {
+        match *self {
+            DeltaElement::Copy(ref start, ref end) => {
+                let mut el = serializer.serialize_tuple_variant("DeltaElement",
+                                                                0, "copy", 2)?;
+                el.serialize_field(start)?;
+                el.serialize_field(end)?;
+                el.end()
+            }
+            DeltaElement::Insert(ref node) =>
+                serializer.serialize_newtype_variant("DeltaElement", 1,
+                                                     "insert", node)
+        }
+    }
+}
+
+impl Serialize for Delta<RopeInfo> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where S: Serializer
+    {
+        let mut delta = serializer.serialize_struct("Delta", 2)?;
+        delta.serialize_field("els", &self.els)?;
+        delta.serialize_field("base_len", &self.base_len)?;
+        delta.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Delta<RopeInfo> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where D: Deserializer<'de>,
+    {
+        // NOTE: we derive to an interim representation and then convert
+        // that into our actual target.
+        #[derive(Serialize, Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        enum RopeDeltaElement_ {
+            Copy(usize, usize),
+            Insert(String),
+        }
+
+        #[derive(Serialize, Deserialize)]
+        struct RopeDelta_ {
+            els: Vec<RopeDeltaElement_>,
+            base_len: usize
+        }
+
+        impl From<RopeDeltaElement_> for DeltaElement<RopeInfo> {
+            fn from(elem: RopeDeltaElement_) -> DeltaElement<RopeInfo> {
+                match elem {
+                    RopeDeltaElement_::Copy(start, end) =>
+                        DeltaElement::Copy(start, end),
+                    RopeDeltaElement_::Insert(s) =>
+                        DeltaElement::Insert(Rope::from(s)),
+                }
+            }
+        }
+
+        impl From<RopeDelta_> for Delta<RopeInfo> {
+            fn from(mut delta: RopeDelta_) -> Delta<RopeInfo> {
+                Delta {
+                    els: delta.els.drain(..)
+                        .map(DeltaElement::from).collect(),
+                    base_len: delta.base_len
+                }
+            }
+        }
+        let d = RopeDelta_::deserialize(deserializer)?;
+        Ok(Delta::from(d))
+    }
+}
+
 impl Rope {
+    /// Edit the string, replacing the byte range [`start`..`end`] with `new`.
+    ///
+    /// Note: `edit` and `edit_str` may be merged, using traits.
+    ///
+    /// Time complexity: O(log n)
     pub fn edit_str(&mut self, start: usize, end: usize, new: &str) {
         let mut b = TreeBuilder::new();
         // TODO: may make this method take the iv directly
@@ -258,6 +407,12 @@ impl Rope {
         b.push_str(new);
         self.push_subseq(&mut b, self_iv.suffix(edit_iv));
         *self = b.build();
+    }
+
+    /// Returns a slice of the string from the byte range [`start`..`end`).
+    pub fn slice(&self, start: usize, end: usize) -> Rope {
+        let iv = Interval::new_closed_open(start, end);
+        self.subseq(iv)
     }
 
     // encourage callers to use Cursor instead?
@@ -297,17 +452,33 @@ impl Rope {
     /// in the slice up to `offset`.
     ///
     /// Time complexity: O(log n)
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if `offset > self.len()`. Callers are expected to
+    /// validate their input.
     pub fn line_of_offset(&self, offset: usize) -> usize {
         self.convert_metrics::<BaseMetric, LinesMetric>(offset)
     }
 
     /// Return the byte offset corresponding to the line number `line`.
+    /// If `line` is equal to one plus the current number of lines,
+    /// this returns the offset of the end of the rope. Arguments higher
+    /// than this will panic.
     ///
     /// The line number is 0-based.
     ///
     /// Time complexity: O(log n)
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if `line > self.measure::<LinesMetric>() + 1`.
+    /// Callers are expected to validate their input.
     pub fn offset_of_line(&self, line: usize) -> usize {
-        if line > self.measure::<LinesMetric>() {
+        let max_line = self.measure::<LinesMetric>() + 1;
+        if line > max_line {
+            panic!("line number {} beyond last line {}", line, max_line);
+        } else if line == max_line {
             return self.len();
         }
         self.convert_metrics::<LinesMetric, BaseMetric>(line)
@@ -327,19 +498,30 @@ impl Rope {
     pub fn iter_chunks(&self, start: usize, end: usize) -> ChunkIter {
         ChunkIter {
             cursor: Cursor::new(self, start),
-            end: end,
+            end,
         }
     }
+
+    //TODO: implement iter_chunks using ranges and delete this
+    pub fn iter_chunks_all(&self) -> ChunkIter {
+        self.iter_chunks(0, self.len())
+    }
+
     /// An iterator over the raw lines. The lines, except the last, include the
     /// terminating newline.
     ///
-    /// The return type is a `Cow<str>`, and in most cases the lines are slices borrowed
-    /// from the rope.
+    /// The return type is a `Cow<str>`, and in most cases the lines are slices
+    /// borrowed from the rope.
     pub fn lines_raw(&self, start: usize, end: usize) -> LinesRaw {
         LinesRaw {
             inner: self.iter_chunks(start, end),
             fragment: ""
         }
+    }
+
+    //TODO: implement lines_raw using ranges and delete this
+    pub fn lines_raw_all(&self) -> LinesRaw {
+        self.lines_raw(0, self.len())
     }
 
     /// An iterator over the lines of a rope.
@@ -356,6 +538,11 @@ impl Rope {
         Lines {
             inner: self.lines_raw(start, end)
         }
+    }
+
+    // TODO: replace this with a version of `lines` that accepts a range
+    pub fn lines_all(&self) -> Lines {
+        self.lines(0, self.len())
     }
 
     // callers should be encouraged to use cursor instead
@@ -445,7 +632,17 @@ impl fmt::Debug for Rope {
     }
 }
 
-// additional cursor features
+impl Add<Rope> for Rope {
+    type Output = Rope;
+    fn add(self, rhs: Rope) -> Rope {
+        let mut b = TreeBuilder::new();
+        b.push(self);
+        b.push(rhs);
+        b.build()
+    }
+}
+
+ //additional cursor features
 
 impl<'a> Cursor<'a, RopeInfo> {
     /// Get previous codepoint before cursor position, and advance cursor backwards.
@@ -549,7 +746,7 @@ impl<'a> Iterator for Lines<'a> {
 
 #[cfg(test)]
 mod tests {
-    use rope::Rope;
+    use super::*;
     use serde_test::{Token, assert_tokens};
 
     #[test]
@@ -560,6 +757,96 @@ mod tests {
     }
 
     #[test]
+    fn lines_raw_small() {
+        let a = Rope::from("a\nb\nc");
+        assert_eq!(vec!["a\n", "b\n", "c"], a.lines_raw_all().collect::<Vec<_>>());
+
+        let a = Rope::from("a\nb\n");
+        assert_eq!(vec!["a\n", "b\n"], a.lines_raw_all().collect::<Vec<_>>());
+
+        let a = Rope::from("\n");
+        assert_eq!(vec!["\n"], a.lines_raw_all().collect::<Vec<_>>());
+
+        let a = Rope::from("");
+        assert_eq!(0, a.lines_raw_all().count());
+    }
+
+    #[test]
+    fn lines_small() {
+        let a = Rope::from("a\nb\nc");
+        assert_eq!(vec!["a", "b", "c"], a.lines_all().collect::<Vec<_>>());
+        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(),
+        a.lines_all().collect::<Vec<_>>());
+
+        let a = Rope::from("a\nb\n");
+        assert_eq!(vec!["a", "b"], a.lines_all().collect::<Vec<_>>());
+        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(),
+        a.lines_all().collect::<Vec<_>>());
+
+        let a = Rope::from("\n");
+        assert_eq!(vec![""], a.lines_all().collect::<Vec<_>>());
+        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(),
+        a.lines_all().collect::<Vec<_>>());
+
+        let a = Rope::from("");
+        assert_eq!(0, a.lines_all().count());
+        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(),
+        a.lines_all().collect::<Vec<_>>());
+
+        let a = Rope::from("a\r\nb\r\nc");
+        assert_eq!(vec!["a", "b", "c"], a.lines_all().collect::<Vec<_>>());
+        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(),
+        a.lines_all().collect::<Vec<_>>());
+
+        let a = Rope::from("a\rb\rc");
+        assert_eq!(vec!["a\rb\rc"], a.lines_all().collect::<Vec<_>>());
+        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(),
+               a.lines_all().collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn lines_med() {
+        let mut a = String::new();
+        let mut b = String::new();
+        let line_len = MAX_LEAF + MIN_LEAF - 1;
+        for _ in 0..line_len {
+            a.push('a');
+            b.push('b');
+        }
+        a.push('\n');
+        b.push('\n');
+        let r = Rope::from(&a[..MAX_LEAF]);
+        let r = r + Rope::from(String::from(&a[MAX_LEAF..]) + &b[..MIN_LEAF]);
+        let r = r + Rope::from(&b[MIN_LEAF..]);
+        //println!("{:?}", r.iter_chunks().collect::<Vec<_>>());
+
+        assert_eq!(vec![a.as_str(), b.as_str()], r.lines_raw_all().collect::<Vec<_>>());
+        assert_eq!(vec![&a[..line_len], &b[..line_len]], r.lines_all().collect::<Vec<_>>());
+        assert_eq!(String::from(&r).lines().collect::<Vec<_>>(),
+                   r.lines_all().collect::<Vec<_>>());
+
+        // additional tests for line indexing
+        assert_eq!(a.len(), r.offset_of_line(1));
+        assert_eq!(r.len(), r.offset_of_line(2));
+        assert_eq!(0, r.line_of_offset(a.len() - 1));
+        assert_eq!(1, r.line_of_offset(a.len()));
+        assert_eq!(1, r.line_of_offset(r.len() - 1));
+        assert_eq!(2, r.line_of_offset(r.len()));
+    }
+
+    #[test]
+    fn append_large() {
+        let mut a = Rope::from("");
+        let mut b = String::new();
+        for i in 0..5_000 {
+            let c = i.to_string() + "\n";
+            b.push_str(&c);
+            a = a + Rope::from(&c);
+        }
+        assert_eq!(b, String::from(a));
+    }
+
+    #[test]
     fn prev_codepoint_offset_small() {
         let a = Rope::from("a\u{00A1}\u{4E00}\u{1F4A9}");
         assert_eq!(Some(6), a.prev_codepoint_offset(10));
@@ -567,13 +854,11 @@ mod tests {
         assert_eq!(Some(1), a.prev_codepoint_offset(3));
         assert_eq!(Some(0), a.prev_codepoint_offset(1));
         assert_eq!(None, a.prev_codepoint_offset(0));
-        /* TODO
         let b = a.slice(1, 10);
         assert_eq!(Some(5), b.prev_codepoint_offset(9));
         assert_eq!(Some(2), b.prev_codepoint_offset(5));
         assert_eq!(Some(0), b.prev_codepoint_offset(2));
         assert_eq!(None, b.prev_codepoint_offset(0));
-        */
     }
 
     #[test]
@@ -584,13 +869,11 @@ mod tests {
         assert_eq!(Some(3), a.next_codepoint_offset(1));
         assert_eq!(Some(1), a.next_codepoint_offset(0));
         assert_eq!(None, a.next_codepoint_offset(10));
-        /* TODO
         let b = a.slice(1, 10);
         assert_eq!(Some(9), b.next_codepoint_offset(5));
         assert_eq!(Some(5), b.next_codepoint_offset(2));
         assert_eq!(Some(2), b.next_codepoint_offset(0));
         assert_eq!(None, b.next_codepoint_offset(9));
-        */
     }
 
     #[test]
@@ -605,5 +888,97 @@ mod tests {
         assert_tokens(&rope, &[
             Token::BorrowedStr("a\u{00A1}\u{4E00}\u{1F4A9}"),
         ]);
+    }
+
+    #[test]
+    fn line_of_offset_small() {
+        let a = Rope::from("a\nb\nc");
+        assert_eq!(0, a.line_of_offset(0));
+        assert_eq!(0, a.line_of_offset(1));
+        assert_eq!(1, a.line_of_offset(2));
+        assert_eq!(1, a.line_of_offset(3));
+        assert_eq!(2, a.line_of_offset(4));
+        assert_eq!(2, a.line_of_offset(5));
+        let b = a.slice(2, 4);
+        assert_eq!(0, b.line_of_offset(0));
+        assert_eq!(0, b.line_of_offset(1));
+        assert_eq!(1, b.line_of_offset(2));
+    }
+
+    #[test]
+    fn offset_of_line_small() {
+        let a = Rope::from("a\nb\nc");
+        assert_eq!(0, a.offset_of_line(0));
+        assert_eq!(2, a.offset_of_line(1));
+        assert_eq!(4, a.offset_of_line(2));
+        assert_eq!(5, a.offset_of_line(3));
+        let b = a.slice(2, 4);
+        assert_eq!(0, b.offset_of_line(0));
+        assert_eq!(2, b.offset_of_line(1));
+    }
+
+    #[test]
+    fn eq_small() {
+        let a = Rope::from("a");
+        let a2 = Rope::from("a");
+        let b = Rope::from("b");
+        let empty = Rope::from("");
+        assert!(a == a2);
+        assert!(a != b);
+        assert!(a != empty);
+        assert!(empty == empty);
+        assert!(a.slice(0, 0) == empty);
+    }
+
+    #[test]
+    fn eq_med() {
+        let mut a = String::new();
+        let mut b = String::new();
+        let line_len = MAX_LEAF + MIN_LEAF - 1;
+        for _ in 0..line_len {
+            a.push('a');
+            b.push('b');
+        }
+        a.push('\n');
+        b.push('\n');
+        let r = Rope::from(&a[..MAX_LEAF]);
+        let r = r + Rope::from(String::from(&a[MAX_LEAF..]) + &b[..MIN_LEAF]);
+        let r = r + Rope::from(&b[MIN_LEAF..]);
+
+        let a_rope = Rope::from(&a);
+        let b_rope = Rope::from(&b);
+        assert!(r != a_rope);
+        assert!(r.clone().slice(0, a.len()) == a_rope);
+        assert!(r.clone().slice(a.len(), r.len()) == b_rope);
+        assert!(r == a_rope.clone() + b_rope.clone());
+        assert!(r != b_rope + a_rope);
+    }
+
+    #[test]
+    fn line_offsets() {
+        let rope = Rope::from("hi\ni'm\nfour\nlines");
+        assert_eq!(rope.offset_of_line(0), 0);
+        assert_eq!(rope.offset_of_line(1), 3);
+        assert_eq!(rope.line_of_offset(0), 0);
+        assert_eq!(rope.line_of_offset(3), 1);
+        // interior of first line should be first line
+        assert_eq!(rope.line_of_offset(1), 0);
+        // interior of last line should be last line
+        assert_eq!(rope.line_of_offset(15), 3);
+        assert_eq!(rope.offset_of_line(4), rope.len());
+    }
+
+    #[test]
+    #[should_panic]
+    fn line_of_offset_panic() {
+        let rope = Rope::from("hi\ni'm\nfour\nlines");
+        rope.line_of_offset(20);
+    }
+
+    #[test]
+    #[should_panic]
+    fn offset_of_line_panic() {
+        let rope = Rope::from("hi\ni'm\nfour\nlines");
+        rope.offset_of_line(5);
     }
 }

@@ -18,7 +18,7 @@ use std::collections::HashMap;
 
 use serde_json::{self, Value};
 use syntect::highlighting::StyleModifier as SynStyleModifier;
-use syntect::highlighting::{Color, Theme, ThemeSet, ThemeSettings, Highlighter, BLACK};
+use syntect::highlighting::{Color, Theme, ThemeSet, ThemeSettings, Highlighter};
 
 const N_RESERVED_STYLES: usize = 2;
 const SYNTAX_PRIORITY_DEFAULT: u16 = 200;
@@ -79,7 +79,7 @@ impl Style {
     {
         assert!(priority <= 1000);
         Style {
-            priority: priority,
+            priority,
             fg_color: fg_color.into(),
             bg_color: bg_color.into(),
             weight: weight.into(),
@@ -90,7 +90,7 @@ impl Style {
 
     /// Returns the default style for the given `Theme`.
     pub fn default_for_theme(theme: &Theme) -> Self {
-        let fg = theme.settings.foreground.unwrap_or(BLACK);
+        let fg = theme.settings.foreground.unwrap_or(Color::BLACK);
         Style::new(
             SYNTAX_PRIORITY_LOWEST,
             Some(Self::rgba_from_syntect_color(&fg)),
@@ -128,7 +128,7 @@ impl Style {
     /// Note: this should only be used when sending the `def_style` RPC.
     pub fn to_json(&self, id: usize) -> Value {
         let mut as_val = serde_json::to_value(self).expect("failed to encode style");
-        as_val["id"] = serde_json::to_value(id).unwrap();
+        as_val["id"] = id.into();
         as_val
     }
 
@@ -159,10 +159,10 @@ impl ThemeStyleMap {
         let default_style = Style::default_for_theme(&theme);
 
         ThemeStyleMap {
-            themes: themes,
-            theme_name: theme_name,
-            theme: theme,
-            default_style: default_style,
+            themes,
+            theme_name,
+            theme,
+            default_style,
             map: HashMap::new(),
             styles: Vec::new(),
         }
@@ -172,7 +172,7 @@ impl ThemeStyleMap {
         &self.default_style
     }
 
-    pub fn get_highlighter<'a>(&'a self) -> Highlighter<'a> {
+    pub fn get_highlighter(&self) -> Highlighter {
         Highlighter::new(&self.theme)
     }
 
@@ -180,8 +180,12 @@ impl ThemeStyleMap {
         &self.theme_name
     }
 
-    pub fn get_theme_settings<'a>(&'a self) -> &ThemeSettings {
+    pub fn get_theme_settings(&self) -> &ThemeSettings {
         &self.theme.settings
+    }
+
+    pub fn get_theme_names(&self) -> Vec<String>  {
+        self.themes.themes.keys().cloned().collect()
     }
 
     pub fn set_theme(&mut self, theme_name: &str) -> Result<(), &'static str> {
@@ -205,7 +209,7 @@ impl ThemeStyleMap {
     }
 
     pub fn lookup(&self, style: &Style) -> Option<usize> {
-        self.map.get(style).map(|&ix| ix)
+        self.map.get(style).cloned()
     }
 
     pub fn add(&mut self, style: &Style) -> usize {

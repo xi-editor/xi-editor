@@ -45,12 +45,14 @@ pub trait NodeInfo: Clone {
 
     /// The identity of the monoid. Need not be implemented because it
     /// can be computed from the leaf default.
+    ///
+    /// This is hear to demonstrate that this is a monoid.
     fn identity() -> Self {
         Self::compute_info(&Self::L::default())
     }
 
-    /// The interval covered by this node. Will generally be implemented
-    /// in interval trees; the default impl is sufficient for other types.
+    /// The interval covered by this node. The default impl is sufficient for most types,
+    /// but interval trees may need to override it.
     fn interval(&self, len: usize) -> Interval {
         Interval::new_closed_closed(0, len)
     }
@@ -58,24 +60,32 @@ pub trait NodeInfo: Clone {
 
 pub trait Leaf: Sized + Clone + Default {
 
-    // measurement of leaf in base units
+    /// Measurement of leaf in base units.
+    /// A 'base unit' refers to the smallest discrete unit
+    /// by which a given concrete type can be indexed.
+    /// Concretely, for Rust's String type the base unit is the byte.
     fn len(&self) -> usize;
 
-    // generally a minimum size requirement for leaves
+    /// Generally a minimum size requirement for leaves.
     fn is_ok_child(&self) -> bool;
 
-    // Interval is in "base units"
-    // generally implements a maximum size
-    // Invariant: if one or the other input is empty, then no split
-
-    // Invariant: if either input satisfies is_ok_child, then on return self
-    // satisfies this, as does the optional split.
-
+    /// Combine other into self, optionly splitting in two.
+    /// Interval is in "base units".
+    /// Generally implements a maximum size.
+    ///
+    /// TODO: What does Interval represent?
+    ///
+    /// Invariants:
+    ///
+    /// - If one or the other input is empty, then no split.
+    /// - If either input satisfies is_ok_child, then on return self
+    /// satisfies this, as does the optional split.
     fn push_maybe_split(&mut self, other: &Self, iv: Interval) -> Option<Self>;
 
-    // same meaning as push_maybe_split starting from an empty
-    // leaf, but maybe can be implemented more efficiently?
-    // TODO: remove if it doesn't pull its weight
+    /// same meaning as push_maybe_split starting from an empty
+    /// leaf, but maybe can be implemented more efficiently?
+    ///
+    /// TODO: remove if it doesn't pull its weight
     fn subseq(&self, iv: Interval) -> Self {
         let mut result = Self::default();
         if result.push_maybe_split(self, iv).is_some() {
@@ -116,29 +126,50 @@ enum NodeVal<N: NodeInfo> {
 
 // also consider making Metric a newtype for usize, so type system can
 // help separate metrics
+
+/// A trait for quickly processing attributes of a NodeInfo.
+///
+/// For the conceptual background see the
+/// [blog post, Rope science, part 2: metrics](https://github.com/google/xi-editor/blob/master/docs/docs/rope_science_02.md).
 pub trait Metric<N: NodeInfo> {
+    /// Return the number of boundarys in the NodeInfo::Leaf
+    ///
+    /// The usize argument is the total size/length of the node, in base units.
     fn measure(&N, usize) -> usize;
 
+    /// Returns the smallest offset, in base units, for an offset in measured units.
+    ///
+    /// Invariants:
+    ///
+    /// - `from_base_units(to_base_units(x)) == x` is True for valid `x`
     fn to_base_units(l: &N::L, in_measured_units: usize) -> usize;
 
+    /// Returns the smallest offset in measured units corresponding to an offset in base units.
+    ///
+    /// Invariants:
+    ///
+    /// - `from_base_units(to_base_units(x)) == x` is True for valid `x`
     fn from_base_units(l: &N::L, in_base_units: usize) -> usize;
 
-    // The next three methods work in base units.
-
-    // These methods must indicate a boundary at the end of a leaf,
-    // if present. A boundary at the beginning of a leaf is optional
-    // (the previous leaf will be queried).
-
+    /// Return whether the offset in base units is a boundary of this metric.
+    /// If a boundary is at end of a leaf then this method must return true.
+    /// However, A boundary at the beginning of a leaf is optional
+    /// (the previous leaf will be queried).
     fn is_boundary(l: &N::L, offset: usize) -> bool;
 
-    // will be called with offset > 0
+    /// Returns the index of the boundary directly preceding offset,
+    /// or None if no such boundary exists. Input and result are in base units.
     fn prev(l: &N::L, offset: usize) -> Option<usize>;
 
+    /// Returns the index of the first boundary for which index > offset,
+    /// or None if no such boundary exists. Input and result are in base units.
     fn next(l: &N::L, offset: usize) -> Option<usize>;
 
-    // When can_fragment is false, the ends of leaves are always
-    // considered to be boundaries. More formally:
-    // !can_fragment -> to_base_units(measure) = leaf.len
+    /// Returns true if the measured units in this metric can span multiple leaves.
+    /// As an example, in a metric that measures lines in a rope,
+    /// a line may start in one leaf and end in another;
+    /// however in a metric measuring bytes,
+    /// storage of a single byte cannot extend across leaves.
     fn can_fragment() -> bool;
 }
 
@@ -149,8 +180,8 @@ impl<N: NodeInfo> Node<N> {
         Node(Arc::new(
             NodeBody {
             height: 0,
-            len: len,
-            info: info,
+            len,
+            info,
             val: NodeVal::Leaf(l),
         }))
     }
@@ -165,9 +196,9 @@ impl<N: NodeInfo> Node<N> {
         }
         Node(Arc::new(
             NodeBody {
-            height: height,
-            len: len,
-            info: info,
+            height,
+            len,
+            info,
             val: NodeVal::Internal(nodes),
         }))
     }
@@ -249,7 +280,7 @@ impl<N: NodeInfo> Node<N> {
             return Node::from_nodes(vec![rope1, rope2]);
         }
         match {
-            let mut node1 = Arc::make_mut(&mut rope1.0);
+            let node1 = Arc::make_mut(&mut rope1.0);
             let leaf2 = rope2.get_leaf();
             if let NodeVal::Leaf(ref mut leaf1) = node1.val {
                 let leaf2_iv = Interval::new_closed_closed(0, leaf2.len());
@@ -481,7 +512,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
     pub fn new(n: &'a Node<N>, position: usize) -> Cursor<'a, N> {
         let mut result = Cursor {
             root: n,
-            position: position,
+            position,
             cache: [None; CURSOR_CACHE_SIZE],
             leaf: None,
             offset_of_leaf: 0,
@@ -490,8 +521,9 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
         result
     }
 
-    // return value is leaf (if cursor is valid) and offset within leaf
-    // invariant: offset is at end of leaf iff end of rope
+    /// return value is leaf (if cursor is valid) and offset within leaf
+    ///
+    /// invariant: offset is at end of leaf iff end of rope
     pub fn get_leaf(&self) -> Option<(&'a N::L, usize)> {
         self.leaf.map(|l| (l, self.position - self.offset_of_leaf))
     }
@@ -656,7 +688,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
         None
     }
 
-    // same return as get_leaf, moves to beginning of next leaf
+    /// same return as get_leaf, moves to beginning of next leaf
     pub fn next_leaf(&mut self) -> Option<(&'a N::L, usize)> {
         if let Some(leaf) = self.leaf {
             self.position = self.offset_of_leaf + leaf.len();
@@ -691,7 +723,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
         self.get_leaf()
     }
 
-    // same return as get_leaf, moves to beginning of prev leaf
+    /// same return as get_leaf, moves to beginning of prev leaf
     pub fn prev_leaf(&mut self) -> Option<(&'a N::L, usize)> {
         if self.offset_of_leaf == 0 || Some(self.leaf).is_none() {
             self.leaf = None;

@@ -12,13 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::borrow::Cow;
+use std::borrow::{Borrow, Cow};
 use std::cmp::{min, max};
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::io::Write;
-use std::collections::{BTreeMap, BTreeSet};
-use std::mem;
+use std::collections::BTreeSet;
+use std::time::SystemTime;
+
 use serde_json::Value;
 
 use xi_rope::rope::{LinesMetric, Rope, RopeInfo};
@@ -26,22 +27,26 @@ use xi_rope::interval::Interval;
 use xi_rope::delta::{self, Delta, Transformer};
 use xi_rope::engine::{Engine, RevId, RevToken};
 use xi_rope::spans::SpansBuilder;
+use xi_rpc::RemoteError;
+use xi_trace::trace_block;
+
 use view::View;
-use word_boundaries::WordCursor;
 use movement::{Movement, region_movement};
 use selection::{Affinity, Selection, SelRegion};
 
-use tabs::{BufferIdentifier, ViewIdentifier, DocumentCtx};
-use rpc::{EditCommand, GestureType};
+use tabs::{self, BufferIdentifier, ViewIdentifier, DocumentCtx};
+use rpc::{self, GestureType};
 use syntax::SyntaxDefinition;
-use plugins::rpc_types::{PluginUpdate, PluginEdit, ScopeSpan, PluginBufferInfo};
-use plugins::PluginPid;
+use plugins::rpc::{PluginUpdate, PluginEdit, ScopeSpan, PluginBufferInfo,
+ClientPluginInfo, TextUnit, GetDataResponse};
+use plugins::{PluginPid, Command};
 use layers::Scopes;
+use config::{BufferConfig, Table};
 
 
-#[cfg(not(target_os = "fuchsia"))]
+#[cfg(not(feature = "ledger"))]
 pub struct SyncStore;
-#[cfg(target_os = "fuchsia")]
+#[cfg(feature = "ledger")]
 use fuchsia::sync::SyncStore;
 
 const FLAG_SELECT: u64 = 2;
@@ -50,22 +55,40 @@ const FLAG_SELECT: u64 = 2;
 // better to keep it low to expose bugs in the GC during casual testing.
 const MAX_UNDOS: usize = 20;
 
-const TAB_SIZE: usize = 4;
-
 // Maximum returned result from plugin get_data RPC.
 const MAX_SIZE_LIMIT: usize = 1024 * 1024;
 
-pub struct Editor<W: Write> {
+enum CharacterEncoding {
+    Utf8,
+    Utf8WithBom
+}
+
+const UTF8_BOM: &str = "\u{feff}";
+
+enum IndentDirection {
+    In,
+    Out
+}
+
+fn last_selection_region(regions: &[SelRegion]) -> Option<&SelRegion> {
+    for region in regions.iter().rev() {
+        if !region.is_caret() {
+            return Some(region);
+        }
+    }
+
+    None
+}
+
+pub struct Editor {
     text: Rope,
+    encoding: CharacterEncoding,
 
     path: Option<PathBuf>,
+    file_mod_time: Option<SystemTime>,
+    file_has_changed: bool,
     buffer_id: BufferIdentifier,
     syntax: SyntaxDefinition,
-
-    /// A collection of non-primary views attached to this buffer.
-    views: BTreeMap<ViewIdentifier, View>,
-    /// The currently active view. This property is dynamically modified as events originating in
-    /// different views arrive.
     view: View,
     engine: Engine,
     last_rev_id: RevId,
@@ -79,10 +102,9 @@ pub struct Editor<W: Write> {
     this_edit_type: EditType,
     last_edit_type: EditType,
 
-    scroll_to: Option<usize>,
-
     styles: Scopes,
-    doc_ctx: DocumentCtx<W>,
+    doc_ctx: DocumentCtx,
+    config: BufferConfig,
     revs_in_flight: usize,
 
     /// Used only on Fuchsia for syncing
@@ -99,6 +121,7 @@ enum EditType {
     Delete,
     Undo,
     Redo,
+    Transpose,
 }
 
 impl EditType {
@@ -108,35 +131,50 @@ impl EditType {
             EditType::Delete => "delete",
             EditType::Undo => "undo",
             EditType::Redo => "redo",
+            EditType::Transpose => "transpose",
             _ => "other",
         }
     }
 }
 
-impl<W: Write + Send + 'static> Editor<W> {
+impl Editor {
     /// Creates a new `Editor` with a new empty buffer.
-    pub fn new(doc_ctx: DocumentCtx<W>, buffer_id: BufferIdentifier,
-               initial_view_id: &ViewIdentifier) -> Editor<W> {
-        Self::with_text(doc_ctx, buffer_id, initial_view_id, "".to_owned())
+    pub fn new(doc_ctx: DocumentCtx, config: BufferConfig,
+               buffer_id: BufferIdentifier,
+               initial_view_id: ViewIdentifier) -> Editor {
+        Self::with_text(doc_ctx, config, buffer_id,
+                        initial_view_id, "".to_owned())
     }
 
     /// Creates a new `Editor`, loading text into a new buffer.
-    pub fn with_text(doc_ctx: DocumentCtx<W>, buffer_id: BufferIdentifier,
-                     initial_view_id: &ViewIdentifier, text: String) -> Editor<W> {
+    pub fn with_text(doc_ctx: DocumentCtx, config: BufferConfig,
+                     buffer_id: BufferIdentifier,
+                     initial_view_id: ViewIdentifier, text: String) -> Editor {
 
-        let engine = Engine::new(Rope::from(text));
+        let encoding = if text.starts_with(UTF8_BOM) {
+            CharacterEncoding::Utf8WithBom
+        } else {
+            CharacterEncoding::Utf8
+        };
+
+        let engine = Engine::new(Rope::from(match encoding {
+            CharacterEncoding::Utf8WithBom => &text[UTF8_BOM.len()..],
+            CharacterEncoding::Utf8 => text.as_str()
+        }));
         let buffer = engine.get_head().clone();
         let last_rev_id = engine.get_head_rev_id();
 
-        let editor = Editor {
+        let mut editor = Editor {
             text: buffer,
-            buffer_id: buffer_id,
+            encoding,
+            buffer_id,
             path: None,
+            file_mod_time: None,
+            file_has_changed: false,
             syntax: SyntaxDefinition::default(),
-            views: BTreeMap::new(),
             view: View::new(initial_view_id),
-            engine: engine,
-            last_rev_id: last_rev_id,
+            engine,
+            last_rev_id,
             pristine_rev_id: last_rev_id,
             undo_group_id: 1,
             // GC only works on undone edits or prefixes of the visible edits,
@@ -148,47 +186,16 @@ impl<W: Write + Send + 'static> Editor<W> {
             gc_undos: BTreeSet::new(),
             last_edit_type: EditType::Other,
             this_edit_type: EditType::Other,
-            scroll_to: Some(0),
             styles: Scopes::default(),
-            doc_ctx: doc_ctx,
+            doc_ctx,
+            config,
             revs_in_flight: 0,
             sync_store: None,
             last_synced_rev: last_rev_id,
         };
+        editor.view.rewrap(&editor.text, editor.config.items.wrap_width);
+        editor.view.set_dirty(&editor.text);
         editor
-    }
-
-
-    #[allow(unreachable_code, unused_variables)]
-    pub fn add_view(&mut self, view_id: &ViewIdentifier) {
-        panic!("multi-view support is not currently implemented");
-        assert!(!self.views.contains_key(view_id), "view_id already exists");
-        self.views.insert(view_id.to_owned(), View::new(view_id));
-    }
-
-    /// Removes a view from this editor's stack, if this editor has multiple views.
-    ///
-    /// If the editor only has a single view this is a no-op. After removing a view the caller must
-    /// always call Editor::has_views() to determine whether or not the editor should be cleaned up.
-    #[allow(unreachable_code)]
-    pub fn remove_view(&mut self, view_id: &ViewIdentifier) {
-        if self.view.view_id == *view_id {
-            if self.views.len() > 0 {
-                panic!("multi-view support is not currently implemented");
-                //set some other view as active. This will be reset on the next EditCommand
-                let tempkey = self.views.keys().nth(0).unwrap().clone();
-                let mut temp = self.views.remove(&tempkey).unwrap();
-                mem::swap(&mut temp, &mut self.view);
-                self.views.insert(temp.view_id.clone(), temp);
-            }
-        } else {
-            self.views.remove(view_id).expect("attempt to remove missing view");
-        }
-    }
-
-    /// Returns true if this editor has additional attached views.
-    pub fn has_views(&self) -> bool {
-        self.views.len() > 0
     }
 
     /// should only ever be called from `BufferContainerRef::set_path`
@@ -197,6 +204,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         let path = path.as_ref();
         //TODO: if the user sets syntax, we shouldn't overwrite here
         self.syntax = SyntaxDefinition::new(path.to_str());
+        self.file_mod_time = tabs::get_file_mod_time(path);
         self.path = Some(path.to_owned());
     }
 
@@ -208,6 +216,74 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
     }
 
+    /// Returns the time of the last file write initiated by this `Editor`.
+    pub fn get_file_mod_time(&self) -> Option<SystemTime> {
+        self.file_mod_time
+    }
+
+    /// Returns `true` if this editor's file has changed on disk.
+    pub fn get_file_has_changed(&self) -> bool {
+        self.file_has_changed
+    }
+
+    #[doc(hidden)]
+    pub (crate) fn _set_file_has_changed(&mut self, has_changed: bool) {
+        self.file_has_changed = has_changed
+    }
+
+    /// Sets this Editor's contents to `text`, preserving undo state and cursor
+    /// position when possible.
+    pub fn reload(&mut self, text: &str) {
+        self.this_edit_type = EditType::Other;
+        let new_text = Rope::from(text);
+        let new_len = new_text.len();
+
+        // preserve a single caret
+        self.view.collapse_selections(&self.text);
+        let prev_sel = self.view.sel_regions().first().cloned();
+        self.view.unset_find(&self.text);
+
+        let mut builder = delta::Builder::new(self.text.len());
+        let all_iv = Interval::new_closed_open(0, self.text.len());
+        builder.replace(all_iv, new_text);
+        self.add_delta(builder.build());
+        self.commit_delta(None);
+        self.last_edit_type = EditType::Other;
+
+        if let Some(prev_sel) = prev_sel {
+            let offset = prev_sel.start.min(new_len);
+            let sel: Selection = SelRegion::caret(offset).into();
+            self.view.set_selection(&self.text, sel);
+        }
+
+        self.file_mod_time = self.path.as_ref()
+            .and_then(tabs::get_file_mod_time);
+        self.pristine_rev_id = self.last_rev_id;
+        self.view.set_pristine();
+        self.render()
+    }
+
+    /// Sets the config for this buffer. If the new config differs
+    /// from the existing config, returns the modified items.
+    pub fn set_config(&mut self, conf: BufferConfig) -> Option<Table> {
+        if let Some(changes) = conf.changes_from(Some(&self.config)) {
+            self.config = conf;
+            if changes.contains_key("wrap_width") {
+                self.view.rewrap(&self.text, self.config.items.wrap_width);;
+                self.view.set_dirty(&self.text);
+                self.render();
+            }
+            self.doc_ctx.config_changed(&self.view.view_id, &changes);
+            Some(changes)
+        } else {
+            None
+        }
+    }
+
+    pub fn get_config(&self) -> &BufferConfig {
+        &self.config
+    }
+
     /// Returns this `Editor`'s active `SyntaxDefinition`.
     pub fn get_syntax(&self) -> &SyntaxDefinition {
         &self.syntax
@@ -216,6 +292,11 @@ impl<W: Write + Send + 'static> Editor<W> {
     /// Returns this `Editor`'s `BufferIdentifier`.
     pub fn get_identifier(&self) -> BufferIdentifier {
         self.buffer_id
+    }
+
+    /// returns the `ViewIdentifier` of the current view.
+    pub fn get_main_view_id(&self) -> ViewIdentifier {
+        self.view.view_id
     }
 
     // each outstanding plugin edit represents a rev_in_flight.
@@ -233,14 +314,18 @@ impl<W: Write + Send + 'static> Editor<W> {
     /// Returns buffer information used to initialize plugins.
     pub fn plugin_init_info(&self) -> PluginBufferInfo {
         let nb_lines = self.text.measure::<LinesMetric>() + 1;
-        let mut views = vec![self.view.view_id.to_owned()];
-        for v in self.views.keys() {
-            views.push(v.to_owned());
-        }
-        
+        let views = vec![self.view.view_id];
+        let config = self.config.to_table();
         PluginBufferInfo::new(self.buffer_id, &views,
                               self.engine.get_head_rev_id().token(), self.text.len(),
-                              nb_lines, self.path.clone(), self.syntax.clone())
+                              nb_lines, self.path.clone(), self.syntax,
+                              config)
+    }
+
+    /// Send initial config state to the client.
+    pub fn send_config_init(&self) {
+        let config = self.config.to_table();
+        self.doc_ctx.config_changed(&self.view.view_id, &config);
     }
 
     fn insert(&mut self, s: &str) {
@@ -251,26 +336,6 @@ impl<W: Write + Send + 'static> Editor<W> {
             builder.replace(iv, rope.clone());
         }
         self.add_delta(builder.build());
-    }
-
-    /// Sets the position of the cursor to `offset`, as part of an edit operation.
-
-    // TODO: add affinity.
-    fn set_cursor(&mut self, offset: usize) {
-        self.set_sel_single_region(SelRegion {
-            start: offset,
-            end: offset,
-            horiz: None,
-            affinity: Affinity::default(),
-        });
-    }
-
-    /// Sets the selection to a single region, and scrolls the end of that
-    /// region into view.
-    fn set_sel_single_region(&mut self, region: SelRegion) {
-        let mut sel = Selection::new();
-        sel.add_region(region);
-        self.scroll_to = self.view.set_selection(&self.text, sel);
     }
 
     /// Applies a delta to the text, and updates undo state.
@@ -289,7 +354,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         let undo_group;
 
         if self.this_edit_type == self.last_edit_type &&
-            self.this_edit_type != EditType::Other &&
+            self.this_edit_type != EditType::Other && self.this_edit_type != EditType::Transpose &&
             !self.live_undos.is_empty() {
 
             undo_group = *self.live_undos.last().unwrap();
@@ -318,25 +383,17 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
     }
 
-    // generates a delta from a plugin's response and applies it to the buffer.
-    pub fn apply_plugin_edit(&mut self, edit: PluginEdit, undo_group: usize) {
-        let interval = Interval::new_closed_open(edit.start as usize, edit.end as usize);
-        let text = Rope::from(&edit.text);
-        let rev_len = self.engine.get_rev(edit.rev).unwrap().len();
-        let delta = Delta::simple_edit(interval, text, rev_len);
-        //let prev_head_rev_id = self.engine.get_head_rev_id();
-        self.engine.edit_rev(edit.priority as usize, undo_group, edit.rev, delta);
-        self.text = self.engine.get_head().clone();
-
-        // TODO: actually implement priority, which makes the need for the following
-        // logic go away.
-        /*
-        // adjust cursor position so that the cursor is not moved by the plugin edit
-        let (changed_interval, _) = self.engine.delta_rev_head(prev_head_rev_id).summary();
-        if edit.after_cursor && (changed_interval.start() as usize) == self.view.sel_end {
-            self.new_cursor = Some((self.view.sel_start, self.view.sel_end));
+    /// generates a delta from a plugin's response and applies it to the buffer.
+    pub fn apply_plugin_edit(&mut self, edit: PluginEdit, undo_group: Option<usize>) {
+        if let Some(undo_group) = undo_group {
+            // non-async edits modify their associated revision
+            //TODO: get priority working, so that plugin edits don't necessarily move cursor
+            self.engine.edit_rev(edit.priority as usize, undo_group, edit.rev, edit.delta);
+            self.text = self.engine.get_head().clone();
         }
-        */
+        else {
+            self.add_delta(edit.delta);
+        }
 
         self.commit_delta(Some(&edit.author));
         self.render();
@@ -349,16 +406,23 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     fn update_after_revision(&mut self, author: Option<&str>) {
-        let delta = self.engine.delta_rev_head(self.last_rev_id.token());
+        let _t = trace_block("Editor::update_after_rev", &["core"]);
+        let last_token = self.last_rev_id.token();
+        let delta = self.engine.delta_rev_head(last_token);
         let is_pristine = self.is_pristine();
-        self.scroll_to = self.view.after_edit(&self.text, &delta, is_pristine);
-        let (iv, new_len) = delta.summary();
+        // TODO (performance): it's probably quicker to stash last_text rather than
+        // resynthesize it.
+        let last_text = self.engine.get_rev(last_token).expect("last_rev not found");
+        let keep_selections = self.this_edit_type == EditType::Transpose;
+        self.view.after_edit(&self.text, &last_text, &delta, is_pristine, keep_selections,
+            &self.doc_ctx);
+        let total_num_lines = self.text.measure::<LinesMetric>() + 1;
 
-        // TODO: maybe more precise editing based on actual delta rather than summary.
-        // TODO: perhaps use different semantics for spans that enclose the edited region.
-        // Currently it breaks any such span in half and applies no spans to the inserted
-        // text. That's ok for syntax highlighting but not ideal for rich text.
-        self.styles.update_all(iv, new_len);
+        // TODO: perhaps use different semantics for spans that enclose the
+        // edited region. Currently it breaks any such span in half and applies
+        // no spans to the inserted text. That's ok for syntax highlighting but
+        // not ideal for rich text.
+        self.styles.update_all(&delta);
 
         // We increment revs in flight once here, and we decrement once
         // after sending plugin updates, regardless of whether or not any actual
@@ -366,21 +430,28 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.increment_revs_in_flight();
 
         {
-            let author = author.unwrap_or(&self.view.view_id.as_str());
-            let text = match new_len < MAX_SIZE_LIMIT {
-                true => Some(self.text.slice_to_string(iv.start(), iv.start() + new_len)),
-                false => None
+            let new_len = delta.new_document_len();
+            let approx_delta_size = delta.inserts_len() + (delta.els.len() * 10);
+            let delta = match approx_delta_size > MAX_SIZE_LIMIT {
+                true => None,
+                false => Some(delta),
+            };
+            let author = match author {
+                Some(s) => s.to_owned(),
+                None => self.view.view_id.to_string(),
             };
 
             let update = PluginUpdate::new(
-                self.view.view_id.clone(),
-                iv.start(), iv.end(), new_len,
-                self.engine.get_head_rev_id().token(), text,
+                self.view.view_id,
+                self.engine.get_head_rev_id().token(),
+                delta,
+                new_len,
+                total_num_lines,
                 self.this_edit_type.json_string().to_owned(),
                 author.to_owned());
 
             let undo_group = *self.live_undos.last().unwrap_or(&0);
-            let view_id = self.view.view_id.clone();
+            let view_id = self.view.view_id;
             self.doc_ctx.update_plugins(view_id, update, undo_group);
         }
 
@@ -404,23 +475,18 @@ impl<W: Write + Send + 'static> Editor<W> {
         // last_rev_id and so that merge will work.
     }
 
-    fn is_pristine(&self) -> bool {
+    pub (crate) fn is_pristine(&self) -> bool {
         self.engine.is_equivalent_revision(self.pristine_rev_id, self.engine.get_head_rev_id())
     }
 
     // render if needed, sending to ui
     pub fn render(&mut self) {
+        let _t = trace_block("Editor::render", &["core"]);
         self.view.render_if_dirty(&self.text, &self.doc_ctx, self.styles.get_merged());
-        if let Some(scrollto) = self.scroll_to {
-            let (line, col) = self.view.offset_to_line_col(&self.text, scrollto);
-            self.doc_ctx.scroll_to(&self.view.view_id, line, col);
-            self.scroll_to = None;
-        }
     }
 
     pub fn merge_new_state(&mut self, new_engine: Engine) {
-        // TODO: CRDT merge
-        self.engine = new_engine;
+        self.engine.merge(&new_engine);
         self.text = self.engine.get_head().clone();
         // TODO: better undo semantics. This only implements separate undo histories for low concurrency.
         self.undo_group_id = self.engine.max_undo_group_id() + 1;
@@ -434,16 +500,16 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.engine.set_session_id(session);
     }
 
-    #[cfg(target_os = "fuchsia")]
+    #[cfg(feature = "ledger")]
     pub fn set_sync_store(&mut self, sync_store: SyncStore) {
         self.sync_store = Some(sync_store);
     }
 
-    #[cfg(not(target_os = "fuchsia"))]
+    #[cfg(not(feature = "ledger"))]
     pub fn sync_state_changed(&mut self) {
     }
 
-    #[cfg(target_os = "fuchsia")]
+    #[cfg(feature = "ledger")]
     pub fn sync_state_changed(&mut self) {
         if let Some(sync_store) = self.sync_store.as_mut() {
             // we don't want to sync right after recieving a new merge
@@ -454,7 +520,7 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
     }
 
-    #[cfg(target_os = "fuchsia")]
+    #[cfg(feature = "ledger")]
     pub fn transaction_ready(&mut self) {
         if let Some(sync_store) = self.sync_store.as_mut() {
             sync_store.commit_transaction(&self.engine);
@@ -485,9 +551,25 @@ impl<W: Write + Send + 'static> Editor<W> {
             let start = if !region.is_caret() {
                 region.min()
             } else {
-                // TODO: implement complex emoji logic
-                self.text.prev_codepoint_offset(region.end).unwrap_or(region.end)
+                // backspace deletes max(1, tab_size) contiguous spaces
+                let (_, c) = self.view.offset_to_line_col(&self.text,
+                                                          region.start);
+                let use_spaces = self.config.items.translate_tabs_to_spaces;
+                let use_tab_stops = self.config.items.use_tab_stops;
+                let tab_size = self.config.items.tab_size;
+                let tab_size = if c % tab_size == 0 { tab_size } else { c % tab_size };
+                let preceded_by_spaces = region.start > 0 &&
+                    (region.start.saturating_sub(tab_size)..region.start)
+                    .all(|i| self.text.byte_at(i) == b' ');
+                if preceded_by_spaces && use_spaces && use_tab_stops {
+                    region.start - tab_size
+                } else {
+                   // TODO: implement complex emoji logic
+                    self.text.prev_codepoint_offset(region.end)
+                        .unwrap_or(region.end)
+               }
             };
+
             let iv = Interval::new_closed_open(start, region.max());
             if !iv.is_empty() {
                 builder.delete(iv);
@@ -510,12 +592,12 @@ impl<W: Write + Send + 'static> Editor<W> {
         // Another possibility would be to make the delta builder be able to handle
         // overlapping deletions (using union semantics).
         let mut deletions = Selection::new();
-        for r in self.view.sel_regions() {
+        for &r in self.view.sel_regions() {
             if r.is_caret() {
                 let new_region = region_movement(movement, r, &self.view, &self.text, true);
                 deletions.add_region(new_region);
             } else {
-                deletions.add_region(r.clone());
+                deletions.add_region(r);
             }
         }
         if save {
@@ -561,16 +643,23 @@ impl<W: Write + Send + 'static> Editor<W> {
 
     fn insert_newline(&mut self) {
         self.this_edit_type = EditType::InsertChars;
-        self.insert("\n");
+        let text = self.config.items.line_ending.clone();
+        self.insert(&text);
     }
 
     fn insert_tab(&mut self) {
         let mut builder = delta::Builder::new(self.text.len());
         for region in self.view.sel_regions() {
             let iv = Interval::new_closed_open(region.min(), region.max());
-            let (_, col) = self.view.offset_to_line_col(&self.text, region.start);
-            let n = TAB_SIZE - (col % TAB_SIZE);
-            builder.replace(iv, Rope::from(n_spaces(n)));
+            let tab_text = if self.config.items.translate_tabs_to_spaces {
+                    let (_, col) = self.view.offset_to_line_col(&self.text, region.start);
+                    let tab_size = self.config.items.tab_size;
+                    let n = tab_size - (col % tab_size);
+                    n_spaces(n)
+            } else {
+                "\t"
+            };
+            builder.replace(iv, Rope::from(tab_text));
         }
         self.this_edit_type = EditType::InsertChars;
         self.add_delta(builder.build());
@@ -594,14 +683,77 @@ impl<W: Write + Send + 'static> Editor<W> {
         */
     }
 
+    /// Indents or outdents lines based on selection and user's tab settings.
+    /// Uses a BTreeSet to holds the collection of lines to modify.
+    /// Preserves cursor position and current selection as much as possible.
+    /// Tries to have behavior consistent with other editors like Atom, Sublime and VSCode,
+    /// with non-caret selections not being modified.
+    fn modify_indent(&mut self, direction: IndentDirection) {
+        let mut lines = BTreeSet::new();
+        let tab_text = if self.config.items.translate_tabs_to_spaces {
+                let tab_size = self.config.items.tab_size;
+                n_spaces(tab_size)
+            } else { "\t" };
+        for region in self.view.sel_regions() {
+            let (first_line, _) = self.view.offset_to_line_col(&self.text, region.min());
+            let (last_line, last_col) =
+                self.view.offset_to_line_col(&self.text, region.max());
+            let last_line = if last_col == 0 && last_line > first_line {
+                last_line - 1
+            } else {
+                last_line
+            };
+            let line_range = first_line..(last_line + 1);
+            for line in line_range {
+                lines.insert(line);
+            }
+        }
+        match direction {
+            IndentDirection::In =>  self.indent(lines, tab_text),
+            IndentDirection::Out => self.outdent(lines, tab_text)
+         };
+
+    }
+
+    fn indent(&mut self, lines: BTreeSet<usize>, tab_text: &str) {
+        let mut builder = delta::Builder::new(self.text.len());
+        for line in lines {
+            let offset = self.view.line_col_to_offset(&self.text, line, 0);
+            let interval = Interval::new_closed_open(offset, offset);
+            builder.replace(interval, Rope::from(tab_text));
+
+        }
+        self.this_edit_type = EditType::InsertChars;
+        self.add_delta(builder.build());
+    }
+
+    fn outdent(&mut self, lines: BTreeSet<usize>, tab_text: &str) {
+        let mut builder = delta::Builder::new(self.text.len());
+        for line in lines {
+            let offset = self.view.line_col_to_offset(&self.text, line, 0);
+            let tab_offset = self.view.line_col_to_offset(&self.text, line, tab_text.len());
+            let interval = Interval::new_closed_open(offset, tab_offset);
+            let leading_slice = self.text.slice_to_string(interval.start(), interval.end());
+            if leading_slice == tab_text {
+                builder.delete(interval);
+            } else if let Some(first_char_col) = leading_slice.find(|c: char| !c.is_whitespace()) {
+                let first_char_offset = self.view.line_col_to_offset(&self.text, line, first_char_col);
+                let interval = Interval::new_closed_open(offset, first_char_offset);
+                builder.delete(interval);
+            }
+        }
+        self.this_edit_type = EditType::Delete;
+        self.add_delta(builder.build());
+    }
+
     /// Apply a movement, also setting the scroll to the point requested by
     /// the movement.
     ///
     /// The type of the `flags` parameter is a convenience to old-style
     /// movement methods.
     fn do_move(&mut self, movement: Movement, flags: u64) {
-        self.scroll_to = self.view.do_move(&self.text, movement,
-            (flags & FLAG_SELECT) != 0);
+        let should_modify = (flags & FLAG_SELECT) != 0;
+        self.view.do_move(&self.text, movement, should_modify);
     }
 
     fn move_up(&mut self, flags: u64) {
@@ -661,17 +813,17 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     fn select_all(&mut self) {
-        self.view.select_all(self.text.len());
+        self.view.select_all(&self.text);
     }
 
     fn add_selection_by_movement(&mut self, movement: Movement) {
         let mut sel = Selection::new();
-        for region in self.view.sel_regions() {
-            sel.add_region(region.clone());
+        for &region in self.view.sel_regions() {
+            sel.add_region(region);
             let new_region = region_movement(movement, region, &self.view, &self.text, false);
             sel.add_region(new_region);
         }
-        self.scroll_to = self.view.set_selection(&self.text, sel);
+        self.view.set_selection(&self.text, sel);
     }
 
     // TODO: insert from keyboard or input method shouldn't break undo group,
@@ -681,112 +833,75 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.insert(chars);
     }
 
-    pub fn do_save<P: AsRef<Path>>(&mut self, path: P) {
+    pub fn do_save<P: AsRef<Path>>(&mut self, path: P) -> Result<(), String> {
         match File::create(&path) {
             Ok(mut f) => {
-                for chunk in self.text.iter_chunks(0, self.text.len()) {
-                    if let Err(e) = f.write_all(chunk.as_bytes()) {
-                        print_err!("write error {}", e);
-                        break;
+                if let Err(e) = match self.encoding {
+                    CharacterEncoding::Utf8WithBom => f.write_all(UTF8_BOM.as_bytes()),
+                    CharacterEncoding::Utf8 => Result::Ok(())
+                } {
+                    Err(format!("write error {}", e))
+                } else {
+                    for chunk in self.text.iter_chunks(0, self.text.len()) {
+                        if let Err(e) = f.write_all(chunk.as_bytes()) {
+                            return Err(format!("write error {}", e));
+                        }
                     }
+                    self.pristine_rev_id = self.last_rev_id;
+                    self.view.set_pristine();
+                    self.view.set_dirty(&self.text);
+                    self.render();
+                    Ok(())
                 }
             }
-            Err(e) => print_err!("create error {}", e),
+            Err(e) => Err(format!("create error {}", e)),
         }
-
-        self.pristine_rev_id = self.last_rev_id;
-        self.view.set_pristine();
-        self.view.set_dirty();
-        self.render();
     }
 
     fn do_scroll(&mut self, first: i64, last: i64) {
         let first = max(first, 0) as usize;
-        let last = last as usize;
+        let last = max(last, 0) as usize;
         self.view.set_scroll(first, last);
-        self.view.send_update_for_scroll(&self.text, &self.doc_ctx, self.styles.get_merged(), first, last);
     }
 
     /// Sets the cursor and scrolls to the beginning of the given line.
     fn do_goto_line(&mut self, line: u64) {
-        let line = self.view.line_col_to_offset(&self.text, line as usize, 0);
-        self.set_cursor(line);
+        let offset = self.view.line_col_to_offset(&self.text, line as usize, 0);
+        self.view.set_selection(&self.text, SelRegion::caret(offset));
     }
 
     fn do_request_lines(&mut self, first: i64, last: i64) {
-        self.view.send_update(&self.text, &self.doc_ctx, self.styles.get_merged(), first as usize, last as usize);
-    }
-
-    fn do_click(&mut self, line: u64, col: u64, flags: u64, click_count: u64) {
-        // TODO: calculate affinity
-        let offset = self.view.line_col_to_offset(&self.text, line as usize, col as usize);
-        if (flags & FLAG_SELECT) != 0 {
-            if !self.view.is_point_in_selection(offset) {
-                let sel = {
-                    let (last, rest) = self.view.sel_regions().split_last().unwrap();
-                    let mut sel = Selection::new();
-                    for region in rest {
-                        sel.add_region(region.clone());
-                    }
-                    // TODO: small nit, merged region should be backward if end < start.
-                    // This could be done by explicitly overriding, or by tweaking the
-                    // merge logic.
-                    sel.add_region(SelRegion {
-                        start: last.start,
-                        end: offset,
-                        horiz: None,
-                        affinity: Affinity::default(),
-                    });
-                    sel
-                };
-                self.view.start_drag(offset, offset, offset);
-                self.scroll_to = self.view.set_selection(&self.text, sel);
-                return;
-            }
-        } else if click_count == 2 {
-            let (start, end) = {
-                let mut word_cursor = WordCursor::new(&self.text, offset);
-                word_cursor.select_word()
-            };
-            self.set_sel_single_region(SelRegion{
-                start: start,
-                end: end,
-                horiz: None,
-                affinity: Affinity::default(),
-            });
-            self.view.start_drag(offset, start, end);
-            return;
-        } else if click_count == 3 {
-            let start = self.view.line_col_to_offset(&self.text, line as usize, 0);
-            let end = self.view.line_col_to_offset(&self.text, line as usize + 1, 0);
-            self.set_sel_single_region(SelRegion{
-                start: start,
-                end: end,
-                horiz: None,
-                affinity: Affinity::default(),
-            });
-            self.view.start_drag(offset, start, end);
-            return;
-        }
-        self.view.start_drag(offset, offset, offset);
-        self.set_cursor(offset);
+        self.view.request_lines(&self.text, &self.doc_ctx, self.styles.get_merged(), first as usize, last as usize);
     }
 
     fn do_drag(&mut self, line: u64, col: u64, _flags: u64) {
-        let offset = self.view.line_col_to_offset(&self.text, line as usize, col as usize);
-        self.scroll_to = self.view.do_drag(&self.text, offset, Affinity::default());
+        self.view.do_drag(&self.text, line, col, Affinity::default());
     }
 
     fn do_gesture(&mut self, line: u64, col: u64, ty: GestureType) {
         let offset = self.view.line_col_to_offset(&self.text, line as usize, col as usize);
         match ty {
-            GestureType::ToggleSel => self.view.toggle_sel(offset),
+            GestureType::PointSelect => {
+                self.view.set_selection(&self.text, SelRegion::caret(offset));
+                self.view.start_drag(offset, offset, offset);
+            },
+            GestureType::RangeSelect => self.view.select_range(&self.text, offset),
+            GestureType::ToggleSel => self.view.toggle_sel(&self.text, offset),
+            GestureType::LineSelect => self.view.select_line(&self.text, offset, line as usize, false),
+            GestureType::WordSelect => self.view.select_word(&self.text, offset, false),
+            GestureType::MultiLineSelect => self.view.select_line(&self.text, offset, line as usize, true),
+            GestureType::MultiWordSelect => self.view.select_word(&self.text, offset, true)
         }
     }
 
     fn debug_rewrap(&mut self) {
         self.view.rewrap(&self.text, 72);
-        self.view.set_dirty();
+        self.view.set_dirty(&self.text);
+    }
+
+    fn debug_wrap_width(&mut self) {
+        self.view.wrap_width(&self.text, &self.doc_ctx, self.styles.get_merged());
+        self.view.set_dirty(&self.text);
     }
 
     fn debug_print_spans(&self) {
@@ -813,7 +928,7 @@ impl<W: Write + Send + 'static> Editor<W> {
     }
 
     fn do_undo(&mut self) {
-        if self.cur_undo > 0 {
+        if self.cur_undo > 1 {
             self.cur_undo -= 1;
             assert!(self.undos.insert(self.live_undos[self.cur_undo]));
             self.this_edit_type = EditType::Undo;
@@ -830,10 +945,21 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
     }
 
+    fn sel_region_to_interval_and_rope(&self, region: SelRegion) -> (Interval, Rope) {
+        let as_interval = Interval::new_closed_open(region.min(), region.max());
+        let interval_rope = Rope::from(self.text.slice_to_string(
+            as_interval.start(), as_interval.end()));
+        (as_interval, interval_rope)
+    }
+
     fn do_transpose(&mut self) {
         let mut builder = delta::Builder::new(self.text.len());
         let mut last = 0;
-        for region in self.view.sel_regions() {
+        let mut optional_previous_selection : Option<(Interval, Rope)> =
+            last_selection_region(self.view.sel_regions()).map(
+                |&region| self.sel_region_to_interval_and_rope(region));
+
+        for &region in self.view.sel_regions() {
             if region.is_caret() {
                 let middle = region.end;
                 let start = self.text.prev_grapheme_offset(middle).unwrap_or(0);
@@ -848,11 +974,14 @@ impl<W: Write + Send + 'static> Editor<W> {
                         last = end;
                     }
                 }
+            } else if let Some(previous_selection) = optional_previous_selection {
+                let current_interval = self.sel_region_to_interval_and_rope(region);
+                builder.replace(current_interval.0, previous_selection.1);
+                optional_previous_selection = Some(current_interval);
             }
-            // TODO: handle else case by rotating non-caret regions.
         }
         if !builder.is_empty() {
-            self.this_edit_type = EditType::Other;
+            self.this_edit_type = EditType::Transpose;
             self.add_delta(builder.build());
         }
     }
@@ -869,10 +998,11 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.insert(&*String::from(kill_ring_string));
     }
 
-    pub fn do_find(&mut self, chars: Option<&str>, case_sensitive: bool) -> Option<Value> {
+    pub fn do_find(&mut self, chars: Option<String>, case_sensitive: bool) -> Value {
         let mut from_sel = false;
-        let search_string = chars.map(String::from).or_else(|| {
-            // if the search string is not provided, use the string of the last selection for find
+        let search_string = if chars.is_some() {
+            chars
+        } else {
             self.view.sel_regions().last().and_then(|region| {
                 if region.is_caret() {
                     None
@@ -881,122 +1011,180 @@ impl<W: Write + Send + 'static> Editor<W> {
                     Some(self.text.slice_to_string(region.min(), region.max()))
                 }
             })
-        });
+        };
 
         if search_string.is_none() {
-            self.view.unset_find();
-            return Some(Value::Null);
+            self.view.unset_find(&self.text);
+            return Value::Null;
         }
 
         let search_string = search_string.unwrap();
-        if search_string.len() == 0 {
-            self.view.unset_find();
-            return Some(Value::Null);
+        if search_string.is_empty() {
+            self.view.unset_find(&self.text);
+            return Value::Null;
         }
 
-        self.view.set_find(&search_string, case_sensitive);
+        self.view.set_find(&self.text, &search_string, case_sensitive);
 
-        Some(Value::String(search_string.to_string()))
+        Value::String(search_string.to_string())
     }
 
     fn do_find_next(&mut self, reverse: bool, wrap_around: bool, allow_same: bool) {
-        self.scroll_to = self.view.select_next_occurrence(&self.text, reverse, false, true, allow_same);
+        self.view.find_next(&self.text, reverse, wrap_around, allow_same);
+    }
 
-        if self.scroll_to.is_none() && wrap_around {
-            // nothing found, search past end of file
-            self.scroll_to = self.view.select_next_occurrence(&self.text, reverse, true, true, allow_same);
+    fn do_cancel_operation(&mut self) {
+        self.view.collapse_selections(&self.text);
+        self.view.unset_find(&self.text);
+    }
+
+    fn transform_text<F: Fn(&str) -> String>(&mut self, transform_function: F) {
+        let mut builder = delta::Builder::new(self.text.len());
+
+        for region in self.view.sel_regions() {
+            let selected_text = self.text.slice_to_string(region.min(), region.max());
+            let interval = Interval::new_closed_open(region.min(), region.max());
+            builder.replace(interval, Rope::from(transform_function(&selected_text)));
+        }
+        if !builder.is_empty() {
+            self.this_edit_type = EditType::Other;
+            self.add_delta(builder.build());
         }
     }
 
-    pub fn do_rpc(&mut self, view_id: &ViewIdentifier, cmd: EditCommand) -> Option<Value> {
-        use rpc::EditCommand::*;
-
-        // if the rpc's originating view is different from current self.view, swap it in
-        if self.view.view_id != *view_id {
-            let mut temp = self.views.remove(view_id).expect("no view for provided view_id");
-            mem::swap(&mut temp, &mut self.view);
-            self.views.insert(temp.view_id.clone(), temp);
-        }
-
+    fn cmd_prelude(&mut self) {
         self.this_edit_type = EditType::Other;
+    }
 
-        let result = match cmd {
-            Insert { chars } => async(self.do_insert(chars)),
-            DeleteForward => async(self.delete_forward()),
-            DeleteBackward => async(self.delete_backward()),
-            DeleteWordForward => async(self.delete_word_forward()),
-            DeleteWordBackward => async(self.delete_word_backward()),
-            DeleteToEndOfParagraph => async(self.delete_to_end_of_paragraph()),
-            DeleteToBeginningOfLine => async(self.delete_to_beginning_of_line()),
-            InsertNewline => async(self.insert_newline()),
-            InsertTab => async(self.insert_tab()),
-            MoveUp => async(self.move_up(0)),
-            MoveUpAndModifySelection => async(self.move_up(FLAG_SELECT)),
-            MoveDown => async(self.move_down(0)),
-            MoveDownAndModifySelection => async(self.move_down(FLAG_SELECT)),
-            MoveLeft => async(self.move_left(0)),
-            MoveLeftAndModifySelection => async(self.move_left(FLAG_SELECT)),
-            MoveRight => async(self.move_right(0)),
-            MoveRightAndModifySelection => async(self.move_right(FLAG_SELECT)),
-            MoveWordLeft => async(self.move_word_left(0)),
-            MoveWordLeftAndModifySelection => async(self.move_word_left(FLAG_SELECT)),
-            MoveWordRight => async(self.move_word_right(0)),
-            MoveWordRightAndModifySelection => async(self.move_word_right(FLAG_SELECT)),
-            MoveToBeginningOfParagraph => async(self.move_to_beginning_of_paragraph(0)),
-            MoveToEndOfParagraph => async(self.move_to_end_of_paragraph(0)),
-            MoveToLeftEndOfLine => async(self.move_to_left_end_of_line(0)),
-            MoveToLeftEndOfLineAndModifySelection => async(self.move_to_left_end_of_line(FLAG_SELECT)),
-            MoveToRightEndOfLine => async(self.move_to_right_end_of_line(0)),
-            MoveToRightEndOfLineAndModifySelection => async(self.move_to_right_end_of_line(FLAG_SELECT)),
-            MoveToBeginningOfDocument => async(self.move_to_beginning_of_document(0)),
-            MoveToBeginningOfDocumentAndModifySelection => async(self.move_to_beginning_of_document(FLAG_SELECT)),
-            MoveToEndOfDocument => async(self.move_to_end_of_document(0)),
-            MoveToEndOfDocumentAndModifySelection => async(self.move_to_end_of_document(FLAG_SELECT)),
-            ScrollPageUp => async(self.scroll_page_up(0)),
-            PageUpAndModifySelection => async(self.scroll_page_up(FLAG_SELECT)),
-            ScrollPageDown => async(self.scroll_page_down(0)),
-            PageDownAndModifySelection => {
-                async(self.scroll_page_down(FLAG_SELECT))
-            }
-            SelectAll => async(self.select_all()),
-            AddSelectionAbove => async(self.add_selection_by_movement(Movement::Up)),
-            AddSelectionBelow => async(self.add_selection_by_movement(Movement::Down)),
-            Scroll { first, last } => async(self.do_scroll(first, last)),
-            GotoLine { line } => async(self.do_goto_line(line)),
-            RequestLines { first, last } => async(self.do_request_lines(first, last)),
-            Yank => async(self.yank()),
-            Transpose => async(self.do_transpose()),
-            Click { line, column, flags, click_count } => {
-                async(self.do_click(line, column, flags, click_count))
-            }
-            Drag { line, column, flags } => async(self.do_drag(line, column, flags)),
-            Gesture { line, column, ty } => async(self.do_gesture(line, column, ty)),
-            Undo => async(self.do_undo()),
-            Redo => async(self.do_redo()),
-            Cut => Some(self.do_cut()),
-            Copy => Some(self.do_copy()),
-            Find { chars, case_sensitive } => self.do_find(chars, case_sensitive),
-            FindNext { wrap_around, allow_same } => async(self.do_find_next(false, wrap_around, allow_same)),
-            FindPrevious { wrap_around } => async(self.do_find_next(true, wrap_around, true)),
-            DebugRewrap => async(self.debug_rewrap()),
-            DebugPrintSpans => async(self.debug_print_spans()),
-        };
-
+    fn cmd_postlude(&mut self) {
         // TODO: could defer this until input quiesces - will this help?
         self.commit_delta(None);
         self.render();
         self.last_edit_type = self.this_edit_type;
-        result
+    }
+
+    pub fn handle_notification(&mut self, _view_id: ViewIdentifier,
+                               cmd: rpc::EditNotification) {
+
+        let _t = trace_block("Editor::handle_notif", &["core"]);
+
+        use rpc::EditNotification::*;
+        use rpc::{LineRange, MouseAction};
+        self.cmd_prelude();
+
+        match cmd {
+            Insert { chars } => self.do_insert(&chars),
+            DeleteForward => self.delete_forward(),
+            DeleteBackward => self.delete_backward(),
+            DeleteWordForward => self.delete_word_forward(),
+            DeleteWordBackward => self.delete_word_backward(),
+            DeleteToEndOfParagraph => self.delete_to_end_of_paragraph(),
+            DeleteToBeginningOfLine => self.delete_to_beginning_of_line(),
+            InsertNewline => self.insert_newline(),
+            InsertTab => self.insert_tab(),
+            MoveUp => self.move_up(0),
+            MoveUpAndModifySelection => self.move_up(FLAG_SELECT),
+            MoveDown => self.move_down(0),
+            MoveDownAndModifySelection => self.move_down(FLAG_SELECT),
+            MoveLeft | MoveBackward => self.move_left(0),
+            MoveLeftAndModifySelection => self.move_left(FLAG_SELECT),
+            MoveRight | MoveForward => self.move_right(0),
+            MoveRightAndModifySelection => self.move_right(FLAG_SELECT),
+            MoveWordLeft => self.move_word_left(0),
+            MoveWordLeftAndModifySelection => self.move_word_left(FLAG_SELECT),
+            MoveWordRight => self.move_word_right(0),
+            MoveWordRightAndModifySelection => self.move_word_right(FLAG_SELECT),
+            MoveToBeginningOfParagraph => self.move_to_beginning_of_paragraph(0),
+            MoveToEndOfParagraph => self.move_to_end_of_paragraph(0),
+            MoveToLeftEndOfLine => self.move_to_left_end_of_line(0),
+            MoveToLeftEndOfLineAndModifySelection => self.move_to_left_end_of_line(FLAG_SELECT),
+            MoveToRightEndOfLine => self.move_to_right_end_of_line(0),
+            MoveToRightEndOfLineAndModifySelection => self.move_to_right_end_of_line(FLAG_SELECT),
+            MoveToBeginningOfDocument => self.move_to_beginning_of_document(0),
+            MoveToBeginningOfDocumentAndModifySelection => self.move_to_beginning_of_document(FLAG_SELECT),
+            MoveToEndOfDocument => self.move_to_end_of_document(0),
+            MoveToEndOfDocumentAndModifySelection => self.move_to_end_of_document(FLAG_SELECT),
+            ScrollPageUp => self.scroll_page_up(0),
+            PageUpAndModifySelection => self.scroll_page_up(FLAG_SELECT),
+            ScrollPageDown => self.scroll_page_down(0),
+            PageDownAndModifySelection => {
+                self.scroll_page_down(FLAG_SELECT)
+            }
+            SelectAll => self.select_all(),
+            AddSelectionAbove => self.add_selection_by_movement(Movement::Up),
+            AddSelectionBelow => self.add_selection_by_movement(Movement::Down),
+            Scroll(LineRange { first, last }) => self.do_scroll(first, last),
+            GotoLine { line } => self.do_goto_line(line),
+            RequestLines(LineRange { first, last }) => self.do_request_lines(first, last),
+            Yank => self.yank(),
+            Transpose => self.do_transpose(),
+            Click(MouseAction {line, column, flags, click_count} ) => {
+                // Deprecated (kept for client compatibility): should be removed in favor of do_gesture
+                eprintln!("Usage of click is deprecated and should be replaced by gestures");
+
+                if (flags & FLAG_SELECT) != 0 {
+                    self.do_gesture(line, column, GestureType::RangeSelect)
+                } else if click_count == Some(2) {
+                    self.do_gesture(line, column, GestureType::WordSelect)
+                } else if click_count == Some(3) {
+                    self.do_gesture(line, column, GestureType::LineSelect)
+                } else {
+                    self.do_gesture(line, column, GestureType::PointSelect)
+                }
+            }
+            Drag (MouseAction {line, column, flags, ..}) => {
+                self.do_drag(line, column, flags);
+            }
+            Gesture { line, col, ty } => self.do_gesture(line, col, ty),
+            Undo => self.do_undo(),
+            Redo => self.do_redo(),
+            FindNext { wrap_around, allow_same } => self.do_find_next(false, wrap_around.unwrap_or(false), allow_same.unwrap_or(false)),
+            FindPrevious { wrap_around } => self.do_find_next(true, wrap_around.unwrap_or(false), true),
+            DebugRewrap => self.debug_rewrap(),
+            DebugWrapWidth => self.debug_wrap_width(),
+            DebugPrintSpans => self.debug_print_spans(),
+            CancelOperation => self.do_cancel_operation(),
+            Uppercase => self.transform_text(|s| s.to_uppercase()),
+            Lowercase => self.transform_text(|s| s.to_lowercase()),
+            Indent => self.modify_indent(IndentDirection::In),
+            Outdent => self.modify_indent(IndentDirection::Out)
+        };
+
+        self.cmd_postlude();
+    }
+
+
+    pub fn handle_request(&mut self, _view_id: ViewIdentifier,
+                          cmd: rpc::EditRequest) -> Result<Value, RemoteError> {
+        use rpc::EditRequest::*;
+        let _t = trace_block("Editor::handle_request", &["core"]);
+        self.cmd_prelude();
+
+        let result = match cmd {
+            Cut => self.do_cut(),
+            Copy => self.do_copy(),
+            Find { chars, case_sensitive } => self.do_find(chars, case_sensitive),
+        };
+
+        self.cmd_postlude();
+        Ok(result)
     }
 
     pub fn theme_changed(&mut self) {
         self.styles.theme_changed(&self.doc_ctx);
-        self.view.set_dirty();
+        self.view.set_dirty(&self.text);
         self.render();
     }
 
     // Note: the following are placeholders for prototyping, and are not intended to
     // deal with asynchrony or be efficient.
+
+    /// Applies an async edit from a plugin.
+    pub fn plugin_edit_async(&mut self, edit: PluginEdit) {
+        let _t = trace_block("Editor::plugin_edit", &["core"]);
+        self.this_edit_type = EditType::Other;
+        self.apply_plugin_edit(edit, None)
+    }
 
     pub fn plugin_n_lines(&self) -> usize {
         self.text.measure::<LinesMetric>() + 1
@@ -1005,11 +1193,13 @@ impl<W: Write + Send + 'static> Editor<W> {
     //TODO: plugins should optionally be able to provide a layer id
     // so a single plugin can maintain multiple layers
     pub fn plugin_add_scopes(&mut self, plugin: PluginPid, scopes: Vec<Vec<String>>) {
+        let _t = trace_block("Editor::add_scopes", &["core"]);
         self.styles.add_scopes(plugin, scopes, &self.doc_ctx);
     }
 
     pub fn plugin_update_spans(&mut self, plugin: PluginPid, start: usize, len: usize,
                                spans: Vec<ScopeSpan>, rev: RevToken) {
+        let _t = trace_block("Editor::update_spans", &["core"]);
         // TODO: more protection against invalid input
         let mut start = start;
         let mut end_offset = start + len;
@@ -1031,11 +1221,13 @@ impl<W: Write + Send + 'static> Editor<W> {
         }
         let iv = Interval::new_closed_closed(start, end_offset);
         self.styles.update_layer(plugin, iv, spans);
-        self.view.set_dirty();
+        self.view.invalidate_styles(&self.text, start, end_offset);
         self.render();
     }
 
-    pub fn plugin_get_data(&self, offset: usize, max_size: usize, rev: RevToken) -> Option<String> {
+    pub fn plugin_get_data(&self, start: usize, unit: TextUnit,
+                           max_size: usize, rev: RevToken) -> Option<GetDataResponse> {
+        let _t = trace_block("Editor::plugin_get_data", &["core"]);
         let text_cow = if rev == self.engine.get_head_rev_id().token() {
             Cow::Borrowed(&self.text)
         } else {
@@ -1045,8 +1237,9 @@ impl<W: Write + Send + 'static> Editor<W> {
             }
         };
         let text = &text_cow;
-        // Enforce start is on codepoint boundary.
-        if !text.is_codepoint_boundary(offset) { return None; }
+        // convert our offset into a valid byte offset
+        let offset = unit.resolve_offset(text.borrow(), start)?;
+
         let max_size = min(max_size, MAX_SIZE_LIMIT);
         let mut end_off = offset.saturating_add(max_size);
         if end_off >= text.len() {
@@ -1055,7 +1248,23 @@ impl<W: Write + Send + 'static> Editor<W> {
             // Snap end to codepoint boundary.
             end_off = text.prev_codepoint_offset(end_off + 1).unwrap();
         }
-        Some(text.slice_to_string(offset, end_off))
+
+        let chunk = text.slice_to_string(offset, end_off);
+        let first_line = text.line_of_offset(offset);
+        let first_line_offset = offset - text.offset_of_line(first_line);
+
+        Some(GetDataResponse { chunk, offset, first_line, first_line_offset })
+    }
+
+    pub fn plugin_get_selections(&self, view_id: ViewIdentifier) -> Value {
+        //TODO: multiview support
+        assert_eq!(view_id, self.view.view_id);
+        let sels: Vec<(usize, usize)> = self.view.sel_regions()
+            .iter()
+            .map(|s| { (s.start, s.end) })
+            .collect();
+
+        json!({"selections": sels})
     }
 
     // Note: currently we route up through Editor to DocumentCtx, but perhaps the plugin
@@ -1064,16 +1273,25 @@ impl<W: Write + Send + 'static> Editor<W> {
         self.doc_ctx.alert(msg);
     }
 
+    /// Notifies the client of the currently available plugins.
+    pub fn available_plugins(&self, view_id: ViewIdentifier,
+                             plugins: &[ClientPluginInfo]) {
+        self.doc_ctx.available_plugins(view_id, plugins);
+    }
+
     /// Notifies the client that the named plugin has started.
     ///
     /// Note: there is no current conception of a plugin which is only active
     /// for a particular view; plugins are active at the editor/buffer level.
     /// Some `view_id` is needed, however, to route to the correct client view.
     //TODO: revisit this after implementing multiview
-    pub fn plugin_started<'a, T>(&'a self, view_id: T, plugin: &str)
-        where T: Into<Option<&'a ViewIdentifier>> {
-        let view_id = view_id.into().unwrap_or(&self.view.view_id);
+    pub fn plugin_started<T>(&self, view_id: T, plugin: &str, cmds: &[Command])
+        where T: Into<Option<ViewIdentifier>>
+    {
+        let _t = trace_block("Editor::plugin_started", &["core"]);
+        let view_id = view_id.into().unwrap_or(self.view.view_id);
         self.doc_ctx.plugin_started(view_id, plugin);
+        self.doc_ctx.update_cmds(view_id, plugin, cmds);
     }
 
     /// Notifies client that the named plugin has stopped.
@@ -1081,20 +1299,17 @@ impl<W: Write + Send + 'static> Editor<W> {
     /// `code` is reserved for future use.
     pub fn plugin_stopped<'a, T>(&'a mut self, view_id: T, plugin: &str,
                                  plugin_id: PluginPid, code: i32)
-        where T: Into<Option<&'a ViewIdentifier>> {
+        where T: Into<Option<ViewIdentifier>> {
+        let _t = trace_block("Editor::plugin_stopped", &["core"]);
         {
             self.styles.remove_layer(plugin_id);
-            self.view.set_dirty();
+            self.view.set_dirty(&self.text);
             self.render();
         }
-        let view_id = view_id.into().unwrap_or(&self.view.view_id);
+        let view_id = view_id.into().unwrap_or(self.view.view_id);
         self.doc_ctx.plugin_stopped(view_id, plugin, code);
+        self.doc_ctx.update_cmds(view_id, plugin, &Vec::new());
     }
-}
-
-// wrapper so async methods don't have to return None themselves
-fn async(_: ()) -> Option<Value> {
-    None
 }
 
 fn n_spaces(n: usize) -> &'static str {

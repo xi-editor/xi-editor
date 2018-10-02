@@ -12,6 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import sys
+from collections import namedtuple
+
+
+Selection = namedtuple('Selection', ['start', 'end', 'is_caret'])
+
 
 class View(object):
     """Represents a view into a buffer."""
@@ -27,8 +33,16 @@ class View(object):
     def syntax(self):
         return self.lines.syntax
 
+    def get_selections(self):
+        selections = self.lines.peer.get_selections(self.view_id)
+        selections = selections['selections']
+        return [Selection(s, e, (s == e)) for (s, e) in selections]
+
     def update_spans(self, *args, **kwargs):
         self.lines.peer.update_spans(self.view_id, *args, **kwargs)
 
     def add_scopes(self, *args, **kwargs):
         self.lines.peer.add_scopes(self.view_id, *args, **kwargs)
+
+    def edit(self, *args, **kwargs):
+        self.lines.peer.edit(self.view_id, *args, **kwargs)

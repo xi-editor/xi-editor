@@ -12,27 +12,51 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::{io, fs};
+use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::collections::HashMap;
 
+use toml;
+
 use super::{PluginName, PluginDescription};
-use super::manifest::debug_plugins;
 
 /// A catalog of all available plugins.
 pub struct PluginCatalog {
     items: HashMap<PluginName, PluginDescription>,
 }
 
+/// Errors that can occur while trying to load a plugin.
+#[derive(Debug)]
+pub enum PluginLoadError {
+    Io(io::Error),
+    /// Malformed manifest
+    Parse(toml::de::Error),
+}
+
 impl <'a>PluginCatalog {
-    /// For use during development: returns the debug plugins
-    pub fn debug() -> Self {
-        PluginCatalog::new(&debug_plugins())
+    /// Loads plugins from the user's search paths
+    pub fn from_paths(paths: Vec<PathBuf>) -> Self {
+        let plugins = paths.iter()
+            .flat_map(|path| {
+                match load_plugins(path) {
+                    Ok(plugins) => plugins,
+                    Err(err) => {
+                        eprintln!("error loading plugins from {:?}, error:\n{:?}",
+                                   path, err);
+                        Vec::new()
+                    }
+                }
+            })
+            .collect::<Vec<_>>();
+        PluginCatalog::new(&plugins)
     }
 
     pub fn new(plugins: &[PluginDescription]) -> Self {
         let mut items = HashMap::with_capacity(plugins.len());
         for plugin in plugins {
             if items.contains_key(&plugin.name) {
-                print_err!("Duplicate plugin name.\n 1: {:?}\n 2: {:?}",
+                eprintln!("Duplicate plugin name.\n 1: {:?}\n 2: {:?}",
                            plugin, items.get(&plugin.name));
                 continue
             }
@@ -63,5 +87,49 @@ impl <'a>PluginCatalog {
         self.iter()
             .filter(|item| predicate(item))
             .collect::<Vec<_>>()
+    }
+}
+
+fn load_plugins(plugin_dir: &Path) -> io::Result<Vec<PluginDescription>> {
+    let mut plugins = Vec::new();
+    for path in plugin_dir.read_dir()? {
+        let path = path?;
+        let path = path.path();
+        if !path.is_dir() { continue }
+        let manif_path = path.join("manifest.toml");
+        if !manif_path.exists() { continue }
+        match load_manifest(&manif_path) {
+            Ok(manif) => plugins.push(manif),
+            Err(err) => eprintln!("Error reading manifest {:?}, error:\n{:?}",
+                                   &manif_path, err),
+        }
+    }
+    Ok(plugins)
+}
+
+fn load_manifest(path: &Path) -> Result<PluginDescription, PluginLoadError> {
+    let mut file = fs::File::open(&path)?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+    let mut manifest: PluginDescription = toml::from_str(&contents)?;
+    // normalize relative paths
+    if manifest.exec_path.starts_with("./") {
+        manifest.exec_path = path.parent()
+            .unwrap()
+            .join(manifest.exec_path)
+            .canonicalize()?;
+    }
+    Ok(manifest)
+}
+
+impl From<io::Error> for PluginLoadError {
+    fn from(err: io::Error) -> PluginLoadError {
+        PluginLoadError::Io(err)
+    }
+}
+
+impl From<toml::de::Error> for PluginLoadError {
+    fn from(err: toml::de::Error) -> PluginLoadError {
+        PluginLoadError::Parse(err)
     }
 }

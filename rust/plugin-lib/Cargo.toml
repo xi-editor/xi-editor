@@ -10,6 +10,22 @@ description = "The library base for implementing xi-editor plugins."
 serde = "1.0"
 serde_json = "1.0"
 serde_derive = "1.0"
+bytecount = "0.3.1"
+rand = "0.4"
+memchr = "2.0"
+
+[dependencies.xi-trace]
+path = "../trace"
+
+
+[dependencies.xi-trace-dump]
+path = "../trace-dump"
 
 [dependencies.xi-rpc]
 path = "../rpc"
+
+[dependencies.xi-core-lib]
+path = "../core-lib"
+
+[dependencies.xi-rope]
+path = "../rope"

@@ -14,35 +14,53 @@
 
 //! The main library for xi-core.
 
+#![cfg_attr(feature = "cargo-clippy", allow(
+    boxed_local,
+    cast_lossless,
+    collapsible_if,
+    let_and_return,
+    map_entry,
+    match_as_ref,
+    match_bool,
+    needless_pass_by_value,
+    new_without_default,
+    new_without_default_derive,
+    or_fun_call,
+    ptr_arg,
+    too_many_arguments,
+    unreadable_literal,
+))]
+
 extern crate serde;
 #[macro_use]
 extern crate serde_json;
 #[macro_use]
 extern crate serde_derive;
+#[macro_use]
+extern crate lazy_static;
 extern crate time;
 extern crate syntect;
+extern crate toml;
+#[cfg(feature = "notify")]
+extern crate notify;
 
-#[cfg(target_os = "fuchsia")]
-extern crate magenta;
-#[cfg(target_os = "fuchsia")]
-extern crate magenta_sys;
-#[cfg(target_os = "fuchsia")]
-extern crate mxruntime;
-#[cfg(target_os = "fuchsia")]
-#[macro_use]
-extern crate fidl;
-#[cfg(target_os = "fuchsia")]
-extern crate apps_ledger_services_public;
+extern crate xi_trace;
+extern crate xi_trace_dump;
 
-#[cfg(target_os = "fuchsia")]
-extern crate sha2;
-
-use std::io::Write;
+#[cfg(feature = "ledger")]
+mod ledger_includes {
+    extern crate fuchsia_zircon;
+    extern crate fuchsia_zircon_sys;
+    extern crate mxruntime;
+    #[macro_use]
+    extern crate fidl;
+    extern crate apps_ledger_services_public;
+    extern crate sha2;
+}
+#[cfg(feature = "ledger")]
+use ledger_includes::*;
 
 use serde_json::Value;
-
-#[macro_use]
-mod macros;
 
 pub mod rpc;
 
@@ -57,7 +75,7 @@ pub mod internal {
     pub mod view;
     pub mod linewrap;
     pub mod plugins;
-    #[cfg(target_os = "fuchsia")]
+    #[cfg(feature = "ledger")]
     pub mod fuchsia;
     pub mod styles;
     pub mod word_boundaries;
@@ -66,7 +84,18 @@ pub mod internal {
     pub mod movement;
     pub mod syntax;
     pub mod layers;
+    pub mod config;
+    #[cfg(feature = "notify")]
+    pub mod watcher;
+    pub mod line_cache_shadow;
+    pub mod width_cache;
 }
+
+pub use plugins::rpc as plugin_rpc;
+pub use plugins::PluginPid;
+pub use tabs::ViewIdentifier;
+pub use syntax::SyntaxDefinition;
+pub use config::{BufferItems as BufferConfig, Table as ConfigTable};
 
 use internal::tabs;
 use internal::editor;
@@ -80,79 +109,67 @@ use internal::selection;
 use internal::movement;
 use internal::syntax;
 use internal::layers;
-#[cfg(target_os = "fuchsia")]
+use internal::config;
+#[cfg(feature = "notify")]
+use internal::watcher;
+use internal::line_cache_shadow;
+use internal::width_cache;
+#[cfg(feature = "ledger")]
 use internal::fuchsia;
 
-use tabs::Documents;
-use rpc::Request;
+use tabs::{Documents, BufferContainerRef};
+use rpc::{CoreNotification, CoreRequest};
 
-#[cfg(target_os = "fuchsia")]
+#[cfg(feature = "ledger")]
 use apps_ledger_services_public::Ledger_Proxy;
 
 extern crate xi_rope;
 extern crate xi_unicode;
 extern crate xi_rpc;
 
-use xi_rpc::{RpcPeer, RpcCtx, Handler};
+use xi_rpc::{RpcPeer, RpcCtx, Handler, RemoteError};
 
-pub type MainPeer<W> = RpcPeer<W>;
+pub type MainPeer = RpcPeer;
 
-pub struct MainState<W: Write> {
-    tabs: Documents<W>,
+pub struct MainState {
+    tabs: Documents,
 }
 
-impl<W: Write + Send + 'static> MainState<W> {
+impl MainState {
     pub fn new() -> Self {
         MainState {
             tabs: Documents::new(),
         }
     }
 
-    #[cfg(target_os = "fuchsia")]
+    /// Returns a copy of the `BufferContainerRef`.
+    ///
+    /// This is exposed for testing purposes only.
+    #[doc(hidden)]
+    pub fn _get_buffers(&self) -> BufferContainerRef {
+        self.tabs._get_buffers()
+    }
+
+    #[cfg(feature = "ledger")]
     pub fn set_ledger(&mut self, ledger: Ledger_Proxy, session_id: (u64, u32)) {
         self.tabs.setup_ledger(ledger, session_id);
     }
 }
 
-impl<W: Write + Send + 'static> Handler<W> for MainState<W> {
-    fn handle_notification(&mut self, ctx: RpcCtx<W>, method: &str, params: &Value) {
-        match Request::from_json(method, params) {
-            Ok(req) => {
-                if let Some(_) = self.handle_req(req, ctx.get_peer()) {
-                    print_err!("Unexpected return value for notification {}", method)
-                }
-            }
-            Err(e) => print_err!("Error {} decoding RPC request {}", e, method)
-        }
+impl Handler for MainState {
+    type Notification = CoreNotification;
+    type Request = CoreRequest;
+
+    fn handle_notification(&mut self, ctx: &RpcCtx, rpc: Self::Notification) {
+        self.tabs.handle_notification(rpc, ctx)
     }
 
-    fn handle_request(&mut self, mut ctx: RpcCtx<W>, method: &str, params: &Value) ->
-        Result<Value, Value> {
-        match Request::from_json(method, params) {
-            Ok(req) => {
-                let result = self.handle_req(req, ctx.get_peer());
-                // Schedule the idle handler to send the render the cursor for new
-                // empty buffers. TODO: move this into the new_tab logic.
-                ctx.schedule_idle(0);
-                result.ok_or_else(|| Value::String("return value missing".to_string()))
-            }
-            Err(e) => {
-                print_err!("Error {} decoding RPC request {}", e, method);
-                Err(Value::String("error decoding request".to_string()))
-            }
-        }
+    fn handle_request(&mut self, ctx: &RpcCtx, rpc: Self::Request)
+                      -> Result<Value, RemoteError> {
+        self.tabs.handle_request(rpc, ctx)
     }
 
-    fn idle(&mut self, _ctx: RpcCtx<W>, _token: usize) {
-        self.tabs.handle_idle();
-    }
-}
-
-impl<W: Write + Send + 'static> MainState<W> {
-    fn handle_req(&mut self, request: Request, rpc_peer: &MainPeer<W>) ->
-        Option<Value> {
-        match request {
-            Request::CoreCommand { core_command } => self.tabs.do_rpc(core_command, rpc_peer)
-        }
+    fn idle(&mut self, ctx: &RpcCtx, token: usize) {
+        self.tabs.handle_idle(ctx, token);
     }
 }

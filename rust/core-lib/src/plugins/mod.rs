@@ -14,7 +14,7 @@
 
 //! Plugins and related functionality.
 
-pub mod rpc_types;
+pub mod rpc;
 mod manager;
 mod manifest;
 mod catalog;
@@ -22,36 +22,36 @@ mod catalog;
 use std::sync::{Arc, Mutex, mpsc};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
-use std::process::{ChildStdin, Child, Command, Stdio};
-use std::io::{self, BufReader, Write};
+use std::process::{Child, Command as ProcCommand, Stdio};
+use std::io::{self, BufReader};
 
 use serde_json::{self, Value};
 
-use xi_rpc::{self, RpcPeer, RpcCtx, RpcLoop, Handler};
+use xi_rpc::{self, RpcPeer, RpcLoop, Callback as RpcCallback};
 use tabs::ViewIdentifier;
 
 pub use self::manager::{PluginManagerRef, WeakPluginManagerRef};
+pub use self::manifest::{PluginDescription, Command, PlaceholderRpc};
 
-use self::rpc_types::{PluginUpdate, PluginCommand, PluginBufferInfo};
-use self::manifest::PluginDescription;
+use self::rpc::{PluginUpdate, PluginBufferInfo};
+
 use self::manager::PluginName;
 use self::catalog::PluginCatalog;
 
 
-pub type PluginPeer = RpcPeer<ChildStdin>;
+pub type PluginPeer = RpcPeer;
 /// A process-unique identifier for a running plugin.
 ///
 /// Note: two instances of the same executable will have different identifiers.
 /// Note: this identifier is distinct from the OS's process id.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Serialize, Deserialize, Default, Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PluginPid(usize);
 
 /// A running plugin.
-pub struct Plugin<W: Write> {
+pub struct Plugin {
     peer: PluginPeer,
     /// The plugin's process
     process: Child,
-    manager: WeakPluginManagerRef<W>,
     description: PluginDescription,
     identifier: PluginPid,
 }
@@ -61,57 +61,39 @@ pub struct Plugin<W: Write> {
 /// Note: A plugin is always owned by and used through a `PluginRef`.
 ///
 /// The second field is used to flag dead plugins for cleanup.
-pub struct PluginRef<W: Write>(Arc<Mutex<Plugin<W>>>, Arc<AtomicBool>);
+pub struct PluginRef(Arc<Mutex<Plugin>>, Arc<AtomicBool>);
 
-impl<W: Write> Clone for PluginRef<W> {
+impl Clone for PluginRef {
     fn clone(&self) -> Self {
         PluginRef(self.0.clone(), self.1.clone())
     }
 }
 
-impl<W: Write + Send + 'static> Handler<ChildStdin> for PluginRef<W> {
-    fn handle_notification(&mut self, _ctx: RpcCtx<ChildStdin>, method: &str, params: &Value) {
-        if let Some(_) = self.rpc_handler(method, params) {
-            print_err!("Unexpected return value for notification {}", method)
-        }
-    }
-
-    fn handle_request(&mut self, _ctx: RpcCtx<ChildStdin>, method: &str, params: &Value) ->
-        Result<Value, Value> {
-        let result = self.rpc_handler(method, params);
-        result.ok_or_else(|| Value::String("missing return value".to_string()))
-    }
-}
-
-impl<W: Write + Send + 'static> PluginRef<W> {
-    fn rpc_handler(&self, method: &str, params: &Value) -> Option<Value> {
-        let plugin_manager = {
-            self.0.lock().unwrap().manager.upgrade()
-        };
-
-        if let Some(plugin_manager) = plugin_manager {
-            let cmd = serde_json::from_value::<PluginCommand>(params.to_owned());
-            if cmd.is_err() {
-                print_err!("failed to parse plugin rpc {}, params {:?}",
-                           method, params);
-                return None
-            }
-            let pid = self.get_identifier();
-            plugin_manager.lock().handle_plugin_cmd(cmd.unwrap(), pid)
-        } else {
-            None
-        }
-    }
-
+impl PluginRef {
     /// Send an arbitrary RPC notification to the plugin.
-    pub fn notify(&self, method: &str, params: &Value) {
+    pub fn rpc_notification(&self, method: &str, params: &Value) {
         self.0.lock().unwrap().peer.send_rpc_notification(method, params);
+    }
+
+    /// Send an arbitrary RPC request to the plugin.
+    pub fn rpc_request_async(&self, method: &str, params: &Value,
+                                f: Box<RpcCallback>) {
+        self.0.lock().unwrap().peer.send_rpc_request_async(method, params, f);
+    }
+
+    /// NOTE: Only added temporarily for tracing infrastructure to simplify
+    /// the initial implementation & perf doesn't matter.
+    /// Otherwise should communicate asynchronously with plugins.
+    pub fn request_traces(&self) -> Result<Value, xi_rpc::Error> {
+        self.0.lock().unwrap().peer.send_rpc_request("collect_trace", &json!({}))
     }
 
     /// Initialize the plugin.
     pub fn initialize(&self, init: &[PluginBufferInfo]) {
+        let pid = self.get_identifier();
         self.0.lock().unwrap().peer
             .send_rpc_notification("initialize", &json!({
+                "plugin_id": pid,
                 "buffer_info": init,
             }));
     }
@@ -121,9 +103,10 @@ impl<W: Write + Send + 'static> PluginRef<W> {
             where F: FnOnce(Result<Value, xi_rpc::Error>) + Send + 'static {
         let params = serde_json::to_value(update).expect("PluginUpdate invalid");
         match self.0.lock() {
-            Ok(plugin) => plugin.peer.send_rpc_request_async("update", &params, callback),
+            Ok(plugin) => plugin.peer.send_rpc_request_async("update", &params,
+                                                             Box::new(callback)),
             Err(err) => {
-                print_err!("plugin update failed {:?}", err);
+                eprintln!("plugin update failed {:?}", err);
                 callback(Err(xi_rpc::Error::PeerDisconnect));
             }
         }
@@ -141,11 +124,11 @@ impl<W: Write + Send + 'static> PluginRef<W> {
                 if inner.description.name == "syntect" {
                     let _ = inner.process.kill();
                 }
-                print_err!("waiting on process {}", inner.process.id());
+                eprintln!("waiting on process {}", inner.process.id());
                 let exit_status = inner.process.wait();
-                print_err!("process ended {:?}", exit_status);
+                eprintln!("process ended {:?}", exit_status);
             }
-            Err(_) => print_err!("plugin mutex poisoned"),
+            Err(_) => eprintln!("plugin mutex poisoned"),
         }
     }
 
@@ -178,41 +161,35 @@ impl<W: Write + Send + 'static> PluginRef<W> {
 /// `Editor` a tx end of an `mpsc::channel`. As plugin updates are generated,
 /// they are sent over this channel to a receiver running in another thread,
 /// which forwards them to interested plugins.
-pub fn start_update_thread<W: Write + Send + 'static>(
+pub fn start_update_thread(
     rx: mpsc::Receiver<(ViewIdentifier, PluginUpdate, usize)>,
-    manager_ref: &PluginManagerRef<W>)
+    manager_ref: &PluginManagerRef)
 {
     let manager_ref = manager_ref.clone();
     thread::spawn(move ||{
-        loop {
-            match rx.recv() {
-                Ok((view_id, update, undo_group)) => {
-                    if let Some(err) = manager_ref.update_plugins(
-                        &view_id, update, undo_group).err() {
-                        print_err!("error updating plugins {:?}", err);
-                    }
-                }
-                Err(_) => break,
+        while let Ok((view_id, update, undo_group)) = rx.recv() {
+            if let Some(err) = manager_ref.update_plugins(
+                view_id, update, undo_group).err() {
+                eprintln!("error updating plugins {:?}", err);
             }
         }
     });
 }
 
 /// Launches a plugin, associating it with a given view.
-pub fn start_plugin_process<W, C>(manager_ref: &PluginManagerRef<W>,
+pub fn start_plugin_process<C>(manager_ref: &PluginManagerRef,
                           plugin_desc: &PluginDescription,
                           identifier: PluginPid,
                           completion: C)
-    where W: Write + Send + 'static,
-          C: FnOnce(Result<PluginRef<W>, io::Error>) + Send + 'static
+    where C: FnOnce(Result<PluginRef, io::Error>) + Send + 'static
 {
 
-    let manager_ref = manager_ref.to_weak();
+    let mut manager_ref = manager_ref.clone();
     let plugin_desc = plugin_desc.to_owned();
 
     thread::spawn(move || {
-        print_err!("starting plugin at path {:?}", &plugin_desc.exec_path);
-        let child = Command::new(&plugin_desc.exec_path)
+        eprintln!("starting plugin at path {:?}", &plugin_desc.exec_path);
+        let child = ProcCommand::new(&plugin_desc.exec_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn();
@@ -222,20 +199,21 @@ pub fn start_plugin_process<W, C>(manager_ref: &PluginManagerRef<W>,
                 let child_stdin = child.stdin.take().unwrap();
                 let child_stdout = child.stdout.take().unwrap();
                 let mut looper = RpcLoop::new(child_stdin);
-                let peer = looper.get_peer();
+                let peer: RpcPeer = Box::new(looper.get_raw_peer());
                 peer.send_rpc_notification("ping", &Value::Array(Vec::new()));
                 let plugin = Plugin {
-                    peer: peer,
+                    peer,
                     process: child,
-                    manager: manager_ref,
                     description: plugin_desc,
-                    identifier: identifier,
+                    identifier,
                 };
-                let mut plugin_ref = PluginRef(
+                let plugin_ref = PluginRef(
                     Arc::new(Mutex::new(plugin)),
                     Arc::new(AtomicBool::new(false)));
                 completion(Ok(plugin_ref.clone()));
-                looper.mainloop(|| BufReader::new(child_stdout), &mut plugin_ref);
+                //TODO: we could be logging plugin exit results
+                let _ = looper.mainloop(|| BufReader::new(child_stdout),
+                                        &mut manager_ref);
             }
             Err(err) => completion(Err(err)),
         }

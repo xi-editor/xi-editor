@@ -11,14 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-extern crate serde;
-extern crate serde_json;
-
 use std::io;
-
-#[macro_use]
-mod macros;
 
 extern crate xi_core_lib;
 extern crate xi_rpc;
@@ -33,5 +26,8 @@ fn main() {
     let stdout = io::stdout();
     let mut rpc_looper = RpcLoop::new(stdout);
 
-    rpc_looper.mainloop(|| stdin.lock(), &mut state);
+    match rpc_looper.mainloop(|| stdin.lock(), &mut state) {
+        Ok(_) => (),
+        Err(err) => eprintln!("xi-core exited with error:\n{:?}", err),
+    }
 }

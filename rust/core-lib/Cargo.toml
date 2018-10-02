@@ -11,19 +11,36 @@ serde = "1.0"
 serde_json = "1.0"
 serde_derive = "1.0"
 time = "0.1"
+toml = "0.4"
+lazy_static = "1.0"
+notify = { optional = true, version = "4.0" }
 
+xi-trace = { path = "../trace", version = "0.1.0" }
+xi-trace-dump = { path = "../trace-dump", version = "0.1.0" }
 xi-rope = { path = "../rope", version = "0.2" }
 xi-unicode = { path = "../unicode", version = "0.1.0" }
 xi-rpc = { path = "../rpc", version = "0.2.0" }
 
 [dependencies.syntect]
-version = "1.7"
+version = "2.0"
 default-features = false
 features = ["assets","dump-load-rs"]
 
 [target."cfg(target_os = \"fuchsia\")".dependencies]
-sha2 = "0.5"
+sha2 = "0.7"
+# Note: these can be available if needed, but the idea is that the
+# platform-specific code moves entirely to the binary wrapper that
+# includes xi-core-lib.
+#fuchsia-zircon = "0.3"
+#fuchsia-zircon-sys = "0.3"
+#mxruntime = "0.1.0"
+#fidl = "0.1.0"
+
+[dev-dependencies]
+tempdir = "^0.3.4"
 
 [features]
 avx-accel = ["xi-rope/avx-accel"]
 simd-accel = ["xi-rope/simd-accel"]
+ledger = []
+default = ["notify"]
