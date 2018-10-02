@@ -1274,4 +1274,35 @@ mod tests {
             rope_with_emoji.convert_metrics::<Utf16CodeUnitsMetric, BaseMetric>(utf16_units);
         assert_eq!(utf8_offset, 19);
     }
+
+    #[test]
+    fn slice_to_cow_small() {
+        let short_text = "hi, i'm a small piece of text.";
+
+        let rope = Rope::from(short_text);
+
+        let cow = rope.slice_to_cow(..);
+
+        assert!(short_text.len() <= 1024);
+        assert_eq!(
+            cow,
+            Cow::Borrowed(short_text) as Cow<str>
+        );
+    }
+
+    #[test]
+    fn slice_to_cow_long() {
+        // 32 char long string, repeat it 33 times so it is longer than 1024 bytes
+        let long_text = "1234567812345678123456781234567812345678123456781234567812345678".repeat(33);
+
+        let rope = Rope::from(&long_text);
+
+        let cow = rope.slice_to_cow(..);
+
+        assert!(long_text.len() > 1024);
+        assert_eq!(
+            cow,
+            Cow::Owned(long_text) as Cow<str>
+        );
+    }
 }
