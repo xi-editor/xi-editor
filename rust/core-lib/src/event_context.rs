@@ -839,4 +839,136 @@ mod tests {
         that has three\n\
         |lines." );
     }
+
+    #[test]
+    fn number_change_tests() {
+        use rpc::GestureType::*;
+        let harness = ContextHarness::new("");
+        let mut ctx = harness.make_context();
+        // Single indent and outdent test
+        ctx.do_edit(EditNotification::Insert { chars: "1234".into() });
+        ctx.do_edit(EditNotification::IncreaseNumber);
+        assert_eq!(harness.debug_render(),"1235|");
+
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 2, ty: PointSelect });
+        ctx.do_edit(EditNotification::IncreaseNumber);
+        assert_eq!(harness.debug_render(),"1236|");
+
+        ctx.do_edit(EditNotification::DeleteToBeginningOfLine);
+        ctx.do_edit(EditNotification::Insert { chars: "-42".into() });
+        ctx.do_edit(EditNotification::IncreaseNumber);
+        assert_eq!(harness.debug_render(),"-41|");
+
+        // Cursor is on the 3
+        ctx.do_edit(EditNotification::MoveToEndOfDocument);
+        ctx.do_edit(EditNotification::DeleteToBeginningOfLine);
+        ctx.do_edit(EditNotification::Insert { chars: "this is a 336 text example".into() });
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 11, ty: PointSelect });
+        ctx.do_edit(EditNotification::DecreaseNumber);
+        assert_eq!(harness.debug_render(),"this is a 335| text example");
+
+        // Cursor is on of the 3
+        ctx.do_edit(EditNotification::MoveToEndOfDocument);
+        ctx.do_edit(EditNotification::DeleteToBeginningOfLine);
+        ctx.do_edit(EditNotification::Insert { chars: "this is a -336 text example".into() });
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 11, ty: PointSelect });
+        ctx.do_edit(EditNotification::DecreaseNumber);
+        assert_eq!(harness.debug_render(),"this is a -337| text example");
+
+        // Cursor is on the 't' of text
+        ctx.do_edit(EditNotification::MoveToEndOfDocument);
+        ctx.do_edit(EditNotification::DeleteToBeginningOfLine);
+        ctx.do_edit(EditNotification::Insert { chars: "this is a -336 text example".into() });
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 15, ty: PointSelect });
+        ctx.do_edit(EditNotification::DecreaseNumber);
+        assert_eq!(harness.debug_render(),"this is a -336 |text example");
+
+        // test multiple iterations
+        ctx.do_edit(EditNotification::MoveToEndOfDocument);
+        ctx.do_edit(EditNotification::DeleteToBeginningOfLine);
+        ctx.do_edit(EditNotification::Insert { chars: "this is a 336 text example".into() });
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 11, ty: PointSelect });
+        ctx.do_edit(EditNotification::IncreaseNumber);
+        ctx.do_edit(EditNotification::IncreaseNumber);
+        ctx.do_edit(EditNotification::IncreaseNumber);
+        assert_eq!(harness.debug_render(),"this is a 339| text example");
+
+        // test changing number of chars
+        ctx.do_edit(EditNotification::MoveToEndOfDocument);
+        ctx.do_edit(EditNotification::DeleteToBeginningOfLine);
+        ctx.do_edit(EditNotification::Insert { chars: "this is a 10 text example".into() });
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 11, ty: PointSelect });
+        ctx.do_edit(EditNotification::DecreaseNumber);
+        assert_eq!(harness.debug_render(),"this is a 9| text example");
+
+        // test going negative
+        ctx.do_edit(EditNotification::MoveToEndOfDocument);
+        ctx.do_edit(EditNotification::DeleteToBeginningOfLine);
+        ctx.do_edit(EditNotification::Insert { chars: "this is a 0 text example".into() });
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 11, ty: PointSelect });
+        ctx.do_edit(EditNotification::DecreaseNumber);
+        assert_eq!(harness.debug_render(),"this is a -1| text example");
+
+        // test going positive
+        ctx.do_edit(EditNotification::MoveToEndOfDocument);
+        ctx.do_edit(EditNotification::DeleteToBeginningOfLine);
+        ctx.do_edit(EditNotification::Insert { chars: "this is a -1 text example".into() });
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 12, ty: PointSelect });
+        ctx.do_edit(EditNotification::IncreaseNumber);
+        assert_eq!(harness.debug_render(),"this is a 0| text example");
+
+        // as long as the beginning of a region starts on a number,
+        // conversion will happen
+        ctx.do_edit(EditNotification::MoveToEndOfDocument);
+        ctx.do_edit(EditNotification::DeleteToBeginningOfLine);
+        ctx.do_edit(EditNotification::Insert { chars: "this is a 10 text example".into() });
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 11, ty: PointSelect });
+        ctx.do_edit(EditNotification::MoveToEndOfDocumentAndModifySelection);
+        ctx.do_edit(EditNotification::DecreaseNumber);
+        assert_eq!(harness.debug_render(),"this is a 9[ text example|]");
+
+        // If a number just happens to be in a region, nothing will happen
+        ctx.do_edit(EditNotification::MoveToEndOfDocument);
+        ctx.do_edit(EditNotification::DeleteToBeginningOfLine);
+        ctx.do_edit(EditNotification::Insert { chars: "this is a 10 text example".into() });
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 5, ty: PointSelect });
+        ctx.do_edit(EditNotification::MoveToEndOfDocumentAndModifySelection);
+        ctx.do_edit(EditNotification::DecreaseNumber);
+        assert_eq!(harness.debug_render(),"this [is a 10 text example|]");
+
+        // if it ends on a region, nothing will happen
+        ctx.do_edit(EditNotification::MoveToEndOfDocument);
+        ctx.do_edit(EditNotification::DeleteToBeginningOfLine);
+        ctx.do_edit(EditNotification::Insert { chars: "this is a 10".into() });
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 0, ty: PointSelect });
+        ctx.do_edit(EditNotification::MoveToEndOfDocumentAndModifySelection);
+        ctx.do_edit(EditNotification::DecreaseNumber);
+        assert_eq!(harness.debug_render(),"[this is a 10|]");
+
+        // if only a part of a number is in a region, the whole number will be changed
+        ctx.do_edit(EditNotification::MoveToEndOfDocument);
+        ctx.do_edit(EditNotification::DeleteToBeginningOfLine);
+        ctx.do_edit(EditNotification::Insert { chars: "this is a 1000 text example".into() });
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 11, ty: PointSelect });
+        ctx.do_edit(EditNotification::MoveRightAndModifySelection);
+        ctx.do_edit(EditNotification::DecreaseNumber);
+        assert_eq!(harness.debug_render(),"this is a 999| text example");
+
+        // Test multiple selections
+        ctx.do_edit(EditNotification::MoveToEndOfDocument);
+        ctx.do_edit(EditNotification::DeleteToBeginningOfLine);
+        let multi_text = "\
+        example 42 number\n\
+        example 90 number\n\
+        Done.";
+        ctx.do_edit(EditNotification::Insert { chars: multi_text.into() });
+        ctx.do_edit(EditNotification::Gesture { line: 1, col: 9, ty: PointSelect });
+        ctx.do_edit(EditNotification::AddSelectionAbove);
+        ctx.do_edit(EditNotification::IncreaseNumber);
+        assert_eq!(harness.debug_render(),"\
+        example 43| number\n\
+        example 91| number\n\
+        Done.");
+
+    }
 }

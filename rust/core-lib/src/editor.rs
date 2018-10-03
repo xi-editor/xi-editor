@@ -685,6 +685,43 @@ impl Editor {
         }
     }
 
+    fn change_number<F: Fn(i32) -> i32>(&mut self, view: &View,
+                                        transform_function: F) {
+        let mut builder = delta::Builder::new(self.text.len());
+        for region in view.sel_regions() {
+            let line_nb = view.line_of_offset(&self.text, region.min());
+            let line_start = view.offset_of_line(&self.text, line_nb);
+            let line_end = view.offset_of_line(&self.text, line_nb + 1);
+            let line = self.text.slice_to_string(&SelRegion::new(line_start, line_end));
+            let (mut begin,  mut end) = (region.min() - line_start, line.len());
+
+            let walker = |enumerated: Vec<(usize, char)>| -> Option<usize> {
+                for (i, c) in enumerated {
+                    if !c.is_digit(10) && c != '-' {
+                        return Some(i);
+                    }
+                }
+                None
+            };
+
+            let begin = walker(line.chars().rev().skip(end - begin).enumerate().collect())
+                .map(|i| begin - i).unwrap_or(0);
+
+            let end = walker(line.chars().skip(begin).enumerate().collect())
+                .map(|i| begin + i).unwrap_or(line.len());
+
+            if let Some(number) = &line[begin..end].parse::<i32>().ok() {
+                let interval = Interval::new_closed_open(line_start + begin, line_start + end);
+                builder.replace(interval, Rope::from(format!("{}", transform_function(*number))));
+            }
+        }
+
+        if !builder.is_empty() {
+            self.this_edit_type = EditType::Other;
+            self.add_delta(builder.build());
+        }
+    }
+
     fn duplicate_line(&mut self, view: &View, config: &BufferItems) {
         let mut builder = delta::Builder::new(self.text.len());
         // get affected lines or regions
@@ -745,6 +782,8 @@ impl Editor {
             ReplaceNext => self.replace(view, false),
             ReplaceAll => self.replace(view, true),
             DuplicateLine => self.duplicate_line(view, config),
+            IncreaseNumber => self.change_number(view, |s| s + 1),
+            DecreaseNumber => self.change_number(view, |s| s - 1),
         }
     }
 
