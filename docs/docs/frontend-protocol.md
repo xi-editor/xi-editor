@@ -534,6 +534,11 @@ instance.
 
 Notifies the client of the available themes.
 
+#### available_languages
+
+`available_languages {"languages": ["Rust"]}`
+
+Notifies the client of the available languages.
 
 #### config_changed
 
