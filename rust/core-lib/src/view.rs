@@ -116,7 +116,7 @@ pub struct Replace {
 }
 
 /// A size, in pixel units (not display pixels).
-#[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Default, PartialEq, Serialize, Deserialize, Clone)]
 pub struct Size {
     pub width: f64,
     pub height: f64,
