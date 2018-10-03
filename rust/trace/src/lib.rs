@@ -144,7 +144,7 @@ impl<'de> serde::Deserialize<'de> for CategoriesT {
             fn visit_str<E>(self, v: &str) -> Result<CategoriesT, E>
                 where E: serde::de::Error
             {
-                let categories = v.split(",").map(|s| s.to_string()).collect();
+                let categories = v.split(',').map(|s| s.to_string()).collect();
                 Ok(CategoriesT::DynamicArray(categories))
             }
         }
