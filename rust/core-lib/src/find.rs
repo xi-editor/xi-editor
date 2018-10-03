@@ -160,13 +160,13 @@ impl Find {
     }
 
     /// Set search parameters and executes the search.
-    pub fn do_find(&mut self, text: &Rope, search_string: String, case_sensitive: bool,
+    pub fn do_find(&mut self, text: &Rope, search_string: &str, case_sensitive: bool,
                    is_regex: bool, whole_words: bool) {
         if search_string.len() == 0 {
             self.unset();
         }
 
-        self.set_find(&search_string, case_sensitive, is_regex, whole_words);
+        self.set_find(search_string, case_sensitive, is_regex, whole_words);
         self.update_find(text, 0, text.len(), false);
     }
 

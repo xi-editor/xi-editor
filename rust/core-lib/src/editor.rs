@@ -37,6 +37,7 @@ use selection::{Selection, SelRegion};
 use styles::ThemeStyleMap;
 use view::{View, Replace};
 use rpc::SelectionModifier;
+use word_boundaries::WordCursor;
 
 #[cfg(not(feature = "ledger"))]
 pub struct SyncStore;
@@ -398,7 +399,7 @@ impl Editor {
         if save {
             let saved = self.extract_sel_regions(&deletions)
                 .unwrap_or_default();
-            *kill_ring = saved.into();
+            *kill_ring = Rope::from(saved);
         }
         self.delete_sel_regions(&deletions);
     }
@@ -420,16 +421,16 @@ impl Editor {
 
     /// Extracts non-caret selection regions into a string,
     /// joining multiple regions with newlines.
-    fn extract_sel_regions(&self, sel_regions: &[SelRegion]) -> Option<String> {
+    fn extract_sel_regions(&self, sel_regions: &[SelRegion]) -> Option<Cow<str>> {
         let mut saved = None;
         for region in sel_regions {
             if !region.is_caret() {
-                let val = self.text.slice_to_string(region);
+                let val = self.text.slice_to_cow(region);
                 match saved {
                     None => saved = Some(val),
                     Some(ref mut s) => {
-                        s.push('\n');
-                        s.push_str(&val);
+                        s.to_mut().push('\n');
+                        s.to_mut().push_str(&val);
                     }
                 }
             }
@@ -519,7 +520,7 @@ impl Editor {
             let tab_offset = view.line_col_to_offset(&self.text, line,
                                                      tab_text.len());
             let interval = Interval::new_closed_open(offset, tab_offset);
-            let leading_slice = self.text.slice_to_string(interval.start()..interval.end());
+            let leading_slice = self.text.slice_to_cow(interval.start()..interval.end());
             if leading_slice == tab_text {
                 builder.delete(interval);
             } else if let Some(first_char_col) = leading_slice.find(|c: char| !c.is_whitespace()) {
@@ -571,7 +572,7 @@ impl Editor {
 
     pub(crate) fn do_copy(&self, view: &View) -> Value {
         if let Some(val) = self.extract_sel_regions(view.sel_regions()) {
-            Value::String(val)
+            Value::String(val.into_owned())
         } else {
             Value::Null
         }
@@ -622,8 +623,9 @@ impl Editor {
                 if let Some(end) = self.text.next_grapheme_offset(middle) {
                     if start >= last {
                         let interval = Interval::new_closed_open(start, end);
-                        let swapped = self.text.slice_to_string(middle..end) +
-                                      &self.text.slice_to_string(start..middle);
+                        let before =  self.text.slice_to_cow(start..middle);
+                        let after = self.text.slice_to_cow(middle..end);
+                        let swapped: String = [after, before].concat();
                         builder.replace(interval, Rope::from(swapped));
                         last = end;
                     }
@@ -675,7 +677,7 @@ impl Editor {
         let mut builder = delta::Builder::new(self.text.len());
 
         for region in view.sel_regions() {
-            let selected_text = self.text.slice_to_string(region);
+            let selected_text = self.text.slice_to_cow(region);
             let interval = Interval::new_closed_open(region.min(), region.max());
             builder.replace(interval, Rope::from(transform_function(&selected_text)));
         }
@@ -684,7 +686,7 @@ impl Editor {
             self.add_delta(builder.build());
         }
     }
-
+  
     /// Changes the number(s) under the cursor(s) with the `transform_function`.
     /// If there is a number next to or on the beginning of the region, then
     /// this number will be replaced with the result of `transform_function` and
@@ -734,6 +736,46 @@ impl Editor {
             self.this_edit_type = EditType::Other;
             self.add_delta(builder.build());
         }
+    }
+
+    // capitalization behaviour is similar to behaviour in XCode
+    fn capitalize_text(&mut self, view: &mut View) {
+        let mut builder = delta::Builder::new(self.text.len());
+        let mut final_selection = Selection::new();
+
+        for &region in view.sel_regions() {
+            final_selection.add_region(SelRegion::new(region.max(), region.max()));
+            let mut word_cursor = WordCursor::new(&self.text, region.min());
+
+            loop {
+                // capitalize each word in the current selection
+                let (start, end) = word_cursor.select_word();
+
+                if start < end {
+                    let interval = Interval::new_closed_open(start, end);
+                    let word = self.text.slice_to_cow(start..end);
+
+                    // first letter is uppercase, remaining letters are lowercase
+                    let (first_char, rest) = word.split_at(1);
+                    let capitalized_text = [first_char.to_uppercase(), rest.to_lowercase()].concat();
+                    builder.replace(interval, Rope::from(capitalized_text));
+                }
+
+                if word_cursor.next_boundary().is_none() || end > region.max() {
+                    break;
+                }
+            }
+        }
+
+        if !builder.is_empty() {
+            self.this_edit_type = EditType::Other;
+            self.add_delta(builder.build());
+        }
+
+        // at the end of the transformation carets are located at the end of the words that were
+        // transformed last in the selections
+        view.collapse_selections(&self.text);
+        view.set_selection(&self.text, final_selection);
     }
 
     fn duplicate_line(&mut self, view: &View, config: &BufferItems) {
@@ -786,6 +828,7 @@ impl Editor {
             Redo => self.do_redo(),
             Uppercase => self.transform_text(view, |s| s.to_uppercase()),
             Lowercase => self.transform_text(view, |s| s.to_lowercase()),
+            Capitalize => self.capitalize_text(view),
             Indent => self.modify_indent(view, config, IndentDirection::In),
             Outdent => self.modify_indent(view, config, IndentDirection::Out),
             InsertNewline => self.insert_newline(view, config),
@@ -870,7 +913,7 @@ impl Editor {
             end_off = text.prev_codepoint_offset(end_off + 1).unwrap();
         }
 
-        let chunk = text.slice_to_string(offset..end_off);
+        let chunk = text.slice_to_cow(offset..end_off).into_owned();
         let first_line = text.line_of_offset(offset);
         let first_line_offset = offset - text.offset_of_line(first_line);
 

@@ -433,7 +433,7 @@ mod tests {
             if offset > self.0.len() {
                 Err(Error::Other("offset too big".into()))
             } else {
-                let chunk = self.0.slice_to_string(offset..end_off);
+                let chunk = self.0.slice_to_cow(offset..end_off).into_owned();
                 Ok(GetDataResponse { chunk, offset, first_line, first_line_offset })
             }
         }

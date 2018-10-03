@@ -578,7 +578,7 @@ impl View {
             pos
         }).unwrap_or(text.len());
 
-        let l_str = text.slice_to_string(start_pos..pos);
+        let l_str = text.slice_to_cow(start_pos..pos);
         let mut cursors = Vec::new();
         let mut selections = Vec::new();
         for region in self.selection.regions_in_range(start_pos, pos) {
@@ -959,13 +959,13 @@ impl View {
         let search_query = match self.selection.last() {
             Some(region) => {
                 if !region.is_caret() {
-                    text.slice_to_string(region)
+                    text.slice_to_cow(region)
                 } else {
                     let (start, end) = {
                         let mut word_cursor = WordCursor::new(text, region.max());
                         word_cursor.select_word()
                     };
-                    text.slice_to_string(start..end)
+                    text.slice_to_cow(start..end)
                 }
             },
             _ => return
@@ -981,7 +981,7 @@ impl View {
             self.find.push(Find::new());
         }
 
-        self.find.first_mut().unwrap().do_find(text, search_query, case_sensitive, false, true);
+        self.find.first_mut().unwrap().do_find(text, &search_query, case_sensitive, false, true);
     }
 
     pub fn do_find(&mut self, text: &Rope, chars: String, case_sensitive: bool, is_regex: bool,
@@ -996,7 +996,7 @@ impl View {
             self.find.push(Find::new());
         }
 
-        self.find.first_mut().unwrap().do_find(text, chars, case_sensitive, is_regex, whole_words);
+        self.find.first_mut().unwrap().do_find(text, &chars, case_sensitive, is_regex, whole_words);
     }
 
     /// Selects the next find match.
@@ -1072,20 +1072,20 @@ impl View {
         let replacement = match self.selection.last() {
             Some(region) => {
                 if !region.is_caret() {
-                    text.slice_to_string(region)
+                    text.slice_to_cow(region)
                 } else {
                     let (start, end) = {
                         let mut word_cursor = WordCursor::new(text, region.max());
                         word_cursor.select_word()
                     };
-                    text.slice_to_string(start..end)
+                    text.slice_to_cow(start..end)
                 }
             },
             _ => return
         };
 
         self.set_dirty(text);
-        self.do_set_replace(replacement, false);
+        self.do_set_replace(replacement.into_owned(), false);
     }
 
     /// Get the line range of a selected region.
