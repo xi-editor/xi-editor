@@ -21,10 +21,8 @@ use serde_json::Value;
 use client::Client;
 use edit_types::ViewEvent;
 use find::Find;
-use find::{Find, FindStatus};
 use internal::find::FindStatus;
 use line_cache_shadow::{self, LineCacheShadow, RenderPlan, RenderTactic};
-use linewrap;
 use linewrap;
 use movement::{region_movement, selection_movement, Movement};
 use rpc::{GestureType, MouseAction, SelectionModifier};
@@ -608,7 +606,7 @@ impl View {
             })
             .unwrap_or(text.len());
 
-        let l_str = text.slice_to_cow(start_pos..pos);
+        let l_str = text.slice_to_string(start_pos..pos);
         let mut cursors = Vec::new();
         let mut selections = Vec::new();
         for region in self.selection.regions_in_range(start_pos, pos) {

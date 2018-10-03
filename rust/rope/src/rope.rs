@@ -637,7 +637,9 @@ impl Rope {
         leaf.as_bytes()[pos]
     }
 
-    pub fn slice_to_cow<T>(&self, range: T) -> Cow<str>
+    // TODO: this should be a Cow
+    // TODO: a case can be made to hang this on Cursor instead
+    pub fn slice_to_string<T>(&self, range: T) -> String
     where
         T: RangeBounds<usize>,
     {

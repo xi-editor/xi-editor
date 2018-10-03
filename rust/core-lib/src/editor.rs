@@ -37,7 +37,6 @@ use rpc::SelectionModifier;
 use selection::{SelRegion, Selection};
 use styles::ThemeStyleMap;
 use view::{Replace, View};
-use word_boundaries::WordCursor;
 
 #[cfg(not(feature = "ledger"))]
 pub struct SyncStore;
@@ -388,7 +387,7 @@ impl Editor {
         }
         if save {
             let saved = self.extract_sel_regions(&deletions).unwrap_or_default();
-            *kill_ring = Rope::from(saved);
+            *kill_ring = saved.into();
         }
         self.delete_sel_regions(&deletions);
     }
@@ -605,9 +604,8 @@ impl Editor {
                 if let Some(end) = self.text.next_grapheme_offset(middle) {
                     if start >= last {
                         let interval = Interval::new_closed_open(start, end);
-                        let before = self.text.slice_to_cow(start..middle);
-                        let after = self.text.slice_to_cow(middle..end);
-                        let swapped: String = [after, before].concat();
+                        let swapped =
+                            self.text.slice_to_string(middle..end) + &self.text.slice_to_string(start..middle);
                         builder.replace(interval, Rope::from(swapped));
                         last = end;
                     }
