@@ -606,7 +606,7 @@ impl View {
             })
             .unwrap_or(text.len());
 
-        let l_str = text.slice_to_cow(start_pos..pos);
+        let l_str = text.slice_to_string(start_pos..pos);
         let mut cursors = Vec::new();
         let mut selections = Vec::new();
         for region in self.selection.regions_in_range(start_pos, pos) {
