@@ -28,15 +28,15 @@
 //! `Engine::merge`, which is more powerful but considerably more complex.
 //! It enables support for full asynchronous and even peer-to-peer editing.
 
-use std::borrow::Cow;
-use std::collections::BTreeSet;
-use std::collections::hash_map::DefaultHasher;
 use std;
+use std::borrow::Cow;
+use std::collections::hash_map::DefaultHasher;
+use std::collections::BTreeSet;
 
-use rope::{Rope, RopeInfo};
-use multiset::{Subset, CountMatcher};
-use interval::Interval;
 use delta::{Delta, InsertDelta};
+use interval::Interval;
+use multiset::{CountMatcher, Subset};
+use rope::{Rope, RopeInfo};
 
 /// Represents the current state of a document and all of its history
 #[derive(Serialize, Deserialize, Debug)]
@@ -68,7 +68,7 @@ pub struct Engine {
     /// wherever there's a non-zero-count segment in `deletes_from_union`.
     deletes_from_union: Subset,
     // TODO: switch to a persistent Set representation to avoid O(n) copying
-    undone_groups: BTreeSet<usize>,  // set of undo_group id's
+    undone_groups: BTreeSet<usize>, // set of undo_group id's
     /// The revision history of the document
     revs: Vec<Revision>,
 }
@@ -135,15 +135,15 @@ enum Contents {
     Undo {
         /// The set of groups toggled between undone and done.
         /// Just the `symmetric_difference` (XOR) of the two sets.
-        toggled_groups: BTreeSet<usize>,  // set of undo_group id's
+        toggled_groups: BTreeSet<usize>, // set of undo_group id's
         /// Used to store a reversible difference between the old
         /// and new deletes_from_union
         deletes_bitxor: Subset,
-    }
+    },
 }
 
 /// for single user cases, used by serde and ::empty
-fn default_session() -> (u64,u32) {
+fn default_session() -> (u64, u32) {
     (1, 0)
 }
 
@@ -178,7 +178,7 @@ impl Engine {
         let mut engine = Engine::empty();
         if initial_contents.len() > 0 {
             let first_rev = engine.get_head_rev_id().token();
-            let delta = Delta::simple_edit(Interval::new_closed_closed(0,0), initial_contents, 0);
+            let delta = Delta::simple_edit(Interval::new_closed_closed(0, 0), initial_contents, 0);
             engine.edit_rev(0, 0, first_rev, delta);
         }
         engine
@@ -187,8 +187,15 @@ impl Engine {
     pub fn empty() -> Engine {
         let deletes_from_union = Subset::new(0);
         let rev = Revision {
-            rev_id: RevId { session1: 0, session2: 0, num: 0 },
-            edit: Undo { toggled_groups: BTreeSet::new(), deletes_bitxor: deletes_from_union.clone() },
+            rev_id: RevId {
+                session1: 0,
+                session2: 0,
+                num: 0,
+            },
+            edit: Undo {
+                toggled_groups: BTreeSet::new(),
+                deletes_bitxor: deletes_from_union.clone(),
+            },
             max_undo_so_far: 0,
         };
         Engine {
@@ -203,21 +210,30 @@ impl Engine {
     }
 
     fn next_rev_id(&self) -> RevId {
-        RevId { session1: self.session.0, session2: self.session.1, num: self.rev_id_counter }
+        RevId {
+            session1: self.session.0,
+            session2: self.session.1,
+            num: self.rev_id_counter,
+        }
     }
 
     fn find_rev(&self, rev_id: RevId) -> Option<usize> {
-        self.revs.iter().enumerate().rev()
+        self.revs
+            .iter()
+            .enumerate()
+            .rev()
             .find(|&(_, ref rev)| rev.rev_id == rev_id)
             .map(|(i, _)| i)
     }
 
     fn find_rev_token(&self, rev_token: RevToken) -> Option<usize> {
-        self.revs.iter().enumerate().rev()
+        self.revs
+            .iter()
+            .enumerate()
+            .rev()
             .find(|&(_, ref rev)| rev.rev_id.token() == rev_token)
             .map(|(i, _)| i)
     }
-
 
     // TODO: does Cow really help much here? It certainly won't after making Subsets a rope.
     /// Find what the `deletes_from_union` field in Engine would have been at the time
@@ -235,7 +251,12 @@ impl Engine {
         // invert the changes to deletes_from_union starting in the present and working backwards
         for rev in self.revs[rev_index..].iter().rev() {
             deletes_from_union = match rev.edit {
-                Edit { ref inserts, ref deletes, ref undo_group, .. } => {
+                Edit {
+                    ref inserts,
+                    ref deletes,
+                    ref undo_group,
+                    ..
+                } => {
                     if undone_groups.contains(undo_group) {
                         // no need to un-delete undone inserts since we'll just shrink them out
                         Cow::Owned(deletes_from_union.transform_shrink(inserts))
@@ -244,7 +265,10 @@ impl Engine {
                         Cow::Owned(un_deleted.transform_shrink(inserts))
                     }
                 }
-                Undo { ref toggled_groups, ref deletes_bitxor } => {
+                Undo {
+                    ref toggled_groups,
+                    ref deletes_bitxor,
+                } => {
                     if invert_undos {
                         let new_undone = undone_groups.symmetric_difference(toggled_groups).cloned().collect();
                         undone_groups = Cow::Owned(new_undone);
@@ -261,8 +285,7 @@ impl Engine {
     /// Get the contents of the document at a given revision number
     fn rev_content_for_index(&self, rev_index: usize) -> Rope {
         let old_deletes_from_union = self.deletes_from_cur_union_for_index(rev_index);
-        let delta = Delta::synthesize(&self.tombstones,
-            &self.deletes_from_union, &old_deletes_from_union);
+        let delta = Delta::synthesize(&self.tombstones, &self.deletes_from_union, &old_deletes_from_union);
         delta.apply(&self.text)
     }
 
@@ -296,7 +319,8 @@ impl Engine {
 
     /// Get text of a given revision, if it can be found.
     pub fn get_rev(&self, rev: RevToken) -> Option<Rope> {
-        self.find_rev_token(rev).map(|rev_index| self.rev_content_for_index(rev_index))
+        self.find_rev_token(rev)
+            .map(|rev_index| self.rev_content_for_index(rev_index))
     }
 
     /// A delta that, when applied to `base_rev`, results in the current head. Panics
@@ -305,7 +329,8 @@ impl Engine {
         let ix = self.find_rev_token(base_rev).expect("base revision not found");
         let prev_from_union = self.deletes_from_cur_union_for_index(ix);
         // TODO: this does 2 calls to Delta::synthesize and 1 to apply, this probably could be better.
-        let old_tombstones = shuffle_tombstones(&self.text, &self.tombstones, &self.deletes_from_union, &prev_from_union);
+        let old_tombstones =
+            shuffle_tombstones(&self.text, &self.tombstones, &self.deletes_from_union, &prev_from_union);
         Delta::synthesize(&old_tombstones, &prev_from_union, &self.deletes_from_union)
     }
 
@@ -313,8 +338,13 @@ impl Engine {
     // TODO: maybe switch to using a revision index for `base_rev` once we disable GC
     /// Returns a tuple of a new `Revision` representing the edit based on the
     /// current head, a new text `Rope`, a new tombstones `Rope` and a new `deletes_from_union`.
-    fn mk_new_rev(&self, new_priority: usize, undo_group: usize,
-            base_rev: RevToken, delta: Delta<RopeInfo>) -> (Revision, Rope, Rope, Subset) {
+    fn mk_new_rev(
+        &self,
+        new_priority: usize,
+        undo_group: usize,
+        base_rev: RevToken,
+        delta: Delta<RopeInfo>,
+    ) -> (Revision, Rope, Rope, Subset) {
         let ix = self.find_rev_token(base_rev).expect("base revision not found");
         let (ins_delta, deletes) = delta.factor();
 
@@ -324,12 +354,21 @@ impl Engine {
         let mut new_deletes = deletes.transform_expand(&deletes_at_rev);
 
         // rebase the delta to be on the head union instead of the base_rev union
-        let new_full_priority = FullPriority { priority: new_priority, session_id: self.session };
+        let new_full_priority = FullPriority {
+            priority: new_priority,
+            session_id: self.session,
+        };
         for r in &self.revs[ix + 1..] {
-            if let Edit { priority, ref inserts, .. } = r.edit {
+            if let Edit {
+                priority, ref inserts, ..
+            } = r.edit
+            {
                 if !inserts.is_empty() {
-                    let full_priority = FullPriority { priority, session_id: r.rev_id.session_id() };
-                    let after = new_full_priority >= full_priority;  // should never be ==
+                    let full_priority = FullPriority {
+                        priority,
+                        session_id: r.rev_id.session_id(),
+                    };
+                    let after = new_full_priority >= full_priority; // should never be ==
                     union_ins_delta = union_ins_delta.transform_expand(inserts, after);
                     new_deletes = new_deletes.transform_expand(inserts);
                 }
@@ -356,26 +395,34 @@ impl Engine {
         };
 
         // move deleted or undone-inserted things from text to tombstones
-        let (new_text, new_tombstones) = shuffle(&text_with_inserts, &self.tombstones,
-            &rebased_deletes_from_union, &new_deletes_from_union);
+        let (new_text, new_tombstones) = shuffle(
+            &text_with_inserts,
+            &self.tombstones,
+            &rebased_deletes_from_union,
+            &new_deletes_from_union,
+        );
 
         let head_rev = &self.revs.last().unwrap();
-        (Revision {
-            rev_id: self.next_rev_id(),
-            max_undo_so_far: std::cmp::max(undo_group, head_rev.max_undo_so_far),
-            edit: Edit {
-                priority: new_priority,
-                undo_group,
-                inserts: new_inserts,
-                deletes: new_deletes,
-            }
-        }, new_text, new_tombstones, new_deletes_from_union)
+        (
+            Revision {
+                rev_id: self.next_rev_id(),
+                max_undo_so_far: std::cmp::max(undo_group, head_rev.max_undo_so_far),
+                edit: Edit {
+                    priority: new_priority,
+                    undo_group,
+                    inserts: new_inserts,
+                    deletes: new_deletes,
+                },
+            },
+            new_text,
+            new_tombstones,
+            new_deletes_from_union,
+        )
     }
 
     // TODO: have `base_rev` be an index so that it can be used maximally efficiently with the
     // head revision, a token or a revision ID. Efficiency loss of token is negligible but unfortunate.
-    pub fn edit_rev(&mut self, priority: usize, undo_group: usize,
-            base_rev: RevToken, delta: Delta<RopeInfo>) {
+    pub fn edit_rev(&mut self, priority: usize, undo_group: usize, base_rev: RevToken, delta: Delta<RopeInfo>) {
         let (new_rev, new_text, new_tombstones, new_deletes_from_union) =
             self.mk_new_rev(priority, undo_group, base_rev, delta);
         self.rev_id_counter += 1;
@@ -401,13 +448,14 @@ impl Engine {
     fn find_first_undo_candidate_index(&self, toggled_groups: &BTreeSet<usize>) -> usize {
         // find the lowest toggled undo group number
         if let Some(lowest_group) = toggled_groups.iter().cloned().next() {
-            for (i,rev) in self.revs.iter().enumerate().rev() {
+            for (i, rev) in self.revs.iter().enumerate().rev() {
                 if rev.max_undo_so_far < lowest_group {
                     return i + 1; // +1 since we know the one we just found doesn't have it
                 }
             }
             return 0;
-        } else { // no toggled groups, return past end
+        } else {
+            // no toggled groups, return past end
             return self.revs.len();
         }
     }
@@ -419,10 +467,18 @@ impl Engine {
         let toggled_groups = self.undone_groups.symmetric_difference(&groups).cloned().collect();
         let first_candidate = self.find_first_undo_candidate_index(&toggled_groups);
         // the `false` below: don't invert undos since our first_candidate is based on the current undo set, not past
-        let mut deletes_from_union = self.deletes_from_union_before_index(first_candidate, false).into_owned();
+        let mut deletes_from_union = self
+            .deletes_from_union_before_index(first_candidate, false)
+            .into_owned();
 
         for rev in &self.revs[first_candidate..] {
-            if let Edit { ref undo_group, ref inserts, ref deletes, .. } = rev.edit {
+            if let Edit {
+                ref undo_group,
+                ref inserts,
+                ref deletes,
+                ..
+            } = rev.edit
+            {
                 if groups.contains(undo_group) {
                     if !inserts.is_empty() {
                         deletes_from_union = deletes_from_union.transform_union(inserts);
@@ -440,19 +496,29 @@ impl Engine {
 
         let deletes_bitxor = self.deletes_from_union.bitxor(&deletes_from_union);
         let max_undo_so_far = self.revs.last().unwrap().max_undo_so_far;
-        (Revision {
-            rev_id: self.next_rev_id(),
-            max_undo_so_far,
-            edit: Undo { toggled_groups, deletes_bitxor }
-        }, deletes_from_union)
+        (
+            Revision {
+                rev_id: self.next_rev_id(),
+                max_undo_so_far,
+                edit: Undo {
+                    toggled_groups,
+                    deletes_bitxor,
+                },
+            },
+            deletes_from_union,
+        )
     }
 
     // TODO: maybe refactor this API to take a toggle set
     pub fn undo(&mut self, groups: BTreeSet<usize>) {
         let (new_rev, new_deletes_from_union) = self.compute_undo(&groups);
 
-        let (new_text, new_tombstones) =
-            shuffle(&self.text, &self.tombstones, &self.deletes_from_union, &new_deletes_from_union);
+        let (new_text, new_tombstones) = shuffle(
+            &self.text,
+            &self.tombstones,
+            &self.deletes_from_union,
+            &new_deletes_from_union,
+        );
 
         self.text = new_text;
         self.tombstones = new_tombstones;
@@ -463,8 +529,12 @@ impl Engine {
     }
 
     pub fn is_equivalent_revision(&self, base_rev: RevId, other_rev: RevId) -> bool {
-        let base_subset = self.find_rev(base_rev).map(|rev_index| self.deletes_from_cur_union_for_index(rev_index));
-        let other_subset = self.find_rev(other_rev).map(|rev_index| self.deletes_from_cur_union_for_index(rev_index));
+        let base_subset = self
+            .find_rev(base_rev)
+            .map(|rev_index| self.deletes_from_cur_union_for_index(rev_index));
+        let other_subset = self
+            .find_rev(other_rev)
+            .map(|rev_index| self.deletes_from_cur_union_for_index(rev_index));
 
         base_subset.is_some() && base_subset == other_subset
     }
@@ -486,7 +556,13 @@ impl Engine {
         }
         {
             for rev in &self.revs {
-                if let Edit { ref undo_group, ref inserts, ref deletes, .. } = rev.edit {
+                if let Edit {
+                    ref undo_group,
+                    ref inserts,
+                    ref deletes,
+                    ..
+                } = rev.edit
+                {
                     if !retain_revs.contains(&rev.rev_id) && gc_groups.contains(undo_group) {
                         if self.undone_groups.contains(undo_group) {
                             if !inserts.is_empty() {
@@ -515,7 +591,12 @@ impl Engine {
         let old_revs = std::mem::replace(&mut self.revs, Vec::new());
         for rev in old_revs.into_iter().rev() {
             match rev.edit {
-                Edit { priority, undo_group, inserts, deletes } => {
+                Edit {
+                    priority,
+                    undo_group,
+                    inserts,
+                    deletes,
+                } => {
                     let new_gc_dels = if inserts.is_empty() {
                         None
                     } else {
@@ -525,8 +606,7 @@ impl Engine {
                         let (inserts, deletes) = if gc_dels.is_empty() {
                             (inserts, deletes)
                         } else {
-                            (inserts.transform_shrink(&gc_dels),
-                                deletes.transform_shrink(&gc_dels))
+                            (inserts.transform_shrink(&gc_dels), deletes.transform_shrink(&gc_dels))
                         };
                         self.revs.push(Revision {
                             rev_id: rev.rev_id,
@@ -536,14 +616,17 @@ impl Engine {
                                 undo_group,
                                 inserts,
                                 deletes,
-                            }
+                            },
                         });
                     }
                     if let Some(new_gc_dels) = new_gc_dels {
                         gc_dels = new_gc_dels;
                     }
                 }
-                Undo { toggled_groups, deletes_bitxor } => {
+                Undo {
+                    toggled_groups,
+                    deletes_bitxor,
+                } => {
                     // We're super-aggressive about dropping these; after gc, the history
                     // of which undos were used to compute deletes_from_union in edits may be lost.
                     if retain_revs.contains(&rev.rev_id) {
@@ -558,7 +641,7 @@ impl Engine {
                             edit: Undo {
                                 toggled_groups: &toggled_groups - gc_groups,
                                 deletes_bitxor: new_deletes_bitxor,
-                            }
+                            },
                         })
                     }
                 }
@@ -583,7 +666,14 @@ impl Engine {
             let expand_by = compute_transforms(a_new);
 
             let max_undo = self.max_undo_group_id();
-            rebase(expand_by, b_deltas, self.text.clone(), self.tombstones.clone(), self.deletes_from_union.clone(), max_undo)
+            rebase(
+                expand_by,
+                b_deltas,
+                self.text.clone(),
+                self.tombstones.clone(),
+                self.deletes_from_union.clone(),
+                max_undo,
+            )
         };
 
         self.text = text;
@@ -599,7 +689,11 @@ impl Engine {
     /// Merge may panic or return incorrect results if session IDs collide, which is why they can be
     /// 96 bits which is more than sufficient for this to never happen.
     pub fn set_session_id(&mut self, session: SessionId) {
-        assert_eq!(1, self.revs.len(), "Revisions were added to an Engine before set_session_id, these may collide.");
+        assert_eq!(
+            1,
+            self.revs.len(),
+            "Revisions were added to an Engine before set_session_id, these may collide."
+        );
         self.session = session;
     }
 }
@@ -607,8 +701,12 @@ impl Engine {
 // ======== Generic helpers
 
 /// Move sections from text to tombstones and out of tombstones based on a new and old set of deletions
-fn shuffle_tombstones(text: &Rope, tombstones: &Rope,
-        old_deletes_from_union: &Subset, new_deletes_from_union: &Subset) -> Rope {
+fn shuffle_tombstones(
+    text: &Rope,
+    tombstones: &Rope,
+    old_deletes_from_union: &Subset,
+    new_deletes_from_union: &Subset,
+) -> Rope {
     // Taking the complement of deletes_from_union leads to an interleaving valid for swapped text and tombstones,
     // allowing us to use the same method to insert the text into the tombstones.
     let inverse_tombstones_map = old_deletes_from_union.complement();
@@ -618,14 +716,21 @@ fn shuffle_tombstones(text: &Rope, tombstones: &Rope,
 
 /// Move sections from text to tombstones and vice versa based on a new and old set of deletions.
 /// Returns a tuple of a new text `Rope` and a new `Tombstones` rope described by `new_deletes_from_union`.
-fn shuffle(text: &Rope, tombstones: &Rope,
-        old_deletes_from_union: &Subset, new_deletes_from_union: &Subset) -> (Rope,Rope) {
+fn shuffle(
+    text: &Rope,
+    tombstones: &Rope,
+    old_deletes_from_union: &Subset,
+    new_deletes_from_union: &Subset,
+) -> (Rope, Rope) {
     // Delta that deletes the right bits from the text
     let del_delta = Delta::synthesize(tombstones, old_deletes_from_union, new_deletes_from_union);
     let new_text = del_delta.apply(text);
     // println!("shuffle: old={:?} new={:?} old_text={:?} new_text={:?} old_tombstones={:?}",
     //     old_deletes_from_union, new_deletes_from_union, text, new_text, tombstones);
-    (new_text, shuffle_tombstones(text,tombstones,old_deletes_from_union,new_deletes_from_union))
+    (
+        new_text,
+        shuffle_tombstones(text, tombstones, old_deletes_from_union, new_deletes_from_union),
+    )
 }
 
 // ======== Merge helpers
@@ -663,7 +768,12 @@ fn rearrange(revs: &[Revision], base_revs: &BTreeSet<RevId>, head_len: usize) ->
     for rev in revs.iter().rev() {
         let is_base = base_revs.contains(&rev.rev_id);
         let contents = match rev.edit {
-            Contents::Edit {priority, undo_group, ref inserts, ref deletes} => {
+            Contents::Edit {
+                priority,
+                undo_group,
+                ref inserts,
+                ref deletes,
+            } => {
                 if is_base {
                     s = inserts.transform_union(&s);
                     None
@@ -676,14 +786,19 @@ fn rearrange(revs: &[Revision], base_revs: &BTreeSet<RevId>, head_len: usize) ->
                     Some(Contents::Edit {
                         inserts: transformed_inserts,
                         deletes: transformed_deletes,
-                        priority, undo_group,
+                        priority,
+                        undo_group,
                     })
                 }
-            },
+            }
             Contents::Undo { .. } => panic!("can't merge undo yet"),
         };
         if let Some(edit) = contents {
-            out.push(Revision { edit, rev_id: rev.rev_id, max_undo_so_far: rev.max_undo_so_far });
+            out.push(Revision {
+                edit,
+                rev_id: rev.rev_id,
+                max_undo_so_far: rev.max_undo_so_far,
+            });
         }
     }
 
@@ -708,7 +823,12 @@ fn compute_deltas(revs: &[Revision], text: &Rope, tombstones: &Rope, deletes_fro
     let mut cur_all_inserts = Subset::new(deletes_from_union.len());
     for rev in revs.iter().rev() {
         match rev.edit {
-            Contents::Edit {priority, undo_group, ref inserts, ref deletes} => {
+            Contents::Edit {
+                priority,
+                undo_group,
+                ref inserts,
+                ref deletes,
+            } => {
                 let older_all_inserts = inserts.transform_union(&cur_all_inserts);
 
                 // TODO could probably be more efficient by avoiding shuffling from head every time
@@ -718,13 +838,14 @@ fn compute_deltas(revs: &[Revision], text: &Rope, tombstones: &Rope, deletes_fro
                 let (ins, _) = delta.factor();
                 out.push(DeltaOp {
                     rev_id: rev.rev_id,
-                    priority, undo_group,
+                    priority,
+                    undo_group,
                     inserts: ins,
                     deletes: deletes.clone(),
                 });
 
                 cur_all_inserts = older_all_inserts;
-            },
+            }
             Contents::Undo { .. } => panic!("can't merge undo yet"),
         }
     }
@@ -746,7 +867,7 @@ fn compute_transforms(revs: Vec<Revision>) -> Vec<(FullPriority, Subset)> {
     let mut out = Vec::new();
     let mut last_priority: Option<usize> = None;
     for r in revs {
-        if let Contents::Edit {priority, inserts, .. } = r.edit {
+        if let Contents::Edit { priority, inserts, .. } = r.edit {
             if inserts.is_empty() {
                 continue;
             }
@@ -755,7 +876,10 @@ fn compute_transforms(revs: Vec<Revision>) -> Vec<(FullPriority, Subset)> {
                 last.1 = last.1.transform_union(&inserts);
             } else {
                 last_priority = Some(priority);
-                let prio = FullPriority { priority, session_id: r.rev_id.session_id() };
+                let prio = FullPriority {
+                    priority,
+                    session_id: r.rev_id.session_id(),
+                };
                 out.push((prio, inserts));
             }
         }
@@ -765,18 +889,33 @@ fn compute_transforms(revs: Vec<Revision>) -> Vec<(FullPriority, Subset)> {
 
 /// Rebase `b_new` on top of `expand_by` and return revision contents that can be appended as new
 /// revisions on top of the revisions represented by `expand_by`.
-fn rebase(mut expand_by: Vec<(FullPriority, Subset)>, b_new: Vec<DeltaOp>, mut text: Rope, mut tombstones: Rope,
-        mut deletes_from_union: Subset, mut max_undo_so_far: usize) -> (Vec<Revision>, Rope, Rope, Subset) {
+fn rebase(
+    mut expand_by: Vec<(FullPriority, Subset)>,
+    b_new: Vec<DeltaOp>,
+    mut text: Rope,
+    mut tombstones: Rope,
+    mut deletes_from_union: Subset,
+    mut max_undo_so_far: usize,
+) -> (Vec<Revision>, Rope, Rope, Subset) {
     let mut out = Vec::with_capacity(b_new.len());
 
     let mut next_expand_by = Vec::with_capacity(expand_by.len());
     for op in b_new {
-        let DeltaOp { rev_id, priority, undo_group, mut inserts, mut deletes } = op;
-        let full_priority = FullPriority { priority, session_id: rev_id.session_id() };
+        let DeltaOp {
+            rev_id,
+            priority,
+            undo_group,
+            mut inserts,
+            mut deletes,
+        } = op;
+        let full_priority = FullPriority {
+            priority,
+            session_id: rev_id.session_id(),
+        };
         // expand by each in expand_by
         for &(trans_priority, ref trans_inserts) in &expand_by {
-            let after = full_priority >= trans_priority;  // should never be ==
-            // d-expand by other
+            let after = full_priority >= trans_priority; // should never be ==
+                                                         // d-expand by other
             inserts = inserts.transform_expand(trans_inserts, after);
             // trans-expand other by expanded so they have the same context
             let inserted = inserts.inserted_subset();
@@ -793,8 +932,12 @@ fn rebase(mut expand_by: Vec<(FullPriority, Subset)>, b_new: Vec<DeltaOp>, mut t
 
         let expanded_deletes_from_union = deletes_from_union.transform_expand(&inserted);
         let new_deletes_from_union = expanded_deletes_from_union.union(&deletes);
-        let (new_text, new_tombstones) =
-            shuffle(&text_with_inserts, &tombstones, &expanded_deletes_from_union, &new_deletes_from_union);
+        let (new_text, new_tombstones) = shuffle(
+            &text_with_inserts,
+            &tombstones,
+            &expanded_deletes_from_union,
+            &new_deletes_from_union,
+        );
 
         text = new_text;
         tombstones = new_tombstones;
@@ -802,11 +945,14 @@ fn rebase(mut expand_by: Vec<(FullPriority, Subset)>, b_new: Vec<DeltaOp>, mut t
 
         max_undo_so_far = std::cmp::max(max_undo_so_far, undo_group);
         out.push(Revision {
-            rev_id, max_undo_so_far,
+            rev_id,
+            max_undo_so_far,
             edit: Contents::Edit {
-                priority, undo_group, deletes,
+                priority,
+                undo_group,
+                deletes,
                 inserts: inserted,
-            }
+            },
         });
 
         expand_by = next_expand_by;
@@ -815,7 +961,6 @@ fn rebase(mut expand_by: Vec<(FullPriority, Subset)>, b_new: Vec<DeltaOp>, mut t
 
     (out, text, tombstones, deletes_from_union)
 }
-
 
 #[cfg(test)]
 #[cfg_attr(rustfmt, rustfmt_skip)]
