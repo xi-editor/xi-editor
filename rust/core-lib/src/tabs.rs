@@ -38,6 +38,7 @@ use xi_trace::{self, trace_block};
 use WeakXiCore;
 use client::Client;
 use config::{self, ConfigManager, ConfigDomain, ConfigDomainExternal, Table};
+use recorder::Recorder;
 use editor::Editor;
 use event_context::EventContext;
 use file::FileManager;
@@ -104,6 +105,8 @@ pub struct CoreState {
     width_cache: RefCell<WidthCache>,
     /// User and platform specific settings
     config_manager: ConfigManager,
+    /// Recorded editor actions
+    recorder: RefCell<Recorder>,
     /// A weak reference to the main state container, stashed so that
     /// it can be passed to plugins.
     self_ref: Option<WeakXiCore>,
@@ -161,6 +164,7 @@ impl CoreState {
             style_map: RefCell::new(ThemeStyleMap::new(themes_dir)),
             width_cache: RefCell::new(WidthCache::new()),
             config_manager,
+            recorder: RefCell::new(Recorder::new()),
             self_ref: None,
             pending_views: Vec::new(),
             peer: Client::new(peer.clone()),
@@ -270,6 +274,7 @@ impl CoreState {
                 view,
                 editor,
                 config: &config.items,
+                recorder: &self.recorder,
                 language,
                 info: info,
                 siblings: Vec::new(),

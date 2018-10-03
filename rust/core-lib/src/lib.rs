@@ -86,6 +86,7 @@ pub mod movement;
 pub mod syntax;
 pub mod layers;
 pub mod config;
+pub mod recorder;
 #[cfg(feature = "notify")]
 pub mod watcher;
 pub mod line_cache_shadow;

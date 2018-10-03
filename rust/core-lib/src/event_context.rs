@@ -39,6 +39,7 @@ use tabs::{BufferId, PluginId, ViewId, RENDER_VIEW_IDLE_MASK};
 use editor::Editor;
 use file::FileInfo;
 use edit_types::{EventDomain, SpecialEvent};
+use recorder::Recorder;
 use client::Client;
 use plugins::Plugin;
 use selection::SelRegion;
@@ -65,6 +66,7 @@ pub struct EventContext<'a> {
     pub(crate) editor: &'a RefCell<Editor>,
     pub(crate) info: Option<&'a FileInfo>,
     pub(crate) config: &'a BufferItems,
+    pub(crate) recorder: &'a RefCell<Recorder>,
     pub(crate) language: LanguageId,
     pub(crate) view: &'a RefCell<View>,
     pub(crate) siblings: Vec<&'a RefCell<View>>,
@@ -104,19 +106,36 @@ impl<'a> EventContext<'a> {
     }
 
     pub(crate) fn do_edit(&mut self, cmd: EditNotification) {
-        use self::EventDomain as E;
         let event: EventDomain = cmd.into();
+
+        {
+            // Handle recording-- clone every non-toggle and play event into the recording buffer
+            let recorder = &mut self.recorder.borrow_mut();
+            if let EventDomain::Special(SpecialEvent::ToggleRecording) = event {
+                recorder.toggle_recording();
+            } else if let EventDomain::Special(SpecialEvent::PlayRecording) = event {
+                // This shouldn't be allowed
+            } else if recorder.is_recording() {
+                recorder.record(event.clone().into());
+            }
+        }
+
+        self.broadcast_event(event);
+        self.after_edit("core");
+        self.render_if_needed();
+    }
+
+    fn broadcast_event(&mut self, event: EventDomain) {
+        use self::EventDomain as E;
         match event {
             E::View(cmd) => {
-                    self.with_view(|view, text| view.do_edit(text, cmd));
-                    self.editor.borrow_mut().update_edit_type();
-                },
+                self.with_view(|view, text| view.do_edit(text, cmd));
+                self.editor.borrow_mut().update_edit_type();
+            },
             E::Buffer(cmd) => self.with_editor(
                 |ed, view, k_ring, conf| ed.do_edit(view, k_ring, conf, cmd)),
             E::Special(cmd) => self.do_special(cmd),
         }
-        self.after_edit("core");
-        self.render_if_needed();
     }
 
     fn do_special(&mut self, cmd: SpecialEvent) {
@@ -137,8 +156,15 @@ impl<'a> EventContext<'a> {
                 }),
             SpecialEvent::RequestLines(LineRange { first, last }) =>
                 self.do_request_lines(first as usize, last as usize),
-            SpecialEvent::RequestHover{ request_id, position } =>
-                self.do_request_hover(request_id, position)
+            SpecialEvent::RequestHover { request_id, position } =>
+                self.do_request_hover(request_id, position),
+            SpecialEvent::ToggleRecording => {}
+            SpecialEvent::PlayRecording => {
+                let recorder = self.recorder.borrow();
+                recorder.play(|event| {
+                    self.broadcast_event(event.clone());
+                })
+            }
         }
     }
 
@@ -534,6 +560,7 @@ mod tests {
                 info: None,
                 siblings: Vec::new(),
                 plugins: Vec::new(),
+                recorder: Recorder::new(),
                 client: &self.client,
                 kill_ring: &self.kill_ring,
                 style_map: &self.style_map,
