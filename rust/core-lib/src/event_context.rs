@@ -1592,34 +1592,12 @@ mod tests {
         lines to see." );
 
         ctx.do_edit(EditNotification::ToggleRecording);
+
+        // Swap last word of the current line and the line below
         ctx.do_edit(EditNotification::AddSelectionBelow);
-        assert_eq!(harness.debug_render(),"\
-        this |is a string\n\
-        that |has about\n\
-        four really nice\n\
-        lines to see." );
-
         ctx.do_edit(EditNotification::MoveToRightEndOfLine);
-        assert_eq!(harness.debug_render(),"\
-        this is a string|\n\
-        that has about|\n\
-        four really nice\n\
-        lines to see." );
-
         ctx.do_edit(EditNotification::MoveWordLeftAndModifySelection);
-        assert_eq!(harness.debug_render(),"\
-        this is a [|string]\n\
-        that has [|about]\n\
-        four really nice\n\
-        lines to see." );
-
         ctx.do_edit(EditNotification::Transpose);
-        assert_eq!(harness.debug_render(),"\
-        this is a [|about]\n\
-        that has [|string]\n\
-        four really nice\n\
-        lines to see." );
-
         ctx.do_edit(EditNotification::CancelOperation);
         ctx.do_edit(EditNotification::MoveToRightEndOfLine);
         assert_eq!(harness.debug_render(),"\
@@ -1631,12 +1609,6 @@ mod tests {
         ctx.do_edit(EditNotification::ToggleRecording);
 
         ctx.do_edit(EditNotification::Gesture { line: 2, col: 5, ty: PointSelect });
-        assert_eq!(harness.debug_render(),"\
-        this is a about\n\
-        that has string\n\
-        four |really nice\n\
-        lines to see." );
-
         ctx.do_edit(EditNotification::PlayRecording);
         assert_eq!(harness.debug_render(),"\
         this is a about\n\
@@ -1644,6 +1616,7 @@ mod tests {
         four really see.|\n\
         lines to nice" );
 
+        // Undo entire playback in a single command
         ctx.do_edit(EditNotification::Undo);
         assert_eq!(harness.debug_render(),"\
         this is a about\n\
@@ -1651,6 +1624,7 @@ mod tests {
         four really nice|\n\
         lines to see." );
 
+        // Make sure we can redo in a single command as well
         ctx.do_edit(EditNotification::Redo);
         assert_eq!(harness.debug_render(),"\
         this is a about\n\
