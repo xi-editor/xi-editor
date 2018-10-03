@@ -685,6 +685,18 @@ impl Editor {
         }
     }
 
+    /// Changes the number(s) under the cursor(s) with the `transform_function`.
+    /// If there is a number next to or on the beginning of the region, then
+    /// this number will be replaced with the result of `transform_function` and
+    /// the cursor will be placed at the end of the number.
+    /// Some Examples with a increment `transform_function`:
+    ///
+    /// "|1234" -> "1235|"
+    /// "12|34" -> "1235|"
+    /// "-|12" -> "-11|"
+    /// "1[23 and other contents|]" -> "124| and other contents"
+    ///
+    /// This function also works fine with multiple regions.
     fn change_number<F: Fn(i32) -> i32>(&mut self, view: &View,
                                         transform_function: F) {
         let mut builder = delta::Builder::new(self.text.len());
@@ -704,9 +716,11 @@ impl Editor {
                 None
             };
 
+            // Walk backwards to see where the number starts
             let begin = walker(line.chars().rev().skip(end - begin).enumerate().collect())
                 .map(|i| begin - i).unwrap_or(0);
 
+            // Walk forwards to see where the number ends
             let end = walker(line.chars().skip(begin).enumerate().collect())
                 .map(|i| begin + i).unwrap_or(line.len());
 
