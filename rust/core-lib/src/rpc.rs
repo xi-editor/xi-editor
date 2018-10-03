@@ -1,4 +1,4 @@
-// Copyright 2016 Google Inc. All rights reserved.
+// Copyright 2016 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -117,7 +117,7 @@ pub enum CoreNotification {
     /// use xi_core::rpc::*;
     /// # fn main() {
     /// let edit = EditCommand {
-    ///     view_id: "view-id-1".into(),
+    ///     view_id: 1.into(),
     ///     cmd: EditNotification::Insert { chars: "hello!".into() },
     /// };
     /// let rpc = CoreNotification::Edit(edit);
@@ -125,8 +125,8 @@ pub enum CoreNotification {
     ///     "method": "edit",
     ///     "params": {
     ///         "method": "insert",
+    ///         "view_id": "view-id-1",
     ///         "params": {
-    ///             "view_id": "view-id-1",
     ///             "chars": "hello!",
     ///         }
     ///     }
@@ -157,7 +157,7 @@ pub enum CoreNotification {
     /// # fn main() {
     /// let rpc = CoreNotification::Plugin(
     ///     PluginNotification::Start {
-    ///         view_id: "view-id-1".into(),
+    ///         view_id: 1.into(),
     ///         plugin_name: "syntect".into(),
     ///     });
     ///
@@ -248,6 +248,10 @@ pub enum CoreRequest {
     NewView { file_path: Option<String> },
     /// Returns the current collated config object for the given view.
     GetConfig { view_id: ViewId },
+    /// Returns the contents of the buffer for a given `ViewId`.
+    /// In the future this might also be used to return structured data (such
+    /// as for printing).
+    DebugGetContents { view_id: ViewId },
 }
 
 /// A helper type, which extracts the `view_id` field from edit
@@ -304,7 +308,7 @@ pub enum GestureType {
 ///
 /// Several core protocol commands use a params array to pass arguments
 /// which are named, internally. this type use custom Serialize /
-/// Deserialize impls to accomodate this.
+/// Deserialize impls to accommodate this.
 #[derive(PartialEq, Eq, Debug)]
 pub struct LineRange {
     pub first: i64,
@@ -352,6 +356,7 @@ impl Default for SelectionModifier {
 #[serde(tag = "method", content = "params")]
 pub enum EditNotification {
     Insert { chars: String },
+    Paste { chars: String },
     DeleteForward,
     DeleteBackward,
     DeleteWordForward,
@@ -436,6 +441,7 @@ pub enum EditNotification {
     CancelOperation,
     Uppercase,
     Lowercase,
+    Capitalize,
     Indent,
     Outdent,
     /// Indicates whether find highlights should be rendered
@@ -453,6 +459,8 @@ pub enum EditNotification {
     ReplaceAll,
     SelectionForReplace,
     RequestHover { request_id: usize, position: Option<Position> },
+    SelectionIntoLines,
+    DuplicateLine,
 }
 
 /// The edit related requests.
@@ -487,7 +495,7 @@ impl<T: Serialize> Serialize for EditCommand<T>
         where S: Serializer
     {
         let mut v = serde_json::to_value(&self.cmd).map_err(ser::Error::custom)?;
-        v["params"]["view_id"] = json!(self.view_id);
+        v["view_id"] = json!(self.view_id);
         v.serialize(serializer)
     }
 }
@@ -566,5 +574,28 @@ impl<'de> Deserialize<'de> for LineRange
 
         let tup = TwoTuple::deserialize(deserializer)?;
         Ok(LineRange { first: tup.0, last: tup.1 })
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tabs::ViewId;
+
+    #[test]
+    fn test_serialize_edit_command() {
+        // Ensure that an EditCommand can be serialized and then correctly deserialized.
+        let message: String = "hello world".into();
+        let edit = EditCommand {
+            view_id: ViewId(1),
+            cmd: EditNotification::Insert { chars: message.clone() },
+        };
+        let json = serde_json::to_string(&edit).unwrap();
+        let cmd: EditCommand<EditNotification> = serde_json::from_str(&json).unwrap();
+        assert_eq!(cmd.view_id, edit.view_id);
+        if let EditNotification::Insert{ chars } = cmd.cmd {
+            assert_eq!(chars, message);
+        }
     }
 }

@@ -1,4 +1,4 @@
-// Copyright 2017 Google Inc. All rights reserved.
+// Copyright 2017 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -316,7 +316,7 @@ mod tests {
     fn find_small() {
         let a = Rope::from("Löwe 老虎 Léopard");
         let mut c = Cursor::new(&a, 0);
-        let mut raw_lines = a.lines_raw(0, a.len());
+        let mut raw_lines = a.lines_raw(..);
         assert_eq!(find(&mut c, &mut raw_lines, Exact, "L", &None), Some(0));
         assert_eq!(find(&mut c, &mut raw_lines, Exact, "L", &None), Some(13));
         assert_eq!(find(&mut c, &mut raw_lines, Exact, "L", &None), None);
@@ -343,7 +343,7 @@ mod tests {
         s.push_str("Löwe 老虎 Léopard");
         let a = Rope::from(&s);
         let mut c = Cursor::new(&a, 0);
-        let mut raw_lines = a.lines_raw(0, a.len());
+        let mut raw_lines = a.lines_raw(0..a.len());
         assert_eq!(find(&mut c, &mut raw_lines, Exact, "L", &None), Some(4000));
         assert_eq!(find(&mut c, &mut raw_lines, Exact, "L", &None), Some(4013));
         assert_eq!(find(&mut c, &mut raw_lines, Exact, "L", &None), None);
@@ -364,7 +364,7 @@ mod tests {
     fn find_casei_small() {
         let a = Rope::from("Löwe 老虎 Léopard");
         let mut c = Cursor::new(&a, 0);
-        let mut raw_lines = a.lines_raw(0, a.len());
+        let mut raw_lines = a.lines_raw(0..a.len());
         assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "l", &None), Some(0));
         assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "l", &None), Some(13));
         assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "l", &None), None);
@@ -385,7 +385,7 @@ mod tests {
     fn find_casei_ascii_nonalpha() {
         let a = Rope::from("![cfg(test)]");
         let mut c = Cursor::new(&a, 0);
-        let mut raw_lines = a.lines_raw(0, a.len());
+        let mut raw_lines = a.lines_raw(0..a.len());
         assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "(test)", &None), Some(5));
         c.set(0);
         assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "(TEST)", &None), Some(5));
@@ -395,7 +395,7 @@ mod tests {
     fn find_casei_special() {
         let a = Rope::from("İ");
         let mut c = Cursor::new(&a, 0);
-        let mut raw_lines = a.lines_raw(0, a.len());
+        let mut raw_lines = a.lines_raw(0..a.len());
         assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "i̇", &None), Some(0));
 
         let a = Rope::from("i̇");
@@ -415,7 +415,7 @@ mod tests {
     fn find_casei_0xc4() {
         let a = Rope::from("\u{0100}I");
         let mut c = Cursor::new(&a, 0);
-        let mut raw_lines = a.lines_raw(0, a.len());
+        let mut raw_lines = a.lines_raw(0..a.len());
         assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "i", &None), Some(2));
     }
 
@@ -423,16 +423,16 @@ mod tests {
     fn find_regex_small_casei() {
         let a = Rope::from("Löwe 老虎 Léopard\nSecond line");
         let mut c = Cursor::new(&a, 0);
-        let mut raw_lines = a.lines_raw(0, a.len());
+        let mut raw_lines = a.lines_raw(0..a.len());
         let regex = RegexBuilder::new("L")
             .size_limit(REGEX_SIZE_LIMIT)
             .case_insensitive(true)
             .build()
             .ok();
         assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "L", &regex), Some(0));
-        raw_lines = a.lines_raw(c.pos(), a.len());
+        raw_lines = a.lines_raw(c.pos()..a.len());
         assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "L", &regex), Some(13));
-        raw_lines = a.lines_raw(c.pos(), a.len());
+        raw_lines = a.lines_raw(c.pos()..a.len());
         assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "L", &regex), Some(29));
         c.set(0);
         let regex = RegexBuilder::new("Léopard")
@@ -440,19 +440,19 @@ mod tests {
             .case_insensitive(true)
             .build()
             .ok();
-        let mut raw_lines = a.lines_raw(0, a.len());
+        let mut raw_lines = a.lines_raw(0..a.len());
         assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "Léopard", &regex), Some(13));
-        raw_lines = a.lines_raw(c.pos(), a.len());
+        raw_lines = a.lines_raw(c.pos()..a.len());
         assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "Léopard", &regex), None);
         c.set(0);
-        let mut raw_lines = a.lines_raw(0, a.len());
+        let mut raw_lines = a.lines_raw(0..a.len());
         let regex = RegexBuilder::new("老虎")
             .size_limit(REGEX_SIZE_LIMIT)
             .case_insensitive(true)
             .build()
             .ok();
         assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "老虎", &regex), Some(6));
-        raw_lines = a.lines_raw(c.pos(), a.len());
+        raw_lines = a.lines_raw(c.pos()..a.len());
         assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "老虎", &regex), None);
         c.set(0);
         let regex = RegexBuilder::new("Tiger")
@@ -460,7 +460,7 @@ mod tests {
             .case_insensitive(true)
             .build()
             .ok();
-        let mut raw_lines = a.lines_raw(0, a.len());
+        let mut raw_lines = a.lines_raw(0..a.len());
         assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "Tiger", &regex), None);
         c.set(0);
         let regex = RegexBuilder::new(".")
@@ -468,16 +468,16 @@ mod tests {
             .case_insensitive(true)
             .build()
             .ok();
-        let mut raw_lines = a.lines_raw(0, a.len());
+        let mut raw_lines = a.lines_raw(0..a.len());
         assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, ".", &regex), Some(0));
-        raw_lines = a.lines_raw(c.pos(), a.len());
+        raw_lines = a.lines_raw(c.pos()..a.len());
         let regex = RegexBuilder::new("\\s")
             .size_limit(REGEX_SIZE_LIMIT)
             .case_insensitive(true)
             .build()
             .ok();
         assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "\\s", &regex), Some(5));
-        raw_lines = a.lines_raw(c.pos(), a.len());
+        raw_lines = a.lines_raw(c.pos()..a.len());
         let regex = RegexBuilder::new("\\sLéopard\n.*")
             .size_limit(REGEX_SIZE_LIMIT)
             .case_insensitive(true)
@@ -490,16 +490,16 @@ mod tests {
     fn find_regex_small() {
         let a = Rope::from("Löwe 老虎 Léopard\nSecond line");
         let mut c = Cursor::new(&a, 0);
-        let mut raw_lines = a.lines_raw(0, a.len());
+        let mut raw_lines = a.lines_raw(0..a.len());
         let regex = RegexBuilder::new("L")
             .size_limit(REGEX_SIZE_LIMIT)
             .case_insensitive(false)
             .build()
             .ok();
         assert_eq!(find(&mut c, &mut raw_lines, Exact, "L", &regex), Some(0));
-        raw_lines = a.lines_raw(c.pos(), a.len());
+        raw_lines = a.lines_raw(c.pos()..a.len());
         assert_eq!(find(&mut c, &mut raw_lines, Exact, "L", &regex), Some(13));
-        raw_lines = a.lines_raw(c.pos(), a.len());
+        raw_lines = a.lines_raw(c.pos()..a.len());
         assert_eq!(find(&mut c, &mut raw_lines, Exact, "L", &regex), None);
         c.set(0);
         let regex = RegexBuilder::new("Léopard")
@@ -507,9 +507,9 @@ mod tests {
             .case_insensitive(false)
             .build()
             .ok();
-        let mut raw_lines = a.lines_raw(0, a.len());
+        let mut raw_lines = a.lines_raw(0..a.len());
         assert_eq!(find(&mut c, &mut raw_lines, Exact, "Léopard", &regex), Some(13));
-        raw_lines = a.lines_raw(c.pos(), a.len());
+        raw_lines = a.lines_raw(c.pos()..a.len());
         assert_eq!(find(&mut c, &mut raw_lines, Exact, "Léopard", &regex), None);
         c.set(0);
         let regex = RegexBuilder::new("老虎")
@@ -517,9 +517,9 @@ mod tests {
             .case_insensitive(false)
             .build()
             .ok();
-        let mut raw_lines = a.lines_raw(0, a.len());
+        let mut raw_lines = a.lines_raw(0..a.len());
         assert_eq!(find(&mut c, &mut raw_lines, Exact, "老虎", &regex), Some(6));
-        raw_lines = a.lines_raw(c.pos(), a.len());
+        raw_lines = a.lines_raw(c.pos()..a.len());
         assert_eq!(find(&mut c, &mut raw_lines, Exact, "老虎", &regex), None);
         c.set(0);
         let regex = RegexBuilder::new("Tiger")
@@ -527,7 +527,7 @@ mod tests {
             .case_insensitive(false)
             .build()
             .ok();
-        let mut raw_lines = a.lines_raw(0, a.len());
+        let mut raw_lines = a.lines_raw(0..a.len());
         assert_eq!(find(&mut c, &mut raw_lines, Exact, "Tiger", &regex), None);
         c.set(0);
         let regex = RegexBuilder::new(".")
@@ -535,16 +535,16 @@ mod tests {
             .case_insensitive(false)
             .build()
             .ok();
-        let mut raw_lines = a.lines_raw(0, a.len());
+        let mut raw_lines = a.lines_raw(0..a.len());
         assert_eq!(find(&mut c, &mut raw_lines, Exact, ".", &regex), Some(0));
-        raw_lines = a.lines_raw(c.pos(), a.len());
+        raw_lines = a.lines_raw(c.pos()..a.len());
         let regex = RegexBuilder::new("\\s")
             .size_limit(REGEX_SIZE_LIMIT)
             .case_insensitive(false)
             .build()
             .ok();
         assert_eq!(find(&mut c, &mut raw_lines, Exact, "\\s", &regex), Some(5));
-        raw_lines = a.lines_raw(c.pos(), a.len());
+        raw_lines = a.lines_raw(c.pos()..a.len());
         let regex = RegexBuilder::new("\\sLéopard\n.*")
             .size_limit(REGEX_SIZE_LIMIT)
             .case_insensitive(false)
@@ -562,26 +562,26 @@ mod tests {
         s.push_str("Löwe 老虎 Léopard\nSecond line");
         let a = Rope::from(&s);
         let mut c = Cursor::new(&a, 0);
-        let mut raw_lines = a.lines_raw(0, a.len());
+        let mut raw_lines = a.lines_raw(0..a.len());
         let regex = RegexBuilder::new("L")
             .size_limit(REGEX_SIZE_LIMIT)
             .case_insensitive(true)
             .build()
             .ok();
         assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "L", &regex), Some(4000));
-        raw_lines = a.lines_raw(c.pos(), a.len());
+        raw_lines = a.lines_raw(c.pos()..a.len());
         assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "L", &regex), Some(4013));
-        raw_lines = a.lines_raw(c.pos(), a.len());
+        raw_lines = a.lines_raw(c.pos()..a.len());
         assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "L", &regex), Some(4029));
         c.set(0);
-        let mut raw_lines = a.lines_raw(0, a.len());
+        let mut raw_lines = a.lines_raw(0..a.len());
         let regex = RegexBuilder::new("Léopard")
             .size_limit(REGEX_SIZE_LIMIT)
             .case_insensitive(true)
             .build()
             .ok();
         assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "Léopard", &regex), Some(4013));
-        raw_lines = a.lines_raw(c.pos(), a.len());
+        raw_lines = a.lines_raw(c.pos()..a.len());
         assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "Léopard", &regex), None);
         c.set(0);
         let regex = RegexBuilder::new("老虎")
@@ -589,9 +589,9 @@ mod tests {
             .case_insensitive(true)
             .build()
             .ok();
-        let mut raw_lines = a.lines_raw(0, a.len());
+        let mut raw_lines = a.lines_raw(0..a.len());
         assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "老虎", &regex), Some(4006));
-        raw_lines = a.lines_raw(c.pos(), a.len());
+        raw_lines = a.lines_raw(c.pos()..a.len());
         assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "老虎", &regex), None);
         c.set(0);
         let regex = RegexBuilder::new("Tiger")
@@ -599,24 +599,24 @@ mod tests {
             .case_insensitive(true)
             .build()
             .ok();
-        let mut raw_lines = a.lines_raw(0, a.len());
+        let mut raw_lines = a.lines_raw(0..a.len());
         assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "Tiger", &regex), None);
         c.set(0);
-        let mut raw_lines = a.lines_raw(0, a.len());
+        let mut raw_lines = a.lines_raw(0..a.len());
         let regex = RegexBuilder::new(".")
             .size_limit(REGEX_SIZE_LIMIT)
             .case_insensitive(true)
             .build()
             .ok();
         assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, ".", &regex), Some(0));
-        raw_lines = a.lines_raw(c.pos(), a.len());
+        raw_lines = a.lines_raw(c.pos()..a.len());
         let regex = RegexBuilder::new("\\s")
             .size_limit(REGEX_SIZE_LIMIT)
             .case_insensitive(true)
             .build()
             .ok();
         assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "\\s", &regex), Some(4005));
-        raw_lines = a.lines_raw(c.pos(), a.len());
+        raw_lines = a.lines_raw(c.pos()..a.len());
         let regex = RegexBuilder::new("\\sLéopard\n.*")
             .size_limit(REGEX_SIZE_LIMIT)
             .case_insensitive(true)
@@ -630,7 +630,7 @@ mod tests {
         let a = Rope::from("Löwe 老虎 Léopard");
         let mut c = Cursor::new(&a, 0);
         let pat = "Löwe 老虎 Léopard";
-        let mut raw_lines = a.lines_raw(0, a.len());
+        let mut raw_lines = a.lines_raw(0..a.len());
         assert!(compare_cursor_str(&mut c, &mut raw_lines, pat).is_some());
         assert_eq!(c.pos(), pat.len());
         c.set(0);
@@ -655,7 +655,7 @@ mod tests {
         s.push_str("Löwe 老虎 Léopard");
         let a = Rope::from(&s);
         let mut c = Cursor::new(&a, 0);
-        let mut raw_lines = a.lines_raw(0, a.len());
+        let mut raw_lines = a.lines_raw(0..a.len());
         assert!(compare_cursor_str(&mut c, &mut raw_lines, &s).is_some());
         assert_eq!(c.pos(), s.len());
         c.set(2000);

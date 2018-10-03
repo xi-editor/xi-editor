@@ -1,4 +1,4 @@
-// Copyright 2016 Google Inc. All rights reserved.
+// Copyright 2016 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ use std::io;
 use std::mem;
 use std::path::{Path, PathBuf};
 
-use serde::de::{Deserialize, Deserializer};
+use serde::de::{self, Deserialize, Deserializer, Unexpected};
 use serde::ser::{Serialize, Serializer};
 use serde_json::Value;
 
@@ -45,7 +45,7 @@ use plugins::{PluginCatalog, PluginPid, Plugin, start_plugin_process};
 use plugin_rpc::{PluginNotification, PluginRequest};
 use rpc::{CoreNotification, CoreRequest, EditNotification, EditRequest,
           PluginNotification as CorePluginNotification};
-use styles::ThemeStyleMap;
+use styles::{ThemeStyleMap, DEFAULT_THEME};
 use view::View;
 use width_cache::WidthCache;
 
@@ -86,6 +86,9 @@ const CONFIG_EVENT_TOKEN: WatchToken = WatchToken(1);
 #[cfg(feature = "notify")]
 pub const OPEN_FILE_EVENT_TOKEN: WatchToken = WatchToken(2);
 
+#[cfg(feature = "notify")]
+const THEME_FILE_EVENT_TOKEN: WatchToken = WatchToken(3);
+
 #[allow(dead_code)]
 pub struct CoreState {
     editors: BTreeMap<BufferId, RefCell<Editor>>,
@@ -122,7 +125,7 @@ impl CoreState {
             if !p.exists() {
                 if let Err(e) = config::init_config_dir(p) {
                     //TODO: report this error?
-                    eprintln!("error initing file based configs: {:?}", e);
+                    error!("error initing file based configs: {:?}", e);
                 }
             }
 
@@ -135,6 +138,15 @@ impl CoreState {
 
         let config_manager = ConfigManager::new(config_dir, extras_dir);
 
+        let themes_dir = config_manager.get_themes_dir();
+        if let Some(p) = themes_dir.as_ref() {
+            #[cfg(feature = "notify")]
+            watcher.watch_filtered(p, true, THEME_FILE_EVENT_TOKEN,
+                                   |p| p.extension()
+                                   .and_then(OsStr::to_str)
+                                   .unwrap_or("") == "tmTheme");
+        }
+
         CoreState {
             views: BTreeMap::new(),
             editors: BTreeMap::new(),
@@ -143,7 +155,7 @@ impl CoreState {
             #[cfg(not(feature = "notify"))]
             file_manager: FileManager::new(),
             kill_ring: RefCell::new(Rope::from("")),
-            style_map: RefCell::new(ThemeStyleMap::new()),
+            style_map: RefCell::new(ThemeStyleMap::new(themes_dir)),
             width_cache: RefCell::new(WidthCache::new()),
             config_manager,
             self_ref: None,
@@ -173,6 +185,9 @@ impl CoreState {
         if let Some(path) = self.config_manager.base_config_file_path() {
             self.load_file_based_config(&path);
         }
+
+        // Load the custom theme files.
+        self.style_map.borrow_mut().load_theme_dir();
 
         // instead of having to do this here, config should just own
         // the plugin catalog and reload automatically
@@ -320,6 +335,8 @@ impl CoreState {
             //TODO: why is this a request?? make a notification?
             GetConfig { view_id } =>
                 self.do_get_config(view_id).map(|c| json!(c)),
+            DebugGetContents { view_id } =>
+                self.do_get_contents(view_id).map(|c| json!(c)),
         }
     }
 
@@ -418,10 +435,18 @@ impl CoreState {
     }
 
     fn do_set_theme(&self, theme_name: &str) {
-        if self.style_map.borrow_mut().set_theme(&theme_name).is_err() {
-        //TODO: report error
-            return;
+        //Set only if requested theme is different from the 
+        //current one.
+        if theme_name != self.style_map.borrow().get_theme_name() {
+           if let Err(e) = self.style_map.borrow_mut().set_theme(&theme_name) {
+                error!("error setting theme: {:?}, {:?}",theme_name, e);
+                return;
+           }
         }
+        self.notify_client_and_update_views();
+    }
+
+    fn notify_client_and_update_views(&self) {
         {
             let style_map = self.style_map.borrow();
             self.peer.theme_changed(style_map.get_theme_name(),
@@ -463,9 +488,16 @@ impl CoreState {
             .ok_or(RemoteError::custom(404, format!("missing {}", view_id), None))
     }
 
+    fn do_get_contents(&self, view_id: ViewId) -> Result<Rope, RemoteError> {
+        self.make_context(view_id)
+            .map(|ctx| ctx.editor.borrow().get_buffer().to_owned())
+            .ok_or_else(
+                || RemoteError::custom(404, format!("No view for id {}", view_id), None))
+    }
+
     fn do_start_plugin(&mut self, _view_id: ViewId, plugin: &str) {
         if self.running_plugins.iter().any(|p| p.name == plugin) {
-            eprintln!("plugin {} already running", plugin);
+            info!("plugin {} already running", plugin);
             return;
         }
 
@@ -476,7 +508,7 @@ impl CoreState {
                                  self.next_plugin_id(),
                                  self.self_ref.as_ref().unwrap().clone());
         } else {
-            eprintln!("no plugin found with name '{}'", plugin);
+            warn!("no plugin found with name '{}'", plugin);
         }
     }
 
@@ -531,7 +563,8 @@ impl CoreState {
             match token {
                 OPEN_FILE_EVENT_TOKEN => self.handle_open_file_fs_event(event),
                 CONFIG_EVENT_TOKEN => self.handle_config_fs_event(event),
-                _ => eprintln!("unexpected fs event token {:?}", token),
+                THEME_FILE_EVENT_TOKEN => self.handle_themes_fs_event(event),
+                _ => warn!("unexpected fs event token {:?}", token),
             }
         }
     }
@@ -548,7 +581,7 @@ impl CoreState {
                 Create(ref path) |
                 Write(ref path) => path,
             other => {
-                eprintln!("Event in open file {:?}", other);
+                debug!("Event in open file {:?}", other);
                 return;
             }
         };
@@ -601,6 +634,61 @@ impl CoreState {
         }
     }
 
+    /// Handles changes in theme files.
+    #[cfg(feature = "notify")]
+    fn handle_themes_fs_event(&mut self, event: DebouncedEvent) {
+        use self::DebouncedEvent::*;
+        match event {
+            Create(ref path) | Write(ref path) =>
+                self.load_theme_file(path),
+            NoticeRemove(ref path) =>
+                self.remove_theme(path),
+            Rename(ref old, ref new) => {
+                self.remove_theme(old);
+                self.load_theme_file(new);
+            },
+            Chmod(ref path) | Remove(ref path) =>
+                self.style_map.borrow_mut()
+                    .sync_dir(path.parent()),
+            _ => ()
+        }
+        let theme_names = self.style_map.borrow().get_theme_names();
+        self.peer.available_themes(theme_names);
+    }
+
+    /// Load a single theme file. Updates if already present.
+    fn load_theme_file(&mut self, path: &Path) {
+        let _t = trace_block("CoreState::load_theme_file", &["core"]);
+
+        let result = self.style_map.borrow_mut().load_theme(path);
+        match result {
+            Ok(theme_name) => {
+                if theme_name == self.style_map.borrow()
+                    .get_theme_name()
+                {
+                    if self.style_map.borrow_mut()
+                        .set_theme(&theme_name).is_ok() 
+                    {
+                        self.notify_client_and_update_views();
+                    }
+                }
+            },
+            Err(e) => error!("Error loading theme file: {:?}, {:?}", path, e),
+        }
+    }
+
+    fn remove_theme(&mut self, path: &Path) {
+        let result = self.style_map.borrow_mut().remove_theme(path);
+
+        // Set default theme if the removed theme was the 
+        // current one.
+        if let Some(theme_name) = result {
+            if theme_name == self.style_map.borrow().get_theme_name() {
+                self.do_set_theme(DEFAULT_THEME);
+            }
+        }
+    }
+
     fn toggle_tracing(&self, enabled: bool) {
         self.running_plugins.iter()
             .for_each(|plugin| plugin.toggle_tracing(enabled))
@@ -621,7 +709,7 @@ impl CoreState {
                     let mut trace = chrome_trace::decode(json).unwrap();
                     all_traces.append(&mut trace);
                 }
-                Err(e) => eprintln!("trace error {:?}", e),
+                Err(e) => error!("trace error {:?}", e),
             }
         }
 
@@ -630,13 +718,13 @@ impl CoreState {
         let mut trace_file = match File::create(path.as_ref()) {
             Ok(f) => f,
             Err(e) => {
-                eprintln!("error saving trace {:?}", e);
+                error!("error saving trace {:?}", e);
                 return;
             }
         };
 
         if let Err(e) = chrome_trace::serialize(&all_traces, &mut trace_file) {
-            eprintln!("error saving trace {:?}", e);
+            error!("error saving trace {:?}", e);
         }
     }
 }
@@ -655,13 +743,13 @@ impl CoreState {
                 self.iter_groups().for_each(|mut cx| cx.plugin_started(&plugin));
                 self.running_plugins.push(plugin);
             }
-            Err(e) => eprintln!("failed to start plugin {:?}", e),
+            Err(e) => error!("failed to start plugin {:?}", e),
         }
     }
 
     pub(crate) fn plugin_exit(&mut self, id: PluginId,
                               error: Result<(), ReadError>) {
-        eprintln!("plugin {:?} exited with result {:?}", id, error);
+        warn!("plugin {:?} exited with result {:?}", id, error);
         let running_idx = self.running_plugins.iter()
             .position(|p| p.id == id);
         if let Some(idx) = running_idx {
@@ -761,21 +849,6 @@ impl Counter {
     }
 }
 
-impl<'a> From<&'a str> for ViewId {
-    fn from(s: &'a str) -> Self {
-        let ord = s.trim_left_matches("view-id-");
-        let ident = usize::from_str_radix(ord, 10)
-            .expect("ViewId parsing should never fail");
-        ViewId(ident)
-    }
-}
-
-impl From<String> for ViewId {
-    fn from(s: String) -> Self {
-        s.as_str().into()
-    }
-}
-
 // these two only exist so that we can use ViewIds as idle tokens
 impl From<usize> for ViewId {
     fn from(src: usize) -> ViewId {
@@ -809,7 +882,11 @@ impl<'de> Deserialize<'de> for ViewId
         where D: Deserializer<'de>
     {
         let s = String::deserialize(deserializer)?;
-        Ok(s.into())
+        let ord = s.trim_left_matches("view-id-");
+        match usize::from_str_radix(ord, 10) {
+            Ok(id) => Ok(ViewId(id)),
+            Err(_) => Err(de::Error::invalid_value(Unexpected::Str(&s), &"view id")),
+        }
     }
 }
 
@@ -822,5 +899,21 @@ impl fmt::Display for BufferId {
 impl BufferId {
     pub fn new(val: usize) -> Self {
         BufferId(val)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde::Deserialize;
+
+    use super::ViewId;
+
+    #[test]
+    fn test_deserialize_view_id() {
+        let de = json!("view-id-1");
+        assert_eq!(ViewId::deserialize(&de).unwrap(), ViewId(1));
+
+        let de = json!("not-a-view-id");
+        assert!(ViewId::deserialize(&de).unwrap_err().is_data());
     }
 }

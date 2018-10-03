@@ -1,4 +1,4 @@
-// Copyright 2016 Google Inc. All rights reserved.
+// Copyright 2016 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,8 +14,8 @@
 
 //! A general b-tree structure suitable for ropes and the like.
 
-use std::sync::Arc;
 use std::cmp::min;
+use std::sync::Arc;
 
 use interval::Interval;
 
@@ -27,7 +27,7 @@ pub trait NodeInfo: Clone {
     ///
     /// A given NodeInfo is for exactly one type of leaf. That is why
     /// the leaf type is an associated type rather than a type parameter.
-    type L : Leaf;
+    type L: Leaf;
 
     /// An operator that combines info from two subtrees. It is intended
     /// (but not strictly enforced) that this operator be associative and
@@ -59,7 +59,6 @@ pub trait NodeInfo: Clone {
 }
 
 pub trait Leaf: Sized + Clone + Default {
-
     /// Measurement of leaf in base units.
     /// A 'base unit' refers to the smallest discrete unit
     /// by which a given concrete type can be indexed.
@@ -177,8 +176,7 @@ impl<N: NodeInfo> Node<N> {
     pub fn from_leaf(l: N::L) -> Node<N> {
         let len = l.len();
         let info = N::compute_info(&l);
-        Node(Arc::new(
-            NodeBody {
+        Node(Arc::new(NodeBody {
             height: 0,
             len,
             info,
@@ -194,8 +192,7 @@ impl<N: NodeInfo> Node<N> {
             len += child.0.len;
             info.accumulate(&child.0.info);
         }
-        Node(Arc::new(
-            NodeBody {
+        Node(Arc::new(NodeBody {
             height,
             len,
             info,
@@ -232,7 +229,7 @@ impl<N: NodeInfo> Node<N> {
     fn next_positive_measure_child<M: Metric<N>>(&self, j: usize) -> (Option<usize>, usize) {
         let children = self.get_children();
         let mut offset = 0;
-        for i in j .. children.len() {
+        for i in j..children.len() {
             if children[i].measure::<M>() > 0 {
                 return (Some(i), offset);
             } else {
@@ -253,7 +250,7 @@ impl<N: NodeInfo> Node<N> {
     fn is_ok_child(&self) -> bool {
         match self.0.val {
             NodeVal::Leaf(ref l) => l.is_ok_child(),
-            NodeVal::Internal(ref nodes) => (nodes.len() >= MIN_CHILDREN)
+            NodeVal::Internal(ref nodes) => (nodes.len() >= MIN_CHILDREN),
         }
     }
 
@@ -292,15 +289,8 @@ impl<N: NodeInfo> Node<N> {
                 panic!("merge_leaves called on non-leaf");
             }
         } {
-            Some(new) => {
-                Node::from_nodes(vec![
-                    rope1,
-                    Node::from_leaf(new),
-                ])
-            }
-            None => {
-                rope1
-            }
+            Some(new) => Node::from_nodes(vec![rope1, Node::from_leaf(new)]),
+            None => rope1,
         }
     }
 
@@ -322,7 +312,7 @@ impl<N: NodeInfo> Node<N> {
                 } else {
                     Node::merge_nodes(newrope.get_children(), &children2[1..])
                 }
-            },
+            }
             Ordering::Equal => {
                 if rope1.is_ok_child() && rope2.is_ok_child() {
                     return Node::from_nodes(vec![rope1, rope2]);
@@ -331,7 +321,7 @@ impl<N: NodeInfo> Node<N> {
                     return Node::merge_leaves(rope1, rope2);
                 }
                 Node::merge_nodes(rope1.get_children(), rope2.get_children())
-            },
+            }
             Ordering::Greater => {
                 let children1 = rope1.get_children();
                 if h2 == h1 - 1 && rope2.is_ok_child() {
@@ -408,7 +398,8 @@ impl<N: NodeInfo> Node<N> {
                     }
                     let child_iv = child.interval();
                     // easier just to use signed ints?
-                    let rec_iv = iv.intersect(child_iv.translate(offset))
+                    let rec_iv = iv
+                        .intersect(child_iv.translate(offset))
                         .translate_neg(offset);
                     child.push_subseq(b, rec_iv);
                     offset += child.len();
@@ -435,7 +426,9 @@ impl<N: NodeInfo> Node<N> {
 
     // doesn't deal with endpoint, handle that specially if you need it
     pub fn convert_metrics<M1: Metric<N>, M2: Metric<N>>(&self, mut m1: usize) -> usize {
-        if m1 == 0 { return 0; }
+        if m1 == 0 {
+            return 0;
+        }
         // If M1 can fragment, then we must land on the leaf containing
         // the m1 boundary. Otherwise, we can land on the beginning of
         // the leaf immediately following the M1 boundary, which may be
@@ -473,12 +466,49 @@ impl<N: NodeInfo> TreeBuilder<N> {
         TreeBuilder(None)
     }
 
-    // TODO: more sophisticated implementation, so pushing a sequence
-    // is amortized O(n), rather than O(n log n) as now.
+    /// Push a node on the accumulating tree by concatenating it.
+    ///
+    /// This method is O(log n), where `n` is the amount of nodes already in the accumulating tree.
+    /// The worst case happens when all nodes having exactly MAX_CHILDREN children
+    /// and the node being pushed is a leaf or equivalently has height 1.
+    /// Then `log n` nodes have to be created before the leaf can be added, to keep all leaves on the same height.
     pub fn push(&mut self, n: Node<N>) {
         match self.0.take() {
             None => self.0 = Some(n),
-            Some(buf) => self.0 = Some(Node::concat(buf, n))
+            Some(buf) => self.0 = Some(Node::concat(buf, n)),
+        }
+    }
+
+    /// Add leaves to accumulating tree.
+    ///
+    /// Creates a stack of node lists, where all the nodes in a list have uniform node height.
+    /// The stack is height sorted in ascending order.
+    /// The length of any list in the stack is at most MAX_CHILDREN -1.
+    ///
+    /// Example of this kind of stack if MAX_CHILDREN = 3:
+    /// let n_i be some node of height i. Let the front of the array represent the top of the stack.
+    /// [[n_1, n_1], [n_2], [n_3, n_3]]
+    ///
+    /// The nodes in the stack are pushed on the accumulating tree one by one in the end.
+    pub fn push_leaves(&mut self, leaves: Vec<N::L>) {
+        let mut stack: Vec<Vec<Node<N>>> = Vec::new();
+        for leaf in leaves {
+            let mut new = Node::from_leaf(leaf);
+            loop {
+                if stack.last().map_or(true, |r| r[0].height() != new.height()) {
+                    stack.push(Vec::new());
+                }
+                stack.last_mut().unwrap().push(new);
+                if stack.last().unwrap().len() < MAX_CHILDREN {
+                    break;
+                }
+                new = Node::from_nodes(stack.pop().unwrap())
+            }
+        }
+        for v in stack {
+            for r in v {
+                self.push(r)
+            }
         }
     }
 
@@ -493,7 +523,7 @@ impl<N: NodeInfo> TreeBuilder<N> {
     pub fn build(self) -> Node<N> {
         match self.0 {
             Some(r) => r,
-            None => Node::from_leaf(N::L::default())
+            None => Node::from_leaf(N::L::default()),
         }
     }
 }
@@ -535,8 +565,8 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
     pub fn set(&mut self, position: usize) {
         self.position = position;
         if let Some(l) = self.leaf {
-            if self.position >= self.offset_of_leaf &&
-                    self.position < self.offset_of_leaf + l.len() {
+            if self.position >= self.offset_of_leaf && self.position < self.offset_of_leaf + l.len()
+            {
                 return;
             }
         }
@@ -553,13 +583,11 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
             // not at a valid position
             return false;
         }
-        if self.position == 0 ||
-                (self.position == self.offset_of_leaf && !M::can_fragment()) {
+        if self.position == 0 || (self.position == self.offset_of_leaf && !M::can_fragment()) {
             return true;
         }
         if self.position > self.offset_of_leaf {
-            return M::is_boundary(self.leaf.unwrap(),
-                self.position - self.offset_of_leaf);
+            return M::is_boundary(self.leaf.unwrap(), self.position - self.offset_of_leaf);
         }
         // tricky case, at beginning of leaf, need to query end of previous
         // leaf; TODO: would be nice if we could do it another way that didn't
@@ -641,7 +669,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
                     return Some(self.root.len());
                 }
                 let (node, j) = self.cache[i].unwrap();
-                let (next_j, offset) = node.next_positive_measure_child::<M>(j+1);
+                let (next_j, offset) = node.next_positive_measure_child::<M>(j + 1);
                 self.position += offset;
                 if let Some(next_j) = next_j {
                     self.cache[i] = Some((node, next_j));
@@ -674,8 +702,9 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
         if let Some(l) = self.leaf {
             let offset_in_leaf = self.position - self.offset_of_leaf;
             if let Some(offset_in_leaf) = M::next(l, offset_in_leaf) {
-                if offset_in_leaf == l.len() &&
-                        self.offset_of_leaf + offset_in_leaf != self.root.len() {
+                if offset_in_leaf == l.len()
+                    && self.offset_of_leaf + offset_in_leaf != self.root.len()
+                {
                     let _ = self.next_leaf();
                 } else {
                     self.position = self.offset_of_leaf + offset_in_leaf;
@@ -876,18 +905,31 @@ impl Metric<BytesInfo> for BytesMetric {
 
 #[cfg(test)]
 mod test {
-    use ::rope::*;
     use super::*;
+    use rope::*;
 
     fn build_triangle(n: u32) -> String {
         let mut s = String::new();
         let mut line = String::new();
-        for _ in 0 .. n {
+        for _ in 0..n {
             s += &line;
             s += "\n";
             line += "a";
         }
         s
+    }
+
+    #[test]
+    fn eq_rope_with_stack() {
+        let n = 2_000;
+        let s = build_triangle(n);
+        let mut builder_default = TreeBuilder::new();
+        let mut builder_stacked = TreeBuilder::new();
+        builder_default.push_str(&s);
+        builder_stacked.push_str_stacked(&s);
+        let tree_default = builder_default.build();
+        let tree_stacked = builder_stacked.build();
+        assert_eq!(tree_default, tree_stacked);
     }
 
     #[test]
@@ -897,8 +939,10 @@ mod test {
 
         let mut cursor = Cursor::new(&text, 0);
         let mut prev_offset = cursor.pos();
-        for i in 1..(n+1) as usize {
-            let offset = cursor.next::<LinesMetric>().expect("arrived at the end too soon");
+        for i in 1..(n + 1) as usize {
+            let offset = cursor
+                .next::<LinesMetric>()
+                .expect("arrived at the end too soon");
             assert_eq!(offset - prev_offset, i);
             prev_offset = offset;
         }
@@ -929,10 +973,13 @@ mod test {
             let mut c = Cursor::new(&r, i);
             let it = c.next::<LinesMetric>();
             let pos = c.pos();
-            assert!(s.as_bytes()[i..pos-1].iter().all(|c| *c != b'\n'), "missed linebreak");
+            assert!(
+                s.as_bytes()[i..pos - 1].iter().all(|c| *c != b'\n'),
+                "missed linebreak"
+            );
             if pos < s.len() {
                 assert!(it.is_some(), "must be Some(_)");
-                assert!(s.as_bytes()[pos-1]  == b'\n', "not a linebreak");
+                assert!(s.as_bytes()[pos - 1] == b'\n', "not a linebreak");
             }
         }
     }
@@ -953,7 +1000,10 @@ mod test {
             let mut c = Cursor::new(&r, i);
             let it = c.prev::<LinesMetric>();
             let pos = c.pos();
-            assert!(s.as_bytes()[pos..i].iter().all(|c| *c != b'\n'), "missed linebreak");
+            assert!(
+                s.as_bytes()[pos..i].iter().all(|c| *c != b'\n'),
+                "missed linebreak"
+            );
 
             if i == 0 && s.as_bytes()[i] == b'\n' {
                 assert_eq!(pos, 0);
@@ -961,7 +1011,7 @@ mod test {
 
             if pos > 0 {
                 assert!(it.is_some(), "must be Some(_)");
-                assert!(s.as_bytes()[pos-1]  == b'\n', "not a linebreak");
+                assert!(s.as_bytes()[pos - 1] == b'\n', "not a linebreak");
             }
         }
     }

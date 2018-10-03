@@ -1,4 +1,4 @@
-// Copyright 2016 Google Inc. All rights reserved.
+// Copyright 2016 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,12 +18,13 @@ use std::collections::BTreeSet;
 
 use serde_json::Value;
 
-use xi_rope::rope::{Rope, RopeInfo, LinesMetric};
+use xi_rope::rope::{Rope, RopeInfo, LinesMetric, count_newlines};
 use xi_rope::interval::Interval;
 use xi_rope::delta::{self, Delta, Transformer};
 use xi_rope::engine::{Engine, RevId, RevToken};
 use xi_rope::spans::SpansBuilder;
 use xi_trace::trace_block;
+use xi_rope::tree::Cursor;
 
 use config::BufferItems;
 use event_context::MAX_SIZE_LIMIT;
@@ -36,6 +37,7 @@ use selection::{Selection, SelRegion};
 use styles::ThemeStyleMap;
 use view::{View, Replace};
 use rpc::SelectionModifier;
+use word_boundaries::WordCursor;
 
 #[cfg(not(feature = "ledger"))]
 pub struct SyncStore;
@@ -139,8 +141,8 @@ impl Editor {
         self.engine.get_head_rev_id().token()
     }
 
-    pub(crate) fn get_edit_type(&self) -> &str {
-        self.this_edit_type.json_string()
+    pub(crate) fn get_edit_type(&self) -> EditType {
+        self.this_edit_type
     }
 
     pub(crate) fn get_active_undo_group(&self) -> usize {
@@ -210,9 +212,7 @@ impl Editor {
         let head_rev_id = self.engine.get_head_rev_id();
         let undo_group;
 
-        if self.this_edit_type == self.last_edit_type
-            && self.this_edit_type != EditType::Other
-            && self.this_edit_type != EditType::Transpose
+        if !self.this_edit_type.breaks_undo_group(self.last_edit_type)
             && !self.live_undos.is_empty()
         {
             undo_group = *self.live_undos.last().unwrap();
@@ -347,7 +347,7 @@ impl Editor {
                 // backspace deletes max(1, tab_size) contiguous spaces
                 let (_, c) = view.offset_to_line_col(&self.text, region.start);
 
-                let tab_off = c & config.tab_size;
+                let tab_off = c % config.tab_size;
                 let tab_size = config.tab_size;
                 let tab_size = if tab_off == 0 { tab_size } else { tab_off };
                 let tab_start = region.start.saturating_sub(tab_size);
@@ -399,7 +399,7 @@ impl Editor {
         if save {
             let saved = self.extract_sel_regions(&deletions)
                 .unwrap_or_default();
-            *kill_ring = saved.into();
+            *kill_ring = Rope::from(saved);
         }
         self.delete_sel_regions(&deletions);
     }
@@ -421,16 +421,16 @@ impl Editor {
 
     /// Extracts non-caret selection regions into a string,
     /// joining multiple regions with newlines.
-    fn extract_sel_regions(&self, sel_regions: &[SelRegion]) -> Option<String> {
+    fn extract_sel_regions(&self, sel_regions: &[SelRegion]) -> Option<Cow<str>> {
         let mut saved = None;
         for region in sel_regions {
             if !region.is_caret() {
-                let val = self.text.slice_to_string(region.min(), region.max());
+                let val = self.text.slice_to_cow(region);
                 match saved {
                     None => saved = Some(val),
                     Some(ref mut s) => {
-                        s.push('\n');
-                        s.push_str(&val);
+                        s.to_mut().push('\n');
+                        s.to_mut().push_str(&val);
                     }
                 }
             }
@@ -439,18 +439,27 @@ impl Editor {
     }
 
     fn insert_newline(&mut self, view: &View, config: &BufferItems) {
-        self.this_edit_type = EditType::InsertChars;
+        self.this_edit_type = EditType::InsertNewline;
         self.insert(view, &config.line_ending);
     }
 
     fn insert_tab(&mut self, view: &View, config: &BufferItems) {
+        self.this_edit_type = EditType::InsertChars;
         let mut builder = delta::Builder::new(self.text.len());
         let const_tab_text = self.get_tab_text(config, None);
+
+        if view.sel_regions().len() > 1 {
+            // if we indent multiple regions or multiple lines (below),
+            // we treat this as an indentation adjustment; otherwise it is
+            // just inserting text.
+            self.this_edit_type = EditType::Indent;
+        }
 
         for region in view.sel_regions() {
             let line_range = view.get_line_range(&self.text, region);
 
             if line_range.len() > 1 {
+                self.this_edit_type = EditType::Indent;
                 for line in line_range {
                     let offset = view.line_col_to_offset(&self.text, line, 0);
                     let iv = Interval::new_closed_open(offset, offset);
@@ -466,7 +475,6 @@ impl Editor {
                 builder.replace(iv, Rope::from(tab_text));
             }
         }
-        self.this_edit_type = EditType::InsertChars;
         self.add_delta(builder.build());
     }
 
@@ -477,6 +485,7 @@ impl Editor {
     /// Sublime and VSCode, with non-caret selections not being modified.
     fn modify_indent(&mut self, view: &View, config: &BufferItems,
                      direction: IndentDirection) {
+        self.this_edit_type = EditType::Indent;
         let mut lines = BTreeSet::new();
         let tab_text = self.get_tab_text(config, None);
         for region in view.sel_regions() {
@@ -511,8 +520,7 @@ impl Editor {
             let tab_offset = view.line_col_to_offset(&self.text, line,
                                                      tab_text.len());
             let interval = Interval::new_closed_open(offset, tab_offset);
-            let leading_slice = self.text.slice_to_string(interval.start(),
-                                                          interval.end());
+            let leading_slice = self.text.slice_to_cow(interval.start()..interval.end());
             if leading_slice == tab_text {
                 builder.delete(interval);
             } else if let Some(first_char_col) = leading_slice.find(|c: char| !c.is_whitespace()) {
@@ -536,11 +544,24 @@ impl Editor {
         tab_text
     }
 
-    // TODO: insert from keyboard or input method shouldn't break undo group,
-    // but paste should.
     fn do_insert(&mut self, view: &View, chars: &str) {
         self.this_edit_type = EditType::InsertChars;
         self.insert(view, chars);
+    }
+
+    fn do_paste(&mut self, view: &View, chars: &str) {
+        if view.sel_regions().len() == 1
+            || view.sel_regions().len() != count_lines(chars)
+        {
+            self.insert(view, chars);
+        } else {
+            let mut builder = delta::Builder::new(self.text.len());
+            for (sel, line) in view.sel_regions().iter().zip(chars.lines()) {
+                let iv = Interval::new_closed_open(sel.min(), sel.max());
+                builder.replace(iv, line.into());
+            }
+            self.add_delta(builder.build());
+        }
     }
 
     pub(crate) fn do_cut(&mut self, view: &mut View) -> Value {
@@ -551,7 +572,7 @@ impl Editor {
 
     pub(crate) fn do_copy(&self, view: &View) -> Value {
         if let Some(val) = self.extract_sel_regions(view.sel_regions()) {
-            Value::String(val)
+            Value::String(val.into_owned())
         } else {
             Value::Null
         }
@@ -582,8 +603,7 @@ impl Editor {
 
     fn sel_region_to_interval_and_rope(&self, region: SelRegion) -> (Interval, Rope) {
         let as_interval = Interval::new_closed_open(region.min(), region.max());
-        let interval_rope = Rope::from(self.text.slice_to_string(
-            as_interval.start(), as_interval.end()));
+        let interval_rope = self.text.subseq(as_interval);
         (as_interval, interval_rope)
     }
 
@@ -603,8 +623,9 @@ impl Editor {
                 if let Some(end) = self.text.next_grapheme_offset(middle) {
                     if start >= last {
                         let interval = Interval::new_closed_open(start, end);
-                        let swapped = self.text.slice_to_string(middle, end) +
-                                      &self.text.slice_to_string(start, middle);
+                        let before =  self.text.slice_to_cow(start..middle);
+                        let after = self.text.slice_to_cow(middle..end);
+                        let swapped: String = [after, before].concat();
                         builder.replace(interval, Rope::from(swapped));
                         last = end;
                     }
@@ -656,8 +677,7 @@ impl Editor {
         let mut builder = delta::Builder::new(self.text.len());
 
         for region in view.sel_regions() {
-            let selected_text = self.text.slice_to_string(region.min(),
-                                                          region.max());
+            let selected_text = self.text.slice_to_cow(region);
             let interval = Interval::new_closed_open(region.min(), region.max());
             builder.replace(interval, Rope::from(transform_function(&selected_text)));
         }
@@ -665,6 +685,84 @@ impl Editor {
             self.this_edit_type = EditType::Other;
             self.add_delta(builder.build());
         }
+    }
+
+    // capitalization behaviour is similar to behaviour in XCode
+    fn capitalize_text(&mut self, view: &mut View) {
+        let mut builder = delta::Builder::new(self.text.len());
+        let mut final_selection = Selection::new();
+
+        for &region in view.sel_regions() {
+            final_selection.add_region(SelRegion::new(region.max(), region.max()));
+            let mut word_cursor = WordCursor::new(&self.text, region.min());
+
+            loop {
+                // capitalize each word in the current selection
+                let (start, end) = word_cursor.select_word();
+
+                if start < end {
+                    let interval = Interval::new_closed_open(start, end);
+                    let word = self.text.slice_to_string(start..end);
+
+                    // first letter is uppercase, remaining letters are lowercase
+                    let (first_char, rest) = word.split_at(1);
+                    let capitalized_text = [first_char.to_uppercase(), rest.to_lowercase()].concat();
+                    builder.replace(interval, Rope::from(capitalized_text));
+                }
+
+                if word_cursor.next_boundary().is_none() || end > region.max() {
+                    break;
+                }
+            }
+        }
+
+        if !builder.is_empty() {
+            self.this_edit_type = EditType::Other;
+            self.add_delta(builder.build());
+        }
+
+        // at the end of the transformation carets are located at the end of the words that were
+        // transformed last in the selections
+        view.collapse_selections(&self.text);
+        view.set_selection(&self.text, final_selection);
+    }
+
+    fn duplicate_line(&mut self, view: &View, config: &BufferItems) {
+        let mut builder = delta::Builder::new(self.text.len());
+        // get affected lines or regions
+        let mut to_duplicate = BTreeSet::new();
+
+        for region in view.sel_regions() {
+            let (first_line, _) = view.offset_to_line_col(&self.text, region.min());
+            let line_start = view.offset_of_line(&self.text, first_line);
+
+            let mut cursor = match region.is_caret() {
+                true => Cursor::new(&self.text, line_start),
+                false => {  // duplicate all lines together that are part of the same selections
+                    let (last_line, _) = view.offset_to_line_col(&self.text, region.max());
+                    let line_end = view.offset_of_line(&self.text, last_line);
+                    Cursor::new(&self.text, line_end)
+                }
+            };
+
+            if let Some(line_end) = cursor.next::<LinesMetric>() {
+                to_duplicate.insert((line_start, line_end));
+            }
+        }
+
+        for (start, end) in to_duplicate {
+            // insert duplicates
+            let iv = Interval::new_closed_open(start, start);
+            builder.replace(iv, self.text.slice(start..end));
+
+            // last line does not have new line character so it needs to be manually added
+            if end == self.text.len() {
+                builder.replace(iv, Rope::from(&config.line_ending))
+            }
+        }
+
+        self.this_edit_type = EditType::Other;
+        self.add_delta(builder.build());
     }
 
     pub(crate) fn do_edit(&mut self, view: &mut View, kill_ring: &mut Rope,
@@ -679,14 +777,17 @@ impl Editor {
             Redo => self.do_redo(),
             Uppercase => self.transform_text(view, |s| s.to_uppercase()),
             Lowercase => self.transform_text(view, |s| s.to_lowercase()),
+            Capitalize => self.capitalize_text(view),
             Indent => self.modify_indent(view, config, IndentDirection::In),
             Outdent => self.modify_indent(view, config, IndentDirection::Out),
             InsertNewline => self.insert_newline(view, config),
             InsertTab => self.insert_tab(view, config),
             Insert(chars) => self.do_insert(view, &chars),
+            Paste(chars) => self.do_paste(view, &chars),
             Yank => self.yank(view, kill_ring),
             ReplaceNext => self.replace(view, false),
             ReplaceAll => self.replace(view, true),
+            DuplicateLine => self.duplicate_line(view, config),
         }
     }
 
@@ -759,7 +860,7 @@ impl Editor {
             end_off = text.prev_codepoint_offset(end_off + 1).unwrap();
         }
 
-        let chunk = text.slice_to_string(offset, end_off);
+        let chunk = text.slice_to_cow(offset..end_off).into_owned();
         let first_line = text.line_of_offset(offset);
         let first_line_offset = offset - text.offset_of_line(first_line);
 
@@ -767,10 +868,19 @@ impl Editor {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Copy)]
-enum EditType {
+#[derive(PartialEq, Eq, Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EditType {
+    /// A catchall for edits that don't fit elsewhere, and which should
+    /// always have their own undo groups; used for things like cut/copy/paste.
     Other,
+    /// An insert from the keyboard/IME (not a paste or a yank).
+    #[serde(rename = "insert")]
     InsertChars,
+    #[serde(rename = "newline")]
+    InsertNewline,
+    /// An indentation adjustment.
+    Indent,
     Delete,
     Undo,
     Redo,
@@ -778,17 +888,14 @@ enum EditType {
 }
 
 impl EditType {
-    pub fn json_string(&self) -> &'static str {
-        match *self {
-            EditType::InsertChars => "insert",
-            EditType::Delete => "delete",
-            EditType::Undo => "undo",
-            EditType::Redo => "redo",
-            EditType::Transpose => "transpose",
-            _ => "other",
-        }
+    /// Checks whether a new undo group should be created between two edits.
+    fn breaks_undo_group(self, previous: EditType) -> bool {
+        self == EditType::Other
+        || self == EditType::Transpose
+        || self != previous
     }
 }
+
 
 fn last_selection_region(regions: &[SelRegion]) -> Option<&SelRegion> {
     for region in regions.iter().rev() {
@@ -803,4 +910,13 @@ fn n_spaces(n: usize) -> &'static str {
     let spaces = "                                ";
     assert!(n <= spaces.len());
     &spaces[..n]
+}
+
+/// Counts the number of lines in the string, not including any trailing newline.
+fn count_lines(s: &str) -> usize {
+    let mut newlines = count_newlines(s);
+    if s.as_bytes().last() == Some(&0xa) {
+        newlines -= 1;
+    }
+    1 + newlines
 }

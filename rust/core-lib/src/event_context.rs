@@ -1,4 +1,4 @@
-// Copyright 2018 Google Inc. All rights reserved.
+// Copyright 2018 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,13 +23,13 @@ use serde_json::{self, Value};
 
 use xi_rope::Rope;
 use xi_rope::interval::Interval;
-use xi_rope::rope::{BaseMetric, LinesMetric, Utf16CodeUnitsMetric};
+use xi_rope::rope::LinesMetric;
 use xi_rpc::{RemoteError, Error as RpcError};
 use xi_trace::trace_block;
 
 use rpc::{EditNotification, EditRequest, LineRange, Position as ClientPosition};
 use plugins::rpc::{ClientPluginInfo, PluginBufferInfo, PluginNotification,
-                   PluginRequest, PluginUpdate, CorePosition, Hover};
+                   PluginRequest, PluginUpdate, Hover};
 
 use styles::ThemeStyleMap;
 use config::{BufferItems, Table};
@@ -130,7 +130,7 @@ impl<'a> EventContext<'a> {
                 }
             }
             SpecialEvent::DebugRewrap | SpecialEvent::DebugWrapWidth =>
-                eprintln!("debug wrapping methods are removed, use the config system"),
+                warn!("debug wrapping methods are removed, use the config system"),
             SpecialEvent::DebugPrintSpans => self.with_editor(
                 |ed, view, _, _| {
                     let sel = view.sel_regions().last().unwrap();
@@ -178,7 +178,7 @@ impl<'a> EventContext<'a> {
             UpdateStatusItem { key, value } => self.client.update_status_item(
                                                         self.view_id, &key, &value),
             RemoveStatusItem { key } => self.client.remove_status_item(self.view_id, &key),
-            ShowHover { request_id, result, rev } => self.do_show_hover(request_id, result, rev),
+            ShowHover { request_id, result } => self.do_show_hover(request_id, result),
         };
         self.after_edit(&plugin.to_string());
         self.render_if_needed();
@@ -220,6 +220,11 @@ impl<'a> EventContext<'a> {
         let delta = if approx_size > MAX_SIZE_LIMIT { None } else { Some(delta) };
 
         let undo_group = ed.get_active_undo_group();
+        //TODO: we want to just put EditType on the wire, but don't want
+        //to update the plugin lib quite yet.
+        let v: Value = serde_json::to_value(&ed.get_edit_type()).unwrap();
+        let edit_type_str = v.as_str().unwrap().to_string();
+
         let update = PluginUpdate::new(
                 self.view_id,
                 ed.get_head_rev_token(),
@@ -227,7 +232,7 @@ impl<'a> EventContext<'a> {
                 new_len,
                 nb_lines,
                 Some(undo_group),
-                ed.get_edit_type().to_owned(),
+                edit_type_str,
                 author.into());
 
 
@@ -357,17 +362,13 @@ impl<'a> EventContext<'a> {
     }
 
     pub(crate) fn reload(&mut self, text: Rope) {
+        //TODO: It would be nice if we could preserve the existing selections,
+        //but to do that correctly we would need to compute a real delta between
+        //the old and new buffers, so that selections could be transformed
         self.with_editor(|ed, view, _, _| {
-            let new_len = text.len();
-            view.collapse_selections(ed.get_buffer());
+            view.set_selection(ed.get_buffer(), SelRegion::caret(0));
             view.unset_find();
-            let prev_sel = view.sel_regions().first().map(|s| s.clone());
             ed.reload(text);
-            if let Some(prev_sel) = prev_sel {
-                let offset = prev_sel.start.min(new_len);
-                let sel = SelRegion::caret(offset);
-                view.set_selection(ed.get_buffer(), sel);
-            }
         });
 
         self.after_edit("core");
@@ -408,8 +409,8 @@ impl<'a> EventContext<'a> {
     pub(crate) fn do_plugin_update(&mut self, update: Result<Value, RpcError>) {
         match update.map(serde_json::from_value::<u64>) {
             Ok(Ok(_)) => (),
-            Ok(Err(err)) => eprintln!("plugin response json err: {:?}", err),
-            Err(err) => eprintln!("plugin shutdown, do something {:?}", err),
+            Ok(Err(err)) => error!("plugin response json err: {:?}", err),
+            Err(err) => error!("plugin shutdown, do something {:?}", err),
         }
         self.editor.borrow_mut().dec_revs_in_flight();
     }
@@ -455,45 +456,27 @@ impl<'a> EventContext<'a> {
 
     fn do_request_hover(&mut self, request_id: usize, position: Option<ClientPosition>) {
         if let Some(position) = self.get_resolved_position(position) {
-            self.with_each_plugin(|p| p.get_hover(self.view_id, request_id, &position))
+            self.with_each_plugin(|p| p.get_hover(self.view_id, request_id, position))
         }
     }
 
-    fn do_show_hover(&mut self, request_id: usize, hover: Result<Hover, RemoteError>, _rev: u64) {
+    fn do_show_hover(&mut self, request_id: usize, hover: Result<Hover, RemoteError>) {
         match hover {
             Ok(hover) => {
                 // TODO: Get Range from hover here and use it to highlight text
                 self.client.show_hover(self.view_id, request_id, hover.content)
             },
-            Err(err) => eprintln!("Hover Response from Client Error {:?}", err)
+            Err(err) => warn!("Hover Response from Client Error {:?}", err)
         }
     }
      
     /// Gives the requested position in UTF-8 offset format to be sent to plugin
     /// If position is `None`, it tries to get the current Caret Position and use
     /// that instead
-    fn get_resolved_position(&mut self, position: Option<ClientPosition>) -> Option<CorePosition> {
+    fn get_resolved_position(&mut self, position: Option<ClientPosition>) -> Option<usize> {
         position.map(|p|
             self.with_view(|view, text| view.line_col_to_offset(text, p.line, p.column)
         )).or_else(|| self.view.borrow().get_caret_offset())
-        .map(|offset| self.offset_to_core_position(offset))
-    }
-
-    fn offset_to_core_position(&mut self, offset: usize) -> CorePosition {
-        self.with_view(|_, text| {
-            let line = text.line_of_offset(offset);
-            let offset_of_line = text.offset_of_line(line);
-            let col_utf8 = offset - offset_of_line;
-            let col_utf16 = text.convert_metrics::<BaseMetric, Utf16CodeUnitsMetric>(offset) -
-                text.convert_metrics::<BaseMetric, Utf16CodeUnitsMetric>(offset_of_line);
-
-            CorePosition {
-                offset,
-                line,
-                col_utf8,
-                col_utf16,
-            }                           
-        })
     }
 }
 
@@ -528,7 +511,7 @@ mod tests {
             let client = Client::new(Box::new(DummyPeer));
             let core_ref = dummy_weak_core();
             let kill_ring = RefCell::new(Rope::from(""));
-            let style_map = RefCell::new(ThemeStyleMap::new());
+            let style_map = RefCell::new(ThemeStyleMap::new(None));
             let width_cache = RefCell::new(WidthCache::new());
             ContextHarness { view, editor, client, core_ref, kill_ring,
                              style_map, width_cache, config_manager }

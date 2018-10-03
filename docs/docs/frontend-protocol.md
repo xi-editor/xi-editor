@@ -106,7 +106,28 @@ inner methods described below:
 
 `insert {"chars":"A"}`
 
-Inserts the `chars` string at the current cursor location.
+Inserts the `chars` string at the current cursor locations.
+
+#### paste
+
+`paste {"chars": "password"}`
+
+Inserts the `chars` string at the current cursor locations. If there are
+multiple cursors and `chars` has the same number of lines as there are
+cursors, one line will be inserted at each cursor, in order; otherwise the full
+string will be inserted at each cursor.
+
+#### copy 
+
+`copy -> String|Null`
+
+Copies the active selection, returning their contents or `Null` if the selection was empty.
+
+#### cut 
+
+`cut -> String|Null`
+
+Cut the active selection, returning their contents or `Null` if the selection was empty.
 
 #### cancel_operation
 
@@ -178,6 +199,7 @@ that takes a "movement" enum as a parameter.
 delete_backward
 delete_forward
 insert_newline
+duplicate_line
 move_up
 move_up_and_modify_selection
 move_down
@@ -199,6 +221,7 @@ The following methods act by modifying the current selection.
 ```
 uppercase
 lowercase
+capitalize
 indent
 outdent
 ```
@@ -281,7 +304,7 @@ valid next occurrence. Supported options for `modify_selection` are:
 * `none`: the selection is not modified
 * `set`: the next/previous match will be set as the new selection
 * `add`: the next/previous match will be added to the current selection
-* `add_remove_current`: the previously added selection will be removed and the next/previous 
+* `add_remove_current`: the previously added selection will be removed and the next/previous
 match will be added to the current selection
 
 Selects the next/previous occurrence matching the search query.
@@ -330,6 +353,12 @@ Replaces the next matching occurrence with the replacement string.
 `replace_all { }`
 
 Replaces all matching occurrences with the replacement string.
+
+#### selection_into_lines
+
+`selection_into_lines { }`
+
+Splits all current selections into lines.
 
 ## From back-end to front-end
 
@@ -497,6 +526,14 @@ Notifies the client that the theme has been changed. The client should
 use the new theme to set colors as appropriate. The `Theme` object is
 directly serialized from a [`syntect::highlighting::ThemeSettings`](https://github.com/trishume/syntect/blob/master/src/highlighting/theme.rs#L27)
 instance.
+
+
+#### available_themes
+
+`available_themes {"themes": ["InspiredGitHub"]}`
+
+Notifies the client of the available themes.
+
 
 #### config_changed
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright 2016 Google Inc. All rights reserved.
+# Copyright 2016 The xi-editor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -104,7 +104,7 @@ def mk_linebreak_props(datadir):
     gen_table('LINEBREAK_4_LEAVES', 'u8', leaves4);
 
 def mk_tables(datadir):
-    print """// Copyright 2016 Google Inc. All rights reserved.
+    print """// Copyright 2016 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.

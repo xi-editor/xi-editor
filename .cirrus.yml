@@ -1,0 +1,35 @@
+env:
+  CARGO_HOME: /tmp/cargo
+
+task:
+  matrix:
+    - install_cmake_script: apt-get update && apt-get install -y cmake
+      matrix:
+        - name: test (linux)
+          container:
+            image: rust:latest
+            cpu: 4
+            memory: 8G
+        - name: test (linux nightly)
+          allow_failures: true
+          container:
+            image: rustlang/rust:nightly
+            cpu: 4
+            memory: 8G
+    - osx_instance:
+        image: high-sierra-xcode-9.4
+      env:
+        PATH: $PATH:$CARGO_HOME/bin
+      install_cmake_script: brew install cmake
+      matrix:
+        - name: test (macOS)
+          install_rust_script: curl https://sh.rustup.rs -sSf | sh -s -- -y
+        - name: test (macOS nightly)
+          allow_failures: true
+          install_rust_script: curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain nightly
+  cargo_cache:
+    folder: $CARGO_HOME/registry
+    fingerprint_script: cat rust/Cargo.lock
+  build_script: cd rust && cargo build --verbose --all --jobs 4
+  test_script: cd rust && cargo test --verbose --all --jobs 4
+  before_cache_script: rm -rf $CARGO_HOME/registry/index

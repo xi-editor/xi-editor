@@ -2,13 +2,13 @@ language: rust
 osx_image: xcode9.2
 
 rust:
-  - 1.26.2
+  - 1.28.0
   - nightly
 
 os:
   - linux
   - osx
-  
+
 matrix:
   allow_failures:
     - rust: nightly
@@ -20,5 +20,6 @@ cache:
 script:
   - cd rust
   - export CARGO_TARGET_DIR=/tmp/target
-  - cargo build --all || exit
+  - export RUST_BACKTRACE=1
+  - RUSTFLAGS="-D warnings" cargo check --all || exit
   - cargo test --all || exit

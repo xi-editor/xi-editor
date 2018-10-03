@@ -1,4 +1,4 @@
-// Copyright 2017 Google Inc. All rights reserved.
+// Copyright 2017 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -27,6 +27,9 @@ extern crate rand;
 extern crate memchr;
 extern crate languageserver_types;
 
+#[macro_use]
+extern crate log;
+
 mod state_cache;
 mod base_cache;
 mod view;
@@ -47,7 +50,7 @@ pub use view::View;
 pub use state_cache::StateCache;
 pub use base_cache::ChunkCache;
 pub use core_proxy::CoreProxy;
-pub use xi_core::plugin_rpc::{Hover, Range, CorePosition, PluginPosition};
+pub use xi_core::plugin_rpc::{Hover, Range};
 
 /// Abstracts getting data from the peer. Mainly exists for mocking in tests.
 pub trait DataSource {
@@ -152,7 +155,7 @@ pub trait Plugin {
     /// Language Plugins specific methods
     
     #[allow(unused_variables)]
-    fn get_hover(&mut self, view: &mut View<Self::Cache>, request_id: usize, position: CorePosition) { }
+    fn get_hover(&mut self, view: &mut View<Self::Cache>, request_id: usize, position: usize) { }
 }
 
 #[derive(Debug)]

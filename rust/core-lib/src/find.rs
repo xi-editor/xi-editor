@@ -1,4 +1,4 @@
-// Copyright 2018 Google Inc. All rights reserved.
+// Copyright 2018 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -160,13 +160,13 @@ impl Find {
     }
 
     /// Set search parameters and executes the search.
-    pub fn do_find(&mut self, text: &Rope, search_string: String, case_sensitive: bool,
+    pub fn do_find(&mut self, text: &Rope, search_string: &str, case_sensitive: bool,
                    is_regex: bool, whole_words: bool) {
         if search_string.len() == 0 {
             self.unset();
         }
 
-        self.set_find(&search_string, case_sensitive, is_regex, whole_words);
+        self.set_find(search_string, case_sensitive, is_regex, whole_words);
         self.update_find(text, 0, text.len(), false);
     }
 
@@ -233,14 +233,14 @@ impl Find {
         // aligned to codepoint boundaries.
         let sub_text = text.subseq(Interval::new_closed_open(0, to));
         let mut find_cursor = Cursor::new(&sub_text, from);
-        let mut raw_lines = text.lines_raw(from, to);
+        let mut raw_lines = text.lines_raw(from..to);
 
         while let Some(start) = find(&mut find_cursor, &mut raw_lines, self.case_matching,
                                      &search_string, &self.regex) {
             let end = find_cursor.pos();
 
             if self.whole_words && !self.is_matching_whole_words(text, start, end) {
-                raw_lines = text.lines_raw(find_cursor.pos(), to);
+                raw_lines = text.lines_raw(find_cursor.pos()..to);
                 continue;
             }
 
@@ -253,7 +253,7 @@ impl Find {
                 // the beginning of the file. Re-align the cursor to the kept
                 // occurrence
                 find_cursor.set(e);
-                raw_lines = text.lines_raw(find_cursor.pos(), to);
+                raw_lines = text.lines_raw(find_cursor.pos()..to);
                 continue;
             }
 
@@ -272,7 +272,7 @@ impl Find {
             }
 
             // update line iterator so that line starts at current cursor position
-            raw_lines = text.lines_raw(find_cursor.pos(), to);
+            raw_lines = text.lines_raw(find_cursor.pos()..to);
         }
 
         self.hls_dirty = true;
