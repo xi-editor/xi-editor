@@ -312,7 +312,6 @@ impl CoreState {
                     PN::Stop { view_id, plugin_name } =>
                         self.do_stop_plugin(view_id, &plugin_name),
                     PN::PluginRpc { view_id, receiver, rpc } =>
--                        //TODO: rethink custom plugin RPCs
                         self.do_plugin_rpc(view_id, &receiver, &rpc.method, &rpc.params),
                 }
             TracingConfig { enabled } =>
