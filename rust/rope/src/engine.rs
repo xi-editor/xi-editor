@@ -965,13 +965,13 @@ fn rebase(
 #[cfg(test)]
 #[cfg_attr(rustfmt, rustfmt_skip)]
 mod tests {
-    use engine::*;
-    use rope::{Rope, RopeInfo};
     use delta::{Builder, Delta};
-    use multiset::Subset;
+    use engine::*;
     use interval::Interval;
+    use multiset::Subset;
+    use rope::{Rope, RopeInfo};
     use std::collections::BTreeSet;
-    use test_helpers::{parse_subset_list, parse_subset, parse_delta, debug_subsets};
+    use test_helpers::{debug_subsets, parse_delta, parse_subset, parse_subset_list};
 
     const TEST_STR: &'static str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
@@ -1008,10 +1008,13 @@ mod tests {
         let first_rev = engine.get_head_rev_id().token();
         engine.edit_rev(1, 1, first_rev, build_delta_1());
         engine.edit_rev(0, 2, first_rev, build_delta_2());
-        assert_eq!("0!3456789abcDEEFGIjklmnopqr888999stuvHIz", String::from(engine.get_head()));
+        assert_eq!(
+            "0!3456789abcDEEFGIjklmnopqr888999stuvHIz",
+            String::from(engine.get_head())
+        );
     }
 
-    fn undo_test(before: bool, undos : BTreeSet<usize>, output: &str) {
+    fn undo_test(before: bool, undos: BTreeSet<usize>, output: &str) {
         let mut engine = Engine::new(Rope::from(TEST_STR));
         let first_rev = engine.get_head_rev_id().token();
         if before {
@@ -1027,17 +1030,25 @@ mod tests {
 
     #[test]
     fn edit_rev_undo() {
-        undo_test(true, [1,2].iter().cloned().collect(), TEST_STR);
+        undo_test(true, [1, 2].iter().cloned().collect(), TEST_STR);
     }
 
     #[test]
     fn edit_rev_undo_2() {
-        undo_test(true, [2].iter().cloned().collect(), "0123456789abcDEEFghijklmnopqr999stuvz");
+        undo_test(
+            true,
+            [2].iter().cloned().collect(),
+            "0123456789abcDEEFghijklmnopqr999stuvz",
+        );
     }
 
     #[test]
     fn edit_rev_undo_3() {
-        undo_test(true, [1].iter().cloned().collect(), "0!3456789abcdefGIjklmnopqr888stuvwHIyz");
+        undo_test(
+            true,
+            [1].iter().cloned().collect(),
+            "0!3456789abcdefGIjklmnopqr888stuvwHIyz",
+        );
     }
 
     #[test]
@@ -1067,73 +1078,96 @@ mod tests {
         let after_first_edit = engine.get_head_rev_id().token();
         engine.edit_rev(0, 2, first_rev, build_delta_2());
         let d = engine.delta_rev_head(after_first_edit);
-        assert_eq!(String::from(engine.get_head()), d.apply_to_string("0123456789abcDEEFghijklmnopqr999stuvz"));
+        assert_eq!(
+            String::from(engine.get_head()),
+            d.apply_to_string("0123456789abcDEEFghijklmnopqr999stuvz")
+        );
     }
 
     #[test]
     fn undo() {
-        undo_test(false, [1,2].iter().cloned().collect(), TEST_STR);
+        undo_test(false, [1, 2].iter().cloned().collect(), TEST_STR);
     }
 
     #[test]
     fn undo_2() {
-        undo_test(false, [2].iter().cloned().collect(), "0123456789abcDEEFghijklmnopqr999stuvz");
+        undo_test(
+            false,
+            [2].iter().cloned().collect(),
+            "0123456789abcDEEFghijklmnopqr999stuvz",
+        );
     }
 
     #[test]
     fn undo_3() {
-        undo_test(false, [1].iter().cloned().collect(), "0!3456789abcdefGIjklmnopqr888stuvwHIyz");
+        undo_test(
+            false,
+            [1].iter().cloned().collect(),
+            "0!3456789abcdefGIjklmnopqr888stuvwHIyz",
+        );
     }
 
     #[test]
     fn undo_4() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
-        let d1 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("a"), TEST_STR.len());
+        let d1 = Delta::simple_edit(Interval::new_closed_open(0, 0), Rope::from("a"), TEST_STR.len());
         let first_rev = engine.get_head_rev_id().token();
         engine.edit_rev(1, 1, first_rev, d1.clone());
         let new_head = engine.get_head_rev_id().token();
         engine.undo([1].iter().cloned().collect());
-        let d2 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("a"), TEST_STR.len()+1);
+        let d2 = Delta::simple_edit(Interval::new_closed_open(0, 0), Rope::from("a"), TEST_STR.len() + 1);
         engine.edit_rev(1, 2, new_head, d2); // note this is based on d1 before, not the undo
         let new_head_2 = engine.get_head_rev_id().token();
-        let d3 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("b"), TEST_STR.len()+1);
+        let d3 = Delta::simple_edit(Interval::new_closed_open(0, 0), Rope::from("b"), TEST_STR.len() + 1);
         engine.edit_rev(1, 3, new_head_2, d3);
-        engine.undo([1,3].iter().cloned().collect());
-        assert_eq!("a0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", String::from(engine.get_head()));
+        engine.undo([1, 3].iter().cloned().collect());
+        assert_eq!(
+            "a0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
+            String::from(engine.get_head())
+        );
     }
 
     #[test]
     fn undo_5() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
-        let d1 = Delta::simple_edit(Interval::new_closed_open(0,10), Rope::from(""), TEST_STR.len());
+        let d1 = Delta::simple_edit(Interval::new_closed_open(0, 10), Rope::from(""), TEST_STR.len());
         let first_rev = engine.get_head_rev_id().token();
         engine.edit_rev(1, 1, first_rev, d1.clone());
         engine.edit_rev(1, 2, first_rev, d1.clone());
         engine.undo([1].iter().cloned().collect());
-        assert_eq!("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", String::from(engine.get_head()));
-        engine.undo([1,2].iter().cloned().collect());
+        assert_eq!(
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
+            String::from(engine.get_head())
+        );
+        engine.undo([1, 2].iter().cloned().collect());
         assert_eq!(TEST_STR, String::from(engine.get_head()));
         engine.undo([].iter().cloned().collect());
-        assert_eq!("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", String::from(engine.get_head()));
+        assert_eq!(
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
+            String::from(engine.get_head())
+        );
     }
 
     #[test]
     fn gc() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
-        let d1 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("c"), TEST_STR.len());
+        let d1 = Delta::simple_edit(Interval::new_closed_open(0, 0), Rope::from("c"), TEST_STR.len());
         let first_rev = engine.get_head_rev_id().token();
         engine.edit_rev(1, 1, first_rev, d1);
         let new_head = engine.get_head_rev_id().token();
         engine.undo([1].iter().cloned().collect());
-        let d2 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("a"), TEST_STR.len()+1);
+        let d2 = Delta::simple_edit(Interval::new_closed_open(0, 0), Rope::from("a"), TEST_STR.len() + 1);
         engine.edit_rev(1, 2, new_head, d2);
-        let gc : BTreeSet<usize> = [1].iter().cloned().collect();
+        let gc: BTreeSet<usize> = [1].iter().cloned().collect();
         engine.gc(&gc);
-        let d3 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("b"), TEST_STR.len()+1);
+        let d3 = Delta::simple_edit(Interval::new_closed_open(0, 0), Rope::from("b"), TEST_STR.len() + 1);
         let new_head_2 = engine.get_head_rev_id().token();
         engine.edit_rev(1, 3, new_head_2, d3);
         engine.undo([3].iter().cloned().collect());
-        assert_eq!("a0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", String::from(engine.get_head()));
+        assert_eq!(
+            "a0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
+            String::from(engine.get_head())
+        );
     }
 
     /// This case is a regression test reproducing a panic I found while using the UI.
@@ -1143,38 +1177,46 @@ mod tests {
 
         // insert `edits` letter "b"s in separate undo groups
         for i in 0..edits {
-            let d = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("b"), i);
+            let d = Delta::simple_edit(Interval::new_closed_open(0, 0), Rope::from("b"), i);
             let head = engine.get_head_rev_id().token();
-            engine.edit_rev(1, i+1, head, d);
+            engine.edit_rev(1, i + 1, head, d);
             if i >= max_undos {
-                let to_gc : BTreeSet<usize> = [i-max_undos].iter().cloned().collect();
+                let to_gc: BTreeSet<usize> = [i - max_undos].iter().cloned().collect();
                 engine.gc(&to_gc)
             }
         }
 
         // spam cmd+z until the available undo history is exhausted
         let mut to_undo = BTreeSet::new();
-        for i in ((edits-max_undos)..edits).rev() {
-            to_undo.insert(i+1);
+        for i in ((edits - max_undos)..edits).rev() {
+            to_undo.insert(i + 1);
             engine.undo(to_undo.clone());
         }
 
         // insert a character at the beginning
-        let d1 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("h"), engine.get_head().len());
+        let d1 = Delta::simple_edit(
+            Interval::new_closed_open(0, 0),
+            Rope::from("h"),
+            engine.get_head().len(),
+        );
         let head = engine.get_head_rev_id().token();
-        engine.edit_rev(1, edits+1, head, d1);
+        engine.edit_rev(1, edits + 1, head, d1);
 
         // since character was inserted after gc, editor gcs all undone things
         engine.gc(&to_undo);
 
         // insert character at end, when this test was added, it panic'd here
-        let chars_left = (edits-max_undos)+1;
-        let d2 = Delta::simple_edit(Interval::new_closed_open(chars_left, chars_left), Rope::from("f"), engine.get_head().len());
+        let chars_left = (edits - max_undos) + 1;
+        let d2 = Delta::simple_edit(
+            Interval::new_closed_open(chars_left, chars_left),
+            Rope::from("f"),
+            engine.get_head().len(),
+        );
         let head2 = engine.get_head_rev_id().token();
-        engine.edit_rev(1, edits+1, head2, d2);
+        engine.edit_rev(1, edits + 1, head2, d2);
 
         let mut soln = String::from("h");
-        for _ in 0..(edits-max_undos) {
+        for _ in 0..(edits - max_undos) {
             soln.push('b');
         }
         soln.push('f');
@@ -1184,41 +1226,47 @@ mod tests {
     #[test]
     fn gc_2() {
         // the smallest values with which it still fails:
-        gc_scenario(4,3);
+        gc_scenario(4, 3);
     }
 
     #[test]
     fn gc_3() {
         // original values this test was created/found with in the UI:
-        gc_scenario(35,20);
+        gc_scenario(35, 20);
     }
 
     #[test]
     fn gc_4() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
-        let d1 = Delta::simple_edit(Interval::new_closed_open(0,10), Rope::from(""), TEST_STR.len());
+        let d1 = Delta::simple_edit(Interval::new_closed_open(0, 10), Rope::from(""), TEST_STR.len());
         let first_rev = engine.get_head_rev_id().token();
         engine.edit_rev(1, 1, first_rev, d1.clone());
         engine.edit_rev(1, 2, first_rev, d1.clone());
-        let gc : BTreeSet<usize> = [1].iter().cloned().collect();
+        let gc: BTreeSet<usize> = [1].iter().cloned().collect();
         engine.gc(&gc);
         // shouldn't do anything since it was double-deleted and one was GC'd
-        engine.undo([1,2].iter().cloned().collect());
-        assert_eq!("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", String::from(engine.get_head()));
+        engine.undo([1, 2].iter().cloned().collect());
+        assert_eq!(
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
+            String::from(engine.get_head())
+        );
     }
 
     #[test]
     fn gc_5() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
-        let d1 = Delta::simple_edit(Interval::new_closed_open(0,10), Rope::from(""), TEST_STR.len());
+        let d1 = Delta::simple_edit(Interval::new_closed_open(0, 10), Rope::from(""), TEST_STR.len());
         let initial_rev = engine.get_head_rev_id().token();
         engine.undo([1].iter().cloned().collect());
         engine.edit_rev(1, 1, initial_rev, d1.clone());
         engine.edit_rev(1, 2, initial_rev, d1.clone());
-        let gc : BTreeSet<usize> = [1].iter().cloned().collect();
+        let gc: BTreeSet<usize> = [1].iter().cloned().collect();
         engine.gc(&gc);
         // only one of the deletes was gc'd, the other should still be in effect
-        assert_eq!("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", String::from(engine.get_head()));
+        assert_eq!(
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
+            String::from(engine.get_head())
+        );
         // since one of the two deletes was gc'd this should undo the one that wasn't
         engine.undo([2].iter().cloned().collect());
         assert_eq!(TEST_STR, String::from(engine.get_head()));
@@ -1227,65 +1275,83 @@ mod tests {
     #[test]
     fn gc_6() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
-        let d1 = Delta::simple_edit(Interval::new_closed_open(0,10), Rope::from(""), TEST_STR.len());
+        let d1 = Delta::simple_edit(Interval::new_closed_open(0, 10), Rope::from(""), TEST_STR.len());
         let initial_rev = engine.get_head_rev_id().token();
         engine.edit_rev(1, 1, initial_rev, d1.clone());
-        engine.undo([1,2].iter().cloned().collect());
+        engine.undo([1, 2].iter().cloned().collect());
         engine.edit_rev(1, 2, initial_rev, d1.clone());
-        let gc : BTreeSet<usize> = [1].iter().cloned().collect();
+        let gc: BTreeSet<usize> = [1].iter().cloned().collect();
         engine.gc(&gc);
         assert_eq!(TEST_STR, String::from(engine.get_head()));
         // since one of the two deletes was gc'd this should re-do the one that wasn't
         engine.undo([].iter().cloned().collect());
-        assert_eq!("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", String::from(engine.get_head()));
+        assert_eq!(
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
+            String::from(engine.get_head())
+        );
     }
 
     fn basic_rev(i: usize) -> RevId {
-        RevId { session1: 1, session2: 0, num: i as u32 }
+        RevId {
+            session1: 1,
+            session2: 0,
+            num: i as u32,
+        }
     }
 
     fn basic_insert_ops(inserts: Vec<Subset>, priority: usize) -> Vec<Revision> {
-        inserts.into_iter().enumerate().map(|(i, inserts)| {
-            let deletes = Subset::new(inserts.len());
-            Revision {
-                rev_id: basic_rev(i+1),
-                max_undo_so_far: i+1,
-                edit: Contents::Edit {
-                    priority, inserts, deletes,
-                    undo_group: i+1,
+        inserts
+            .into_iter()
+            .enumerate()
+            .map(|(i, inserts)| {
+                let deletes = Subset::new(inserts.len());
+                Revision {
+                    rev_id: basic_rev(i + 1),
+                    max_undo_so_far: i + 1,
+                    edit: Contents::Edit {
+                        priority,
+                        inserts,
+                        deletes,
+                        undo_group: i + 1,
+                    },
                 }
-            }
-        }).collect()
+            })
+            .collect()
     }
 
     #[test]
     fn rearrange_1() {
-        let inserts = parse_subset_list("
+        let inserts = parse_subset_list(
+            "
         ##
         -#-
         #---
         ---#-
         -----#
         #------
-        ");
+        ",
+        );
         let revs = basic_insert_ops(inserts, 1);
-        let base: BTreeSet<RevId> = [3,5].iter().cloned().map(basic_rev).collect();
+        let base: BTreeSet<RevId> = [3, 5].iter().cloned().map(basic_rev).collect();
 
         let rearranged = rearrange(&revs, &base, 7);
-        let rearranged_inserts: Vec<Subset> = rearranged.into_iter().map(|c| {
-            match c.edit {
-                Contents::Edit {inserts, ..} => inserts,
+        let rearranged_inserts: Vec<Subset> = rearranged
+            .into_iter()
+            .map(|c| match c.edit {
+                Contents::Edit { inserts, .. } => inserts,
                 Contents::Undo { .. } => panic!(),
-            }
-        }).collect();
+            })
+            .collect();
 
         debug_subsets(&rearranged_inserts);
-        let correct = parse_subset_list("
+        let correct = parse_subset_list(
+            "
         -##-
         --#--
         ---#--
         #------
-        ");
+        ",
+        );
         assert_eq!(correct, rearranged_inserts);
     }
 
@@ -1297,30 +1363,30 @@ mod tests {
             deletes: Subset::new(0),
         };
 
-        ids.iter().cloned().map(|i| {
-            Revision {
+        ids.iter()
+            .cloned()
+            .map(|i| Revision {
                 rev_id: basic_rev(i),
                 max_undo_so_far: i,
-                edit: contents.clone()
-            }
-        }).collect()
+                edit: contents.clone(),
+            })
+            .collect()
     }
 
     #[test]
     fn find_common_1() {
-        let a: Vec<Revision> = ids_to_fake_revs(&[0,2,4,6,8,10,12]);
-        let b: Vec<Revision> = ids_to_fake_revs(&[0,1,2,4,5,8,9]);
+        let a: Vec<Revision> = ids_to_fake_revs(&[0, 2, 4, 6, 8, 10, 12]);
+        let b: Vec<Revision> = ids_to_fake_revs(&[0, 1, 2, 4, 5, 8, 9]);
         let res = find_common(&a, &b);
 
-        let correct: BTreeSet<RevId> = [0,2,4,8].iter().cloned().map(basic_rev).collect();
+        let correct: BTreeSet<RevId> = [0, 2, 4, 8].iter().cloned().map(basic_rev).collect();
         assert_eq!(correct, res);
     }
 
-
     #[test]
     fn find_base_1() {
-        let a: Vec<Revision> = ids_to_fake_revs(&[0,2,4,6,8,10,12]);
-        let b: Vec<Revision> = ids_to_fake_revs(&[0,1,2,4,5,8,9]);
+        let a: Vec<Revision> = ids_to_fake_revs(&[0, 2, 4, 6, 8, 10, 12]);
+        let b: Vec<Revision> = ids_to_fake_revs(&[0, 1, 2, 4, 5, 8, 9]);
         let res = find_base_index(&a, &b);
 
         assert_eq!(1, res);
@@ -1328,12 +1394,14 @@ mod tests {
 
     #[test]
     fn compute_deltas_1() {
-        let inserts = parse_subset_list("
+        let inserts = parse_subset_list(
+            "
         -##-
         --#--
         ---#--
         #------
-        ");
+        ",
+        );
         let revs = basic_insert_ops(inserts, 1);
 
         let text = Rope::from("13456");
@@ -1352,12 +1420,14 @@ mod tests {
 
     #[test]
     fn compute_transforms_1() {
-        let inserts = parse_subset_list("
+        let inserts = parse_subset_list(
+            "
         -##-
         --#--
         ---#--
         #------
-        ");
+        ",
+        );
         let revs = basic_insert_ops(inserts, 1);
 
         let expand_by = compute_transforms(revs);
@@ -1369,20 +1439,26 @@ mod tests {
 
     #[test]
     fn compute_transforms_2() {
-        let inserts_1 = parse_subset_list("
+        let inserts_1 = parse_subset_list(
+            "
         -##-
         --#--
-        ");
+        ",
+        );
         let mut revs = basic_insert_ops(inserts_1, 1);
-        let inserts_2 = parse_subset_list("
+        let inserts_2 = parse_subset_list(
+            "
         ----
-        ");
+        ",
+        );
         let mut revs_2 = basic_insert_ops(inserts_2, 4);
         revs.append(&mut revs_2);
-        let inserts_3 = parse_subset_list("
+        let inserts_3 = parse_subset_list(
+            "
         ---#--
         #------
-        ");
+        ",
+        );
         let mut revs_3 = basic_insert_ops(inserts_3, 2);
         revs.append(&mut revs_3);
 
@@ -1399,10 +1475,12 @@ mod tests {
 
     #[test]
     fn rebase_1() {
-        let inserts = parse_subset_list("
+        let inserts = parse_subset_list(
+            "
         --#-
         ----#
-        ");
+        ",
+        );
         let a_revs = basic_insert_ops(inserts.clone(), 1);
         let b_revs = basic_insert_ops(inserts, 2);
 
@@ -1421,20 +1499,22 @@ mod tests {
         let (revs, text_2, tombstones_2, deletes_from_union_2) =
             rebase(expand_by, b_delta_ops, text_a, tombstones_a, deletes_from_union_a, 0);
 
-        let rebased_inserts: Vec<Subset> = revs.into_iter().map(|c| {
-            match c.edit {
-                Contents::Edit {inserts, ..} => inserts,
+        let rebased_inserts: Vec<Subset> = revs
+            .into_iter()
+            .map(|c| match c.edit {
+                Contents::Edit { inserts, .. } => inserts,
                 Contents::Undo { .. } => panic!(),
-            }
-        }).collect();
+            })
+            .collect();
 
         debug_subsets(&rebased_inserts);
-        let correct = parse_subset_list("
+        let correct = parse_subset_list(
+            "
         ---#--
         ------#
-        ");
+        ",
+        );
         assert_eq!(correct, rebased_inserts);
-
 
         assert_eq!("zcpbdj", String::from(&text_2));
         assert_eq!("a", String::from(&tombstones_2));
@@ -1449,7 +1529,12 @@ mod tests {
         Assert(usize, String),
         AssertAll(String),
         AssertMaxUndoSoFar(usize, usize),
-        Edit { ei: usize, p: usize, u: usize, d: Delta<RopeInfo> },
+        Edit {
+            ei: usize,
+            p: usize,
+            u: usize,
+            d: Delta<RopeInfo>,
+        },
     }
 
     #[derive(Debug)]
@@ -1462,7 +1547,7 @@ mod tests {
             let mut peers = Vec::with_capacity(count);
             for i in 0..count {
                 let mut peer = Engine::new(Rope::from(""));
-                peer.set_session_id(((i*1000) as u64, 0));
+                peer.set_session_id(((i * 1000) as u64, 0));
                 peers.push(peer);
             }
             MergeTestState { peers }
@@ -1479,25 +1564,25 @@ mod tests {
                         &mut rest[bi - ai - 1]
                     };
                     a.merge(b);
-                },
+                }
                 MergeTestOp::Assert(ei, ref correct) => {
                     let e = &mut self.peers[ei];
                     assert_eq!(correct, &String::from(e.get_head()), "for peer {}", ei);
-                },
+                }
                 MergeTestOp::AssertMaxUndoSoFar(ei, correct) => {
                     let e = &mut self.peers[ei];
                     assert_eq!(correct, e.max_undo_group_id(), "for peer {}", ei);
-                },
+                }
                 MergeTestOp::AssertAll(ref correct) => {
                     for (ei, e) in self.peers.iter().enumerate() {
                         assert_eq!(correct, &String::from(e.get_head()), "for peer {}", ei);
                     }
-                },
+                }
                 MergeTestOp::Edit { ei, p, u, d: ref delta } => {
                     let mut e = &mut self.peers[ei];
                     let head = e.get_head_rev_id().token();
                     e.edit_rev(p, u, head, delta.clone());
-                },
+                }
             }
         }
 
@@ -1514,22 +1599,54 @@ mod tests {
     fn merge_insert_only_whiteboard() {
         use self::MergeTestOp::*;
         let script = vec![
-            Edit { ei: 2, p: 1, u: 1, d: parse_delta("ab") },
-            Merge(0,2), Merge(1, 2),
+            Edit {
+                ei: 2,
+                p: 1,
+                u: 1,
+                d: parse_delta("ab"),
+            },
+            Merge(0, 2),
+            Merge(1, 2),
             Assert(0, "ab".to_owned()),
             Assert(1, "ab".to_owned()),
             Assert(2, "ab".to_owned()),
-            Edit { ei: 0, p: 3, u: 1, d: parse_delta("-c-") },
-            Edit { ei: 0, p: 3, u: 1, d: parse_delta("---d") },
+            Edit {
+                ei: 0,
+                p: 3,
+                u: 1,
+                d: parse_delta("-c-"),
+            },
+            Edit {
+                ei: 0,
+                p: 3,
+                u: 1,
+                d: parse_delta("---d"),
+            },
             Assert(0, "acbd".to_owned()),
-            Edit { ei: 1, p: 5, u: 1, d: parse_delta("-p-") },
-            Edit { ei: 1, p: 5, u: 1, d: parse_delta("---j") },
+            Edit {
+                ei: 1,
+                p: 5,
+                u: 1,
+                d: parse_delta("-p-"),
+            },
+            Edit {
+                ei: 1,
+                p: 5,
+                u: 1,
+                d: parse_delta("---j"),
+            },
             Assert(1, "apbj".to_owned()),
-            Edit { ei: 2, p: 1, u: 1, d: parse_delta("z--") },
-            Merge(0,2), Merge(1, 2),
+            Edit {
+                ei: 2,
+                p: 1,
+                u: 1,
+                d: parse_delta("z--"),
+            },
+            Merge(0, 2),
+            Merge(1, 2),
             Assert(0, "zacbd".to_owned()),
             Assert(1, "zapbj".to_owned()),
-            Merge(0,1),
+            Merge(0, 1),
             Assert(0, "zacpbdj".to_owned()),
         ];
         MergeTestState::new(3).run_script(&script[..]);
@@ -1540,27 +1657,65 @@ mod tests {
     fn merge_priorities() {
         use self::MergeTestOp::*;
         let script = vec![
-            Edit { ei: 2, p: 1, u: 1, d: parse_delta("ab") },
-            Merge(0,2), Merge(1, 2),
+            Edit {
+                ei: 2,
+                p: 1,
+                u: 1,
+                d: parse_delta("ab"),
+            },
+            Merge(0, 2),
+            Merge(1, 2),
             Assert(0, "ab".to_owned()),
             Assert(1, "ab".to_owned()),
             Assert(2, "ab".to_owned()),
-            Edit { ei: 0, p: 3, u: 1, d: parse_delta("-c-") },
-            Edit { ei: 0, p: 3, u: 1, d: parse_delta("---d") },
+            Edit {
+                ei: 0,
+                p: 3,
+                u: 1,
+                d: parse_delta("-c-"),
+            },
+            Edit {
+                ei: 0,
+                p: 3,
+                u: 1,
+                d: parse_delta("---d"),
+            },
             Assert(0, "acbd".to_owned()),
-            Edit { ei: 1, p: 5, u: 1, d: parse_delta("-p-") },
+            Edit {
+                ei: 1,
+                p: 5,
+                u: 1,
+                d: parse_delta("-p-"),
+            },
             Assert(1, "apb".to_owned()),
-            Edit { ei: 2, p: 4, u: 1, d: parse_delta("-r-") },
-            Merge(0,2), Merge(1, 2),
+            Edit {
+                ei: 2,
+                p: 4,
+                u: 1,
+                d: parse_delta("-r-"),
+            },
+            Merge(0, 2),
+            Merge(1, 2),
             Assert(0, "acrbd".to_owned()),
             Assert(1, "arpb".to_owned()),
-            Edit { ei: 1, p: 5, u: 1, d: parse_delta("----j") },
+            Edit {
+                ei: 1,
+                p: 5,
+                u: 1,
+                d: parse_delta("----j"),
+            },
             Assert(1, "arpbj".to_owned()),
-            Edit { ei: 2, p: 4, u: 1, d: parse_delta("---z") },
-            Merge(0,2), Merge(1, 2),
+            Edit {
+                ei: 2,
+                p: 4,
+                u: 1,
+                d: parse_delta("---z"),
+            },
+            Merge(0, 2),
+            Merge(1, 2),
             Assert(0, "acrbdz".to_owned()),
             Assert(1, "arpbzj".to_owned()),
-            Merge(0,1),
+            Merge(0, 1),
             Assert(0, "acrpbdzj".to_owned()),
         ];
         MergeTestState::new(3).run_script(&script[..]);
@@ -1571,19 +1726,48 @@ mod tests {
     fn merge_idempotent() {
         use self::MergeTestOp::*;
         let script = vec![
-            Edit { ei: 2, p: 1, u: 1, d: parse_delta("ab") },
-            Merge(0,2), Merge(1, 2),
+            Edit {
+                ei: 2,
+                p: 1,
+                u: 1,
+                d: parse_delta("ab"),
+            },
+            Merge(0, 2),
+            Merge(1, 2),
             Assert(0, "ab".to_owned()),
             Assert(1, "ab".to_owned()),
             Assert(2, "ab".to_owned()),
-            Edit { ei: 0, p: 3, u: 1, d: parse_delta("-c-") },
-            Edit { ei: 0, p: 3, u: 1, d: parse_delta("---d") },
+            Edit {
+                ei: 0,
+                p: 3,
+                u: 1,
+                d: parse_delta("-c-"),
+            },
+            Edit {
+                ei: 0,
+                p: 3,
+                u: 1,
+                d: parse_delta("---d"),
+            },
             Assert(0, "acbd".to_owned()),
-            Edit { ei: 1, p: 5, u: 1, d: parse_delta("-p-") },
-            Edit { ei: 1, p: 5, u: 1, d: parse_delta("---j") },
-            Merge(0,1),
+            Edit {
+                ei: 1,
+                p: 5,
+                u: 1,
+                d: parse_delta("-p-"),
+            },
+            Edit {
+                ei: 1,
+                p: 5,
+                u: 1,
+                d: parse_delta("---j"),
+            },
+            Merge(0, 1),
             Assert(0, "acpbdj".to_owned()),
-            Merge(0,1), Merge(1,0), Merge(0,1), Merge(1,0),
+            Merge(0, 1),
+            Merge(1, 0),
+            Merge(0, 1),
+            Merge(1, 0),
             Assert(0, "acpbdj".to_owned()),
             Assert(1, "acpbdj".to_owned()),
         ];
@@ -1594,24 +1778,51 @@ mod tests {
     fn merge_associative() {
         use self::MergeTestOp::*;
         let script = vec![
-            Edit { ei: 2, p: 1, u: 1, d: parse_delta("ab") },
-            Merge(0,2), Merge(1, 2),
-            Edit { ei: 0, p: 3, u: 1, d: parse_delta("-c-") },
-            Edit { ei: 1, p: 5, u: 1, d: parse_delta("-p-") },
-            Edit { ei: 2, p: 2, u: 1, d: parse_delta("z--") },
+            Edit {
+                ei: 2,
+                p: 1,
+                u: 1,
+                d: parse_delta("ab"),
+            },
+            Merge(0, 2),
+            Merge(1, 2),
+            Edit {
+                ei: 0,
+                p: 3,
+                u: 1,
+                d: parse_delta("-c-"),
+            },
+            Edit {
+                ei: 1,
+                p: 5,
+                u: 1,
+                d: parse_delta("-p-"),
+            },
+            Edit {
+                ei: 2,
+                p: 2,
+                u: 1,
+                d: parse_delta("z--"),
+            },
             // copy the current state
-            Merge(3, 0), Merge(4, 1), Merge(5, 2),
+            Merge(3, 0),
+            Merge(4, 1),
+            Merge(5, 2),
             // Do the merge one direction
-            Merge(1,2),
-            Merge(0,1),
+            Merge(1, 2),
+            Merge(0, 1),
             Assert(0, "zacpb".to_owned()),
             // Do it the other way on the copy
-            Merge(4,3),
-            Merge(5,4),
+            Merge(4, 3),
+            Merge(5, 4),
             Assert(5, "zacpb".to_owned()),
             // Go crazy
-            Merge(0,5), Merge(2,5), Merge(4,5), Merge(1,4),
-            Merge(3,1), Merge(5,3),
+            Merge(0, 5),
+            Merge(2, 5),
+            Merge(4, 5),
+            Merge(1, 4),
+            Merge(3, 1),
+            Merge(5, 3),
             AssertAll("zacpb".to_owned()),
         ];
         MergeTestState::new(6).run_script(&script[..]);
@@ -1621,15 +1832,30 @@ mod tests {
     fn merge_simple_delete_1() {
         use self::MergeTestOp::*;
         let script = vec![
-            Edit { ei: 0, p: 1, u: 1, d: parse_delta("abc") },
-            Merge(1,0),
+            Edit {
+                ei: 0,
+                p: 1,
+                u: 1,
+                d: parse_delta("abc"),
+            },
+            Merge(1, 0),
             Assert(0, "abc".to_owned()),
             Assert(1, "abc".to_owned()),
-            Edit { ei: 0, p: 1, u: 1, d: parse_delta("!-d-") },
+            Edit {
+                ei: 0,
+                p: 1,
+                u: 1,
+                d: parse_delta("!-d-"),
+            },
             Assert(0, "bdc".to_owned()),
-            Edit { ei: 1, p: 3, u: 1, d: parse_delta("--efg!") },
+            Edit {
+                ei: 1,
+                p: 3,
+                u: 1,
+                d: parse_delta("--efg!"),
+            },
             Assert(1, "abefg".to_owned()),
-            Merge(1,0),
+            Merge(1, 0),
             Assert(1, "bdefg".to_owned()),
         ];
         MergeTestState::new(2).run_script(&script[..]);
@@ -1639,15 +1865,30 @@ mod tests {
     fn merge_simple_delete_2() {
         use self::MergeTestOp::*;
         let script = vec![
-            Edit { ei: 0, p: 1, u: 1, d: parse_delta("ab") },
-            Merge(1,0),
+            Edit {
+                ei: 0,
+                p: 1,
+                u: 1,
+                d: parse_delta("ab"),
+            },
+            Merge(1, 0),
             Assert(0, "ab".to_owned()),
             Assert(1, "ab".to_owned()),
-            Edit { ei: 0, p: 1, u: 1, d: parse_delta("!-") },
+            Edit {
+                ei: 0,
+                p: 1,
+                u: 1,
+                d: parse_delta("!-"),
+            },
             Assert(0, "b".to_owned()),
-            Edit { ei: 1, p: 3, u: 1, d: parse_delta("-c-") },
+            Edit {
+                ei: 1,
+                p: 3,
+                u: 1,
+                d: parse_delta("-c-"),
+            },
             Assert(1, "acb".to_owned()),
-            Merge(1,0),
+            Merge(1, 0),
             Assert(1, "cb".to_owned()),
         ];
         MergeTestState::new(2).run_script(&script[..]);
@@ -1658,32 +1899,70 @@ mod tests {
     fn merge_whiteboard() {
         use self::MergeTestOp::*;
         let script = vec![
-            Edit { ei: 2, p: 1, u: 1, d: parse_delta("ab") },
-            Merge(0,2), Merge(1, 2), Merge(3, 2),
+            Edit {
+                ei: 2,
+                p: 1,
+                u: 1,
+                d: parse_delta("ab"),
+            },
+            Merge(0, 2),
+            Merge(1, 2),
+            Merge(3, 2),
             Assert(0, "ab".to_owned()),
             Assert(1, "ab".to_owned()),
             Assert(2, "ab".to_owned()),
             Assert(3, "ab".to_owned()),
-            Edit { ei: 2, p: 1, u: 1, d: parse_delta("!-") },
+            Edit {
+                ei: 2,
+                p: 1,
+                u: 1,
+                d: parse_delta("!-"),
+            },
             Assert(2, "b".to_owned()),
-            Edit { ei: 0, p: 3, u: 1, d: parse_delta("-c-") },
-            Edit { ei: 0, p: 3, u: 1, d: parse_delta("---d") },
+            Edit {
+                ei: 0,
+                p: 3,
+                u: 1,
+                d: parse_delta("-c-"),
+            },
+            Edit {
+                ei: 0,
+                p: 3,
+                u: 1,
+                d: parse_delta("---d"),
+            },
             Assert(0, "acbd".to_owned()),
-            Merge(0,2),
+            Merge(0, 2),
             Assert(0, "cbd".to_owned()),
-            Edit { ei: 1, p: 5, u: 1, d: parse_delta("-p-") },
-            Merge(1,2),
+            Edit {
+                ei: 1,
+                p: 5,
+                u: 1,
+                d: parse_delta("-p-"),
+            },
+            Merge(1, 2),
             Assert(1, "pb".to_owned()),
-            Edit { ei: 1, p: 5, u: 1, d: parse_delta("--j") },
+            Edit {
+                ei: 1,
+                p: 5,
+                u: 1,
+                d: parse_delta("--j"),
+            },
             Assert(1, "pbj".to_owned()),
             // to replicate whiteboard, z must be before a tombstone
             // which we can do with another peer that inserts before a and merges.
-            Edit { ei: 3, p: 7, u: 1, d: parse_delta("z--") },
-            Merge(2,3),
-            Merge(0,2), Merge(1, 2),
+            Edit {
+                ei: 3,
+                p: 7,
+                u: 1,
+                d: parse_delta("z--"),
+            },
+            Merge(2, 3),
+            Merge(0, 2),
+            Merge(1, 2),
             Assert(0, "zcbd".to_owned()),
             Assert(1, "zpbj".to_owned()),
-            Merge(0,1), // the merge from the whiteboard scan
+            Merge(0, 1), // the merge from the whiteboard scan
             Assert(0, "zcpbdj".to_owned()),
         ];
         MergeTestState::new(4).run_script(&script[..]);
@@ -1693,19 +1972,40 @@ mod tests {
     fn merge_max_undo_so_far() {
         use self::MergeTestOp::*;
         let script = vec![
-            Edit { ei: 0, p: 1, u: 1, d: parse_delta("ab") },
-            Merge(1,0), Merge(2,0),
-            AssertMaxUndoSoFar(1,1),
-            Edit { ei: 0, p: 1, u: 2, d: parse_delta("!-") },
-            Edit { ei: 1, p: 3, u: 3, d: parse_delta("-!") },
-            Merge(1,0),
-            AssertMaxUndoSoFar(1,3),
-            AssertMaxUndoSoFar(0,2),
-            Merge(0,1),
-            AssertMaxUndoSoFar(0,3),
-            Edit { ei: 2, p: 1, u: 1, d: parse_delta("!!") },
-            Merge(1,2),
-            AssertMaxUndoSoFar(1,3),
+            Edit {
+                ei: 0,
+                p: 1,
+                u: 1,
+                d: parse_delta("ab"),
+            },
+            Merge(1, 0),
+            Merge(2, 0),
+            AssertMaxUndoSoFar(1, 1),
+            Edit {
+                ei: 0,
+                p: 1,
+                u: 2,
+                d: parse_delta("!-"),
+            },
+            Edit {
+                ei: 1,
+                p: 3,
+                u: 3,
+                d: parse_delta("-!"),
+            },
+            Merge(1, 0),
+            AssertMaxUndoSoFar(1, 3),
+            AssertMaxUndoSoFar(0, 2),
+            Merge(0, 1),
+            AssertMaxUndoSoFar(0, 3),
+            Edit {
+                ei: 2,
+                p: 1,
+                u: 1,
+                d: parse_delta("!!"),
+            },
+            Merge(1, 2),
+            AssertMaxUndoSoFar(1, 3),
         ];
         MergeTestState::new(3).run_script(&script[..]);
     }
@@ -1716,18 +2016,33 @@ mod tests {
     fn merge_session_priorities() {
         use self::MergeTestOp::*;
         let script = vec![
-            Edit { ei: 0, p: 1, u: 1, d: parse_delta("ac") },
-            Merge(1,0),
-            Merge(2,0),
+            Edit {
+                ei: 0,
+                p: 1,
+                u: 1,
+                d: parse_delta("ac"),
+            },
+            Merge(1, 0),
+            Merge(2, 0),
             AssertAll("ac".to_owned()),
-            Edit { ei: 0, p: 1, u: 1, d: parse_delta("-d-") },
+            Edit {
+                ei: 0,
+                p: 1,
+                u: 1,
+                d: parse_delta("-d-"),
+            },
             Assert(0, "adc".to_owned()),
-            Edit { ei: 1, p: 1, u: 1, d: parse_delta("-f-") },
-            Merge(2,1),
+            Edit {
+                ei: 1,
+                p: 1,
+                u: 1,
+                d: parse_delta("-f-"),
+            },
+            Merge(2, 1),
             Assert(1, "afc".to_owned()),
             Assert(2, "afc".to_owned()),
-            Merge(2,0),
-            Merge(0,1),
+            Merge(2, 0),
+            Merge(0, 1),
             // These two will be different without using session IDs
             Assert(2, "adfc".to_owned()),
             Assert(0, "adfc".to_owned()),
