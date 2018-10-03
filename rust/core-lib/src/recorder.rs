@@ -2,14 +2,16 @@ use edit_types::EventDomain;
 
 pub(crate) struct Recorder {
     is_recording: bool,
-    recording: Option<Recording>,
+    recording: Recording,
 }
 
 impl Recorder {
     pub(crate) fn new() -> Recorder {
         Recorder {
             is_recording: false,
-            recording: None,
+            recording: Recording {
+                events: Vec::new()
+            },
         }
     }
 
@@ -18,6 +20,10 @@ impl Recorder {
     }
 
     pub(crate) fn toggle_recording(&mut self) {
+        if !self.is_recording && !self.recording.events.is_empty() {
+            self.recording.events.clear();
+        }
+
         self.is_recording = !self.is_recording;
     }
 
@@ -27,18 +33,12 @@ impl Recorder {
             return;
         }
 
-        self.recording.iter_mut()
-            .for_each(|recording| {
-                recording.events.push(cmd.clone());
-            });
+        self.recording.events.push(cmd.clone());
     }
 
     pub(crate) fn play<F>(&self, action: F)
         where F: FnMut(&EventDomain) -> () {
-
-        if let Some(ref recording) = self.recording {
-            recording.events.iter().for_each(action)
-        }
+        self.recording.events.iter().for_each(action)
     }
 }
 
