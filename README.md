@@ -9,7 +9,7 @@
 
 ***Note:*** *This is repo contains only the editor core, which is not usable on its own. For editors based on it, check out the list in [Frontends](#Frontends).*
 
-The xi editor project is an attempt to build a high quality text editor,
+The xi-editor project is an attempt to build a high quality text editor,
 using modern software engineering techniques. It is initially built for
 Mac OS X, using Cocoa for the user interface. There are also frontends for
 other operating systems available from third-party developers.
@@ -31,7 +31,7 @@ Goals include:
 
 Screenshot (will need to be updated as syntax coloring and UI polish is added):
 
-![xi screenshot](/docs/docs/img/xi-mac-screenshot.png?raw=true)
+![xi-mac screenshot](/docs/docs/img/xi-mac-screenshot.png?raw=true)
 
 
 ## Getting started
@@ -42,10 +42,10 @@ below.
 
 ### Building the core
 
-Xi targets 'recent stable Rust'. We recommend installing via [rustup](https://www.rustup.rs).
+Xi-editor targets 'recent stable Rust'. We recommend installing via [rustup](https://www.rustup.rs).
 The current minimum supported version is 1.28.
 
-To build the xi editor core from the root directory of this repo:
+To build the xi-editor core from the root directory of this repo:
 
 ```
 > cd rust
@@ -55,7 +55,7 @@ To build the xi editor core from the root directory of this repo:
 
 ## Frontends
 
-Here are some other front-ends in various stages of development:
+Here are some front-ends in various stages of development:
 
 * [xi-mac](https://github.com/xi-editor/xi-mac), the official macOS front-end.
 
@@ -149,7 +149,7 @@ editor.
 
 ## Authors
 
-The Xi editor project was started by Raph Levien but has since received
+The xi-editor project was started by Raph Levien but has since received
 contributions from a number of other people. See the [AUTHORS](AUTHORS)
 file for details.
 
