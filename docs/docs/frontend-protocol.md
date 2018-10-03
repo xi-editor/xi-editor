@@ -73,8 +73,13 @@ note for `new_view`. Errors are not currently reported.
 
 `set_theme {"theme_name": "InspiredGitHub"}`
 
-Requests that core change the theme. If the change succeeds the client
+Requests that core changes the theme. If the change succeeds the client
 will receive a `theme_changed` notification.
+
+### set_language
+`set_language {"view-id":"view-id-1", "language_id":"Rust"}`
+
+Requests that core changes the language of the buffer associated with the `view_id`.
 
 ### modify_user_config
 
@@ -117,13 +122,13 @@ multiple cursors and `chars` has the same number of lines as there are
 cursors, one line will be inserted at each cursor, in order; otherwise the full
 string will be inserted at each cursor.
 
-#### copy 
+#### copy
 
 `copy -> String|Null`
 
 Copies the active selection, returning their contents or `Null` if the selection was empty.
 
-#### cut 
+#### cut
 
 `cut -> String|Null`
 
