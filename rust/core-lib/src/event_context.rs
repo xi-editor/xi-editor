@@ -506,6 +506,7 @@ mod tests {
         style_map: RefCell<ThemeStyleMap>,
         width_cache: RefCell<WidthCache>,
         config_manager: ConfigManager,
+        recorder: RefCell<Recorder>,
     }
 
     impl ContextHarness {
@@ -521,8 +522,9 @@ mod tests {
             let kill_ring = RefCell::new(Rope::from(""));
             let style_map = RefCell::new(ThemeStyleMap::new(None));
             let width_cache = RefCell::new(WidthCache::new());
+            let recorder = RefCell::new(Recorder::new());
             ContextHarness { view, editor, client, core_ref, kill_ring,
-                             style_map, width_cache, config_manager }
+                             style_map, width_cache, config_manager, recorder }
         }
 
         /// Renders the text and selections. cursors are represented with
@@ -560,7 +562,7 @@ mod tests {
                 info: None,
                 siblings: Vec::new(),
                 plugins: Vec::new(),
-                recorder: Recorder::new(),
+                recorder: &self.recorder,
                 client: &self.client,
                 kill_ring: &self.kill_ring,
                 style_map: &self.style_map,
@@ -1425,16 +1427,16 @@ mod tests {
         // Single indent and outdent test
         ctx.do_edit(EditNotification::Insert { chars: "1234".into() });
         ctx.do_edit(EditNotification::IncreaseNumber);
-        assert_eq!(harness.debug_render(),"1235|");
+        assert_eq!(harness.debug_render(), "1235|");
 
         ctx.do_edit(EditNotification::Gesture { line: 0, col: 2, ty: PointSelect });
         ctx.do_edit(EditNotification::IncreaseNumber);
-        assert_eq!(harness.debug_render(),"1236|");
+        assert_eq!(harness.debug_render(), "1236|");
 
         ctx.do_edit(EditNotification::DeleteToBeginningOfLine);
         ctx.do_edit(EditNotification::Insert { chars: "-42".into() });
         ctx.do_edit(EditNotification::IncreaseNumber);
-        assert_eq!(harness.debug_render(),"-41|");
+        assert_eq!(harness.debug_render(), "-41|");
 
         // Cursor is on the 3
         ctx.do_edit(EditNotification::MoveToEndOfDocument);
@@ -1442,7 +1444,7 @@ mod tests {
         ctx.do_edit(EditNotification::Insert { chars: "this is a 336 text example".into() });
         ctx.do_edit(EditNotification::Gesture { line: 0, col: 11, ty: PointSelect });
         ctx.do_edit(EditNotification::DecreaseNumber);
-        assert_eq!(harness.debug_render(),"this is a 335| text example");
+        assert_eq!(harness.debug_render(), "this is a 335| text example");
 
         // Cursor is on of the 3
         ctx.do_edit(EditNotification::MoveToEndOfDocument);
@@ -1450,7 +1452,7 @@ mod tests {
         ctx.do_edit(EditNotification::Insert { chars: "this is a -336 text example".into() });
         ctx.do_edit(EditNotification::Gesture { line: 0, col: 11, ty: PointSelect });
         ctx.do_edit(EditNotification::DecreaseNumber);
-        assert_eq!(harness.debug_render(),"this is a -337| text example");
+        assert_eq!(harness.debug_render(), "this is a -337| text example");
 
         // Cursor is on the 't' of text
         ctx.do_edit(EditNotification::MoveToEndOfDocument);
@@ -1458,7 +1460,7 @@ mod tests {
         ctx.do_edit(EditNotification::Insert { chars: "this is a -336 text example".into() });
         ctx.do_edit(EditNotification::Gesture { line: 0, col: 15, ty: PointSelect });
         ctx.do_edit(EditNotification::DecreaseNumber);
-        assert_eq!(harness.debug_render(),"this is a -336 |text example");
+        assert_eq!(harness.debug_render(), "this is a -336 |text example");
 
         // test multiple iterations
         ctx.do_edit(EditNotification::MoveToEndOfDocument);
@@ -1468,7 +1470,7 @@ mod tests {
         ctx.do_edit(EditNotification::IncreaseNumber);
         ctx.do_edit(EditNotification::IncreaseNumber);
         ctx.do_edit(EditNotification::IncreaseNumber);
-        assert_eq!(harness.debug_render(),"this is a 339| text example");
+        assert_eq!(harness.debug_render(), "this is a 339| text example");
 
         // test changing number of chars
         ctx.do_edit(EditNotification::MoveToEndOfDocument);
@@ -1476,7 +1478,7 @@ mod tests {
         ctx.do_edit(EditNotification::Insert { chars: "this is a 10 text example".into() });
         ctx.do_edit(EditNotification::Gesture { line: 0, col: 11, ty: PointSelect });
         ctx.do_edit(EditNotification::DecreaseNumber);
-        assert_eq!(harness.debug_render(),"this is a 9| text example");
+        assert_eq!(harness.debug_render(), "this is a 9| text example");
 
         // test going negative
         ctx.do_edit(EditNotification::MoveToEndOfDocument);
@@ -1484,7 +1486,7 @@ mod tests {
         ctx.do_edit(EditNotification::Insert { chars: "this is a 0 text example".into() });
         ctx.do_edit(EditNotification::Gesture { line: 0, col: 11, ty: PointSelect });
         ctx.do_edit(EditNotification::DecreaseNumber);
-        assert_eq!(harness.debug_render(),"this is a -1| text example");
+        assert_eq!(harness.debug_render(), "this is a -1| text example");
 
         // test going positive
         ctx.do_edit(EditNotification::MoveToEndOfDocument);
@@ -1492,7 +1494,7 @@ mod tests {
         ctx.do_edit(EditNotification::Insert { chars: "this is a -1 text example".into() });
         ctx.do_edit(EditNotification::Gesture { line: 0, col: 12, ty: PointSelect });
         ctx.do_edit(EditNotification::IncreaseNumber);
-        assert_eq!(harness.debug_render(),"this is a 0| text example");
+        assert_eq!(harness.debug_render(), "this is a 0| text example");
 
         // if it begins in a region, nothing will happen
         ctx.do_edit(EditNotification::MoveToEndOfDocument);
@@ -1501,7 +1503,7 @@ mod tests {
         ctx.do_edit(EditNotification::Gesture { line: 0, col: 10, ty: PointSelect });
         ctx.do_edit(EditNotification::MoveToEndOfDocumentAndModifySelection);
         ctx.do_edit(EditNotification::DecreaseNumber);
-        assert_eq!(harness.debug_render(),"this is a [10 text example|]");
+        assert_eq!(harness.debug_render(), "this is a [10 text example|]");
 
         // If a number just happens to be in a region, nothing will happen
         ctx.do_edit(EditNotification::MoveToEndOfDocument);
@@ -1510,7 +1512,7 @@ mod tests {
         ctx.do_edit(EditNotification::Gesture { line: 0, col: 5, ty: PointSelect });
         ctx.do_edit(EditNotification::MoveToEndOfDocumentAndModifySelection);
         ctx.do_edit(EditNotification::DecreaseNumber);
-        assert_eq!(harness.debug_render(),"this [is a 10 text example|]");
+        assert_eq!(harness.debug_render(), "this [is a 10 text example|]");
 
         // if it ends on a region, the number will be changed
         ctx.do_edit(EditNotification::MoveToEndOfDocument);
@@ -1519,7 +1521,7 @@ mod tests {
         ctx.do_edit(EditNotification::Gesture { line: 0, col: 0, ty: PointSelect });
         ctx.do_edit(EditNotification::MoveToEndOfDocumentAndModifySelection);
         ctx.do_edit(EditNotification::IncreaseNumber);
-        assert_eq!(harness.debug_render(),"[this is a 11|]");
+        assert_eq!(harness.debug_render(), "[this is a 11|]");
 
         // if only a part of a number is in a region, the whole number will be changed
         ctx.do_edit(EditNotification::MoveToEndOfDocument);
@@ -1528,7 +1530,7 @@ mod tests {
         ctx.do_edit(EditNotification::Gesture { line: 0, col: 11, ty: PointSelect });
         ctx.do_edit(EditNotification::MoveRightAndModifySelection);
         ctx.do_edit(EditNotification::DecreaseNumber);
-        assert_eq!(harness.debug_render(),"this is a 999| text example");
+        assert_eq!(harness.debug_render(), "this is a 999| text example");
 
         // invalid numbers
         ctx.do_edit(EditNotification::MoveToEndOfDocument);
@@ -1565,10 +1567,95 @@ mod tests {
         ctx.do_edit(EditNotification::Gesture { line: 1, col: 9, ty: PointSelect });
         ctx.do_edit(EditNotification::AddSelectionAbove);
         ctx.do_edit(EditNotification::IncreaseNumber);
-        assert_eq!(harness.debug_render(),"\
+        assert_eq!(harness.debug_render(), "\
         example 43| number\n\
         example 91| number\n\
         Done.");
+    }
 
+    #[test]
+    fn recording_test() {
+        use rpc::GestureType::*;
+        let initial_text = "\
+        this is a string\n\
+        that has about\n\
+        four really nice\n\
+        lines to see.";
+        let harness = ContextHarness::new(initial_text);
+        let mut ctx = harness.make_context();
+
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 5, ty: PointSelect });
+        assert_eq!(harness.debug_render(),"\
+        this |is a string\n\
+        that has about\n\
+        four really nice\n\
+        lines to see." );
+
+        ctx.do_edit(EditNotification::ToggleRecording);
+        ctx.do_edit(EditNotification::AddSelectionBelow);
+        assert_eq!(harness.debug_render(),"\
+        this |is a string\n\
+        that |has about\n\
+        four really nice\n\
+        lines to see." );
+
+        ctx.do_edit(EditNotification::MoveToRightEndOfLine);
+        assert_eq!(harness.debug_render(),"\
+        this is a string|\n\
+        that has about|\n\
+        four really nice\n\
+        lines to see." );
+
+        ctx.do_edit(EditNotification::MoveWordLeftAndModifySelection);
+        assert_eq!(harness.debug_render(),"\
+        this is a [|string]\n\
+        that has [|about]\n\
+        four really nice\n\
+        lines to see." );
+
+        ctx.do_edit(EditNotification::Transpose);
+        assert_eq!(harness.debug_render(),"\
+        this is a [|about]\n\
+        that has [|string]\n\
+        four really nice\n\
+        lines to see." );
+
+        ctx.do_edit(EditNotification::CancelOperation);
+        ctx.do_edit(EditNotification::MoveToRightEndOfLine);
+        assert_eq!(harness.debug_render(),"\
+        this is a about|\n\
+        that has string\n\
+        four really nice\n\
+        lines to see." );
+
+        ctx.do_edit(EditNotification::ToggleRecording);
+
+        ctx.do_edit(EditNotification::Gesture { line: 2, col: 5, ty: PointSelect });
+        assert_eq!(harness.debug_render(),"\
+        this is a about\n\
+        that has string\n\
+        four |really nice\n\
+        lines to see." );
+
+        ctx.do_edit(EditNotification::PlayRecording);
+        assert_eq!(harness.debug_render(),"\
+        this is a about\n\
+        that has string\n\
+        four really see.|\n\
+        lines to nice" );
+
+        ctx.do_edit(EditNotification::Undo);
+        assert_eq!(harness.debug_render(),"\
+        this is a about\n\
+        that has string\n\
+        four really nice|\n\
+        lines to see." );
+
+        ctx.do_edit(EditNotification::Redo);
+        assert_eq!(harness.debug_render(),"\
+        this is a about\n\
+        that has string\n\
+        four really see.|\n\
+        lines to nice" );
     }
 }
