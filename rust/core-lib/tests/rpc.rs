@@ -34,8 +34,8 @@ fn test_startup() {
     let json = make_reader(r#"{"method":"client_started","params":{}}
 {"method":"set_theme","params":{"theme_name":"InspiredGitHub"}}"#);
     assert!(rpc_looper.mainloop(|| json, &mut state).is_ok());
-    rx.expect_rpc("available_themes");
     rx.expect_rpc("available_languages");
+    rx.expect_rpc("available_themes");
     rx.expect_rpc("theme_changed");
 
     let json = make_reader(r#"{"id":0,"method":"new_view","params":{}}"#);
@@ -176,8 +176,8 @@ fn test_settings_commands() {
 {"method":"set_theme","params":{"theme_name":"InspiredGitHub"}}
 {"id":0,"method":"new_view","params":{}}"#);
     assert!(rpc_looper.mainloop(|| json, &mut state).is_ok());
-    rx.expect_rpc("available_themes");
     rx.expect_rpc("available_languages");
+    rx.expect_rpc("available_themes");
     rx.expect_rpc("theme_changed");
     rx.expect_response().unwrap();
     rx.expect_rpc("available_plugins");
