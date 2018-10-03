@@ -36,7 +36,7 @@ Screenshot (will need to be updated as syntax coloring and UI polish is added):
 
 ## Getting started
 
-This repository is the core only. You'll also need a front-end, from the list
+This repository is the core only. You will also need a front-end, from the list
 below.
 
 ### Building the core
