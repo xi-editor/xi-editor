@@ -188,6 +188,13 @@ multi_line_select # adds a line to the selection
 multi_word_select # adds a word to the selection
 ```
 
+#### goto_line
+
+`goto_line {"line": 1}`
+
+Sets the cursor to the beginning of the provided `line` and scrolls to
+this position.
+
 #### Other movement and deletion commands
 
 The following edit methods take no parameters, and have similar
@@ -212,6 +219,11 @@ scroll_page_up
 page_up_and_modify_selection
 scroll_page_down
 page_down_and_modify_selection
+yank
+transpose
+select_all
+add_selection_above
+add_selection_below
 ```
 
 #### Transformations
