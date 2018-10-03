@@ -342,42 +342,6 @@ impl<N: NodeInfo> Node<N> {
         M::measure(&self.0.info, self.0.len)
     }
 
-    /*
-    // TODO: not sure if this belongs in the public interface, cursor
-    // might subsume all real use cases.
-    // calls the given function with leaves forming the sequence
-    fn visit_subseq<F>(&self, iv: Interval, f: &mut F)
-            where F: FnMut(&N::L) -> () {
-        if iv.is_empty() {
-            return;
-        }
-        match self.0.val {
-            NodeVal::Leaf(ref l) => {
-                if iv == Interval::new_closed_closed(0, l.len()) {
-                    f(l);
-                } else {
-                    f(&l.clone().subseq(iv));
-                }
-            }
-            NodeVal::Internal(ref v) => {
-                let mut offset = 0;
-                for child in v {
-                    if iv.is_before(offset) {
-                        break;
-                    }
-                    let child_iv = Interval::new_closed_closed(0, child.len());
-                    // easier just to use signed ints?
-                    let rec_iv = iv.intersect(child_iv.translate(offset))
-                        .translate_neg(offset);
-                    child.visit_subseq::<F>(rec_iv, f);
-                    offset += child_iv.size();
-                }
-                return;
-            }
-        }
-    }
-    */
-
     pub fn push_subseq(&self, b: &mut TreeBuilder<N>, iv: Interval) {
         if iv.is_empty() {
             return;
