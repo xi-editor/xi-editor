@@ -55,6 +55,8 @@ pub const MAX_SIZE_LIMIT: usize = 1024 * 1024;
 /// window will be sent to the view along with the edit.
 const RENDER_DELAY: Duration = Duration::from_millis(2);
 
+const SELECTION_STATUS_ITEM_KEY: &str = "xi-editor.io.status.selections";
+
 /// A collection of all the state relevant for handling a particular event.
 ///
 /// This is created dynamically for each event that arrives to the core,
@@ -283,7 +285,16 @@ impl<'a> EventContext<'a> {
         //TODO: render other views
         self.view.borrow_mut()
             .render_if_dirty(ed.get_buffer(), self.client, self.style_map,
-                             ed.get_layers().get_merged(), ed.is_pristine())
+                             ed.get_layers().get_merged(), ed.is_pristine());
+
+        if self.config.show_cursor_status {
+            let status_msg = self.view.borrow()
+                .get_selection_status_text(ed.get_buffer());
+            self.client.update_status_item(self.view_id,
+                                           SELECTION_STATUS_ITEM_KEY,
+                                           &status_msg);
+        }
+
     }
 }
 
@@ -309,6 +320,9 @@ impl<'a> EventContext<'a> {
 
         self.client.config_changed(self.view_id, config);
         self.update_wrap_state();
+        if self.config.show_cursor_status {
+            self.setup_selection_status_item();
+        }
         self.render()
     }
 
@@ -335,6 +349,10 @@ impl<'a> EventContext<'a> {
         if changes.contains_key("wrap_width")
             || changes.contains_key("word_wrap") {
             self.update_wrap_state();
+        }
+
+        if changes.contains_key("show_cursor_status") {
+            self.setup_selection_status_item();
         }
 
         self.client.config_changed(self.view_id, &changes);
@@ -414,6 +432,18 @@ impl<'a> EventContext<'a> {
             });
         }
         self.render();
+    }
+
+    fn setup_selection_status_item(&self) {
+        if self.config.show_cursor_status {
+            self.client.add_status_item(self.view_id,
+                                        "core",
+                                        SELECTION_STATUS_ITEM_KEY,
+                                        "",
+                                        "left");
+        } else {
+            self.client.remove_status_item(self.view_id, SELECTION_STATUS_ITEM_KEY);
+        }
     }
 
     fn do_request_lines(&mut self, first: usize, last: usize) {
