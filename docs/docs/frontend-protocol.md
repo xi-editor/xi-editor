@@ -225,6 +225,15 @@ indent
 outdent
 ```
 
+#### Number Transformations
+
+The following methods work with a caret or multiple selections. If the beginning of a selection (or the caret) is within a positive or negative number, the number will be transformed accordingly:
+
+```
+increase_number
+decrease_number
+```
+
 ### Language Support Oriented features (in Edit Namespace)
 
 #### Hover
