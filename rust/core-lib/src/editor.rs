@@ -702,7 +702,7 @@ impl Editor {
 
                 if start < end {
                     let interval = Interval::new_closed_open(start, end);
-                    let word = self.text.slice_to_string(start..end);
+                    let word = self.text.slice_to_cow(start..end);
 
                     // first letter is uppercase, remaining letters are lowercase
                     let (first_char, rest) = word.split_at(1);
