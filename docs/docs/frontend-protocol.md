@@ -73,13 +73,13 @@ note for `new_view`. Errors are not currently reported.
 
 `set_theme {"theme_name": "InspiredGitHub"}`
 
-Requests that core changes the theme. If the change succeeds the client
+Asks core to change the theme. If the change succeeds the client
 will receive a `theme_changed` notification.
 
 ### set_language
 `set_language {"view-id":"view-id-1", "language_id":"Rust"}`
 
-Requests that core changes the language of the buffer associated with the `view_id`.
+Asks core to change the language of the buffer associated with the `view_id`.
 
 ### modify_user_config
 
