@@ -311,8 +311,9 @@ impl CoreState {
                         self.do_start_plugin(view_id, &plugin_name),
                     PN::Stop { view_id, plugin_name } =>
                         self.do_stop_plugin(view_id, &plugin_name),
-                    PN::PluginRpc { .. } => ()
-                        //TODO: rethink custom plugin RPCs
+                    PN::PluginRpc { view_id, receiver, rpc } =>
+-                        //TODO: rethink custom plugin RPCs
+                        self.do_plugin_rpc(view_id, &receiver, &rpc.method, &rpc.params),
                 }
             TracingConfig { enabled } =>
                 self.toggle_tracing(enabled),
@@ -520,6 +521,12 @@ impl CoreState {
                 p.shutdown();
                 self.after_stop_plugin(&p);
             }
+    }
+
+    fn do_plugin_rpc(&self, view_id: ViewId, receiver: &str, method: &str, params: &Value) {
+        self.running_plugins.iter()
+            .filter(|p| p.name == receiver)
+            .for_each(|p| p.dispatch_command(view_id, method, params))
     }
 
     fn after_stop_plugin(&mut self, plugin: &Plugin) {

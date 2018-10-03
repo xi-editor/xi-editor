@@ -134,6 +134,13 @@ impl Plugin {
                                                 "request_id": request_id,
                                                 "position": position}))
     }
+
+    pub fn dispatch_command(&self, view_id: ViewId, method: &str, params: &Value) {
+        self.peer.send_rpc_notification("custom_command", 
+                                        &json!({"view_id": view_id,
+                                                "method": method,
+                                                "params": params}))
+    }
 }
 
 pub(crate) fn start_plugin_process(plugin_desc: Arc<PluginDescription>,
