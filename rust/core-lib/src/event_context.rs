@@ -114,7 +114,8 @@ impl<'a> EventContext<'a> {
             if let EventDomain::Special(SpecialEvent::ToggleRecording) = event {
                 recorder.toggle_recording();
             } else if let EventDomain::Special(SpecialEvent::PlayRecording) = event {
-                // This shouldn't be allowed
+                // This shouldn't be allowed, how do we report back to the client?
+                if recorder.is_recording() {}
             } else if recorder.is_recording() {
                 recorder.record(event.clone().into());
             }
