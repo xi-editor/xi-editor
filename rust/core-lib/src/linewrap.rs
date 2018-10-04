@@ -242,7 +242,7 @@ impl<'a> RewrapCtx<'a> {
         while pos < self.max_offset && self.pot_breaks.len() < MAX_POT_BREAKS {
             let (next, hard) = self.lb_cursor.next();
             // TODO: avoid allocating string
-            let word = self.text.slice_to_string(pos,next);
+            let word = self.text.slice_to_string(pos, next);
             let tok = req.request(style_id, &word);
             pos = next;
             self.pot_breaks.push(PotentialBreak { pos, tok, hard });
