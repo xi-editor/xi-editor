@@ -954,6 +954,15 @@ mod tests {
         ctx.do_edit(EditNotification::DecreaseNumber);
         assert_eq!(harness.debug_render(),"this is a 999| text example");
 
+        // Number Wrapping
+        ctx.do_edit(EditNotification::MoveToEndOfDocument);
+        ctx.do_edit(EditNotification::DeleteToBeginningOfLine);
+        ctx.do_edit(EditNotification::Insert { chars: format!("{}", i128::max_value()) });
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 11, ty: PointSelect });
+        ctx.do_edit(EditNotification::MoveRightAndModifySelection);
+        ctx.do_edit(EditNotification::IncreaseNumber);
+        assert_eq!(harness.debug_render(), format!("{}|", i128::min_value()));
+
         // Test multiple selections
         ctx.do_edit(EditNotification::MoveToEndOfDocument);
         ctx.do_edit(EditNotification::DeleteToBeginningOfLine);

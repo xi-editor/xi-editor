@@ -699,7 +699,7 @@ impl Editor {
     /// "1[23 and other contents|]" -> "124| and other contents"
     ///
     /// This function also works fine with multiple regions.
-    fn change_number<F: Fn(i32) -> i32>(&mut self, view: &View,
+    fn change_number<F: Fn(i128) -> i128>(&mut self, view: &View,
                                         transform_function: F) {
         let mut builder = delta::Builder::new(self.text.len());
         for region in view.sel_regions() {
@@ -726,7 +726,7 @@ impl Editor {
             let end = walker(line.chars().skip(begin).enumerate().collect())
                 .map(|i| begin + i).unwrap_or(line.len());
 
-            if let Some(number) = &line[begin..end].parse::<i32>().ok() {
+            if let Some(number) = &line[begin..end].parse::<i128>().ok() {
                 let interval = Interval::new_closed_open(line_start + begin, line_start + end);
                 builder.replace(interval, Rope::from(format!("{}", transform_function(*number))));
             }
@@ -839,8 +839,8 @@ impl Editor {
             ReplaceNext => self.replace(view, false),
             ReplaceAll => self.replace(view, true),
             DuplicateLine => self.duplicate_line(view, config),
-            IncreaseNumber => self.change_number(view, |s| s + 1),
-            DecreaseNumber => self.change_number(view, |s| s - 1),
+            IncreaseNumber => self.change_number(view, |s| s.wrapping_add(1)),
+            DecreaseNumber => self.change_number(view, |s| s.wrapping_sub(1)),
         }
     }
 
