@@ -23,41 +23,9 @@ impl Recorder {
 
     pub(crate) fn toggle_recording(&mut self) {
         if !self.is_recording && !self.recording.events.is_empty() {
-            self.clear_recording();
+            self.recording.clear();
         } else if self.is_recording {
-            let mut saw_undo = false;
-            let mut saw_redo = false;
-
-            // Walk the recording backwards and remove any undo / redo events
-            let filtered: Vec<EventDomain> = self.recording.events.clone().into_iter()
-                .rev()
-                .filter(|event| {
-                    if let EventDomain::Buffer(event) = event {
-                        match event {
-                            BufferEvent::Undo => {
-                                saw_undo = !saw_redo;
-                                saw_redo = false;
-                                return false;
-                            }
-                            BufferEvent::Redo => {
-                                saw_redo = !saw_undo;
-                                saw_undo = false;
-                                return false;
-                            }
-                            _ => {
-                                let ret = !saw_undo;
-                                saw_undo = false;
-                                saw_redo = false;
-                                return ret;
-                            }
-                        }
-                    }
-
-                    true
-                })
-                .collect();
-
-            mem::replace(&mut self.recording.events, filtered);
+            self.recording.filter_undos();
         }
 
         self.is_recording = !self.is_recording;
@@ -69,21 +37,71 @@ impl Recorder {
             return;
         }
 
-        self.recording.events.push(cmd.clone());
+        self.recording.events.push(cmd);
     }
 
     pub(crate) fn play<F>(&self, action: F)
         where F: FnMut(&EventDomain) -> () {
-        self.recording.events.iter().for_each(action)
+        self.recording.play(action);
     }
 
-    fn clear_recording(&mut self) {
-        self.recording.events.clear();
+    pub(crate) fn clear(&mut self) {
+        self.recording.clear();
     }
 }
 
 struct Recording {
     events: Vec<EventDomain>
+}
+
+impl Recording {
+    pub(crate) fn clear(&mut self) {
+        self.events.clear();
+    }
+
+    pub(crate) fn play<F>(&self, action: F)
+        where F: FnMut(&EventDomain) -> () {
+        self.events.iter().for_each(action)
+    }
+
+    pub(crate) fn filter_undos(&mut self) {
+        let mut saw_undo = false;
+        let mut saw_redo = false;
+
+        // Walk the recording backwards and remove any undo / redo events
+        let filtered: Vec<EventDomain> = self.events.clone().into_iter()
+            .rev()
+            .filter(|event| {
+                if let EventDomain::Buffer(event) = event {
+                    return match event {
+                        BufferEvent::Undo => {
+                            saw_undo = !saw_redo;
+                            saw_redo = false;
+                            false
+                        }
+                        BufferEvent::Redo => {
+                            saw_redo = !saw_undo;
+                            saw_undo = false;
+                            false
+                        }
+                        _ => {
+                            let ret = !saw_undo;
+                            saw_undo = false;
+                            saw_redo = false;
+                            ret
+                        }
+                    };
+                }
+
+                true
+            })
+            .collect::<Vec<EventDomain>>()
+            .into_iter() // Why does rev().filter().rev().collect() cancel out the first rev()????
+            .rev()
+            .collect();
+
+        mem::replace(&mut self.events, filtered);
+    }
 }
 
 #[cfg(test)]
@@ -96,45 +114,46 @@ mod tests {
         let mut recorder = Recorder::new();
 
         // Tests for filtering undo / redo from the recording buffer
-        // A = Action
+        // A = Event
+        // B = Event
         // U = Undo
         // R = Redo
 
         // Undo removes last item, redo only affects undo
-        // A U A R => A
+        // A U B R => B
         recorder.toggle_recording();
         recorder.record(BufferEvent::Transpose.into());
         recorder.record(BufferEvent::Undo.into());
-        recorder.record(BufferEvent::Transpose.into());
+        recorder.record(BufferEvent::DuplicateLine.into());
         recorder.record(BufferEvent::Redo.into());
         recorder.toggle_recording();
-        assert_eq!(recorder.recording.events, vec![BufferEvent::Transpose.into()]);
+        assert_eq!(recorder.recording.events, vec![BufferEvent::DuplicateLine.into()]);
 
-        recorder.clear_recording();
+        recorder.clear();
 
-        // Swapping order shouldn't change the outcome
-        // A R A U => A
+        // Swapping order of undo and redo should give us a different leftover item
+        // A R B U => A
         recorder.toggle_recording();
         recorder.record(BufferEvent::Transpose.into());
         recorder.record(BufferEvent::Redo.into());
-        recorder.record(BufferEvent::Transpose.into());
+        recorder.record(BufferEvent::DuplicateLine.into());
         recorder.record(BufferEvent::Undo.into());
         recorder.toggle_recording();
         assert_eq!(recorder.recording.events, vec![BufferEvent::Transpose.into()]);
 
-        recorder.clear_recording();
+        recorder.clear();
 
         // Redo cancels out an undo
-        // A U R A => A A
+        // A U R B => A B
         recorder.toggle_recording();
         recorder.record(BufferEvent::Transpose.into());
         recorder.record(BufferEvent::Undo.into());
         recorder.record(BufferEvent::Redo.into());
-        recorder.record(BufferEvent::Transpose.into());
+        recorder.record(BufferEvent::DuplicateLine.into());
         recorder.toggle_recording();
-        assert_eq!(recorder.recording.events, vec![BufferEvent::Transpose.into(), BufferEvent::Transpose.into()]);
+        assert_eq!(recorder.recording.events, vec![BufferEvent::Transpose.into(), BufferEvent::DuplicateLine.into()]);
 
-        recorder.clear_recording();
+        recorder.clear();
 
         // Undo should cancel a redo, preventing it from canceling another undo
         // A U R U => _
