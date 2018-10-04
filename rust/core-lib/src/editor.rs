@@ -37,7 +37,6 @@ use rpc::SelectionModifier;
 use selection::{SelRegion, Selection};
 use styles::ThemeStyleMap;
 use view::{Replace, View};
-use word_boundaries::WordCursor;
 
 #[cfg(not(feature = "ledger"))]
 pub struct SyncStore;
@@ -388,7 +387,7 @@ impl Editor {
         }
         if save {
             let saved = self.extract_sel_regions(&deletions).unwrap_or_default();
-            *kill_ring = Rope::from(saved);
+            *kill_ring = saved.into();
         }
         self.delete_sel_regions(&deletions);
     }

@@ -67,33 +67,66 @@ mod ledger_includes {
 #[cfg(feature = "ledger")]
 use ledger_includes::*;
 
-pub mod client;
-pub mod config;
-pub mod core;
-pub mod edit_types;
-pub mod editor;
-pub mod event_context;
-pub mod file;
-pub mod find;
-#[cfg(feature = "ledger")]
-pub mod fuchsia;
-pub mod index_set;
-pub mod layers;
-pub mod line_cache_shadow;
-pub mod linewrap;
-pub mod movement;
-pub mod plugins;
-pub mod selection;
-pub mod styles;
-pub mod syntax;
-pub mod tabs;
-pub mod view;
-#[cfg(feature = "notify")]
-pub mod watcher;
-pub mod width_cache;
-pub mod word_boundaries;
+/// Internal data structures and logic.
+///
+/// These internals are not part of the public API (for the purpose of binding to
+/// a front-end), but are exposed here, largely so they appear in documentation.
+#[path = ""]
+pub mod internal {
+    pub mod client;
+    pub mod config;
+    pub mod core;
+    pub mod edit_types;
+    pub mod editor;
+    pub mod event_context;
+    pub mod file;
+    pub mod find;
+    #[cfg(feature = "ledger")]
+    pub mod fuchsia;
+    pub mod index_set;
+    pub mod layers;
+    pub mod line_cache_shadow;
+    pub mod linewrap;
+    pub mod movement;
+    pub mod plugins;
+    pub mod selection;
+    pub mod styles;
+    pub mod syntax;
+    pub mod tabs;
+    pub mod view;
+    #[cfg(feature = "notify")]
+    pub mod watcher;
+    pub mod width_cache;
+    pub mod word_boundaries;
+}
 
 pub mod rpc;
+
+use internal::client;
+use internal::config;
+use internal::core;
+use internal::edit_types;
+use internal::editor;
+use internal::event_context;
+use internal::file;
+use internal::find;
+#[cfg(feature = "ledger")]
+use internal::fuchsia;
+use internal::index_set;
+use internal::layers;
+use internal::line_cache_shadow;
+use internal::linewrap;
+use internal::movement;
+use internal::plugins;
+use internal::selection;
+use internal::styles;
+use internal::syntax;
+use internal::tabs;
+use internal::view;
+#[cfg(feature = "notify")]
+use internal::watcher;
+use internal::width_cache;
+use internal::word_boundaries;
 
 #[cfg(feature = "ledger")]
 use apps_ledger_services_public::Ledger_Proxy;
