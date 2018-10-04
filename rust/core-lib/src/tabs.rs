@@ -605,10 +605,10 @@ impl CoreState {
         }
 
         let config_delta = self.config_manager.table_for_update(ConfigDomain::SysOverride(buffer_id), changes);
-        match self.config_manager.set_user_config(ConfigDomain::SysOverride(buffer_id), config_delta.clone()) {
-            Ok(ref items) if items.len() > 0 => {
+        match self.config_manager.set_user_config(ConfigDomain::SysOverride(buffer_id), config_delta) {
+            Ok(ref mut items) if items.len() > 0 => {
                 assert!(items.len() == 1, "whitespace overrides can only update a single buffer's config\n{:?}", items);
-                let table = items.first().unwrap().1.to_owned();
+                let table = items.remove(0).1;
                 let mut config = config.clone();
                 config.extend(table);
                 Some(config)
