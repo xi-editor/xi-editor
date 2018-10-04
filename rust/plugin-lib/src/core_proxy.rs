@@ -13,10 +13,10 @@
 // limitations under the License.
 
 //! A proxy for the methods on Core
+use xi_core::internal::plugins::PluginId;
 use xi_core::plugin_rpc::Hover;
-use xi_core::plugins::PluginId;
 use xi_core::ViewId;
-use xi_rpc::{RemoteError, RpcCtx, RpcPeer};
+use xi_rpc::{RpcCtx, RpcPeer, RemoteError};
 
 #[derive(Clone)]
 pub struct CoreProxy {
@@ -65,7 +65,12 @@ impl CoreProxy {
         self.peer.send_rpc_notification("remove_status_item", &params)
     }
 
-    pub fn display_hover(&mut self, view_id: ViewId, request_id: usize, result: Result<Hover, RemoteError>) {
+    pub fn display_hover(
+        &mut self,
+        view_id: ViewId,
+        request_id: usize,
+        result: Result<Hover, RemoteError>
+    ) {
         let params = json!({
             "plugin_id": self.plugin_id,
             "request_id": request_id,
