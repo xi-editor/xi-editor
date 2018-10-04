@@ -300,11 +300,11 @@ impl<T: Clone + Default> Spans<T> {
     pub fn apply_shape<M: NodeInfo>(&mut self, delta: &Delta<M>) {
         let mut b = TreeBuilder::new();
         for elem in &delta.els {
-            match elem {
-                &DeltaElement::Copy(beg, end) =>
-                    b.push(self.subseq(Interval::new_closed_open(beg, end))),
-                &DeltaElement::Insert(ref n) =>
-                    b.push(SpansBuilder::new(n.len()).build()),
+            match *elem {
+                DeltaElement::Copy(beg, end) =>
+                   b.push(self.subseq(Interval::new_closed_open(beg, end))),
+                DeltaElement::Insert(ref n) =>
+                   b.push(SpansBuilder::new(n.len()).build()),
             }
         }
         *self = b.build();

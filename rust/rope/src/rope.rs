@@ -591,7 +591,7 @@ impl Rope {
 
         ChunkIter {
             cursor: Cursor::new(self, start),
-            end: end,
+            end,
         }
     }
 
@@ -742,8 +742,7 @@ fn split_as_leaves(mut s: &str) -> Vec<String> {
         nodes.push(s[..splitpoint].to_owned());
         s = &s[splitpoint..];
     }
-
-    return nodes;
+    nodes
 }
 
 impl<T: AsRef<str>> From<T> for Rope {

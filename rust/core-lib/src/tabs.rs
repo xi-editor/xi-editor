@@ -48,6 +48,7 @@ use rpc::{CoreNotification, CoreRequest, EditNotification, EditRequest,
 use styles::{ThemeStyleMap, DEFAULT_THEME};
 use view::View;
 use width_cache::WidthCache;
+use syntax::LanguageId;
 
 #[cfg(feature = "notify")]
 use watcher::{FileWatcher, WatchToken};
@@ -311,13 +312,14 @@ impl CoreState {
                         self.do_start_plugin(view_id, &plugin_name),
                     PN::Stop { view_id, plugin_name } =>
                         self.do_stop_plugin(view_id, &plugin_name),
-                    PN::PluginRpc { .. } => ()
-                        //TODO: rethink custom plugin RPCs
+                    PN::PluginRpc { view_id, receiver, rpc } =>
+                        self.do_plugin_rpc(view_id, &receiver, &rpc.method, &rpc.params),
                 }
             TracingConfig { enabled } =>
                 self.toggle_tracing(enabled),
             // handled at the top level
             ClientStarted { .. } => (),
+            SetLanguage { view_id, language_id } => self.do_set_language(view_id, language_id),
         }
     }
 
@@ -435,7 +437,7 @@ impl CoreState {
     }
 
     fn do_set_theme(&self, theme_name: &str) {
-        //Set only if requested theme is different from the 
+        //Set only if requested theme is different from the
         //current one.
         if theme_name != self.style_map.borrow().get_theme_name() {
            if let Err(e) = self.style_map.borrow_mut().set_theme(&theme_name) {
@@ -522,8 +524,21 @@ impl CoreState {
             }
     }
 
+    fn do_plugin_rpc(&self, view_id: ViewId, receiver: &str, method: &str, params: &Value) {
+        self.running_plugins.iter()
+            .filter(|p| p.name == receiver)
+            .for_each(|p| p.dispatch_command(view_id, method, params))
+    }
+
     fn after_stop_plugin(&mut self, plugin: &Plugin) {
         self.iter_groups().for_each(|mut cx| cx.plugin_stopped(plugin));
+    }
+
+    fn do_set_language(&mut self, view_id: ViewId, language_id: LanguageId) {
+        if let Some(view) = self.views.get(&view_id) {
+            let buffer_id = view.borrow().get_buffer_id();
+            self.config_manager.override_language(buffer_id, language_id);
+        }
     }
 }
 
@@ -667,7 +682,7 @@ impl CoreState {
                     .get_theme_name()
                 {
                     if self.style_map.borrow_mut()
-                        .set_theme(&theme_name).is_ok() 
+                        .set_theme(&theme_name).is_ok()
                     {
                         self.notify_client_and_update_views();
                     }
@@ -680,7 +695,7 @@ impl CoreState {
     fn remove_theme(&mut self, path: &Path) {
         let result = self.style_map.borrow_mut().remove_theme(path);
 
-        // Set default theme if the removed theme was the 
+        // Set default theme if the removed theme was the
         // current one.
         if let Some(theme_name) = result {
             if theme_name == self.style_map.borrow().get_theme_name() {

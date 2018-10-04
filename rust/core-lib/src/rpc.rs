@@ -29,6 +29,7 @@ use config::{Table, ConfigDomainExternal};
 use plugins::PlaceholderRpc;
 use tabs::ViewId;
 use view::Size;
+use syntax::LanguageId;
 
 // =============================================================================
 //  Command types
@@ -204,7 +205,9 @@ pub enum CoreNotification {
     TracingConfig {enabled: bool},
     /// Save trace data to the given path.  The core will first send
     /// CoreRequest::CollectTrace to all peers to collect the samples.
-    SaveTrace { destination: PathBuf, frontend_samples: Value }
+    SaveTrace { destination: PathBuf, frontend_samples: Value },
+    /// Tells `xi-core` to set the language id for the view.
+    SetLanguage { view_id: ViewId, language_id: LanguageId }
 }
 
 /// The requests which make up the base of the protocol.

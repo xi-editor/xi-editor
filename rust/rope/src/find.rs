@@ -165,9 +165,8 @@ fn find_core(cursor: &mut Cursor<RopeInfo>, lines: &mut LinesRaw, pat: &str,
         if let Some(off) = scanner(&leaf[pos_in_leaf..]) {
             let candidate_pos = orig_pos + off;
             cursor.set(candidate_pos);
-            match matcher(cursor, lines, pat) {
-                Some(actual_pos) => return FindResult::Found(actual_pos),
-                _ => ()
+            if let Some(actual_pos) = matcher(cursor, lines, pat) {
+                return FindResult::Found(actual_pos)
             }
         } else {
             let _ = cursor.next_leaf();
@@ -273,11 +272,11 @@ fn compare_cursor_regex(cursor: &mut Cursor<RopeInfo>, lines: &mut LinesRaw, pat
             let end_position = orig_position + mat.end();
             cursor.set(end_position);
 
-            return Some(start_position)
+            Some(start_position)
         },
         None => {
             cursor.set(orig_position + text.len());
-            return None
+            None
         }
     }
 }
