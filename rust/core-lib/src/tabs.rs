@@ -195,7 +195,7 @@ impl CoreState {
         let plugin_paths = self.config_manager.get_plugin_paths();
         self.plugins.reload_from_paths(&plugin_paths);
         let languages = self.plugins.make_languages_map();
-        let languages_ids = languages.named.keys().cloned().collect::<Vec<_>>();
+        let languages_ids = languages.iter().map(|l| l.name.clone()).collect::<Vec<_>>();
         self.peer.available_languages(languages_ids);
         self.config_manager.set_languages(languages);
         let theme_names = self.style_map.borrow().get_theme_names();

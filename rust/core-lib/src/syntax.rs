@@ -41,7 +41,7 @@ pub struct LanguageDefinition {
 /// A repository of all loaded `LanguageDefinition`s.
 #[derive(Debug, Default)]
 pub struct Languages {
-    pub named: HashMap<LanguageId, Arc<LanguageDefinition>>,
+    named: HashMap<LanguageId, Arc<LanguageDefinition>>,
     extensions: HashMap<String, Arc<LanguageDefinition>>,
 }
 
