@@ -73,8 +73,13 @@ note for `new_view`. Errors are not currently reported.
 
 `set_theme {"theme_name": "InspiredGitHub"}`
 
-Requests that core change the theme. If the change succeeds the client
+Asks core to change the theme. If the change succeeds the client
 will receive a `theme_changed` notification.
+
+### set_language
+`set_language {"view-id":"view-id-1", "language_id":"Rust"}`
+
+Asks core to change the language of the buffer associated with the `view_id`.
 
 ### modify_user_config
 
@@ -117,13 +122,13 @@ multiple cursors and `chars` has the same number of lines as there are
 cursors, one line will be inserted at each cursor, in order; otherwise the full
 string will be inserted at each cursor.
 
-#### copy 
+#### copy
 
 `copy -> String|Null`
 
 Copies the active selection, returning their contents or `Null` if the selection was empty.
 
-#### cut 
+#### cut
 
 `cut -> String|Null`
 
@@ -188,6 +193,13 @@ multi_line_select # adds a line to the selection
 multi_word_select # adds a word to the selection
 ```
 
+#### goto_line
+
+`goto_line {"line": 1}`
+
+Sets the cursor to the beginning of the provided `line` and scrolls to
+this position.
+
 #### Other movement and deletion commands
 
 The following edit methods take no parameters, and have similar
@@ -212,6 +224,11 @@ scroll_page_up
 page_up_and_modify_selection
 scroll_page_down
 page_down_and_modify_selection
+yank
+transpose
+select_all
+add_selection_above
+add_selection_below
 ```
 
 #### Transformations
