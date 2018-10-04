@@ -23,7 +23,7 @@ use xi_rope::rope::{LinesMetric, Rope};
 use xi_rope::tree::Cursor;
 
 /// The specification of a movement.
-#[derive(Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Movement {
     /// Move to the left by one grapheme cluster.
     Left,
