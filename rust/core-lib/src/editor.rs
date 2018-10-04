@@ -706,7 +706,7 @@ impl Editor {
             let line_nb = view.line_of_offset(&self.text, region.min());
             let line_start = view.offset_of_line(&self.text, line_nb);
             let line_end = view.offset_of_line(&self.text, line_nb + 1);
-            let line = self.text.slice_to_string(&SelRegion::new(line_start, line_end));
+            let line = self.text.slice_to_cow(&SelRegion::new(line_start, line_end));
             let (mut begin,  mut end) = (region.min() - line_start, line.len());
 
             let walker = |enumerated: Vec<(usize, char)>| -> Option<usize> {
