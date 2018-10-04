@@ -21,11 +21,11 @@
 
 use std::path::PathBuf;
 
+use serde_json::{self, Value};
 use serde::de::{self, Deserialize, Deserializer};
 use serde::ser::{self, Serialize, Serializer};
-use serde_json::{self, Value};
 
-use config::{ConfigDomainExternal, Table};
+use config::{Table, ConfigDomainExternal};
 use plugins::PlaceholderRpc;
 use tabs::ViewId;
 use view::Size;
@@ -117,7 +117,7 @@ pub enum CoreNotification {
     /// use xi_core::rpc::*;
     /// # fn main() {
     /// let edit = EditCommand {
-    ///     view_id: 1.into(),
+    ///     view_id: "view-id-1".into(),
     ///     cmd: EditNotification::Insert { chars: "hello!".into() },
     /// };
     /// let rpc = CoreNotification::Edit(edit);
@@ -125,8 +125,8 @@ pub enum CoreNotification {
     ///     "method": "edit",
     ///     "params": {
     ///         "method": "insert",
-    ///         "view_id": "view-id-1",
     ///         "params": {
+    ///             "view_id": "view-id-1",
     ///             "chars": "hello!",
     ///         }
     ///     }
@@ -157,7 +157,7 @@ pub enum CoreNotification {
     /// # fn main() {
     /// let rpc = CoreNotification::Plugin(
     ///     PluginNotification::Start {
-    ///         view_id: 1.into(),
+    ///         view_id: "view-id-1".into(),
     ///         plugin_name: "syntect".into(),
     ///     });
     ///
@@ -197,20 +197,14 @@ pub enum CoreNotification {
     /// domain argument is `ConfigDomain::UserOverride(_)`, which
     /// represents non-persistent view-specific settings, such as when
     /// a user manually changes whitespace settings for a given view.
-    ModifyUserConfig {
-        domain: ConfigDomainExternal,
-        changes: Table,
-    },
+    ModifyUserConfig { domain: ConfigDomainExternal, changes: Table },
     /// Control whether the tracing infrastructure is enabled.
     /// This propagates to all peers that should respond by toggling its own
     /// infrastructure on/off.
-    TracingConfig { enabled: bool },
+    TracingConfig {enabled: bool},
     /// Save trace data to the given path.  The core will first send
     /// CoreRequest::CollectTrace to all peers to collect the samples.
-    SaveTrace {
-        destination: PathBuf,
-        frontend_samples: Value,
-    },
+    SaveTrace { destination: PathBuf, frontend_samples: Value }
 }
 
 /// The requests which make up the base of the protocol.
@@ -254,10 +248,6 @@ pub enum CoreRequest {
     NewView { file_path: Option<String> },
     /// Returns the current collated config object for the given view.
     GetConfig { view_id: ViewId },
-    /// Returns the contents of the buffer for a given `ViewId`.
-    /// In the future this might also be used to return structured data (such
-    /// as for printing).
-    DebugGetContents { view_id: ViewId },
 }
 
 /// A helper type, which extracts the `view_id` field from edit
@@ -335,7 +325,7 @@ pub struct MouseAction {
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
 pub struct Position {
     pub line: usize,
-    pub column: usize,
+    pub column: usize
 }
 
 /// Represents how the current selection is modified (used by find
@@ -346,13 +336,11 @@ pub enum SelectionModifier {
     None,
     Set,
     Add,
-    AddRemovingCurrent,
+    AddRemovingCurrent
 }
 
 impl Default for SelectionModifier {
-    fn default() -> SelectionModifier {
-        SelectionModifier::Set
-    }
+    fn default() -> SelectionModifier { SelectionModifier::Set }
 }
 
 /// The edit-related notifications.
@@ -363,12 +351,8 @@ impl Default for SelectionModifier {
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "method", content = "params")]
 pub enum EditNotification {
-    Insert {
-        chars: String,
-    },
-    Paste {
-        chars: String,
-    },
+    Insert { chars: String },
+    Paste { chars: String },
     DeleteForward,
     DeleteBackward,
     DeleteWordForward,
@@ -412,19 +396,13 @@ pub enum EditNotification {
     AddSelectionBelow,
     Scroll(LineRange),
     Resize(Size),
-    GotoLine {
-        line: u64,
-    },
+    GotoLine { line: u64 },
     RequestLines(LineRange),
     Yank,
     Transpose,
     Click(MouseAction),
     Drag(MouseAction),
-    Gesture {
-        line: u64,
-        col: u64,
-        ty: GestureType,
-    },
+    Gesture { line: u64, col: u64, ty: GestureType},
     Undo,
     Redo,
     Find {
@@ -433,7 +411,7 @@ pub enum EditNotification {
         #[serde(default)]
         regex: bool,
         #[serde(default)]
-        whole_words: bool,
+        whole_words: bool
     },
     FindNext {
         #[serde(default)]
@@ -441,7 +419,7 @@ pub enum EditNotification {
         #[serde(default)]
         allow_same: bool,
         #[serde(default)]
-        modify_selection: SelectionModifier,
+        modify_selection: SelectionModifier
     },
     FindPrevious {
         #[serde(default)]
@@ -449,7 +427,7 @@ pub enum EditNotification {
         #[serde(default)]
         allow_same: bool,
         #[serde(default)]
-        modify_selection: SelectionModifier,
+        modify_selection: SelectionModifier
     },
     FindAll,
     DebugRewrap,
@@ -459,31 +437,24 @@ pub enum EditNotification {
     CancelOperation,
     Uppercase,
     Lowercase,
-    Capitalize,
     Indent,
     Outdent,
     /// Indicates whether find highlights should be rendered
-    HighlightFind {
-        visible: bool,
-    },
+    HighlightFind { visible: bool },
     SelectionForFind {
         #[serde(default)]
-        case_sensitive: bool,
+        case_sensitive: bool
     },
     Replace {
         chars: String,
         #[serde(default)]
-        preserve_case: bool,
+        preserve_case: bool
     },
     ReplaceNext,
     ReplaceAll,
     SelectionForReplace,
-    RequestHover {
-        request_id: usize,
-        position: Option<Position>,
-    },
+    RequestHover { request_id: usize, position: Option<Position> },
     SelectionIntoLines,
-    DuplicateLine,
 }
 
 /// The edit related requests.
@@ -499,43 +470,34 @@ pub enum EditRequest {
     Copy,
 }
 
+
 /// The plugin related notifications.
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(tag = "command")]
 #[serde(rename_all = "snake_case")]
 pub enum PluginNotification {
-    Start {
-        view_id: ViewId,
-        plugin_name: String,
-    },
-    Stop {
-        view_id: ViewId,
-        plugin_name: String,
-    },
-    PluginRpc {
-        view_id: ViewId,
-        receiver: String,
-        rpc: PlaceholderRpc,
-    },
+    Start { view_id: ViewId, plugin_name: String },
+    Stop { view_id: ViewId, plugin_name: String },
+    PluginRpc { view_id: ViewId, receiver: String, rpc: PlaceholderRpc },
 }
 
 // Serialize / Deserialize
 
-impl<T: Serialize> Serialize for EditCommand<T> {
+impl<T: Serialize> Serialize for EditCommand<T>
+{
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
+        where S: Serializer
     {
         let mut v = serde_json::to_value(&self.cmd).map_err(ser::Error::custom)?;
-        v["view_id"] = json!(self.view_id);
+        v["params"]["view_id"] = json!(self.view_id);
         v.serialize(serializer)
     }
 }
 
-impl<'de, T: Deserialize<'de>> Deserialize<'de> for EditCommand<T> {
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for EditCommand<T>
+{
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
+        where D: Deserializer<'de>
     {
         #[derive(Deserialize)]
         struct InnerId {
@@ -549,11 +511,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for EditCommand<T> {
         let remove_params = match v.get("params") {
             Some(&Value::Object(ref obj)) => obj.is_empty(),
             Some(&Value::Array(ref arr)) => arr.is_empty(),
-            Some(_) => {
-                return Err(de::Error::custom(
-                    "'params' field, if present, must be object or array.",
-                ))
-            }
+            Some(_) => return Err(de::Error::custom("'params' field, if present, must be object or array.")),
             None => false,
         };
 
@@ -566,10 +524,10 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for EditCommand<T> {
     }
 }
 
-impl Serialize for MouseAction {
+impl Serialize for MouseAction
+{
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
+        where S: Serializer
     {
         #[derive(Serialize)]
         struct Helper(u64, u64, u64, Option<u64>);
@@ -579,66 +537,36 @@ impl Serialize for MouseAction {
     }
 }
 
-impl<'de> Deserialize<'de> for MouseAction {
+impl<'de> Deserialize<'de> for MouseAction
+{
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
+        where D: Deserializer<'de>
     {
         let v: Vec<u64> = Vec::deserialize(deserializer)?;
         let click_count = if v.len() == 4 { Some(v[3]) } else { None };
-        Ok(MouseAction {
-            line: v[0],
-            column: v[1],
-            flags: v[2],
-            click_count,
-        })
+        Ok(MouseAction { line: v[0], column: v[1], flags: v[2], click_count })
     }
 }
 
-impl Serialize for LineRange {
+impl Serialize for LineRange
+{
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
+        where S: Serializer
     {
         let as_tup = (self.first, self.last);
         as_tup.serialize(serializer)
     }
 }
 
-impl<'de> Deserialize<'de> for LineRange {
+impl<'de> Deserialize<'de> for LineRange
+{
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
+        where D: Deserializer<'de>
     {
         #[derive(Deserialize)]
         struct TwoTuple(i64, i64);
 
         let tup = TwoTuple::deserialize(deserializer)?;
-        Ok(LineRange {
-            first: tup.0,
-            last: tup.1,
-        })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tabs::ViewId;
-
-    #[test]
-    fn test_serialize_edit_command() {
-        // Ensure that an EditCommand can be serialized and then correctly deserialized.
-        let message: String = "hello world".into();
-        let edit = EditCommand {
-            view_id: ViewId(1),
-            cmd: EditNotification::Insert { chars: message.clone() },
-        };
-        let json = serde_json::to_string(&edit).unwrap();
-        let cmd: EditCommand<EditNotification> = serde_json::from_str(&json).unwrap();
-        assert_eq!(cmd.view_id, edit.view_id);
-        if let EditNotification::Insert { chars } = cmd.cmd {
-            assert_eq!(chars, message);
-        }
+        Ok(LineRange { first: tup.0, last: tup.1 })
     }
 }
