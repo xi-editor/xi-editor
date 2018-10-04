@@ -12,17 +12,33 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 use std::io;
+use std::fs;
+use std::path::PathBuf;
 
 #[macro_use]
 extern crate log;
 extern crate chrono;
 extern crate fern;
 
+extern crate dirs;
+use dirs::data_local_dir;
+
 extern crate xi_core_lib;
 extern crate xi_rpc;
 
 use xi_core_lib::XiCore;
 use xi_rpc::RpcLoop;
+
+fn get_logging_directory() -> Result<PathBuf, fern::InitError> {
+    let xi_directory = "xi-core/";
+    if let Some(mut log_dir) = data_local_dir() {
+        log_dir.push(xi_directory);
+        Ok(log_dir)
+    } else {
+        let dir_error = io::Error::new(io::ErrorKind::Other, "dir was not able to find a directory");
+        Err(fern::InitError::Io(dir_error))
+    }
+}
 
 fn setup_logging() -> Result<(), fern::InitError> {
     let level_filter = match std::env::var("XI_LOG") {
@@ -32,9 +48,16 @@ fn setup_logging() -> Result<(), fern::InitError> {
             _ => log::LevelFilter::Info,
         },
         // Default to info
-        Err(_) => log::LevelFilter::Info
+        Err(_) => log::LevelFilter::Info,
     };
 
+    let logging_directory = get_logging_directory()?;
+    // Create the logging directory
+    fs::create_dir_all(&logging_directory)?;
+
+    let xi_log_file = "xi-core.log";
+    let mut logging_file_path = logging_directory;
+    logging_file_path.push(xi_log_file);
     fern::Dispatch::new()
         .format(|out, message, record| {
             out.finish(format_args!(
@@ -44,10 +67,9 @@ fn setup_logging() -> Result<(), fern::InitError> {
                 record.level(),
                 message
             ))
-        })
-        .level(level_filter)
-        .chain(std::io::stderr())
-        .chain(fern::log_file("xi-core.log")?)
+        }).level(level_filter)
+        .chain(io::stderr())
+        .chain(fern::log_file(logging_file_path)?)
         .apply()?;
     Ok(())
 }
