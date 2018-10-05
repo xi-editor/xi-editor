@@ -1,52 +1,76 @@
 use std::mem;
+use std::collections::HashMap;
 
 use edit_types::{BufferEvent, EventDomain};
 
 pub(crate) struct Recorder {
-    is_recording: bool,
-    recording: Recording,
+    active_recording: Option<String>,
+    recordings: HashMap<String, Recording>,
 }
 
 impl Recorder {
     pub(crate) fn new() -> Recorder {
         Recorder {
-            is_recording: false,
-            recording: Recording {
-                events: Vec::new()
-            },
+            active_recording: None,
+            recordings: HashMap::new(),
         }
     }
 
     pub(crate) fn is_recording(&self) -> bool {
-        self.is_recording
+        self.active_recording.is_some()
     }
 
-    pub(crate) fn toggle_recording(&mut self) {
-        if !self.is_recording && !self.recording.events.is_empty() {
-            self.recording.clear();
-        } else if self.is_recording {
-            self.recording.filter_undos();
+    pub(crate) fn toggle_recording(&mut self, recording_name: Option<String>) {
+        if self.is_recording() {
+            let last_recording = self.active_recording.take().unwrap();
+
+            // If a recording name was provided, we're going to switch
+            if let Some(ref recording_name) = recording_name {
+                if &last_recording == recording_name {
+                    self.recordings.get_mut(&last_recording)
+                        .and_then(|recording| {
+                            recording.filter_undos();
+                            Some(())
+                        });
+                    return;
+                } else {
+                    self.clear(&last_recording);
+                }
+            } else {
+                self.recordings.get_mut(&last_recording)
+                    .and_then(|recording| {
+                        recording.filter_undos();
+                        Some(())
+                    });
+            }
         }
 
-        self.is_recording = !self.is_recording;
+        mem::replace(&mut self.active_recording, recording_name);
     }
 
     pub(crate) fn record(&mut self, cmd: EventDomain) {
-        if !self.is_recording {
+        if !self.is_recording() {
             // We're not supposed to be recording? Can we log somehow?
             return;
         }
 
-        self.recording.events.push(cmd);
+        let current_recording = self.active_recording.as_ref().unwrap();
+        let recording = self.recordings.entry(current_recording.clone())
+            .or_insert(Recording::new());
+        recording.events.push(cmd);
     }
 
-    pub(crate) fn play<F>(&self, action: F)
+    pub(crate) fn play<F>(&self, recording_name: &str, action: F)
         where F: FnMut(&EventDomain) -> () {
-        self.recording.play(action);
+        self.recordings.get(recording_name)
+            .and_then(|recording| {
+                recording.play(action);
+                Some(())
+            });
     }
 
-    pub(crate) fn clear(&mut self) {
-        self.recording.clear();
+    pub(crate) fn clear(&mut self, recording_name: &str) {
+        self.recordings.remove(recording_name);
     }
 }
 
@@ -55,8 +79,10 @@ struct Recording {
 }
 
 impl Recording {
-    pub(crate) fn clear(&mut self) {
-        self.events.clear();
+    pub(crate) fn new() -> Recording {
+        Recording {
+            events: Vec::new()
+        }
     }
 
     pub(crate) fn play<F>(&self, action: F)
@@ -118,7 +144,8 @@ mod tests {
     #[test]
     fn play_recording() {
         let mut recorder = Recorder::new();
-        
+
+        let recording_name = String::new();
         let mut expected_events: Vec<EventDomain> = vec![
             BufferEvent::Indent.into(),
             BufferEvent::Outdent.into(),
@@ -126,13 +153,13 @@ mod tests {
             BufferEvent::Transpose.into(),
         ];
 
-        recorder.toggle_recording();
+        recorder.toggle_recording(Some(recording_name.clone()));
         for event in expected_events.iter().rev() {
             recorder.record(event.clone());
         }
-        recorder.toggle_recording();
+        recorder.toggle_recording(Some(recording_name.clone()));
 
-        recorder.play(|event| {
+        recorder.play(&recording_name, |event| {
             // We shouldn't iterate more times than we added items!
             let expected_event = expected_events.pop();
             assert!(expected_event.is_some());
@@ -149,107 +176,121 @@ mod tests {
     fn clear_recording() {
         let mut recorder = Recorder::new();
 
-        recorder.toggle_recording();
+        let recording_name = String::new();
+
+        recorder.toggle_recording(Some(recording_name.clone()));
         recorder.record(BufferEvent::Transpose.into());
         recorder.record(BufferEvent::DuplicateLine.into());
         recorder.record(BufferEvent::Outdent.into());
         recorder.record(BufferEvent::Indent.into());
-        recorder.toggle_recording();
+        recorder.toggle_recording(Some(recording_name.clone()));
 
-        assert_eq!(recorder.recording.events.len(), 4);
+        assert_eq!(recorder.recordings.get(&recording_name).unwrap().events.len(), 4);
 
-        recorder.clear();
+        recorder.clear(&recording_name);
 
-        assert_eq!(recorder.recording.events.len(), 0);
+        assert!(recorder.recordings.get(&recording_name).is_none());
     }
 
     #[test]
     fn basic_test() {
         let mut recorder = Recorder::new();
 
+        let recording_name = String::new();
+
         // Undo removes last item, redo only affects undo
         // A U B R => B
-        recorder.toggle_recording();
+        recorder.toggle_recording(Some(recording_name.clone()));
         recorder.record(BufferEvent::Transpose.into());
         recorder.record(BufferEvent::Undo.into());
         recorder.record(BufferEvent::DuplicateLine.into());
         recorder.record(BufferEvent::Redo.into());
-        recorder.toggle_recording();
-        assert_eq!(recorder.recording.events, vec![BufferEvent::DuplicateLine.into()]);
+        recorder.toggle_recording(Some(recording_name.clone()));
+        assert_eq!(recorder.recordings.get(&recording_name).unwrap().events, vec![BufferEvent::DuplicateLine.into()]);
     }
 
     #[test]
     fn basic_test_swapped() {
         let mut recorder = Recorder::new();
 
+        let recording_name = String::new();
+
         // Swapping order of undo and redo from the basic test should give us a different leftover item
         // A R B U => A
-        recorder.toggle_recording();
+        recorder.toggle_recording(Some(recording_name.clone()));
         recorder.record(BufferEvent::Transpose.into());
         recorder.record(BufferEvent::Redo.into());
         recorder.record(BufferEvent::DuplicateLine.into());
         recorder.record(BufferEvent::Undo.into());
-        recorder.toggle_recording();
-        assert_eq!(recorder.recording.events, vec![BufferEvent::Transpose.into()]);
+        recorder.toggle_recording(Some(recording_name.clone()));
+        assert_eq!(recorder.recordings.get(&recording_name).unwrap().events, vec![BufferEvent::Transpose.into()]);
     }
 
     #[test]
     fn redo_cancels_undo() {
         let mut recorder = Recorder::new();
 
+        let recording_name = String::new();
+
         // Redo cancels out an undo
         // A U R B => A B
-        recorder.toggle_recording();
+        recorder.toggle_recording(Some(recording_name.clone()));
         recorder.record(BufferEvent::Transpose.into());
         recorder.record(BufferEvent::Undo.into());
         recorder.record(BufferEvent::Redo.into());
         recorder.record(BufferEvent::DuplicateLine.into());
-        recorder.toggle_recording();
-        assert_eq!(recorder.recording.events, vec![BufferEvent::Transpose.into(), BufferEvent::DuplicateLine.into()]);
+        recorder.toggle_recording(Some(recording_name.clone()));
+        assert_eq!(recorder.recordings.get(&recording_name).unwrap().events, vec![BufferEvent::Transpose.into(), BufferEvent::DuplicateLine.into()]);
     }
 
     #[test]
     fn undo_cancels_redo() {
         let mut recorder = Recorder::new();
 
+        let recording_name = String::new();
+
         // Undo should cancel a redo, preventing it from canceling another undo
         // A U R U => _
-        recorder.toggle_recording();
+        recorder.toggle_recording(Some(recording_name.clone()));
         recorder.record(BufferEvent::Transpose.into());
         recorder.record(BufferEvent::Undo.into());
         recorder.record(BufferEvent::Redo.into());
         recorder.record(BufferEvent::Undo.into());
-        recorder.toggle_recording();
-        assert_eq!(recorder.recording.events, vec![]);
+        recorder.toggle_recording(Some(recording_name.clone()));
+        assert_eq!(recorder.recordings.get(&recording_name).unwrap().events, vec![]);
     }
 
     #[test]
     fn undo_as_first_item() {
         let mut recorder = Recorder::new();
 
+        let recording_name = String::new();
+
         // Undo shouldn't do anything as the first item
         // U A B R => A B
-        recorder.toggle_recording();
+        recorder.toggle_recording(Some(recording_name.clone()));
         recorder.record(BufferEvent::Undo.into());
         recorder.record(BufferEvent::Transpose.into());
         recorder.record(BufferEvent::DuplicateLine.into());
         recorder.record(BufferEvent::Redo.into());
-        recorder.toggle_recording();
-        assert_eq!(recorder.recording.events, vec![BufferEvent::Transpose.into(), BufferEvent::DuplicateLine.into()]);
+        recorder.toggle_recording(Some(recording_name.clone()));
+        assert_eq!(recorder.recordings.get(&recording_name).unwrap().events, vec![BufferEvent::Transpose.into(), BufferEvent::DuplicateLine.into()]);
     }
 
     #[test]
     fn redo_as_first_item() {
         let mut recorder = Recorder::new();
 
+        let recording_name = String::new();
+
         // Redo shouldn't do anything as the first item
         // R A B U => A
-        recorder.toggle_recording();
+        recorder.toggle_recording(Some(recording_name.clone()));
         recorder.record(BufferEvent::Redo.into());
         recorder.record(BufferEvent::Transpose.into());
         recorder.record(BufferEvent::DuplicateLine.into());
         recorder.record(BufferEvent::Undo.into());
-        recorder.toggle_recording();
-        assert_eq!(recorder.recording.events, vec![BufferEvent::Transpose.into()]);
+        recorder.toggle_recording(Some(recording_name.clone()));
+        assert_eq!(recorder.recordings.get(&recording_name).unwrap().events, vec![BufferEvent::Transpose.into()]);
     }
 }

@@ -83,9 +83,9 @@ pub(crate) enum SpecialEvent {
     Resize(Size),
     RequestLines(LineRange),
     RequestHover { request_id: usize, position: Option<Position> },
-    ToggleRecording,
-    PlayRecording,
-    ClearRecording,
+    ToggleRecording(Option<String>),
+    PlayRecording(String),
+    ClearRecording(String),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -255,9 +255,9 @@ impl From<EditNotification> for EventDomain {
             DuplicateLine => BufferEvent::DuplicateLine.into(),
             IncreaseNumber => BufferEvent::IncreaseNumber.into(),
             DecreaseNumber => BufferEvent::DecreaseNumber.into(),
-            ToggleRecording => SpecialEvent::ToggleRecording.into(),
-            PlayRecording => SpecialEvent::PlayRecording.into(),
-            ClearRecording => SpecialEvent::ClearRecording.into(),
+            ToggleRecording { recording_name } => SpecialEvent::ToggleRecording(recording_name).into(),
+            PlayRecording { recording_name } => SpecialEvent::PlayRecording(recording_name).into(),
+            ClearRecording { recording_name } => SpecialEvent::ClearRecording(recording_name).into(),
         }
     }
 }
