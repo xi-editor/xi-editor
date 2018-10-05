@@ -70,9 +70,7 @@ impl Style {
         Self::new(
             SYNTAX_PRIORITY_DEFAULT,
             style.foreground.map(Self::rgba_from_syntect_color),
-            None,
-            //TODO: stop ignoring background color
-            //style.background.map(|c| Self::rgba_from_syntect_color(&c)),
+            style.background.map(Self::rgba_from_syntect_color),
             weight,
             underline,
             italic,
@@ -127,8 +125,7 @@ impl Style {
         Style::new(
             p1.priority,
             p1.fg_color.or(p2.fg_color),
-            //TODO: stop ignoring background color
-            None,
+            p1.bg_color.or(p2.bg_color),
             p1.weight.or(p2.weight),
             p1.underline.or(p2.underline),
             p1.italic.or(p2.italic),
