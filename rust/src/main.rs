@@ -64,7 +64,7 @@ fn setup_logging() -> Result<(), fern::InitError> {
         Err(_) => log::LevelFilter::Info,
     };
 
-    let mut fern_dispatch = fern::Dispatch::new()
+    let fern_dispatch = fern::Dispatch::new()
         .format(|out, message, record| {
             out.finish(format_args!(
                 "{}[{}][{}] {}",
@@ -77,16 +77,17 @@ fn setup_logging() -> Result<(), fern::InitError> {
         .chain(io::stderr());
 
     match path_for_log_file(XI_LOG_FILE) {
-        Ok(logging_file_path) => {
-            fern_dispatch = fern_dispatch.chain(fern::log_file(logging_file_path)?)
-        }
-        Err(e) => {
-            let error_message =
-                "[WARNING] There was an issue getting the path for the log file, falling back to stderr.";
-            eprintln!("{}\nError:\n{:?}", error_message, e)
+        Ok(logging_file_path) => fern_dispatch
+            .chain(fern::log_file(logging_file_path)?)
+            .apply()?,
+        Err(err) => {
+            fern_dispatch.apply()?;
+            warn!(
+                "There was an issue getting the path for the log file: {}, falling back to stderr.",
+                err,
+            );
         }
     }
-    fern_dispatch.apply()?;
     info!("Logging with fern is setup");
     Ok(())
 }
