@@ -37,7 +37,6 @@ use width_cache::WidthCache;
 use word_boundaries::WordCursor;
 use find::{Find, FindStatus};
 use linewrap;
-use internal::find::FindStatus;
 
 type StyleMap = RefCell<ThemeStyleMap>;
 
@@ -994,7 +993,7 @@ impl View {
             self.add_find();
         }
 
-        self.find.last_mut().unwrap().do_find(text, search_query, case_sensitive, false, true);
+        self.find.last_mut().unwrap().do_find(text, &search_query, case_sensitive, false, true);
     }
 
     fn add_find(&mut self) {
@@ -1025,7 +1024,7 @@ impl View {
                 }
             };
 
-            self.find.get_mut(pos).unwrap().do_find(text, query.chars.clone(), query.case_sensitive,
+            self.find.get_mut(pos).unwrap().do_find(text, &query.chars.clone(), query.case_sensitive,
                                                     query.regex, query.whole_words)
         }
     }

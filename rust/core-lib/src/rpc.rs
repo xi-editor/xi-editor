@@ -29,11 +29,7 @@ use config::{Table, ConfigDomainExternal};
 use plugins::PlaceholderRpc;
 use tabs::ViewId;
 use view::Size;
-<<<<<<< HEAD
-use internal::find::FindId;
 use syntax::LanguageId;
-=======
->>>>>>> Use usize as ID for Find
 
 // =============================================================================
 //  Command types
