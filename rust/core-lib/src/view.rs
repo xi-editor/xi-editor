@@ -223,7 +223,12 @@ impl View {
             Gesture { line, col, ty } =>
                 self.do_gesture(text, line, col, ty),
             GotoLine { line } => self.goto_line(text, line),
-            Find { queries } =>
+            Find { chars, case_sensitive, regex, whole_words } => {
+                let id = self.find.first().and_then(|q| Some(q.id()));
+                let query_changes = FindQuery { id, chars, case_sensitive, regex, whole_words };
+                self.do_find(text, [query_changes].to_vec())
+            },
+            MultiFind { queries } =>
                 self.do_find(text, queries),
             FindNext { wrap_around, allow_same, modify_selection } =>
                 self.do_find_next(text, false, wrap_around, allow_same, &modify_selection),

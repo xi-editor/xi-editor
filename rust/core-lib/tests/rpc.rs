@@ -280,7 +280,8 @@ const OTHER_EDIT_RPCS: &str = r#"{"method":"edit","params":{"view_id":"view-id-1
 {"method":"edit","params":{"view_id":"view-id-1","method":"gesture","params":{"line": 1, "col": 2, "ty": "word_select"}}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"gesture","params":{"line": 1, "col": 2, "ty": "multi_line_select"}}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"gesture","params":{"line": 1, "col": 2, "ty": "multi_word_select"}}}
-{"method":"edit","params":{"view_id":"view-id-1","method":"find","params":{"queries": [{"case_sensitive":false,"chars":"m"}]}}}
+{"method":"edit","params":{"view_id":"view-id-1","method":"find","params":{"case_sensitive":false,"chars":"m"}}}
+{"method":"edit","params":{"view_id":"view-id-1","method":"multi_find","params":{"queries": [{"case_sensitive":false,"chars":"m"}]}}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"find_next","params":{"wrap_around":true}}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"find_previous","params":{"wrap_around":true}}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"find_all","params":[]}}

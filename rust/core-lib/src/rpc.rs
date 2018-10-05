@@ -428,7 +428,15 @@ pub enum EditNotification {
     Gesture { line: u64, col: u64, ty: GestureType},
     Undo,
     Redo,
-    Find { queries: Vec<FindQuery> },
+    Find {
+        chars: String,
+        case_sensitive: bool,
+        #[serde(default)]
+        regex: bool,
+        #[serde(default)]
+        whole_words: bool
+    },
+    MultiFind { queries: Vec<FindQuery> },
     FindNext {
         #[serde(default)]
         wrap_around: bool,
