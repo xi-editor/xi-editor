@@ -40,7 +40,7 @@ fn get_logging_directory() -> Result<PathBuf, io::Error> {
         }
         None => Err(io::Error::new(
             io::ErrorKind::NotFound,
-            "The dir library was not able to find a directory for this platform",
+            "No standard logging directory known for this platform",
         )),
     }
 }
