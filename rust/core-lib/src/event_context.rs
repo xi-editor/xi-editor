@@ -111,12 +111,12 @@ impl<'a> EventContext<'a> {
         {
             // Handle recording-- clone every non-toggle and play event into the recording buffer
             let recorder = &mut self.recorder.borrow_mut();
-            if let EventDomain::Special(SpecialEvent::ToggleRecording) = event {
-                recorder.toggle_recording();
-            } else if let EventDomain::Special(SpecialEvent::PlayRecording) = event {
+            if let EventDomain::Special(SpecialEvent::ToggleRecording(ref recording_name)) = event {
+                recorder.toggle_recording(recording_name.clone());
+            } else if let EventDomain::Special(SpecialEvent::PlayRecording(_)) = event {
                 // This shouldn't be allowed, how do we report back to the client?
                 if recorder.is_recording() {}
-            } else if let EventDomain::Special(SpecialEvent::ClearRecording) = event{
+            } else if let EventDomain::Special(SpecialEvent::ClearRecording(_)) = event{
                 // This shouldn't be allowed, how do we report back to the client?
                 if recorder.is_recording() {}
             } else if recorder.is_recording() {
@@ -162,16 +162,16 @@ impl<'a> EventContext<'a> {
                 self.do_request_lines(first as usize, last as usize),
             SpecialEvent::RequestHover { request_id, position } =>
                 self.do_request_hover(request_id, position),
-            SpecialEvent::ToggleRecording => {}
-            SpecialEvent::PlayRecording => {
+            SpecialEvent::ToggleRecording(_) => {}
+            SpecialEvent::PlayRecording(recording_name) => {
                 let recorder = self.recorder.borrow();
-                recorder.play(|event| {
+                recorder.play(&recording_name, |event| {
                     self.broadcast_event(event.clone());
                 })
             }
-            SpecialEvent::ClearRecording => {
+            SpecialEvent::ClearRecording(recording_name) => {
                 let mut recorder = self.recorder.borrow_mut();
-                recorder.clear();
+                recorder.clear(&recording_name);
             }
         }
     }
@@ -1344,6 +1344,8 @@ mod tests {
         let harness = ContextHarness::new(initial_text);
         let mut ctx = harness.make_context();
 
+        let recording_name = String::new();
+
         ctx.do_edit(EditNotification::Gesture { line: 0, col: 5, ty: PointSelect });
         assert_eq!(harness.debug_render(),"\
         this |is a string\n\
@@ -1599,7 +1601,7 @@ mod tests {
         four really nice\n\
         lines to see." );
 
-        ctx.do_edit(EditNotification::ToggleRecording);
+        ctx.do_edit(EditNotification::ToggleRecording { recording_name: Some(recording_name.clone()) });
 
         // Swap last word of the current line and the line below
         ctx.do_edit(EditNotification::AddSelectionBelow);
@@ -1614,10 +1616,10 @@ mod tests {
         four really nice\n\
         lines to see." );
 
-        ctx.do_edit(EditNotification::ToggleRecording);
+        ctx.do_edit(EditNotification::ToggleRecording { recording_name: Some(recording_name.clone())});
 
         ctx.do_edit(EditNotification::Gesture { line: 2, col: 5, ty: PointSelect });
-        ctx.do_edit(EditNotification::PlayRecording);
+        ctx.do_edit(EditNotification::PlayRecording { recording_name });
         assert_eq!(harness.debug_render(),"\
         this is a about\n\
         that has string\n\

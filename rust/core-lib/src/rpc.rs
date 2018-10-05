@@ -481,9 +481,9 @@ pub enum EditNotification {
     DuplicateLine,
     IncreaseNumber,
     DecreaseNumber,
-    ToggleRecording,
-    PlayRecording,
-    ClearRecording
+    ToggleRecording { recording_name: Option<String> },
+    PlayRecording { recording_name: String },
+    ClearRecording { recording_name: String },
 }
 
 /// The edit related requests.
