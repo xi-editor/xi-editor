@@ -116,6 +116,9 @@ impl<'a> EventContext<'a> {
             } else if let EventDomain::Special(SpecialEvent::PlayRecording) = event {
                 // This shouldn't be allowed, how do we report back to the client?
                 if recorder.is_recording() {}
+            } else if let EventDomain::Special(SpecialEvent::ClearRecording) = event{
+                // This shouldn't be allowed, how do we report back to the client?
+                if recorder.is_recording() {}
             } else if recorder.is_recording() {
                 recorder.record(event.clone().into());
             }
@@ -165,6 +168,10 @@ impl<'a> EventContext<'a> {
                 recorder.play(|event| {
                     self.broadcast_event(event.clone());
                 })
+            }
+            SpecialEvent::ClearRecording => {
+                let mut recorder = self.recorder.borrow_mut();
+                recorder.clear();
             }
         }
     }

@@ -483,6 +483,7 @@ pub enum EditNotification {
     DecreaseNumber,
     ToggleRecording,
     PlayRecording,
+    ClearRecording
 }
 
 /// The edit related requests.

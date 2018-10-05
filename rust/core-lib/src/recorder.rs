@@ -69,7 +69,8 @@ impl Recording {
         let mut saw_redo = false;
 
         // Walk the recording backwards and remove any undo / redo events
-        let filtered: Vec<EventDomain> = self.events.clone().into_iter()
+        let filtered: Vec<EventDomain> = self.events.clone()
+            .into_iter()
             .rev()
             .filter(|event| {
                 if let EventDomain::Buffer(event) = event {
