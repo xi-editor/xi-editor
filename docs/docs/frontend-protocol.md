@@ -306,14 +306,21 @@ or a request.
 
 #### find
 
-Find supports multiple search queries.
+`find {"chars": "a", "case_sensitive": false, "regex": false, "whole_words": true}`
+Parameters `regex` and `whole_words` are optional and by default `false`.
 
-`find [{"id": 1, "chars": "a", "case_sensitive": false, "regex": false, "whole_words": true}]`
+Sets the current search query and options.
+
+#### multi_find
+
+This find command supports multiple search queries.
+
+`multi_find [{"id": 1, "chars": "a", "case_sensitive": false, "regex": false, "whole_words": true}]`
 Parameters `regex` and `whole_words` are optional and by default `false`. `id` is an optional parameter
 used to uniquely identify a search query. If left empty, the query is considered as a new query and 
 the backend will generate a new ID.
 
-Sets the current search query and options.
+Sets the current search queries and options.
 
 #### find_next and find_previous
 
