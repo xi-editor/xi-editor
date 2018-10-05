@@ -24,7 +24,7 @@ extern crate xi_rpc;
 
 use std::fs;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use xi_core_lib::XiCore;
 use xi_rpc::RpcLoop;
@@ -45,7 +45,7 @@ fn get_logging_directory() -> Result<PathBuf, io::Error> {
     }
 }
 
-fn path_for_log_file<P: AsRef<str>>(filename: P) -> Result<PathBuf, io::Error> {
+fn path_for_log_file<P: AsRef<Path>>(filename: P) -> Result<PathBuf, io::Error> {
     let mut logging_directory = get_logging_directory()?;
     // Create the logging directory
     fs::create_dir_all(&logging_directory)?;
