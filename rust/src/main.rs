@@ -32,28 +32,25 @@ use xi_rpc::RpcLoop;
 const XI_DIRECTORY: &str = "xi-core";
 const XI_LOG_FILE: &str = "xi-core.log";
 
-fn get_logging_directory() -> Option<PathBuf> {
-    if let Some(mut log_dir) = dirs::data_local_dir() {
-        log_dir.push(XI_DIRECTORY);
-        Some(log_dir)
-    } else {
-        eprintln!("[WARNING] The dir library was not able to find a directory for this platform");
-        None
+fn get_logging_directory() -> Result<PathBuf, io::Error> {
+    match dirs::data_local_dir() {
+        Some(mut log_dir) => {
+            log_dir.push(XI_DIRECTORY);
+            Ok(log_dir)
+        }
+        None => Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "The dir library was not able to find a directory for this platform",
+        )),
     }
 }
 
-fn path_for_log_file<P: AsRef<str>>(filename: P) -> Option<PathBuf> {
-    if let Some(mut logging_directory) = get_logging_directory() {
-        // Create the logging directory
-        match fs::create_dir_all(&logging_directory) {
-            Ok(_) => (),
-            Err(why) => eprintln!("[WARNING] {:?}", why),
-        }
-        logging_directory.push(filename.as_ref());
-        Some(logging_directory)
-    } else {
-        None
-    }
+fn path_for_log_file<P: AsRef<str>>(filename: P) -> Result<PathBuf, io::Error> {
+    let mut logging_directory = get_logging_directory()?;
+    // Create the logging directory
+    fs::create_dir_all(&logging_directory)?;
+    logging_directory.push(filename.as_ref());
+    Ok(logging_directory)
 }
 
 fn setup_logging() -> Result<(), fern::InitError> {
@@ -79,12 +76,15 @@ fn setup_logging() -> Result<(), fern::InitError> {
         }).level(level_filter)
         .chain(io::stderr());
 
-    if let Some(logging_file_path) = path_for_log_file(XI_LOG_FILE) {
-        fern_dispatch = fern_dispatch.chain(fern::log_file(logging_file_path)?)
-    } else {
-        eprintln!(
-            "[WARNING] There was an issue getting the path for the log file, just using stderr"
-        );
+    match path_for_log_file(XI_LOG_FILE) {
+        Ok(logging_file_path) => {
+            fern_dispatch = fern_dispatch.chain(fern::log_file(logging_file_path)?)
+        }
+        Err(e) => {
+            let error_message =
+                "[WARNING] There was an issue getting the path for the log file, falling back to stderr.";
+            eprintln!("{}\nError:\n{:?}", error_message, e)
+        }
     }
     fern_dispatch.apply()?;
     info!("Logging with fern is setup");
