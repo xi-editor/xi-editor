@@ -64,7 +64,7 @@ fn setup_logging() -> Result<(), fern::InitError> {
         Err(_) => log::LevelFilter::Info,
     };
 
-    let fern_dispatch = fern::Dispatch::new()
+    let mut fern_dispatch = fern::Dispatch::new()
         .format(|out, message, record| {
             out.finish(format_args!(
                 "{}[{}][{}] {}",
@@ -76,18 +76,21 @@ fn setup_logging() -> Result<(), fern::InitError> {
         }).level(level_filter)
         .chain(io::stderr());
 
-    match path_for_log_file(XI_LOG_FILE) {
-        Ok(logging_file_path) => fern_dispatch
-            .chain(fern::log_file(logging_file_path)?)
-            .apply()?,
-        Err(err) => {
-            fern_dispatch.apply()?;
-            warn!(
-                "There was an issue getting the path for the log file: {}, falling back to stderr.",
-                err,
-            );
-        }
+    let path_result = path_for_log_file(XI_LOG_FILE);
+    // If the logging_file_path returned successfully, add the logfile capability to fern
+    if let Ok(logging_file_path) = &path_result {
+        fern_dispatch = fern_dispatch.chain(fern::log_file(logging_file_path)?);
     }
+
+    // Start fern
+    fern_dispatch.apply()?;
+
+    // If the logging_file_path returned an error, print it with fern/logs
+    if let Err(e) = &path_result {
+        let message = "There was an issue getting the path for the log file";
+        warn!("{}: {:?}, falling back to stderr.", message, e);
+    }
+
     info!("Logging with fern is setup");
     Ok(())
 }
