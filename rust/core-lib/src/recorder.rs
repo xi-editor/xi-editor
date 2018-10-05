@@ -105,20 +105,67 @@ impl Recording {
     }
 }
 
+// Tests for filtering undo / redo from the recording buffer
+// A = Event
+// B = Event
+// U = Undo
+// R = Redo
 #[cfg(test)]
 mod tests {
     use recorder::Recorder;
-    use edit_types::BufferEvent;
+    use edit_types::{BufferEvent, EventDomain};
 
     #[test]
-    fn undo_filtering_tests() {
+    fn play_recording() {
+        let mut recorder = Recorder::new();
+        
+        let mut expected_events: Vec<EventDomain> = vec![
+            BufferEvent::Indent.into(),
+            BufferEvent::Outdent.into(),
+            BufferEvent::DuplicateLine.into(),
+            BufferEvent::Transpose.into(),
+        ];
+
+        recorder.toggle_recording();
+        for event in expected_events.iter().rev() {
+            recorder.record(event.clone());
+        }
+        recorder.toggle_recording();
+
+        recorder.play(|event| {
+            // We shouldn't iterate more times than we added items!
+            let expected_event = expected_events.pop();
+            assert!(expected_event.is_some());
+
+            // Should be the event we expect
+            assert_eq!(*event, expected_event.unwrap());
+        });
+
+        // We should have iterated over everything we inserted
+        assert_eq!(expected_events.len(), 0);
+    }
+
+    #[test]
+    fn clear_recording() {
         let mut recorder = Recorder::new();
 
-        // Tests for filtering undo / redo from the recording buffer
-        // A = Event
-        // B = Event
-        // U = Undo
-        // R = Redo
+        recorder.toggle_recording();
+        recorder.record(BufferEvent::Transpose.into());
+        recorder.record(BufferEvent::DuplicateLine.into());
+        recorder.record(BufferEvent::Outdent.into());
+        recorder.record(BufferEvent::Indent.into());
+        recorder.toggle_recording();
+
+        assert_eq!(recorder.recording.events.len(), 4);
+
+        recorder.clear();
+
+        assert_eq!(recorder.recording.events.len(), 0);
+    }
+
+    #[test]
+    fn basic_test() {
+        let mut recorder = Recorder::new();
 
         // Undo removes last item, redo only affects undo
         // A U B R => B
@@ -129,10 +176,13 @@ mod tests {
         recorder.record(BufferEvent::Redo.into());
         recorder.toggle_recording();
         assert_eq!(recorder.recording.events, vec![BufferEvent::DuplicateLine.into()]);
+    }
 
-        recorder.clear();
+    #[test]
+    fn basic_test_swapped() {
+        let mut recorder = Recorder::new();
 
-        // Swapping order of undo and redo should give us a different leftover item
+        // Swapping order of undo and redo from the basic test should give us a different leftover item
         // A R B U => A
         recorder.toggle_recording();
         recorder.record(BufferEvent::Transpose.into());
@@ -141,8 +191,11 @@ mod tests {
         recorder.record(BufferEvent::Undo.into());
         recorder.toggle_recording();
         assert_eq!(recorder.recording.events, vec![BufferEvent::Transpose.into()]);
+    }
 
-        recorder.clear();
+    #[test]
+    fn redo_cancels_undo() {
+        let mut recorder = Recorder::new();
 
         // Redo cancels out an undo
         // A U R B => A B
@@ -153,8 +206,11 @@ mod tests {
         recorder.record(BufferEvent::DuplicateLine.into());
         recorder.toggle_recording();
         assert_eq!(recorder.recording.events, vec![BufferEvent::Transpose.into(), BufferEvent::DuplicateLine.into()]);
+    }
 
-        recorder.clear();
+    #[test]
+    fn undo_cancels_redo() {
+        let mut recorder = Recorder::new();
 
         // Undo should cancel a redo, preventing it from canceling another undo
         // A U R U => _
@@ -165,5 +221,35 @@ mod tests {
         recorder.record(BufferEvent::Undo.into());
         recorder.toggle_recording();
         assert_eq!(recorder.recording.events, vec![]);
+    }
+
+    #[test]
+    fn undo_as_first_item() {
+        let mut recorder = Recorder::new();
+
+        // Undo shouldn't do anything as the first item
+        // U A B R => A B
+        recorder.toggle_recording();
+        recorder.record(BufferEvent::Undo.into());
+        recorder.record(BufferEvent::Transpose.into());
+        recorder.record(BufferEvent::DuplicateLine.into());
+        recorder.record(BufferEvent::Redo.into());
+        recorder.toggle_recording();
+        assert_eq!(recorder.recording.events, vec![BufferEvent::Transpose.into(), BufferEvent::DuplicateLine.into()]);
+    }
+
+    #[test]
+    fn redo_as_first_item() {
+        let mut recorder = Recorder::new();
+
+        // Redo shouldn't do anything as the first item
+        // R A B U => A
+        recorder.toggle_recording();
+        recorder.record(BufferEvent::Redo.into());
+        recorder.record(BufferEvent::Transpose.into());
+        recorder.record(BufferEvent::DuplicateLine.into());
+        recorder.record(BufferEvent::Undo.into());
+        recorder.toggle_recording();
+        assert_eq!(recorder.recording.events, vec![BufferEvent::Transpose.into()]);
     }
 }
