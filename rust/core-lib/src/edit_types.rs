@@ -85,6 +85,7 @@ pub(crate) enum SpecialEvent {
     RequestHover { request_id: usize, position: Option<Position> },
     ToggleRecording,
     PlayRecording,
+    ClearRecording,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -256,6 +257,7 @@ impl From<EditNotification> for EventDomain {
             DecreaseNumber => BufferEvent::DecreaseNumber.into(),
             ToggleRecording => SpecialEvent::ToggleRecording.into(),
             PlayRecording => SpecialEvent::PlayRecording.into(),
+            ClearRecording => SpecialEvent::ClearRecording.into(),
         }
     }
 }
