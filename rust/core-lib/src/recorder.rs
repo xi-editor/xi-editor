@@ -193,6 +193,32 @@ mod tests {
     }
 
     #[test]
+    fn multiple_recordings() {
+        let mut recorder = Recorder::new();
+
+        let recording_a = "a".to_string();
+        let recording_b = "b".to_string();
+
+        recorder.toggle_recording(Some(recording_a.clone()));
+        recorder.record(BufferEvent::Transpose.into());
+        recorder.record(BufferEvent::DuplicateLine.into());
+        recorder.toggle_recording(Some(recording_a.clone()));
+
+        recorder.toggle_recording(Some(recording_b.clone()));
+        recorder.record(BufferEvent::Outdent.into());
+        recorder.record(BufferEvent::Indent.into());
+        recorder.toggle_recording(Some(recording_b.clone()));
+
+        assert_eq!(recorder.recordings.get(&recording_a).unwrap().events, vec![BufferEvent::Transpose.into(), BufferEvent::DuplicateLine.into()]);
+        assert_eq!(recorder.recordings.get(&recording_b).unwrap().events, vec![BufferEvent::Outdent.into(), BufferEvent::Indent.into()]);
+
+        recorder.clear(&recording_a);
+
+        assert!(recorder.recordings.get(&recording_a).is_none());
+        assert!(recorder.recordings.get(&recording_b).is_some());
+    }
+
+    #[test]
     fn basic_test() {
         let mut recorder = Recorder::new();
 
