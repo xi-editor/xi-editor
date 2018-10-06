@@ -696,39 +696,26 @@ impl Editor {
     /// "|1234" -> "1235|"
     /// "12|34" -> "1235|"
     /// "-|12" -> "-11|"
-    /// "1[23 and other contents|]" -> "124| and other contents"
+    /// "another number is 123|]" -> "another number is 124"
     ///
     /// This function also works fine with multiple regions.
-    fn change_number<F: Fn(i128) -> i128>(&mut self, view: &View,
+    fn change_number<F: Fn(i128) -> Option<i128>>(&mut self, view: &View,
                                         transform_function: F) {
         let mut builder = delta::Builder::new(self.text.len());
         for region in view.sel_regions() {
-            let line_nb = view.line_of_offset(&self.text, region.min());
-            let line_start = view.offset_of_line(&self.text, line_nb);
-            let line_end = view.offset_of_line(&self.text, line_nb + 1);
-            let line = self.text.slice_to_cow(&SelRegion::new(line_start, line_end));
-            let (mut begin,  mut end) = (region.min() - line_start, line.len());
 
-            let walker = |enumerated: Vec<(usize, char)>| -> Option<usize> {
-                for (i, c) in enumerated {
-                    if !c.is_digit(10) && c != '-' {
-                        return Some(i);
-                    }
-                }
-                None
-            };
+            let mut cursor = WordCursor::new(&self.text, region.end);
+            let (mut start, end) = cursor.select_word();
 
-            // Walk backwards to see where the number starts
-            let begin = walker(line.chars().rev().skip(end - begin).enumerate().collect())
-                .map(|i| begin - i).unwrap_or(0);
+            // see if the word begins with a -
+            if start > 0 && self.text.slice_to_cow(start - 1..start) == "-" {
+                start -= 1;
+            }
 
-            // Walk forwards to see where the number ends
-            let end = walker(line.chars().skip(begin).enumerate().collect())
-                .map(|i| begin + i).unwrap_or(line.len());
-
-            if let Some(number) = &line[begin..end].parse::<i128>().ok() {
-                let interval = Interval::new_closed_open(line_start + begin, line_start + end);
-                builder.replace(interval, Rope::from(format!("{}", transform_function(*number))));
+            let word = self.text.slice_to_cow(start..end);
+            if let Some(number) = word.parse::<i128>().ok().and_then(&transform_function) {
+                let interval = Interval::new_closed_open(start, end);
+                builder.replace(interval, Rope::from(format!("{}", number)));
             }
         }
 
@@ -839,8 +826,8 @@ impl Editor {
             ReplaceNext => self.replace(view, false),
             ReplaceAll => self.replace(view, true),
             DuplicateLine => self.duplicate_line(view, config),
-            IncreaseNumber => self.change_number(view, |s| s.wrapping_add(1)),
-            DecreaseNumber => self.change_number(view, |s| s.wrapping_sub(1)),
+            IncreaseNumber => self.change_number(view, |s| s.checked_add(1)),
+            DecreaseNumber => self.change_number(view, |s| s.checked_sub(1)),
         }
     }
 

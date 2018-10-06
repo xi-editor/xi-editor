@@ -917,15 +917,14 @@ mod tests {
         ctx.do_edit(EditNotification::IncreaseNumber);
         assert_eq!(harness.debug_render(),"this is a 0| text example");
 
-        // as long as the beginning of a region starts on a number,
-        // conversion will happen
+        // if it begins in a region, nothing will happen
         ctx.do_edit(EditNotification::MoveToEndOfDocument);
         ctx.do_edit(EditNotification::DeleteToBeginningOfLine);
         ctx.do_edit(EditNotification::Insert { chars: "this is a 10 text example".into() });
-        ctx.do_edit(EditNotification::Gesture { line: 0, col: 11, ty: PointSelect });
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 10, ty: PointSelect });
         ctx.do_edit(EditNotification::MoveToEndOfDocumentAndModifySelection);
         ctx.do_edit(EditNotification::DecreaseNumber);
-        assert_eq!(harness.debug_render(),"this is a 9[ text example|]");
+        assert_eq!(harness.debug_render(),"this is a [10 text example|]");
 
         // If a number just happens to be in a region, nothing will happen
         ctx.do_edit(EditNotification::MoveToEndOfDocument);
@@ -936,14 +935,14 @@ mod tests {
         ctx.do_edit(EditNotification::DecreaseNumber);
         assert_eq!(harness.debug_render(),"this [is a 10 text example|]");
 
-        // if it ends on a region, nothing will happen
+        // if it ends on a region, the number will be changed
         ctx.do_edit(EditNotification::MoveToEndOfDocument);
         ctx.do_edit(EditNotification::DeleteToBeginningOfLine);
         ctx.do_edit(EditNotification::Insert { chars: "this is a 10".into() });
         ctx.do_edit(EditNotification::Gesture { line: 0, col: 0, ty: PointSelect });
         ctx.do_edit(EditNotification::MoveToEndOfDocumentAndModifySelection);
-        ctx.do_edit(EditNotification::DecreaseNumber);
-        assert_eq!(harness.debug_render(),"[this is a 10|]");
+        ctx.do_edit(EditNotification::IncreaseNumber);
+        assert_eq!(harness.debug_render(),"[this is a 11|]");
 
         // if only a part of a number is in a region, the whole number will be changed
         ctx.do_edit(EditNotification::MoveToEndOfDocument);
@@ -954,14 +953,29 @@ mod tests {
         ctx.do_edit(EditNotification::DecreaseNumber);
         assert_eq!(harness.debug_render(),"this is a 999| text example");
 
-        // Number Wrapping
+        // invalid numbers
         ctx.do_edit(EditNotification::MoveToEndOfDocument);
         ctx.do_edit(EditNotification::DeleteToBeginningOfLine);
-        ctx.do_edit(EditNotification::Insert { chars: format!("{}", i128::max_value()) });
-        ctx.do_edit(EditNotification::Gesture { line: 0, col: 11, ty: PointSelect });
-        ctx.do_edit(EditNotification::MoveRightAndModifySelection);
+        ctx.do_edit(EditNotification::Insert { chars: "10_000".into() });
+        ctx.do_edit(EditNotification::MoveToEndOfDocument);
         ctx.do_edit(EditNotification::IncreaseNumber);
-        assert_eq!(harness.debug_render(), format!("{}|", i128::min_value()));
+        assert_eq!(harness.debug_render(), "10_000|");
+
+        // decimals are kinda accounted for (i.e. 4.55 becomes 4.56 (good), but 4.99 becomes 4.100 (bad)
+        ctx.do_edit(EditNotification::MoveToEndOfDocument);
+        ctx.do_edit(EditNotification::DeleteToBeginningOfLine);
+        ctx.do_edit(EditNotification::Insert { chars: "4.55".into() });
+        ctx.do_edit(EditNotification::MoveToEndOfDocument);
+        ctx.do_edit(EditNotification::IncreaseNumber);
+        assert_eq!(harness.debug_render(), "4.56|");
+
+        // invalid numbers
+        ctx.do_edit(EditNotification::MoveToEndOfDocument);
+        ctx.do_edit(EditNotification::DeleteToBeginningOfLine);
+        ctx.do_edit(EditNotification::Insert { chars: "0xFF03".into() });
+        ctx.do_edit(EditNotification::MoveToEndOfDocument);
+        ctx.do_edit(EditNotification::IncreaseNumber);
+        assert_eq!(harness.debug_render(), "0xFF03|");
 
         // Test multiple selections
         ctx.do_edit(EditNotification::MoveToEndOfDocument);
