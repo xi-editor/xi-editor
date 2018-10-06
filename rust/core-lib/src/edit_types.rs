@@ -68,6 +68,8 @@ pub(crate) enum BufferEvent {
     ReplaceNext,
     ReplaceAll,
     DuplicateLine,
+    IncreaseNumber,
+    DecreaseNumber
 }
 
 /// An event that needs special handling
@@ -240,6 +242,8 @@ impl From<EditNotification> for EventDomain {
                 SpecialEvent::RequestHover { request_id, position }.into(),
             SelectionIntoLines => ViewEvent::SelectionIntoLines.into(),
             DuplicateLine => BufferEvent::DuplicateLine.into(),
+            IncreaseNumber => BufferEvent::IncreaseNumber.into(),
+            DecreaseNumber => BufferEvent::DecreaseNumber.into()
         }
     }
 }

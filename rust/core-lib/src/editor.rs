@@ -686,6 +686,44 @@ impl Editor {
             self.add_delta(builder.build());
         }
     }
+  
+    /// Changes the number(s) under the cursor(s) with the `transform_function`.
+    /// If there is a number next to or on the beginning of the region, then
+    /// this number will be replaced with the result of `transform_function` and
+    /// the cursor will be placed at the end of the number.
+    /// Some Examples with a increment `transform_function`:
+    ///
+    /// "|1234" -> "1235|"
+    /// "12|34" -> "1235|"
+    /// "-|12" -> "-11|"
+    /// "another number is 123|]" -> "another number is 124"
+    ///
+    /// This function also works fine with multiple regions.
+    fn change_number<F: Fn(i128) -> Option<i128>>(&mut self, view: &View,
+                                        transform_function: F) {
+        let mut builder = delta::Builder::new(self.text.len());
+        for region in view.sel_regions() {
+
+            let mut cursor = WordCursor::new(&self.text, region.end);
+            let (mut start, end) = cursor.select_word();
+
+            // if the word begins with '-', then it is a negative number
+            if start > 0 && self.text.byte_at(start - 1) == ('-' as u8) {
+                start -= 1;
+            }
+
+            let word = self.text.slice_to_cow(start..end);
+            if let Some(number) = word.parse::<i128>().ok().and_then(&transform_function) {
+                let interval = Interval::new_closed_open(start, end);
+                builder.replace(interval, Rope::from(number.to_string()));
+            }
+        }
+
+        if !builder.is_empty() {
+            self.this_edit_type = EditType::Other;
+            self.add_delta(builder.build());
+        }
+    }
 
     // capitalization behaviour is similar to behaviour in XCode
     fn capitalize_text(&mut self, view: &mut View) {
@@ -788,6 +826,8 @@ impl Editor {
             ReplaceNext => self.replace(view, false),
             ReplaceAll => self.replace(view, true),
             DuplicateLine => self.duplicate_line(view, config),
+            IncreaseNumber => self.change_number(view, |s| s.checked_add(1)),
+            DecreaseNumber => self.change_number(view, |s| s.checked_sub(1)),
         }
     }
 
