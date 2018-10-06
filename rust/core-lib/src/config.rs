@@ -170,6 +170,7 @@ pub struct BufferItems {
     pub scroll_past_end: bool,
     pub wrap_width: usize,
     pub word_wrap: bool,
+    pub autodetect_whitespace: bool,
 }
 
 pub type BufferConfig = Config<BufferItems>;

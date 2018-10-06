@@ -29,10 +29,10 @@ use client::Client;
 use edit_types::ViewEvent;
 use line_cache_shadow::{self, LineCacheShadow, RenderPlan, RenderTactic};
 use movement::{Movement, region_movement, selection_movement};
-use rpc::{GestureType, MouseAction, SelectionModifier};
+use rpc::{GestureType, MouseAction, SelectionModifier, FindQuery};
 use styles::{Style, ThemeStyleMap};
 use selection::{Affinity, Selection, SelRegion};
-use tabs::{ViewId, BufferId};
+use tabs::{ViewId, BufferId, Counter};
 use width_cache::WidthCache;
 use word_boundaries::WordCursor;
 use find::{Find, FindStatus};
@@ -75,6 +75,9 @@ pub struct View {
     /// The state for finding text for this view.
     /// Each instance represents a separate search query.
     find: Vec<Find>,
+
+    /// Tracks the IDs for additional search queries in find.
+    find_id_counter: Counter,
 
     /// Tracks whether there has been changes in find results or find parameters.
     /// This is used to determined whether FindStatus should be sent to the frontend.
@@ -177,6 +180,7 @@ impl View {
             wrap_col: WrapWidth::None,
             lc_shadow: LineCacheShadow::default(),
             find: Vec::new(),
+            find_id_counter: Counter::default(),
             find_changed: FindStatusChange::None,
             highlight_find: false,
             replace: None,
@@ -218,8 +222,13 @@ impl View {
             Gesture { line, col, ty } =>
                 self.do_gesture(text, line, col, ty),
             GotoLine { line } => self.goto_line(text, line),
-            Find { chars, case_sensitive, regex, whole_words } =>
-                self.do_find(text, chars, case_sensitive, regex, whole_words),
+            Find { chars, case_sensitive, regex, whole_words } => {
+                let id = self.find.first().and_then(|q| Some(q.id()));
+                let query_changes = FindQuery { id, chars, case_sensitive, regex, whole_words };
+                self.do_find(text, [query_changes].to_vec())
+            },
+            MultiFind { queries } =>
+                self.do_find(text, queries),
             FindNext { wrap_around, allow_same, modify_selection } =>
                 self.do_find_next(text, false, wrap_around, allow_same, &modify_selection),
             FindPrevious { wrap_around, allow_same, modify_selection } =>
@@ -604,13 +613,15 @@ impl View {
 
         if self.highlight_find {
             for find in self.find.iter() {
+                let mut cur_hls = Vec::new();
                 for region in find.occurrences().regions_in_range(start_pos, pos) {
                     let sel_start_ix = clamp(region.min(), start_pos, pos) - start_pos;
                     let sel_end_ix = clamp(region.max(), start_pos, pos) - start_pos;
                     if sel_end_ix > sel_start_ix {
-                        hls.push((sel_start_ix, sel_end_ix));
+                        cur_hls.push((sel_start_ix, sel_end_ix));
                     }
                 }
+                hls.push(cur_hls);
             }
         }
 
@@ -630,21 +641,23 @@ impl View {
 
     pub fn render_styles(&self, client: &Client, styles: &StyleMap,
                          start: usize, end: usize, sel: &[(usize, usize)],
-                         hls: &[(usize, usize)],
+                         hls: &Vec<Vec<(usize, usize)>>,
                          style_spans: &Spans<Style>) -> Vec<isize>
     {
         let mut rendered_styles = Vec::new();
         let style_spans = style_spans.subseq(Interval::new_closed_open(start, end));
 
         let mut ix = 0;
-        // we add the special find highlights (1) and selection (0) styles first.
+        // we add the special find highlights (1 to N) and selection (0) styles first.
         // We add selection after find because we want it to be preferred if the
         // same span exists in both sets (as when there is an active selection)
-        for &(sel_start, sel_end) in hls {
-            rendered_styles.push((sel_start as isize) - ix);
-            rendered_styles.push(sel_end as isize - sel_start as isize);
-            rendered_styles.push(1);
-            ix = sel_end as isize;
+        for (index, cur_find_hls) in hls.iter().enumerate() {
+            for &(sel_start, sel_end) in cur_find_hls {
+                rendered_styles.push((sel_start as isize) - ix);
+                rendered_styles.push(sel_end as isize - sel_start as isize);
+                rendered_styles.push(index as isize + 1);
+                ix = sel_end as isize;
+            }
         }
         for &(sel_start, sel_end) in sel {
             rendered_styles.push((sel_start as isize) - ix);
@@ -974,29 +987,46 @@ impl View {
         self.find_changed = FindStatusChange::All;
         self.set_dirty(text);
 
-        // todo: this will be changed once multiple queries are supported
-        // todo: for now only a single search query is supported however in the future
-        // todo: the correct Find instance needs to be updated with the new parameters
-        if self.find.is_empty() {
-            self.find.push(Find::new());
+        // set selection as search query for first find if no additional search queries are used
+        // otherwise add new find with selection as search query
+        if self.find.len() != 1 {
+            self.add_find();
         }
 
-        self.find.first_mut().unwrap().do_find(text, &search_query, case_sensitive, false, true);
+        self.find.last_mut().unwrap().do_find(text, &search_query, case_sensitive, false, true);
     }
 
-    pub fn do_find(&mut self, text: &Rope, chars: String, case_sensitive: bool, is_regex: bool,
-                   whole_words: bool) {
+    fn add_find(&mut self) {
+        let id = self.find_id_counter.next();
+        self.find.push(Find::new(id));
+    }
+
+    pub fn do_find(&mut self, text: &Rope, queries: Vec<FindQuery>) {
         self.set_dirty(text);
         self.find_changed = FindStatusChange::Matches;
 
-        // todo: this will be changed once multiple queries are supported
-        // todo: for now only a single search query is supported however in the future
-        // todo: the correct Find instance needs to be updated with the new parameters
-        if self.find.is_empty() {
-            self.find.push(Find::new());
-        }
+        // remove deleted queries
+        self.find.retain(|f| queries.iter().position(|q| q.id == Some(f.id())).is_some());
 
-        self.find.first_mut().unwrap().do_find(text, &chars, case_sensitive, is_regex, whole_words);
+        for query in &queries {
+            let pos = match query.id {
+                Some(id) => {
+                    // update existing query
+                    match self.find.iter().position(|f| f.id() == id) {
+                        Some(p) => p,
+                        None => return
+                    }
+                }
+                None => {
+                    // add new query
+                    self.add_find();
+                    self.find.len() - 1
+                }
+            };
+
+            self.find.get_mut(pos).unwrap().do_find(text, &query.chars.clone(), query.case_sensitive,
+                                                    query.regex, query.whole_words)
+        }
     }
 
     /// Selects the next find match.
@@ -1027,13 +1057,20 @@ impl View {
     /// indicates a search for the next occurrence past the end of the file.
     pub fn select_next_occurrence(&mut self, text: &Rope, reverse: bool, wrapped: bool,
                                   _allow_same: bool, modify_selection: &SelectionModifier) {
+        let (cur_start, cur_end) = match self.selection.last() {
+            Some(sel) => (sel.min(), sel.max()),
+            _ => (0, 0)
+        };
+
         // multiple queries; select closest occurrence
         let closest_occurrence = self.find.iter().flat_map(|x|
             x.next_occurrence(text, reverse, wrapped, &self.selection)
         ).min_by_key(|x| {
             match reverse {
-                true => x.end,
-                false => x.start
+                true if x.end > cur_end => 2 * text.len() - x.end,
+                true => cur_end - x.end,
+                false if x.start < cur_start => x.start + text.len(),
+                false => x.start - cur_start
             }
         });
 

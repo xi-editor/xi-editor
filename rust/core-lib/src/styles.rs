@@ -28,7 +28,7 @@ use syntect::LoadingError;
 
 pub use syntect::highlighting::ThemeSettings;
 
-const N_RESERVED_STYLES: usize = 2;
+pub const N_RESERVED_STYLES: usize = 8;
 const SYNTAX_PRIORITY_DEFAULT: u16 = 200;
 const SYNTAX_PRIORITY_LOWEST: u16 = 0;
 pub const DEFAULT_THEME: &str = "InspiredGitHub";

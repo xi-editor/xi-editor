@@ -7,7 +7,7 @@
 
 <h4 align="center">A modern editor with a backend written in Rust.</h4>
 
-***Note:*** *This is repo contains only the editor core, which is not usable on its own. For editors based on it, check out the list in [Frontends](#Frontends).*
+***Note:*** *This is repo contains only the editor core, which is not usable on its own. For editors based on it, check out the list in [Frontends](#frontends).*
 
 The xi-editor project is an attempt to build a high quality text editor,
 using modern software engineering techniques. It is initially built for
@@ -161,7 +161,7 @@ This project is licensed under the Apache 2 [license](LICENSE).
 ## Contributions
 
 We gladly accept contributions via GitHub pull requests. Please see
-[CONTRIBUTING.md](CONTRIBUTING.md) for more details.
+[CONTRIBUTING.md](.github/CONTRIBUTING.md) for more details.
 
 If you are interested in contributing but not sure where to start, there is
 an active IRC channel at #xi on irc.mozilla.org. There is also a subreddit at

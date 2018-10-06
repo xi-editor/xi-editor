@@ -320,6 +320,17 @@ Parameters `regex` and `whole_words` are optional and by default `false`.
 
 Sets the current search query and options.
 
+#### multi_find
+
+This find command supports multiple search queries.
+
+`multi_find [{"id": 1, "chars": "a", "case_sensitive": false, "regex": false, "whole_words": true}]`
+Parameters `regex` and `whole_words` are optional and by default `false`. `id` is an optional parameter
+used to uniquely identify a search query. If left empty, the query is considered as a new query and 
+the backend will generate a new ID.
+
+Sets the current search queries and options.
+
 #### find_next and find_previous
 
 `find_next {"wrap_around": true, "allow_same": false, "modify_selection": "set"}`
@@ -560,6 +571,11 @@ instance.
 
 Notifies the client of the available themes.
 
+#### available_languages
+
+`available_languages {"languages": ["Rust"]}`
+
+Notifies the client of the available languages.
 
 #### config_changed
 
@@ -670,7 +686,9 @@ Removes a status item from the front end.
 
 #### find_status
 
-`find_status {"view_id": "view-id-1", "queries": [{"chars": "a", "case_sensitive": false, "is_regex": false, "whole_words": true, "matches": 6}]}`
+Find supports multiple search queries.
+
+`find_status {"view_id": "view-id-1", "queries": [{"id": 1, "chars": "a", "case_sensitive": false, "is_regex": false, "whole_words": true, "matches": 6}]}`
 
 Notifies the client about the current search queries and search options.
 

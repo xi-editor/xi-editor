@@ -49,6 +49,8 @@ use styles::{ThemeStyleMap, DEFAULT_THEME};
 use view::View;
 use width_cache::WidthCache;
 use syntax::LanguageId;
+use whitespace::Indentation;
+use line_ending::LineEnding;
 
 #[cfg(feature = "notify")]
 use watcher::{FileWatcher, WatchToken};
@@ -195,6 +197,8 @@ impl CoreState {
         let plugin_paths = self.config_manager.get_plugin_paths();
         self.plugins.reload_from_paths(&plugin_paths);
         let languages = self.plugins.make_languages_map();
+        let languages_ids = languages.iter().map(|l| l.name.clone()).collect::<Vec<_>>();
+        self.peer.available_languages(languages_ids);
         self.config_manager.set_languages(languages);
         let theme_names = self.style_map.borrow().get_theme_names();
         self.peer.available_themes(theme_names);
@@ -557,9 +561,67 @@ impl CoreState {
     fn finalize_new_views(&mut self) {
         let to_start = mem::replace(&mut self.pending_views, Vec::new());
         to_start.iter().for_each(|(id, config)| {
+            let modified = self.detect_whitespace(*id, config); 
+            let config = modified.as_ref().unwrap_or(config);
             let mut edit_ctx = self.make_context(*id).unwrap();
-            edit_ctx.finish_init(config);
+            edit_ctx.finish_init(&config);
         });
+    }
+
+    // Detects whitespace settings from the file and merges them with the config
+    fn detect_whitespace(&mut self, id: ViewId, config: &Table) -> Option<Table> {
+        let buffer_id = self.views.get(&id).map(|v| v.borrow().get_buffer_id())?;
+        let editor = self.editors.get(&buffer_id).expect("existing buffer_id must have corresponding editor");
+
+        let autodetect_whitespace = self.config_manager.get_buffer_config(buffer_id).items.autodetect_whitespace;
+        if !autodetect_whitespace {
+            return None;
+        }
+
+        let mut changes = Table::new();
+        let indentation = Indentation::parse(editor.borrow().get_buffer());
+        match indentation {
+            Ok(Some(Indentation::Tabs)) => {
+                changes.insert("translate_tabs_to_spaces".into(), false.into());
+            },
+            Ok(Some(Indentation::Spaces(n))) => {
+                changes.insert("translate_tabs_to_spaces".into(), true.into());
+                changes.insert("tab_size".into(), n.into());
+            },
+            Err(_) => info!("detected mixed indentation"),
+            Ok(None) => info!("file contains no indentation"),
+        }
+
+        let line_ending = LineEnding::parse(editor.borrow().get_buffer());
+        match line_ending {
+            Ok(Some(LineEnding::CrLf)) => {
+                changes.insert("line_ending".into(), "\r\n".into());
+            },
+            Ok(Some(LineEnding::Lf)) => {
+                changes.insert("line_ending".into(), "\n".into());
+            },
+            Err(_) => info!("detected mixed line endings"),
+            Ok(None) => info!("file contains no supported line endings"),
+        }
+
+        let config_delta = self.config_manager.table_for_update(ConfigDomain::SysOverride(buffer_id), changes);
+        match self.config_manager.set_user_config(ConfigDomain::SysOverride(buffer_id), config_delta) {
+            Ok(ref mut items) if items.len() > 0 => {
+                assert!(items.len() == 1, "whitespace overrides can only update a single buffer's config\n{:?}", items);
+                let table = items.remove(0).1;
+                let mut config = config.clone();
+                config.extend(table);
+                Some(config)
+            },
+            Ok(_) => {
+                warn!("set_user_config failed to update config, no tables were returned");
+                None
+            },
+            Err(err) => {
+                warn!("detect_whitespace failed to update config: {:?}", err);
+                None
+            },
+        }
     }
 
     fn handle_render_timer(&mut self, token: usize) {
@@ -854,10 +916,10 @@ impl<'a, I> Iterator for Iter<'a, I> where I: Iterator<Item=&'a ViewId> {
 }
 
 #[derive(Debug, Default)]
-struct Counter(Cell<usize>);
+pub(crate) struct Counter(Cell<usize>);
 
 impl Counter {
-    fn next(&self) -> usize {
+    pub(crate) fn next(&self) -> usize {
         let n = self.0.get();
         self.0.set(n + 1);
         n + 1
