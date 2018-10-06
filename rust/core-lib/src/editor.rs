@@ -707,8 +707,8 @@ impl Editor {
             let mut cursor = WordCursor::new(&self.text, region.end);
             let (mut start, end) = cursor.select_word();
 
-            // see if the word begins with a -
-            if start > 0 && self.text.slice_to_cow(start - 1..start) == "-" {
+            // if the word begins with '-', then it is a negative number
+            if start > 0 && self.text.byte_at(start - 1) == ('-' as u8) {
                 start -= 1;
             }
 
