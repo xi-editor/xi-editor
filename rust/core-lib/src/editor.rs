@@ -715,7 +715,7 @@ impl Editor {
             let word = self.text.slice_to_cow(start..end);
             if let Some(number) = word.parse::<i128>().ok().and_then(&transform_function) {
                 let interval = Interval::new_closed_open(start, end);
-                builder.replace(interval, Rope::from(format!("{}", number)));
+                builder.replace(interval, Rope::from(number.to_string()));
             }
         }
 
