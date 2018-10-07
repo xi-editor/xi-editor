@@ -177,12 +177,17 @@ where
         File::open(path.as_ref()).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
     let mod_time =
         f.metadata().map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?.modified().ok();
-    let mut bytes = Vec::new();
-    f.read_to_end(&mut bytes).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
+    let mut bytes = [0; 4096]; // TODO: Chunk size based on hardware/benchmarks
+    let num_bytes_read = f.read(&mut bytes).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
 
     let encoding = CharacterEncoding::guess(&bytes);
-    let rope = try_decode(bytes, encoding, path.as_ref())?;
-    let info = FileInfo { encoding, mod_time, path: path.as_ref().to_owned(), has_changed: false };
+    let (rope, leftovers) = try_decode(&bytes, encoding, path.as_ref())?;
+    let info = FileInfo {
+        encoding,
+        mod_time,
+        path: path.as_ref().to_owned(),
+        has_changed: false,
+    };
     Ok((rope, info))
 }
 
@@ -212,16 +217,76 @@ fn try_save(path: &Path, text: &Rope, encoding: CharacterEncoding) -> io::Result
     Ok(())
 }
 
-fn try_decode(bytes: Vec<u8>, encoding: CharacterEncoding, path: &Path) -> Result<Rope, FileError> {
+fn try_decode(bytes: &[u8],
+              encoding: CharacterEncoding, path: &Path) -> Result<(Rope, Vec<u8>), FileError> {
+    // Check the last valid UTF-8 character in the chunk
+    // If it's incomplete but otherwise valid, save it for the next chunk
+    let (complete_bytes, leftovers): (&[u8], &[u8]) = match last_utf8_char_info(bytes) {
+        LastUTF8CharInfo::Complete => (bytes, &[]),
+        LastUTF8CharInfo::Incomplete(reverse_idx) => bytes.split_at(bytes.len() - reverse_idx),
+        LastUTF8CharInfo::InvalidUTF8 => Err(FileError::UnknownEncoding(path.to_owned()))?
+    };
+
     match encoding {
-        CharacterEncoding::Utf8 => Ok(Rope::from(
-            str::from_utf8(&bytes).map_err(|_e| FileError::UnknownEncoding(path.to_owned()))?,
-        )),
+        CharacterEncoding::Utf8 => {
+            let utf8_str = str::from_utf8(complete_bytes).map_err(|_e|
+                FileError::UnknownEncoding(path.to_owned())
+            )?;
+            Ok((Rope::from(utf8_str), leftovers.to_vec()))
+        },
         CharacterEncoding::Utf8WithBom => {
-            let s = String::from_utf8(bytes)
-                .map_err(|_e| FileError::UnknownEncoding(path.to_owned()))?;
-            Ok(Rope::from(&s[UTF8_BOM.len()..]))
+            let utf8_str = String::from_utf8(complete_bytes.to_vec()).map_err(|_e|
+                FileError::UnknownEncoding(path.to_owned())
+            )?;
+            Ok((Rope::from(&utf8_str[UTF8_BOM.len()..]), leftovers.to_vec()))
         }
+    }
+}
+
+enum LastUTF8CharInfo {
+    Complete,
+    Incomplete(usize),
+    InvalidUTF8
+}
+
+fn last_utf8_char_info(s: &[u8]) -> LastUTF8CharInfo {
+    let size = s.len();
+
+    // Using the Err here to short circuit the fold, Ok to continue backwards along the slice for continuation bytes
+    let last_char_result = s.iter().try_rfold(1, |reverse_idx, byte| match *byte {
+        _ if reverse_idx > 4 => Err(LastUTF8CharInfo::InvalidUTF8),
+        // First bit is 0, a single byte UTF-8 character
+        leading_byte_single if leading_byte_single < 128 => Err(match reverse_idx {
+            1 => LastUTF8CharInfo::Complete,
+            _ => LastUTF8CharInfo::InvalidUTF8
+        }),
+        // Byte starts with 10, a UTF-8 continuation byte
+        // This is bit magic equivalent to: 128 <= b || b < 192
+        continuation_byte if (continuation_byte as i8) < -0x40 => Ok(reverse_idx + 1),
+        // Byte starts with 110, a 2 byte UTF-8 character
+        leading_byte_double if 192 <= leading_byte_double && leading_byte_double < 224 => Err(match reverse_idx {
+            1 => LastUTF8CharInfo::Incomplete(reverse_idx),
+            2 => LastUTF8CharInfo::Complete,
+            _ => LastUTF8CharInfo::InvalidUTF8
+        }),
+        // Byte starts with 1110, a 3 byte UTF-8 character
+        leading_byte_triple if 224 <= leading_byte_triple && leading_byte_triple < 240 => Err(match reverse_idx {
+            1 | 2 => LastUTF8CharInfo::Incomplete(reverse_idx),
+            3 => LastUTF8CharInfo::Complete,
+            _ => LastUTF8CharInfo::InvalidUTF8
+        }),
+        // Byte starts with 11110, a 4 byte UTF-8 character
+        leading_byte_quad if 240 <= leading_byte_quad && leading_byte_quad < 248 => Err(match reverse_idx {
+            1 | 2 | 3 => LastUTF8CharInfo::Incomplete(reverse_idx),
+            4 => LastUTF8CharInfo::Complete,
+            _ => LastUTF8CharInfo::InvalidUTF8
+        }),
+        _ => Err(LastUTF8CharInfo::InvalidUTF8) // Should only happen in invalid UTF-8
+    });
+
+    match last_char_result {
+        Ok(_) => LastUTF8CharInfo::InvalidUTF8, // Found too many continuation characters!
+        Err(result) => result,
     }
 }
 
