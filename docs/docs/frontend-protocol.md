@@ -253,6 +253,34 @@ increase_number
 decrease_number
 ```
 
+#### Recording
+
+These methods allow manipulation and playback of event recordings.
+
+- If there is no currently active recording, start recording events under the provided name.
+- If there is no provided name, the current recording is saved.
+- If the name provided matches the current recording name, the current recording is saved.
+- If the name provided does not match the current recording name, the events for the current recording are dismissed.
+```
+toggle_recording {
+    "recording_name"?: string
+}
+```
+
+Execute a set of recorded events and modify the document state:
+```
+play_recording {
+    "recording_name": string
+}
+```
+
+Completely remove a specific recording:
+```
+clear_recording {
+    "recording_name": string
+}
+```
+
 ### Language Support Oriented features (in Edit Namespace)
 
 #### Hover
