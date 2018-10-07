@@ -57,7 +57,6 @@ impl Recorder {
     /// If no recording is active, the event passed in is ignored.
     pub(crate) fn record(&mut self, cmd: EventDomain) {
         if !self.is_recording() {
-            // We're not supposed to be recording? Can we log somehow?
             return;
         }
 

@@ -115,9 +115,8 @@ impl<'a> EventContext<'a> {
                 (_, EventDomain::Special(SpecialEvent::ToggleRecording(recording_name))) => {
                     recorder.toggle_recording(recording_name.clone());
                 },
-                (true, EventDomain::Special(_)) => {
-                    // This shouldn't be allowed, how do we report back to the client?
-                },
+                // Don't save special events
+                (true, EventDomain::Special(_)) => {},
                 (true, event) => recorder.record(event.clone().into()),
                 _ => {}
             }
