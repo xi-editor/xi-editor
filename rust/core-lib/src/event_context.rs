@@ -116,7 +116,8 @@ impl<'a> EventContext<'a> {
                     recorder.toggle_recording(recording_name.clone());
                 },
                 // Don't save special events
-                (true, EventDomain::Special(_)) => {},
+                (true, EventDomain::Special(_)) =>
+                    warn!("Special events cannot be recorded-- ignoring event {:?}", event),
                 (true, event) => recorder.record(event.clone().into()),
                 _ => {}
             }
