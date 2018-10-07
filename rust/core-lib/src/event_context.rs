@@ -111,16 +111,15 @@ impl<'a> EventContext<'a> {
         {
             // Handle recording-- clone every non-toggle and play event into the recording buffer
             let recorder = &mut self.recorder.borrow_mut();
-            if let EventDomain::Special(SpecialEvent::ToggleRecording(ref recording_name)) = event {
-                recorder.toggle_recording(recording_name.clone());
-            } else if let EventDomain::Special(SpecialEvent::PlayRecording(_)) = event {
-                // This shouldn't be allowed, how do we report back to the client?
-                if recorder.is_recording() {}
-            } else if let EventDomain::Special(SpecialEvent::ClearRecording(_)) = event{
-                // This shouldn't be allowed, how do we report back to the client?
-                if recorder.is_recording() {}
-            } else if recorder.is_recording() {
-                recorder.record(event.clone().into());
+            match (recorder.is_recording(), &event) {
+                (_, EventDomain::Special(SpecialEvent::ToggleRecording(recording_name))) => {
+                    recorder.toggle_recording(recording_name.clone());
+                },
+                (true, EventDomain::Special(_)) => {
+                    // This shouldn't be allowed, how do we report back to the client?
+                },
+                (true, event) => recorder.record(event.clone().into()),
+                _ => {}
             }
         }
 
@@ -1619,7 +1618,7 @@ mod tests {
         ctx.do_edit(EditNotification::ToggleRecording { recording_name: Some(recording_name.clone())});
 
         ctx.do_edit(EditNotification::Gesture { line: 2, col: 5, ty: PointSelect });
-        ctx.do_edit(EditNotification::PlayRecording { recording_name });
+        ctx.do_edit(EditNotification::PlayRecording { recording_name: recording_name.clone() });
         assert_eq!(harness.debug_render(),"\
         this is a about\n\
         that has string\n\
@@ -1641,5 +1640,16 @@ mod tests {
         that has string\n\
         four really see.|\n\
         lines to nice" );
+
+        // We shouldn't be able to use cleared recordings
+        ctx.do_edit(EditNotification::Undo);
+        ctx.do_edit(EditNotification::Undo);
+        ctx.do_edit(EditNotification::ClearRecording { recording_name: recording_name.clone() });
+        ctx.do_edit(EditNotification::PlayRecording { recording_name });
+        assert_eq!(harness.debug_render(),"\
+        this is a string\n\
+        that has about\n\
+        four really nice|\n\
+        lines to see." );
     }
 }

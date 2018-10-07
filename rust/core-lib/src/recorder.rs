@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 use edit_types::{BufferEvent, EventDomain};
 
+/// A container that manages and holds all recordings for the current editing session
 pub(crate) struct Recorder {
     active_recording: Option<String>,
     recordings: HashMap<String, Recording>,
@@ -20,34 +21,40 @@ impl Recorder {
         self.active_recording.is_some()
     }
 
+    /// Starts or stops the specified recording.
+    ///
+    ///
+    /// There are three outcome behaviors:
+    /// - If the current recording name is specified, the active recording is saved
+    /// - If no recording name is specified, the currently active recording is saved
+    /// - If a recording name other than the active recording is specified,
+    /// the current recording will be thrown out and will be switched to the new name
+    ///
+    /// In addition to the above:
+    /// - If the recording was saved, there is no active recording
+    /// - If the recording was switched, there will be a new active recording
     pub(crate) fn toggle_recording(&mut self, recording_name: Option<String>) {
-        if self.is_recording() {
-            let last_recording = self.active_recording.take().unwrap();
+        let is_recording = self.is_recording();
+        let last_recording = self.active_recording.take();
 
-            // If a recording name was provided, we're going to switch
-            if let Some(ref recording_name) = recording_name {
-                if &last_recording == recording_name {
-                    self.recordings.get_mut(&last_recording)
-                        .and_then(|recording| {
-                            recording.filter_undos();
-                            Some(())
-                        });
-                    return;
+        match (is_recording, &last_recording, &recording_name) {
+            (true, Some(last_recording), None) => self.filter_recording(last_recording),
+            (true, Some(last_recording), Some(recording_name)) => {
+                if last_recording != recording_name {
+                    self.clear(last_recording);
                 } else {
-                    self.clear(&last_recording);
+                    self.filter_recording(last_recording);
+                    return;
                 }
-            } else {
-                self.recordings.get_mut(&last_recording)
-                    .and_then(|recording| {
-                        recording.filter_undos();
-                        Some(())
-                    });
             }
+            _ => {}
         }
 
         mem::replace(&mut self.active_recording, recording_name);
     }
 
+    /// Saves an event into the currently active recording.
+    /// If no recording is active, the event passed in is ignored.
     pub(crate) fn record(&mut self, cmd: EventDomain) {
         if !self.is_recording() {
             // We're not supposed to be recording? Can we log somehow?
@@ -60,6 +67,8 @@ impl Recorder {
         recording.events.push(cmd);
     }
 
+    /// Iterates over a specified recording's buffer and runs the specified action
+    /// on each event.
     pub(crate) fn play<F>(&self, recording_name: &str, action: F)
         where F: FnMut(&EventDomain) -> () {
         self.recordings.get(recording_name)
@@ -69,8 +78,17 @@ impl Recorder {
             });
     }
 
+    /// Completely removes the specified recording from the Recorder
     pub(crate) fn clear(&mut self, recording_name: &str) {
         self.recordings.remove(recording_name);
+    }
+
+    fn filter_recording(&mut self, recording_name: &str) {
+        self.recordings.get_mut(recording_name)
+            .and_then(|recording| {
+                recording.filter_undos();
+                Some(())
+            });
     }
 }
 
@@ -79,18 +97,24 @@ struct Recording {
 }
 
 impl Recording {
-    pub(crate) fn new() -> Recording {
+    fn new() -> Recording {
         Recording {
             events: Vec::new()
         }
     }
 
-    pub(crate) fn play<F>(&self, action: F)
+    /// Iterates over the recording buffer and runs the specified action
+    /// on each event.
+    fn play<F>(&self, action: F)
         where F: FnMut(&EventDomain) -> () {
         self.events.iter().for_each(action)
     }
 
-    pub(crate) fn filter_undos(&mut self) {
+    /// Cleans the recording buffer by filtering out any undo or redo events.
+    ///
+    /// A recording should not store any undos or redos--
+    /// call this once a recording is 'finalized.'
+    fn filter_undos(&mut self) {
         let mut saw_undo = false;
         let mut saw_redo = false;
 
@@ -123,7 +147,7 @@ impl Recording {
                 true
             })
             .collect::<Vec<EventDomain>>()
-            .into_iter() // Why does rev().filter().rev().collect() cancel out the first rev()????
+            .into_iter()
             .rev()
             .collect();
 
