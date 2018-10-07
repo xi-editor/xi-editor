@@ -171,8 +171,12 @@ impl From<EditNotification> for EventDomain {
                 ViewEvent::ModifySelection(Movement::RightWord).into(),
             MoveToBeginningOfParagraph =>
                 ViewEvent::Move(Movement::StartOfParagraph).into(),
+            MoveToBeginningOfParagraphAndModifySelection =>
+                ViewEvent::ModifySelection(Movement::StartOfParagraph).into(),
             MoveToEndOfParagraph =>
                 ViewEvent::Move(Movement::EndOfParagraph).into(),
+            MoveToEndOfParagraphAndModifySelection =>
+                ViewEvent::ModifySelection(Movement::EndOfParagraph).into(),
             MoveToLeftEndOfLine =>
                 ViewEvent::Move(Movement::LeftOfLine).into(),
             MoveToLeftEndOfLineAndModifySelection =>
