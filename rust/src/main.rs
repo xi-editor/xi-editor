@@ -57,7 +57,7 @@ fn path_for_log_file<P: AsRef<Path>>(filename: P) -> Result<PathBuf, io::Error> 
     Ok(logging_directory)
 }
 
-fn setup_logging() -> Result<(), fern::InitError> {
+fn setup_logging(logging_path_result: Result<PathBuf, io::Error>) -> Result<(), fern::InitError> {
     let level_filter = match std::env::var("XI_LOG") {
         Ok(level) => match level.to_lowercase().as_ref() {
             "trace" => log::LevelFilter::Trace,
@@ -80,11 +80,20 @@ fn setup_logging() -> Result<(), fern::InitError> {
         }).level(level_filter)
         .chain(io::stderr());
 
-    let path_result = path_for_log_file(get_logfile_file_name());
-    // If the logging_file_path returned successfully, add the logfile capability to fern
-    if let Ok(logging_file_path) = &path_result {
+    if let Ok(logging_file_path) = &logging_path_result {
+        // Ensure the logging directory is created
+        let parent_path = logging_file_path.parent().ok_or(
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "Unable to get the parent of the following Path: {}", logging_file_path.display(),
+                )
+            )
+        )?;
+        fs::create_dir_all(parent_path)?;
+        // Attach it to fern
         fern_dispatch = fern_dispatch.chain(fern::log_file(logging_file_path)?);
-    }
+    };
 
     // Start fern
     fern_dispatch.apply()?;
@@ -163,7 +172,8 @@ fn main() {
         file: log_file_flag_option,
     };
 
-    if let Err(e) = setup_logging() {
+    let logging_path: Result<PathBuf, io::Error> = prepare_logging_path(logfile_config);
+    if let Err(e) = setup_logging(logging_path) {
         eprintln!(
             "[ERROR] setup_logging returned error, logging disabled: {:?}",
             e
