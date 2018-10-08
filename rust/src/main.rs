@@ -108,12 +108,12 @@ fn prepare_logging_path(logfile_config: LogfileConfig) -> Result<PathBuf, io::Er
     // Use the file name set in logfile_config or fallback to the default
     let logfile_file_name = match logfile_config.file {
         Some(file_name) => file_name,
-        None => XI_LOG_FILE.to_string(),
+        None => PathBuf::from(XI_LOG_FILE),
     };
     // Use the directory name set in logfile_config or fallback to the default
     let logfile_directory_name = match logfile_config.directory {
         Some(dir) => dir,
-        None => XI_LOG_DIR.to_string(),
+        None => PathBuf::from(XI_LOG_DIR),
     };
 
     let mut logging_directory_path = get_logging_directory_path(logfile_directory_name)?;
@@ -121,11 +121,6 @@ fn prepare_logging_path(logfile_config: LogfileConfig) -> Result<PathBuf, io::Er
     // Add the file name & return the full path
     logging_directory_path.push(logfile_file_name);
     Ok(logging_directory_path)
-}
-
-struct LogfileConfig {
-    directory: Option<String>,
-    file: Option<String>,
 }
 
 fn get_flags() -> HashMap<String, Option<String>> {
@@ -161,6 +156,11 @@ fn extract_env_or_flag(flags: &HashMap<String, Option<String>>, conf: EnvFlagCon
         .or(flags.get(conf.flag_name).cloned().unwrap_or(None))
 }
 
+struct LogfileConfig {
+    directory: Option<PathBuf>,
+    file: Option<PathBuf>,
+}
+
 fn generate_logfile_config(flags: &HashMap<String, Option<String>>) -> LogfileConfig {
     // If the key is set, get the Option within
     let log_dir_env_flag = EnvFlagConfig {
@@ -171,9 +171,9 @@ fn generate_logfile_config(flags: &HashMap<String, Option<String>>) -> LogfileCo
         env_name: "XI_LOG_FILE",
         flag_name: "log-file",
     };
-    let log_dir_flag_option = extract_env_or_flag(&flags, log_dir_env_flag);
+    let log_dir_flag_option = extract_env_or_flag(&flags, log_dir_env_flag).map(PathBuf::from);
 
-    let log_file_flag_option = extract_env_or_flag(&flags, log_file_env_flag);
+    let log_file_flag_option = extract_env_or_flag(&flags, log_file_env_flag).map(PathBuf::from);
 
     LogfileConfig {
         directory: log_dir_flag_option,
