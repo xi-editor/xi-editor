@@ -150,6 +150,17 @@ fn get_flags() -> HashMap<String, Option<String>> {
     flags
 }
 
+fn generate_logfile_config(flags: HashMap<String, Option<String>>) -> LogfileConfig {
+    // If the key is set, get the Option within
+    let log_dir_flag_option = flags.get("log-dir").cloned().unwrap_or(None);
+    let log_file_flag_option = flags.get("log-file").cloned().unwrap_or(None);
+
+    LogfileConfig {
+        directory: log_dir_flag_option,
+        file: log_file_flag_option,
+    }
+}
+
 fn main() {
     let mut state = XiCore::new();
     let stdin = io::stdin();
@@ -158,14 +169,7 @@ fn main() {
 
     let flags: HashMap<String, Option<String>> = get_flags();
 
-    // If the key is set, get the Option within
-    let log_dir_flag_option = flags.get("log-dir").cloned().unwrap_or(None);
-    let log_file_flag_option = flags.get("log-file").cloned().unwrap_or(None);
-
-    let logfile_config = LogfileConfig {
-        directory: log_dir_flag_option,
-        file: log_file_flag_option,
-    };
+    let logfile_config = generate_logfile_config(flags);
 
     let logging_path: Result<PathBuf, io::Error> = prepare_logging_path(logfile_config);
     if let Err(e) = setup_logging(logging_path) {
