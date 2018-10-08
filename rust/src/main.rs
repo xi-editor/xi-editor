@@ -102,6 +102,30 @@ fn setup_logging() -> Result<(), fern::InitError> {
     Ok(())
 }
 
+fn prepare_logging_path(logfile_config: LogfileConfig) -> Result<PathBuf, io::Error> {
+    // Use the file name set in logfile_config or fallback to the default
+    let logfile_file_name = match logfile_config.file {
+        Some(file_name) => file_name,
+        None => XI_LOG_FILE.to_string(),
+    };
+    // Use the directory name set in logfile_config or fallback to the default
+    let logfile_directory_name = match logfile_config.directory {
+        Some(dir) => dir,
+        None => XI_LOG_DIR.to_string(),
+    };
+
+    let mut logging_directory_path = get_logging_directory_path(logfile_directory_name)?;
+
+    // Add the file name & return the full path
+    logging_directory_path.push(logfile_file_name);
+    Ok(logging_directory_path)
+}
+
+struct LogfileConfig {
+    directory: Option<String>,
+    file: Option<String>,
+}
+
 fn get_flags() -> HashMap<String, Option<String>> {
     let mut flags: HashMap<String, Option<String>> = HashMap::new();
 
