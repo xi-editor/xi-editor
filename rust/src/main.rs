@@ -33,20 +33,6 @@ use xi_rpc::RpcLoop;
 const XI_LOG_DIR: &str = "xi-core";
 const XI_LOG_FILE: &str = "xi-core.log";
 
-fn get_logfile_directory_name() -> String {
-    match std::env::var("XI_LOG_DIR") {
-        Ok(name) => name,
-        Err(_) => String::from(XI_LOG_DIR),
-    }
-}
-
-fn get_logfile_file_name() -> String {
-    match std::env::var("XI_LOG_FILE") {
-        Ok(name) => name,
-        Err(_) => String::from(XI_LOG_FILE),
-    }
-}
-
 fn get_logging_directory<P: AsRef<Path>>(directory: P) -> Result<PathBuf, io::Error> {
     match dirs::data_local_dir() {
         Some(mut log_dir) => {
