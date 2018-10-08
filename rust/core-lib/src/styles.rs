@@ -154,6 +154,7 @@ pub struct ThemeStyleMap {
     theme: Theme,
     default_style: Style,
     map: HashMap<Style, usize>,
+    path_map: HashMap<String, PathBuf>,
 
     // It's not obvious we actually have to store the style, we seem to only need it
     // as the key in the map.
@@ -181,6 +182,7 @@ impl ThemeStyleMap {
             theme,
             default_style,
             map: HashMap::new(),
+            path_map: HashMap::new(),
             styles: Vec::new(),
             themes_dir,
             cache_dir,
@@ -214,6 +216,27 @@ impl ThemeStyleMap {
     }
 
     pub fn set_theme(&mut self, theme_name: &str) -> Result<(), &'static str> {
+        // If we haven't loaded the theme before, we try to load it from the dump (if the dump
+        // exists), or load it from the file itself.
+        // Otherwise, we just load the cached theme from our theme map.
+        if !self.contains_theme(theme_name) {
+            let theme_p = &self.path_map.get(theme_name).cloned();
+            if let Some(theme_p) = theme_p {
+                match self.try_load_from_dump(theme_p) {
+                    // If loading from the dump is successful, this will get us the theme name
+                    // and its theme data.
+                    Some((dump_theme_name, dump_theme_data)) => {
+                        self.insert_to_map(dump_theme_name, dump_theme_data, theme_p);
+                    }
+                    None => {
+                        let _ = self.load_theme(theme_p);
+                    }
+                }
+            } else {
+                return Err("can't find path for theme");
+            }
+        }
+
         if let Some(new_theme) = self.themes.themes.get(theme_name) {
             self.theme = new_theme.to_owned();
             self.theme_name = theme_name.to_owned();
@@ -257,12 +280,13 @@ impl ThemeStyleMap {
         Some(theme_name.to_string())
     }
 
-    /// Load all themes inside the given directory.
+    /// Cache all themes names and their paths inside the given directory.
     pub(crate) fn load_theme_dir(&mut self) {
         if let Some(themes_dir) = self.themes_dir.clone() {
             match ThemeSet::discover_theme_paths(themes_dir) {
                 Ok(themes) => {
                     self.caching_enabled = self.caching_enabled && self.init_cache_dir();
+<<<<<<< HEAD
 
                     for theme_p in &themes {
                         match self.try_load_from_dump(theme_p) {
@@ -272,6 +296,15 @@ impl ThemeStyleMap {
                             None => {
                                 let _ = self.load_theme(theme_p);
                             }
+=======
+                    // We look through the theme folder here and cache their names/paths to a
+                    // path hashmap.
+                    for theme_p in themes.iter() {
+                        if let Some(theme_name) = theme_p.file_stem().and_then(OsStr::to_str) {
+                            self.path_map.insert(theme_name.to_string(), theme_p.to_path_buf());
+                        } else {
+                            error!("Invalid theme name, skipping");
+>>>>>>> Implement lazy load for themes
                         }
                     }
                 }
