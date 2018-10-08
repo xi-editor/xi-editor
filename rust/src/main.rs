@@ -39,12 +39,10 @@ fn get_logging_directory_path<P: AsRef<Path>>(directory: P) -> Result<PathBuf, i
             log_dir.push(directory);
             Ok(log_dir)
         }
-        None => Err(
-            io::Error::new(
-                io::ErrorKind::NotFound,
-                "No standard logging directory known for this platform",
-            )
-        ),
+        None => Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "No standard logging directory known for this platform",
+        )),
     }
 }
 
@@ -73,14 +71,13 @@ fn setup_logging(logging_path_result: Result<PathBuf, io::Error>) -> Result<(), 
 
     if let Ok(logging_file_path) = &logging_path_result {
         // Ensure the logging directory is created
-        let parent_path = logging_file_path.parent().ok_or(
-            io::Error::new(
-                io::ErrorKind::InvalidInput,
-                format!(
-                    "Unable to get the parent of the following Path: {}", logging_file_path.display(),
-                )
-            )
-        )?;
+        let parent_path = logging_file_path.parent().ok_or(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "Unable to get the parent of the following Path: {}",
+                logging_file_path.display(),
+            ),
+        ))?;
         fs::create_dir_all(parent_path)?;
         // Attach it to fern
         fern_dispatch = fern_dispatch.chain(fern::log_file(logging_file_path)?);
@@ -98,7 +95,10 @@ fn setup_logging(logging_path_result: Result<PathBuf, io::Error>) -> Result<(), 
             warn!("{}: {:?}, falling back to stderr.", message, e);
         }
         Ok(logging_file_path) => {
-            info!("Logging to the following file: {}", logging_file_path.display());
+            info!(
+                "Logging to the following file: {}",
+                logging_file_path.display()
+            );
         }
     }
     Ok(())
@@ -139,7 +139,9 @@ fn get_flags() -> HashMap<String, Option<String>> {
 
             // Check the next argument doesn't start with the flag prefix
             // map_or accounts for peek returning an Option
-            let next_arg_not_a_flag: bool = args_itterator.peek().map_or(false, |val| !val.starts_with(flag_prefix));
+            let next_arg_not_a_flag: bool = args_itterator
+                .peek()
+                .map_or(false, |val| !val.starts_with(flag_prefix));
             if next_arg_not_a_flag {
                 flags.insert(key, args_itterator.next());
             }
