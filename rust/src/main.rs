@@ -152,8 +152,13 @@ fn get_flags() -> HashMap<String, Option<String>> {
 
 fn generate_logfile_config(flags: HashMap<String, Option<String>>) -> LogfileConfig {
     // If the key is set, get the Option within
-    let log_dir_flag_option = flags.get("log-dir").cloned().unwrap_or(None);
-    let log_file_flag_option = flags.get("log-file").cloned().unwrap_or(None);
+    let log_dir_flag_option = std::env::var("XI_LOG_DIR")
+        .ok()
+        .or(flags.get("log-dir").cloned().unwrap_or(None));
+
+    let log_file_flag_option = std::env::var("XI_LOG_FILE")
+        .ok()
+        .or(flags.get("log-file").cloned().unwrap_or(None));
 
     LogfileConfig {
         directory: log_dir_flag_option,
