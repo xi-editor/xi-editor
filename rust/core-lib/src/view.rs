@@ -193,6 +193,27 @@ impl View {
         self.pending_render
     }
 
+    /// Returns a string description of the selection state, suitable for
+    /// display in an editor's statusbar.
+    pub(crate) fn get_selection_status_text(&self, text: &Rope) -> String {
+        let _t = trace_block("View::get_selection_status_text", &["core"]);
+        match self.selection.len() {
+            0 => "".into(),
+            1 if self.selection[0].is_caret() => {
+                let offset = self.selection[0].start;
+                let (line, col) = self.offset_to_line_col(text, offset);
+                format!("Line: {}, Column: {}", line + 1, col)
+            }
+            1 => {
+                let sel_size = self.selection[0].max() - self.selection[0].min();
+                // I don't want to get the text and count the chars here,
+                // but I'm not sure what the shortcut is.
+                format!("Selected {} bytes", sel_size)
+            }
+            other => format!("{} active cursors", other)
+        }
+    }
+
     pub(crate) fn do_edit(&mut self, text: &Rope, cmd: ViewEvent) {
         use self::ViewEvent::*;
         match cmd {
