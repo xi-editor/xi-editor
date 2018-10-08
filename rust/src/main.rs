@@ -90,15 +90,15 @@ fn setup_logging(logging_path_result: Result<PathBuf, io::Error>) -> Result<(), 
     // Log details of the logging_file_path result using fern/log
     // Either logging the path fern is outputting to or the error from obtaining the path
     match &logging_path_result {
-        Err(e) => {
-            let message = "There was an issue getting the path for the log file";
-            warn!("{}: {:?}, falling back to stderr.", message, e);
-        }
         Ok(logging_file_path) => {
             info!(
                 "Logging to the following file: {}",
                 logging_file_path.display()
             );
+        }
+        Err(e) => {
+            let message = "There was an issue getting the path for the log file";
+            warn!("{}: {:?}, falling back to stderr.", message, e);
         }
     }
     Ok(())
