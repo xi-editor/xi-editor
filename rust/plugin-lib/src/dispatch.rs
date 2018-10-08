@@ -17,7 +17,7 @@ use std::path::PathBuf;
 
 use serde_json::{self, Value};
 
-use xi_core::{ViewId, PluginPid, ConfigTable};
+use xi_core::{ViewId, PluginPid, ConfigTable, LanguageId};
 use xi_core::plugin_rpc::{PluginBufferInfo, PluginUpdate, HostRequest, HostNotification};
 use xi_rpc::{RpcCtx, RemoteError, Handler as RpcHandler};
 use xi_trace::{self, trace, trace_block, trace_block_payload};
@@ -76,7 +76,7 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
 
         let core_proxy = CoreProxy::new(self.pid.unwrap(), ctx);
         self.plugin.initialize(core_proxy);
-        
+
         self.do_new_buffer(ctx, buffers);
     }
 
@@ -95,6 +95,16 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
         }
         let conf = serde_json::from_value(Value::Object(v.config_table.clone()));
         v.config = conf.unwrap();
+    }
+
+    fn do_language_changed(&mut self, view_id: ViewId, new_lang: LanguageId) {
+        let v = bail!(
+            self.views.get_mut(&view_id),
+            "language_changed",
+            self.pid,
+            view_id
+        );
+        self.plugin.language_changed(v, new_lang);
     }
 
     fn do_new_buffer(&mut self, ctx: &RpcCtx, buffers: Vec<PluginBufferInfo>) {
@@ -192,6 +202,8 @@ impl<'a, P: Plugin> RpcHandler for Dispatcher<'a, P> {
                 self.do_tracing_config(enabled),
             GetHover {  view_id, request_id, position } =>
                 self.do_get_hover(view_id, request_id, position),
+            LanguageChanged { view_id, new_lang } =>
+                self.do_language_changed(view_id, new_lang),
             Ping ( .. ) => (),
         }
     }

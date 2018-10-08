@@ -541,7 +541,11 @@ impl CoreState {
     fn do_set_language(&mut self, view_id: ViewId, language_id: LanguageId) {
         if let Some(view) = self.views.get(&view_id) {
             let buffer_id = view.borrow().get_buffer_id();
-            self.config_manager.override_language(buffer_id, language_id);
+            self.make_context(view_id).unwrap().language_changed(&language_id);
+            let changes = self.config_manager.override_language(buffer_id, language_id);
+            if let Some(changes) = changes {
+                self.make_context(view_id).unwrap().config_changed(&changes);
+            }
         }
     }
 }
@@ -561,7 +565,7 @@ impl CoreState {
     fn finalize_new_views(&mut self) {
         let to_start = mem::replace(&mut self.pending_views, Vec::new());
         to_start.iter().for_each(|(id, config)| {
-            let modified = self.detect_whitespace(*id, config); 
+            let modified = self.detect_whitespace(*id, config);
             let config = modified.as_ref().unwrap_or(config);
             let mut edit_ctx = self.make_context(*id).unwrap();
             edit_ctx.finish_init(&config);

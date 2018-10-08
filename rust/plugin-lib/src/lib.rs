@@ -41,7 +41,7 @@ use std::path::Path;
 
 use xi_rpc::{RpcLoop, ReadError};
 use xi_rope::rope::RopeDelta;
-use xi_core::ConfigTable;
+use xi_core::{ConfigTable, LanguageId};
 use xi_core::plugin_rpc::{GetDataResponse, TextUnit};
 
 use self::dispatch::Dispatcher;
@@ -81,9 +81,9 @@ pub trait Cache {
     /// [`DataSource`]: trait.DataSource.html
     fn get_line<DS: DataSource>(&mut self, source: &DS, line_num: usize)
         -> Result<&str, Error>;
-    
+
     /// Returns the entire contents of the remote document, fetching as needed.
-    fn get_document<DS: DataSource>(&mut self, source: &DS) -> Result<String, Error>; 
+    fn get_document<DS: DataSource>(&mut self, source: &DS) -> Result<String, Error>;
 
     /// Returns the offset of the line at `line_num`, zero-indexed, fetching
     /// data from `source` if needed.
@@ -145,6 +145,9 @@ pub trait Plugin {
                       view: &mut View<Self::Cache>,
                       changes: &ConfigTable);
 
+    #[allow(unused_variables)]
+    fn language_changed(&mut self, view: &mut View<Self::Cache>, new_lang: LanguageId) {}
+
     /// Called when the runloop is idle, if the plugin has previously
     /// asked to be scheduled via `View::schedule_idle()`. Plugins that
     /// are doing things like full document analysis can use this mechanism
@@ -153,7 +156,7 @@ pub trait Plugin {
     fn idle(&mut self, view: &mut View<Self::Cache>) { }
 
     /// Language Plugins specific methods
-    
+
     #[allow(unused_variables)]
     fn get_hover(&mut self, view: &mut View<Self::Cache>, request_id: usize, position: usize) { }
 }
