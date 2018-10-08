@@ -48,15 +48,6 @@ fn get_logging_directory_path<P: AsRef<Path>>(directory: P) -> Result<PathBuf, i
     }
 }
 
-fn path_for_log_file<P: AsRef<Path>>(filename: P) -> Result<PathBuf, io::Error> {
-    let mut logging_directory = get_logging_directory_path(get_logfile_directory_name())?;
-    // Create the logging directory
-    fs::create_dir_all(&logging_directory)?;
-    // Pushing the filename to the end
-    logging_directory.push(filename.as_ref());
-    Ok(logging_directory)
-}
-
 fn setup_logging(logging_path_result: Result<PathBuf, io::Error>) -> Result<(), fern::InitError> {
     let level_filter = match std::env::var("XI_LOG") {
         Ok(level) => match level.to_lowercase().as_ref() {
