@@ -46,7 +46,7 @@ fn get_logging_directory_path<P: AsRef<Path>>(directory: P) -> Result<PathBuf, i
     }
 }
 
-fn setup_logging(logging_path_result: Result<PathBuf, io::Error>) -> Result<(), fern::InitError> {
+fn setup_logging(logging_path_result: Option<PathBuf>) -> Result<(), fern::InitError> {
     let level_filter = match std::env::var("XI_LOG") {
         Ok(level) => match level.to_lowercase().as_ref() {
             "trace" => log::LevelFilter::Trace,
@@ -69,7 +69,7 @@ fn setup_logging(logging_path_result: Result<PathBuf, io::Error>) -> Result<(), 
         }).level(level_filter)
         .chain(io::stderr());
 
-    if let Ok(logging_file_path) = &logging_path_result {
+    if let Some(logging_file_path) = &logging_path_result {
         // Ensure the logging directory is created
         let parent_path = logging_file_path.parent().ok_or(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -90,21 +90,16 @@ fn setup_logging(logging_path_result: Result<PathBuf, io::Error>) -> Result<(), 
     // Log details of the logging_file_path result using fern/log
     // Either logging the path fern is outputting to or the error from obtaining the path
     match &logging_path_result {
-        Ok(logging_file_path) => {
-            info!(
-                "Logging to the following file: {}",
-                logging_file_path.display()
-            );
-        }
-        Err(e) => {
-            let message = "There was an issue getting the path for the log file";
-            warn!("{}: {:?}, falling back to stderr.", message, e);
-        }
+        Some(logging_file_path) => info!(
+            "Logging to the following file: {}",
+            logging_file_path.display()
+        ),
+        None => warn!("There was no path supplied for the log file, falling back to stderr."),
     }
     Ok(())
 }
 
-fn prepare_logging_path(logfile_config: LogfileConfig) -> Result<PathBuf, io::Error> {
+fn generate_logging_path(logfile_config: LogfileConfig) -> Result<PathBuf, io::Error> {
     // Use the file name set in logfile_config or fallback to the default
     let logfile_file_name = match logfile_config.file {
         Some(file_name) => file_name,
@@ -150,7 +145,10 @@ struct EnvFlagConfig {
     flag_name: &'static str,
 }
 
-fn extract_env_or_flag(flags: &HashMap<String, Option<String>>, conf: EnvFlagConfig) -> Option<String> {
+fn extract_env_or_flag(
+    flags: &HashMap<String, Option<String>>,
+    conf: EnvFlagConfig,
+) -> Option<String> {
     std::env::var(conf.env_name)
         .ok()
         .or(flags.get(conf.flag_name).cloned().unwrap_or(None))
@@ -191,7 +189,17 @@ fn main() {
 
     let logfile_config = generate_logfile_config(&flags);
 
-    let logging_path: Result<PathBuf, io::Error> = prepare_logging_path(logfile_config);
+    let logging_path_result: Result<PathBuf, io::Error> = generate_logging_path(logfile_config);
+    let logging_path: Option<PathBuf> = match logging_path_result {
+        Ok(val) => Some(val),
+        Err(e) => {
+            eprintln!(
+                "[WARNING] Unable to successfully generate the logging path: {:?}",
+                e
+            );
+            None
+        }
+    };
     if let Err(e) = setup_logging(logging_path) {
         eprintln!(
             "[ERROR] setup_logging returned error, logging disabled: {:?}",
