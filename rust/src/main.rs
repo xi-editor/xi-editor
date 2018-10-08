@@ -150,15 +150,30 @@ fn get_flags() -> HashMap<String, Option<String>> {
     flags
 }
 
-fn generate_logfile_config(flags: HashMap<String, Option<String>>) -> LogfileConfig {
-    // If the key is set, get the Option within
-    let log_dir_flag_option = std::env::var("XI_LOG_DIR")
-        .ok()
-        .or(flags.get("log-dir").cloned().unwrap_or(None));
+struct EnvFlagConfig {
+    env_name: &'static str,
+    flag_name: &'static str,
+}
 
-    let log_file_flag_option = std::env::var("XI_LOG_FILE")
+fn extract_env_or_flag(flags: &HashMap<String, Option<String>>, conf: EnvFlagConfig) -> Option<String> {
+    std::env::var(conf.env_name)
         .ok()
-        .or(flags.get("log-file").cloned().unwrap_or(None));
+        .or(flags.get(conf.flag_name).cloned().unwrap_or(None))
+}
+
+fn generate_logfile_config(flags: &HashMap<String, Option<String>>) -> LogfileConfig {
+    // If the key is set, get the Option within
+    let log_dir_env_flag = EnvFlagConfig {
+        env_name: "XI_LOG_DIR",
+        flag_name: "log-dir",
+    };
+    let log_file_env_flag = EnvFlagConfig {
+        env_name: "XI_LOG_FILE",
+        flag_name: "log-file",
+    };
+    let log_dir_flag_option = extract_env_or_flag(&flags, log_dir_env_flag);
+
+    let log_file_flag_option = extract_env_or_flag(&flags, log_file_env_flag);
 
     LogfileConfig {
         directory: log_dir_flag_option,
@@ -174,7 +189,7 @@ fn main() {
 
     let flags: HashMap<String, Option<String>> = get_flags();
 
-    let logfile_config = generate_logfile_config(flags);
+    let logfile_config = generate_logfile_config(&flags);
 
     let logging_path: Result<PathBuf, io::Error> = prepare_logging_path(logfile_config);
     if let Err(e) = setup_logging(logging_path) {
