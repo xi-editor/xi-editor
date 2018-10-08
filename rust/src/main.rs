@@ -152,6 +152,17 @@ fn main() {
     let stdout = io::stdout();
     let mut rpc_looper = RpcLoop::new(stdout);
 
+    let flags: HashMap<String, Option<String>> = get_flags();
+
+    // If the key is set, get the Option within
+    let log_dir_flag_option = flags.get("log-dir").cloned().unwrap_or(None);
+    let log_file_flag_option = flags.get("log-file").cloned().unwrap_or(None);
+
+    let logfile_config = LogfileConfig {
+        directory: log_dir_flag_option,
+        file: log_file_flag_option,
+    };
+
     if let Err(e) = setup_logging() {
         eprintln!(
             "[ERROR] setup_logging returned error, logging disabled: {:?}",
