@@ -22,6 +22,7 @@ extern crate dirs;
 extern crate xi_core_lib;
 extern crate xi_rpc;
 
+use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -111,6 +112,26 @@ fn setup_logging() -> Result<(), fern::InitError> {
 
     info!("Logging with fern is setup");
     Ok(())
+}
+
+fn get_flags() -> HashMap<String, Option<String>> {
+    let mut flags: HashMap<String, Option<String>> = HashMap::new();
+
+    let flag_prefix = "-";
+    let mut args_itterator = std::env::args().peekable();
+    while let Some(arg) = args_itterator.next() {
+        if arg.starts_with(flag_prefix) {
+            let key = arg.trim_left_matches(flag_prefix).to_string();
+
+            // Check the next argument doesn't start with the flag prefix
+            // map_or accounts for peek returning an Option
+            let next_arg_not_a_flag: bool = args_itterator.peek().map_or(false, |val| !val.starts_with(flag_prefix));
+            if next_arg_not_a_flag {
+                flags.insert(key, args_itterator.next());
+            }
+        }
+    }
+    flags
 }
 
 fn main() {
