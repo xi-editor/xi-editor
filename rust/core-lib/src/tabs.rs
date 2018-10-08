@@ -541,10 +541,12 @@ impl CoreState {
     fn do_set_language(&mut self, view_id: ViewId, language_id: LanguageId) {
         if let Some(view) = self.views.get(&view_id) {
             let buffer_id = view.borrow().get_buffer_id();
-            self.make_context(view_id).unwrap().language_changed(&language_id);
-            let changes = self.config_manager.override_language(buffer_id, language_id);
+            let changes = self.config_manager.override_language(buffer_id, language_id.clone());
+
+            let mut context = self.make_context(view_id).unwrap();
+            context.language_changed(&language_id);
             if let Some(changes) = changes {
-                self.make_context(view_id).unwrap().config_changed(&changes);
+                context.config_changed(&changes);
             }
         }
     }
