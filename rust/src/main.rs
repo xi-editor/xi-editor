@@ -145,13 +145,17 @@ struct EnvFlagConfig {
     flag_name: &'static str,
 }
 
+/// Extracts a value from the flags and the env.
+///
+/// In this order: `String` from the flags, then `String` from the env, then `None`
 fn extract_env_or_flag(
     flags: &HashMap<String, Option<String>>,
     conf: EnvFlagConfig,
 ) -> Option<String> {
-    std::env::var(conf.env_name)
-        .ok()
-        .or(flags.get(conf.flag_name).cloned().unwrap_or(None))
+    flags
+        .get(conf.flag_name)
+        .cloned()
+        .unwrap_or(std::env::var(conf.env_name).ok())
 }
 
 struct LogfileConfig {
