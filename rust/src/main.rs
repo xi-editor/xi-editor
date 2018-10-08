@@ -33,21 +33,23 @@ use xi_rpc::RpcLoop;
 const XI_LOG_DIR: &str = "xi-core";
 const XI_LOG_FILE: &str = "xi-core.log";
 
-fn get_logging_directory<P: AsRef<Path>>(directory: P) -> Result<PathBuf, io::Error> {
+fn get_logging_directory_path<P: AsRef<Path>>(directory: P) -> Result<PathBuf, io::Error> {
     match dirs::data_local_dir() {
         Some(mut log_dir) => {
             log_dir.push(directory);
             Ok(log_dir)
         }
-        None => Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            "No standard logging directory known for this platform",
-        )),
+        None => Err(
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                "No standard logging directory known for this platform",
+            )
+        ),
     }
 }
 
 fn path_for_log_file<P: AsRef<Path>>(filename: P) -> Result<PathBuf, io::Error> {
-    let mut logging_directory = get_logging_directory(get_logfile_directory_name())?;
+    let mut logging_directory = get_logging_directory_path(get_logfile_directory_name())?;
     // Create the logging directory
     fs::create_dir_all(&logging_directory)?;
     // Pushing the filename to the end
