@@ -308,12 +308,14 @@ impl ConfigManager {
     /// Sets a specific language for the given buffer. This is used if the
     /// user selects a specific language in the frontend, for instance.
     #[allow(dead_code)]
-    pub(crate) fn override_language(&mut self, id: BufferId, new_lang: LanguageId) {
+    pub(crate) fn override_language(&mut self, id: BufferId, new_lang: LanguageId) -> Option<Table> {
         let has_changed = self.buffer_tags.get_mut(&id)
             .map(|tag| tag.set_user(Some(new_lang)))
             .expect("buffer must exist");
         if has_changed {
-            self.update_buffer_config(id);
+            self.update_buffer_config(id)
+        } else {
+            None
         }
     }
 

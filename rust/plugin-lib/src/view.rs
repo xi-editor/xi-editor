@@ -16,7 +16,7 @@ use std::path::{PathBuf, Path};
 use serde_json::{self, Value};
 use serde::Deserialize;
 
-use xi_core::{ViewId, PluginPid, BufferConfig, ConfigTable};
+use xi_core::{ViewId, PluginPid, BufferConfig, ConfigTable, LanguageId};
 use xi_core::plugin_rpc::{TextUnit, PluginEdit, GetDataResponse, ScopeSpan, PluginBufferInfo};
 use xi_rope::rope::RopeDelta;
 use xi_trace::trace_block;
@@ -41,13 +41,14 @@ pub struct View<C> {
     pub undo_group: Option<usize>,
     buf_size: usize,
     pub (crate) view_id: ViewId,
+    pub (crate) language_id: LanguageId,
 }
 
 impl<C: Cache> View<C> {
     pub (crate) fn new(peer: RpcPeer, plugin_id: PluginPid,
                        info: PluginBufferInfo) -> Self {
         let PluginBufferInfo {
-            views, rev, path, config, buf_size, nb_lines, ..
+            views, rev, path, config, buf_size, nb_lines, syntax, ..
         } = info;
 
         assert_eq!(views.len(), 1, "assuming single view");
@@ -64,6 +65,7 @@ impl<C: Cache> View<C> {
             rev: rev,
             undo_group: None,
             buf_size: buf_size,
+            language_id: syntax,
         }
     }
 
@@ -96,6 +98,10 @@ impl<C: Cache> View<C> {
 
     pub fn get_path(&self) -> Option<&Path> {
         self.path.as_ref().map(PathBuf::as_path)
+    }
+
+    pub fn get_language_id(&self) -> &LanguageId {
+        &self.language_id
     }
 
     pub fn get_config(&self) -> &BufferConfig {

@@ -343,6 +343,10 @@ impl<'a> EventContext<'a> {
         self.render()
     }
 
+    pub(crate) fn language_changed(&mut self, lang_id: &LanguageId) {
+        self.plugins.iter().for_each(|plug| plug.language_changed(self.view_id, lang_id));
+    }
+
     pub(crate) fn reload(&mut self, text: Rope) {
         //TODO: It would be nice if we could preserve the existing selections,
         //but to do that correctly we would need to compute a real delta between
@@ -439,7 +443,7 @@ impl<'a> EventContext<'a> {
             Err(err) => warn!("Hover Response from Client Error {:?}", err)
         }
     }
-     
+
     /// Gives the requested position in UTF-8 offset format to be sent to plugin
     /// If position is `None`, it tries to get the current Caret Position and use
     /// that instead

@@ -27,17 +27,18 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::Path;
 
-use xi_core::{ViewId, ConfigTable};
+use xi_core::{ConfigTable, ViewId, LanguageId};
 use xi_core::plugin_rpc::ScopeSpan;
-use xi_rope::rope::RopeDelta;
-use xi_rope::interval::Interval;
+use xi_plugin_lib::{mainloop, Cache, Plugin, StateCache, View};
 use xi_rope::delta::Builder as EditBuilder;
 use xi_trace::{trace, trace_block};
-use xi_plugin_lib::{Cache, Plugin, StateCache, View, mainloop};
+use xi_rope::interval::Interval;
+use xi_rope::rope::RopeDelta;
 
-use syntect::parsing::{ParseState, ScopeStack, SyntaxSet, SCOPE_REPO,
-                       SyntaxDefinition, ScopeRepository};
-use stackmap::{StackMap, LookupResult};
+use stackmap::{LookupResult, StackMap};
+use syntect::parsing::{
+    ParseState, ScopeRepository, ScopeStack, SyntaxSet, SCOPE_REPO,
+};
 
 const LINES_PER_RPC: usize = 10;
 const INDENTATION_PRIORITY: u64 = 100;
@@ -192,9 +193,13 @@ impl<'a> Syntect<'a> {
     }
 
     /// Wipes any existing state and starts highlighting with `syntax`.
-    fn do_highlighting(&mut self, view: &mut MyView) {
+    fn do_highlighting(&mut self, view: &mut MyView, lang: Option<&LanguageId>) {
         let initial_state = {
-            let syntax = self.guess_syntax(view.get_path());
+            let language_id = lang.unwrap_or(view.get_language_id());
+            let syntax = self
+                .syntax_set
+                .find_syntax_by_name(language_id.as_ref())
+                .unwrap_or(self.syntax_set.find_syntax_plain_text());
             Some((ParseState::new(syntax), ScopeStack::new()))
         };
 
@@ -206,17 +211,6 @@ impl<'a> Syntect<'a> {
         state.spans_start = 0;
         view.get_cache().clear();
         view.schedule_idle();
-    }
-
-    fn guess_syntax(&'a self, path: Option<&Path>) -> &'a SyntaxDefinition {
-        let _t = trace_block("Syntect::guess_syntax", &["syntect"]);
-        match path {
-            Some(path) => self.syntax_set.find_syntax_for_file(path)
-                .ok()
-                .unwrap_or(None)
-                .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text()),
-            None => self.syntax_set.find_syntax_plain_text(),
-        }
     }
 
     /// Checks if a newline has been inserted, and if so inserts whitespace
@@ -295,7 +289,6 @@ impl<'a> Syntect<'a> {
     }
 }
 
-
 impl<'a> Plugin for Syntect<'a> {
     type Cache = StateCache<LineState>;
 
@@ -304,7 +297,7 @@ impl<'a> Plugin for Syntect<'a> {
         let view_id = view.get_id();
         let state = PluginState::new();
         self.view_state.insert(view_id, state);
-        self.do_highlighting(view);
+        self.do_highlighting(view, None);
     }
 
     fn did_close(&mut self, view: &View<Self::Cache>) {
@@ -313,10 +306,14 @@ impl<'a> Plugin for Syntect<'a> {
 
     fn did_save(&mut self, view: &mut View<Self::Cache>, _old: Option<&Path>) {
         let _t = trace_block("Syntect::did_save", &["syntect"]);
-        self.do_highlighting(view);
+        self.do_highlighting(view, None);
     }
 
     fn config_changed(&mut self, _view: &mut View<Self::Cache>, _changes: &ConfigTable) {}
+
+    fn language_changed(&mut self, view: &mut View<Self::Cache>, new_lang: LanguageId) {
+        self.do_highlighting(view, Some(&new_lang));
+    }
 
     fn update(&mut self, view: &mut View<Self::Cache>, delta: Option<&RopeDelta>,
               _edit_type: String, _author: String) {
