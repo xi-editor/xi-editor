@@ -129,10 +129,9 @@ impl Plugin {
                                                 "changes": changes}))
     }
 
-    pub fn language_changed(&self, view_id: ViewId, old_lang: &LanguageId, new_lang: &LanguageId) {
+    pub fn language_changed(&self, view_id: ViewId, new_lang: &LanguageId) {
         self.peer.send_rpc_notification("language_changed",
                                         &json!({"view_id": view_id,
-                                                "old_lang": old_lang,
                                                 "new_lang": new_lang}))
     }
 

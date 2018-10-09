@@ -97,15 +97,16 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
         v.config = conf.unwrap();
     }
 
-    fn do_language_changed(&mut self, view_id: ViewId, old_lang: LanguageId, new_lang: LanguageId) {
+    fn do_language_changed(&mut self, view_id: ViewId, new_lang: LanguageId) {
         let v = bail!(
             self.views.get_mut(&view_id),
             "language_changed",
             self.pid,
             view_id
         );
-        v.set_language(new_lang.clone());
-        self.plugin.language_changed(v, old_lang, new_lang);
+        let old_lang = v.language_id.clone();
+        v.set_language(new_lang);
+        self.plugin.language_changed(v, old_lang);
     }
 
     fn do_new_buffer(&mut self, ctx: &RpcCtx, buffers: Vec<PluginBufferInfo>) {
@@ -203,8 +204,8 @@ impl<'a, P: Plugin> RpcHandler for Dispatcher<'a, P> {
                 self.do_tracing_config(enabled),
             GetHover {  view_id, request_id, position } =>
                 self.do_get_hover(view_id, request_id, position),
-            LanguageChanged { view_id, old_lang, new_lang } =>
-                self.do_language_changed(view_id, old_lang, new_lang),
+            LanguageChanged { view_id, new_lang } =>
+                self.do_language_changed(view_id, new_lang),
             Ping ( .. ) => (),
         }
     }
