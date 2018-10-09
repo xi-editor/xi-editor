@@ -193,9 +193,9 @@ impl<'a> Syntect<'a> {
     }
 
     /// Wipes any existing state and starts highlighting with `syntax`.
-    fn do_highlighting(&mut self, view: &mut MyView, lang: Option<&LanguageId>) {
+    fn do_highlighting(&mut self, view: &mut MyView) {
         let initial_state = {
-            let language_id = lang.unwrap_or(view.get_language_id());
+            let language_id = view.get_language_id();
             let syntax = self
                 .syntax_set
                 .find_syntax_by_name(language_id.as_ref())
@@ -297,7 +297,7 @@ impl<'a> Plugin for Syntect<'a> {
         let view_id = view.get_id();
         let state = PluginState::new();
         self.view_state.insert(view_id, state);
-        self.do_highlighting(view, None);
+        self.do_highlighting(view);
     }
 
     fn did_close(&mut self, view: &View<Self::Cache>) {
@@ -306,13 +306,18 @@ impl<'a> Plugin for Syntect<'a> {
 
     fn did_save(&mut self, view: &mut View<Self::Cache>, _old: Option<&Path>) {
         let _t = trace_block("Syntect::did_save", &["syntect"]);
-        self.do_highlighting(view, None);
+        self.do_highlighting(view);
     }
 
     fn config_changed(&mut self, _view: &mut View<Self::Cache>, _changes: &ConfigTable) {}
 
-    fn language_changed(&mut self, view: &mut View<Self::Cache>, new_lang: LanguageId) {
-        self.do_highlighting(view, Some(&new_lang));
+    fn language_changed(
+        &mut self,
+        view: &mut View<Self::Cache>,
+        _old_lang: LanguageId,
+        _new_lang: LanguageId
+    ) {
+        self.do_highlighting(view);
     }
 
     fn update(&mut self, view: &mut View<Self::Cache>, delta: Option<&RopeDelta>,

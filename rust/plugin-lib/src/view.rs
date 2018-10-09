@@ -77,6 +77,10 @@ impl<C: Cache> View<C> {
         self.buf_size = new_len;
     }
 
+    pub (crate) fn set_language(&mut self, new_language_id: LanguageId) {
+        self.language_id = new_language_id;
+    }
+
     //NOTE: (discuss in review) this feels bad, but because we're mutating cache,
     // which we own, we can't just pass in a reference to something else we own;
     // so we create this on each call. The `clone`is only cloning an `Arc`,

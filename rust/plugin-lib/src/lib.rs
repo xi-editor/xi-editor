@@ -146,7 +146,12 @@ pub trait Plugin {
                       changes: &ConfigTable);
 
     #[allow(unused_variables)]
-    fn language_changed(&mut self, view: &mut View<Self::Cache>, new_lang: LanguageId) {}
+    fn language_changed(
+        &mut self,
+        view: &mut View<Self::Cache>,
+        old_lang: LanguageId,
+        new_lang: LanguageId
+    ) {}
 
     /// Called when the runloop is idle, if the plugin has previously
     /// asked to be scheduled via `View::schedule_idle()`. Plugins that

@@ -501,6 +501,20 @@ impl CoreState {
                 || RemoteError::custom(404, format!("No view for id {}", view_id), None))
     }
 
+    fn do_set_language(&mut self, view_id: ViewId, language_id: LanguageId) {
+        if let Some(view) = self.views.get(&view_id) {
+            let buffer_id = view.borrow().get_buffer_id();
+            let old_language_id = self.config_manager.get_buffer_language(buffer_id);
+            let changes = self.config_manager.override_language(buffer_id, language_id.clone());
+
+            let mut context = self.make_context(view_id).unwrap();
+            context.language_changed(&old_language_id, &language_id);
+            if let Some(changes) = changes {
+                context.config_changed(&changes);
+            }
+        }
+    }
+
     fn do_start_plugin(&mut self, _view_id: ViewId, plugin: &str) {
         if self.running_plugins.iter().any(|p| p.name == plugin) {
             info!("plugin {} already running", plugin);
@@ -536,19 +550,6 @@ impl CoreState {
 
     fn after_stop_plugin(&mut self, plugin: &Plugin) {
         self.iter_groups().for_each(|mut cx| cx.plugin_stopped(plugin));
-    }
-
-    fn do_set_language(&mut self, view_id: ViewId, language_id: LanguageId) {
-        if let Some(view) = self.views.get(&view_id) {
-            let buffer_id = view.borrow().get_buffer_id();
-            let changes = self.config_manager.override_language(buffer_id, language_id.clone());
-
-            let mut context = self.make_context(view_id).unwrap();
-            context.language_changed(&language_id);
-            if let Some(changes) = changes {
-                context.config_changed(&changes);
-            }
-        }
     }
 }
 
