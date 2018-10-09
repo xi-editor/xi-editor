@@ -41,6 +41,7 @@ pub struct LanguageDefinition {
 /// A repository of all loaded `LanguageDefinition`s.
 #[derive(Debug, Default)]
 pub struct Languages {
+    // NOTE: BTreeMap is used for sorting the languages by name alphabetically
     named: BTreeMap<LanguageId, Arc<LanguageDefinition>>,
     extensions: HashMap<String, Arc<LanguageDefinition>>,
 }
