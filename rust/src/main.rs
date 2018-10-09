@@ -203,7 +203,7 @@ fn main() {
     };
     if let Err(e) = setup_logging(logging_path) {
         eprintln!(
-            "[ERROR] setup_logging returned error, logging disabled: {:?}",
+            "[ERROR] setup_logging returned error, logging not enabled: {:?}",
             e
         );
     }
