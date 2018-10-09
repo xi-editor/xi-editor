@@ -211,29 +211,45 @@ pub fn is_variation_selector(c: char) -> bool {
     (c >= '\u{FE00}' && c <= '\u{FE0F}') || (c >= '\u{E0100}' && c <= '\u{E01EF}')
 }
 
-pub fn is_regional_indicator_symbol(c: char) -> bool {
-    c >= '\u{1F1E6}' && c <= '\u{1F1FF}'
+pub trait EmojiExt {
+    fn is_regional_indicator_symbol(self) -> bool;
+    fn is_emoji_modifier(self) -> bool;
+    fn is_emoji_combining_enclosing_keycap(self) -> bool;
+    fn is_emoji(self) -> bool;
+    fn is_emoji_modifier_base(self) -> bool;
+    fn is_tag_spec_char(self) -> bool;
+    fn is_emoji_cancel_tag(self) -> bool;
+    fn is_zwj(self) -> bool;
 }
 
-pub fn is_emoji_modifier(c: char) -> bool {
-    c >= '\u{1F3FB}' && c <= '\u{1F3FF}'
+impl EmojiExt for char {
+    fn is_regional_indicator_symbol(self) -> bool {
+        self >= '\u{1F1E6}' && self <= '\u{1F1FF}'
+    }
+    fn is_emoji_modifier(self) -> bool {
+        self >= '\u{1F3FB}' && self <= '\u{1F3FF}'
+    }
+    fn is_emoji_combining_enclosing_keycap(self) -> bool {
+        self == '\u{20E3}'
+    }
+    fn is_emoji(self) -> bool {
+        is_in_asc_list(self, &EMOJI_TABLE, 0, EMOJI_TABLE.len() - 1)
+    }
+    fn is_emoji_modifier_base(self) -> bool {
+        is_in_asc_list(self, &EMOJI_MODIFIER_BASE_TABLE, 0, EMOJI_MODIFIER_BASE_TABLE.len() - 1)
+    }
+    fn is_tag_spec_char(self) -> bool {
+        '\u{E0020}' <= self && self <= '\u{E007E}'
+    }
+    fn is_emoji_cancel_tag(self) -> bool {
+        self == '\u{E007F}'
+    }
+    fn is_zwj(self) -> bool {
+        self == '\u{200D}'
+    }
 }
-
-pub fn is_emoji_combining_enclosing_keycap(c: char) -> bool { c == '\u{20E3}' }
-
-pub fn is_emoji(c: char) -> bool { is_in_asc_list(c, &EMOJI_TABLE, 0, EMOJI_TABLE.len() - 1) }
 
 pub fn is_keycap_base(c: char) -> bool { ('0' <= c && c <= '9') || c == '#' || c == '*' }
-
-pub fn is_emoji_modifier_base(c: char) -> bool {
-    is_in_asc_list(c, &EMOJI_MODIFIER_BASE_TABLE, 0, EMOJI_MODIFIER_BASE_TABLE.len() - 1)
-}
-
-pub fn is_tag_spec_char(c: char) -> bool { '\u{E0020}' <= c && c <= '\u{E007E}' }
-
-pub fn is_emoji_cancel_tag(c: char) -> bool { c == '\u{E007F}' }
-
-pub fn is_zwj(c: char) -> bool { c == '\u{200D}' }
 
 #[cfg(test)]
 mod tests {

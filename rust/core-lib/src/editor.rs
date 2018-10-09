@@ -397,15 +397,15 @@ impl Editor {
                                     state = State::Lf;
                                 } else if is_variation_selector(code_point) {
                                     state = State::BeforeVS;
-                                } else if is_regional_indicator_symbol(code_point) {
+                                } else if code_point.is_regional_indicator_symbol() {
                                     state = State::OddNumberedRIS;
-                                } else if is_emoji_modifier(code_point) {
+                                } else if code_point.is_emoji_modifier() {
                                     state = State::BeforeEmojiModifier;
-                                } else if is_emoji_combining_enclosing_keycap(code_point) {
+                                } else if code_point.is_emoji_combining_enclosing_keycap() {
                                     state = State::BeforeKeycap;
-                                } else if is_emoji(code_point) {
+                                } else if code_point.is_emoji() {
                                     state = State::BeforeEmoji;
-                                } else if is_emoji_cancel_tag(code_point) {
+                                } else if code_point.is_emoji_cancel_tag() {
                                     state = State::InTagSequence;
                                 } else {
                                     state = State::Finished;
@@ -418,7 +418,7 @@ impl Editor {
                                 state = State::Finished;
                             }
                             State::OddNumberedRIS => {
-                                if is_regional_indicator_symbol(code_point) {
+                                if code_point.is_regional_indicator_symbol() {
                                     delete_code_point_count += 1;
                                     state = State::EvenNumberedRIS
                                 } else {
@@ -426,7 +426,7 @@ impl Editor {
                                 }
                             }
                             State::EvenNumberedRIS => {
-                                if is_regional_indicator_symbol(code_point) {
+                                if code_point.is_regional_indicator_symbol() {
                                     delete_code_point_count -= 1;
                                     state = State::OddNumberedRIS;
                                 } else {
@@ -455,20 +455,20 @@ impl Editor {
                                     last_seen_vs_code_point_count = 1;
                                     state = State::BeforeVSAndEmojiModifier;
                                 } else {
-                                    if is_emoji_modifier_base(code_point) {
+                                    if code_point.is_emoji_modifier_base() {
                                         delete_code_point_count += 1;
                                     }
                                     state = State::Finished;
                                 }
                             }
                             State::BeforeVSAndEmojiModifier => {
-                                if is_emoji_modifier_base(code_point) {
+                                if code_point.is_emoji_modifier_base() {
                                     delete_code_point_count += last_seen_vs_code_point_count + 1;
                                 }
                                 state = State::Finished;
                             }
                             State::BeforeVS => {
-                                if is_emoji(code_point) {
+                                if code_point.is_emoji() {
                                     delete_code_point_count += 1;
                                     state = State::BeforeEmoji;
                                 } else {
@@ -479,16 +479,16 @@ impl Editor {
                                 }
                             }
                             State::BeforeEmoji => {
-                                if is_zwj(code_point) {
+                                if code_point.is_zwj() {
                                     state = State::BeforeZwj;
                                 } else {
                                     state = State::Finished;
                                 }
                             }
                             State::BeforeZwj => {
-                                if is_emoji(code_point) {
+                                if code_point.is_emoji() {
                                     delete_code_point_count += 2;
-                                    state = if is_emoji_modifier(code_point) { State::BeforeEmojiModifier } else { State::BeforeEmoji };
+                                    state = if code_point.is_emoji_modifier() { State::BeforeEmojiModifier } else { State::BeforeEmoji };
                                 } else if is_variation_selector(code_point) {
                                     last_seen_vs_code_point_count = 1;
                                     state = State::BeforeVSAndZWJ;
@@ -497,7 +497,7 @@ impl Editor {
                                 }
                             }
                             State::BeforeVSAndZWJ => {
-                                if is_emoji(code_point) {
+                                if code_point.is_emoji() {
                                     delete_code_point_count += last_seen_vs_code_point_count + 2;
                                     last_seen_vs_code_point_count = 0;
                                     state = State::BeforeEmoji;
@@ -506,9 +506,9 @@ impl Editor {
                                 }
                             }
                             State::InTagSequence => {
-                                if is_tag_spec_char(code_point) {
+                                if code_point.is_tag_spec_char() {
                                     delete_code_point_count += 1;
-                                } else if is_emoji(code_point) {
+                                } else if code_point.is_emoji() {
                                     delete_code_point_count += 1;
                                     state = State::Finished;
                                 } else {
