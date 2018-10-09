@@ -62,19 +62,19 @@ fn get_logging_directory_path<P: AsRef<Path>>(directory: P) -> Result<PathBuf, i
 /// use std::path::PathBuf;
 /// let path_with_file = PathBuf::from("/some/directory/then/file");
 /// assert_eq!(Some(OsStr::new("file")), path_with_file.file_name());
-/// assert_eq!(create_parent_directory(path_with_file).is_ok(), true);
+/// assert_eq!(create_log_directory(path_with_file).is_ok(), true);
 ///
 /// let path_with_other_file = PathBuf::from("/other_file");
 /// assert_eq!(Some(OsStr::new("other_file")), path_with_other_file.file_name());
-/// assert_eq!(create_parent_directory(path_with_file).is_ok(), true);
+/// assert_eq!(create_log_directory(path_with_file).is_ok(), true);
 ///
 /// // Path that is just the root or prefix:
 /// let path_without_file = PathBuf::from("/");
 /// assert_eq!(None, path_with_file.file_name());
-/// assert_eq!(create_parent_directory(path_with_file).is_ok(), false);
+/// assert_eq!(create_log_directory(path_with_file).is_ok(), false);
 /// ```
-pub fn create_parent_directory(path_with_file: &PathBuf) -> Result<(), io::Error> {
-    let parent_path = path_with_file.parent().ok_or(io::Error::new(
+fn create_log_directory(path_with_file: &PathBuf) -> Result<(), io::Error> {
+    let log_dir = path_with_file.parent().ok_or(io::Error::new(
         io::ErrorKind::InvalidInput,
         format!(
             "Unable to get the parent of the following Path: {}",
@@ -82,7 +82,7 @@ pub fn create_parent_directory(path_with_file: &PathBuf) -> Result<(), io::Error
         ),
     ))?;
     // Try to create the directory.
-    fs::create_dir_all(parent_path)?;
+    fs::create_dir_all(log_dir)?;
     Ok(())
 }
 
@@ -111,7 +111,7 @@ fn setup_logging(logging_path_result: Option<PathBuf>) -> Result<(), fern::InitE
 
     if let Some(logging_file_path) = &logging_path_result {
         // Try to create the parent directories for the logging file in the logging file path
-        create_parent_directory(&logging_file_path)?;
+        create_log_directory(&logging_file_path)?;
 
         // Attach it to fern
         fern_dispatch = fern_dispatch.chain(fern::log_file(logging_file_path)?);
