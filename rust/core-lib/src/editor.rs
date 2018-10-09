@@ -364,14 +364,14 @@ impl Editor {
                     #[derive(PartialEq)]
                     enum State {
                         Start,
-                        LF,
+                        Lf,
                         BeforeKeycap,
                         BeforeVsAndKeycap,
                         BeforeEmojiModifier,
                         BeforeVSAndEmojiModifier,
                         BeforeVS,
                         BeforeEmoji,
-                        BeforeZWJ,
+                        BeforeZwj,
                         BeforeVSAndZWJ,
                         OddNumberedRIS,
                         EvenNumberedRIS,
@@ -394,7 +394,7 @@ impl Editor {
                             State::Start => {
                                 delete_code_point_count = 1;
                                 if code_point == '\n' {
-                                    state = State::LF;
+                                    state = State::Lf;
                                 } else if is_variation_selector(code_point) {
                                     state = State::BeforeVS;
                                 } else if is_regional_indicator_symbol(code_point) {
@@ -411,7 +411,7 @@ impl Editor {
                                     state = State::Finished;
                                 }
                             }
-                            State::LF => {
+                            State::Lf => {
                                 if code_point == '\r' {
                                     delete_code_point_count += 1;
                                 }
@@ -480,12 +480,12 @@ impl Editor {
                             }
                             State::BeforeEmoji => {
                                 if is_zwj(code_point) {
-                                    state = State::BeforeZWJ;
+                                    state = State::BeforeZwj;
                                 } else {
                                     state = State::Finished;
                                 }
                             }
-                            State::BeforeZWJ => {
+                            State::BeforeZwj => {
                                 if is_emoji(code_point) {
                                     delete_code_point_count += 2;
                                     state = if is_emoji_modifier(code_point) { State::BeforeEmojiModifier } else { State::BeforeEmoji };
