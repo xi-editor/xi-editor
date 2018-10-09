@@ -534,18 +534,16 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for EditCommand<T>
         let helper = InnerId::deserialize(&v).map_err(de::Error::custom)?;
         let InnerId { view_id } = helper;
 
-        if T::deserialize(v.clone()).is_err() {
-            // if params are empty, remove them
-            let remove_params = match v.get("params") {
-                Some(&Value::Object(ref obj)) => obj.is_empty(),
-                Some(&Value::Array(ref arr)) => arr.is_empty(),
-                Some(_) => return Err(de::Error::custom("'params' field, if present, must be object or array.")),
-                None => false,
-            };
+        // if params are empty, remove them
+        let remove_params = match v.get("params") {
+            Some(&Value::Object(ref obj)) => obj.is_empty() && T::deserialize(v.clone()).is_err(),
+            Some(&Value::Array(ref arr)) => arr.is_empty() && T::deserialize(v.clone()).is_err(),
+            Some(_) => return Err(de::Error::custom("'params' field, if present, must be object or array.")),
+            None => false,
+        };
 
-            if remove_params {
-                v.as_object_mut().map(|v| v.remove("params"));
-            }
+        if remove_params {
+            v.as_object_mut().map(|v| v.remove("params"));
         }
 
         let cmd = T::deserialize(v).map_err(de::Error::custom)?;
