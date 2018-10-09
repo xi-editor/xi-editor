@@ -81,7 +81,6 @@ fn create_log_directory(path_with_file: &PathBuf) -> Result<(), io::Error> {
             path_with_file.display(),
         ),
     ))?;
-    // Try to create the directory.
     fs::create_dir_all(log_dir)?;
     Ok(())
 }
@@ -110,10 +109,8 @@ fn setup_logging(logging_path: Option<PathBuf>) -> Result<(), fern::InitError> {
         .chain(io::stderr());
 
     if let Some(logging_file_path) = &logging_path {
-        // Try to create the parent directories for the logging file in the logging file path
         create_log_directory(&logging_file_path)?;
 
-        // Attach it to fern
         fern_dispatch = fern_dispatch.chain(fern::log_file(logging_file_path)?);
     };
 
@@ -226,11 +223,11 @@ fn main() {
     let stdout = io::stdout();
     let mut rpc_looper = RpcLoop::new(stdout);
 
-    let flags: HashMap<String, Option<String>> = get_flags();
+    let flags = get_flags();
 
     let logfile_config = generate_logfile_config(&flags);
 
-    let logging_path_result: Result<PathBuf, io::Error> = generate_logging_path(logfile_config);
+    let logging_path_result = generate_logging_path(logfile_config);
 
     let mut logging_path: Option<PathBuf> = None;
     let mut logging_error: Option<io::Error> = None;
