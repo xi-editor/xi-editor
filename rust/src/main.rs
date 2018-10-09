@@ -86,7 +86,7 @@ fn create_log_directory(path_with_file: &PathBuf) -> Result<(), io::Error> {
     Ok(())
 }
 
-fn setup_logging(logging_path_result: Option<PathBuf>) -> Result<(), fern::InitError> {
+fn setup_logging(logging_path: Option<PathBuf>) -> Result<(), fern::InitError> {
     let level_filter = match std::env::var("XI_LOG") {
         Ok(level) => match level.to_lowercase().as_ref() {
             "trace" => log::LevelFilter::Trace,
@@ -109,7 +109,7 @@ fn setup_logging(logging_path_result: Option<PathBuf>) -> Result<(), fern::InitE
         }).level(level_filter)
         .chain(io::stderr());
 
-    if let Some(logging_file_path) = &logging_path_result {
+    if let Some(logging_file_path) = &logging_path {
         // Try to create the parent directories for the logging file in the logging file path
         create_log_directory(&logging_file_path)?;
 
@@ -123,11 +123,8 @@ fn setup_logging(logging_path_result: Option<PathBuf>) -> Result<(), fern::InitE
 
     // Log details of the logging_file_path result using fern/log
     // Either logging the path fern is outputting to or the error from obtaining the path
-    match &logging_path_result {
-        Some(logging_file_path) => info!(
-            "Logging to the following file: {}",
-            logging_file_path.display()
-        ),
+    match &logging_path {
+        Some(logging_file_path) => info!("Writing logs to: {}", logging_file_path.display()),
         None => warn!("There was no path supplied for the log file, falling back to stderr."),
     }
     Ok(())
