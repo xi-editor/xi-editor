@@ -311,12 +311,7 @@ impl<'a> Plugin for Syntect<'a> {
 
     fn config_changed(&mut self, _view: &mut View<Self::Cache>, _changes: &ConfigTable) {}
 
-    fn language_changed(
-        &mut self,
-        view: &mut View<Self::Cache>,
-        _old_lang: LanguageId,
-        _new_lang: LanguageId
-    ) {
+    fn language_changed(&mut self, view: &mut View<Self::Cache>, _old_lang: LanguageId) {
         self.do_highlighting(view);
     }
 

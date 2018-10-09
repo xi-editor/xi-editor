@@ -145,13 +145,10 @@ pub trait Plugin {
                       view: &mut View<Self::Cache>,
                       changes: &ConfigTable);
 
+    /// Called when syntax language has changed for this view.
+    /// New language is available in the `view`, and old language is available in `old_lang`.
     #[allow(unused_variables)]
-    fn language_changed(
-        &mut self,
-        view: &mut View<Self::Cache>,
-        old_lang: LanguageId,
-        new_lang: LanguageId
-    ) {}
+    fn language_changed(&mut self, view: &mut View<Self::Cache>, old_lang: LanguageId) {}
 
     /// Called when the runloop is idle, if the plugin has previously
     /// asked to be scheduled via `View::schedule_idle()`. Plugins that

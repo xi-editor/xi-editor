@@ -346,13 +346,12 @@ impl<'a> EventContext<'a> {
 
     pub(crate) fn language_changed(
         &mut self,
-        old_language_id: &LanguageId,
         new_language_id: &LanguageId
     ) {
         self.language = new_language_id.clone();
         self.client.language_changed(self.view_id, new_language_id);
         self.plugins.iter()
-            .for_each(|plug| plug.language_changed(self.view_id, old_language_id, new_language_id));
+            .for_each(|plug| plug.language_changed(self.view_id, new_language_id));
     }
 
     pub(crate) fn reload(&mut self, text: Rope) {
