@@ -194,21 +194,21 @@ fn main() {
     let logfile_config = generate_logfile_config(&flags);
 
     let logging_path_result: Result<PathBuf, io::Error> = generate_logging_path(logfile_config);
-    let logging_path: Option<PathBuf> = match logging_path_result {
-        Ok(val) => Some(val),
-        Err(e) => {
-            eprintln!(
-                "[WARNING] Unable to successfully generate the logging path: {:?}",
-                e
-            );
-            None
-        }
+
+    let mut logging_path: Option<PathBuf> = None;
+    let mut logging_error: Option<io::Error> = None;
+    match logging_path_result {
+        Ok(val) => logging_path = Some(val),
+        Err(e) => logging_error = Some(e),
     };
     if let Err(e) = setup_logging(logging_path) {
         eprintln!(
             "[ERROR] setup_logging returned error, logging disabled: {:?}",
             e
         );
+    }
+    if let Some(e) = logging_error {
+        warn!("Unable to successfully generate the logging path: {:?}", e)
     }
 
     match rpc_looper.mainloop(|| stdin.lock(), &mut state) {
