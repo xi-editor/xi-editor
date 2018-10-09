@@ -122,18 +122,18 @@ fn get_flags() -> HashMap<String, Option<String>> {
     let mut flags: HashMap<String, Option<String>> = HashMap::new();
 
     let flag_prefix = "-";
-    let mut args_itterator = std::env::args().peekable();
-    while let Some(arg) = args_itterator.next() {
+    let mut args_iterator = std::env::args().peekable();
+    while let Some(arg) = args_iterator.next() {
         if arg.starts_with(flag_prefix) {
             let key = arg.trim_left_matches(flag_prefix).to_string();
 
             // Check the next argument doesn't start with the flag prefix
             // map_or accounts for peek returning an Option
-            let next_arg_not_a_flag: bool = args_itterator
+            let next_arg_not_a_flag: bool = args_iterator
                 .peek()
                 .map_or(false, |val| !val.starts_with(flag_prefix));
             if next_arg_not_a_flag {
-                flags.insert(key, args_itterator.next());
+                flags.insert(key, args_iterator.next());
             }
         }
     }
