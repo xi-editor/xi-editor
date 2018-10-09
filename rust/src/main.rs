@@ -105,6 +105,12 @@ fn generate_logging_path(logfile_config: LogfileConfig) -> Result<PathBuf, io::E
         Some(file_name) => file_name,
         None => PathBuf::from(XI_LOG_FILE),
     };
+    if logfile_file_name.eq(Path::new("")) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "A blank file name was supplied",
+        ));
+    };
     // Use the directory name set in logfile_config or fallback to the default
     let logfile_directory_name = match logfile_config.directory {
         Some(dir) => dir,
@@ -208,7 +214,7 @@ fn main() {
         );
     }
     if let Some(e) = logging_error {
-        warn!("Unable to successfully generate the logging path: {:?}", e)
+        warn!("Unable to successfully generate the logging path: {}", e)
     }
 
     match rpc_looper.mainloop(|| stdin.lock(), &mut state) {
