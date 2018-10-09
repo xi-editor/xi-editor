@@ -308,6 +308,7 @@ impl<'a> EventContext<'a> {
                                       &available_plugins);
 
         self.client.config_changed(self.view_id, config);
+        self.client.language_changed(self.view_id, &self.language);
         self.update_wrap_state();
         self.render()
     }
@@ -344,6 +345,7 @@ impl<'a> EventContext<'a> {
     }
 
     pub(crate) fn language_changed(&mut self, lang_id: &LanguageId) {
+        self.client.language_changed(self.view_id, lang_id);
         self.plugins.iter().for_each(|plug| plug.language_changed(self.view_id, lang_id));
     }
 
