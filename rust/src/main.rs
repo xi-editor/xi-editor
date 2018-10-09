@@ -46,6 +46,46 @@ fn get_logging_directory_path<P: AsRef<Path>>(directory: P) -> Result<PathBuf, i
     }
 }
 
+/// This function tries to create the parent directories for a file
+///
+/// It wraps around the `parent()` function of `Path` which returns an `Option<&Path>` and
+/// `fs::create_dir_all` which returns an `io::Result<()`.
+///
+/// This allows you to use `?`/`try!()` to create the dir and you recive the additional custom error for when `parent()`
+/// returns nothing.
+///
+/// # Errors
+/// This can return an `io::Error` if `fs::create_dir_all` fails or if `parent()` returns `None`.
+/// See `Path`'s `parent()` function for more details.
+/// # Examples
+/// ```
+/// use std::path::PathBuf;
+/// let path_with_file = PathBuf::from("/some/directory/then/file");
+/// assert_eq!(Some(OsStr::new("file")), path_with_file.file_name());
+/// assert_eq!(create_parent_directory(path_with_file).is_ok(), true);
+///
+/// let path_with_other_file = PathBuf::from("/other_file");
+/// assert_eq!(Some(OsStr::new("other_file")), path_with_other_file.file_name());
+/// assert_eq!(create_parent_directory(path_with_file).is_ok(), true);
+///
+/// // Path that is just the root or prefix:
+/// let path_without_file = PathBuf::from("/");
+/// assert_eq!(None, path_with_file.file_name());
+/// assert_eq!(create_parent_directory(path_with_file).is_ok(), false);
+/// ```
+pub fn create_parent_directory(path_with_file: &PathBuf) -> Result<(), io::Error> {
+    let parent_path = path_with_file.parent().ok_or(io::Error::new(
+        io::ErrorKind::InvalidInput,
+        format!(
+            "Unable to get the parent of the following Path: {}",
+            path_with_file.display(),
+        ),
+    ))?;
+    // Try to create the directory.
+    fs::create_dir_all(parent_path)?;
+    Ok(())
+}
+
 fn setup_logging(logging_path_result: Option<PathBuf>) -> Result<(), fern::InitError> {
     let level_filter = match std::env::var("XI_LOG") {
         Ok(level) => match level.to_lowercase().as_ref() {
@@ -70,15 +110,9 @@ fn setup_logging(logging_path_result: Option<PathBuf>) -> Result<(), fern::InitE
         .chain(io::stderr());
 
     if let Some(logging_file_path) = &logging_path_result {
-        // Ensure the logging directory is created
-        let parent_path = logging_file_path.parent().ok_or(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!(
-                "Unable to get the parent of the following Path: {}",
-                logging_file_path.display(),
-            ),
-        ))?;
-        fs::create_dir_all(parent_path)?;
+        // Try to create the parent directories for the logging file in the logging file path
+        create_parent_directory(&logging_file_path)?;
+
         // Attach it to fern
         fern_dispatch = fern_dispatch.chain(fern::log_file(logging_file_path)?);
     };
