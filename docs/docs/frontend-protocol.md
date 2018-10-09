@@ -80,6 +80,7 @@ will receive a `theme_changed` notification.
 `set_language {"view-id":"view-id-1", "language_id":"Rust"}`
 
 Asks core to change the language of the buffer associated with the `view_id`.
+If the change succeeds the client will receive a `language_changed` notification.
 
 ### modify_user_config
 
@@ -326,7 +327,7 @@ This find command supports multiple search queries.
 
 `multi_find [{"id": 1, "chars": "a", "case_sensitive": false, "regex": false, "whole_words": true}]`
 Parameters `regex` and `whole_words` are optional and by default `false`. `id` is an optional parameter
-used to uniquely identify a search query. If left empty, the query is considered as a new query and 
+used to uniquely identify a search query. If left empty, the query is considered as a new query and
 the backend will generate a new ID.
 
 Sets the current search queries and options.
@@ -570,6 +571,12 @@ instance.
 `available_themes {"themes": ["InspiredGitHub"]}`
 
 Notifies the client of the available themes.
+
+#### language_changed
+
+`language_changed {"view_id": "view-id-1", "language_id": "Rust"}`
+
+Notifies the client that the language used for syntax highlighting has been changed.
 
 #### available_languages
 
