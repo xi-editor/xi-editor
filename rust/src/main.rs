@@ -77,7 +77,7 @@ fn create_log_directory(path_with_file: &PathBuf) -> Result<(), io::Error> {
     let log_dir = path_with_file.parent().ok_or(io::Error::new(
         io::ErrorKind::InvalidInput,
         format!(
-            "Unable to get the parent of the following Path: {}",
+            "Unable to get the parent of the following Path: {}, Your path should contain a file name",
             path_with_file.display(),
         ),
     ))?;
@@ -119,13 +119,13 @@ fn setup_logging(logging_path: Option<PathBuf>) -> Result<(), fern::InitError> {
 
     // Start fern
     fern_dispatch.apply()?;
-    info!("Logging with fern is setup");
+    info!("Logging with fern is set up");
 
     // Log details of the logging_file_path result using fern/log
     // Either logging the path fern is outputting to or the error from obtaining the path
     match &logging_path {
         Some(logging_file_path) => info!("Writing logs to: {}", logging_file_path.display()),
-        None => warn!("There was no path supplied for the log file, falling back to stderr."),
+        None => warn!("No path was supplied for the log file, not saving logs to disk, falling back to just stderr"),
     }
     Ok(())
 }
@@ -245,7 +245,10 @@ fn main() {
         );
     }
     if let Some(e) = logging_error {
-        warn!("Unable to successfully generate the logging path: {}", e)
+        warn!(
+            "Unable to generate the logging path to pass to set up: {}",
+            e
+        )
     }
 
     match rpc_looper.mainloop(|| stdin.lock(), &mut state) {
