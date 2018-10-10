@@ -44,6 +44,10 @@ pub enum Movement {
     UpPage,
     /// Move down one viewport height.
     DownPage,
+    /// Move up to the next line that can preserve the cursor position.
+    UpEnforceHorizPos,
+    /// Move down to the next line that can preserve the cursor position.
+    DownEnforceHorizPos,
     /// Move to the start of the text line.
     StartOfParagraph,
     /// Move to the end of the text line.
@@ -80,19 +84,41 @@ fn vertical_motion(
     // TODO: write tests to verify
     let line = view.line_of_offset(text, active);
     if line_delta < 0 && (-line_delta as usize) > line {
-        return (0, Some(col));
+        if enforce_horiz_pos {
+            return (active, Some(col));
+        } else {
+            return (0, Some(col));
+        }
     }
-    let line = if line_delta < 0 {
+    let mut line = if line_delta < 0 {
         line - (-line_delta as usize)
     } else {
         line.saturating_add(line_delta as usize)
     };
     let n_lines = view.line_of_offset(text, text.len());
-    if line > n_lines {
-        return (text.len(), Some(col));
+
+    if !enforce_horiz_pos {
+        if line > n_lines {
+            return (text.len(), Some(col));
+        }
+
+        return (view.line_col_to_offset(text, line, col), Some(col));
     }
-    let new_offset = view.line_col_to_offset(text, line, col);
-    (new_offset, Some(col))
+
+    loop {
+        // If the line is longer than the current cursor position, break.
+        let line_length = view.offset_of_line(text, line.saturating_add(1)) - view.offset_of_line(text, line);
+        if line_length > col { break; }
+
+        // If you are trying to add a selection past the end of the file or before the first line, return original selection
+        if line >= n_lines || (line == 0 && line_delta < 0) {
+            return (active, Some(col));
+        }
+
+        line = if line_delta < 0 { line - 1 } else { line.saturating_add(1) };
+     }
+
+    (view.line_col_to_offset(text, line, col), Some(col))
 }
 
 /// When paging through a file, the number of lines from the previous page
@@ -164,8 +190,10 @@ pub fn region_movement(
             }
             (offset, None)
         }
-        Movement::Up => vertical_motion(r, view, text, -1, modify),
-        Movement::Down => vertical_motion(r, view, text, 1, modify),
+        Movement::Up => vertical_motion(r, view, text, -1, modify, false),
+        Movement::Down => vertical_motion(r, view, text, 1, modify, false),
+        Movement::UpEnforceHorizPos => vertical_motion(r, view, text, -1, modify, true),
+        Movement::DownEnforceHorizPos => vertical_motion(r, view, text, 1, modify, true),
         Movement::StartOfParagraph => {
             // Note: TextEdit would start at modify ? r.end : r.min()
             let mut cursor = Cursor::new(&text, r.end);
@@ -203,8 +231,8 @@ pub fn region_movement(
             }
             (offset, None)
         }
-        Movement::UpPage => vertical_motion(r, view, text, -scroll_height(view), modify),
-        Movement::DownPage => vertical_motion(r, view, text, scroll_height(view), modify),
+        Movement::UpPage => vertical_motion(r, view, text, -scroll_height(view), modify, false),
+        Movement::DownPage => vertical_motion(r, view, text, scroll_height(view), modify, false),
         Movement::StartOfDocument => (0, None),
         Movement::EndOfDocument => (text.len(), None),
     };
