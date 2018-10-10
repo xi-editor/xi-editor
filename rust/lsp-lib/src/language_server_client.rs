@@ -16,12 +16,12 @@
 
 use jsonrpc_lite::{Error, Id, JsonRpc, Params};
 use lsp_types::*;
+use result_queue::ResultQueue;
 use serde_json;
 use serde_json::{to_value, Value};
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::process;
-use result_queue::ResultQueue;
 use types::Callback;
 use url::Url;
 use xi_core::ViewId;
@@ -46,11 +46,7 @@ pub struct LanguageServerClient {
 /// a serde_json object `Value`
 fn prepare_lsp_json(msg: &Value) -> Result<String, serde_json::error::Error> {
     let request = serde_json::to_string(&msg)?;
-    Ok(format!(
-        "Content-Length: {}\r\n\r\n{}",
-        request.len(),
-        request
-    ))
+    Ok(format!("Content-Length: {}\r\n\r\n{}", request.len(), request))
 }
 
 /// Get numeric id from the request id.
@@ -86,9 +82,7 @@ impl LanguageServerClient {
     }
 
     pub fn write(&mut self, msg: &str) {
-        self.writer
-            .write_all(msg.as_bytes())
-            .expect("error writing to stdin");
+        self.writer.write_all(msg.as_bytes()).expect("error writing to stdin");
 
         self.writer.flush().expect("error flushing child stdin");
     }
@@ -98,7 +92,7 @@ impl LanguageServerClient {
             Ok(JsonRpc::Request(obj)) => trace!("client received unexpected request: {:?}", obj),
             Ok(value @ JsonRpc::Notification(_)) => {
                 self.handle_notification(value.get_method().unwrap(), value.get_params().unwrap())
-            },
+            }
             Ok(value @ JsonRpc::Success(_)) => {
                 let id = number_from_id(value.get_id().unwrap());
                 let result = value.get_result().unwrap();
@@ -114,36 +108,26 @@ impl LanguageServerClient {
     }
 
     pub fn handle_response(&mut self, id: u64, result: Result<Value, Error>) {
-        let callback = self
-            .pending
-            .remove(&id)
-            .expect(&format!("id {} missing from request table", id));
+        let callback =
+            self.pending.remove(&id).expect(&format!("id {} missing from request table", id));
         callback.call(self, result);
     }
 
     pub fn handle_notification(&mut self, method: &str, params: Params) {
         trace!("Notification Received =>\n Method: {}, params: {:?}", method, params);
         match method {
-            "window/showMessage" => {
-
-            },
-            "window/logMessage" => {
-
-            },
-            "textDocument/publishDiagnostics" => {
-
-            },
-            "telemetry/event" => {
-
-            },
-            _ => self.handle_misc_notification(method, params)
-        }        
+            "window/showMessage" => {}
+            "window/logMessage" => {}
+            "textDocument/publishDiagnostics" => {}
+            "telemetry/event" => {}
+            _ => self.handle_misc_notification(method, params),
+        }
     }
 
     pub fn handle_misc_notification(&mut self, method: &str, params: Params) {
         match self.language_id.to_lowercase().as_ref() {
             "rust" => self.handle_rust_misc_notification(method, params),
-            _ => warn!("Unknown notification: {}", method)
+            _ => warn!("Unknown notification: {}", method),
         }
     }
 
@@ -165,7 +149,7 @@ impl LanguageServerClient {
         for view_id in self.opened_documents.keys() {
             self.core.update_status_item(view_id, id, value);
         }
-    } 
+    }
 
     pub fn send_request(&mut self, method: &str, params: Params, completion: Callback) {
         let request = JsonRpc::request_with_params(Id::Num(self.next_id as i64), method, params);
@@ -205,7 +189,7 @@ impl LanguageServerClient {
 
         let init_params = InitializeParams {
             process_id: Some(process::id() as u64),
-            root_uri: root_uri,
+            root_uri,
             root_path: None,
             initialization_options: None,
             capabilities: client_capabilities,
@@ -236,9 +220,8 @@ impl LanguageServerClient {
     /// Send textDocument/didClose Notification to the Language Server
     pub fn send_did_close(&mut self, view_id: ViewId) {
         let uri = self.opened_documents.get(&view_id).unwrap().clone();
-        let text_document_did_close_params = DidCloseTextDocumentParams {
-            text_document: TextDocumentIdentifier { uri: uri },
-        };
+        let text_document_did_close_params =
+            DidCloseTextDocumentParams { text_document: TextDocumentIdentifier { uri } };
 
         let params = Params::from(serde_json::to_value(text_document_did_close_params).unwrap());
         self.send_notification("textDocument/didClose", params);
@@ -278,12 +261,8 @@ impl LanguageServerClient {
         self.send_notification("textDocument/didSave", params);
     }
 
-    pub fn request_hover<CB>(
-        &mut self,
-        view_id: ViewId,
-        position: Position,
-        on_result: CB,
-    ) where
+    pub fn request_hover<CB>(&mut self, view_id: ViewId, position: Position, on_result: CB)
+    where
         CB: 'static + Send + FnOnce(&mut LanguageServerClient, Result<Value, Error>),
     {
         let text_document_position_params = TextDocumentPositionParams {
@@ -304,11 +283,7 @@ impl LanguageServerClient {
 impl LanguageServerClient {
     /// Method to get the sync kind Supported by the Server
     pub fn get_sync_kind(&mut self) -> TextDocumentSyncKind {
-        match self
-            .server_capabilities
-            .as_ref()
-            .and_then(|c| c.text_document_sync.as_ref())
-        {
+        match self.server_capabilities.as_ref().and_then(|c| c.text_document_sync.as_ref()) {
             Some(&TextDocumentSyncCapability::Kind(kind)) => kind,
             _ => TextDocumentSyncKind::Full,
         }
@@ -317,7 +292,6 @@ impl LanguageServerClient {
 
 /// Language Specific Notification handling implementations
 impl LanguageServerClient {
-
     pub fn handle_rust_misc_notification(&mut self, method: &str, params: Params) {
         match method {
             "window/progress" => {
@@ -325,19 +299,23 @@ impl LanguageServerClient {
                     Params::Map(m) => {
                         let done = m.get("done").unwrap_or(&Value::Bool(false));
                         if let Value::Bool(done) = done {
-                            let id: String = serde_json::from_value(m.get("id").unwrap().clone()).unwrap();
+                            let id: String =
+                                serde_json::from_value(m.get("id").unwrap().clone()).unwrap();
                             if *done {
                                 self.remove_status_item(&id);
                             } else {
-                                let mut value = String::new(); 
+                                let mut value = String::new();
                                 if let Some(Value::String(s)) = &m.get("title") {
                                     value.push_str(&format!("{} ", s));
                                 }
-                                
+
                                 if let Some(Value::Number(n)) = &m.get("percentage") {
-                                    value.push_str(&format!("{} %", (n.as_f64().unwrap()*100.00).round()));
+                                    value.push_str(&format!(
+                                        "{} %",
+                                        (n.as_f64().unwrap() * 100.00).round()
+                                    ));
                                 }
-                                
+
                                 if let Some(Value::String(s)) = &m.get("message") {
                                     value.push_str(s);
                                 }
@@ -346,14 +324,14 @@ impl LanguageServerClient {
                                     self.update_status_item(&id, &value);
                                 } else {
                                     self.add_status_item(&id, &value, "left");
-                                }                         
+                                }
                             }
                         }
-                    },
-                    _ => warn!("Unexpected type")
+                    }
+                    _ => warn!("Unexpected type"),
                 }
-            },
-            _ => warn!("Unknown Notification from RLS: {} ", method)
+            }
+            _ => warn!("Unknown Notification from RLS: {} ", method),
         }
     }
 }

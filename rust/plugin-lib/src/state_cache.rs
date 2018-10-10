@@ -17,17 +17,16 @@
 use bytecount;
 use rand::{thread_rng, Rng};
 
-use xi_rope::rope::{RopeDelta, LinesMetric};
+use xi_rope::rope::{LinesMetric, RopeDelta};
 use xi_trace::trace_block;
 
+use super::{Cache, DataSource, Error, View};
 use base_cache::ChunkCache;
-use super::{Error, Cache, View, DataSource};
 
 const CACHE_SIZE: usize = 1024;
 
 /// Number of probes for eviction logic.
 const NUM_PROBES: usize = 5;
-
 
 struct CacheEntry<S> {
     line_num: usize,
@@ -38,7 +37,7 @@ struct CacheEntry<S> {
 /// The caching state
 #[derive(Default)]
 pub struct StateCache<S> {
-   pub (crate) buf_cache: ChunkCache,
+    pub(crate) buf_cache: ChunkCache,
     state_cache: Vec<CacheEntry<S>>,
     /// The frontier, represented as a sorted list of line numbers.
     frontier: Vec<usize>,
@@ -53,33 +52,32 @@ impl<S: Clone + Default> Cache for StateCache<S> {
         }
     }
 
-    fn get_line<DS: DataSource>(&mut self, source: &DS, line_num: usize)
-        -> Result<&str, Error>
-    {
+    fn get_line<DS: DataSource>(&mut self, source: &DS, line_num: usize) -> Result<&str, Error> {
         self.buf_cache.get_line(source, line_num)
     }
 
-    fn get_document<DS: DataSource>(&mut self, source: &DS)
-        -> Result<String, Error>
-    {
+    fn get_document<DS: DataSource>(&mut self, source: &DS) -> Result<String, Error> {
         self.buf_cache.get_document(source)
     }
 
-    fn offset_of_line<DS: DataSource>(&mut self, source: &DS, line_num: usize)
-        -> Result<usize, Error>
-    {
+    fn offset_of_line<DS: DataSource>(
+        &mut self,
+        source: &DS,
+        line_num: usize,
+    ) -> Result<usize, Error> {
         self.buf_cache.offset_of_line(source, line_num)
     }
 
-    fn line_of_offset<DS: DataSource>(&mut self, source: &DS, offset: usize)
-        -> Result<usize, Error>
-    {
+    fn line_of_offset<DS: DataSource>(
+        &mut self,
+        source: &DS,
+        offset: usize,
+    ) -> Result<usize, Error> {
         self.buf_cache.line_of_offset(source, offset)
     }
 
     /// Updates the cache by applying this delta.
-    fn update(&mut self, delta: Option<&RopeDelta>, buf_size: usize,
-              num_lines: usize, rev: u64) {
+    fn update(&mut self, delta: Option<&RopeDelta>, buf_size: usize, num_lines: usize, rev: u64) {
         let _t = trace_block("StateCache::update", &["plugin"]);
 
         if let Some(ref delta) = delta {
@@ -125,7 +123,9 @@ impl<S: Clone + Default> StateCache<S> {
                 if let Some(ref s) = item.user_state {
                     return (item.line_num, item.offset, s.clone());
                 }
-                if ix == 0 { break; }
+                if ix == 0 {
+                    break;
+                }
                 ix -= 1;
             }
         }
@@ -134,14 +134,14 @@ impl<S: Clone + Default> StateCache<S> {
 
     /// Get the state at the given line number, if it exists in the cache.
     pub fn get(&self, line_num: usize) -> Option<&S> {
-        self.find_line(line_num).ok()
-            .and_then(|ix| self.state_cache[ix].user_state.as_ref())
+        self.find_line(line_num).ok().and_then(|ix| self.state_cache[ix].user_state.as_ref())
     }
 
     /// Set the state at the given line number. Note: has no effect if line_num
     /// references the end of the partial line at EOF.
     pub fn set<DS>(&mut self, source: &DS, line_num: usize, s: S)
-        where DS: DataSource,
+    where
+        DS: DataSource,
     {
         if let Some(entry) = self.get_entry(source, line_num) {
             entry.user_state = Some(s);
@@ -151,9 +151,9 @@ impl<S: Clone + Default> StateCache<S> {
     /// Get the cache entry at the given line number, creating it if necessary.
     /// Returns None if line_num > number of newlines in doc (ie if it references
     /// the end of the partial line at EOF).
-    fn get_entry<DS>(&mut self, source: &DS, line_num: usize)
-        -> Option<&mut CacheEntry<S>>
-        where DS: DataSource,
+    fn get_entry<DS>(&mut self, source: &DS, line_num: usize) -> Option<&mut CacheEntry<S>>
+    where
+        DS: DataSource,
     {
         match self.find_line(line_num) {
             Ok(ix) => Some(&mut self.state_cache[ix]),
@@ -161,7 +161,9 @@ impl<S: Clone + Default> StateCache<S> {
                 if line_num == self.buf_cache.num_lines {
                     None
                 } else {
-                    let offset = self.buf_cache.offset_of_line(source, line_num)
+                    let offset = self
+                        .buf_cache
+                        .offset_of_line(source, line_num)
                         .expect("get_entry should validate inputs");
                     let new_ix = self.insert_entry(line_num, offset, None);
                     Some(&mut self.state_cache[new_ix])
@@ -178,9 +180,7 @@ impl<S: Clone + Default> StateCache<S> {
         match self.find_line(line_num) {
             Ok(_ix) => panic!("entry already exists"),
             Err(ix) => {
-                self.state_cache.insert(ix, CacheEntry {
-                    line_num, offset, user_state
-                });
+                self.state_cache.insert(ix, CacheEntry { line_num, offset, user_state });
                 ix
             }
         }
@@ -221,18 +221,13 @@ impl<S: Clone + Default> StateCache<S> {
     fn truncate_cache(&mut self, offset: usize) {
         let (line_num, ix) = match self.find_offset(offset) {
             Ok(ix) => (self.state_cache[ix].line_num, ix + 1),
-            Err(ix) => (
-                if ix == 0 { 0 } else {
-                    self.state_cache[ix - 1].line_num
-                },
-                ix
-            ),
+            Err(ix) => (if ix == 0 { 0 } else { self.state_cache[ix - 1].line_num }, ix),
         };
         self.truncate_frontier(line_num);
         self.state_cache.truncate(ix);
     }
 
-    pub (crate) fn truncate_frontier(&mut self, line_num: usize) {
+    pub(crate) fn truncate_frontier(&mut self, line_num: usize) {
         match self.frontier.binary_search(&line_num) {
             Ok(ix) => self.frontier.truncate(ix + 1),
             Err(ix) => {
@@ -259,8 +254,7 @@ impl<S: Clone + Default> StateCache<S> {
         }
     }
 
-    fn line_cache_simple_insert(&mut self, start: usize, new_len: usize,
-                                newline_num: usize) {
+    fn line_cache_simple_insert(&mut self, start: usize, new_len: usize, newline_num: usize) {
         let ix = match self.find_offset(start) {
             Ok(ix) => ix + 1,
             Err(ix) => ix,
@@ -283,9 +277,8 @@ impl<S: Clone + Default> StateCache<S> {
                 Ok(ix) => ix + 1,
                 Err(ix) => ix,
             };
-            while ix < self.state_cache.len() &&
-                self.state_cache[ix].offset <= end {
-                    self.state_cache.remove(ix);
+            while ix < self.state_cache.len() && self.state_cache[ix].offset <= end {
+                self.state_cache.remove(ix);
             }
             for entry in &mut self.state_cache[ix..] {
                 entry.line_num -= del_newline_num;
