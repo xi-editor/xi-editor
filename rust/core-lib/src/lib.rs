@@ -92,9 +92,9 @@ pub mod line_cache_shadow;
 pub mod width_cache;
 pub mod whitespace;
 pub mod line_ending;
+pub mod backspace;
 
 pub mod rpc;
-
 
 #[cfg(feature = "ledger")]
 use apps_ledger_services_public::Ledger_Proxy;
