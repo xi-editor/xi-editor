@@ -20,8 +20,11 @@ pub fn current_tid() -> Result<u64, libc::c_int> {
     use std::mem::uninitialized;
 
     #[link(name = "pthread")]
-    extern {
-        fn pthread_threadid_np(thread: libc::pthread_t, thread_id: *mut libc::uint64_t) -> libc::c_int;
+    extern "C" {
+        fn pthread_threadid_np(
+            thread: libc::pthread_t,
+            thread_id: *mut libc::uint64_t,
+        ) -> libc::c_int;
     }
 
     unsafe {
@@ -29,7 +32,7 @@ pub fn current_tid() -> Result<u64, libc::c_int> {
         let err = pthread_threadid_np(0, &mut tid);
         match err {
             0 => Ok(tid),
-            _ => Err(err)
+            _ => Err(err),
         }
     }
 }
@@ -53,28 +56,35 @@ pub fn current_tid() -> Result<u64, libc::c_int> {
 #[cfg(any(target_os = "linux", target_os = "android"))]
 #[inline]
 pub fn current_tid() -> Result<u64, libc::c_int> {
-    unsafe {
-        Ok(libc::syscall(libc::SYS_gettid) as u64)
-    }
+    unsafe { Ok(libc::syscall(libc::SYS_gettid) as u64) }
 }
 
 // TODO: maybe use https://github.com/alexcrichton/cfg-if to simplify this?
 // pthread-based fallback
-#[cfg(all(target_family = "unix", not(any(target_os = "macos", target_os = "ios", target_os = "linux", target_os = "android", target_os = "fuchsia"))))]
+#[cfg(
+    all(
+        target_family = "unix",
+        not(
+            any(
+                target_os = "macos",
+                target_os = "ios",
+                target_os = "linux",
+                target_os = "android",
+                target_os = "fuchsia"
+            )
+        )
+    )
+)]
 pub fn current_tid() -> Result<u64, libc::c_int> {
-    unsafe {
-        Ok(libc::pthread_self() as u64)
-    }
+    unsafe { Ok(libc::pthread_self() as u64) }
 }
 
 #[cfg(target_os = "windows")]
 #[inline]
 pub fn current_tid() -> Result<u64, libc::c_int> {
-    extern {
+    extern "C" {
         fn GetCurrentThreadId() -> libc::c_ulong;
     }
 
-    unsafe {
-        Ok(GetCurrentThreadId() as u64)
-    }
+    unsafe { Ok(GetCurrentThreadId() as u64) }
 }
