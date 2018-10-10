@@ -59,21 +59,23 @@ fn get_logging_directory_path<P: AsRef<Path>>(directory: P) -> Result<PathBuf, i
 /// See `Path`'s `parent()` function for more details.
 /// # Examples
 /// ```
-/// use std::path::PathBuf;
-/// let path_with_file = PathBuf::from("/some/directory/then/file");
+/// use std::path::Path;
+/// use std::ffi::OsStr;
+///
+/// let path_with_file = Path::new("/some/directory/then/file");
 /// assert_eq!(Some(OsStr::new("file")), path_with_file.file_name());
 /// assert_eq!(create_log_directory(path_with_file).is_ok(), true);
 ///
-/// let path_with_other_file = PathBuf::from("/other_file");
+/// let path_with_other_file = Path::new("/other_file");
 /// assert_eq!(Some(OsStr::new("other_file")), path_with_other_file.file_name());
 /// assert_eq!(create_log_directory(path_with_file).is_ok(), true);
 ///
 /// // Path that is just the root or prefix:
-/// let path_without_file = PathBuf::from("/");
-/// assert_eq!(None, path_with_file.file_name());
-/// assert_eq!(create_log_directory(path_with_file).is_ok(), false);
+/// let path_without_file = Path::new("/");
+/// assert_eq!(None, path_without_file.file_name());
+/// assert_eq!(create_log_directory(path_without_file).is_ok(), false);
 /// ```
-fn create_log_directory(path_with_file: &PathBuf) -> Result<(), io::Error> {
+fn create_log_directory(path_with_file: &Path) -> Result<(), io::Error> {
     let log_dir = path_with_file.parent().ok_or(io::Error::new(
         io::ErrorKind::InvalidInput,
         format!(
@@ -85,7 +87,7 @@ fn create_log_directory(path_with_file: &PathBuf) -> Result<(), io::Error> {
     Ok(())
 }
 
-fn setup_logging(logging_path: Option<PathBuf>) -> Result<(), fern::InitError> {
+fn setup_logging(logging_path: Option<&Path>) -> Result<(), fern::InitError> {
     let level_filter = match std::env::var("XI_LOG") {
         Ok(level) => match level.to_lowercase().as_ref() {
             "trace" => log::LevelFilter::Trace,
@@ -108,8 +110,8 @@ fn setup_logging(logging_path: Option<PathBuf>) -> Result<(), fern::InitError> {
         }).level(level_filter)
         .chain(io::stderr());
 
-    if let Some(logging_file_path) = &logging_path {
-        create_log_directory(&logging_file_path)?;
+    if let Some(logging_file_path) = logging_path {
+        create_log_directory(logging_file_path)?;
 
         fern_dispatch = fern_dispatch.chain(fern::log_file(logging_file_path)?);
     };
@@ -120,7 +122,7 @@ fn setup_logging(logging_path: Option<PathBuf>) -> Result<(), fern::InitError> {
 
     // Log details of the logging_file_path result using fern/log
     // Either logging the path fern is outputting to or the error from obtaining the path
-    match &logging_path {
+    match logging_path {
         Some(logging_file_path) => info!("Writing logs to: {}", logging_file_path.display()),
         None => warn!("No path was supplied for the log file. Not saving logs to disk, falling back to just stderr"),
     }
@@ -229,19 +231,18 @@ fn main() {
 
     let logging_path_result = generate_logging_path(logfile_config);
 
-    let mut logging_path: Option<PathBuf> = None;
-    let mut logging_error: Option<io::Error> = None;
-    match logging_path_result {
-        Ok(val) => logging_path = Some(val),
-        Err(e) => logging_error = Some(e),
-    };
+    let logging_path = logging_path_result
+        .as_ref()
+        .map(|p: &PathBuf| -> &Path { p.as_path() })
+        .ok();
+
     if let Err(e) = setup_logging(logging_path) {
         eprintln!(
             "[ERROR] setup_logging returned error, logging not enabled: {:?}",
             e
         );
     }
-    if let Some(e) = logging_error {
+    if let Err(e) = logging_path_result.as_ref() {
         warn!(
             "Unable to generate the logging path to pass to set up: {}",
             e
