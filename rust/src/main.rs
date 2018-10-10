@@ -49,7 +49,7 @@ fn get_logging_directory_path<P: AsRef<Path>>(directory: P) -> Result<PathBuf, i
 /// This function tries to create the parent directories for a file
 ///
 /// It wraps around the `parent()` function of `Path` which returns an `Option<&Path>` and
-/// `fs::create_dir_all` which returns an `io::Result<()`.
+/// `fs::create_dir_all` which returns an `io::Result<()>`.
 ///
 /// This allows you to use `?`/`try!()` to create the dir and you recive the additional custom error for when `parent()`
 /// returns nothing.
@@ -75,7 +75,7 @@ fn get_logging_directory_path<P: AsRef<Path>>(directory: P) -> Result<PathBuf, i
 /// assert_eq!(None, path_without_file.file_name());
 /// assert_eq!(create_log_directory(path_without_file).is_ok(), false);
 /// ```
-fn create_log_directory(path_with_file: &Path) -> Result<(), io::Error> {
+fn create_log_directory(path_with_file: &Path) -> io::Result<()> {
     let log_dir = path_with_file.parent().ok_or(io::Error::new(
         io::ErrorKind::InvalidInput,
         format!(
