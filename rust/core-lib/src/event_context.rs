@@ -1727,4 +1727,45 @@ mod tests {
         four really nice|\n\
         lines to see." );
     }
+
+    #[test]
+    fn test_enforce_horiz_pos() {
+        use rpc::GestureType::*;
+        let initial_text = "\
+        this is a string\n\
+        that has three\n\
+        \n\
+        lines.\n\
+        And lines with very different length.";
+        let harness = ContextHarness::new(initial_text);
+        let mut ctx = harness.make_context();
+        ctx.do_edit(EditNotification::Gesture { line: 1, col: 5, ty: PointSelect });
+        ctx.do_edit(EditNotification::AddSelectionAbove);
+        assert_eq!(harness.debug_render(),"\
+        this |is a string\n\
+        that |has three\n\
+        \n\
+        lines.\n\
+        And lines with very different length.");
+
+        ctx.do_edit(EditNotification::CancelOperation);
+        ctx.do_edit(EditNotification::Gesture { line: 1, col: 5, ty: PointSelect });
+        ctx.do_edit(EditNotification::AddSelectionBelow);
+        assert_eq!(harness.debug_render(),"\
+        this is a string\n\
+        that |has three\n\
+        \n\
+        lines|.\n\
+        And lines with very different length.");
+
+        ctx.do_edit(EditNotification::CancelOperation);
+        ctx.do_edit(EditNotification::Gesture { line: 4, col: 10, ty: PointSelect });
+        ctx.do_edit(EditNotification::AddSelectionAbove);
+        assert_eq!(harness.debug_render(),"\
+        this is a string\n\
+        that has t|hree\n\
+        \n\
+        lines.\n\
+        And lines |with very different length.");
+    }
 }
