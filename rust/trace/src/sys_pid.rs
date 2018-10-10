@@ -17,13 +17,11 @@ use libc;
 #[cfg(all(target_family = "unix", not(target_os = "fuchsia")))]
 #[inline]
 pub fn current_pid() -> u64 {
-    extern {
+    extern "C" {
         fn getpid() -> libc::pid_t;
     }
 
-    unsafe {
-        getpid() as u64
-    }
+    unsafe { getpid() as u64 }
 }
 
 #[cfg(target_os = "fuchsia")]
@@ -35,11 +33,9 @@ pub fn current_pid() -> u64 {
 #[cfg(target_family = "windows")]
 #[inline]
 pub fn current_pid() -> u64 {
-    extern {
+    extern "C" {
         fn GetCurrentProcessId() -> libc::c_ulong;
     }
 
-    unsafe {
-        GetCurrentProcessId() as u64
-    }
+    unsafe { GetCurrentProcessId() as u64 }
 }
