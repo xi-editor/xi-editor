@@ -1,0 +1,29 @@
+[package]
+name = "xi-rope-fuzz"
+version = "0.0.1"
+authors = ["The xi-editor authors"]
+description = "Fuzzers for xi-rope"
+license = "Apache-2.0"
+repository = "https://github.com/xi-editor/xi-editor"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies.xi-rope]
+path = ".."
+
+[dependencies.libfuzzer-sys]
+git = "https://github.com/rust-fuzz/libfuzzer-sys.git"
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "single_edits"
+path = "fuzz_targets/single_edits.rs"
+
+[[bin]]
+name = "op_seq"
+path = "fuzz_targets/op_seq.rs"
