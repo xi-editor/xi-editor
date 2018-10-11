@@ -308,7 +308,28 @@ mod tests {
     }
 
     #[test]
-    fn basic_test() {
+    fn text_playback() {
+        let mut recorder = Recorder::new();
+
+        let recording_name = String::new();
+
+        recorder.toggle_recording(Some(recording_name.clone()));
+        recorder.record(BufferEvent::Insert("Foo".to_owned()).into());
+        recorder.record(BufferEvent::Insert("B".to_owned()).into());
+        recorder.record(BufferEvent::Insert("A".to_owned()).into());
+        recorder.record(BufferEvent::Insert("R".to_owned()).into());
+
+        recorder.toggle_recording(Some(recording_name.clone()));
+        assert_eq!(recorder.recordings.get(&recording_name).unwrap().events, vec![
+                       BufferEvent::Insert("Foo".to_owned()).into(),
+                       BufferEvent::Insert("B".to_owned()).into(),
+                       BufferEvent::Insert("A".to_owned()).into(),
+                       BufferEvent::Insert("R".to_owned()).into()
+        ]);
+    }
+
+    #[test]
+    fn basic_undo() {
         let mut recorder = Recorder::new();
 
         let recording_name = String::new();
@@ -325,7 +346,7 @@ mod tests {
     }
 
     #[test]
-    fn basic_test_swapped() {
+    fn basic_undo_swapped() {
         let mut recorder = Recorder::new();
 
         let recording_name = String::new();
