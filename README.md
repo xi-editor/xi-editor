@@ -5,7 +5,7 @@
 
 <p align="center"><em>(pronounced "Zigh")</em></p>
 
-<h4 align="center">A modern editor with a backend written in Rust.</h4>
+<h4 align="center">A modern editor with a backend written in Rust</h4>
 
 ***Note:*** *This is repo contains only the editor core, which is not usable on its own. For editors based on it, check out the list in [Frontends](#frontends).*
 
@@ -24,7 +24,7 @@ Goals include:
   technology available (Core Text on Mac, DirectWrite on Windows, etc.), and
   support Unicode fully.
 
-* ***Reliability***. Crashing, hanging, or losing work should never happen.
+* ***Reliability***. Crashing, hanging or losing work should never happen.
 
 * ***Developer friendliness***. It should be easy to customize xi editor, whether
   by adding plug-ins or hacking on the core.
@@ -132,7 +132,7 @@ contribute to the above goals:
   version control, deeper static analyzers of code, etc.
 
 * ***JSON***. The protocol for front-end / back-end communication, as well as
-  between the back-end and plug-ins, is based on simple JSON messages. I
+  between the back-end and plugins, is based on simple JSON messages. I
   considered binary formats, but the actual improvement in performance would
   be completely in the noise. Using JSON considerably lowers friction for
   developing plug-ins, as it’s available out of the box for most modern
