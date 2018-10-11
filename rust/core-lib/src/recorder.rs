@@ -84,6 +84,15 @@ impl Recorder {
     /// on each event.
     pub(crate) fn play<F>(&self, recording_name: &str, action: F)
         where F: FnMut(&EventDomain) -> () {
+        let is_current_recording: bool = self.active_recording.as_ref().map_or(false, |current_recording| {
+            current_recording == recording_name
+        });
+
+        if is_current_recording {
+            warn!("Cannot play recording while it's currently active!");
+            return;
+        }
+
         self.recordings.get(recording_name)
             .and_then(|recording| {
                 recording.play(action);
