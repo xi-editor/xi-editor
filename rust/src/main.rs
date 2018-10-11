@@ -136,10 +136,7 @@ fn generate_logging_path(logfile_config: LogfileConfig) -> Result<PathBuf, io::E
         None => PathBuf::from(XI_LOG_FILE),
     };
     if logfile_file_name.eq(Path::new("")) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "A blank file name was supplied",
-        ));
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "A blank file name was supplied"));
     };
     // Use the directory name set in logfile_config or fallback to the default
     let logfile_directory_name = match logfile_config.directory {
@@ -165,9 +162,8 @@ fn get_flags() -> HashMap<String, Option<String>> {
 
             // Check the next argument doesn't start with the flag prefix
             // map_or accounts for peek returning an Option
-            let next_arg_not_a_flag: bool = args_iterator
-                .peek()
-                .map_or(false, |val| !val.starts_with(flag_prefix));
+            let next_arg_not_a_flag: bool =
+                args_iterator.peek().map_or(false, |val| !val.starts_with(flag_prefix));
             if next_arg_not_a_flag {
                 flags.insert(key, args_iterator.next());
             }
@@ -188,10 +184,7 @@ fn extract_env_or_flag(
     flags: &HashMap<String, Option<String>>,
     conf: EnvFlagConfig,
 ) -> Option<String> {
-    flags
-        .get(conf.flag_name)
-        .cloned()
-        .unwrap_or(std::env::var(conf.env_name).ok())
+    flags.get(conf.flag_name).cloned().unwrap_or(std::env::var(conf.env_name).ok())
 }
 
 struct LogfileConfig {
@@ -201,22 +194,13 @@ struct LogfileConfig {
 
 fn generate_logfile_config(flags: &HashMap<String, Option<String>>) -> LogfileConfig {
     // If the key is set, get the Option within
-    let log_dir_env_flag = EnvFlagConfig {
-        env_name: "XI_LOG_DIR",
-        flag_name: "log-dir",
-    };
-    let log_file_env_flag = EnvFlagConfig {
-        env_name: "XI_LOG_FILE",
-        flag_name: "log-file",
-    };
+    let log_dir_env_flag = EnvFlagConfig { env_name: "XI_LOG_DIR", flag_name: "log-dir" };
+    let log_file_env_flag = EnvFlagConfig { env_name: "XI_LOG_FILE", flag_name: "log-file" };
     let log_dir_flag_option = extract_env_or_flag(&flags, log_dir_env_flag).map(PathBuf::from);
 
     let log_file_flag_option = extract_env_or_flag(&flags, log_file_env_flag).map(PathBuf::from);
 
-    LogfileConfig {
-        directory: log_dir_flag_option,
-        file: log_file_flag_option,
-    }
+    LogfileConfig { directory: log_dir_flag_option, file: log_file_flag_option }
 }
 
 fn main() {
@@ -231,22 +215,14 @@ fn main() {
 
     let logging_path_result = generate_logging_path(logfile_config);
 
-    let logging_path = logging_path_result
-        .as_ref()
-        .map(|p: &PathBuf| -> &Path { p.as_path() })
-        .ok();
+    let logging_path =
+        logging_path_result.as_ref().map(|p: &PathBuf| -> &Path { p.as_path() }).ok();
 
     if let Err(e) = setup_logging(logging_path) {
-        eprintln!(
-            "[ERROR] setup_logging returned error, logging not enabled: {:?}",
-            e
-        );
+        eprintln!("[ERROR] setup_logging returned error, logging not enabled: {:?}", e);
     }
     if let Err(e) = logging_path_result.as_ref() {
-        warn!(
-            "Unable to generate the logging path to pass to set up: {}",
-            e
-        )
+        warn!("Unable to generate the logging path to pass to set up: {}", e)
     }
 
     match rpc_looper.mainloop(|| stdin.lock(), &mut state) {

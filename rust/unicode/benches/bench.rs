@@ -21,7 +21,7 @@ extern crate xi_unicode;
 #[cfg(test)]
 mod bench {
     use std::cmp::max;
-    use test::{Bencher, black_box};
+    use test::{black_box, Bencher};
     use xi_unicode::linebreak_property;
     use xi_unicode::linebreak_property_str;
     use xi_unicode::LineBreakIterator;
