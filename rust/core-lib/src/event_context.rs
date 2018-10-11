@@ -1583,7 +1583,34 @@ mod tests {
     }
 
     #[test]
-    fn recording_test() {
+    fn text_recording() {
+        use rpc::GestureType::*;
+        let initial_text = "";
+        let harness = ContextHarness::new(initial_text);
+        let mut ctx = harness.make_context();
+
+        let recording_name = String::new();
+
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 0, ty: PointSelect });
+        assert_eq!(harness.debug_render(), "|");
+
+        ctx.do_edit(EditNotification::ToggleRecording { recording_name: Some(recording_name.clone()) });
+
+        ctx.do_edit(EditNotification::Insert { chars: "Foo ".to_owned() });
+        ctx.do_edit(EditNotification::Insert { chars: "B".to_owned() });
+        ctx.do_edit(EditNotification::Insert { chars: "A".to_owned() });
+        ctx.do_edit(EditNotification::Insert { chars: "R".to_owned() });
+        assert_eq!(harness.debug_render(), "Foo BAR|");
+
+        ctx.do_edit(EditNotification::ToggleRecording { recording_name: Some(recording_name.clone())});
+        ctx.do_edit(EditNotification::Insert { chars: " ".to_owned() });
+
+        ctx.do_edit(EditNotification::PlayRecording { recording_name });
+        assert_eq!(harness.debug_render(), "Foo BAR Foo BAR|");
+    }
+
+    #[test]
+    fn movement_recording() {
         use rpc::GestureType::*;
         let initial_text = "\
         this is a string\n\
