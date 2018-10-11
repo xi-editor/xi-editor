@@ -27,18 +27,18 @@ pub fn offset_for_delete_backwards(view: &View, region: &SelRegion, text: &Rope,
     if !region.is_caret() {
         region.min()
     } else {
+        // backspace deletes max(1, tab_size) contiguous spaces
+        let (_, c) = view.offset_to_line_col(&text, region.start);
+
+        let tab_off = c % config.tab_size;
+        let tab_size = config.tab_size;
+        let tab_size = if tab_off == 0 { tab_size } else { tab_off };
+        let tab_start = region.start.saturating_sub(tab_size);
+        let preceded_by_spaces = region.start > 0 &&
+            (tab_start..region.start).all(|i| text.byte_at(i) == b' ');
         if preceded_by_spaces
             && config.translate_tabs_to_spaces
             && config.use_tab_stops {
-            // backspace deletes max(1, tab_size) contiguous spaces
-            let (_, c) = view.offset_to_line_col(&text, region.start);
-
-            let tab_off = c % config.tab_size;
-            let tab_size = config.tab_size;
-            let tab_size = if tab_off == 0 { tab_size } else { tab_off };
-            let tab_start = region.start.saturating_sub(tab_size);
-            let preceded_by_spaces = region.start > 0 &&
-                (tab_start..region.start).all(|i| text.byte_at(i) == b' ');
             tab_start
         } else {
             #[derive(PartialEq)]
