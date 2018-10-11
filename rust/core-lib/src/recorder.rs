@@ -214,6 +214,54 @@ mod tests {
     }
 
     #[test]
+    fn play_only_after_saved() {
+        let mut recorder = Recorder::new();
+
+        let recording_name = String::new();
+        let expected_events: Vec<EventDomain> = vec![
+            BufferEvent::Indent.into(),
+            BufferEvent::Outdent.into(),
+            BufferEvent::DuplicateLine.into(),
+            BufferEvent::Transpose.into(),
+        ];
+
+        recorder.toggle_recording(Some(recording_name.clone()));
+        for event in expected_events.iter().rev() {
+            recorder.record(event.clone());
+        }
+
+        recorder.play(&recording_name, |_| {
+            // We shouldn't have any events to play since nothing was saved!
+            assert!(false);
+        });
+    }
+
+    #[test]
+    fn prevent_same_playback() {
+        let mut recorder = Recorder::new();
+
+        let recording_name = String::new();
+        let expected_events: Vec<EventDomain> = vec![
+            BufferEvent::Indent.into(),
+            BufferEvent::Outdent.into(),
+            BufferEvent::DuplicateLine.into(),
+            BufferEvent::Transpose.into(),
+        ];
+
+        recorder.toggle_recording(Some(recording_name.clone()));
+        for event in expected_events.iter().rev() {
+            recorder.record(event.clone());
+        }
+        recorder.toggle_recording(Some(recording_name.clone()));
+
+        recorder.toggle_recording(Some(recording_name.clone()));
+        recorder.play(&recording_name, |_| {
+            // We shouldn't be able to play a recording while recording with the same name
+            assert!(false);
+        });
+    }
+
+    #[test]
     fn clear_recording() {
         let mut recorder = Recorder::new();
 
