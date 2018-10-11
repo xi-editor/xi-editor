@@ -29,6 +29,8 @@ Goals include:
 * ***Developer friendliness***. It should be easy to customize xi editor, whether
   by adding plug-ins or hacking on the core.
 
+**Learn more** in the Recurse Center talk covering Xi: https://www.recurse.com/events/localhost-raph-levien
+
 Screenshot (will need to be updated as syntax coloring and UI polish is added):
 
 ![xi-mac screenshot](/docs/docs/img/xi-mac-screenshot.png?raw=true)
