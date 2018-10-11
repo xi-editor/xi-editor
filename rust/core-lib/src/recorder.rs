@@ -20,6 +20,7 @@ use edit_types::{BufferEvent, EventDomain};
 /// A container that manages and holds all recordings for the current editing session
 pub(crate) struct Recorder {
     active_recording: Option<String>,
+    recording_buffer: Vec<EventDomain>,
     recordings: HashMap<String, Recording>,
 }
 
@@ -27,6 +28,7 @@ impl Recorder {
     pub(crate) fn new() -> Recorder {
         Recorder {
             active_recording: None,
+            recording_buffer: Vec::new(),
             recordings: HashMap::new(),
         }
     }
@@ -52,12 +54,12 @@ impl Recorder {
         let last_recording = self.active_recording.take();
 
         match (is_recording, &last_recording, &recording_name) {
-            (true, Some(last_recording), None) => self.filter_recording(last_recording),
+            (true, Some(last_recording), None) => self.save_recording_buffer(last_recording.clone()),
             (true, Some(last_recording), Some(recording_name)) => {
                 if last_recording != recording_name {
-                    self.clear(last_recording);
+                    self.recording_buffer.clear();
                 } else {
-                    self.filter_recording(last_recording);
+                    self.save_recording_buffer(last_recording.clone());
                     return;
                 }
             },
@@ -75,10 +77,7 @@ impl Recorder {
             return;
         }
 
-        let current_recording = self.active_recording.as_ref().unwrap();
-        let recording = self.recordings.entry(current_recording.clone())
-            .or_insert(Recording::new());
-        recording.events.push(cmd);
+        self.recording_buffer.push(cmd);
     }
 
     /// Iterates over a specified recording's buffer and runs the specified action
@@ -97,43 +96,17 @@ impl Recorder {
         self.recordings.remove(recording_name);
     }
 
-    fn filter_recording(&mut self, recording_name: &str) {
-        self.recordings.get_mut(recording_name)
-            .and_then(|recording| {
-                recording.filter_undos();
-                Some(())
-            });
-    }
-}
-
-struct Recording {
-    events: Vec<EventDomain>
-}
-
-impl Recording {
-    fn new() -> Recording {
-        Recording {
-            events: Vec::new()
-        }
-    }
-
-    /// Iterates over the recording buffer and runs the specified action
-    /// on each event.
-    fn play<F>(&self, action: F)
-        where F: FnMut(&EventDomain) -> () {
-        self.events.iter().for_each(action)
-    }
-
-    /// Cleans the recording buffer by filtering out any undo or redo events.
+    /// Cleans the recording buffer by filtering out any undo or redo events and then saves it
+    /// with the specified name.
     ///
     /// A recording should not store any undos or redos--
     /// call this once a recording is 'finalized.'
-    fn filter_undos(&mut self) {
+    fn save_recording_buffer(&mut self, recording_name: String) {
         let mut saw_undo = false;
         let mut saw_redo = false;
 
         // Walk the recording backwards and remove any undo / redo events
-        let filtered: Vec<EventDomain> = self.events.clone()
+        let filtered: Vec<EventDomain> = self.recording_buffer.clone()
             .into_iter()
             .rev()
             .filter(|event| {
@@ -165,7 +138,28 @@ impl Recording {
             .rev()
             .collect();
 
-        mem::replace(&mut self.events, filtered);
+        let current_recording = Recording::new(filtered);
+        self.recordings.insert(recording_name, current_recording);
+        self.recording_buffer.clear();
+    }
+}
+
+struct Recording {
+    events: Vec<EventDomain>
+}
+
+impl Recording {
+    fn new(events: Vec<EventDomain>) -> Recording {
+        Recording {
+            events
+        }
+    }
+
+    /// Iterates over the recording buffer and runs the specified action
+    /// on each event.
+    fn play<F>(&self, action: F)
+        where F: FnMut(&EventDomain) -> () {
+        self.events.iter().for_each(action)
     }
 }
 
