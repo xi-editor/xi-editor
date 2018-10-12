@@ -449,7 +449,12 @@ impl View {
         let start = self.line_col_to_offset(text, line, 0);
         let end = self.line_col_to_offset(text, line + 1, 0);
 
-        self.select_region(text, SelRegion::new(start, end), multi_select);
+        let mut sel = match multi_select {
+            true => self.selection.clone(),
+            false => Selection::new(),
+        };
+        sel.add_region(SelRegion::new(start, end));
+        self.set_selection_raw(text, sel.into());
         self.start_drag(offset, start, end, SelectionGranularity::Line, multi_select);
     }
 
@@ -499,6 +504,7 @@ impl View {
     /// Does a drag gesture, setting the selection from a combination of the drag
     /// state and new offset.
     fn do_drag(&mut self, text: &Rope, line: u64, col: u64, affinity: Affinity) {
+        let mut is_line = false;
         let offset = self.line_col_to_offset(text, line as usize, col as usize);
         let new_sel = self.drag_state.as_ref().map(|drag_state| {
             let mut sel = drag_state.base_sel.clone();
@@ -525,7 +531,11 @@ impl View {
         });
 
         if let Some(sel) = new_sel {
-            self.set_selection(text, sel);
+            if is_line {
+                self.set_selection_raw(text, sel);
+            } else {
+                self.set_selection(text, sel);
+            }
         }
     }
 
