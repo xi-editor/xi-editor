@@ -14,7 +14,7 @@ matrix:
   allow_failures:
     - rust: nightly
 
-# windows runs in a Git Bash shell so these (should) work the same way as on *nix
+# windows builds run in git bash so these (should) Just Work
 cache:
   directories:
     - $HOME/.cargo
