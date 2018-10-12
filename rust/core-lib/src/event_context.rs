@@ -166,6 +166,18 @@ impl<'a> EventContext<'a> {
                 let recorder = self.recorder.borrow();
                 recorder.play(&recording_name, |event| {
                     self.broadcast_event(event.clone());
+
+                    // TODO: Shamelessly copied from after_edit... look into DRY
+                    let mut ed = self.editor.borrow_mut();
+                    let (delta, last_text, keep_sels) = match ed.commit_delta() {
+                        Some(edit_info) => edit_info,
+                        None => return,
+                    };
+                    let mut width_cache = self.width_cache.borrow_mut();
+                    let iter_views = iter::once(&self.view).chain(self.siblings.iter());
+                    iter_views.for_each(|view| view.borrow_mut()
+                        .after_edit(ed.get_buffer(), &last_text, &delta,
+                                    self.client, &mut width_cache, keep_sels));
                 })
             }
             SpecialEvent::ClearRecording(recording_name) => {
@@ -233,6 +245,7 @@ impl<'a> EventContext<'a> {
     /// This only updates internal state; it does not update the client.
     fn after_edit(&mut self, author: &str) {
         let _t = trace_block("EventContext::after_edit", &["core"]);
+
         let mut ed = self.editor.borrow_mut();
         let (delta, last_text, keep_sels) = match ed.commit_delta() {
             Some(edit_info) => edit_info,
