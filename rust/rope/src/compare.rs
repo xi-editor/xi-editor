@@ -138,21 +138,14 @@ pub fn ne_idx_rev_simd(one: &[u8], two: &[u8]) -> Option<usize> {
 #[allow(dead_code)]
 #[doc(hidden)]
 pub fn ne_idx_fallback(one: &[u8], two: &[u8]) -> Option<usize> {
-    for i in 0..one.len().min(two.len()) {
-        if one[i] != two[i] { return Some(i); }
-    }
-    None
+    one.iter().zip(two.iter()).position(|(a, b)| a != b)
 }
 
 #[inline]
 #[allow(dead_code)]
 #[doc(hidden)]
 pub fn ne_idx_rev_fallback(one: &[u8], two: &[u8]) -> Option<usize> {
-    let min_len =  one.len().min(two.len());
-    for i in 1..min_len + 1 {
-        if one[one.len()-i] != two[two.len()-i] { return Some(i - 1); }
-    }
-    None
+    one.iter().rev().zip(two.iter().rev()).position(|(a, b)| a != b)
 }
 
 /// Utility for efficiently comparing two ropes.
