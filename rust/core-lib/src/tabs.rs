@@ -112,7 +112,7 @@ pub struct CoreState {
     /// it can be passed to plugins.
     self_ref: Option<WeakXiCore>,
     /// Views which need to have setup finished.
-    pending_views: Vec<(ViewId, Table, bool)>,
+    pending_views: Vec<(ViewId, Table)>,
     peer: Client,
     id_counter: Counter,
     plugins: PluginCatalog,
@@ -354,10 +354,9 @@ impl CoreState {
         let view_id = self.next_view_id();
         let buffer_id = self.next_buffer_id();
 
-        let mut is_existing_file = false;
 
         let rope = match path.as_ref() {
-            Some(p) => {is_existing_file = true; self.file_manager.open(p, buffer_id)?},
+            Some(p) => self.file_manager.open(p, buffer_id)?,
             None => Rope::from(""),
         };
 
@@ -373,7 +372,7 @@ impl CoreState {
         //view_id before we can send any events to this view. We use mark the
         // viewa s pending and schedule the idle handler so that we can finish
         // setting up this view on the next runloop pass.
-        self.pending_views.push((view_id, config, is_existing_file));
+        self.pending_views.push((view_id, config));
         self.peer.schedule_idle(NEW_VIEW_IDLE_TOKEN);
 
         Ok(json!(view_id))
@@ -551,8 +550,12 @@ impl CoreState {
 
     fn finalize_new_views(&mut self) {
         let to_start = mem::replace(&mut self.pending_views, Vec::new());
-        to_start.iter().for_each(|(id, config, is_existing_file)| {
-            if *is_existing_file {
+        to_start.iter().for_each(|(id, config)| {
+            let buffer_id = self.views.get(&id).map(|v| v.borrow().get_buffer_id()).unwrap();
+            let has_contents = self.editors.get(&buffer_id)
+                .map(|e| !e.borrow().get_buffer().len() == 0)
+                .unwrap_or_default();
+            if has_contents {
                 let modified = self.detect_whitespace(*id, config);
                 let config = modified.as_ref().unwrap_or(config);
                 let mut edit_ctx = self.make_context(*id).unwrap();
