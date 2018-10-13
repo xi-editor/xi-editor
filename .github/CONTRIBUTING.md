@@ -11,13 +11,16 @@ follow the [Code of Conduct](https://github.com/xi-editor/xi-editor/blob/master/
     - [Improving and reviewing docs](#improving-and-reviewing-docs)
     - [Reviewing and testing changes](#reviewing-and-testing-changes)
 - [Proposing and making changes](#proposing-and-making-changes)
-	- [Finding something to work on](#finding-something-to-work-on)
+    - [Finding something to work on](#finding-something-to-work-on)
     - [Before you start](#before-you-start-work)
     - [Before you open your PR](#before-you-open-your-pr)
     - [Review process](#review-process)
+    - [After submitting your change](#after-submitting-your-change)
 - [Getting more involved](#getting-more-involved)
 
 ## Getting started
+
+### Very first steps
 
 Not sure where to start? If you haven't already, take a look at the 
 [docs](http://xi-editor.github.io/xi-editor/docs.html) to get a better
