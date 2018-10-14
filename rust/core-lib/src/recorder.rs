@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use xi_trace::trace_block;
+
 use std::mem;
 use std::collections::HashMap;
 
@@ -168,6 +170,7 @@ impl Recording {
     /// on each event.
     fn play<F>(&self, action: F)
         where F: FnMut(&EventDomain) -> () {
+        let _guard = trace_block("Recording::play", &["core", "recording"]);
         self.events.iter().for_each(action)
     }
 }
