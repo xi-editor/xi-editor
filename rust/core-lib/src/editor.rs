@@ -587,20 +587,29 @@ impl Editor {
         (as_interval, interval_rope)
     }
 
-    fn do_transpose(&mut self, view: &View) {
+    fn do_transpose(&mut self, view: &View, config: &BufferItems) {
         let mut builder = delta::Builder::new(self.text.len());
         let mut last = 0;
         let mut optional_previous_selection : Option<(Interval, Rope)> =
             last_selection_region(view.sel_regions()).map(
                 |&region| self.sel_region_to_interval_and_rope(region));
+        let line_ending = &config.line_ending;
 
         for &region in view.sel_regions() {
             if region.is_caret() {
-                let middle = region.end;
-                let start = self.text.prev_grapheme_offset(middle).unwrap_or(0);
-                // Note: this matches Sublime's behavior. Cocoa would swap last
-                // two characters of line if at end of line.
-                if let Some(end) = self.text.next_grapheme_offset(middle) {
+                let mut middle = region.end;
+                let mut start = self.text.prev_grapheme_offset(middle).unwrap_or(0);
+                if let Some(mut end) = self.text.next_grapheme_offset(middle) {
+                    let end_text = self.text.slice_to_string(middle..end);
+                    if end_text == *line_ending {
+                        middle = self.text.prev_grapheme_offset(middle).unwrap_or(0);
+                        start = self.text.prev_grapheme_offset(middle).unwrap_or(0);
+                        if let Some(mut new_end) = self.text.next_grapheme_offset(middle) {
+                            end = new_end;
+                        } else {
+                            continue;
+                        }
+                    }
                     if start >= last {
                         let interval = Interval::new_closed_open(start, end);
                         let before =  self.text.slice_to_cow(start..middle);
@@ -790,7 +799,7 @@ impl Editor {
             Delete { movement, kill } =>
                 self.delete_by_movement(view, movement, kill, kill_ring),
             Backspace => self.delete_backward(view, config),
-            Transpose => self.do_transpose(view),
+            Transpose => self.do_transpose(view, config),
             Undo => self.do_undo(),
             Redo => self.do_redo(),
             Uppercase => self.transform_text(view, |s| s.to_uppercase()),
@@ -857,7 +866,7 @@ impl Editor {
                 Some(text) => Cow::Owned(text)
             }
         };
-        
+
         Some(text_cow)
     }
 
