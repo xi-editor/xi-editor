@@ -164,6 +164,13 @@ impl<'a> EventContext<'a> {
             SpecialEvent::ToggleRecording(_) => {}
             SpecialEvent::PlayRecording(recording_name) => {
                 let recorder = self.recorder.borrow();
+
+                // Don't group playback with the previous action
+                self.editor.borrow_mut().update_edit_type();
+                self.editor.borrow_mut().calculate_undo_group();
+
+                // No matter what, our entire playback must belong to the same undo group
+                self.editor.borrow_mut().set_force_undo_group(true);
                 recorder.play(&recording_name, |event| {
                     self.broadcast_event(event.clone());
 
@@ -178,7 +185,11 @@ impl<'a> EventContext<'a> {
                     iter_views.for_each(|view| view.borrow_mut()
                         .after_edit(ed.get_buffer(), &last_text, &delta,
                                     self.client, &mut width_cache, keep_sels));
-                })
+                });
+                self.editor.borrow_mut().set_force_undo_group(false);
+
+                // The action that follows the playback must belong to a separate undo group
+                self.editor.borrow_mut().update_edit_type();
             }
             SpecialEvent::ClearRecording(recording_name) => {
                 let mut recorder = self.recorder.borrow_mut();

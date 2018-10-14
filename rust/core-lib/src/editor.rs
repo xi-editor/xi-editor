@@ -23,7 +23,7 @@ use xi_rope::interval::Interval;
 use xi_rope::delta::{self, Delta, Transformer};
 use xi_rope::engine::{Engine, RevId, RevToken};
 use xi_rope::spans::SpansBuilder;
-use xi_trace::trace_block;
+use xi_trace::{trace_block, trace_payload};
 use xi_rope::tree::Cursor;
 
 use config::BufferItems;
@@ -74,6 +74,7 @@ pub struct Editor {
     undos: BTreeSet<usize>,
     /// undo groups that are no longer live and should be gc'ed
     gc_undos: BTreeSet<usize>,
+    force_undo_group: bool,
 
     this_edit_type: EditType,
     last_edit_type: EditType,
@@ -117,6 +118,7 @@ impl Editor {
             cur_undo: 1,
             undos: BTreeSet::new(),
             gc_undos: BTreeSet::new(),
+            force_undo_group: false,
             last_edit_type: EditType::Other,
             this_edit_type: EditType::Other,
             layers: Layers::default(),
@@ -162,6 +164,11 @@ impl Editor {
     pub(crate) fn is_pristine(&self) -> bool {
         self.engine.is_equivalent_revision(self.pristine_rev_id,
                                            self.engine.get_head_rev_id())
+    }
+
+    pub(crate) fn set_force_undo_group(&mut self, force_undo_group: bool) {
+        trace_payload("Editor::set_force_undo_group", &["core"], force_undo_group.to_string());
+        self.force_undo_group = force_undo_group;
     }
 
     /// Sets this Editor's contents to `text`, preserving undo state and cursor
@@ -211,14 +218,22 @@ impl Editor {
     /// `commit_delta` call.
     fn add_delta(&mut self, delta: Delta<RopeInfo>) {
         let head_rev_id = self.engine.get_head_rev_id();
-        let undo_group;
+        let undo_group = self.calculate_undo_group();
+        self.last_edit_type = self.this_edit_type;
+        let priority = 0x10000;
+        self.engine.edit_rev(priority, undo_group, head_rev_id.token(), delta);
+        self.text = self.engine.get_head().clone();
+    }
 
-        if !self.this_edit_type.breaks_undo_group(self.last_edit_type)
-            && !self.live_undos.is_empty()
-        {
-            undo_group = *self.live_undos.last().unwrap();
+    pub(crate) fn calculate_undo_group(&mut self) -> usize {
+        let has_undos = !self.live_undos.is_empty();
+        let force_undo_group = self.force_undo_group;
+        let is_unbroken_group = !self.this_edit_type.breaks_undo_group(self.last_edit_type);
+
+        if has_undos && (force_undo_group || is_unbroken_group) {
+            *self.live_undos.last().unwrap()
         } else {
-            undo_group = self.undo_group_id;
+            let undo_group = self.undo_group_id;
             self.gc_undos.extend(&self.live_undos[self.cur_undo..]);
             self.live_undos.truncate(self.cur_undo);
             self.live_undos.push(undo_group);
@@ -228,11 +243,8 @@ impl Editor {
                 self.gc_undos.insert(self.live_undos.remove(0));
             }
             self.undo_group_id += 1;
+            undo_group
         }
-        self.last_edit_type = self.this_edit_type;
-        let priority = 0x10000;
-        self.engine.edit_rev(priority, undo_group, head_rev_id.token(), delta);
-        self.text = self.engine.get_head().clone();
     }
 
     /// generates a delta from a plugin's response and applies it to the buffer.
