@@ -582,6 +582,15 @@ interface Line {
 }
 ```
 
+#### measure_width
+
+```
+measure_width [{"id": number, "strings": string[]}] <- {"id":0, "result":[[28.0,8.0]]}
+```
+
+Asks the frontend to send, for each pair of theme id and string
+array, the typographic lenght of each string.
+
 ---
 
 #### theme_changed
