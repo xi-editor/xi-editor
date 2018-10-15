@@ -234,7 +234,7 @@ impl<'a> Syntect<'a> {
 
                 let indent = self.indent_for_next_line(line, use_spaces, tab_size);
                 let ix = start + text.len();
-                let interval = Interval::new_open_closed(ix, ix);
+                let interval = Interval::new_closed_open(ix, ix);
                 //TODO: view should have a `get_edit_builder` fn?
                 let mut builder = EditBuilder::new(buf_size);
                 builder.replace(interval, indent.into());

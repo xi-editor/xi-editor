@@ -618,7 +618,7 @@ mod tests {
         assert_eq!(c.cached_offset_of_line(5), None);
 
         // delete a newline, and see that line_offsets is correctly updated
-        let delta = Delta::simple_edit(Interval::new_open_closed(3, 4), "".into(), c.buf_size);
+        let delta = Delta::simple_edit(Interval::new_closed_open(3, 4), "".into(), c.buf_size);
         assert!(delta.is_simple_delete());
         c.update(Some(&delta), delta.new_document_len(), 3, 1);
         assert_eq!(&c.contents, "zerone\ntwo\ntri");
@@ -650,7 +650,7 @@ mod tests {
         assert_eq!(&c.contents, "zer\none\ntwo\ntri");
         assert_eq!(&c.line_offsets, &[4, 8, 12]);
 
-        let delta = Delta::simple_edit(Interval::new_open_closed(3, 4), "".into(), c.buf_size);
+        let delta = Delta::simple_edit(Interval::new_closed_open(3, 4), "".into(), c.buf_size);
         assert!(delta.is_simple_delete());
         let (iv, _) = delta.summary();
         let start = iv.start();
@@ -820,7 +820,7 @@ mod tests {
         assert_eq!(c.get_line(&source, 2).unwrap(), "    let two = \"two\";\n");
         assert_eq!(c.get_line(&source, 3).unwrap(), "}");
 
-        let delta = Delta::simple_edit(Interval::new_open_closed(53, 54), "".into(), c.buf_size);
+        let delta = Delta::simple_edit(Interval::new_closed_open(53, 54), "".into(), c.buf_size);
         c.update(Some(&delta), base_document.len() - 1, 3, 1);
         source.0 = edited_document.into();
         assert_eq!(c.get_line(&source, 0).unwrap(), "fn main() {\n");
