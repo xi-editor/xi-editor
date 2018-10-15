@@ -200,6 +200,7 @@ struct RpcState<W: Write> {
     idle_queue: Mutex<VecDeque<usize>>,
     timers: Mutex<BinaryHeap<Timer>>,
     needs_exit: AtomicBool,
+    is_blocked: AtomicBool,
 }
 
 /// A structure holding the state of a main loop for handling RPC's.
@@ -221,6 +222,7 @@ impl<W: Write + Send> RpcLoop<W> {
             idle_queue: Mutex::new(VecDeque::new()),
             timers: Mutex::new(BinaryHeap::new()),
             needs_exit: AtomicBool::new(false),
+            is_blocked: AtomicBool::new(false),
         }));
         RpcLoop { reader: MessageReader::default(), peer: rpc_peer }
     }
@@ -271,6 +273,10 @@ impl<W: Write + Send> RpcLoop<W> {
                     let json = match self.reader.next(&mut stream) {
                         Ok(json) => json,
                         Err(err) => {
+                            if self.peer.0.is_blocked.load(Ordering::Relaxed) {
+                                warn!("failed to parse response json: {}", err);
+                                self.peer.disconnect();
+                            }
                             self.peer.put_rx(Err(err));
                             break;
                         }
@@ -416,6 +422,7 @@ impl<W: Write + Send + 'static> Peer for RawPeer<W> {
 
     fn send_rpc_request(&self, method: &str, params: &Value) -> Result<Value, Error> {
         let _trace = trace_block_payload("send req sync", &["rpc"], method.to_owned());
+        self.0.is_blocked.store(true, Ordering::Relaxed);
         let (tx, rx) = mpsc::channel();
         self.send_rpc_request_common(method, params, ResponseHandler::Chan(tx));
         rx.recv().unwrap_or(Err(Error::PeerDisconnect))
