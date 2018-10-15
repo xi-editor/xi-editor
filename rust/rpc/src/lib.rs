@@ -274,7 +274,7 @@ impl<W: Write + Send> RpcLoop<W> {
                         Ok(json) => json,
                         Err(err) => {
                             if self.peer.0.is_blocked.load(Ordering::Relaxed) {
-                                warn!("failed to parse response json: {}", err);
+                                error!("failed to parse response json: {}", err);
                                 self.peer.disconnect();
                             }
                             self.peer.put_rx(Err(err));
