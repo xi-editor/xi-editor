@@ -205,24 +205,6 @@ impl Editor {
         self.add_delta(builder.build());
     }
 
-    /// Executes a series of operations with this editor while forcing every performed action into
-    /// the same undo group.
-    pub(crate) fn while_force_grouping<F>(&mut self, mut block: F) where F: FnMut(&mut Editor) -> () {
-        let _guard = trace_block("Editor::while_force_grouping", &["core"]);
-
-        // Don't group with the previous action
-        self.update_edit_type();
-        self.calculate_undo_group();
-
-        // No matter what, our entire block must belong to the same undo group
-        self.set_force_undo_group(true);
-        block(self);
-        self.set_force_undo_group(false);
-
-        // The action that follows the block must belong to a separate undo group
-        self.update_edit_type();
-    }
-
     /// Applies a delta to the text, and updates undo state.
     ///
     /// Records the delta into the CRDT engine so that it can be undone. Also

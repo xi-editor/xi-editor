@@ -107,6 +107,19 @@ impl<'a> EventContext<'a> {
         self.plugins.iter().for_each(f)
     }
 
+    fn broadcast_event(&mut self, event: EventDomain) {
+        use self::EventDomain as E;
+        match event {
+            E::View(cmd) => {
+                self.with_view(|view, text| view.do_edit(text, cmd));
+                self.editor.borrow_mut().update_edit_type();
+            },
+            E::Buffer(cmd) => self.with_editor(
+                |ed, view, k_ring, conf| ed.do_edit(view, k_ring, conf, cmd)),
+            E::Special(cmd) => self.do_special(cmd),
+        }
+    }
+
     pub(crate) fn do_edit(&mut self, cmd: EditNotification) {
         let event: EventDomain = cmd.into();
 
@@ -128,19 +141,6 @@ impl<'a> EventContext<'a> {
         self.broadcast_event(event);
         self.after_edit("core");
         self.render_if_needed();
-    }
-
-    fn broadcast_event(&mut self, event: EventDomain) {
-        use self::EventDomain as E;
-        match event {
-            E::View(cmd) => {
-                self.with_view(|view, text| view.do_edit(text, cmd));
-                self.editor.borrow_mut().update_edit_type();
-            },
-            E::Buffer(cmd) => self.with_editor(
-                |ed, view, k_ring, conf| ed.do_edit(view, k_ring, conf, cmd)),
-            E::Special(cmd) => self.do_special(cmd),
-        }
     }
 
     fn do_special(&mut self, cmd: SpecialEvent) {
@@ -167,17 +167,26 @@ impl<'a> EventContext<'a> {
             SpecialEvent::PlayRecording(recording_name) => {
                 let recorder = self.recorder.borrow();
 
-                let mut editor = self.editor.borrow_mut();
-                editor.while_force_grouping(|ed| {
-                    recorder.play(&recording_name, |event| {
-                        self.broadcast_event(event.clone());
-                        let (delta, last_text, keep_sels) = match ed.commit_delta() {
-                            Some(edit_info) => edit_info,
-                            None => return,
-                        };
-                        self.update_views(ed, &delta, &last_text, keep_sels);
-                    });
+                // Don't group with the previous action
+                self.editor.borrow_mut().update_edit_type();
+                self.editor.borrow_mut().calculate_undo_group();
+
+                // No matter what, our entire block must belong to the same undo group
+                self.editor.borrow_mut().set_force_undo_group(true);
+                recorder.play(&recording_name, |event| {
+                    self.broadcast_event(event.clone());
+
+                    let mut editor = self.editor.borrow_mut();
+                    let (delta, last_text, keep_sels) = match editor.commit_delta() {
+                        Some(edit_info) => edit_info,
+                        None => return,
+                    };
+                    self.update_views(&editor, &delta, &last_text, keep_sels);
                 });
+                self.editor.borrow_mut().set_force_undo_group(false);
+
+                // The action that follows the block must belong to a separate undo group
+                self.editor.borrow_mut().update_edit_type();
             }
             SpecialEvent::ClearRecording(recording_name) => {
                 let mut recorder = self.recorder.borrow_mut();
