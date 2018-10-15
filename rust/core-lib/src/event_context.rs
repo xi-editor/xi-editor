@@ -22,8 +22,10 @@ use std::time::{Duration, Instant};
 use serde_json::{self, Value};
 
 use xi_rope::Rope;
+use xi_rope::tree::Node;
+use xi_rope::delta::Delta;
 use xi_rope::interval::Interval;
-use xi_rope::rope::LinesMetric;
+use xi_rope::rope::{LinesMetric, RopeInfo};
 use xi_rpc::{RemoteError, Error as RpcError};
 use xi_trace::trace_block;
 
@@ -165,31 +167,17 @@ impl<'a> EventContext<'a> {
             SpecialEvent::PlayRecording(recording_name) => {
                 let recorder = self.recorder.borrow();
 
-                // Don't group playback with the previous action
-                self.editor.borrow_mut().update_edit_type();
-                self.editor.borrow_mut().calculate_undo_group();
-
-                // No matter what, our entire playback must belong to the same undo group
-                self.editor.borrow_mut().set_force_undo_group(true);
-                recorder.play(&recording_name, |event| {
-                    self.broadcast_event(event.clone());
-
-                    // TODO: Shamelessly copied from after_edit... look into DRY
-                    let mut ed = self.editor.borrow_mut();
-                    let (delta, last_text, keep_sels) = match ed.commit_delta() {
-                        Some(edit_info) => edit_info,
-                        None => return,
-                    };
-                    let mut width_cache = self.width_cache.borrow_mut();
-                    let iter_views = iter::once(&self.view).chain(self.siblings.iter());
-                    iter_views.for_each(|view| view.borrow_mut()
-                        .after_edit(ed.get_buffer(), &last_text, &delta,
-                                    self.client, &mut width_cache, keep_sels));
+                let mut editor = self.editor.borrow_mut();
+                editor.while_force_grouping(|ed| {
+                    recorder.play(&recording_name, |event| {
+                        self.broadcast_event(event.clone());
+                        let (delta, last_text, keep_sels) = match ed.commit_delta() {
+                            Some(edit_info) => edit_info,
+                            None => return,
+                        };
+                        self.update_views(ed, &delta, &last_text, keep_sels);
+                    });
                 });
-                self.editor.borrow_mut().set_force_undo_group(false);
-
-                // The action that follows the playback must belong to a separate undo group
-                self.editor.borrow_mut().update_edit_type();
             }
             SpecialEvent::ClearRecording(recording_name) => {
                 let mut recorder = self.recorder.borrow_mut();
@@ -262,11 +250,8 @@ impl<'a> EventContext<'a> {
             Some(edit_info) => edit_info,
             None => return,
         };
-        let mut width_cache = self.width_cache.borrow_mut();
-        let iter_views = iter::once(&self.view).chain(self.siblings.iter());
-        iter_views.for_each(|view| view.borrow_mut()
-                            .after_edit(ed.get_buffer(), &last_text, &delta,
-                                        self.client, &mut width_cache, keep_sels));
+
+        self.update_views(&ed, &delta, &last_text, keep_sels);
 
         let new_len = delta.new_document_len();
         let nb_lines = ed.get_buffer().measure::<LinesMetric>() + 1;
@@ -318,6 +303,13 @@ impl<'a> EventContext<'a> {
                 view.set_has_pending_render(true);
             }
         }
+    }
+
+    fn update_views(&self, ed: &Editor, delta: &Delta<RopeInfo>, last_text: &Node<RopeInfo>, keep_sels: bool) {
+        let mut width_cache = self.width_cache.borrow_mut();
+        let iter_views = iter::once(&self.view).chain(self.siblings.iter());
+        iter_views.for_each(|view| view.borrow_mut()
+            .after_edit(ed.get_buffer(), last_text, delta, self.client, &mut width_cache, keep_sels));
     }
 
     /// Renders the view, if a render has not already been scheduled.
