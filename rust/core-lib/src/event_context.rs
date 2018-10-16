@@ -167,6 +167,8 @@ impl<'a> EventContext<'a> {
             SpecialEvent::PlayRecording(recording_name) => {
                 let recorder = self.recorder.borrow();
 
+                let starting_revision = self.editor.borrow_mut().get_head_rev_token();
+
                 // Don't group with the previous action
                 self.editor.borrow_mut().update_edit_type();
                 self.editor.borrow_mut().calculate_undo_group();
@@ -187,6 +189,9 @@ impl<'a> EventContext<'a> {
 
                 // The action that follows the block must belong to a separate undo group
                 self.editor.borrow_mut().update_edit_type();
+
+                let delta = self.editor.borrow_mut().delta_between(starting_revision);
+                self.update_plugins(&mut self.editor.borrow_mut(), delta, "core")
             }
             SpecialEvent::ClearRecording(recording_name) => {
                 let mut recorder = self.recorder.borrow_mut();
@@ -261,45 +266,7 @@ impl<'a> EventContext<'a> {
         };
 
         self.update_views(&ed, &delta, &last_text, keep_sels);
-
-        let new_len = delta.new_document_len();
-        let nb_lines = ed.get_buffer().measure::<LinesMetric>() + 1;
-        // don't send the actual delta if it is too large, by some heuristic
-        let approx_size = delta.inserts_len() + (delta.els.len() * 10);
-        let delta = if approx_size > MAX_SIZE_LIMIT { None } else { Some(delta) };
-
-        let undo_group = ed.get_active_undo_group();
-        //TODO: we want to just put EditType on the wire, but don't want
-        //to update the plugin lib quite yet.
-        let v: Value = serde_json::to_value(&ed.get_edit_type()).unwrap();
-        let edit_type_str = v.as_str().unwrap().to_string();
-
-        let update = PluginUpdate::new(
-                self.view_id,
-                ed.get_head_rev_token(),
-                delta,
-                new_len,
-                nb_lines,
-                Some(undo_group),
-                edit_type_str,
-                author.into());
-
-
-        // we always increment and decrement regardless of whether we're
-        // sending plugins, to ensure that GC runs.
-        ed.increment_revs_in_flight();
-
-        self.plugins.iter().for_each(|plugin| {
-            ed.increment_revs_in_flight();
-            let weak_core = self.weak_core.clone();
-            let id = plugin.id;
-            let view_id = self.view_id;
-            plugin.update(&update, move |resp| {
-                weak_core.handle_plugin_update(id, view_id, resp);
-            });
-        });
-        ed.dec_revs_in_flight();
-        ed.update_edit_type();
+        self.update_plugins(&mut ed, delta, author);
 
          //if we have no plugins we always render immediately.
         if !self.plugins.is_empty() {
@@ -319,6 +286,47 @@ impl<'a> EventContext<'a> {
         let iter_views = iter::once(&self.view).chain(self.siblings.iter());
         iter_views.for_each(|view| view.borrow_mut()
             .after_edit(ed.get_buffer(), last_text, delta, self.client, &mut width_cache, keep_sels));
+    }
+
+    fn update_plugins(&self, ed: &mut Editor, delta: Delta<RopeInfo>, author: &str) {
+        let new_len = delta.new_document_len();
+        let nb_lines = ed.get_buffer().measure::<LinesMetric>() + 1;
+        // don't send the actual delta if it is too large, by some heuristic
+        let approx_size = delta.inserts_len() + (delta.els.len() * 10);
+        let delta = if approx_size > MAX_SIZE_LIMIT { None } else { Some(delta) };
+
+        let undo_group = ed.get_active_undo_group();
+        //TODO: we want to just put EditType on the wire, but don't want
+        //to update the plugin lib quite yet.
+        let v: Value = serde_json::to_value(&ed.get_edit_type()).unwrap();
+        let edit_type_str = v.as_str().unwrap().to_string();
+
+        let update = PluginUpdate::new(
+            self.view_id,
+            ed.get_head_rev_token(),
+            delta,
+            new_len,
+            nb_lines,
+            Some(undo_group),
+            edit_type_str,
+            author.into());
+
+
+        // we always increment and decrement regardless of whether we're
+        // sending plugins, to ensure that GC runs.
+        ed.increment_revs_in_flight();
+
+        self.plugins.iter().for_each(|plugin| {
+            ed.increment_revs_in_flight();
+            let weak_core = self.weak_core.clone();
+            let id = plugin.id;
+            let view_id = self.view_id;
+            plugin.update(&update, move |resp| {
+                weak_core.handle_plugin_update(id, view_id, resp);
+            });
+        });
+        ed.dec_revs_in_flight();
+        ed.update_edit_type();
     }
 
     /// Renders the view, if a render has not already been scheduled.

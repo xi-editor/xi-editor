@@ -295,6 +295,10 @@ impl Editor {
         Some((delta, last_text, keep_selections))
     }
 
+    pub(crate) fn delta_between(&self, target_rev_id: u64) -> Delta<RopeInfo> {
+        self.engine.delta_rev_head(target_rev_id)
+    }
+
     #[cfg(not(target_os = "fuchsia"))]
     fn gc_undos(&mut self) {
         if self.revs_in_flight == 0 && !self.gc_undos.is_empty() {
