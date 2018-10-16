@@ -102,7 +102,7 @@ impl Recorder {
         self.recordings.remove(recording_name);
     }
 
-    /// Cleans the recording buffer by filtering out any undo or redo events and then saves it
+    /// Cleans the recording buffer by merging inserts, filtering out any undo or redo events, and then saving it
     /// with the specified name.
     ///
     /// A recording should not store any undos or redos--
@@ -113,6 +113,31 @@ impl Recorder {
 
         // Walk the recording backwards and remove any undo / redo events
         let filtered: Vec<EventDomain> = self.recording_buffer.clone()
+            .into_iter()
+            .fold(vec![], |mut acc, current_event| {
+                if !acc.last().is_some() {
+                    acc.push(current_event);
+                    return acc;
+                }
+
+                let (replace_last, new_event) = {
+                    let last_event = acc.last().unwrap();
+                    match (last_event, current_event) {
+                        (EventDomain::Buffer(BufferEvent::Insert(old_characters)), EventDomain::Buffer(BufferEvent::Insert(ref new_characters))) => {
+                            (true, EventDomain::Buffer(BufferEvent::Insert(format!("{}{}", old_characters, new_characters))))
+                        }
+                        (_, current_event) => (false, current_event)
+                    }
+                };
+
+                if replace_last {
+                    acc.pop();
+                }
+
+                acc.push(new_event);
+
+                acc
+            })
             .into_iter()
             .rev()
             .filter(|event| {
@@ -318,12 +343,7 @@ mod tests {
         recorder.record(BufferEvent::Insert("R".to_owned()).into());
 
         recorder.toggle_recording(Some(recording_name.clone()));
-        assert_eq!(recorder.recordings.get(&recording_name).unwrap().events, vec![
-                       BufferEvent::Insert("Foo".to_owned()).into(),
-                       BufferEvent::Insert("B".to_owned()).into(),
-                       BufferEvent::Insert("A".to_owned()).into(),
-                       BufferEvent::Insert("R".to_owned()).into()
-        ]);
+        assert_eq!(recorder.recordings.get(&recording_name).unwrap().events, vec![BufferEvent::Insert("FooBAR".to_owned()).into()]);
     }
 
     #[test]
