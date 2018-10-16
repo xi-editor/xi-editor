@@ -247,7 +247,7 @@ impl ScopeLayer {
 
             // apply the stack, generating children as needed.
             for i in upper_bound_of_last..stack.len() {
-                let style_mod = highlighter.get_style(&stack[0..i+1]);
+                let style_mod = highlighter.style_mod_for_stack(&stack[0..i+1]);
                 base_style_mod = base_style_mod.apply(style_mod);
             }
 
