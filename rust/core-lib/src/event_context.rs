@@ -1368,8 +1368,6 @@ mod tests {
         let harness = ContextHarness::new(initial_text);
         let mut ctx = harness.make_context();
 
-        let recording_name = String::new();
-
         ctx.do_edit(EditNotification::Gesture { line: 0, col: 5, ty: PointSelect });
         assert_eq!(harness.debug_render(),"\
         this |is a string\n\
@@ -1644,6 +1642,8 @@ mod tests {
         lines to see.";
         let harness = ContextHarness::new(initial_text);
         let mut ctx = harness.make_context();
+
+        let recording_name = String::new();
 
         ctx.do_edit(EditNotification::Gesture { line: 0, col: 5, ty: PointSelect });
         assert_eq!(harness.debug_render(),"\
