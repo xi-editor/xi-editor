@@ -13,6 +13,7 @@ os:
 matrix:
   allow_failures:
     - rust: nightly
+    - os: windows
 
 # on windows, rustup installs the msvc toolchain by default so we need link.exe
 before_script:
