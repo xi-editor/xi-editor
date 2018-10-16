@@ -273,7 +273,7 @@ impl<W: Write + Send> RpcLoop<W> {
                     let json = match self.reader.next(&mut stream) {
                         Ok(json) => json,
                         Err(err) => {
-                            if self.peer.0.is_blocked.load(Ordering::Relaxed) {
+                            if self.peer.0.is_blocked.load(Ordering::SeqCst) {
                                 error!("failed to parse response json: {}", err);
                                 self.peer.disconnect();
                             }
