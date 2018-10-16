@@ -709,7 +709,7 @@ impl View {
         // send updated find status only if there have been changes
         if self.find_changed != FindStatusChange::None {
             let matches_only = self.find_changed == FindStatusChange::Matches;
-            client.find_status(self.view_id, &json!(self.find_status(matches_only)));
+            client.find_status(self.view_id, &json!(self.find_status(text, matches_only)));
         }
 
         // send updated replace status if changed
@@ -791,11 +791,11 @@ impl View {
 
     /// Determines the current number of find results and search parameters to send them to
     /// the frontend.
-    pub fn find_status(&mut self, matches_only: bool) -> Vec<FindStatus> {
+    pub fn find_status(&mut self, text: &Rope, matches_only: bool) -> Vec<FindStatus> {
         self.find_changed = FindStatusChange::None;
 
         self.find.iter().map(|find| {
-            find.find_status(matches_only)
+            find.find_status(&self, text, matches_only)
         }).collect::<Vec<FindStatus>>()
     }
 
