@@ -166,6 +166,11 @@ impl Editor {
                                            self.engine.get_head_rev_id())
     }
 
+    /// Set whether or not edits are forced into the same undo group rather than being split by
+    /// their EditType.
+    ///
+    /// This is used for things such as recording playback, where you don't want the
+    /// individual events to be undoable, but instead the entire playback should be.
     pub(crate) fn set_force_undo_group(&mut self, force_undo_group: bool) {
         trace_payload("Editor::set_force_undo_group", &["core"], force_undo_group.to_string());
         self.force_undo_group = force_undo_group;
