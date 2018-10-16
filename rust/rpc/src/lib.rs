@@ -273,7 +273,7 @@ impl<W: Write + Send> RpcLoop<W> {
                     let json = match self.reader.next(&mut stream) {
                         Ok(json) => json,
                         Err(err) => {
-                            if self.peer.0.is_blocked.load(Ordering::SeqCst) {
+                            if self.peer.0.is_blocked.load(Ordering::Acquire) {
                                 error!("failed to parse response json: {}", err);
                                 self.peer.disconnect();
                             }
@@ -422,7 +422,7 @@ impl<W: Write + Send + 'static> Peer for RawPeer<W> {
 
     fn send_rpc_request(&self, method: &str, params: &Value) -> Result<Value, Error> {
         let _trace = trace_block_payload("send req sync", &["rpc"], method.to_owned());
-        self.0.is_blocked.store(true, Ordering::Relaxed);
+        self.0.is_blocked.store(true, Ordering::Release);
         let (tx, rx) = mpsc::channel();
         self.send_rpc_request_common(method, params, ResponseHandler::Chan(tx));
         rx.recv().unwrap_or(Err(Error::PeerDisconnect))
