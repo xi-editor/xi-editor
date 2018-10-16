@@ -72,9 +72,31 @@ impl Recorder {
     }
 
     /// Saves an event into the currently active recording.
-    pub(crate) fn record(&mut self, cmd: EventDomain) {
+    ///
+    /// Every sequential `BufferEvent::Insert` event will be merged together to cut down the number of
+    /// `Editor::commit_delta` calls we need to make when playing back.
+    pub(crate) fn record(&mut self, current_event: EventDomain) {
         assert!(self.is_recording());
-        self.recording_buffer.push(cmd);
+
+        let recording_buffer = &mut self.recording_buffer;
+
+        if !recording_buffer.last().is_some() {
+            recording_buffer.push(current_event);
+            return;
+        }
+
+        {
+            let last_event = recording_buffer.last_mut().unwrap();
+            match (last_event, &current_event) {
+                (EventDomain::Buffer(BufferEvent::Insert(old_characters)), EventDomain::Buffer(BufferEvent::Insert(new_characters))) => {
+                    old_characters.push_str(new_characters);
+                    return;
+                }
+                _ => {}
+            }
+        }
+
+        recording_buffer.push(current_event);
     }
 
     /// Iterates over a specified recording's buffer and runs the specified action
@@ -102,7 +124,7 @@ impl Recorder {
         self.recordings.remove(recording_name);
     }
 
-    /// Cleans the recording buffer by merging inserts, filtering out any undo or redo events, and then saving it
+    /// Cleans the recording buffer by filtering out any undo or redo events and then saving it
     /// with the specified name.
     ///
     /// A recording should not store any undos or redos--
@@ -113,31 +135,6 @@ impl Recorder {
 
         // Walk the recording backwards and remove any undo / redo events
         let filtered: Vec<EventDomain> = self.recording_buffer.clone()
-            .into_iter()
-            .fold(vec![], |mut acc, current_event| {
-                if !acc.last().is_some() {
-                    acc.push(current_event);
-                    return acc;
-                }
-
-                let (replace_last, new_event) = {
-                    let last_event = acc.last().unwrap();
-                    match (last_event, current_event) {
-                        (EventDomain::Buffer(BufferEvent::Insert(old_characters)), EventDomain::Buffer(BufferEvent::Insert(ref new_characters))) => {
-                            (true, EventDomain::Buffer(BufferEvent::Insert(format!("{}{}", old_characters, new_characters))))
-                        }
-                        (_, current_event) => (false, current_event)
-                    }
-                };
-
-                if replace_last {
-                    acc.pop();
-                }
-
-                acc.push(new_event);
-
-                acc
-            })
             .into_iter()
             .rev()
             .filter(|event| {
