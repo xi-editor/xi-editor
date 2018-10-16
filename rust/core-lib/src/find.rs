@@ -25,6 +25,7 @@ use selection::{Selection, SelRegion};
 use xi_rope::tree::Metric;
 use regex::{RegexBuilder, Regex};
 use word_boundaries::WordCursor;
+use view::View;
 
 const REGEX_SIZE_LIMIT: usize = 1000000;
 
@@ -47,23 +48,32 @@ pub struct FindStatus {
     whole_words: Option<bool>,
 
     /// Total number of matches.
-    matches: usize
+    matches: usize,
+
+    /// Line numbers which have find results.
+    lines: Vec<usize>
 }
 
 /// Contains logic to search text
 pub struct Find {
     /// Uniquely identifies this search query.
     id: usize,
+
     /// The occurrences, which determine the highlights, have been updated.
     hls_dirty: bool,
+
     /// The currently active search string.
     search_string: Option<String>,
+
     /// The case matching setting for the currently active search.
     case_matching: CaseMatching,
+
     /// The search query should be considered as regular expression.
     regex: Option<Regex>,
+
     /// Query matches only whole words.
     whole_words: bool,
+
     /// The set of all known find occurrences (highlights).
     occurrences: Selection,
 }
@@ -93,7 +103,7 @@ impl Find {
         self.hls_dirty
     }
 
-    pub fn find_status(&self, matches_only: bool) -> FindStatus {
+    pub fn find_status(&self, view: &View, text: &Rope, matches_only: bool) -> FindStatus {
         if matches_only {
             FindStatus {
                 id: self.id,
@@ -102,6 +112,7 @@ impl Find {
                 is_regex: None,
                 whole_words: None,
                 matches: self.occurrences.len(),
+                lines: self.occurrences.iter().map(|o| view.offset_to_line_col(text, o.min()).0).collect(),
             }
         } else {
             FindStatus {
@@ -111,6 +122,7 @@ impl Find {
                 is_regex: Some(self.regex.is_some()),
                 whole_words: Some(self.whole_words),
                 matches: self.occurrences.len(),
+                lines: self.occurrences.iter().map(|o| view.offset_to_line_col(text, o.min()).0).collect(),
             }
         }
     }
