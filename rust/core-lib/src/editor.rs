@@ -295,7 +295,7 @@ impl Editor {
         Some((delta, last_text, keep_selections))
     }
 
-    pub(crate) fn delta_between(&self, target_rev_id: u64) -> Delta<RopeInfo> {
+    pub(crate) fn delta_rev_head(&self, target_rev_id: RevToken) -> Delta<RopeInfo> {
         self.engine.delta_rev_head(target_rev_id)
     }
 
