@@ -37,6 +37,7 @@ const UTF8_BOM: &str = "\u{feff}";
 
 /// Tracks all state related to open files.
 pub struct FileManager {
+    loading_files: HashMap<PathBuf, BufferId>,
     open_files: HashMap<PathBuf, BufferId>,
     file_info: HashMap<BufferId, FileInfo>,
     /// A monitor of filesystem events, for things like reloading changed files.
@@ -50,12 +51,14 @@ pub struct FileInfo {
     pub path: PathBuf,
     pub mod_time: Option<SystemTime>,
     pub has_changed: bool,
+    pub loaded_state: FileLoadState
 }
 
 pub enum FileError {
     Io(io::Error, PathBuf),
     UnknownEncoding(PathBuf),
     HasChanged(PathBuf),
+    StillLoading(PathBuf)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -64,15 +67,34 @@ pub enum CharacterEncoding {
     Utf8WithBom,
 }
 
+#[derive(Debug)]
+pub enum FileLoadState {
+    FullyLoaded,
+    Loading {
+        file_handle: File, // This also stores the current seek cursor for the file
+        leftovers: Vec<u8>,
+        next_chunk: u32
+    },
+}
+
 impl FileManager {
     #[cfg(feature = "notify")]
     pub fn new(watcher: FileWatcher) -> Self {
-        FileManager { open_files: HashMap::new(), file_info: HashMap::new(), watcher }
+        FileManager {
+            loading_files: HashMap::new(),
+            open_files: HashMap::new(),
+            file_info: HashMap::new(),
+            watcher,
+        }
     }
 
     #[cfg(not(feature = "notify"))]
     pub fn new() -> Self {
-        FileManager { open_files: HashMap::new(), file_info: HashMap::new() }
+        FileManager {
+            loading_files: HashMap::new(),
+            open_files: HashMap::new(),
+            file_info: HashMap::new(),
+        }
     }
 
     #[cfg(feature = "notify")]
@@ -108,11 +130,16 @@ impl FileManager {
 
         let (rope, info) = try_load_file(path)?;
 
-        self.open_files.insert(path.to_owned(), id);
+        match info.loaded_state {
+            FileLoadState::FullyLoaded => self.open_files.insert(path.to_owned(), id),
+            FileLoadState::Loading { .. } => self.loading_files.insert(path.to_owned(), id),
+        };
+
         if self.file_info.insert(id, info).is_none() {
             #[cfg(feature = "notify")]
             self.watcher.watch(path, false, OPEN_FILE_EVENT_TOKEN);
         }
+
         Ok(rope)
     }
 
@@ -141,6 +168,7 @@ impl FileManager {
             path: path.to_owned(),
             mod_time: get_mod_time(path),
             has_changed: false,
+            loaded_state: FileLoadState::FullyLoaded
         };
         self.open_files.insert(path.to_owned(), id);
         self.file_info.insert(id, info);
@@ -149,9 +177,14 @@ impl FileManager {
         Ok(())
     }
 
-    fn save_existing(&mut self, path: &Path, text: &Rope, id: BufferId) -> Result<(), FileError> {
-        let prev_path = self.file_info[&id].path.clone();
-        if prev_path != path {
+    fn save_existing(&mut self, path: &Path, text: &Rope, id: BufferId)
+        -> Result<(), FileError>
+    {
+        let prev_path = self.previous_path(&id);
+
+        if !self.is_file_loading(&id) {
+            return Err(FileError::StillLoading(path.to_owned()));
+        } else if prev_path != path {
             self.save_new(path, text, id)?;
             self.open_files.remove(&prev_path);
             #[cfg(feature = "notify")]
@@ -159,13 +192,32 @@ impl FileManager {
         } else if self.file_info[&id].has_changed {
             return Err(FileError::HasChanged(path.to_owned()));
         } else {
-            let encoding = self.file_info[&id].encoding;
+            let existing_file_info = self.file_info.get_mut(&id).unwrap();
+            let encoding = existing_file_info.encoding;
             try_save(path, text, encoding).map_err(|e| FileError::Io(e, path.to_owned()))?;
-            self.file_info.get_mut(&id).unwrap().mod_time = get_mod_time(path);
+            existing_file_info.mod_time = get_mod_time(path);
         }
         Ok(())
     }
+
+    fn previous_path(&self, id: &BufferId) -> PathBuf {
+        let existing_file_info = self.file_info.get(id).unwrap();
+
+        existing_file_info.path.clone()
+    }
+
+    pub fn is_file_loading(&self, id: &BufferId) -> bool {
+        match self.file_info.get(id) {
+            Some(file_info) => match file_info.loaded_state {
+                FileLoadState::FullyLoaded => false,
+                _ => true
+            },
+            None => false
+        }
+    }
 }
+
+const CHUNK_SIZE: usize = 4096;
 
 fn try_load_file<P>(path: P) -> Result<(Rope, FileInfo), FileError>
 where
@@ -173,36 +225,53 @@ where
 {
     // TODO: support for non-utf8
     // it's arguable that the rope crate should have file loading functionality
-    let mut f =
+    let f =
         File::open(path.as_ref()).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
     let mod_time =
         f.metadata().map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?.modified().ok();
-    let mut bytes = [0; 4096]; // TODO: Chunk size based on hardware/benchmarks
-    let num_bytes_read = f.read(&mut bytes).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
 
-    let encoding = CharacterEncoding::guess(&bytes);
-    let (rope, leftovers) = try_decode(&bytes, encoding, path.as_ref())?;
+    let (rope, loaded_state, encoding) = try_load_file_chunk(f, Vec::new(), 0, path.as_ref())?;
+
     let info = FileInfo {
         encoding,
         mod_time,
         path: path.as_ref().to_owned(),
         has_changed: false,
+        loaded_state
     };
     Ok((rope, info))
 }
 
-fn try_save(path: &Path, text: &Rope, encoding: CharacterEncoding) -> io::Result<()> {
-    let tmp_extension = path.extension().map_or_else(
-        || OsString::from("swp"),
-        |ext| {
-            let mut ext = ext.to_os_string();
-            ext.push(".swp");
-            ext
-        },
-    );
-    let tmp_path = &path.with_extension(tmp_extension);
+pub fn try_load_file_chunk<P>(mut file_handle: File, mut chunk: Vec<u8>, next_chunk: u32, path: P) -> Result<(Rope, FileLoadState, CharacterEncoding), FileError>
+where P: AsRef<Path>
+{
+    let mut bytes = [0; CHUNK_SIZE];
+    let num_bytes_read = file_handle.read(&mut bytes)
+        .map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
 
-    let mut f = File::create(tmp_path)?;
+    chunk.extend_from_slice(&bytes);
+
+    let encoding = CharacterEncoding::guess(&chunk);
+    let (rope, new_leftovers) = try_decode(&chunk, encoding, path.as_ref())?;
+
+    let new_loaded_state = match (num_bytes_read < CHUNK_SIZE, new_leftovers.is_empty()) {
+        (true, true) => FileLoadState::FullyLoaded,
+        (true, false) => Err(FileError::UnknownEncoding(path.as_ref().to_owned()))?,
+        // Maybe more bytes to read
+        _ => FileLoadState::Loading {
+            file_handle,
+            leftovers: new_leftovers,
+            next_chunk: next_chunk + 1
+        },
+    };
+
+    Ok((rope, new_loaded_state, encoding))
+}
+
+fn try_save(path: &Path, text: &Rope, encoding: CharacterEncoding)
+    -> io::Result<()>
+{
+    let mut f = File::create(path)?;
     match encoding {
         CharacterEncoding::Utf8WithBom => f.write_all(UTF8_BOM.as_bytes())?,
         CharacterEncoding::Utf8 => (),
@@ -250,8 +319,6 @@ enum LastUTF8CharInfo {
 }
 
 fn last_utf8_char_info(s: &[u8]) -> LastUTF8CharInfo {
-    let size = s.len();
-
     // Using the Err here to short circuit the fold, Ok to continue backwards along the slice for continuation bytes
     let last_char_result = s.iter().try_rfold(1, |reverse_idx, byte| match *byte {
         _ if reverse_idx > 4 => Err(LastUTF8CharInfo::InvalidUTF8),
@@ -322,9 +389,10 @@ impl From<FileError> for RemoteError {
 impl FileError {
     fn error_code(&self) -> i64 {
         match self {
-            FileError::Io(_, _) => 5,
-            FileError::UnknownEncoding(_) => 6,
-            FileError::HasChanged(_) => 7,
+            &FileError::Io(_, _) => 5,
+            &FileError::UnknownEncoding(_) => 6,
+            &FileError::HasChanged(_) => 7,
+            &FileError::StillLoading(_) => 8,
         }
     }
 }
@@ -340,6 +408,7 @@ impl fmt::Display for FileError {
                  Please save elsewhere and reload the file. File path: {:?}",
                 p
             ),
+            &FileError::StillLoading(ref p) => write!(f, "File is in the middle of loading, path {:?}", p),
         }
     }
 }

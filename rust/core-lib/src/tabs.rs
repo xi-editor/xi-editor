@@ -84,6 +84,9 @@ const NEW_VIEW_IDLE_TOKEN: usize = 1001;
 /// xi_rpc idle Token for watcher related idle scheduling.
 pub(crate) const WATCH_IDLE_TOKEN: usize = 1002;
 
+/// xi_rpc idle Token for asynchronous file loading
+pub(crate) const LOADING_FILE_IDLE_TOKEN: usize = 1003;
+
 #[cfg(feature = "notify")]
 const CONFIG_EVENT_TOKEN: WatchToken = WatchToken(1);
 
@@ -358,6 +361,9 @@ impl CoreState {
             Some(p) => self.file_manager.open(p, buffer_id)?,
             None => Rope::from(""),
         };
+        if self.file_manager.is_file_loading(&buffer_id) {
+            self.peer.schedule_idle(LOADING_FILE_IDLE_TOKEN);
+        }
 
         let editor = RefCell::new(Editor::with_text(rope));
         let view = RefCell::new(View::new(view_id, buffer_id));
@@ -369,7 +375,7 @@ impl CoreState {
 
         //NOTE: because this is a synchronous call, we have to return the
         //view_id before we can send any events to this view. We use mark the
-        // viewa s pending and schedule the idle handler so that we can finish
+        // view as pending and schedule the idle handler so that we can finish
         // setting up this view on the next runloop pass.
         self.pending_views.push((view_id, config));
         self.peer.schedule_idle(NEW_VIEW_IDLE_TOKEN);
@@ -541,10 +547,10 @@ impl CoreState {
     pub(crate) fn handle_idle(&mut self, token: usize) {
         match token {
             NEW_VIEW_IDLE_TOKEN => self.finalize_new_views(),
-            WATCH_IDLE_TOKEN => self.handle_fs_events(),
-            other if (other & RENDER_VIEW_IDLE_MASK) != 0 => {
-                self.handle_render_timer(other ^ RENDER_VIEW_IDLE_MASK)
-            }
+            WATCH_IDLE_TOKEN => self.handle_fs_watcher_events(),
+            LOADING_FILE_IDLE_TOKEN => self.continue_loading_files(),
+            other if (other & RENDER_VIEW_IDLE_MASK) != 0 =>
+                self.handle_render_timer(other ^ RENDER_VIEW_IDLE_MASK),
             other => panic!("unexpected idle token {}", other),
         };
     }
@@ -639,7 +645,7 @@ impl CoreState {
     }
 
     #[cfg(feature = "notify")]
-    fn handle_fs_events(&mut self) {
+    fn handle_fs_watcher_events(&mut self) {
         let _t = trace_block("CoreState::handle_fs_events", &["core"]);
         let mut events = self.file_manager.watcher().take_events();
 
@@ -654,7 +660,7 @@ impl CoreState {
     }
 
     #[cfg(not(feature = "notify"))]
-    fn handle_fs_events(&mut self) {}
+    fn handle_fs_watcher_events(&mut self) { }
 
     /// Handles a file system event related to a currently open file
     #[cfg(feature = "notify")]
@@ -805,6 +811,33 @@ impl CoreState {
         if let Err(e) = chrome_trace::serialize(&all_traces, &mut trace_file) {
             error!("error saving trace {:?}", e);
         }
+    }
+
+    fn continue_loading_files(&mut self) {
+        //self.file_manager.loading_files = self.file_manager.loading_files.iter().map(|loading_file| {
+        //    let (path_buf, buffer_id) = loading_file;
+        //    let file_info = self.file_manager.file_info.get(&buffer_id).unwrap();
+//
+        //    let still_loading_file = match file_info.loaded_state {
+        //        FileLoadState::FullyLoaded => None,
+        //        FileLoadState::Loading { file_handle, leftovers, next_chunk } => {
+        //            let chunk_result = try_load_file_chunk(file_handle, chunk, next_chunk, path);
+//
+        //            match chunk_result {
+        //                Ok((rope, new_load_state, _)) => {
+        //                    // Add the rope to the correct editor/view
+        //                    FileInfo {
+        //                        loaded_state: new_load_state,
+        //                        ..file_info
+        //                    }
+        //                },
+        //                Err(chunk_err) =>,
+        //            }
+        //        },
+        //    };
+//
+        //    still_loading_file
+        //})
     }
 }
 
