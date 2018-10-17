@@ -22,7 +22,7 @@ use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use syntect::parsing::{SyntaxDefinition, SyntaxSet};
+use syntect::parsing::{SyntaxReference, SyntaxSet};
 use toml::Value;
 use xi_core::plugin_manifest::*;
 use xi_core::LanguageDefinition;
@@ -69,7 +69,7 @@ fn main() -> Result<(), io::Error> {
     f.write_all(toml_str.as_ref())
 }
 
-fn lang_from_syn<'a>(src: &'a SyntaxDefinition) -> LanguageDefinition {
+fn lang_from_syn<'a>(src: &'a SyntaxReference) -> LanguageDefinition {
     LanguageDefinition {
         name: src.name.as_str().into(),
         extensions: src.file_extensions.clone(),
