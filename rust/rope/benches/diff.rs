@@ -36,86 +36,75 @@ static TARG_STR: &str = "This adds some function, I guess?, that has a size set 
 
 Currently my sense of smell (and the pain of implementing Write) might be too much, since bytes will probably always be fed one by one anyway. Otherwise crying might be needed (one by one is inefficient).";
 
+fn make_test_data() -> (Vec<u8>, Vec<u8>) {
+    let one = [EDITOR_STR, VIEW_STR, INTERVAL_STR, BREAKS_STR].concat().into_bytes();
+    let mut two = one.clone();
+    let idx = one.len() / 2;
+    two[idx] = 0x02;
+    (one, two)
+}
+
 #[bench]
 fn ne_idx_sw(b: &mut Bencher) {
-    let one: String = [EDITOR_STR, VIEW_STR, INTERVAL_STR, BREAKS_STR].concat();
-    let mut two = one.clone();
-    unsafe {
-        let b = two.as_bytes_mut();
-        let idx = b.len() - 200;
-        b[idx] = 0x02;
-    }
+    let (one, two) = make_test_data();
 
     b.iter(|| {
-        compare::ne_idx_fallback(one.as_bytes(), one.as_bytes());
-        compare::ne_idx_fallback(one.as_bytes(), two.as_bytes());
+        compare::ne_idx_fallback(&one, &one);
+        compare::ne_idx_fallback(&one, &two);
     })
 }
 
 #[bench]
 fn ne_idx_sse(b: &mut Bencher) {
-    let one: String = [EDITOR_STR, VIEW_STR, INTERVAL_STR, BREAKS_STR].concat();
-    let mut two = one.clone();
-    unsafe {
-        let b = two.as_bytes_mut();
-        let idx = b.len() - 200;
-        b[idx] = 0x02;
-    }
+    let (one, two) = make_test_data();
 
     let mut x = 0;
     b.iter(|| {
-        x += compare::ne_idx_sse(one.as_bytes(), one.as_bytes()).unwrap_or_default();
-        x += compare::ne_idx_sse(one.as_bytes(), two.as_bytes()).unwrap_or_default();
+        x += unsafe { compare::ne_idx_sse(&one, &one).unwrap_or_default() };
+        x += unsafe { compare::ne_idx_sse(&one, &two).unwrap_or_default() };
     })
 }
 
 #[bench]
 fn ne_idx_avx(b: &mut Bencher) {
-    let one: String = [EDITOR_STR, VIEW_STR, INTERVAL_STR, BREAKS_STR].concat();
-    let mut two = one.clone();
-    unsafe {
-        let b = two.as_bytes_mut();
-        let idx = b.len() - 200;
-        b[idx] = 0x02;
-    }
+    let (one, two) = make_test_data();
 
     let mut dont_opt_me = 0;
     b.iter(|| {
-        dont_opt_me += compare::ne_idx_avx(one.as_bytes(), two.as_bytes()).unwrap_or_default();
-        dont_opt_me += compare::ne_idx_avx(one.as_bytes(), one.as_bytes()).unwrap_or_default();
+        dont_opt_me += unsafe { compare::ne_idx_avx(&one, &two).unwrap_or_default() };
+        dont_opt_me += unsafe { compare::ne_idx_avx(&one, &one).unwrap_or_default() };
+    })
+}
+
+#[bench]
+fn ne_idx_detect(b: &mut Bencher) {
+    let (one, two) = make_test_data();
+
+    let mut dont_opt_me = 0;
+    b.iter(|| {
+        dont_opt_me += compare::ne_idx(&one, &two).unwrap_or_default();
+        dont_opt_me += compare::ne_idx(&one, &one).unwrap_or_default();
     })
 }
 
 #[bench]
 fn ne_idx_rev_sw(b: &mut Bencher) {
-    let one: String = [EDITOR_STR, VIEW_STR, INTERVAL_STR, BREAKS_STR].concat();
-    let mut two = one.clone();
-    unsafe {
-        let b = two.as_bytes_mut();
-        let idx = 200;
-        b[idx] = 0x02;
-    }
+    let (one, two) = make_test_data();
 
     let mut x = 0;
     b.iter(|| {
-        x += compare::ne_idx_rev_fallback(one.as_bytes(), one.as_bytes()).unwrap_or_default();
-        x += compare::ne_idx_rev_fallback(one.as_bytes(), two.as_bytes()).unwrap_or_default();
+        x += compare::ne_idx_rev_fallback(&one, &one).unwrap_or_default();
+        x += compare::ne_idx_rev_fallback(&one, &two).unwrap_or_default();
     })
 }
 
 #[bench]
 fn ne_idx_rev_sse(b: &mut Bencher) {
-    let one: String = [EDITOR_STR, VIEW_STR, INTERVAL_STR, BREAKS_STR].concat();
-    let mut two = one.clone();
-    unsafe {
-        let b = two.as_bytes_mut();
-        let idx = 200;
-        b[idx] = 0x02;
-    }
+    let (one, two) = make_test_data();
 
     b.iter(|| {
-        compare::ne_idx_rev_sse(one.as_bytes(), one.as_bytes());
-        compare::ne_idx_rev_sse(one.as_bytes(), two.as_bytes());
+        compare::ne_idx_rev_sse(&one, &one);
+        compare::ne_idx_rev_sse(&one, &two);
     })
 }
 

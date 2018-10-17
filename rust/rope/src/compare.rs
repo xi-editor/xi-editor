@@ -39,9 +39,9 @@ const SSE_STRIDE: usize = 16;
 /// # }
 /// ```
 ///
-#[inline(always)]
 #[doc(hidden)]
 #[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "sse4.2")]
 pub unsafe fn sse_compare_mask(one: &[u8], two: &[u8]) -> i32 {
     use std::arch::x86_64::*;
 
@@ -59,6 +59,7 @@ pub unsafe fn sse_compare_mask(one: &[u8], two: &[u8]) -> i32 {
 const AVX_STRIDE: usize = 32;
 
 /// Like above but with 32 byte slices
+#[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 #[doc(hidden)]
 pub unsafe fn avx_compare_mask(one: &[u8], two: &[u8]) -> i32 {
@@ -71,8 +72,10 @@ pub unsafe fn avx_compare_mask(one: &[u8], two: &[u8]) -> i32 {
 
 /// Returns the lowest `i` for which `one[i] != two[i]`, if one exists.
 pub fn ne_idx(one: &[u8], two: &[u8]) -> Option<usize> {
-    if is_x86_feature_detected!("sse4.2") {
-        ne_idx_sse(one, two)
+    if is_x86_feature_detected!("avx2") {
+        unsafe { ne_idx_avx(one, two) }
+    } else if is_x86_feature_detected!("sse4.2") {
+        unsafe { ne_idx_sse(one, two) }
     } else {
         ne_idx_fallback(one, two)
     }
@@ -89,21 +92,17 @@ pub fn ne_idx_rev(one: &[u8], two: &[u8]) -> Option<usize> {
 }
 
 #[cfg(target_arch = "x86_64")]
-#[allow(dead_code)]
+#[target_feature(enable = "avx2")]
 #[doc(hidden)]
-//NOTE: this is apparently now slower than the sse version, which is confusing.
-//leaving in place for more benchmarking.
-pub fn ne_idx_avx(one: &[u8], two: &[u8]) -> Option<usize> {
+pub unsafe fn ne_idx_avx(one: &[u8], two: &[u8]) -> Option<usize> {
     let min_len = one.len().min(two.len());
     let mut idx = 0;
     while idx < min_len {
         let stride_len = AVX_STRIDE.min(min_len - idx);
-        let mask = unsafe {
-            avx_compare_mask(
-                &one.get_unchecked(idx..idx + stride_len),
-                &two.get_unchecked(idx..idx + stride_len),
-            )
-        };
+        let mask = avx_compare_mask(
+            &one.get_unchecked(idx..idx + stride_len),
+            &two.get_unchecked(idx..idx + stride_len),
+        );
         // at the end of the slice the mask might include garbage bytes, so
         // we ignore matches that are OOB
         if mask != 0 && idx + (mask.trailing_zeros() as usize) < min_len {
@@ -115,19 +114,17 @@ pub fn ne_idx_avx(one: &[u8], two: &[u8]) -> Option<usize> {
 }
 
 #[cfg(target_arch = "x86_64")]
-#[allow(dead_code)]
+#[target_feature(enable = "sse4.2")]
 #[doc(hidden)]
-pub fn ne_idx_sse(one: &[u8], two: &[u8]) -> Option<usize> {
+pub unsafe fn ne_idx_sse(one: &[u8], two: &[u8]) -> Option<usize> {
     let min_len = one.len().min(two.len());
     let mut idx = 0;
     while idx < min_len {
         let stride_len = SSE_STRIDE.min(min_len - idx);
-        let mask = unsafe {
-            sse_compare_mask(
-                &one.get_unchecked(idx..idx + stride_len),
-                &two.get_unchecked(idx..idx + stride_len),
-            )
-        };
+        let mask = sse_compare_mask(
+            &one.get_unchecked(idx..idx + stride_len),
+            &two.get_unchecked(idx..idx + stride_len),
+        );
         if mask != 0 && idx + (mask.trailing_zeros() as usize) < min_len {
             return Some(idx + mask.trailing_zeros() as usize);
         }
@@ -652,21 +649,23 @@ mod tests {
         }
         let one = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         let two = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-        assert_eq!(ne_idx_avx(one.as_bytes(), two.as_bytes()), Some(0));
-        let two = "aaaaaaa_aaaaaaaaaaaaaaaaaaaaaaaa";
-        assert_eq!(ne_idx_avx(one.as_bytes(), two.as_bytes()), Some(7));
-        let two = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        assert_eq!(ne_idx_avx(one.as_bytes(), two.as_bytes()), None);
+        unsafe {
+            assert_eq!(ne_idx_avx(one.as_bytes(), two.as_bytes()), Some(0));
+            let two = "aaaaaaa_aaaaaaaaaaaaaaaaaaaaaaaa";
+            assert_eq!(ne_idx_avx(one.as_bytes(), two.as_bytes()), Some(7));
+            let two = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+            assert_eq!(ne_idx_avx(one.as_bytes(), two.as_bytes()), None);
 
-        let one = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        assert_eq!(ne_idx_avx(one.as_bytes(), one.as_bytes()), None);
-        let two = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_aaaaaaaaaaaaaaaaaaaaaaaaa";
-        assert_eq!(ne_idx_avx(one.as_bytes(), two.as_bytes()), Some(38));
-        let two = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_";
-        assert_eq!(ne_idx_avx(one.as_bytes(), two.as_bytes()), Some(63));
+            let one = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+            assert_eq!(ne_idx_avx(one.as_bytes(), one.as_bytes()), None);
+            let two = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_aaaaaaaaaaaaaaaaaaaaaaaaa";
+            assert_eq!(ne_idx_avx(one.as_bytes(), two.as_bytes()), Some(38));
+            let two = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_";
+            assert_eq!(ne_idx_avx(one.as_bytes(), two.as_bytes()), Some(63));
 
-        let one = "________________________________________";
-        let two = "______________________________________0_";
-        assert_eq!(ne_idx_avx(one.as_bytes(), two.as_bytes()), Some(38));
+            let one = "________________________________________";
+            let two = "______________________________________0_";
+            assert_eq!(ne_idx_avx(one.as_bytes(), two.as_bytes()), Some(38));
+        }
     }
 }
