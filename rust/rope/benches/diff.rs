@@ -20,7 +20,7 @@ extern crate xi_rope;
 use test::Bencher;
 use xi_rope::compare;
 use xi_rope::diff::{Diff, LineHashDiff};
-use xi_rope::rope::RopeDelta;
+use xi_rope::rope::{Rope, RopeDelta};
 
 static EDITOR_STR: &str = include_str!("../../core-lib/src/editor.rs");
 static VIEW_STR: &str = include_str!("../../core-lib/src/view.rs");
@@ -105,6 +105,19 @@ fn ne_idx_rev_sse(b: &mut Bencher) {
     b.iter(|| {
         compare::ne_idx_rev_sse(&one, &one);
         compare::ne_idx_rev_sse(&one, &two);
+    })
+}
+
+#[bench]
+fn scanner(b: &mut Bencher) {
+    let (one, two) = make_test_data();
+    let one = Rope::from(String::from_utf8(one).unwrap());
+    let two = Rope::from(String::from_utf8(two).unwrap());
+
+    let mut scanner = compare::RopeScanner::new(&one, &two);
+    b.iter(|| {
+        scanner.find_ne_char_right(0, 0, None);
+        scanner.find_ne_char_left(one.len(), two.len(), None);
     })
 }
 
