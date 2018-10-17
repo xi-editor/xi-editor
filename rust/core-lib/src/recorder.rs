@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Manages recording and enables playback for client sent events.
+//!
+//! Clients can store multiple, named recordings.
+
 use xi_trace::trace_block;
 
 use std::mem;

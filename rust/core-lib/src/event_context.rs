@@ -190,7 +190,7 @@ impl<'a> EventContext<'a> {
                 // The action that follows the block must belong to a separate undo group
                 self.editor.borrow_mut().update_edit_type();
 
-                let delta = self.editor.borrow_mut().delta_between(starting_revision);
+                let delta = self.editor.borrow_mut().delta_rev_head(starting_revision);
                 self.update_plugins(&mut self.editor.borrow_mut(), delta, "core")
             }
             SpecialEvent::ClearRecording(recording_name) => {
