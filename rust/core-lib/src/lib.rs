@@ -115,5 +115,5 @@ pub use tabs::test_helpers;
 pub use tabs::{BufferId, BufferIdentifier, ViewId};
 
 // TODO
-pub mod writer;
+pub mod session;
 
