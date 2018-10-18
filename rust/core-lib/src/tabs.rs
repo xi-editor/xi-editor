@@ -54,6 +54,8 @@ use view::View;
 use whitespace::Indentation;
 use width_cache::WidthCache;
 use WeakXiCore;
+// TODO
+use writer::Writer;
 
 #[cfg(feature = "notify")]
 use notify::DebouncedEvent;
@@ -118,6 +120,8 @@ pub struct CoreState {
     plugins: PluginCatalog,
     // for the time being we auto-start all plugins we find on launch.
     running_plugins: Vec<Plugin>,
+    // TODO
+    writer: RefCell<Writer>,
 }
 
 /// Initial setup and bookkeeping
@@ -172,6 +176,7 @@ impl CoreState {
             id_counter: Counter::default(),
             plugins: PluginCatalog::default(),
             running_plugins: Vec::new(),
+            writer: RefCell::new(Writer::new()),
         }
     }
 
@@ -286,6 +291,7 @@ impl CoreState {
                 width_cache: &self.width_cache,
                 kill_ring: &self.kill_ring,
                 weak_core: self.self_ref.as_ref().unwrap(),
+                writer: &self.writer,
             }
         })
     }
@@ -539,6 +545,9 @@ impl CoreState {
 /// Idle, tracing, and file event handling
 impl CoreState {
     pub(crate) fn handle_idle(&mut self, token: usize) {
+        // TODO not place it here
+        self.writer.borrow_mut().handle_idle();
+
         match token {
             NEW_VIEW_IDLE_TOKEN => self.finalize_new_views(),
             WATCH_IDLE_TOKEN => self.handle_fs_events(),

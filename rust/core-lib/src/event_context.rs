@@ -45,6 +45,7 @@ use tabs::{BufferId, PluginId, ViewId, RENDER_VIEW_IDLE_MASK};
 use view::View;
 use width_cache::WidthCache;
 use WeakXiCore;
+use writer::Writer;
 
 // Maximum returned result from plugin get_data RPC.
 pub const MAX_SIZE_LIMIT: usize = 1024 * 1024;
@@ -75,6 +76,7 @@ pub struct EventContext<'a> {
     pub(crate) width_cache: &'a RefCell<WidthCache>,
     pub(crate) kill_ring: &'a RefCell<Rope>,
     pub(crate) weak_core: &'a WeakXiCore,
+    pub(crate) writer: &'a RefCell<Writer>,
 }
 
 impl<'a> EventContext<'a> {
@@ -306,6 +308,9 @@ impl<'a> EventContext<'a> {
         //to update the plugin lib quite yet.
         let v: Value = serde_json::to_value(&ed.get_edit_type()).unwrap();
         let edit_type_str = v.as_str().unwrap().to_string();
+
+        let serialized_absolute_delta = serde_json::to_string(&ed.get_absolute_delta()).unwrap();
+        self.writer.borrow_mut().stage(serialized_absolute_delta);
 
         let update = PluginUpdate::new(
             self.view_id,
@@ -553,6 +558,7 @@ mod tests {
         width_cache: RefCell<WidthCache>,
         config_manager: ConfigManager,
         recorder: RefCell<Recorder>,
+        writer: RefCell<Writer>,
     }
 
     impl ContextHarness {
@@ -569,8 +575,9 @@ mod tests {
             let style_map = RefCell::new(ThemeStyleMap::new(None));
             let width_cache = RefCell::new(WidthCache::new());
             let recorder = RefCell::new(Recorder::new());
+            let writer = RefCell::new(Writer::new());
             ContextHarness { view, editor, client, core_ref, kill_ring,
-                             style_map, width_cache, config_manager, recorder }
+                             style_map, width_cache, config_manager, recorder, writer }
         }
 
         /// Renders the text and selections. cursors are represented with
@@ -614,6 +621,7 @@ mod tests {
                 style_map: &self.style_map,
                 width_cache: &self.width_cache,
                 weak_core: &self.core_ref,
+                writer: &self.writer,
             }
         }
     }

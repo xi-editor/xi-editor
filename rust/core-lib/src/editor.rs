@@ -306,6 +306,12 @@ impl Editor {
         self.engine.delta_rev_head(target_rev_id)
     }
 
+    // TODO
+    pub fn get_absolute_delta(&self) -> Delta<RopeInfo> {
+        let token = self.pristine_rev_id.token();
+        self.engine.delta_rev_head(token)
+    }
+
     #[cfg(not(target_os = "fuchsia"))]
     fn gc_undos(&mut self) {
         if self.revs_in_flight == 0 && !self.gc_undos.is_empty() {
