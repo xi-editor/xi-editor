@@ -116,7 +116,7 @@ fn vertical_motion(
         }
 
         line = if line_delta < 0 { line - 1 } else { line.saturating_add(1) };
-     }
+    }
 
     (view.line_col_to_offset(text, line, col), Some(col))
 }
