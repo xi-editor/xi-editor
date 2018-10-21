@@ -112,7 +112,7 @@ impl Find {
                 is_regex: None,
                 whole_words: None,
                 matches: self.occurrences.len(),
-                lines: self.occurrences.iter().map(|o| view.offset_to_line_col(text, o.min()).0).collect(),
+                lines: self.occurrences.iter().map(|o| view.offset_to_line_col(text, o.min()).0 + 1).collect(),
             }
         } else {
             FindStatus {
@@ -122,7 +122,7 @@ impl Find {
                 is_regex: Some(self.regex.is_some()),
                 whole_words: Some(self.whole_words),
                 matches: self.occurrences.len(),
-                lines: self.occurrences.iter().map(|o| view.offset_to_line_col(text, o.min()).0).collect(),
+                lines: self.occurrences.iter().map(|o| view.offset_to_line_col(text, o.min()).0 + 1).collect(),
             }
         }
     }
