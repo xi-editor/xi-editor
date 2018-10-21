@@ -15,47 +15,52 @@
 //! The library base for implementing xi-editor plugins.
 
 extern crate xi_core_lib as xi_core;
-extern crate xi_rpc;
 extern crate xi_rope;
+extern crate xi_rpc;
 extern crate xi_trace;
 extern crate xi_trace_dump;
 #[macro_use]
 extern crate serde_json;
-extern crate serde;
 extern crate bytecount;
-extern crate rand;
-extern crate memchr;
 extern crate languageserver_types;
+extern crate memchr;
+extern crate rand;
+extern crate serde;
 
 #[macro_use]
 extern crate log;
 
-mod state_cache;
 mod base_cache;
-mod view;
-mod dispatch;
 mod core_proxy;
+mod dispatch;
+mod state_cache;
+mod view;
 
 use std::io;
 use std::path::Path;
 
-use xi_rpc::{RpcLoop, ReadError};
-use xi_rope::rope::RopeDelta;
-use xi_core::ConfigTable;
 use xi_core::plugin_rpc::{GetDataResponse, TextUnit};
+use xi_core::{ConfigTable, LanguageId};
+use xi_rope::rope::RopeDelta;
+use xi_rpc::{ReadError, RpcLoop};
 
 use self::dispatch::Dispatcher;
 
-pub use view::View;
-pub use state_cache::StateCache;
 pub use base_cache::ChunkCache;
 pub use core_proxy::CoreProxy;
+pub use state_cache::StateCache;
+pub use view::View;
 pub use xi_core::plugin_rpc::{Hover, Range};
 
 /// Abstracts getting data from the peer. Mainly exists for mocking in tests.
 pub trait DataSource {
-    fn get_data(&self, start: usize, unit: TextUnit, max_size: usize, rev: u64)
-        -> Result<GetDataResponse, Error>;
+    fn get_data(
+        &self,
+        start: usize,
+        unit: TextUnit,
+        max_size: usize,
+        rev: u64,
+    ) -> Result<GetDataResponse, Error>;
 }
 
 /// A generic interface for types that cache a remote document.
@@ -79,11 +84,10 @@ pub trait Cache {
     /// the general case this is backed by the remote peer.
     ///
     /// [`DataSource`]: trait.DataSource.html
-    fn get_line<DS: DataSource>(&mut self, source: &DS, line_num: usize)
-        -> Result<&str, Error>;
-    
+    fn get_line<DS: DataSource>(&mut self, source: &DS, line_num: usize) -> Result<&str, Error>;
+
     /// Returns the entire contents of the remote document, fetching as needed.
-    fn get_document<DS: DataSource>(&mut self, source: &DS) -> Result<String, Error>; 
+    fn get_document<DS: DataSource>(&mut self, source: &DS) -> Result<String, Error>;
 
     /// Returns the offset of the line at `line_num`, zero-indexed, fetching
     /// data from `source` if needed.
@@ -92,8 +96,11 @@ pub trait Cache {
     ///
     /// Returns an error if `line_num` is greater than the total number of lines
     /// in the document, or if there is a problem communicating with `source`.
-    fn offset_of_line<DS: DataSource>(&mut self, source: &DS, line_num: usize)
-        -> Result<usize, Error>;
+    fn offset_of_line<DS: DataSource>(
+        &mut self,
+        source: &DS,
+        line_num: usize,
+    ) -> Result<usize, Error>;
     /// Returns the index of the line containing `offset`, fetching
     /// data from `source` if needed.
     ///
@@ -101,11 +108,13 @@ pub trait Cache {
     ///
     /// Returns an error if `offset` is greater than the total length of
     /// the document, or if there is a problem communicating with `source`.
-    fn line_of_offset<DS: DataSource>(&mut self, source: &DS, offset: usize)
-        -> Result<usize, Error>;
+    fn line_of_offset<DS: DataSource>(
+        &mut self,
+        source: &DS,
+        offset: usize,
+    ) -> Result<usize, Error>;
     /// Updates the cache by applying this delta.
-    fn update(&mut self, delta: Option<&RopeDelta>, buf_size: usize,
-              num_lines: usize, rev: u64);
+    fn update(&mut self, delta: Option<&RopeDelta>, buf_size: usize, num_lines: usize, rev: u64);
     /// Flushes any state held by this cache.
     fn clear(&mut self);
 }
@@ -124,8 +133,13 @@ pub trait Plugin {
 
     /// Called when an edit has occurred in the remote view. If the plugin wishes
     /// to add its own edit, it must do so using asynchronously via the edit notification.
-    fn update(&mut self, view: &mut View<Self::Cache>, delta: Option<&RopeDelta>,
-              edit_type: String, author: String);
+    fn update(
+        &mut self,
+        view: &mut View<Self::Cache>,
+        delta: Option<&RopeDelta>,
+        edit_type: String,
+        author: String,
+    );
     /// Called when a buffer has been saved to disk. The buffer's previous
     /// path, if one existed, is passed as `old_path`.
     fn did_save(&mut self, view: &mut View<Self::Cache>, old_path: Option<&Path>);
@@ -141,21 +155,24 @@ pub trait Plugin {
     /// Called when a config option has changed for this view. `changes`
     /// is a map of keys/values that have changed; previous values are available
     /// in the existing config, accessible through `view.get_config()`.
-    fn config_changed(&mut self,
-                      view: &mut View<Self::Cache>,
-                      changes: &ConfigTable);
+    fn config_changed(&mut self, view: &mut View<Self::Cache>, changes: &ConfigTable);
+
+    /// Called when syntax language has changed for this view.
+    /// New language is available in the `view`, and old language is available in `old_lang`.
+    #[allow(unused_variables)]
+    fn language_changed(&mut self, view: &mut View<Self::Cache>, old_lang: LanguageId) {}
 
     /// Called when the runloop is idle, if the plugin has previously
     /// asked to be scheduled via `View::schedule_idle()`. Plugins that
     /// are doing things like full document analysis can use this mechanism
     /// to perform their work incrementally while remaining responsive.
     #[allow(unused_variables)]
-    fn idle(&mut self, view: &mut View<Self::Cache>) { }
+    fn idle(&mut self, view: &mut View<Self::Cache>) {}
 
     /// Language Plugins specific methods
-    
+
     #[allow(unused_variables)]
-    fn get_hover(&mut self, view: &mut View<Self::Cache>, request_id: usize, position: usize) { }
+    fn get_hover(&mut self, view: &mut View<Self::Cache>, request_id: usize, position: usize) {}
 }
 
 #[derive(Debug)]

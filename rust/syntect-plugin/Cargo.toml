@@ -14,7 +14,7 @@ serde_derive = "1.0"
 toml = "0.4"
 
 [dependencies.syntect]
-version = "2.0"
+version = "2.1"
 default-features = false
 features = ["parsing", "assets","dump-load-rs"]
 

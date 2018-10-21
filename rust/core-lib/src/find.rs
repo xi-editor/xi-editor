@@ -31,6 +31,9 @@ const REGEX_SIZE_LIMIT: usize = 1000000;
 /// Information about search queries and number of matches for find
 #[derive(Serialize, Deserialize, Debug)]
 pub struct FindStatus {
+    /// Identifier for the current search query.
+    id: usize,
+
     /// The current search query.
     chars: Option<String>,
 
@@ -49,25 +52,26 @@ pub struct FindStatus {
 
 /// Contains logic to search text
 pub struct Find {
-    // todo: link to search query so that search results can be correlated back to query
-
+    /// Uniquely identifies this search query.
+    id: usize,
     /// The occurrences, which determine the highlights, have been updated.
     hls_dirty: bool,
-    /// The currently active search string
+    /// The currently active search string.
     search_string: Option<String>,
-    /// The case matching setting for the currently active search
+    /// The case matching setting for the currently active search.
     case_matching: CaseMatching,
-    /// The search query should be considered as regular expression
+    /// The search query should be considered as regular expression.
     regex: Option<Regex>,
     /// Query matches only whole words.
     whole_words: bool,
-    /// The set of all known find occurrences (highlights)
+    /// The set of all known find occurrences (highlights).
     occurrences: Selection,
 }
 
 impl Find {
-    pub fn new() -> Find {
+    pub fn new(id: usize) -> Find {
         Find {
+            id: id,
             hls_dirty: true,
             search_string: None,
             case_matching: CaseMatching::CaseInsensitive,
@@ -75,6 +79,10 @@ impl Find {
             whole_words: false,
             occurrences: Selection::new(),
         }
+    }
+
+    pub fn id(&self) -> usize {
+        self.id
     }
 
     pub fn occurrences(&self) -> &Selection {
@@ -88,6 +96,7 @@ impl Find {
     pub fn find_status(&self, matches_only: bool) -> FindStatus {
         if matches_only {
             FindStatus {
+                id: self.id,
                 chars: None,
                 case_sensitive: None,
                 is_regex: None,
@@ -96,6 +105,7 @@ impl Find {
             }
         } else {
             FindStatus {
+                id: self.id,
                 chars: self.search_string.clone(),
                 case_sensitive: Some(self.case_matching == CaseMatching::Exact),
                 is_regex: Some(self.regex.is_some()),
@@ -160,13 +170,13 @@ impl Find {
     }
 
     /// Set search parameters and executes the search.
-    pub fn do_find(&mut self, text: &Rope, search_string: String, case_sensitive: bool,
+    pub fn do_find(&mut self, text: &Rope, search_string: &str, case_sensitive: bool,
                    is_regex: bool, whole_words: bool) {
         if search_string.len() == 0 {
             self.unset();
         }
 
-        self.set_find(&search_string, case_sensitive, is_regex, whole_words);
+        self.set_find(search_string, case_sensitive, is_regex, whole_words);
         self.update_find(text, 0, text.len(), false);
     }
 

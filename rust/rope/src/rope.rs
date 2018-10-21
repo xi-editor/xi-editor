@@ -591,7 +591,7 @@ impl Rope {
 
         ChunkIter {
             cursor: Cursor::new(self, start),
-            end: end,
+            end,
         }
     }
 
@@ -634,18 +634,27 @@ impl Rope {
         leaf.as_bytes()[pos]
     }
 
-    // TODO: this should be a Cow
-    // TODO: a case can be made to hang this on Cursor instead
-    pub fn slice_to_string<T>(&self, range: T) -> String 
+    pub fn slice_to_cow<T>(&self, range: T) -> Cow<str>
         where T: RangeBounds<usize>
     {
-        let mut result = String::new();
-        for chunk in self.iter_chunks(range) {
-            result.push_str(chunk);
+        let mut iter = self.iter_chunks(range);
+        let first = iter.next();
+        let second = iter.next();
+
+        match (first, second) {
+            (None, None) => Cow::from(""),
+            (Some(s), None) => Cow::from(s),
+            (Some(one), Some(two)) => {
+                let mut result = [one, two].concat();
+                for chunk in iter {
+                    result.push_str(chunk);
+                }
+                Cow::from(result)
+            }
+            (None, Some(_)) => unreachable!(),
         }
-        result
     }
-    
+
     /// Extracts start and end bounds from a range
     fn extract_range<T>(&self, range: T) -> (usize, usize)
         where T: RangeBounds<usize>
@@ -733,8 +742,7 @@ fn split_as_leaves(mut s: &str) -> Vec<String> {
         nodes.push(s[..splitpoint].to_owned());
         s = &s[splitpoint..];
     }
-
-    return nodes;
+    nodes
 }
 
 impl<T: AsRef<str>> From<T> for Rope {
@@ -752,7 +760,16 @@ impl From<Rope> for String {
 
 impl<'a> From<&'a Rope> for String {
     fn from(r: &Rope) -> String {
-        r.slice_to_string(..)
+        r.slice_to_cow(..).into_owned()
+    }
+}
+
+impl fmt::Display for Rope {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for s in self.iter_chunks(..) {
+            write!(f, "{}", s)?;
+        }
+        Ok(())
     }
 }
 
@@ -1264,5 +1281,52 @@ mod tests {
         let utf8_offset =
             rope_with_emoji.convert_metrics::<Utf16CodeUnitsMetric, BaseMetric>(utf16_units);
         assert_eq!(utf8_offset, 19);
+    }
+
+    #[test]
+    fn slice_to_cow_small_string() {
+        let short_text = "hi, i'm a small piece of text.";
+
+        let rope = Rope::from(short_text);
+
+        let cow = rope.slice_to_cow(..);
+
+        assert!(short_text.len() <= 1024);
+        assert_eq!(
+            cow,
+            Cow::Borrowed(short_text) as Cow<str>
+        );
+    }
+
+    #[test]
+    fn slice_to_cow_long_string_long_slice() {
+        // 32 char long string, repeat it 33 times so it is longer than 1024 bytes
+        let long_text = "1234567812345678123456781234567812345678123456781234567812345678".repeat(33);
+
+        let rope = Rope::from(&long_text);
+
+        let cow = rope.slice_to_cow(..);
+
+        assert!(long_text.len() > 1024);
+        assert_eq!(
+            cow,
+            Cow::Owned(long_text) as Cow<str>
+        );
+    }
+
+    #[test]
+    fn slice_to_cow_long_string_short_slice() {
+        // 32 char long string, repeat it 33 times so it is longer than 1024 bytes
+        let long_text = "1234567812345678123456781234567812345678123456781234567812345678".repeat(33);
+
+        let rope = Rope::from(&long_text);
+
+        let cow = rope.slice_to_cow(..500);
+
+        assert!(long_text.len() > 1024);
+        assert_eq!(
+            cow,
+            Cow::Borrowed(&long_text[..500])
+        );
     }
 }

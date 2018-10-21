@@ -33,6 +33,7 @@ use xi_trace;
 use WeakXiCore;
 use config::Table;
 use tabs::ViewId;
+use syntax::LanguageId;
 
 use self::rpc::{PluginUpdate, PluginBufferInfo};
 
@@ -128,11 +129,24 @@ impl Plugin {
                                                 "changes": changes}))
     }
 
+    pub fn language_changed(&self, view_id: ViewId, new_lang: &LanguageId) {
+        self.peer.send_rpc_notification("language_changed",
+                                        &json!({"view_id": view_id,
+                                                "new_lang": new_lang}))
+    }
+
     pub fn get_hover(&self, view_id: ViewId, request_id: usize, position: usize) {
-        self.peer.send_rpc_notification("get_hover", 
+        self.peer.send_rpc_notification("get_hover",
                                         &json!({"view_id": view_id,
                                                 "request_id": request_id,
                                                 "position": position}))
+    }
+
+    pub fn dispatch_command(&self, view_id: ViewId, method: &str, params: &Value) {
+        self.peer.send_rpc_notification("custom_command",
+                                        &json!({"view_id": view_id,
+                                                "method": method,
+                                                "params": params}))
     }
 }
 

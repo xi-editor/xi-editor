@@ -29,15 +29,14 @@ use client::Client;
 use edit_types::ViewEvent;
 use line_cache_shadow::{self, LineCacheShadow, RenderPlan, RenderTactic};
 use movement::{Movement, region_movement, selection_movement};
-use rpc::{GestureType, MouseAction, SelectionModifier};
+use rpc::{GestureType, MouseAction, SelectionModifier, FindQuery};
 use styles::{Style, ThemeStyleMap};
 use selection::{Affinity, Selection, SelRegion};
-use tabs::{ViewId, BufferId};
+use tabs::{ViewId, BufferId, Counter};
 use width_cache::WidthCache;
 use word_boundaries::WordCursor;
-use find::Find;
+use find::{Find, FindStatus};
 use linewrap;
-use internal::find::FindStatus;
 
 type StyleMap = RefCell<ThemeStyleMap>;
 
@@ -77,6 +76,9 @@ pub struct View {
     /// Each instance represents a separate search query.
     find: Vec<Find>,
 
+    /// Tracks the IDs for additional search queries in find.
+    find_id_counter: Counter,
+
     /// Tracks whether there has been changes in find results or find parameters.
     /// This is used to determined whether FindStatus should be sent to the frontend.
     find_changed: FindStatusChange,
@@ -114,7 +116,7 @@ pub struct Replace {
 }
 
 /// A size, in pixel units (not display pixels).
-#[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Default, PartialEq, Serialize, Deserialize, Clone)]
 pub struct Size {
     pub width: f64,
     pub height: f64,
@@ -134,6 +136,16 @@ enum WrapWidth {
     Width(f64),
 }
 
+/// The smallest unit of text that a gesture can select
+pub enum SelectionGranularity {
+    /// Selects any point or character range
+    Point,
+    /// Selects one word at a time
+    Word,
+    /// Selects one line at a time
+    Line
+}
+
 /// State required to resolve a drag gesture into a selection.
 struct DragState {
     /// All the selection regions other than the one being dragged.
@@ -148,6 +160,8 @@ struct DragState {
 
     /// End of the region selected when drag was started.
     max: usize,
+
+    granularity: SelectionGranularity,
 }
 
 impl View {
@@ -166,6 +180,7 @@ impl View {
             wrap_col: WrapWidth::None,
             lc_shadow: LineCacheShadow::default(),
             find: Vec::new(),
+            find_id_counter: Counter::default(),
             find_changed: FindStatusChange::None,
             highlight_find: false,
             replace: None,
@@ -207,8 +222,13 @@ impl View {
             Gesture { line, col, ty } =>
                 self.do_gesture(text, line, col, ty),
             GotoLine { line } => self.goto_line(text, line),
-            Find { chars, case_sensitive, regex, whole_words } =>
-                self.do_find(text, chars, case_sensitive, regex, whole_words),
+            Find { chars, case_sensitive, regex, whole_words } => {
+                let id = self.find.first().and_then(|q| Some(q.id()));
+                let query_changes = FindQuery { id, chars, case_sensitive, regex, whole_words };
+                self.do_find(text, [query_changes].to_vec())
+            },
+            MultiFind { queries } =>
+                self.do_find(text, queries),
             FindNext { wrap_around, allow_same, modify_selection } =>
                 self.do_find_next(text, false, wrap_around, allow_same, &modify_selection),
             FindPrevious { wrap_around, allow_same, modify_selection } =>
@@ -252,7 +272,7 @@ impl View {
         match ty {
             GestureType::PointSelect => {
                 self.set_selection(text, SelRegion::caret(offset));
-                self.start_drag(offset, offset, offset);
+                self.start_drag(offset, offset, offset, SelectionGranularity::Point, false);
             },
             GestureType::RangeSelect => self.select_range(text, offset),
             GestureType::ToggleSel => self.toggle_sel(text, offset),
@@ -329,15 +349,10 @@ impl View {
                 return;
             }
         }
-        self.drag_state = Some(DragState {
-            base_sel: selection.clone(),
-            offset,
-            min: offset,
-            max: offset,
-        });
         let region = SelRegion::caret(offset);
         selection.add_region(region);
         self.set_selection_raw(text, selection);
+        self.start_drag(offset, offset, offset, SelectionGranularity::Point, true)
     }
 
     /// Move the selection by the given movement. Return value is the offset of
@@ -431,13 +446,13 @@ impl View {
             sel.add_region(SelRegion::new(last.start, offset));
             sel
         };
-        let min = sel.last().unwrap().start;
+        let range_start = sel.last().unwrap().start;
         self.set_selection(text, sel);
-        self.start_drag(offset, min, offset);
+        self.start_drag(range_start, range_start, range_start, SelectionGranularity::Point, false);
 }
 
     /// Selects the given region and supports multi selection.
-    fn select_region(&mut self, text: &Rope, offset: usize, region: SelRegion, multi_select: bool) {
+    fn select_region(&mut self, text: &Rope, region: SelRegion, multi_select: bool) {
         let mut selection = match multi_select {
             true => self.selection.clone(),
             false => Selection::new(),
@@ -445,8 +460,6 @@ impl View {
 
         selection.add_region(region);
         self.set_selection(text, selection);
-
-        self.start_drag(offset, region.start, region.end);
     }
 
     /// Selects an entire word and supports multi selection.
@@ -456,7 +469,8 @@ impl View {
             word_cursor.select_word()
         };
 
-        self.select_region(text, offset, SelRegion::new(start, end), multi_select);
+        self.select_region(text, SelRegion::new(start, end), multi_select);
+        self.start_drag(offset, start, end, SelectionGranularity::Word, multi_select);
     }
 
     /// Selects an entire line and supports multi selection.
@@ -464,7 +478,8 @@ impl View {
         let start = self.line_col_to_offset(text, line, 0);
         let end = self.line_col_to_offset(text, line + 1, 0);
 
-        self.select_region(text, offset, SelRegion::new(start, end), multi_select);
+        self.select_region(text, SelRegion::new(start, end), multi_select);
+        self.start_drag(offset, start, end, SelectionGranularity::Line, multi_select);
     }
 
     /// Splits current selections into lines.
@@ -495,9 +510,12 @@ impl View {
     }
 
     /// Starts a drag operation.
-    pub fn start_drag(&mut self, offset: usize, min: usize, max: usize) {
-        let base_sel = Selection::new();
-        self.drag_state = Some(DragState { base_sel, offset, min, max });
+    pub fn start_drag(&mut self, offset: usize, min: usize, max: usize, granularity: SelectionGranularity, multi_select: bool) {
+        let base_sel = match multi_select {
+            true => self.selection.clone(),
+            false => Selection::new()
+        };
+        self.drag_state = Some(DragState { base_sel, offset, min, max, granularity });
     }
 
     /// Does a drag gesture, setting the selection from a combination of the drag
@@ -506,11 +524,22 @@ impl View {
         let offset = self.line_col_to_offset(text, line as usize, col as usize);
         let new_sel = self.drag_state.as_ref().map(|drag_state| {
             let mut sel = drag_state.base_sel.clone();
-            // TODO: on double or triple click, quantize offset to requested granularity.
+            // Determine which word or line the cursor is in
+            let (unit_start, unit_end) = match drag_state.granularity {
+                SelectionGranularity::Point => (offset, offset),
+                SelectionGranularity::Word => {
+                    let mut word_cursor = WordCursor::new(text, offset);
+                    word_cursor.select_word()
+                },
+                SelectionGranularity::Line => (
+                    self.line_col_to_offset(text, line as usize, 0),
+                    self.line_col_to_offset(text, (line as usize) + 1, 0)
+                )
+            };
             let (start, end) = if offset < drag_state.offset {
-                (drag_state.max, min(offset, drag_state.min))
+                (drag_state.max, min(unit_start, drag_state.min))
             } else {
-                (drag_state.min, max(offset, drag_state.max))
+                (drag_state.min, max(unit_end, drag_state.max))
             };
             let horiz = None;
             sel.add_region(
@@ -558,7 +587,7 @@ impl View {
             pos
         }).unwrap_or(text.len());
 
-        let l_str = text.slice_to_string(start_pos..pos);
+        let l_str = text.slice_to_cow(start_pos..pos);
         let mut cursors = Vec::new();
         let mut selections = Vec::new();
         for region in self.selection.regions_in_range(start_pos, pos) {
@@ -584,13 +613,15 @@ impl View {
 
         if self.highlight_find {
             for find in self.find.iter() {
+                let mut cur_hls = Vec::new();
                 for region in find.occurrences().regions_in_range(start_pos, pos) {
                     let sel_start_ix = clamp(region.min(), start_pos, pos) - start_pos;
                     let sel_end_ix = clamp(region.max(), start_pos, pos) - start_pos;
                     if sel_end_ix > sel_start_ix {
-                        hls.push((sel_start_ix, sel_end_ix));
+                        cur_hls.push((sel_start_ix, sel_end_ix));
                     }
                 }
+                hls.push(cur_hls);
             }
         }
 
@@ -610,21 +641,23 @@ impl View {
 
     pub fn render_styles(&self, client: &Client, styles: &StyleMap,
                          start: usize, end: usize, sel: &[(usize, usize)],
-                         hls: &[(usize, usize)],
+                         hls: &Vec<Vec<(usize, usize)>>,
                          style_spans: &Spans<Style>) -> Vec<isize>
     {
         let mut rendered_styles = Vec::new();
         let style_spans = style_spans.subseq(Interval::new_closed_open(start, end));
 
         let mut ix = 0;
-        // we add the special find highlights (1) and selection (0) styles first.
+        // we add the special find highlights (1 to N) and selection (0) styles first.
         // We add selection after find because we want it to be preferred if the
         // same span exists in both sets (as when there is an active selection)
-        for &(sel_start, sel_end) in hls {
-            rendered_styles.push((sel_start as isize) - ix);
-            rendered_styles.push(sel_end as isize - sel_start as isize);
-            rendered_styles.push(1);
-            ix = sel_end as isize;
+        for (index, cur_find_hls) in hls.iter().enumerate() {
+            for &(sel_start, sel_end) in cur_find_hls {
+                rendered_styles.push((sel_start as isize) - ix);
+                rendered_styles.push(sel_end as isize - sel_start as isize);
+                rendered_styles.push(index as isize + 1);
+                ix = sel_end as isize;
+            }
         }
         for &(sel_start, sel_end) in sel {
             rendered_styles.push((sel_start as isize) - ix);
@@ -939,13 +972,13 @@ impl View {
         let search_query = match self.selection.last() {
             Some(region) => {
                 if !region.is_caret() {
-                    text.slice_to_string(region)
+                    text.slice_to_cow(region)
                 } else {
                     let (start, end) = {
                         let mut word_cursor = WordCursor::new(text, region.max());
                         word_cursor.select_word()
                     };
-                    text.slice_to_string(start..end)
+                    text.slice_to_cow(start..end)
                 }
             },
             _ => return
@@ -954,29 +987,46 @@ impl View {
         self.find_changed = FindStatusChange::All;
         self.set_dirty(text);
 
-        // todo: this will be changed once multiple queries are supported
-        // todo: for now only a single search query is supported however in the future
-        // todo: the correct Find instance needs to be updated with the new parameters
-        if self.find.is_empty() {
-            self.find.push(Find::new());
+        // set selection as search query for first find if no additional search queries are used
+        // otherwise add new find with selection as search query
+        if self.find.len() != 1 {
+            self.add_find();
         }
 
-        self.find.first_mut().unwrap().do_find(text, search_query, case_sensitive, false, true);
+        self.find.last_mut().unwrap().do_find(text, &search_query, case_sensitive, false, true);
     }
 
-    pub fn do_find(&mut self, text: &Rope, chars: String, case_sensitive: bool, is_regex: bool,
-                   whole_words: bool) {
+    fn add_find(&mut self) {
+        let id = self.find_id_counter.next();
+        self.find.push(Find::new(id));
+    }
+
+    pub fn do_find(&mut self, text: &Rope, queries: Vec<FindQuery>) {
         self.set_dirty(text);
         self.find_changed = FindStatusChange::Matches;
 
-        // todo: this will be changed once multiple queries are supported
-        // todo: for now only a single search query is supported however in the future
-        // todo: the correct Find instance needs to be updated with the new parameters
-        if self.find.is_empty() {
-            self.find.push(Find::new());
-        }
+        // remove deleted queries
+        self.find.retain(|f| queries.iter().position(|q| q.id == Some(f.id())).is_some());
 
-        self.find.first_mut().unwrap().do_find(text, chars, case_sensitive, is_regex, whole_words);
+        for query in &queries {
+            let pos = match query.id {
+                Some(id) => {
+                    // update existing query
+                    match self.find.iter().position(|f| f.id() == id) {
+                        Some(p) => p,
+                        None => return
+                    }
+                }
+                None => {
+                    // add new query
+                    self.add_find();
+                    self.find.len() - 1
+                }
+            };
+
+            self.find.get_mut(pos).unwrap().do_find(text, &query.chars.clone(), query.case_sensitive,
+                                                    query.regex, query.whole_words)
+        }
     }
 
     /// Selects the next find match.
@@ -1007,13 +1057,20 @@ impl View {
     /// indicates a search for the next occurrence past the end of the file.
     pub fn select_next_occurrence(&mut self, text: &Rope, reverse: bool, wrapped: bool,
                                   _allow_same: bool, modify_selection: &SelectionModifier) {
+        let (cur_start, cur_end) = match self.selection.last() {
+            Some(sel) => (sel.min(), sel.max()),
+            _ => (0, 0)
+        };
+
         // multiple queries; select closest occurrence
         let closest_occurrence = self.find.iter().flat_map(|x|
             x.next_occurrence(text, reverse, wrapped, &self.selection)
         ).min_by_key(|x| {
             match reverse {
-                true => x.end,
-                false => x.start
+                true if x.end > cur_end => 2 * text.len() - x.end,
+                true => cur_end - x.end,
+                false if x.start < cur_start => x.start + text.len(),
+                false => x.start - cur_start
             }
         });
 
@@ -1052,20 +1109,20 @@ impl View {
         let replacement = match self.selection.last() {
             Some(region) => {
                 if !region.is_caret() {
-                    text.slice_to_string(region)
+                    text.slice_to_cow(region)
                 } else {
                     let (start, end) = {
                         let mut word_cursor = WordCursor::new(text, region.max());
                         word_cursor.select_word()
                     };
-                    text.slice_to_string(start..end)
+                    text.slice_to_cow(start..end)
                 }
             },
             _ => return
         };
 
         self.set_dirty(text);
-        self.do_set_replace(replacement, false);
+        self.do_set_replace(replacement.into_owned(), false);
     }
 
     /// Get the line range of a selected region.

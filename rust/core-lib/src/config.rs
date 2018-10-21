@@ -36,12 +36,17 @@ fn load_base_config() -> Table {
     }
 
     fn platform_overrides() -> Option<Table> {
-        #[cfg(target_os = "windows")]
-        {
-            let win_toml: &str = include_str!("../assets/windows.toml");
-            return Some(load(win_toml))
+        if cfg!(test) {
+            // Exit early if we are in tests and never have platform overrides.
+            // This makes sure we have a stable test environment.
+            None
+        } else if cfg!(windows) {
+            let toml = include_str!("../assets/windows.toml");
+            Some(load(toml))
+        } else {
+            // All other platorms
+            None
         }
-        None
     }
 
     let base_toml: &str = include_str!("../assets/defaults.toml");
@@ -165,6 +170,7 @@ pub struct BufferItems {
     pub scroll_past_end: bool,
     pub wrap_width: usize,
     pub word_wrap: bool,
+    pub autodetect_whitespace: bool,
 }
 
 pub type BufferConfig = Config<BufferItems>;
@@ -301,13 +307,14 @@ impl ConfigManager {
 
     /// Sets a specific language for the given buffer. This is used if the
     /// user selects a specific language in the frontend, for instance.
-    #[allow(dead_code)]
-    pub(crate) fn override_language(&mut self, id: BufferId, new_lang: LanguageId) {
+    pub(crate) fn override_language(&mut self, id: BufferId, new_lang: LanguageId) -> Option<Table> {
         let has_changed = self.buffer_tags.get_mut(&id)
             .map(|tag| tag.set_user(Some(new_lang)))
             .expect("buffer must exist");
         if has_changed {
-            self.update_buffer_config(id);
+            self.update_buffer_config(id)
+        } else {
+            None
         }
     }
 

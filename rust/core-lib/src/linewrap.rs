@@ -24,7 +24,7 @@ use xi_rope::spans::Spans;
 use xi_trace::trace_block;
 use xi_unicode::LineBreakLeafIter;
 
-use styles::Style;
+use styles::{Style, N_RESERVED_STYLES};
 use client::Client;
 use width_cache::{Token, WidthCache};
 
@@ -216,8 +216,6 @@ impl<'a> RewrapCtx<'a> {
     }
 
     fn refill_pot_breaks(&mut self) {
-        let style_id = 2;  // TODO: derive from style spans rather than assuming.
-
         let mut req = self.width_cache.batch_req();
 
         self.pot_breaks.clear();
@@ -226,8 +224,8 @@ impl<'a> RewrapCtx<'a> {
         while pos < self.max_offset && self.pot_breaks.len() < MAX_POT_BREAKS {
             let (next, hard) = self.lb_cursor.next();
             // TODO: avoid allocating string
-            let word = self.text.slice_to_string(pos..next);
-            let tok = req.request(style_id, &word);
+            let word = self.text.slice_to_cow(pos..next);
+            let tok = req.request(N_RESERVED_STYLES, &word);
             pos = next;
             self.pot_breaks.push(PotentialBreak { pos, tok, hard });
         }

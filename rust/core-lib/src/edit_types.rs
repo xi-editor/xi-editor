@@ -19,11 +19,12 @@
 //! the editor or view as appropriate.
 
 use movement::Movement;
-use rpc::{Position, GestureType, LineRange, EditNotification, MouseAction, SelectionModifier};
+use rpc::{Position, GestureType, LineRange, EditNotification, MouseAction, SelectionModifier, FindQuery};
 use view::Size;
 
 
 /// Events that only modify view state
+#[derive(Debug, PartialEq, Clone)]
 pub(crate) enum ViewEvent {
     Move(Movement),
     ModifySelection(Movement),
@@ -36,6 +37,7 @@ pub(crate) enum ViewEvent {
     Gesture { line: u64, col: u64, ty: GestureType },
     GotoLine { line: u64 },
     Find { chars: String, case_sensitive: bool, regex: bool, whole_words: bool },
+    MultiFind { queries: Vec<FindQuery> },
     FindNext { wrap_around: bool, allow_same: bool, modify_selection: SelectionModifier },
     FindPrevious { wrap_around: bool, allow_same: bool, modify_selection: SelectionModifier },
     FindAll,
@@ -48,6 +50,7 @@ pub(crate) enum ViewEvent {
 }
 
 /// Events that modify the buffer
+#[derive(Debug, PartialEq, Clone)]
 pub(crate) enum BufferEvent {
     Delete { movement: Movement, kill: bool },
     Backspace,
@@ -56,6 +59,7 @@ pub(crate) enum BufferEvent {
     Redo,
     Uppercase,
     Lowercase,
+    Capitalize,
     Indent,
     Outdent,
     Insert(String),
@@ -66,9 +70,12 @@ pub(crate) enum BufferEvent {
     ReplaceNext,
     ReplaceAll,
     DuplicateLine,
+    IncreaseNumber,
+    DecreaseNumber
 }
 
 /// An event that needs special handling
+#[derive(Debug, PartialEq, Clone)]
 pub(crate) enum SpecialEvent {
     DebugRewrap,
     DebugWrapWidth,
@@ -76,8 +83,12 @@ pub(crate) enum SpecialEvent {
     Resize(Size),
     RequestLines(LineRange),
     RequestHover { request_id: usize, position: Option<Position> },
+    ToggleRecording(Option<String>),
+    PlayRecording(String),
+    ClearRecording(String),
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub(crate) enum EventDomain {
     View(ViewEvent),
     Buffer(BufferEvent),
@@ -167,8 +178,12 @@ impl From<EditNotification> for EventDomain {
                 ViewEvent::ModifySelection(Movement::RightWord).into(),
             MoveToBeginningOfParagraph =>
                 ViewEvent::Move(Movement::StartOfParagraph).into(),
+            MoveToBeginningOfParagraphAndModifySelection =>
+                ViewEvent::ModifySelection(Movement::StartOfParagraph).into(),
             MoveToEndOfParagraph =>
                 ViewEvent::Move(Movement::EndOfParagraph).into(),
+            MoveToEndOfParagraphAndModifySelection =>
+                ViewEvent::ModifySelection(Movement::EndOfParagraph).into(),
             MoveToLeftEndOfLine =>
                 ViewEvent::Move(Movement::LeftOfLine).into(),
             MoveToLeftEndOfLineAndModifySelection =>
@@ -210,6 +225,8 @@ impl From<EditNotification> for EventDomain {
             Redo => BufferEvent::Redo.into(),
             Find { chars, case_sensitive, regex, whole_words } =>
                 ViewEvent::Find { chars, case_sensitive, regex, whole_words }.into(),
+            MultiFind { queries } =>
+                ViewEvent::MultiFind { queries }.into(),
             FindNext { wrap_around, allow_same, modify_selection } =>
                 ViewEvent::FindNext { wrap_around, allow_same, modify_selection }.into(),
             FindPrevious { wrap_around, allow_same, modify_selection } =>
@@ -221,6 +238,7 @@ impl From<EditNotification> for EventDomain {
             CancelOperation => ViewEvent::Cancel.into(),
             Uppercase => BufferEvent::Uppercase.into(),
             Lowercase => BufferEvent::Lowercase.into(),
+            Capitalize => BufferEvent::Capitalize.into(),
             Indent => BufferEvent::Indent.into(),
             Outdent => BufferEvent::Outdent.into(),
             HighlightFind { visible } => ViewEvent::HighlightFind { visible }.into(),
@@ -235,6 +253,11 @@ impl From<EditNotification> for EventDomain {
                 SpecialEvent::RequestHover { request_id, position }.into(),
             SelectionIntoLines => ViewEvent::SelectionIntoLines.into(),
             DuplicateLine => BufferEvent::DuplicateLine.into(),
+            IncreaseNumber => BufferEvent::IncreaseNumber.into(),
+            DecreaseNumber => BufferEvent::DecreaseNumber.into(),
+            ToggleRecording { recording_name } => SpecialEvent::ToggleRecording(recording_name).into(),
+            PlayRecording { recording_name } => SpecialEvent::PlayRecording(recording_name).into(),
+            ClearRecording { recording_name } => SpecialEvent::ClearRecording(recording_name).into(),
         }
     }
 }

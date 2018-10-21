@@ -29,6 +29,7 @@ use config::{Table, ConfigDomainExternal};
 use plugins::PlaceholderRpc;
 use tabs::ViewId;
 use view::Size;
+use syntax::LanguageId;
 
 // =============================================================================
 //  Command types
@@ -117,7 +118,7 @@ pub enum CoreNotification {
     /// use xi_core::rpc::*;
     /// # fn main() {
     /// let edit = EditCommand {
-    ///     view_id: "view-id-1".into(),
+    ///     view_id: 1.into(),
     ///     cmd: EditNotification::Insert { chars: "hello!".into() },
     /// };
     /// let rpc = CoreNotification::Edit(edit);
@@ -125,8 +126,8 @@ pub enum CoreNotification {
     ///     "method": "edit",
     ///     "params": {
     ///         "method": "insert",
+    ///         "view_id": "view-id-1",
     ///         "params": {
-    ///             "view_id": "view-id-1",
     ///             "chars": "hello!",
     ///         }
     ///     }
@@ -157,7 +158,7 @@ pub enum CoreNotification {
     /// # fn main() {
     /// let rpc = CoreNotification::Plugin(
     ///     PluginNotification::Start {
-    ///         view_id: "view-id-1".into(),
+    ///         view_id: 1.into(),
     ///         plugin_name: "syntect".into(),
     ///     });
     ///
@@ -204,7 +205,9 @@ pub enum CoreNotification {
     TracingConfig {enabled: bool},
     /// Save trace data to the given path.  The core will first send
     /// CoreRequest::CollectTrace to all peers to collect the samples.
-    SaveTrace { destination: PathBuf, frontend_samples: Value }
+    SaveTrace { destination: PathBuf, frontend_samples: Value },
+    /// Tells `xi-core` to set the language id for the view.
+    SetLanguage { view_id: ViewId, language_id: LanguageId }
 }
 
 /// The requests which make up the base of the protocol.
@@ -290,7 +293,7 @@ pub struct EditCommand<T> {
 }
 
 /// An enum representing touch and mouse gestures applied to the text.
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum GestureType {
     PointSelect,
@@ -309,7 +312,7 @@ pub enum GestureType {
 /// Several core protocol commands use a params array to pass arguments
 /// which are named, internally. this type use custom Serialize /
 /// Deserialize impls to accommodate this.
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct LineRange {
     pub first: i64,
     pub last: i64,
@@ -318,7 +321,7 @@ pub struct LineRange {
 /// A mouse event. See the note for [`LineRange`].
 ///
 /// [`LineRange`]: enum.LineRange.html
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct MouseAction {
     pub line: u64,
     pub column: u64,
@@ -326,7 +329,7 @@ pub struct MouseAction {
     pub click_count: Option<u64>,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct Position {
     pub line: usize,
     pub column: usize
@@ -334,7 +337,7 @@ pub struct Position {
 
 /// Represents how the current selection is modified (used by find
 /// operations).
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum SelectionModifier {
     None,
@@ -345,6 +348,18 @@ pub enum SelectionModifier {
 
 impl Default for SelectionModifier {
     fn default() -> SelectionModifier { SelectionModifier::Set }
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct FindQuery {
+    pub id: Option<usize>,
+    pub chars: String,
+    pub case_sensitive: bool,
+    #[serde(default)]
+    pub regex: bool,
+    #[serde(default)]
+    pub whole_words: bool
 }
 
 /// The edit-related notifications.
@@ -382,7 +397,9 @@ pub enum EditNotification {
     MoveWordRight,
     MoveWordRightAndModifySelection,
     MoveToBeginningOfParagraph,
+    MoveToBeginningOfParagraphAndModifySelection,
     MoveToEndOfParagraph,
+    MoveToEndOfParagraphAndModifySelection,
     MoveToLeftEndOfLine,
     MoveToLeftEndOfLineAndModifySelection,
     MoveToRightEndOfLine,
@@ -417,6 +434,7 @@ pub enum EditNotification {
         #[serde(default)]
         whole_words: bool
     },
+    MultiFind { queries: Vec<FindQuery> },
     FindNext {
         #[serde(default)]
         wrap_around: bool,
@@ -441,6 +459,7 @@ pub enum EditNotification {
     CancelOperation,
     Uppercase,
     Lowercase,
+    Capitalize,
     Indent,
     Outdent,
     /// Indicates whether find highlights should be rendered
@@ -460,6 +479,11 @@ pub enum EditNotification {
     RequestHover { request_id: usize, position: Option<Position> },
     SelectionIntoLines,
     DuplicateLine,
+    IncreaseNumber,
+    DecreaseNumber,
+    ToggleRecording { recording_name: Option<String> },
+    PlayRecording { recording_name: String },
+    ClearRecording { recording_name: String },
 }
 
 /// The edit related requests.
@@ -494,7 +518,7 @@ impl<T: Serialize> Serialize for EditCommand<T>
         where S: Serializer
     {
         let mut v = serde_json::to_value(&self.cmd).map_err(ser::Error::custom)?;
-        v["params"]["view_id"] = json!(self.view_id);
+        v["view_id"] = json!(self.view_id);
         v.serialize(serializer)
     }
 }
@@ -512,10 +536,11 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for EditCommand<T>
         let mut v = Value::deserialize(deserializer)?;
         let helper = InnerId::deserialize(&v).map_err(de::Error::custom)?;
         let InnerId { view_id } = helper;
+
         // if params are empty, remove them
         let remove_params = match v.get("params") {
-            Some(&Value::Object(ref obj)) => obj.is_empty(),
-            Some(&Value::Array(ref arr)) => arr.is_empty(),
+            Some(&Value::Object(ref obj)) => obj.is_empty() && T::deserialize(v.clone()).is_err(),
+            Some(&Value::Array(ref arr)) => arr.is_empty() && T::deserialize(v.clone()).is_err(),
             Some(_) => return Err(de::Error::custom("'params' field, if present, must be object or array.")),
             None => false,
         };
@@ -573,5 +598,28 @@ impl<'de> Deserialize<'de> for LineRange
 
         let tup = TwoTuple::deserialize(deserializer)?;
         Ok(LineRange { first: tup.0, last: tup.1 })
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tabs::ViewId;
+
+    #[test]
+    fn test_serialize_edit_command() {
+        // Ensure that an EditCommand can be serialized and then correctly deserialized.
+        let message: String = "hello world".into();
+        let edit = EditCommand {
+            view_id: ViewId(1),
+            cmd: EditNotification::Insert { chars: message.clone() },
+        };
+        let json = serde_json::to_string(&edit).unwrap();
+        let cmd: EditCommand<EditNotification> = serde_json::from_str(&json).unwrap();
+        assert_eq!(cmd.view_id, edit.view_id);
+        if let EditNotification::Insert{ chars } = cmd.cmd {
+            assert_eq!(chars, message);
+        }
     }
 }

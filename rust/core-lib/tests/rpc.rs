@@ -34,6 +34,7 @@ fn test_startup() {
     let json = make_reader(r#"{"method":"client_started","params":{}}
 {"method":"set_theme","params":{"theme_name":"InspiredGitHub"}}"#);
     assert!(rpc_looper.mainloop(|| json, &mut state).is_ok());
+    rx.expect_rpc("available_languages");
     rx.expect_rpc("available_themes");
     rx.expect_rpc("theme_changed");
 
@@ -42,6 +43,7 @@ fn test_startup() {
     assert_eq!(rx.expect_response(), Ok(json!("view-id-1")));
     rx.expect_rpc("available_plugins");
     rx.expect_rpc("config_changed");
+    rx.expect_rpc("language_changed");
     rx.expect_rpc("update");
     rx.expect_rpc("scroll_to");
     rx.expect_nothing();
@@ -175,11 +177,13 @@ fn test_settings_commands() {
 {"method":"set_theme","params":{"theme_name":"InspiredGitHub"}}
 {"id":0,"method":"new_view","params":{}}"#);
     assert!(rpc_looper.mainloop(|| json, &mut state).is_ok());
+    rx.expect_rpc("available_languages");
     rx.expect_rpc("available_themes");
     rx.expect_rpc("theme_changed");
     rx.expect_response().unwrap();
     rx.expect_rpc("available_plugins");
     rx.expect_rpc("config_changed");
+    rx.expect_rpc("language_changed");
     rx.expect_rpc("update");
     rx.expect_rpc("scroll_to");
 
@@ -263,6 +267,8 @@ const TEXT_EDIT_RPCS: &str = r#"{"method":"edit","params":{"view_id":"view-id-1"
 {"method":"edit","params":{"view_id":"view-id-1","method":"indent","params":[]}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"outdent","params":[]}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"duplicate_line","params":[]}}
+{"method":"edit","params":{"view_id":"view-id-1","method":"replace_next","params":[]}}
+{"method":"edit","params":{"view_id":"view-id-1","method":"replace_all","params":[]}}
 {"id":2,"method":"edit","params":{"view_id":"view-id-1","method":"cut","params":[]}}"#;
 
 const OTHER_EDIT_RPCS: &str = r#"{"method":"edit","params":{"view_id":"view-id-1","method":"scroll","params":[0,1]}}
@@ -277,8 +283,14 @@ const OTHER_EDIT_RPCS: &str = r#"{"method":"edit","params":{"view_id":"view-id-1
 {"method":"edit","params":{"view_id":"view-id-1","method":"gesture","params":{"line": 1, "col": 2, "ty": "multi_line_select"}}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"gesture","params":{"line": 1, "col": 2, "ty": "multi_word_select"}}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"find","params":{"case_sensitive":false,"chars":"m"}}}
+{"method":"edit","params":{"view_id":"view-id-1","method":"multi_find","params":{"queries": [{"case_sensitive":false,"chars":"m"}]}}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"find_next","params":{"wrap_around":true}}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"find_previous","params":{"wrap_around":true}}}
+{"method":"edit","params":{"view_id":"view-id-1","method":"find_all","params":[]}}
+{"method":"edit","params":{"view_id":"view-id-1","method":"highlight_find","params":{"visible":true}}}
+{"method":"edit","params":{"view_id":"view-id-1","method":"selection_for_find","params":{"case_sensitive":true}}}
+{"method":"edit","params":{"view_id":"view-id-1","method":"replace","params":{"chars":"a"}}}
+{"method":"edit","params":{"view_id":"view-id-1","method":"selection_for_replace","params":[]}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"debug_rewrap","params":[]}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"debug_print_spans","params":[]}}
 {"id":3,"method":"edit","params":{"view_id":"view-id-1","method":"copy","params":[]}}"#;

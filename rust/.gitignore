@@ -1,5 +1,6 @@
 */Cargo.lock
 !/syntect-plugin/Cargo.lock
+/syntect-plugin/out
 *.rs.bk
 target
 build

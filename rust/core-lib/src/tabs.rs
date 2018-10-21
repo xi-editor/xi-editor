@@ -27,7 +27,7 @@ use std::io;
 use std::mem;
 use std::path::{Path, PathBuf};
 
-use serde::de::{Deserialize, Deserializer};
+use serde::de::{self, Deserialize, Deserializer, Unexpected};
 use serde::ser::{Serialize, Serializer};
 use serde_json::Value;
 
@@ -38,6 +38,7 @@ use xi_trace::{self, trace_block};
 use WeakXiCore;
 use client::Client;
 use config::{self, ConfigManager, ConfigDomain, ConfigDomainExternal, Table};
+use recorder::Recorder;
 use editor::Editor;
 use event_context::EventContext;
 use file::FileManager;
@@ -48,6 +49,9 @@ use rpc::{CoreNotification, CoreRequest, EditNotification, EditRequest,
 use styles::{ThemeStyleMap, DEFAULT_THEME};
 use view::View;
 use width_cache::WidthCache;
+use syntax::LanguageId;
+use whitespace::Indentation;
+use line_ending::LineEnding;
 
 #[cfg(feature = "notify")]
 use watcher::{FileWatcher, WatchToken};
@@ -101,6 +105,8 @@ pub struct CoreState {
     width_cache: RefCell<WidthCache>,
     /// User and platform specific settings
     config_manager: ConfigManager,
+    /// Recorded editor actions
+    recorder: RefCell<Recorder>,
     /// A weak reference to the main state container, stashed so that
     /// it can be passed to plugins.
     self_ref: Option<WeakXiCore>,
@@ -158,6 +164,7 @@ impl CoreState {
             style_map: RefCell::new(ThemeStyleMap::new(themes_dir)),
             width_cache: RefCell::new(WidthCache::new()),
             config_manager,
+            recorder: RefCell::new(Recorder::new()),
             self_ref: None,
             pending_views: Vec::new(),
             peer: Client::new(peer.clone()),
@@ -194,6 +201,8 @@ impl CoreState {
         let plugin_paths = self.config_manager.get_plugin_paths();
         self.plugins.reload_from_paths(&plugin_paths);
         let languages = self.plugins.make_languages_map();
+        let languages_ids = languages.iter().map(|l| l.name.clone()).collect::<Vec<_>>();
+        self.peer.available_languages(languages_ids);
         self.config_manager.set_languages(languages);
         let theme_names = self.style_map.borrow().get_theme_names();
         self.peer.available_themes(theme_names);
@@ -265,6 +274,7 @@ impl CoreState {
                 view,
                 editor,
                 config: &config.items,
+                recorder: &self.recorder,
                 language,
                 info: info,
                 siblings: Vec::new(),
@@ -311,13 +321,14 @@ impl CoreState {
                         self.do_start_plugin(view_id, &plugin_name),
                     PN::Stop { view_id, plugin_name } =>
                         self.do_stop_plugin(view_id, &plugin_name),
-                    PN::PluginRpc { .. } => ()
-                        //TODO: rethink custom plugin RPCs
+                    PN::PluginRpc { view_id, receiver, rpc } =>
+                        self.do_plugin_rpc(view_id, &receiver, &rpc.method, &rpc.params),
                 }
             TracingConfig { enabled } =>
                 self.toggle_tracing(enabled),
             // handled at the top level
             ClientStarted { .. } => (),
+            SetLanguage { view_id, language_id } => self.do_set_language(view_id, language_id),
         }
     }
 
@@ -435,7 +446,7 @@ impl CoreState {
     }
 
     fn do_set_theme(&self, theme_name: &str) {
-        //Set only if requested theme is different from the 
+        //Set only if requested theme is different from the
         //current one.
         if theme_name != self.style_map.borrow().get_theme_name() {
            if let Err(e) = self.style_map.borrow_mut().set_theme(&theme_name) {
@@ -495,6 +506,19 @@ impl CoreState {
                 || RemoteError::custom(404, format!("No view for id {}", view_id), None))
     }
 
+    fn do_set_language(&mut self, view_id: ViewId, language_id: LanguageId) {
+        if let Some(view) = self.views.get(&view_id) {
+            let buffer_id = view.borrow().get_buffer_id();
+            let changes = self.config_manager.override_language(buffer_id, language_id.clone());
+
+            let mut context = self.make_context(view_id).unwrap();
+            context.language_changed(&language_id);
+            if let Some(changes) = changes {
+                context.config_changed(&changes);
+            }
+        }
+    }
+
     fn do_start_plugin(&mut self, _view_id: ViewId, plugin: &str) {
         if self.running_plugins.iter().any(|p| p.name == plugin) {
             info!("plugin {} already running", plugin);
@@ -522,6 +546,12 @@ impl CoreState {
             }
     }
 
+    fn do_plugin_rpc(&self, view_id: ViewId, receiver: &str, method: &str, params: &Value) {
+        self.running_plugins.iter()
+            .filter(|p| p.name == receiver)
+            .for_each(|p| p.dispatch_command(view_id, method, params))
+    }
+
     fn after_stop_plugin(&mut self, plugin: &Plugin) {
         self.iter_groups().for_each(|mut cx| cx.plugin_stopped(plugin));
     }
@@ -542,9 +572,67 @@ impl CoreState {
     fn finalize_new_views(&mut self) {
         let to_start = mem::replace(&mut self.pending_views, Vec::new());
         to_start.iter().for_each(|(id, config)| {
+            let modified = self.detect_whitespace(*id, config);
+            let config = modified.as_ref().unwrap_or(config);
             let mut edit_ctx = self.make_context(*id).unwrap();
-            edit_ctx.finish_init(config);
+            edit_ctx.finish_init(&config);
         });
+    }
+
+    // Detects whitespace settings from the file and merges them with the config
+    fn detect_whitespace(&mut self, id: ViewId, config: &Table) -> Option<Table> {
+        let buffer_id = self.views.get(&id).map(|v| v.borrow().get_buffer_id())?;
+        let editor = self.editors.get(&buffer_id).expect("existing buffer_id must have corresponding editor");
+
+        let autodetect_whitespace = self.config_manager.get_buffer_config(buffer_id).items.autodetect_whitespace;
+        if !autodetect_whitespace {
+            return None;
+        }
+
+        let mut changes = Table::new();
+        let indentation = Indentation::parse(editor.borrow().get_buffer());
+        match indentation {
+            Ok(Some(Indentation::Tabs)) => {
+                changes.insert("translate_tabs_to_spaces".into(), false.into());
+            },
+            Ok(Some(Indentation::Spaces(n))) => {
+                changes.insert("translate_tabs_to_spaces".into(), true.into());
+                changes.insert("tab_size".into(), n.into());
+            },
+            Err(_) => info!("detected mixed indentation"),
+            Ok(None) => info!("file contains no indentation"),
+        }
+
+        let line_ending = LineEnding::parse(editor.borrow().get_buffer());
+        match line_ending {
+            Ok(Some(LineEnding::CrLf)) => {
+                changes.insert("line_ending".into(), "\r\n".into());
+            },
+            Ok(Some(LineEnding::Lf)) => {
+                changes.insert("line_ending".into(), "\n".into());
+            },
+            Err(_) => info!("detected mixed line endings"),
+            Ok(None) => info!("file contains no supported line endings"),
+        }
+
+        let config_delta = self.config_manager.table_for_update(ConfigDomain::SysOverride(buffer_id), changes);
+        match self.config_manager.set_user_config(ConfigDomain::SysOverride(buffer_id), config_delta) {
+            Ok(ref mut items) if items.len() > 0 => {
+                assert!(items.len() == 1, "whitespace overrides can only update a single buffer's config\n{:?}", items);
+                let table = items.remove(0).1;
+                let mut config = config.clone();
+                config.extend(table);
+                Some(config)
+            },
+            Ok(_) => {
+                warn!("set_user_config failed to update config, no tables were returned");
+                None
+            },
+            Err(err) => {
+                warn!("detect_whitespace failed to update config: {:?}", err);
+                None
+            },
+        }
     }
 
     fn handle_render_timer(&mut self, token: usize) {
@@ -667,7 +755,7 @@ impl CoreState {
                     .get_theme_name()
                 {
                     if self.style_map.borrow_mut()
-                        .set_theme(&theme_name).is_ok() 
+                        .set_theme(&theme_name).is_ok()
                     {
                         self.notify_client_and_update_views();
                     }
@@ -680,7 +768,7 @@ impl CoreState {
     fn remove_theme(&mut self, path: &Path) {
         let result = self.style_map.borrow_mut().remove_theme(path);
 
-        // Set default theme if the removed theme was the 
+        // Set default theme if the removed theme was the
         // current one.
         if let Some(theme_name) = result {
             if theme_name == self.style_map.borrow().get_theme_name() {
@@ -839,28 +927,13 @@ impl<'a, I> Iterator for Iter<'a, I> where I: Iterator<Item=&'a ViewId> {
 }
 
 #[derive(Debug, Default)]
-struct Counter(Cell<usize>);
+pub(crate) struct Counter(Cell<usize>);
 
 impl Counter {
-    fn next(&self) -> usize {
+    pub(crate) fn next(&self) -> usize {
         let n = self.0.get();
         self.0.set(n + 1);
         n + 1
-    }
-}
-
-impl<'a> From<&'a str> for ViewId {
-    fn from(s: &'a str) -> Self {
-        let ord = s.trim_left_matches("view-id-");
-        let ident = usize::from_str_radix(ord, 10)
-            .expect("ViewId parsing should never fail");
-        ViewId(ident)
-    }
-}
-
-impl From<String> for ViewId {
-    fn from(s: String) -> Self {
-        s.as_str().into()
     }
 }
 
@@ -897,7 +970,11 @@ impl<'de> Deserialize<'de> for ViewId
         where D: Deserializer<'de>
     {
         let s = String::deserialize(deserializer)?;
-        Ok(s.into())
+        let ord = s.trim_left_matches("view-id-");
+        match usize::from_str_radix(ord, 10) {
+            Ok(id) => Ok(ViewId(id)),
+            Err(_) => Err(de::Error::invalid_value(Unexpected::Str(&s), &"view id")),
+        }
     }
 }
 
@@ -910,5 +987,21 @@ impl fmt::Display for BufferId {
 impl BufferId {
     pub fn new(val: usize) -> Self {
         BufferId(val)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde::Deserialize;
+
+    use super::ViewId;
+
+    #[test]
+    fn test_deserialize_view_id() {
+        let de = json!("view-id-1");
+        assert_eq!(ViewId::deserialize(&de).unwrap(), ViewId(1));
+
+        let de = json!("not-a-view-id");
+        assert!(ViewId::deserialize(&de).unwrap_err().is_data());
     }
 }

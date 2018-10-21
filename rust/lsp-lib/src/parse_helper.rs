@@ -28,12 +28,10 @@ fn parse_header(s: &str) -> Result<LspHeader, ParseError> {
     };
     match split[0].as_ref() {
         HEADER_CONTENT_TYPE => Ok(LspHeader::ContentType),
-        HEADER_CONTENT_LENGTH => Ok(LspHeader::ContentLength(usize::from_str_radix(
-            &split[1], 10,
-        )?)),
-        _ => Err(ParseError::Unknown(
-            "Unknown parse error occurred".to_string(),
-        )),
+        HEADER_CONTENT_LENGTH => {
+            Ok(LspHeader::ContentLength(usize::from_str_radix(&split[1], 10)?))
+        }
+        _ => Err(ParseError::Unknown("Unknown parse error occurred".to_string())),
     }
 }
 

@@ -15,14 +15,14 @@
 //! Very basic syntax detection.
 
 use std::borrow::Borrow;
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeMap};
 use std::path::Path;
 use std::sync::Arc;
 
 use config::Table;
 
 /// The canonical identifier for a particular `LanguageDefinition`.
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct LanguageId(Arc<String>);
 
 /// Describes a `LanguageDefinition`. Although these are provided by plugins,
@@ -41,13 +41,14 @@ pub struct LanguageDefinition {
 /// A repository of all loaded `LanguageDefinition`s.
 #[derive(Debug, Default)]
 pub struct Languages {
-    named: HashMap<LanguageId, Arc<LanguageDefinition>>,
+    // NOTE: BTreeMap is used for sorting the languages by name alphabetically
+    named: BTreeMap<LanguageId, Arc<LanguageDefinition>>,
     extensions: HashMap<String, Arc<LanguageDefinition>>,
 }
 
 impl Languages {
     pub fn new(language_defs: &[LanguageDefinition]) -> Self {
-        let mut named = HashMap::new();
+        let mut named = BTreeMap::new();
         let mut extensions = HashMap::new();
         for lang in language_defs.iter() {
             let lang_arc = Arc::new(lang.clone());

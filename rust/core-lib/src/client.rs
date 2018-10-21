@@ -24,6 +24,7 @@ use config::Table;
 use styles::ThemeSettings;
 use plugins::rpc::ClientPluginInfo;
 use plugins::Command;
+use syntax::LanguageId;
 
 /// An interface to the frontend.
 pub struct Client(RpcPeer);
@@ -71,11 +72,24 @@ impl Client {
                                      &json!({"themes": theme_names}))
     }
 
+    pub fn available_languages(&self, languages: Vec<LanguageId>) {
+        self.0.send_rpc_notification("available_languages",
+                                     &json!({"languages": languages}))
+    }
+
     pub fn theme_changed(&self, name: &str, theme: &ThemeSettings) {
         self.0.send_rpc_notification("theme_changed",
                                      &json!({
                                          "name": name,
                                          "theme": theme,
+                                     }));
+    }
+
+    pub fn language_changed(&self, view_id: ViewId, new_lang: &LanguageId) {
+        self.0.send_rpc_notification("language_changed",
+                                     &json!({
+                                         "view_id": view_id,
+                                         "language_id": new_lang,
                                      }));
     }
 

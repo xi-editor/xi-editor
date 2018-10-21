@@ -73,8 +73,14 @@ note for `new_view`. Errors are not currently reported.
 
 `set_theme {"theme_name": "InspiredGitHub"}`
 
-Requests that core change the theme. If the change succeeds the client
+Asks core to change the theme. If the change succeeds the client
 will receive a `theme_changed` notification.
+
+### set_language
+`set_language {"view-id":"view-id-1", "language_id":"Rust"}`
+
+Asks core to change the language of the buffer associated with the `view_id`.
+If the change succeeds the client will receive a `language_changed` notification.
 
 ### modify_user_config
 
@@ -117,13 +123,13 @@ multiple cursors and `chars` has the same number of lines as there are
 cursors, one line will be inserted at each cursor, in order; otherwise the full
 string will be inserted at each cursor.
 
-#### copy 
+#### copy
 
 `copy -> String|Null`
 
 Copies the active selection, returning their contents or `Null` if the selection was empty.
 
-#### cut 
+#### cut
 
 `cut -> String|Null`
 
@@ -188,6 +194,13 @@ multi_line_select # adds a line to the selection
 multi_word_select # adds a word to the selection
 ```
 
+#### goto_line
+
+`goto_line {"line": 1}`
+
+Sets the cursor to the beginning of the provided `line` and scrolls to
+this position.
+
 #### Other movement and deletion commands
 
 The following edit methods take no parameters, and have similar
@@ -212,6 +225,11 @@ scroll_page_up
 page_up_and_modify_selection
 scroll_page_down
 page_down_and_modify_selection
+yank
+transpose
+select_all
+add_selection_above
+add_selection_below
 ```
 
 #### Transformations
@@ -221,8 +239,46 @@ The following methods act by modifying the current selection.
 ```
 uppercase
 lowercase
+capitalize
 indent
 outdent
+```
+
+#### Number Transformations
+
+The following methods work with a caret or multiple selections. If the beginning of a selection (or the caret) is within a positive or negative number, the number will be transformed accordingly:
+
+```
+increase_number
+decrease_number
+```
+
+#### Recording
+
+These methods allow manipulation and playback of event recordings.
+
+- If there is no currently active recording, start recording events under the provided name.
+- If there is no provided name, the current recording is saved.
+- If the name provided matches the current recording name, the current recording is saved.
+- If the name provided does not match the current recording name, the events for the current recording are dismissed.
+```
+toggle_recording {
+    "recording_name"?: string
+}
+```
+
+Execute a set of recorded events and modify the document state:
+```
+play_recording {
+    "recording_name": string
+}
+```
+
+Completely remove a specific recording:
+```
+clear_recording {
+    "recording_name": string
+}
 ```
 
 ### Language Support Oriented features (in Edit Namespace)
@@ -292,6 +348,17 @@ or a request.
 Parameters `regex` and `whole_words` are optional and by default `false`.
 
 Sets the current search query and options.
+
+#### multi_find
+
+This find command supports multiple search queries.
+
+`multi_find [{"id": 1, "chars": "a", "case_sensitive": false, "regex": false, "whole_words": true}]`
+Parameters `regex` and `whole_words` are optional and by default `false`. `id` is an optional parameter
+used to uniquely identify a search query. If left empty, the query is considered as a new query and
+the backend will generate a new ID.
+
+Sets the current search queries and options.
 
 #### find_next and find_previous
 
@@ -533,6 +600,17 @@ instance.
 
 Notifies the client of the available themes.
 
+#### language_changed
+
+`language_changed {"view_id": "view-id-1", "language_id": "Rust"}`
+
+Notifies the client that the language used for syntax highlighting has been changed.
+
+#### available_languages
+
+`available_languages {"languages": ["Rust"]}`
+
+Notifies the client of the available languages.
 
 #### config_changed
 
@@ -643,7 +721,9 @@ Removes a status item from the front end.
 
 #### find_status
 
-`find_status {"view_id": "view-id-1", "queries": [{"chars": "a", "case_sensitive": false, "is_regex": false, "whole_words": true, "matches": 6}]}`
+Find supports multiple search queries.
+
+`find_status {"view_id": "view-id-1", "queries": [{"id": 1, "chars": "a", "case_sensitive": false, "is_regex": false, "whole_words": true, "matches": 6}]}`
 
 Notifies the client about the current search queries and search options.
 

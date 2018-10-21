@@ -8,11 +8,18 @@ rust:
 os:
   - linux
   - osx
+  - windows
 
 matrix:
   allow_failures:
     - rust: nightly
+    - os: windows
 
+# on windows, rustup installs the msvc toolchain by default so we need link.exe
+before_script:
+  - if [ "$TRAVIS_OS_NAME" = 'windows' ]; then choco install windows-sdk-10.0; fi
+
+# windows builds run in git bash so these (should) Just Work
 cache:
   directories:
     - $HOME/.cargo

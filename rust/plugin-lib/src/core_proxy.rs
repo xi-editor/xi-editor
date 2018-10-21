@@ -13,10 +13,10 @@
 // limitations under the License.
 
 //! A proxy for the methods on Core
-use xi_core::internal::plugins::PluginId;
 use xi_core::plugin_rpc::Hover;
+use xi_core::plugins::PluginId;
 use xi_core::ViewId;
-use xi_rpc::{RpcCtx, RpcPeer, RemoteError};
+use xi_rpc::{RemoteError, RpcCtx, RpcPeer};
 
 #[derive(Clone)]
 pub struct CoreProxy {
@@ -26,10 +26,7 @@ pub struct CoreProxy {
 
 impl CoreProxy {
     pub fn new(plugin_id: PluginId, rpc_ctx: &RpcCtx) -> Self {
-        CoreProxy {
-            plugin_id,
-            peer: rpc_ctx.get_peer().clone(),
-        }
+        CoreProxy { plugin_id, peer: rpc_ctx.get_peer().clone() }
     }
 
     pub fn add_status_item(&mut self, view_id: &ViewId, key: &str, value: &str, alignment: &str) {
@@ -69,7 +66,7 @@ impl CoreProxy {
         &mut self,
         view_id: ViewId,
         request_id: usize,
-        result: Result<Hover, RemoteError>
+        result: Result<Hover, RemoteError>,
     ) {
         let params = json!({
             "plugin_id": self.plugin_id,

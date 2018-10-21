@@ -342,42 +342,6 @@ impl<N: NodeInfo> Node<N> {
         M::measure(&self.0.info, self.0.len)
     }
 
-    /*
-    // TODO: not sure if this belongs in the public interface, cursor
-    // might subsume all real use cases.
-    // calls the given function with leaves forming the sequence
-    fn visit_subseq<F>(&self, iv: Interval, f: &mut F)
-            where F: FnMut(&N::L) -> () {
-        if iv.is_empty() {
-            return;
-        }
-        match self.0.val {
-            NodeVal::Leaf(ref l) => {
-                if iv == Interval::new_closed_closed(0, l.len()) {
-                    f(l);
-                } else {
-                    f(&l.clone().subseq(iv));
-                }
-            }
-            NodeVal::Internal(ref v) => {
-                let mut offset = 0;
-                for child in v {
-                    if iv.is_before(offset) {
-                        break;
-                    }
-                    let child_iv = Interval::new_closed_closed(0, child.len());
-                    // easier just to use signed ints?
-                    let rec_iv = iv.intersect(child_iv.translate(offset))
-                        .translate_neg(offset);
-                    child.visit_subseq::<F>(rec_iv, f);
-                    offset += child_iv.size();
-                }
-                return;
-            }
-        }
-    }
-    */
-
     pub fn push_subseq(&self, b: &mut TreeBuilder<N>, iv: Interval) {
         if iv.is_empty() {
             return;
@@ -816,92 +780,6 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
         self.offset_of_leaf = offset;
     }
 }
-
-/*
-
-// How to access the slice type for a leaf, if available. This will
-// be super helpful in building a chunk iterator (which requires
-// slices if it's going to conform to Rust's iterator protocol)
-fn slice<'a, L: Leaf + Index<RangeFull>>(l: &'a L) -> &'a L::Output {
-    l.index(RangeFull)
-}
-*/
-
-/*
-// TODO: the following is an example, written during development but
-// not actually used. Either make it real or delete it.
-
-#[derive(Clone, Default)]
-struct BytesLeaf(Vec<u8>);
-
-#[derive(Clone)]
-struct BytesInfo(usize);
-
-// leaf doesn't have to be a newtype
-impl Leaf for Vec<u8> {
-    fn len(&self) -> usize {
-        self.len()
-    }
-
-    fn is_ok_child(&self) -> bool {
-        self.len() >= 512
-    }
-
-    fn push_maybe_split(&mut self, other: &Vec<u8>, iv: Interval) -> Option<Vec<u8>> {
-        let (start, end) = iv.start_end();
-        self.extend_from_slice(&other[start..end]);
-        if self.len() <= 1024 {
-            None
-        } else {
-            let splitpoint = self.len() / 2;
-            let new = self[splitpoint..].to_owned();
-            self.truncate(splitpoint);
-            Some(new)
-        }
-    }
-}
-
-impl NodeInfo for BytesInfo {
-    type L = Vec<u8>;
-    type BaseMetric = BytesMetric;
-    fn accumulate(&mut self, other: &Self) {
-        self.0 += other.0;
-    }
-
-    fn compute_info(l: &Vec<u8>) -> BytesInfo {
-        BytesInfo(l.len())
-    }
-}
-
-struct BytesMetric(());
-
-impl Metric<BytesInfo> for BytesMetric {
-    fn measure(_: &BytesInfo, len: usize) -> usize {
-        len
-    }
-
-    fn to_base_units(_: &Vec<u8>, in_measured_units: usize) -> usize {
-        in_measured_units
-    }
-
-    fn from_base_units(_: &Vec<u8>, in_base_units: usize) -> usize {
-        in_base_units
-    }
-
-    fn is_boundary(_: &Vec<u8>, _: usize) -> bool { true }
-
-    fn prev(_: &Vec<u8>, offset: usize) -> Option<usize> {
-        if offset > 0 { Some(offset - 1) } else { None }
-    }
-
-    fn next(l: &Vec<u8>, offset: usize) -> Option<usize> {
-        if offset < l.len() { Some(offset + 1) } else { None }
-    }
-
-    fn can_fragment() -> bool { false }
-}
-
-*/
 
 #[cfg(test)]
 mod test {

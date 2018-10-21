@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use result_queue::ResultQueue;
 use conversion_utils::*;
 use language_server_client::LanguageServerClient;
 use lsp_types::*;
 use parse_helper;
+use result_queue::ResultQueue;
 use std;
 use std::ffi::OsStr;
 use std::io::{BufReader, BufWriter};
@@ -27,9 +27,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use types::Error;
 use url::Url;
-use xi_plugin_lib::{
-    Cache, ChunkCache, CoreProxy, Error as PluginLibError, View,
-};
+use xi_plugin_lib::{Cache, ChunkCache, CoreProxy, Error as PluginLibError, View};
 use xi_rope::rope::RopeDelta;
 
 /// Get contents changes of a document modeled according to Language Server Protocol
@@ -200,8 +198,7 @@ pub fn start_new_server(
                         Err(err) => error!("Error occurred {:?}", err),
                     };
                 }
-            })
-            .unwrap();
+            }).unwrap();
     }
 
     Ok(language_server_client)

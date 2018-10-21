@@ -13,13 +13,10 @@
 // limitations under the License.
 
 #![cfg_attr(feature = "benchmarks", feature(test))]
-
-#![cfg_attr(feature = "cargo-clippy", allow(
-    if_same_then_else,
-    needless_bool,
-    needless_pass_by_value,
-    ptr_arg,
-))]
+#![cfg_attr(
+    feature = "cargo-clippy",
+    allow(if_same_then_else, needless_bool, needless_pass_by_value, ptr_arg)
+)]
 
 extern crate xi_trace;
 
@@ -33,7 +30,8 @@ extern crate serde_derive;
 extern crate serde_json;
 
 #[cfg(test)]
-#[macro_use] extern crate serde_json;
+#[macro_use]
+extern crate serde_json;
 
 #[cfg(all(test, feature = "benchmarks"))]
 extern crate test;
@@ -63,7 +61,7 @@ mod tests {
 
     #[cfg(feature = "json_payload")]
     fn to_payload(value: &'static str) -> TracePayloadT {
-        json!({"test": value})
+        json!({ "test": value })
     }
 
     #[cfg(feature = "chrome_trace_event")]
@@ -75,9 +73,14 @@ mod tests {
         trace.instant("sample1", &["test", "chrome"]);
         trace.instant_payload("sample2", &["test", "chrome"], to_payload("payload 2"));
         trace.instant_payload("sample3", &["test", "chrome"], to_payload("payload 3"));
-        trace.closure_payload("sample4", &["test", "chrome"],|| {
-            let _guard = trace.block("sample5", &["test,chrome"]);
-        }, to_payload("payload 4"));
+        trace.closure_payload(
+            "sample4",
+            &["test", "chrome"],
+            || {
+                let _guard = trace.block("sample5", &["test,chrome"]);
+            },
+            to_payload("payload 4"),
+        );
 
         let samples = trace.samples_cloned_unsorted();
 
@@ -86,7 +89,7 @@ mod tests {
         let result = chrome_trace::serialize(&samples, &mut serialized);
         assert!(result.is_ok(), "{:?}", result);
 
-        let decoded_result : Vec<serde_json::Value> = serde_json::from_slice(&serialized).unwrap();
+        let decoded_result: Vec<serde_json::Value> = serde_json::from_slice(&serialized).unwrap();
         assert_eq!(decoded_result.len(), 8);
         assert_eq!(decoded_result[0]["name"].as_str().unwrap(), "process_name");
         assert_eq!(decoded_result[1]["name"].as_str().unwrap(), "thread_name");
@@ -113,7 +116,7 @@ mod tests {
         trace.instant("sample1", &["test", "chrome"]);
         trace.instant_payload("sample2", &["test", "chrome"], to_payload("payload 2"));
         trace.instant_payload("sample3", &["test", "chrome"], to_payload("payload 3"));
-        trace.closure_payload("sample4", &["test", "chrome"],|| (), to_payload("payload 4"));
+        trace.closure_payload("sample4", &["test", "chrome"], || (), to_payload("payload 4"));
 
         let samples = trace.samples_cloned_unsorted();
 
@@ -149,7 +152,8 @@ mod tests {
             Sample::new_instant("trace1", &["benchmark", "test"], None),
             Sample::new_instant("trace2", &["benchmark"], None),
             Sample::new_duration("trace3", &["benchmark"], Some(to_payload("some payload"), 0)),
-            Sample::new_instant("trace4", &["benchmark"], None)];
+            Sample::new_instant("trace4", &["benchmark"], None),
+        ];
 
         b.iter(|| {
             serialized.clear();

@@ -18,12 +18,12 @@
 
 use memchr::memchr;
 
-use xi_rope::rope::{Rope, RopeDelta, LinesMetric};
+use xi_core::plugin_rpc::{GetDataResponse, TextUnit};
 use xi_rope::delta::DeltaElement;
-use xi_core::plugin_rpc::{TextUnit, GetDataResponse};
+use xi_rope::rope::{LinesMetric, Rope, RopeDelta};
 use xi_trace::trace_block;
 
-use super::{Error, DataSource, Cache};
+use super::{Cache, DataSource, Error};
 
 #[cfg(not(test))]
 const CHUNK_SIZE: usize = 1024 * 1024;
@@ -75,17 +75,21 @@ impl Cache for ChunkCache {
     ///
     /// [`DataSource`]: trait.DataSource.html
     fn get_line<DS>(&mut self, source: &DS, line_num: usize) -> Result<&str, Error>
-        where DS: DataSource
+    where
+        DS: DataSource,
     {
-        if line_num >= self.num_lines { return Err(Error::BadRequest) }
+        if line_num >= self.num_lines {
+            return Err(Error::BadRequest);
+        }
 
         // if chunk does not include the start of this line, fetch and reset everything
         if self.contents.len() == 0
             || line_num < self.first_line
             || (line_num == self.first_line && self.first_line_offset > 0)
-            || (line_num > self.first_line + self.line_offsets.len()) {
-                let resp = source.get_data(line_num, TextUnit::Line, CHUNK_SIZE, self.rev)?;
-                self.reset_chunk(resp);
+            || (line_num > self.first_line + self.line_offsets.len())
+        {
+            let resp = source.get_data(line_num, TextUnit::Line, CHUNK_SIZE, self.rev)?;
+            self.reset_chunk(resp);
         }
 
         // We now know that the start of this line is contained in self.contents.
@@ -95,7 +99,7 @@ impl Cache for ChunkCache {
         // of the document as necessary.
         loop {
             if let Some(end_off) = self.cached_offset_of_line(line_num + 1) {
-                return Ok(&self.contents[start_off..end_off - self.offset])
+                return Ok(&self.contents[start_off..end_off - self.offset]);
             }
             // if we have a chunk and we're fetching more, discard unnecessary
             // portion of our chunk.
@@ -105,11 +109,9 @@ impl Cache for ChunkCache {
             }
 
             let chunk_end = self.offset + self.contents.len();
-            let resp = source.get_data(chunk_end, TextUnit::Utf8,
-                                       CHUNK_SIZE, self.rev)?;
+            let resp = source.get_data(chunk_end, TextUnit::Utf8, CHUNK_SIZE, self.rev)?;
             self.append_chunk(resp);
         }
-
     }
 
     fn get_document<DS: DataSource>(&mut self, source: &DS) -> Result<String, Error> {
@@ -117,8 +119,7 @@ impl Cache for ChunkCache {
         let mut cur_idx = 0;
         while cur_idx < self.buf_size {
             if self.contents.len() == 0 || cur_idx != self.offset {
-                let resp = source.get_data(cur_idx, TextUnit::Utf8,
-                                           CHUNK_SIZE, self.rev)?;
+                let resp = source.get_data(cur_idx, TextUnit::Utf8, CHUNK_SIZE, self.rev)?;
                 self.reset_chunk(resp);
             }
             result.push_str(&self.contents);
@@ -127,31 +128,38 @@ impl Cache for ChunkCache {
         Ok(result)
     }
 
-    fn offset_of_line<DS: DataSource>(&mut self, source: &DS, line_num: usize)
-        -> Result<usize, Error>
-    {
-        if line_num > self.num_lines { return Err(Error::BadRequest) }
+    fn offset_of_line<DS: DataSource>(
+        &mut self,
+        source: &DS,
+        line_num: usize,
+    ) -> Result<usize, Error> {
+        if line_num > self.num_lines {
+            return Err(Error::BadRequest);
+        }
         match self.cached_offset_of_line(line_num) {
             Some(offset) => Ok(offset),
             None => {
-                let resp = source.get_data(line_num, TextUnit::Line,
-                                           CHUNK_SIZE, self.rev)?;
+                let resp = source.get_data(line_num, TextUnit::Line, CHUNK_SIZE, self.rev)?;
                 self.reset_chunk(resp);
                 self.offset_of_line(source, line_num)
             }
         }
     }
 
-    fn line_of_offset<DS: DataSource>(&mut self, source: &DS, offset: usize)
-        -> Result<usize, Error>
-    {
-        if offset > self.buf_size { return Err(Error::BadRequest) }
+    fn line_of_offset<DS: DataSource>(
+        &mut self,
+        source: &DS,
+        offset: usize,
+    ) -> Result<usize, Error> {
+        if offset > self.buf_size {
+            return Err(Error::BadRequest);
+        }
         if self.contents.len() == 0
             || offset < self.offset
-            || offset > self.offset + self.contents.len() {
-                let resp = source.get_data(offset, TextUnit::Utf8,
-                                           CHUNK_SIZE, self.rev)?;
-                self.reset_chunk(resp);
+            || offset > self.offset + self.contents.len()
+        {
+            let resp = source.get_data(offset, TextUnit::Utf8, CHUNK_SIZE, self.rev)?;
+            self.reset_chunk(resp);
         }
 
         let rel_offset = offset - self.offset;
@@ -162,10 +170,8 @@ impl Cache for ChunkCache {
         Ok(line_num)
     }
 
-
     /// Updates the chunk to reflect changes in this delta.
-    fn update(&mut self, delta: Option<&RopeDelta>, new_len: usize,
-              num_lines: usize, rev: u64) {
+    fn update(&mut self, delta: Option<&RopeDelta>, new_len: usize, num_lines: usize, rev: u64) {
         let _t = trace_block("ChunkCache::update", &["plugin"]);
         let is_empty = self.offset == 0 && self.contents.len() == 0;
         let should_clear = match delta {
@@ -183,7 +189,7 @@ impl Cache for ChunkCache {
             self.update_chunk(delta.unwrap());
         }
         self.buf_size = new_len;
-        self.num_lines =  num_lines;
+        self.num_lines = num_lines;
         self.rev = rev;
     }
 
@@ -201,21 +207,23 @@ impl ChunkCache {
     /// without fetching data. The offset of line 0 is always 0, and there
     /// is an implicit line at the last offset in the buffer.
     fn cached_offset_of_line(&self, line_num: usize) -> Option<usize> {
-        if line_num < self.first_line { return None }
+        if line_num < self.first_line {
+            return None;
+        }
 
         let rel_line_num = line_num - self.first_line;
 
         if rel_line_num == 0 {
-            return Some(self.offset - self.first_line_offset)
+            return Some(self.offset - self.first_line_offset);
         }
 
         if rel_line_num <= self.line_offsets.len() {
-            return Some(self.offset + self.line_offsets[rel_line_num - 1])
+            return Some(self.offset + self.line_offsets[rel_line_num - 1]);
         }
 
         // EOF
         if line_num == self.num_lines && self.offset + self.contents.len() == self.buf_size {
-            return Some(self.offset + self.contents.len())
+            return Some(self.offset + self.contents.len());
         }
         None
     }
@@ -243,10 +251,8 @@ impl ChunkCache {
         };
 
         // then clear line_offsets up to and including offset
-        self.line_offsets = self.line_offsets.iter()
-            .filter(|i| **i > offset)
-            .map(|i| i - offset)
-            .collect();
+        self.line_offsets =
+            self.line_offsets.iter().filter(|i| **i > offset).map(|i| i - offset).collect();
 
         self.first_line = new_line;
         self.first_line_offset = new_line_off;
@@ -311,8 +317,11 @@ impl ChunkCache {
         let self_off = self.offset;
         assert!(ins_offset >= self_off);
         // regardless of if we are inserting newlines we adjust offsets
-        self.line_offsets.iter_mut()
-            .for_each(|off| if *off > ins_offset - self_off { *off += text.len() });
+        self.line_offsets.iter_mut().for_each(|off| {
+            if *off > ins_offset - self_off {
+                *off += text.len()
+            }
+        });
         // calculate and insert new newlines if necessary
         // we could save some hassle and just rerun memchr on the chunk here?
         if has_newline {
@@ -320,15 +329,15 @@ impl ChunkCache {
             newline_offsets(&String::from(text), &mut new_offsets);
             new_offsets.iter_mut().for_each(|off| *off += ins_offset - self_off);
 
-            let split_idx = self.line_offsets.binary_search(&new_offsets[0])
+            let split_idx = self
+                .line_offsets
+                .binary_search(&new_offsets[0])
                 .err()
                 .expect("new index cannot be occupied");
 
-            self.line_offsets = [
-                &self.line_offsets[..split_idx],
-                &new_offsets,
-                &self.line_offsets[split_idx..],
-            ].concat();
+            self.line_offsets =
+                [&self.line_offsets[..split_idx], &new_offsets, &self.line_offsets[split_idx..]]
+                    .concat();
         }
     }
 
@@ -337,21 +346,24 @@ impl ChunkCache {
         let del_size = end - start;
         let start = start - self.offset;
         let end = end - self.offset;
-        let has_newline = memchr(b'\n', &self.contents.as_bytes()[start..end])
-            .is_some();
+        let has_newline = memchr(b'\n', &self.contents.as_bytes()[start..end]).is_some();
         // a bit too fancy: only reallocate if we need to remove an item
         if has_newline {
-            self.line_offsets = self.line_offsets.iter()
+            self.line_offsets = self
+                .line_offsets
+                .iter()
                 .filter_map(|off| match *off {
                     x if x <= start => Some(x),
                     x if x > start && x <= end => None,
                     x if x > end => Some(x - del_size),
                     hmm => panic!("invariant violated {} {} {}?", start, end, hmm),
-                })
-            .collect();
+                }).collect();
         } else {
-            self.line_offsets.iter_mut()
-                .for_each(|off| if *off >= end { *off -= del_size });
+            self.line_offsets.iter_mut().for_each(|off| {
+                if *off >= end {
+                    *off -= del_size
+                }
+            });
         }
     }
 
@@ -379,7 +391,7 @@ impl ChunkCache {
                         }
                         let cp_start = start - chunk_start;
                         let cp_end = (end - chunk_start).min(self.contents.len());
-                        new_state.push_str(&self.contents[cp_start .. cp_end]);
+                        new_state.push_str(&self.contents[cp_start..cp_end]);
                     }
                     prev_copy_end = end;
                 }
@@ -413,17 +425,23 @@ fn newline_offsets(text: &str, storage: &mut Vec<usize>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use xi_rope::interval::Interval;
-    use xi_rope::delta::Delta;
-    use xi_rope::rope::{Rope, LinesMetric};
     use xi_core::plugin_rpc::GetDataResponse;
+    use xi_rope::delta::Delta;
+    use xi_rope::interval::Interval;
+    use xi_rope::rope::{LinesMetric, Rope};
 
     struct MockDataSource(Rope);
 
     impl DataSource for MockDataSource {
-        fn get_data(&self, start: usize, unit: TextUnit, _max_size: usize, _rev: u64)
-            -> Result<GetDataResponse, Error> {
-            let offset = unit.resolve_offset(&self.0, start)
+        fn get_data(
+            &self,
+            start: usize,
+            unit: TextUnit,
+            _max_size: usize,
+            _rev: u64,
+        ) -> Result<GetDataResponse, Error> {
+            let offset = unit
+                .resolve_offset(&self.0, start)
                 .ok_or(Error::Other("unable to resolve offset".into()))?;
             let first_line = self.0.line_of_offset(offset);
             let first_line_offset = offset - self.0.offset_of_line(first_line);
@@ -433,7 +451,7 @@ mod tests {
             if offset > self.0.len() {
                 Err(Error::Other("offset too big".into()))
             } else {
-                let chunk = self.0.slice_to_string(offset..end_off);
+                let chunk = self.0.slice_to_cow(offset..end_off).into_owned();
                 Ok(GetDataResponse { chunk, offset, first_line, first_line_offset })
             }
         }
@@ -456,7 +474,8 @@ mod tests {
         assert_eq!(&c.contents, "ahhyayoh");
         assert_eq!(c.offset, 0);
 
-        let d = Delta::simple_edit(Interval::new_closed_open(2, 2), "_oops_".into(), c.contents.len());
+        let d =
+            Delta::simple_edit(Interval::new_closed_open(2, 2), "_oops_".into(), c.contents.len());
         assert_eq!(d.els.len(), 3);
         c.update(Some(&d), d.new_document_len(), 1, 3);
 
@@ -539,15 +558,21 @@ mod tests {
         let mut c = ChunkCache::default();
         c.contents = "some".into();
         c.buf_size = 4;
-        let d = Delta::simple_edit(Interval::new_closed_open(0, 0),
-                                   "two\nline\nbreaks".into(), c.contents.len());
+        let d = Delta::simple_edit(
+            Interval::new_closed_open(0, 0),
+            "two\nline\nbreaks".into(),
+            c.contents.len(),
+        );
         assert!(d.as_simple_insert().is_some());
         assert!(!d.is_simple_delete());
         c.update(Some(&d), d.new_document_len(), 3, 1);
         assert_eq!(c.line_offsets, vec![4, 9]);
 
-        let d = Delta::simple_edit(Interval::new_closed_open(4, 4),
-                                   "one\nmore".into(), c.contents.len());
+        let d = Delta::simple_edit(
+            Interval::new_closed_open(4, 4),
+            "one\nmore".into(),
+            c.contents.len(),
+        );
         assert!(d.as_simple_insert().is_some());
         c.update(Some(&d), d.new_document_len(), 4, 2);
         assert_eq!(&c.contents, "two\none\nmoreline\nbreakssome");
@@ -593,7 +618,7 @@ mod tests {
         assert_eq!(c.cached_offset_of_line(5), None);
 
         // delete a newline, and see that line_offsets is correctly updated
-        let delta = Delta::simple_edit(Interval::new_open_closed(3, 4), "".into(), c.buf_size);
+        let delta = Delta::simple_edit(Interval::new_closed_open(3, 4), "".into(), c.buf_size);
         assert!(delta.is_simple_delete());
         c.update(Some(&delta), delta.new_document_len(), 3, 1);
         assert_eq!(&c.contents, "zerone\ntwo\ntri");
@@ -625,8 +650,7 @@ mod tests {
         assert_eq!(&c.contents, "zer\none\ntwo\ntri");
         assert_eq!(&c.line_offsets, &[4, 8, 12]);
 
-        let delta = Delta::simple_edit(Interval::new_open_closed(3, 4),
-            "".into(), c.buf_size);
+        let delta = Delta::simple_edit(Interval::new_closed_open(3, 4), "".into(), c.buf_size);
         assert!(delta.is_simple_delete());
         let (iv, _) = delta.summary();
         let start = iv.start();
@@ -636,8 +660,6 @@ mod tests {
         c.simple_delete(start, end);
 
         assert_eq!(&c.line_offsets, &[7, 11]);
-
-
     }
 
     #[test]
@@ -651,8 +673,11 @@ mod tests {
         assert_eq!(c.offset, 9);
         assert_eq!(&c.contents, "four\nlines!");
         assert_eq!(c.offset_of_line(&source, 3).unwrap(), 14);
-        let d = Delta::simple_edit(Interval::new_closed_open(10,10),
-                                   "ive nice\ns".into(), c.contents.len() + c.offset);
+        let d = Delta::simple_edit(
+            Interval::new_closed_open(10, 10),
+            "ive nice\ns".into(),
+            c.contents.len() + c.offset,
+        );
         c.update(Some(&d), d.new_document_len(), 5, 1);
         // keep our source up to date
         source.0 = "this\nhas\nfive nice\nsour\nlines!".into();
@@ -665,7 +690,7 @@ mod tests {
         assert_eq!(c.offset_of_line(&source, 0).unwrap(), 0);
         assert_eq!(c.offset, 0);
         // during tests, we fetch the document in 16 byte chunks
-        assert_eq!(&c.contents, "this\nhas\nfive ni");// "ce\nsour\nlines!");
+        assert_eq!(&c.contents, "this\nhas\nfive ni"); // "ce\nsour\nlines!");
         assert_eq!(c.offset_of_line(&source, 1).unwrap(), 5);
         assert_eq!(c.offset_of_line(&source, 3).unwrap(), 19);
         assert_eq!(c.offset_of_line(&source, 4).unwrap(), 24);
@@ -677,8 +702,11 @@ mod tests {
         assert_eq!(c.offset, 5);
         assert_eq!(c.first_line, 1);
         //assert_eq!(c.offset_of_line(&source, 2).unwrap(), 9);
-        let d = Delta::simple_edit(Interval::new_closed_open(6, 10),
-                                   "".into(), c.contents.len() + c.offset);
+        let d = Delta::simple_edit(
+            Interval::new_closed_open(6, 10),
+            "".into(),
+            c.contents.len() + c.offset,
+        );
         assert!(d.is_simple_delete());
         c.update(Some(&d), d.new_document_len(), 4, 1);
         source.0 = "this\nhive nice\nsour\nlines!".into();
@@ -719,7 +747,7 @@ mod tests {
         assert_eq!(c.get_line(&source, 1).unwrap(), "has one big line in the middle\n");
         // fetches are always in an interval of CHUNK_SIZE. because getting this line
         // requres multiple fetches, contents is truncated at the start of the line.
-        assert_eq!(c.contents, test_str[5..CHUNK_SIZE*3]);
+        assert_eq!(c.contents, test_str[5..CHUNK_SIZE * 3]);
         assert_eq!(c.get_line(&source, 3).unwrap(), "yay!");
         assert_eq!(c.first_line, 3);
     }
@@ -735,8 +763,7 @@ mod tests {
             four";
         let source = MockDataSource(base_document.into());
         let mut c = ChunkCache::default();
-        let delta = Delta::simple_edit(
-            Interval::new_closed_open(0,0), base_document.into(), 0);
+        let delta = Delta::simple_edit(Interval::new_closed_open(0, 0), base_document.into(), 0);
         c.update(Some(&delta), base_document.len(), 4, 0);
         match c.get_line(&source, 4) {
             Err(Error::BadRequest) => (),
@@ -764,7 +791,6 @@ mod tests {
         assert_eq!(c.line_of_offset(&source, 20).unwrap(), 3);
         assert!(c.line_of_offset(&source, 21).is_err());
 
-
         assert_eq!(c.offset_of_line(&source, 0).unwrap(), 0);
         assert_eq!(c.offset_of_line(&source, 1).unwrap(), 5);
         assert_eq!(c.offset_of_line(&source, 2).unwrap(), 9);
@@ -786,8 +812,7 @@ mod tests {
 
         let mut source = MockDataSource(base_document.into());
         let mut c = ChunkCache::default();
-        let delta = Delta::simple_edit(
-            Interval::new_closed_open(0,0), base_document.into(), 0);
+        let delta = Delta::simple_edit(Interval::new_closed_open(0, 0), base_document.into(), 0);
 
         c.update(Some(&delta), base_document.len(), 4, 0);
         assert_eq!(c.get_line(&source, 0).unwrap(), "fn main() {\n");
@@ -795,7 +820,7 @@ mod tests {
         assert_eq!(c.get_line(&source, 2).unwrap(), "    let two = \"two\";\n");
         assert_eq!(c.get_line(&source, 3).unwrap(), "}");
 
-        let delta = Delta::simple_edit(Interval::new_open_closed(53, 54), "".into(), c.buf_size);
+        let delta = Delta::simple_edit(Interval::new_closed_open(53, 54), "".into(), c.buf_size);
         c.update(Some(&delta), base_document.len() - 1, 3, 1);
         source.0 = edited_document.into();
         assert_eq!(c.get_line(&source, 0).unwrap(), "fn main() {\n");
