@@ -84,8 +84,7 @@ fn vertical_motion(
     // This code is quite careful to avoid integer overflow.
     // TODO: write tests to verify
     let line = view.line_of_offset(text, active);
-    // Line Length include the newline, we want the non newline count.
-    let mut line_length = view.offset_of_line(text, line.saturating_add(1)) - view.offset_of_line(text, line) - 1;
+    let mut line_length = view.offset_of_line(text, line.saturating_add(1)) - view.offset_of_line(text, line);
     if line_delta < 0 && (-line_delta as usize) > line {
         if enforce_horiz_pos {
             return (active, Some(col));
