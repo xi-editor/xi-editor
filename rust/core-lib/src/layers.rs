@@ -95,7 +95,7 @@ impl Layers {
         self.deleted.insert(layer);
         let layer = self.layers.remove(&layer);
         if layer.is_some() {
-            let iv_all = Interval::new_closed_closed(0, self.merged.len());
+            let iv_all = Interval::new(0, self.merged.len());
             //TODO: should Spans<T> have a clear() method?
             self.merged = SpansBuilder::new(self.merged.len()).build();
             self.resolve_styles(iv_all);
@@ -108,7 +108,7 @@ impl Layers {
             layer.theme_changed(style_map);
         }
         self.merged = SpansBuilder::new(self.merged.len()).build();
-        let iv_all = Interval::new_closed_closed(0, self.merged.len());
+        let iv_all = Interval::new(0, self.merged.len());
         self.resolve_styles(iv_all);
     }
 
@@ -191,7 +191,7 @@ impl ScopeLayer {
         // recompute styles with the new theme
         let cur_stacks = self.stack_lookup.clone();
         self.style_lookup = self.styles_for_stacks(&cur_stacks, style_map);
-        let iv_all = Interval::new_closed_closed(0, self.style_spans.len());
+        let iv_all = Interval::new(0, self.style_spans.len());
         self.style_spans = SpansBuilder::new(self.style_spans.len()).build();
         // this feels unnecessary but we can't pass in a reference to self
         // and I don't want to get fancy unless there's an actual perf problem

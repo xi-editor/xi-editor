@@ -178,7 +178,7 @@ impl Engine {
         let mut engine = Engine::empty();
         if initial_contents.len() > 0 {
             let first_rev = engine.get_head_rev_id().token();
-            let delta = Delta::simple_edit(Interval::new_closed_closed(0,0), initial_contents, 0);
+            let delta = Delta::simple_edit(Interval::new(0, 0), initial_contents, 0);
             engine.edit_rev(0, 0, first_rev, delta);
         }
         engine
@@ -832,20 +832,20 @@ mod tests {
 
     fn build_delta_1() -> Delta<RopeInfo> {
         let mut d_builder = Builder::new(TEST_STR.len());
-        d_builder.delete(Interval::new_closed_open(10, 36));
-        d_builder.replace(Interval::new_closed_open(39, 42), Rope::from("DEEF"));
-        d_builder.replace(Interval::new_closed_open(54, 54), Rope::from("999"));
-        d_builder.delete(Interval::new_closed_open(58, 61));
+        d_builder.delete(Interval::new(10, 36));
+        d_builder.replace(Interval::new(39, 42), Rope::from("DEEF"));
+        d_builder.replace(Interval::new(54, 54), Rope::from("999"));
+        d_builder.delete(Interval::new(58, 61));
         d_builder.build()
     }
 
     fn build_delta_2() -> Delta<RopeInfo> {
         let mut d_builder = Builder::new(TEST_STR.len());
-        d_builder.replace(Interval::new_closed_open(1, 3), Rope::from("!"));
-        d_builder.delete(Interval::new_closed_open(10, 36));
-        d_builder.replace(Interval::new_closed_open(42, 45), Rope::from("GI"));
-        d_builder.replace(Interval::new_closed_open(54, 54), Rope::from("888"));
-        d_builder.replace(Interval::new_closed_open(59, 60), Rope::from("HI"));
+        d_builder.replace(Interval::new(1, 3), Rope::from("!"));
+        d_builder.delete(Interval::new(10, 36));
+        d_builder.replace(Interval::new(42, 45), Rope::from("GI"));
+        d_builder.replace(Interval::new(54, 54), Rope::from("888"));
+        d_builder.replace(Interval::new(59, 60), Rope::from("HI"));
         d_builder.build()
     }
 
@@ -943,15 +943,15 @@ mod tests {
     #[test]
     fn undo_4() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
-        let d1 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("a"), TEST_STR.len());
+        let d1 = Delta::simple_edit(Interval::new(0,0), Rope::from("a"), TEST_STR.len());
         let first_rev = engine.get_head_rev_id().token();
         engine.edit_rev(1, 1, first_rev, d1.clone());
         let new_head = engine.get_head_rev_id().token();
         engine.undo([1].iter().cloned().collect());
-        let d2 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("a"), TEST_STR.len()+1);
+        let d2 = Delta::simple_edit(Interval::new(0,0), Rope::from("a"), TEST_STR.len()+1);
         engine.edit_rev(1, 2, new_head, d2); // note this is based on d1 before, not the undo
         let new_head_2 = engine.get_head_rev_id().token();
-        let d3 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("b"), TEST_STR.len()+1);
+        let d3 = Delta::simple_edit(Interval::new(0,0), Rope::from("b"), TEST_STR.len()+1);
         engine.edit_rev(1, 3, new_head_2, d3);
         engine.undo([1,3].iter().cloned().collect());
         assert_eq!("a0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", String::from(engine.get_head()));
@@ -960,7 +960,7 @@ mod tests {
     #[test]
     fn undo_5() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
-        let d1 = Delta::simple_edit(Interval::new_closed_open(0,10), Rope::from(""), TEST_STR.len());
+        let d1 = Delta::simple_edit(Interval::new(0,10), Rope::from(""), TEST_STR.len());
         let first_rev = engine.get_head_rev_id().token();
         engine.edit_rev(1, 1, first_rev, d1.clone());
         engine.edit_rev(1, 2, first_rev, d1.clone());
@@ -975,16 +975,16 @@ mod tests {
     #[test]
     fn gc() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
-        let d1 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("c"), TEST_STR.len());
+        let d1 = Delta::simple_edit(Interval::new(0,0), Rope::from("c"), TEST_STR.len());
         let first_rev = engine.get_head_rev_id().token();
         engine.edit_rev(1, 1, first_rev, d1);
         let new_head = engine.get_head_rev_id().token();
         engine.undo([1].iter().cloned().collect());
-        let d2 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("a"), TEST_STR.len()+1);
+        let d2 = Delta::simple_edit(Interval::new(0,0), Rope::from("a"), TEST_STR.len()+1);
         engine.edit_rev(1, 2, new_head, d2);
         let gc : BTreeSet<usize> = [1].iter().cloned().collect();
         engine.gc(&gc);
-        let d3 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("b"), TEST_STR.len()+1);
+        let d3 = Delta::simple_edit(Interval::new(0,0), Rope::from("b"), TEST_STR.len()+1);
         let new_head_2 = engine.get_head_rev_id().token();
         engine.edit_rev(1, 3, new_head_2, d3);
         engine.undo([3].iter().cloned().collect());
@@ -998,7 +998,7 @@ mod tests {
 
         // insert `edits` letter "b"s in separate undo groups
         for i in 0..edits {
-            let d = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("b"), i);
+            let d = Delta::simple_edit(Interval::new(0,0), Rope::from("b"), i);
             let head = engine.get_head_rev_id().token();
             engine.edit_rev(1, i+1, head, d);
             if i >= max_undos {
@@ -1015,7 +1015,7 @@ mod tests {
         }
 
         // insert a character at the beginning
-        let d1 = Delta::simple_edit(Interval::new_closed_open(0,0), Rope::from("h"), engine.get_head().len());
+        let d1 = Delta::simple_edit(Interval::new(0,0), Rope::from("h"), engine.get_head().len());
         let head = engine.get_head_rev_id().token();
         engine.edit_rev(1, edits+1, head, d1);
 
@@ -1024,7 +1024,7 @@ mod tests {
 
         // insert character at end, when this test was added, it panic'd here
         let chars_left = (edits-max_undos)+1;
-        let d2 = Delta::simple_edit(Interval::new_closed_open(chars_left, chars_left), Rope::from("f"), engine.get_head().len());
+        let d2 = Delta::simple_edit(Interval::new(chars_left, chars_left), Rope::from("f"), engine.get_head().len());
         let head2 = engine.get_head_rev_id().token();
         engine.edit_rev(1, edits+1, head2, d2);
 
@@ -1051,7 +1051,7 @@ mod tests {
     #[test]
     fn gc_4() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
-        let d1 = Delta::simple_edit(Interval::new_closed_open(0,10), Rope::from(""), TEST_STR.len());
+        let d1 = Delta::simple_edit(Interval::new(0,10), Rope::from(""), TEST_STR.len());
         let first_rev = engine.get_head_rev_id().token();
         engine.edit_rev(1, 1, first_rev, d1.clone());
         engine.edit_rev(1, 2, first_rev, d1.clone());
@@ -1065,7 +1065,7 @@ mod tests {
     #[test]
     fn gc_5() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
-        let d1 = Delta::simple_edit(Interval::new_closed_open(0,10), Rope::from(""), TEST_STR.len());
+        let d1 = Delta::simple_edit(Interval::new(0,10), Rope::from(""), TEST_STR.len());
         let initial_rev = engine.get_head_rev_id().token();
         engine.undo([1].iter().cloned().collect());
         engine.edit_rev(1, 1, initial_rev, d1.clone());
@@ -1082,7 +1082,7 @@ mod tests {
     #[test]
     fn gc_6() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
-        let d1 = Delta::simple_edit(Interval::new_closed_open(0,10), Rope::from(""), TEST_STR.len());
+        let d1 = Delta::simple_edit(Interval::new(0,10), Rope::from(""), TEST_STR.len());
         let initial_rev = engine.get_head_rev_id().token();
         engine.edit_rev(1, 1, initial_rev, d1.clone());
         engine.undo([1,2].iter().cloned().collect());

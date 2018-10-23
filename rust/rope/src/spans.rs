@@ -98,7 +98,7 @@ impl<T: Clone + Default> NodeInfo for SpansInfo<T> {
     }
 
     fn compute_info(l: &SpansLeaf<T>) -> Self {
-        let mut iv = Interval::new_closed_open(0, 0);  // should be Interval::default?
+        let mut iv = Interval::new(0, 0);  // should be Interval::default?
         for span in &l.spans {
             iv = iv.union(span.iv);
         }
@@ -170,11 +170,10 @@ impl<T: Clone + Default> Spans<T> {
         let new_end = xform.transform(base_end, true);
         let mut builder = SpansBuilder::new(new_end - new_start);
         for (iv, data) in self.iter() {
-            let (start_closed, end_closed) = (iv.is_start_closed(), iv.is_end_closed());
-            let start = xform.transform(iv.start() + base_start, !start_closed) - new_start;
-            let end = xform.transform(iv.end() + base_start, end_closed) - new_start;
-            if start < end || (start_closed && end_closed) {
-                let iv = Interval::new(start, start_closed, end, end_closed);
+            let start = xform.transform(iv.start() + base_start, false) - new_start;
+            let end = xform.transform(iv.end() + base_start, true) - new_start;
+            if start < end {
+                let iv = Interval::new(start, end);
                 // TODO: could imagine using a move iterator and avoiding clone, but it's not easy.
                 builder.add_span(iv, data.clone());
             }
@@ -302,7 +301,7 @@ impl<T: Clone + Default> Spans<T> {
         for elem in &delta.els {
             match *elem {
                 DeltaElement::Copy(beg, end) =>
-                   b.push(self.subseq(Interval::new_closed_open(beg, end))),
+                   b.push(self.subseq(Interval::new(beg, end))),
                 DeltaElement::Insert(ref n) =>
                    b.push(SpansBuilder::new(n.len()).build()),
             }
@@ -350,40 +349,40 @@ mod tests {
         // with    2 2 4 4     8 8
         // ==      3 3 5 5 1 1 9 9 1 16
         let mut sb = SpansBuilder::new(10);
-        sb.add_span(Interval::new_closed_open(0, 9), 1u32);
-        sb.add_span(Interval::new_closed_open(9, 10), 16);
+        sb.add_span(Interval::new(0, 9), 1u32);
+        sb.add_span(Interval::new(9, 10), 16);
         let red = sb.build();
 
         let mut sb = SpansBuilder::new(10);
-        sb.add_span(Interval::new_closed_open(0, 2), 2);
-        sb.add_span(Interval::new_closed_open(2, 4), 4);
-        sb.add_span(Interval::new_closed_open(6, 8), 8);
+        sb.add_span(Interval::new(0, 2), 2);
+        sb.add_span(Interval::new(2, 4), 4);
+        sb.add_span(Interval::new(6, 8), 8);
         let blue = sb.build();
         let merged = red.merge(&blue, |r, b| b.map(|b| b + r).unwrap_or(*r));
 
         let mut merged_iter = merged.iter();
         let (iv, val) = merged_iter.next().unwrap();
-        assert_eq!(iv, Interval::new_closed_open(0, 2));
+        assert_eq!(iv, Interval::new(0, 2));
         assert_eq!(*val, 3);
 
         let (iv, val) = merged_iter.next().unwrap();
-        assert_eq!(iv, Interval::new_closed_open(2, 4));
+        assert_eq!(iv, Interval::new(2, 4));
         assert_eq!(*val, 5);
 
         let (iv, val) = merged_iter.next().unwrap();
-        assert_eq!(iv, Interval::new_closed_open(4, 6));
+        assert_eq!(iv, Interval::new(4, 6));
         assert_eq!(*val, 1);
 
         let (iv, val) = merged_iter.next().unwrap();
-        assert_eq!(iv, Interval::new_closed_open(6, 8));
+        assert_eq!(iv, Interval::new(6, 8));
         assert_eq!(*val, 9);
 
         let (iv, val) = merged_iter.next().unwrap();
-        assert_eq!(iv, Interval::new_closed_open(8, 9));
+        assert_eq!(iv, Interval::new(8, 9));
         assert_eq!(*val, 1);
 
         let (iv, val) = merged_iter.next().unwrap();
-        assert_eq!(iv, Interval::new_closed_open(9, 10));
+        assert_eq!(iv, Interval::new(9, 10));
         assert_eq!(*val, 16);
 
         assert!(merged_iter.next().is_none());
@@ -394,45 +393,45 @@ mod tests {
         // 1 1 1   4 4
         //   2 2 2 2     8 9
         let mut sb = SpansBuilder::new(9);
-        sb.add_span(Interval::new_closed_open(0, 3), 1);
-        sb.add_span(Interval::new_closed_open(4, 6), 4);
+        sb.add_span(Interval::new(0, 3), 1);
+        sb.add_span(Interval::new(4, 6), 4);
         let blue = sb.build();
 
         let mut sb = SpansBuilder::new(9);
-        sb.add_span(Interval::new_closed_open(1, 5), 2);
-        sb.add_span(Interval::new_closed_open(7, 8), 8);
-        sb.add_span(Interval::new_closed_open(8, 9), 9);
+        sb.add_span(Interval::new(1, 5), 2);
+        sb.add_span(Interval::new(7, 8), 8);
+        sb.add_span(Interval::new(8, 9), 9);
         let red = sb.build();
 
         let merged = red.merge(&blue, |r, b| b.map(|b| b + r).unwrap_or(*r));
 
         let mut merged_iter = merged.iter();
         let (iv, val) = merged_iter.next().unwrap();
-        assert_eq!(iv, Interval::new_closed_open(0, 1));
+        assert_eq!(iv, Interval::new(0, 1));
         assert_eq!(*val, 1);
 
         let (iv, val) = merged_iter.next().unwrap();
-        assert_eq!(iv, Interval::new_closed_open(1, 3));
+        assert_eq!(iv, Interval::new(1, 3));
         assert_eq!(*val, 3);
 
         let (iv, val) = merged_iter.next().unwrap();
-        assert_eq!(iv, Interval::new_closed_open(3, 4));
+        assert_eq!(iv, Interval::new(3, 4));
         assert_eq!(*val, 2);
 
         let (iv, val) = merged_iter.next().unwrap();
-        assert_eq!(iv, Interval::new_closed_open(4, 5));
+        assert_eq!(iv, Interval::new(4, 5));
         assert_eq!(*val, 6);
 
         let (iv, val) = merged_iter.next().unwrap();
-        assert_eq!(iv, Interval::new_closed_open(5, 6));
+        assert_eq!(iv, Interval::new(5, 6));
         assert_eq!(*val, 4);
 
         let (iv, val) = merged_iter.next().unwrap();
-        assert_eq!(iv, Interval::new_closed_open(7, 8));
+        assert_eq!(iv, Interval::new(7, 8));
         assert_eq!(*val, 8);
 
         let (iv, val) = merged_iter.next().unwrap();
-        assert_eq!(iv, Interval::new_closed_open(8, 9));
+        assert_eq!(iv, Interval::new(8, 9));
         assert_eq!(*val, 9);
 
         assert!(merged_iter.next().is_none());

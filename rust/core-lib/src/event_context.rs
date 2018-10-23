@@ -156,7 +156,7 @@ impl<'a> EventContext<'a> {
             SpecialEvent::DebugPrintSpans => self.with_editor(
                 |ed, view, _, _| {
                     let sel = view.sel_regions().last().unwrap();
-                    let iv = Interval::new_closed_open(sel.min(), sel.max());
+                    let iv = Interval::new(sel.min(), sel.max());
                     ed.get_layers().debug_print_spans(iv);
                 }),
             SpecialEvent::RequestLines(LineRange { first, last }) =>

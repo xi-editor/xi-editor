@@ -480,15 +480,15 @@ impl Rope {
     /// Note: `edit` and `edit_str` may be merged, using traits.
     ///
     /// Time complexity: O(log n)
-    pub fn edit_str<T>(&mut self, range: T, new: &str) 
-        where T: RangeBounds<usize> 
+    pub fn edit_str<T>(&mut self, range: T, new: &str)
+        where T: RangeBounds<usize>
     {
         let (start, end) = self.extract_range(range);
 
         let mut b = TreeBuilder::new();
         // TODO: may make this method take the iv directly
-        let edit_iv = Interval::new_closed_open(start, end);
-        let self_iv = Interval::new_closed_closed(0, self.len());
+        let edit_iv = Interval::new(start, end);
+        let self_iv = Interval::new(0, self.len());
         self.push_subseq(&mut b, self_iv.prefix(edit_iv));
         b.push_str(new);
         self.push_subseq(&mut b, self_iv.suffix(edit_iv));
@@ -496,12 +496,12 @@ impl Rope {
     }
 
     /// Returns a new Rope with the contents of the provided range.
-    pub fn slice<T>(&self, range: T) -> Rope 
+    pub fn slice<T>(&self, range: T) -> Rope
         where T: RangeBounds<usize>
     {
         let (start, end) = self.extract_range(range);
 
-        let iv = Interval::new_closed_open(start, end);
+        let iv = Interval::new(start, end);
         self.subseq(iv)
     }
 

@@ -253,7 +253,7 @@ impl Find {
 
         // TODO: this interval might cut a unicode codepoint, make sure it is
         // aligned to codepoint boundaries.
-        let sub_text = text.subseq(Interval::new_closed_open(0, to));
+        let sub_text = text.subseq(Interval::new(0, to));
         let mut find_cursor = Cursor::new(&sub_text, from);
         let mut raw_lines = text.lines_raw(from..to);
 

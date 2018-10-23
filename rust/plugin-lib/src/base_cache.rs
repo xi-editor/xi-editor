@@ -463,26 +463,26 @@ mod tests {
         c.buf_size = 2;
         c.contents = "oh".into();
 
-        let d = Delta::simple_edit(Interval::new_closed_open(0, 0), "yay".into(), c.contents.len());
+        let d = Delta::simple_edit(Interval::new(0, 0), "yay".into(), c.contents.len());
         c.update(Some(&d), d.new_document_len(), 1, 1);
         assert_eq!(&c.contents, "yayoh");
         assert_eq!(c.offset, 0);
 
-        let d = Delta::simple_edit(Interval::new_closed_open(0, 0), "ahh".into(), c.contents.len());
+        let d = Delta::simple_edit(Interval::new(0, 0), "ahh".into(), c.contents.len());
         c.update(Some(&d), d.new_document_len(), 1, 2);
 
         assert_eq!(&c.contents, "ahhyayoh");
         assert_eq!(c.offset, 0);
 
         let d =
-            Delta::simple_edit(Interval::new_closed_open(2, 2), "_oops_".into(), c.contents.len());
+            Delta::simple_edit(Interval::new(2, 2), "_oops_".into(), c.contents.len());
         assert_eq!(d.els.len(), 3);
         c.update(Some(&d), d.new_document_len(), 1, 3);
 
         assert_eq!(&c.contents, "ah_oops_hyayoh");
         assert_eq!(c.offset, 0);
 
-        let d = Delta::simple_edit(Interval::new_closed_open(9, 9), "fin".into(), c.contents.len());
+        let d = Delta::simple_edit(Interval::new(9, 9), "fin".into(), c.contents.len());
         c.update(Some(&d), d.new_document_len(), 1, 5);
 
         assert_eq!(&c.contents, "ah_oops_hfinyayoh");
@@ -559,7 +559,7 @@ mod tests {
         c.contents = "some".into();
         c.buf_size = 4;
         let d = Delta::simple_edit(
-            Interval::new_closed_open(0, 0),
+            Interval::new(0, 0),
             "two\nline\nbreaks".into(),
             c.contents.len(),
         );
@@ -569,7 +569,7 @@ mod tests {
         assert_eq!(c.line_offsets, vec![4, 9]);
 
         let d = Delta::simple_edit(
-            Interval::new_closed_open(4, 4),
+            Interval::new(4, 4),
             "one\nmore".into(),
             c.contents.len(),
         );
@@ -618,7 +618,7 @@ mod tests {
         assert_eq!(c.cached_offset_of_line(5), None);
 
         // delete a newline, and see that line_offsets is correctly updated
-        let delta = Delta::simple_edit(Interval::new_closed_open(3, 4), "".into(), c.buf_size);
+        let delta = Delta::simple_edit(Interval::new(3, 4), "".into(), c.buf_size);
         assert!(delta.is_simple_delete());
         c.update(Some(&delta), delta.new_document_len(), 3, 1);
         assert_eq!(&c.contents, "zerone\ntwo\ntri");
@@ -650,7 +650,7 @@ mod tests {
         assert_eq!(&c.contents, "zer\none\ntwo\ntri");
         assert_eq!(&c.line_offsets, &[4, 8, 12]);
 
-        let delta = Delta::simple_edit(Interval::new_closed_open(3, 4), "".into(), c.buf_size);
+        let delta = Delta::simple_edit(Interval::new(3, 4), "".into(), c.buf_size);
         assert!(delta.is_simple_delete());
         let (iv, _) = delta.summary();
         let start = iv.start();
@@ -674,7 +674,7 @@ mod tests {
         assert_eq!(&c.contents, "four\nlines!");
         assert_eq!(c.offset_of_line(&source, 3).unwrap(), 14);
         let d = Delta::simple_edit(
-            Interval::new_closed_open(10, 10),
+            Interval::new(10, 10),
             "ive nice\ns".into(),
             c.contents.len() + c.offset,
         );
@@ -703,7 +703,7 @@ mod tests {
         assert_eq!(c.first_line, 1);
         //assert_eq!(c.offset_of_line(&source, 2).unwrap(), 9);
         let d = Delta::simple_edit(
-            Interval::new_closed_open(6, 10),
+            Interval::new(6, 10),
             "".into(),
             c.contents.len() + c.offset,
         );
@@ -763,7 +763,7 @@ mod tests {
             four";
         let source = MockDataSource(base_document.into());
         let mut c = ChunkCache::default();
-        let delta = Delta::simple_edit(Interval::new_closed_open(0, 0), base_document.into(), 0);
+        let delta = Delta::simple_edit(Interval::new(0, 0), base_document.into(), 0);
         c.update(Some(&delta), base_document.len(), 4, 0);
         match c.get_line(&source, 4) {
             Err(Error::BadRequest) => (),
@@ -812,7 +812,7 @@ mod tests {
 
         let mut source = MockDataSource(base_document.into());
         let mut c = ChunkCache::default();
-        let delta = Delta::simple_edit(Interval::new_closed_open(0, 0), base_document.into(), 0);
+        let delta = Delta::simple_edit(Interval::new(0, 0), base_document.into(), 0);
 
         c.update(Some(&delta), base_document.len(), 4, 0);
         assert_eq!(c.get_line(&source, 0).unwrap(), "fn main() {\n");
@@ -820,7 +820,7 @@ mod tests {
         assert_eq!(c.get_line(&source, 2).unwrap(), "    let two = \"two\";\n");
         assert_eq!(c.get_line(&source, 3).unwrap(), "}");
 
-        let delta = Delta::simple_edit(Interval::new_closed_open(53, 54), "".into(), c.buf_size);
+        let delta = Delta::simple_edit(Interval::new(53, 54), "".into(), c.buf_size);
         c.update(Some(&delta), base_document.len() - 1, 3, 1);
         source.0 = edited_document.into();
         assert_eq!(c.get_line(&source, 0).unwrap(), "fn main() {\n");
