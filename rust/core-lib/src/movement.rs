@@ -107,7 +107,7 @@ fn vertical_motion(
     }
 
     // If the active columns is longer than the current line, use the current line length.
-    let col = if line_length < col { line_length } else { col };
+    let col = if line_length < col { line_length - 1 } else { col };
 
     loop {
         line_length = view.offset_of_line(text, line.saturating_add(1)) - view.offset_of_line(text, line);
