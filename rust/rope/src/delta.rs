@@ -122,7 +122,7 @@ impl<N: NodeInfo> Delta<N> {
         for elem in &self.els {
             match *elem {
                 DeltaElement::Copy(beg, end) => {
-                    base.push_subseq(&mut b, Interval::new_closed_open(beg, end))
+                    base.push_subseq(&mut b, Interval::new(beg, end))
                 }
                 DeltaElement::Insert(ref n) => b.push(n.clone())
             }
@@ -247,7 +247,7 @@ impl<N: NodeInfo> Delta<N> {
                     }
                     // Note: could try to aggregate insertions, but not sure of the win.
                     // Use the mapper to insert the corresponding section of the tombstones rope
-                    let interval = Interval::new_closed_open(m.doc_index_to_subset(beg), m.doc_index_to_subset(end));
+                    let interval = Interval::new(m.doc_index_to_subset(beg), m.doc_index_to_subset(end));
                     els.push(DeltaElement::Insert(tombstones.subseq(interval)));
                     beg = end;
                 }
@@ -279,7 +279,7 @@ impl<N: NodeInfo> Delta<N> {
                 els = init;
             }
         }
-        (Interval::new_closed_open(iv_start, iv_end), Delta::total_element_len(els))
+        (Interval::new(iv_start, iv_end), Delta::total_element_len(els))
     }
 
     /// Returns the length of the new document. In other words, the length of
@@ -577,7 +577,6 @@ impl<N: NodeInfo> Builder<N> {
 
     /// Deletes the given interval. Panics if interval is not properly sorted.
     pub fn delete(&mut self, interval: Interval) {
-        // TODO: doesn't handle interval types other than closed_open
         let (start, end) = interval.start_end();
         assert!(start >= self.last_offset, "Delta builder: intervals not properly sorted");
         if start > self.last_offset {
@@ -701,14 +700,14 @@ mod tests {
 
     #[test]
     fn simple() {
-        let d = Delta::simple_edit(Interval::new_closed_open(1, 9), Rope::from("era"), 11);
+        let d = Delta::simple_edit(Interval::new(1, 9), Rope::from("era"), 11);
         assert_eq!("herald", d.apply_to_string("hello world"));
         assert_eq!(6, d.new_document_len());
     }
 
     #[test]
     fn factor() {
-        let d = Delta::simple_edit(Interval::new_closed_open(1, 9), Rope::from("era"), 11);
+        let d = Delta::simple_edit(Interval::new(1, 9), Rope::from("era"), 11);
         let (d1, ss) = d.factor();
         assert_eq!("heraello world", d1.apply_to_string("hello world"));
         assert_eq!("hld", ss.delete_from_string("hello world"));
@@ -716,7 +715,7 @@ mod tests {
 
     #[test]
     fn synthesize() {
-        let d = Delta::simple_edit(Interval::new_closed_open(1, 9), Rope::from("era"), 11);
+        let d = Delta::simple_edit(Interval::new(1, 9), Rope::from("era"), 11);
         let (d1, del) = d.factor();
         let ins = d1.inserted_subset();
         let del = del.transform_expand(&ins);
@@ -731,7 +730,7 @@ mod tests {
 
     #[test]
     fn inserted_subset() {
-        let d = Delta::simple_edit(Interval::new_closed_open(1, 9), Rope::from("era"), 11);
+        let d = Delta::simple_edit(Interval::new(1, 9), Rope::from("era"), 11);
         let (d1, _ss) = d.factor();
         assert_eq!("hello world", d1.inserted_subset().delete_from_string("heraello world"));
     }
@@ -740,7 +739,7 @@ mod tests {
     fn transform_expand() {
         let str1 = "01259DGJKNQTUVWXYcdefghkmopqrstvwxy";
         let s1 = find_deletions(str1, TEST_STR);
-        let d = Delta::simple_edit(Interval::new_closed_open(10, 12), Rope::from("+"), str1.len());
+        let d = Delta::simple_edit(Interval::new(10, 12), Rope::from("+"), str1.len());
         assert_eq!("01259DGJKN+UVWXYcdefghkmopqrstvwxy", d.apply_to_string(str1));
         let (d2, _ss) = d.factor();
         assert_eq!("01259DGJKN+QTUVWXYcdefghkmopqrstvwxy", d2.apply_to_string(str1));
@@ -752,7 +751,7 @@ mod tests {
 
     #[test]
     fn transform_shrink() {
-        let d = Delta::simple_edit(Interval::new_closed_open(10, 12), Rope::from("+"), TEST_STR.len());
+        let d = Delta::simple_edit(Interval::new(10, 12), Rope::from("+"), TEST_STR.len());
         let (d2, _ss) = d.factor();
         assert_eq!("0123456789+ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", d2.apply_to_string(TEST_STR));
 
@@ -770,9 +769,9 @@ mod tests {
     #[test]
     fn iter_inserts() {
         let mut builder = Builder::new(10);
-        builder.replace(Interval::new_closed_open(2, 2), Rope::from("a"));
-        builder.delete(Interval::new_closed_open(3, 5));
-        builder.replace(Interval::new_closed_open(6, 8), Rope::from("b"));
+        builder.replace(Interval::new(2, 2), Rope::from("a"));
+        builder.delete(Interval::new(3, 5));
+        builder.replace(Interval::new(6, 8), Rope::from("b"));
         let delta = builder.build();
 
         assert_eq!("01a25b89", delta.apply_to_string("0123456789"));
@@ -786,9 +785,9 @@ mod tests {
     #[test]
     fn iter_deletions() {
         let mut builder = Builder::new(10);
-        builder.delete(Interval::new_closed_open(0, 2));
-        builder.delete(Interval::new_closed_open(4, 6));
-        builder.delete(Interval::new_closed_open(8, 10));
+        builder.delete(Interval::new(0, 2));
+        builder.delete(Interval::new(4, 6));
+        builder.delete(Interval::new(8, 10));
         let delta = builder.build();
 
         assert_eq!("2367", delta.apply_to_string("0123456789"));
@@ -802,7 +801,7 @@ mod tests {
 
     #[test]
     fn delta_serde() {
-        let d = Delta::simple_edit(Interval::new_closed_open(10, 12),
+        let d = Delta::simple_edit(Interval::new(10, 12),
                                    Rope::from("+"), TEST_STR.len());
         let ser = serde_json::to_value(d.clone()).expect("serialize failed");
         eprintln!("{:?}", &ser);
@@ -813,17 +812,17 @@ mod tests {
 
     #[test]
     fn is_simple_delete() {
-        let d = Delta::simple_edit(Interval::new_closed_open(10, 12),
+        let d = Delta::simple_edit(Interval::new(10, 12),
                                    Rope::from("+"), TEST_STR.len());
         assert_eq!(false, d.is_simple_delete());
 
-        let d = Delta::simple_edit(Interval::new_closed_open(10, 11),
+        let d = Delta::simple_edit(Interval::new(10, 11),
                                    Rope::from(""), TEST_STR.len());
         assert_eq!(true, d.is_simple_delete());
 
         let mut builder = Builder::<RopeInfo>::new(10);
-        builder.delete(Interval::new_closed_open(0, 2));
-        builder.delete(Interval::new_closed_open(4, 6));
+        builder.delete(Interval::new(0, 2));
+        builder.delete(Interval::new(4, 6));
         let d = builder.build();
         assert_eq!(false, d.is_simple_delete());
 
@@ -845,11 +844,11 @@ mod tests {
 
     #[test]
     fn as_simple_insert() {
-        let d = Delta::simple_edit(Interval::new_closed_open(10, 11),
+        let d = Delta::simple_edit(Interval::new(10, 11),
                                    Rope::from("+"), TEST_STR.len());
         assert_eq!(None, d.as_simple_insert());
 
-        let d = Delta::simple_edit(Interval::new_closed_open(10, 10),
+        let d = Delta::simple_edit(Interval::new(10, 10),
                                    Rope::from("+"), TEST_STR.len());
         assert_eq!(Some(Rope::from("+")).as_ref(), d.as_simple_insert());
     }

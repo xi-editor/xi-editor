@@ -81,11 +81,11 @@ pub fn parse_delta(s: &str) -> Delta<RopeInfo> {
         if c == '-' {
             i += 1;
         } else if c == '!' {
-            b.delete(Interval::new_closed_open(i,i+1));
+            b.delete(Interval::new(i,i+1));
             i += 1;
         } else {
             let inserted = format!("{}", c);
-            b.replace(Interval::new_closed_open(i,i), Rope::from(inserted));
+            b.replace(Interval::new(i,i), Rope::from(inserted));
         }
     }
 

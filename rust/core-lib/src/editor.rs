@@ -180,7 +180,7 @@ impl Editor {
     /// position when possible.
     pub fn reload(&mut self, text: Rope) {
         let mut builder = delta::Builder::new(self.text.len());
-        let all_iv = Interval::new_closed_open(0, self.text.len());
+        let all_iv = Interval::new(0, self.text.len());
         builder.replace(all_iv, text);
         self.add_delta(builder.build());
         self.set_pristine();
@@ -204,7 +204,7 @@ impl Editor {
         let rope = text.into();
         let mut builder = delta::Builder::new(self.text.len());
         for region in view.sel_regions() {
-            let iv = Interval::new_closed_open(region.min(), region.max());
+            let iv = Interval::new(region.min(), region.max());
             builder.replace(iv, rope.clone());
         }
         self.add_delta(builder.build());
@@ -364,7 +364,7 @@ impl Editor {
         let mut builder = delta::Builder::new(self.text.len());
         for region in view.sel_regions() {
             let start = offset_for_delete_backwards(&view, &region, &self.text, &config);
-            let iv = Interval::new_closed_open(start, region.max());
+            let iv = Interval::new(start, region.max());
             if !iv.is_empty() {
                 builder.delete(iv);
             }
@@ -409,7 +409,7 @@ impl Editor {
     fn delete_sel_regions(&mut self, sel_regions: &[SelRegion]) {
         let mut builder = delta::Builder::new(self.text.len());
         for region in sel_regions {
-            let iv = Interval::new_closed_open(region.min(), region.max());
+            let iv = Interval::new(region.min(), region.max());
             if !iv.is_empty() {
                 builder.delete(iv);
             }
@@ -463,7 +463,7 @@ impl Editor {
                 self.this_edit_type = EditType::Indent;
                 for line in line_range {
                     let offset = view.line_col_to_offset(&self.text, line, 0);
-                    let iv = Interval::new_closed_open(offset, offset);
+                    let iv = Interval::new(offset, offset);
                     builder.replace(iv, Rope::from(const_tab_text));
                 }
             } else {
@@ -472,7 +472,7 @@ impl Editor {
                 tab_size = tab_size - (col % tab_size);
                 let tab_text = self.get_tab_text(config, Some(tab_size));
 
-                let iv = Interval::new_closed_open(region.min(), region.max());
+                let iv = Interval::new(region.min(), region.max());
                 builder.replace(iv, Rope::from(tab_text));
             }
         }
@@ -506,7 +506,7 @@ impl Editor {
         let mut builder = delta::Builder::new(self.text.len());
         for line in lines {
             let offset = view.line_col_to_offset(&self.text, line, 0);
-            let interval = Interval::new_closed_open(offset, offset);
+            let interval = Interval::new(offset, offset);
             builder.replace(interval, Rope::from(tab_text));
 
         }
@@ -520,13 +520,13 @@ impl Editor {
             let offset = view.line_col_to_offset(&self.text, line, 0);
             let tab_offset = view.line_col_to_offset(&self.text, line,
                                                      tab_text.len());
-            let interval = Interval::new_closed_open(offset, tab_offset);
+            let interval = Interval::new(offset, tab_offset);
             let leading_slice = self.text.slice_to_cow(interval.start()..interval.end());
             if leading_slice == tab_text {
                 builder.delete(interval);
             } else if let Some(first_char_col) = leading_slice.find(|c: char| !c.is_whitespace()) {
                 let first_char_offset = view.line_col_to_offset(&self.text, line, first_char_col);
-                let interval = Interval::new_closed_open(offset, first_char_offset);
+                let interval = Interval::new(offset, first_char_offset);
                 builder.delete(interval);
             }
         }
@@ -558,7 +558,7 @@ impl Editor {
         } else {
             let mut builder = delta::Builder::new(self.text.len());
             for (sel, line) in view.sel_regions().iter().zip(chars.lines()) {
-                let iv = Interval::new_closed_open(sel.min(), sel.max());
+                let iv = Interval::new(sel.min(), sel.max());
                 builder.replace(iv, line.into());
             }
             self.add_delta(builder.build());
@@ -603,7 +603,7 @@ impl Editor {
     }
 
     fn sel_region_to_interval_and_rope(&self, region: SelRegion) -> (Interval, Rope) {
-        let as_interval = Interval::new_closed_open(region.min(), region.max());
+        let as_interval = Interval::new(region.min(), region.max());
         let interval_rope = self.text.subseq(as_interval);
         (as_interval, interval_rope)
     }
@@ -631,7 +631,7 @@ impl Editor {
                         end = middle.wrapping_add(1);
                     }
 
-                    let interval = Interval::new_closed_open(start, end);
+                    let interval = Interval::new(start, end);
                     let before =  self.text.slice_to_cow(start..middle);
                     let after = self.text.slice_to_cow(middle..end);
                     let swapped: String = [after, before].concat();
@@ -686,7 +686,7 @@ impl Editor {
 
         for region in view.sel_regions() {
             let selected_text = self.text.slice_to_cow(region);
-            let interval = Interval::new_closed_open(region.min(), region.max());
+            let interval = Interval::new(region.min(), region.max());
             builder.replace(interval, Rope::from(transform_function(&selected_text)));
         }
         if !builder.is_empty() {
@@ -722,7 +722,7 @@ impl Editor {
 
             let word = self.text.slice_to_cow(start..end);
             if let Some(number) = word.parse::<i128>().ok().and_then(&transform_function) {
-                let interval = Interval::new_closed_open(start, end);
+                let interval = Interval::new(start, end);
                 builder.replace(interval, Rope::from(number.to_string()));
             }
         }
@@ -747,7 +747,7 @@ impl Editor {
                 let (start, end) = word_cursor.select_word();
 
                 if start < end {
-                    let interval = Interval::new_closed_open(start, end);
+                    let interval = Interval::new(start, end);
                     let word = self.text.slice_to_cow(start..end);
 
                     // first letter is uppercase, remaining letters are lowercase
@@ -798,7 +798,7 @@ impl Editor {
 
         for (start, end) in to_duplicate {
             // insert duplicates
-            let iv = Interval::new_closed_open(start, start);
+            let iv = Interval::new(start, start);
             builder.replace(iv, self.text.slice(start..end));
 
             // last line does not have new line character so it needs to be manually added
@@ -856,7 +856,7 @@ impl Editor {
         let mut end_offset = start + len;
         let mut sb = SpansBuilder::new(len);
         for span in spans {
-            sb.add_span(Interval::new_open_open(span.start, span.end),
+            sb.add_span(Interval::new(span.start, span.end),
                         span.scope_id);
         }
         let mut spans = sb.build();
@@ -865,13 +865,13 @@ impl Editor {
             let mut transformer = Transformer::new(&delta);
             let new_start = transformer.transform(start, false);
             if !transformer.interval_untouched(
-                Interval::new_closed_closed(start, end_offset)) {
+                Interval::new(start, end_offset)) {
                 spans = spans.transform(start, end_offset, &mut transformer);
             }
             start = new_start;
             end_offset = transformer.transform(end_offset, true);
         }
-        let iv = Interval::new_closed_closed(start, end_offset);
+        let iv = Interval::new(start, end_offset);
         self.layers.update_layer(plugin, iv, spans);
         view.invalidate_styles(&self.text, start, end_offset);
     }

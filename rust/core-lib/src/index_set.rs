@@ -332,15 +332,15 @@ mod tests {
         e.union_one_range(1, 3);
         e.union_one_range(5, 9);
 
-        let d = Delta::simple_edit(Interval::new_closed_open(2, 2), Rope::from("..."), 10);
+        let d = Delta::simple_edit(Interval::new(2, 2), Rope::from("..."), 10);
         let s = e.apply_delta(&d);
         assert_eq!(s.get_ranges(), &[(1, 6), (8, 12)]);
 
-        let d = Delta::simple_edit(Interval::new_closed_open(0, 3), Rope::from(""), 10);
+        let d = Delta::simple_edit(Interval::new(0, 3), Rope::from(""), 10);
         let s = e.apply_delta(&d);
         assert_eq!(s.get_ranges(), &[(2, 6)]);
 
-        let d = Delta::simple_edit(Interval::new_closed_open(2, 6), Rope::from(""), 10);
+        let d = Delta::simple_edit(Interval::new(2, 6), Rope::from(""), 10);
         let s = e.apply_delta(&d);
         assert_eq!(s.get_ranges(), &[(1, 5)]);
     }

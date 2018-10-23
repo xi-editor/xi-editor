@@ -54,7 +54,7 @@ pub trait NodeInfo: Clone {
     /// The interval covered by this node. The default impl is sufficient for most types,
     /// but interval trees may need to override it.
     fn interval(&self, len: usize) -> Interval {
-        Interval::new_closed_closed(0, len)
+        Interval::new(0, len)
     }
 }
 
@@ -280,7 +280,7 @@ impl<N: NodeInfo> Node<N> {
             let node1 = Arc::make_mut(&mut rope1.0);
             let leaf2 = rope2.get_leaf();
             if let NodeVal::Leaf(ref mut leaf1) = node1.val {
-                let leaf2_iv = Interval::new_closed_closed(0, leaf2.len());
+                let leaf2_iv = Interval::new(0, leaf2.len());
                 let new = leaf1.push_maybe_split(leaf2, leaf2_iv);
                 node1.len = leaf1.len();
                 node1.info = N::compute_info(leaf1);
@@ -381,7 +381,7 @@ impl<N: NodeInfo> Node<N> {
 
     pub fn edit(&mut self, iv: Interval, new: Node<N>) {
         let mut b = TreeBuilder::new();
-        let self_iv = Interval::new_closed_closed(0, self.len());
+        let self_iv = Interval::new(0, self.len());
         self.push_subseq(&mut b, self_iv.prefix(iv));
         b.push(new);
         self.push_subseq(&mut b, self_iv.suffix(iv));

@@ -162,7 +162,7 @@ pub fn rewrap(breaks: &mut Breaks, text: &Rope, iv: Interval, newsize: usize, co
         let time_ms = (time::now() - start_time).num_nanoseconds().unwrap() as f64 * 1e-6;
         debug!("time to wrap {} bytes: {:.2}ms (not counting build+edit)",
             inval_end - inval_start, time_ms);
-        (Interval::new_open_closed(inval_start, inval_end + (end - start) - newsize), builder.build())
+        (Interval::new(inval_start, inval_end + (end - start) - newsize), builder.build())
     };
     breaks.edit(edit_iv, new_breaks);
 }
@@ -337,7 +337,7 @@ pub fn rewrap_width(breaks: &mut Breaks, text: &Rope,
     // First, remove any breaks in edited section.
     let mut builder = BreakBuilder::new();
     builder.add_no_break(newsize);
-    let edit_iv = Interval::new_open_closed(iv.start(), iv.end());
+    let edit_iv = Interval::new(iv.start(), iv.end());
     breaks.edit(edit_iv, builder.build());
     // At this point, breaks is aligned with text.
 
@@ -355,6 +355,6 @@ pub fn rewrap_width(breaks: &mut Breaks, text: &Rope,
     let new_breaks = compute_rewrap_width(text, width_cache, /* style_spans, */
                                           client, max_width, breaks,
                                           start, end);
-    let edit_iv = Interval::new_open_closed(start, start + new_breaks.len());
+    let edit_iv = Interval::new(start, start + new_breaks.len());
     breaks.edit(edit_iv, new_breaks);
 }

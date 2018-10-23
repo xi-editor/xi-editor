@@ -645,7 +645,7 @@ impl View {
                          style_spans: &Spans<Style>) -> Vec<isize>
     {
         let mut rendered_styles = Vec::new();
-        let style_spans = style_spans.subseq(Interval::new_closed_open(start, end));
+        let style_spans = style_spans.subseq(Interval::new(start, end));
 
         let mut ix = 0;
         // we add the special find highlights (1 to N) and selection (0) styles first.
