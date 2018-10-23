@@ -83,6 +83,8 @@ fn vertical_motion(
     // This code is quite careful to avoid integer overflow.
     // TODO: write tests to verify
     let line = view.line_of_offset(text, active);
+    // Line Length include the newline, we want the non newline count.
+    let mut line_length = view.offset_of_line(text, line.saturating_add(1)) - view.offset_of_line(text, line) - 1;
     if line_delta < 0 && (-line_delta as usize) > line {
         if enforce_horiz_pos {
             return (active, Some(col));
@@ -105,9 +107,14 @@ fn vertical_motion(
         return (view.line_col_to_offset(text, line, col), Some(col));
     }
 
+    // If the active columns is longer than the current line, use the current line length.
+    let col = if line_length < col { line_length } else { col };
+
     loop {
+        line_length = view.offset_of_line(text, line.saturating_add(1)) - view.offset_of_line(text, line);
+
         // If the line is longer than the current cursor position, break.
-        let line_length = view.offset_of_line(text, line.saturating_add(1)) - view.offset_of_line(text, line);
+        // We use > instead of >= because line_length includes newline.
         if line_length > col { break; }
 
         // If you are trying to add a selection past the end of the file or before the first line, return original selection
