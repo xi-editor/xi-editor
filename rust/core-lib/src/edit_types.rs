@@ -24,6 +24,7 @@ use view::Size;
 
 
 /// Events that only modify view state
+#[derive(Debug, PartialEq, Clone)]
 pub(crate) enum ViewEvent {
     Move(Movement),
     ModifySelection(Movement),
@@ -49,6 +50,7 @@ pub(crate) enum ViewEvent {
 }
 
 /// Events that modify the buffer
+#[derive(Debug, PartialEq, Clone)]
 pub(crate) enum BufferEvent {
     Delete { movement: Movement, kill: bool },
     Backspace,
@@ -73,6 +75,7 @@ pub(crate) enum BufferEvent {
 }
 
 /// An event that needs special handling
+#[derive(Debug, PartialEq, Clone)]
 pub(crate) enum SpecialEvent {
     DebugRewrap,
     DebugWrapWidth,
@@ -80,8 +83,12 @@ pub(crate) enum SpecialEvent {
     Resize(Size),
     RequestLines(LineRange),
     RequestHover { request_id: usize, position: Option<Position> },
+    ToggleRecording(Option<String>),
+    PlayRecording(String),
+    ClearRecording(String),
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub(crate) enum EventDomain {
     View(ViewEvent),
     Buffer(BufferEvent),
@@ -247,7 +254,10 @@ impl From<EditNotification> for EventDomain {
             SelectionIntoLines => ViewEvent::SelectionIntoLines.into(),
             DuplicateLine => BufferEvent::DuplicateLine.into(),
             IncreaseNumber => BufferEvent::IncreaseNumber.into(),
-            DecreaseNumber => BufferEvent::DecreaseNumber.into()
+            DecreaseNumber => BufferEvent::DecreaseNumber.into(),
+            ToggleRecording { recording_name } => SpecialEvent::ToggleRecording(recording_name).into(),
+            PlayRecording { recording_name } => SpecialEvent::PlayRecording(recording_name).into(),
+            ClearRecording { recording_name } => SpecialEvent::ClearRecording(recording_name).into(),
         }
     }
 }

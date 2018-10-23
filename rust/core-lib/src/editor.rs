@@ -23,7 +23,7 @@ use xi_rope::interval::Interval;
 use xi_rope::delta::{self, Delta, Transformer};
 use xi_rope::engine::{Engine, RevId, RevToken};
 use xi_rope::spans::SpansBuilder;
-use xi_trace::trace_block;
+use xi_trace::{trace_block, trace_payload};
 use xi_rope::tree::Cursor;
 
 use config::BufferItems;
@@ -43,6 +43,7 @@ use word_boundaries::WordCursor;
 pub struct SyncStore;
 #[cfg(feature = "ledger")]
 use fuchsia::sync::SyncStore;
+use backspace::offset_for_delete_backwards;
 
 // TODO This could go much higher without issue but while developing it is
 // better to keep it low to expose bugs in the GC during casual testing.
@@ -73,6 +74,7 @@ pub struct Editor {
     undos: BTreeSet<usize>,
     /// undo groups that are no longer live and should be gc'ed
     gc_undos: BTreeSet<usize>,
+    force_undo_group: bool,
 
     this_edit_type: EditType,
     last_edit_type: EditType,
@@ -116,6 +118,7 @@ impl Editor {
             cur_undo: 1,
             undos: BTreeSet::new(),
             gc_undos: BTreeSet::new(),
+            force_undo_group: false,
             last_edit_type: EditType::Other,
             this_edit_type: EditType::Other,
             layers: Layers::default(),
@@ -161,6 +164,16 @@ impl Editor {
     pub(crate) fn is_pristine(&self) -> bool {
         self.engine.is_equivalent_revision(self.pristine_rev_id,
                                            self.engine.get_head_rev_id())
+    }
+
+    /// Set whether or not edits are forced into the same undo group rather than being split by
+    /// their EditType.
+    ///
+    /// This is used for things such as recording playback, where you don't want the
+    /// individual events to be undoable, but instead the entire playback should be.
+    pub(crate) fn set_force_undo_group(&mut self, force_undo_group: bool) {
+        trace_payload("Editor::set_force_undo_group", &["core"], force_undo_group.to_string());
+        self.force_undo_group = force_undo_group;
     }
 
     /// Sets this Editor's contents to `text`, preserving undo state and cursor
@@ -210,14 +223,22 @@ impl Editor {
     /// `commit_delta` call.
     fn add_delta(&mut self, delta: Delta<RopeInfo>) {
         let head_rev_id = self.engine.get_head_rev_id();
-        let undo_group;
+        let undo_group = self.calculate_undo_group();
+        self.last_edit_type = self.this_edit_type;
+        let priority = 0x10000;
+        self.engine.edit_rev(priority, undo_group, head_rev_id.token(), delta);
+        self.text = self.engine.get_head().clone();
+    }
 
-        if !self.this_edit_type.breaks_undo_group(self.last_edit_type)
-            && !self.live_undos.is_empty()
-        {
-            undo_group = *self.live_undos.last().unwrap();
+    pub(crate) fn calculate_undo_group(&mut self) -> usize {
+        let has_undos = !self.live_undos.is_empty();
+        let force_undo_group = self.force_undo_group;
+        let is_unbroken_group = !self.this_edit_type.breaks_undo_group(self.last_edit_type);
+
+        if has_undos && (force_undo_group || is_unbroken_group) {
+            *self.live_undos.last().unwrap()
         } else {
-            undo_group = self.undo_group_id;
+            let undo_group = self.undo_group_id;
             self.gc_undos.extend(&self.live_undos[self.cur_undo..]);
             self.live_undos.truncate(self.cur_undo);
             self.live_undos.push(undo_group);
@@ -227,11 +248,8 @@ impl Editor {
                 self.gc_undos.insert(self.live_undos.remove(0));
             }
             self.undo_group_id += 1;
+            undo_group
         }
-        self.last_edit_type = self.this_edit_type;
-        let priority = 0x10000;
-        self.engine.edit_rev(priority, undo_group, head_rev_id.token(), delta);
-        self.text = self.engine.get_head().clone();
     }
 
     /// generates a delta from a plugin's response and applies it to the buffer.
@@ -275,6 +293,10 @@ impl Editor {
         self.last_rev_id = self.engine.get_head_rev_id();
         self.sync_state_changed();
         Some((delta, last_text, keep_selections))
+    }
+
+    pub(crate) fn delta_rev_head(&self, target_rev_id: RevToken) -> Delta<RopeInfo> {
+        self.engine.delta_rev_head(target_rev_id)
     }
 
     #[cfg(not(target_os = "fuchsia"))]
@@ -341,28 +363,7 @@ impl Editor {
         // could be improved by implementing a "backspace" movement instead.
         let mut builder = delta::Builder::new(self.text.len());
         for region in view.sel_regions() {
-            let start = if !region.is_caret() {
-                region.min()
-            } else {
-                // backspace deletes max(1, tab_size) contiguous spaces
-                let (_, c) = view.offset_to_line_col(&self.text, region.start);
-
-                let tab_off = c % config.tab_size;
-                let tab_size = config.tab_size;
-                let tab_size = if tab_off == 0 { tab_size } else { tab_off };
-                let tab_start = region.start.saturating_sub(tab_size);
-                let preceded_by_spaces = region.start > 0 &&
-                    (tab_start..region.start).all(|i| self.text.byte_at(i) == b' ');
-                if preceded_by_spaces
-                    && config.translate_tabs_to_spaces
-                    && config.use_tab_stops {
-                    tab_start
-                } else {
-                    self.text.prev_grapheme_offset(region.end)
-                        .unwrap_or(region.end)
-               }
-            };
-
+            let start = offset_for_delete_backwards(&view, &region, &self.text, &config);
             let iv = Interval::new_closed_open(start, region.max());
             if !iv.is_empty() {
                 builder.delete(iv);
@@ -616,19 +617,26 @@ impl Editor {
 
         for &region in view.sel_regions() {
             if region.is_caret() {
-                let middle = region.end;
-                let start = self.text.prev_grapheme_offset(middle).unwrap_or(0);
-                // Note: this matches Sublime's behavior. Cocoa would swap last
+                let mut middle = region.end;
+                let mut start = self.text.prev_grapheme_offset(middle).unwrap_or(0);
+                let mut end = self.text.next_grapheme_offset(middle).unwrap_or(middle);
+
+                // Note: this matches Emac's behavior. It swaps last
                 // two characters of line if at end of line.
-                if let Some(end) = self.text.next_grapheme_offset(middle) {
-                    if start >= last {
-                        let interval = Interval::new_closed_open(start, end);
-                        let before =  self.text.slice_to_cow(start..middle);
-                        let after = self.text.slice_to_cow(middle..end);
-                        let swapped: String = [after, before].concat();
-                        builder.replace(interval, Rope::from(swapped));
-                        last = end;
+                if start >= last {
+                    let end_line_offset = view.offset_of_line(&self.text, view.line_of_offset(&self.text, end));
+                    if end == middle || end == end_line_offset {
+                        middle = start;
+                        start = self.text.prev_grapheme_offset(middle).unwrap_or(0);
+                        end = middle.wrapping_add(1);
                     }
+
+                    let interval = Interval::new_closed_open(start, end);
+                    let before =  self.text.slice_to_cow(start..middle);
+                    let after = self.text.slice_to_cow(middle..end);
+                    let swapped: String = [after, before].concat();
+                    builder.replace(interval, Rope::from(swapped));
+                    last = end;
                 }
             } else if let Some(previous_selection) = optional_previous_selection {
                 let current_interval = self.sel_region_to_interval_and_rope(region);

@@ -12,67 +12,76 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::path::{PathBuf, Path};
-use serde_json::{self, Value};
 use serde::Deserialize;
+use serde_json::{self, Value};
+use std::path::{Path, PathBuf};
 
-use xi_core::{ViewId, PluginPid, BufferConfig, ConfigTable};
-use xi_core::plugin_rpc::{TextUnit, PluginEdit, GetDataResponse, ScopeSpan, PluginBufferInfo};
+use xi_core::plugin_rpc::{GetDataResponse, PluginBufferInfo, PluginEdit, ScopeSpan, TextUnit};
+use xi_core::{BufferConfig, ConfigTable, LanguageId, PluginPid, ViewId};
 use xi_rope::rope::RopeDelta;
 use xi_trace::trace_block;
 
 use xi_rpc::RpcPeer;
 
-use super::{Cache, Error, DataSource};
+use super::{Cache, DataSource, Error};
 
 /// A type that acts as a proxy for a remote view. Provides access to
 /// a document cache, and implements various methods for querying and modifying
 /// view state.
 pub struct View<C> {
-    pub (crate) cache: C,
-    pub (crate) peer: RpcPeer,
-    pub (crate) path: Option<PathBuf>,
-    pub (crate) config: BufferConfig,
-    pub (crate) config_table: ConfigTable,
+    pub(crate) cache: C,
+    pub(crate) peer: RpcPeer,
+    pub(crate) path: Option<PathBuf>,
+    pub(crate) config: BufferConfig,
+    pub(crate) config_table: ConfigTable,
     plugin_id: PluginPid,
     // TODO: this is only public to avoid changing the syntect impl
     // this should go away with async edits
     pub rev: u64,
     pub undo_group: Option<usize>,
     buf_size: usize,
-    pub (crate) view_id: ViewId,
+    pub(crate) view_id: ViewId,
+    pub(crate) language_id: LanguageId,
 }
 
 impl<C: Cache> View<C> {
-    pub (crate) fn new(peer: RpcPeer, plugin_id: PluginPid,
-                       info: PluginBufferInfo) -> Self {
-        let PluginBufferInfo {
-            views, rev, path, config, buf_size, nb_lines, ..
-        } = info;
+    pub(crate) fn new(peer: RpcPeer, plugin_id: PluginPid, info: PluginBufferInfo) -> Self {
+        let PluginBufferInfo { views, rev, path, config, buf_size, nb_lines, syntax, .. } = info;
 
         assert_eq!(views.len(), 1, "assuming single view");
         let view_id = views.first().unwrap().to_owned();
         let path = path.map(PathBuf::from);
         View {
             cache: C::new(buf_size, rev, nb_lines),
-            peer: peer,
+            peer,
             config_table: config.clone(),
             config: serde_json::from_value(Value::Object(config)).unwrap(),
-            path: path,
-            plugin_id: plugin_id,
-            view_id: view_id,
-            rev: rev,
+            path,
+            plugin_id,
+            view_id,
+            rev,
             undo_group: None,
-            buf_size: buf_size,
+            buf_size,
+            language_id: syntax,
         }
     }
 
-    pub (crate) fn update(&mut self, delta: Option<&RopeDelta>, new_len: usize,
-                       new_num_lines: usize, rev: u64, undo_group: Option<usize>) {
+    pub(crate) fn update(
+        &mut self,
+        delta: Option<&RopeDelta>,
+        new_len: usize,
+        new_num_lines: usize,
+        rev: u64,
+        undo_group: Option<usize>,
+    ) {
         self.cache.update(delta, new_len, new_num_lines, rev);
         self.rev = rev;
         self.undo_group = undo_group;
         self.buf_size = new_len;
+    }
+
+    pub(crate) fn set_language(&mut self, new_language_id: LanguageId) {
+        self.language_id = new_language_id;
     }
 
     //NOTE: (discuss in review) this feels bad, but because we're mutating cache,
@@ -81,12 +90,8 @@ impl<C: Cache> View<C> {
     // but we could maybe use a RefCell or something and make this cleaner.
     /// Returns a `FetchCtx`, a thin wrapper around an RpcPeer that implements
     /// the `DataSource` trait and can be used when updating a cache.
-    pub (crate) fn make_ctx(&self) -> FetchCtx {
-        FetchCtx {
-            view_id: self.view_id,
-            plugin_id: self.plugin_id,
-            peer: self.peer.clone(),
-        }
+    pub(crate) fn make_ctx(&self) -> FetchCtx {
+        FetchCtx { view_id: self.view_id, plugin_id: self.plugin_id, peer: self.peer.clone() }
     }
 
     /// Returns the length of the view's buffer, in bytes.
@@ -96,6 +101,10 @@ impl<C: Cache> View<C> {
 
     pub fn get_path(&self) -> Option<&Path> {
         self.path.as_ref().map(PathBuf::as_path)
+    }
+
+    pub fn get_language_id(&self) -> &LanguageId {
+        &self.language_id
     }
 
     pub fn get_config(&self) -> &BufferConfig {
@@ -139,9 +148,14 @@ impl<C: Cache> View<C> {
         self.peer.send_rpc_notification("add_scopes", &params);
     }
 
-    pub fn edit(&self, delta: RopeDelta, priority: u64, after_cursor: bool,
-                new_undo_group: bool, author: String) {
-
+    pub fn edit(
+        &self,
+        delta: RopeDelta,
+        priority: u64,
+        after_cursor: bool,
+        new_undo_group: bool,
+        author: String,
+    ) {
         let undo_group = if new_undo_group { None } else { self.undo_group };
         let edit = PluginEdit { rev: self.rev, delta, priority, after_cursor, undo_group, author };
         let params = json!({
@@ -204,7 +218,6 @@ impl<C: Cache> View<C> {
         });
         self.peer.send_rpc_notification("remove_status_item", &params);
     }
-
 }
 
 /// A simple wrapper type that acts as a `DataSource`.
@@ -215,8 +228,13 @@ pub struct FetchCtx {
 }
 
 impl DataSource for FetchCtx {
-    fn get_data(&self, start: usize, unit: TextUnit, max_size: usize, rev: u64)
-        -> Result<GetDataResponse, Error> {
+    fn get_data(
+        &self,
+        start: usize,
+        unit: TextUnit,
+        max_size: usize,
+        rev: u64,
+    ) -> Result<GetDataResponse, Error> {
         let _t = trace_block("FetchCtx::get_data", &["plugin"]);
         let params = json!({
             "plugin_id": self.plugin_id,
@@ -226,9 +244,8 @@ impl DataSource for FetchCtx {
             "max_size": max_size,
             "rev": rev,
         });
-        let result = self.peer.send_rpc_request("get_data", &params)
-            .map_err(|e| Error::RpcError(e))?;
-        GetDataResponse::deserialize(result)
-            .map_err(|_| Error::WrongReturnType)
+        let result =
+            self.peer.send_rpc_request("get_data", &params).map_err(|e| Error::RpcError(e))?;
+        GetDataResponse::deserialize(result).map_err(|_| Error::WrongReturnType)
     }
 }

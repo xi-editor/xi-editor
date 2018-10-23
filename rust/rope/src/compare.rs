@@ -59,10 +59,23 @@ pub unsafe fn fast_cmpestr_mask(one: &[u8], two: &[u8]) -> i32 {
     _mm_cvtsi128_si32(mask)
 }
 
+const AVX_STRIDE: usize = 32;
+
+/// Like above but with 32 byte slices
+#[target_feature(enable="avx2")]
+#[doc(hidden)]
+pub unsafe fn avx_compare_mask(one: &[u8], two: &[u8]) -> i32 {
+    use std::arch::x86_64::*;
+    let onev = _mm256_loadu_si256(one.as_ptr() as *const _);
+    let twov = _mm256_loadu_si256(two.as_ptr() as *const _);
+    let mask = _mm256_cmpeq_epi8(onev, twov);
+    !_mm256_movemask_epi8(mask)
+}
+
 /// Returns the lowest `i` for which `one[i] != two[i]`, if one exists.
 pub fn ne_idx(one: &[u8], two: &[u8]) -> Option<usize> {
-    if is_x86_feature_detected!("sse4.2") {
-        ne_idx_simd(one, two)
+    if is_x86_feature_detected!("avx2") {
+        ne_idx_avx(one, two)
     } else {
         ne_idx_fallback(one, two)
     }
@@ -78,10 +91,30 @@ pub fn ne_idx_rev(one: &[u8], two: &[u8]) -> Option<usize> {
     }
 }
 
+#[doc(hidden)]
+pub fn ne_idx_avx(one: &[u8], two: &[u8]) -> Option<usize> {
+    let min_len = one.len().min(two.len());
+    let mut idx = 0;
+    while idx < min_len {
+        let stride_len = AVX_STRIDE.min(min_len - idx);
+        let mask = unsafe { avx_compare_mask(&one.get_unchecked(idx..idx+stride_len),
+                                             &two.get_unchecked(idx..idx+stride_len)) };
+        // at the end of the slice the mask might include garbage bytes, so
+        // we ignore matches that are OOB
+        if mask != 0 && idx + (mask.trailing_zeros() as usize) < min_len {
+            return Some(idx + mask.trailing_zeros() as usize);
+        }
+        idx += AVX_STRIDE;
+    }
+    None
+}
+
 #[cfg(target_arch = "x86_64")]
 #[allow(dead_code)]
 #[doc(hidden)]
-pub fn ne_idx_simd(one: &[u8], two: &[u8]) -> Option<usize> {
+//NOTE: this turned out to be slower than sw, keeping it around
+//for now for benchmarking.
+pub fn ne_idx_sse42(one: &[u8], two: &[u8]) -> Option<usize> {
     let min_len = one.len().min(two.len());
     let mut idx = 0;
     loop {
@@ -138,21 +171,14 @@ pub fn ne_idx_rev_simd(one: &[u8], two: &[u8]) -> Option<usize> {
 #[allow(dead_code)]
 #[doc(hidden)]
 pub fn ne_idx_fallback(one: &[u8], two: &[u8]) -> Option<usize> {
-    for i in 0..one.len().min(two.len()) {
-        if one[i] != two[i] { return Some(i); }
-    }
-    None
+    one.iter().zip(two.iter()).position(|(a, b)| a != b)
 }
 
 #[inline]
 #[allow(dead_code)]
 #[doc(hidden)]
 pub fn ne_idx_rev_fallback(one: &[u8], two: &[u8]) -> Option<usize> {
-    let min_len =  one.len().min(two.len());
-    for i in 1..min_len + 1 {
-        if one[one.len()-i] != two[two.len()-i] { return Some(i - 1); }
-    }
-    None
+    one.iter().rev().zip(two.iter().rev()).position(|(a, b)| a != b)
 }
 
 /// Utility for efficiently comparing two ropes.
@@ -372,16 +398,19 @@ mod tests {
     }
 
     #[test]
-    #[cfg(all(target_arch = "x86_64", target_feature = "sse4.2"))]
+    #[cfg(target_feature = "sse4.2")]
     fn ne_len_simd() {
         // we should only match up to the length of the shortest input
         let one = "aaaaaa";
         let two = "aaaa";
         let tre = "aaba";
         let fur = "";
-        assert!(ne_idx_simd(one.as_bytes(), two.as_bytes()).is_none());
-        assert_eq!(ne_idx_simd(one.as_bytes(), tre.as_bytes()), Some(2));
-        assert_eq!(ne_idx_simd(one.as_bytes(), fur.as_bytes()), None);
+        assert!(ne_idx_sse42(one.as_bytes(), two.as_bytes()).is_none());
+        assert_eq!(ne_idx_sse42(one.as_bytes(), tre.as_bytes()), Some(2));
+        assert_eq!(ne_idx_sse42(one.as_bytes(), fur.as_bytes()), None);
+        assert!(ne_idx_avx(one.as_bytes(), two.as_bytes()).is_none());
+        assert_eq!(ne_idx_avx(one.as_bytes(), tre.as_bytes()), Some(2));
+        assert_eq!(ne_idx_avx(one.as_bytes(), fur.as_bytes()), None);
     }
 
 
@@ -586,5 +615,46 @@ mod tests {
         }
         assert_eq!(ne_idx_rev_fallback(zer.as_bytes(), one.as_bytes()), Some(4));
         assert_eq!(ne_idx_rev_fallback(one.as_bytes(), two.as_bytes()), Some(5));
+    }
+
+    #[test]
+    fn avx_mask() {
+        if !is_x86_feature_detected!("avx2") { return; }
+        let one = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let two = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let mask = unsafe { avx_compare_mask(one.as_bytes(), two.as_bytes()) };
+        assert_eq!(mask, 0);
+        assert_eq!(mask.trailing_zeros(), 32);
+        let two = "aaaaaaaa_aaaaaaaaaaaaaaaaaaaaaaa";
+        let mask = unsafe { avx_compare_mask(one.as_bytes(), two.as_bytes()) };
+        assert_eq!(mask.trailing_zeros(), 8);
+        let two = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let mask = unsafe { avx_compare_mask(one.as_bytes(), two.as_bytes()) };
+        assert_eq!(mask.trailing_zeros(), 0);
+    }
+
+    #[test]
+    fn ne_avx() {
+        if !is_x86_feature_detected!("avx2") { return; }
+        let one = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let two = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        assert_eq!(ne_idx_avx(one.as_bytes(), two.as_bytes()), Some(0));
+        let two = "aaaaaaa_aaaaaaaaaaaaaaaaaaaaaaaa";
+        assert_eq!(ne_idx_avx(one.as_bytes(), two.as_bytes()), Some(7));
+        let two = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        assert_eq!(ne_idx_avx(one.as_bytes(), two.as_bytes()), None);
+
+        let one = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        assert_eq!(ne_idx_avx(one.as_bytes(), one.as_bytes()), None);
+        let two = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_aaaaaaaaaaaaaaaaaaaaaaaaa";
+        assert_eq!(ne_idx_avx(one.as_bytes(), two.as_bytes()), Some(38));
+        let two = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_";
+        assert_eq!(ne_idx_avx(one.as_bytes(), two.as_bytes()), Some(63));
+
+
+        let one = "________________________________________";
+        let two = "______________________________________0_";
+        assert_eq!(ne_idx_avx(one.as_bytes(), two.as_bytes()), Some(38));
+
     }
 }

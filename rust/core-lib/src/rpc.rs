@@ -293,7 +293,7 @@ pub struct EditCommand<T> {
 }
 
 /// An enum representing touch and mouse gestures applied to the text.
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum GestureType {
     PointSelect,
@@ -312,7 +312,7 @@ pub enum GestureType {
 /// Several core protocol commands use a params array to pass arguments
 /// which are named, internally. this type use custom Serialize /
 /// Deserialize impls to accommodate this.
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct LineRange {
     pub first: i64,
     pub last: i64,
@@ -321,7 +321,7 @@ pub struct LineRange {
 /// A mouse event. See the note for [`LineRange`].
 ///
 /// [`LineRange`]: enum.LineRange.html
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct MouseAction {
     pub line: u64,
     pub column: u64,
@@ -329,7 +329,7 @@ pub struct MouseAction {
     pub click_count: Option<u64>,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct Position {
     pub line: usize,
     pub column: usize
@@ -337,7 +337,7 @@ pub struct Position {
 
 /// Represents how the current selection is modified (used by find
 /// operations).
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum SelectionModifier {
     None,
@@ -480,7 +480,10 @@ pub enum EditNotification {
     SelectionIntoLines,
     DuplicateLine,
     IncreaseNumber,
-    DecreaseNumber
+    DecreaseNumber,
+    ToggleRecording { recording_name: Option<String> },
+    PlayRecording { recording_name: String },
+    ClearRecording { recording_name: String },
 }
 
 /// The edit related requests.
@@ -533,10 +536,11 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for EditCommand<T>
         let mut v = Value::deserialize(deserializer)?;
         let helper = InnerId::deserialize(&v).map_err(de::Error::custom)?;
         let InnerId { view_id } = helper;
+
         // if params are empty, remove them
         let remove_params = match v.get("params") {
-            Some(&Value::Object(ref obj)) => obj.is_empty(),
-            Some(&Value::Array(ref arr)) => arr.is_empty(),
+            Some(&Value::Object(ref obj)) => obj.is_empty() && T::deserialize(v.clone()).is_err(),
+            Some(&Value::Array(ref arr)) => arr.is_empty() && T::deserialize(v.clone()).is_err(),
             Some(_) => return Err(de::Error::custom("'params' field, if present, must be object or array.")),
             None => false,
         };

@@ -22,6 +22,7 @@ extern crate dirs;
 extern crate xi_core_lib;
 extern crate xi_rpc;
 
+use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -29,13 +30,13 @@ use std::path::{Path, PathBuf};
 use xi_core_lib::XiCore;
 use xi_rpc::RpcLoop;
 
-const XI_DIRECTORY: &str = "xi-core";
+const XI_LOG_DIR: &str = "xi-core";
 const XI_LOG_FILE: &str = "xi-core.log";
 
-fn get_logging_directory() -> Result<PathBuf, io::Error> {
+fn get_logging_directory_path<P: AsRef<Path>>(directory: P) -> Result<PathBuf, io::Error> {
     match dirs::data_local_dir() {
         Some(mut log_dir) => {
-            log_dir.push(XI_DIRECTORY);
+            log_dir.push(directory);
             Ok(log_dir)
         }
         None => Err(io::Error::new(
@@ -45,15 +46,48 @@ fn get_logging_directory() -> Result<PathBuf, io::Error> {
     }
 }
 
-fn path_for_log_file<P: AsRef<Path>>(filename: P) -> Result<PathBuf, io::Error> {
-    let mut logging_directory = get_logging_directory()?;
-    // Create the logging directory
-    fs::create_dir_all(&logging_directory)?;
-    logging_directory.push(filename.as_ref());
-    Ok(logging_directory)
+/// This function tries to create the parent directories for a file
+///
+/// It wraps around the `parent()` function of `Path` which returns an `Option<&Path>` and
+/// `fs::create_dir_all` which returns an `io::Result<()>`.
+///
+/// This allows you to use `?`/`try!()` to create the dir and you recive the additional custom error for when `parent()`
+/// returns nothing.
+///
+/// # Errors
+/// This can return an `io::Error` if `fs::create_dir_all` fails or if `parent()` returns `None`.
+/// See `Path`'s `parent()` function for more details.
+/// # Examples
+/// ```
+/// use std::path::Path;
+/// use std::ffi::OsStr;
+///
+/// let path_with_file = Path::new("/some/directory/then/file");
+/// assert_eq!(Some(OsStr::new("file")), path_with_file.file_name());
+/// assert_eq!(create_log_directory(path_with_file).is_ok(), true);
+///
+/// let path_with_other_file = Path::new("/other_file");
+/// assert_eq!(Some(OsStr::new("other_file")), path_with_other_file.file_name());
+/// assert_eq!(create_log_directory(path_with_file).is_ok(), true);
+///
+/// // Path that is just the root or prefix:
+/// let path_without_file = Path::new("/");
+/// assert_eq!(None, path_without_file.file_name());
+/// assert_eq!(create_log_directory(path_without_file).is_ok(), false);
+/// ```
+fn create_log_directory(path_with_file: &Path) -> io::Result<()> {
+    let log_dir = path_with_file.parent().ok_or(io::Error::new(
+        io::ErrorKind::InvalidInput,
+        format!(
+            "Unable to get the parent of the following Path: {}, Your path should contain a file name",
+            path_with_file.display(),
+        ),
+    ))?;
+    fs::create_dir_all(log_dir)?;
+    Ok(())
 }
 
-fn setup_logging() -> Result<(), fern::InitError> {
+fn setup_logging(logging_path: Option<&Path>) -> Result<(), fern::InitError> {
     let level_filter = match std::env::var("XI_LOG") {
         Ok(level) => match level.to_lowercase().as_ref() {
             "trace" => log::LevelFilter::Trace,
@@ -76,23 +110,97 @@ fn setup_logging() -> Result<(), fern::InitError> {
         }).level(level_filter)
         .chain(io::stderr());
 
-    let path_result = path_for_log_file(XI_LOG_FILE);
-    // If the logging_file_path returned successfully, add the logfile capability to fern
-    if let Ok(logging_file_path) = &path_result {
+    if let Some(logging_file_path) = logging_path {
+        create_log_directory(logging_file_path)?;
+
         fern_dispatch = fern_dispatch.chain(fern::log_file(logging_file_path)?);
-    }
+    };
 
     // Start fern
     fern_dispatch.apply()?;
+    info!("Logging with fern is set up");
 
-    // If the logging_file_path returned an error, print it with fern/logs
-    if let Err(e) = &path_result {
-        let message = "There was an issue getting the path for the log file";
-        warn!("{}: {:?}, falling back to stderr.", message, e);
+    // Log details of the logging_file_path result using fern/log
+    // Either logging the path fern is outputting to or the error from obtaining the path
+    match logging_path {
+        Some(logging_file_path) => info!("Writing logs to: {}", logging_file_path.display()),
+        None => warn!("No path was supplied for the log file. Not saving logs to disk, falling back to just stderr"),
     }
-
-    info!("Logging with fern is setup");
     Ok(())
+}
+
+fn generate_logging_path(logfile_config: LogfileConfig) -> Result<PathBuf, io::Error> {
+    // Use the file name set in logfile_config or fallback to the default
+    let logfile_file_name = match logfile_config.file {
+        Some(file_name) => file_name,
+        None => PathBuf::from(XI_LOG_FILE),
+    };
+    if logfile_file_name.eq(Path::new("")) {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "A blank file name was supplied"));
+    };
+    // Use the directory name set in logfile_config or fallback to the default
+    let logfile_directory_name = match logfile_config.directory {
+        Some(dir) => dir,
+        None => PathBuf::from(XI_LOG_DIR),
+    };
+
+    let mut logging_directory_path = get_logging_directory_path(logfile_directory_name)?;
+
+    // Add the file name & return the full path
+    logging_directory_path.push(logfile_file_name);
+    Ok(logging_directory_path)
+}
+
+fn get_flags() -> HashMap<String, Option<String>> {
+    let mut flags: HashMap<String, Option<String>> = HashMap::new();
+
+    let flag_prefix = "-";
+    let mut args_iterator = std::env::args().peekable();
+    while let Some(arg) = args_iterator.next() {
+        if arg.starts_with(flag_prefix) {
+            let key = arg.trim_left_matches(flag_prefix).to_string();
+
+            // Check the next argument doesn't start with the flag prefix
+            // map_or accounts for peek returning an Option
+            let next_arg_not_a_flag: bool =
+                args_iterator.peek().map_or(false, |val| !val.starts_with(flag_prefix));
+            if next_arg_not_a_flag {
+                flags.insert(key, args_iterator.next());
+            }
+        }
+    }
+    flags
+}
+
+struct EnvFlagConfig {
+    env_name: &'static str,
+    flag_name: &'static str,
+}
+
+/// Extracts a value from the flags and the env.
+///
+/// In this order: `String` from the flags, then `String` from the env, then `None`
+fn extract_env_or_flag(
+    flags: &HashMap<String, Option<String>>,
+    conf: EnvFlagConfig,
+) -> Option<String> {
+    flags.get(conf.flag_name).cloned().unwrap_or(std::env::var(conf.env_name).ok())
+}
+
+struct LogfileConfig {
+    directory: Option<PathBuf>,
+    file: Option<PathBuf>,
+}
+
+fn generate_logfile_config(flags: &HashMap<String, Option<String>>) -> LogfileConfig {
+    // If the key is set, get the Option within
+    let log_dir_env_flag = EnvFlagConfig { env_name: "XI_LOG_DIR", flag_name: "log-dir" };
+    let log_file_env_flag = EnvFlagConfig { env_name: "XI_LOG_FILE", flag_name: "log-file" };
+    let log_dir_flag_option = extract_env_or_flag(&flags, log_dir_env_flag).map(PathBuf::from);
+
+    let log_file_flag_option = extract_env_or_flag(&flags, log_file_env_flag).map(PathBuf::from);
+
+    LogfileConfig { directory: log_dir_flag_option, file: log_file_flag_option }
 }
 
 fn main() {
@@ -101,11 +209,20 @@ fn main() {
     let stdout = io::stdout();
     let mut rpc_looper = RpcLoop::new(stdout);
 
-    if let Err(e) = setup_logging() {
-        eprintln!(
-            "[ERROR] setup_logging returned error, logging disabled: {:?}",
-            e
-        );
+    let flags = get_flags();
+
+    let logfile_config = generate_logfile_config(&flags);
+
+    let logging_path_result = generate_logging_path(logfile_config);
+
+    let logging_path =
+        logging_path_result.as_ref().map(|p: &PathBuf| -> &Path { p.as_path() }).ok();
+
+    if let Err(e) = setup_logging(logging_path) {
+        eprintln!("[ERROR] setup_logging returned error, logging not enabled: {:?}", e);
+    }
+    if let Err(e) = logging_path_result.as_ref() {
+        warn!("Unable to generate the logging path to pass to set up: {}", e)
     }
 
     match rpc_looper.mainloop(|| stdin.lock(), &mut state) {

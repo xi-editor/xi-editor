@@ -68,10 +68,7 @@ pub(crate) fn get_position_of_offset<C: Cache>(
 
     let char_offset = count_utf16(&(view.get_line(line_num)?[0..(offset - line_offset)]));
 
-    Ok(Position {
-        line: line_num as u64,
-        character: char_offset as u64,
-    })
+    Ok(Position { line: line_num as u64, character: char_offset as u64 })
 }
 
 pub(crate) fn offset_of_position<C: Cache>(

@@ -14,13 +14,13 @@
 
 //! Types and helpers used for testing.
 
-use std::sync::mpsc::{channel, Sender, Receiver};
+use std::io::{self, Cursor, Write};
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::{Duration, Instant};
-use std::io::{self, Write, Cursor};
 
 use serde_json::{self, Value};
 
-use super::{Callback, MessageReader, RpcObject, Peer, Response, ReadError, Error};
+use super::{Callback, Error, MessageReader, Peer, ReadError, Response, RpcObject};
 
 /// Wraps an instance of `mpsc::Sender`, implementing `Write`.
 ///
@@ -54,11 +54,8 @@ impl DummyReader {
     ///
     /// This method makes no assumptions about the contents of the
     /// message, and does no error handling.
-    pub fn next_timeout(&mut self, timeout: Duration)
-                        -> Option<Result<RpcObject, ReadError>> {
-        self.1.recv_timeout(timeout)
-            .ok()
-            .map(|s| self.0.parse(&s))
+    pub fn next_timeout(&mut self, timeout: Duration) -> Option<Result<RpcObject, ReadError>> {
+        self.1.recv_timeout(timeout).ok().map(|s| self.0.parse(&s))
     }
 
     /// Reads and parses a response object.
@@ -68,26 +65,23 @@ impl DummyReader {
     /// Panics if a non-response message is received, or if no message
     /// is received after a reasonable time.
     pub fn expect_response(&mut self) -> Response {
-        let raw = self.next_timeout(Duration::from_secs(1))
-            .expect("response should be received");
+        let raw = self.next_timeout(Duration::from_secs(1)).expect("response should be received");
         let val = raw.as_ref().ok().map(|v| serde_json::to_string(&v.0));
-        let resp = raw.map_err(|e| e.to_string())
-            .and_then(|r| r.into_response());
+        let resp = raw.map_err(|e| e.to_string()).and_then(|r| r.into_response());
 
         match resp {
             Err(msg) => panic!("Bad response: {:?}. {}", val, msg),
-            Ok(resp) => resp
+            Ok(resp) => resp,
         }
     }
 
     pub fn expect_object(&mut self) -> RpcObject {
-        self.next_timeout(Duration::from_secs(1))
-            .expect("expected object")
-            .unwrap()
+        self.next_timeout(Duration::from_secs(1)).expect("expected object").unwrap()
     }
 
     pub fn expect_rpc(&mut self, method: &str) -> RpcObject {
-        let obj = self.next_timeout(Duration::from_secs(1))
+        let obj = self
+            .next_timeout(Duration::from_secs(1))
             .expect(&format!("expected rpc \"{}\"", method))
             .unwrap();
         assert_eq!(obj.get_method(), Some(method));
@@ -104,10 +98,9 @@ impl DummyReader {
 impl Write for DummyWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let s = String::from_utf8(buf.to_vec()).unwrap();
-        self.0.send(s)
-            .map_err(|err| {
-                io::Error::new(io::ErrorKind::Other, format!("{:?}", err))
-            })
+        self.0
+            .send(s)
+            .map_err(|err| io::Error::new(io::ErrorKind::Other, format!("{:?}", err)))
             .map(|_| buf.len())
     }
 
@@ -116,22 +109,20 @@ impl Write for DummyWriter {
     }
 }
 
-
 impl Peer for DummyPeer {
     fn box_clone(&self) -> Box<Peer> {
         Box::new(self.clone())
     }
-    fn send_rpc_notification(&self, _method: &str, _params: &Value) {  }
-    fn send_rpc_request_async(&self, _method: &str, _params: &Value,
-                              f: Box<Callback>) {
+    fn send_rpc_notification(&self, _method: &str, _params: &Value) {}
+    fn send_rpc_request_async(&self, _method: &str, _params: &Value, f: Box<Callback>) {
         f.call(Ok("dummy peer".into()))
     }
-    fn send_rpc_request(&self, _method: &str, _params: &Value)
-        -> Result<Value, Error>
-    {
+    fn send_rpc_request(&self, _method: &str, _params: &Value) -> Result<Value, Error> {
         Ok("dummy peer".into())
     }
-    fn request_is_pending(&self) -> bool { false }
-    fn schedule_idle(&self, _token: usize) {  }
-    fn schedule_timer(&self, _time: Instant, _token: usize) {  }
+    fn request_is_pending(&self) -> bool {
+        false
+    }
+    fn schedule_idle(&self, _token: usize) {}
+    fn schedule_timer(&self, _time: Instant, _token: usize) {}
 }

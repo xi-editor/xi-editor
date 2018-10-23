@@ -103,16 +103,12 @@ impl<'a> LineBreakIterator<'a> {
         if s.is_empty() {
             LineBreakIterator {
                 s,
-                ix: 1,  // LB2, don't break; sot takes priority for empty string
+                ix: 1, // LB2, don't break; sot takes priority for empty string
                 state: 0,
             }
         } else {
             let (lb, len) = linebreak_property_str(s, 0);
-            LineBreakIterator {
-                s,
-                ix: len,
-                state: lb,
-            }
+            LineBreakIterator { s, ix: len, state: lb }
         }
     }
 }
@@ -135,10 +131,7 @@ impl Default for LineBreakLeafIter {
     // A default value. No guarantees on what happens when next() is called
     // on this. Intended to be useful for empty ropes.
     fn default() -> LineBreakLeafIter {
-        LineBreakLeafIter {
-            ix: 0,
-            state: 0,
-        }
+        LineBreakLeafIter { ix: 0, state: 0 }
     }
 }
 
@@ -146,15 +139,8 @@ impl LineBreakLeafIter {
     /// Create a new line break iterator suitable for leaves in a rope.
     /// Precondition: ix is at a code point boundary within s.
     pub fn new(s: &str, ix: usize) -> LineBreakLeafIter {
-        let (lb, len) = if ix == s.len() {
-            (0, 0)
-        } else {
-            linebreak_property_str(s, ix)
-        };
-        LineBreakLeafIter {
-            ix: ix + len,
-            state: lb,
-        }
+        let (lb, len) = if ix == s.len() { (0, 0) } else { linebreak_property_str(s, ix) };
+        LineBreakLeafIter { ix: ix + len, state: lb }
     }
 
     /// Return break pos and whether it's a hard break. Note: hard break
@@ -170,7 +156,7 @@ impl LineBreakLeafIter {
     pub fn next(&mut self, s: &str) -> (usize, bool) {
         loop {
             if self.ix == s.len() {
-                self.ix = 0;  // in preparation for next leaf
+                self.ix = 0; // in preparation for next leaf
                 return (s.len(), false);
             }
             let (lb, len) = linebreak_property_str(s, self.ix);
@@ -190,6 +176,69 @@ impl LineBreakLeafIter {
     }
 }
 
+fn is_in_asc_list<T: std::cmp::PartialOrd>(c: T, list: &[T], start: usize, end: usize) -> bool {
+    if c == list[start] || c == list[end] {
+        return true;
+    }
+    if end - start <= 1 {
+        return false;
+    }
+
+    let mid = (start + end) / 2;
+
+    if c >= list[mid] {
+        return is_in_asc_list(c, &list, mid, end);
+    } else {
+        return is_in_asc_list(c, &list, start, mid);
+    }
+}
+
+pub fn is_variation_selector(c: char) -> bool {
+    (c >= '\u{FE00}' && c <= '\u{FE0F}') || (c >= '\u{E0100}' && c <= '\u{E01EF}')
+}
+
+pub trait EmojiExt {
+    fn is_regional_indicator_symbol(self) -> bool;
+    fn is_emoji_modifier(self) -> bool;
+    fn is_emoji_combining_enclosing_keycap(self) -> bool;
+    fn is_emoji(self) -> bool;
+    fn is_emoji_modifier_base(self) -> bool;
+    fn is_tag_spec_char(self) -> bool;
+    fn is_emoji_cancel_tag(self) -> bool;
+    fn is_zwj(self) -> bool;
+}
+
+impl EmojiExt for char {
+    fn is_regional_indicator_symbol(self) -> bool {
+        self >= '\u{1F1E6}' && self <= '\u{1F1FF}'
+    }
+    fn is_emoji_modifier(self) -> bool {
+        self >= '\u{1F3FB}' && self <= '\u{1F3FF}'
+    }
+    fn is_emoji_combining_enclosing_keycap(self) -> bool {
+        self == '\u{20E3}'
+    }
+    fn is_emoji(self) -> bool {
+        is_in_asc_list(self, &EMOJI_TABLE, 0, EMOJI_TABLE.len() - 1)
+    }
+    fn is_emoji_modifier_base(self) -> bool {
+        is_in_asc_list(self, &EMOJI_MODIFIER_BASE_TABLE, 0, EMOJI_MODIFIER_BASE_TABLE.len() - 1)
+    }
+    fn is_tag_spec_char(self) -> bool {
+        '\u{E0020}' <= self && self <= '\u{E007E}'
+    }
+    fn is_emoji_cancel_tag(self) -> bool {
+        self == '\u{E007F}'
+    }
+    fn is_zwj(self) -> bool {
+        self == '\u{200D}'
+    }
+}
+
+pub fn is_keycap_base(c: char) -> bool {
+    ('0' <= c && c <= '9') || c == '#' || c == '*'
+}
+
 #[cfg(test)]
 mod tests {
     use linebreak_property;
@@ -198,14 +247,14 @@ mod tests {
 
     #[test]
     fn linebreak_prop() {
-        assert_eq!( 9, linebreak_property('\u{0001}'));
-        assert_eq!( 9, linebreak_property('\u{0003}'));
-        assert_eq!( 9, linebreak_property('\u{0004}'));
-        assert_eq!( 9, linebreak_property('\u{0008}'));
+        assert_eq!(9, linebreak_property('\u{0001}'));
+        assert_eq!(9, linebreak_property('\u{0003}'));
+        assert_eq!(9, linebreak_property('\u{0004}'));
+        assert_eq!(9, linebreak_property('\u{0008}'));
         assert_eq!(10, linebreak_property('\u{000D}'));
-        assert_eq!( 9, linebreak_property('\u{0010}'));
-        assert_eq!( 9, linebreak_property('\u{0015}'));
-        assert_eq!( 9, linebreak_property('\u{0018}'));
+        assert_eq!(9, linebreak_property('\u{0010}'));
+        assert_eq!(9, linebreak_property('\u{0015}'));
+        assert_eq!(9, linebreak_property('\u{0018}'));
         assert_eq!(22, linebreak_property('\u{002B}'));
         assert_eq!(16, linebreak_property('\u{002C}'));
         assert_eq!(13, linebreak_property('\u{002D}'));
@@ -214,57 +263,57 @@ mod tests {
         assert_eq!(19, linebreak_property('\u{0038}'));
         assert_eq!(19, linebreak_property('\u{0039}'));
         assert_eq!(16, linebreak_property('\u{003B}'));
-        assert_eq!( 2, linebreak_property('\u{003E}'));
+        assert_eq!(2, linebreak_property('\u{003E}'));
         assert_eq!(11, linebreak_property('\u{003F}'));
-        assert_eq!( 2, linebreak_property('\u{0040}'));
-        assert_eq!( 2, linebreak_property('\u{0055}'));
-        assert_eq!( 2, linebreak_property('\u{0056}'));
-        assert_eq!( 2, linebreak_property('\u{0058}'));
-        assert_eq!( 2, linebreak_property('\u{0059}'));
+        assert_eq!(2, linebreak_property('\u{0040}'));
+        assert_eq!(2, linebreak_property('\u{0055}'));
+        assert_eq!(2, linebreak_property('\u{0056}'));
+        assert_eq!(2, linebreak_property('\u{0058}'));
+        assert_eq!(2, linebreak_property('\u{0059}'));
         assert_eq!(20, linebreak_property('\u{005B}'));
         assert_eq!(22, linebreak_property('\u{005C}'));
-        assert_eq!( 2, linebreak_property('\u{0062}'));
-        assert_eq!( 2, linebreak_property('\u{006C}'));
-        assert_eq!( 2, linebreak_property('\u{006D}'));
-        assert_eq!( 2, linebreak_property('\u{0071}'));
-        assert_eq!( 2, linebreak_property('\u{0074}'));
-        assert_eq!( 2, linebreak_property('\u{0075}'));
-        assert_eq!( 4, linebreak_property('\u{007C}'));
-        assert_eq!( 9, linebreak_property('\u{009D}'));
-        assert_eq!( 2, linebreak_property('\u{00D5}'));
-        assert_eq!( 2, linebreak_property('\u{00D8}'));
-        assert_eq!( 2, linebreak_property('\u{00E9}'));
-        assert_eq!( 2, linebreak_property('\u{0120}'));
-        assert_eq!( 2, linebreak_property('\u{0121}'));
-        assert_eq!( 2, linebreak_property('\u{015C}'));
-        assert_eq!( 2, linebreak_property('\u{016C}'));
-        assert_eq!( 2, linebreak_property('\u{017E}'));
-        assert_eq!( 2, linebreak_property('\u{01B0}'));
-        assert_eq!( 2, linebreak_property('\u{0223}'));
-        assert_eq!( 2, linebreak_property('\u{028D}'));
-        assert_eq!( 2, linebreak_property('\u{02BE}'));
-        assert_eq!( 1, linebreak_property('\u{02D0}'));
-        assert_eq!( 9, linebreak_property('\u{0337}'));
-        assert_eq!( 0, linebreak_property('\u{0380}'));
-        assert_eq!( 2, linebreak_property('\u{04AA}'));
-        assert_eq!( 2, linebreak_property('\u{04CE}'));
-        assert_eq!( 2, linebreak_property('\u{04F1}'));
-        assert_eq!( 2, linebreak_property('\u{0567}'));
-        assert_eq!( 2, linebreak_property('\u{0580}'));
-        assert_eq!( 9, linebreak_property('\u{05A1}'));
-        assert_eq!( 9, linebreak_property('\u{05B0}'));
+        assert_eq!(2, linebreak_property('\u{0062}'));
+        assert_eq!(2, linebreak_property('\u{006C}'));
+        assert_eq!(2, linebreak_property('\u{006D}'));
+        assert_eq!(2, linebreak_property('\u{0071}'));
+        assert_eq!(2, linebreak_property('\u{0074}'));
+        assert_eq!(2, linebreak_property('\u{0075}'));
+        assert_eq!(4, linebreak_property('\u{007C}'));
+        assert_eq!(9, linebreak_property('\u{009D}'));
+        assert_eq!(2, linebreak_property('\u{00D5}'));
+        assert_eq!(2, linebreak_property('\u{00D8}'));
+        assert_eq!(2, linebreak_property('\u{00E9}'));
+        assert_eq!(2, linebreak_property('\u{0120}'));
+        assert_eq!(2, linebreak_property('\u{0121}'));
+        assert_eq!(2, linebreak_property('\u{015C}'));
+        assert_eq!(2, linebreak_property('\u{016C}'));
+        assert_eq!(2, linebreak_property('\u{017E}'));
+        assert_eq!(2, linebreak_property('\u{01B0}'));
+        assert_eq!(2, linebreak_property('\u{0223}'));
+        assert_eq!(2, linebreak_property('\u{028D}'));
+        assert_eq!(2, linebreak_property('\u{02BE}'));
+        assert_eq!(1, linebreak_property('\u{02D0}'));
+        assert_eq!(9, linebreak_property('\u{0337}'));
+        assert_eq!(0, linebreak_property('\u{0380}'));
+        assert_eq!(2, linebreak_property('\u{04AA}'));
+        assert_eq!(2, linebreak_property('\u{04CE}'));
+        assert_eq!(2, linebreak_property('\u{04F1}'));
+        assert_eq!(2, linebreak_property('\u{0567}'));
+        assert_eq!(2, linebreak_property('\u{0580}'));
+        assert_eq!(9, linebreak_property('\u{05A1}'));
+        assert_eq!(9, linebreak_property('\u{05B0}'));
         assert_eq!(38, linebreak_property('\u{05D4}'));
-        assert_eq!( 2, linebreak_property('\u{0643}'));
-        assert_eq!( 9, linebreak_property('\u{065D}'));
+        assert_eq!(2, linebreak_property('\u{0643}'));
+        assert_eq!(9, linebreak_property('\u{065D}'));
         assert_eq!(19, linebreak_property('\u{066C}'));
-        assert_eq!( 2, linebreak_property('\u{066E}'));
-        assert_eq!( 2, linebreak_property('\u{068A}'));
-        assert_eq!( 2, linebreak_property('\u{0776}'));
-        assert_eq!( 2, linebreak_property('\u{07A2}'));
-        assert_eq!( 0, linebreak_property('\u{07BB}'));
+        assert_eq!(2, linebreak_property('\u{066E}'));
+        assert_eq!(2, linebreak_property('\u{068A}'));
+        assert_eq!(2, linebreak_property('\u{0776}'));
+        assert_eq!(2, linebreak_property('\u{07A2}'));
+        assert_eq!(0, linebreak_property('\u{07BB}'));
         assert_eq!(19, linebreak_property('\u{1091}'));
         assert_eq!(19, linebreak_property('\u{1B53}'));
-        assert_eq!( 2, linebreak_property('\u{1EEA}'));
+        assert_eq!(2, linebreak_property('\u{1EEA}'));
         assert_eq!(40, linebreak_property('\u{200D}'));
         assert_eq!(14, linebreak_property('\u{30C7}'));
         assert_eq!(14, linebreak_property('\u{318B}'));
@@ -279,7 +328,7 @@ mod tests {
         assert_eq!(14, linebreak_property('\u{920F}'));
         assert_eq!(14, linebreak_property('\u{9731}'));
         assert_eq!(14, linebreak_property('\u{9F3A}'));
-        assert_eq!( 2, linebreak_property('\u{ABD2}'));
+        assert_eq!(2, linebreak_property('\u{ABD2}'));
         assert_eq!(19, linebreak_property('\u{ABF6}'));
         assert_eq!(32, linebreak_property('\u{B2EA}'));
         assert_eq!(32, linebreak_property('\u{B3F5}'));
@@ -288,42 +337,42 @@ mod tests {
         assert_eq!(32, linebreak_property('\u{BD42}'));
         assert_eq!(32, linebreak_property('\u{C714}'));
         assert_eq!(32, linebreak_property('\u{CC25}'));
-        assert_eq!( 0, linebreak_property('\u{EA59}'));
-        assert_eq!( 0, linebreak_property('\u{F6C8}'));
-        assert_eq!( 0, linebreak_property('\u{F83C}'));
-        assert_eq!( 2, linebreak_property('\u{FC6A}'));
-        assert_eq!( 0, linebreak_property('\u{15199}'));
-        assert_eq!( 0, linebreak_property('\u{163AC}'));
-        assert_eq!( 0, linebreak_property('\u{1EF65}'));
+        assert_eq!(0, linebreak_property('\u{EA59}'));
+        assert_eq!(0, linebreak_property('\u{F6C8}'));
+        assert_eq!(0, linebreak_property('\u{F83C}'));
+        assert_eq!(2, linebreak_property('\u{FC6A}'));
+        assert_eq!(0, linebreak_property('\u{15199}'));
+        assert_eq!(0, linebreak_property('\u{163AC}'));
+        assert_eq!(0, linebreak_property('\u{1EF65}'));
         assert_eq!(14, linebreak_property('\u{235A7}'));
         assert_eq!(14, linebreak_property('\u{2E483}'));
         assert_eq!(14, linebreak_property('\u{2FFFA}'));
         assert_eq!(14, linebreak_property('\u{3613E}'));
         assert_eq!(14, linebreak_property('\u{3799A}'));
-        assert_eq!( 0, linebreak_property('\u{4DD35}'));
-        assert_eq!( 0, linebreak_property('\u{5858D}'));
-        assert_eq!( 0, linebreak_property('\u{585C2}'));
-        assert_eq!( 0, linebreak_property('\u{6CF38}'));
-        assert_eq!( 0, linebreak_property('\u{7573F}'));
-        assert_eq!( 0, linebreak_property('\u{7AABF}'));
-        assert_eq!( 0, linebreak_property('\u{87762}'));
-        assert_eq!( 0, linebreak_property('\u{90297}'));
-        assert_eq!( 0, linebreak_property('\u{9D037}'));
-        assert_eq!( 0, linebreak_property('\u{A0E65}'));
-        assert_eq!( 0, linebreak_property('\u{B8E7F}'));
-        assert_eq!( 0, linebreak_property('\u{BBEA5}'));
-        assert_eq!( 0, linebreak_property('\u{BE28C}'));
-        assert_eq!( 0, linebreak_property('\u{C1B57}'));
-        assert_eq!( 0, linebreak_property('\u{C2011}'));
-        assert_eq!( 0, linebreak_property('\u{CBF32}'));
-        assert_eq!( 0, linebreak_property('\u{DD9BD}'));
-        assert_eq!( 0, linebreak_property('\u{DF4A6}'));
-        assert_eq!( 0, linebreak_property('\u{E923D}'));
-        assert_eq!( 0, linebreak_property('\u{E94DB}'));
-        assert_eq!( 0, linebreak_property('\u{F90AB}'));
-        assert_eq!( 0, linebreak_property('\u{100EF6}'));
-        assert_eq!( 0, linebreak_property('\u{106487}'));
-        assert_eq!( 0, linebreak_property('\u{1064B4}'));
+        assert_eq!(0, linebreak_property('\u{4DD35}'));
+        assert_eq!(0, linebreak_property('\u{5858D}'));
+        assert_eq!(0, linebreak_property('\u{585C2}'));
+        assert_eq!(0, linebreak_property('\u{6CF38}'));
+        assert_eq!(0, linebreak_property('\u{7573F}'));
+        assert_eq!(0, linebreak_property('\u{7AABF}'));
+        assert_eq!(0, linebreak_property('\u{87762}'));
+        assert_eq!(0, linebreak_property('\u{90297}'));
+        assert_eq!(0, linebreak_property('\u{9D037}'));
+        assert_eq!(0, linebreak_property('\u{A0E65}'));
+        assert_eq!(0, linebreak_property('\u{B8E7F}'));
+        assert_eq!(0, linebreak_property('\u{BBEA5}'));
+        assert_eq!(0, linebreak_property('\u{BE28C}'));
+        assert_eq!(0, linebreak_property('\u{C1B57}'));
+        assert_eq!(0, linebreak_property('\u{C2011}'));
+        assert_eq!(0, linebreak_property('\u{CBF32}'));
+        assert_eq!(0, linebreak_property('\u{DD9BD}'));
+        assert_eq!(0, linebreak_property('\u{DF4A6}'));
+        assert_eq!(0, linebreak_property('\u{E923D}'));
+        assert_eq!(0, linebreak_property('\u{E94DB}'));
+        assert_eq!(0, linebreak_property('\u{F90AB}'));
+        assert_eq!(0, linebreak_property('\u{100EF6}'));
+        assert_eq!(0, linebreak_property('\u{106487}'));
+        assert_eq!(0, linebreak_property('\u{1064B4}'));
     }
 
     #[test]
@@ -463,57 +512,70 @@ mod tests {
 
     #[test]
     fn lb_iter_simple() {
-        assert_eq!(vec![(6, false), (11, true)],
-            LineBreakIterator::new("hello world").collect::<Vec<_>>());
+        assert_eq!(
+            vec![(6, false), (11, true)],
+            LineBreakIterator::new("hello world").collect::<Vec<_>>()
+        );
 
         // LB7, LB18
-        assert_eq!(vec![(3, false), (4, true)],
-            LineBreakIterator::new("a  b").collect::<Vec<_>>());
+        assert_eq!(vec![(3, false), (4, true)], LineBreakIterator::new("a  b").collect::<Vec<_>>());
 
         // LB5
-        assert_eq!(vec![(2, true), (3, true)],
-            LineBreakIterator::new("a\nb").collect::<Vec<_>>());
-        assert_eq!(vec![(2, true), (4, true)],
-            LineBreakIterator::new("\r\n\r\n").collect::<Vec<_>>());
+        assert_eq!(vec![(2, true), (3, true)], LineBreakIterator::new("a\nb").collect::<Vec<_>>());
+        assert_eq!(
+            vec![(2, true), (4, true)],
+            LineBreakIterator::new("\r\n\r\n").collect::<Vec<_>>()
+        );
 
         // LB8a
-        assert_eq!(vec![(7, true)],
-            LineBreakIterator::new("\u{200D}\u{1F3FB}").collect::<Vec<_>>());
+        assert_eq!(
+            vec![(7, true)],
+            LineBreakIterator::new("\u{200D}\u{1F3FB}").collect::<Vec<_>>()
+        );
 
         // LB10 combining mark after space
-        assert_eq!(vec![(2, false), (4, true)],
-            LineBreakIterator::new("a \u{301}").collect::<Vec<_>>());
+        assert_eq!(
+            vec![(2, false), (4, true)],
+            LineBreakIterator::new("a \u{301}").collect::<Vec<_>>()
+        );
 
         // LB15
-        assert_eq!(vec![(3, true)],
-            LineBreakIterator::new("\" [").collect::<Vec<_>>());
+        assert_eq!(vec![(3, true)], LineBreakIterator::new("\" [").collect::<Vec<_>>());
 
         // LB17
-        assert_eq!(vec![(2, false), (10, false), (11, true)],
-            LineBreakIterator::new("a \u{2014} \u{2014} c").collect::<Vec<_>>());
+        assert_eq!(
+            vec![(2, false), (10, false), (11, true)],
+            LineBreakIterator::new("a \u{2014} \u{2014} c").collect::<Vec<_>>()
+        );
 
         // LB18
-        assert_eq!(vec![(2, false), (6, false), (7, true)],
-            LineBreakIterator::new("a \"b\" c").collect::<Vec<_>>());
+        assert_eq!(
+            vec![(2, false), (6, false), (7, true)],
+            LineBreakIterator::new("a \"b\" c").collect::<Vec<_>>()
+        );
 
         // LB21
-        assert_eq!(vec![(2, false), (3, true)],
-            LineBreakIterator::new("a-b").collect::<Vec<_>>());
+        assert_eq!(vec![(2, false), (3, true)], LineBreakIterator::new("a-b").collect::<Vec<_>>());
 
         // LB21a
-        assert_eq!(vec![(5, true)],
-            LineBreakIterator::new("\u{05D0}-\u{05D0}").collect::<Vec<_>>());
+        assert_eq!(
+            vec![(5, true)],
+            LineBreakIterator::new("\u{05D0}-\u{05D0}").collect::<Vec<_>>()
+        );
 
         // LB23a
-        assert_eq!(vec![(6, true)],
-            LineBreakIterator::new("$\u{1F3FB}%").collect::<Vec<_>>());
+        assert_eq!(vec![(6, true)], LineBreakIterator::new("$\u{1F3FB}%").collect::<Vec<_>>());
 
         // LB30b
-        assert_eq!(vec![(8, true)],
-            LineBreakIterator::new("\u{1F466}\u{1F3FB}").collect::<Vec<_>>());
+        assert_eq!(
+            vec![(8, true)],
+            LineBreakIterator::new("\u{1F466}\u{1F3FB}").collect::<Vec<_>>()
+        );
 
         // LB31
-        assert_eq!(vec![(8, false), (16, true)],
-            LineBreakIterator::new("\u{1F1E6}\u{1F1E6}\u{1F1E6}\u{1F1E6}").collect::<Vec<_>>());
+        assert_eq!(
+            vec![(8, false), (16, true)],
+            LineBreakIterator::new("\u{1F1E6}\u{1F1E6}\u{1F1E6}\u{1F1E6}").collect::<Vec<_>>()
+        );
     }
 }

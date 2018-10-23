@@ -85,6 +85,14 @@ impl Client {
                                      }));
     }
 
+    pub fn language_changed(&self, view_id: ViewId, new_lang: &LanguageId) {
+        self.0.send_rpc_notification("language_changed",
+                                     &json!({
+                                         "view_id": view_id,
+                                         "language_id": new_lang,
+                                     }));
+    }
+
     /// Notify the client that a plugin has started.
     pub fn plugin_started(&self, view_id: ViewId, plugin: &str) {
         self.0.send_rpc_notification("plugin_started",

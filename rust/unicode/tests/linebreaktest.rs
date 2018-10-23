@@ -10,26 +10,20 @@ const TEST_FILE: &'static str = "tests/LineBreakTest.txt";
 
 #[test]
 fn line_break_test() {
-    let file = File::open(TEST_FILE)
-        .expect("unable to open test file.");
+    let file = File::open(TEST_FILE).expect("unable to open test file.");
 
     let mut reader = BufReader::new(file);
     let mut buffer = String::new();
 
-    reader.read_to_string(&mut buffer)
-        .expect("failed to read test file.");
+    reader.read_to_string(&mut buffer).expect("failed to read test file.");
 
     let mut failed_tests = Vec::new();
 
     for full_test in buffer.lines().filter(|s| !s.starts_with('#')) {
-        let test = full_test
-            .split('#').next().unwrap()
-            .trim();
+        let test = full_test.split('#').next().unwrap().trim();
 
         let (string, breaks) = parse_test(test);
-        let xi_lb = LineBreakIterator::new(&string)
-            .map(|(idx, _)| idx)
-            .collect::<Vec<_>>();
+        let xi_lb = LineBreakIterator::new(&string).map(|(idx, _)| idx).collect::<Vec<_>>();
 
         if xi_lb != breaks {
             failed_tests.push((full_test.to_string(), breaks, xi_lb));
@@ -51,7 +45,7 @@ fn line_break_test() {
 
 // A typical test looks like: "× 0023 × 0308 × 0020 ÷ 0023 ÷"
 fn parse_test(test: &str) -> (String, Vec<usize>) {
-    use ::std::char;
+    use std::char;
 
     let mut parts = test.split(' ');
     let mut idx = 0usize;
@@ -61,7 +55,9 @@ fn parse_test(test: &str) -> (String, Vec<usize>) {
 
     loop {
         let next = parts.next();
-        if next.is_none() { break }
+        if next.is_none() {
+            break;
+        }
 
         if next != Some("×") && next != Some("÷") {
             panic!("syntax error");
@@ -73,10 +69,12 @@ fn parse_test(test: &str) -> (String, Vec<usize>) {
 
         if let Some(hex) = parts.next() {
             let num = u32::from_str_radix(hex, 16).expect("syntax error");
-            let ch  = char::from_u32(num).expect("invalid codepoint");
+            let ch = char::from_u32(num).expect("invalid codepoint");
             string.push(ch);
             idx += ch.len_utf8();
-        } else { break }
+        } else {
+            break;
+        }
     }
 
     (string, breaks)

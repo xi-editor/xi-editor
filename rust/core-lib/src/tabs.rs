@@ -38,6 +38,7 @@ use xi_trace::{self, trace_block};
 use WeakXiCore;
 use client::Client;
 use config::{self, ConfigManager, ConfigDomain, ConfigDomainExternal, Table};
+use recorder::Recorder;
 use editor::Editor;
 use event_context::EventContext;
 use file::FileManager;
@@ -104,6 +105,8 @@ pub struct CoreState {
     width_cache: RefCell<WidthCache>,
     /// User and platform specific settings
     config_manager: ConfigManager,
+    /// Recorded editor actions
+    recorder: RefCell<Recorder>,
     /// A weak reference to the main state container, stashed so that
     /// it can be passed to plugins.
     self_ref: Option<WeakXiCore>,
@@ -161,6 +164,7 @@ impl CoreState {
             style_map: RefCell::new(ThemeStyleMap::new(themes_dir)),
             width_cache: RefCell::new(WidthCache::new()),
             config_manager,
+            recorder: RefCell::new(Recorder::new()),
             self_ref: None,
             pending_views: Vec::new(),
             peer: Client::new(peer.clone()),
@@ -270,6 +274,7 @@ impl CoreState {
                 view,
                 editor,
                 config: &config.items,
+                recorder: &self.recorder,
                 language,
                 info: info,
                 siblings: Vec::new(),
@@ -501,6 +506,19 @@ impl CoreState {
                 || RemoteError::custom(404, format!("No view for id {}", view_id), None))
     }
 
+    fn do_set_language(&mut self, view_id: ViewId, language_id: LanguageId) {
+        if let Some(view) = self.views.get(&view_id) {
+            let buffer_id = view.borrow().get_buffer_id();
+            let changes = self.config_manager.override_language(buffer_id, language_id.clone());
+
+            let mut context = self.make_context(view_id).unwrap();
+            context.language_changed(&language_id);
+            if let Some(changes) = changes {
+                context.config_changed(&changes);
+            }
+        }
+    }
+
     fn do_start_plugin(&mut self, _view_id: ViewId, plugin: &str) {
         if self.running_plugins.iter().any(|p| p.name == plugin) {
             info!("plugin {} already running", plugin);
@@ -537,13 +555,6 @@ impl CoreState {
     fn after_stop_plugin(&mut self, plugin: &Plugin) {
         self.iter_groups().for_each(|mut cx| cx.plugin_stopped(plugin));
     }
-
-    fn do_set_language(&mut self, view_id: ViewId, language_id: LanguageId) {
-        if let Some(view) = self.views.get(&view_id) {
-            let buffer_id = view.borrow().get_buffer_id();
-            self.config_manager.override_language(buffer_id, language_id);
-        }
-    }
 }
 
 /// Idle, tracing, and file event handling
@@ -561,7 +572,7 @@ impl CoreState {
     fn finalize_new_views(&mut self) {
         let to_start = mem::replace(&mut self.pending_views, Vec::new());
         to_start.iter().for_each(|(id, config)| {
-            let modified = self.detect_whitespace(*id, config); 
+            let modified = self.detect_whitespace(*id, config);
             let config = modified.as_ref().unwrap_or(config);
             let mut edit_ctx = self.make_context(*id).unwrap();
             edit_ctx.finish_init(&config);
