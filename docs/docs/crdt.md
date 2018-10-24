@@ -32,7 +32,7 @@ A deleted character is known as a "tombstone", and these have also been used to 
 
 Defining the semantics of undo is tricky, especially in the face of concurrent edits, and a lot of ink has been spilled on the subject. Here we present a simple but general model again based on CRDT.
 
-Each editing operation is assigned an "undo group." Several edits may be in the same group. For example, if the user types `"`, then a smart-quote plugin may revise that to '“'. If the smart-quote revision is assigned the same undo group (because it is a consequence of the same user action), then a single undo would zorch both edits. Note, incidentally, that TextEdit on MacOS X does not exhibit this behavior. The first undo leaves the buffer with '"' (and selected), and it requires a second undo to return to the initial contents.
+Each editing operation is assigned an "undo group." Several edits may be in the same group. For example, if the user types `"`, then a smart-quote plugin may revise that to '“'. If the smart-quote revision is assigned the same undo group (because it is a consequence of the same user action), then a single undo would zorch both edits. Note, incidentally, that TextEdit on macOS does not exhibit this behavior. The first undo leaves the buffer with '"' (and selected), and it requires a second undo to return to the initial contents.
 
 Each edit has _two_ sets characters, one for deletions (as above), but also for insertions. In normal editing, the insertion set is ignored. However, when an undo group goes into an undone state, the insertion and deletion sets are swapped. Note that if a character is both inserted and deleted by edits in the same undo group (as is the case for the poor dumb quote above), its state does not change.
 
