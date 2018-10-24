@@ -16,11 +16,10 @@
 
 use std::cmp::{min, max};
 use std::ops::Deref;
-use std::ops::Bound;
-use std::ops::RangeBounds;
 
 use index_set::remove_n_at;
 use xi_rope::delta::{Delta, Transformer};
+use xi_rope::interval::Interval;
 use xi_rope::rope::RopeInfo;
 
 /// A type representing horizontal measurements. This is currently in units
@@ -350,14 +349,9 @@ impl SelRegion {
     }
 }
 
-// Returns `[min..max)`
-impl<'a> RangeBounds<usize> for &'a SelRegion {
-    fn start_bound(&self) -> Bound<&usize> {
-        Bound::Included(min(&self.start, &self.end))
-    }
-    
-    fn end_bound(&self) -> Bound<&usize> {
-        Bound::Excluded(max(&self.start, &self.end))
+impl<'a> From<&'a SelRegion> for Interval {
+    fn from(src: &'a SelRegion) -> Interval {
+        Interval::new(src.min(), src.max())
     }
 }
 

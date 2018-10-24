@@ -22,11 +22,9 @@ use std::ops::Add;
 use std::str;
 use std::str::FromStr;
 use std::string::ParseError;
-use std::ops::Bound;
-use std::ops::RangeBounds;
 
 use delta::{Delta, DeltaElement};
-use interval::Interval;
+use interval::{Interval, IntervalBounds};
 use tree::{Cursor, Leaf, Metric, Node, NodeInfo, TreeBuilder};
 
 use bytecount;
@@ -477,31 +475,13 @@ impl<'de> Deserialize<'de> for Delta<RopeInfo> {
 impl Rope {
     /// Edit the string, replacing the byte range [`start`..`end`] with `new`.
     ///
-    /// Note: `edit` and `edit_str` may be merged, using traits.
-    ///
     /// Time complexity: O(log n)
-    pub fn edit_str<T>(&mut self, range: T, new: &str)
-        where T: RangeBounds<usize>
-    {
-        let (start, end) = self.extract_range(range);
-
-        let mut b = TreeBuilder::new();
-        // TODO: may make this method take the iv directly
-        let edit_iv = Interval::new(start, end);
-        let self_iv = Interval::new(0, self.len());
-        self.push_subseq(&mut b, self_iv.prefix(edit_iv));
-        b.push_str(new);
-        self.push_subseq(&mut b, self_iv.suffix(edit_iv));
-        *self = b.build();
+    pub fn edit_str<T: IntervalBounds>(&mut self, iv: T, new: &str) {
+        self.edit(iv, new)
     }
 
     /// Returns a new Rope with the contents of the provided range.
-    pub fn slice<T>(&self, range: T) -> Rope
-        where T: RangeBounds<usize>
-    {
-        let (start, end) = self.extract_range(range);
-
-        let iv = Interval::new(start, end);
+    pub fn slice<T: IntervalBounds>(&self, iv: T) -> Rope {
         self.subseq(iv)
     }
 
@@ -584,10 +564,8 @@ impl Rope {
     ///
     /// Time complexity: technically O(n log n), but the constant factor is so
     /// tiny it is effectively O(n). This iterator does not allocate.
-    pub fn iter_chunks<T>(&self, range: T) -> ChunkIter 
-        where T: RangeBounds<usize>
-    {
-        let (start, end) = self.extract_range(range);
+    pub fn iter_chunks<T: IntervalBounds>(&self, range: T) -> ChunkIter {
+        let Interval { start, end } = range.into_interval(self.len());
 
         ChunkIter {
             cursor: Cursor::new(self, start),
@@ -600,9 +578,7 @@ impl Rope {
     ///
     /// The return type is a `Cow<str>`, and in most cases the lines are slices
     /// borrowed from the rope.
-    pub fn lines_raw<T>(&self, range: T) -> LinesRaw 
-        where T: RangeBounds<usize>
-    {
+    pub fn lines_raw<T: IntervalBounds>(&self, range: T) -> LinesRaw {
         LinesRaw {
             inner: self.iter_chunks(range),
             fragment: "",
@@ -619,9 +595,7 @@ impl Rope {
     /// from the rope.
     ///
     /// The semantics are intended to match `str::lines()`.
-    pub fn lines<T>(&self, range: T) -> Lines
-        where T: RangeBounds<usize>
-    {
+    pub fn lines<T: IntervalBounds>(&self, range: T) -> Lines {
         Lines {
             inner: self.lines_raw(range)
         }
@@ -634,9 +608,7 @@ impl Rope {
         leaf.as_bytes()[pos]
     }
 
-    pub fn slice_to_cow<T>(&self, range: T) -> Cow<str>
-        where T: RangeBounds<usize>
-    {
+    pub fn slice_to_cow<T: IntervalBounds>(&self, range: T) -> Cow<str> {
         let mut iter = self.iter_chunks(range);
         let first = iter.next();
         let second = iter.next();
@@ -653,25 +625,6 @@ impl Rope {
             }
             (None, Some(_)) => unreachable!(),
         }
-    }
-
-    /// Extracts start and end bounds from a range
-    fn extract_range<T>(&self, range: T) -> (usize, usize)
-        where T: RangeBounds<usize>
-    {
-        let start = match range.start_bound() {
-            Bound::Included(n) => *n,
-            Bound::Excluded(n) => *n + 1,
-            Bound::Unbounded => 0,
-        };
-
-        let end = match range.end_bound() {
-            Bound::Included(n) => *n + 1,
-            Bound::Excluded(n) => *n,
-            Bound::Unbounded => self.len(),
-        };
-
-        (start, end)
     }
 }
 
