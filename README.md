@@ -11,7 +11,7 @@
 
 The xi-editor project is an attempt to build a high quality text editor,
 using modern software engineering techniques. It is initially built for
-Mac OS X, using Cocoa for the user interface. There are also frontends for
+macOS, using Cocoa for the user interface. There are also frontends for
 other operating systems available from third-party developers.
 
 Goals include:

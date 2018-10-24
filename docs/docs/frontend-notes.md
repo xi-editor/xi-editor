@@ -51,7 +51,7 @@ a response it can begin sending editing operations against that view.
 ### Additional Resources
 
 This document is not always perfectly up to date. For a comprehensive list of
-supported commands, the canonical resource is the source, specifically [rust/core-lib/src/rpc.rs](https://github.com/google/xi-editor/blob/master/rust/core-lib/src/rpc.rs).
+supported commands, the canonical resource is the source, specifically [rust/core-lib/src/rpc.rs](https://github.com/xi-editor/xi-editor/blob/master/rust/core-lib/src/rpc.rs).
 
 - The protocol is described in
   [docs/frontend-protocol.md](frontend-protocol.md).
