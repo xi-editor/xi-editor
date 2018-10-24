@@ -22,7 +22,7 @@ use std::fmt;
 
 use tree::{Leaf, Node, NodeInfo, TreeBuilder, Cursor};
 use delta::{Delta, DeltaElement, Transformer};
-use interval::Interval;
+use interval::{Interval, IntervalBounds};
 
 const MIN_LEAF: usize = 32;
 const MAX_LEAF: usize = 64;
@@ -129,7 +129,8 @@ impl<T: Clone + Default> SpansBuilder<T> {
 
     // Precondition: spans must be added in nondecreasing start order.
     // Maybe take Span struct instead of separate iv, data args?
-    pub fn add_span(&mut self, iv: Interval, data: T) {
+    pub fn add_span<IV: IntervalBounds>(&mut self, iv: IV, data: T) {
+        let iv = iv.into_interval(self.total_len);
         if self.leaf.spans.len() == MAX_LEAF {
             let mut leaf = mem::replace(&mut self.leaf, SpansLeaf::default());
             leaf.len = iv.start() - self.len;

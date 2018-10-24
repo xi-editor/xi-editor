@@ -17,7 +17,7 @@
 use std::cmp::min;
 use std::sync::Arc;
 
-use interval::Interval;
+use interval::{Interval, IntervalBounds};
 
 const MIN_CHILDREN: usize = 4;
 const MAX_CHILDREN: usize = 8;
@@ -342,7 +342,7 @@ impl<N: NodeInfo> Node<N> {
         M::measure(&self.0.info, self.0.len)
     }
 
-    pub fn push_subseq(&self, b: &mut TreeBuilder<N>, iv: Interval) {
+    pub(crate) fn push_subseq(&self, b: &mut TreeBuilder<N>, iv: Interval) {
         if iv.is_empty() {
             return;
         }
@@ -373,17 +373,23 @@ impl<N: NodeInfo> Node<N> {
         }
     }
 
-    pub fn subseq(&self, iv: Interval) -> Node<N> {
+    pub fn subseq<T: IntervalBounds>(&self, iv: T) -> Node<N> {
+        let iv = iv.into_interval(self.len());
         let mut b = TreeBuilder::new();
         self.push_subseq(&mut b, iv);
         b.build()
     }
 
-    pub fn edit(&mut self, iv: Interval, new: Node<N>) {
+    pub fn edit<T, IV>(&mut self, iv: IV, new: T)
+        where
+            T: Into<Node<N>>,
+            IV: IntervalBounds,
+    {
         let mut b = TreeBuilder::new();
-        let self_iv = Interval::new(0, self.len());
+        let iv = iv.into_interval(self.len());
+        let self_iv = self.interval();
         self.push_subseq(&mut b, self_iv.prefix(iv));
-        b.push(new);
+        b.push(new.into());
         self.push_subseq(&mut b, self_iv.suffix(iv));
         *self = b.build();
     }

@@ -16,7 +16,7 @@
 //! It's useful to explicitly represent these operations so they can be
 //! shared across multiple subsystems.
 
-use interval::Interval;
+use interval::{Interval, IntervalBounds};
 use tree::{Node, NodeInfo, TreeBuilder};
 use multiset::{Subset, SubsetBuilder, CountMatcher};
 use std::cmp::min;
@@ -51,7 +51,7 @@ pub struct Delta<N: NodeInfo> {
 pub struct InsertDelta<N: NodeInfo>(Delta<N>);
 
 impl<N: NodeInfo> Delta<N> {
-    pub fn simple_edit(interval: Interval, rope: Node<N>, base_len: usize) -> Delta<N> {
+    pub fn simple_edit<T: IntervalBounds>(interval: T, rope: Node<N>, base_len: usize) -> Delta<N> {
         let mut builder = Builder::new(base_len);
         if rope.len() > 0 {
             builder.replace(interval, rope);
@@ -525,7 +525,8 @@ impl<'a, N: NodeInfo + 'a> Transformer<'a, N> {
     }
 
     /// Determine whether a given interval is untouched by the transformation.
-    pub fn interval_untouched(&mut self, iv: Interval) -> bool {
+    pub fn interval_untouched<T: IntervalBounds>(&mut self, iv: T) -> bool {
+        let iv = iv.into_interval(self.delta.base_len);
         let mut last_was_ins = true;
         for el in &self.delta.els {
             match *el {
@@ -576,7 +577,8 @@ impl<N: NodeInfo> Builder<N> {
     }
 
     /// Deletes the given interval. Panics if interval is not properly sorted.
-    pub fn delete(&mut self, interval: Interval) {
+    pub fn delete<T: IntervalBounds>(&mut self, interval: T) {
+        let interval = interval.into_interval(self.delta.base_len);
         let (start, end) = interval.start_end();
         assert!(start >= self.last_offset, "Delta builder: intervals not properly sorted");
         if start > self.last_offset {
@@ -587,7 +589,7 @@ impl<N: NodeInfo> Builder<N> {
 
     /// Replaces the given interval with the new rope. Panics if interval
     /// is not properly sorted.
-    pub fn replace(&mut self, interval: Interval, rope: Node<N>) {
+    pub fn replace<T: IntervalBounds>(&mut self, interval: T, rope: Node<N>) {
         self.delete(interval);
         if rope.len() > 0 {
             self.delta.els.push(DeltaElement::Insert(rope));
@@ -800,6 +802,16 @@ mod tests {
     }
 
     #[test]
+    fn fancy_bounds() {
+        let mut builder = Builder::new(10);
+        builder.delete(..2);
+        builder.delete(4..=5);
+        builder.delete(8..);
+        let delta = builder.build();
+        assert_eq!("2367", delta.apply_to_string("0123456789"));
+    }
+
+    #[test]
     fn delta_serde() {
         let d = Delta::simple_edit(Interval::new(10, 12),
                                    Rope::from("+"), TEST_STR.len());
@@ -812,8 +824,7 @@ mod tests {
 
     #[test]
     fn is_simple_delete() {
-        let d = Delta::simple_edit(Interval::new(10, 12),
-                                   Rope::from("+"), TEST_STR.len());
+        let d = Delta::simple_edit(10..12, Rope::from("+"), TEST_STR.len());
         assert_eq!(false, d.is_simple_delete());
 
         let d = Delta::simple_edit(Interval::new(10, 11),

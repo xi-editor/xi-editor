@@ -20,27 +20,17 @@
 
 use std::cmp::{min, max};
 use std::fmt;
+use std::ops::{Range, RangeFrom, RangeFull, RangeInclusive, RangeTo, RangeToInclusive};
 
-// Invariant: end >= start
-// (attempting to construct an interval of negative size gives an
-// empty interval beginning at start)
-
+/// A fancy version of Range<usize>, representing a closed-open range;
+/// the interval [5, 7) is the set {5, 6}.
+///
+/// It is an invariant that `start <= end`. An interval where `end < start` is
+/// considered empty.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Interval {
-    start: usize,
-    end: usize,
-}
-
-impl fmt::Display for Interval {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "[{}, {})", self.start(), self.end())
-    }
-}
-
-impl fmt::Debug for Interval {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Display::fmt(self, f)
-    }
+    pub start: usize,
+    pub end: usize,
 }
 
 impl Interval {
@@ -163,6 +153,73 @@ impl Interval {
     // insensitive to open or closed ends, just the size of the interior
     pub fn size(&self) -> usize {
         self.end().saturating_sub(self.start())
+    }
+}
+
+impl fmt::Display for Interval {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "[{}, {})", self.start(), self.end())
+    }
+}
+
+impl fmt::Debug for Interval {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(self, f)
+    }
+}
+
+impl From<Range<usize>> for Interval {
+    fn from(src: Range<usize>) -> Interval {
+        let Range { start, end } = src;
+        Interval { start, end }
+    }
+}
+
+impl From<RangeTo<usize>> for Interval {
+    fn from(src: RangeTo<usize>) -> Interval {
+        Interval::new(0, src.end)
+    }
+}
+
+impl From<RangeInclusive<usize>> for Interval {
+    fn from(src: RangeInclusive<usize>) -> Interval {
+        Interval::new(*src.start(), src.end().saturating_add(1))
+    }
+}
+
+impl From<RangeToInclusive<usize>> for Interval {
+    fn from(src: RangeToInclusive<usize>) -> Interval {
+        Interval::new(0, src.end.saturating_add(1))
+    }
+}
+
+/// A trait for types that represent unbounded ranges; they need an explicit
+/// upper bound in order to be converted to `Interval`s.
+///
+/// This exists so that some methods that use `Interval` under the hood can
+/// accept arguments like `..` or `10..`.
+///
+/// This trait should only be used when the idea of taking all of something
+/// makes sense.
+pub trait IntervalBounds {
+    fn into_interval(self, upper_bound: usize) -> Interval;
+}
+
+impl<T: Into<Interval>> IntervalBounds for T {
+    fn into_interval(self, _upper_bound: usize) -> Interval {
+        self.into()
+    }
+}
+
+impl IntervalBounds for RangeFrom<usize> {
+    fn into_interval(self, upper_bound: usize) -> Interval {
+        Interval::new(self.start, upper_bound)
+    }
+}
+
+impl IntervalBounds for RangeFull {
+    fn into_interval(self, upper_bound: usize) -> Interval {
+        Interval::new(0, upper_bound)
     }
 }
 
