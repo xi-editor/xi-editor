@@ -172,7 +172,7 @@ impl<T: Clone + Default> Spans<T> {
         let mut builder = SpansBuilder::new(new_end - new_start);
         for (iv, data) in self.iter() {
             let start = xform.transform(iv.start() + base_start, false) - new_start;
-            let end = xform.transform(iv.end() + base_start, true) - new_start;
+            let end = xform.transform(iv.end() + base_start, false) - new_start;
             if start < end {
                 let iv = Interval::new(start, end);
                 // TODO: could imagine using a move iterator and avoiding clone, but it's not easy.
