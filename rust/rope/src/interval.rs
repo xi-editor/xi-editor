@@ -34,29 +34,32 @@ pub struct Interval {
 }
 
 impl Interval {
+    /// Construct a new `Interval` representing the range [start..end).
+    /// It is an invariant that `start <= end`.
     pub fn new(start: usize, end: usize) -> Interval {
+        debug_assert!(start <= end);
         Interval {
             start,
             end,
         }
     }
 
-    #[deprecated(since="0.2.1", note="all intervals are now closed_open, use Interval::new")]
+    #[deprecated(since="0.3", note="all intervals are now closed_open, use Interval::new")]
     pub fn new_closed_open(start: usize, end: usize) -> Interval {
         Self::new(start, end)
     }
 
-    #[deprecated(since="0.2.1", note="all intervals are now closed_open")]
+    #[deprecated(since="0.3", note="all intervals are now closed_open")]
     pub fn new_open_closed(start: usize, end: usize) -> Interval {
         Self::new(start, end)
     }
 
-    #[deprecated(since="0.2.1", note="all intervals are now closed_open")]
+    #[deprecated(since="0.3", note="all intervals are now closed_open")]
     pub fn new_closed_closed(start: usize, end: usize) -> Interval {
         Self::new(start, end)
     }
 
-    #[deprecated(since="0.2.1", note="all intervals are now closed_open")]
+    #[deprecated(since="0.3", note="all intervals are now closed_open")]
     pub fn new_open_open(start: usize, end: usize) -> Interval {
         Self::new(start, end)
     }
@@ -144,6 +147,7 @@ impl Interval {
 
     // as above for Sub trait
     pub fn translate_neg(&self, amount: usize) -> Interval {
+        debug_assert!(self.start >= amount);
         Interval {
             start: self.start - amount,
             end: self.end - amount,
@@ -152,7 +156,7 @@ impl Interval {
 
     // insensitive to open or closed ends, just the size of the interior
     pub fn size(&self) -> usize {
-        self.end().saturating_sub(self.start())
+        self.end - self.start
     }
 }
 
@@ -301,6 +305,7 @@ mod tests {
     #[test]
     fn size() {
         assert_eq!(40, Interval::new(2, 42).size());
-        assert_eq!(0, Interval::new(1, 0).size());
+        assert_eq!(0, Interval::new(1, 1).size());
+        assert_eq!(1, Interval::new(1, 2).size());
     }
 }

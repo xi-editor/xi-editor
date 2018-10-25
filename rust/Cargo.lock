@@ -1164,7 +1164,7 @@ dependencies = [
  "tempdir 0.3.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "time 0.1.40 (registry+https://github.com/rust-lang/crates.io-index)",
  "toml 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
- "xi-rope 0.2.0",
+ "xi-rope 0.3.0",
  "xi-rpc 0.2.0",
  "xi-trace 0.1.0",
  "xi-trace-dump 0.1.0",
@@ -1186,7 +1186,7 @@ dependencies = [
  "url 1.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "xi-core-lib 0.2.0",
  "xi-plugin-lib 0.1.0",
- "xi-rope 0.2.0",
+ "xi-rope 0.3.0",
  "xi-rpc 0.2.0",
  "xi-trace 0.1.0",
 ]
@@ -1204,7 +1204,7 @@ dependencies = [
  "serde_derive 1.0.80 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json 1.0.32 (registry+https://github.com/rust-lang/crates.io-index)",
  "xi-core-lib 0.2.0",
- "xi-rope 0.2.0",
+ "xi-rope 0.3.0",
  "xi-rpc 0.2.0",
  "xi-trace 0.1.0",
  "xi-trace-dump 0.1.0",
@@ -1212,7 +1212,7 @@ dependencies = [
 
 [[package]]
 name = "xi-rope"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "bytecount 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "memchr 2.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1244,7 +1244,7 @@ dependencies = [
  "serde_derive 1.0.80 (registry+https://github.com/rust-lang/crates.io-index)",
  "xi-core-lib 0.2.0",
  "xi-plugin-lib 0.1.0",
- "xi-rope 0.2.0",
+ "xi-rope 0.3.0",
  "xi-trace 0.1.0",
 ]
 
@@ -1258,7 +1258,7 @@ dependencies = [
  "toml 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "xi-core-lib 0.2.0",
  "xi-plugin-lib 0.1.0",
- "xi-rope 0.2.0",
+ "xi-rope 0.3.0",
  "xi-trace 0.1.0",
 ]
 
