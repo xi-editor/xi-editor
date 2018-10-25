@@ -289,11 +289,7 @@ fn compute_rewrap_width(text: &Rope, width_cache: &mut WidthCache,
                         start: usize, end: usize) -> Breaks
 {
     let mut line_cursor = Cursor::new(&text, end);
-    let measure_end = if line_cursor.is_boundary::<LinesMetric>() {
-        end
-    } else {
-        line_cursor.next::<LinesMetric>().unwrap_or(text.len())
-    };
+    let measure_end = line_cursor.next::<LinesMetric>().unwrap_or(text.len());
     let mut ctx = RewrapCtx::new(text, /* style_spans, */ client, max_width,
                                  width_cache, start, measure_end);
     let mut builder = BreakBuilder::new();
