@@ -10,14 +10,14 @@
 ***Note:*** *This is repo contains only the editor core, which is not usable on its own. For editors based on it, check out the list in [Frontends](#frontends).*
 
 The xi-editor project is an attempt to build a high quality text editor,
-using modern software engineering techniques. It is initially built for
+using modern software engineering techniques. It was initially built for
 Mac OS X, using Cocoa for the user interface. There are also frontends for
 other operating systems available from third-party developers.
 
 Goals include:
 
 * ***Incredibly high performance***. All editing operations should commit and paint
-  in under 16ms. The editor should never make you wait for anything.
+  in under 16ms. The editor will never make you wait for anything.
 
 * ***Beauty***. The editor should fit well on a modern desktop, and not look like a
   throwback from the ’80s or ’90s. Text drawing should be done with the best
