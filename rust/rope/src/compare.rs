@@ -59,9 +59,9 @@ pub unsafe fn sse_compare_mask(one: &[u8], two: &[u8]) -> i32 {
 const AVX_STRIDE: usize = 32;
 
 /// Like above but with 32 byte slices
+#[doc(hidden)]
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[doc(hidden)]
 pub unsafe fn avx_compare_mask(one: &[u8], two: &[u8]) -> i32 {
     use std::arch::x86_64::*;
     let onev = _mm256_loadu_si256(one.as_ptr() as *const _);
@@ -85,15 +85,15 @@ pub fn ne_idx(one: &[u8], two: &[u8]) -> Option<usize> {
 /// if one exists.
 pub fn ne_idx_rev(one: &[u8], two: &[u8]) -> Option<usize> {
     if is_x86_feature_detected!("sse4.2") {
-        ne_idx_rev_sse(one, two)
+        unsafe { ne_idx_rev_sse(one, two) }
     } else {
         ne_idx_rev_fallback(one, two)
     }
 }
 
+#[doc(hidden)]
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-#[doc(hidden)]
 pub unsafe fn ne_idx_avx(one: &[u8], two: &[u8]) -> Option<usize> {
     let min_len = one.len().min(two.len());
     let mut idx = 0;
@@ -113,9 +113,9 @@ pub unsafe fn ne_idx_avx(one: &[u8], two: &[u8]) -> Option<usize> {
     None
 }
 
+#[doc(hidden)]
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "sse4.2")]
-#[doc(hidden)]
 pub unsafe fn ne_idx_sse(one: &[u8], two: &[u8]) -> Option<usize> {
     let min_len = one.len().min(two.len());
     let mut idx = 0;
@@ -133,10 +133,10 @@ pub unsafe fn ne_idx_sse(one: &[u8], two: &[u8]) -> Option<usize> {
     None
 }
 
-#[cfg(target_arch = "x86_64")]
-#[allow(dead_code)]
 #[doc(hidden)]
-pub fn ne_idx_rev_sse(one: &[u8], two: &[u8]) -> Option<usize> {
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "sse4.2")]
+pub unsafe fn ne_idx_rev_sse(one: &[u8], two: &[u8]) -> Option<usize> {
     let min_len = one.len().min(two.len());
     let one = &one[one.len() - min_len..];
     let two = &two[two.len() - min_len..];
@@ -149,11 +149,9 @@ pub fn ne_idx_rev_sse(one: &[u8], two: &[u8]) -> Option<usize> {
             let mut two_buf: [u8; SSE_STRIDE] = [0; SSE_STRIDE];
             one_buf[SSE_STRIDE - idx..].copy_from_slice(&one[..idx]);
             two_buf[SSE_STRIDE - idx..].copy_from_slice(&two[..idx]);
-            mask = unsafe { sse_compare_mask(&one_buf, &two_buf) };
+            mask = sse_compare_mask(&one_buf, &two_buf);
         } else {
-            mask = unsafe {
-                sse_compare_mask(&one[idx - SSE_STRIDE..idx], &two[idx - SSE_STRIDE..idx])
-            };
+            mask = sse_compare_mask(&one[idx - SSE_STRIDE..idx], &two[idx - SSE_STRIDE..idx]);
         }
         let i = mask.leading_zeros() as usize - SSE_STRIDE;
         if i != SSE_STRIDE {
@@ -201,9 +199,9 @@ impl<'a> RopeScanner<'a> {
         }
     }
 
-    /// Returns the distance to the left of the two offsets to the first codepoint
-    /// which is not equal in the two ropes. If no such position exists,
-    /// returns the distance to the nearest starting offset.
+    /// Starting from the two provided offsets in the corresponding ropes,
+    /// Returns the distance, moving backwards, to the first non-equal codepoint.
+    /// If no such position exists, returns the distance to the closest 0 offset.
     ///
     /// if `stop` is not None, the scan will stop at if it reaches this value.
     ///
@@ -216,10 +214,10 @@ impl<'a> RopeScanner<'a> {
     /// let one = Rope::from("hiii");
     /// let two = Rope::from("siii");
     /// let mut scanner = RopeScanner::new(&one, &two);
-    /// assert_eq!(scanner.find_ne_char_left(one.len(), two.len(), None), 3);
-    /// assert_eq!(scanner.find_ne_char_left(one.len(), two.len(), 2), 2);
+    /// assert_eq!(scanner.find_ne_char_back(one.len(), two.len(), None), 3);
+    /// assert_eq!(scanner.find_ne_char_back(one.len(), two.len(), 2), 2);
     /// ```
-    pub fn find_ne_char_left<T>(&mut self, base_off: usize, targ_off: usize, stop: T) -> usize
+    pub fn find_ne_char_back<T>(&mut self, base_off: usize, targ_off: usize, stop: T) -> usize
     where
         T: Into<Option<usize>>,
     {
@@ -265,9 +263,12 @@ impl<'a> RopeScanner<'a> {
         stop.min(self.scanned)
     }
 
-    /// Returns the distance to the right of the two offsets to the first
-    /// non-equal codepoint. If no such position exists,
-    /// returns the distance to the end of the nearest rope.
+    /// Starting from the two provided offsets into the two ropes, returns
+    /// the distance (in bytes) to the first non-equal codepoint. If no such
+    /// position exists, returns the shortest distance to the end of a rope.
+    ///
+    /// This can be thought of as the length of the longest common substring
+    /// between `base[base_off..]` and `target[targ_off..]`.
     ///
     /// if `stop` is not None, the scan will stop at if it reaches this value.
     ///
@@ -280,10 +281,10 @@ impl<'a> RopeScanner<'a> {
     /// let one = Rope::from("uh-oh🙈");
     /// let two = Rope::from("uh-oh🙉");
     /// let mut scanner = RopeScanner::new(&one, &two);
-    /// assert_eq!(scanner.find_ne_char_right(0, 0, None), 5);
-    /// assert_eq!(scanner.find_ne_char_right(0, 0, 3), 3);
+    /// assert_eq!(scanner.find_ne_char(0, 0, None), 5);
+    /// assert_eq!(scanner.find_ne_char(0, 0, 3), 3);
     /// ```
-    pub fn find_ne_char_right<T>(&mut self, base_off: usize, targ_off: usize, stop: T) -> usize
+    pub fn find_ne_char<T>(&mut self, base_off: usize, targ_off: usize, stop: T) -> usize
     where
         T: Into<Option<usize>>,
     {
@@ -343,7 +344,7 @@ impl<'a> RopeScanner<'a> {
     pub fn find_min_diff_range(&mut self) -> (usize, usize) {
         let b_end = self.base.total_len();
         let t_end = self.target.total_len();
-        let start = self.find_ne_char_right(0, 0, None);
+        let start = self.find_ne_char(0, 0, None);
 
         // scanning from the end of the document, we should stop at whatever
         // offset we reached scanning from the start.
@@ -353,7 +354,7 @@ impl<'a> RopeScanner<'a> {
             return (start, start);
         }
 
-        let end = self.find_ne_char_left(b_end, t_end, unscanned);
+        let end = self.find_ne_char_back(b_end, t_end, unscanned);
         (start, end)
     }
 
@@ -404,19 +405,25 @@ mod tests {
     }
 
     #[test]
-    #[cfg(target_feature = "sse4.2")]
+    #[cfg(target_arch = "x86_64")]
     fn ne_len_simd() {
         // we should only match up to the length of the shortest input
         let one = "aaaaaa";
         let two = "aaaa";
         let tre = "aaba";
         let fur = "";
-        assert!(ne_idx_sse(one.as_bytes(), two.as_bytes()).is_none());
-        assert_eq!(ne_idx_sse(one.as_bytes(), tre.as_bytes()), Some(2));
-        assert_eq!(ne_idx_sse(one.as_bytes(), fur.as_bytes()), None);
-        assert!(ne_idx_avx(one.as_bytes(), two.as_bytes()).is_none());
-        assert_eq!(ne_idx_avx(one.as_bytes(), tre.as_bytes()), Some(2));
-        assert_eq!(ne_idx_avx(one.as_bytes(), fur.as_bytes()), None);
+        unsafe {
+            if is_x86_feature_detected!("sse4.2") {
+                assert!(ne_idx_sse(one.as_bytes(), two.as_bytes()).is_none());
+                assert_eq!(ne_idx_sse(one.as_bytes(), tre.as_bytes()), Some(2));
+                assert_eq!(ne_idx_sse(one.as_bytes(), fur.as_bytes()), None);
+            }
+            if is_x86_feature_detected!("avx2") {
+                assert!(ne_idx_avx(one.as_bytes(), two.as_bytes()).is_none());
+                assert_eq!(ne_idx_avx(one.as_bytes(), tre.as_bytes()), Some(2));
+                assert_eq!(ne_idx_avx(one.as_bytes(), fur.as_bytes()), None);
+            }
+        }
     }
 
     #[test]
@@ -431,15 +438,20 @@ mod tests {
     }
 
     #[test]
-    #[cfg(all(target_arch = "x86_64", target_feature = "sse4.2"))]
+    #[cfg(target_arch = "x86_64")]
     fn ne_len_rev_sse() {
+        if !is_x86_feature_detected!("sse4.2") {
+            return;
+        }
         let one = "aaaaaa";
         let two = "aaaa";
         let tre = "aaba";
         let fur = "";
-        assert!(ne_idx_rev_sse(one.as_bytes(), two.as_bytes()).is_none());
-        assert_eq!(ne_idx_rev_sse(one.as_bytes(), tre.as_bytes()), Some(1));
-        assert_eq!(ne_idx_rev_sse(one.as_bytes(), fur.as_bytes()), None);
+        unsafe {
+            assert!(ne_idx_rev_sse(one.as_bytes(), two.as_bytes()).is_none());
+            assert_eq!(ne_idx_rev_sse(one.as_bytes(), tre.as_bytes()), Some(1));
+            assert_eq!(ne_idx_rev_sse(one.as_bytes(), fur.as_bytes()), None);
+        }
     }
 
     #[test]
@@ -456,7 +468,9 @@ mod tests {
 
         assert_eq!(ne_idx_rev_fallback(one, two), Some(1));
         if is_x86_feature_detected!("sse4.2") {
-            assert_eq!(ne_idx_rev_sse(one, two), Some(1));
+            unsafe {
+                assert_eq!(ne_idx_rev_sse(one, two), Some(1));
+            }
         }
     }
 
@@ -470,7 +484,7 @@ mod tests {
     }
 
     #[test]
-    fn scanner_right_simple() {
+    fn scanner_forward_simple() {
         let rope = Rope::from("aaaaaaaaaaaaaaaa");
         let chunk1 = Rope::from("aaaaaaaaaaaaaaaa");
         let chunk2 = Rope::from("baaaaaaaaaaaaaaa");
@@ -478,27 +492,27 @@ mod tests {
         let chunk4 = Rope::from("aaaaaabaaaaaaaaa");
         {
             let mut scanner = RopeScanner::new(&rope, &chunk1);
-            assert_eq!(scanner.find_ne_char_right(0, 0, None), 16);
+            assert_eq!(scanner.find_ne_char(0, 0, None), 16);
         }
 
         {
             let mut scanner = RopeScanner::new(&rope, &chunk2);
-            assert_eq!(scanner.find_ne_char_right(0, 0, None), 0);
+            assert_eq!(scanner.find_ne_char(0, 0, None), 0);
         }
 
         {
             let mut scanner = RopeScanner::new(&rope, &chunk3);
-            assert_eq!(scanner.find_ne_char_right(0, 0, None), 1);
+            assert_eq!(scanner.find_ne_char(0, 0, None), 1);
         }
 
         {
             let mut scanner = RopeScanner::new(&rope, &chunk4);
-            assert_eq!(scanner.find_ne_char_right(0, 0, None), 6);
+            assert_eq!(scanner.find_ne_char(0, 0, None), 6);
         }
     }
 
     #[test]
-    fn scanner_left_simple() {
+    fn scanner_backward_simple() {
         let rope = Rope::from("aaaaaaaaaaaaaaaa");
         let chunk1 = Rope::from("aaaaaaaaaaaaaaaa");
         let chunk2 = Rope::from("aaaaaaaaaaaaaaba");
@@ -506,39 +520,39 @@ mod tests {
         let chunk4 = Rope::from("aaaaaabaaaaaaaaa");
         {
             let mut scanner = RopeScanner::new(&rope, &chunk1);
-            assert_eq!(scanner.find_ne_char_left(rope.len(), chunk1.len(), None), 16);
+            assert_eq!(scanner.find_ne_char_back(rope.len(), chunk1.len(), None), 16);
         }
 
         {
             let mut scanner = RopeScanner::new(&rope, &chunk2);
-            assert_eq!(scanner.find_ne_char_left(rope.len(), chunk2.len(), None), 1);
+            assert_eq!(scanner.find_ne_char_back(rope.len(), chunk2.len(), None), 1);
         }
 
         {
             let mut scanner = RopeScanner::new(&rope, &chunk3);
-            assert_eq!(scanner.find_ne_char_left(rope.len(), chunk3.len(), None), 0);
+            assert_eq!(scanner.find_ne_char_back(rope.len(), chunk3.len(), None), 0);
         }
 
         {
             let mut scanner = RopeScanner::new(&rope, &chunk4);
-            assert_eq!(scanner.find_ne_char_left(rope.len(), chunk4.len(), None), 9);
+            assert_eq!(scanner.find_ne_char_back(rope.len(), chunk4.len(), None), 9);
         }
     }
 
     #[test]
-    fn scan_left_ne_lens() {
+    fn scan_back_ne_lens() {
         let rope = Rope::from("aaaaaaaaaaaaaaaa");
         let chunk1 = Rope::from("aaaaaaaaaaaaa");
         let chunk2 = Rope::from("aaaaaaaaaaaaab");
 
         {
             let mut scanner = RopeScanner::new(&rope, &chunk1);
-            assert_eq!(scanner.find_ne_char_left(rope.len(), chunk1.len(), None), 13);
+            assert_eq!(scanner.find_ne_char_back(rope.len(), chunk1.len(), None), 13);
         }
 
         {
             let mut scanner = RopeScanner::new(&rope, &chunk2);
-            assert_eq!(scanner.find_ne_char_left(rope.len(), chunk2.len(), None), 0);
+            assert_eq!(scanner.find_ne_char_back(rope.len(), chunk2.len(), None), 0);
         }
     }
 
@@ -558,7 +572,7 @@ mod tests {
     }
 
     #[test]
-    fn scanner_left() {
+    fn scanner_back() {
         let rope = Rope::from(make_lines(10));
         let mut chunk = String::from("bbb");
         chunk.push_str(&make_lines(5));
@@ -566,7 +580,7 @@ mod tests {
 
         {
             let mut scanner = RopeScanner::new(&rope, &targ);
-            let result = scanner.find_ne_char_left(rope.len(), targ.len(), None);
+            let result = scanner.find_ne_char_back(rope.len(), targ.len(), None);
             assert_eq!(result, 400);
         }
 
@@ -575,50 +589,52 @@ mod tests {
         targ.push('\n');
         let targ = Rope::from(&targ);
         let mut scanner = RopeScanner::new(&rope, &targ);
-        let result = scanner.find_ne_char_left(rope.len(), targ.len(), None);
+        let result = scanner.find_ne_char_back(rope.len(), targ.len(), None);
         assert_eq!(result, 1);
     }
 
     #[test]
-    fn find_right_utf8() {
+    fn find_forward_utf8() {
         // make sure we don't include the matching non-boundary bytes
         let one = Rope::from("aaaa🙈");
         let two = Rope::from("aaaa🙉");
 
         let mut scanner = RopeScanner::new(&one, &two);
-        let result = scanner.find_ne_char_right(0, 0, None);
+        let result = scanner.find_ne_char(0, 0, None);
         assert_eq!(result, 4);
     }
 
     #[test]
-    fn find_left_utf8() {
+    fn find_back_utf8() {
         let zer = Rope::from("baaaa");
         let one = Rope::from("🍄aaaa"); // F0 9F 8D 84 61 61 61 61;
         let two = Rope::from("🙄aaaa"); // F0 9F 99 84 61 61 61 61;
         let tri = Rope::from("🝄aaaa"); // F0 AF 8D 84 61 61 61 61;
 
         let mut scanner = RopeScanner::new(&zer, &one);
-        let result = scanner.find_ne_char_left(zer.len(), one.len(), None);
+        let result = scanner.find_ne_char_back(zer.len(), one.len(), None);
         assert_eq!(result, 4);
 
         let mut scanner = RopeScanner::new(&one, &two);
-        let result = scanner.find_ne_char_left(one.len(), two.len(), None);
+        let result = scanner.find_ne_char_back(one.len(), two.len(), None);
         assert_eq!(result, 4);
 
         let mut scanner = RopeScanner::new(&one, &tri);
-        let result = scanner.find_ne_char_left(one.len(), tri.len(), None);
+        let result = scanner.find_ne_char_back(one.len(), tri.len(), None);
         assert_eq!(result, 4);
     }
 
     #[test]
     fn ne_idx_rev_utf8() {
-        // there was a weird failure in `find_left_utf8` non_simd, drilling down:
+        // there was a weird failure in `find_back_utf8` non_simd, drilling down:
         let zer = "baaaa";
         let one = "🍄aaaa"; // F0 9F 8D 84 61 61 61 61;
         let two = "🙄aaaa"; // F0 9F 99 84 61 61 61 61;
         if is_x86_feature_detected!("sse4.2") {
-            assert_eq!(ne_idx_rev_sse(zer.as_bytes(), one.as_bytes()), Some(4));
-            assert_eq!(ne_idx_rev_sse(one.as_bytes(), two.as_bytes()), Some(5));
+            unsafe {
+                assert_eq!(ne_idx_rev_sse(zer.as_bytes(), one.as_bytes()), Some(4));
+                assert_eq!(ne_idx_rev_sse(one.as_bytes(), two.as_bytes()), Some(5));
+            }
         }
         assert_eq!(ne_idx_rev_fallback(zer.as_bytes(), one.as_bytes()), Some(4));
         assert_eq!(ne_idx_rev_fallback(one.as_bytes(), two.as_bytes()), Some(5));
