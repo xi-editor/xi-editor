@@ -741,7 +741,7 @@ impl CoreState {
     fn load_theme_file(&mut self, path: &Path) {
         let _t = trace_block("CoreState::load_theme_file", &["core"]);
 
-        let result = self.style_map.borrow_mut().load_theme(path);
+        let result = self.style_map.borrow_mut().load_theme_from_path(path);
         match result {
             Ok(theme_name) => {
                 if theme_name == self.style_map.borrow().get_theme_name() {

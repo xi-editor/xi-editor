@@ -216,36 +216,23 @@ impl ThemeStyleMap {
     }
 
     pub fn set_theme(&mut self, theme_name: &str) -> Result<(), &'static str> {
-        // If we haven't loaded the theme before, we try to load it from the dump (if the dump
-        // exists), or load it from the file itself.
-        // Otherwise, we just load the cached theme from our theme map.
-        if !self.contains_theme(theme_name) {
-            let theme_p = &self.path_map.get(theme_name).cloned();
-            if let Some(theme_p) = theme_p {
-                match self.try_load_from_dump(theme_p) {
-                    // If loading from the dump is successful, this will get us the theme name
-                    // and its theme data.
-                    Some((dump_theme_name, dump_theme_data)) => {
-                        self.insert_to_map(dump_theme_name, dump_theme_data, theme_p);
-                    }
-                    None => {
-                        let _ = self.load_theme(theme_p);
-                    }
+        match self.load_theme(theme_name) {
+            Ok(()) => {
+                if let Some(new_theme) = self.themes.themes.get(theme_name) {
+                    self.theme = new_theme.to_owned();
+                    self.theme_name = theme_name.to_owned();
+                    self.default_style = Style::default_for_theme(&self.theme);
+                    self.map = HashMap::new();
+                    self.styles = Vec::new();
+                    Ok(())
+                } else {
+                    Err("unknown theme")
                 }
-            } else {
-                return Err("can't find path for theme");
-            }
-        }
-
-        if let Some(new_theme) = self.themes.themes.get(theme_name) {
-            self.theme = new_theme.to_owned();
-            self.theme_name = theme_name.to_owned();
-            self.default_style = Style::default_for_theme(&self.theme);
-            self.map = HashMap::new();
-            self.styles = Vec::new();
-            Ok(())
-        } else {
-            Err("unknown theme")
+            },
+            Err(e) => {
+                eprintln!("Encountered error {:?} while trying to load {:?}", e, theme_name);
+                Err("could not load theme")
+            },
         }
     }
 
@@ -270,6 +257,7 @@ impl ThemeStyleMap {
 
         let theme_name = path.file_stem().and_then(OsStr::to_str)?;
         self.themes.themes.remove(theme_name);
+        self.path_map.remove(theme_name);
         self.state.remove(path);
 
         let dump_p = self.get_dump_path(theme_name)?;
@@ -300,11 +288,20 @@ impl ThemeStyleMap {
                     // We look through the theme folder here and cache their names/paths to a
                     // path hashmap.
                     for theme_p in themes.iter() {
+<<<<<<< HEAD
                         if let Some(theme_name) = theme_p.file_stem().and_then(OsStr::to_str) {
                             self.path_map.insert(theme_name.to_string(), theme_p.to_path_buf());
                         } else {
                             error!("Invalid theme name, skipping");
 >>>>>>> Implement lazy load for themes
+=======
+                        match self.load_theme_from_path(theme_p) {
+                            Ok(theme_name) => {
+                                self.path_map.insert(theme_name.to_string(), theme_p.to_path_buf());
+                                self.state.insert(theme_p.to_path_buf());
+                            },
+                            Err(e) => error!("Error {:?} loading theme at path {:?}", e, theme_p),
+>>>>>>> Refactor theme loading to always load path first
                         }
                     }
                 }
@@ -344,22 +341,45 @@ impl ThemeStyleMap {
         }
     }
 
-    /// Loads theme using syntect's `get_theme` fn to our `theme` map.
-    /// Stores binary dump in a file with `tmdump` extension, only if
-    /// caching is enabled.
-    pub(crate) fn load_theme(&mut self, theme_p: &Path) -> Result<String, LoadingError> {
+    /// Loads a theme's name and its respective path into the theme path map.
+    pub(crate) fn load_theme_from_path(&mut self, theme_p: &Path) -> Result<String, LoadingError> {
         validate_theme_file(theme_p)?;
         let theme = ThemeSet::get_theme(theme_p)?;
         let theme_name =
             theme_p.file_stem().and_then(OsStr::to_str).ok_or(LoadingError::BadPath)?;
 
-        if self.caching_enabled {
-            if let Some(dump_p) = self.get_dump_path(theme_name) {
-                let _ = dump_to_file(&theme, dump_p);
-            }
-        }
-        self.insert_to_map(theme_name.to_owned(), theme, theme_p);
         Ok(theme_name.to_owned())
+    }
+
+    /// Loads theme using syntect's `get_theme` fn to our `theme` path hashmap.
+    /// Stores binary dump in a file with `tmdump` extension, only if
+    /// caching is enabled.
+    fn load_theme(&mut self, theme_name: &str) -> Result<(), LoadingError> {
+        // If we haven't loaded the theme before, we try to load it from the dump (if the dump
+        // exists), or load it from the file itself.
+        // Otherwise, we just load the cached theme from our theme map.
+        let theme_p = &self.path_map.get(theme_name).cloned();
+        if let Some(theme_p) = theme_p {
+            match self.try_load_from_dump(theme_p) {
+                // If loading from the dump is successful, this will get us the theme name
+                // and its theme data.
+                Some((dump_theme_name, dump_theme_data)) => {
+                    self.insert_to_map(dump_theme_name, dump_theme_data, theme_p);
+                }
+                None => {
+                    let theme = ThemeSet::get_theme(theme_p)?;
+                    if self.caching_enabled {
+                        if let Some(dump_p) = self.get_dump_path(theme_name) {
+                            let _ = dump_to_file(&theme, dump_p);
+                        }
+                    }
+                    self.insert_to_map(theme_name.to_owned(), theme, theme_p);
+                }
+            }
+            Ok(())
+        } else {
+            Err(LoadingError::BadPath)
+        }
     }
 
     fn insert_to_map(&mut self, k: String, v: Theme, p: &Path) {
@@ -384,9 +404,8 @@ impl ThemeStyleMap {
 
                 let to_insert = current_state.difference(&maintained_state);
                 for path in to_insert {
-                    let _ = self.load_theme(path);
+                    let _ = self.load_theme_from_path(path);
                 }
-
                 let to_remove = maintained_state.difference(&current_state);
                 for path in to_remove {
                     self.remove_theme(path);
