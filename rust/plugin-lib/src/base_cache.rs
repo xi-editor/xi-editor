@@ -474,8 +474,7 @@ mod tests {
         assert_eq!(&c.contents, "ahhyayoh");
         assert_eq!(c.offset, 0);
 
-        let d =
-            Delta::simple_edit(Interval::new(2, 2), "_oops_".into(), c.contents.len());
+        let d = Delta::simple_edit(Interval::new(2, 2), "_oops_".into(), c.contents.len());
         assert_eq!(d.els.len(), 3);
         c.update(Some(&d), d.new_document_len(), 1, 3);
 
@@ -558,21 +557,14 @@ mod tests {
         let mut c = ChunkCache::default();
         c.contents = "some".into();
         c.buf_size = 4;
-        let d = Delta::simple_edit(
-            Interval::new(0, 0),
-            "two\nline\nbreaks".into(),
-            c.contents.len(),
-        );
+        let d =
+            Delta::simple_edit(Interval::new(0, 0), "two\nline\nbreaks".into(), c.contents.len());
         assert!(d.as_simple_insert().is_some());
         assert!(!d.is_simple_delete());
         c.update(Some(&d), d.new_document_len(), 3, 1);
         assert_eq!(c.line_offsets, vec![4, 9]);
 
-        let d = Delta::simple_edit(
-            Interval::new(4, 4),
-            "one\nmore".into(),
-            c.contents.len(),
-        );
+        let d = Delta::simple_edit(Interval::new(4, 4), "one\nmore".into(), c.contents.len());
         assert!(d.as_simple_insert().is_some());
         c.update(Some(&d), d.new_document_len(), 4, 2);
         assert_eq!(&c.contents, "two\none\nmoreline\nbreakssome");
@@ -702,11 +694,7 @@ mod tests {
         assert_eq!(c.offset, 5);
         assert_eq!(c.first_line, 1);
         //assert_eq!(c.offset_of_line(&source, 2).unwrap(), 9);
-        let d = Delta::simple_edit(
-            Interval::new(6, 10),
-            "".into(),
-            c.contents.len() + c.offset,
-        );
+        let d = Delta::simple_edit(Interval::new(6, 10), "".into(), c.contents.len() + c.offset);
         assert!(d.is_simple_delete());
         c.update(Some(&d), d.new_document_len(), 4, 1);
         source.0 = "this\nhive nice\nsour\nlines!".into();

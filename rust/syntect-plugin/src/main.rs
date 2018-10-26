@@ -80,7 +80,12 @@ impl PluginState {
     }
 
     // compute syntax for one line, also accumulating the style spans
-    fn compute_syntax(&mut self, line: &str, state: LineState, syntax_set: & SyntaxSet) -> LineState {
+    fn compute_syntax(
+        &mut self,
+        line: &str,
+        state: LineState,
+        syntax_set: &SyntaxSet,
+    ) -> LineState {
         let (mut parse_state, mut scope_state) =
             state.or_else(|| self.initial_state.clone()).unwrap();
         let ops = parse_state.parse_line(&line, syntax_set);
@@ -126,7 +131,7 @@ impl PluginState {
 
     #[allow(unused)]
     // Return true if there's any more work to be done.
-    fn highlight_one_line(&mut self, ctx: &mut MyView, syntax_set: & SyntaxSet) -> bool {
+    fn highlight_one_line(&mut self, ctx: &mut MyView, syntax_set: &SyntaxSet) -> bool {
         if let Some(line_num) = ctx.get_frontier() {
             let (line_num, offset, state) = ctx.get_prev(line_num);
             if offset != self.offset {
