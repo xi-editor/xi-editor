@@ -14,9 +14,9 @@ using modern software engineering techniques. It is initially built for
 Mac OS X, using Cocoa for the user interface. There are also frontends for
 other operating systems available from third-party developers.
 
-Goals include:
+Goals Include:
 
-* ***Incredibly high performance***. All editing operations should commit and paint
+* ***Incredibly High Performance***. All editing operations should commit and paint
   in under 16ms. The editor should never make you wait for anything.
 
 * ***Beauty***. The editor should fit well on a modern desktop, and not look like a
@@ -26,10 +26,10 @@ Goals include:
 
 * ***Reliability***. Crashing, hanging, or losing work should never happen.
 
-* ***Developer friendliness***. It should be easy to customize xi editor, whether
+* ***Developer Friendliness***. It should be easy to customize xi editor, whether
   by adding plug-ins or hacking on the core.
 
-**Learn more** with the creator of Xi, Raph Levien, in this [Recurse Center Localhost talk](https://www.recurse.com/events/localhost-raph-levien
+**Learn More** with the creator of Xi, Raph Levien, in this [Recurse Center Localhost talk](https://www.recurse.com/events/localhost-raph-levien
 ).
 
 Screenshot (will need to be updated as syntax coloring and UI polish is added):
@@ -37,13 +37,13 @@ Screenshot (will need to be updated as syntax coloring and UI polish is added):
 ![xi-mac screenshot](/docs/docs/img/xi-mac-screenshot.png?raw=true)
 
 
-## Getting started
+## Getting Started
 
 This repository is the core only. You'll also need a front-end, from the list
 below.
 
 
-### Building the core
+### Building the Core
 
 Xi-editor targets 'recent stable Rust'. We recommend installing via [rustup](https://www.rustup.rs).
 The current minimum supported version is 1.28.
@@ -94,7 +94,7 @@ documentation at this point) on the protocol at
 send a PR to add it to the above list.
 
 
-## Design decisions
+## Design Decisions
 
 Here are some of the design decisions, and motivation why they should
 contribute to the above goals:
@@ -140,7 +140,7 @@ contribute to the above goals:
   ones.
 
 
-## Current status
+## Current Status
 
 This is still a project in its early stages. The Mac build has basic editing
 functionality (it was used to write this README), but looks very spare and
