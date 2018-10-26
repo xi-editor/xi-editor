@@ -115,10 +115,9 @@ impl Diff<RopeInfo> for LineHashDiff {
             if targ_off <= prev_end { continue; }
             let (left_dist, mut right_dist) = expand_match(base, target, base_off,
                                                            targ_off, prev_end);
-            if targ_off + right_dist > target_end {
-                // don't let last match expand past target_end
-                right_dist = target_end - targ_off;
-            }
+
+            // don't let last match expand past target_end
+            right_dist = right_dist.min(target_end - targ_off);
 
             let targ_start = targ_off - left_dist;
             let base_start = base_off - left_dist;
@@ -129,8 +128,7 @@ impl Diff<RopeInfo> for LineHashDiff {
         }
 
         if diff_end > 0 {
-            builder.copy(base.len() - diff_end,
-            target.len() - diff_end, diff_end);
+            builder.copy(base.len() - diff_end, target.len() - diff_end, diff_end);
         }
 
         builder.to_delta(base, target)
@@ -237,7 +235,7 @@ impl DiffBuilder {
         let mut targ_pos = 0;
         for DiffOp { base_idx, target_idx, len } in self.ops {
             if target_idx > targ_pos {
-                let iv = Interval::new_closed_open(targ_pos, target_idx);
+                let iv = Interval::new(targ_pos, target_idx);
                 els.push(DeltaElement::Insert(target.subseq(iv)));
             }
             els.push(DeltaElement::Copy(base_idx, base_idx + len));
@@ -245,7 +243,7 @@ impl DiffBuilder {
         }
 
         if targ_pos < target.len() {
-            let iv = Interval::new_closed_open(targ_pos, target.len());
+            let iv = Interval::new(targ_pos, target.len());
             els.push(DeltaElement::Insert(target.subseq(iv)));
         }
 
@@ -262,10 +260,23 @@ struct LineScanner<'a> {
 impl<'a> Iterator for LineScanner<'a> {
     type Item = &'a str;
     fn next(&mut self) -> Option<&'a str> {
-        let idx = memchr(b'\n', &self.inner.as_bytes()[self.idx..])?;
-        let result = &self.inner[self.idx..self.idx + idx+1];
-        self.idx += idx + 1;
-        Some(result)
+        if self.idx >= self.inner.len() {
+            return None;
+        }
+
+        match memchr(b'\n', &self.inner.as_bytes()[self.idx..]) {
+            Some(idx) => {
+                let next_idx = self.idx + idx + 1;
+                let result = &self.inner[self.idx..next_idx];
+                self.idx = next_idx;
+                Some(result)
+            }
+            None => {
+                let result = &self.inner[self.idx..];
+                self.idx = self.inner.len();
+                Some(result)
+            }
+        }
     }
 }
 
