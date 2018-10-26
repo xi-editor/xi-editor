@@ -149,9 +149,9 @@ fn expand_match(
 ) -> (usize, usize) {
     let mut scanner = RopeScanner::new(base, target);
     let max_left = targ_off - prev_match_targ_end;
-    let start = scanner.find_ne_char_left(base_off, targ_off, max_left);
+    let start = scanner.find_ne_char_back(base_off, targ_off, max_left);
     debug_assert!(start <= max_left, "{} <= {}", start, max_left);
-    let end = scanner.find_ne_char_right(base_off, targ_off, None);
+    let end = scanner.find_ne_char(base_off, targ_off, None);
     (start.min(max_left), end)
 }
 

@@ -55,7 +55,11 @@ fn ne_idx_sw(b: &mut Bencher) {
 }
 
 #[bench]
+#[cfg(target_arch = "x86_64")]
 fn ne_idx_sse(b: &mut Bencher) {
+    if !is_x86_feature_detected!("sse4.2") {
+        return;
+    }
     let (one, two) = make_test_data();
 
     let mut x = 0;
@@ -66,7 +70,11 @@ fn ne_idx_sse(b: &mut Bencher) {
 }
 
 #[bench]
+#[cfg(target_arch = "x86_64")]
 fn ne_idx_avx(b: &mut Bencher) {
+    if !is_x86_feature_detected!("avx2") {
+        return;
+    }
     let (one, two) = make_test_data();
 
     let mut dont_opt_me = 0;
@@ -99,10 +107,14 @@ fn ne_idx_rev_sw(b: &mut Bencher) {
 }
 
 #[bench]
+#[cfg(target_arch = "x86_64")]
 fn ne_idx_rev_sse(b: &mut Bencher) {
+    if !is_x86_feature_detected!("sse4.2") {
+        return;
+    }
     let (one, two) = make_test_data();
 
-    b.iter(|| {
+    b.iter(|| unsafe {
         compare::ne_idx_rev_sse(&one, &one);
         compare::ne_idx_rev_sse(&one, &two);
     })
@@ -116,8 +128,8 @@ fn scanner(b: &mut Bencher) {
 
     let mut scanner = compare::RopeScanner::new(&one, &two);
     b.iter(|| {
-        scanner.find_ne_char_right(0, 0, None);
-        scanner.find_ne_char_left(one.len(), two.len(), None);
+        scanner.find_ne_char(0, 0, None);
+        scanner.find_ne_char_back(one.len(), two.len(), None);
     })
 }
 
