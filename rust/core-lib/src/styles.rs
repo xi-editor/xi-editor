@@ -60,10 +60,9 @@ pub struct Style {
 }
 
 impl Style {
-
     /// Creates a new `Style` by converting from a `Syntect::StyleModifier`.
     pub fn from_syntect_style_mod(style: &SynStyleModifier) -> Self {
-        let font_style = style.font_style.map(|s|s.bits()).unwrap_or_default();
+        let font_style = style.font_style.map(|s| s.bits()).unwrap_or_default();
         let weight = if (font_style & 1) != 0 { Some(700) } else { None };
         let underline = if (font_style & 2) != 0 { Some(true) } else { None };
         let italic = if (font_style & 4) != 0 { Some(true) } else { None };
@@ -77,14 +76,21 @@ impl Style {
             weight,
             underline,
             italic,
-            )
+        )
     }
 
-    pub fn new<O32, O16, OB>(priority: u16, fg_color: O32, bg_color: O32,
-                             weight: O16, underline: OB, italic: OB) -> Self
-        where O32: Into<Option<u32>>,
-              O16: Into<Option<u16>>,
-              OB: Into<Option<bool>>
+    pub fn new<O32, O16, OB>(
+        priority: u16,
+        fg_color: O32,
+        bg_color: O32,
+        weight: O16,
+        underline: OB,
+        italic: OB,
+    ) -> Self
+    where
+        O32: Into<Option<u32>>,
+        O16: Into<Option<u16>>,
+        OB: Into<Option<bool>>,
     {
         assert!(priority <= 1000);
         Style {
@@ -106,7 +112,8 @@ impl Style {
             None,
             None,
             None,
-            None)
+            None,
+        )
     }
 
     /// Creates a new style by combining attributes of `self` and `other`.
@@ -115,11 +122,7 @@ impl Style {
     ///
     /// Note: when merging multiple styles, apply them in increasing priority.
     pub fn merge(&self, other: &Style) -> Style {
-        let (p1, p2) = if self.priority > other.priority {
-            (self, other)
-        } else {
-            (other, self)
-        };
+        let (p1, p2) = if self.priority > other.priority { (self, other) } else { (other, self) };
 
         Style::new(
             p1.priority,
@@ -129,7 +132,7 @@ impl Style {
             p1.weight.or(p2.weight),
             p1.underline.or(p2.underline),
             p1.italic.or(p2.italic),
-            )
+        )
     }
 
     /// Encode this `Style`, setting the `id` property.
@@ -205,7 +208,7 @@ impl ThemeStyleMap {
         &self.theme.settings
     }
 
-    pub fn get_theme_names(&self) -> Vec<String>  {
+    pub fn get_theme_names(&self) -> Vec<String> {
         self.themes.themes.keys().cloned().collect()
     }
 
@@ -303,9 +306,7 @@ impl ThemeStyleMap {
         let mod_t_orig = fs::metadata(theme_p).and_then(|md| md.modified()).ok()?;
 
         if mod_t >= mod_t_orig {
-            from_dump_file(&dump_p)
-                .ok()
-                .map(|t| (theme_name.to_owned(), t))
+            from_dump_file(&dump_p).ok().map(|t| (theme_name.to_owned(), t))
         } else {
             // Delete dump file
             let _ = fs::remove_file(&dump_p);
@@ -319,10 +320,8 @@ impl ThemeStyleMap {
     pub(crate) fn load_theme(&mut self, theme_p: &Path) -> Result<String, LoadingError> {
         validate_theme_file(theme_p)?;
         let theme = ThemeSet::get_theme(theme_p)?;
-        let theme_name = theme_p
-            .file_stem()
-            .and_then(OsStr::to_str)
-            .ok_or(LoadingError::BadPath)?;
+        let theme_name =
+            theme_p.file_stem().and_then(OsStr::to_str).ok_or(LoadingError::BadPath)?;
 
         if self.caching_enabled {
             if let Some(dump_p) = self.get_dump_path(theme_name) {
@@ -342,9 +341,7 @@ impl ThemeStyleMap {
 
     /// Returns dump's path corresponding to the given theme name.
     fn get_dump_path(&self, theme_name: &str) -> Option<PathBuf> {
-        self.cache_dir
-            .as_ref()
-            .map(|p| p.join(theme_name).with_extension("tmdump"))
+        self.cache_dir.as_ref().map(|p| p.join(theme_name).with_extension("tmdump"))
     }
 
     /// Compare the stored file paths in `self.state`
@@ -387,7 +384,5 @@ impl ThemeStyleMap {
 
 /// Used to remove files with extension other than `tmTheme`.
 fn validate_theme_file(path: &Path) -> Result<bool, LoadingError> {
-    path.extension()
-        .map(|e| e != "tmTheme")
-        .ok_or(LoadingError::BadPath)
+    path.extension().map(|e| e != "tmTheme").ok_or(LoadingError::BadPath)
 }

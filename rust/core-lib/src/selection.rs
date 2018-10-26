@@ -14,7 +14,7 @@
 
 //! Data structures representing (multiple) selections and cursors.
 
-use std::cmp::{min, max};
+use std::cmp::{max, min};
 use std::ops::Deref;
 
 use index_set::remove_n_at;
@@ -43,9 +43,7 @@ impl Selection {
 
     /// Creates a selection with a single region.
     pub fn new_simple(region: SelRegion) -> Selection {
-        Selection {
-            regions: vec![region]
-        }
+        Selection { regions: vec![region] }
     }
 
     /// Clear the selection.
@@ -133,8 +131,10 @@ impl Selection {
         if !delete_adjacent && self.regions[first].max() == start {
             first += 1;
         }
-        if last < self.regions.len() && ((delete_adjacent && self.regions[last].min() <= end)
-           || (!delete_adjacent && self.regions[last].min() < end)) {
+        if last < self.regions.len()
+            && ((delete_adjacent && self.regions[last].min() <= end)
+                || (!delete_adjacent && self.regions[last].min() < end))
+        {
             last += 1;
         }
         remove_n_at(&mut self.regions, first, last - first);
@@ -187,7 +187,12 @@ impl Selection {
     ///
     /// Whether or not the preceding selections are restored depends on the keep_selections
     /// value (only set to true on transpose).
-    pub fn apply_delta(&self, delta: &Delta<RopeInfo>, after: bool, keep_selections: bool) -> Selection {
+    pub fn apply_delta(
+        &self,
+        delta: &Delta<RopeInfo>,
+        after: bool,
+        keep_selections: bool,
+    ) -> Selection {
         let mut result = Selection::new();
         let mut transformer = Transformer::new(delta);
         for region in self.iter() {
@@ -215,7 +220,6 @@ impl Selection {
         }
         result
     }
-
 }
 
 /// Implementing the Deref trait allows callers to easily test `is_empty`, iterate
@@ -273,38 +277,22 @@ pub struct SelRegion {
 impl SelRegion {
     /// Returns a new region.
     pub fn new(start: usize, end: usize) -> Self {
-        Self {
-            start,
-            end,
-            horiz: None,
-            affinity: Affinity::default(),
-        }
+        Self { start, end, horiz: None, affinity: Affinity::default() }
     }
 
     /// Returns a new caret region (`start == end`).
     pub fn caret(pos: usize) -> Self {
-        Self {
-            start: pos,
-            end: pos,
-            horiz: None,
-            affinity: Affinity::default(),
-        }
+        Self { start: pos, end: pos, horiz: None, affinity: Affinity::default() }
     }
 
     /// Returns a region with the given horizontal position.
     pub fn with_horiz(self, horiz: Option<HorizPos>) -> Self {
-        Self {
-            horiz,
-            ..self
-        }
+        Self { horiz, ..self }
     }
 
     /// Returns a region with the given affinity.
     pub fn with_affinity(self, affinity: Affinity) -> Self {
-        Self {
-            affinity,
-            ..self
-        }
+        Self { affinity, ..self }
     }
 
     /// Gets the earliest offset within the region, ie the minimum of both edges.
@@ -330,19 +318,15 @@ impl SelRegion {
     // Indicate whether this region should merge with the next.
     // Assumption: regions are sorted (self.min() <= other.min())
     fn should_merge(self, other: SelRegion) -> bool {
-        other.min() < self.max() ||
-            ((self.is_caret() || other.is_caret()) && other.min() == self.max())
+        other.min() < self.max()
+            || ((self.is_caret() || other.is_caret()) && other.min() == self.max())
     }
 
     fn merge_with(self, other: SelRegion) -> SelRegion {
         let is_forward = self.end > self.start || other.end > other.start;
         let new_min = min(self.min(), other.min());
         let new_max = max(self.max(), other.max());
-        let (start, end) = if is_forward {
-            (new_min, new_max)
-        } else {
-            (new_max, new_min)
-        };
+        let (start, end) = if is_forward { (new_min, new_max) } else { (new_max, new_min) };
         // Could try to preserve horiz/affinity from one of the
         // sources, but very likely not worth it.
         SelRegion::new(start, end)
@@ -363,7 +347,7 @@ impl From<SelRegion> for Selection {
 
 #[cfg(test)]
 mod tests {
-    use super::{Selection, SelRegion};
+    use super::{SelRegion, Selection};
     use std::ops::Deref;
 
     fn r(start: usize, end: usize) -> SelRegion {

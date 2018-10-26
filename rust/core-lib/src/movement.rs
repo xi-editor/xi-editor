@@ -16,7 +16,7 @@
 
 use std::cmp::max;
 
-use selection::{HorizPos, Selection, SelRegion};
+use selection::{HorizPos, SelRegion, Selection};
 use view::View;
 use word_boundaries::WordCursor;
 use xi_rope::rope::{LinesMetric, Rope};
@@ -61,9 +61,13 @@ pub enum Movement {
 ///
 /// Note: in non-exceptional cases, this function preserves the `horiz`
 /// field of the selection region.
-fn vertical_motion(r: SelRegion, view: &View, text: &Rope, line_delta: isize,
-    modify: bool) -> (usize, Option<HorizPos>)
-{
+fn vertical_motion(
+    r: SelRegion,
+    view: &View,
+    text: &Rope,
+    line_delta: isize,
+    modify: bool,
+) -> (usize, Option<HorizPos>) {
     // The active point of the selection
     let active = if modify {
         r.end
@@ -72,11 +76,7 @@ fn vertical_motion(r: SelRegion, view: &View, text: &Rope, line_delta: isize,
     } else {
         r.max()
     };
-    let col = if let Some(col) = r.horiz {
-        col
-    } else {
-        view.offset_to_line_col(text, active).1
-    };
+    let col = if let Some(col) = r.horiz { col } else { view.offset_to_line_col(text, active).1 };
     // This code is quite careful to avoid integer overflow.
     // TODO: write tests to verify
     let line = view.line_of_offset(text, active);
@@ -107,9 +107,13 @@ fn scroll_height(view: &View) -> isize {
 }
 
 /// Compute the result of movement on one selection region.
-pub fn region_movement(m: Movement, r: SelRegion, view: &View, text: &Rope, modify: bool)
-    -> SelRegion
-{
+pub fn region_movement(
+    m: Movement,
+    r: SelRegion,
+    view: &View,
+    text: &Rope,
+    modify: bool,
+) -> SelRegion {
     let (offset, horiz) = match m {
         Movement::Left => {
             if r.is_caret() || modify {
@@ -205,10 +209,7 @@ pub fn region_movement(m: Movement, r: SelRegion, view: &View, text: &Rope, modi
         Movement::StartOfDocument => (0, None),
         Movement::EndOfDocument => (text.len(), None),
     };
-    SelRegion::new(
-        if modify { r.start } else { offset },
-        offset,
-    ).with_horiz(horiz)
+    SelRegion::new(if modify { r.start } else { offset }, offset).with_horiz(horiz)
 }
 
 /// Compute a new selection by applying a movement to an existing selection.
@@ -218,9 +219,13 @@ pub fn region_movement(m: Movement, r: SelRegion, view: &View, text: &Rope, modi
 ///
 /// If `modify` is `true`, the selections are modified, otherwise the results
 /// of individual region movements become carets.
-pub fn selection_movement(m: Movement, s: &Selection, view: &View, text: &Rope,
-    modify: bool) -> Selection
-{
+pub fn selection_movement(
+    m: Movement,
+    s: &Selection,
+    view: &View,
+    text: &Rope,
+    modify: bool,
+) -> Selection {
     let mut result = Selection::new();
     for &r in s.iter() {
         let new_region = region_movement(m, r, view, text, modify);

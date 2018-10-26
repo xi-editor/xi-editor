@@ -16,14 +16,19 @@
 
 use view::View;
 
-use xi_rope::tree::Cursor;
 use xi_rope::rope::Rope;
+use xi_rope::tree::Cursor;
 
 use config::BufferItems;
 use selection::SelRegion;
 use xi_unicode::*;
 
-pub fn offset_for_delete_backwards(view: &View, region: &SelRegion, text: &Rope, config: &BufferItems) -> usize {
+pub fn offset_for_delete_backwards(
+    view: &View,
+    region: &SelRegion,
+    text: &Rope,
+    config: &BufferItems,
+) -> usize {
     if !region.is_caret() {
         region.min()
     } else {
@@ -34,11 +39,9 @@ pub fn offset_for_delete_backwards(view: &View, region: &SelRegion, text: &Rope,
         let tab_size = config.tab_size;
         let tab_size = if tab_off == 0 { tab_size } else { tab_off };
         let tab_start = region.start.saturating_sub(tab_size);
-        let preceded_by_spaces = region.start > 0 &&
-            (tab_start..region.start).all(|i| text.byte_at(i) == b' ');
-        if preceded_by_spaces
-            && config.translate_tabs_to_spaces
-            && config.use_tab_stops {
+        let preceded_by_spaces =
+            region.start > 0 && (tab_start..region.start).all(|i| text.byte_at(i) == b' ');
+        if preceded_by_spaces && config.translate_tabs_to_spaces && config.use_tab_stops {
             tab_start
         } else {
             #[derive(PartialEq)]
@@ -56,7 +59,7 @@ pub fn offset_for_delete_backwards(view: &View, region: &SelRegion, text: &Rope,
                 OddNumberedRIS,
                 EvenNumberedRIS,
                 InTagSequence,
-                Finished
+                Finished,
             };
             let mut state = State::Start;
             let mut tmp_offset = region.end;
@@ -152,7 +155,8 @@ pub fn offset_for_delete_backwards(view: &View, region: &SelRegion, text: &Rope,
                             delete_code_point_count += 1;
                             state = State::BeforeEmoji;
                         } else {
-                            if !is_variation_selector(code_point) { //TODO: UCharacter.getCombiningClass(codePoint) == 0
+                            if !is_variation_selector(code_point) {
+                                //TODO: UCharacter.getCombiningClass(codePoint) == 0
                                 delete_code_point_count += 1;
                             }
                             state = State::Finished;
@@ -168,7 +172,11 @@ pub fn offset_for_delete_backwards(view: &View, region: &SelRegion, text: &Rope,
                     State::BeforeZwj => {
                         if code_point.is_emoji() {
                             delete_code_point_count += 2;
-                            state = if code_point.is_emoji_modifier() { State::BeforeEmojiModifier } else { State::BeforeEmoji };
+                            state = if code_point.is_emoji_modifier() {
+                                State::BeforeEmojiModifier
+                            } else {
+                                State::BeforeEmoji
+                            };
                         } else if is_variation_selector(code_point) {
                             last_seen_vs_code_point_count = 1;
                             state = State::BeforeVSAndZWJ;

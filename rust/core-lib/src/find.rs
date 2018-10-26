@@ -14,18 +14,18 @@
 
 //! Module for searching text.
 
-use std::cmp::{min,max};
+use std::cmp::{max, min};
 
+use regex::{Regex, RegexBuilder};
+use selection::{SelRegion, Selection};
+use view::View;
+use word_boundaries::WordCursor;
 use xi_rope::delta::{Delta, DeltaRegion};
 use xi_rope::find::{find, is_multiline_regex, CaseMatching};
-use xi_rope::rope::{Rope, LinesMetric, RopeInfo};
-use xi_rope::tree::Cursor;
 use xi_rope::interval::Interval;
-use selection::{Selection, SelRegion};
+use xi_rope::rope::{LinesMetric, Rope, RopeInfo};
+use xi_rope::tree::Cursor;
 use xi_rope::tree::Metric;
-use regex::{RegexBuilder, Regex};
-use word_boundaries::WordCursor;
-use view::View;
 
 const REGEX_SIZE_LIMIT: usize = 1000000;
 
@@ -51,7 +51,7 @@ pub struct FindStatus {
     matches: usize,
 
     /// Line numbers which have find results.
-    lines: Vec<usize>
+    lines: Vec<usize>,
 }
 
 /// Contains logic to search text
@@ -81,7 +81,7 @@ pub struct Find {
 impl Find {
     pub fn new(id: usize) -> Find {
         Find {
-            id: id,
+            id,
             hls_dirty: true,
             search_string: None,
             case_matching: CaseMatching::CaseInsensitive,
@@ -112,7 +112,11 @@ impl Find {
                 is_regex: None,
                 whole_words: None,
                 matches: self.occurrences.len(),
-                lines: self.occurrences.iter().map(|o| view.offset_to_line_col(text, o.min()).0 + 1).collect(),
+                lines: self
+                    .occurrences
+                    .iter()
+                    .map(|o| view.offset_to_line_col(text, o.min()).0 + 1)
+                    .collect(),
             }
         } else {
             FindStatus {
@@ -122,7 +126,11 @@ impl Find {
                 is_regex: Some(self.regex.is_some()),
                 whole_words: Some(self.whole_words),
                 matches: self.occurrences.len(),
-                lines: self.occurrences.iter().map(|o| view.offset_to_line_col(text, o.min()).0 + 1).collect(),
+                lines: self
+                    .occurrences
+                    .iter()
+                    .map(|o| view.offset_to_line_col(text, o.min()).0 + 1)
+                    .collect(),
             }
         }
     }
@@ -135,17 +143,21 @@ impl Find {
         // update search highlights for changed regions
         if self.search_string.is_some() {
             // invalidate occurrences around deletion positions
-            for DeltaRegion{ old_offset, new_offset: _, len } in delta.iter_deletions() {
+            for DeltaRegion { old_offset, new_offset: _, len } in delta.iter_deletions() {
                 self.occurrences.delete_range(old_offset, old_offset + len, false);
             }
 
             self.occurrences = self.occurrences.apply_delta(delta, false, false);
 
             // invalidate occurrences around insert positions
-            for DeltaRegion{ new_offset, len, .. } in delta.iter_inserts() {
+            for DeltaRegion { new_offset, len, .. } in delta.iter_inserts() {
                 // also invalidate previous occurrence since it might expand after insertion
                 // eg. for regex .* every insertion after match will be part of match
-                self.occurrences.delete_range(new_offset.checked_sub(1).unwrap_or(0), new_offset + len, false);
+                self.occurrences.delete_range(
+                    new_offset.checked_sub(1).unwrap_or(0),
+                    new_offset + len,
+                    false,
+                );
             }
 
             // update find for the whole delta and everything after
@@ -154,12 +166,14 @@ impl Find {
             // get last valid occurrence that was unaffected by the delta
             let start = match self.occurrences.regions_in_range(0, iv.start()).last() {
                 Some(reg) => reg.end,
-                None => 0
+                None => 0,
             };
 
             // invalidate all search results from the point of the last valid search result until ...
-            let is_multi_line = LinesMetric::next(self.search_string.as_ref().unwrap(), 0).is_some();
-            let is_multi_line_regex = self.regex.is_some() && is_multiline_regex(self.search_string.as_ref().unwrap());
+            let is_multi_line =
+                LinesMetric::next(self.search_string.as_ref().unwrap(), 0).is_some();
+            let is_multi_line_regex =
+                self.regex.is_some() && is_multiline_regex(self.search_string.as_ref().unwrap());
 
             if is_multi_line || is_multi_line_regex {
                 // ... the end of the file
@@ -172,7 +186,7 @@ impl Find {
                 let end_of_line = match cursor.next::<LinesMetric>() {
                     Some(end) => end,
                     None if cursor.pos() == text.len() => cursor.pos(),
-                    _ => return
+                    _ => return,
                 };
 
                 self.occurrences.delete_range(iv.start(), end_of_line, false);
@@ -182,8 +196,14 @@ impl Find {
     }
 
     /// Set search parameters and executes the search.
-    pub fn do_find(&mut self, text: &Rope, search_string: &str, case_sensitive: bool,
-                   is_regex: bool, whole_words: bool) {
+    pub fn do_find(
+        &mut self,
+        text: &Rope,
+        search_string: &str,
+        case_sensitive: bool,
+        is_regex: bool,
+        whole_words: bool,
+    ) {
         if search_string.len() == 0 {
             self.unset();
         }
@@ -200,16 +220,22 @@ impl Find {
     }
 
     /// Sets find parameters and search query.
-    fn set_find(&mut self, search_string: &str, case_sensitive: bool, is_regex: bool, whole_words: bool) {
-        let case_matching = if case_sensitive {
-            CaseMatching::Exact
-        } else {
-            CaseMatching::CaseInsensitive
-        };
+    fn set_find(
+        &mut self,
+        search_string: &str,
+        case_sensitive: bool,
+        is_regex: bool,
+        whole_words: bool,
+    ) {
+        let case_matching =
+            if case_sensitive { CaseMatching::Exact } else { CaseMatching::CaseInsensitive };
 
         if let Some(ref s) = self.search_string {
-            if s == search_string && case_matching == self.case_matching &&
-                self.regex.is_some() == is_regex && self.whole_words == whole_words {
+            if s == search_string
+                && case_matching == self.case_matching
+                && self.regex.is_some() == is_regex
+                && self.whole_words == whole_words
+            {
                 // search parameters did not change
                 return;
             }
@@ -224,19 +250,16 @@ impl Find {
         // create regex from untrusted input
         self.regex = match is_regex {
             false => None,
-            true => {
-                RegexBuilder::new(search_string)
-                    .size_limit(REGEX_SIZE_LIMIT)
-                    .case_insensitive(case_matching == CaseMatching::CaseInsensitive)
-                    .build()
-                    .ok()
-            }
+            true => RegexBuilder::new(search_string)
+                .size_limit(REGEX_SIZE_LIMIT)
+                .case_insensitive(case_matching == CaseMatching::CaseInsensitive)
+                .build()
+                .ok(),
         };
     }
 
     /// Execute the search on the provided text in the range provided by `start` and `end`.
-    pub fn update_find(&mut self, text: &Rope, start: usize, end: usize, include_slop: bool)
-    {
+    pub fn update_find(&mut self, text: &Rope, start: usize, end: usize, include_slop: bool) {
         if self.search_string.is_none() {
             return;
         }
@@ -257,8 +280,9 @@ impl Find {
         let mut find_cursor = Cursor::new(&sub_text, from);
         let mut raw_lines = text.lines_raw(from..to);
 
-        while let Some(start) = find(&mut find_cursor, &mut raw_lines, self.case_matching,
-                                     &search_string, &self.regex) {
+        while let Some(start) =
+            find(&mut find_cursor, &mut raw_lines, self.case_matching, &search_string, &self.regex)
+        {
             let end = find_cursor.pos();
 
             if self.whole_words && !self.is_matching_whole_words(text, start, end) {
@@ -303,32 +327,48 @@ impl Find {
     /// Return the occurrence closest to the provided selection `sel`. If searched is reversed then
     /// the occurrence closest to the start of the selection is returned. `wrapped` indicates that
     /// if the end of the text is reached the search continues from the start.
-    pub fn next_occurrence(&self, text: &Rope, reverse: bool, wrapped: bool, sel: &Selection) -> Option<SelRegion> {
+    pub fn next_occurrence(
+        &self,
+        text: &Rope,
+        reverse: bool,
+        wrapped: bool,
+        sel: &Selection,
+    ) -> Option<SelRegion> {
         if self.occurrences.len() == 0 {
             return None;
         }
 
         let (sel_start, sel_end) = match sel.last() {
             Some(last) if last.is_caret() =>
-                // if last selection is caret then allow the current position to be part of the occurrence
-                (last.min(), last.max()),
+            // if last selection is caret then allow the current position to be part of the occurrence
+            {
+                (last.min(), last.max())
+            }
             Some(last) if !last.is_caret() =>
-                // if the last selection is not a caret then continue searching after the caret
-                (last.min(), last.max() + 1),
-            _ => (0, 0)
+            // if the last selection is not a caret then continue searching after the caret
+            {
+                (last.min(), last.max() + 1)
+            }
+            _ => (0, 0),
         };
 
         if reverse {
             let next_occurrence = match sel_start.checked_sub(1) {
                 Some(search_end) => self.occurrences.regions_in_range(0, search_end).last(),
-                None => None
+                None => None,
             };
 
             if next_occurrence.is_none() && !wrapped {
                 // get previous unselected occurrence
-                return self.occurrences.regions_in_range(0, text.len()).iter().cloned().filter(|o| {
-                    sel.regions_in_range(o.min(), o.max()).is_empty()
-                }).collect::<Vec<SelRegion>>().last().cloned();
+                return self
+                    .occurrences
+                    .regions_in_range(0, text.len())
+                    .iter()
+                    .cloned()
+                    .filter(|o| sel.regions_in_range(o.min(), o.max()).is_empty())
+                    .collect::<Vec<SelRegion>>()
+                    .last()
+                    .cloned();
             }
 
             next_occurrence.cloned()
@@ -337,9 +377,15 @@ impl Find {
 
             if next_occurrence.is_none() && !wrapped {
                 // get next unselected occurrence
-                return self.occurrences.regions_in_range(0, text.len()).iter().cloned().filter(|o| {
-                    sel.regions_in_range(o.min(), o.max()).is_empty()
-                }).collect::<Vec<SelRegion>>().first().cloned();
+                return self
+                    .occurrences
+                    .regions_in_range(0, text.len())
+                    .iter()
+                    .cloned()
+                    .filter(|o| sel.regions_in_range(o.min(), o.max()).is_empty())
+                    .collect::<Vec<SelRegion>>()
+                    .first()
+                    .cloned();
             }
 
             next_occurrence.cloned()
