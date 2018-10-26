@@ -8,6 +8,14 @@ if ! (RUSTFLAGS="-D warnings" cargo check --all); then
 fi
 
 printf 'Check passed!\n'
+
+printf 'Running rustfmt:\n'
+
+if ! (cargo fmt --all -- --check); then
+    printf '\nRustfmt failed. Please run rustfmt.\n'
+    exit $?
+fi
+
 printf 'Running "cargo test --all"\n'
 
 if ! (cargo test --all); then
