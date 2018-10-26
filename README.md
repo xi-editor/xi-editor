@@ -169,3 +169,5 @@ We gladly accept contributions via GitHub pull requests. Please see
 If you are interested in contributing but not sure where to start, there is
 an active IRC channel at #xi on irc.mozilla.org. There is also a subreddit at
 [/r/xi_editor](https://www.reddit.com/r/xi_editor/).
+
+https://hacktoberfest.digitalocean.com/
