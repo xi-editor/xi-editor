@@ -36,7 +36,6 @@ static TARG_STR: &str = "This adds some function, I guess?, that has a size set 
 
 Currently my sense of smell (and the pain of implementing Write) might be too much, since bytes will probably always be fed one by one anyway. Otherwise crying might be needed (one by one is inefficient).";
 
-
 #[bench]
 fn ne_idx_sw(b: &mut Bencher) {
     let one: String = [EDITOR_STR, VIEW_STR, INTERVAL_STR, BREAKS_STR].concat();
@@ -98,7 +97,6 @@ fn ne_idx_rev_sw(b: &mut Bencher) {
         let idx = 200;
         b[idx] = 0x02;
     }
-
 
     let mut x = 0;
     b.iter(|| {

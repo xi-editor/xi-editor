@@ -20,11 +20,10 @@ extern crate xi_rope;
 use test::Bencher;
 use xi_rope::rope::Rope;
 
-
 fn build_triangle(n: usize) -> String {
     let mut s = String::new();
     let mut line = String::new();
-    for _ in 0 .. n {
+    for _ in 0..n {
         s += &line;
         s += "\n";
         line += "a";
@@ -43,7 +42,7 @@ fn build_short_lines(n: usize) -> String {
 
 fn build_few_big_lines(size: usize) -> String {
     let mut s = String::with_capacity(size * 10 + 20);
-    for _ in 0 .. 10 {
+    for _ in 0..10 {
         for _ in 0..size {
             s += "a";
         }
@@ -55,13 +54,17 @@ fn build_few_big_lines(size: usize) -> String {
 #[bench]
 fn benchmark_file_load_short_lines(b: &mut Bencher) {
     let text = build_short_lines(50_000);
-    b.iter(|| { Rope::from(&text); });
+    b.iter(|| {
+        Rope::from(&text);
+    });
 }
 
 #[bench]
 fn benchmark_file_load_few_big_lines(b: &mut Bencher) {
     let text = build_few_big_lines(1_000_000);
-    b.iter(|| { Rope::from(&text); });
+    b.iter(|| {
+        Rope::from(&text);
+    });
 }
 
 #[bench]

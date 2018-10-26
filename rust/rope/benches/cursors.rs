@@ -18,9 +18,8 @@ extern crate test;
 extern crate xi_rope;
 
 use test::Bencher;
-use xi_rope::tree::*;
 use xi_rope::rope::{LinesMetric, Rope};
-
+use xi_rope::tree::*;
 
 fn run_down_rope(text: &Rope) {
     let mut cursor = Cursor::new(&text, 0);
@@ -33,7 +32,7 @@ fn run_down_rope(text: &Rope) {
 fn build_triangle(n: usize) -> String {
     let mut s = String::new();
     let mut line = String::new();
-    for _ in 0 .. n {
+    for _ in 0..n {
         s += &line;
         s += "\n";
         line += "a";
@@ -52,7 +51,7 @@ fn build_short_lines(n: usize) -> String {
 
 fn build_few_big_lines(size: usize) -> String {
     let mut s = String::with_capacity(size * 10 + 20);
-    for _ in 0 .. 10 {
+    for _ in 0..10 {
         for _ in 0..size {
             s += "a";
         }
