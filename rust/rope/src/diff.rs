@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use compare::RopeScanner;
 use delta::{Delta, DeltaElement};
 use interval::Interval;
-use rope::{LinesMetric, Rope, RopeInfo, RopeDelta};
+use rope::{LinesMetric, Rope, RopeDelta, RopeInfo};
 use tree::{Node, NodeInfo};
 
 use memchr::memchr;
@@ -100,11 +100,8 @@ impl Diff<RopeInfo> for LineHashDiff {
         // TODO: a possible optimization here would be to expand matches
         // to adjacent lines first? this would be at best a small win though..
 
-        let longest_subseq = if needs_subseq {
-            longest_increasing_region_set(&matches)
-        } else {
-            matches
-        };
+        let longest_subseq =
+            if needs_subseq { longest_increasing_region_set(&matches) } else { matches };
 
         // for each matching region, we extend it forwards and backwards.
         // we keep track of how far forward we extend it each time, to avoid
@@ -112,9 +109,11 @@ impl Diff<RopeInfo> for LineHashDiff {
         let mut prev_end = start_offset;
 
         for (targ_off, base_off) in longest_subseq {
-            if targ_off <= prev_end { continue; }
-            let (left_dist, mut right_dist) = expand_match(base, target, base_off,
-                                                           targ_off, prev_end);
+            if targ_off <= prev_end {
+                continue;
+            }
+            let (left_dist, mut right_dist) =
+                expand_match(base, target, base_off, targ_off, prev_end);
 
             // don't let last match expand past target_end
             right_dist = right_dist.min(target_end - targ_off);
@@ -141,9 +140,13 @@ impl Diff<RopeInfo> for LineHashDiff {
 /// The return value is a pair of offsets, each of which represents an absolute
 /// distance. That is to say, the position of the start and end boundaries
 /// relative to the input offset.
-fn expand_match(base: &Rope, target: &Rope, base_off: usize, targ_off: usize,
-                prev_match_targ_end: usize) -> (usize, usize) {
-
+fn expand_match(
+    base: &Rope,
+    target: &Rope,
+    base_off: usize,
+    targ_off: usize,
+    prev_match_targ_end: usize,
+) -> (usize, usize) {
     let mut scanner = RopeScanner::new(base, target);
     let max_left = targ_off - prev_match_targ_end;
     let start = scanner.find_ne_char_left(base_off, targ_off, max_left);
@@ -169,10 +172,9 @@ fn longest_increasing_region_set(items: &[(usize, usize)]) -> Vec<(usize, usize)
             continue;
         }
 
-        let next_idx = match result.binary_search_by(
-            |&j| items[j].1.cmp(&items[i].1)) {
-                Ok(_) => continue, // we ignore duplicates
-                Err(idx) => idx,
+        let next_idx = match result.binary_search_by(|&j| items[j].1.cmp(&items[i].1)) {
+            Ok(_) => continue, // we ignore duplicates
+            Err(idx) => idx,
         };
 
         if &items[i].1 < &items[result[next_idx]].1 {
@@ -196,10 +198,7 @@ fn longest_increasing_region_set(items: &[(usize, usize)]) -> Vec<(usize, usize)
 
 #[inline]
 fn non_ws_offset(s: &str) -> usize {
-    s.as_bytes()
-        .iter()
-        .take_while(|b| **b == b' ' || **b == b'\t')
-        .count()
+    s.as_bytes().iter().take_while(|b| **b == b' ' || **b == b'\t').count()
 }
 
 /// Represents copying `len` bytes from base to target.
@@ -227,7 +226,7 @@ impl DiffBuilder {
                 return;
             }
         }
-        self.ops.push(DiffOp { target_idx: target, base_idx: base, len: len })
+        self.ops.push(DiffOp { target_idx: target, base_idx: base, len })
     }
 
     fn to_delta(self, base: &Rope, target: &Rope) -> RopeDelta {
@@ -293,7 +292,6 @@ fn make_line_hashes<'a>(base: &'a str, min_size: usize) -> HashMap<&'a str, usiz
     }
     line_hashes
 }
-
 
 #[cfg(test)]
 mod tests {
