@@ -122,3 +122,34 @@ fn benchmark_triangle_concat_inplace(b: &mut Bencher) {
         offset += insertion_len;
     });
 }
+
+#[bench]
+fn real_world_editing_scenario(b: &mut Bencher) {
+    b.iter(|| {
+        let mut text = Rope::default();
+        let mut cursor = 0;
+        for i in 1..10_000 {
+            let s = if i % 80 == 0 { "\n" } else { "a" };
+            text.edit(cursor..cursor, s);
+            if i % 123 == 0 {
+                // periodically do some deletes
+                text.edit(cursor - 5..cursor, "");
+            }
+
+            // periodically move cursor:
+            cursor = match i {
+                1000 => 200,
+                2000 => 1800,
+                3000 => 1000,
+                4000 => text.len() - 1,
+                5000 => 404,
+                6000 => 4444,
+                7000 => 6990,
+                8000 => 6990,
+                9000 => 100,
+                n if n % 123 == 0 => cursor - 5, // the delete case
+                _ => cursor + 1,
+            };
+        }
+    })
+}
