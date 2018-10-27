@@ -1719,7 +1719,7 @@ mod tests {
     }
 
     #[test]
-    fn test_enforce_horiz_pos() {
+    fn test_exact_position() {
         use rpc::GestureType::*;
         let initial_text = "\
         this is a string\n\
