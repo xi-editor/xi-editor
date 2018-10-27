@@ -31,11 +31,8 @@ use tabs::{BufferId, Counter, ViewId};
 use width_cache::WidthCache;
 use word_boundaries::WordCursor;
 use xi_rope::breaks::{Breaks, BreaksBaseMetric, BreaksInfo, BreaksMetric};
-use xi_rope::delta::Delta;
-use xi_rope::interval::Interval;
-use xi_rope::rope::{LinesMetric, Rope, RopeInfo};
 use xi_rope::spans::Spans;
-use xi_rope::tree::Cursor;
+use xi_rope::{Cursor, Interval, LinesMetric, Rope, RopeDelta, RopeInfo};
 use xi_trace::trace_block;
 
 type StyleMap = RefCell<ThemeStyleMap>;
@@ -955,7 +952,7 @@ impl View {
         &mut self,
         text: &Rope,
         last_text: &Rope,
-        delta: &Delta<RopeInfo>,
+        delta: &RopeDelta,
         client: &Client,
         width_cache: &mut WidthCache,
         keep_selections: bool,

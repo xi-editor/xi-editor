@@ -17,7 +17,7 @@
 use bytecount;
 use rand::{thread_rng, Rng};
 
-use xi_rope::rope::{LinesMetric, RopeDelta};
+use xi_rope::{LinesMetric, RopeDelta};
 use xi_trace::trace_block;
 
 use super::{Cache, DataSource, Error, View};

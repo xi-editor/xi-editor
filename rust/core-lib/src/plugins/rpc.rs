@@ -25,7 +25,7 @@ use super::PluginPid;
 use config::Table;
 use syntax::LanguageId;
 use tabs::{BufferIdentifier, ViewId};
-use xi_rope::rope::{LinesMetric, Rope, RopeDelta};
+use xi_rope::{LinesMetric, Rope, RopeDelta};
 use xi_rpc::RemoteError;
 
 //TODO: At the moment (May 08, 2017) this is all very much in flux.

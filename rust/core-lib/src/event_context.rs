@@ -21,11 +21,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{self, Value};
 
-use xi_rope::delta::Delta;
-use xi_rope::interval::Interval;
-use xi_rope::rope::{LinesMetric, RopeInfo};
-use xi_rope::tree::Node;
-use xi_rope::Rope;
+use xi_rope::{Interval, LinesMetric, Rope, RopeDelta};
 use xi_rpc::{Error as RpcError, RemoteError};
 use xi_trace::trace_block;
 
@@ -282,13 +278,7 @@ impl<'a> EventContext<'a> {
         }
     }
 
-    fn update_views(
-        &self,
-        ed: &Editor,
-        delta: &Delta<RopeInfo>,
-        last_text: &Node<RopeInfo>,
-        keep_sels: bool,
-    ) {
+    fn update_views(&self, ed: &Editor, delta: &RopeDelta, last_text: &Rope, keep_sels: bool) {
         let mut width_cache = self.width_cache.borrow_mut();
         let iter_views = iter::once(&self.view).chain(self.siblings.iter());
         iter_views.for_each(|view| {
@@ -303,7 +293,7 @@ impl<'a> EventContext<'a> {
         });
     }
 
-    fn update_plugins(&self, ed: &mut Editor, delta: Delta<RopeInfo>, author: &str) {
+    fn update_plugins(&self, ed: &mut Editor, delta: RopeDelta, author: &str) {
         let new_len = delta.new_document_len();
         let nb_lines = ed.get_buffer().measure::<LinesMetric>() + 1;
         // don't send the actual delta if it is too large, by some heuristic

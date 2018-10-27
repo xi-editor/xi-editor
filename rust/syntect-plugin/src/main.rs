@@ -30,9 +30,7 @@ use std::sync::MutexGuard;
 use xi_core::plugin_rpc::ScopeSpan;
 use xi_core::{ConfigTable, LanguageId, ViewId};
 use xi_plugin_lib::{mainloop, Cache, Plugin, StateCache, View};
-use xi_rope::delta::Builder as EditBuilder;
-use xi_rope::interval::Interval;
-use xi_rope::rope::RopeDelta;
+use xi_rope::{DeltaBuilder, Interval, RopeDelta};
 use xi_trace::{trace, trace_block};
 
 use stackmap::{LookupResult, StackMap};
@@ -241,7 +239,7 @@ impl<'a> Syntect<'a> {
                 let ix = start + text.len();
                 let interval = Interval::new(ix, ix);
                 //TODO: view should have a `get_edit_builder` fn?
-                let mut builder = EditBuilder::new(buf_size);
+                let mut builder = DeltaBuilder::new(buf_size);
                 builder.replace(interval, indent.into());
 
                 let delta = builder.build();

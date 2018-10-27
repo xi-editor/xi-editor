@@ -16,8 +16,7 @@
 
 use view::View;
 
-use xi_rope::rope::Rope;
-use xi_rope::tree::Cursor;
+use xi_rope::{Cursor, Rope};
 
 use config::BufferItems;
 use selection::SelRegion;

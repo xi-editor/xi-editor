@@ -15,8 +15,7 @@
 //! Segmentation of word boundaries. Note: this current implementation
 //! is intended to work for code. Future work is to make it Unicode aware.
 
-use xi_rope::rope::{Rope, RopeInfo};
-use xi_rope::tree::Cursor;
+use xi_rope::{Cursor, Rope, RopeInfo};
 
 pub struct WordCursor<'a> {
     inner: Cursor<'a, RopeInfo>,

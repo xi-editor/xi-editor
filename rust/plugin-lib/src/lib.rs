@@ -41,7 +41,7 @@ use std::path::Path;
 
 use xi_core::plugin_rpc::{GetDataResponse, TextUnit};
 use xi_core::{ConfigTable, LanguageId};
-use xi_rope::rope::RopeDelta;
+use xi_rope::RopeDelta;
 use xi_rpc::{ReadError, RpcLoop};
 
 use self::dispatch::Dispatcher;

@@ -19,8 +19,7 @@
 // crate. Maybe we don't need both.
 
 use std::cmp::{max, min};
-use xi_rope::delta::{Delta, Transformer};
-use xi_rope::rope::RopeInfo;
+use xi_rope::{RopeDelta, Transformer};
 
 pub struct IndexSet {
     ranges: Vec<(usize, usize)>,
@@ -120,7 +119,7 @@ impl IndexSet {
 
     /// Computes a new set based on applying a delta to the old set. Collapsed regions are removed
     /// and contiguous regions are combined.
-    pub fn apply_delta(&self, delta: &Delta<RopeInfo>) -> IndexSet {
+    pub fn apply_delta(&self, delta: &RopeDelta) -> IndexSet {
         let mut ranges: Vec<(usize, usize)> = Vec::new();
         let mut transformer = Transformer::new(delta);
         for &(start, end) in &self.ranges {
@@ -315,9 +314,7 @@ mod tests {
 
     #[test]
     fn apply_delta() {
-        use xi_rope::delta::Delta;
-        use xi_rope::interval::Interval;
-        use xi_rope::rope::Rope;
+        use xi_rope::{Delta, Interval, Rope};
 
         let mut e = IndexSet::new();
         e.union_one_range(1, 3);

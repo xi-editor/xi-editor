@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 
 use xi_core::plugin_rpc::{GetDataResponse, PluginBufferInfo, PluginEdit, ScopeSpan, TextUnit};
 use xi_core::{BufferConfig, ConfigTable, LanguageId, PluginPid, ViewId};
-use xi_rope::rope::RopeDelta;
+use xi_rope::RopeDelta;
 use xi_trace::trace_block;
 
 use xi_rpc::RpcPeer;

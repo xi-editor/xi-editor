@@ -19,8 +19,7 @@
 use memchr::memchr;
 
 use xi_core::plugin_rpc::{GetDataResponse, TextUnit};
-use xi_rope::delta::DeltaElement;
-use xi_rope::rope::{LinesMetric, Rope, RopeDelta};
+use xi_rope::{DeltaElement, LinesMetric, Rope, RopeDelta};
 use xi_trace::trace_block;
 
 use super::{Cache, DataSource, Error};
