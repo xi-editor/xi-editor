@@ -18,7 +18,7 @@
 // Note: this data structure has nontrivial overlap with Subset in the rope
 // crate. Maybe we don't need both.
 
-use std::cmp::{min, max};
+use std::cmp::{max, min};
 use xi_rope::delta::{Delta, Transformer};
 use xi_rope::rope::RopeInfo;
 
@@ -41,9 +41,7 @@ pub fn remove_n_at<T: Clone>(v: &mut Vec<T>, index: usize, n: usize) {
 impl IndexSet {
     /// Create a new, empty set.
     pub fn new() -> IndexSet {
-        IndexSet {
-            ranges: Vec::new(),
-        }
+        IndexSet { ranges: Vec::new() }
     }
 
     /// Clear the set.
@@ -91,7 +89,7 @@ impl IndexSet {
             if self.ranges[ix].0 < start {
                 if self.ranges[ix].1 > end {
                     let range = (end, self.ranges[ix].1);
-                    self.ranges.insert(ix+1, range);
+                    self.ranges.insert(ix + 1, range);
                 }
                 self.ranges[ix].1 = start;
             } else if self.ranges[ix].1 > end {
@@ -117,11 +115,7 @@ impl IndexSet {
         while !ranges.is_empty() && start >= ranges[0].1 {
             ranges = &ranges[1..];
         }
-        MinusIter {
-            ranges,
-            start,
-            end,
-        }
+        MinusIter { ranges, start, end }
     }
 
     /// Computes a new set based on applying a delta to the old set. Collapsed regions are removed
@@ -130,10 +124,8 @@ impl IndexSet {
         let mut ranges: Vec<(usize, usize)> = Vec::new();
         let mut transformer = Transformer::new(delta);
         for &(start, end) in &self.ranges {
-            let new_range = (
-                transformer.transform(start, false),
-                transformer.transform(end, false)
-            );
+            let new_range =
+                (transformer.transform(start, false), transformer.transform(end, false));
             if new_range.0 == new_range.1 {
                 continue; // remove collapsed regions
             }
@@ -315,7 +307,6 @@ mod tests {
         e.delete_range(2, 4);
         assert_eq!(e.get_ranges(), &[(1, 2), (4, 6)]);
 
-
         let mut e = IndexSet::new();
         e.union_one_range(0, 10);
         e.delete_range(4, 6);
@@ -332,15 +323,15 @@ mod tests {
         e.union_one_range(1, 3);
         e.union_one_range(5, 9);
 
-        let d = Delta::simple_edit(Interval::new_closed_open(2, 2), Rope::from("..."), 10);
+        let d = Delta::simple_edit(Interval::new(2, 2), Rope::from("..."), 10);
         let s = e.apply_delta(&d);
         assert_eq!(s.get_ranges(), &[(1, 6), (8, 12)]);
 
-        let d = Delta::simple_edit(Interval::new_closed_open(0, 3), Rope::from(""), 10);
+        let d = Delta::simple_edit(Interval::new(0, 3), Rope::from(""), 10);
         let s = e.apply_delta(&d);
         assert_eq!(s.get_ranges(), &[(2, 6)]);
 
-        let d = Delta::simple_edit(Interval::new_closed_open(2, 6), Rope::from(""), 10);
+        let d = Delta::simple_edit(Interval::new(2, 6), Rope::from(""), 10);
         let s = e.apply_delta(&d);
         assert_eq!(s.get_ranges(), &[(1, 5)]);
     }

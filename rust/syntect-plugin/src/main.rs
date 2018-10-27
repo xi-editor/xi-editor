@@ -80,10 +80,15 @@ impl PluginState {
     }
 
     // compute syntax for one line, also accumulating the style spans
-    fn compute_syntax(&mut self, line: &str, state: LineState) -> LineState {
+    fn compute_syntax(
+        &mut self,
+        line: &str,
+        state: LineState,
+        syntax_set: &SyntaxSet,
+    ) -> LineState {
         let (mut parse_state, mut scope_state) =
             state.or_else(|| self.initial_state.clone()).unwrap();
-        let ops = parse_state.parse_line(&line);
+        let ops = parse_state.parse_line(&line, syntax_set);
 
         let mut prev_cursor = 0;
         let repo = SCOPE_REPO.lock().unwrap();
@@ -126,7 +131,7 @@ impl PluginState {
 
     #[allow(unused)]
     // Return true if there's any more work to be done.
-    fn highlight_one_line(&mut self, ctx: &mut MyView) -> bool {
+    fn highlight_one_line(&mut self, ctx: &mut MyView, syntax_set: &SyntaxSet) -> bool {
         if let Some(line_num) = ctx.get_frontier() {
             let (line_num, offset, state) = ctx.get_prev(line_num);
             if offset != self.offset {
@@ -137,7 +142,7 @@ impl PluginState {
             let new_frontier = match ctx.get_line(line_num) {
                 Ok("") => None,
                 Ok(s) => {
-                    let new_state = self.compute_syntax(s, state);
+                    let new_state = self.compute_syntax(s, state, syntax_set);
                     self.offset += s.len();
                     if s.as_bytes().last() == Some(&b'\n') {
                         Some((new_state, line_num + 1))
@@ -234,7 +239,7 @@ impl<'a> Syntect<'a> {
 
                 let indent = self.indent_for_next_line(line, use_spaces, tab_size);
                 let ix = start + text.len();
-                let interval = Interval::new_closed_open(ix, ix);
+                let interval = Interval::new(ix, ix);
                 //TODO: view should have a `get_edit_builder` fn?
                 let mut builder = EditBuilder::new(buf_size);
                 builder.replace(interval, indent.into());
@@ -337,7 +342,7 @@ impl<'a> Plugin for Syntect<'a> {
     fn idle(&mut self, view: &mut View<Self::Cache>) {
         let state = self.view_state.get_mut(&view.get_id()).unwrap();
         for _ in 0..LINES_PER_RPC {
-            if !state.highlight_one_line(view) {
+            if !state.highlight_one_line(view, self.syntax_set) {
                 state.flush_spans(view);
                 return;
             }

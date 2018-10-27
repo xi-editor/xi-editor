@@ -24,7 +24,7 @@ gem install bundler
 bundle install --path vendor/bundle
 ```
 
-_Note: If you're on Mac OS and this fails installing nokogiri, run `brew unlink xz`, install, and then `brew link xz`._
+_Note: If you're on macOS and this fails installing nokogiri, run `brew unlink xz`, install, and then `brew link xz`._
 
 ### Running the site
 

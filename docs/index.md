@@ -13,7 +13,7 @@ site_nav_category_order: 1
     <p><em>(pronounced "Zigh")</em></p>
 
     <p>The xi editor project is an attempt to build a high quality text editor, using modern software engineering
-    techniques. It is initially built for Mac OS X, using Cocoa for the user interface. There are also frontends for
+    techniques. It is initially built for macOS, using Cocoa for the user interface. There are also frontends for
     other operating systems available from third-party developers.</p>
 
     <p>Goals include:</p>
@@ -33,7 +33,7 @@ site_nav_category_order: 1
     by adding plug-ins or hacking on the core.</p></li>
     </ul>
 
-    <p>Please refer to the <a href="https://github.com/google/xi-editor/issues/437">November 2017 roadmap</a>
+    <p>Please refer to the <a href="https://github.com/xi-editor/xi-editor/issues/937">October 2018 roadmap</a>
     to learn more about planned features.</p>
   </div>
 

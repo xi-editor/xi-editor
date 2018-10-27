@@ -2,7 +2,7 @@ language: rust
 osx_image: xcode9.2
 
 rust:
-  - 1.28.0
+  - 1.29.2
   - nightly
 
 os:
@@ -18,6 +18,7 @@ matrix:
 # on windows, rustup installs the msvc toolchain by default so we need link.exe
 before_script:
   - if [ "$TRAVIS_OS_NAME" = 'windows' ]; then choco install windows-sdk-10.0; fi
+  - rustup component add rustfmt-preview
 
 # windows builds run in git bash so these (should) Just Work
 cache:
@@ -30,3 +31,4 @@ script:
   - export RUST_BACKTRACE=1
   - RUSTFLAGS="-D warnings" cargo check --all || exit
   - cargo test --all || exit
+  - cargo fmt --all -- --check

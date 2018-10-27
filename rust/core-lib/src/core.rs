@@ -12,19 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::io;
+use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
 use serde_json::Value;
 
-use xi_rpc::{RpcCtx, Handler, RemoteError, Error as RpcError, ReadError};
+use xi_rpc::{Error as RpcError, Handler, ReadError, RemoteError, RpcCtx};
 use xi_trace;
 
 use plugin_rpc::{PluginCommand, PluginNotification, PluginRequest};
 use plugins::{Plugin, PluginId};
 use rpc::*;
 use tabs::{CoreState, ViewId};
-
 
 /// A reference to the main core state.
 ///
@@ -39,7 +38,6 @@ pub enum XiCore {
     Waiting,
     Running(Arc<Mutex<CoreState>>),
 }
-
 
 /// A weak reference to the main state. This is passed to plugin threads.
 #[derive(Clone)]
@@ -67,16 +65,17 @@ impl XiCore {
     pub fn inner(&self) -> MutexGuard<CoreState> {
         match self {
             &XiCore::Running(ref inner) => inner.lock().unwrap(),
-            &XiCore::Waiting => panic!("core does not start until client_started \
-                                      RPC is received"),
+            &XiCore::Waiting => panic!(
+                "core does not start until client_started \
+                 RPC is received"
+            ),
         }
     }
 
     /// Returns a new reference to the core state, if core is running.
     fn weak_self(&self) -> Option<WeakXiCore> {
         match self {
-            &XiCore::Running(ref inner) =>
-                Some(WeakXiCore(Arc::downgrade(inner))),
+            &XiCore::Running(ref inner) => Some(WeakXiCore(Arc::downgrade(inner))),
             &XiCore::Waiting => None,
         }
     }
@@ -105,8 +104,8 @@ impl Handler for XiCore {
         // wait for client_started before setting up inner
         if let &ClientStarted { ref config_dir, ref client_extras_dir } = &rpc {
             assert!(self.is_waiting(), "client_started can only be sent once");
-            let state = CoreState::new(ctx.get_peer(), config_dir.clone(),
-                                      client_extras_dir.clone());
+            let state =
+                CoreState::new(ctx.get_peer(), config_dir.clone(), client_extras_dir.clone());
             let state = Arc::new(Mutex::new(state));
             *self = XiCore::Running(state);
             let weak_self = self.weak_self().unwrap();
@@ -114,11 +113,9 @@ impl Handler for XiCore {
         }
 
         self.inner().client_notification(rpc);
-
     }
 
-    fn handle_request(&mut self, _ctx: &RpcCtx, rpc: Self::Request)
-                      -> Result<Value, RemoteError> {
+    fn handle_request(&mut self, _ctx: &RpcCtx, rpc: Self::Request) -> Result<Value, RemoteError> {
         self.inner().client_request(rpc)
     }
 
@@ -155,8 +152,12 @@ impl WeakXiCore {
     /// core can track which revisions are still 'live', that is can still
     /// be the base revision for a delta. Once a plugin has acknowledged a new
     /// revision, it can no longer send deltas against any older revision.
-    pub fn handle_plugin_update(&self, plugin: PluginId, view: ViewId,
-                                response: Result<Value, RpcError>) {
+    pub fn handle_plugin_update(
+        &self,
+        plugin: PluginId,
+        view: ViewId,
+        response: Result<Value, RpcError>,
+    ) {
         if let Some(core) = self.upgrade() {
             let _t = xi_trace::trace_block("WeakXiCore::plugin_update", &["core"]);
             core.inner().plugin_update(plugin, view, response);
@@ -176,8 +177,7 @@ impl Handler for WeakXiCore {
         }
     }
 
-    fn handle_request(&mut self, ctx: &RpcCtx, rpc: Self::Request)
-                      -> Result<Value, RemoteError> {
+    fn handle_request(&mut self, ctx: &RpcCtx, rpc: Self::Request) -> Result<Value, RemoteError> {
         let PluginCommand { view_id, plugin_id, cmd } = rpc;
         if let Some(core) = self.upgrade() {
             core.inner().plugin_request(ctx, view_id, plugin_id, cmd)

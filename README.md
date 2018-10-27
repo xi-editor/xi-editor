@@ -11,7 +11,7 @@
 
 The xi-editor project is an attempt to build a high quality text editor,
 using modern software engineering techniques. It is initially built for
-Mac OS X, using Cocoa for the user interface. There are also frontends for
+macOS, using Cocoa for the user interface. There are also frontends for
 other operating systems available from third-party developers.
 
 Goals include:
@@ -46,7 +46,7 @@ below.
 ### Building the core
 
 Xi-editor targets 'recent stable Rust'. We recommend installing via [rustup](https://www.rustup.rs).
-The current minimum supported version is 1.28.
+The current minimum supported version is 1.29.
 
 To build the xi-editor core from the root directory of this repo:
 

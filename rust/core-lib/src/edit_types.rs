@@ -19,9 +19,10 @@
 //! the editor or view as appropriate.
 
 use movement::Movement;
-use rpc::{Position, GestureType, LineRange, EditNotification, MouseAction, SelectionModifier, FindQuery};
+use rpc::{
+    EditNotification, FindQuery, GestureType, LineRange, MouseAction, Position, SelectionModifier,
+};
 use view::Size;
-
 
 /// Events that only modify view state
 #[derive(Debug, PartialEq, Clone)]
@@ -71,7 +72,7 @@ pub(crate) enum BufferEvent {
     ReplaceAll,
     DuplicateLine,
     IncreaseNumber,
-    DecreaseNumber
+    DecreaseNumber,
 }
 
 /// An event that needs special handling
@@ -113,6 +114,7 @@ impl From<SpecialEvent> for EventDomain {
     }
 }
 
+#[cfg_attr(rustfmt, rustfmt_skip)]
 impl From<EditNotification> for EventDomain {
     fn from(src: EditNotification) -> EventDomain {
         use self::EditNotification::*;
@@ -261,4 +263,3 @@ impl From<EditNotification> for EventDomain {
         }
     }
 }
-

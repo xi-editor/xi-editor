@@ -16,14 +16,14 @@
 
 extern crate xi_rope;
 
-use xi_rope::Rope;
 use memchr::memchr2;
+use xi_rope::Rope;
 
 /// An enumeration of valid line endings
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LineEnding {
-    CrLf,   // DOS style, \r\n
-    Lf,     // *nix style, \n
+    CrLf, // DOS style, \r\n
+    Lf,   // *nix style, \n
 }
 
 /// A struct representing a mixed line ending error.
@@ -58,7 +58,9 @@ impl LineEnding {
         let bytes = chunk.as_bytes();
         let newline = memchr2(b'\n', b'\r', bytes);
         match newline {
-            Some(x) if bytes[x] == b'\r' && bytes.len() > x + 1 && bytes[x + 1] == b'\n' => Ok(Some(LineEnding::CrLf)),
+            Some(x) if bytes[x] == b'\r' && bytes.len() > x + 1 && bytes[x + 1] == b'\n' => {
+                Ok(Some(LineEnding::CrLf))
+            }
             Some(x) if bytes[x] == b'\n' => Ok(Some(LineEnding::Lf)),
             Some(_) => Err(MixedLineEndingError),
             _ => Ok(None),

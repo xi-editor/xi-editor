@@ -723,9 +723,9 @@ Removes a status item from the front end.
 
 Find supports multiple search queries.
 
-`find_status {"view_id": "view-id-1", "queries": [{"id": 1, "chars": "a", "case_sensitive": false, "is_regex": false, "whole_words": true, "matches": 6}]}`
+`find_status {"view_id": "view-id-1", "queries": [{"id": 1, "chars": "a", "case_sensitive": false, "is_regex": false, "whole_words": true, "matches": 6, "lines": [1, 3, 3, 6]}]}`
 
-Notifies the client about the current search queries and search options.
+Notifies the client about the current search queries and search options. `lines` indicates for each match its line number.
 
 #### replace_status
 

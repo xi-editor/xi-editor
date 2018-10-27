@@ -4,7 +4,7 @@ description = "A generic rope data structure built on top of B-Trees."
 license = "Apache-2.0"
 name = "xi-rope"
 repository = "https://github.com/google/xi-editor"
-version = "0.2.0"
+version = "0.3.0"
 
 [dependencies]
 bytecount = "0.3.1"

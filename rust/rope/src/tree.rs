@@ -17,7 +17,7 @@
 use std::cmp::min;
 use std::sync::Arc;
 
-use interval::Interval;
+use interval::{Interval, IntervalBounds};
 
 const MIN_CHILDREN: usize = 4;
 const MAX_CHILDREN: usize = 8;
@@ -54,7 +54,7 @@ pub trait NodeInfo: Clone {
     /// The interval covered by this node. The default impl is sufficient for most types,
     /// but interval trees may need to override it.
     fn interval(&self, len: usize) -> Interval {
-        Interval::new_closed_closed(0, len)
+        Interval::new(0, len)
     }
 }
 
@@ -176,12 +176,7 @@ impl<N: NodeInfo> Node<N> {
     pub fn from_leaf(l: N::L) -> Node<N> {
         let len = l.len();
         let info = N::compute_info(&l);
-        Node(Arc::new(NodeBody {
-            height: 0,
-            len,
-            info,
-            val: NodeVal::Leaf(l),
-        }))
+        Node(Arc::new(NodeBody { height: 0, len, info, val: NodeVal::Leaf(l) }))
     }
 
     fn from_nodes(nodes: Vec<Node<N>>) -> Node<N> {
@@ -192,12 +187,7 @@ impl<N: NodeInfo> Node<N> {
             len += child.0.len;
             info.accumulate(&child.0.info);
         }
-        Node(Arc::new(NodeBody {
-            height,
-            len,
-            info,
-            val: NodeVal::Internal(nodes),
-        }))
+        Node(Arc::new(NodeBody { height, len, info, val: NodeVal::Internal(nodes) }))
     }
 
     pub fn len(&self) -> usize {
@@ -280,7 +270,7 @@ impl<N: NodeInfo> Node<N> {
             let node1 = Arc::make_mut(&mut rope1.0);
             let leaf2 = rope2.get_leaf();
             if let NodeVal::Leaf(ref mut leaf1) = node1.val {
-                let leaf2_iv = Interval::new_closed_closed(0, leaf2.len());
+                let leaf2_iv = Interval::new(0, leaf2.len());
                 let new = leaf1.push_maybe_split(leaf2, leaf2_iv);
                 node1.len = leaf1.len();
                 node1.info = N::compute_info(leaf1);
@@ -342,7 +332,7 @@ impl<N: NodeInfo> Node<N> {
         M::measure(&self.0.info, self.0.len)
     }
 
-    pub fn push_subseq(&self, b: &mut TreeBuilder<N>, iv: Interval) {
+    pub(crate) fn push_subseq(&self, b: &mut TreeBuilder<N>, iv: Interval) {
         if iv.is_empty() {
             return;
         }
@@ -362,9 +352,7 @@ impl<N: NodeInfo> Node<N> {
                     }
                     let child_iv = child.interval();
                     // easier just to use signed ints?
-                    let rec_iv = iv
-                        .intersect(child_iv.translate(offset))
-                        .translate_neg(offset);
+                    let rec_iv = iv.intersect(child_iv.translate(offset)).translate_neg(offset);
                     child.push_subseq(b, rec_iv);
                     offset += child.len();
                 }
@@ -373,17 +361,23 @@ impl<N: NodeInfo> Node<N> {
         }
     }
 
-    pub fn subseq(&self, iv: Interval) -> Node<N> {
+    pub fn subseq<T: IntervalBounds>(&self, iv: T) -> Node<N> {
+        let iv = iv.into_interval(self.len());
         let mut b = TreeBuilder::new();
         self.push_subseq(&mut b, iv);
         b.build()
     }
 
-    pub fn edit(&mut self, iv: Interval, new: Node<N>) {
+    pub fn edit<T, IV>(&mut self, iv: IV, new: T)
+    where
+        T: Into<Node<N>>,
+        IV: IntervalBounds,
+    {
         let mut b = TreeBuilder::new();
-        let self_iv = Interval::new_closed_closed(0, self.len());
+        let iv = iv.into_interval(self.len());
+        let self_iv = self.interval();
         self.push_subseq(&mut b, self_iv.prefix(iv));
-        b.push(new);
+        b.push(new.into());
         self.push_subseq(&mut b, self_iv.suffix(iv));
         *self = b.build();
     }
@@ -818,9 +812,7 @@ mod test {
         let mut cursor = Cursor::new(&text, 0);
         let mut prev_offset = cursor.pos();
         for i in 1..(n + 1) as usize {
-            let offset = cursor
-                .next::<LinesMetric>()
-                .expect("arrived at the end too soon");
+            let offset = cursor.next::<LinesMetric>().expect("arrived at the end too soon");
             assert_eq!(offset - prev_offset, i);
             prev_offset = offset;
         }
@@ -851,10 +843,7 @@ mod test {
             let mut c = Cursor::new(&r, i);
             let it = c.next::<LinesMetric>();
             let pos = c.pos();
-            assert!(
-                s.as_bytes()[i..pos - 1].iter().all(|c| *c != b'\n'),
-                "missed linebreak"
-            );
+            assert!(s.as_bytes()[i..pos - 1].iter().all(|c| *c != b'\n'), "missed linebreak");
             if pos < s.len() {
                 assert!(it.is_some(), "must be Some(_)");
                 assert!(s.as_bytes()[pos - 1] == b'\n', "not a linebreak");
@@ -878,10 +867,7 @@ mod test {
             let mut c = Cursor::new(&r, i);
             let it = c.prev::<LinesMetric>();
             let pos = c.pos();
-            assert!(
-                s.as_bytes()[pos..i].iter().all(|c| *c != b'\n'),
-                "missed linebreak"
-            );
+            assert!(s.as_bytes()[pos..i].iter().all(|c| *c != b'\n'), "missed linebreak");
 
             if i == 0 && s.as_bytes()[i] == b'\n' {
                 assert_eq!(pos, 0);

@@ -15,7 +15,7 @@
 //! Very basic syntax detection.
 
 use std::borrow::Borrow;
-use std::collections::{HashMap, BTreeMap};
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -67,7 +67,8 @@ impl Languages {
     }
 
     pub fn language_for_name<S>(&self, name: S) -> Option<Arc<LanguageDefinition>>
-        where S: AsRef<str>
+    where
+        S: AsRef<str>,
     {
         self.named.get(name.as_ref()).map(Arc::clone)
     }
@@ -75,13 +76,14 @@ impl Languages {
     /// Returns a Vec of any `LanguageDefinition`s which exist
     /// in `self` but not `other`.
     pub fn difference(&self, other: &Languages) -> Vec<Arc<LanguageDefinition>> {
-        self.named.iter()
+        self.named
+            .iter()
             .filter(|(k, _)| !other.named.contains_key(*k))
             .map(|(_, v)| v.clone())
             .collect()
     }
 
-    pub fn iter<'a>(&'a self) -> impl Iterator<Item=&'a Arc<LanguageDefinition>> {
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item = &'a Arc<LanguageDefinition>> {
         self.named.values()
     }
 }
@@ -108,9 +110,7 @@ impl<'a> From<&'a str> for LanguageId {
 // for testing
 #[cfg(test)]
 impl LanguageDefinition {
-    pub(crate) fn simple(name: &str, exts: &[&str],
-                         scope: &str, config: Option<Table>) -> Self
-    {
+    pub(crate) fn simple(name: &str, exts: &[&str], scope: &str, config: Option<Table>) -> Self {
         LanguageDefinition {
             name: name.into(),
             extensions: exts.iter().map(|s| (*s).into()).collect(),
