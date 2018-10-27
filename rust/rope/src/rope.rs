@@ -85,7 +85,7 @@ const MAX_LEAF: usize = 1024;
 /// ```rust
 /// # use xi_rope::Rope;
 /// let mut a = Rope::from("hello world");
-/// a.edit_str(1..9, "era");
+/// a.edit(1..9, "era");
 /// assert_eq!("herald", String::from(a));
 /// ```
 pub type Rope = Node<RopeInfo>;
@@ -470,6 +470,7 @@ impl Rope {
     /// Edit the string, replacing the byte range [`start`..`end`] with `new`.
     ///
     /// Time complexity: O(log n)
+    #[deprecated(since = "0.3", note = "Use Rope::edit instead")]
     pub fn edit_str<T: IntervalBounds>(&mut self, iv: T, new: &str) {
         self.edit(iv, new)
     }
@@ -890,7 +891,7 @@ mod tests {
     #[test]
     fn replace_small() {
         let mut a = Rope::from("hello world");
-        a.edit_str(1..9, "era");
+        a.edit(1..9, "era");
         assert_eq!("herald", String::from(a));
     }
 
