@@ -114,7 +114,7 @@ fn benchmark_overwrite_into_line(b: &mut Bencher) {
 #[bench]
 fn benchmark_triangle_concat_inplace(b: &mut Bencher) {
     let mut text = Rope::from("");
-    let insertion = build_triangle(10_000);
+    let insertion = build_triangle(3000);
     let insertion_len = insertion.len();
     let mut offset = 0;
     b.iter(|| {
