@@ -31,4 +31,4 @@ script:
   - export RUST_BACKTRACE=1
   - RUSTFLAGS="-D warnings" cargo check --all || exit
   - cargo test --all || exit
-  - cargo fmt --all -- --check
+  - if [ "$TRAVIS_RUST_VERSION" = '1.29.2' ]; then cargo fmt --all -- --check; fi
