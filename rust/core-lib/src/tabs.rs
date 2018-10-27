@@ -354,7 +354,6 @@ impl CoreState {
         let view_id = self.next_view_id();
         let buffer_id = self.next_buffer_id();
 
-
         let rope = match path.as_ref() {
             Some(p) => self.file_manager.open(p, buffer_id)?,
             None => Rope::from(""),
@@ -552,18 +551,10 @@ impl CoreState {
         let to_start = mem::replace(&mut self.pending_views, Vec::new());
         to_start.iter().for_each(|(id, config)| {
             let buffer_id = self.views.get(&id).map(|v| v.borrow().get_buffer_id()).unwrap();
-            let has_contents = self.editors.get(&buffer_id)
-                .map(|e| !e.borrow().get_buffer().len() == 0)
-                .unwrap_or_default();
-            if has_contents {
-                let modified = self.detect_whitespace(*id, config);
-                let config = modified.as_ref().unwrap_or(config);
-                let mut edit_ctx = self.make_context(*id).unwrap();
-                edit_ctx.finish_init(&config);
-            } else {
-                let mut edit_ctx = self.make_context(*id).unwrap();
-                edit_ctx.finish_init(&config);
-            }
+            let modified = self.detect_whitespace(*id, config);
+            let config = modified.as_ref().unwrap_or(config);
+            let mut edit_ctx = self.make_context(*id).unwrap();
+            edit_ctx.finish_init(&config);
         });
     }
 
