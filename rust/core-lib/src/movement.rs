@@ -46,9 +46,9 @@ pub enum Movement {
     /// Move down one viewport height.
     DownPage,
     /// Move up to the next line that can preserve the cursor position.
-    UpEnforceHorizPos,
+    UpExactPosition,
     /// Move down to the next line that can preserve the cursor position.
-    DownEnforceHorizPos,
+    DownExactPosition,
     /// Move to the start of the text line.
     StartOfParagraph,
     /// Move to the end of the text line.
@@ -72,6 +72,81 @@ fn vertical_motion(
     line_delta: isize,
     modify: bool,
 ) -> (usize, Option<HorizPos>) {
+    let (col, line, n_lines) = selection_position(r, view, text, line_delta, modify);
+
+    // This code is quite careful to avoid integer overflow.
+    // TODO: write tests to verify
+    if line_delta < 0 && (-line_delta as usize) > line {
+        return (0, Some(col));
+    }
+    let line = if line_delta < 0 {
+        line - (-line_delta as usize)
+    } else {
+        line.saturating_add(line_delta as usize)
+    };
+    if line > n_lines {
+        return (text.len(), Some(col));
+    }
+    let new_offset = view.line_col_to_offset(text, line, col);
+    (new_offset, Some(col))
+}
+
+/// Compute movement based on vertical motion by the given number of lines skipping
+/// any line that is shorter than the current cursor position.
+fn vertical_motion_exact_pos(
+    r: SelRegion,
+    view: &View,
+    text: &Rope,
+    line_delta: isize,
+    modify: bool,
+) -> (usize, Option<HorizPos>) {
+    let (col, init_line, n_lines) = selection_position(r, view, text, line_delta, modify);
+
+    let mut line_length = view.offset_of_line(text, init_line.saturating_add(1))
+        - view.offset_of_line(text, init_line);
+    if line_delta < 0 && (-line_delta as usize) > init_line {
+        return (view.line_col_to_offset(text, init_line, col), Some(col));
+    }
+    let mut line = if line_delta < 0 {
+        init_line - (-line_delta as usize)
+    } else {
+        init_line.saturating_add(line_delta as usize)
+    };
+
+    // If the active columns is longer than the current line, use the current line length.
+    let col = if line_length < col { line_length - 1 } else { col };
+
+    loop {
+        line_length =
+            view.offset_of_line(text, line.saturating_add(1)) - view.offset_of_line(text, line);
+
+        // If the line is longer than the current cursor position, break.
+        // We use > instead of >= because line_length includes newline.
+        if line_length > col {
+            break;
+        }
+
+        // If you are trying to add a selection past the end of the file or before the first line, return original selection
+        if line >= n_lines || (line == 0 && line_delta < 0) {
+            line = init_line;
+            break;
+        }
+
+        line = if line_delta < 0 { line - 1 } else { line.saturating_add(1) };
+    }
+
+    (view.line_col_to_offset(text, line, col), Some(col))
+}
+
+/// Based on the current selection position this will return the cursor position, the current line, and the
+/// total number of lines of the file.
+fn selection_position(
+    r: SelRegion,
+    view: &View,
+    text: &Rope,
+    line_delta: isize,
+    modify: bool,
+) -> (HorizPos, usize, usize) {
     // The active point of the selection
     let active = if modify {
         r.end
@@ -81,51 +156,10 @@ fn vertical_motion(
         r.max()
     };
     let col = if let Some(col) = r.horiz { col } else { view.offset_to_line_col(text, active).1 };
-    // This code is quite careful to avoid integer overflow.
-    // TODO: write tests to verify
     let line = view.line_of_offset(text, active);
-    let mut line_length = view.offset_of_line(text, line.saturating_add(1)) - view.offset_of_line(text, line);
-    if line_delta < 0 && (-line_delta as usize) > line {
-        if enforce_horiz_pos {
-            return (active, Some(col));
-        } else {
-            return (0, Some(col));
-        }
-    }
-    let mut line = if line_delta < 0 {
-        line - (-line_delta as usize)
-    } else {
-        line.saturating_add(line_delta as usize)
-    };
     let n_lines = view.line_of_offset(text, text.len());
 
-    if !enforce_horiz_pos {
-        if line > n_lines {
-            return (text.len(), Some(col));
-        }
-
-        return (view.line_col_to_offset(text, line, col), Some(col));
-    }
-
-    // If the active columns is longer than the current line, use the current line length.
-    let col = if line_length < col { line_length - 1 } else { col };
-
-    loop {
-        line_length = view.offset_of_line(text, line.saturating_add(1)) - view.offset_of_line(text, line);
-
-        // If the line is longer than the current cursor position, break.
-        // We use > instead of >= because line_length includes newline.
-        if line_length > col { break; }
-
-        // If you are trying to add a selection past the end of the file or before the first line, return original selection
-        if line >= n_lines || (line == 0 && line_delta < 0) {
-            return (active, Some(col));
-        }
-
-        line = if line_delta < 0 { line - 1 } else { line.saturating_add(1) };
-    }
-
-    (view.line_col_to_offset(text, line, col), Some(col))
+    (col, line, n_lines)
 }
 
 /// When paging through a file, the number of lines from the previous page
@@ -197,10 +231,10 @@ pub fn region_movement(
             }
             (offset, None)
         }
-        Movement::Up => vertical_motion(r, view, text, -1, modify, false),
-        Movement::Down => vertical_motion(r, view, text, 1, modify, false),
-        Movement::UpEnforceHorizPos => vertical_motion(r, view, text, -1, modify, true),
-        Movement::DownEnforceHorizPos => vertical_motion(r, view, text, 1, modify, true),
+        Movement::Up => vertical_motion(r, view, text, -1, modify),
+        Movement::Down => vertical_motion(r, view, text, 1, modify),
+        Movement::UpExactPosition => vertical_motion_exact_pos(r, view, text, -1, modify),
+        Movement::DownExactPosition => vertical_motion_exact_pos(r, view, text, 1, modify),
         Movement::StartOfParagraph => {
             // Note: TextEdit would start at modify ? r.end : r.min()
             let mut cursor = Cursor::new(&text, r.end);
@@ -238,8 +272,8 @@ pub fn region_movement(
             }
             (offset, None)
         }
-        Movement::UpPage => vertical_motion(r, view, text, -scroll_height(view), modify, false),
-        Movement::DownPage => vertical_motion(r, view, text, scroll_height(view), modify, false),
+        Movement::UpPage => vertical_motion(r, view, text, -scroll_height(view), modify),
+        Movement::DownPage => vertical_motion(r, view, text, scroll_height(view), modify),
         Movement::StartOfDocument => (0, None),
         Movement::EndOfDocument => (text.len(), None),
     };

@@ -214,8 +214,8 @@ impl View {
             ModifySelection(movement) => self.do_move(text, movement, true),
             SelectAll => self.select_all(text),
             Scroll(range) => self.set_scroll(range.first, range.last),
-            AddSelectionAbove => self.add_selection_by_movement(text, Movement::UpEnforceHorizPos),
-            AddSelectionBelow => self.add_selection_by_movement(text, Movement::DownEnforceHorizPos),
+            AddSelectionAbove => self.add_selection_by_movement(text, Movement::UpExactPosition),
+            AddSelectionBelow => self.add_selection_by_movement(text, Movement::DownExactPosition),
             Gesture { line, col, ty } => self.do_gesture(text, line, col, ty),
             GotoLine { line } => self.goto_line(text, line),
             Find { chars, case_sensitive, regex, whole_words } => {
