@@ -68,11 +68,11 @@ fn benchmark_file_load_few_big_lines(b: &mut Bencher) {
 }
 
 #[bench]
-fn benchmark_char_insertion_one_line_edit_str(b: &mut Bencher) {
+fn benchmark_char_insertion_one_line_edit(b: &mut Bencher) {
     let mut text = Rope::from("b".repeat(100));
     let mut offset = 100;
     b.iter(|| {
-        text.edit_str(offset..=offset, "a");
+        text.edit(offset..=offset, "a");
         offset += 1;
     });
 }
@@ -83,7 +83,7 @@ fn benchmark_paste_into_line(b: &mut Bencher) {
     let insertion = "a".repeat(50);
     let mut offset = 100;
     b.iter(|| {
-        text.edit_str(offset..=offset, &insertion);
+        text.edit(offset..=offset, &insertion);
         offset += 150;
     });
 }
@@ -93,7 +93,7 @@ fn benchmark_insert_newline(b: &mut Bencher) {
     let mut text = Rope::from(build_few_big_lines(1_000_000));
     let mut offset = 1000;
     b.iter(|| {
-        text.edit_str(offset..=offset, "\n");
+        text.edit(offset..=offset, "\n");
         offset += 1001;
     });
 }
@@ -106,7 +106,7 @@ fn benchmark_overwrite_into_line(b: &mut Bencher) {
     b.iter(|| {
         // TODO: if the method runs too quickly, this may generate a fault
         // since there's an upper limit to how many times this can run.
-        text.edit_str(offset..=offset + 20, &insertion);
+        text.edit(offset..=offset + 20, &insertion);
         offset += 30;
     });
 }
@@ -118,7 +118,7 @@ fn benchmark_triangle_concat_inplace(b: &mut Bencher) {
     let insertion_len = insertion.len();
     let mut offset = 0;
     b.iter(|| {
-        text.edit_str(offset..=offset, &insertion);
+        text.edit(offset..=offset, &insertion);
         offset += insertion_len;
     });
 }
