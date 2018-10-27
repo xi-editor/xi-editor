@@ -18,13 +18,11 @@ use std::collections::BTreeSet;
 
 use serde_json::Value;
 
-use xi_rope::delta::{self, Delta, Transformer};
 use xi_rope::diff::{Diff, LineHashDiff};
 use xi_rope::engine::{Engine, RevId, RevToken};
-use xi_rope::interval::Interval;
-use xi_rope::rope::{count_newlines, LinesMetric, Rope, RopeInfo};
+use xi_rope::rope::count_newlines;
 use xi_rope::spans::SpansBuilder;
-use xi_rope::tree::Cursor;
+use xi_rope::{Cursor, DeltaBuilder, Interval, LinesMetric, Rope, RopeDelta, Transformer};
 use xi_trace::{trace_block, trace_payload};
 
 use config::BufferItems;
@@ -195,7 +193,7 @@ impl Editor {
 
     fn insert<T: Into<Rope>>(&mut self, view: &View, text: T) {
         let rope = text.into();
-        let mut builder = delta::Builder::new(self.text.len());
+        let mut builder = DeltaBuilder::new(self.text.len());
         for region in view.sel_regions() {
             let iv = Interval::new(region.min(), region.max());
             builder.replace(iv, rope.clone());
@@ -214,7 +212,7 @@ impl Editor {
     /// the views. Thus, view-associated state such as the selection and line
     /// breaks are to be considered invalid after this method, until the
     /// `commit_delta` call.
-    fn add_delta(&mut self, delta: Delta<RopeInfo>) {
+    fn add_delta(&mut self, delta: RopeDelta) {
         let head_rev_id = self.engine.get_head_rev_id();
         let undo_group = self.calculate_undo_group();
         self.last_edit_type = self.this_edit_type;
@@ -263,7 +261,7 @@ impl Editor {
     /// Commits the current delta. If the buffer has changed, returns
     /// a 3-tuple containing the delta representing the changes, the previous
     /// buffer, and a bool indicating whether selections should be preserved.
-    pub(crate) fn commit_delta(&mut self) -> Option<(Delta<RopeInfo>, Rope, bool)> {
+    pub(crate) fn commit_delta(&mut self) -> Option<(RopeDelta, Rope, bool)> {
         let _t = trace_block("Editor::commit_delta", &["core"]);
 
         if self.engine.get_head_rev_id() == self.last_rev_id {
@@ -284,7 +282,7 @@ impl Editor {
         Some((delta, last_text, keep_selections))
     }
 
-    pub(crate) fn delta_rev_head(&self, target_rev_id: RevToken) -> Delta<RopeInfo> {
+    pub(crate) fn delta_rev_head(&self, target_rev_id: RevToken) -> RopeDelta {
         self.engine.delta_rev_head(target_rev_id)
     }
 
@@ -349,7 +347,7 @@ impl Editor {
     fn delete_backward(&mut self, view: &View, config: &BufferItems) {
         // TODO: this function is workable but probably overall code complexity
         // could be improved by implementing a "backspace" movement instead.
-        let mut builder = delta::Builder::new(self.text.len());
+        let mut builder = DeltaBuilder::new(self.text.len());
         for region in view.sel_regions() {
             let start = offset_for_delete_backwards(&view, &region, &self.text, &config);
             let iv = Interval::new(start, region.max());
@@ -398,7 +396,7 @@ impl Editor {
 
     /// Deletes the given regions.
     fn delete_sel_regions(&mut self, sel_regions: &[SelRegion]) {
-        let mut builder = delta::Builder::new(self.text.len());
+        let mut builder = DeltaBuilder::new(self.text.len());
         for region in sel_regions {
             let iv = Interval::new(region.min(), region.max());
             if !iv.is_empty() {
@@ -437,7 +435,7 @@ impl Editor {
 
     fn insert_tab(&mut self, view: &View, config: &BufferItems) {
         self.this_edit_type = EditType::InsertChars;
-        let mut builder = delta::Builder::new(self.text.len());
+        let mut builder = DeltaBuilder::new(self.text.len());
         let const_tab_text = self.get_tab_text(config, None);
 
         if view.sel_regions().len() > 1 {
@@ -492,7 +490,7 @@ impl Editor {
     }
 
     fn indent(&mut self, view: &View, lines: BTreeSet<usize>, tab_text: &str) {
-        let mut builder = delta::Builder::new(self.text.len());
+        let mut builder = DeltaBuilder::new(self.text.len());
         for line in lines {
             let offset = view.line_col_to_offset(&self.text, line, 0);
             let interval = Interval::new(offset, offset);
@@ -503,7 +501,7 @@ impl Editor {
     }
 
     fn outdent(&mut self, view: &View, lines: BTreeSet<usize>, tab_text: &str) {
-        let mut builder = delta::Builder::new(self.text.len());
+        let mut builder = DeltaBuilder::new(self.text.len());
         for line in lines {
             let offset = view.line_col_to_offset(&self.text, line, 0);
             let tab_offset = view.line_col_to_offset(&self.text, line, tab_text.len());
@@ -537,7 +535,7 @@ impl Editor {
         if view.sel_regions().len() == 1 || view.sel_regions().len() != count_lines(chars) {
             self.insert(view, chars);
         } else {
-            let mut builder = delta::Builder::new(self.text.len());
+            let mut builder = DeltaBuilder::new(self.text.len());
             for (sel, line) in view.sel_regions().iter().zip(chars.lines()) {
                 let iv = Interval::new(sel.min(), sel.max());
                 builder.replace(iv, line.into());
@@ -590,7 +588,7 @@ impl Editor {
     }
 
     fn do_transpose(&mut self, view: &View) {
-        let mut builder = delta::Builder::new(self.text.len());
+        let mut builder = DeltaBuilder::new(self.text.len());
         let mut last = 0;
         let mut optional_previous_selection: Option<(Interval, Rope)> =
             last_selection_region(view.sel_regions())
@@ -663,7 +661,7 @@ impl Editor {
     }
 
     fn transform_text<F: Fn(&str) -> String>(&mut self, view: &View, transform_function: F) {
-        let mut builder = delta::Builder::new(self.text.len());
+        let mut builder = DeltaBuilder::new(self.text.len());
 
         for region in view.sel_regions() {
             let selected_text = self.text.slice_to_cow(region);
@@ -689,7 +687,7 @@ impl Editor {
     ///
     /// This function also works fine with multiple regions.
     fn change_number<F: Fn(i128) -> Option<i128>>(&mut self, view: &View, transform_function: F) {
-        let mut builder = delta::Builder::new(self.text.len());
+        let mut builder = DeltaBuilder::new(self.text.len());
         for region in view.sel_regions() {
             let mut cursor = WordCursor::new(&self.text, region.end);
             let (mut start, end) = cursor.select_word();
@@ -714,7 +712,7 @@ impl Editor {
 
     // capitalization behaviour is similar to behaviour in XCode
     fn capitalize_text(&mut self, view: &mut View) {
-        let mut builder = delta::Builder::new(self.text.len());
+        let mut builder = DeltaBuilder::new(self.text.len());
         let mut final_selection = Selection::new();
 
         for &region in view.sel_regions() {
@@ -754,7 +752,7 @@ impl Editor {
     }
 
     fn duplicate_line(&mut self, view: &View, config: &BufferItems) {
-        let mut builder = delta::Builder::new(self.text.len());
+        let mut builder = DeltaBuilder::new(self.text.len());
         // get affected lines or regions
         let mut to_duplicate = BTreeSet::new();
 

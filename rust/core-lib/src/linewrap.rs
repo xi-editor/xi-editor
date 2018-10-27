@@ -17,10 +17,8 @@
 use time;
 
 use xi_rope::breaks::{BreakBuilder, Breaks, BreaksBaseMetric};
-use xi_rope::interval::Interval;
-use xi_rope::rope::{LinesMetric, Rope, RopeInfo};
 use xi_rope::spans::Spans;
-use xi_rope::tree::Cursor;
+use xi_rope::{Cursor, Interval, LinesMetric, Rope, RopeInfo};
 use xi_trace::trace_block;
 use xi_unicode::LineBreakLeafIter;
 

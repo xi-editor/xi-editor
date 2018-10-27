@@ -19,8 +19,7 @@ use std::cmp::max;
 use selection::{HorizPos, SelRegion, Selection};
 use view::View;
 use word_boundaries::WordCursor;
-use xi_rope::rope::{LinesMetric, Rope};
-use xi_rope::tree::Cursor;
+use xi_rope::{Cursor, LinesMetric, Rope};
 
 /// The specification of a movement.
 #[derive(Debug, PartialEq, Clone, Copy)]

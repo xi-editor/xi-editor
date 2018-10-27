@@ -22,10 +22,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use syntect::highlighting::StyleModifier;
 use syntect::parsing::Scope;
 
-use xi_rope::delta::Delta;
-use xi_rope::interval::Interval;
-use xi_rope::rope::RopeInfo;
 use xi_rope::spans::{Spans, SpansBuilder};
+use xi_rope::{Interval, RopeDelta};
 use xi_trace::trace_block;
 
 use plugins::PluginPid;
@@ -77,7 +75,7 @@ impl Layers {
     ///
     /// This is useful for clearing spans, and for updating spans
     /// as edits occur.
-    pub fn update_all(&mut self, delta: &Delta<RopeInfo>) {
+    pub fn update_all(&mut self, delta: &RopeDelta) {
         self.merged.apply_shape(delta);
 
         for layer in self.layers.values_mut() {
@@ -273,7 +271,7 @@ impl ScopeLayer {
     /// Applies `delta`, which is presumed to contain empty spans.
     /// This is only used when we receive an edit, to adjust current span
     /// positions.
-    fn blank_scopes(&mut self, delta: &Delta<RopeInfo>) {
+    fn blank_scopes(&mut self, delta: &RopeDelta) {
         self.style_spans.apply_shape(delta);
         self.scope_spans.apply_shape(delta);
     }

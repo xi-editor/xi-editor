@@ -20,12 +20,9 @@ use regex::{Regex, RegexBuilder};
 use selection::{SelRegion, Selection};
 use view::View;
 use word_boundaries::WordCursor;
-use xi_rope::delta::{Delta, DeltaRegion};
+use xi_rope::delta::DeltaRegion;
 use xi_rope::find::{find, is_multiline_regex, CaseMatching};
-use xi_rope::interval::Interval;
-use xi_rope::rope::{LinesMetric, Rope, RopeInfo};
-use xi_rope::tree::Cursor;
-use xi_rope::tree::Metric;
+use xi_rope::{Cursor, Interval, LinesMetric, Metric, Rope, RopeDelta};
 
 const REGEX_SIZE_LIMIT: usize = 1000000;
 
@@ -139,7 +136,7 @@ impl Find {
         self.hls_dirty = is_dirty
     }
 
-    pub fn update_highlights(&mut self, text: &Rope, delta: &Delta<RopeInfo>) {
+    pub fn update_highlights(&mut self, text: &Rope, delta: &RopeDelta) {
         // update search highlights for changed regions
         if self.search_string.is_some() {
             // invalidate occurrences around deletion positions

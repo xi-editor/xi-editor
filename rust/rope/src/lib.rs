@@ -53,4 +53,7 @@ pub mod spans;
 mod test_helpers;
 pub mod tree;
 
-pub use rope::Rope;
+pub use delta::{Builder as DeltaBuilder, Delta, DeltaElement, Transformer};
+pub use interval::Interval;
+pub use rope::{LinesMetric, Rope, RopeDelta, RopeInfo};
+pub use tree::{Cursor, Metric};

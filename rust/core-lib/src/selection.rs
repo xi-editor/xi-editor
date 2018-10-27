@@ -18,9 +18,7 @@ use std::cmp::{max, min};
 use std::ops::Deref;
 
 use index_set::remove_n_at;
-use xi_rope::delta::{Delta, Transformer};
-use xi_rope::interval::Interval;
-use xi_rope::rope::RopeInfo;
+use xi_rope::{Interval, RopeDelta, Transformer};
 
 /// A type representing horizontal measurements. This is currently in units
 /// that are not very well defined except that ASCII characters count as
@@ -187,12 +185,7 @@ impl Selection {
     ///
     /// Whether or not the preceding selections are restored depends on the keep_selections
     /// value (only set to true on transpose).
-    pub fn apply_delta(
-        &self,
-        delta: &Delta<RopeInfo>,
-        after: bool,
-        keep_selections: bool,
-    ) -> Selection {
+    pub fn apply_delta(&self, delta: &RopeDelta, after: bool, keep_selections: bool) -> Selection {
         let mut result = Selection::new();
         let mut transformer = Transformer::new(delta);
         for region in self.iter() {
