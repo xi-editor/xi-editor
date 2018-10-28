@@ -470,7 +470,7 @@ impl Rope {
     /// Edit the string, replacing the byte range [`start`..`end`] with `new`.
     ///
     /// Time complexity: O(log n)
-    #[deprecated(since = "0.3", note = "Use Rope::edit instead")]
+    #[deprecated(since = "0.3.0", note = "Use Rope::edit instead")]
     pub fn edit_str<T: IntervalBounds>(&mut self, iv: T, new: &str) {
         self.edit(iv, new)
     }

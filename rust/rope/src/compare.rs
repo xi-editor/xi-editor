@@ -143,16 +143,15 @@ pub unsafe fn ne_idx_rev_sse(one: &[u8], two: &[u8]) -> Option<usize> {
     debug_assert_eq!(one.len(), two.len());
     let mut idx = min_len;
     loop {
-        let mask: i32;
-        if idx < SSE_STRIDE {
+        let mask = if idx < SSE_STRIDE {
             let mut one_buf: [u8; SSE_STRIDE] = [0; SSE_STRIDE];
             let mut two_buf: [u8; SSE_STRIDE] = [0; SSE_STRIDE];
             one_buf[SSE_STRIDE - idx..].copy_from_slice(&one[..idx]);
             two_buf[SSE_STRIDE - idx..].copy_from_slice(&two[..idx]);
-            mask = sse_compare_mask(&one_buf, &two_buf);
+            sse_compare_mask(&one_buf, &two_buf)
         } else {
-            mask = sse_compare_mask(&one[idx - SSE_STRIDE..idx], &two[idx - SSE_STRIDE..idx]);
-        }
+            sse_compare_mask(&one[idx - SSE_STRIDE..idx], &two[idx - SSE_STRIDE..idx])
+        };
         let i = mask.leading_zeros() as usize - SSE_STRIDE;
         if i != SSE_STRIDE {
             return Some(min_len - (idx - i));

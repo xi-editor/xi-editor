@@ -177,7 +177,7 @@ fn longest_increasing_region_set(items: &[(usize, usize)]) -> Vec<(usize, usize)
             Err(idx) => idx,
         };
 
-        if &items[i].1 < &items[result[next_idx]].1 {
+        if items[i].1 < items[result[next_idx]].1 {
             if next_idx > 0 {
                 prev_chain[i] = result[next_idx - 1];
             }
