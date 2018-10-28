@@ -84,7 +84,7 @@ impl FileManager {
     }
 
     pub fn get_editor(&self, path: &Path) -> Option<BufferId> {
-        self.open_files.get(path).map(|id| *id)
+        self.open_files.get(path).cloned()
     }
 
     /// Returns `true` if this file is open and has changed on disk.
@@ -149,16 +149,16 @@ impl FileManager {
     }
 
     fn save_existing(&mut self, path: &Path, text: &Rope, id: BufferId) -> Result<(), FileError> {
-        let prev_path = self.file_info.get(&id).unwrap().path.clone();
+        let prev_path = self.file_info[&id].path.clone();
         if prev_path != path {
             self.save_new(path, text, id)?;
             self.open_files.remove(&prev_path);
             #[cfg(feature = "notify")]
             self.watcher.unwatch(&prev_path, OPEN_FILE_EVENT_TOKEN);
-        } else if self.file_info.get(&id).unwrap().has_changed {
+        } else if self.file_info[&id].has_changed {
             return Err(FileError::HasChanged(path.to_owned()));
         } else {
-            let encoding = self.file_info.get(&id).unwrap().encoding;
+            let encoding = self.file_info[&id].encoding;
             try_save(path, text, encoding).map_err(|e| FileError::Io(e, path.to_owned()))?;
             self.file_info.get_mut(&id).unwrap().mod_time = get_mod_time(path);
         }
@@ -243,9 +243,9 @@ impl From<FileError> for RemoteError {
 impl FileError {
     fn error_code(&self) -> i64 {
         match self {
-            &FileError::Io(_, _) => 5,
-            &FileError::UnknownEncoding(_) => 6,
-            &FileError::HasChanged(_) => 7,
+            FileError::Io(_, _) => 5,
+            FileError::UnknownEncoding(_) => 6,
+            FileError::HasChanged(_) => 7,
         }
     }
 }
@@ -253,9 +253,9 @@ impl FileError {
 impl fmt::Display for FileError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            &FileError::Io(ref e, ref p) => write!(f, "{}. File path: {:?}", e, p),
-            &FileError::UnknownEncoding(ref p) => write!(f, "Error decoding file: {:?}", p),
-            &FileError::HasChanged(ref p) => write!(
+            FileError::Io(ref e, ref p) => write!(f, "{}. File path: {:?}", e, p),
+            FileError::UnknownEncoding(ref p) => write!(f, "Error decoding file: {:?}", p),
+            FileError::HasChanged(ref p) => write!(
                 f,
                 "File has changed on disk. \
                  Please save elsewhere and reload the file. File path: {:?}",

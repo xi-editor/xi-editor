@@ -69,7 +69,7 @@ impl Style {
 
         Self::new(
             SYNTAX_PRIORITY_DEFAULT,
-            style.foreground.map(|c| Self::rgba_from_syntect_color(&c)),
+            style.foreground.map(Self::rgba_from_syntect_color),
             None,
             //TODO: stop ignoring background color
             //style.background.map(|c| Self::rgba_from_syntect_color(&c)),
@@ -108,7 +108,7 @@ impl Style {
         let fg = theme.settings.foreground.unwrap_or(Color::BLACK);
         Style::new(
             SYNTAX_PRIORITY_LOWEST,
-            Some(Self::rgba_from_syntect_color(&fg)),
+            Some(Self::rgba_from_syntect_color(fg)),
             None,
             None,
             None,
@@ -144,8 +144,8 @@ impl Style {
         as_val
     }
 
-    fn rgba_from_syntect_color(color: &Color) -> u32 {
-        let &Color { r, g, b, a } = color;
+    fn rgba_from_syntect_color(color: Color) -> u32 {
+        let Color { r, g, b, a } = color;
         ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
     }
 }
@@ -267,7 +267,7 @@ impl ThemeStyleMap {
                 Ok(themes) => {
                     self.caching_enabled = self.caching_enabled && self.init_cache_dir();
 
-                    for theme_p in themes.iter() {
+                    for theme_p in &themes {
                         match self.try_load_from_dump(theme_p) {
                             Some((k, v)) => {
                                 self.insert_to_map(k, v, theme_p);

@@ -49,7 +49,7 @@ impl<'a> PluginCatalog {
         self.items.clear();
         self.locations.clear();
         let all_manifests = find_all_manifests(paths);
-        for manifest_path in all_manifests.iter() {
+        for manifest_path in &all_manifests {
             match load_manifest(manifest_path) {
                 Err(e) => warn!("error loading plugin {:?}", e),
                 Ok(manifest) => {
@@ -117,7 +117,7 @@ fn load_manifest(path: &Path) -> Result<PluginDescription, PluginLoadError> {
         manifest.exec_path = path.parent().unwrap().join(manifest.exec_path).canonicalize()?;
     }
 
-    for lang in manifest.languages.iter_mut() {
+    for lang in &mut manifest.languages {
         let lang_config_path =
             path.parent().unwrap().join(&lang.name.as_ref()).with_extension("toml");
         if !lang_config_path.exists() {

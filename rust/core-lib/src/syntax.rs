@@ -53,7 +53,7 @@ impl Languages {
         for lang in language_defs.iter() {
             let lang_arc = Arc::new(lang.clone());
             named.insert(lang.name.clone(), lang_arc.clone());
-            for ext in lang.extensions.iter() {
+            for ext in &lang.extensions {
                 extensions.insert(ext.clone(), lang_arc.clone());
             }
         }
@@ -83,7 +83,7 @@ impl Languages {
             .collect()
     }
 
-    pub fn iter<'a>(&'a self) -> impl Iterator<Item = &'a Arc<LanguageDefinition>> {
+    pub fn iter(&self) -> impl Iterator<Item = &Arc<LanguageDefinition>> {
         self.named.values()
     }
 }

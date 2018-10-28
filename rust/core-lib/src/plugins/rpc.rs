@@ -289,9 +289,9 @@ impl PluginUpdate {
 impl TextUnit {
     /// Converts an offset in some unit to a concrete byte offset. Returns
     /// `None` if the input offset is out of bounds in its unit space.
-    pub fn resolve_offset<T: Borrow<Rope>>(&self, text: T, offset: usize) -> Option<usize> {
+    pub fn resolve_offset<T: Borrow<Rope>>(self, text: T, offset: usize) -> Option<usize> {
         let text = text.borrow();
-        match *self {
+        match self {
             TextUnit::Utf8 => {
                 if offset > text.len() {
                     None

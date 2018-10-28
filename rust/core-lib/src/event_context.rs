@@ -119,7 +119,7 @@ impl<'a> EventContext<'a> {
                 (true, EventDomain::Special(_)) => {
                     warn!("Special events cannot be recorded-- ignoring event {:?}", event)
                 }
-                (true, event) => recorder.record(event.clone().into()),
+                (true, event) => recorder.record(event.clone()),
                 _ => {}
             }
         }

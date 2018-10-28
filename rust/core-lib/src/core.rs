@@ -64,8 +64,8 @@ impl XiCore {
     /// Panics if core has not yet received the `client_started` message.
     pub fn inner(&self) -> MutexGuard<CoreState> {
         match self {
-            &XiCore::Running(ref inner) => inner.lock().unwrap(),
-            &XiCore::Waiting => panic!(
+            XiCore::Running(ref inner) => inner.lock().unwrap(),
+            XiCore::Waiting => panic!(
                 "core does not start until client_started \
                  RPC is received"
             ),
@@ -75,8 +75,8 @@ impl XiCore {
     /// Returns a new reference to the core state, if core is running.
     fn weak_self(&self) -> Option<WeakXiCore> {
         match self {
-            &XiCore::Running(ref inner) => Some(WeakXiCore(Arc::downgrade(inner))),
-            &XiCore::Waiting => None,
+            XiCore::Running(ref inner) => Some(WeakXiCore(Arc::downgrade(inner))),
+            XiCore::Waiting => None,
         }
     }
 }
@@ -90,7 +90,7 @@ impl Handler for XiCore {
         use self::CoreNotification::*;
 
         // We allow tracing to be enabled before event `client_started`
-        if let &TracingConfig { enabled } = &rpc {
+        if let TracingConfig { enabled } = rpc {
             match enabled {
                 true => xi_trace::enable_tracing(),
                 false => xi_trace::disable_tracing(),
@@ -102,7 +102,7 @@ impl Handler for XiCore {
         }
 
         // wait for client_started before setting up inner
-        if let &ClientStarted { ref config_dir, ref client_extras_dir } = &rpc {
+        if let ClientStarted { ref config_dir, ref client_extras_dir } = rpc {
             assert!(self.is_waiting(), "client_started can only be sent once");
             let state =
                 CoreState::new(ctx.get_peer(), config_dir.clone(), client_extras_dir.clone());
@@ -128,7 +128,7 @@ impl WeakXiCore {
     /// Attempts to upgrade the weak reference. Essentially a wrapper
     /// for `Arc::upgrade`.
     fn upgrade(&self) -> Option<XiCore> {
-        self.0.upgrade().map(|state| XiCore::Running(state))
+        self.0.upgrade().map(XiCore::Running)
     }
 
     /// Called immediately after attempting to start a plugin,

@@ -693,7 +693,7 @@ impl Editor {
             let (mut start, end) = cursor.select_word();
 
             // if the word begins with '-', then it is a negative number
-            if start > 0 && self.text.byte_at(start - 1) == ('-' as u8) {
+            if start > 0 && self.text.byte_at(start - 1) == (b'-') {
                 start -= 1;
             }
 
