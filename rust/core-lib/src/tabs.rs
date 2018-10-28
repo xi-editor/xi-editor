@@ -392,7 +392,9 @@ impl CoreState {
         let ed = &self.editors[&buffer_id];
 
         if let Err(e) = self.file_manager.save(path, ed.borrow().get_buffer(), buffer_id) {
-            self.peer.alert(e.to_string());
+            let error_message = e.to_string();
+            error!("File error: {:?}", error_message);
+            self.peer.alert(error_message);
             return;
         }
 
