@@ -53,6 +53,21 @@ pub struct FileInfo {
     pub has_changed: bool,
     pub loaded_state: FileLoadState
 }
+impl FileInfo {
+    pub fn try_clone(&self) -> io::Result<FileInfo> {
+        let cloned_loaded_state = self.loaded_state.try_clone()?;
+
+        let cloned_file_info = FileInfo {
+            encoding: self.encoding.clone(),
+            path: self.path.clone(),
+            mod_time: self.mod_time.clone(),
+            has_changed: self.has_changed.clone(),
+            loaded_state: cloned_loaded_state
+        };
+
+        Ok(cloned_file_info)
+    }
+}
 
 pub enum FileError {
     Io(io::Error, PathBuf),
@@ -72,9 +87,25 @@ pub enum FileLoadState {
     FullyLoaded,
     Loading {
         file_handle: File, // This also stores the current seek cursor for the file
-        leftovers: Vec<u8>,
-        next_chunk: u32
+        leftovers: Vec<u8>
     },
+}
+impl FileLoadState {
+    pub fn try_clone(&self) -> io::Result<FileLoadState> {
+        let cloned_load_state = match self {
+            FileLoadState::FullyLoaded => FileLoadState::FullyLoaded,
+            FileLoadState::Loading { file_handle, leftovers } => {
+                let cloned_file_handle = file_handle.try_clone()?;
+
+                FileLoadState::Loading {
+                    file_handle: cloned_file_handle,
+                    leftovers: leftovers.clone()
+                }
+            }
+        };
+
+        Ok(cloned_load_state)
+    }
 }
 
 impl FileManager {
@@ -123,7 +154,9 @@ impl FileManager {
         false
     }
 
-    pub fn open(&mut self, path: &Path, id: BufferId) -> Result<Rope, FileError> {
+    pub fn open(&mut self, path: &Path, id: BufferId) -> Result<Rope, FileError>
+    {
+
         if !path.exists() {
             let _ = File::create(path).map_err(|e| FileError::Io(e, path.to_owned()))?;
         }
@@ -182,7 +215,7 @@ impl FileManager {
     {
         let prev_path = self.previous_path(&id);
 
-        if !self.is_file_loading(&id) {
+        if !self.is_file_loaded(&id) {
             return Err(FileError::StillLoading(path.to_owned()));
         } else if prev_path != path {
             self.save_new(path, text, id)?;
@@ -206,14 +239,36 @@ impl FileManager {
         existing_file_info.path.clone()
     }
 
-    pub fn is_file_loading(&self, id: &BufferId) -> bool {
-        match self.file_info.get(id) {
-            Some(file_info) => match file_info.loaded_state {
-                FileLoadState::FullyLoaded => false,
-                _ => true
+    pub fn pop_file_info(&mut self, id: &BufferId) -> Option<FileInfo> {
+        self.file_info.remove(id)
+    }
+    pub fn is_file_loaded(&self, id: &BufferId) -> bool {
+        self.file_info.get(id).iter().any(|file_info| match file_info.loaded_state  {
+            FileLoadState::FullyLoaded => true,
+            _ => false
+        })
+    }
+    pub fn update_file_load_state(&mut self, prev_file_info: FileInfo, path: &PathBuf, id: &BufferId, new_load_state: FileLoadState)
+    {
+        match new_load_state {
+            FileLoadState::FullyLoaded => {
+                // Move this buffer from loading_files to open_files
+                self.loading_files.remove(&path.to_owned());
+                self.open_files.insert(path.to_owned(), id.clone());
             },
-            None => false
-        }
+            FileLoadState::Loading { .. } => (),
+        };
+
+        let new_file_info = FileInfo {
+            loaded_state: new_load_state,
+            .. prev_file_info
+        };
+        self.file_info.insert(id.clone(), new_file_info);
+    }
+
+    pub fn loading_files(&self) -> HashMap<PathBuf, BufferId>
+    {
+        self.loading_files.clone()
     }
 }
 
@@ -225,12 +280,10 @@ where
 {
     // TODO: support for non-utf8
     // it's arguable that the rope crate should have file loading functionality
-    let f =
-        File::open(path.as_ref()).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
-    let mod_time =
-        f.metadata().map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?.modified().ok();
+    let mut f = File::open(path.as_ref()).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
+    let mod_time = f.metadata().map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?.modified().ok();
 
-    let (rope, loaded_state, encoding) = try_load_file_chunk(f, Vec::new(), 0, path.as_ref())?;
+    let (rope, loaded_state, encoding) = try_load_file_chunk( &mut f, Vec::new(), path.as_ref())?;
 
     let info = FileInfo {
         encoding,
@@ -242,7 +295,7 @@ where
     Ok((rope, info))
 }
 
-pub fn try_load_file_chunk<P>(mut file_handle: File, mut chunk: Vec<u8>, next_chunk: u32, path: P) -> Result<(Rope, FileLoadState, CharacterEncoding), FileError>
+pub fn try_load_file_chunk<P>(file_handle: &mut File, mut chunk: Vec<u8>, path: P) -> Result<(Rope, FileLoadState, CharacterEncoding), FileError>
 where P: AsRef<Path>
 {
     let mut bytes = [0; CHUNK_SIZE];
@@ -258,10 +311,15 @@ where P: AsRef<Path>
         (true, true) => FileLoadState::FullyLoaded,
         (true, false) => Err(FileError::UnknownEncoding(path.as_ref().to_owned()))?,
         // Maybe more bytes to read
-        _ => FileLoadState::Loading {
-            file_handle,
-            leftovers: new_leftovers,
-            next_chunk: next_chunk + 1
+        _ => {
+            let file_handle_copy = file_handle.try_clone().map_err(|e| {
+                FileError::Io(e, path.as_ref().to_owned())
+            })?;
+
+            FileLoadState::Loading {
+                file_handle: file_handle_copy,
+                leftovers: new_leftovers
+            }
         },
     };
 

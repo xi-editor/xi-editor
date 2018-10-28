@@ -409,14 +409,17 @@ impl Engine {
         undo_group: usize,
         base_rev: RevToken,
         delta: Delta<RopeInfo>,
-    ) {
+    ) -> RevId {
         let (new_rev, new_text, new_tombstones, new_deletes_from_union) =
             self.mk_new_rev(priority, undo_group, base_rev, delta);
+        let rev_id = new_rev.rev_id;
         self.rev_id_counter += 1;
         self.revs.push(new_rev);
         self.text = new_text;
         self.tombstones = new_tombstones;
         self.deletes_from_union = new_deletes_from_union;
+
+        rev_id
     }
 
     // since undo and gc replay history with transforms, we need an empty set
@@ -654,6 +657,19 @@ impl Engine {
             "Revisions were added to an Engine before set_session_id, these may collide."
         );
         self.session = session;
+    }
+
+    pub fn append_loaded_chunk(&mut self, last_chunk_rev: RevToken, rope: Rope) -> RevId {
+        let last_revision = self.get_rev(last_chunk_rev).unwrap();
+        let last_revision_final_position = last_revision.len();
+        let insertion_length = rope.len();
+        let interval_up_to_latest_chunk = Interval::new(last_revision_final_position, last_revision_final_position + insertion_length);
+        let delta = Delta::simple_edit(interval_up_to_latest_chunk, rope, insertion_length);
+        let (insert_delta, _) = delta.factor();
+
+        let loaded_chunk_rev_id = self.edit_rev(0, 0, last_chunk_rev, (*insert_delta).clone());
+
+        loaded_chunk_rev_id
     }
 }
 

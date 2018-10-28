@@ -39,10 +39,10 @@ use client::Client;
 use config::{self, ConfigDomain, ConfigDomainExternal, ConfigManager, Table};
 use editor::Editor;
 use event_context::EventContext;
-use file::FileManager;
+use file::{FileManager, FileLoadState, try_load_file_chunk};
 use line_ending::LineEnding;
+use plugins::{PluginCatalog, PluginPid, Plugin, start_plugin_process};
 use plugin_rpc::{PluginNotification, PluginRequest};
-use plugins::{start_plugin_process, Plugin, PluginCatalog, PluginPid};
 use recorder::Recorder;
 use rpc::{
     CoreNotification, CoreRequest, EditNotification, EditRequest,
@@ -361,7 +361,7 @@ impl CoreState {
             Some(p) => self.file_manager.open(p, buffer_id)?,
             None => Rope::from(""),
         };
-        if self.file_manager.is_file_loading(&buffer_id) {
+        if !self.file_manager.is_file_loaded(&buffer_id) {
             self.peer.schedule_idle(LOADING_FILE_IDLE_TOKEN);
         }
 
@@ -814,30 +814,50 @@ impl CoreState {
     }
 
     fn continue_loading_files(&mut self) {
-        //self.file_manager.loading_files = self.file_manager.loading_files.iter().map(|loading_file| {
-        //    let (path_buf, buffer_id) = loading_file;
-        //    let file_info = self.file_manager.file_info.get(&buffer_id).unwrap();
-//
-        //    let still_loading_file = match file_info.loaded_state {
-        //        FileLoadState::FullyLoaded => None,
-        //        FileLoadState::Loading { file_handle, leftovers, next_chunk } => {
-        //            let chunk_result = try_load_file_chunk(file_handle, chunk, next_chunk, path);
-//
-        //            match chunk_result {
-        //                Ok((rope, new_load_state, _)) => {
-        //                    // Add the rope to the correct editor/view
-        //                    FileInfo {
-        //                        loaded_state: new_load_state,
-        //                        ..file_info
-        //                    }
-        //                },
-        //                Err(chunk_err) =>,
-        //            }
-        //        },
-        //    };
-//
-        //    still_loading_file
-        //})
+        let loading_files = self.file_manager.loading_files();
+
+        loading_files.iter().for_each(|loading_file| {
+            let (path_buf, buffer_id) = loading_file;
+            let file_info = self.file_manager.pop_file_info(&buffer_id).unwrap();
+
+            // Keep loading any loaded files
+            let mut loaded_state_clone = file_info.loaded_state.try_clone();
+
+            match loaded_state_clone {
+                Ok(FileLoadState::FullyLoaded) => {
+                    // Should be impossible, but nonetheless, remove this from the loading_files!
+                    unreachable!()
+                },
+                Ok(FileLoadState::Loading { ref mut file_handle, ref leftovers }) => {
+                    // Load a file chunk
+                    let chunk_result = try_load_file_chunk(file_handle, leftovers.to_vec(), path_buf);
+
+                    match chunk_result {
+                        Ok((rope, new_load_state, _ /* encoding only matters for the first chunk */)) => {
+                            // Add the rope to the correct editor/view
+                            self.editors.get(buffer_id).unwrap().borrow_mut().append_loaded_chunk(rope);
+
+                            // If still loading, schedule another idle token to load the next chunk later
+                            let should_continue_loading = match new_load_state {
+                                FileLoadState::Loading { .. } => true,
+                                _ => false,
+                            };
+
+                            // Get the new load state in file_info for this buffer_id
+                            self.file_manager.update_file_load_state(file_info, &path_buf, buffer_id, new_load_state);
+
+                            if should_continue_loading {
+                                self.peer.schedule_idle(LOADING_FILE_IDLE_TOKEN)
+                            }
+                        },
+                        Err(_chunk_err) => {
+                            // TODO: Close files that get an error midway through loading?
+                        },
+                    }
+                },
+                _ => () // TODO: Failed to copy the loaded state, close files?
+            };
+        });
     }
 }
 
