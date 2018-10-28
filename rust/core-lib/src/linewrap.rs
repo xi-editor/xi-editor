@@ -346,7 +346,7 @@ fn compute_rewrap_width(
             break;
         }
     }
-    return builder.build();
+    builder.build()
 }
 
 pub fn rewrap_width(

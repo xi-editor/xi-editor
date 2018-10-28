@@ -39,6 +39,7 @@ const SSE_STRIDE: usize = 16;
 /// # }
 /// ```
 ///
+#[cfg_attr(feature = "cargo-clippy", allow(cast_ptr_alignment))]
 #[doc(hidden)]
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "sse4.2")]
@@ -59,6 +60,7 @@ pub unsafe fn sse_compare_mask(one: &[u8], two: &[u8]) -> i32 {
 const AVX_STRIDE: usize = 32;
 
 /// Like above but with 32 byte slices
+#[cfg_attr(feature = "cargo-clippy", allow(cast_ptr_alignment))]
 #[doc(hidden)]
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]

@@ -49,7 +49,7 @@ impl Indentation {
             }
         }
 
-        match (tabs, spaces.len() > 0) {
+        match (tabs, !spaces.is_empty()) {
             (true, true) => Err(MixedIndentError),
             (true, false) => Ok(Some(Indentation::Tabs)),
             (false, true) => Ok(Some(Indentation::Spaces(extract_count(spaces)))),
@@ -94,9 +94,9 @@ fn extract_count(spaces: BTreeMap<usize, usize>) -> usize {
     spaces.iter().take(take_size).fold(0, |a, (b, _)| {
         let d = gcd(a, *b);
         if d == 1 {
-            return a;
+            a
         } else {
-            return d;
+            d
         }
     })
 }

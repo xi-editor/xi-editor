@@ -260,11 +260,11 @@ impl CoreState {
     /// holds references to the `Editor` and `View` backing this `ViewId`,
     /// as well as to sibling views, plugins, and other state necessary
     /// for handling most events.
-    pub(crate) fn make_context<'a>(&'a self, view_id: ViewId) -> Option<EventContext<'a>> {
+    pub(crate) fn make_context(&self, view_id: ViewId) -> Option<EventContext> {
         self.views.get(&view_id).map(|view| {
             let buffer_id = view.borrow().get_buffer_id();
 
-            let editor = self.editors.get(&buffer_id).unwrap();
+            let editor = &self.editors[&buffer_id];
             let info = self.file_manager.get_info(buffer_id);
             let plugins = self.running_plugins.iter().collect::<Vec<_>>();
             let config = self.config_manager.get_buffer_config(buffer_id);
@@ -389,7 +389,7 @@ impl CoreState {
             None => return,
         };
 
-        let ed = self.editors.get(&buffer_id).unwrap();
+        let ed = &self.editors[&buffer_id];
 
         if let Err(e) = self.file_manager.save(path, ed.borrow().get_buffer(), buffer_id) {
             self.peer.alert(e.to_string());
@@ -607,7 +607,7 @@ impl CoreState {
             .config_manager
             .set_user_config(ConfigDomain::SysOverride(buffer_id), config_delta)
         {
-            Ok(ref mut items) if items.len() > 0 => {
+            Ok(ref mut items) if !items.is_empty() => {
                 assert!(
                     items.len() == 1,
                     "whitespace overrides can only update a single buffer's config\n{:?}",
@@ -776,7 +776,7 @@ impl CoreState {
             all_traces.append(&mut traces);
         }
 
-        for plugin in self.running_plugins.iter() {
+        for plugin in &self.running_plugins {
             match plugin.collect_trace() {
                 Ok(json) => {
                     let mut trace = chrome_trace::decode(json).unwrap();

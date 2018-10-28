@@ -31,6 +31,7 @@
         ptr_arg,
         too_many_arguments,
         unreadable_literal,
+        get_unwrap,
     )
 )]
 

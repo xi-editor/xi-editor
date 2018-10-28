@@ -76,7 +76,7 @@ fn get_logging_directory_path<P: AsRef<Path>>(directory: P) -> Result<PathBuf, i
 /// assert_eq!(create_log_directory(path_without_file).is_ok(), false);
 /// ```
 fn create_log_directory(path_with_file: &Path) -> io::Result<()> {
-    let log_dir = path_with_file.parent().ok_or(io::Error::new(
+    let log_dir = path_with_file.parent().ok_or_else(|| io::Error::new(
         io::ErrorKind::InvalidInput,
         format!(
             "Unable to get the parent of the following Path: {}, Your path should contain a file name",
@@ -182,9 +182,9 @@ struct EnvFlagConfig {
 /// In this order: `String` from the flags, then `String` from the env, then `None`
 fn extract_env_or_flag(
     flags: &HashMap<String, Option<String>>,
-    conf: EnvFlagConfig,
+    conf: &EnvFlagConfig,
 ) -> Option<String> {
-    flags.get(conf.flag_name).cloned().unwrap_or(std::env::var(conf.env_name).ok())
+    flags.get(conf.flag_name).cloned().unwrap_or_else(|| std::env::var(conf.env_name).ok())
 }
 
 struct LogfileConfig {
@@ -196,9 +196,9 @@ fn generate_logfile_config(flags: &HashMap<String, Option<String>>) -> LogfileCo
     // If the key is set, get the Option within
     let log_dir_env_flag = EnvFlagConfig { env_name: "XI_LOG_DIR", flag_name: "log-dir" };
     let log_file_env_flag = EnvFlagConfig { env_name: "XI_LOG_FILE", flag_name: "log-file" };
-    let log_dir_flag_option = extract_env_or_flag(&flags, log_dir_env_flag).map(PathBuf::from);
+    let log_dir_flag_option = extract_env_or_flag(&flags, &log_dir_env_flag).map(PathBuf::from);
 
-    let log_file_flag_option = extract_env_or_flag(&flags, log_file_env_flag).map(PathBuf::from);
+    let log_file_flag_option = extract_env_or_flag(&flags, &log_file_env_flag).map(PathBuf::from);
 
     LogfileConfig { directory: log_dir_flag_option, file: log_file_flag_option }
 }

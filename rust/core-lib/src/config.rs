@@ -348,7 +348,9 @@ impl ConfigManager {
         let mut configs = Vec::new();
 
         configs.push(self.configs.get(&ConfigDomain::General));
-        lang.map(|s| configs.push(self.configs.get(&s.into())));
+        if let Some(s) = lang {
+            configs.push(self.configs.get(&s.into()))
+        };
         configs.push(self.configs.get(&ConfigDomain::SysOverride(id)));
         configs.push(self.configs.get(&ConfigDomain::UserOverride(id)));
 
@@ -602,7 +604,7 @@ impl<'de, T: Deserialize<'de>> Config<T> {
 }
 
 impl ConfigDomain {
-    fn file_stem<'a>(&'a self) -> &'a str {
+    fn file_stem(&self) -> &str {
         match self {
             ConfigDomain::General => "preferences",
             ConfigDomain::Language(lang) => lang.as_ref(),

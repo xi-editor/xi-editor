@@ -140,7 +140,7 @@ impl Find {
         // update search highlights for changed regions
         if self.search_string.is_some() {
             // invalidate occurrences around deletion positions
-            for DeltaRegion { old_offset, new_offset: _, len } in delta.iter_deletions() {
+            for DeltaRegion { old_offset, len, .. } in delta.iter_deletions() {
                 self.occurrences.delete_range(old_offset, old_offset + len, false);
             }
 
@@ -201,7 +201,7 @@ impl Find {
         is_regex: bool,
         whole_words: bool,
     ) {
-        if search_string.len() == 0 {
+        if search_string.is_empty() {
             self.unset();
         }
 

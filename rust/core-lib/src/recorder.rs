@@ -86,22 +86,20 @@ impl Recorder {
 
         let recording_buffer = &mut self.recording_buffer;
 
-        if !recording_buffer.last().is_some() {
+        if recording_buffer.last().is_none() {
             recording_buffer.push(current_event);
             return;
         }
 
         {
             let last_event = recording_buffer.last_mut().unwrap();
-            match (last_event, &current_event) {
-                (
-                    EventDomain::Buffer(BufferEvent::Insert(old_characters)),
-                    EventDomain::Buffer(BufferEvent::Insert(new_characters)),
-                ) => {
-                    old_characters.push_str(new_characters);
-                    return;
-                }
-                _ => {}
+            if let (
+                EventDomain::Buffer(BufferEvent::Insert(old_characters)),
+                EventDomain::Buffer(BufferEvent::Insert(new_characters)),
+            ) = (last_event, &current_event)
+            {
+                old_characters.push_str(new_characters);
+                return;
             }
         }
 

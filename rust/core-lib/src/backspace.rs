@@ -22,6 +22,7 @@ use config::BufferItems;
 use selection::SelRegion;
 use xi_unicode::*;
 
+#[cfg_attr(feature = "cargo-clippy", allow(cyclomatic_complexity))]
 pub fn offset_for_delete_backwards(
     view: &View,
     region: &SelRegion,

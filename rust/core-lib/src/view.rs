@@ -286,9 +286,7 @@ impl View {
     }
 
     pub(crate) fn unset_find(&mut self) {
-        for mut find in self.find.iter_mut() {
-            find.unset();
-        }
+        self.find.iter_mut().for_each(Find::unset);
         self.find.clear();
     }
 
@@ -610,7 +608,7 @@ impl View {
         let mut hls = Vec::new();
 
         if self.highlight_find {
-            for find in self.find.iter() {
+            for find in &self.find {
                 let mut cur_hls = Vec::new();
                 for region in find.occurrences().regions_in_range(start_pos, pos) {
                     let sel_start_ix = clamp(region.min(), start_pos, pos) - start_pos;
@@ -1033,7 +1031,7 @@ impl View {
         self.find_changed = FindStatusChange::Matches;
 
         // remove deleted queries
-        self.find.retain(|f| queries.iter().position(|q| q.id == Some(f.id())).is_some());
+        self.find.retain(|f| queries.iter().any(|q| q.id == Some(f.id())));
 
         for query in &queries {
             let pos = match query.id {
@@ -1051,7 +1049,7 @@ impl View {
                 }
             };
 
-            self.find.get_mut(pos).unwrap().do_find(
+            self.find[pos].do_find(
                 text,
                 &query.chars.clone(),
                 query.case_sensitive,
@@ -1079,7 +1077,7 @@ impl View {
     /// Selects all find matches.
     pub fn do_find_all(&mut self, text: &Rope) {
         let mut selection = Selection::new();
-        for find in self.find.iter() {
+        for find in &self.find {
             for &occurrence in find.occurrences().iter() {
                 selection.add_region(occurrence);
             }
