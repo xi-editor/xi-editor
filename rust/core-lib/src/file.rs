@@ -188,9 +188,10 @@ where
 fn try_save(path: &Path, text: &Rope, encoding: CharacterEncoding) -> io::Result<()> {
     use std::fs;
 
-    let tmp_extension = path.extension()
+    let tmp_extension = path
+        .extension()
         .and_then(|extension| extension.to_str())
-        .map_or_else(|| "swp".to_string(),|extension| format!("{}.swp", extension));
+        .map_or_else(|| "swp".to_string(), |extension| format!("{}.swp", extension));
     let tmp_path = &path.with_extension(tmp_extension);
 
     let mut f = File::create(tmp_path)?;
