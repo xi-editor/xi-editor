@@ -301,14 +301,12 @@ impl<S: Clone + Default> StateCache<S> {
         for old_ln in &self.frontier {
             if *old_ln < line_num {
                 new_frontier.push(*old_ln);
-            } else {
-                if need_push {
-                    new_frontier.push(line_num);
-                    need_push = false;
-                    if let Some(ref entry) = self.state_cache.get(cache_idx) {
-                        if *old_ln >= entry.line_num {
-                            new_frontier.push(old_ln.wrapping_add(nl_count_delta as usize));
-                        }
+            } else if need_push {
+                new_frontier.push(line_num);
+                need_push = false;
+                if let Some(ref entry) = self.state_cache.get(cache_idx) {
+                    if *old_ln >= entry.line_num {
+                        new_frontier.push(old_ln.wrapping_add(nl_count_delta as usize));
                     }
                 }
             }

@@ -82,7 +82,7 @@ impl Cache for ChunkCache {
         }
 
         // if chunk does not include the start of this line, fetch and reset everything
-        if self.contents.len() == 0
+        if self.contents.is_empty()
             || line_num < self.first_line
             || (line_num == self.first_line && self.first_line_offset > 0)
             || (line_num > self.first_line + self.line_offsets.len())
@@ -109,7 +109,7 @@ impl Cache for ChunkCache {
 
             let chunk_end = self.offset + self.contents.len();
             let resp = source.get_data(chunk_end, TextUnit::Utf8, CHUNK_SIZE, self.rev)?;
-            self.append_chunk(resp);
+            self.append_chunk(&resp);
         }
     }
 
@@ -117,7 +117,7 @@ impl Cache for ChunkCache {
         let mut result = String::new();
         let mut cur_idx = 0;
         while cur_idx < self.buf_size {
-            if self.contents.len() == 0 || cur_idx != self.offset {
+            if self.contents.is_empty() || cur_idx != self.offset {
                 let resp = source.get_data(cur_idx, TextUnit::Utf8, CHUNK_SIZE, self.rev)?;
                 self.reset_chunk(resp);
             }
@@ -153,7 +153,7 @@ impl Cache for ChunkCache {
         if offset > self.buf_size {
             return Err(Error::BadRequest);
         }
-        if self.contents.len() == 0
+        if self.contents.is_empty()
             || offset < self.offset
             || offset > self.offset + self.contents.len()
         {
@@ -172,7 +172,7 @@ impl Cache for ChunkCache {
     /// Updates the chunk to reflect changes in this delta.
     fn update(&mut self, delta: Option<&RopeDelta>, new_len: usize, num_lines: usize, rev: u64) {
         let _t = trace_block("ChunkCache::update", &["plugin"]);
-        let is_empty = self.offset == 0 && self.contents.len() == 0;
+        let is_empty = self.offset == 0 && self.contents.is_empty();
         let should_clear = match delta {
             Some(delta) if !is_empty => self.should_clear(delta),
             // if no contents, clearing is a noop
@@ -267,7 +267,7 @@ impl ChunkCache {
     }
 
     /// Append to the existing cache, leaving existing data in place.
-    fn append_chunk(&mut self, data: GetDataResponse) {
+    fn append_chunk(&mut self, data: &GetDataResponse) {
         self.contents.push_str(data.chunk.as_str());
         // this is doing extra work in the case where we're fetching a single
         // massive (multiple of CHUNK_SIZE) line, but unclear if it's worth optimizing
@@ -376,8 +376,8 @@ impl ChunkCache {
         let mut ins_before: usize = 0;
 
         for op in delta.els.as_slice() {
-            match op {
-                &DeltaElement::Copy(start, end) => {
+            match *op {
+                DeltaElement::Copy(start, end) => {
                     if start < chunk_start {
                         del_before += start - prev_copy_end;
                         if end >= chunk_start {
@@ -394,7 +394,7 @@ impl ChunkCache {
                     }
                     prev_copy_end = end;
                 }
-                &DeltaElement::Insert(ref s) => {
+                DeltaElement::Insert(ref s) => {
                     if prev_copy_end < chunk_start {
                         ins_before += s.len();
                     } else if prev_copy_end <= chunk_end {

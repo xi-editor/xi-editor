@@ -116,7 +116,7 @@ impl<C: Cache> View<C> {
     }
 
     pub fn get_id(&self) -> ViewId {
-        self.view_id.clone()
+        self.view_id
     }
 
     pub fn get_line(&mut self, line_num: usize) -> Result<&str, Error> {
@@ -139,7 +139,7 @@ impl<C: Cache> View<C> {
         self.cache.line_of_offset(&ctx, offset)
     }
 
-    pub fn add_scopes(&self, scopes: &Vec<Vec<String>>) {
+    pub fn add_scopes(&self, scopes: &[Vec<String>]) {
         let params = json!({
             "plugin_id": self.plugin_id,
             "view_id": self.view_id,
@@ -244,8 +244,7 @@ impl DataSource for FetchCtx {
             "max_size": max_size,
             "rev": rev,
         });
-        let result =
-            self.peer.send_rpc_request("get_data", &params).map_err(|e| Error::RpcError(e))?;
+        let result = self.peer.send_rpc_request("get_data", &params).map_err(Error::RpcError)?;
         GetDataResponse::deserialize(result).map_err(|_| Error::WrongReturnType)
     }
 }

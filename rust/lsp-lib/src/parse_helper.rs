@@ -17,8 +17,8 @@
 use std::io::BufRead;
 use types::{LspHeader, ParseError};
 
-const HEADER_CONTENT_LENGTH: &'static str = "content-length";
-const HEADER_CONTENT_TYPE: &'static str = "content-type";
+const HEADER_CONTENT_LENGTH: &str = "content-length";
+const HEADER_CONTENT_TYPE: &str = "content-type";
 
 /// parse header from the incoming input string
 fn parse_header(s: &str) -> Result<LspHeader, ParseError> {
@@ -45,7 +45,7 @@ pub fn read_message<T: BufRead>(reader: &mut T) -> Result<String, ParseError> {
         let _result = reader.read_line(&mut buffer);
 
         match &buffer {
-            s if s.trim().len() == 0 => break,
+            s if s.trim().is_empty() => break,
             s => {
                 match parse_header(s)? {
                     LspHeader::ContentLength(len) => content_length = Some(len),
@@ -56,7 +56,7 @@ pub fn read_message<T: BufRead>(reader: &mut T) -> Result<String, ParseError> {
     }
 
     let content_length =
-        content_length.ok_or(format!("missing content-length header: {}", buffer))?;
+        content_length.ok_or_else(|| format!("missing content-length header: {}", buffer))?;
 
     let mut body_buffer = vec![0; content_length];
     reader.read_exact(&mut body_buffer)?;

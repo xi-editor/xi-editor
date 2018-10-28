@@ -50,8 +50,8 @@ fn prepare_lsp_json(msg: &Value) -> Result<String, serde_json::error::Error> {
 }
 
 /// Get numeric id from the request id.
-fn number_from_id(id: Id) -> u64 {
-    match id {
+fn number_from_id(id: &Id) -> u64 {
+    match *id {
         Id::Num(n) => n as u64,
         Id::Str(ref s) => u64::from_str_radix(s, 10).expect("failed to convert string id to u64"),
         _ => panic!("unexpected value for id: None"),
@@ -94,12 +94,12 @@ impl LanguageServerClient {
                 self.handle_notification(value.get_method().unwrap(), value.get_params().unwrap())
             }
             Ok(value @ JsonRpc::Success(_)) => {
-                let id = number_from_id(value.get_id().unwrap());
+                let id = number_from_id(&value.get_id().unwrap());
                 let result = value.get_result().unwrap();
                 self.handle_response(id, Ok(result.clone()));
             }
             Ok(value @ JsonRpc::Error(_)) => {
-                let id = number_from_id(value.get_id().unwrap());
+                let id = number_from_id(&value.get_id().unwrap());
                 let error = value.get_error().unwrap();
                 self.handle_response(id, Err(error.clone()));
             }
@@ -108,8 +108,10 @@ impl LanguageServerClient {
     }
 
     pub fn handle_response(&mut self, id: u64, result: Result<Value, Error>) {
-        let callback =
-            self.pending.remove(&id).expect(&format!("id {} missing from request table", id));
+        let callback = self
+            .pending
+            .remove(&id)
+            .unwrap_or_else(|| panic!("id {} missing from request table", id));
         callback.call(self, result);
     }
 
@@ -134,20 +136,20 @@ impl LanguageServerClient {
     fn remove_status_item(&mut self, id: &str) {
         self.status_items.remove(id);
         for view_id in self.opened_documents.keys() {
-            self.core.remove_status_item(view_id, id);
+            self.core.remove_status_item(*view_id, id);
         }
     }
 
     fn add_status_item(&mut self, id: &str, value: &str, alignment: &str) {
         self.status_items.insert(id.to_string());
         for view_id in self.opened_documents.keys() {
-            self.core.add_status_item(view_id, id, value, alignment);
+            self.core.add_status_item(*view_id, id, value, alignment);
         }
     }
 
     fn update_status_item(&mut self, id: &str, value: &str) {
         for view_id in self.opened_documents.keys() {
-            self.core.update_status_item(view_id, id, value);
+            self.core.update_status_item(*view_id, id, value);
         }
     }
 
@@ -157,11 +159,11 @@ impl LanguageServerClient {
         self.pending.insert(self.next_id, completion);
         self.next_id += 1;
 
-        self.send_rpc(to_value(&request).unwrap());
+        self.send_rpc(&to_value(&request).unwrap());
     }
 
-    fn send_rpc(&mut self, value: Value) {
-        let rpc = match prepare_lsp_json(&value) {
+    fn send_rpc(&mut self, value: &Value) {
+        let rpc = match prepare_lsp_json(value) {
             Ok(r) => r,
             Err(err) => panic!("Encoding Error {:?}", err),
         };
@@ -173,7 +175,7 @@ impl LanguageServerClient {
     pub fn send_notification(&mut self, method: &str, params: Params) {
         let notification = JsonRpc::notification_with_params(method, params);
         let res = to_value(&notification).unwrap();
-        self.send_rpc(res);
+        self.send_rpc(&res);
     }
 }
 
@@ -188,7 +190,7 @@ impl LanguageServerClient {
         let client_capabilities = ClientCapabilities::default();
 
         let init_params = InitializeParams {
-            process_id: Some(process::id() as u64),
+            process_id: Some(u64::from(process::id())),
             root_uri,
             root_path: None,
             initialization_options: None,
@@ -219,7 +221,7 @@ impl LanguageServerClient {
 
     /// Send textDocument/didClose Notification to the Language Server
     pub fn send_did_close(&mut self, view_id: ViewId) {
-        let uri = self.opened_documents.get(&view_id).unwrap().clone();
+        let uri = self.opened_documents[&view_id].clone();
         let text_document_did_close_params =
             DidCloseTextDocumentParams { text_document: TextDocumentIdentifier { uri } };
 
@@ -238,7 +240,7 @@ impl LanguageServerClient {
     ) {
         let text_document_did_change_params = DidChangeTextDocumentParams {
             text_document: VersionedTextDocumentIdentifier {
-                uri: self.opened_documents.get(&view_id).unwrap().clone(),
+                uri: self.opened_documents[&view_id].clone(),
                 version: Some(version),
             },
             content_changes: changes,
@@ -249,13 +251,11 @@ impl LanguageServerClient {
     }
 
     /// Send textDocument/didSave notification to the Language Server
-    pub fn send_did_save(&mut self, view_id: ViewId, _document_text: String) {
+    pub fn send_did_save(&mut self, view_id: ViewId, _document_text: &str) {
         // Add support for sending document text as well. Currently missing in LSP types
         // and is optional in LSP Specification
         let text_document_did_save_params = DidSaveTextDocumentParams {
-            text_document: TextDocumentIdentifier {
-                uri: self.opened_documents.get(&view_id).unwrap().clone(),
-            },
+            text_document: TextDocumentIdentifier { uri: self.opened_documents[&view_id].clone() },
         };
         let params = Params::from(serde_json::to_value(text_document_did_save_params).unwrap());
         self.send_notification("textDocument/didSave", params);
@@ -266,9 +266,7 @@ impl LanguageServerClient {
         CB: 'static + Send + FnOnce(&mut LanguageServerClient, Result<Value, Error>),
     {
         let text_document_position_params = TextDocumentPositionParams {
-            text_document: TextDocumentIdentifier {
-                uri: self.opened_documents.get(&view_id).unwrap().clone(),
-            },
+            text_document: TextDocumentIdentifier { uri: self.opened_documents[&view_id].clone() },
             position,
         };
 
