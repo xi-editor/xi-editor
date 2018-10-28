@@ -75,7 +75,7 @@ impl Plugin for LspPlugin {
         if let Some(view_info) = view_info {
             // This won't fail since we definitely have a client for the given
             // client identifier
-            let ls_client = self.language_server_clients.get(&view_info.ls_identifier).unwrap();
+            let ls_client = &self.language_server_clients[&view_info.ls_identifier];
             let mut ls_client = ls_client.lock().unwrap();
 
             let sync_kind = ls_client.get_sync_kind();
@@ -91,7 +91,7 @@ impl Plugin for LspPlugin {
 
         let document_text = view.get_document().unwrap();
         self.with_language_server_for_view(view, |ls_client| {
-            ls_client.send_did_save(view.get_id(), document_text);
+            ls_client.send_did_save(view.get_id(), &document_text);
         });
     }
 
@@ -107,8 +107,8 @@ impl Plugin for LspPlugin {
         trace!("new view {}", view.get_id());
 
         let document_text = view.get_document().unwrap();
-        let path = view.get_path().clone();
-        let view_id = view.get_id().clone();
+        let path = view.get_path();
+        let view_id = view.get_id();
 
         // TODO: Use Language Idenitifier assigned by core when the
         // implementation is settled
@@ -119,13 +119,13 @@ impl Plugin for LspPlugin {
                 let config = &self.config.language_config.get_mut(&language_id).unwrap();
 
                 config.workspace_identifier.clone().and_then(|identifier| {
-                    let path = view.get_path().clone().unwrap();
+                    let path = view.get_path().unwrap();
                     let q = get_workspace_root_uri(&identifier, path);
                     q.ok()
                 })
             };
 
-            let result = self.get_lsclient_from_workspace_root(language_id, &workspace_root_uri);
+            let result = self.get_lsclient_from_workspace_root(&language_id, &workspace_root_uri);
 
             if let Some((identifier, ls_client)) = result {
                 self.view_info
@@ -187,7 +187,7 @@ impl Plugin for LspPlugin {
                     let res =
                         res.and_then(|h| core_hover_from_hover(view, h)).map_err(|e| e.into());
                     self.with_language_server_for_view(view, |ls_client| {
-                        ls_client.core.display_hover(view.get_id(), request_id, res)
+                        ls_client.core.display_hover(view.get_id(), request_id, &res)
                     });
                 }
             }
@@ -203,14 +203,14 @@ impl LspPlugin {
     /// Arc reference to it
     fn get_lsclient_from_workspace_root(
         &mut self,
-        language_id: String,
+        language_id: &str,
         workspace_root: &Option<Url>,
     ) -> Option<(String, Arc<Mutex<LanguageServerClient>>)> {
         workspace_root
             .clone()
             .and_then(|r| Some(r.clone().into_string()))
             .or_else(|| {
-                let config = self.config.language_config.get(&language_id).unwrap();
+                let config = &self.config.language_config[language_id];
                 if config.supports_single_file {
                     // A generic client is the one that supports single files i.e.
                     // Non-Workspace projects as well
@@ -223,20 +223,16 @@ impl LspPlugin {
                     self.language_server_clients.contains_key(&language_server_identifier);
 
                 if contains {
-                    let client = self
-                        .language_server_clients
-                        .get(&language_server_identifier)
-                        .unwrap()
-                        .clone();
+                    let client = self.language_server_clients[&language_server_identifier].clone();
 
                     Some((language_server_identifier, client))
                 } else {
-                    let config = self.config.language_config.get(&language_id).unwrap();
+                    let config = &self.config.language_config[language_id];
                     let client = start_new_server(
                         config.start_command.clone(),
                         config.start_arguments.clone(),
                         config.extensions.clone(),
-                        language_id.clone(),
+                        language_id,
                         // Unwrap is safe
                         self.core.clone().unwrap(),
                         self.result_queue.clone(),
@@ -289,7 +285,7 @@ impl LspPlugin {
             return None;
         };
 
-        let ls_client_arc = self.language_server_clients.get(&view_info.ls_identifier).unwrap();
+        let ls_client_arc = &self.language_server_clients[&view_info.ls_identifier];
         let mut ls_client = ls_client_arc.lock().unwrap();
         Some(f(&mut ls_client))
     }

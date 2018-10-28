@@ -159,7 +159,7 @@ pub fn start_new_server(
     command: String,
     arguments: Vec<String>,
     file_extensions: Vec<String>,
-    language_id: String,
+    language_id: &str,
     core: CoreProxy,
     result_queue: ResultQueue,
 ) -> Result<Arc<Mutex<LanguageServerClient>>, String> {
@@ -176,7 +176,7 @@ pub fn start_new_server(
         writer,
         core,
         result_queue,
-        language_id.clone(),
+        language_id.to_owned(),
         file_extensions,
     )));
 

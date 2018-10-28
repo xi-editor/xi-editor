@@ -91,7 +91,7 @@ impl PluginState {
         let mut prev_cursor = 0;
         let repo = SCOPE_REPO.lock().unwrap();
         for (cursor, batch) in ops {
-            if scope_state.len() > 0 {
+            if !scope_state.is_empty() {
                 let scope_id = self.identifier_for_stack(&scope_state, &repo);
                 let start = self.offset - self.spans_start + prev_cursor;
                 let end = start + (cursor - prev_cursor);
@@ -196,7 +196,7 @@ impl<'a> Syntect<'a> {
             let syntax = self
                 .syntax_set
                 .find_syntax_by_name(language_id.as_ref())
-                .unwrap_or(self.syntax_set.find_syntax_plain_text());
+                .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text());
             Some((ParseState::new(syntax), ScopeStack::new()))
         };
 
@@ -229,7 +229,7 @@ impl<'a> Syntect<'a> {
             let tab_size = view.get_config().tab_size;
             let buf_size = view.get_buf_size();
 
-            let result = if let Some(line) = view.get_line(line_num).ok() {
+            let result = if let Ok(line) = view.get_line(line_num) {
                 // do not send update if last line is empty string (contains only line ending)
                 if line == line_ending {
                     return;
@@ -265,7 +265,7 @@ impl<'a> Syntect<'a> {
         let leading_ws = prev_line
             .char_indices()
             .find(|&(_, c)| !c.is_whitespace())
-            .or(prev_line.char_indices().last())
+            .or_else(|| prev_line.char_indices().last())
             .map(|(idx, _)| unsafe { prev_line.get_unchecked(0..idx) })
             .unwrap_or("");
 
