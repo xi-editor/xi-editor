@@ -186,7 +186,14 @@ where
 }
 
 fn try_save(path: &Path, text: &Rope, encoding: CharacterEncoding) -> io::Result<()> {
-    let mut f = File::create(path)?;
+    use std::fs;
+
+    let tmp_extension = path.extension()
+        .and_then(|extension| extension.to_str())
+        .map_or_else(|| "swp".to_string(),|extension| format!("{}.swp", extension));
+    let tmp_path = &path.with_extension(tmp_extension);
+
+    let mut f = File::create(tmp_path)?;
     match encoding {
         CharacterEncoding::Utf8WithBom => f.write_all(UTF8_BOM.as_bytes())?,
         CharacterEncoding::Utf8 => (),
@@ -195,6 +202,9 @@ fn try_save(path: &Path, text: &Rope, encoding: CharacterEncoding) -> io::Result
     for chunk in text.iter_chunks(..text.len()) {
         f.write_all(chunk.as_bytes())?;
     }
+
+    fs::rename(tmp_path, path)?;
+
     Ok(())
 }
 
