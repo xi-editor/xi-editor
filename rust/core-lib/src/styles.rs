@@ -207,8 +207,8 @@ impl ThemeStyleMap {
         &self.theme.settings
     }
 
-    pub fn get_theme_names(&self) -> Vec<String> {
-        self.themes.themes.keys().cloned().collect()
+    pub fn get_theme_names(&self) -> Vec<String>  {
+        self.path_map.keys().chain(self.themes.themes.keys()).cloned().collect()
     }
 
     pub fn contains_theme(&self, k: &str) -> bool {
@@ -344,9 +344,10 @@ impl ThemeStyleMap {
     /// Loads a theme's name and its respective path into the theme path map.
     pub(crate) fn load_theme_from_path(&mut self, theme_p: &Path) -> Result<String, LoadingError> {
         validate_theme_file(theme_p)?;
-        let theme = ThemeSet::get_theme(theme_p)?;
-        let theme_name =
-            theme_p.file_stem().and_then(OsStr::to_str).ok_or(LoadingError::BadPath)?;
+        let theme_name = theme_p
+            .file_stem()
+            .and_then(OsStr::to_str)
+            .ok_or(LoadingError::BadPath)?;
 
         Ok(theme_name.to_owned())
     }
@@ -355,6 +356,10 @@ impl ThemeStyleMap {
     /// Stores binary dump in a file with `tmdump` extension, only if
     /// caching is enabled.
     fn load_theme(&mut self, theme_name: &str) -> Result<(), LoadingError> {
+        // If it's a default theme, it should already be loaded, and we can just move on.
+        if self.contains_theme(theme_name) {
+            return Ok(())
+        }
         // If we haven't loaded the theme before, we try to load it from the dump if a dump
         // exists  or load it from the theme file itself.
         // Otherwise, we just load the cached theme from our theme map.
