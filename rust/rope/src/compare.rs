@@ -39,7 +39,7 @@ const SSE_STRIDE: usize = 16;
 /// # }
 /// ```
 ///
-#[cfg_attr(feature = "cargo-clippy", allow(cast_ptr_alignment))]
+#[cfg_attr(feature = "cargo-clippy", allow(cast_ptr_alignment, unreadable_literal))]
 #[doc(hidden)]
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "sse4.2")]
