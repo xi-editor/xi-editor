@@ -14,7 +14,7 @@
 
 //! Management of styles.
 
-use std::collections::{HashMap, HashSet, BTreeMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::OsStr;
 use std::fs;
 use std::iter::FromIterator;
@@ -207,7 +207,7 @@ impl ThemeStyleMap {
         &self.theme.settings
     }
 
-    pub fn get_theme_names(&self) -> Vec<String>  {
+    pub fn get_theme_names(&self) -> Vec<String> {
         self.path_map.keys().chain(self.themes.themes.keys()).cloned().collect()
     }
 
@@ -228,11 +228,11 @@ impl ThemeStyleMap {
                 } else {
                     Err("unknown theme")
                 }
-            },
+            }
             Err(e) => {
                 eprintln!("Encountered error {:?} while trying to load {:?}", e, theme_name);
                 Err("could not load theme")
-            },
+            }
         }
     }
 
@@ -274,34 +274,15 @@ impl ThemeStyleMap {
             match ThemeSet::discover_theme_paths(themes_dir) {
                 Ok(themes) => {
                     self.caching_enabled = self.caching_enabled && self.init_cache_dir();
-<<<<<<< HEAD
-
-                    for theme_p in &themes {
-                        match self.try_load_from_dump(theme_p) {
-                            Some((k, v)) => {
-                                self.insert_to_map(k, v, theme_p);
-                            }
-                            None => {
-                                let _ = self.load_theme(theme_p);
-                            }
-=======
                     // We look through the theme folder here and cache their names/paths to a
                     // path hashmap.
                     for theme_p in themes.iter() {
-<<<<<<< HEAD
-                        if let Some(theme_name) = theme_p.file_stem().and_then(OsStr::to_str) {
-                            self.path_map.insert(theme_name.to_string(), theme_p.to_path_buf());
-                        } else {
-                            error!("Invalid theme name, skipping");
->>>>>>> Implement lazy load for themes
-=======
                         match self.load_theme_from_path(theme_p) {
                             Ok(theme_name) => {
                                 self.path_map.insert(theme_name.to_string(), theme_p.to_path_buf());
                                 self.state.insert(theme_p.to_path_buf());
-                            },
+                            }
                             Err(e) => error!("Error {:?} loading theme at path {:?}", e, theme_p),
->>>>>>> Refactor theme loading to always load path first
                         }
                     }
                 }
@@ -344,10 +325,8 @@ impl ThemeStyleMap {
     /// Loads a theme's name and its respective path into the theme path map.
     pub(crate) fn load_theme_from_path(&mut self, theme_p: &Path) -> Result<String, LoadingError> {
         validate_theme_file(theme_p)?;
-        let theme_name = theme_p
-            .file_stem()
-            .and_then(OsStr::to_str)
-            .ok_or(LoadingError::BadPath)?;
+        let theme_name =
+            theme_p.file_stem().and_then(OsStr::to_str).ok_or(LoadingError::BadPath)?;
 
         Ok(theme_name.to_owned())
     }
@@ -358,10 +337,10 @@ impl ThemeStyleMap {
     fn load_theme(&mut self, theme_name: &str) -> Result<(), LoadingError> {
         // If it's a default theme, it should already be loaded, and we can just move on.
         if self.contains_theme(theme_name) {
-            return Ok(())
+            return Ok(());
         }
         // If we haven't loaded the theme before, we try to load it from the dump if a dump
-        // exists  or load it from the theme file itself.
+        // exists or load it from the theme file itself.
         // Otherwise, we just load the cached theme from our theme map.
         let theme_p = &self.path_map.get(theme_name).cloned();
         if let Some(theme_p) = theme_p {
