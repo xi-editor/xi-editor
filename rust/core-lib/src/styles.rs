@@ -14,7 +14,7 @@
 
 //! Management of styles.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, BTreeMap};
 use std::ffi::OsStr;
 use std::fs;
 use std::iter::FromIterator;
@@ -154,7 +154,7 @@ pub struct ThemeStyleMap {
     theme: Theme,
     default_style: Style,
     map: HashMap<Style, usize>,
-    path_map: HashMap<String, PathBuf>,
+    path_map: BTreeMap<String, PathBuf>,
 
     // It's not obvious we actually have to store the style, we seem to only need it
     // as the key in the map.
@@ -182,7 +182,7 @@ impl ThemeStyleMap {
             theme,
             default_style,
             map: HashMap::new(),
-            path_map: HashMap::new(),
+            path_map: BTreeMap::new(),
             styles: Vec::new(),
             themes_dir,
             cache_dir,
@@ -355,14 +355,12 @@ impl ThemeStyleMap {
     /// Stores binary dump in a file with `tmdump` extension, only if
     /// caching is enabled.
     fn load_theme(&mut self, theme_name: &str) -> Result<(), LoadingError> {
-        // If we haven't loaded the theme before, we try to load it from the dump (if the dump
-        // exists), or load it from the file itself.
+        // If we haven't loaded the theme before, we try to load it from the dump if a dump
+        // exists  or load it from the theme file itself.
         // Otherwise, we just load the cached theme from our theme map.
         let theme_p = &self.path_map.get(theme_name).cloned();
         if let Some(theme_p) = theme_p {
             match self.try_load_from_dump(theme_p) {
-                // If loading from the dump is successful, this will get us the theme name
-                // and its theme data.
                 Some((dump_theme_name, dump_theme_data)) => {
                     self.insert_to_map(dump_theme_name, dump_theme_data, theme_p);
                 }
