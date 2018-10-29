@@ -37,7 +37,8 @@ pub trait Callable: Send {
     );
 }
 
-//NOTE: I (cmyr) don't understand this lint, and I just want this to pass clippy
+//FIXME: this can be removed when this change makes it to stable:
+// https://github.com/rust-lang-nursery/rust-clippy/pull/3321
 #[cfg_attr(feature = "cargo-clippy", allow(boxed_local))]
 impl<F: Send + FnOnce(&mut LanguageServerClient, Result<Value, JsonRpcError>)> Callable for F {
     fn call(self: Box<F>, client: &mut LanguageServerClient, result: Result<Value, JsonRpcError>) {
