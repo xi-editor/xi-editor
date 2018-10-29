@@ -277,9 +277,10 @@ impl ThemeStyleMap {
                     // We look through the theme folder here and cache their names/paths to a
                     // path hashmap.
                     for theme_p in themes.iter() {
-                        self.load_theme_from_path(theme_p).expect(&format!("Error loading theme at path {:?}", theme_p));
-                        }
+                        self.load_theme_info_from_path(theme_p)
+                            .expect(&format!("Error loading theme info at path {:?}", theme_p));
                     }
+                }
                 Err(e) => error!("Error loading themes dir: {:?}", e),
             }
         }
@@ -317,7 +318,10 @@ impl ThemeStyleMap {
     }
 
     /// Loads a theme's name and its respective path into the theme path map.
-    pub(crate) fn load_theme_from_path(&mut self, theme_p: &Path) -> Result<String, LoadingError> {
+    pub(crate) fn load_theme_info_from_path(
+        &mut self,
+        theme_p: &Path,
+    ) -> Result<String, LoadingError> {
         validate_theme_file(theme_p)?;
         let theme_name =
             theme_p.file_stem().and_then(OsStr::to_str).ok_or(LoadingError::BadPath)?;
@@ -328,7 +332,7 @@ impl ThemeStyleMap {
         Ok(theme_name.to_owned())
     }
 
-    /// Loads theme using syntect's `get_theme` fn to our `theme` path hashmap.
+    /// Loads theme using syntect's `get_theme` fn to our `theme` path map.
     /// Stores binary dump in a file with `tmdump` extension, only if
     /// caching is enabled.
     fn load_theme(&mut self, theme_name: &str) -> Result<(), LoadingError> {
@@ -382,7 +386,7 @@ impl ThemeStyleMap {
 
                 let to_insert = current_state.difference(&maintained_state);
                 for path in to_insert {
-                    let _ = self.load_theme_from_path(path);
+                    let _ = self.load_theme_info_from_path(path);
                 }
                 let to_remove = maintained_state.difference(&current_state);
                 for path in to_remove {
