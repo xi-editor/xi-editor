@@ -277,15 +277,9 @@ impl ThemeStyleMap {
                     // We look through the theme folder here and cache their names/paths to a
                     // path hashmap.
                     for theme_p in themes.iter() {
-                        match self.load_theme_from_path(theme_p) {
-                            Ok(theme_name) => {
-                                self.path_map.insert(theme_name.to_string(), theme_p.to_path_buf());
-                                self.state.insert(theme_p.to_path_buf());
-                            }
-                            Err(e) => error!("Error {:?} loading theme at path {:?}", e, theme_p),
+                        self.load_theme_from_path(theme_p).expect(&format!("Error loading theme at path {:?}", theme_p));
                         }
                     }
-                }
                 Err(e) => error!("Error loading themes dir: {:?}", e),
             }
         }
@@ -327,6 +321,9 @@ impl ThemeStyleMap {
         validate_theme_file(theme_p)?;
         let theme_name =
             theme_p.file_stem().and_then(OsStr::to_str).ok_or(LoadingError::BadPath)?;
+
+        self.path_map.insert(theme_name.to_string(), theme_p.to_path_buf());
+        self.state.insert(theme_p.to_path_buf());
 
         Ok(theme_name.to_owned())
     }
