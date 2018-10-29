@@ -42,7 +42,5 @@ sha2 = "0.7"
 tempdir = "^0.3.4"
 
 [features]
-avx-accel = ["xi-rope/avx-accel"]
-simd-accel = ["xi-rope/simd-accel"]
 ledger = []
 default = ["notify"]
