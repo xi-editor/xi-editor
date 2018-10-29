@@ -11,6 +11,8 @@ task:
             cpu: 4
             memory: 8G
           rustfmt_script: rustup component add rustfmt-preview && cd rust && cargo fmt --all -- --check
+          clippy_script: rustup component add clippy-preview && cd rust && cargo clippy --all -- -D warnings
+
         - name: test (linux nightly)
           allow_failures: true
           container:
@@ -26,6 +28,7 @@ task:
         - name: test (macOS)
           install_rust_script: curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain 1.29.2
           rustfmt_script: rustup component add rustfmt-preview && cd rust && cargo fmt --all -- --check
+          clippy_script: rustup component add clippy-preview && cd rust && cargo clippy --all -- -D warnings
         - name: test (macOS nightly)
           allow_failures: true
           install_rust_script: curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain nightly

@@ -1,5 +1,34 @@
 #!/bin/bash
 
+if !(cargo clippy --version); then
+    printf 'Checks requires clippy; try `rustup install clippy-preview`.\n'
+    exit 1
+fi
+
+if !(cargo fmt --version); then
+    printf 'Checks requires rustfmt; try `rustup install rustfmt-preview`.\n'
+    exit 1
+fi
+
+printf 'Running rustfmt:\n'
+
+if ! (cargo fmt --all -- --check); then
+    printf '\nRustfmt failed. Please run rustfmt.\n'
+    exit $?
+fi
+
+printf 'Rustfmt check passed.\n'
+
+printf 'Running clippy:\n'
+
+if ! (cargo clippy --all -- -D warnings); then
+    printf '\nClippy has nits. :(\n'
+    exit $?
+fi
+
+printf 'Clippy check passed.\n'
+
+
 printf 'Checking compiler warnings:\n'
 
 if ! (RUSTFLAGS="-D warnings" cargo check --all); then
@@ -8,13 +37,6 @@ if ! (RUSTFLAGS="-D warnings" cargo check --all); then
 fi
 
 printf 'Check passed!\n'
-
-printf 'Running rustfmt:\n'
-
-if ! (cargo fmt --all -- --check); then
-    printf '\nRustfmt failed. Please run rustfmt.\n'
-    exit $?
-fi
 
 printf 'Running "cargo test --all"\n'
 
