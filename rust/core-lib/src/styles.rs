@@ -335,13 +335,12 @@ impl ThemeStyleMap {
     /// Stores binary dump in a file with `tmdump` extension, only if
     /// caching is enabled.
     fn load_theme(&mut self, theme_name: &str) -> Result<(), LoadingError> {
-        // If it's a default theme, it should already be loaded, and we can just move on.
+        // If it's a default theme, or if the theme has already been loaded, we can move on.
         if self.contains_theme(theme_name) {
             return Ok(());
         }
         // If we haven't loaded the theme before, we try to load it from the dump if a dump
         // exists or load it from the theme file itself.
-        // Otherwise, we just load the cached theme from our theme map.
         let theme_p = &self.path_map.get(theme_name).cloned();
         if let Some(theme_p) = theme_p {
             match self.try_load_from_dump(theme_p) {
