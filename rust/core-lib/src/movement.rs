@@ -97,18 +97,18 @@ fn vertical_motion_exact_pos(
     r: SelRegion,
     view: &View,
     text: &Rope,
-    is_down: bool,
+    move_up: bool,
     modify: bool,
 ) -> (usize, Option<HorizPos>) {
-    let (col, init_line) = selection_position(r, view, text, is_down, modify);
+    let (col, init_line) = selection_position(r, view, text, move_up, modify);
     let n_lines = view.line_of_offset(text, text.len());
 
     let mut line_length = view.offset_of_line(text, init_line.saturating_add(1))
         - view.offset_of_line(text, init_line);
-    if is_down && init_line == 0 {
+    if move_up && init_line == 0 {
         return (view.line_col_to_offset(text, init_line, col), Some(col));
     }
-    let mut line = if is_down { init_line - 1 } else { init_line.saturating_add(1) };
+    let mut line = if move_up { init_line - 1 } else { init_line.saturating_add(1) };
 
     // If the active columns is longer than the current line, use the current line length.
     let col = if line_length < col { line_length - 1 } else { col };
@@ -123,12 +123,12 @@ fn vertical_motion_exact_pos(
         }
 
         // If you are trying to add a selection past the end of the file or before the first line, return original selection
-        if line >= n_lines || (line == 0 && is_down) {
+        if line >= n_lines || (line == 0 && move_up) {
             line = init_line;
             break;
         }
 
-        line = if is_down { line - 1 } else { line.saturating_add(1) };
+        line = if move_up { line - 1 } else { line.saturating_add(1) };
     }
 
     (view.line_col_to_offset(text, line, col), Some(col))
@@ -140,13 +140,13 @@ fn selection_position(
     r: SelRegion,
     view: &View,
     text: &Rope,
-    is_down: bool,
+    move_up: bool,
     modify: bool,
 ) -> (HorizPos, usize) {
     // The active point of the selection
     let active = if modify {
         r.end
-    } else if is_down {
+    } else if move_up {
         r.min()
     } else {
         r.max()
