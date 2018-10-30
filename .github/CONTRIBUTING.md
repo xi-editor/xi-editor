@@ -18,7 +18,7 @@ follow the [Code of Conduct](https://github.com/xi-editor/xi-editor/blob/master/
     - [After submitting your change](#after-submitting-your-change)
 - [Getting more involved](#getting-more-involved)
 
-## Getting started
+## Getting Started
 
 ### Very first steps
 
@@ -83,7 +83,7 @@ edge cases? Manual testing is very valuable. For more information on
 reviews, see [code review process](#review-process).
 
 
-## Proposing and making changes
+## Proposing and Making Changes
 
 ### Finding something to work on
 
@@ -193,7 +193,7 @@ anyone, feel free to comment on it, or stop by the IRC channel, to ask
 if anyone has had a chance to take a look. It's very possible that it's
 been lost in the shuffle.
 
-## Getting more involved
+## Getting More Involved
 
 If you are participating in the xi-editor project, you may receive
 additional privileges:
