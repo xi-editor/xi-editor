@@ -276,9 +276,10 @@ impl ThemeStyleMap {
                     self.caching_enabled = self.caching_enabled && self.init_cache_dir();
                     // We look through the theme folder here and cache their names/paths to a
                     // path hashmap.
-                    for theme_p in themes.iter() {
-                        self.load_theme_info_from_path(theme_p)
-                            .expect(&format!("Error loading theme info at path {:?}", theme_p));
+                    for theme_p in &themes {
+                        self.load_theme_info_from_path(theme_p).unwrap_or_else(|_| {
+                            panic!("Error loading theme info at path {:?}", theme_p)
+                        });
                     }
                 }
                 Err(e) => error!("Error loading themes dir: {:?}", e),
