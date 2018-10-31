@@ -230,7 +230,7 @@ impl ThemeStyleMap {
                 }
             }
             Err(e) => {
-                eprintln!("Encountered error {:?} while trying to load {:?}", e, theme_name);
+                error!("Encountered error {:?} while trying to load {:?}", e, theme_name);
                 Err("could not load theme")
             }
         }
@@ -277,9 +277,10 @@ impl ThemeStyleMap {
                     // We look through the theme folder here and cache their names/paths to a
                     // path hashmap.
                     for theme_p in &themes {
-                        self.load_theme_info_from_path(theme_p).unwrap_or_else(|_| {
-                            panic!("Error loading theme info at path {:?}", theme_p)
-                        });
+                        match self.load_theme_info_from_path(theme_p) {
+                            Ok(_) => (),
+                            Err(e) => error!("Encountered error {:?} loading theme at {:?}", e, theme_p),
+                        }
                     }
                 }
                 Err(e) => error!("Error loading themes dir: {:?}", e),
