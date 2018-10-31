@@ -26,3 +26,10 @@ wrap_width = 0
 word_wrap = false
 
 autodetect_whitespace = true
+
+surrounding_pairs = [
+  ["\"", "\""],
+  ["'", "'"],
+  ["{", "}"],
+  ["[", "]"],
+]

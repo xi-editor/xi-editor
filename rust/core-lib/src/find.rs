@@ -17,7 +17,7 @@
 use std::cmp::{max, min};
 
 use regex::{Regex, RegexBuilder};
-use selection::{SelRegion, Selection};
+use selection::{InsertDrift, SelRegion, Selection};
 use view::View;
 use word_boundaries::WordCursor;
 use xi_rope::delta::DeltaRegion;
@@ -144,7 +144,7 @@ impl Find {
                 self.occurrences.delete_range(old_offset, old_offset + len, false);
             }
 
-            self.occurrences = self.occurrences.apply_delta(delta, false, false);
+            self.occurrences = self.occurrences.apply_delta(delta, false, InsertDrift::Default);
 
             // invalidate occurrences around insert positions
             for DeltaRegion { new_offset, len, .. } in delta.iter_inserts() {

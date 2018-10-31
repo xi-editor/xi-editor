@@ -39,6 +39,7 @@ use editor::Editor;
 use file::FileInfo;
 use plugins::Plugin;
 use recorder::Recorder;
+use selection::InsertDrift;
 use syntax::LanguageId;
 use tabs::{BufferId, PluginId, ViewId, RENDER_VIEW_IDLE_MASK};
 use view::View;
@@ -181,11 +182,11 @@ impl<'a> EventContext<'a> {
                     self.dispatch_event(event.clone());
 
                     let mut editor = self.editor.borrow_mut();
-                    let (delta, last_text, keep_sels) = match editor.commit_delta() {
+                    let (delta, last_text, drift) = match editor.commit_delta() {
                         Some(edit_info) => edit_info,
                         None => return,
                     };
-                    self.update_views(&editor, &delta, &last_text, keep_sels);
+                    self.update_views(&editor, &delta, &last_text, drift);
                 });
                 self.editor.borrow_mut().set_force_undo_group(false);
 
@@ -257,12 +258,12 @@ impl<'a> EventContext<'a> {
         let _t = trace_block("EventContext::after_edit", &["core"]);
 
         let mut ed = self.editor.borrow_mut();
-        let (delta, last_text, keep_sels) = match ed.commit_delta() {
+        let (delta, last_text, drift) = match ed.commit_delta() {
             Some(edit_info) => edit_info,
             None => return,
         };
 
-        self.update_views(&ed, &delta, &last_text, keep_sels);
+        self.update_views(&ed, &delta, &last_text, drift);
         self.update_plugins(&mut ed, delta, author);
 
         //if we have no plugins we always render immediately.
@@ -278,7 +279,7 @@ impl<'a> EventContext<'a> {
         }
     }
 
-    fn update_views(&self, ed: &Editor, delta: &RopeDelta, last_text: &Rope, keep_sels: bool) {
+    fn update_views(&self, ed: &Editor, delta: &RopeDelta, last_text: &Rope, drift: InsertDrift) {
         let mut width_cache = self.width_cache.borrow_mut();
         let iter_views = iter::once(&self.view).chain(self.siblings.iter());
         iter_views.for_each(|view| {
@@ -288,7 +289,7 @@ impl<'a> EventContext<'a> {
                 delta,
                 self.client,
                 &mut width_cache,
-                keep_sels,
+                drift,
             )
         });
     }

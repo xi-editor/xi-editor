@@ -169,6 +169,7 @@ pub struct BufferItems {
     pub wrap_width: usize,
     pub word_wrap: bool,
     pub autodetect_whitespace: bool,
+    pub surrounding_pairs: Vec<(String, String)>,
 }
 
 pub type BufferConfig = Config<BufferItems>;

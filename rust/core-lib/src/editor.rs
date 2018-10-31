@@ -33,7 +33,7 @@ use movement::{region_movement, Movement};
 use plugins::rpc::{GetDataResponse, PluginEdit, ScopeSpan, TextUnit};
 use plugins::PluginId;
 use rpc::SelectionModifier;
-use selection::{SelRegion, Selection};
+use selection::{InsertDrift, SelRegion, Selection};
 use styles::ThemeStyleMap;
 use view::{Replace, View};
 use word_boundaries::WordCursor;
@@ -201,6 +201,24 @@ impl Editor {
         self.add_delta(builder.build());
     }
 
+    /// Leaves the current selection untouched, but surrounds it with two insertions.
+    fn surround<BT, AT>(&mut self, view: &View, before_text: BT, after_text: AT)
+    where
+        BT: Into<Rope>,
+        AT: Into<Rope>,
+    {
+        let mut builder = DeltaBuilder::new(self.text.len());
+        let before_rope = before_text.into();
+        let after_rope = after_text.into();
+        for region in view.sel_regions() {
+            let before_iv = Interval::new(region.min(), region.min());
+            builder.replace(before_iv, before_rope.clone());
+            let after_iv = Interval::new(region.max(), region.max());
+            builder.replace(after_iv, after_rope.clone());
+        }
+        self.add_delta(builder.build());
+    }
+
     /// Applies a delta to the text, and updates undo state.
     ///
     /// Records the delta into the CRDT engine so that it can be undone. Also
@@ -261,7 +279,7 @@ impl Editor {
     /// Commits the current delta. If the buffer has changed, returns
     /// a 3-tuple containing the delta representing the changes, the previous
     /// buffer, and a bool indicating whether selections should be preserved.
-    pub(crate) fn commit_delta(&mut self) -> Option<(RopeDelta, Rope, bool)> {
+    pub(crate) fn commit_delta(&mut self) -> Option<(RopeDelta, Rope, InsertDrift)> {
         let _t = trace_block("Editor::commit_delta", &["core"]);
 
         if self.engine.get_head_rev_id() == self.last_rev_id {
@@ -274,12 +292,18 @@ impl Editor {
         // rather than resynthesize it.
         let last_text = self.engine.get_rev(last_token).expect("last_rev not found");
 
-        let keep_selections = self.this_edit_type == EditType::Transpose;
+        // Transpose can rotate characters inside of a selection; this is why it's an Inside edit.
+        // Surround adds characters on either side of a selection, that's why it's an Outside edit.
+        let drift = match self.this_edit_type {
+            EditType::Transpose => InsertDrift::Inside,
+            EditType::Surround => InsertDrift::Outside,
+            _ => InsertDrift::Default,
+        };
         self.layers.update_all(&delta);
 
         self.last_rev_id = self.engine.get_head_rev_id();
         self.sync_state_changed();
-        Some((delta, last_text, keep_selections))
+        Some((delta, last_text, drift))
     }
 
     pub(crate) fn delta_rev_head(&self, target_rev_id: RevToken) -> RopeDelta {
@@ -526,9 +550,16 @@ impl Editor {
         tab_text
     }
 
-    fn do_insert(&mut self, view: &View, chars: &str) {
-        self.this_edit_type = EditType::InsertChars;
-        self.insert(view, chars);
+    fn do_insert(&mut self, view: &View, config: &BufferItems, chars: &str) {
+        let pair_search = config.surrounding_pairs.iter().find(|pair| pair.0 == chars);
+        let caret_exists = view.sel_regions().iter().any(|region| region.is_caret());
+        if let (Some(pair), false) = (pair_search, caret_exists) {
+            self.this_edit_type = EditType::Surround;
+            self.surround(view, pair.0.to_string(), pair.1.to_string());
+        } else {
+            self.this_edit_type = EditType::InsertChars;
+            self.insert(view, chars);
+        }
     }
 
     fn do_paste(&mut self, view: &View, chars: &str) {
@@ -811,7 +842,7 @@ impl Editor {
             Outdent => self.modify_indent(view, config, IndentDirection::Out),
             InsertNewline => self.insert_newline(view, config),
             InsertTab => self.insert_tab(view, config),
-            Insert(chars) => self.do_insert(view, &chars),
+            Insert(chars) => self.do_insert(view, config, &chars),
             Paste(chars) => self.do_paste(view, &chars),
             Yank => self.yank(view, kill_ring),
             ReplaceNext => self.replace(view, false),
@@ -923,6 +954,7 @@ pub enum EditType {
     Undo,
     Redo,
     Transpose,
+    Surround,
 }
 
 impl EditType {
