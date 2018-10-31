@@ -206,7 +206,10 @@ impl ThemeStyleMap {
     }
 
     pub fn get_theme_names(&self) -> Vec<String> {
-        self.path_map.keys().chain(self.themes.themes.keys()).cloned().collect()
+        let mut theme_names: Vec<String> = self.path_map.keys().chain(self.themes.themes.keys()).cloned().collect();
+        let set: HashSet<String> = theme_names.drain(..).collect();
+        theme_names.extend(set.into_iter());
+        theme_names
     }
 
     pub fn contains_theme(&self, k: &str) -> bool {
