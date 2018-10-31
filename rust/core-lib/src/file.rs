@@ -16,7 +16,8 @@
 
 use std::collections::HashMap;
 use std::fmt;
-use std::fs::File;
+use std::ffi::OsString;
+use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::str;
@@ -186,12 +187,13 @@ where
 }
 
 fn try_save(path: &Path, text: &Rope, encoding: CharacterEncoding) -> io::Result<()> {
-    use std::fs;
-
     let tmp_extension = path
         .extension()
-        .and_then(|extension| extension.to_str()?.to_string().into())
-        .map_or_else(|| "swp".to_string(), |extension| extension + ".swp");
+        .map_or_else(|| OsString::from("swp"), |ext| {
+            let mut ext = ext.to_os_string();
+            ext.push(".swp");
+            ext
+        });
     let tmp_path = &path.with_extension(tmp_extension);
 
     let mut f = File::create(tmp_path)?;
