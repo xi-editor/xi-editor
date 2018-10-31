@@ -15,8 +15,8 @@
 //! Interactions with the file system.
 
 use std::collections::HashMap;
-use std::fmt;
 use std::ffi::OsString;
+use std::fmt;
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
@@ -187,13 +187,14 @@ where
 }
 
 fn try_save(path: &Path, text: &Rope, encoding: CharacterEncoding) -> io::Result<()> {
-    let tmp_extension = path
-        .extension()
-        .map_or_else(|| OsString::from("swp"), |ext| {
+    let tmp_extension = path.extension().map_or_else(
+        || OsString::from("swp"),
+        |ext| {
             let mut ext = ext.to_os_string();
             ext.push(".swp");
             ext
-        });
+        },
+    );
     let tmp_path = &path.with_extension(tmp_extension);
 
     let mut f = File::create(tmp_path)?;
