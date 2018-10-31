@@ -659,7 +659,7 @@ impl CoreState {
     fn handle_open_file_fs_event(&mut self, event: DebouncedEvent) {
         use notify::DebouncedEvent::*;
         let path = match event {
-            NoticeWrite(ref path) | Create(ref path) | Write(ref path) => path,
+            NoticeWrite(ref path) | Create(ref path) | Write(ref path) | Chmod(ref path) => path,
             other => {
                 debug!("Event in open file {:?}", other);
                 return;
@@ -697,8 +697,10 @@ impl CoreState {
     fn handle_config_fs_event(&mut self, event: DebouncedEvent) {
         use self::DebouncedEvent::*;
         match event {
-            Create(ref path) | Write(ref path) => self.load_file_based_config(path),
-            Remove(ref path) => self.remove_config_at_path(path),
+            Create(ref path) | Write(ref path) | Chmod(ref path) => {
+                self.load_file_based_config(path)
+            }
+            Remove(ref path) if !path.exists() => self.remove_config_at_path(path),
             Rename(ref old, ref new) => {
                 self.remove_config_at_path(old);
                 self.load_file_based_config(new);
@@ -719,7 +721,9 @@ impl CoreState {
         use self::DebouncedEvent::*;
         match event {
             Create(ref path) | Write(ref path) => self.load_theme_file(path),
-            NoticeRemove(ref path) => self.remove_theme(path),
+            // the way FSEvents on macOS work, we want to verify that this path
+            // has actually be removed before we do anything.
+            NoticeRemove(ref path) | Remove(ref path) if !path.exists() => self.remove_theme(path),
             Rename(ref old, ref new) => {
                 self.remove_theme(old);
                 self.load_theme_file(new);
