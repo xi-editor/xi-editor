@@ -25,7 +25,7 @@ use line_cache_shadow::{self, LineCacheShadow, RenderPlan, RenderTactic};
 use linewrap;
 use movement::{region_movement, selection_movement, Movement};
 use rpc::{FindQuery, GestureType, MouseAction, SelectionModifier};
-use selection::{Affinity, SelRegion, Selection};
+use selection::{Affinity, InsertDrift, SelRegion, Selection};
 use styles::{Style, ThemeStyleMap};
 use tabs::{BufferId, Counter, ViewId};
 use width_cache::WidthCache;
@@ -953,7 +953,7 @@ impl View {
         delta: &RopeDelta,
         client: &Client,
         width_cache: &mut WidthCache,
-        keep_selections: bool,
+        drift: InsertDrift,
     ) {
         let (iv, new_len) = delta.summary();
         if let Some(breaks) = self.breaks.as_mut() {
@@ -988,7 +988,7 @@ impl View {
 
         // Note: for committing plugin edits, we probably want to know the priority
         // of the delta so we can set the cursor before or after the edit, as needed.
-        let new_sel = self.selection.apply_delta(delta, true, keep_selections);
+        let new_sel = self.selection.apply_delta(delta, true, drift);
         self.set_selection_for_edit(text, new_sel);
     }
 
