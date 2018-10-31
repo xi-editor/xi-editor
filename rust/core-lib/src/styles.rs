@@ -154,6 +154,8 @@ pub struct ThemeStyleMap {
     theme: Theme,
     default_style: Style,
     map: HashMap<Style, usize>,
+
+    // Maintains the map of found themes and their paths.
     path_map: BTreeMap<String, PathBuf>,
 
     // It's not obvious we actually have to store the style, we seem to only need it
@@ -162,9 +164,6 @@ pub struct ThemeStyleMap {
     themes_dir: Option<PathBuf>,
     cache_dir: Option<PathBuf>,
     caching_enabled: bool,
-
-    // Maintaining all theme paths for comparison on an fs event.
-    state: HashSet<PathBuf>,
 }
 
 impl ThemeStyleMap {
@@ -187,7 +186,6 @@ impl ThemeStyleMap {
             themes_dir,
             cache_dir,
             caching_enabled,
-            state: HashSet::new(),
         }
     }
 
@@ -258,7 +256,6 @@ impl ThemeStyleMap {
         let theme_name = path.file_stem().and_then(OsStr::to_str)?;
         self.themes.themes.remove(theme_name);
         self.path_map.remove(theme_name);
-        self.state.remove(path);
 
         let dump_p = self.get_dump_path(theme_name)?;
         if dump_p.exists() {
@@ -279,7 +276,9 @@ impl ThemeStyleMap {
                     for theme_p in &themes {
                         match self.load_theme_info_from_path(theme_p) {
                             Ok(_) => (),
-                            Err(e) => error!("Encountered error {:?} loading theme at {:?}", e, theme_p),
+                            Err(e) => {
+                                error!("Encountered error {:?} loading theme at {:?}", e, theme_p)
+                            }
                         }
                     }
                 }
@@ -329,7 +328,6 @@ impl ThemeStyleMap {
             theme_p.file_stem().and_then(OsStr::to_str).ok_or(LoadingError::BadPath)?;
 
         self.path_map.insert(theme_name.to_string(), theme_p.to_path_buf());
-        self.state.insert(theme_p.to_path_buf());
 
         Ok(theme_name.to_owned())
     }
@@ -348,7 +346,7 @@ impl ThemeStyleMap {
         if let Some(theme_p) = theme_p {
             match self.try_load_from_dump(theme_p) {
                 Some((dump_theme_name, dump_theme_data)) => {
-                    self.insert_to_map(dump_theme_name, dump_theme_data, theme_p);
+                    self.insert_to_map(dump_theme_name, dump_theme_data);
                 }
                 None => {
                     let theme = ThemeSet::get_theme(theme_p)?;
@@ -357,7 +355,7 @@ impl ThemeStyleMap {
                             let _ = dump_to_file(&theme, dump_p);
                         }
                     }
-                    self.insert_to_map(theme_name.to_owned(), theme, theme_p);
+                    self.insert_to_map(theme_name.to_owned(), theme);
                 }
             }
             Ok(())
@@ -366,11 +364,8 @@ impl ThemeStyleMap {
         }
     }
 
-    fn insert_to_map(&mut self, k: String, v: Theme, p: &Path) {
+    fn insert_to_map(&mut self, k: String, v: Theme) {
         self.themes.themes.insert(k, v);
-
-        //Maintain a record for future syncing
-        self.state.insert(p.to_path_buf());
     }
 
     /// Returns dump's path corresponding to the given theme name.
@@ -383,8 +378,9 @@ impl ThemeStyleMap {
     pub(crate) fn sync_dir(&mut self, dir: Option<&Path>) {
         if let Some(themes_dir) = dir {
             if let Ok(paths) = ThemeSet::discover_theme_paths(themes_dir) {
-                let current_state = HashSet::from_iter(paths.into_iter());
-                let maintained_state = self.state.clone();
+                let current_state: HashSet<PathBuf> = HashSet::from_iter(paths.into_iter());
+                let maintained_state: HashSet<PathBuf> =
+                    HashSet::from_iter(self.path_map.values().cloned());
 
                 let to_insert = current_state.difference(&maintained_state);
                 for path in to_insert {
