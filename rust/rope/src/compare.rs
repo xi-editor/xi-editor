@@ -328,8 +328,11 @@ impl<'a> RopeScanner<'a> {
     }
 
     /// Returns the positive offset from the start of the rope to the first
-    /// non-equal byte, and the negative offest from the end of the rope to
+    /// non-equal byte, and the negative offset from the end of the rope to
     /// the first non-equal byte.
+    ///
+    /// The two offsets are guaranteed not to overlap;
+    /// thus `sum(start_offset, end_offset) <= min(one.len(), two.len())`.
     ///
     /// # Examples
     ///
@@ -341,6 +344,12 @@ impl<'a> RopeScanner<'a> {
     /// let two = Rope::from("123ZZZ12345");
     /// let mut scanner = RopeScanner::new(&one, &two);
     /// assert_eq!(scanner.find_min_diff_range(), (3, 5));
+    ///
+    ///
+    /// let one = Rope::from("friends");
+    /// let two = Rope::from("fiends");
+    /// let mut scanner = RopeScanner::new(&one, &two);
+    /// assert_eq!(scanner.find_min_diff_range(), (1, 5))
     /// ```
     pub fn find_min_diff_range(&mut self) -> (usize, usize) {
         let b_end = self.base.total_len();
@@ -350,12 +359,12 @@ impl<'a> RopeScanner<'a> {
         // scanning from the end of the document, we should stop at whatever
         // offset we reached scanning from the start.
         let unscanned = b_end.min(t_end) - start;
-        if unscanned == 0 {
-            debug_assert_eq!(b_end, t_end);
-            return (start, start);
-        }
 
-        let end = self.find_ne_char_back(b_end, t_end, unscanned);
+        let end = match unscanned {
+            0 => 0,
+            n => self.find_ne_char_back(b_end, t_end, n),
+        };
+
         (start, end)
     }
 
@@ -570,6 +579,27 @@ mod tests {
         let mut scanner = RopeScanner::new(&one, &two);
         let (start, end) = scanner.find_min_diff_range();
         assert_eq!((start, end), (1, 1));
+
+        let one = Rope::from("XXX");
+        let two = Rope::from("XXX");
+        let mut scanner = RopeScanner::new(&one, &two);
+        let (start, end) = scanner.find_min_diff_range();
+        assert_eq!((start, end), (3, 0));
+    }
+
+    #[test]
+    fn find_diff_range_ne_lens() {
+        let one = Rope::from("this is a great bit of text");
+        let two = Rope::from("this is a great bit of text, with some bonus bytes");
+        let mut scanner = RopeScanner::new(&one, &two);
+        let (start, end) = scanner.find_min_diff_range();
+        assert_eq!((start, end), (27, 0));
+
+        let one = Rope::from("this is a great bit of text");
+        let two = Rope::from("xtra bytes precede this is a great bit of text");
+        let mut scanner = RopeScanner::new(&one, &two);
+        let (start, end) = scanner.find_min_diff_range();
+        assert_eq!((start, end), (0, 27));
     }
 
     #[test]
