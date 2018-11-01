@@ -17,6 +17,7 @@
 use bytecount;
 use rand::{thread_rng, Rng};
 
+use xi_rope::interval::IntervalBounds;
 use xi_rope::{LinesMetric, RopeDelta};
 use xi_trace::trace_block;
 
@@ -54,6 +55,14 @@ impl<S: Clone + Default> Cache for StateCache<S> {
 
     fn get_line<DS: DataSource>(&mut self, source: &DS, line_num: usize) -> Result<&str, Error> {
         self.buf_cache.get_line(source, line_num)
+    }
+
+    fn get_region<DS, I>(&mut self, source: &DS, interval: I) -> Result<&str, Error>
+    where
+        DS: DataSource,
+        I: IntervalBounds,
+    {
+        self.buf_cache.get_region(source, interval)
     }
 
     fn get_document<DS: DataSource>(&mut self, source: &DS) -> Result<String, Error> {

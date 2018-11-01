@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 
 use xi_core::plugin_rpc::{GetDataResponse, PluginBufferInfo, PluginEdit, ScopeSpan, TextUnit};
 use xi_core::{BufferConfig, ConfigTable, LanguageId, PluginPid, ViewId};
+use xi_rope::interval::IntervalBounds;
 use xi_rope::RopeDelta;
 use xi_trace::trace_block;
 
@@ -122,6 +123,12 @@ impl<C: Cache> View<C> {
     pub fn get_line(&mut self, line_num: usize) -> Result<&str, Error> {
         let ctx = self.make_ctx();
         self.cache.get_line(&ctx, line_num)
+    }
+
+    /// Returns a region of the view's buffer.
+    pub fn get_region<I: IntervalBounds>(&mut self, interval: I) -> Result<&str, Error> {
+        let ctx = self.make_ctx();
+        self.cache.get_region(&ctx, interval)
     }
 
     pub fn get_document(&mut self) -> Result<String, Error> {
