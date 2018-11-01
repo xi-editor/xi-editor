@@ -19,7 +19,8 @@
 use memchr::memchr;
 
 use xi_core::plugin_rpc::{GetDataResponse, TextUnit};
-use xi_rope::{DeltaElement, LinesMetric, Rope, RopeDelta};
+use xi_rope::interval::IntervalBounds;
+use xi_rope::{DeltaElement, Interval, LinesMetric, Rope, RopeDelta};
 use xi_trace::trace_block;
 
 use super::{Cache, DataSource, Error};
@@ -113,6 +114,40 @@ impl Cache for ChunkCache {
         }
     }
 
+    fn get_region<DS, I>(&mut self, source: &DS, interval: I) -> Result<&str, Error>
+    where
+        DS: DataSource,
+        I: IntervalBounds,
+    {
+        let Interval { start, end } = interval.into_interval(self.buf_size);
+        if self.contents.is_empty()
+            || start < self.offset
+            || start >= self.offset + self.contents.len()
+        {
+            let resp = source.get_data(start, TextUnit::Utf8, CHUNK_SIZE, self.rev)?;
+            self.reset_chunk(resp);
+        }
+
+        loop {
+            let start_off = start - self.offset;
+            let end_off = end - self.offset;
+            if end_off <= self.contents.len() {
+                return Ok(&self.contents[start_off..end_off]);
+            }
+
+            if start_off != 0 {
+                self.clear_up_to(start_off);
+            }
+
+            let chunk_end = self.offset + self.contents.len();
+            let resp = source.get_data(chunk_end, TextUnit::Utf8, CHUNK_SIZE, self.rev)?;
+            self.append_chunk(&resp);
+        }
+    }
+
+    // could reimplement this with get_region, but this doesn't bloat the cache.
+    // Not clear that's a win, though, since if we're using this at all caching
+    // is probably worth it?
     fn get_document<DS: DataSource>(&mut self, source: &DS) -> Result<String, Error> {
         let mut result = String::new();
         let mut cur_idx = 0;
@@ -506,6 +541,21 @@ mod tests {
         assert_eq!(c.cached_offset_of_line(4), None);
         assert_eq!(c.get_line(&remote_document, 3).ok(), Some("lines!"));
         assert!(c.get_line(&remote_document, 4).is_err());
+    }
+
+    #[test]
+    fn get_region() {
+        let remote_document = MockDataSource("but\nthis big fella\nhas\nFIVE\nlines!".into());
+        let mut c = ChunkCache::default();
+        c.buf_size = remote_document.0.len();
+        c.num_lines = remote_document.0.measure::<LinesMetric>() + 1;
+        assert_eq!(c.get_region(&remote_document, ..3).ok(), Some("but"));
+        assert_eq!(c.get_region(&remote_document, 28..).ok(), Some("lines!"));
+        assert!(c.offset > 0);
+        assert_eq!(
+            c.get_region(&remote_document, ..).ok(),
+            Some("but\nthis big fella\nhas\nFIVE\nlines!")
+        );
     }
 
     #[test]
