@@ -14,9 +14,10 @@ serde_derive = "1.0"
 toml = "0.4"
 
 [dependencies.syntect]
-version = "3.0"
+git = "https://github.com/cmyr/syntect.git"
+branch = "feature/metadata"
 default-features = false
-features = ["parsing", "assets","dump-load-rs"]
+features = ["parsing", "assets","dump-load-rs", "metadata"]
 
 [dependencies.xi-plugin-lib]
 path = "../plugin-lib"
