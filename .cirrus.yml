@@ -20,7 +20,7 @@ task:
             cpu: 4
             memory: 8G
     - osx_instance:
-        image: high-sierra-xcode-9.4
+        image: high-sierra-xcode-9.4.1
       env:
         PATH: $PATH:$CARGO_HOME/bin
       install_cmake_script: brew install cmake
