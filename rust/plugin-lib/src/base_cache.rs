@@ -322,16 +322,15 @@ impl ChunkCache {
         let start = iv.start();
         let end = iv.end();
         // we only apply the delta if it is a simple edit, which
-        // begins in the interior of our chunk.
+        // begins inside or immediately following our chunk.
         // - If it begins _before_ our chunk, we are likely going to
         // want to fetch the edited region, which will reset our state;
-        // - If it begins _after_ our chunk, it has no effect on our state;
         // - If it's a complex edit the logic is tricky, and this should
         // be rare enough we can afford to discard.
         // The one 'complex edit' we should probably be handling is
         // the replacement of a single range. This could be a new
         // convenience method on `Delta`?
-        if start < self.offset || start >= self.offset + self.contents.len() {
+        if start < self.offset || start > self.offset + self.contents.len() {
             true
         } else if delta.is_simple_delete() {
             self.simple_delete(start, end);
