@@ -274,20 +274,14 @@ impl<'a> Syntect<'a> {
             return Ok(());
         }
         let prev_line = self.previous_nonblank_line(view, line)?;
-        let indent_level = self.indent_level_of_line(view, prev_line);
-        let increase = self.test_increase(view, prev_line + 1)?;
         let decrease = self.test_decrease(view, line)?;
-        let indent_level = match (increase, decrease) {
-            (true, false) => indent_level + tab_size,
-            (false, true) => indent_level.saturating_sub(tab_size),
-            _ => indent_level,
-        };
-
-        if indent_level != current_indent {
-            self.set_indent(view, line, indent_level)
-        } else {
-            Ok(())
+        if decrease {
+            let indent_level = self.indent_level_of_line(view, prev_line).saturating_sub(tab_size);
+            if indent_level != current_indent {
+                return self.set_indent(view, line, indent_level);
+            }
         }
+        Ok(())
     }
 
     fn set_indent(&self, view: &mut MyView, line: usize, level: usize) -> Result<(), Error> {
