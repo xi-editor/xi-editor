@@ -14,3 +14,12 @@ combine = { version = "2.2.2", optional = true }
 
 [dependencies.xi-plugin-lib]
 path = "../../plugin-lib"
+
+[dependencies.xi-core-lib]
+path = "../../core-lib"
+
+[dependencies.xi-rope]
+path = "../../rope"
+
+[dependencies.xi-trace]
+path = "../../trace"

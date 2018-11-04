@@ -62,7 +62,7 @@ impl<T: Debug> NewState<T> for DebugNewState {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Style {
     pub fg_color: u32, // ARGB
     pub font: u8, // bitflags, 1=bold, 2=underline, 4=italic
