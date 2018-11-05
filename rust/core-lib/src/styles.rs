@@ -206,9 +206,10 @@ impl ThemeStyleMap {
     }
 
     pub fn get_theme_names(&self) -> Vec<String> {
-        let mut theme_names: Vec<String> = self.path_map.keys().chain(self.themes.themes.keys()).cloned().collect();
-        let set: HashSet<String> = theme_names.drain(..).collect();
-        theme_names.extend(set.into_iter());
+        let mut theme_names: Vec<String> =
+            self.path_map.keys().chain(self.themes.themes.keys()).cloned().collect();
+        theme_names.sort();
+        theme_names.dedup();
         theme_names
     }
 
@@ -339,8 +340,9 @@ impl ThemeStyleMap {
     /// Stores binary dump in a file with `tmdump` extension, only if
     /// caching is enabled.
     fn load_theme(&mut self, theme_name: &str) -> Result<(), LoadingError> {
-        // If it's a default theme, or if the theme has already been loaded, we can move on.
-        if self.contains_theme(theme_name) {
+        // If it is the current theme (the user has edited it), we load it again.
+        // Otherwise, if it's a default theme or the theme has already been loaded, we can move on.
+        if self.contains_theme(theme_name) && self.get_theme_name() != theme_name {
             return Ok(());
         }
         // If we haven't loaded the theme before, we try to load it from the dump if a dump
@@ -396,7 +398,6 @@ impl ThemeStyleMap {
             }
         }
     }
-
     /// Creates the cache dir returns true
     /// if it is successfully initialized or
     /// already exists.

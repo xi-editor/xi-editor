@@ -730,10 +730,7 @@ impl CoreState {
                 self.remove_theme(old);
                 self.load_theme_file(new);
             }
-            Chmod(ref path) => {
-                self.load_theme_file(path);
-            }
-            Remove(ref path) => {
+            Chmod(ref path) | Remove(ref path) => {
                 self.style_map.borrow_mut().sync_dir(path.parent())
             }
             _ => (),
@@ -749,7 +746,7 @@ impl CoreState {
         let result = self.style_map.borrow_mut().load_theme_info_from_path(path);
         match result {
             Ok(theme_name) => {
-                if theme_name != self.style_map.borrow().get_theme_name() {
+                if theme_name == self.style_map.borrow().get_theme_name() {
                     if self.style_map.borrow_mut().set_theme(&theme_name).is_ok() {
                         self.notify_client_and_update_views();
                     }
