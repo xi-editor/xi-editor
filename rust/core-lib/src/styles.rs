@@ -152,6 +152,9 @@ pub struct ThemeStyleMap {
     themes: ThemeSet,
     theme_name: String,
     theme: Theme,
+
+    // Keeps a list of default themes.
+    default_themes: Vec<String>,
     default_style: Style,
     map: HashMap<Style, usize>,
 
@@ -171,6 +174,7 @@ impl ThemeStyleMap {
         let themes = ThemeSet::load_defaults();
         let theme_name = DEFAULT_THEME.to_owned();
         let theme = themes.themes.get(&theme_name).expect("missing theme").to_owned();
+        let default_themes = themes.themes.keys().cloned().collect();
         let default_style = Style::default_for_theme(&theme);
         let cache_dir = None;
         let caching_enabled = true;
@@ -179,6 +183,7 @@ impl ThemeStyleMap {
             themes,
             theme_name,
             theme,
+            default_themes,
             default_style,
             map: HashMap::new(),
             path_map: BTreeMap::new(),
@@ -206,11 +211,7 @@ impl ThemeStyleMap {
     }
 
     pub fn get_theme_names(&self) -> Vec<String> {
-        let mut theme_names: Vec<String> =
-            self.path_map.keys().chain(self.themes.themes.keys()).cloned().collect();
-        theme_names.sort();
-        theme_names.dedup();
-        theme_names
+        self.path_map.keys().chain(self.default_themes.iter()).cloned().collect()
     }
 
     pub fn contains_theme(&self, k: &str) -> bool {
