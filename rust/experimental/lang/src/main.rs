@@ -20,25 +20,21 @@ extern crate xi_plugin_lib;
 extern crate xi_core_lib;
 extern crate xi_rope;
 
-use xi_core_lib::{ConfigTable, ViewId};
-use xi_plugin_lib::{Cache, ChunkCache, CoreProxy, mainloop, Plugin, View};
+use xi_core_lib::{ConfigTable, ViewId, plugins::rpc::ScopeSpan};
+use xi_plugin_lib::{Cache, CoreProxy, mainloop, Plugin, StateCache, View};
 use xi_rope::{Interval, RopeDelta, spans::SpansBuilder};
 
 use std::{env, path::Path, collections::HashMap};
 
-use colorize::{Style, StyleNewState, Colorize};
-use rust::RustColorize;
+use rust::{RustParser, StateEl};
 use statestack::State;
+use statestack::HolderNewState;
 
-mod colorize;
 mod peg;
 mod rust;
 mod statestack;
 
 const LINES_PER_RPC: usize = 50;
-
-// Possibly swap this out for something more appropriate down the line
-type StyleCache = ChunkCache;
 
 struct LangPlugin {
     view_states: HashMap<ViewId, ViewState>
@@ -53,7 +49,7 @@ impl LangPlugin {
 }
 
 impl Plugin for LangPlugin {
-    type Cache = StyleCache;
+    type Cache = StateCache<State>;
 
     fn initialize(&mut self, core: CoreProxy) {
         //self.do_highlighting(ctx);
@@ -119,88 +115,170 @@ impl Plugin for LangPlugin {
 }
 
 struct ViewState {
-    colorize: RustColorize<StyleNewState<fn(&mut Style, &rust::StateEl)>>,
+    parser: RustParser<HolderNewState<StateEl>>,
+    tracker: ElementTracker,
     line_num: usize,
     offset: usize,
-    state: State,
+    initial_state: State,
     spans_start: usize,
-    builder: Option<SpansBuilder<Style>>,
+    spans: Vec<ScopeSpan>,
+    new_scopes: Vec<Vec<String>>,
 }
 
 impl ViewState {
     fn new() -> ViewState {
         ViewState {
-            colorize: RustColorize::new(StyleNewState::new(rust::to_style)),
+            parser: RustParser::new(HolderNewState::new()),
+            tracker: ElementTracker::default(),
             line_num: 0,
             offset: 0,
-            state: State::default(),
+            initial_state: State::default(),
             spans_start: 0,
-            builder: None,
+            spans: Vec::new(),
+            new_scopes: Vec::new(),
         }
     }
 
-    fn do_highlighting(&mut self, view: &mut View<StyleCache>) {
+    fn do_highlighting(&mut self, view: &mut View<StateCache<State>>) {
         self.line_num = 0;
         self.offset = 0;
-        self.state = State::default();
+        self.initial_state = State::default();
+        self.spans = Vec::new();
+        self.new_scopes = Vec::new();
         view.schedule_idle();
     }
 
-    // Return true if there's more to do.
-    fn highlight_one_line(&mut self, view: &mut View<StyleCache>) -> bool {
-        let line = view.get_line(self.line_num);
-        if let Err(err) = line {
-            eprintln!("Error: {:?}", err);
-            return false;
+    fn highlight_one_line(&mut self, view: &mut View<StateCache<State>>) -> bool {
+        if let Some(line_num) = view.get_frontier() {
+            let (line_num, offset, state) = view.get_prev(line_num);
+
+            if offset != self.offset {
+                self.flush_spans(view);
+                self.offset = offset;
+                self.spans_start = offset;
+            }
+
+            let new_frontier = match view.get_line(line_num) {
+                Ok("") => None,
+                Ok(s) => {
+                    let new_state = self.compute_syntax(s);
+                    self.offset += s.len();
+                    if s.as_bytes().last() == Some(&b'\n') {
+                        Some((new_state, line_num + 1))
+                    } else {
+                        None
+                    }
+                }
+                Err(_) => None,
+            };
+
+            let mut converged = false;
+            if let Some((ref new_state, new_line_num)) = new_frontier {
+                if let Some(old_state) = view.get(new_line_num) {
+                    converged = old_state == new_state;
+                }
+            }
+
+            if !converged {
+                if let Some((new_state, new_line_num)) = new_frontier {
+                    view.set(new_line_num, new_state);
+                    view.update_frontier(new_line_num);
+                    return true;
+                }
+            }
+
+            view.close_frontier();
         }
+        false
+    }
 
-        let line = line.unwrap();
-
-        if self.builder.is_none() {
-            self.spans_start = self.offset;
-            self.builder = Some(SpansBuilder::new(line.len()));
-        }
-
+    fn compute_syntax(&mut self, line: &str) -> State {
         let mut i = 0;
+
+        let mut state = self.initial_state;
         while i < line.len() {
-            let (prevlen, s0, len, s1) = self.colorize.colorize(&line[i..], self.state);
+            let (prevlen, s0, len, s1) = self.parser.parse(&line[i..], state);
 
             if prevlen > 0 {
                 // TODO: maybe make an iterator to avoid this duplication
-                let style = self.colorize.get_new_state().get_style(self.state);
+                let element = self.parser.get_new_state().get_element(self.initial_state);
+                let scope_id = match self.tracker.lookup(element) {
+                    LookupResult::Existing(id) => id,
+                    LookupResult::New(id) => {
+                        self.new_scopes.push(element.as_scopes());
+                        id
+                    }
+                };
+
                 let start = self.offset - self.spans_start + i;
                 let end = start + prevlen;
-                add_style_span(self.builder.as_mut().unwrap(), style.clone(), start, end);
+
+                let span = ScopeSpan { start, end, scope_id };
+                self.spans.push(span);
+
                 i += prevlen;
             }
 
-            let style = self.colorize.get_new_state().get_style(s0);
+            let element = self.parser.get_new_state().get_element(s0);
+            let scope_id = match self.tracker.lookup(element) {
+                LookupResult::Existing(id) => id,
+                LookupResult::New(id) => {
+                    self.new_scopes.push(element.as_scopes());
+                    id
+                }
+            };
 
             let start = self.offset - self.spans_start + i;
             let end = start + len;
 
-            add_style_span(self.builder.as_mut().unwrap(), style.clone(), start, end);
+            let span = ScopeSpan { start, end, scope_id };
+            self.spans.push(span);
 
             i += len;
-            self.state = s1;
+            state = s1;
         }
 
-        self.line_num += 1;
-        self.offset += line.len();
-
-        true
+        state
     }
 
-    fn flush_spans(&mut self, view: &mut View<StyleCache>) {
-        if let Some(builder) = self.builder.take() {
-            let spans = builder.build();
-            view.update_spans(self.spans_start, self.offset - self.spans_start, spans);
+    fn flush_spans(&mut self, view: &mut View<StateCache<State>>) {
+        if !self.new_scopes.is_empty() {
+            view.add_scopes(&self.new_scopes);
+            self.new_scopes.clear();
         }
+
+        if self.spans_start != self.offset {
+            view.update_spans(self.spans_start, self.offset - self.spans_start, &self.spans);
+            self.spans.clear();
+        }
+
+        self.spans_start = self.offset;
     }
 }
 
-fn add_style_span(builder: &mut SpansBuilder<Style>, style: Style, start: usize, end: usize) {
-    builder.add_span(Interval::new(start, end), style);
+#[derive(Default)]
+struct ElementTracker {
+    elements: HashMap<StateEl, u32>,
+    next_id: u32
+}
+
+impl ElementTracker {
+    fn lookup(&mut self, element: &StateEl) -> LookupResult {
+        if let Some(id) = self.elements.get(element) {
+            return LookupResult::Existing(*id);
+        }
+
+        let old_id = self.next_id;
+        self.next_id += 1;
+
+        self.elements.insert(element.clone(), old_id);
+        LookupResult::New(old_id)
+    }
+}
+
+enum LookupResult {
+    Existing(u32),
+    New(u32)
 }
 
 fn main() {

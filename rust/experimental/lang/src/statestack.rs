@@ -14,6 +14,7 @@
 
 use std::hash::Hash;
 use std::collections::HashMap;
+use std::fmt::Debug;
 
 /// An entire state stack is represented as a single integer.
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -99,5 +100,43 @@ impl<T: Clone + Hash + Eq, N: NewState<T>> Context<T, N> {
         }
         result.reverse();
         result
+    }
+}
+
+pub struct HolderNewState<T> {
+    elements: Vec<T>
+}
+
+impl<T> HolderNewState<T> {
+    pub fn new() -> HolderNewState<T> {
+        HolderNewState {
+            elements: vec![]
+        }
+    }
+
+    pub fn get_element(&self, s: State) -> &T {
+        &self.elements[s.raw()]
+    }
+}
+
+impl<T: Clone> NewState<T> for HolderNewState<T> {
+    fn new_state(&mut self, _s: State, contents: &[T]) {
+        for element in contents {
+            self.elements.push(element.clone())
+        }
+    }
+}
+
+pub struct DebugNewState;
+
+impl DebugNewState {
+    pub fn new() -> DebugNewState {
+        DebugNewState
+    }
+}
+
+impl<T: Debug> NewState<T> for DebugNewState {
+    fn new_state(&mut self, s: State, contents: &[T]) {
+        println!("new state {:?}: {:?}", s, contents);
     }
 }

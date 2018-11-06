@@ -17,8 +17,8 @@
 use std::io::{stdin, Read};
 
 use statestack::{State, Context, NewState};
-use colorize::{self, Colorize, DebugNewState, Style};
 use peg::*;
+use statestack::DebugNewState;
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum StateEl {
@@ -38,17 +38,24 @@ pub enum StateEl {
     // generics etc
 }
 
-pub fn to_style(style: &mut Style, el: &StateEl) {
-    match *el {
-        StateEl::Comment => style.fg_color = 0xFF75715E,
-        StateEl::StrQuote => style.fg_color = 0xFF998844,
-        StateEl::CharQuote => style.fg_color = 0xFF998844,
-        StateEl::Invalid => style.fg_color = 0xFFFF0000,
-        StateEl::NumericLiteral => style.fg_color = 0xFF6644EE,
-        StateEl::CharConst => style.fg_color = 0xFF8866EE,
-        StateEl::Keyword => style.font = 1,
-        StateEl::Operator => style.fg_color = 0xFFAA2244,
-        StateEl::PrimType => style.fg_color = 0xFF44AAAA,
+impl StateEl {
+    /// Transform a [StateEl] into a [Vec] of Syntect Scope [String]s.
+    /// See [this](https://github.com/sublimehq/Packages/blob/master/Rust/Rust.sublime-syntax)
+    /// for reference.
+    pub fn as_scopes(&self) -> Vec<String> {
+        let scope_strs = match self {
+            StateEl::StrQuote => vec!["string", "quoted", "double", "rust"],
+            StateEl::CharQuote => vec!["string", "quoted", "single", "rust"],
+            StateEl::Comment => vec!["punctuation", "definition", "comment", "rust"],
+            StateEl::CharConst => vec!["constant", "character", "escape", "rust"],
+            StateEl::NumericLiteral => vec!["storage", "type", "numeric", "rust"],
+            StateEl::Invalid => vec!["invalid", "illegal", "rust"],
+            StateEl::Keyword => vec!["keyword", "operator", "rust"],
+            StateEl::Operator => vec!["keyword", "operator", "arithmetic", "rust"],
+            StateEl::PrimType => vec!["entity", "name", "type", "rust"],
+        };
+
+        scope_strs.iter().map(|it| it.to_string()).collect()
     }
 }
 
@@ -76,19 +83,68 @@ const RUST_OPERATORS: &'static [&'static [u8]] = &[
     b"==", b"=", b"..", b"=>", b"<=", b"<", b">=", b">"
 ];
 
-pub struct RustColorize<N> {
+pub struct RustParser<N> {
     ctx: Context<StateEl, N>,
 }
 
-impl<N: NewState<StateEl>> RustColorize<N> {
-    pub fn new(new_state: N) -> RustColorize<N> {
-        RustColorize {
+impl<N: NewState<StateEl>> RustParser<N> {
+    pub fn new(new_state: N) -> RustParser<N> {
+        RustParser {
             ctx: Context::new(new_state),
         }
     }
 
     pub fn get_new_state(&self) -> &N {
         self.ctx.get_new_state()
+    }
+
+    pub fn parse(&mut self, text: &str, mut state: State) -> (usize, State, usize, State) {
+        let t = text.as_bytes();
+        match self.ctx.tos(state) {
+            Some(StateEl::Comment) => {
+                for i in 0..t.len() {
+                    if let Some(len) = "/*".p(&t[i..]) {
+                        state = self.ctx.push(state, StateEl::Comment);
+                        return (i, state, len, state);
+                    } else if let Some(len) = "*/".p(&t[i..]) {
+                        return (0, state, i + len, self.ctx.pop(state).unwrap());
+                    }
+                }
+                return (0, state, t.len(), state);
+            }
+            Some(StateEl::StrQuote) => return self.quoted_str(t, state),
+            _ => ()
+        }
+        let mut i = 0;
+        while i < t.len() {
+            let b = t[i];
+            if let Some(len) = "/*".p(&t[i..]) {
+                state = self.ctx.push(state, StateEl::Comment);
+                return (i, state, len, state);
+            } else if let Some(_) = "//".p(&t[i..]) {
+                return (i, self.ctx.push(state, StateEl::Comment), t.len(), state);
+            } else if let Some(len) = numeric_literal.p(&t[i..]) {
+                return (i, self.ctx.push(state, StateEl::NumericLiteral), len, state);
+            } else if b == b'"' {
+                state = self.ctx.push(state, StateEl::StrQuote);
+                return (i, state, 1, state);
+            } else if let Some(len) = char_literal.p(&t[i..]) {
+                return (i, self.ctx.push(state, StateEl::CharQuote), len, state);
+            } else if let Some(len) = OneOf(RUST_OPERATORS).p(&t[i..]) {
+                return (i, self.ctx.push(state, StateEl::Operator), len, state);
+            } else if let Some(len) = ident.p(&t[i..]) {
+                if RUST_KEYWORDS.binary_search(&&t[i..i + len]).is_ok() {
+                    return (i, self.ctx.push(state, StateEl::Keyword), len, state);
+                } else if RUST_PRIM_TYPES.binary_search(&&t[i..i + len]).is_ok() {
+                    return (i, self.ctx.push(state, StateEl::PrimType), len, state);
+                } else {
+                    i += len;
+                    continue;
+                }
+            }
+            i += 1;
+        }
+        (0, state, t.len(), state)
     }
 
     fn quoted_str(&mut self, t: &[u8], state: State) -> (usize, State, usize, State) {
@@ -100,7 +156,7 @@ impl<N: NewState<StateEl>> RustColorize<N> {
             } else if b == b'\\' {
                 if let Some(len) = escape.p(&t[i..]) {
                     return (i, self.ctx.push(state, StateEl::CharConst), len, state);
-                } else if let Some(len) = 
+                } else if let Some(len) =
                         (FailIf(OneOf(b"\r\nbu")), OneChar(|_| true)).p(&t[i+1..]) {
                     return (i + 1, self.ctx.push(state, StateEl::Invalid), len, state);
                 }
@@ -200,63 +256,26 @@ fn char_literal(s: &[u8]) -> Option<usize> {
     ).p(s)
 }
 
-impl<N: NewState<StateEl>> Colorize for RustColorize<N> {
-    fn colorize(&mut self, text: &str, mut state: State) -> (usize, State, usize, State) {
-        let t = text.as_bytes();
-        match self.ctx.tos(state) {
-            Some(StateEl::Comment) => {
-                for i in 0..t.len() {
-                    if let Some(len) = "/*".p(&t[i..]) {
-                        state = self.ctx.push(state, StateEl::Comment);
-                        return (i, state, len, state);
-                    } else if let Some(len) = "*/".p(&t[i..]) {
-                        return (0, state, i + len, self.ctx.pop(state).unwrap());
-                    }
-                }
-                return (0, state, t.len(), state);
-            }
-            Some(StateEl::StrQuote) => return self.quoted_str(t, state),
-            _ => ()
-        }
-        let mut i = 0;
-        while i < t.len() {
-            let b = t[i];
-            if let Some(len) = "/*".p(&t[i..]) {
-                state = self.ctx.push(state, StateEl::Comment);
-                return (i, state, len, state);
-            } else if let Some(_) = "//".p(&t[i..]) {
-                return (i, self.ctx.push(state, StateEl::Comment), t.len(), state);
-            } else if let Some(len) = numeric_literal.p(&t[i..]) {
-                return (i, self.ctx.push(state, StateEl::NumericLiteral), len, state);
-            } else if b == b'"' {
-                state = self.ctx.push(state, StateEl::StrQuote);
-                return (i, state, 1, state);
-            } else if let Some(len) = char_literal.p(&t[i..]) {
-                return (i, self.ctx.push(state, StateEl::CharQuote), len, state);
-            } else if let Some(len) = OneOf(RUST_OPERATORS).p(&t[i..]) {
-                return (i, self.ctx.push(state, StateEl::Operator), len, state);
-            } else if let Some(len) = ident.p(&t[i..]) {
-                if RUST_KEYWORDS.binary_search(&&t[i..i + len]).is_ok() {
-                    return (i, self.ctx.push(state, StateEl::Keyword), len, state);
-                } else if RUST_PRIM_TYPES.binary_search(&&t[i..i + len]).is_ok() {
-                    return (i, self.ctx.push(state, StateEl::PrimType), len, state);
-                } else {
-                    i += len;
-                    continue;
-                }
-            }
-            i += 1;
-        }
-        (0, state, t.len(), state)
-    }
-}
-
 // A simple stdio based harness for testing.
 pub fn test() {
     let mut buf = String::new();
     let _ = stdin().read_to_string(&mut buf).unwrap();
-    let mut c = RustColorize::new(DebugNewState::new());
-    colorize::run_debug(&mut c, &buf);
+    let mut c = RustParser::new(DebugNewState::new());
+
+    let mut state = State::default();
+    for line in buf.lines() {
+        let mut i = 0;
+        while i < line.len() {
+            let (prevlen, s0, len, s1) = c.parse(&line[i..], state);
+            if prevlen > 0 {
+                println!("{}: {:?}", &line[i..i + prevlen], state);
+                i += prevlen;
+            }
+            println!("{}: {:?}", &line[i..i + len], s0);
+            i += len;
+            state = s1;
+        }
+    }
 }
 
 #[cfg(test)]

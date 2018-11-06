@@ -7,7 +7,7 @@ repository = "https://github.com/google/xi-editor"
 description = "A language syntax coloring and indentation plugin for xi-editor."
 
 [dependencies]
-pom = { version = "0.8", optional = true }
+pom = { version = "0.9", optional = true }
 regex = { version = "0.2", optional = true }
 nom = { version = "2.1", optional = true }
 combine = { version = "2.2.2", optional = true }

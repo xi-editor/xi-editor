@@ -33,6 +33,7 @@ members = [
   "trace",
   "trace-dump",
   "unicode",
+  "experimental/lang"
 ]
 
 [profile.bench]
