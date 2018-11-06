@@ -19,16 +19,17 @@ extern crate xi_plugin_lib;
 
 extern crate xi_core_lib;
 extern crate xi_rope;
+extern crate xi_trace;
 
 use xi_core_lib::{ConfigTable, ViewId, plugins::rpc::ScopeSpan};
 use xi_plugin_lib::{Cache, CoreProxy, mainloop, Plugin, StateCache, View};
 use xi_rope::{Interval, RopeDelta, spans::SpansBuilder};
+use xi_trace::{trace, trace_payload, trace_block};
 
 use std::{env, path::Path, collections::HashMap};
 
 use rust::{RustParser, StateEl};
-use statestack::State;
-use statestack::HolderNewState;
+use statestack::{HolderNewState, State};
 
 mod peg;
 mod rust;
@@ -62,16 +63,18 @@ impl Plugin for LangPlugin {
         edit_type: String,
         author: String,
     ) {
-        let view_id = view.get_id();
+        let _guard = trace_block("ExperimentalLang::update", &["experimental-lang"]);
 
+        let view_id = view.get_id();
         if let Some(view_state) = self.view_states.get_mut(&view_id) {
             view_state.do_highlighting(view);
         }
     }
 
     fn did_save(&mut self, view: &mut View<Self::Cache>, old_path: Option<&Path>) {
-        let view_id = view.get_id();
+        let _guard = trace_block("ExperimentalLang::did_save", &["experimental-lang"]);
 
+        let view_id = view.get_id();
         if let Some(view_state) = self.view_states.get_mut(&view_id) {
             view_state.do_highlighting(view);
         }
@@ -83,8 +86,11 @@ impl Plugin for LangPlugin {
     }
 
     fn new_view(&mut self, view: &mut View<Self::Cache>) {
+        let _guard = trace_block("ExperimentalLang::new_view", &["experimental-lang"]);
+
         let view_id = view.get_id();
         let mut view_state = ViewState::new();
+
         view_state.do_highlighting(view);
         self.view_states.insert(view_id, view_state);
     }
@@ -95,7 +101,6 @@ impl Plugin for LangPlugin {
         let view_id = view.get_id();
 
         if let Some(view_state) = self.view_states.get_mut(&view_id) {
-            eprintln!("idle task at line {}", view_state.line_num);
             for _ in 0..LINES_PER_RPC {
                 if !view_state.highlight_one_line(view) {
                     view_state.flush_spans(view);
@@ -103,7 +108,7 @@ impl Plugin for LangPlugin {
                 }
 
                 if view.request_is_pending() {
-                    eprintln!("request pending at line {}", view_state.line_num);
+                    trace("yielding for request", &["experimental-lang"]);
                     break;
                 }
             }
@@ -202,6 +207,27 @@ impl ViewState {
             if prevlen > 0 {
                 // TODO: maybe make an iterator to avoid this duplication
                 let element = self.parser.get_new_state().get_element(self.initial_state);
+                if let Some(ref element) = element {
+                    let scope_id = match self.tracker.lookup(element) {
+                        LookupResult::Existing(id) => id,
+                        LookupResult::New(id) => {
+                            self.new_scopes.push(element.as_scopes());
+                            id
+                        }
+                    };
+
+                    let start = self.offset - self.spans_start + i;
+                    let end = start + prevlen;
+
+                    let span = ScopeSpan { start, end, scope_id };
+                    self.spans.push(span);
+
+                    i += prevlen;
+                }
+            }
+
+            let element = self.parser.get_new_state().get_element(s0);
+            if let Some(ref element) = element {
                 let scope_id = match self.tracker.lookup(element) {
                     LookupResult::Existing(id) => id,
                     LookupResult::New(id) => {
@@ -211,31 +237,14 @@ impl ViewState {
                 };
 
                 let start = self.offset - self.spans_start + i;
-                let end = start + prevlen;
+                let end = start + len;
 
                 let span = ScopeSpan { start, end, scope_id };
                 self.spans.push(span);
 
-                i += prevlen;
+                i += len;
+                state = s1;
             }
-
-            let element = self.parser.get_new_state().get_element(s0);
-            let scope_id = match self.tracker.lookup(element) {
-                LookupResult::Existing(id) => id,
-                LookupResult::New(id) => {
-                    self.new_scopes.push(element.as_scopes());
-                    id
-                }
-            };
-
-            let start = self.offset - self.spans_start + i;
-            let end = start + len;
-
-            let span = ScopeSpan { start, end, scope_id };
-            self.spans.push(span);
-
-            i += len;
-            state = s1;
         }
 
         state
@@ -243,11 +252,13 @@ impl ViewState {
 
     fn flush_spans(&mut self, view: &mut View<StateCache<State>>) {
         if !self.new_scopes.is_empty() {
+            trace_payload("flushing scopes", &["experimental-lang"], format!("flushing scopes: {:?}", self.new_scopes));
             view.add_scopes(&self.new_scopes);
             self.new_scopes.clear();
         }
 
         if self.spans_start != self.offset {
+            trace_payload("flushing spans", &["experimental-lang"], format!("flushing spans: {:?}", self.spans));
             view.update_spans(self.spans_start, self.offset - self.spans_start, &self.spans);
             self.spans.clear();
         }

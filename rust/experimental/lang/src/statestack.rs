@@ -104,17 +104,17 @@ impl<T: Clone + Hash + Eq, N: NewState<T>> Context<T, N> {
 }
 
 pub struct HolderNewState<T> {
-    elements: Vec<T>
+    elements: Vec<Option<T>>
 }
 
 impl<T> HolderNewState<T> {
     pub fn new() -> HolderNewState<T> {
         HolderNewState {
-            elements: vec![]
+            elements: vec![None]
         }
     }
 
-    pub fn get_element(&self, s: State) -> &T {
+    pub fn get_element(&self, s: State) -> &Option<T> {
         &self.elements[s.raw()]
     }
 }
@@ -122,7 +122,7 @@ impl<T> HolderNewState<T> {
 impl<T: Clone> NewState<T> for HolderNewState<T> {
     fn new_state(&mut self, _s: State, contents: &[T]) {
         for element in contents {
-            self.elements.push(element.clone())
+            self.elements.push(Some(element.clone()))
         }
     }
 }

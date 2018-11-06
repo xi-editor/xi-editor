@@ -1,0 +1,3 @@
+name = "xi-lang-plugin"
+version = "0.0"
+exec_path="./bin/xi-lang"

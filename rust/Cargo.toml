@@ -24,6 +24,7 @@ path = "rpc"
 [workspace]
 members = [
   "core-lib",
+  "experimental/lang",
   "lsp-lib",
   "plugin-lib",
   "rope",
@@ -33,7 +34,6 @@ members = [
   "trace",
   "trace-dump",
   "unicode",
-  "experimental/lang"
 ]
 
 [profile.bench]
