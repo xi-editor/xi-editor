@@ -14,8 +14,8 @@ serde_derive = "1.0"
 toml = "0.4"
 
 [dependencies.syntect]
-git = "https://github.com/cmyr/syntect.git"
-branch = "feature/metadata"
+git = "https://github.com/trishume/syntect.git"
+branch = "master"
 default-features = false
 features = ["parsing", "assets","dump-load-rs", "metadata"]
 
