@@ -32,7 +32,9 @@ use xi_plugin_lib::{mainloop, Cache, Error, Plugin, StateCache, View};
 use xi_rope::{Interval, RopeDelta};
 use xi_trace::{trace, trace_block};
 
-use syntect::parsing::{ParseState, ScopeRepository, ScopeStack, SyntaxSet, SCOPE_REPO};
+use syntect::parsing::{
+    ParseState, ScopeRepository, ScopeStack, ScopedMetadata, SyntaxSet, SCOPE_REPO,
+};
 
 use stackmap::{LookupResult, StackMap};
 
@@ -82,12 +84,13 @@ impl PluginState {
         }
     }
 
-    // compute syntax for one line, also accumulating the style spans
+    /// Compute syntax for one line, optionally also accumulating the style spans.
     fn compute_syntax(
         &mut self,
         line: &str,
         state: LineState,
         syntax_set: &SyntaxSet,
+        accumulate_spans: bool,
     ) -> LineState {
         let (mut parse_state, mut scope_state) =
             state.or_else(|| self.initial_state.clone()).unwrap();
@@ -100,7 +103,7 @@ impl PluginState {
                 let scope_id = self.identifier_for_stack(&scope_state, &repo);
                 let start = self.offset - self.spans_start + prev_cursor;
                 let end = start + (cursor - prev_cursor);
-                if start != end {
+                if accumulate_spans && start != end {
                     let span = ScopeSpan { start, end, scope_id };
                     self.spans.push(span);
                 }
@@ -108,12 +111,15 @@ impl PluginState {
             prev_cursor = cursor;
             scope_state.apply(&batch);
         }
-        // add span for final state
-        let start = self.offset - self.spans_start + prev_cursor;
-        let end = start + (line.len() - prev_cursor);
-        let scope_id = self.identifier_for_stack(&scope_state, &repo);
-        let span = ScopeSpan { start, end, scope_id };
-        self.spans.push(span);
+
+        if accumulate_spans {
+            // add span for final state
+            let start = self.offset - self.spans_start + prev_cursor;
+            let end = start + (line.len() - prev_cursor);
+            let scope_id = self.identifier_for_stack(&scope_state, &repo);
+            let span = ScopeSpan { start, end, scope_id };
+            self.spans.push(span);
+        }
         Some((parse_state, scope_state))
     }
 
@@ -144,7 +150,7 @@ impl PluginState {
             let new_frontier = match ctx.get_line(line_num) {
                 Ok("") => None,
                 Ok(s) => {
-                    let new_state = self.compute_syntax(s, state, syntax_set);
+                    let new_state = self.compute_syntax(s, state, syntax_set, true);
                     self.offset += s.len();
                     if s.as_bytes().last() == Some(&b'\n') {
                         Some((new_state, line_num + 1))
@@ -214,6 +220,25 @@ impl<'a> Syntect<'a> {
         view.schedule_idle();
     }
 
+    fn get_metadata(&mut self, view: &mut MyView, line: usize) -> Option<ScopedMetadata> {
+        // we don't store the state for the first line, so recompute it
+        let Syntect { view_state, syntax_set } = self;
+        if line == 0 {
+            let view_id = view.get_id();
+            let text = view.get_line(0).unwrap_or("");
+            let scope = view_state
+                .get_mut(&view_id)
+                .and_then(|state| state.compute_syntax(&text, None, syntax_set, false))
+                .map(|(_, scope)| scope)?;
+            Some(syntax_set.metadata().metadata_for_scope(scope.as_slice()))
+        } else {
+            let scope = view.get(line)?;
+            scope
+                .as_ref()
+                .map(|(_, scope)| syntax_set.metadata().metadata_for_scope(scope.as_slice()))
+        }
+    }
+
     /// Checks for possible autoindent changes after an appropriate edit.
     fn consider_indentation(&mut self, view: &mut MyView, delta: &RopeDelta, edit_type: &str) {
         for region in delta.iter_inserts() {
@@ -253,7 +278,6 @@ impl<'a> Syntect<'a> {
         let increase_level = self.test_increase(view, line)?;
         let indent_level = if increase_level { base_indent + tab_size } else { base_indent };
         if indent_level != current_indent {
-            //eprintln!("auto indenting {}, prev_level {}", line, base_indent);
             self.set_indent(view, line, indent_level)
         } else {
             Ok(())
@@ -267,7 +291,6 @@ impl<'a> Syntect<'a> {
         if line == 0 {
             return Ok(());
         }
-        //eprintln!("checking indent for {}", line);
         let tab_size = view.get_config().tab_size;
         let current_indent = self.indent_level_of_line(view, line);
         if line == 0 || current_indent == 0 {
@@ -285,7 +308,6 @@ impl<'a> Syntect<'a> {
     }
 
     fn set_indent(&self, view: &mut MyView, line: usize, level: usize) -> Result<(), Error> {
-        //eprintln!("setting indent {} for line {}", level, line);
         let edit_start = view.offset_of_line(line)?;
         let edit_len = {
             let line = view.get_line(line)?;
@@ -308,32 +330,7 @@ impl<'a> Syntect<'a> {
     /// by testing the _previous_ line against a regex.
     fn test_increase(&mut self, view: &mut MyView, line: usize) -> Result<bool, Error> {
         debug_assert!(line > 0, "increasing indent requires a previous line");
-        let Syntect { view_state, syntax_set } = self;
-        let metadata = {
-            // we don't store the state for the first line, so recompute it
-            if line == 1 {
-                let view_id = view.get_id();
-                let text = view.get_line(0)?;
-                if let Some(scope) = view_state
-                    .get_mut(&view_id)
-                    .and_then(|state| state.compute_syntax(&text, None, syntax_set))
-                {
-                    syntax_set.metadata().metadata_for_scope(scope.1.as_slice())
-                } else {
-                    eprintln!("no state/scope for line 0");
-                    return Ok(false);
-                }
-            } else {
-                let scope = match view.get(line - 1) {
-                    Some(Some((_, scope))) => scope,
-                    _ => {
-                        eprintln!("no state for line {}", line - 1);
-                        return Ok(false);
-                    }
-                };
-                syntax_set.metadata().metadata_for_scope(scope.as_slice())
-            }
-        };
+        let metadata = self.get_metadata(view, line - 1).ok_or_else(|| Error::PeerDisconnect)?;
         let line = view.get_line(line - 1)?;
         Ok(metadata.increase_indent(line))
     }
@@ -344,16 +341,7 @@ impl<'a> Syntect<'a> {
         if line == 0 {
             return Ok(false);
         }
-        let metadata = {
-            let scope = match view.get(line) {
-                Some(Some((_, scope))) => scope,
-                _ => {
-                    eprintln!("no state for line {}", line);
-                    return Ok(false);
-                }
-            };
-            self.syntax_set.metadata().metadata_for_scope(scope.as_slice())
-        };
+        let metadata = self.get_metadata(view, line).ok_or_else(|| Error::PeerDisconnect)?;
         let line = view.get_line(line)?;
         Ok(metadata.decrease_indent(line))
     }
