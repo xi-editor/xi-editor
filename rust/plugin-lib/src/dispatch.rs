@@ -106,6 +106,11 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
         self.plugin.language_changed(v, old_lang);
     }
 
+    fn do_custom_command(&mut self, view_id: ViewId, method: &str, params: Value) {
+        let v = bail!(self.views.get_mut(&view_id), method, self.pid, view_id);
+        self.plugin.custom_command(v, method, params);
+    }
+
     fn do_new_buffer(&mut self, ctx: &RpcCtx, buffers: Vec<PluginBufferInfo>) {
         let plugin_id = self.pid.unwrap();
         buffers
@@ -202,6 +207,9 @@ impl<'a, P: Plugin> RpcHandler for Dispatcher<'a, P> {
                 self.do_get_hover(view_id, request_id, position)
             }
             LanguageChanged { view_id, new_lang } => self.do_language_changed(view_id, new_lang),
+            CustomCommand { view_id, method, params } => {
+                self.do_custom_command(view_id, &method, params)
+            }
             Ping(..) => (),
         }
     }
