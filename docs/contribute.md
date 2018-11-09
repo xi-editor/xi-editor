@@ -31,8 +31,8 @@ follow the [Code of Conduct](https://github.com/xi-editor/xi-editor/blob/master/
 Not sure where to start? If you haven't already, take a look at the
 [docs](http://xi-editor.github.io/xi-editor/docs.html) to get a better
 sense of the project. Read through some issues and some open PRs, to
-get a sense for the habits of existing contributors. Drop by the #xi
-channel on [irc.mozilla.org](https://mozilla.logbot.info/xi) to follow
+get a sense for the habits of existing contributors. Drop by the #xi-editor
+channel on [Zulip](https://xi.zulipchat.com) to follow
 ongoing discussions or ask questions. Clone the repos you're
 interested in, and make sure you can build and run the tests. If you
 can't, open an issue, and someone will try to help. Once you're up and
@@ -99,7 +99,7 @@ issues that are labeled
 [help wanted](https://github.com/xi-editor/xi-editor/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22) and/or
 [easy](https://github.com/xi-editor/xi-editor/issues?q=is%3Aissue+is%3Aopen+label%3Aeasy)
 are good places to start. If you can't find anything there, feel free to ask
-on IRC, or play around with the editor and try to identify something that
+on Zulip, or play around with the editor and try to identify something that
 _you_ think is missing.
 
 ### Before you start work
@@ -195,7 +195,7 @@ type of feedback you might expect.
 _Patience_. As a general goal, we try to respond to all pull requests
 within a few days, and to do preliminary review within a week, but we
 don't always succeed. If you've opened a PR and haven't heard from
-anyone, feel free to comment on it, or stop by the IRC channel, to ask
+anyone, feel free to comment on it, or stop by the Zulip channel, to ask
 if anyone has had a chance to take a look. It's very possible that it's
 been lost in the shuffle.
 
