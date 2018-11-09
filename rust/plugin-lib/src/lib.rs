@@ -39,6 +39,7 @@ mod view;
 use std::io;
 use std::path::Path;
 
+use serde_json::Value;
 use xi_core::plugin_rpc::{GetDataResponse, TextUnit};
 use xi_core::{ConfigTable, LanguageId};
 use xi_rope::interval::IntervalBounds;
@@ -175,6 +176,10 @@ pub trait Plugin {
     /// New language is available in the `view`, and old language is available in `old_lang`.
     #[allow(unused_variables)]
     fn language_changed(&mut self, view: &mut View<Self::Cache>, old_lang: LanguageId) {}
+
+    /// Called with a custom command.
+    #[allow(unused_variables)]
+    fn custom_command(&mut self, view: &mut View<Self::Cache>, method: &str, params: Value) {}
 
     /// Called when the runloop is idle, if the plugin has previously
     /// asked to be scheduled via `View::schedule_idle()`. Plugins that
