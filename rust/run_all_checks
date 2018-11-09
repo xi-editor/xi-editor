@@ -1,12 +1,14 @@
 #!/bin/bash
 
 if !(cargo clippy --version); then
-    printf 'Checks requires clippy; try `rustup install clippy-preview`.\n'
+    printf 'Checks requires clippy; try `rustup component add clippy-preview`.\n'
+    printf "If that doesn't fix things; try `rustup self update`.\n"
     exit 1
 fi
 
 if !(cargo fmt --version); then
-    printf 'Checks requires rustfmt; try `rustup install rustfmt-preview`.\n'
+    printf 'Checks requires rustfmt; try `rustup component add rustfmt-preview`.\n'
+    printf "If that doesn't fix things; try `rustup self update`.\n"
     exit 1
 fi
 
