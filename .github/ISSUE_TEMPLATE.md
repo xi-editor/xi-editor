@@ -3,7 +3,8 @@
 - [ ] I have studied the documentation.
 
 <!---
-Please ensure the issue meets these requirements. If you are not sure, questions are welcome on the #xi chatroom on irc.mozilla.org.
+Please ensure the issue meets these requirements. If you are not sure, questions
+are welcome on the #xi-editor channel on https://xi.zulipchat.com.
 --->
 ## Details
 

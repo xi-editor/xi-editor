@@ -6,7 +6,7 @@ is_site_nav_category: true
 site_nav_category: gsoc
 ---
 
-Please, use the suggested [proposal template](gsoc-template.html) when applying. Check out [GSoC guides](https://google.github.io/gsocguides/student/writing-a-proposal#elements-of-a-quality-proposal) for more tips. 
+Please, use the suggested [proposal template](gsoc-template.html) when applying. Check out [GSoC guides](https://google.github.io/gsocguides/student/writing-a-proposal#elements-of-a-quality-proposal) for more tips.
 
 Good places to start contributing to Xi are [easy](https://github.com/xi-editor/xi-editor/issues?q=is%3Aopen+is%3Aissue+label%3Aeasy) and [help wanted](https://github.com/xi-editor/xi-editor/issues?q=is%3Aopen+is%3Aissue+label%3A%22help+wanted%22) issues on GitHub.
 
@@ -75,7 +75,7 @@ Xi currently uses a plugin based on [syntect](https://github.com/trishume/syntec
 When this work is finished, the user should be able to place custom themes and syntax definitions in an appropriate place on the filesystem, and have those items automatically detected and loaded by syntect. Syntect should also generate new binary dumps including the new items, to avoid unduly impacting startup time.
 
 ### Difficulty
-This is low-hanging fruit for core development.  We already support syntax files. The work that would need to be done is to define RPC mechanism for a front-end to inform syntect of the syntax file path & for syntect to integrate a filesystem watcher to scan for changes. A minimal design docs or maybe even just an IRC discussion would be necessary. Additionally adding more syntax files built-in would improve the out-of-the box experience.  
+This is low-hanging fruit for core development.  We already support syntax files. The work that would need to be done is to define RPC mechanism for a front-end to inform syntect of the syntax file path & for syntect to integrate a filesystem watcher to scan for changes. A minimal design docs or maybe even just an Zulip discussion would be necessary. Additionally adding more syntax files built-in would improve the out-of-the box experience.
 
 There is opportunity for the student to expand the scope of the work to improve the performance of loading the theme files by compiling them into a binary format & caching them.  Would require some diligence to detect stale cache entries (updated theme file) or uninstalled themes.
 
@@ -97,15 +97,15 @@ The split-view work should be relatively easy core development work.  Diff/merge
 ## Workspace + Git
 
 ### Step 1 for an IDE experience
-A workspace plugin would enable project-based editing. This would provide a foundation for performing actions like building, running & debugging a target.  It would also provide various higher-scope tools (e.g. refactoring) with the knowledge necessary about how to perform those actions (what files are part of the compilation, where to look for documentation, etc).  
+A workspace plugin would enable project-based editing. This would provide a foundation for performing actions like building, running & debugging a target.  It would also provide various higher-scope tools (e.g. refactoring) with the knowledge necessary about how to perform those actions (what files are part of the compilation, where to look for documentation, etc).
 A git plugin would allow for operations like annotating lines with commit info and for viewing the diff of a particular commit. When the workspace plugin is loaded then there would also be status indications for untracked/modified status of project files.
 
 ### Outcome
-A workspace plugin that supports Cargo projects so that we could self-host.  Supporting CMake would be great too. This requires front-end integration as well for providing an “IDE” view. IDE’s typically have a single window that shows the project files + a view to edit a window. Additionally, at startup there’s an ability to provide a selection screen of which project(s) to open.  
+A workspace plugin that supports Cargo projects so that we could self-host.  Supporting CMake would be great too. This requires front-end integration as well for providing an “IDE” view. IDE’s typically have a single window that shows the project files + a view to edit a window. Additionally, at startup there’s an ability to provide a selection screen of which project(s) to open.
 Git integration at a minimum would entail a blame option & an ability to view the changes introduced within that diff (like Xcode).
 
 ### Difficulty
-This would be medium-difficulty core development work for the workspace. It would probably require having another entry-point in the front-end for an IDE view. It would reuse a lot of the core rendering code but the document management would probably be distinct. CMake & Cargo are two projects that would probably be fairly easy to integrate as the files that are part of Cargo are mostly deterministic from a static TOML file and CMake can export all its commands to a JSON file. It would require coming up with a thorough project structure model. For full completeness, consideration would have to be given to properly incorporate build.rs logic.  
+This would be medium-difficulty core development work for the workspace. It would probably require having another entry-point in the front-end for an IDE view. It would reuse a lot of the core rendering code but the document management would probably be distinct. CMake & Cargo are two projects that would probably be fairly easy to integrate as the files that are part of Cargo are mostly deterministic from a static TOML file and CMake can export all its commands to a JSON file. It would require coming up with a thorough project structure model. For full completeness, consideration would have to be given to properly incorporate build.rs logic.
 
 Most of the git blame work would simply require getting it to render correctly & efficiently. The git plugin itself shouldn’t be difficult since there exist great Rust bindings and git already supports blaming a line-range which is what the front-end would ask the plugin to provide.
 
@@ -134,7 +134,7 @@ The find functionality currently only supports plain-text search within the curr
  - Find + Find/replace within workspace files
  - Filter for matching lines. Show only matching lines with a configurable amount of context
  - Multiple queries. Match any number of queries and highlight them uniquely.
-All of these use-cases have received significant attention by the ripgrep project which has factored them out into standalone Rust libraries (as fast or significantly faster than other tools like venerable grep).  The workspace files integration would depend on the workspace plugin but significant development can be made even without it.  Filter & multiple queries would be features exclusive to xi not seen before in text editors (filter is available in command-line grep and multiple queries are kind of possible via regex search).  
+All of these use-cases have received significant attention by the ripgrep project which has factored them out into standalone Rust libraries (as fast or significantly faster than other tools like venerable grep).  The workspace files integration would depend on the workspace plugin but significant development can be made even without it.  Filter & multiple queries would be features exclusive to xi not seen before in text editors (filter is available in command-line grep and multiple queries are kind of possible via regex search).
 
 An additional feature for supporting multiple queries (each query highlighted separately but the search acting in a uniform way) would be super useful addition that would be unique to xi (often useful for log files).
 
@@ -150,7 +150,7 @@ There is a variety of levels of difficulty available, even within a work item.  
 ## Scriptable language bindings (C API)
 
 ### Provide an API for core data structures and actions, suitable for binding to scripting languages and GUI frontends
-Right now all communication between core and front-end, as well as between core and plug-ins, is mediated by a JSON-RPC communication mechanism. We’ve been finding that there are common operations (maintenance of the line case, for example) that would be worthwhile to make available for many clients; these are also typically performance sensitive, so would benefit from implementation in Rust. The project involves creating C API’s for such tasks, designed specifically to be easily wrapped in FFI bindings from scripting languages and the languages most commonly used to write front-ends.  
+Right now all communication between core and front-end, as well as between core and plug-ins, is mediated by a JSON-RPC communication mechanism. We’ve been finding that there are common operations (maintenance of the line case, for example) that would be worthwhile to make available for many clients; these are also typically performance sensitive, so would benefit from implementation in Rust. The project involves creating C API’s for such tasks, designed specifically to be easily wrapped in FFI bindings from scripting languages and the languages most commonly used to write front-ends.
 
 Related work would be similar FFI bindings for the xi-rope data structure, so plug-ins running as threads in the same process could have more direct access to the document contents.
 
@@ -165,7 +165,7 @@ This is probably medium difficulty and not particularly risky; it requires caref
 ## Flush out unit tests
 
 ### Provide ability to write a more robust set of tests
-We have some RPC tests but being able to express tests at a higher level (type  ‘A’, move cursor to X:Y, add cursor at A:B, transpose, paste “XYZ”, etc) would make it much easier to express the operations in a maintainable way & provide for ways to easily validate.  
+We have some RPC tests but being able to express tests at a higher level (type  ‘A’, move cursor to X:Y, add cursor at A:B, transpose, paste “XYZ”, etc) would make it much easier to express the operations in a maintainable way & provide for ways to easily validate.
 
 Follow-on work could include "property testing," which generates test cases automatically (resulting in higher coverage) and tests properties such as correctness of incremental algorithms.
 
