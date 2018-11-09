@@ -521,7 +521,7 @@ certainly represent at least initial and trailing sequences of invalid lines by
 their count; and the editing operations may be more efficiently done in-place
 than by copying from the old state to the new].
 
-The "copy" op appends the `n` lines `[old_ix: old_ix + n]` to the new lines
+The "copy" op appends the `n` lines `[old_ix .. old_ix + n]` to the new lines
 array, and increments `old_ix` by `n`.
 
 The "skip" op increments `old_ix` by `n`.
