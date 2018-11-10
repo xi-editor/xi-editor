@@ -460,7 +460,7 @@ impl<N: NodeInfo> TreeBuilder<N> {
     ///
     /// Example of this kind of stack if MAX_CHILDREN = 3:
     /// let n_i be some node of height i. Let the front of the array represent the top of the stack.
-    /// [[n_1, n_1], [n_2], [n_3, n_3]]
+    /// `[[n_1, n_1], [n_2], [n_3, n_3]]`
     ///
     /// The nodes in the stack are pushed on the accumulating tree one by one in the end.
     pub fn push_leaves(&mut self, leaves: Vec<N::L>) {
