@@ -25,14 +25,14 @@ const MAX_CHILDREN: usize = 8;
 pub trait NodeInfo: Clone {
     /// The type of the leaf.
     ///
-    /// A given NodeInfo is for exactly one type of leaf. That is why
+    /// A given `NodeInfo` is for exactly one type of leaf. That is why
     /// the leaf type is an associated type rather than a type parameter.
     type L: Leaf;
 
     /// An operator that combines info from two subtrees. It is intended
     /// (but not strictly enforced) that this operator be associative and
     /// obey an identity property. In mathematical terms, the accumulate
-    /// method is the sum operator of a monoid.
+    /// method is the operation of a monoid.
     fn accumulate(&mut self, other: &Self);
 
     /// A mapping from a leaf into the info type. It is intended (but
@@ -46,18 +46,22 @@ pub trait NodeInfo: Clone {
     /// The identity of the monoid. Need not be implemented because it
     /// can be computed from the leaf default.
     ///
-    /// This is hear to demonstrate that this is a monoid.
+    /// This is here to demonstrate that this is a monoid.
     fn identity() -> Self {
         Self::compute_info(&Self::L::default())
     }
 
-    /// The interval covered by this node. The default impl is sufficient for most types,
-    /// but interval trees may need to override it.
+    /// The interval covered by the first `len` base units of this node. The
+    /// default impl is sufficient for most types, but interval trees may need
+    /// to override it.
     fn interval(&self, len: usize) -> Interval {
         Interval::new(0, len)
     }
 }
 
+/// A trait for the leaves of trees of type [Node].
+///
+/// Two leafs can be concatenated using `push_maybe_split`.
 pub trait Leaf: Sized + Clone + Default {
     /// Measurement of leaf in base units.
     /// A 'base unit' refers to the smallest discrete unit
@@ -68,23 +72,23 @@ pub trait Leaf: Sized + Clone + Default {
     /// Generally a minimum size requirement for leaves.
     fn is_ok_child(&self) -> bool;
 
-    /// Combine other into self, optionly splitting in two.
-    /// Interval is in "base units".
-    /// Generally implements a maximum size.
+    /// Combine the part `other` denoted by the `Interval` `iv` into `self`,
+    /// optionly splitting off a new `Leaf` if `self` would have become too big.
+    /// Returns either `None` if no splitting was needed, or `Some(rest)` if
+    /// `rest` was split off.
     ///
-    /// TODO: What does Interval represent?
+    /// Interval is in "base units".  Generally implements a maximum size.
     ///
-    /// Invariants:
-    ///
+    /// # Invariants:
     /// - If one or the other input is empty, then no split.
-    /// - If either input satisfies is_ok_child, then on return self
-    /// satisfies this, as does the optional split.
+    /// - If either input satisfies `is_ok_child`, then, on return, `self`
+    ///   satisfies this, as does the optional split.
     fn push_maybe_split(&mut self, other: &Self, iv: Interval) -> Option<Self>;
 
-    /// same meaning as push_maybe_split starting from an empty
+    /// Same meaning as push_maybe_split starting from an empty
     /// leaf, but maybe can be implemented more efficiently?
     ///
-    /// TODO: remove if it doesn't pull its weight
+    // TODO: remove if it doesn't pull its weight
     fn subseq(&self, iv: Interval) -> Self {
         let mut result = Self::default();
         if result.push_maybe_split(self, iv).is_some() {
@@ -126,33 +130,33 @@ enum NodeVal<N: NodeInfo> {
 // also consider making Metric a newtype for usize, so type system can
 // help separate metrics
 
-/// A trait for quickly processing attributes of a NodeInfo.
+/// A trait for quickly processing attributes of a [NodeInfo].
 ///
 /// For the conceptual background see the
 /// [blog post, Rope science, part 2: metrics](https://github.com/google/xi-editor/blob/master/docs/docs/rope_science_02.md).
 pub trait Metric<N: NodeInfo> {
-    /// Return the number of boundarys in the NodeInfo::Leaf
+    /// Return the number of boundaries in the [NodeInfo::L]
     ///
     /// The usize argument is the total size/length of the node, in base units.
-    fn measure(&N, usize) -> usize;
+    fn measure(info: &N, len: usize) -> usize;
 
     /// Returns the smallest offset, in base units, for an offset in measured units.
     ///
-    /// Invariants:
+    /// # Invariants:
     ///
     /// - `from_base_units(to_base_units(x)) == x` is True for valid `x`
     fn to_base_units(l: &N::L, in_measured_units: usize) -> usize;
 
     /// Returns the smallest offset in measured units corresponding to an offset in base units.
     ///
-    /// Invariants:
+    /// # Invariants:
     ///
     /// - `from_base_units(to_base_units(x)) == x` is True for valid `x`
     fn from_base_units(l: &N::L, in_base_units: usize) -> usize;
 
     /// Return whether the offset in base units is a boundary of this metric.
     /// If a boundary is at end of a leaf then this method must return true.
-    /// However, A boundary at the beginning of a leaf is optional
+    /// However, a boundary at the beginning of a leaf is optional
     /// (the previous leaf will be queried).
     fn is_boundary(l: &N::L, offset: usize) -> bool;
 
@@ -164,11 +168,10 @@ pub trait Metric<N: NodeInfo> {
     /// or None if no such boundary exists. Input and result are in base units.
     fn next(l: &N::L, offset: usize) -> Option<usize>;
 
-    /// Returns true if the measured units in this metric can span multiple leaves.
-    /// As an example, in a metric that measures lines in a rope,
-    /// a line may start in one leaf and end in another;
-    /// however in a metric measuring bytes,
-    /// storage of a single byte cannot extend across leaves.
+    /// Returns true if the measured units in this metric can span multiple
+    /// leaves.  As an example, in a metric that measures lines in a rope, a
+    /// line may start in one leaf and end in another; however in a metric
+    /// measuring bytes, storage of a single byte cannot extend across leaves.
     fn can_fragment() -> bool;
 }
 
@@ -214,8 +217,10 @@ impl<N: NodeInfo> Node<N> {
         }
     }
 
-    /// Returns the first child with a positive measure, starting from the `j`th.
-    /// Also, returns the offset we have skipped; note that if it returns `None`in the first component, we skip all the children.
+    /// Returns the first child with a positive measure, starting from the
+    /// `j`th.  Also, returns the length in base units of the children we have
+    /// skipped. Note that if it returns `None` in the first component, we skip
+    /// all the children.
     fn next_positive_measure_child<M: Metric<N>>(&self, j: usize) -> (Option<usize>, usize) {
         let children = self.get_children();
         let mut offset = 0;
