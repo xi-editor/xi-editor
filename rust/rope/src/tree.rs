@@ -46,7 +46,7 @@ pub trait NodeInfo: Clone {
     /// The identity of the monoid. Need not be implemented because it
     /// can be computed from the leaf default.
     ///
-    /// This is hear to demonstrate that this is a monoid.
+    /// This is here to demonstrate that this is a monoid.
     fn identity() -> Self {
         Self::compute_info(&Self::L::default())
     }
