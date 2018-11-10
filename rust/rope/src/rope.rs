@@ -146,16 +146,22 @@ impl NodeInfo for RopeInfo {
 
 //TODO: document metrics, based on https://github.com/google/xi-editor/issues/456
 //See ../docs/MetricsAndBoundaries.md for more information.
+/// This metric let us walk utf8 text by code point.
+///
+/// `BaseMetric` implements the trait [Metric].  Both its _measured unit_ and
+/// its _base unit_ are utf8 code unit.
+///
+/// Offsets that do not correspond to codepoint boundaries are _invalid_, and
+/// calling functions that assume valid offsets with invalid offets will panic
+/// in debug mode.
+///
+/// Boundary is atomic and determined by codepoint boundary.  Atomicity is
+/// implicit, because offsets between two utf8 code units that form a code
+/// point is considered invalid. For example, if a string starts with a
+/// 0xC2 byte, then `offset=1` is invalid.
 #[derive(Clone, Copy)]
 pub struct BaseMetric(());
 
-/// Measured unit is utf8 code unit.
-/// Base unit is utf8 code unit.
-/// Boundary is atomic and determined by codepoint boundary.
-/// Atomicity is implicit, putting the offset
-/// between two utf8 code units that form a code point is considered invalid.
-/// For example, take a string that starts with a 0xC2 byte.
-/// Then offset=1 is invalid.
 impl Metric<RopeInfo> for BaseMetric {
     fn measure(_: &RopeInfo, len: usize) -> usize {
         len
