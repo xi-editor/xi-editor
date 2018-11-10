@@ -7,7 +7,7 @@ The xi-editor project follows the Rust Code of Conduct, reproduced below.
 **Contact**: [mods@xi-editor.io](mailto:mods@xi-editor.io)
 
 * We are committed to providing a friendly, safe and welcoming environment for all, regardless of level of experience, gender identity and expression, sexual orientation, disability, personal appearance, body size, race, ethnicity, age, religion, nationality, or other similar characteristic.
-* On Zulip, please avoid using overtly sexual nicknames or other nicknames that might detract from a friendly, safe and welcoming environment for all.
+* On chat platforms (like Zulip and IRC), please avoid using overtly sexual nicknames or other nicknames that might detract from a friendly, safe and welcoming environment for all.
 * Please be kind and courteous. There's no need to be mean or rude.
 * Respect that people have differences of opinion and that every design or implementation choice carries a trade-off and numerous costs. There is seldom a right answer.
 * Please keep unstructured critique to a minimum. If you have solid ideas you want to experiment with, make a fork and see how it works.
@@ -36,8 +36,6 @@ In the Rust community we strive to go the extra step to look out for each other.
 
 And if someone takes issue with something you said or did, resist the urge to be defensive. Just stop doing what it was they complained about and apologize. Even if you feel you were misinterpreted or unfairly accused, chances are good there was something you could've communicated better — remember that it's your responsibility to make your fellow Rustaceans comfortable. Everyone wants to get along and we are all here first and foremost because we want to talk about cool technology. You will find that people will be eager to assume good intent and forgive as long as you earn their trust.
 
-The enforcement policies listed above apply to all official xi-editor venues,
-including the #xi-editor Zulip channel and the repositories under the xi-editor
-organization.
+The enforcement policies listed above apply to all official xi-editor venues, including Zulip, the #xi channel on IRC, and the repositories under the xi-editor organization.
 
 *Adapted from the [Node.js Policy on Trolling](http://blog.izs.me/post/30036893703/policy-on-trolling) as well as the [Contributor Covenant v1.3.0](https://www.contributor-covenant.org/version/1/3/0/).*

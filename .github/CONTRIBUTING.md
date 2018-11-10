@@ -23,14 +23,14 @@ follow the [Code of Conduct](https://github.com/xi-editor/xi-editor/blob/master/
 ### Very first steps
 
 Not sure where to start? If you haven't already, take a look at the
-[docs](http://xi-editor.github.io/xi-editor/docs.html) to get a better
-sense of the project. Read through some issues and some open PRs, to
-get a sense for the habits of existing contributors. Drop by the #xi
-channel on [Zulip](https://xi.zulipchat.com) to follow
-ongoing discussions or ask questions. Clone the repos you're
-interested in, and make sure you can build and run the tests. If you
-can't, open an issue, and someone will try to help. Once you're up and
-running, there are a a number of ways to participate:
+[docs](http://xi-editor.github.io/xi-editor/docs.html) to get a better sense of
+the project. Read through some issues and some open PRs, to get a sense for the
+habits of existing contributors. Drop by the #xi-editor stream on
+[Zulip](https://xi.zulipchat.com) (anyone with a Github account can easily
+signup), or the #xi channel on irc.mozilla.org, to follow ongoing discussions or
+ask questions. Clone the repos you're interested in, and make sure you can build
+and run the tests. If you can't, open an issue, and someone will try to help.
+Once you're up and running, there are a a number of ways to participate:
 
 ### Opening issues
 
@@ -93,7 +93,7 @@ issues that are labeled
 [help wanted](https://github.com/xi-editor/xi-editor/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22) and/or
 [easy](https://github.com/xi-editor/xi-editor/issues?q=is%3Aissue+is%3Aopen+label%3Aeasy)
 are good places to start. If you can't find anything there, feel free to ask
-on Zulip, or play around with the editor and try to identify something that
+on Zulip or IRC, or play around with the editor and try to identify something that
 _you_ think is missing.
 
 ### Before you start work
