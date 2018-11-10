@@ -136,9 +136,18 @@ enum NodeVal<N: NodeInfo> {
 /// For the conceptual background see the
 /// [blog post, Rope science, part 2: metrics](https://github.com/google/xi-editor/blob/master/docs/docs/rope_science_02.md).
 pub trait Metric<N: NodeInfo> {
-    /// Return the number of boundaries in the [NodeInfo::L](trait.NodeInfo.html#associatedtype.L)
+    /// Return the size of the
+    /// [NodeInfo::L](trait.NodeInfo.html#associatedtype.L), as measured by this
+    /// metric.
     ///
     /// The usize argument is the total size/length of the node, in base units.
+    ///
+    /// # Examples
+    /// For the [LinesMetric](../rope/struct.LinesMetric.html), this gives the number of
+    /// lines in string contained in the leaf. For the
+    /// [BaseMetric](../rope/struct.BaseMetric.html), this gives the size of the string
+    /// in uft8 code units, that is, bytes.
+    ///
     fn measure(info: &N, len: usize) -> usize;
 
     /// Returns the smallest offset, in base units, for an offset in measured units.
