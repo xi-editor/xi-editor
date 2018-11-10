@@ -59,7 +59,7 @@ pub trait NodeInfo: Clone {
     }
 }
 
-/// A trait for the leaves of trees of type [Node].
+/// A trait for the leaves of trees of type [Node](struct.Node.html).
 ///
 /// Two leafs can be concatenated using `push_maybe_split`.
 pub trait Leaf: Sized + Clone + Default {
@@ -130,12 +130,13 @@ enum NodeVal<N: NodeInfo> {
 // also consider making Metric a newtype for usize, so type system can
 // help separate metrics
 
-/// A trait for quickly processing attributes of a [NodeInfo].
+/// A trait for quickly processing attributes of a
+/// [NodeInfo](struct.NodeInfo.html).
 ///
 /// For the conceptual background see the
 /// [blog post, Rope science, part 2: metrics](https://github.com/google/xi-editor/blob/master/docs/docs/rope_science_02.md).
 pub trait Metric<N: NodeInfo> {
-    /// Return the number of boundaries in the [NodeInfo::L]
+    /// Return the number of boundaries in the [NodeInfo::L](trait.NodeInfo.html#associatedtype.L)
     ///
     /// The usize argument is the total size/length of the node, in base units.
     fn measure(info: &N, len: usize) -> usize;
