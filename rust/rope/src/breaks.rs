@@ -60,14 +60,14 @@ impl Leaf for BreaksLeaf {
         } else {
             let splitpoint = self.data.len() / 2; // number of breaks
             let splitpoint_units = self.data[splitpoint - 1];
-            // TODO: use Vec::split_off(), it's nicer
-            let mut new = Vec::with_capacity(self.data.len() - splitpoint);
-            for i in splitpoint..self.data.len() {
-                new.push(self.data[i] - splitpoint_units);
+
+            let mut new = self.data.split_off(splitpoint);
+            for x in &mut new {
+                *x -= splitpoint_units;
             }
+
             let new_len = self.len - splitpoint_units;
             self.len = splitpoint_units;
-            self.data.truncate(splitpoint);
             Some(BreaksLeaf { len: new_len, data: new })
         }
     }
