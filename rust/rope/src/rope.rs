@@ -161,11 +161,13 @@ impl Metric<RopeInfo> for BaseMetric {
         len
     }
 
-    fn to_base_units(_: &String, in_measured_units: usize) -> usize {
+    fn to_base_units(s: &String, in_measured_units: usize) -> usize {
+        debug_assert!(s.is_char_boundary(in_measured_units));
         in_measured_units
     }
 
-    fn from_base_units(_: &String, in_base_units: usize) -> usize {
+    fn from_base_units(s: &String, in_base_units: usize) -> usize {
+        debug_assert!(s.is_char_boundary(in_base_units));
         in_base_units
     }
 
