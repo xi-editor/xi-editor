@@ -104,25 +104,14 @@ impl Metric<BreaksInfo> for BreaksMetric {
     }
 
     fn from_base_units(l: &BreaksLeaf, in_base_units: usize) -> usize {
-        // TODO: binary search, data is sorted
-        for i in 0..l.data.len() {
-            if in_base_units < l.data[i] {
-                return i;
-            }
+        match l.data.binary_search(&in_base_units) {
+            Ok(n) => n + 1,
+            Err(n) => n,
         }
-        l.data.len()
     }
 
     fn is_boundary(l: &BreaksLeaf, offset: usize) -> bool {
-        // TODO: binary search, data is sorted
-        for i in 0..l.data.len() {
-            if offset == l.data[i] {
-                return true;
-            } else if offset < l.data[i] {
-                return false;
-            }
-        }
-        false
+        l.data.binary_search(&offset).is_ok()
     }
 
     fn prev(l: &BreaksLeaf, offset: usize) -> Option<usize> {
@@ -139,13 +128,16 @@ impl Metric<BreaksInfo> for BreaksMetric {
     }
 
     fn next(l: &BreaksLeaf, offset: usize) -> Option<usize> {
-        // TODO: binary search, data is sorted
-        for i in 0..l.data.len() {
-            if offset < l.data[i] {
-                return Some(l.data[i]);
-            }
+        let n = match l.data.binary_search(&offset) {
+            Ok(n) => n + 1,
+            Err(n) => n,
+        };
+
+        if n == l.data.len() {
+            None
+        } else {
+            Some(l.data[n])
         }
-        None
     }
 
     fn can_fragment() -> bool {
