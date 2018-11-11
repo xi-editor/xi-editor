@@ -123,7 +123,7 @@ impl Editor {
             revs_in_flight: 0,
             sync_store: None,
             last_synced_rev: last_rev_id,
-            last_initial_load_rev: last_rev_id
+            last_initial_load_rev: last_rev_id,
         }
     }
 
@@ -940,7 +940,8 @@ impl Editor {
     }
 
     pub fn append_loaded_chunk(&mut self, rope: Rope) {
-        let new_loaded_chunk_rev = self.engine.append_loaded_chunk(self.last_initial_load_rev.token(), rope);
+        let new_loaded_chunk_rev =
+            self.engine.append_loaded_chunk(self.last_initial_load_rev.token(), rope);
         self.last_initial_load_rev = new_loaded_chunk_rev;
     }
 }

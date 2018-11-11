@@ -39,10 +39,10 @@ use client::Client;
 use config::{self, ConfigDomain, ConfigDomainExternal, ConfigManager, Table};
 use editor::Editor;
 use event_context::EventContext;
-use file::{FileManager, FileLoadState, try_load_file_chunk};
+use file::{try_load_file_chunk, FileLoadState, FileManager};
 use line_ending::LineEnding;
-use plugins::{PluginCatalog, PluginPid, Plugin, start_plugin_process};
 use plugin_rpc::{PluginNotification, PluginRequest};
+use plugins::{start_plugin_process, Plugin, PluginCatalog, PluginPid};
 use recorder::Recorder;
 use rpc::{
     CoreNotification, CoreRequest, EditNotification, EditRequest,
@@ -549,8 +549,9 @@ impl CoreState {
             NEW_VIEW_IDLE_TOKEN => self.finalize_new_views(),
             WATCH_IDLE_TOKEN => self.handle_fs_watcher_events(),
             LOADING_FILE_IDLE_TOKEN => self.continue_loading_files(),
-            other if (other & RENDER_VIEW_IDLE_MASK) != 0 =>
-                self.handle_render_timer(other ^ RENDER_VIEW_IDLE_MASK),
+            other if (other & RENDER_VIEW_IDLE_MASK) != 0 => {
+                self.handle_render_timer(other ^ RENDER_VIEW_IDLE_MASK)
+            }
             other => panic!("unexpected idle token {}", other),
         };
     }
@@ -660,7 +661,7 @@ impl CoreState {
     }
 
     #[cfg(not(feature = "notify"))]
-    fn handle_fs_watcher_events(&mut self) { }
+    fn handle_fs_watcher_events(&mut self) {}
 
     /// Handles a file system event related to a currently open file
     #[cfg(feature = "notify")]

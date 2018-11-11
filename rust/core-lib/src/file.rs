@@ -51,7 +51,7 @@ pub struct FileInfo {
     pub path: PathBuf,
     pub mod_time: Option<SystemTime>,
     pub has_changed: bool,
-    pub loaded_state: FileLoadState
+    pub loaded_state: FileLoadState,
 }
 impl FileInfo {
     pub fn try_clone(&self) -> io::Result<FileInfo> {
@@ -62,7 +62,7 @@ impl FileInfo {
             path: self.path.clone(),
             mod_time: self.mod_time.clone(),
             has_changed: self.has_changed.clone(),
-            loaded_state: cloned_loaded_state
+            loaded_state: cloned_loaded_state,
         };
 
         Ok(cloned_file_info)
@@ -73,7 +73,7 @@ pub enum FileError {
     Io(io::Error, PathBuf),
     UnknownEncoding(PathBuf),
     HasChanged(PathBuf),
-    StillLoading(PathBuf)
+    StillLoading(PathBuf),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -87,7 +87,7 @@ pub enum FileLoadState {
     FullyLoaded,
     Loading {
         file_handle: File, // This also stores the current seek cursor for the file
-        leftovers: Vec<u8>
+        leftovers: Vec<u8>,
     },
 }
 impl FileLoadState {
@@ -99,7 +99,7 @@ impl FileLoadState {
 
                 FileLoadState::Loading {
                     file_handle: cloned_file_handle,
-                    leftovers: leftovers.clone()
+                    leftovers: leftovers.clone(),
                 }
             }
         };
@@ -154,9 +154,7 @@ impl FileManager {
         false
     }
 
-    pub fn open(&mut self, path: &Path, id: BufferId) -> Result<Rope, FileError>
-    {
-
+    pub fn open(&mut self, path: &Path, id: BufferId) -> Result<Rope, FileError> {
         if !path.exists() {
             let _ = File::create(path).map_err(|e| FileError::Io(e, path.to_owned()))?;
         }
@@ -201,7 +199,7 @@ impl FileManager {
             path: path.to_owned(),
             mod_time: get_mod_time(path),
             has_changed: false,
-            loaded_state: FileLoadState::FullyLoaded
+            loaded_state: FileLoadState::FullyLoaded,
         };
         self.open_files.insert(path.to_owned(), id);
         self.file_info.insert(id, info);
@@ -210,9 +208,7 @@ impl FileManager {
         Ok(())
     }
 
-    fn save_existing(&mut self, path: &Path, text: &Rope, id: BufferId)
-        -> Result<(), FileError>
-    {
+    fn save_existing(&mut self, path: &Path, text: &Rope, id: BufferId) -> Result<(), FileError> {
         let prev_path = self.previous_path(&id);
 
         if !self.is_file_loaded(&id) {
@@ -243,31 +239,32 @@ impl FileManager {
         self.file_info.remove(id)
     }
     pub fn is_file_loaded(&self, id: &BufferId) -> bool {
-        self.file_info.get(id).iter().any(|file_info| match file_info.loaded_state  {
+        self.file_info.get(id).iter().any(|file_info| match file_info.loaded_state {
             FileLoadState::FullyLoaded => true,
-            _ => false
+            _ => false,
         })
     }
-    pub fn update_file_load_state(&mut self, prev_file_info: FileInfo, path: &PathBuf, id: &BufferId, new_load_state: FileLoadState)
-    {
+    pub fn update_file_load_state(
+        &mut self,
+        prev_file_info: FileInfo,
+        path: &PathBuf,
+        id: &BufferId,
+        new_load_state: FileLoadState,
+    ) {
         match new_load_state {
             FileLoadState::FullyLoaded => {
                 // Move this buffer from loading_files to open_files
                 self.loading_files.remove(&path.to_owned());
                 self.open_files.insert(path.to_owned(), id.clone());
-            },
+            }
             FileLoadState::Loading { .. } => (),
         };
 
-        let new_file_info = FileInfo {
-            loaded_state: new_load_state,
-            .. prev_file_info
-        };
+        let new_file_info = FileInfo { loaded_state: new_load_state, ..prev_file_info };
         self.file_info.insert(id.clone(), new_file_info);
     }
 
-    pub fn loading_files(&self) -> HashMap<PathBuf, BufferId>
-    {
+    pub fn loading_files(&self) -> HashMap<PathBuf, BufferId> {
         self.loading_files.clone()
     }
 }
@@ -280,27 +277,34 @@ where
 {
     // TODO: support for non-utf8
     // it's arguable that the rope crate should have file loading functionality
-    let mut f = File::open(path.as_ref()).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
-    let mod_time = f.metadata().map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?.modified().ok();
+    let mut f =
+        File::open(path.as_ref()).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
+    let mod_time =
+        f.metadata().map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?.modified().ok();
 
-    let (rope, loaded_state, encoding) = try_load_file_chunk( &mut f, Vec::new(), path.as_ref())?;
+    let (rope, loaded_state, encoding) = try_load_file_chunk(&mut f, Vec::new(), path.as_ref())?;
 
     let info = FileInfo {
         encoding,
         mod_time,
         path: path.as_ref().to_owned(),
         has_changed: false,
-        loaded_state
+        loaded_state,
     };
     Ok((rope, info))
 }
 
-pub fn try_load_file_chunk<P>(file_handle: &mut File, mut chunk: Vec<u8>, path: P) -> Result<(Rope, FileLoadState, CharacterEncoding), FileError>
-where P: AsRef<Path>
+pub fn try_load_file_chunk<P>(
+    file_handle: &mut File,
+    mut chunk: Vec<u8>,
+    path: P,
+) -> Result<(Rope, FileLoadState, CharacterEncoding), FileError>
+where
+    P: AsRef<Path>,
 {
     let mut bytes = [0; CHUNK_SIZE];
-    let num_bytes_read = file_handle.read(&mut bytes)
-        .map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
+    let num_bytes_read =
+        file_handle.read(&mut bytes).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
 
     chunk.extend_from_slice(&bytes);
 
@@ -312,23 +316,17 @@ where P: AsRef<Path>
         (true, false) => Err(FileError::UnknownEncoding(path.as_ref().to_owned()))?,
         // Maybe more bytes to read
         _ => {
-            let file_handle_copy = file_handle.try_clone().map_err(|e| {
-                FileError::Io(e, path.as_ref().to_owned())
-            })?;
+            let file_handle_copy =
+                file_handle.try_clone().map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
 
-            FileLoadState::Loading {
-                file_handle: file_handle_copy,
-                leftovers: new_leftovers
-            }
-        },
+            FileLoadState::Loading { file_handle: file_handle_copy, leftovers: new_leftovers }
+        }
     };
 
     Ok((rope, new_loaded_state, encoding))
 }
 
-fn try_save(path: &Path, text: &Rope, encoding: CharacterEncoding)
-    -> io::Result<()>
-{
+fn try_save(path: &Path, text: &Rope, encoding: CharacterEncoding) -> io::Result<()> {
     let mut f = File::create(path)?;
     match encoding {
         CharacterEncoding::Utf8WithBom => f.write_all(UTF8_BOM.as_bytes())?,
@@ -344,27 +342,28 @@ fn try_save(path: &Path, text: &Rope, encoding: CharacterEncoding)
     Ok(())
 }
 
-fn try_decode(bytes: &[u8],
-              encoding: CharacterEncoding, path: &Path) -> Result<(Rope, Vec<u8>), FileError> {
+fn try_decode(
+    bytes: &[u8],
+    encoding: CharacterEncoding,
+    path: &Path,
+) -> Result<(Rope, Vec<u8>), FileError> {
     // Check the last valid UTF-8 character in the chunk
     // If it's incomplete but otherwise valid, save it for the next chunk
     let (complete_bytes, leftovers): (&[u8], &[u8]) = match last_utf8_char_info(bytes) {
         LastUTF8CharInfo::Complete => (bytes, &[]),
         LastUTF8CharInfo::Incomplete(reverse_idx) => bytes.split_at(bytes.len() - reverse_idx),
-        LastUTF8CharInfo::InvalidUTF8 => Err(FileError::UnknownEncoding(path.to_owned()))?
+        LastUTF8CharInfo::InvalidUTF8 => Err(FileError::UnknownEncoding(path.to_owned()))?,
     };
 
     match encoding {
         CharacterEncoding::Utf8 => {
-            let utf8_str = str::from_utf8(complete_bytes).map_err(|_e|
-                FileError::UnknownEncoding(path.to_owned())
-            )?;
+            let utf8_str = str::from_utf8(complete_bytes)
+                .map_err(|_e| FileError::UnknownEncoding(path.to_owned()))?;
             Ok((Rope::from(utf8_str), leftovers.to_vec()))
-        },
+        }
         CharacterEncoding::Utf8WithBom => {
-            let utf8_str = String::from_utf8(complete_bytes.to_vec()).map_err(|_e|
-                FileError::UnknownEncoding(path.to_owned())
-            )?;
+            let utf8_str = String::from_utf8(complete_bytes.to_vec())
+                .map_err(|_e| FileError::UnknownEncoding(path.to_owned()))?;
             Ok((Rope::from(&utf8_str[UTF8_BOM.len()..]), leftovers.to_vec()))
         }
     }
@@ -373,7 +372,7 @@ fn try_decode(bytes: &[u8],
 enum LastUTF8CharInfo {
     Complete,
     Incomplete(usize),
-    InvalidUTF8
+    InvalidUTF8,
 }
 
 fn last_utf8_char_info(s: &[u8]) -> LastUTF8CharInfo {
@@ -383,30 +382,36 @@ fn last_utf8_char_info(s: &[u8]) -> LastUTF8CharInfo {
         // First bit is 0, a single byte UTF-8 character
         leading_byte_single if leading_byte_single < 128 => Err(match reverse_idx {
             1 => LastUTF8CharInfo::Complete,
-            _ => LastUTF8CharInfo::InvalidUTF8
+            _ => LastUTF8CharInfo::InvalidUTF8,
         }),
         // Byte starts with 10, a UTF-8 continuation byte
         // This is bit magic equivalent to: 128 <= b || b < 192
         continuation_byte if (continuation_byte as i8) < -0x40 => Ok(reverse_idx + 1),
         // Byte starts with 110, a 2 byte UTF-8 character
-        leading_byte_double if 192 <= leading_byte_double && leading_byte_double < 224 => Err(match reverse_idx {
-            1 => LastUTF8CharInfo::Incomplete(reverse_idx),
-            2 => LastUTF8CharInfo::Complete,
-            _ => LastUTF8CharInfo::InvalidUTF8
-        }),
+        leading_byte_double if 192 <= leading_byte_double && leading_byte_double < 224 => {
+            Err(match reverse_idx {
+                1 => LastUTF8CharInfo::Incomplete(reverse_idx),
+                2 => LastUTF8CharInfo::Complete,
+                _ => LastUTF8CharInfo::InvalidUTF8,
+            })
+        }
         // Byte starts with 1110, a 3 byte UTF-8 character
-        leading_byte_triple if 224 <= leading_byte_triple && leading_byte_triple < 240 => Err(match reverse_idx {
-            1 | 2 => LastUTF8CharInfo::Incomplete(reverse_idx),
-            3 => LastUTF8CharInfo::Complete,
-            _ => LastUTF8CharInfo::InvalidUTF8
-        }),
+        leading_byte_triple if 224 <= leading_byte_triple && leading_byte_triple < 240 => {
+            Err(match reverse_idx {
+                1 | 2 => LastUTF8CharInfo::Incomplete(reverse_idx),
+                3 => LastUTF8CharInfo::Complete,
+                _ => LastUTF8CharInfo::InvalidUTF8,
+            })
+        }
         // Byte starts with 11110, a 4 byte UTF-8 character
-        leading_byte_quad if 240 <= leading_byte_quad && leading_byte_quad < 248 => Err(match reverse_idx {
-            1 | 2 | 3 => LastUTF8CharInfo::Incomplete(reverse_idx),
-            4 => LastUTF8CharInfo::Complete,
-            _ => LastUTF8CharInfo::InvalidUTF8
-        }),
-        _ => Err(LastUTF8CharInfo::InvalidUTF8) // Should only happen in invalid UTF-8
+        leading_byte_quad if 240 <= leading_byte_quad && leading_byte_quad < 248 => {
+            Err(match reverse_idx {
+                1 | 2 | 3 => LastUTF8CharInfo::Incomplete(reverse_idx),
+                4 => LastUTF8CharInfo::Complete,
+                _ => LastUTF8CharInfo::InvalidUTF8,
+            })
+        }
+        _ => Err(LastUTF8CharInfo::InvalidUTF8), // Should only happen in invalid UTF-8
     });
 
     match last_char_result {
@@ -466,7 +471,9 @@ impl fmt::Display for FileError {
                  Please save elsewhere and reload the file. File path: {:?}",
                 p
             ),
-            &FileError::StillLoading(ref p) => write!(f, "File is in the middle of loading, path {:?}", p),
+            &FileError::StillLoading(ref p) => {
+                write!(f, "File is in the middle of loading, path {:?}", p)
+            }
         }
     }
 }

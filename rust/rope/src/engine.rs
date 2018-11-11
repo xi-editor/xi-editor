@@ -663,7 +663,10 @@ impl Engine {
         let last_revision = self.get_rev(last_chunk_rev).unwrap();
         let last_revision_final_position = last_revision.len();
         let insertion_length = rope.len();
-        let interval_up_to_latest_chunk = Interval::new(last_revision_final_position, last_revision_final_position + insertion_length);
+        let interval_up_to_latest_chunk = Interval::new(
+            last_revision_final_position,
+            last_revision_final_position + insertion_length,
+        );
         let delta = Delta::simple_edit(interval_up_to_latest_chunk, rope, insertion_length);
         let (insert_delta, _) = delta.factor();
 
