@@ -664,6 +664,60 @@ impl View {
         ix
     }
 
+    fn build_update_op(&self, op: &str, lines: Option<Vec<Value>>, n: usize) -> Value {
+        let mut update = json!({
+            "op": op,
+            "n": n,
+        });
+
+        if let Some(lines) = lines {
+            update["lines"] = json!(lines);
+        }
+
+        update
+    }
+
+    fn build_selection_annotations(&self, text: &Rope, start: usize, end: usize) -> Vec<Value> {
+        self.selection.regions_in_range(start, end).iter().map(|region| {
+            let (start_line, start_col) = self.offset_to_line_col(text, region.min());
+            let (end_line, end_col) = self.offset_to_line_col(text, region.max());
+            json!({
+                "pos": [start_line, start_col, end_line, end_col]
+            })
+        }).collect::<Vec<Value>>()
+    }
+
+    fn build_highlight_annotations(&self, text: &Rope, start: usize, end: usize) -> Vec<Value> {
+        self.find.iter().flat_map(|find| {
+            let query_id = find.id();
+            find.occurrences().regions_in_range(start, end).iter().map(move |region| {
+                let (start_line, start_col) = self.offset_to_line_col(text, region.min());
+                let (end_line, end_col) = self.offset_to_line_col(text, region.max());
+                json!({
+                    "pos": [start_line, start_col, end_line, end_col],
+                    "metadata": {
+                        "query": query_id
+                    }
+                })
+            })
+        }).collect::<Vec<Value>>()
+    }
+
+    fn build_update_annotation(&self, selection_annotations: Vec<Value>, highlight_annotations: Vec<Value>) -> Value {
+        json!([
+            {
+                "type": "selection",
+                "n": selection_annotations.len(),
+                "data": selection_annotations
+            },
+            {
+                "type": "highlights",
+                "n": highlight_annotations.len(),
+                "data": highlight_annotations
+            },
+        ])
+    }
+
     fn send_update_for_plan(
         &mut self,
         text: &Rope,
@@ -755,6 +809,16 @@ impl View {
                 }
             }
         }
+
+        let last_line = self.first_line + self.height - 1;
+        let selection_annotations = self.build_selection_annotations(text, self.first_line, last_line);
+        let highlight_annotations = self.build_highlight_annotations(text, self.first_line, last_line);
+
+        let params = json!({
+            "annotations": self.build_update_annotation(selection_annotations, highlight_annotations),
+            "ops": ops,
+            "pristine": pristine,
+        });
         let update = Update { ops, pristine };
 
         client.update_view(self.view_id, &update);
