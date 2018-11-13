@@ -16,6 +16,7 @@
 
 use std::cell::RefCell;
 use std::iter;
+use std::ops::Range;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -166,6 +167,7 @@ impl<'a> EventContext<'a> {
             SpecialEvent::RequestHover { request_id, position } => {
                 self.do_request_hover(request_id, position)
             }
+            SpecialEvent::DebugToggleComment => self.do_debug_toggle_comment(),
             SpecialEvent::ToggleRecording(_) => {}
             SpecialEvent::PlayRecording(recording_name) => {
                 let recorder = self.recorder.borrow();
@@ -506,6 +508,40 @@ impl<'a> EventContext<'a> {
             last,
             ed.is_pristine(),
         )
+    }
+
+    fn do_debug_toggle_comment(&mut self) {
+        let view = self.view.borrow();
+        let ed = self.editor.borrow();
+        let mut prev_range: Option<Range<usize>> = None;
+        let mut line_ranges = Vec::new();
+        // we send selection state to syntect in the form of a vec of line ranges,
+        // so we combine overlapping selections to get the minimum set of ranges.
+        for region in self.view.borrow().sel_regions().iter() {
+            let line_range = view.get_line_range(ed.get_buffer(), region);
+            let prev = prev_range.take();
+            match (prev, line_range) {
+                (None, range) => prev_range = Some(range),
+                (Some(ref prev), ref range) if range.start <= prev.end => {
+                    let combined =
+                        Range { start: prev.start.min(range.start), end: prev.end.max(range.end) };
+                    prev_range = Some(combined);
+                }
+                (Some(prev), range) => {
+                    line_ranges.push((prev.start, prev.end));
+                    prev_range = Some(range);
+                }
+            }
+        }
+
+        if let Some(prev) = prev_range {
+            line_ranges.push((prev.start, prev.end));
+        }
+
+        // this is handled by syntect only; this is definitely not the long-term solution.
+        if let Some(plug) = self.plugins.iter().find(|p| p.name == "xi-syntect-plugin") {
+            plug.dispatch_command(self.view_id, "toggle_comment", &json!(line_ranges));
+        }
     }
 
     fn do_request_hover(&mut self, request_id: usize, position: Option<ClientPosition>) {
