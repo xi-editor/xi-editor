@@ -84,6 +84,7 @@ pub(crate) enum SpecialEvent {
     Resize(Size),
     RequestLines(LineRange),
     RequestHover { request_id: usize, position: Option<Position> },
+    DebugToggleComment,
     ToggleRecording(Option<String>),
     PlayRecording(String),
     ClearRecording(String),
@@ -242,6 +243,7 @@ impl From<EditNotification> for EventDomain {
             Capitalize => BufferEvent::Capitalize.into(),
             Indent => BufferEvent::Indent.into(),
             Outdent => BufferEvent::Outdent.into(),
+            DebugToggleComment => SpecialEvent::DebugToggleComment.into(),
             HighlightFind { visible } => ViewEvent::HighlightFind { visible }.into(),
             SelectionForFind { case_sensitive } =>
                 ViewEvent::SelectionForFind { case_sensitive }.into(),

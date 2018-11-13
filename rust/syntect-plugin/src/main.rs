@@ -14,6 +14,7 @@
 
 //! A syntax highlighting plugin based on syntect.
 
+extern crate serde_json;
 extern crate syntect;
 extern crate xi_core_lib as xi_core;
 extern crate xi_plugin_lib;
@@ -23,13 +24,14 @@ extern crate xi_trace;
 mod stackmap;
 
 use std::collections::HashMap;
+use std::ops::Range;
 use std::path::Path;
 use std::sync::MutexGuard;
 
 use xi_core::plugin_rpc::ScopeSpan;
 use xi_core::{ConfigTable, LanguageId, ViewId};
 use xi_plugin_lib::{mainloop, Cache, Error, Plugin, StateCache, View};
-use xi_rope::{Interval, RopeDelta};
+use xi_rope::{DeltaBuilder, Interval, Rope, RopeDelta, RopeInfo};
 use xi_trace::{trace, trace_block};
 
 use syntect::parsing::{
@@ -40,6 +42,8 @@ use stackmap::{LookupResult, StackMap};
 
 const LINES_PER_RPC: usize = 10;
 const INDENTATION_PRIORITY: u64 = 100;
+
+type EditBuilder = DeltaBuilder<RopeInfo>;
 
 /// The state for syntax highlighting of one file.
 struct PluginState {
@@ -234,7 +238,10 @@ impl<'a> Syntect<'a> {
                 .map(|(_, scope)| scope)?;
             Some(syntax_set.metadata().metadata_for_scope(scope.as_slice()))
         } else {
-            let scope = view.get(line)?;
+            //HACK: for comment toggling the metadata is generally the same
+            //for all lines in a document? So we use get_prev, which means
+            //we'll still be useful if the line isn't in the cache.
+            let (_, _, scope) = view.get_prev(line);
             scope
                 .as_ref()
                 .map(|(_, scope)| syntax_set.metadata().metadata_for_scope(scope.as_slice()))
@@ -389,6 +396,103 @@ impl<'a> Syntect<'a> {
             .map(|b| if b == &b' ' { 1 } else { tab_size })
             .sum()
     }
+
+    fn toggle_comment(&mut self, view: &mut MyView, lines: &[(usize, usize)]) {
+        let _t = trace_block("Syntect::toggle_comment", &["syntect"]);
+        if lines.is_empty() {
+            return;
+        }
+
+        let mut builder = DeltaBuilder::new(view.get_buf_size());
+
+        for (start, end) in lines {
+            let range = Range { start: *start, end: *end };
+            self.toggle_comment_line_range(view, &mut builder, range);
+        }
+
+        if builder.is_empty() {
+            eprintln!("no delta for lines {:?}", &lines);
+        } else {
+            view.edit(builder.build(), INDENTATION_PRIORITY, false, true, String::from("syntect"));
+        }
+    }
+
+    fn toggle_comment_line_range(
+        &mut self,
+        view: &mut MyView,
+        builder: &mut EditBuilder,
+        line_range: Range<usize>,
+    ) {
+        let comment_str = match self
+            .get_metadata(view, line_range.start)
+            .and_then(|s| s.line_comment().map(|s| s.to_owned()))
+        {
+            Some(s) => s,
+            None => return,
+        };
+
+        match view
+            .get_line(line_range.start)
+            .map(|l| comment_str.trim() == l.trim() || l.trim().starts_with(&comment_str))
+        {
+            Ok(true) => self.remove_comment_marker(view, builder, line_range, &comment_str),
+            Ok(false) => self.insert_comment_marker(view, builder, line_range, &comment_str),
+            Err(e) => eprintln!("toggle comment error: {:?}", e),
+        }
+    }
+
+    fn insert_comment_marker(
+        &self,
+        view: &mut MyView,
+        builder: &mut EditBuilder,
+        line_range: Range<usize>,
+        comment_str: &str,
+    ) {
+        // when commenting out multiple lines, we insert all comment markers at
+        // the same indent level: that of the least indented line.
+        let line_offset = line_range
+            .clone()
+            .map(|num| {
+                view.get_line(num)
+                    .ok()
+                    .and_then(|line| line.as_bytes().iter().position(|b| *b != b' ' && *b != b'\t'))
+                    .unwrap_or(0)
+            }).min()
+            .unwrap_or(0);
+
+        let comment_txt = Rope::from(&comment_str);
+        for num in line_range {
+            let offset = view.offset_of_line(num).unwrap();
+            let line = view.get_line(num).unwrap();
+            if line.trim().starts_with(&comment_str) {
+                continue;
+            }
+
+            let iv = Interval::new(offset + line_offset, offset + line_offset);
+            builder.replace(iv, comment_txt.clone());
+        }
+    }
+
+    fn remove_comment_marker(
+        &self,
+        view: &mut MyView,
+        builder: &mut EditBuilder,
+        lines: Range<usize>,
+        comment_str: &str,
+    ) {
+        for num in lines {
+            let offset = view.offset_of_line(num).unwrap();
+            let line = view.get_line(num).unwrap();
+            let (comment_start, len) = match line.find(&comment_str) {
+                Some(off) => (offset + off, comment_str.len()),
+                None if line.trim() == comment_str.trim() => (offset, comment_str.trim().len()),
+                None => continue,
+            };
+
+            let iv = Interval::new(comment_start, comment_start + len);
+            builder.delete(iv);
+        }
+    }
 }
 
 impl<'a> Plugin for Syntect<'a> {
@@ -434,6 +538,21 @@ impl<'a> Plugin for Syntect<'a> {
             if let Some(delta) = delta {
                 self.consider_indentation(view, delta, &edit_type);
             }
+        }
+    }
+
+    fn custom_command(
+        &mut self,
+        view: &mut View<Self::Cache>,
+        method: &str,
+        params: serde_json::Value,
+    ) {
+        match method {
+            "toggle_comment" => {
+                let lines: Vec<(usize, usize)> = serde_json::from_value(params).unwrap();
+                self.toggle_comment(view, &lines);
+            }
+            other => eprintln!("syntect received unexpected command {}", other),
         }
     }
 
