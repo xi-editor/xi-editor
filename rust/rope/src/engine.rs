@@ -900,7 +900,7 @@ fn rebase(
 mod tests {
     use engine::*;
     use rope::{Rope, RopeInfo};
-    use delta::{Builder, Delta};
+    use delta::{Builder, Delta, DeltaElement};
     use multiset::Subset;
     use interval::Interval;
     use std::collections::BTreeSet;
@@ -933,6 +933,20 @@ mod tests {
         let first_rev = engine.get_head_rev_id().token();
         engine.edit_rev(0, 1, first_rev, build_delta_1());
         assert_eq!("0123456789abcDEEFghijklmnopqr999stuvz", String::from(engine.get_head()));
+    }
+
+    #[test]
+    fn edit_rev_empty() {
+        let mut engine = Engine::new(Rope::from(TEST_STR));
+        let first_rev = engine.get_head_rev_id().token();
+        let delta = Delta {
+            base_len: TEST_STR.len(),
+            els: vec![DeltaElement::Copy(0, TEST_STR.len())],
+        };
+        engine.edit_rev(0, 1, first_rev, delta.clone());
+        assert_eq!(TEST_STR, String::from(engine.get_head()));
+        engine.edit_rev(0, 1, first_rev, delta.clone());
+        assert_eq!(TEST_STR, String::from(engine.get_head()));
     }
 
     #[test]
