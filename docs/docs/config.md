@@ -45,7 +45,7 @@ type is converted to a string.
 
 `xi-core` includes a number of default config tables. In the source, these are
 included as `TOML` files (see
-[/rust/core-lib/assets/](https://github.com/google/xi-editor/blob/master/rust/core-lib/assets/)).
+[/rust/core-lib/assets/](https://github.com/xi-editor/xi-editor/blob/master/rust/core-lib/assets/)).
 At compile time these are baked into the binary.
 
 

@@ -48,24 +48,24 @@ enum ChromeTraceArrayEntries {
 /// let mut serialized = Vec::<u8>::new();
 /// chrome_trace::serialize(samples.iter(), serialized);
 /// ```
-pub fn serialize<'a, W>(samples: &Vec<Sample>, output: W) -> Result<(), Error>
+pub fn serialize<W>(samples: &Vec<Sample>, output: W) -> Result<(), Error>
 where
     W: Write,
 {
-    serde_json::to_writer(output, samples).map_err(|e| Error::Json(e))
+    serde_json::to_writer(output, samples).map_err(Error::Json)
 }
 
 pub fn to_value(samples: &Vec<Sample>) -> Result<serde_json::Value, Error> {
-    serde_json::to_value(samples).map_err(|e| Error::Json(e))
+    serde_json::to_value(samples).map_err(Error::Json)
 }
 
 pub fn decode(samples: serde_json::Value) -> Result<Vec<Sample>, Error> {
-    serde_json::from_value(samples).map_err(|e| Error::Json(e))
+    serde_json::from_value(samples).map_err(Error::Json)
 }
 
 pub fn deserialize<R>(input: R) -> Result<Vec<Sample>, Error>
 where
     R: Read,
 {
-    serde_json::from_reader(input).map_err(|e| Error::Json(e))
+    serde_json::from_reader(input).map_err(Error::Json)
 }

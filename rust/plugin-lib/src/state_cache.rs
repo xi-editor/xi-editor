@@ -17,7 +17,8 @@
 use bytecount;
 use rand::{thread_rng, Rng};
 
-use xi_rope::rope::{LinesMetric, RopeDelta};
+use xi_rope::interval::IntervalBounds;
+use xi_rope::{LinesMetric, RopeDelta};
 use xi_trace::trace_block;
 
 use super::{Cache, DataSource, Error, View};
@@ -54,6 +55,14 @@ impl<S: Clone + Default> Cache for StateCache<S> {
 
     fn get_line<DS: DataSource>(&mut self, source: &DS, line_num: usize) -> Result<&str, Error> {
         self.buf_cache.get_line(source, line_num)
+    }
+
+    fn get_region<DS, I>(&mut self, source: &DS, interval: I) -> Result<&str, Error>
+    where
+        DS: DataSource,
+        I: IntervalBounds,
+    {
+        self.buf_cache.get_region(source, interval)
     }
 
     fn get_document<DS: DataSource>(&mut self, source: &DS) -> Result<String, Error> {
@@ -301,14 +310,12 @@ impl<S: Clone + Default> StateCache<S> {
         for old_ln in &self.frontier {
             if *old_ln < line_num {
                 new_frontier.push(*old_ln);
-            } else {
-                if need_push {
-                    new_frontier.push(line_num);
-                    need_push = false;
-                    if let Some(ref entry) = self.state_cache.get(cache_idx) {
-                        if *old_ln >= entry.line_num {
-                            new_frontier.push(old_ln.wrapping_add(nl_count_delta as usize));
-                        }
+            } else if need_push {
+                new_frontier.push(line_num);
+                need_push = false;
+                if let Some(ref entry) = self.state_cache.get(cache_idx) {
+                    if *old_ln >= entry.line_num {
+                        new_frontier.push(old_ln.wrapping_add(nl_count_delta as usize));
                     }
                 }
             }

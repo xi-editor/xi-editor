@@ -22,15 +22,15 @@ follow the [Code of Conduct](https://github.com/xi-editor/xi-editor/blob/master/
 
 ### Very first steps
 
-Not sure where to start? If you haven't already, take a look at the 
-[docs](http://xi-editor.github.io/xi-editor/docs.html) to get a better
-sense of the project. Read through some issues and some open PRs, to
-get a sense for the habits of existing contributors. Drop by the #xi
-channel on [irc.mozilla.org](https://mozilla.logbot.info/xi) to follow
-ongoing discussions or ask questions. Clone the repos you're
-interested in, and make sure you can build and run the tests. If you
-can't, open an issue, and someone will try to help. Once you're up and
-running, there are a a number of ways to participate:
+Not sure where to start? If you haven't already, take a look at the
+[docs](http://xi-editor.github.io/xi-editor/docs.html) to get a better sense of
+the project. Read through some issues and some open PRs, to get a sense for the
+habits of existing contributors. Drop by the #xi-editor stream on
+[Zulip](https://xi.zulipchat.com) (anyone with a Github account can easily
+signup), or the #xi channel on irc.mozilla.org, to follow ongoing discussions or
+ask questions. Clone the repos you're interested in, and make sure you can build
+and run the tests. If you can't, open an issue, and someone will try to help.
+Once you're up and running, there are a a number of ways to participate:
 
 ### Opening issues
 
@@ -44,11 +44,11 @@ and/or examples of how this feature is used in other editors.
 #### Before you open an issue
 
 Before opening an issue, **try to identify where the issue belongs**.
-Is it a problem with the frontend or with core? The frontend is 
+Is it a problem with the frontend or with core? The frontend is
 responsible for drawing windows and UI, and handling events; the core
 is responsible for most everything else. Issues with the frontend
 should be opened in that frontend's repository, and issues with
-core should be opened in the 
+core should be opened in the
 [xi-editor](https://github.com/xi-editor/xi-editor/issues) repo.
 
 Finally, before opening an issue, **use github's search bar** to make
@@ -89,23 +89,23 @@ reviews, see [code review process](#review-process).
 
 If you're looking for something to work on, a good first step is to browse
 the [issues](https://github.com/xi-editor/xi-editor/issues). Specifically,
-issues that are labeled 
+issues that are labeled
 [help wanted](https://github.com/xi-editor/xi-editor/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22) and/or
 [easy](https://github.com/xi-editor/xi-editor/issues?q=is%3Aissue+is%3Aopen+label%3Aeasy)
 are good places to start. If you can't find anything there, feel free to ask
-on IRC, or play around with the editor and try to identify something that
+on Zulip or IRC, or play around with the editor and try to identify something that
 _you_ think is missing.
 
 ### Before you start work
 
 Before starting to work on an issue, consider the following:
-    
+
 - _Is it a bugfix or small change?_ If you notice a small bug somewhere,
  and you believe you have a fix, feel free to open a pull request directly.
 
 - _Is it a feature?_ If you have an idea for a new editor feature that is
  along the lines of something that already exists (for instance, adding a
- new command to reverse the letters in a selected region) _consider_ 
+ new command to reverse the letters in a selected region) _consider_
  opening a short issue beforehand, describing the feature you have in mind.
  Other contributors might be able to identify possible issues or
  refinements. This isn't _necessary_, but it might end up saving you work,
@@ -113,18 +113,18 @@ Before starting to work on an issue, consider the following:
  which feels good.
 
 - _Is it a major feature, affecting for instance the behaviour or appearance
- of a frontend, or the API or architecture of core?_ Before working on a 
+ of a frontend, or the API or architecture of core?_ Before working on a
  large change, please open a discussion/proposal issue. This should describe
- the problem you're trying to solve, and the approach you're considering; 
- think of this as a 'lite' version of Rust's 
- [RFC](https://github.com/rust-lang/rfcs) process. 
+ the problem you're trying to solve, and the approach you're considering;
+ think of this as a 'lite' version of Rust's
+ [RFC](https://github.com/rust-lang/rfcs) process.
 
 
 ### Before you open your PR
 
-Before pressing the 'Create pull request' button, 
+Before pressing the 'Create pull request' button,
 
-- _Run the tests_. It's easy to accidentally break something with even a small 
+- _Run the tests_. It's easy to accidentally break something with even a small
  change, so always run the tests locally before submitting (or updating) a PR.
  You can run all checks locally with the `xi-editor/rust/run_all_checks`. script.
 
@@ -135,18 +135,18 @@ Before pressing the 'Create pull request' button,
  If your change changes some behaviour, how might it be tested?
 
 - ***Be your own first reviewer***. On the page where you enter your message,
- you have a final opportunity to see your PR _as it will be seen by your 
+ you have a final opportunity to see your PR _as it will be seen by your
  reviewers_. This is a great opportunity to give it one last review, yourself.
- Imagine that it is someone else's work, that you're reviewing: what comments 
- would you have? If you spot a typo or a problem, you can push an update in 
+ Imagine that it is someone else's work, that you're reviewing: what comments
+ would you have? If you spot a typo or a problem, you can push an update in
  place, without losing your PR message or other state.
 
-- _Add yourself to the AUTHORS file_. If this is your first substantive pull 
+- _Add yourself to the AUTHORS file_. If this is your first substantive pull
 request in this repo, feel free to add yourself to the AUTHORS file.
 
 ### Review process
 
-Every non-trivial pull request goes through review. Everyone is welcome to 
+Every non-trivial pull request goes through review. Everyone is welcome to
 participate in review; review is an excellent time to ask questions about
 code or design decisions that you don't understand.
 
@@ -156,7 +156,7 @@ commit rights to the repo in question; larger changes (changes which add a
 feature, or significantly change behaviour or API) should also be approved by
 a maintainer.
 
-Before being merged, a change must pass 
+Before being merged, a change must pass
 [CI](https://en.wikipedia.org/wiki/Continuous_integration).
 
 #### Responsibilites of the approving reviewer
@@ -169,11 +169,11 @@ and overall coding style of the relevant repo
 - are ready and able to help resolve any problems that may be introduced by
 merging the change.
 
-If a PR is made by a contributor who has write access to the repo in question, 
-they are responsible for merging/rebasing the PR after it has been approved; 
+If a PR is made by a contributor who has write access to the repo in question,
+they are responsible for merging/rebasing the PR after it has been approved;
 otherwise it will be merged by the reviewer.
 
-If a patch adds or modifies behaviour that is observable in the client, 
+If a patch adds or modifies behaviour that is observable in the client,
 the reviewer should build the patch and verify that it works as expected.
 
 ### After submitting your change
@@ -189,7 +189,7 @@ type of feedback you might expect.
 _Patience_. As a general goal, we try to respond to all pull requests
 within a few days, and to do preliminary review within a week, but we
 don't always succeed. If you've opened a PR and haven't heard from
-anyone, feel free to comment on it, or stop by the IRC channel, to ask
+anyone, feel free to comment on it, or stop by the Zulip channel, to ask
 if anyone has had a chance to take a look. It's very possible that it's
 been lost in the shuffle.
 

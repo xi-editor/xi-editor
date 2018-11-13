@@ -22,11 +22,9 @@ use std::ops::Add;
 use std::str;
 use std::str::FromStr;
 use std::string::ParseError;
-use std::ops::Bound;
-use std::ops::RangeBounds;
 
 use delta::{Delta, DeltaElement};
-use interval::Interval;
+use interval::{Interval, IntervalBounds};
 use tree::{Cursor, Leaf, Metric, Node, NodeInfo, TreeBuilder};
 
 use bytecount;
@@ -87,7 +85,7 @@ const MAX_LEAF: usize = 1024;
 /// ```rust
 /// # use xi_rope::Rope;
 /// let mut a = Rope::from("hello world");
-/// a.edit_str(1..9, "era");
+/// a.edit(1..9, "era");
 /// assert_eq!("herald", String::from(a));
 /// ```
 pub type Rope = Node<RopeInfo>;
@@ -138,42 +136,44 @@ impl NodeInfo for RopeInfo {
     }
 
     fn compute_info(s: &String) -> Self {
-        RopeInfo {
-            lines: count_newlines(s),
-            utf16_size: count_utf16_code_units(s),
-        }
+        RopeInfo { lines: count_newlines(s), utf16_size: count_utf16_code_units(s) }
     }
 
     fn identity() -> Self {
-        RopeInfo {
-            lines: 0,
-            utf16_size: 0,
-        }
+        RopeInfo { lines: 0, utf16_size: 0 }
     }
 }
 
 //TODO: document metrics, based on https://github.com/google/xi-editor/issues/456
 //See ../docs/MetricsAndBoundaries.md for more information.
+/// This metric let us walk utf8 text by code point.
+///
+/// `BaseMetric` implements the trait [Metric].  Both its _measured unit_ and
+/// its _base unit_ are utf8 code unit.
+///
+/// Offsets that do not correspond to codepoint boundaries are _invalid_, and
+/// calling functions that assume valid offsets with invalid offets will panic
+/// in debug mode.
+///
+/// Boundary is atomic and determined by codepoint boundary.  Atomicity is
+/// implicit, because offsets between two utf8 code units that form a code
+/// point is considered invalid. For example, if a string starts with a
+/// 0xC2 byte, then `offset=1` is invalid.
 #[derive(Clone, Copy)]
 pub struct BaseMetric(());
 
-/// Measured unit is utf8 code unit.
-/// Base unit is utf8 code unit.
-/// Boundary is atomic and determined by codepoint boundary.
-/// Atomicity is implicit, putting the offset
-/// between two utf8 code units that form a code point is considered invalid.
-/// For example, take a string that starts with a 0xC2 byte.
-/// Then offset=1 is invalid.
 impl Metric<RopeInfo> for BaseMetric {
     fn measure(_: &RopeInfo, len: usize) -> usize {
         len
     }
 
-    fn to_base_units(_: &String, in_measured_units: usize) -> usize {
+    fn to_base_units(s: &String, in_measured_units: usize) -> usize {
+        debug_assert!(s.is_char_boundary(in_measured_units));
         in_measured_units
     }
 
-    fn from_base_units(_: &String, in_base_units: usize) -> usize {
+    fn from_base_units(s: &String, in_base_units: usize) -> usize {
+        debug_assert!(s.is_char_boundary(in_base_units));
         in_base_units
     }
 
@@ -477,31 +477,14 @@ impl<'de> Deserialize<'de> for Delta<RopeInfo> {
 impl Rope {
     /// Edit the string, replacing the byte range [`start`..`end`] with `new`.
     ///
-    /// Note: `edit` and `edit_str` may be merged, using traits.
-    ///
     /// Time complexity: O(log n)
-    pub fn edit_str<T>(&mut self, range: T, new: &str) 
-        where T: RangeBounds<usize> 
-    {
-        let (start, end) = self.extract_range(range);
-
-        let mut b = TreeBuilder::new();
-        // TODO: may make this method take the iv directly
-        let edit_iv = Interval::new_closed_open(start, end);
-        let self_iv = Interval::new_closed_closed(0, self.len());
-        self.push_subseq(&mut b, self_iv.prefix(edit_iv));
-        b.push_str(new);
-        self.push_subseq(&mut b, self_iv.suffix(edit_iv));
-        *self = b.build();
+    #[deprecated(since = "0.3.0", note = "Use Rope::edit instead")]
+    pub fn edit_str<T: IntervalBounds>(&mut self, iv: T, new: &str) {
+        self.edit(iv, new)
     }
 
     /// Returns a new Rope with the contents of the provided range.
-    pub fn slice<T>(&self, range: T) -> Rope 
-        where T: RangeBounds<usize>
-    {
-        let (start, end) = self.extract_range(range);
-
-        let iv = Interval::new_closed_open(start, end);
+    pub fn slice<T: IntervalBounds>(&self, iv: T) -> Rope {
         self.subseq(iv)
     }
 
@@ -584,15 +567,10 @@ impl Rope {
     ///
     /// Time complexity: technically O(n log n), but the constant factor is so
     /// tiny it is effectively O(n). This iterator does not allocate.
-    pub fn iter_chunks<T>(&self, range: T) -> ChunkIter 
-        where T: RangeBounds<usize>
-    {
-        let (start, end) = self.extract_range(range);
+    pub fn iter_chunks<T: IntervalBounds>(&self, range: T) -> ChunkIter {
+        let Interval { start, end } = range.into_interval(self.len());
 
-        ChunkIter {
-            cursor: Cursor::new(self, start),
-            end,
-        }
+        ChunkIter { cursor: Cursor::new(self, start), end }
     }
 
     /// An iterator over the raw lines. The lines, except the last, include the
@@ -600,13 +578,8 @@ impl Rope {
     ///
     /// The return type is a `Cow<str>`, and in most cases the lines are slices
     /// borrowed from the rope.
-    pub fn lines_raw<T>(&self, range: T) -> LinesRaw 
-        where T: RangeBounds<usize>
-    {
-        LinesRaw {
-            inner: self.iter_chunks(range),
-            fragment: "",
-        }
+    pub fn lines_raw<T: IntervalBounds>(&self, range: T) -> LinesRaw {
+        LinesRaw { inner: self.iter_chunks(range), fragment: "" }
     }
 
     /// An iterator over the lines of a rope.
@@ -619,12 +592,8 @@ impl Rope {
     /// from the rope.
     ///
     /// The semantics are intended to match `str::lines()`.
-    pub fn lines<T>(&self, range: T) -> Lines
-        where T: RangeBounds<usize>
-    {
-        Lines {
-            inner: self.lines_raw(range)
-        }
+    pub fn lines<T: IntervalBounds>(&self, range: T) -> Lines {
+        Lines { inner: self.lines_raw(range) }
     }
 
     // callers should be encouraged to use cursor instead
@@ -634,9 +603,7 @@ impl Rope {
         leaf.as_bytes()[pos]
     }
 
-    pub fn slice_to_cow<T>(&self, range: T) -> Cow<str>
-        where T: RangeBounds<usize>
-    {
+    pub fn slice_to_cow<T: IntervalBounds>(&self, range: T) -> Cow<str> {
         let mut iter = self.iter_chunks(range);
         let first = iter.next();
         let second = iter.next();
@@ -653,25 +620,6 @@ impl Rope {
             }
             (None, Some(_)) => unreachable!(),
         }
-    }
-
-    /// Extracts start and end bounds from a range
-    fn extract_range<T>(&self, range: T) -> (usize, usize)
-        where T: RangeBounds<usize>
-    {
-        let start = match range.start_bound() {
-            Bound::Included(n) => *n,
-            Bound::Excluded(n) => *n + 1,
-            Bound::Unbounded => 0,
-        };
-
-        let end = match range.end_bound() {
-            Bound::Included(n) => *n + 1,
-            Bound::Excluded(n) => *n,
-            Bound::Unbounded => self.len(),
-        };
-
-        (start, end)
     }
 }
 
@@ -708,11 +656,7 @@ impl TreeBuilder<RopeInfo> {
             return;
         }
         while !s.is_empty() {
-            let splitpoint = if s.len() > MAX_LEAF {
-                find_leaf_split_for_bulk(s)
-            } else {
-                s.len()
-            };
+            let splitpoint = if s.len() > MAX_LEAF { find_leaf_split_for_bulk(s) } else { s.len() };
             self.push_leaf(s[..splitpoint].to_owned());
             s = &s[splitpoint..];
         }
@@ -734,11 +678,7 @@ impl TreeBuilder<RopeInfo> {
 fn split_as_leaves(mut s: &str) -> Vec<String> {
     let mut nodes = Vec::new();
     while !s.is_empty() {
-        let splitpoint = if s.len() > MAX_LEAF {
-            find_leaf_split_for_bulk(s)
-        } else {
-            s.len()
-        };
+        let splitpoint = if s.len() > MAX_LEAF { find_leaf_split_for_bulk(s) } else { s.len() };
         nodes.push(s[..splitpoint].to_owned());
         s = &s[splitpoint..];
     }
@@ -906,13 +846,7 @@ impl<'a> Iterator for LinesRaw<'a> {
             if self.fragment.is_empty() {
                 match self.inner.next() {
                     Some(chunk) => self.fragment = chunk,
-                    None => {
-                        return if result.is_empty() {
-                            None
-                        } else {
-                            Some(result)
-                        }
-                    }
+                    None => return if result.is_empty() { None } else { Some(result) },
                 }
                 if self.fragment.is_empty() {
                     // can only happen on empty input
@@ -974,7 +908,7 @@ mod tests {
     #[test]
     fn replace_small() {
         let mut a = Rope::from("hello world");
-        a.edit_str(1..9, "era");
+        a.edit(1..9, "era");
         assert_eq!("herald", String::from(a));
     }
 
@@ -998,33 +932,27 @@ mod tests {
     fn lines_small() {
         let a = Rope::from("a\nb\nc");
         assert_eq!(vec!["a", "b", "c"], a.lines(..).collect::<Vec<_>>());
-        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(),
-        a.lines(..).collect::<Vec<_>>());
+        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(), a.lines(..).collect::<Vec<_>>());
 
         let a = Rope::from("a\nb\n");
         assert_eq!(vec!["a", "b"], a.lines(..).collect::<Vec<_>>());
-        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(),
-        a.lines(..).collect::<Vec<_>>());
+        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(), a.lines(..).collect::<Vec<_>>());
 
         let a = Rope::from("\n");
         assert_eq!(vec![""], a.lines(..).collect::<Vec<_>>());
-        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(),
-        a.lines(..).collect::<Vec<_>>());
+        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(), a.lines(..).collect::<Vec<_>>());
 
         let a = Rope::from("");
         assert_eq!(0, a.lines(..).count());
-        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(),
-        a.lines(..).collect::<Vec<_>>());
+        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(), a.lines(..).collect::<Vec<_>>());
 
         let a = Rope::from("a\r\nb\r\nc");
         assert_eq!(vec!["a", "b", "c"], a.lines(..).collect::<Vec<_>>());
-        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(),
-        a.lines(..).collect::<Vec<_>>());
+        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(), a.lines(..).collect::<Vec<_>>());
 
         let a = Rope::from("a\rb\rc");
         assert_eq!(vec!["a\rb\rc"], a.lines(..).collect::<Vec<_>>());
-        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(),
-               a.lines(..).collect::<Vec<_>>());
+        assert_eq!(String::from(&a).lines().collect::<Vec<_>>(), a.lines(..).collect::<Vec<_>>());
     }
 
     #[test]
@@ -1045,8 +973,7 @@ mod tests {
 
         assert_eq!(vec![a.as_str(), b.as_str()], r.lines_raw(..).collect::<Vec<_>>());
         assert_eq!(vec![&a[..line_len], &b[..line_len]], r.lines(..).collect::<Vec<_>>());
-        assert_eq!(String::from(&r).lines().collect::<Vec<_>>(),
-                   r.lines(..).collect::<Vec<_>>());
+        assert_eq!(String::from(&r).lines().collect::<Vec<_>>(), r.lines(..).collect::<Vec<_>>());
 
         // additional tests for line indexing
         assert_eq!(a.len(), r.offset_of_line(1));
@@ -1292,41 +1219,34 @@ mod tests {
         let cow = rope.slice_to_cow(..);
 
         assert!(short_text.len() <= 1024);
-        assert_eq!(
-            cow,
-            Cow::Borrowed(short_text) as Cow<str>
-        );
+        assert_eq!(cow, Cow::Borrowed(short_text) as Cow<str>);
     }
 
     #[test]
     fn slice_to_cow_long_string_long_slice() {
         // 32 char long string, repeat it 33 times so it is longer than 1024 bytes
-        let long_text = "1234567812345678123456781234567812345678123456781234567812345678".repeat(33);
+        let long_text =
+            "1234567812345678123456781234567812345678123456781234567812345678".repeat(33);
 
         let rope = Rope::from(&long_text);
 
         let cow = rope.slice_to_cow(..);
 
         assert!(long_text.len() > 1024);
-        assert_eq!(
-            cow,
-            Cow::Owned(long_text) as Cow<str>
-        );
+        assert_eq!(cow, Cow::Owned(long_text) as Cow<str>);
     }
 
     #[test]
     fn slice_to_cow_long_string_short_slice() {
         // 32 char long string, repeat it 33 times so it is longer than 1024 bytes
-        let long_text = "1234567812345678123456781234567812345678123456781234567812345678".repeat(33);
+        let long_text =
+            "1234567812345678123456781234567812345678123456781234567812345678".repeat(33);
 
         let rope = Rope::from(&long_text);
 
         let cow = rope.slice_to_cow(..500);
 
         assert!(long_text.len() > 1024);
-        assert_eq!(
-            cow,
-            Cow::Borrowed(&long_text[..500])
-        );
+        assert_eq!(cow, Cow::Borrowed(&long_text[..500]));
     }
 }

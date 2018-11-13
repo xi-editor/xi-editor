@@ -59,13 +59,13 @@ impl Node {
             }
 
             // if key exists, value still might not be assigned:
-            let needs_value = self.children.get(first).unwrap().value.is_none();
+            let needs_value = self.children[first].value.is_none();
             if needs_value {
                 let node = self.children.get_mut(first).unwrap();
                 node.value = Some(next_id);
                 return LookupResult::New(next_id);
             } else {
-                let value = self.children.get(first).unwrap().value.unwrap();
+                let value = self.children[first].value.unwrap();
                 return LookupResult::Existing(value);
             }
         }

@@ -34,15 +34,15 @@
 //! - We are integrated with the xi_rpc runloop; events are queued as
 //! they arrive, and an idle task is scheduled.
 
-use notify::{Watcher, RecursiveMode, watcher, DebouncedEvent, RecommendedWatcher};
+use notify::{watcher, DebouncedEvent, RecommendedWatcher, RecursiveMode, Watcher};
+use std::collections::VecDeque;
+use std::fmt;
+use std::mem;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use std::thread;
-use std::mem;
-use std::collections::VecDeque;
-use std::fmt;
+use std::time::Duration;
 
 use xi_rpc::RpcPeer;
 
@@ -97,15 +97,15 @@ impl FileWatcher {
         let state = Arc::new(Mutex::new(WatcherState::default()));
         let state_clone = state.clone();
 
-        let inner = watcher(tx_event, Duration::from_millis(100))
-            .expect("watcher should spawn");
+        let inner = watcher(tx_event, Duration::from_millis(100)).expect("watcher should spawn");
 
         thread::spawn(move || {
             while let Ok(event) = rx_event.recv() {
                 let mut state = state_clone.lock().unwrap();
                 let WatcherState { ref mut events, ref mut watchees } = *state;
 
-                watchees.iter()
+                watchees
+                    .iter()
                     .filter(|w| w.wants_event(&event))
                     .map(|w| w.token)
                     .for_each(|t| events.push_back((t, clone_event(&event))));
@@ -130,22 +130,26 @@ impl FileWatcher {
 
     /// Like `watch`, but taking a predicate function that filters delivery
     /// of events based on their path.
-    pub fn watch_filtered<F>(&mut self, path: &Path, recursive: bool,
-                             token: WatchToken, filter: F)
-        where F: Fn(&Path) -> bool + Send + 'static,
+    pub fn watch_filtered<F>(&mut self, path: &Path, recursive: bool, token: WatchToken, filter: F)
+    where
+        F: Fn(&Path) -> bool + Send + 'static,
     {
         let filter = Box::new(filter) as Box<PathFilter>;
         self.watch_impl(path, recursive, token, Some(filter));
     }
 
-    fn watch_impl(&mut self, path: &Path, recursive: bool, token: WatchToken,
-                  filter: Option<Box<PathFilter>>)
-    {
+    fn watch_impl(
+        &mut self,
+        path: &Path,
+        recursive: bool,
+        token: WatchToken,
+        filter: Option<Box<PathFilter>>,
+    ) {
         let path = match path.canonicalize() {
             Ok(ref p) => p.to_owned(),
             Err(e) => {
                 warn!("error watching {:?}: {:?}", path, e);
-                return
+                return;
             }
         };
 
@@ -161,7 +165,6 @@ impl FileWatcher {
         }
 
         state.watchees.push(w);
-
     }
 
     /// Removes the provided token/path pair from the watch list.
@@ -170,8 +173,7 @@ impl FileWatcher {
     pub fn unwatch(&mut self, path: &Path, token: WatchToken) {
         let mut state = self.state.lock().unwrap();
 
-        let idx = state.watchees.iter()
-            .position(|w| w.token == token && w.path == path);
+        let idx = state.watchees.iter().position(|w| w.token == token && w.path == path);
 
         if let Some(idx) = idx {
             let removed = state.watchees.remove(idx);
@@ -194,7 +196,9 @@ impl FileWatcher {
             // manually re-added
             if removed.recursive {
                 // do this in two steps because we've borrowed mutably up top
-                let to_add = state.watchees.iter()
+                let to_add = state
+                    .watchees
+                    .iter()
                     .filter(|w| w.path.starts_with(&removed.path))
                     .map(|w| (w.path.to_owned(), mode_from_bool(w.recursive)))
                     .collect::<Vec<_>>();
@@ -220,25 +224,17 @@ impl Watchee {
     fn wants_event(&self, event: &DebouncedEvent) -> bool {
         use self::DebouncedEvent::*;
         match *event {
-            NoticeWrite(ref p) | NoticeRemove(ref p) | Create(ref p) |
-                Write(ref p) | Chmod(ref p) | Remove(ref p) => {
-                    self.applies_to_path(p)
-                }
-            Rename(ref p1, ref p2) => {
-                self.applies_to_path(p1) || self.applies_to_path(p2)
-            }
+            NoticeWrite(ref p) | NoticeRemove(ref p) | Create(ref p) | Write(ref p)
+            | Chmod(ref p) | Remove(ref p) => self.applies_to_path(p),
+            Rename(ref p1, ref p2) => self.applies_to_path(p1) || self.applies_to_path(p2),
             Rescan => false,
-            Error(_, ref opt_p) => {
-                opt_p.as_ref().map(|p| self.applies_to_path(p))
-                    .unwrap_or(false)
-            }
+            Error(_, ref opt_p) => opt_p.as_ref().map(|p| self.applies_to_path(p)).unwrap_or(false),
         }
     }
 
     fn applies_to_path(&self, path: &Path) -> bool {
         let general_case = if path.starts_with(&self.path) {
-            (self.recursive || self.path == path) ||
-                path.parent() == Some(&self.path)
+            (self.recursive || self.path == path) || path.parent() == Some(&self.path)
         } else {
             false
         };
@@ -259,8 +255,14 @@ impl Notify for RpcPeer {
 
 impl fmt::Debug for Watchee {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Watchee path: {:?}, r {}, t {} f {}",
-               self.path, self.recursive, self.token.0, self.filter.is_some())
+        write!(
+            f,
+            "Watchee path: {:?}, r {}, t {} f {}",
+            self.path,
+            self.recursive,
+            self.token.0,
+            self.filter.is_some()
+        )
     }
 }
 
@@ -305,11 +307,11 @@ extern crate tempdir;
 mod tests {
     use super::*;
     use std::ffi::OsStr;
-    use std::thread;
     use std::fs;
-    use std::sync::mpsc;
-    use std::time::{Duration, Instant};
     use std::io::Write;
+    use std::sync::mpsc;
+    use std::thread;
+    use std::time::{Duration, Instant};
 
     impl PartialEq<usize> for WatchToken {
         fn eq(&self, other: &usize) -> bool {
@@ -349,7 +351,7 @@ mod tests {
             match rx.recv_timeout(Duration::from_millis(50)) {
                 Ok(event) => events.push(event),
                 Err(mpsc::RecvTimeoutError::Timeout) => (),
-                Err(e) => panic!("unexpected channel err: {:?}", e)
+                Err(e) => panic!("unexpected channel err: {:?}", e),
             }
         }
         events
@@ -380,8 +382,8 @@ mod tests {
 
     impl TestHelpers for tempdir::TempDir {
         fn mkpath(&self, p: &str) -> PathBuf {
-            let mut path = self.path().canonicalize()
-                .expect("failed to canonalize path").to_owned();
+            let mut path =
+                self.path().canonicalize().expect("failed to canonalize path").to_owned();
             for part in p.split('/').collect::<Vec<_>>() {
                 if part != "." {
                     path.push(part);
@@ -392,19 +394,15 @@ mod tests {
 
         fn create(&self, p: &str) {
             let path = self.mkpath(p);
-            if path.components().last().unwrap().as_os_str()
-                .to_str().unwrap().contains("dir") {
-                    fs::create_dir_all(path)
-                        .expect("failed to create directory");
-                } else {
-                    let parent = path.parent()
-                        .expect("failed to get parent directory").to_owned();
-                    if !parent.exists() {
-                        fs::create_dir_all(parent)
-                            .expect("failed to create parent directory");
-                    }
-                    fs::File::create(path).expect("failed to create file");
+            if path.components().last().unwrap().as_os_str().to_str().unwrap().contains("dir") {
+                fs::create_dir_all(path).expect("failed to create directory");
+            } else {
+                let parent = path.parent().expect("failed to get parent directory").to_owned();
+                if !parent.exists() {
+                    fs::create_dir_all(parent).expect("failed to create parent directory");
                 }
+                fs::File::create(path).expect("failed to create file");
+            }
         }
 
         fn create_all(&self, paths: Vec<&str>) {
@@ -416,20 +414,16 @@ mod tests {
         fn rename(&self, a: &str, b: &str) {
             let path_a = self.mkpath(a);
             let path_b = self.mkpath(b);
-            fs::rename(&path_a, &path_b)
-                .expect("failed to rename file or directory");
+            fs::rename(&path_a, &path_b).expect("failed to rename file or directory");
         }
 
         fn write(&self, p: &str) {
             let path = self.mkpath(p);
 
-            let mut file = fs::OpenOptions::new()
-                .write(true)
-                .open(path)
-                .expect("failed to open file");
+            let mut file =
+                fs::OpenOptions::new().write(true).open(path).expect("failed to open file");
 
-            file.write(b"some data")
-                .expect("failed to write to file");
+            file.write(b"some data").expect("failed to write to file");
             file.sync_all().expect("failed to sync file");
         }
 
@@ -461,9 +455,7 @@ mod tests {
         assert!(w.applies_to_path(&PathBuf::from("/hi/there/friend.txt")));
         assert!(w.applies_to_path(&PathBuf::from("/hi/there/")));
 
-        w.filter = Some(Box::new(|p| {
-            p.extension().and_then(OsStr::to_str) == Some("txt")
-        }));
+        w.filter = Some(Box::new(|p| p.extension().and_then(OsStr::to_str) == Some("txt")));
         assert!(w.applies_to_path(&PathBuf::from("/hi/there/dear/friend.txt")));
         assert!(w.applies_to_path(&PathBuf::from("/hi/there/friend.txt")));
         assert!(!w.applies_to_path(&PathBuf::from("/hi/there/")));
@@ -493,17 +485,20 @@ mod tests {
         sleep_if_macos(35_000);
         w.watch(&tmp.mkpath("adir"), true, 1.into());
         sleep(10);
-        w.watch(&tmp.mkpath("adir/dir2/file"), false,  2.into());
+        w.watch(&tmp.mkpath("adir/dir2/file"), false, 2.into());
         sleep(10);
         w.unwatch(&tmp.mkpath("adir"), 1.into());
         sleep(10);
         tmp.write("adir/dir2/file");
         let _ = recv_all(&rx, Duration::from_millis(1000));
         let events = w.take_events();
-        assert_eq!(events, vec![
-                   (2.into(), DebouncedEvent::NoticeWrite(tmp.mkpath("adir/dir2/file"))),
-                   (2.into(), DebouncedEvent::Write(tmp.mkpath("adir/dir2/file"))),
-        ]);
+        assert_eq!(
+            events,
+            vec![
+                (2.into(), DebouncedEvent::NoticeWrite(tmp.mkpath("adir/dir2/file"))),
+                (2.into(), DebouncedEvent::Write(tmp.mkpath("adir/dir2/file"))),
+            ]
+        );
     }
 
     #[test]
@@ -521,12 +516,15 @@ mod tests {
 
         let _ = recv_all(&rx, Duration::from_millis(1000));
         let events = w.take_events();
-        assert_eq!(events, vec![
-                   (1.into(), DebouncedEvent::NoticeWrite(tmp.mkpath("my_file"))),
-                   (2.into(), DebouncedEvent::NoticeWrite(tmp.mkpath("my_file"))),
-                   (1.into(), DebouncedEvent::Write(tmp.mkpath("my_file"))),
-                   (2.into(), DebouncedEvent::Write(tmp.mkpath("my_file"))),
-        ]);
+        assert_eq!(
+            events,
+            vec![
+                (1.into(), DebouncedEvent::NoticeWrite(tmp.mkpath("my_file"))),
+                (2.into(), DebouncedEvent::NoticeWrite(tmp.mkpath("my_file"))),
+                (1.into(), DebouncedEvent::Write(tmp.mkpath("my_file"))),
+                (2.into(), DebouncedEvent::Write(tmp.mkpath("my_file"))),
+            ]
+        );
 
         assert_eq!(w.state.lock().unwrap().watchees.len(), 2);
         w.unwatch(&tmp.mkpath("my_file"), 1.into());

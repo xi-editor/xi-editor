@@ -89,7 +89,7 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
         self.plugin.did_save(v, prev_path.as_ref().map(PathBuf::as_path));
     }
 
-    fn do_config_changed(&mut self, view_id: ViewId, changes: ConfigTable) {
+    fn do_config_changed(&mut self, view_id: ViewId, changes: &ConfigTable) {
         let v = bail!(self.views.get_mut(&view_id), "config_changed", self.pid, view_id);
         self.plugin.config_changed(v, &changes);
         for (key, value) in changes.iter() {
@@ -166,7 +166,7 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
         v.update(delta.as_ref(), new_len, new_line_count, rev, undo_group);
         self.plugin.update(v, delta.as_ref(), edit_type, author);
 
-        return Ok(Value::from(1));
+        Ok(Value::from(1))
     }
 
     fn do_collect_trace(&self) -> Result<Value, RemoteError> {
@@ -193,7 +193,7 @@ impl<'a, P: Plugin> RpcHandler for Dispatcher<'a, P> {
                 self.do_initialize(ctx, plugin_id, buffer_info)
             }
             DidSave { view_id, path } => self.do_did_save(view_id, path),
-            ConfigChanged { view_id, changes } => self.do_config_changed(view_id, changes),
+            ConfigChanged { view_id, changes } => self.do_config_changed(view_id, &changes),
             NewBuffer { buffer_info } => self.do_new_buffer(ctx, buffer_info),
             DidClose { view_id } => self.do_close(view_id),
             Shutdown(..) => self.do_shutdown(),

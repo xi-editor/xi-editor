@@ -41,7 +41,8 @@ use std::path::Path;
 
 use xi_core::plugin_rpc::{GetDataResponse, TextUnit};
 use xi_core::{ConfigTable, LanguageId};
-use xi_rope::rope::RopeDelta;
+use xi_rope::interval::IntervalBounds;
+use xi_rope::RopeDelta;
 use xi_rpc::{ReadError, RpcLoop};
 
 use self::dispatch::Dispatcher;
@@ -85,6 +86,19 @@ pub trait Cache {
     ///
     /// [`DataSource`]: trait.DataSource.html
     fn get_line<DS: DataSource>(&mut self, source: &DS, line_num: usize) -> Result<&str, Error>;
+
+    /// Returns the specified region of the buffer. Returns an `Err(_)` if
+    /// there is a problem connecting to the peer, or if the requested line
+    /// is out of bounds.
+    ///
+    /// The `source` argument is some type that implements [`DataSource`]; in
+    /// the general case this is backed by the remote peer.
+    ///
+    /// [`DataSource`]: trait.DataSource.html
+    fn get_region<DS, I>(&mut self, source: &DS, interval: I) -> Result<&str, Error>
+    where
+        DS: DataSource,
+        I: IntervalBounds;
 
     /// Returns the entire contents of the remote document, fetching as needed.
     fn get_document<DS: DataSource>(&mut self, source: &DS) -> Result<String, Error>;

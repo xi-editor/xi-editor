@@ -14,7 +14,7 @@
 
 //! Management of styles.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::OsStr;
 use std::fs;
 use std::iter::FromIterator;
@@ -60,31 +60,35 @@ pub struct Style {
 }
 
 impl Style {
-
     /// Creates a new `Style` by converting from a `Syntect::StyleModifier`.
     pub fn from_syntect_style_mod(style: &SynStyleModifier) -> Self {
-        let font_style = style.font_style.map(|s|s.bits()).unwrap_or_default();
+        let font_style = style.font_style.map(|s| s.bits()).unwrap_or_default();
         let weight = if (font_style & 1) != 0 { Some(700) } else { None };
         let underline = if (font_style & 2) != 0 { Some(true) } else { None };
         let italic = if (font_style & 4) != 0 { Some(true) } else { None };
 
         Self::new(
             SYNTAX_PRIORITY_DEFAULT,
-            style.foreground.map(|c| Self::rgba_from_syntect_color(&c)),
-            None,
-            //TODO: stop ignoring background color
-            //style.background.map(|c| Self::rgba_from_syntect_color(&c)),
+            style.foreground.map(Self::rgba_from_syntect_color),
+            style.background.map(Self::rgba_from_syntect_color),
             weight,
             underline,
             italic,
-            )
+        )
     }
 
-    pub fn new<O32, O16, OB>(priority: u16, fg_color: O32, bg_color: O32,
-                             weight: O16, underline: OB, italic: OB) -> Self
-        where O32: Into<Option<u32>>,
-              O16: Into<Option<u16>>,
-              OB: Into<Option<bool>>
+    pub fn new<O32, O16, OB>(
+        priority: u16,
+        fg_color: O32,
+        bg_color: O32,
+        weight: O16,
+        underline: OB,
+        italic: OB,
+    ) -> Self
+    where
+        O32: Into<Option<u32>>,
+        O16: Into<Option<u16>>,
+        OB: Into<Option<bool>>,
     {
         assert!(priority <= 1000);
         Style {
@@ -102,11 +106,12 @@ impl Style {
         let fg = theme.settings.foreground.unwrap_or(Color::BLACK);
         Style::new(
             SYNTAX_PRIORITY_LOWEST,
-            Some(Self::rgba_from_syntect_color(&fg)),
+            Some(Self::rgba_from_syntect_color(fg)),
             None,
             None,
             None,
-            None)
+            None,
+        )
     }
 
     /// Creates a new style by combining attributes of `self` and `other`.
@@ -115,21 +120,16 @@ impl Style {
     ///
     /// Note: when merging multiple styles, apply them in increasing priority.
     pub fn merge(&self, other: &Style) -> Style {
-        let (p1, p2) = if self.priority > other.priority {
-            (self, other)
-        } else {
-            (other, self)
-        };
+        let (p1, p2) = if self.priority > other.priority { (self, other) } else { (other, self) };
 
         Style::new(
             p1.priority,
             p1.fg_color.or(p2.fg_color),
-            //TODO: stop ignoring background color
-            None,
+            p1.bg_color.or(p2.bg_color),
             p1.weight.or(p2.weight),
             p1.underline.or(p2.underline),
             p1.italic.or(p2.italic),
-            )
+        )
     }
 
     /// Encode this `Style`, setting the `id` property.
@@ -141,8 +141,8 @@ impl Style {
         as_val
     }
 
-    fn rgba_from_syntect_color(color: &Color) -> u32 {
-        let &Color { r, g, b, a } = color;
+    fn rgba_from_syntect_color(color: Color) -> u32 {
+        let Color { r, g, b, a } = color;
         ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
     }
 }
@@ -152,8 +152,14 @@ pub struct ThemeStyleMap {
     themes: ThemeSet,
     theme_name: String,
     theme: Theme,
+
+    // Keeps a list of default themes.
+    default_themes: Vec<String>,
     default_style: Style,
     map: HashMap<Style, usize>,
+
+    // Maintains the map of found themes and their paths.
+    path_map: BTreeMap<String, PathBuf>,
 
     // It's not obvious we actually have to store the style, we seem to only need it
     // as the key in the map.
@@ -161,9 +167,6 @@ pub struct ThemeStyleMap {
     themes_dir: Option<PathBuf>,
     cache_dir: Option<PathBuf>,
     caching_enabled: bool,
-
-    // Maintaining all theme paths for comparison on an fs event.
-    state: HashSet<PathBuf>,
 }
 
 impl ThemeStyleMap {
@@ -171,6 +174,7 @@ impl ThemeStyleMap {
         let themes = ThemeSet::load_defaults();
         let theme_name = DEFAULT_THEME.to_owned();
         let theme = themes.themes.get(&theme_name).expect("missing theme").to_owned();
+        let default_themes = themes.themes.keys().cloned().collect();
         let default_style = Style::default_for_theme(&theme);
         let cache_dir = None;
         let caching_enabled = true;
@@ -179,13 +183,14 @@ impl ThemeStyleMap {
             themes,
             theme_name,
             theme,
+            default_themes,
             default_style,
             map: HashMap::new(),
+            path_map: BTreeMap::new(),
             styles: Vec::new(),
             themes_dir,
             cache_dir,
             caching_enabled,
-            state: HashSet::new(),
         }
     }
 
@@ -205,8 +210,8 @@ impl ThemeStyleMap {
         &self.theme.settings
     }
 
-    pub fn get_theme_names(&self) -> Vec<String>  {
-        self.themes.themes.keys().cloned().collect()
+    pub fn get_theme_names(&self) -> Vec<String> {
+        self.path_map.keys().chain(self.default_themes.iter()).cloned().collect()
     }
 
     pub fn contains_theme(&self, k: &str) -> bool {
@@ -214,15 +219,23 @@ impl ThemeStyleMap {
     }
 
     pub fn set_theme(&mut self, theme_name: &str) -> Result<(), &'static str> {
-        if let Some(new_theme) = self.themes.themes.get(theme_name) {
-            self.theme = new_theme.to_owned();
-            self.theme_name = theme_name.to_owned();
-            self.default_style = Style::default_for_theme(&self.theme);
-            self.map = HashMap::new();
-            self.styles = Vec::new();
-            Ok(())
-        } else {
-            Err("unknown theme")
+        match self.load_theme(theme_name) {
+            Ok(()) => {
+                if let Some(new_theme) = self.themes.themes.get(theme_name) {
+                    self.theme = new_theme.to_owned();
+                    self.theme_name = theme_name.to_owned();
+                    self.default_style = Style::default_for_theme(&self.theme);
+                    self.map = HashMap::new();
+                    self.styles = Vec::new();
+                    Ok(())
+                } else {
+                    Err("unknown theme")
+                }
+            }
+            Err(e) => {
+                error!("Encountered error {:?} while trying to load {:?}", e, theme_name);
+                Err("could not load theme")
+            }
         }
     }
 
@@ -247,7 +260,7 @@ impl ThemeStyleMap {
 
         let theme_name = path.file_stem().and_then(OsStr::to_str)?;
         self.themes.themes.remove(theme_name);
-        self.state.remove(path);
+        self.path_map.remove(theme_name);
 
         let dump_p = self.get_dump_path(theme_name)?;
         if dump_p.exists() {
@@ -257,20 +270,19 @@ impl ThemeStyleMap {
         Some(theme_name.to_string())
     }
 
-    /// Load all themes inside the given directory.
+    /// Cache all themes names and their paths inside the given directory.
     pub(crate) fn load_theme_dir(&mut self) {
         if let Some(themes_dir) = self.themes_dir.clone() {
             match ThemeSet::discover_theme_paths(themes_dir) {
                 Ok(themes) => {
                     self.caching_enabled = self.caching_enabled && self.init_cache_dir();
-
-                    for theme_p in themes.iter() {
-                        match self.try_load_from_dump(theme_p) {
-                            Some((k, v)) => {
-                                self.insert_to_map(k, v, theme_p);
-                            }
-                            None => {
-                                let _ = self.load_theme(theme_p);
+                    // We look through the theme folder here and cache their names/paths to a
+                    // path hashmap.
+                    for theme_p in &themes {
+                        match self.load_theme_info_from_path(theme_p) {
+                            Ok(_) => (),
+                            Err(e) => {
+                                error!("Encountered error {:?} loading theme at {:?}", e, theme_p)
                             }
                         }
                     }
@@ -303,9 +315,7 @@ impl ThemeStyleMap {
         let mod_t_orig = fs::metadata(theme_p).and_then(|md| md.modified()).ok()?;
 
         if mod_t >= mod_t_orig {
-            from_dump_file(&dump_p)
-                .ok()
-                .map(|t| (theme_name.to_owned(), t))
+            from_dump_file(&dump_p).ok().map(|t| (theme_name.to_owned(), t))
         } else {
             // Delete dump file
             let _ = fs::remove_file(&dump_p);
@@ -313,38 +323,60 @@ impl ThemeStyleMap {
         }
     }
 
-    /// Loads theme using syntect's `get_theme` fn to our `theme` map.
-    /// Stores binary dump in a file with `tmdump` extension, only if
-    /// caching is enabled.
-    pub(crate) fn load_theme(&mut self, theme_p: &Path) -> Result<String, LoadingError> {
+    /// Loads a theme's name and its respective path into the theme path map.
+    pub(crate) fn load_theme_info_from_path(
+        &mut self,
+        theme_p: &Path,
+    ) -> Result<String, LoadingError> {
         validate_theme_file(theme_p)?;
-        let theme = ThemeSet::get_theme(theme_p)?;
-        let theme_name = theme_p
-            .file_stem()
-            .and_then(OsStr::to_str)
-            .ok_or(LoadingError::BadPath)?;
+        let theme_name =
+            theme_p.file_stem().and_then(OsStr::to_str).ok_or(LoadingError::BadPath)?;
 
-        if self.caching_enabled {
-            if let Some(dump_p) = self.get_dump_path(theme_name) {
-                let _ = dump_to_file(&theme, dump_p);
-            }
-        }
-        self.insert_to_map(theme_name.to_owned(), theme, theme_p);
+        self.path_map.insert(theme_name.to_string(), theme_p.to_path_buf());
+
         Ok(theme_name.to_owned())
     }
 
-    fn insert_to_map(&mut self, k: String, v: Theme, p: &Path) {
-        self.themes.themes.insert(k, v);
+    /// Loads theme using syntect's `get_theme` fn to our `theme` path map.
+    /// Stores binary dump in a file with `tmdump` extension, only if
+    /// caching is enabled.
+    fn load_theme(&mut self, theme_name: &str) -> Result<(), LoadingError> {
+        // If it is the current theme (the user has edited it), we load it again.
+        // Otherwise, if it's a default theme or the theme has already been loaded, we can move on.
+        if self.contains_theme(theme_name) && self.get_theme_name() != theme_name {
+            return Ok(());
+        }
+        // If we haven't loaded the theme before, we try to load it from the dump if a dump
+        // exists or load it from the theme file itself.
+        let theme_p = &self.path_map.get(theme_name).cloned();
+        if let Some(theme_p) = theme_p {
+            match self.try_load_from_dump(theme_p) {
+                Some((dump_theme_name, dump_theme_data)) => {
+                    self.insert_to_map(dump_theme_name, dump_theme_data);
+                }
+                None => {
+                    let theme = ThemeSet::get_theme(theme_p)?;
+                    if self.caching_enabled {
+                        if let Some(dump_p) = self.get_dump_path(theme_name) {
+                            let _ = dump_to_file(&theme, dump_p);
+                        }
+                    }
+                    self.insert_to_map(theme_name.to_owned(), theme);
+                }
+            }
+            Ok(())
+        } else {
+            Err(LoadingError::BadPath)
+        }
+    }
 
-        //Maintain a record for future syncing
-        self.state.insert(p.to_path_buf());
+    fn insert_to_map(&mut self, k: String, v: Theme) {
+        self.themes.themes.insert(k, v);
     }
 
     /// Returns dump's path corresponding to the given theme name.
     fn get_dump_path(&self, theme_name: &str) -> Option<PathBuf> {
-        self.cache_dir
-            .as_ref()
-            .map(|p| p.join(theme_name).with_extension("tmdump"))
+        self.cache_dir.as_ref().map(|p| p.join(theme_name).with_extension("tmdump"))
     }
 
     /// Compare the stored file paths in `self.state`
@@ -352,14 +384,14 @@ impl ThemeStyleMap {
     pub(crate) fn sync_dir(&mut self, dir: Option<&Path>) {
         if let Some(themes_dir) = dir {
             if let Ok(paths) = ThemeSet::discover_theme_paths(themes_dir) {
-                let current_state = HashSet::from_iter(paths.into_iter());
-                let maintained_state = self.state.clone();
+                let current_state: HashSet<PathBuf> = HashSet::from_iter(paths.into_iter());
+                let maintained_state: HashSet<PathBuf> =
+                    HashSet::from_iter(self.path_map.values().cloned());
 
                 let to_insert = current_state.difference(&maintained_state);
                 for path in to_insert {
-                    let _ = self.load_theme(path);
+                    let _ = self.load_theme_info_from_path(path);
                 }
-
                 let to_remove = maintained_state.difference(&current_state);
                 for path in to_remove {
                     self.remove_theme(path);
@@ -367,7 +399,6 @@ impl ThemeStyleMap {
             }
         }
     }
-
     /// Creates the cache dir returns true
     /// if it is successfully initialized or
     /// already exists.
@@ -387,7 +418,5 @@ impl ThemeStyleMap {
 
 /// Used to remove files with extension other than `tmTheme`.
 fn validate_theme_file(path: &Path) -> Result<bool, LoadingError> {
-    path.extension()
-        .map(|e| e != "tmTheme")
-        .ok_or(LoadingError::BadPath)
+    path.extension().map(|e| e != "tmTheme").ok_or(LoadingError::BadPath)
 }

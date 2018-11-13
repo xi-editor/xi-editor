@@ -64,17 +64,3 @@ Here is an example where both leading and trailing boundaries are useful from th
 
 There current code needs to be fixed to support this. Probably the more systematic would be to explicitly request leading or trailing edge (likely by providing an additional explicit argument to the is_boundary, next, and prev methods of Cursor). Another approach is to bind the preference for leading or trailing boundary into the metric (this is closest to the way the code is currently structured), then require two separate instances of Metric to support the fast-path use case above.
 
-We probably also want to be more explicit in the convert_metrics method, which
-
-## Intervals
-One other confusing aspect to the code is the Interval struct and the fact that the endpoints can be open or closed. The best way to understand the intent is in terms of leading and trailing boundaries. Let's say that the interval represents some non-atomic metric, lines for example. An interval starting on a closed endpoint, or ending on an open one (both the most common cases) selects a trailing boundary. Conversely, starting on an open endpoint or ending on a closed one would select a leading boundary. Starting from the string "abc\ndef" and writing intervals in terms of the newline metric:
-
-[0, 1) -> "abc\n"
-(0, 1) -> "\n"
-[0, 1] -> "abc\ndef"
-(0, 1] -> "\ndef"
-In this framework, computing a substring of UTF-8 bytes based on code point indices would always be an open_closed interval.
-
-This is not supported in the current code, because it requires a way to calculate next and prev of the base metric, and the base metric is not directly accessible.
-
-When, as is most common, the interval is in base units, the distinction between leading and trailing boundaries can be ignored, and the flavor of the interval should default to closed_open.

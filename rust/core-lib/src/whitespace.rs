@@ -16,8 +16,8 @@
 
 extern crate xi_rope;
 
-use xi_rope::Rope;
 use std::collections::BTreeMap;
+use xi_rope::Rope;
 
 /// An enumeration of legal indentation types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -39,17 +39,17 @@ impl Indentation {
 
         for line in lines {
             match Indentation::parse_line(&line) {
-                Ok(Some(Indentation::Spaces(size))) => { 
+                Ok(Some(Indentation::Spaces(size))) => {
                     let counter = spaces.entry(size).or_insert(0);
                     *counter += 1;
-                },
+                }
                 Ok(Some(Indentation::Tabs)) => tabs = true,
                 Ok(None) => continue,
                 Err(e) => return Err(e),
             }
         }
 
-        match (tabs, spaces.len() > 0) {
+        match (tabs, !spaces.is_empty()) {
             (true, true) => Err(MixedIndentError),
             (true, false) => Ok(Some(Indentation::Tabs)),
             (false, true) => Ok(Some(Indentation::Spaces(extract_count(spaces)))),
@@ -73,15 +73,14 @@ impl Indentation {
 
         if spaces > 0 {
             Ok(Some(Indentation::Spaces(spaces)))
-        }
-        else {
+        } else {
             Ok(None)
         }
     }
 }
 
 /// Uses a heuristic to calculate the greatest common denominator of most used indentation depths.
-/// 
+///
 /// As BTreeMaps are ordered by value, using take on the iterator ensures the indentation levels
 /// most frequently used in the file are extracted.
 fn extract_count(spaces: BTreeMap<usize, usize>) -> usize {
@@ -92,13 +91,12 @@ fn extract_count(spaces: BTreeMap<usize, usize>) -> usize {
     }
 
     // Fold results using GCD, skipping numbers which result in gcd returning 1
-    spaces.iter().take(take_size)
-    .fold(0, |a, (b, _)| {
-        let d = gcd(a, *b); 
+    spaces.iter().take(take_size).fold(0, |a, (b, _)| {
+        let d = gcd(a, *b);
         if d == 1 {
-            return a;
+            a
         } else {
-            return d;
+            d
         }
     })
 }
@@ -112,7 +110,7 @@ fn gcd(a: usize, b: usize) -> usize {
     } else {
         let mut a = a;
         let mut b = b;
-        
+
         while b > 0 {
             let r = a % b;
             a = b;
@@ -156,7 +154,8 @@ mod tests {
 
     #[test]
     fn rope_gets_two_spaces() {
-        let result = Indentation::parse(&Rope::from(r#"
+        let result = Indentation::parse(&Rope::from(
+            r#"
         // This is a comment
           Testing
           Indented
@@ -164,7 +163,8 @@ mod tests {
             # Comment
             # Comment
             # Comment
-        "#));
+        "#,
+        ));
         let expected = Indentation::Spaces(2);
 
         assert_eq!(result.unwrap(), Some(expected));
@@ -172,13 +172,15 @@ mod tests {
 
     #[test]
     fn rope_gets_four_spaces() {
-        let result = Indentation::parse(&Rope::from(r#"
+        let result = Indentation::parse(&Rope::from(
+            r#"
         fn my_fun_func(&self,
                        another_arg: usize) -> Fun {
             /* Random comment describing program behavior */
             Fun::from(another_arg)
         }
-        "#));
+        "#,
+        ));
         let expected = Indentation::Spaces(4);
 
         assert_eq!(result.unwrap(), Some(expected));

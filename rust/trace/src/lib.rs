@@ -220,17 +220,17 @@ impl Config {
     /// The maximum amount of space the tracing data will take up.  This does
     /// not account for any overhead of storing the data itself (i.e. pointer to
     /// the heap, counters, etc); just the data itself.
-    pub fn max_size_in_bytes(&self) -> usize {
+    pub fn max_size_in_bytes(self) -> usize {
         self.sample_limit_count * size_of::<Sample>()
     }
 
     /// The maximum number of samples that should be stored.
-    pub fn max_samples(&self) -> usize {
+    pub fn max_samples(self) -> usize {
         self.sample_limit_count
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SampleEventType {
     DurationBegin,
     DurationEnd,
@@ -252,8 +252,8 @@ impl SampleEventType {
     // TODO(vlovich): Replace all of this with serde flatten + rename once
     // https://github.com/serde-rs/serde/issues/1189 is fixed.
     #[inline]
-    fn into_chrome_id(&self) -> char {
-        match *self {
+    fn into_chrome_id(self) -> char {
+        match self {
             SampleEventType::DurationBegin => 'B',
             SampleEventType::DurationEnd => 'E',
             SampleEventType::CompleteDuration => 'X',
@@ -363,6 +363,8 @@ fn ns_to_us(ns: u64) -> u64 {
     ns / 1000
 }
 
+//NOTE: serde requires this to take a reference
+#[cfg_attr(feature = "cargo-clippy", allow(trivially_copy_pass_by_ref))]
 fn serialize_event_type<S>(ph: &SampleEventType, s: S) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
@@ -374,7 +376,7 @@ fn deserialize_event_type<'de, D>(d: D) -> Result<SampleEventType, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    serde::Deserialize::deserialize(d).map(|ph: char| SampleEventType::from_chrome_id(ph))
+    serde::Deserialize::deserialize(d).map(SampleEventType::from_chrome_id)
 }
 
 /// Stores the relevant data about a sample for later serialization.
@@ -508,7 +510,7 @@ impl Sample {
             pid: sys_pid::current_pid(),
             args: Some(SampleArgs {
                 payload: None,
-                metadata_name: metadata_name.map(|s| Cow::Owned(s)),
+                metadata_name: metadata_name.map(Cow::Owned),
                 metadata_sort_index: sort_index,
             }),
         }
@@ -765,7 +767,7 @@ impl Trace {
         result
     }
 
-    pub fn samples_cloned_unsorted<'a>(&'a self) -> Vec<Sample> {
+    pub fn samples_cloned_unsorted(&self) -> Vec<Sample> {
         let all_samples = self.samples.lock().unwrap();
         if all_samples.is_empty() {
             return Vec::with_capacity(0);

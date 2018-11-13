@@ -21,33 +21,30 @@ use std::time::{Duration, Instant};
 
 use serde_json::{self, Value};
 
-use xi_rope::Rope;
-use xi_rope::tree::Node;
-use xi_rope::delta::Delta;
-use xi_rope::interval::Interval;
-use xi_rope::rope::{LinesMetric, RopeInfo};
-use xi_rpc::{RemoteError, Error as RpcError};
+use xi_rope::{Interval, LinesMetric, Rope, RopeDelta};
+use xi_rpc::{Error as RpcError, RemoteError};
 use xi_trace::trace_block;
 
+use plugins::rpc::{
+    ClientPluginInfo, Hover, PluginBufferInfo, PluginNotification, PluginRequest, PluginUpdate,
+};
 use rpc::{EditNotification, EditRequest, LineRange, Position as ClientPosition};
-use plugins::rpc::{ClientPluginInfo, PluginBufferInfo, PluginNotification,
-                   PluginRequest, PluginUpdate, Hover};
 
-use styles::ThemeStyleMap;
 use config::{BufferItems, Table};
+use styles::ThemeStyleMap;
 
-use WeakXiCore;
-use tabs::{BufferId, PluginId, ViewId, RENDER_VIEW_IDLE_MASK};
+use client::Client;
+use edit_types::{EventDomain, SpecialEvent};
 use editor::Editor;
 use file::FileInfo;
-use edit_types::{EventDomain, SpecialEvent};
-use recorder::Recorder;
-use client::Client;
 use plugins::Plugin;
-use selection::SelRegion;
+use recorder::Recorder;
+use selection::InsertDrift;
 use syntax::LanguageId;
+use tabs::{BufferId, PluginId, ViewId, RENDER_VIEW_IDLE_MASK};
 use view::View;
 use width_cache::WidthCache;
+use WeakXiCore;
 
 // Maximum returned result from plugin get_data RPC.
 pub const MAX_SIZE_LIMIT: usize = 1024 * 1024;
@@ -84,7 +81,8 @@ impl<'a> EventContext<'a> {
     /// Executes a closure with mutable references to the editor and the view,
     /// common in edit actions that modify the text.
     pub(crate) fn with_editor<R, F>(&mut self, f: F) -> R
-        where F: FnOnce(&mut Editor, &mut View, &mut Rope, &BufferItems) -> R
+    where
+        F: FnOnce(&mut Editor, &mut View, &mut Rope, &BufferItems) -> R,
     {
         let mut editor = self.editor.borrow_mut();
         let mut view = self.view.borrow_mut();
@@ -96,7 +94,8 @@ impl<'a> EventContext<'a> {
     /// to the current text. This is common to most edits that just modify
     /// selection or viewport state.
     fn with_view<R, F>(&mut self, f: F) -> R
-        where F: FnOnce(&mut View, &Rope) -> R
+    where
+        F: FnOnce(&mut View, &Rope) -> R,
     {
         let editor = self.editor.borrow();
         let mut view = self.view.borrow_mut();
@@ -116,11 +115,12 @@ impl<'a> EventContext<'a> {
             match (recorder.is_recording(), &event) {
                 (_, EventDomain::Special(SpecialEvent::ToggleRecording(recording_name))) => {
                     recorder.toggle_recording(recording_name.clone());
-                },
+                }
                 // Don't save special events
-                (true, EventDomain::Special(_)) =>
-                    warn!("Special events cannot be recorded-- ignoring event {:?}", event),
-                (true, event) => recorder.record(event.clone().into()),
+                (true, EventDomain::Special(_)) => {
+                    warn!("Special events cannot be recorded-- ignoring event {:?}", event)
+                }
+                (true, event) => recorder.record(event.clone()),
                 _ => {}
             }
         }
@@ -136,9 +136,10 @@ impl<'a> EventContext<'a> {
             E::View(cmd) => {
                 self.with_view(|view, text| view.do_edit(text, cmd));
                 self.editor.borrow_mut().update_edit_type();
-            },
-            E::Buffer(cmd) => self.with_editor(
-                |ed, view, k_ring, conf| ed.do_edit(view, k_ring, conf, cmd)),
+            }
+            E::Buffer(cmd) => {
+                self.with_editor(|ed, view, k_ring, conf| ed.do_edit(view, k_ring, conf, cmd))
+            }
             E::Special(cmd) => self.do_special(cmd),
         }
     }
@@ -151,18 +152,20 @@ impl<'a> EventContext<'a> {
                     self.update_wrap_state();
                 }
             }
-            SpecialEvent::DebugRewrap | SpecialEvent::DebugWrapWidth =>
-                warn!("debug wrapping methods are removed, use the config system"),
-            SpecialEvent::DebugPrintSpans => self.with_editor(
-                |ed, view, _, _| {
-                    let sel = view.sel_regions().last().unwrap();
-                    let iv = Interval::new_closed_open(sel.min(), sel.max());
-                    ed.get_layers().debug_print_spans(iv);
-                }),
-            SpecialEvent::RequestLines(LineRange { first, last }) =>
-                self.do_request_lines(first as usize, last as usize),
-            SpecialEvent::RequestHover { request_id, position } =>
-                self.do_request_hover(request_id, position),
+            SpecialEvent::DebugRewrap | SpecialEvent::DebugWrapWidth => {
+                warn!("debug wrapping methods are removed, use the config system")
+            }
+            SpecialEvent::DebugPrintSpans => self.with_editor(|ed, view, _, _| {
+                let sel = view.sel_regions().last().unwrap();
+                let iv = Interval::new(sel.min(), sel.max());
+                ed.get_layers().debug_print_spans(iv);
+            }),
+            SpecialEvent::RequestLines(LineRange { first, last }) => {
+                self.do_request_lines(first as usize, last as usize)
+            }
+            SpecialEvent::RequestHover { request_id, position } => {
+                self.do_request_hover(request_id, position)
+            }
             SpecialEvent::ToggleRecording(_) => {}
             SpecialEvent::PlayRecording(recording_name) => {
                 let recorder = self.recorder.borrow();
@@ -179,11 +182,11 @@ impl<'a> EventContext<'a> {
                     self.dispatch_event(event.clone());
 
                     let mut editor = self.editor.borrow_mut();
-                    let (delta, last_text, keep_sels) = match editor.commit_delta() {
+                    let (delta, last_text, drift) = match editor.commit_delta() {
                         Some(edit_info) => edit_info,
                         None => return,
                     };
-                    self.update_views(&editor, &delta, &last_text, keep_sels);
+                    self.update_views(&editor, &delta, &last_text, drift);
                 });
                 self.editor.borrow_mut().set_force_undo_group(false);
 
@@ -200,8 +203,7 @@ impl<'a> EventContext<'a> {
         }
     }
 
-    pub(crate) fn do_edit_sync(&mut self, cmd: EditRequest
-                               ) -> Result<Value, RemoteError> {
+    pub(crate) fn do_edit_sync(&mut self, cmd: EditRequest) -> Result<Value, RemoteError> {
         use self::EditRequest::*;
         let result = match cmd {
             Cut => Ok(self.with_editor(|ed, view, _, _| ed.do_cut(view))),
@@ -212,8 +214,7 @@ impl<'a> EventContext<'a> {
         result
     }
 
-    pub(crate) fn do_plugin_cmd(&mut self, plugin: PluginId,
-                                 cmd: PluginNotification) {
+    pub(crate) fn do_plugin_cmd(&mut self, plugin: PluginId, cmd: PluginNotification) {
         use self::PluginNotification::*;
         match cmd {
             AddScopes { scopes } => {
@@ -221,18 +222,18 @@ impl<'a> EventContext<'a> {
                 let style_map = self.style_map.borrow();
                 ed.get_layers_mut().add_scopes(plugin, scopes, &style_map);
             }
-            UpdateSpans { start, len, spans, rev } => self.with_editor(
-                |ed, view, _, _| ed.update_spans(view, plugin, start,
-                                           len, spans, rev)),
-            Edit { edit } => self.with_editor(
-                |ed, _, _, _| ed.apply_plugin_edit(edit)),
+            UpdateSpans { start, len, spans, rev } => self.with_editor(|ed, view, _, _| {
+                ed.update_spans(view, plugin, start, len, spans, rev)
+            }),
+            Edit { edit } => self.with_editor(|ed, _, _, _| ed.apply_plugin_edit(edit)),
             Alert { msg } => self.client.alert(&msg),
-            AddStatusItem { key, value, alignment }  => {
-            	let plugin_name = &self.plugins.iter().find(|p| p.id == plugin).unwrap().name;
-            	self.client.add_status_item(self.view_id, plugin_name, &key, &value, &alignment);
+            AddStatusItem { key, value, alignment } => {
+                let plugin_name = &self.plugins.iter().find(|p| p.id == plugin).unwrap().name;
+                self.client.add_status_item(self.view_id, plugin_name, &key, &value, &alignment);
             }
-            UpdateStatusItem { key, value } => self.client.update_status_item(
-                                                        self.view_id, &key, &value),
+            UpdateStatusItem { key, value } => {
+                self.client.update_status_item(self.view_id, &key, &value)
+            }
             RemoveStatusItem { key } => self.client.remove_status_item(self.view_id, &key),
             ShowHover { request_id, result } => self.do_show_hover(request_id, result),
         };
@@ -240,17 +241,14 @@ impl<'a> EventContext<'a> {
         self.render_if_needed();
     }
 
-    pub(crate) fn do_plugin_cmd_sync(&mut self, _plugin: PluginId,
-                                      cmd: PluginRequest) -> Value {
+    pub(crate) fn do_plugin_cmd_sync(&mut self, _plugin: PluginId, cmd: PluginRequest) -> Value {
         use self::PluginRequest::*;
         match cmd {
-            LineCount =>
-                json!(self.editor.borrow().plugin_n_lines()),
-            GetData { start, unit, max_size, rev } =>
-                json!(self.editor.borrow()
-                      .plugin_get_data(start, unit, max_size, rev)),
-            GetSelections =>
-                json!("not implemented"),
+            LineCount => json!(self.editor.borrow().plugin_n_lines()),
+            GetData { start, unit, max_size, rev } => {
+                json!(self.editor.borrow().plugin_get_data(start, unit, max_size, rev))
+            }
+            GetSelections => json!("not implemented"),
         }
     }
 
@@ -260,15 +258,15 @@ impl<'a> EventContext<'a> {
         let _t = trace_block("EventContext::after_edit", &["core"]);
 
         let mut ed = self.editor.borrow_mut();
-        let (delta, last_text, keep_sels) = match ed.commit_delta() {
+        let (delta, last_text, drift) = match ed.commit_delta() {
             Some(edit_info) => edit_info,
             None => return,
         };
 
-        self.update_views(&ed, &delta, &last_text, keep_sels);
+        self.update_views(&ed, &delta, &last_text, drift);
         self.update_plugins(&mut ed, delta, author);
 
-         //if we have no plugins we always render immediately.
+        //if we have no plugins we always render immediately.
         if !self.plugins.is_empty() {
             let mut view = self.view.borrow_mut();
             if !view.has_pending_render() {
@@ -281,14 +279,22 @@ impl<'a> EventContext<'a> {
         }
     }
 
-    fn update_views(&self, ed: &Editor, delta: &Delta<RopeInfo>, last_text: &Node<RopeInfo>, keep_sels: bool) {
+    fn update_views(&self, ed: &Editor, delta: &RopeDelta, last_text: &Rope, drift: InsertDrift) {
         let mut width_cache = self.width_cache.borrow_mut();
         let iter_views = iter::once(&self.view).chain(self.siblings.iter());
-        iter_views.for_each(|view| view.borrow_mut()
-            .after_edit(ed.get_buffer(), last_text, delta, self.client, &mut width_cache, keep_sels));
+        iter_views.for_each(|view| {
+            view.borrow_mut().after_edit(
+                ed.get_buffer(),
+                last_text,
+                delta,
+                self.client,
+                &mut width_cache,
+                drift,
+            )
+        });
     }
 
-    fn update_plugins(&self, ed: &mut Editor, delta: Delta<RopeInfo>, author: &str) {
+    fn update_plugins(&self, ed: &mut Editor, delta: RopeDelta, author: &str) {
         let new_len = delta.new_document_len();
         let nb_lines = ed.get_buffer().measure::<LinesMetric>() + 1;
         // don't send the actual delta if it is too large, by some heuristic
@@ -309,8 +315,8 @@ impl<'a> EventContext<'a> {
             nb_lines,
             Some(undo_group),
             edit_type_str,
-            author.into());
-
+            author.into(),
+        );
 
         // we always increment and decrement regardless of whether we're
         // sending plugins, to ensure that GC runs.
@@ -347,9 +353,13 @@ impl<'a> EventContext<'a> {
         let _t = trace_block("EventContext::render", &["core"]);
         let ed = self.editor.borrow();
         //TODO: render other views
-        self.view.borrow_mut()
-            .render_if_dirty(ed.get_buffer(), self.client, self.style_map,
-                             ed.get_layers().get_merged(), ed.is_pristine())
+        self.view.borrow_mut().render_if_dirty(
+            ed.get_buffer(),
+            self.client,
+            self.style_map,
+            ed.get_layers().get_merged(),
+            ed.is_pristine(),
+        )
     }
 }
 
@@ -359,19 +369,18 @@ impl<'a> EventContext<'a> {
 /// requires access to particular combinations of state. We isolate such
 /// special cases here.
 impl<'a> EventContext<'a> {
-
     pub(crate) fn finish_init(&mut self, config: &Table) {
         if !self.plugins.is_empty() {
             let info = self.plugin_info();
             self.plugins.iter().for_each(|plugin| plugin.new_buffer(&info));
         }
 
-        let available_plugins = self.plugins.iter().map(|plugin|
-            ClientPluginInfo { name: plugin.name.clone(), running: true }
-            )
+        let available_plugins = self
+            .plugins
+            .iter()
+            .map(|plugin| ClientPluginInfo { name: plugin.name.clone(), running: true })
             .collect::<Vec<_>>();
-        self.client.available_plugins(self.view_id,
-                                      &available_plugins);
+        self.client.available_plugins(self.view_id, &available_plugins);
 
         self.client.config_changed(self.view_id, config);
         self.client.language_changed(self.view_id, &self.language);
@@ -381,9 +390,7 @@ impl<'a> EventContext<'a> {
 
     pub(crate) fn after_save(&mut self, path: &Path) {
         // notify plugins
-        self.plugins.iter().for_each(
-            |plugin| plugin.did_save(self.view_id, path)
-            );
+        self.plugins.iter().for_each(|plugin| plugin.did_save(self.view_id, path));
 
         self.editor.borrow_mut().set_pristine();
         self.with_view(|view, text| view.set_dirty(text));
@@ -399,37 +406,23 @@ impl<'a> EventContext<'a> {
     }
 
     pub(crate) fn config_changed(&mut self, changes: &Table) {
-        if changes.contains_key("wrap_width")
-            || changes.contains_key("word_wrap") {
+        if changes.contains_key("wrap_width") || changes.contains_key("word_wrap") {
             self.update_wrap_state();
         }
 
         self.client.config_changed(self.view_id, &changes);
-        self.plugins.iter()
-            .for_each(|plug| plug.config_changed(self.view_id, &changes));
+        self.plugins.iter().for_each(|plug| plug.config_changed(self.view_id, &changes));
         self.render()
     }
 
-    pub(crate) fn language_changed(
-        &mut self,
-        new_language_id: &LanguageId
-    ) {
+    pub(crate) fn language_changed(&mut self, new_language_id: &LanguageId) {
         self.language = new_language_id.clone();
         self.client.language_changed(self.view_id, new_language_id);
-        self.plugins.iter()
-            .for_each(|plug| plug.language_changed(self.view_id, new_language_id));
+        self.plugins.iter().for_each(|plug| plug.language_changed(self.view_id, new_language_id));
     }
 
     pub(crate) fn reload(&mut self, text: Rope) {
-        //TODO: It would be nice if we could preserve the existing selections,
-        //but to do that correctly we would need to compute a real delta between
-        //the old and new buffers, so that selections could be transformed
-        self.with_editor(|ed, view, _, _| {
-            view.set_selection(ed.get_buffer(), SelRegion::caret(0));
-            view.unset_find();
-            ed.reload(text);
-        });
-
+        self.with_editor(|ed, _, _, _| ed.reload(text));
         self.after_edit("core");
         self.render();
     }
@@ -444,12 +437,16 @@ impl<'a> EventContext<'a> {
 
         let changes = serde_json::to_value(self.config).unwrap();
         let path = self.info.map(|info| info.path.to_owned());
-        PluginBufferInfo::new(self.buffer_id, &views,
-                              ed.get_head_rev_token(),
-                              ed.get_buffer().len(), nb_lines,
-                              path,
-                              self.language.clone(),
-                              changes.as_object().unwrap().to_owned())
+        PluginBufferInfo::new(
+            self.buffer_id,
+            &views,
+            ed.get_head_rev_token(),
+            ed.get_buffer().len(),
+            nb_lines,
+            path,
+            self.language.clone(),
+            changes.as_object().unwrap().to_owned(),
+        )
     }
 
     pub(crate) fn plugin_started(&mut self, plugin: &Plugin) {
@@ -480,8 +477,12 @@ impl<'a> EventContext<'a> {
             let mut view = self.view.borrow_mut();
             let mut width_cache = self.width_cache.borrow_mut();
             let ed = self.editor.borrow();
-            view.wrap_width(ed.get_buffer(), &mut width_cache, self.client,
-                            ed.get_layers().get_merged());
+            view.wrap_width(
+                ed.get_buffer(),
+                &mut width_cache,
+                self.client,
+                ed.get_layers().get_merged(),
+            );
             view.set_dirty(ed.get_buffer());
         } else {
             let wrap_width = self.config.wrap_width;
@@ -496,9 +497,15 @@ impl<'a> EventContext<'a> {
     fn do_request_lines(&mut self, first: usize, last: usize) {
         let mut view = self.view.borrow_mut();
         let ed = self.editor.borrow();
-        view.request_lines(ed.get_buffer(), self.client, self.style_map,
-                           ed.get_layers().get_merged(), first, last,
-                           ed.is_pristine())
+        view.request_lines(
+            ed.get_buffer(),
+            self.client,
+            self.style_map,
+            ed.get_layers().get_merged(),
+            first,
+            last,
+            ed.is_pristine(),
+        )
     }
 
     fn do_request_hover(&mut self, request_id: usize, position: Option<ClientPosition>) {
@@ -512,8 +519,8 @@ impl<'a> EventContext<'a> {
             Ok(hover) => {
                 // TODO: Get Range from hover here and use it to highlight text
                 self.client.show_hover(self.view_id, request_id, hover.content)
-            },
-            Err(err) => warn!("Hover Response from Client Error {:?}", err)
+            }
+            Err(err) => warn!("Hover Response from Client Error {:?}", err),
         }
     }
 
@@ -521,12 +528,11 @@ impl<'a> EventContext<'a> {
     /// If position is `None`, it tries to get the current Caret Position and use
     /// that instead
     fn get_resolved_position(&mut self, position: Option<ClientPosition>) -> Option<usize> {
-        position.map(|p|
-            self.with_view(|view, text| view.line_col_to_offset(text, p.line, p.column)
-        )).or_else(|| self.view.borrow().get_caret_offset())
+        position
+            .map(|p| self.with_view(|view, text| view.line_col_to_offset(text, p.line, p.column)))
+            .or_else(|| self.view.borrow().get_caret_offset())
     }
 }
-
 
 #[cfg(test)]
 #[cfg_attr(rustfmt, rustfmt_skip)]
@@ -1711,5 +1717,46 @@ mod tests {
         that has about\n\
         four really nice|\n\
         lines to see." );
+    }
+
+    #[test]
+    fn test_exact_position() {
+        use rpc::GestureType::*;
+        let initial_text = "\
+        this is a string\n\
+        that has three\n\
+        \n\
+        lines.\n\
+        And lines with very different length.";
+        let harness = ContextHarness::new(initial_text);
+        let mut ctx = harness.make_context();
+        ctx.do_edit(EditNotification::Gesture { line: 1, col: 5, ty: PointSelect });
+        ctx.do_edit(EditNotification::AddSelectionAbove);
+        assert_eq!(harness.debug_render(),"\
+        this |is a string\n\
+        that |has three\n\
+        \n\
+        lines.\n\
+        And lines with very different length.");
+
+        ctx.do_edit(EditNotification::CancelOperation);
+        ctx.do_edit(EditNotification::Gesture { line: 1, col: 5, ty: PointSelect });
+        ctx.do_edit(EditNotification::AddSelectionBelow);
+        assert_eq!(harness.debug_render(),"\
+        this is a string\n\
+        that |has three\n\
+        \n\
+        lines|.\n\
+        And lines with very different length.");
+
+        ctx.do_edit(EditNotification::CancelOperation);
+        ctx.do_edit(EditNotification::Gesture { line: 4, col: 10, ty: PointSelect });
+        ctx.do_edit(EditNotification::AddSelectionAbove);
+        assert_eq!(harness.debug_render(),"\
+        this is a string\n\
+        that has t|hree\n\
+        \n\
+        lines.\n\
+        And lines |with very different length.");
     }
 }

@@ -14,19 +14,29 @@
 
 //! Data structures representing (multiple) selections and cursors.
 
-use std::cmp::{min, max};
+use std::cmp::{max, min};
 use std::ops::Deref;
-use std::ops::Bound;
-use std::ops::RangeBounds;
 
 use index_set::remove_n_at;
-use xi_rope::delta::{Delta, Transformer};
-use xi_rope::rope::RopeInfo;
+use xi_rope::{Interval, RopeDelta, Transformer};
 
 /// A type representing horizontal measurements. This is currently in units
 /// that are not very well defined except that ASCII characters count as
 /// 1 each. It will change.
 pub type HorizPos = usize;
+
+/// Indicates if an edit should try to drift inside or outside nearby selections. If the selection
+/// is zero width, that is, it is a caret, this value will be ignored, the equivalent of the
+/// `Default` value.
+#[derive(Copy, Clone)]
+pub enum InsertDrift {
+    /// Indicates this edit should happen within any (non-caret) selections if possible.
+    Inside,
+    /// Indicates this edit should happen outside any selections if possible.
+    Outside,
+    /// Indicates to do whatever the `after` bool says to do
+    Default,
+}
 
 /// A set of zero or more selection regions, representing a selection state.
 #[derive(Default, Debug, Clone)]
@@ -44,9 +54,7 @@ impl Selection {
 
     /// Creates a selection with a single region.
     pub fn new_simple(region: SelRegion) -> Selection {
-        Selection {
-            regions: vec![region]
-        }
+        Selection { regions: vec![region] }
     }
 
     /// Clear the selection.
@@ -134,8 +142,10 @@ impl Selection {
         if !delete_adjacent && self.regions[first].max() == start {
             first += 1;
         }
-        if last < self.regions.len() && ((delete_adjacent && self.regions[last].min() <= end)
-           || (!delete_adjacent && self.regions[last].min() < end)) {
+        if last < self.regions.len()
+            && ((delete_adjacent && self.regions[last].min() <= end)
+                || (!delete_adjacent && self.regions[last].min() < end))
+        {
             last += 1;
         }
         remove_n_at(&mut self.regions, first, last - first);
@@ -188,24 +198,17 @@ impl Selection {
     ///
     /// Whether or not the preceding selections are restored depends on the keep_selections
     /// value (only set to true on transpose).
-    pub fn apply_delta(&self, delta: &Delta<RopeInfo>, after: bool, keep_selections: bool) -> Selection {
+    pub fn apply_delta(&self, delta: &RopeDelta, after: bool, drift: InsertDrift) -> Selection {
         let mut result = Selection::new();
         let mut transformer = Transformer::new(delta);
         for region in self.iter() {
-            let preserve_selection = keep_selections && region.start != region.end;
-            let start_after = {
-                if preserve_selection {
-                    region.start > region.end
-                } else {
-                    after
-                }
-            };
-            let end_after = {
-                if preserve_selection {
-                    region.start < region.end
-                } else {
-                    after
-                }
+            let is_caret = region.start == region.end;
+            let is_region_forward = region.start < region.end;
+
+            let (start_after, end_after) = match (drift, is_caret) {
+                (InsertDrift::Inside, false) => (!is_region_forward, is_region_forward),
+                (InsertDrift::Outside, false) => (is_region_forward, !is_region_forward),
+                _ => (after, after),
             };
 
             let new_region = SelRegion::new(
@@ -216,7 +219,6 @@ impl Selection {
         }
         result
     }
-
 }
 
 /// Implementing the Deref trait allows callers to easily test `is_empty`, iterate
@@ -274,38 +276,22 @@ pub struct SelRegion {
 impl SelRegion {
     /// Returns a new region.
     pub fn new(start: usize, end: usize) -> Self {
-        Self {
-            start,
-            end,
-            horiz: None,
-            affinity: Affinity::default(),
-        }
+        Self { start, end, horiz: None, affinity: Affinity::default() }
     }
 
     /// Returns a new caret region (`start == end`).
     pub fn caret(pos: usize) -> Self {
-        Self {
-            start: pos,
-            end: pos,
-            horiz: None,
-            affinity: Affinity::default(),
-        }
+        Self { start: pos, end: pos, horiz: None, affinity: Affinity::default() }
     }
 
     /// Returns a region with the given horizontal position.
     pub fn with_horiz(self, horiz: Option<HorizPos>) -> Self {
-        Self {
-            horiz,
-            ..self
-        }
+        Self { horiz, ..self }
     }
 
     /// Returns a region with the given affinity.
     pub fn with_affinity(self, affinity: Affinity) -> Self {
-        Self {
-            affinity,
-            ..self
-        }
+        Self { affinity, ..self }
     }
 
     /// Gets the earliest offset within the region, ie the minimum of both edges.
@@ -331,33 +317,24 @@ impl SelRegion {
     // Indicate whether this region should merge with the next.
     // Assumption: regions are sorted (self.min() <= other.min())
     fn should_merge(self, other: SelRegion) -> bool {
-        other.min() < self.max() ||
-            ((self.is_caret() || other.is_caret()) && other.min() == self.max())
+        other.min() < self.max()
+            || ((self.is_caret() || other.is_caret()) && other.min() == self.max())
     }
 
     fn merge_with(self, other: SelRegion) -> SelRegion {
         let is_forward = self.end > self.start || other.end > other.start;
         let new_min = min(self.min(), other.min());
         let new_max = max(self.max(), other.max());
-        let (start, end) = if is_forward {
-            (new_min, new_max)
-        } else {
-            (new_max, new_min)
-        };
+        let (start, end) = if is_forward { (new_min, new_max) } else { (new_max, new_min) };
         // Could try to preserve horiz/affinity from one of the
         // sources, but very likely not worth it.
         SelRegion::new(start, end)
     }
 }
 
-// Returns `[min..max)`
-impl<'a> RangeBounds<usize> for &'a SelRegion {
-    fn start_bound(&self) -> Bound<&usize> {
-        Bound::Included(min(&self.start, &self.end))
-    }
-    
-    fn end_bound(&self) -> Bound<&usize> {
-        Bound::Excluded(max(&self.start, &self.end))
+impl<'a> From<&'a SelRegion> for Interval {
+    fn from(src: &'a SelRegion) -> Interval {
+        Interval::new(src.min(), src.max())
     }
 }
 
@@ -369,8 +346,9 @@ impl From<SelRegion> for Selection {
 
 #[cfg(test)]
 mod tests {
-    use super::{Selection, SelRegion};
+    use super::{InsertDrift, SelRegion, Selection};
     use std::ops::Deref;
+    use xi_rope::{DeltaBuilder, Interval};
 
     fn r(start: usize, end: usize) -> SelRegion {
         SelRegion::new(start, end)
@@ -514,5 +492,56 @@ mod tests {
         assert_eq!(s.deref(), &[r(3, 1), r(6, 3), r(9, 7)]);
         s.add_region(r(8, 2));
         assert_eq!(s.deref(), &[r(9, 1)]);
+    }
+
+    #[test]
+    fn apply_delta_outside_drift() {
+        let mut s = Selection::new();
+        s.add_region(r(0, 4));
+        s.add_region(r(4, 8));
+        assert_eq!(s.deref(), &[r(0, 4), r(4, 8)]);
+
+        // simulate outside edit between two adjacent selections
+        // like "texthere!" -> "text here!"
+        // the space should be outside the selections
+        let mut builder = DeltaBuilder::new("texthere!".len());
+        builder.replace(Interval::new(4, 4), " ".into());
+        let s2 = s.apply_delta(&builder.build(), true, InsertDrift::Outside);
+
+        assert_eq!(s2.deref(), &[r(0, 4), r(5, 9)]);
+    }
+
+    #[test]
+    fn apply_delta_inside_drift() {
+        let mut s = Selection::new();
+        s.add_region(r(1, 2));
+        assert_eq!(s.deref(), &[r(1, 2)]);
+
+        // simulate inside edit on either end of selection
+        // like "abc" -> "abbbc"
+        // if b was selected at beginning, inside edit should cause all bs to be selected after
+        let mut builder = DeltaBuilder::new("abc".len());
+        builder.replace(Interval::new(1, 1), "b".into());
+        builder.replace(Interval::new(2, 2), "b".into());
+        let s2 = s.apply_delta(&builder.build(), true, InsertDrift::Inside);
+
+        assert_eq!(s2.deref(), &[r(1, 4)]);
+    }
+
+    #[test]
+    fn apply_delta_drift_ignored_for_carets() {
+        let mut s = Selection::new();
+        s.add_region(r(1, 1));
+        assert_eq!(s.deref(), &[r(1, 1)]);
+
+        let mut builder = DeltaBuilder::new("ab".len());
+        builder.replace(Interval::new(1, 1), "b".into());
+        let s2 = s.apply_delta(&builder.build(), true, InsertDrift::Inside);
+        assert_eq!(s2.deref(), &[r(2, 2)]);
+
+        let mut builder = DeltaBuilder::new("ab".len());
+        builder.replace(Interval::new(1, 1), "b".into());
+        let s3 = s.apply_delta(&builder.build(), false, InsertDrift::Inside);
+        assert_eq!(s3.deref(), &[r(1, 1)]);
     }
 }

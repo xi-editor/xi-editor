@@ -15,10 +15,10 @@
 //! A module for representing a set of breaks, typically used for
 //! storing the result of line breaking.
 
+use interval::Interval;
 use std::cmp::min;
 use std::mem;
-use tree::{Node, Leaf, NodeInfo, Metric, TreeBuilder};
-use interval::Interval;
+use tree::{Leaf, Metric, Node, NodeInfo, TreeBuilder};
 
 // Breaks represents a set of indexes. A motivating use is storing line breaks.
 pub type Breaks = Node<BreaksInfo>;
@@ -28,12 +28,12 @@ pub type Breaks = Node<BreaksInfo>;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct BreaksLeaf {
-    len: usize,  // measured in base units
-    data: Vec<usize>,  // each is a delta relative to start of leaf; sorted
+    len: usize,       // measured in base units
+    data: Vec<usize>, // each is a delta relative to start of leaf; sorted
 }
 
 #[derive(Clone)]
-pub struct BreaksInfo(usize);  // number of breaks
+pub struct BreaksInfo(usize); // number of breaks
 
 impl Leaf for BreaksLeaf {
     fn len(&self) -> usize {
@@ -47,9 +47,8 @@ impl Leaf for BreaksLeaf {
     fn push_maybe_split(&mut self, other: &BreaksLeaf, iv: Interval) -> Option<BreaksLeaf> {
         //eprintln!("push_maybe_split {:?} {:?} {}", self, other, iv);
         let (start, end) = iv.start_end();
-        let start_test = if iv.is_start_closed() { start } else { start + 1 };
         for &v in &other.data {
-            if start_test <= v && v <= end {
+            if start < v && v <= end {
                 self.data.push(v - start + self.len);
             }
         }
@@ -59,20 +58,17 @@ impl Leaf for BreaksLeaf {
         if self.data.len() <= 64 {
             None
         } else {
-            let splitpoint = self.data.len() / 2;  // number of breaks
+            let splitpoint = self.data.len() / 2; // number of breaks
             let splitpoint_units = self.data[splitpoint - 1];
-            // TODO: use Vec::split_off(), it's nicer
-            let mut new = Vec::with_capacity(self.data.len() - splitpoint);
-            for i in splitpoint..self.data.len() {
-                new.push(self.data[i] - splitpoint_units);
+
+            let mut new = self.data.split_off(splitpoint);
+            for x in &mut new {
+                *x -= splitpoint_units;
             }
+
             let new_len = self.len - splitpoint_units;
             self.len = splitpoint_units;
-            self.data.truncate(splitpoint);
-            Some(BreaksLeaf {
-                len: new_len,
-                data: new,
-            })
+            Some(BreaksLeaf { len: new_len, data: new })
         }
     }
 }
@@ -108,25 +104,14 @@ impl Metric<BreaksInfo> for BreaksMetric {
     }
 
     fn from_base_units(l: &BreaksLeaf, in_base_units: usize) -> usize {
-        // TODO: binary search, data is sorted
-        for i in 0..l.data.len() {
-            if in_base_units < l.data[i] {
-                return i;
-            }
+        match l.data.binary_search(&in_base_units) {
+            Ok(n) => n + 1,
+            Err(n) => n,
         }
-        l.data.len()
     }
 
     fn is_boundary(l: &BreaksLeaf, offset: usize) -> bool {
-        // TODO: binary search, data is sorted
-        for i in 0..l.data.len() {
-            if offset == l.data[i] {
-                return true;
-            } else if offset < l.data[i] {
-                return false;
-            }
-        }
-        false
+        l.data.binary_search(&offset).is_ok()
     }
 
     fn prev(l: &BreaksLeaf, offset: usize) -> Option<usize> {
@@ -143,16 +128,21 @@ impl Metric<BreaksInfo> for BreaksMetric {
     }
 
     fn next(l: &BreaksLeaf, offset: usize) -> Option<usize> {
-        // TODO: binary search, data is sorted
-        for i in 0..l.data.len() {
-            if offset < l.data[i] {
-                return Some(l.data[i]);
-            }
+        let n = match l.data.binary_search(&offset) {
+            Ok(n) => n + 1,
+            Err(n) => n,
+        };
+
+        if n == l.data.len() {
+            None
+        } else {
+            Some(l.data[n])
         }
-        None
     }
 
-    fn can_fragment() -> bool { true }
+    fn can_fragment() -> bool {
+        true
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -183,7 +173,9 @@ impl Metric<BreaksInfo> for BreaksBaseMetric {
         BreaksMetric::next(l, offset)
     }
 
-    fn can_fragment() -> bool { true }
+    fn can_fragment() -> bool {
+        true
+    }
 }
 
 // Additional functions specific to breaks
@@ -192,10 +184,7 @@ impl Breaks {
     // a length with no break, useful in edit operations; for
     // other use cases, use the builder.
     pub fn new_no_break(len: usize) -> Breaks {
-        let leaf = BreaksLeaf {
-            len,
-            data: vec![],
-        };
+        let leaf = BreaksLeaf { len, data: vec![] };
         Node::from_leaf(leaf)
     }
 }
@@ -207,10 +196,7 @@ pub struct BreakBuilder {
 
 impl Default for BreakBuilder {
     fn default() -> BreakBuilder {
-        BreakBuilder {
-            b: TreeBuilder::new(),
-            leaf: BreaksLeaf::default(),
-        }
+        BreakBuilder { b: TreeBuilder::new(), leaf: BreaksLeaf::default() }
     }
 }
 
@@ -240,9 +226,9 @@ impl BreakBuilder {
 
 #[cfg(test)]
 mod tests {
-    use breaks::{BreaksLeaf, BreaksInfo, BreaksMetric, BreakBuilder};
-    use tree::{Node, Cursor};
+    use breaks::{BreakBuilder, BreaksInfo, BreaksLeaf, BreaksMetric};
     use interval::Interval;
+    use tree::{Cursor, Node};
 
     fn gen(n: usize) -> Node<BreaksInfo> {
         let mut node = Node::default();
@@ -254,7 +240,7 @@ mod tests {
         }
         for _ in 0..n {
             let len = node.len();
-            let empty_interval_at_end = Interval::new_open_closed(len, len);
+            let empty_interval_at_end = Interval::new(len, len);
             node.edit(empty_interval_at_end, testnode.clone());
         }
         node
@@ -274,10 +260,7 @@ mod tests {
 
     #[test]
     fn one() {
-        let testleaf = BreaksLeaf {
-            len: 10,
-            data: vec![10],
-        };
+        let testleaf = BreaksLeaf { len: 10, data: vec![10] };
         let testnode = Node::<BreaksInfo>::from_leaf(testleaf.clone());
         assert_eq!(10, testnode.len());
         let mut c = Cursor::new(&testnode, 0);

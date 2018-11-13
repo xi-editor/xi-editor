@@ -35,7 +35,7 @@ pub struct WidthCache {
 
 #[derive(Eq, PartialEq, Hash)]
 struct WidthCacheKey<'a> {
-    id: usize,  // style id
+    id: usize, // style id
     s: Cow<'a, str>,
 }
 
@@ -52,10 +52,7 @@ pub struct WidthBatchReq<'a> {
 
 impl WidthCache {
     pub fn new() -> WidthCache {
-        WidthCache {
-            m: HashMap::new(),
-            widths: Vec::new(),
-        }
+        WidthCache { m: HashMap::new(), widths: Vec::new() }
     }
 
     /// Resolve a previously obtained token into a width value.
@@ -77,21 +74,14 @@ impl WidthCache {
 }
 
 impl<'a> WidthBatchReq<'a> {
-
     /// Request measurement of one string/style pair within the batch.
     pub fn request(&mut self, id: usize, s: &str) -> Token {
-        let key = WidthCacheKey {
-            id,
-            s: Cow::Borrowed(s),
-        };
+        let key = WidthCacheKey { id, s: Cow::Borrowed(s) };
         if let Some(tok) = self.cache.m.get(&key) {
             return *tok;
         }
         // cache miss, add the request
-        let key = WidthCacheKey {
-            id,
-            s: Cow::Owned(s.to_owned()),
-        };
+        let key = WidthCacheKey { id, s: Cow::Owned(s.to_owned()) };
         let req = &mut self.req;
         let req_toks = &mut self.req_toks;
         let id_off = *self.req_ids.entry(id).or_insert_with(|| {

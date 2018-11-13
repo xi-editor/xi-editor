@@ -18,8 +18,8 @@
 
 use xi_trace::trace_block;
 
-use std::mem;
 use std::collections::HashMap;
+use std::mem;
 
 use edit_types::{BufferEvent, EventDomain};
 
@@ -60,7 +60,9 @@ impl Recorder {
         let last_recording = self.active_recording.take();
 
         match (is_recording, &last_recording, &recording_name) {
-            (true, Some(last_recording), None) => self.save_recording_buffer(last_recording.clone()),
+            (true, Some(last_recording), None) => {
+                self.save_recording_buffer(last_recording.clone())
+            }
             (true, Some(last_recording), Some(recording_name)) => {
                 if last_recording != recording_name {
                     self.recording_buffer.clear();
@@ -68,7 +70,7 @@ impl Recorder {
                     self.save_recording_buffer(last_recording.clone());
                     return;
                 }
-            },
+            }
             _ => {}
         }
 
@@ -84,19 +86,20 @@ impl Recorder {
 
         let recording_buffer = &mut self.recording_buffer;
 
-        if !recording_buffer.last().is_some() {
+        if recording_buffer.last().is_none() {
             recording_buffer.push(current_event);
             return;
         }
 
         {
             let last_event = recording_buffer.last_mut().unwrap();
-            match (last_event, &current_event) {
-                (EventDomain::Buffer(BufferEvent::Insert(old_characters)), EventDomain::Buffer(BufferEvent::Insert(new_characters))) => {
-                    old_characters.push_str(new_characters);
-                    return;
-                }
-                _ => {}
+            if let (
+                EventDomain::Buffer(BufferEvent::Insert(old_characters)),
+                EventDomain::Buffer(BufferEvent::Insert(new_characters)),
+            ) = (last_event, &current_event)
+            {
+                old_characters.push_str(new_characters);
+                return;
             }
         }
 
@@ -106,21 +109,23 @@ impl Recorder {
     /// Iterates over a specified recording's buffer and runs the specified action
     /// on each event.
     pub(crate) fn play<F>(&self, recording_name: &str, action: F)
-        where F: FnMut(&EventDomain) -> () {
-        let is_current_recording: bool = self.active_recording.as_ref().map_or(false, |current_recording| {
-            current_recording == recording_name
-        });
+    where
+        F: FnMut(&EventDomain) -> (),
+    {
+        let is_current_recording: bool = self
+            .active_recording
+            .as_ref()
+            .map_or(false, |current_recording| current_recording == recording_name);
 
         if is_current_recording {
             warn!("Cannot play recording while it's currently active!");
             return;
         }
 
-        self.recordings.get(recording_name)
-            .and_then(|recording| {
-                recording.play(action);
-                Some(())
-            });
+        self.recordings.get(recording_name).and_then(|recording| {
+            recording.play(action);
+            Some(())
+        });
     }
 
     /// Completely removes the specified recording from the Recorder
@@ -138,7 +143,9 @@ impl Recorder {
         let mut saw_redo = false;
 
         // Walk the recording backwards and remove any undo / redo events
-        let filtered: Vec<EventDomain> = self.recording_buffer.clone()
+        let filtered: Vec<EventDomain> = self
+            .recording_buffer
+            .clone()
             .into_iter()
             .rev()
             .filter(|event| {
@@ -164,8 +171,7 @@ impl Recorder {
                 }
 
                 true
-            })
-            .collect::<Vec<EventDomain>>()
+            }).collect::<Vec<EventDomain>>()
             .into_iter()
             .rev()
             .collect();
@@ -177,20 +183,20 @@ impl Recorder {
 }
 
 struct Recording {
-    events: Vec<EventDomain>
+    events: Vec<EventDomain>,
 }
 
 impl Recording {
     fn new(events: Vec<EventDomain>) -> Recording {
-        Recording {
-            events
-        }
+        Recording { events }
     }
 
     /// Iterates over the recording buffer and runs the specified action
     /// on each event.
     fn play<F>(&self, action: F)
-        where F: FnMut(&EventDomain) -> () {
+    where
+        F: FnMut(&EventDomain) -> (),
+    {
         let _guard = trace_block("Recording::play", &["core", "recording"]);
         self.events.iter().for_each(action)
     }
@@ -203,8 +209,8 @@ impl Recording {
 // R = Redo
 #[cfg(test)]
 mod tests {
-    use recorder::Recorder;
     use edit_types::{BufferEvent, EventDomain};
+    use recorder::Recorder;
 
     #[test]
     fn play_recording() {
@@ -322,8 +328,14 @@ mod tests {
         recorder.record(BufferEvent::Indent.into());
         recorder.toggle_recording(Some(recording_b.clone()));
 
-        assert_eq!(recorder.recordings.get(&recording_a).unwrap().events, vec![BufferEvent::Transpose.into(), BufferEvent::DuplicateLine.into()]);
-        assert_eq!(recorder.recordings.get(&recording_b).unwrap().events, vec![BufferEvent::Outdent.into(), BufferEvent::Indent.into()]);
+        assert_eq!(
+            recorder.recordings.get(&recording_a).unwrap().events,
+            vec![BufferEvent::Transpose.into(), BufferEvent::DuplicateLine.into()]
+        );
+        assert_eq!(
+            recorder.recordings.get(&recording_b).unwrap().events,
+            vec![BufferEvent::Outdent.into(), BufferEvent::Indent.into()]
+        );
 
         recorder.clear(&recording_a);
 
@@ -344,7 +356,10 @@ mod tests {
         recorder.record(BufferEvent::Insert("R".to_owned()).into());
 
         recorder.toggle_recording(Some(recording_name.clone()));
-        assert_eq!(recorder.recordings.get(&recording_name).unwrap().events, vec![BufferEvent::Insert("FooBAR".to_owned()).into()]);
+        assert_eq!(
+            recorder.recordings.get(&recording_name).unwrap().events,
+            vec![BufferEvent::Insert("FooBAR".to_owned()).into()]
+        );
     }
 
     #[test]
@@ -361,7 +376,10 @@ mod tests {
         recorder.record(BufferEvent::DuplicateLine.into());
         recorder.record(BufferEvent::Redo.into());
         recorder.toggle_recording(Some(recording_name.clone()));
-        assert_eq!(recorder.recordings.get(&recording_name).unwrap().events, vec![BufferEvent::DuplicateLine.into()]);
+        assert_eq!(
+            recorder.recordings.get(&recording_name).unwrap().events,
+            vec![BufferEvent::DuplicateLine.into()]
+        );
     }
 
     #[test]
@@ -378,7 +396,10 @@ mod tests {
         recorder.record(BufferEvent::DuplicateLine.into());
         recorder.record(BufferEvent::Undo.into());
         recorder.toggle_recording(Some(recording_name.clone()));
-        assert_eq!(recorder.recordings.get(&recording_name).unwrap().events, vec![BufferEvent::Transpose.into()]);
+        assert_eq!(
+            recorder.recordings.get(&recording_name).unwrap().events,
+            vec![BufferEvent::Transpose.into()]
+        );
     }
 
     #[test]
@@ -395,7 +416,10 @@ mod tests {
         recorder.record(BufferEvent::Redo.into());
         recorder.record(BufferEvent::DuplicateLine.into());
         recorder.toggle_recording(Some(recording_name.clone()));
-        assert_eq!(recorder.recordings.get(&recording_name).unwrap().events, vec![BufferEvent::Transpose.into(), BufferEvent::DuplicateLine.into()]);
+        assert_eq!(
+            recorder.recordings.get(&recording_name).unwrap().events,
+            vec![BufferEvent::Transpose.into(), BufferEvent::DuplicateLine.into()]
+        );
     }
 
     #[test]
@@ -429,7 +453,10 @@ mod tests {
         recorder.record(BufferEvent::DuplicateLine.into());
         recorder.record(BufferEvent::Redo.into());
         recorder.toggle_recording(Some(recording_name.clone()));
-        assert_eq!(recorder.recordings.get(&recording_name).unwrap().events, vec![BufferEvent::Transpose.into(), BufferEvent::DuplicateLine.into()]);
+        assert_eq!(
+            recorder.recordings.get(&recording_name).unwrap().events,
+            vec![BufferEvent::Transpose.into(), BufferEvent::DuplicateLine.into()]
+        );
     }
 
     #[test]
@@ -446,6 +473,9 @@ mod tests {
         recorder.record(BufferEvent::DuplicateLine.into());
         recorder.record(BufferEvent::Undo.into());
         recorder.toggle_recording(Some(recording_name.clone()));
-        assert_eq!(recorder.recordings.get(&recording_name).unwrap().events, vec![BufferEvent::Transpose.into()]);
+        assert_eq!(
+            recorder.recordings.get(&recording_name).unwrap().events,
+            vec![BufferEvent::Transpose.into()]
+        );
     }
 }

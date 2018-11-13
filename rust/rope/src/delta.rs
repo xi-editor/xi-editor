@@ -16,18 +16,18 @@
 //! It's useful to explicitly represent these operations so they can be
 //! shared across multiple subsystems.
 
-use interval::Interval;
-use tree::{Node, NodeInfo, TreeBuilder};
-use multiset::{Subset, SubsetBuilder, CountMatcher};
+use interval::{Interval, IntervalBounds};
+use multiset::{CountMatcher, Subset, SubsetBuilder};
 use std::cmp::min;
-use std::ops::Deref;
 use std::fmt;
+use std::ops::Deref;
 use std::slice;
+use tree::{Node, NodeInfo, TreeBuilder};
 
 #[derive(Clone)]
 pub enum DeltaElement<N: NodeInfo> {
     /// Represents a range of text in the base document. Includes beginning, excludes end.
-    Copy(usize, usize),  // note: for now, we lose open/closed info at interval endpoints
+    Copy(usize, usize), // note: for now, we lose open/closed info at interval endpoints
     Insert(Node<N>),
 }
 
@@ -51,7 +51,7 @@ pub struct Delta<N: NodeInfo> {
 pub struct InsertDelta<N: NodeInfo>(Delta<N>);
 
 impl<N: NodeInfo> Delta<N> {
-    pub fn simple_edit(interval: Interval, rope: Node<N>, base_len: usize) -> Delta<N> {
+    pub fn simple_edit<T: IntervalBounds>(interval: T, rope: Node<N>, base_len: usize) -> Delta<N> {
         let mut builder = Builder::new(base_len);
         if rope.len() > 0 {
             builder.replace(interval, rope);
@@ -101,7 +101,7 @@ impl<N: NodeInfo> Delta<N> {
                     end < self.base_len
                 } else if let DeltaElement::Copy(b1, e1) = self.els[1] {
                     // Deletion in middle
-                   self.els.len() == 2 && end < b1 && e1 == self.base_len
+                    self.els.len() == 2 && end < b1 && e1 == self.base_len
                 } else {
                     false
                 }
@@ -114,6 +114,17 @@ impl<N: NodeInfo> Delta<N> {
         }
     }
 
+    /// Returns `true` if applying the delta will cause no change.
+    pub fn is_identity(&self) -> bool {
+        if self.els.len() == 1 {
+            if let DeltaElement::Copy(beg, end) = self.els[0] {
+                return beg == 0 && end == self.base_len;
+            }
+        }
+
+        false
+    }
+
     /// Apply the delta to the given rope. May not work well if the length of the rope
     /// is not compatible with the construction of the delta.
     pub fn apply(&self, base: &Node<N>) -> Node<N> {
@@ -121,10 +132,8 @@ impl<N: NodeInfo> Delta<N> {
         let mut b = TreeBuilder::new();
         for elem in &self.els {
             match *elem {
-                DeltaElement::Copy(beg, end) => {
-                    base.push_subseq(&mut b, Interval::new_closed_open(beg, end))
-                }
-                DeltaElement::Insert(ref n) => b.push(n.clone())
+                DeltaElement::Copy(beg, end) => base.push_subseq(&mut b, Interval::new(beg, end)),
+                DeltaElement::Insert(ref n) => b.push(n.clone()),
             }
         }
         b.build()
@@ -223,23 +232,25 @@ impl<N: NodeInfo> Delta<N> {
                     let (ib, ie) = last_old.unwrap();
                     let end = min(e, ie);
                     // Try to merge contiguous Copys in the output
-                    let xbeg = beg + x - ib;  // "beg - ib + x" better for overflow?
-                    let xend = end + x - ib;  // ditto
-                    let merged = if let Some(&mut DeltaElement::Copy(_, ref mut le)) = els.last_mut() {
-                        if *le == xbeg {
-                            *le = xend;
-                            true
+                    let xbeg = beg + x - ib; // "beg - ib + x" better for overflow?
+                    let xend = end + x - ib; // ditto
+                    let merged =
+                        if let Some(&mut DeltaElement::Copy(_, ref mut le)) = els.last_mut() {
+                            if *le == xbeg {
+                                *le = xend;
+                                true
+                            } else {
+                                false
+                            }
                         } else {
                             false
-                        }
-                    } else {
-                        false
-                    };
+                        };
                     if !merged {
                         els.push(DeltaElement::Copy(xbeg, xend));
                     }
                     beg = end;
-                } else { // if the character at beg isn't in the old text, then we Insert
+                } else {
+                    // if the character at beg isn't in the old text, then we Insert
                     // Insert up until the next old range we could Copy from, or the end of this segment
                     let mut end = e;
                     if let Some((ib, _)) = last_old {
@@ -247,7 +258,8 @@ impl<N: NodeInfo> Delta<N> {
                     }
                     // Note: could try to aggregate insertions, but not sure of the win.
                     // Use the mapper to insert the corresponding section of the tombstones rope
-                    let interval = Interval::new_closed_open(m.doc_index_to_subset(beg), m.doc_index_to_subset(end));
+                    let interval =
+                        Interval::new(m.doc_index_to_subset(beg), m.doc_index_to_subset(end));
                     els.push(DeltaElement::Insert(tombstones.subseq(interval)));
                     beg = end;
                 }
@@ -279,7 +291,7 @@ impl<N: NodeInfo> Delta<N> {
                 els = init;
             }
         }
-        (Interval::new_closed_open(iv_start, iv_end), Delta::total_element_len(els))
+        (Interval::new(iv_start, iv_end), Delta::total_element_len(els))
     }
 
     /// Returns the length of the new document. In other words, the length of
@@ -291,52 +303,45 @@ impl<N: NodeInfo> Delta<N> {
     }
 
     fn total_element_len(els: &[DeltaElement<N>]) -> usize {
-        els.iter().fold(0, |sum, el|
+        els.iter().fold(0, |sum, el| {
             sum + match *el {
                 DeltaElement::Copy(beg, end) => end - beg,
-                DeltaElement::Insert(ref n) => n.len()
+                DeltaElement::Insert(ref n) => n.len(),
             }
-        )
+        })
     }
 
     /// Returns the sum length of the inserts of the delta.
     pub fn inserts_len(&self) -> usize {
-        self.els.iter()
-            .fold(0, |sum, el|
-                  sum + match *el {
-                      DeltaElement::Copy(_, _) => 0,
-                      DeltaElement::Insert(ref s) => s.len(),
-                  }
-            )
+        self.els.iter().fold(0, |sum, el| {
+            sum + match *el {
+                DeltaElement::Copy(_, _) => 0,
+                DeltaElement::Insert(ref s) => s.len(),
+            }
+        })
     }
 
     /// Iterates over all the inserts of the delta.
     pub fn iter_inserts(&self) -> InsertsIter<N> {
-        InsertsIter {
-            pos: 0,
-            last_end: 0,
-            els_iter: self.els.iter(),
-        }
+        InsertsIter { pos: 0, last_end: 0, els_iter: self.els.iter() }
     }
 
     /// Iterates over all the deletions of the delta.
     pub fn iter_deletions(&self) -> DeletionsIter<N> {
-        DeletionsIter {
-            pos: 0,
-            last_end: 0,
-            base_len: self.base_len,
-            els_iter: self.els.iter(),
-        }
+        DeletionsIter { pos: 0, last_end: 0, base_len: self.base_len, els_iter: self.els.iter() }
     }
 }
 
-impl<N: NodeInfo> fmt::Debug for Delta<N> where Node<N>: fmt::Debug {
+impl<N: NodeInfo> fmt::Debug for Delta<N>
+where
+    Node<N>: fmt::Debug,
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if f.alternate() {
             for el in &self.els {
                 match *el {
-                    DeltaElement::Copy(beg,end) => {
-                        write!(f, "{}", "-".repeat(end-beg))?;
+                    DeltaElement::Copy(beg, end) => {
+                        write!(f, "{}", "-".repeat(end - beg))?;
                     }
                     DeltaElement::Insert(ref node) => {
                         node.fmt(f)?;
@@ -347,7 +352,7 @@ impl<N: NodeInfo> fmt::Debug for Delta<N> where Node<N>: fmt::Debug {
             write!(f, "Delta(")?;
             for el in &self.els {
                 match *el {
-                    DeltaElement::Copy(beg,end) => {
+                    DeltaElement::Copy(beg, end) => {
                         write!(f, "[{},{}) ", beg, end)?;
                     }
                     DeltaElement::Insert(ref node) => {
@@ -361,7 +366,10 @@ impl<N: NodeInfo> fmt::Debug for Delta<N> where Node<N>: fmt::Debug {
     }
 }
 
-impl<N: NodeInfo> fmt::Debug for InsertDelta<N> where Node<N>: fmt::Debug {
+impl<N: NodeInfo> fmt::Debug for InsertDelta<N>
+where
+    Node<N>: fmt::Debug,
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.0.fmt(f)
     }
@@ -376,9 +384,9 @@ impl<N: NodeInfo> InsertDelta<N> {
     pub fn transform_expand(&self, xform: &Subset, after: bool) -> InsertDelta<N> {
         let cur_els = &self.0.els;
         let mut els = Vec::new();
-        let mut x = 0;  // coordinate within self
-        let mut y = 0;  // coordinate within xform
-        let mut i = 0;  // index into self.els
+        let mut x = 0; // coordinate within self
+        let mut y = 0; // coordinate within xform
+        let mut i = 0; // index into self.els
         let mut b1 = 0;
         let mut xform_ranges = xform.complement_iter();
         let mut last_xform = xform_ranges.next();
@@ -436,17 +444,17 @@ impl<N: NodeInfo> InsertDelta<N> {
     /// apply to the text.
     pub fn transform_shrink(&self, xform: &Subset) -> InsertDelta<N> {
         let mut m = xform.mapper(CountMatcher::Zero);
-        let els = self.0.els.iter().map(|elem| {
-            match *elem {
+        let els = self
+            .0
+            .els
+            .iter()
+            .map(|elem| match *elem {
                 DeltaElement::Copy(b, e) => {
                     DeltaElement::Copy(m.doc_index_to_subset(b), m.doc_index_to_subset(e))
                 }
-                DeltaElement::Insert(ref n) => {
-                    DeltaElement::Insert(n.clone())
-                }
-            }
-        }).collect();
-        InsertDelta(Delta { els, base_len: xform.len_after_delete()})
+                DeltaElement::Insert(ref n) => DeltaElement::Insert(n.clone()),
+            }).collect();
+        InsertDelta(Delta { els, base_len: xform.len_after_delete() })
     }
 
     /// Return a Subset containing the inserted ranges.
@@ -491,9 +499,7 @@ pub struct Transformer<'a, N: NodeInfo + 'a> {
 impl<'a, N: NodeInfo + 'a> Transformer<'a, N> {
     /// Create a new transformer from a delta.
     pub fn new(delta: &'a Delta<N>) -> Self {
-        Transformer {
-            delta,
-        }
+        Transformer { delta }
     }
 
     /// Transform a single coordinate. The `after` parameter indicates whether it
@@ -525,7 +531,8 @@ impl<'a, N: NodeInfo + 'a> Transformer<'a, N> {
     }
 
     /// Determine whether a given interval is untouched by the transformation.
-    pub fn interval_untouched(&mut self, iv: Interval) -> bool {
+    pub fn interval_untouched<T: IntervalBounds>(&mut self, iv: T) -> bool {
+        let iv = iv.into_interval(self.delta.base_len);
         let mut last_was_ins = true;
         for el in &self.delta.els {
             match *el {
@@ -566,18 +573,12 @@ pub struct Builder<N: NodeInfo> {
 impl<N: NodeInfo> Builder<N> {
     /// Creates a new builder, applicable to a base rope of length `base_len`.
     pub fn new(base_len: usize) -> Builder<N> {
-        Builder {
-            delta: Delta {
-                els: Vec::new(),
-                base_len,
-            },
-            last_offset: 0,
-        }
+        Builder { delta: Delta { els: Vec::new(), base_len }, last_offset: 0 }
     }
 
     /// Deletes the given interval. Panics if interval is not properly sorted.
-    pub fn delete(&mut self, interval: Interval) {
-        // TODO: doesn't handle interval types other than closed_open
+    pub fn delete<T: IntervalBounds>(&mut self, interval: T) {
+        let interval = interval.into_interval(self.delta.base_len);
         let (start, end) = interval.start_end();
         assert!(start >= self.last_offset, "Delta builder: intervals not properly sorted");
         if start > self.last_offset {
@@ -588,7 +589,7 @@ impl<N: NodeInfo> Builder<N> {
 
     /// Replaces the given interval with the new rope. Panics if interval
     /// is not properly sorted.
-    pub fn replace(&mut self, interval: Interval, rope: Node<N>) {
+    pub fn replace<T: IntervalBounds>(&mut self, interval: T, rope: Node<N>) {
         self.delete(interval);
         if rope.len() > 0 {
             self.delta.els.push(DeltaElement::Insert(rope));
@@ -624,7 +625,7 @@ pub struct DeltaRegion {
 
 impl DeltaRegion {
     fn new(old_offset: usize, new_offset: usize, len: usize) -> Self {
-        DeltaRegion{ old_offset, new_offset, len }
+        DeltaRegion { old_offset, new_offset, len }
     }
 }
 
@@ -691,24 +692,24 @@ impl<'a, N: NodeInfo> Iterator for DeletionsIter<'a, N> {
 
 #[cfg(test)]
 mod tests {
-    use serde_json;
-    use rope::{Rope, RopeInfo};
-    use delta::{Delta, Builder, DeltaRegion, DeltaElement};
+    use delta::{Builder, Delta, DeltaElement, DeltaRegion};
     use interval::Interval;
+    use rope::{Rope, RopeInfo};
+    use serde_json;
     use test_helpers::find_deletions;
 
     const TEST_STR: &'static str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
     #[test]
     fn simple() {
-        let d = Delta::simple_edit(Interval::new_closed_open(1, 9), Rope::from("era"), 11);
+        let d = Delta::simple_edit(Interval::new(1, 9), Rope::from("era"), 11);
         assert_eq!("herald", d.apply_to_string("hello world"));
         assert_eq!(6, d.new_document_len());
     }
 
     #[test]
     fn factor() {
-        let d = Delta::simple_edit(Interval::new_closed_open(1, 9), Rope::from("era"), 11);
+        let d = Delta::simple_edit(Interval::new(1, 9), Rope::from("era"), 11);
         let (d1, ss) = d.factor();
         assert_eq!("heraello world", d1.apply_to_string("hello world"));
         assert_eq!("hld", ss.delete_from_string("hello world"));
@@ -716,7 +717,7 @@ mod tests {
 
     #[test]
     fn synthesize() {
-        let d = Delta::simple_edit(Interval::new_closed_open(1, 9), Rope::from("era"), 11);
+        let d = Delta::simple_edit(Interval::new(1, 9), Rope::from("era"), 11);
         let (d1, del) = d.factor();
         let ins = d1.inserted_subset();
         let del = del.transform_expand(&ins);
@@ -731,7 +732,7 @@ mod tests {
 
     #[test]
     fn inserted_subset() {
-        let d = Delta::simple_edit(Interval::new_closed_open(1, 9), Rope::from("era"), 11);
+        let d = Delta::simple_edit(Interval::new(1, 9), Rope::from("era"), 11);
         let (d1, _ss) = d.factor();
         assert_eq!("hello world", d1.inserted_subset().delete_from_string("heraello world"));
     }
@@ -740,21 +741,30 @@ mod tests {
     fn transform_expand() {
         let str1 = "01259DGJKNQTUVWXYcdefghkmopqrstvwxy";
         let s1 = find_deletions(str1, TEST_STR);
-        let d = Delta::simple_edit(Interval::new_closed_open(10, 12), Rope::from("+"), str1.len());
+        let d = Delta::simple_edit(Interval::new(10, 12), Rope::from("+"), str1.len());
         assert_eq!("01259DGJKN+UVWXYcdefghkmopqrstvwxy", d.apply_to_string(str1));
         let (d2, _ss) = d.factor();
         assert_eq!("01259DGJKN+QTUVWXYcdefghkmopqrstvwxy", d2.apply_to_string(str1));
         let d3 = d2.transform_expand(&s1, false);
-        assert_eq!("0123456789ABCDEFGHIJKLMN+OPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", d3.apply_to_string(TEST_STR));
+        assert_eq!(
+            "0123456789ABCDEFGHIJKLMN+OPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
+            d3.apply_to_string(TEST_STR)
+        );
         let d4 = d2.transform_expand(&s1, true);
-        assert_eq!("0123456789ABCDEFGHIJKLMNOP+QRSTUVWXYZabcdefghijklmnopqrstuvwxyz", d4.apply_to_string(TEST_STR));
+        assert_eq!(
+            "0123456789ABCDEFGHIJKLMNOP+QRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
+            d4.apply_to_string(TEST_STR)
+        );
     }
 
     #[test]
     fn transform_shrink() {
-        let d = Delta::simple_edit(Interval::new_closed_open(10, 12), Rope::from("+"), TEST_STR.len());
+        let d = Delta::simple_edit(Interval::new(10, 12), Rope::from("+"), TEST_STR.len());
         let (d2, _ss) = d.factor();
-        assert_eq!("0123456789+ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", d2.apply_to_string(TEST_STR));
+        assert_eq!(
+            "0123456789+ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
+            d2.apply_to_string(TEST_STR)
+        );
 
         let str1 = "0345678BCxyz";
         let s1 = find_deletions(str1, TEST_STR);
@@ -770,9 +780,9 @@ mod tests {
     #[test]
     fn iter_inserts() {
         let mut builder = Builder::new(10);
-        builder.replace(Interval::new_closed_open(2, 2), Rope::from("a"));
-        builder.delete(Interval::new_closed_open(3, 5));
-        builder.replace(Interval::new_closed_open(6, 8), Rope::from("b"));
+        builder.replace(Interval::new(2, 2), Rope::from("a"));
+        builder.delete(Interval::new(3, 5));
+        builder.replace(Interval::new(6, 8), Rope::from("b"));
         let delta = builder.build();
 
         assert_eq!("01a25b89", delta.apply_to_string("0123456789"));
@@ -786,9 +796,9 @@ mod tests {
     #[test]
     fn iter_deletions() {
         let mut builder = Builder::new(10);
-        builder.delete(Interval::new_closed_open(0, 2));
-        builder.delete(Interval::new_closed_open(4, 6));
-        builder.delete(Interval::new_closed_open(8, 10));
+        builder.delete(Interval::new(0, 2));
+        builder.delete(Interval::new(4, 6));
+        builder.delete(Interval::new(8, 10));
         let delta = builder.build();
 
         assert_eq!("2367", delta.apply_to_string("0123456789"));
@@ -801,29 +811,35 @@ mod tests {
     }
 
     #[test]
+    fn fancy_bounds() {
+        let mut builder = Builder::new(10);
+        builder.delete(..2);
+        builder.delete(4..=5);
+        builder.delete(8..);
+        let delta = builder.build();
+        assert_eq!("2367", delta.apply_to_string("0123456789"));
+    }
+
+    #[test]
     fn delta_serde() {
-        let d = Delta::simple_edit(Interval::new_closed_open(10, 12),
-                                   Rope::from("+"), TEST_STR.len());
+        let d = Delta::simple_edit(Interval::new(10, 12), Rope::from("+"), TEST_STR.len());
         let ser = serde_json::to_value(d.clone()).expect("serialize failed");
         eprintln!("{:?}", &ser);
-        let de: Delta<RopeInfo> = serde_json::from_value(ser)
-        .expect("deserialize failed");
+        let de: Delta<RopeInfo> = serde_json::from_value(ser).expect("deserialize failed");
         assert_eq!(d.apply_to_string(TEST_STR), de.apply_to_string(TEST_STR));
     }
 
     #[test]
     fn is_simple_delete() {
-        let d = Delta::simple_edit(Interval::new_closed_open(10, 12),
-                                   Rope::from("+"), TEST_STR.len());
+        let d = Delta::simple_edit(10..12, Rope::from("+"), TEST_STR.len());
         assert_eq!(false, d.is_simple_delete());
 
-        let d = Delta::simple_edit(Interval::new_closed_open(10, 11),
-                                   Rope::from(""), TEST_STR.len());
+        let d = Delta::simple_edit(Interval::new(10, 11), Rope::from(""), TEST_STR.len());
         assert_eq!(true, d.is_simple_delete());
 
         let mut builder = Builder::<RopeInfo>::new(10);
-        builder.delete(Interval::new_closed_open(0, 2));
-        builder.delete(Interval::new_closed_open(4, 6));
+        builder.delete(Interval::new(0, 2));
+        builder.delete(Interval::new(4, 6));
         let d = builder.build();
         assert_eq!(false, d.is_simple_delete());
 
@@ -844,13 +860,20 @@ mod tests {
     }
 
     #[test]
+    fn is_identity() {
+        let d = Delta::simple_edit(10..12, Rope::from("+"), TEST_STR.len());
+        assert_eq!(false, d.is_identity());
+
+        let d = Delta::simple_edit(0..0, Rope::from(""), TEST_STR.len());
+        assert_eq!(true, d.is_identity());
+    }
+
+    #[test]
     fn as_simple_insert() {
-        let d = Delta::simple_edit(Interval::new_closed_open(10, 11),
-                                   Rope::from("+"), TEST_STR.len());
+        let d = Delta::simple_edit(Interval::new(10, 11), Rope::from("+"), TEST_STR.len());
         assert_eq!(None, d.as_simple_insert());
 
-        let d = Delta::simple_edit(Interval::new_closed_open(10, 10),
-                                   Rope::from("+"), TEST_STR.len());
+        let d = Delta::simple_edit(Interval::new(10, 10), Rope::from("+"), TEST_STR.len());
         assert_eq!(Some(Rope::from("+")).as_ref(), d.as_simple_insert());
     }
 }

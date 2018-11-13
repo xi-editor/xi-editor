@@ -521,7 +521,7 @@ certainly represent at least initial and trailing sequences of invalid lines by
 their count; and the editing operations may be more efficiently done in-place
 than by copying from the old state to the new].
 
-The "copy" op appends the `n` lines `[old_ix: old_ix + n]` to the new lines
+The "copy" op appends the `n` lines `[old_ix .. old_ix + n]` to the new lines
 array, and increments `old_ix` by `n`.
 
 The "skip" op increments `old_ix` by `n`.
@@ -581,6 +581,16 @@ interface Line {
   styles?: number[]  // length is a multiple of 3, see below
 }
 ```
+
+#### measure_width
+
+```
+measure_width [{"id": number, "strings": string[]}] <- {"id":0, "result":[[28.0,8.0]]}
+```
+
+Asks the frontend to measure the display widths (the width when rendered and presented on screen) of a group of strings. The frontend should return an array of arrays, one for each item in the input array, containing the widths of each of that item's strings when rendered with the style indicated by that items id argument.
+
+These widths are used to determine how to [calculate line breaks](https://xi-editor.github.io/xi-editor/docs/rope_science_05.html) and other attributes that depend on the behaviour of the client's text rendering system.
 
 ---
 
@@ -723,9 +733,9 @@ Removes a status item from the front end.
 
 Find supports multiple search queries.
 
-`find_status {"view_id": "view-id-1", "queries": [{"id": 1, "chars": "a", "case_sensitive": false, "is_regex": false, "whole_words": true, "matches": 6}]}`
+`find_status {"view_id": "view-id-1", "queries": [{"id": 1, "chars": "a", "case_sensitive": false, "is_regex": false, "whole_words": true, "matches": 6, "lines": [1, 3, 3, 6]}]}`
 
-Notifies the client about the current search queries and search options.
+Notifies the client about the current search queries and search options. `lines` indicates for each match its line number.
 
 #### replace_status
 

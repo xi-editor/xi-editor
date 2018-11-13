@@ -33,7 +33,7 @@ fn init_logger() -> Result<(), fern::InitError> {
         Err(_) => log::LevelFilter::Info,
     };
 
-    Ok(fern::Dispatch::new()
+    fern::Dispatch::new()
         .format(|out, message, record| {
             out.finish(format_args!(
                 "{}[{}][{}] {}",
@@ -45,7 +45,8 @@ fn init_logger() -> Result<(), fern::InitError> {
         }).level(level_filter)
         .chain(std::io::stderr())
         .chain(fern::log_file("xi-lsp-plugin.log")?)
-        .apply()?)
+        .apply()
+        .map_err(|e| e.into())
 }
 
 fn main() {

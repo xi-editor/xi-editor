@@ -100,8 +100,8 @@ impl Builder {
     pub fn add_span(&mut self, n: usize, start_line_num: usize, validity: u8) {
         if n > 0 {
             if let Some(last) = self.spans.last_mut() {
-                if last.validity == validity &&
-                    (validity == 0 || last.start_line_num + last.n == start_line_num)
+                if last.validity == validity
+                    && (validity == 0 || last.start_line_num + last.n == start_line_num)
                 {
                     last.n += n;
                     return;
@@ -167,9 +167,11 @@ impl LineCacheShadow {
             let invalid_start = max(start, line_num);
             let invalid_end = min(end, line_num + span.n);
             if invalid_end > invalid_start {
-                b.add_span(invalid_end - invalid_start,
+                b.add_span(
+                    invalid_end - invalid_start,
                     span.start_line_num + (invalid_start - line_num),
-                    span.validity & !invalid);
+                    span.validity & !invalid,
+                );
             }
             if line_num + span.n > end {
                 let offset = end.saturating_sub(line_num);
@@ -182,9 +184,9 @@ impl LineCacheShadow {
     }
 
     pub fn needs_render(&self, plan: &RenderPlan) -> bool {
-        self.dirty || self.iter_with_plan(plan).any(|seg|
-            seg.tactic == RenderTactic::Render && seg.validity != ALL_VALID
-        )
+        self.dirty || self
+            .iter_with_plan(plan)
+            .any(|seg| seg.tactic == RenderTactic::Render && seg.validity != ALL_VALID)
     }
 
     pub fn spans(&self) -> &[Span] {
@@ -192,8 +194,14 @@ impl LineCacheShadow {
     }
 
     pub fn iter_with_plan<'a>(&'a self, plan: &'a RenderPlan) -> PlanIterator<'a> {
-        PlanIterator { lc_shadow: self, plan,
-            shadow_ix: 0, shadow_line_num: 0, plan_ix: 0, plan_line_num: 0 }
+        PlanIterator {
+            lc_shadow: self,
+            plan,
+            shadow_ix: 0,
+            shadow_line_num: 0,
+            plan_ix: 0,
+            plan_line_num: 0,
+        }
     }
 }
 
@@ -233,7 +241,6 @@ impl<'a> Iterator for PlanIterator<'a> {
         Some(result)
     }
 }
-
 
 impl RenderPlan {
     /// This function implements the policy of what to discard, what to preserve, and

@@ -29,7 +29,7 @@ impl CoreProxy {
         CoreProxy { plugin_id, peer: rpc_ctx.get_peer().clone() }
     }
 
-    pub fn add_status_item(&mut self, view_id: &ViewId, key: &str, value: &str, alignment: &str) {
+    pub fn add_status_item(&mut self, view_id: ViewId, key: &str, value: &str, alignment: &str) {
         let params = json!({
             "plugin_id": self.plugin_id,
             "view_id": view_id,
@@ -41,7 +41,7 @@ impl CoreProxy {
         self.peer.send_rpc_notification("add_status_item", &params)
     }
 
-    pub fn update_status_item(&mut self, view_id: &ViewId, key: &str, value: &str) {
+    pub fn update_status_item(&mut self, view_id: ViewId, key: &str, value: &str) {
         let params = json!({
             "plugin_id": self.plugin_id,
             "view_id": view_id,
@@ -52,7 +52,7 @@ impl CoreProxy {
         self.peer.send_rpc_notification("update_status_item", &params)
     }
 
-    pub fn remove_status_item(&mut self, view_id: &ViewId, key: &str) {
+    pub fn remove_status_item(&mut self, view_id: ViewId, key: &str) {
         let params = json!({
             "plugin_id": self.plugin_id,
             "view_id": view_id,
@@ -66,7 +66,7 @@ impl CoreProxy {
         &mut self,
         view_id: ViewId,
         request_id: usize,
-        result: Result<Hover, RemoteError>,
+        result: &Result<Hover, RemoteError>,
     ) {
         let params = json!({
             "plugin_id": self.plugin_id,

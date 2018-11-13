@@ -97,7 +97,7 @@ impl SamplePlugin {
         let new_text = view.get_line(line_nb)?[word_start..end_offset - line_start].to_uppercase();
         let buf_size = view.get_buf_size();
         let mut builder = EditBuilder::new(buf_size);
-        let iv = Interval::new_closed_open(line_start + word_start, end_offset);
+        let iv = Interval::new(line_start + word_start, end_offset);
         builder.replace(iv, new_text.into());
         view.edit(builder.build(), 0, false, true, "sample".into());
         Ok(())

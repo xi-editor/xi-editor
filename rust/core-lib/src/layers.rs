@@ -19,17 +19,15 @@
 //! into styles using a theme, augmented with additional style definitions.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
-use syntect::parsing::Scope;
 use syntect::highlighting::StyleModifier;
+use syntect::parsing::Scope;
 
-use xi_rope::delta::Delta;
-use xi_rope::interval::Interval;
-use xi_rope::rope::RopeInfo;
 use xi_rope::spans::{Spans, SpansBuilder};
+use xi_rope::{Interval, RopeDelta};
 use xi_trace::trace_block;
 
-use styles::{Style, ThemeStyleMap};
 use plugins::PluginPid;
+use styles::{Style, ThemeStyleMap};
 
 /// A collection of layers containing scope information.
 #[derive(Default)]
@@ -54,16 +52,21 @@ pub struct ScopeLayer {
 }
 
 impl Layers {
-
     pub fn get_merged(&self) -> &Spans<Style> {
         &self.merged
     }
 
     /// Adds the provided scopes to the layer's lookup table.
-    pub fn add_scopes(&mut self, layer: PluginPid, scopes: Vec<Vec<String>>,
-                                style_map: &ThemeStyleMap) {
+    pub fn add_scopes(
+        &mut self,
+        layer: PluginPid,
+        scopes: Vec<Vec<String>>,
+        style_map: &ThemeStyleMap,
+    ) {
         let _t = trace_block("Layers::AddScopes", &["core"]);
-        if self.create_if_missing(layer).is_err() { return }
+        if self.create_if_missing(layer).is_err() {
+            return;
+        }
         self.layers.get_mut(&layer).unwrap().add_scopes(scopes, style_map);
     }
 
@@ -72,7 +75,7 @@ impl Layers {
     ///
     /// This is useful for clearing spans, and for updating spans
     /// as edits occur.
-    pub fn update_all(&mut self, delta: &Delta<RopeInfo>) {
+    pub fn update_all(&mut self, delta: &RopeDelta) {
         self.merged.apply_shape(delta);
 
         for layer in self.layers.values_mut() {
@@ -84,7 +87,9 @@ impl Layers {
 
     /// Updates the scope spans for a given layer.
     pub fn update_layer(&mut self, layer: PluginPid, iv: Interval, spans: Spans<u32>) {
-        if self.create_if_missing(layer).is_err() { return }
+        if self.create_if_missing(layer).is_err() {
+            return;
+        }
         self.layers.get_mut(&layer).unwrap().update_scopes(iv, &spans);
         self.resolve_styles(iv);
     }
@@ -95,7 +100,7 @@ impl Layers {
         self.deleted.insert(layer);
         let layer = self.layers.remove(&layer);
         if layer.is_some() {
-            let iv_all = Interval::new_closed_closed(0, self.merged.len());
+            let iv_all = Interval::new(0, self.merged.len());
             //TODO: should Spans<T> have a clear() method?
             self.merged = SpansBuilder::new(self.merged.len()).build();
             self.resolve_styles(iv_all);
@@ -108,7 +113,7 @@ impl Layers {
             layer.theme_changed(style_map);
         }
         self.merged = SpansBuilder::new(self.merged.len()).build();
-        let iv_all = Interval::new_closed_closed(0, self.merged.len());
+        let iv_all = Interval::new(0, self.merged.len());
         self.resolve_styles(iv_all);
     }
 
@@ -116,7 +121,7 @@ impl Layers {
     /// the master style spans.
     fn resolve_styles(&mut self, iv: Interval) {
         if self.layers.is_empty() {
-            return
+            return;
         }
         let mut layer_iter = self.layers.values();
         let mut resolved = layer_iter.next().unwrap().style_spans.subseq(iv);
@@ -124,11 +129,9 @@ impl Layers {
         for other in layer_iter {
             let spans = other.style_spans.subseq(iv);
             assert_eq!(resolved.len(), spans.len());
-            resolved = resolved.merge(&spans, |a, b| {
-                match b {
-                    Some(b) => a.merge(b),
-                    None => a.to_owned(),
-                }
+            resolved = resolved.merge(&spans, |a, b| match b {
+                Some(b) => a.merge(b),
+                None => a.to_owned(),
             });
         }
         self.merged.edit(iv, resolved);
@@ -152,10 +155,11 @@ impl Layers {
         }
     }
 
-
     /// Returns an `Err` if this layer has been deleted; the caller should return.
     fn create_if_missing(&mut self, layer_id: PluginPid) -> Result<(), ()> {
-        if self.deleted.contains(&layer_id) { return Err(()) }
+        if self.deleted.contains(&layer_id) {
+            return Err(());
+        }
         if !self.layers.contains_key(&layer_id) {
             self.layers.insert(layer_id, ScopeLayer::new(self.merged.len()));
         }
@@ -176,7 +180,6 @@ impl Default for ScopeLayer {
 }
 
 impl ScopeLayer {
-
     pub fn new(len: usize) -> Self {
         ScopeLayer {
             stack_lookup: Vec::new(),
@@ -191,7 +194,7 @@ impl ScopeLayer {
         // recompute styles with the new theme
         let cur_stacks = self.stack_lookup.clone();
         self.style_lookup = self.styles_for_stacks(&cur_stacks, style_map);
-        let iv_all = Interval::new_closed_closed(0, self.style_spans.len());
+        let iv_all = Interval::new(0, self.style_spans.len());
         self.style_spans = SpansBuilder::new(self.style_spans.len()).build();
         // this feels unnecessary but we can't pass in a reference to self
         // and I don't want to get fancy unless there's an actual perf problem
@@ -199,21 +202,19 @@ impl ScopeLayer {
         self.update_styles(iv_all, &scopes)
     }
 
-    fn add_scopes(&mut self, scopes: Vec<Vec<String>>,
-                                style_map: &ThemeStyleMap) {
+    fn add_scopes(&mut self, scopes: Vec<Vec<String>>, style_map: &ThemeStyleMap) {
         let mut stacks = Vec::with_capacity(scopes.len());
         for stack in scopes {
-            let scopes = stack.iter().map(|s| Scope::new(&s))
+            let scopes = stack
+                .iter()
+                .map(|s| Scope::new(&s))
                 .filter(|result| match *result {
                     Err(ref err) => {
-                        warn!("failed to resolve scope {}\nErr: {:?}",
-                                   &stack.join(" "),
-                                   err);
+                        warn!("failed to resolve scope {}\nErr: {:?}", &stack.join(" "), err);
                         false
                     }
-                    _ => true
-                })
-                .map(|s| s.unwrap())
+                    _ => true,
+                }).map(|s| s.unwrap())
                 .collect::<Vec<_>>();
             stacks.push(scopes);
         }
@@ -223,8 +224,11 @@ impl ScopeLayer {
         self.style_lookup.append(&mut new_styles);
     }
 
-    fn styles_for_stacks(&mut self, stacks: &[Vec<Scope>],
-                         style_map: &ThemeStyleMap) -> Vec<Style> {
+    fn styles_for_stacks(
+        &mut self,
+        stacks: &[Vec<Scope>],
+        style_map: &ThemeStyleMap,
+    ) -> Vec<Style> {
         //let style_map = style_map.borrow();
         let highlighter = style_map.get_highlighter();
         let mut new_styles = Vec::new();
@@ -235,19 +239,19 @@ impl ScopeLayer {
 
             // walk backwards through stack to see if we have an existing
             // style for any child stacks.
-            for i in 0..stack.len()-1 {
+            for i in 0..stack.len() - 1 {
                 let prev_range = 0..stack.len() - (i + 1);
                 if let Some(s) = self.style_cache.get(&stack[prev_range]) {
                     last_style = Some(*s);
                     upper_bound_of_last = stack.len() - (i + 1);
-                    break
+                    break;
                 }
             }
             let mut base_style_mod = last_style.unwrap_or_default();
 
             // apply the stack, generating children as needed.
             for i in upper_bound_of_last..stack.len() {
-                let style_mod = highlighter.get_style(&stack[0..i+1]);
+                let style_mod = highlighter.style_mod_for_stack(&stack[0..i + 1]);
                 base_style_mod = base_style_mod.apply(style_mod);
             }
 
@@ -267,7 +271,7 @@ impl ScopeLayer {
     /// Applies `delta`, which is presumed to contain empty spans.
     /// This is only used when we receive an edit, to adjust current span
     /// positions.
-    fn blank_scopes(&mut self, delta: &Delta<RopeInfo>) {
+    fn blank_scopes(&mut self, delta: &RopeDelta) {
         self.style_spans.apply_shape(delta);
         self.scope_spans.apply_shape(delta);
     }
@@ -275,7 +279,6 @@ impl ScopeLayer {
     /// Updates `self.style_spans`, mapping scopes to styles and combining
     /// adjacent and equal spans.
     fn update_styles(&mut self, iv: Interval, spans: &Spans<u32>) {
-
         // NOTE: This is a tradeoff. Keeping both u32 and Style spans for each
         // layer makes debugging simpler and reduces the total number of spans
         // on the wire (because we combine spans that resolve to the same style)
@@ -284,23 +287,23 @@ impl ScopeLayer {
         let mut spans_iter = spans.iter();
         let mut prev = spans_iter.next();
         {
-        // distinct adjacent scopes can often resolve to the same style,
-        // so we combine them when building the styles.
-        let style_eq = |i1: &u32, i2: &u32| {
-            self.style_lookup[*i1 as usize] == self.style_lookup[*i2 as usize]
-        };
+            // distinct adjacent scopes can often resolve to the same style,
+            // so we combine them when building the styles.
+            let style_eq = |i1: &u32, i2: &u32| {
+                self.style_lookup[*i1 as usize] == self.style_lookup[*i2 as usize]
+            };
 
-        while let Some((p_iv, p_val)) = prev {
-            match spans_iter.next() {
-                Some((n_iv, n_val)) if n_iv.start() == p_iv.end() && style_eq(p_val, n_val) => {
-                    prev = Some((p_iv.union(n_iv), p_val));
-                }
-                other => {
-                    sb.add_span(p_iv, self.style_lookup[*p_val as usize].to_owned());
-                    prev = other;
+            while let Some((p_iv, p_val)) = prev {
+                match spans_iter.next() {
+                    Some((n_iv, n_val)) if n_iv.start() == p_iv.end() && style_eq(p_val, n_val) => {
+                        prev = Some((p_iv.union(n_iv), p_val));
+                    }
+                    other => {
+                        sb.add_span(p_iv, self.style_lookup[*p_val as usize].to_owned());
+                        prev = other;
+                    }
                 }
             }
-        }
         }
         self.style_spans.edit(iv, sb.build());
     }

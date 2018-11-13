@@ -82,7 +82,7 @@ impl DummyReader {
     pub fn expect_rpc(&mut self, method: &str) -> RpcObject {
         let obj = self
             .next_timeout(Duration::from_secs(1))
-            .expect(&format!("expected rpc \"{}\"", method))
+            .unwrap_or_else(|| panic!("expected rpc \"{}\"", method))
             .unwrap();
         assert_eq!(obj.get_method(), Some(method));
         obj
