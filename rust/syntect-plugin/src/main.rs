@@ -41,11 +41,6 @@ use stackmap::{LookupResult, StackMap};
 const LINES_PER_RPC: usize = 10;
 const INDENTATION_PRIORITY: u64 = 100;
 
-const MANY_TABS: &str =
-    "\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t";
-const MANY_SPACES: &str =
-    "                                                                                          ";
-
 /// The state for syntax highlighting of one file.
 struct PluginState {
     stack_idents: StackMap,
@@ -85,6 +80,10 @@ impl PluginState {
     }
 
     /// Compute syntax for one line, optionally also accumulating the style spans.
+    ///
+    /// NOTE: `accumulate_spans` should be true if we're doing syntax highlighting,
+    /// and want to update the client. It should be `false` if we need syntax
+    /// infromation for another purpose, such as auto-indent.
     fn compute_syntax(
         &mut self,
         line: &str,
@@ -220,6 +219,9 @@ impl<'a> Syntect<'a> {
         view.schedule_idle();
     }
 
+    /// Returns the metadata relevant to the given line. Computes the syntax
+    /// for this line (during normal editing this is only likely for line 0) if
+    /// necessary; in general reuses the syntax state calculated for highlighting.
     fn get_metadata(&mut self, view: &mut MyView, line: usize) -> Option<ScopedMetadata> {
         // we don't store the state for the first line, so recompute it
         let Syntect { view_state, syntax_set } = self;
@@ -317,8 +319,7 @@ impl<'a> Syntect<'a> {
         let use_spaces = view.get_config().translate_tabs_to_spaces;
         let tab_size = view.get_config().tab_size;
 
-        let indent_text =
-            if use_spaces { &MANY_SPACES[..level] } else { &MANY_TABS[..level / tab_size] };
+        let indent_text = if use_spaces { n_spaces(level) } else { n_tabs(level / tab_size) };
 
         let iv = Interval::new(edit_start, edit_start + edit_len);
         let delta = RopeDelta::simple_edit(iv, indent_text.into(), view.get_buf_size());
@@ -437,4 +438,17 @@ fn main() {
     let syntax_set = SyntaxSet::load_defaults_newlines();
     let mut state = Syntect::new(&syntax_set);
     mainloop(&mut state).unwrap();
+}
+
+fn n_spaces(n: usize) -> &'static str {
+    // when someone opens an issue complaining about this we know we've made it
+    const MAX_SPACES: usize = 160;
+    static MANY_SPACES: [u8; MAX_SPACES] = [b' '; MAX_SPACES];
+    unsafe { ::std::str::from_utf8_unchecked(&MANY_SPACES[..n.min(MAX_SPACES)]) }
+}
+
+fn n_tabs(n: usize) -> &'static str {
+    const MAX_TABS: usize = 40;
+    static MANY_TABS: [u8; MAX_TABS] = [b'\t'; MAX_TABS];
+    unsafe { ::std::str::from_utf8_unchecked(&MANY_TABS[..n.min(MAX_TABS)]) }
 }
