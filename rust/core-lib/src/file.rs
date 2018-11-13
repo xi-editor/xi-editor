@@ -31,6 +31,10 @@ use tabs::BufferId;
 use tabs::OPEN_FILE_EVENT_TOKEN;
 #[cfg(feature = "notify")]
 use watcher::FileWatcher;
+use std::io::Seek;
+use std::io::SeekFrom;
+use xi_rope::tree::Node;
+use file::FileInfo;
 
 const UTF8_BOM: &str = "\u{feff}";
 
@@ -49,6 +53,14 @@ pub struct FileInfo {
     pub path: PathBuf,
     pub mod_time: Option<SystemTime>,
     pub has_changed: bool,
+    #[cfg(feature = "notify")]
+    pub tail_details: TailDetails,
+}
+
+pub struct TailDetails {
+    pub current_postion: i64,
+    pub is_tail_mode_on: bool,
+    pub is_at_bottom_of_file: bool,
 }
 
 pub enum FileError {
@@ -114,7 +126,17 @@ impl FileManager {
             let _ = File::create(path).map_err(|e| FileError::Io(e, path.to_owned()))?;
         }
 
-        let (rope, info) = try_load_file(path)?;
+        let current_file_info = self.get_info(id).unwrap();
+        let is_tail_mode_on = true;
+        let is_at_bottom_of_file = true;
+        let current_postion = 0 as u64;
+
+        let file_details = (Node<N: NodeInfo>, FileInfo);
+        if is_tail_mode_on && is_at_bottom_of_file {
+            let (rope, info) = try_tailing_file(path, current_postion)?;
+        } else {
+            let (rope, info) = try_load_file(path)?;
+        }
 
         self.open_files.insert(path.to_owned(), id);
         if self.file_info.insert(id, info).is_none() {
@@ -179,6 +201,35 @@ impl FileManager {
         }
         Ok(())
     }
+}
+
+fn try_tailing_file<P>(path: P, current_postion: u64) -> Result<(Rope, FileInfo), FileError>
+    where P: AsRef<Path>
+{
+    let mut f = File::open(path.as_ref()).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
+    let mod_time = f.metadata().map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?.modified().ok();
+    f.seek(SeekFrom::Start(current_postion))?;
+
+    let mut bytes = Vec::new();
+    f.read_to_end(&mut bytes).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
+    let new_current_position = current_postion + bytes.len();
+
+    let new_tail_details = TailDetails {
+        current_postion: new_current_position,
+        is_tail_mode_on: true,
+        is_at_bottom_of_file: true,
+    };
+
+    let encoding = CharacterEncoding::guess(&bytes);
+    let rope = try_decode(bytes, encoding, path.as_ref())?;
+    let info = FileInfo {
+        encoding,
+        mod_time,
+        path: path.as_ref().to_owned(),
+        has_changed: false,
+        tail_details: new_tail_details,
+    };
+    Ok((rope, info))
 }
 
 fn try_load_file<P>(path: P) -> Result<(Rope, FileInfo), FileError>

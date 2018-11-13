@@ -7,6 +7,9 @@ description = "Main process for xi-core, based on json-rpc"
 categories = ["text-editors"]
 repository = "https://github.com/google/xi-editor"
 
+[features]
+notify = []
+
 [dependencies]
 serde = "1.0"
 serde_json = "1.0"
@@ -37,3 +40,5 @@ members = [
 
 [profile.bench]
 lto = true
+
+notify = { version = "4.0.0", optional = true }
