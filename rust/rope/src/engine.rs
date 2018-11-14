@@ -670,9 +670,7 @@ impl Engine {
         let delta = Delta::simple_edit(interval_up_to_latest_chunk, rope, insertion_length);
         let (insert_delta, _) = delta.factor();
 
-        let loaded_chunk_rev_id = self.edit_rev(0, 0, last_chunk_rev, (*insert_delta).clone());
-
-        loaded_chunk_rev_id
+        self.edit_rev(0, 0, last_chunk_rev, (*insert_delta).clone())
     }
 }
 
