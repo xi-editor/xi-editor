@@ -361,7 +361,7 @@ impl CoreState {
             Some(p) => self.file_manager.open(p, buffer_id)?,
             None => Rope::from(""),
         };
-        if !self.file_manager.is_file_loaded(&buffer_id) {
+        if !self.file_manager.is_file_loaded(buffer_id) {
             self.peer.schedule_idle(LOADING_FILE_IDLE_TOKEN);
         }
 
@@ -819,7 +819,7 @@ impl CoreState {
 
         loading_files.iter().for_each(|loading_file| {
             let (path_buf, buffer_id) = loading_file;
-            let file_info = self.file_manager.pop_file_info(&buffer_id).unwrap();
+            let file_info = self.file_manager.pop_file_info(*buffer_id).unwrap();
 
             // Keep loading any loaded files
             let mut loaded_state_clone = file_info.loaded_state.try_clone();
@@ -845,7 +845,7 @@ impl CoreState {
                             };
 
                             // Get the new load state in file_info for this buffer_id
-                            self.file_manager.update_file_load_state(file_info, &path_buf, buffer_id, new_load_state);
+                            self.file_manager.update_file_load_state(file_info, &path_buf, *buffer_id, new_load_state);
 
                             if should_continue_loading {
                                 self.peer.schedule_idle(LOADING_FILE_IDLE_TOKEN)

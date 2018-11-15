@@ -57,10 +57,10 @@ impl FileInfo {
         let cloned_loaded_state = self.loaded_state.try_clone()?;
 
         let cloned_file_info = FileInfo {
-            encoding: self.encoding.clone(),
+            encoding: self.encoding,
             path: self.path.clone(),
-            mod_time: self.mod_time.clone(),
-            has_changed: self.has_changed.clone(),
+            mod_time: self.mod_time,
+            has_changed: self.has_changed,
             loaded_state: cloned_loaded_state,
         };
 
@@ -208,9 +208,9 @@ impl FileManager {
     }
 
     fn save_existing(&mut self, path: &Path, text: &Rope, id: BufferId) -> Result<(), FileError> {
-        let prev_path = self.previous_path(&id);
+        let prev_path = self.previous_path(id);
 
-        if !self.is_file_loaded(&id) {
+        if !self.is_file_loaded(id) {
             return Err(FileError::StillLoading(path.to_owned()));
         } else if prev_path != path {
             self.save_new(path, text, id)?;
@@ -228,17 +228,17 @@ impl FileManager {
         Ok(())
     }
 
-    fn previous_path(&self, id: &BufferId) -> PathBuf {
-        let existing_file_info = self.file_info.get(id).unwrap();
+    fn previous_path(&self, id: BufferId) -> PathBuf {
+        let existing_file_info = self.file_info.get(&id).unwrap();
 
         existing_file_info.path.clone()
     }
 
-    pub fn pop_file_info(&mut self, id: &BufferId) -> Option<FileInfo> {
-        self.file_info.remove(id)
+    pub fn pop_file_info(&mut self, id: BufferId) -> Option<FileInfo> {
+        self.file_info.remove(&id)
     }
-    pub fn is_file_loaded(&self, id: &BufferId) -> bool {
-        self.file_info.get(id).iter().any(|file_info| match file_info.loaded_state {
+    pub fn is_file_loaded(&self, id: BufferId) -> bool {
+        self.file_info.get(&id).iter().any(|file_info| match file_info.loaded_state {
             FileLoadState::FullyLoaded => true,
             _ => false,
         })
@@ -247,20 +247,20 @@ impl FileManager {
         &mut self,
         prev_file_info: FileInfo,
         path: &PathBuf,
-        id: &BufferId,
+        id: BufferId,
         new_load_state: FileLoadState,
     ) {
         match new_load_state {
             FileLoadState::FullyLoaded => {
                 // Move this buffer from loading_files to open_files
                 self.loading_files.remove(&path.to_owned());
-                self.open_files.insert(path.to_owned(), id.clone());
+                self.open_files.insert(path.to_owned(), id);
             }
             FileLoadState::Loading { .. } => (),
         };
 
         let new_file_info = FileInfo { loaded_state: new_load_state, ..prev_file_info };
-        self.file_info.insert(id.clone(), new_file_info);
+        self.file_info.insert(id, new_file_info);
     }
 
     pub fn loading_files(&self) -> HashMap<PathBuf, BufferId> {
@@ -457,11 +457,11 @@ impl From<FileError> for RemoteError {
 
 impl FileError {
     fn error_code(&self) -> i64 {
-        match self {
-            &FileError::Io(_, _) => 5,
-            &FileError::UnknownEncoding(_) => 6,
-            &FileError::HasChanged(_) => 7,
-            &FileError::StillLoading(_) => 8,
+        match *self {
+            FileError::Io(_, _) => 5,
+            FileError::UnknownEncoding(_) => 6,
+            FileError::HasChanged(_) => 7,
+            FileError::StillLoading(_) => 8,
         }
     }
 }
