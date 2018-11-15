@@ -711,7 +711,7 @@ impl View {
                 "data": selection_annotations
             },
             {
-                "type": "highlights",
+                "type": "highlight",
                 "n": highlight_annotations.len(),
                 "data": highlight_annotations
             },
