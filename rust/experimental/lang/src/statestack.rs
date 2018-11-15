@@ -119,7 +119,7 @@ impl<T> HolderNewState<T> {
     }
 }
 
-impl<T: Clone> NewState<T> for HolderNewState<T> {
+impl<T: Clone + Debug> NewState<T> for HolderNewState<T> {
     fn new_state(&mut self, _s: State, contents: &[T]) {
         for element in contents {
             self.elements.push(Some(element.clone()))

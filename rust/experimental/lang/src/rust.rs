@@ -44,15 +44,42 @@ impl StateEl {
     /// for reference.
     pub fn as_scopes(&self) -> Vec<String> {
         let scope_strs = match self {
-            StateEl::StrQuote => vec!["string", "quoted", "double", "rust"],
-            StateEl::CharQuote => vec!["string", "quoted", "single", "rust"],
-            StateEl::Comment => vec!["punctuation", "definition", "comment", "rust"],
-            StateEl::CharConst => vec!["constant", "character", "escape", "rust"],
-            StateEl::NumericLiteral => vec!["storage", "type", "numeric", "rust"],
-            StateEl::Invalid => vec!["invalid", "illegal", "rust"],
-            StateEl::Keyword => vec!["keyword", "operator", "rust"],
-            StateEl::Operator => vec!["keyword", "operator", "arithmetic", "rust"],
-            StateEl::PrimType => vec!["entity", "name", "type", "rust"],
+            StateEl::StrQuote => vec![
+                "source.rust",
+                "string.quoted.double.rust"
+            ],
+            StateEl::CharQuote => vec![
+                "source.rust",
+                "string.quoted.single.rust"
+            ],
+            StateEl::Comment => vec![
+                "source.rust",
+                "punctuation.definition.comment.rust"
+            ],
+            StateEl::CharConst => vec![
+                "source.rust",
+                "constant.character.escape.rust"
+            ],
+            StateEl::NumericLiteral => vec![
+                "source.rust",
+                "constant.numeric.integer.decimal.rust"
+            ],
+            StateEl::Invalid => vec![
+                "source.rust",
+                "invalid.illegal.rust"
+            ],
+            StateEl::Keyword => vec![
+                "source.rust",
+                "keyword.operator.rust"
+            ],
+            StateEl::Operator => vec![
+                "source.rust",
+                "keyword.operator.arithmetic.rust"
+            ],
+            StateEl::PrimType => vec![
+                "source.rust",
+                "entity.name.type.rust"
+            ],
         };
 
         scope_strs.iter().map(|it| it.to_string()).collect()

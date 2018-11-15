@@ -21,9 +21,9 @@ extern crate xi_core_lib;
 extern crate xi_rope;
 extern crate xi_trace;
 
-use xi_core_lib::{ConfigTable, ViewId, plugins::rpc::ScopeSpan};
-use xi_plugin_lib::{Cache, CoreProxy, mainloop, Plugin, StateCache, View};
-use xi_rope::{Interval, RopeDelta, spans::SpansBuilder};
+use xi_core_lib::{ConfigTable, LanguageId, ViewId, plugins::rpc::ScopeSpan};
+use xi_plugin_lib::{Cache, mainloop, Plugin, StateCache, View};
+use xi_rope::RopeDelta;
 use xi_trace::{trace, trace_payload, trace_block};
 
 use std::{env, path::Path, collections::HashMap};
@@ -51,10 +51,6 @@ impl LangPlugin {
 
 impl Plugin for LangPlugin {
     type Cache = StateCache<State>;
-
-    fn initialize(&mut self, core: CoreProxy) {
-        //self.do_highlighting(ctx);
-    }
 
     fn update(
         &mut self,
@@ -96,6 +92,15 @@ impl Plugin for LangPlugin {
     }
 
     fn config_changed(&mut self, view: &mut View<Self::Cache>, changes: &ConfigTable) {}
+
+    fn language_changed(&mut self, view: &mut View<<Self as Plugin>::Cache>, old_lang: LanguageId) {
+        let _guard = trace_block("ExperimentalLang::language_changed", &["experimental-lang"]);
+
+        let view_id = view.get_id();
+        if let Some(view_state) = self.view_states.get_mut(&view_id) {
+            view_state.do_highlighting(view);
+        }
+    }
 
     fn idle(&mut self, view: &mut View<Self::Cache>) {
         let view_id = view.get_id();
@@ -144,7 +149,16 @@ impl ViewState {
         }
     }
 
+    fn can_highlight(&self, language_id: &LanguageId) -> bool {
+        language_id.as_ref() == "Rust"
+    }
+
     fn do_highlighting(&mut self, view: &mut View<StateCache<State>>) {
+        if !self.can_highlight(view.get_language_id()) {
+            trace("unsupported language", &["experimental-lang"]);
+            return;
+        }
+
         self.line_num = 0;
         self.offset = 0;
         self.initial_state = State::default();
@@ -194,6 +208,7 @@ impl ViewState {
 
             view.close_frontier();
         }
+
         false
     }
 
@@ -221,9 +236,9 @@ impl ViewState {
 
                     let span = ScopeSpan { start, end, scope_id };
                     self.spans.push(span);
-
-                    i += prevlen;
                 }
+
+                i += prevlen;
             }
 
             let element = self.parser.get_new_state().get_element(s0);
@@ -241,10 +256,10 @@ impl ViewState {
 
                 let span = ScopeSpan { start, end, scope_id };
                 self.spans.push(span);
-
-                i += len;
-                state = s1;
             }
+
+            i += len;
+            state = s1;
         }
 
         state
@@ -253,12 +268,14 @@ impl ViewState {
     fn flush_spans(&mut self, view: &mut View<StateCache<State>>) {
         if !self.new_scopes.is_empty() {
             trace_payload("flushing scopes", &["experimental-lang"], format!("flushing scopes: {:?}", self.new_scopes));
+            eprintln!("flushing scopes: {:?}", self.new_scopes);
             view.add_scopes(&self.new_scopes);
             self.new_scopes.clear();
         }
 
         if self.spans_start != self.offset {
             trace_payload("flushing spans", &["experimental-lang"], format!("flushing spans: {:?}", self.spans));
+            eprintln!("flushing spans: {:?}", self.spans);
             view.update_spans(self.spans_start, self.offset - self.spans_start, &self.spans);
             self.spans.clear();
         }
