@@ -26,7 +26,7 @@ font_face = "Inconsolata"
 font_size = 14
 
 # Automatically match current indentation level on newline.
-auto_indent = false
+auto_indent = true
 
 # Allow scrolling past the last line of a document.
 scroll_past_end = false
