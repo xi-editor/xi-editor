@@ -276,7 +276,9 @@ impl<'a> Syntect<'a> {
         debug_assert!(line > 0);
         let tab_size = view.get_config().tab_size;
         let current_indent = self.indent_level_of_line(view, line);
-        let base_indent = self.indent_level_of_line(view, line - 1);
+        let base_indent = self.previous_nonblank_line(view, line)?
+            .map(|l| self.indent_level_of_line(view, l))
+            .unwrap_or(0);
         let increase_level = self.test_increase(view, line)?;
         let indent_level = if increase_level { base_indent + tab_size } else { base_indent };
         if indent_level != current_indent {
@@ -298,10 +300,18 @@ impl<'a> Syntect<'a> {
         if line == 0 || current_indent == 0 {
             return Ok(());
         }
-        let prev_line = self.previous_nonblank_line(view, line)?;
+        let just_increased = self.test_increase(view, line)?;
         let decrease = self.test_decrease(view, line)?;
+        let prev_line = self.previous_nonblank_line(view, line)?;
+        let mut indent_level = self.indent_level_of_line(view, prev_line);
         if decrease {
-            let indent_level = self.indent_level_of_line(view, prev_line).saturating_sub(tab_size);
+            // the first line after an increase should just match the previous line
+            if !just_increased {
+                indent_level = indent_level.saturating_sub(tab_size);
+            }
+            // we don't want to change indent level if this line doesn't
+            // match `test_decrease`, because the user could have changed
+            // it manually, and we respect that.
             if indent_level != current_indent {
                 return self.set_indent(view, line, indent_level);
             }
@@ -331,8 +341,10 @@ impl<'a> Syntect<'a> {
     /// by testing the _previous_ line against a regex.
     fn test_increase(&mut self, view: &mut MyView, line: usize) -> Result<bool, Error> {
         debug_assert!(line > 0, "increasing indent requires a previous line");
-        let metadata = self.get_metadata(view, line - 1).ok_or_else(|| Error::PeerDisconnect)?;
-        let line = view.get_line(line - 1)?;
+        let prev_line = self.previous_nonblank_line(view, line)?;
+        let metadata = self.get_metadata(view, prev_line)
+            .ok_or_else(|| Error::PeerDisconnect)?;
+        let line = view.get_line(prev_line)?;
         Ok(metadata.increase_indent(line))
     }
 
