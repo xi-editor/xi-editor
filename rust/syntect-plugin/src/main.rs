@@ -276,7 +276,8 @@ impl<'a> Syntect<'a> {
         debug_assert!(line > 0);
         let tab_size = view.get_config().tab_size;
         let current_indent = self.indent_level_of_line(view, line);
-        let base_indent = self.previous_nonblank_line(view, line)?
+        let base_indent = self
+            .previous_nonblank_line(view, line)?
             .map(|l| self.indent_level_of_line(view, l))
             .unwrap_or(0);
         let increase_level = self.test_increase(view, line)?;
@@ -303,7 +304,7 @@ impl<'a> Syntect<'a> {
         let just_increased = self.test_increase(view, line)?;
         let decrease = self.test_decrease(view, line)?;
         let prev_line = self.previous_nonblank_line(view, line)?;
-        let mut indent_level = self.indent_level_of_line(view, prev_line);
+        let mut indent_level = prev_line.map(|l| self.indent_level_of_line(view, l)).unwrap_or(0);
         if decrease {
             // the first line after an increase should just match the previous line
             if !just_increased {
@@ -341,9 +342,12 @@ impl<'a> Syntect<'a> {
     /// by testing the _previous_ line against a regex.
     fn test_increase(&mut self, view: &mut MyView, line: usize) -> Result<bool, Error> {
         debug_assert!(line > 0, "increasing indent requires a previous line");
-        let prev_line = self.previous_nonblank_line(view, line)?;
-        let metadata = self.get_metadata(view, prev_line)
-            .ok_or_else(|| Error::PeerDisconnect)?;
+        let prev_line = match self.previous_nonblank_line(view, line) {
+            Ok(Some(l)) => l,
+            Ok(None) => return Ok(false),
+            Err(e) => return Err(e),
+        };
+        let metadata = self.get_metadata(view, prev_line).ok_or_else(|| Error::PeerDisconnect)?;
         let line = view.get_line(prev_line)?;
         Ok(metadata.increase_indent(line))
     }
@@ -359,17 +363,21 @@ impl<'a> Syntect<'a> {
         Ok(metadata.decrease_indent(line))
     }
 
-    fn previous_nonblank_line(&self, view: &mut MyView, line: usize) -> Result<usize, Error> {
+    fn previous_nonblank_line(
+        &self,
+        view: &mut MyView,
+        line: usize,
+    ) -> Result<Option<usize>, Error> {
         debug_assert!(line > 0);
         let mut line = line;
         while line > 0 {
             line -= 1;
             let text = view.get_line(line)?;
             if !text.bytes().all(|b| b.is_ascii_whitespace()) {
-                return Ok(line);
+                return Ok(Some(line));
             }
         }
-        Err(Error::Other("No nonblank line".into()))
+        Ok(None)
     }
 
     fn indent_level_of_line(&self, view: &mut MyView, line: usize) -> usize {
