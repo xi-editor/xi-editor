@@ -118,12 +118,13 @@ impl FileManager {
             let _ = File::create(path).map_err(|e| FileError::Io(e, path.to_owned()))?;
         }
 
+        //sj_todo following details need to come from RPC
         let current_file_info = self.get_info(id).unwrap();
         let is_tail_mode_on = true;
         let is_at_bottom_of_file = true;
         let current_postion = 0 as u64;
 
-        let file_details = (Node<N: NodeInfo>, FileInfo);
+        //let file_details = (Node<N: NodeInfo>, FileInfo);
         if is_tail_mode_on && is_at_bottom_of_file {
             let (rope, info) = try_tailing_file(path, current_postion)?;
         } else {
@@ -189,33 +190,43 @@ impl FileManager {
     }
 }
 
+/// When tailing a file instead of reading file from beginning, we need to get changes from the end.
+/// This method does that.
 fn try_tailing_file<P>(path: P, current_postion: u64) -> Result<(Rope, FileInfo), FileError>
     where P: AsRef<Path>
 {
     let mut f = File::open(path.as_ref()).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
-    let mod_time = f.metadata().map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?.modified().ok();
-    f.seek(SeekFrom::Start(current_postion))?;
+    let end_postion = f.seek(SeekFrom::End(0))?;
 
-    let mut bytes = Vec::new();
-    f.read_to_end(&mut bytes).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
-    let new_current_position = current_postion + bytes.len();
+    if(end_position > current_postion) {
+        let diff = end_position - current_postion;
 
-    let new_tail_details = TailDetails {
-        current_postion: new_current_position,
-        is_tail_mode_on: true,
-        is_at_bottom_of_file: true,
-    };
+        let mut buf = vec![0; diff as usize];
+        let pos = f.seek(SeekFrom::Current(-(buf.len() as i64))).unwrap();
+        f.read_exact(&mut buf).unwrap();
 
-    let encoding = CharacterEncoding::guess(&bytes);
-    let rope = try_decode(bytes, encoding, path.as_ref())?;
-    let info = FileInfo {
-        encoding,
-        mod_time,
-        path: path.as_ref().to_owned(),
-        has_changed: false,
-        tail_details: new_tail_details,
-    };
-    Ok((rope, info))
+        //sj_todo put new current position in file info
+        let new_current_position = end_position;
+
+        let new_tail_details = TailDetails {
+            current_postion: new_current_position,
+            is_tail_mode_on: true,
+            is_at_bottom_of_file: true,
+        };
+
+        let mod_time = f.metadata().map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?.modified().ok();
+
+        let encoding = CharacterEncoding::guess(&bytes);
+        let rope = try_decode(bytes, encoding, path.as_ref())?;
+        let info = FileInfo {
+            encoding,
+            mod_time,
+            path: path.as_ref().to_owned(),
+            has_changed: false,
+            tail_details: new_tail_details,
+        };
+        Ok((rope, info))
+    }
 }
 
 fn try_load_file<P>(path: P) -> Result<(Rope, FileInfo), FileError>
