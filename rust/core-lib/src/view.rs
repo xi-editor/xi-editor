@@ -678,7 +678,9 @@ impl View {
     }
 
     fn build_selection_annotations(&self, text: &Rope, start: usize, end: usize) -> Vec<Value> {
-        self.selection.regions_in_range(start, end).iter().map(|region| {
+        let start_offset = self.offset_of_line(text, start);
+        let end_offset = self.offset_of_line(text, end);
+        self.selection.regions_in_range(start_offset, end_offset).iter().map(|region| {
             let (start_line, start_col) = self.offset_to_line_col(text, region.min());
             let (end_line, end_col) = self.offset_to_line_col(text, region.max());
             json!({
@@ -690,7 +692,9 @@ impl View {
     fn build_highlight_annotations(&self, text: &Rope, start: usize, end: usize) -> Vec<Value> {
         self.find.iter().flat_map(|find| {
             let query_id = find.id();
-            find.occurrences().regions_in_range(start, end).iter().map(move |region| {
+            let start_offset = self.offset_of_line(text, start);
+            let end_offset = self.offset_of_line(text, end);
+            find.occurrences().regions_in_range(start_offset, end_offset).iter().map(move |region| {
                 let (start_line, start_col) = self.offset_to_line_col(text, region.min());
                 let (end_line, end_col) = self.offset_to_line_col(text, region.max());
                 json!({
