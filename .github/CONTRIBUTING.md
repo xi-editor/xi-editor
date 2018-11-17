@@ -30,7 +30,7 @@ habits of existing contributors. Drop by the #xi-editor stream on
 signup), or the #xi channel on irc.mozilla.org, to follow ongoing discussions or
 ask questions. Clone the repos you're interested in, and make sure you can build
 and run the tests. If you can't, open an issue, and someone will try to help.
-Once you're up and running, there are a a number of ways to participate:
+Once you're up and running, there are a number of ways to participate:
 
 ### Opening issues
 
