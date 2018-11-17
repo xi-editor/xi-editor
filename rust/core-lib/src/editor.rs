@@ -268,13 +268,16 @@ impl Editor {
         let PluginEdit { rev, delta, priority, undo_group, .. } = edit;
         let priority = priority as usize;
         let undo_group = undo_group.unwrap_or_else(|| self.calculate_undo_group());
-        self.engine.edit_rev(priority, undo_group, rev, delta);
-        self.text = self.engine.get_head().clone();
+        match self.engine.try_edit_rev(priority, undo_group, rev, delta) {
+            Err(e) => error!("Error applying plugin edit: {}", e),
+            Ok(_) => self.text = self.engine.get_head().clone(),
+        };
     }
 
     /// Commits the current delta. If the buffer has changed, returns
     /// a 3-tuple containing the delta representing the changes, the previous
-    /// buffer, and a bool indicating whether selections should be preserved.
+    /// buffer, and an `InsertDrift` enum describing the correct selection update
+    /// behaviour.
     pub(crate) fn commit_delta(&mut self) -> Option<(RopeDelta, Rope, InsertDrift)> {
         let _t = trace_block("Editor::commit_delta", &["core"]);
 

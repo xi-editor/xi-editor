@@ -1759,4 +1759,34 @@ mod tests {
         lines.\n\
         And lines |with very different length.");
     }
+
+    #[test]
+    fn test_illegal_plugin_edit() {
+        use xi_rope::DeltaBuilder;
+        use plugins::rpc::{PluginNotification, PluginEdit};
+        use plugins::PluginPid;
+
+        let text = "text";
+        let harness = ContextHarness::new(text);
+        let mut ctx = harness.make_context();
+        let rev_token = ctx.editor.borrow().get_head_rev_token();
+
+        let iv = Interval::new(1, 1);
+        let mut builder = DeltaBuilder::new(0); // wrong length
+        builder.replace(iv, "1".into());
+
+        let edit_one = PluginEdit {
+            rev: rev_token,
+            delta: builder.build(),
+            priority: 55,
+            after_cursor: false,
+            undo_group: None,
+            author: "plugin_one".into(),
+        };
+
+        ctx.do_plugin_cmd(PluginPid(1), PluginNotification::Edit { edit: edit_one });
+        let new_rev_token = ctx.editor.borrow().get_head_rev_token();
+        // no change should be made
+        assert_eq!(rev_token, new_rev_token);
+    }
 }
