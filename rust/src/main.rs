@@ -26,6 +26,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::process;
 
 use xi_core_lib::XiCore;
 use xi_rpc::RpcLoop;
@@ -227,6 +228,9 @@ fn main() {
 
     match rpc_looper.mainloop(|| stdin.lock(), &mut state) {
         Ok(_) => (),
-        Err(err) => error!("xi-core exited with error:\n{:?}", err),
+        Err(err) => {
+            error!("xi-core exited with error:\n{:?}", err);
+            process::exit(1);
+        }
     }
 }
