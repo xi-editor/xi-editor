@@ -19,6 +19,7 @@ use std::ops::Range;
 
 use serde_json::Value;
 
+use crate::annotations::Annotation;
 use crate::client::{Client, Update, UpdateOp};
 use crate::edit_types::ViewEvent;
 use crate::find::{Find, FindStatus};
@@ -707,19 +708,35 @@ impl View {
         }).collect::<Vec<Value>>()
     }
 
-    fn build_update_annotation(&self, selection_annotations: Vec<Value>, highlight_annotations: Vec<Value>) -> Value {
-        json!([
-            {
-                "type": "selection",
-                "n": selection_annotations.len(),
-                "data": selection_annotations
-            },
-            {
-                "type": "highlight",
-                "n": highlight_annotations.len(),
-                "data": highlight_annotations
-            },
-        ])
+    fn build_update_annotation(
+        &self,
+        text: &Rope,
+        annotations: Vec<Value>,
+        start: usize,
+        end: usize
+    ) -> Value {
+        let annotations_in_range = annotations.subseq(Interval::new(start, end));
+
+        for (iv, annotation) in annotations_in_range.iter() {
+            let (start_line, start_col) = self.offset_to_line_col(text, iv.start());
+            let (end_line, end_col) = self.offset_to_line_col(text, iv.end());
+            let metadata = annotation.to_json();
+        }
+
+        json!([])
+
+//        json!([
+//            {
+//                "type": "selection",
+//                "n": selection_annotations.len(),
+//                "data": selection_annotations
+//            },
+//            {
+//                "type": "highlight",
+//                "n": highlight_annotations.len(),
+//                "data": highlight_annotations
+//            },
+//        ])
     }
 
     fn send_update_for_plan(
@@ -728,6 +745,7 @@ impl View {
         client: &Client,
         styles: &StyleMap,
         style_spans: &Spans<Style>,
+        annotations: &Spans<Annotation>,
         plan: &RenderPlan,
         pristine: bool,
     ) {
@@ -738,6 +756,7 @@ impl View {
         // send updated find status only if there have been changes
         if self.find_changed != FindStatusChange::None {
             let matches_only = self.find_changed == FindStatusChange::Matches;
+            // todo: invalidate and update annotations
             client.find_status(self.view_id, &json!(self.find_status(text, matches_only)));
         }
 
@@ -814,12 +833,10 @@ impl View {
             }
         }
 
-        let last_line = self.first_line + self.height - 1;
-        let selection_annotations = self.build_selection_annotations(text, self.first_line, last_line);
-        let highlight_annotations = self.build_highlight_annotations(text, self.first_line, last_line);
+        let end = self.first_line + self.height - 1;
 
         let params = json!({
-            "annotations": self.build_update_annotation(selection_annotations, highlight_annotations),
+            "annotations": self.build_update_annotation(text, annotations, self.first_line, end),
             "ops": ops,
             "pristine": pristine,
         });
@@ -852,11 +869,12 @@ impl View {
         client: &Client,
         styles: &StyleMap,
         style_spans: &Spans<Style>,
+        annotations: &Spans<Annotation>,
         pristine: bool,
     ) {
         let height = self.line_of_offset(text, text.len()) + 1;
         let plan = RenderPlan::create(height, self.first_line, self.height);
-        self.send_update_for_plan(text, client, styles, style_spans, &plan, pristine);
+        self.send_update_for_plan(text, client, styles, style_spans, annotations, &plan, pristine);
         if let Some(new_scroll_pos) = self.scroll_to.take() {
             let (line, col) = self.offset_to_line_col(text, new_scroll_pos);
             client.scroll_to(self.view_id, line, col);
@@ -870,6 +888,7 @@ impl View {
         client: &Client,
         styles: &StyleMap,
         style_spans: &Spans<Style>,
+        annotations: &Spans<Annotation>,
         first_line: usize,
         last_line: usize,
         pristine: bool,
@@ -877,7 +896,7 @@ impl View {
         let height = self.line_of_offset(text, text.len()) + 1;
         let mut plan = RenderPlan::create(height, self.first_line, self.height);
         plan.request_lines(first_line, last_line);
-        self.send_update_for_plan(text, client, styles, style_spans, &plan, pristine);
+        self.send_update_for_plan(text, client, styles, style_spans, annotations, &plan, pristine);
     }
 
     /// Invalidates front-end's entire line cache, forcing a full render at the next

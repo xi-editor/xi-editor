@@ -66,6 +66,7 @@ mod ledger_includes {
 #[cfg(feature = "ledger")]
 use ledger_includes::*;
 
+pub mod annotations;
 pub mod backspace;
 pub mod client;
 pub mod config;
