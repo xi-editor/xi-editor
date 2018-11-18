@@ -358,12 +358,15 @@ impl CoreState {
         let buffer_id = self.next_buffer_id();
 
         let rope = match path.as_ref() {
-            Some(p) => self.file_manager.open(p, buffer_id)?,
+            Some(p) => {
+                let open_file_rope = self.file_manager.open(p, buffer_id)?;
+                if !self.file_manager.is_file_loaded(buffer_id) {
+                    self.peer.schedule_idle(LOADING_FILE_IDLE_TOKEN);
+                }
+                open_file_rope
+            }
             None => Rope::from(""),
         };
-        if !self.file_manager.is_file_loaded(buffer_id) {
-            self.peer.schedule_idle(LOADING_FILE_IDLE_TOKEN);
-        }
 
         let editor = RefCell::new(Editor::with_text(rope));
         let view = RefCell::new(View::new(view_id, buffer_id));
