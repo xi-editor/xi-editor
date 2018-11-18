@@ -35,7 +35,9 @@ use watcher::FileWatcher;
 use std::io::Seek;
 use std::io::SeekFrom;
 use xi_rope::tree::Node;
-use file::FileInfo;
+
+//sj_todo why was this imported to begin with?
+//use file::FileInfo;
 
 const UTF8_BOM: &str = "\u{feff}";
 
@@ -58,8 +60,9 @@ pub struct FileInfo {
     pub tail_details: TailDetails,
 }
 
+#[derive(Debug)]
 pub struct TailDetails {
-    pub current_postion: i64,
+    pub current_position_in_tail: u64,
     pub is_tail_mode_on: bool,
     pub is_at_bottom_of_file: bool,
 }
@@ -96,6 +99,13 @@ impl FileManager {
         self.file_info.get(&id)
     }
 
+    pub fn get_current_position_in_tail(&self, id: &BufferId) -> u64 {
+        match self.file_info.get(id) {
+            Some(V) => V.tail_details.current_position_in_tail,
+            None => 0
+        }
+    }
+
     pub fn get_editor(&self, path: &Path) -> Option<BufferId> {
         self.open_files.get(path).cloned()
     }
@@ -119,24 +129,30 @@ impl FileManager {
         }
 
         //sj_todo following details need to come from RPC
-        let current_file_info = self.get_info(id).unwrap();
         let is_tail_mode_on = true;
         let is_at_bottom_of_file = true;
-        let current_postion = 0 as u64;
+        let current_position = self.get_current_position_in_tail(&id);
 
-        //let file_details = (Node<N: NodeInfo>, FileInfo);
         if is_tail_mode_on && is_at_bottom_of_file {
-            let (rope, info) = try_tailing_file(path, current_postion)?;
+            let (rope, info) = try_tailing_file(path, current_position)?;
+
+            self.open_files.insert(path.to_owned(), id);
+            if self.file_info.insert(id, info).is_none() {
+                #[cfg(feature = "notify")]
+                    self.watcher.watch(path, false, OPEN_FILE_EVENT_TOKEN);
+            }
+            Ok(rope)
         } else {
             let (rope, info) = try_load_file(path)?;
-        }
 
-        self.open_files.insert(path.to_owned(), id);
-        if self.file_info.insert(id, info).is_none() {
-            #[cfg(feature = "notify")]
-            self.watcher.watch(path, false, OPEN_FILE_EVENT_TOKEN);
+
+            self.open_files.insert(path.to_owned(), id);
+            if self.file_info.insert(id, info).is_none() {
+                #[cfg(feature = "notify")]
+                    self.watcher.watch(path, false, OPEN_FILE_EVENT_TOKEN);
+            }
+            Ok(rope)
         }
-        Ok(rope)
     }
 
     pub fn close(&mut self, id: BufferId) {
@@ -159,12 +175,23 @@ impl FileManager {
     fn save_new(&mut self, path: &Path, text: &Rope, id: BufferId) -> Result<(), FileError> {
         try_save(path, text, CharacterEncoding::Utf8)
             .map_err(|e| FileError::Io(e, path.to_owned()))?;
+
+        #[cfg(feature = "notify")]
+        let new_tail_details = TailDetails {
+            current_position_in_tail: 0,
+            is_tail_mode_on: false,
+            is_at_bottom_of_file: false,
+        };
+
         let info = FileInfo {
             encoding: CharacterEncoding::Utf8,
             path: path.to_owned(),
             mod_time: get_mod_time(path),
             has_changed: false,
+            #[cfg(feature = "notify")]
+            tail_details: new_tail_details,
         };
+
         self.open_files.insert(path.to_owned(), id);
         self.file_info.insert(id, info);
         #[cfg(feature = "notify")]
@@ -196,37 +223,36 @@ fn try_tailing_file<P>(path: P, current_postion: u64) -> Result<(Rope, FileInfo)
     where P: AsRef<Path>
 {
     let mut f = File::open(path.as_ref()).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
-    let end_postion = f.seek(SeekFrom::End(0))?;
+    let end_position = f.seek(SeekFrom::End(0)).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
 
-    if(end_position > current_postion) {
-        let diff = end_position - current_postion;
+    let diff = end_position - current_postion;
 
-        let mut buf = vec![0; diff as usize];
-        let pos = f.seek(SeekFrom::Current(-(buf.len() as i64))).unwrap();
-        f.read_exact(&mut buf).unwrap();
+    //sj_todo do we need to check if end_position > current_position?
 
-        //sj_todo put new current position in file info
-        let new_current_position = end_position;
+    let mut buf = vec![0; diff as usize];
+    let pos = f.seek(SeekFrom::Current(-(buf.len() as i64))).unwrap();
+    f.read_exact(&mut buf).unwrap();
 
-        let new_tail_details = TailDetails {
-            current_postion: new_current_position,
-            is_tail_mode_on: true,
-            is_at_bottom_of_file: true,
-        };
+    let new_current_position = end_position;
 
-        let mod_time = f.metadata().map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?.modified().ok();
+    let new_tail_details = TailDetails {
+        current_position_in_tail: new_current_position,
+        is_tail_mode_on: true,
+        is_at_bottom_of_file: true,
+    };
 
-        let encoding = CharacterEncoding::guess(&bytes);
-        let rope = try_decode(bytes, encoding, path.as_ref())?;
-        let info = FileInfo {
-            encoding,
-            mod_time,
-            path: path.as_ref().to_owned(),
-            has_changed: false,
-            tail_details: new_tail_details,
-        };
-        Ok((rope, info))
-    }
+    let mod_time = f.metadata().map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?.modified().ok();
+
+    let encoding = CharacterEncoding::guess(&buf);
+    let rope = try_decode(buf, encoding, path.as_ref())?;
+    let info = FileInfo {
+        encoding,
+        mod_time,
+        path: path.as_ref().to_owned(),
+        has_changed: false,
+        tail_details: new_tail_details,
+    };
+    Ok((rope, info))
 }
 
 fn try_load_file<P>(path: P) -> Result<(Rope, FileInfo), FileError>
@@ -244,7 +270,20 @@ where
 
     let encoding = CharacterEncoding::guess(&bytes);
     let rope = try_decode(bytes, encoding, path.as_ref())?;
-    let info = FileInfo { encoding, mod_time, path: path.as_ref().to_owned(), has_changed: false };
+
+    #[cfg(feature = "notify")]
+    let unchanged_tail_details = TailDetails {
+        current_position_in_tail: 0,
+        is_tail_mode_on: false,
+        is_at_bottom_of_file: false,
+    };
+
+    let info = FileInfo {
+        encoding, mod_time,
+        path: path.as_ref().to_owned(),
+        has_changed: false,
+        #[cfg(feature = "notify")]
+        tail_details: unchanged_tail_details };
     Ok((rope, info))
 }
 
