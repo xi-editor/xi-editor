@@ -37,5 +37,5 @@ pub fn current_pid() -> u64 {
         fn GetCurrentProcessId() -> libc::c_ulong;
     }
 
-    unsafe { GetCurrentProcessId() as u64 }
+    unsafe { u64::from(GetCurrentProcessId()) as u64 }
 }

@@ -86,5 +86,5 @@ pub fn current_tid() -> Result<u64, libc::c_int> {
         fn GetCurrentThreadId() -> libc::c_ulong;
     }
 
-    unsafe { Ok(GetCurrentThreadId() as u64) }
+    unsafe { Ok(u64::from(GetCurrentProcessId())) as u64) }
 }
