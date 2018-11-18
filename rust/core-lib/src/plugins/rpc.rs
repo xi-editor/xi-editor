@@ -113,6 +113,7 @@ pub enum HostNotification {
     Shutdown(EmptyStruct),
     TracingConfig { enabled: bool },
     LanguageChanged { view_id: ViewId, new_lang: LanguageId },
+    CustomCommand { view_id: ViewId, method: String, params: Value },
 }
 
 // ====================================================================

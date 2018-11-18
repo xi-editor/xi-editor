@@ -22,19 +22,21 @@ extern crate xi_trace;
 
 mod stackmap;
 
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::MutexGuard;
 
 use xi_core::plugin_rpc::ScopeSpan;
 use xi_core::{ConfigTable, LanguageId, ViewId};
-use xi_plugin_lib::{mainloop, Cache, Plugin, StateCache, View};
-use xi_rope::{DeltaBuilder, Interval, RopeDelta};
+use xi_plugin_lib::{mainloop, Cache, Error, Plugin, StateCache, View};
+use xi_rope::{Interval, RopeDelta};
 use xi_trace::{trace, trace_block};
 
+use syntect::parsing::{
+    ParseState, ScopeRepository, ScopeStack, ScopedMetadata, SyntaxSet, SCOPE_REPO,
+};
+
 use stackmap::{LookupResult, StackMap};
-use syntect::parsing::{ParseState, ScopeRepository, ScopeStack, SyntaxSet, SCOPE_REPO};
 
 const LINES_PER_RPC: usize = 10;
 const INDENTATION_PRIORITY: u64 = 100;
@@ -77,12 +79,17 @@ impl PluginState {
         }
     }
 
-    // compute syntax for one line, also accumulating the style spans
+    /// Compute syntax for one line, optionally also accumulating the style spans.
+    ///
+    /// NOTE: `accumulate_spans` should be true if we're doing syntax highlighting,
+    /// and want to update the client. It should be `false` if we need syntax
+    /// infromation for another purpose, such as auto-indent.
     fn compute_syntax(
         &mut self,
         line: &str,
         state: LineState,
         syntax_set: &SyntaxSet,
+        accumulate_spans: bool,
     ) -> LineState {
         let (mut parse_state, mut scope_state) =
             state.or_else(|| self.initial_state.clone()).unwrap();
@@ -95,7 +102,7 @@ impl PluginState {
                 let scope_id = self.identifier_for_stack(&scope_state, &repo);
                 let start = self.offset - self.spans_start + prev_cursor;
                 let end = start + (cursor - prev_cursor);
-                if start != end {
+                if accumulate_spans && start != end {
                     let span = ScopeSpan { start, end, scope_id };
                     self.spans.push(span);
                 }
@@ -103,12 +110,15 @@ impl PluginState {
             prev_cursor = cursor;
             scope_state.apply(&batch);
         }
-        // add span for final state
-        let start = self.offset - self.spans_start + prev_cursor;
-        let end = start + (line.len() - prev_cursor);
-        let scope_id = self.identifier_for_stack(&scope_state, &repo);
-        let span = ScopeSpan { start, end, scope_id };
-        self.spans.push(span);
+
+        if accumulate_spans {
+            // add span for final state
+            let start = self.offset - self.spans_start + prev_cursor;
+            let end = start + (line.len() - prev_cursor);
+            let scope_id = self.identifier_for_stack(&scope_state, &repo);
+            let span = ScopeSpan { start, end, scope_id };
+            self.spans.push(span);
+        }
         Some((parse_state, scope_state))
     }
 
@@ -127,7 +137,6 @@ impl PluginState {
         }
     }
 
-    #[allow(unused)]
     // Return true if there's any more work to be done.
     fn highlight_one_line(&mut self, ctx: &mut MyView, syntax_set: &SyntaxSet) -> bool {
         if let Some(line_num) = ctx.get_frontier() {
@@ -140,7 +149,7 @@ impl PluginState {
             let new_frontier = match ctx.get_line(line_num) {
                 Ok("") => None,
                 Ok(s) => {
-                    let new_state = self.compute_syntax(s, state, syntax_set);
+                    let new_state = self.compute_syntax(s, state, syntax_set, true);
                     self.offset += s.len();
                     if s.as_bytes().last() == Some(&b'\n') {
                         Some((new_state, line_num + 1))
@@ -210,82 +219,175 @@ impl<'a> Syntect<'a> {
         view.schedule_idle();
     }
 
-    /// Checks if a newline has been inserted, and if so inserts whitespace
-    /// as necessary.
-    fn do_indentation(&mut self, view: &mut MyView, start: usize, end: usize, text: &str) {
-        let _t = trace_block("PluginState::do_indentation", &["syntect"]);
-        // don't touch indentation if this is not a simple edit
-        if end != start {
-            return;
+    /// Returns the metadata relevant to the given line. Computes the syntax
+    /// for this line (during normal editing this is only likely for line 0) if
+    /// necessary; in general reuses the syntax state calculated for highlighting.
+    fn get_metadata(&mut self, view: &mut MyView, line: usize) -> Option<ScopedMetadata> {
+        // we don't store the state for the first line, so recompute it
+        let Syntect { view_state, syntax_set } = self;
+        if line == 0 {
+            let view_id = view.get_id();
+            let text = view.get_line(0).unwrap_or("");
+            let scope = view_state
+                .get_mut(&view_id)
+                .and_then(|state| state.compute_syntax(&text, None, syntax_set, false))
+                .map(|(_, scope)| scope)?;
+            Some(syntax_set.metadata().metadata_for_scope(scope.as_slice()))
+        } else {
+            let scope = view.get(line)?;
+            scope
+                .as_ref()
+                .map(|(_, scope)| syntax_set.metadata().metadata_for_scope(scope.as_slice()))
         }
+    }
 
-        let line_ending = view.get_config().line_ending.clone();
-        let is_newline = line_ending == text;
-
-        if is_newline {
-            let line_num = view.line_of_offset(start).unwrap();
-
-            let use_spaces = view.get_config().translate_tabs_to_spaces;
-            let tab_size = view.get_config().tab_size;
-            let buf_size = view.get_buf_size();
-
-            let result = if let Ok(line) = view.get_line(line_num) {
-                // do not send update if last line is empty string (contains only line ending)
-                if line == line_ending {
-                    return;
+    /// Checks for possible autoindent changes after an appropriate edit.
+    fn consider_indentation(&mut self, view: &mut MyView, delta: &RopeDelta, edit_type: &str) {
+        for region in delta.iter_inserts() {
+            let line_of_edit = view.line_of_offset(region.new_offset).unwrap();
+            let result = match edit_type {
+                "newline" => self.autoindent_line(view, line_of_edit + 1),
+                "insert" => {
+                    let range = region.new_offset..region.new_offset + region.len;
+                    let is_whitespace = {
+                        let insert_region =
+                            view.get_region(range).expect("view must return region");
+                        insert_region.as_bytes().iter().all(u8::is_ascii_whitespace)
+                    };
+                    if !is_whitespace {
+                        self.check_indent_active_edit(view, line_of_edit)
+                    } else {
+                        Ok(())
+                    }
                 }
-
-                let indent = self.indent_for_next_line(line, use_spaces, tab_size);
-                let ix = start + text.len();
-                let interval = Interval::new(ix, ix);
-                //TODO: view should have a `get_edit_builder` fn?
-                let mut builder = DeltaBuilder::new(buf_size);
-                builder.replace(interval, indent.into());
-
-                let delta = builder.build();
-                Some(delta)
-            } else {
-                None
+                other => panic!("unexpected edit_type {}", other),
             };
 
-            if let Some(delta) = result {
-                view.edit(delta, INDENTATION_PRIORITY, false, false, String::from("syntect"));
+            if let Err(e) = result {
+                eprintln!("error in autoindent {:?}", e);
             }
         }
     }
 
-    /// Returns the string which should be inserted after the newline
-    /// to achieve the desired indentation level.
-    fn indent_for_next_line<'b>(
-        &self,
-        prev_line: &'b str,
-        use_spaces: bool,
-        tab_size: usize,
-    ) -> Cow<'b, str> {
-        let leading_ws = prev_line
-            .char_indices()
-            .find(|&(_, c)| !c.is_whitespace())
-            .or_else(|| prev_line.char_indices().last())
-            .map(|(idx, _)| unsafe { prev_line.get_unchecked(0..idx) })
-            .unwrap_or("");
-
-        if self.increase_indentation(prev_line) {
-            let indent_text =
-                if use_spaces { &"                                    "[..tab_size] } else { "\t" };
-            format!("{}{}", leading_ws, indent_text).into()
+    /// Called when freshly computing a line's indent level, such as after
+    /// a newline, or when reindenting a block.
+    fn autoindent_line(&mut self, view: &mut MyView, line: usize) -> Result<(), Error> {
+        let _t = trace_block("Syntect::autoindent", &["syntect"]);
+        debug_assert!(line > 0);
+        let tab_size = view.get_config().tab_size;
+        let current_indent = self.indent_level_of_line(view, line);
+        let base_indent = self
+            .previous_nonblank_line(view, line)?
+            .map(|l| self.indent_level_of_line(view, l))
+            .unwrap_or(0);
+        let increase_level = self.test_increase(view, line)?;
+        let indent_level = if increase_level { base_indent + tab_size } else { base_indent };
+        if indent_level != current_indent {
+            self.set_indent(view, line, indent_level)
         } else {
-            leading_ws.into()
+            Ok(())
         }
     }
 
-    /// Checks if the indent level should be increased.
-    fn increase_indentation(&self, prev_line: &str) -> bool {
-        let trailing_char = prev_line.trim_right().chars().rev().next().unwrap_or(' ');
-        // very naive heuristic for modifying indentation level.
-        match trailing_char {
-            '{' | ':' => true,
-            _ => false,
+    /// Called when actviely editing a line; cheifly checks for whether or not
+    /// the current line should be de-indented, such as after a closeing '}'.
+    fn check_indent_active_edit(&mut self, view: &mut MyView, line: usize) -> Result<(), Error> {
+        let _t = trace_block("Syntect::check_indent_active_line", &["syntect"]);
+        if line == 0 {
+            return Ok(());
         }
+        let tab_size = view.get_config().tab_size;
+        let current_indent = self.indent_level_of_line(view, line);
+        if line == 0 || current_indent == 0 {
+            return Ok(());
+        }
+        let just_increased = self.test_increase(view, line)?;
+        let decrease = self.test_decrease(view, line)?;
+        let prev_line = self.previous_nonblank_line(view, line)?;
+        let mut indent_level = prev_line.map(|l| self.indent_level_of_line(view, l)).unwrap_or(0);
+        if decrease {
+            // the first line after an increase should just match the previous line
+            if !just_increased {
+                indent_level = indent_level.saturating_sub(tab_size);
+            }
+            // we don't want to change indent level if this line doesn't
+            // match `test_decrease`, because the user could have changed
+            // it manually, and we respect that.
+            if indent_level != current_indent {
+                return self.set_indent(view, line, indent_level);
+            }
+        }
+        Ok(())
+    }
+
+    fn set_indent(&self, view: &mut MyView, line: usize, level: usize) -> Result<(), Error> {
+        let edit_start = view.offset_of_line(line)?;
+        let edit_len = {
+            let line = view.get_line(line)?;
+            line.as_bytes().iter().take_while(|b| **b == b' ' || **b == b'\t').count()
+        };
+
+        let use_spaces = view.get_config().translate_tabs_to_spaces;
+        let tab_size = view.get_config().tab_size;
+
+        let indent_text = if use_spaces { n_spaces(level) } else { n_tabs(level / tab_size) };
+
+        let iv = Interval::new(edit_start, edit_start + edit_len);
+        let delta = RopeDelta::simple_edit(iv, indent_text.into(), view.get_buf_size());
+        view.edit(delta, INDENTATION_PRIORITY, false, false, String::from("syntect"));
+        Ok(())
+    }
+
+    /// Test whether the indent level should be increased for this line,
+    /// by testing the _previous_ line against a regex.
+    fn test_increase(&mut self, view: &mut MyView, line: usize) -> Result<bool, Error> {
+        debug_assert!(line > 0, "increasing indent requires a previous line");
+        let prev_line = match self.previous_nonblank_line(view, line) {
+            Ok(Some(l)) => l,
+            Ok(None) => return Ok(false),
+            Err(e) => return Err(e),
+        };
+        let metadata = self.get_metadata(view, prev_line).ok_or_else(|| Error::PeerDisconnect)?;
+        let line = view.get_line(prev_line)?;
+        Ok(metadata.increase_indent(line))
+    }
+
+    /// Test whether the indent level for this line should be decreased, by
+    /// checking this line against a regex.
+    fn test_decrease(&mut self, view: &mut MyView, line: usize) -> Result<bool, Error> {
+        if line == 0 {
+            return Ok(false);
+        }
+        let metadata = self.get_metadata(view, line).ok_or_else(|| Error::PeerDisconnect)?;
+        let line = view.get_line(line)?;
+        Ok(metadata.decrease_indent(line))
+    }
+
+    fn previous_nonblank_line(
+        &self,
+        view: &mut MyView,
+        line: usize,
+    ) -> Result<Option<usize>, Error> {
+        debug_assert!(line > 0);
+        let mut line = line;
+        while line > 0 {
+            line -= 1;
+            let text = view.get_line(line)?;
+            if !text.bytes().all(|b| b.is_ascii_whitespace()) {
+                return Ok(Some(line));
+            }
+        }
+        Ok(None)
+    }
+
+    fn indent_level_of_line(&self, view: &mut MyView, line: usize) -> usize {
+        let tab_size = view.get_config().tab_size;
+        let line = view.get_line(line).unwrap_or("");
+        line.as_bytes()
+            .iter()
+            .take_while(|b| **b == b' ' || **b == b'\t')
+            .map(|b| if b == &b' ' { 1 } else { tab_size })
+            .sum()
     }
 }
 
@@ -319,20 +421,18 @@ impl<'a> Plugin for Syntect<'a> {
         &mut self,
         view: &mut View<Self::Cache>,
         delta: Option<&RopeDelta>,
-        _edit_type: String,
-        _author: String,
+        edit_type: String,
+        author: String,
     ) {
         let _t = trace_block("Syntect::update", &["syntect"]);
         view.schedule_idle();
         let should_auto_indent = view.get_config().auto_indent;
-        if !should_auto_indent {
-            return;
-        }
-        if let Some(delta) = delta {
-            let (iv, _) = delta.summary();
-            if let Some(s) = delta.as_simple_insert() {
-                let s: String = s.into();
-                self.do_indentation(view, iv.start(), iv.end(), &s);
+        if should_auto_indent
+            && author == "core"
+            && (edit_type == "newline" || edit_type == "insert")
+        {
+            if let Some(delta) = delta {
+                self.consider_indentation(view, delta, &edit_type);
             }
         }
     }
@@ -358,4 +458,17 @@ fn main() {
     let syntax_set = SyntaxSet::load_defaults_newlines();
     let mut state = Syntect::new(&syntax_set);
     mainloop(&mut state).unwrap();
+}
+
+fn n_spaces(n: usize) -> &'static str {
+    // when someone opens an issue complaining about this we know we've made it
+    const MAX_SPACES: usize = 160;
+    static MANY_SPACES: [u8; MAX_SPACES] = [b' '; MAX_SPACES];
+    unsafe { ::std::str::from_utf8_unchecked(&MANY_SPACES[..n.min(MAX_SPACES)]) }
+}
+
+fn n_tabs(n: usize) -> &'static str {
+    const MAX_TABS: usize = 40;
+    static MANY_TABS: [u8; MAX_TABS] = [b'\t'; MAX_TABS];
+    unsafe { ::std::str::from_utf8_unchecked(&MANY_TABS[..n.min(MAX_TABS)]) }
 }
