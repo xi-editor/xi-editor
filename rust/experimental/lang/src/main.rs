@@ -21,18 +21,20 @@ extern crate xi_core_lib;
 extern crate xi_rope;
 extern crate xi_trace;
 
-use xi_core_lib::{ConfigTable, LanguageId, ViewId, plugins::rpc::ScopeSpan};
-use xi_plugin_lib::{Cache, mainloop, Plugin, StateCache, View};
+use xi_core_lib::{ConfigTable, LanguageId, plugins::rpc::ScopeSpan, ViewId};
+use xi_plugin_lib::{mainloop, Plugin, StateCache, View};
 use xi_rope::RopeDelta;
-use xi_trace::{trace, trace_payload, trace_block};
+use xi_trace::{trace, trace_block, trace_payload};
 
-use std::{env, path::Path, collections::HashMap};
+use std::{collections::HashMap, env, path::Path};
 
 use rust::{RustParser, StateEl};
 use statestack::{HolderNewState, State};
+use tracker::{ElementTracker, LookupResult};
 
 mod peg;
 mod rust;
+mod tracker;
 mod statestack;
 
 const LINES_PER_RPC: usize = 50;
@@ -55,19 +57,15 @@ impl Plugin for LangPlugin {
     fn update(
         &mut self,
         view: &mut View<Self::Cache>,
-        delta: Option<&RopeDelta>,
-        edit_type: String,
-        author: String,
+        _delta: Option<&RopeDelta>,
+        _edit_type: String,
+        _author: String,
     ) {
         let _guard = trace_block("ExperimentalLang::update", &["experimental-lang"]);
-
-        let view_id = view.get_id();
-        if let Some(view_state) = self.view_states.get_mut(&view_id) {
-            view_state.do_highlighting(view);
-        }
+        view.schedule_idle();
     }
 
-    fn did_save(&mut self, view: &mut View<Self::Cache>, old_path: Option<&Path>) {
+    fn did_save(&mut self, view: &mut View<Self::Cache>, _old_path: Option<&Path>) {
         let _guard = trace_block("ExperimentalLang::did_save", &["experimental-lang"]);
 
         let view_id = view.get_id();
@@ -91,9 +89,9 @@ impl Plugin for LangPlugin {
         self.view_states.insert(view_id, view_state);
     }
 
-    fn config_changed(&mut self, view: &mut View<Self::Cache>, changes: &ConfigTable) {}
+    fn config_changed(&mut self, _view: &mut View<Self::Cache>, _changes: &ConfigTable) {}
 
-    fn language_changed(&mut self, view: &mut View<<Self as Plugin>::Cache>, old_lang: LanguageId) {
+    fn language_changed(&mut self, view: &mut View<<Self as Plugin>::Cache>, _old_lang: LanguageId) {
         let _guard = trace_block("ExperimentalLang::language_changed", &["experimental-lang"]);
 
         let view_id = view.get_id();
@@ -169,7 +167,7 @@ impl ViewState {
 
     fn highlight_one_line(&mut self, view: &mut View<StateCache<State>>) -> bool {
         if let Some(line_num) = view.get_frontier() {
-            let (line_num, offset, state) = view.get_prev(line_num);
+            let (line_num, offset, _state) = view.get_prev(line_num);
 
             if offset != self.offset {
                 self.flush_spans(view);
@@ -179,10 +177,11 @@ impl ViewState {
 
             let new_frontier = match view.get_line(line_num) {
                 Ok("") => None,
-                Ok(s) => {
-                    let new_state = self.compute_syntax(s);
-                    self.offset += s.len();
-                    if s.as_bytes().last() == Some(&b'\n') {
+                Ok(line) => {
+                    let new_state = self.compute_syntax(line);
+                    self.offset += line.len();
+
+                    if line.as_bytes().last() == Some(&b'\n') {
                         Some((new_state, line_num + 1))
                     } else {
                         None
@@ -265,6 +264,17 @@ impl ViewState {
         state
     }
 
+    #[allow(unused)]
+    fn identifier_for_element(&mut self, element: &StateEl) -> u32 {
+        match self.tracker.lookup(element) {
+            LookupResult::Existing(id) => id,
+            LookupResult::New(id) => {
+                self.new_scopes.push(element.as_scopes());
+                id
+            }
+        }
+    }
+
     fn flush_spans(&mut self, view: &mut View<StateCache<State>>) {
         if !self.new_scopes.is_empty() {
             trace_payload("flushing scopes", &["experimental-lang"], format!("flushing scopes: {:?}", self.new_scopes));
@@ -282,31 +292,6 @@ impl ViewState {
 
         self.spans_start = self.offset;
     }
-}
-
-#[derive(Default)]
-struct ElementTracker {
-    elements: HashMap<StateEl, u32>,
-    next_id: u32
-}
-
-impl ElementTracker {
-    fn lookup(&mut self, element: &StateEl) -> LookupResult {
-        if let Some(id) = self.elements.get(element) {
-            return LookupResult::Existing(*id);
-        }
-
-        let old_id = self.next_id;
-        self.next_id += 1;
-
-        self.elements.insert(element.clone(), old_id);
-        LookupResult::New(old_id)
-    }
-}
-
-enum LookupResult {
-    Existing(u32),
-    New(u32)
 }
 
 fn main() {
