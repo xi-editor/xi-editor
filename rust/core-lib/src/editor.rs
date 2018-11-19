@@ -297,7 +297,8 @@ impl Editor {
         // Surround adds characters on either side of a selection, that's why it's an Outside edit.
         let drift = match self.this_edit_type {
             EditType::Transpose => InsertDrift::Inside,
-            EditType::Surround => InsertDrift::Outside,
+            EditType::Surround | EditType::MoveLineDown => InsertDrift::Outside,
+            EditType::MoveLineUp => InsertDrift::OutsideCaret,
             _ => InsertDrift::Default,
         };
         self.layers.update_all(&delta);
@@ -552,8 +553,10 @@ impl Editor {
         for (start_line, end_line) in to_move {
             let last_line = view.line_of_offset(&self.text, self.text.len());
             // don't move if first line
-            if start_line == 0 { continue }
-             // line to swap moved lines/regions with
+            if start_line == 0 {
+                continue;
+            }
+            // line to swap moved lines/regions with
             let swap_line = start_line - 1;
             let (swap_start, swap_end) = view.get_line_offset(&self.text, swap_line);
 
@@ -566,11 +569,12 @@ impl Editor {
             // adjusts newline character for last line
             if end_line == last_line {
                 iv = Interval::new(self.text.len(), self.text.len());
-                saved_text = Rope::from(&config.line_ending) + saved_text.slice(0..saved_text.len() - 1);
+                saved_text =
+                    Rope::from(&config.line_ending) + saved_text.slice(0..saved_text.len() - 1);
             }
             builder.replace(iv, saved_text);
         }
-        self.this_edit_type = EditType::CaretBefore;
+        self.this_edit_type = EditType::MoveLineUp;
         self.add_delta(builder.build());
     }
 
@@ -583,9 +587,9 @@ impl Editor {
             let last_line = view.line_of_offset(&self.text, self.text.len());
             // don't move if last line
             if end_line == last_line {
-                continue
+                continue;
             }
-             // line to swap moved lines/regions with
+            // line to swap moved lines/regions with
             let swap_line = end_line + 1;
             let start = view.line_col_to_offset(&self.text, start_line, 0);
             let (swap_start, swap_end) = view.get_line_offset(&self.text, swap_line);
@@ -603,19 +607,17 @@ impl Editor {
             builder.replace(iv, saved_text);
             builder.delete(swap_iv);
         }
-        self.this_edit_type = EditType::Other;
+        self.this_edit_type = EditType::MoveLineDown;
         self.add_delta(builder.build());
     }
 
-     /// Returns an ordered list of line ranges in the current selection,
+    /// Returns an ordered list of line ranges in the current selection,
     /// combining adjacent ranges; e.g. 1..2 and 3..4 becomes 1..4.
     fn get_adjacent_selected_line_ranges(&self, view: &View) -> Vec<(usize, usize)> {
         let mut ranges = Vec::new();
         let mut prev_sel: Option<(usize, usize)> = None;
-        let line_range_iter = view
-            .sel_regions()
-            .iter()
-            .map(|sel| view.get_line_range(self.get_buffer(), sel));
+        let line_range_iter =
+            view.sel_regions().iter().map(|sel| view.get_line_range(self.get_buffer(), sel));
 
         for range in line_range_iter {
             // the range of a single line is represented as n..n+1; we just want
@@ -639,13 +641,10 @@ impl Editor {
         if let Some(last) = prev_sel.take() {
             ranges.push(last);
         }
-        eprintln!("{:?}", ranges);
         ranges
     }
 
-    fn get_tab_text(&self, config: &BufferItems, tab_size: Option<usize>)
-        -> &'static str
-    {
+    fn get_tab_text(&self, config: &BufferItems, tab_size: Option<usize>) -> &'static str {
         let tab_size = tab_size.unwrap_or(config.tab_size);
         let tab_text = if config.translate_tabs_to_spaces { n_spaces(tab_size) } else { "\t" };
 
@@ -1047,10 +1046,8 @@ pub enum EditType {
     /// A catchall for edits that don't fit elsewhere, and which should
     /// always have their own undo groups; used for things like cut/copy/paste.
     Other,
-    /// An edit that is which inserts text after the caret, thus placing the caret
-    /// before inserted text.
-    /// Only used with a special move line up case.
-    CaretBefore,
+    MoveLineUp,
+    MoveLineDown,
     /// An insert from the keyboard/IME (not a paste or a yank).
     #[serde(rename = "insert")]
     InsertChars,
