@@ -5,7 +5,7 @@ use rust::StateEl;
 #[derive(Default)]
 pub struct ElementTracker {
     elements: HashMap<StateEl, u32>,
-    next_id: u32
+    next_id: u32,
 }
 
 impl ElementTracker {
@@ -24,5 +24,5 @@ impl ElementTracker {
 
 pub enum LookupResult {
     Existing(u32),
-    New(u32)
+    New(u32),
 }

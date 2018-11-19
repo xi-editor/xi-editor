@@ -14,40 +14,36 @@
 
 //! A language syntax coloring and indentation plugin for xi-editor.
 
+extern crate xi_core_lib;
 #[macro_use]
 extern crate xi_plugin_lib;
-
-extern crate xi_core_lib;
 extern crate xi_rope;
 extern crate xi_trace;
-
-use xi_core_lib::{ConfigTable, LanguageId, plugins::rpc::ScopeSpan, ViewId};
-use xi_plugin_lib::{mainloop, Plugin, StateCache, View};
-use xi_rope::RopeDelta;
-use xi_trace::{trace, trace_block, trace_payload};
 
 use std::{collections::HashMap, env, path::Path};
 
 use rust::{RustParser, StateEl};
 use statestack::{HolderNewState, State};
 use tracker::{ElementTracker, LookupResult};
+use xi_core_lib::{plugins::rpc::ScopeSpan, ConfigTable, LanguageId, ViewId};
+use xi_plugin_lib::{mainloop, Plugin, StateCache, View};
+use xi_rope::RopeDelta;
+use xi_trace::{trace, trace_block, trace_payload};
 
 mod peg;
 mod rust;
-mod tracker;
 mod statestack;
+mod tracker;
 
 const LINES_PER_RPC: usize = 50;
 
 struct LangPlugin {
-    view_states: HashMap<ViewId, ViewState>
+    view_states: HashMap<ViewId, ViewState>,
 }
 
 impl LangPlugin {
     fn new() -> LangPlugin {
-        LangPlugin {
-            view_states: HashMap::new()
-        }
+        LangPlugin { view_states: HashMap::new() }
     }
 }
 
@@ -91,7 +87,11 @@ impl Plugin for LangPlugin {
 
     fn config_changed(&mut self, _view: &mut View<Self::Cache>, _changes: &ConfigTable) {}
 
-    fn language_changed(&mut self, view: &mut View<<Self as Plugin>::Cache>, _old_lang: LanguageId) {
+    fn language_changed(
+        &mut self,
+        view: &mut View<<Self as Plugin>::Cache>,
+        _old_lang: LanguageId,
+    ) {
         let _guard = trace_block("ExperimentalLang::language_changed", &["experimental-lang"]);
 
         let view_id = view.get_id();
@@ -277,14 +277,22 @@ impl ViewState {
 
     fn flush_spans(&mut self, view: &mut View<StateCache<State>>) {
         if !self.new_scopes.is_empty() {
-            trace_payload("flushing scopes", &["experimental-lang"], format!("flushing scopes: {:?}", self.new_scopes));
+            trace_payload(
+                "flushing scopes",
+                &["experimental-lang"],
+                format!("flushing scopes: {:?}", self.new_scopes),
+            );
             eprintln!("flushing scopes: {:?}", self.new_scopes);
             view.add_scopes(&self.new_scopes);
             self.new_scopes.clear();
         }
 
         if self.spans_start != self.offset {
-            trace_payload("flushing spans", &["experimental-lang"], format!("flushing spans: {:?}", self.spans));
+            trace_payload(
+                "flushing spans",
+                &["experimental-lang"],
+                format!("flushing spans: {:?}", self.spans),
+            );
             eprintln!("flushing spans: {:?}", self.spans);
             view.update_spans(self.spans_start, self.offset - self.spans_start, &self.spans);
             self.spans.clear();

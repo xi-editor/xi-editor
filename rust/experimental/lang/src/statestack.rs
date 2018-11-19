@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::hash::Hash;
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::hash::Hash;
 
 /// An entire state stack is represented as a single integer.
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -47,11 +47,7 @@ pub struct Context<T, N> {
 
 impl<T: Clone + Hash + Eq, N: NewState<T>> Context<T, N> {
     pub fn new(new_state: N) -> Context<T, N> {
-        Context {
-            new_state: new_state,
-            entries: Vec::new(),
-            next: HashMap::new(),
-        }
+        Context { new_state, entries: Vec::new(), next: HashMap::new() }
     }
 
     pub fn get_new_state(&self) -> &N {
@@ -79,11 +75,14 @@ impl<T: Clone + Hash + Eq, N: NewState<T>> Context<T, N> {
         let mut new = false;
         let result = {
             let entries = &mut self.entries;
-            self.next.entry((s, el.clone())).or_insert_with(|| {
-                new = true;
-                entries.push(Entry { tos: el, prev: s });
-                State(entries.len())
-            }).clone()
+            self.next
+                .entry((s, el.clone()))
+                .or_insert_with(|| {
+                    new = true;
+                    entries.push(Entry { tos: el, prev: s });
+                    State(entries.len())
+                })
+                .clone()
         };
         if new {
             let contents = self.to_vec(result);
@@ -104,14 +103,12 @@ impl<T: Clone + Hash + Eq, N: NewState<T>> Context<T, N> {
 }
 
 pub struct HolderNewState<T> {
-    elements: Vec<Option<T>>
+    elements: Vec<Option<T>>,
 }
 
 impl<T> HolderNewState<T> {
     pub fn new() -> HolderNewState<T> {
-        HolderNewState {
-            elements: vec![None]
-        }
+        HolderNewState { elements: vec![None] }
     }
 
     pub fn get_element(&self, s: State) -> &Option<T> {
