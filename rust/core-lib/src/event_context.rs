@@ -1468,6 +1468,151 @@ mod tests {
     }
 
     #[test]
+    fn move_single_line_tests() {
+        use rpc::GestureType::*;
+        let initial_text = "\
+        this is a string\n\
+        that has three\n\
+        lines.";
+        let harness = ContextHarness::new(initial_text);
+        let mut ctx = harness.make_context();
+
+        // Single line move test
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 1, ty: PointSelect });
+        ctx.do_edit(EditNotification::MoveLineDown);
+        assert_eq!(harness.debug_render(),"\
+        that has three\n\
+        t|his is a string\n\
+        lines." );
+
+        ctx.do_edit(EditNotification::MoveLineUp);
+        assert_eq!(harness.debug_render(),"\
+        t|his is a string\n\
+        that has three\n\
+        lines." );
+
+        // Move to end, then move back up
+        ctx.do_edit(EditNotification::MoveLineDown);
+        ctx.do_edit(EditNotification::MoveLineDown);
+        assert_eq!(harness.debug_render(),"\
+        that has three\n\
+        lines.\n\
+        t|his is a string" );
+
+        ctx.do_edit(EditNotification::MoveLineUp);
+        ctx.do_edit(EditNotification::MoveLineUp);
+        assert_eq!(harness.debug_render(),"\
+        t|his is a string\n\
+        that has three\n\
+        lines." );
+
+        // Cursor at end of file, move up and down
+        ctx.do_edit(EditNotification::MoveToEndOfDocument);
+        ctx.do_edit(EditNotification::MoveLineUp);
+        ctx.do_edit(EditNotification::MoveLineUp);
+        assert_eq!(harness.debug_render(),"\
+        lines.|\n\
+        this is a string\n\
+        that has three" );
+
+        ctx.do_edit(EditNotification::MoveLineDown);
+        ctx.do_edit(EditNotification::MoveLineDown);
+        assert_eq!(harness.debug_render(),"\
+        this is a string\n\
+        that has three\n\
+        lines.|" );
+    }
+
+    #[test]
+    fn move_multi_lines_tests() {
+        use rpc::GestureType::*;
+        let initial_text = "\
+        this is a string\n\
+        that has five\n\
+        very different\n\
+        and unique\n\
+        lines.";
+        let harness = ContextHarness::new(initial_text);
+        let mut ctx = harness.make_context();
+
+        // Gap lines move 
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 0, ty: PointSelect });
+        ctx.do_edit(EditNotification::Gesture { line: 2, col: 0, ty: PointSelect });
+        assert_eq!(harness.debug_render(),"\
+        |this is a string\n\
+        that has five\n\
+        |very different\n\
+        and unique\n\
+        lines." );
+
+        ctx.do_edit(EditNotification::MoveLineDown);
+        assert_eq!(harness.debug_render(),"\
+        that has five\n\
+        |this is a string\n\
+        and unique\n\
+        |very different\n\
+        lines." );
+
+        ctx.do_edit(EditNotification::MoveLineDown);
+        assert_eq!(harness.debug_render(),"\
+        that has five\n\
+        and unique\n\
+        |this is a string\n\
+        lines.\n\
+        |very different" );
+
+        ctx.do_edit(EditNotification::MoveLineUp);
+        ctx.do_edit(EditNotification::MoveLineUp);
+        ctx.do_edit(EditNotification::MoveLineUp);
+        assert_eq!(harness.debug_render(),"\
+        |this is a string\n\
+        that has five\n\
+        |very different\n\
+        and unique\n\
+        lines." );
+        
+        // Simple selection move test
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 0, ty: PointSelect });
+        ctx.do_edit(EditNotification::MoveToRightEndOfLineAndModifySelection);
+        ctx.do_edit(EditNotification::MoveDownAndModifySelection);
+        assert_eq!(harness.debug_render(),"\
+        [this is a string\n\
+        that has five|]\n\
+        very different\n\
+        and unique\n\
+        lines." );
+
+        ctx.do_edit(EditNotification::MoveLineDown);
+        assert_eq!(harness.debug_render(),"\
+        very different\n\
+        [this is a string\n\
+        that has five|]\n\
+        and unique\n\
+        lines." );
+
+        ctx.do_edit(EditNotification::MoveLineDown);
+        ctx.do_edit(EditNotification::MoveLineDown);
+        ctx.do_edit(EditNotification::MoveLineDown);
+        assert_eq!(harness.debug_render(),"\
+        very different\n\
+        and unique\n\
+        lines.\n\
+        [this is a string\n\
+        that has five|]" );
+
+        ctx.do_edit(EditNotification::MoveLineUp);
+        ctx.do_edit(EditNotification::MoveLineUp);
+        ctx.do_edit(EditNotification::MoveLineUp);
+        ctx.do_edit(EditNotification::MoveLineUp);
+        assert_eq!(harness.debug_render(),"\
+        [this is a string\n\
+        that has five|]\n\
+        very different\n\
+        and unique\n\
+        lines." );
+    }
+
+    #[test]
     fn number_change_tests() {
         use rpc::GestureType::*;
         let harness = ContextHarness::new("");
