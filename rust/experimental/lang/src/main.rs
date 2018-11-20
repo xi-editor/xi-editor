@@ -157,6 +157,9 @@ impl ViewState {
             return;
         }
 
+        // Start off with the base language scope
+        view.add_scopes(&[vec!["source.rust".to_owned()]]);
+
         self.line_num = 0;
         self.offset = 0;
         self.initial_state = State::default();
@@ -282,7 +285,6 @@ impl ViewState {
                 &["experimental-lang"],
                 format!("flushing scopes: {:?}", self.new_scopes),
             );
-            eprintln!("flushing scopes: {:?}", self.new_scopes);
             view.add_scopes(&self.new_scopes);
             self.new_scopes.clear();
         }
@@ -293,7 +295,6 @@ impl ViewState {
                 &["experimental-lang"],
                 format!("flushing spans: {:?}", self.spans),
             );
-            eprintln!("flushing spans: {:?}", self.spans);
             view.update_spans(self.spans_start, self.offset - self.spans_start, &self.spans);
             self.spans.clear();
         }

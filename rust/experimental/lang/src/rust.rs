@@ -49,7 +49,7 @@ impl StateEl {
             StateEl::CharQuote => vec!["source.rust", "string.quoted.single.rust"],
             StateEl::Comment => vec!["source.rust", "punctuation.definition.comment.rust"],
             StateEl::CharConst => vec!["source.rust", "constant.character.escape.rust"],
-            StateEl::NumericLiteral => vec!["source.rust", "constant.numeric.integer.decimal.rust"],
+            StateEl::NumericLiteral => vec!["source.rust", "constant.numeric.decimal.rust"],
             StateEl::Invalid => vec!["source.rust", "invalid.illegal.rust"],
             StateEl::Keyword => vec!["source.rust", "keyword.operator.rust"],
             StateEl::Operator => vec!["source.rust", "keyword.operator.arithmetic.rust"],
