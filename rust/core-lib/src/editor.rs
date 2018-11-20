@@ -560,7 +560,10 @@ impl Editor {
                 continue;
             }
             // also don't move if caret is on a blank last line
-            if start_line == end_line && end_line == last_line && self.text.slice_to_cow(end_line_start..end_line_end).is_empty() {
+            if start_line == end_line
+                && end_line == last_line
+                && self.text.slice_to_cow(end_line_start..end_line_end).is_empty()
+            {
                 continue;
             }
             // line to swap moved lines/regions with

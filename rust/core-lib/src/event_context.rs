@@ -1536,41 +1536,40 @@ mod tests {
         let mut ctx = harness.make_context();
 
         // Gap lines move 
-        ctx.do_edit(EditNotification::Gesture { line: 0, col: 0, ty: PointSelect });
-        ctx.do_edit(EditNotification::Gesture { line: 2, col: 0, ty: PointSelect });
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 1, ty: PointSelect });
+        ctx.do_edit(EditNotification::Gesture { line: 2, col: 1, ty: ToggleSel });
         assert_eq!(harness.debug_render(),"\
-        |this is a string\n\
+        t|his is a string\n\
         that has five\n\
-        |very different\n\
+        v|ery different\n\
         and unique\n\
         lines." );
 
         ctx.do_edit(EditNotification::MoveLineDown);
         assert_eq!(harness.debug_render(),"\
         that has five\n\
-        |this is a string\n\
+        t|his is a string\n\
         and unique\n\
-        |very different\n\
+        v|ery different\n\
         lines." );
 
         ctx.do_edit(EditNotification::MoveLineDown);
         assert_eq!(harness.debug_render(),"\
         that has five\n\
         and unique\n\
-        |this is a string\n\
+        t|his is a string\n\
         lines.\n\
-        |very different" );
+        v|ery different" );
 
         ctx.do_edit(EditNotification::MoveLineUp);
         ctx.do_edit(EditNotification::MoveLineUp);
-        ctx.do_edit(EditNotification::MoveLineUp);
         assert_eq!(harness.debug_render(),"\
-        |this is a string\n\
+        t|his is a string\n\
         that has five\n\
-        |very different\n\
+        v|ery different\n\
         and unique\n\
         lines." );
-        
+
         // Simple selection move test
         ctx.do_edit(EditNotification::Gesture { line: 0, col: 0, ty: PointSelect });
         ctx.do_edit(EditNotification::MoveToRightEndOfLineAndModifySelection);
