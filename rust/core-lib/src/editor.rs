@@ -552,8 +552,15 @@ impl Editor {
 
         for (start_line, end_line) in to_move {
             let last_line = view.line_of_offset(&self.text, self.text.len());
+
+            let (end_line_start, end_line_end) = view.get_line_offset(&self.text, end_line);
+
             // don't move if first line
             if start_line == 0 {
+                continue;
+            }
+            // also don't move if caret is on a blank last line
+            if start_line == end_line && end_line == last_line && self.text.slice_to_cow(end_line_start..end_line_end).is_empty() {
                 continue;
             }
             // line to swap moved lines/regions with
