@@ -40,7 +40,7 @@ pub enum InsertDrift {
 }
 
 /// A set of zero or more selection regions, representing a selection state.
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct Selection {
     // An invariant: regions[i].max() <= regions[i+1].min()
     // and < if either is_caret()

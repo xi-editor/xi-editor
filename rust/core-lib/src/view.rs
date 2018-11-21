@@ -20,6 +20,7 @@ use serde_json::Value;
 
 use client::Client;
 use edit_types::ViewEvent;
+use editor::{EditType, MAX_UNDOS};
 use find::{Find, FindStatus};
 use line_cache_shadow::{self, LineCacheShadow, RenderPlan, RenderTactic};
 use linewrap;
@@ -28,6 +29,7 @@ use rpc::{FindQuery, GestureType, MouseAction, SelectionModifier};
 use selection::{Affinity, InsertDrift, SelRegion, Selection};
 use styles::{Style, ThemeStyleMap};
 use tabs::{BufferId, Counter, ViewId};
+use undo::ViewUndoStack;
 use width_cache::WidthCache;
 use word_boundaries::WordCursor;
 use xi_rope::breaks::{Breaks, BreaksBaseMetric, BreaksInfo, BreaksMetric};
@@ -67,6 +69,8 @@ pub struct View {
 
     /// New offset to be scrolled into position after an edit.
     scroll_to: Option<usize>,
+
+    undo_state: ViewUndoStack<Selection>,
 
     /// The state for finding text for this view.
     /// Each instance represents a separate search query.
@@ -162,11 +166,14 @@ struct DragState {
 
 impl View {
     pub fn new(view_id: ViewId, buffer_id: BufferId) -> View {
+        let selection: Selection = SelRegion::caret(0).into();
+        let undo_state = ViewUndoStack::new(MAX_UNDOS, selection.clone());
         View {
             view_id,
             buffer_id,
             pending_render: false,
-            selection: SelRegion::caret(0).into(),
+            selection,
+            undo_state,
             scroll_to: Some(0),
             size: Size::default(),
             drag_state: None,
@@ -954,6 +961,8 @@ impl View {
         client: &Client,
         width_cache: &mut WidthCache,
         drift: InsertDrift,
+        undo_group: Option<usize>,
+        edit_type: EditType,
     ) {
         let (iv, new_len) = delta.summary();
         if let Some(breaks) = self.breaks.as_mut() {
@@ -986,10 +995,34 @@ impl View {
 
         self.find_changed = FindStatusChange::Matches;
 
-        // Note: for committing plugin edits, we probably want to know the priority
-        // of the delta so we can set the cursor before or after the edit, as needed.
-        let new_sel = self.selection.apply_delta(delta, true, drift);
+        // for undo/redo we use our saved selection; otherwise we calculate from the delta.
+        let new_sel = match edit_type {
+            EditType::Undo => self.undo_state.undo().to_owned(),
+            EditType::Redo => self.undo_state.redo().to_owned(),
+            _ => self.selection.apply_delta(delta, true, drift),
+        };
+
+        // If this is part of a recording playback, we don't pass `undo_group`
+        // and we don't update view state.
+        if let Some(undo_group) = undo_group {
+            if !edit_type.is_undo_or_redo() {
+                if self.undo_state.active_undo_group() != undo_group {
+                    self.undo_state.new_group(undo_group, &self.selection, new_sel.clone());
+                } else {
+                    self.undo_state.update_group(undo_group, new_sel.clone());
+                }
+            }
+        }
         self.set_selection_for_edit(text, new_sel);
+    }
+
+    pub(crate) fn start_manual_undo(&mut self, group: usize) {
+        let sel = self.selection.clone();
+        self.undo_state.new_group(group, &self.selection, sel);
+    }
+
+    pub(crate) fn end_manual_undo(&mut self, group: usize) {
+        self.undo_state.update_group(group, self.selection.clone());
     }
 
     fn do_selection_for_find(&mut self, text: &Rope, case_sensitive: bool) {
