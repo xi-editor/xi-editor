@@ -220,15 +220,8 @@ impl ViewState {
 
             if prevlen > 0 {
                 // TODO: maybe make an iterator to avoid this duplication
-                let element = self.parser.get_new_state().get_element(self.initial_state);
-                if let Some(ref element) = element {
-                    let scope_id = match self.tracker.lookup(element) {
-                        LookupResult::Existing(id) => id,
-                        LookupResult::New(id) => {
-                            self.new_scopes.push(element.as_scopes());
-                            id
-                        }
-                    };
+                if let Some(ref element) = self.parser.get_new_state().get_element(self.initial_state) {
+                    let scope_id = identifier_for_element(&mut self.tracker, &mut self.new_scopes, element);
 
                     let start = self.offset - self.spans_start + i;
                     let end = start + prevlen;
@@ -240,15 +233,8 @@ impl ViewState {
                 i += prevlen;
             }
 
-            let element = self.parser.get_new_state().get_element(s0);
-            if let Some(ref element) = element {
-                let scope_id = match self.tracker.lookup(element) {
-                    LookupResult::Existing(id) => id,
-                    LookupResult::New(id) => {
-                        self.new_scopes.push(element.as_scopes());
-                        id
-                    }
-                };
+            if let Some(ref element) = self.parser.get_new_state().get_element(s0) {
+                let scope_id = identifier_for_element(&mut self.tracker, &mut self.new_scopes, element);
 
                 let start = self.offset - self.spans_start + i;
                 let end = start + len;
@@ -262,17 +248,6 @@ impl ViewState {
         }
 
         state
-    }
-
-    #[allow(unused)]
-    fn identifier_for_element(&mut self, element: &StateEl) -> u32 {
-        match self.tracker.lookup(element) {
-            LookupResult::Existing(id) => id,
-            LookupResult::New(id) => {
-                self.new_scopes.push(element.as_scopes());
-                id
-            }
-        }
     }
 
     fn flush_spans(&mut self, view: &mut View<StateCache<State>>) {
@@ -297,6 +272,16 @@ impl ViewState {
         }
 
         self.spans_start = self.offset;
+    }
+}
+
+fn identifier_for_element(tracker: &mut ElementTracker, scopes: &mut Vec<Vec<String>>, element: &StateEl) -> u32 {
+    match tracker.lookup(element) {
+        LookupResult::Existing(id) => id,
+        LookupResult::New(id) => {
+            scopes.push(element.as_scopes());
+            id
+        }
     }
 }
 
