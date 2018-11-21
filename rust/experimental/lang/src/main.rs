@@ -157,9 +157,6 @@ impl ViewState {
             return;
         }
 
-        // Start off with the base language scope
-        view.add_scopes(&[vec!["source.rust".to_owned()]]);
-
         self.line_num = 0;
         self.offset = 0;
         self.initial_state = State::default();

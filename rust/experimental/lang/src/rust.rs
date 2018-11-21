@@ -22,6 +22,7 @@ use statestack::{Context, NewState, State};
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum StateEl {
+    Source,
     StrQuote,
     CharQuote,
     Comment,
@@ -45,6 +46,7 @@ impl StateEl {
     /// for reference.
     pub fn as_scopes(&self) -> Vec<String> {
         let scope_strs = match self {
+            StateEl::Source => vec!["source.rust"],
             StateEl::StrQuote => vec!["source.rust", "string.quoted.double.rust"],
             StateEl::CharQuote => vec!["source.rust", "string.quoted.single.rust"],
             StateEl::Comment => vec!["source.rust", "punctuation.definition.comment.rust"],
@@ -186,7 +188,10 @@ impl<N: NewState<StateEl>> RustParser<N> {
                     i += len;
                     continue;
                 }
+            } else if let Some(len) = whitespace.p(&t[i..]) {
+                return (i, self.ctx.push(state, StateEl::Source), len, state);
             }
+
             i += 1;
         }
         (0, state, t.len(), state)
@@ -300,6 +305,14 @@ fn escape(s: &[u8]) -> Option<usize> {
 
 fn char_literal(s: &[u8]) -> Option<usize> {
     (b'\'', Alt(OneChar(|c| c != '\\' && c != '\''), escape), b'\'').p(s)
+}
+
+// Parser for an arbitrary number of whitespace characters
+// Reference: https://en.cppreference.com/w/cpp/string/byte/isspace
+fn whitespace(s: &[u8]) -> Option<usize> {
+    // 0x0B -> \v
+    // 0x0C -> \f
+    (OneOrMore(OneOf(&[b' ', b'\t', b'\n', b'\r', 0x0B, 0x0C]))).p(s)
 }
 
 // A simple stdio based harness for testing.
