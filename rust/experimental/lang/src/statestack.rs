@@ -32,7 +32,8 @@ struct Entry<T> {
 }
 
 pub trait NewState<T> {
-    fn new_state(&mut self, s: State, contents: &[T]);
+    fn new_state(&mut self, state: State, contents: &[T]);
+    fn get_element(&self, state: State) -> &Option<T>;
 }
 
 /// All states are interpreted in a context.
@@ -110,17 +111,17 @@ impl<T> HolderNewState<T> {
     pub fn new() -> HolderNewState<T> {
         HolderNewState { elements: vec![None] }
     }
-
-    pub fn get_element(&self, s: State) -> &Option<T> {
-        &self.elements[s.raw()]
-    }
 }
 
 impl<T: Clone + Debug> NewState<T> for HolderNewState<T> {
-    fn new_state(&mut self, _s: State, contents: &[T]) {
+    fn new_state(&mut self, _state: State, contents: &[T]) {
         for element in contents {
             self.elements.push(Some(element.clone()))
         }
+    }
+
+    fn get_element(&self, state: State) -> &Option<T> {
+        &self.elements[state.raw()]
     }
 }
 
@@ -133,7 +134,11 @@ impl DebugNewState {
 }
 
 impl<T: Debug> NewState<T> for DebugNewState {
-    fn new_state(&mut self, s: State, contents: &[T]) {
-        println!("new state {:?}: {:?}", s, contents);
+    fn new_state(&mut self, state: State, contents: &[T]) {
+        println!("new state {:?}: {:?}", state, contents);
+    }
+
+    fn get_element(&self, _state: State) -> &Option<T> {
+        &None
     }
 }

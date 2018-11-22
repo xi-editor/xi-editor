@@ -12,33 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Helper utility for assigning a unique id to a particular [Scope]
-
-use std::collections::HashMap;
-
+use statestack::State;
 use Scope;
 
-#[derive(Default)]
-pub struct ScopeTracker {
-    elements: HashMap<Scope, u32>,
-    next_id: u32,
-}
-
-impl ScopeTracker {
-    pub fn lookup(&mut self, scope: &Scope) -> LookupResult {
-        if let Some(id) = self.elements.get(scope) {
-            return LookupResult::Existing(*id);
-        }
-
-        let old_id = self.next_id;
-        self.next_id += 1;
-
-        self.elements.insert(scope.clone(), old_id);
-        LookupResult::New(old_id)
-    }
-}
-
-pub enum LookupResult {
-    Existing(u32),
-    New(u32),
+/// Trait for abstracting over text parsing and [Scope] extraction
+pub trait Parser {
+    fn get_scope_for_state(&self, state: State) -> Scope;
+    fn parse(&mut self, text: &str, state: State) -> (usize, State, usize, State);
 }

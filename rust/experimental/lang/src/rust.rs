@@ -16,9 +16,11 @@
 
 use std::io::{stdin, Read};
 
+use parser::Parser;
 use peg::*;
 use statestack::DebugNewState;
 use statestack::{Context, NewState, State};
+use Scope;
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum StateEl {
@@ -44,7 +46,7 @@ impl StateEl {
     /// Transform a [StateEl] into a [Vec] of Syntect Scope [String]s.
     /// See [this](https://github.com/sublimehq/Packages/blob/master/Rust/Rust.sublime-syntax)
     /// for reference.
-    pub fn as_scopes(&self) -> Vec<String> {
+    pub fn as_scopes(&self) -> Scope {
         let scope_strs = match self {
             StateEl::Source => vec!["source.rust"],
             StateEl::StrQuote => vec!["source.rust", "string.quoted.double.rust"],
@@ -141,11 +143,43 @@ impl<N: NewState<StateEl>> RustParser<N> {
         RustParser { ctx: Context::new(new_state) }
     }
 
-    pub fn get_new_state(&self) -> &N {
+    fn get_new_state(&self) -> &N {
         self.ctx.get_new_state()
     }
 
-    pub fn parse(&mut self, text: &str, mut state: State) -> (usize, State, usize, State) {
+    fn quoted_str(&mut self, t: &[u8], state: State) -> (usize, State, usize, State) {
+        let mut i = 0;
+        while i < t.len() {
+            let b = t[i];
+            if b == b'"' {
+                return (0, state, i + 1, self.ctx.pop(state).unwrap());
+            } else if b == b'\\' {
+                if let Some(len) = escape.p(&t[i..]) {
+                    return (i, self.ctx.push(state, StateEl::CharConst), len, state);
+                } else if let Some(len) =
+                    (FailIf(OneOf(b"\r\nbu")), OneChar(|_| true)).p(&t[i + 1..])
+                {
+                    return (i + 1, self.ctx.push(state, StateEl::Invalid), len, state);
+                }
+            }
+            i += 1;
+        }
+        (0, state, i, state)
+    }
+}
+
+impl<N: NewState<StateEl>> Parser for RustParser<N> {
+    fn get_scope_for_state(&self, state: State) -> Scope {
+        let new_state = self.get_new_state();
+
+        if let Some(element) = new_state.get_element(state) {
+            element.as_scopes()
+        } else {
+            vec![]
+        }
+    }
+
+    fn parse(&mut self, text: &str, mut state: State) -> (usize, State, usize, State) {
         let t = text.as_bytes();
         match self.ctx.tos(state) {
             Some(StateEl::Comment) => {
@@ -195,26 +229,6 @@ impl<N: NewState<StateEl>> RustParser<N> {
             i += 1;
         }
         (0, state, t.len(), state)
-    }
-
-    fn quoted_str(&mut self, t: &[u8], state: State) -> (usize, State, usize, State) {
-        let mut i = 0;
-        while i < t.len() {
-            let b = t[i];
-            if b == b'"' {
-                return (0, state, i + 1, self.ctx.pop(state).unwrap());
-            } else if b == b'\\' {
-                if let Some(len) = escape.p(&t[i..]) {
-                    return (i, self.ctx.push(state, StateEl::CharConst), len, state);
-                } else if let Some(len) =
-                    (FailIf(OneOf(b"\r\nbu")), OneChar(|_| true)).p(&t[i + 1..])
-                {
-                    return (i + 1, self.ctx.push(state, StateEl::Invalid), len, state);
-                }
-            }
-            i += 1;
-        }
-        (0, state, i, state)
     }
 }
 
