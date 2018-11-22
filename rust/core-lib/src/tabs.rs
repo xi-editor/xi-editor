@@ -368,9 +368,9 @@ impl CoreState {
         let config = self.config_manager.add_buffer(buffer_id, path.as_ref().map(|p| p.as_path()));
 
         //NOTE: because this is a synchronous call, we have to return the
-        //view_id before we can send any events to this view. We use mark the
-        // viewa s pending and schedule the idle handler so that we can finish
-        // setting up this view on the next runloop pass.
+        //view_id before we can send any events to this view. We mark the
+        // view as pending and schedule the idle handler so that we can finish
+        // setting up this view on the next runloop pass, in finalize_new_views.
         self.pending_views.push((view_id, config));
         self.peer.schedule_idle(NEW_VIEW_IDLE_TOKEN);
 
