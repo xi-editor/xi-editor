@@ -277,11 +277,13 @@ impl<'a> Syntect<'a> {
         let tab_size = view.get_config().tab_size;
         let current_indent = self.indent_level_of_line(view, line);
         let base_indent = self
-            .previous_nonblank_line(view, line)?
+            .previous_line(view, line)?
             .map(|l| self.indent_level_of_line(view, l))
             .unwrap_or(0);
+
         let increase_level = self.test_increase(view, line)?;
         let indent_level = if increase_level { base_indent + tab_size } else { base_indent };
+
         if indent_level != current_indent {
             self.set_indent(view, line, indent_level)
         } else {
@@ -289,13 +291,14 @@ impl<'a> Syntect<'a> {
         }
     }
 
-    /// Called when actviely editing a line; cheifly checks for whether or not
-    /// the current line should be de-indented, such as after a closeing '}'.
+    /// Called when actively editing a line; chiefly checks for whether or not
+    /// the current line should be de-indented, such as after a closing '}'.
     fn check_indent_active_edit(&mut self, view: &mut MyView, line: usize) -> Result<(), Error> {
         let _t = trace_block("Syntect::check_indent_active_line", &["syntect"]);
         if line == 0 {
             return Ok(());
         }
+
         let tab_size = view.get_config().tab_size;
         let current_indent = self.indent_level_of_line(view, line);
         if line == 0 || current_indent == 0 {
@@ -361,6 +364,18 @@ impl<'a> Syntect<'a> {
         let metadata = self.get_metadata(view, line).ok_or_else(|| Error::PeerDisconnect)?;
         let line = view.get_line(line)?;
         Ok(metadata.decrease_indent(line))
+    }
+
+    fn previous_line(
+        &self,
+        view: &mut MyView,
+        line: usize,
+    ) -> Result<Option<usize>, Error> {
+        debug_assert!(line > 0);
+        if line > 0 {
+            return Ok(Some(line - 1));
+        }
+        Ok(None)
     }
 
     fn previous_nonblank_line(
