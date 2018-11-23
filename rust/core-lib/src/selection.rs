@@ -15,6 +15,7 @@
 //! Data structures representing (multiple) selections and cursors.
 
 use std::cmp::{max, min};
+use std::fmt;
 use std::ops::Deref;
 
 use index_set::remove_n_at;
@@ -344,6 +345,34 @@ impl From<SelRegion> for Selection {
     }
 }
 
+impl fmt::Display for Selection {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.regions.len() == 1 {
+            self.regions[0].fmt(f)?;
+        } else {
+            write!(f, "[ {}", &self.regions[0])?;
+            for region in &self.regions[1..] {
+                write!(f, ", {}", region)?;
+            }
+            write!(f, " ]")?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Display for SelRegion {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.is_caret() {
+            write!(f, "{}|", self.start)?;
+        } else if self.start < self.end {
+            write!(f, "{}..{}|", self.start, self.end)?;
+        } else {
+            write!(f, "|{}..{}", self.end, self.start)?;
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{InsertDrift, SelRegion, Selection};
@@ -543,5 +572,15 @@ mod tests {
         builder.replace(Interval::new(1, 1), "b".into());
         let s3 = s.apply_delta(&builder.build(), false, InsertDrift::Inside);
         assert_eq!(s3.deref(), &[r(1, 1)]);
+    }
+
+    #[test]
+    fn display() {
+        let mut s = Selection::new();
+        s.add_region(r(1, 1));
+        assert_eq!(s.to_string(), "1|");
+        s.add_region(r(3, 5));
+        s.add_region(r(8, 6));
+        assert_eq!(s.to_string(), "[ 1|, 3..5|, |6..8 ]");
     }
 }

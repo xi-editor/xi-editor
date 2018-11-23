@@ -264,16 +264,12 @@ impl Editor {
     /// generates a delta from a plugin's response and applies it to the buffer.
     pub fn apply_plugin_edit(&mut self, edit: PluginEdit) {
         let _t = trace_block("Editor::apply_plugin_edit", &["core"]);
-        let undo_group = edit.undo_group;
-        if let Some(undo_group) = undo_group {
-            // non-async edits modify their associated revision
-            //TODO: get priority working, so that plugin edits don't
-            // necessarily move cursor
-            self.engine.edit_rev(edit.priority as usize, undo_group, edit.rev, edit.delta);
-            self.text = self.engine.get_head().clone();
-        } else {
-            self.add_delta(edit.delta);
-        }
+        //TODO: get priority working, so that plugin edits don't necessarily move cursor
+        let PluginEdit { rev, delta, priority, undo_group, .. } = edit;
+        let priority = priority as usize;
+        let undo_group = undo_group.unwrap_or_else(|| self.calculate_undo_group());
+        self.engine.edit_rev(priority, undo_group, rev, delta);
+        self.text = self.engine.get_head().clone();
     }
 
     /// Commits the current delta. If the buffer has changed, returns
@@ -986,4 +982,32 @@ fn count_lines(s: &str) -> usize {
         newlines -= 1;
     }
     1 + newlines
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn plugin_edit() {
+        let base_text = "hello";
+        let mut editor = Editor::with_text(base_text);
+        let mut builder = DeltaBuilder::new(base_text.len());
+        builder.replace(0..0, "s".into());
+        let delta = builder.build();
+        let rev = editor.get_head_rev_token();
+
+        let edit_one = PluginEdit {
+            rev,
+            delta,
+            priority: 55,
+            after_cursor: false,
+            undo_group: None,
+            author: "plugin_one".into(),
+        };
+
+        editor.apply_plugin_edit(edit_one.clone());
+        editor.apply_plugin_edit(edit_one);
+
+        assert_eq!(editor.get_buffer().to_string(), "sshello");
+    }
 }
