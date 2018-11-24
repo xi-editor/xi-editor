@@ -210,8 +210,12 @@ impl FileManager {
             return Err(FileError::HasChanged(path.to_owned()));
         } else {
             let encoding = self.file_info[&id].encoding;
+            #[cfg(feature = "notify")]
+            self.watcher.unwatch(&path, OPEN_FILE_EVENT_TOKEN);
             try_save(path, text, encoding).map_err(|e| FileError::Io(e, path.to_owned()))?;
             self.file_info.get_mut(&id).unwrap().mod_time = get_mod_time(path);
+            #[cfg(feature = "notify")]
+            self.watcher.watch(&path,false,OPEN_FILE_EVENT_TOKEN);
         }
         Ok(())
     }
