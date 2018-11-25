@@ -188,10 +188,6 @@ impl<N: NewState<StateEl>> RustParser<N> {
 }
 
 impl<N: NewState<StateEl>> Parser for RustParser<N> {
-    fn get_source_scope(&self) -> Vec<String> {
-        RUST_SOURCE_SCOPE.to_vec()
-    }
-
     fn get_scope_for_state(&self, state: State) -> Scope {
         let new_state = self.get_new_state();
 

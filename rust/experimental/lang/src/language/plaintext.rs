@@ -17,15 +17,11 @@ impl<N: NewState<()>> PlaintextParser<N> {
 }
 
 impl<N: NewState<()>> Parser for PlaintextParser<N> {
-    fn get_source_scope(&self) -> Scope {
-        PLAINTEXT_SOURCE_SCOPE.to_vec()
-    }
-
     fn get_scope_for_state(&self, _state: State) -> Scope {
         PLAINTEXT_SOURCE_SCOPE.to_vec()
     }
 
-    fn parse(&mut self, text: &str, mut state: State) -> (usize, State, usize, State) {
+    fn parse(&mut self, text: &str, state: State) -> (usize, State, usize, State) {
         (0, self.ctx.push(state, ()), text.as_bytes().len(), state)
     }
 }
