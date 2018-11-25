@@ -14,26 +14,27 @@
 
 //! A language syntax coloring and indentation plugin for xi-editor.
 
-extern crate xi_core_lib;
 #[macro_use]
+extern crate lazy_static;
+extern crate xi_core_lib;
 extern crate xi_plugin_lib;
 extern crate xi_rope;
 extern crate xi_trace;
 
 use std::{collections::HashMap, env, path::Path};
 
+use language::{plaintext::PlaintextParser, rust::RustParser};
 use parser::Parser;
-use rust::RustParser;
 use statestack::{HolderNewState, State};
 use tracker::{LookupResult, ScopeTracker};
 use xi_core_lib::{plugins::rpc::ScopeSpan, ConfigTable, LanguageId, ViewId};
-use xi_plugin_lib::{mainloop, Plugin, StateCache, View};
+use xi_plugin_lib::{mainloop, Cache, Plugin, StateCache, View};
 use xi_rope::RopeDelta;
 use xi_trace::{trace, trace_block, trace_payload};
 
+mod language;
 mod parser;
 mod peg;
-mod rust;
 mod statestack;
 mod tracker;
 
@@ -100,7 +101,6 @@ impl Plugin for LangPlugin {
 
         let view_id = view.get_id();
         if let Some(view_state) = self.view_states.get_mut(&view_id) {
-            view_state.set_parser(&view.get_language_id());
             view_state.do_highlighting(view);
         }
     }
@@ -109,10 +109,6 @@ impl Plugin for LangPlugin {
         let view_id = view.get_id();
 
         if let Some(view_state) = self.view_states.get_mut(&view_id) {
-            if view_state.parser.is_none() {
-                return;
-            }
-
             for _ in 0..LINES_PER_RPC {
                 if !view_state.highlight_one_line(view) {
                     view_state.flush_spans(view);
@@ -132,9 +128,9 @@ impl Plugin for LangPlugin {
 }
 
 struct ViewState {
-    parser: Option<Box<dyn Parser>>,
+    current_language: LanguageId,
+    parser: Box<dyn Parser>,
     tracker: ScopeTracker,
-    line_num: usize,
     offset: usize,
     initial_state: State,
     spans_start: usize,
@@ -145,9 +141,9 @@ struct ViewState {
 impl ViewState {
     fn new() -> ViewState {
         ViewState {
-            parser: None,
+            current_language: LanguageId::from("Plain Text"),
+            parser: Box::new(PlaintextParser::new(HolderNewState::new())),
             tracker: ScopeTracker::default(),
-            line_num: 0,
             offset: 0,
             initial_state: State::default(),
             spans_start: 0,
@@ -156,26 +152,32 @@ impl ViewState {
         }
     }
 
-    fn set_parser(&mut self, language_id: &LanguageId) {
-        self.parser = match language_id.as_ref() {
-            "Rust" => Some(Box::new(RustParser::new(HolderNewState::new()))),
-            language_id => {
-                trace_payload(
-                    "unsupported language",
-                    &["experimental-lang"],
-                    format!("language id: {}", language_id),
-                );
-                None
-            }
-        };
-    }
-
     fn do_highlighting(&mut self, view: &mut View<StateCache<State>>) {
-        self.line_num = 0;
         self.offset = 0;
+        self.spans_start = 0;
         self.initial_state = State::default();
         self.spans = Vec::new();
         self.new_scopes = Vec::new();
+        view.get_cache().clear();
+
+        if view.get_language_id() != &self.current_language {
+            let parser: Box<dyn Parser> = match view.get_language_id().as_ref() {
+                "Rust" => Box::new(RustParser::new(HolderNewState::new())),
+                "Plain Text" => Box::new(PlaintextParser::new(HolderNewState::new())),
+                language_id => {
+                    trace_payload(
+                        "unsupported language",
+                        &["experimental-lang"],
+                        format!("language id: {}", language_id),
+                    );
+                    Box::new(PlaintextParser::new(HolderNewState::new()))
+                }
+            };
+
+            self.current_language = view.get_language_id().clone();
+            self.parser = parser;
+        }
+
         view.schedule_idle();
     }
 
@@ -226,20 +228,18 @@ impl ViewState {
     }
 
     fn compute_syntax(&mut self, line: &str) -> State {
-        let parser = self.parser.as_mut().expect("cannot compute syntax with no parser set");
-
         let mut i = 0;
         let mut state = self.initial_state;
         while i < line.len() {
-            let (prevlen, s0, len, s1) = parser.parse(&line[i..], state);
+            let (prevlen, s0, len, s1) = self.parser.parse(&line[i..], state);
 
             if prevlen > 0 {
                 // TODO: maybe make an iterator to avoid this duplication
-                let scopes = parser.get_scope_for_state(self.initial_state);
+                let scopes = self.parser.get_scope_for_state(self.initial_state);
 
                 if !scopes.is_empty() {
                     let scope_id =
-                        identifier_for_element(&mut self.tracker, &mut self.new_scopes, scopes);
+                        identifier_for_scope(&mut self.tracker, &mut self.new_scopes, scopes);
 
                     let start = self.offset - self.spans_start + i;
                     let end = start + prevlen;
@@ -251,11 +251,11 @@ impl ViewState {
                 i += prevlen;
             }
 
-            let scopes = parser.get_scope_for_state(s0);
+            let scopes = self.parser.get_scope_for_state(s0);
 
             if !scopes.is_empty() {
                 let scope_id =
-                    identifier_for_element(&mut self.tracker, &mut self.new_scopes, scopes);
+                    identifier_for_scope(&mut self.tracker, &mut self.new_scopes, scopes);
 
                 let start = self.offset - self.spans_start + i;
                 let end = start + len;
@@ -296,7 +296,7 @@ impl ViewState {
     }
 }
 
-fn identifier_for_element(
+fn identifier_for_scope(
     tracker: &mut ScopeTracker,
     new_scopes: &mut Vec<Scope>,
     scope: Scope,
@@ -313,7 +313,7 @@ fn identifier_for_element(
 fn main() {
     if let Some(ref s) = env::args().skip(1).next() {
         if s == "test" {
-            rust::test();
+            language::rust::test();
             return;
         }
     }

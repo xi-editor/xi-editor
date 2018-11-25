@@ -18,9 +18,30 @@ use std::io::{stdin, Read};
 
 use parser::Parser;
 use peg::*;
-use statestack::DebugNewState;
-use statestack::{Context, NewState, State};
+use statestack::{Context, DebugNewState, NewState, State};
 use Scope;
+
+lazy_static! {
+    static ref RUST_SOURCE_SCOPE: Scope = vec!["source.rust".to_string()];
+    static ref RUST_STRING_SCOPE: Scope =
+        vec!["source.rust".to_string(), "string.quoted.double.rust".to_string()];
+    static ref RUST_CHAR_SCOPE: Scope =
+        vec!["source.rust".to_string(), "string.quoted.single.rust".to_string()];
+    static ref RUST_COMMENT_SCOPE: Scope =
+        vec!["source.rust".to_string(), "punctuation.definition.comment.rust".to_string()];
+    static ref RUST_CONST_CHAR_SCOPE: Scope =
+        vec!["source.rust".to_string(), "constant.character.escape.rust".to_string()];
+    static ref RUST_NUMERIC_SCOPE: Scope =
+        vec!["source.rust".to_string(), "constant.numeric.decimal.rust".to_string()];
+    static ref RUST_INVALID_SCOPE: Scope =
+        vec!["source.rust".to_string(), "invalid.illegal.rust".to_string()];
+    static ref RUST_KEYWORD_SCOPE: Scope =
+        vec!["source.rust".to_string(), "keyword.operator.rust".to_string()];
+    static ref RUST_OPERATOR_SCOPE: Scope =
+        vec!["source.rust".to_string(), "keyword.operator.arithmetic.rust".to_string()];
+    static ref RUST_PRIMITIVE_SCOPE: Scope =
+        vec!["source.rust".to_string(), "entity.name.type.rust".to_string()];
+}
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum StateEl {
@@ -47,20 +68,18 @@ impl StateEl {
     /// See [this](https://github.com/sublimehq/Packages/blob/master/Rust/Rust.sublime-syntax)
     /// for reference.
     pub fn as_scopes(&self) -> Scope {
-        let scope_strs = match self {
-            StateEl::Source => vec!["source.rust"],
-            StateEl::StrQuote => vec!["source.rust", "string.quoted.double.rust"],
-            StateEl::CharQuote => vec!["source.rust", "string.quoted.single.rust"],
-            StateEl::Comment => vec!["source.rust", "punctuation.definition.comment.rust"],
-            StateEl::CharConst => vec!["source.rust", "constant.character.escape.rust"],
-            StateEl::NumericLiteral => vec!["source.rust", "constant.numeric.decimal.rust"],
-            StateEl::Invalid => vec!["source.rust", "invalid.illegal.rust"],
-            StateEl::Keyword => vec!["source.rust", "keyword.operator.rust"],
-            StateEl::Operator => vec!["source.rust", "keyword.operator.arithmetic.rust"],
-            StateEl::PrimType => vec!["source.rust", "entity.name.type.rust"],
-        };
-
-        scope_strs.iter().map(|it| it.to_string()).collect()
+        match self {
+            StateEl::Source => RUST_SOURCE_SCOPE.to_vec(),
+            StateEl::StrQuote => RUST_STRING_SCOPE.to_vec(),
+            StateEl::CharQuote => RUST_CHAR_SCOPE.to_vec(),
+            StateEl::Comment => RUST_COMMENT_SCOPE.to_vec(),
+            StateEl::CharConst => RUST_CONST_CHAR_SCOPE.to_vec(),
+            StateEl::NumericLiteral => RUST_NUMERIC_SCOPE.to_vec(),
+            StateEl::Invalid => RUST_INVALID_SCOPE.to_vec(),
+            StateEl::Keyword => RUST_KEYWORD_SCOPE.to_vec(),
+            StateEl::Operator => RUST_OPERATOR_SCOPE.to_vec(),
+            StateEl::PrimType => RUST_PRIMITIVE_SCOPE.to_vec(),
+        }
     }
 }
 
@@ -169,6 +188,10 @@ impl<N: NewState<StateEl>> RustParser<N> {
 }
 
 impl<N: NewState<StateEl>> Parser for RustParser<N> {
+    fn get_source_scope(&self) -> Vec<String> {
+        RUST_SOURCE_SCOPE.to_vec()
+    }
+
     fn get_scope_for_state(&self, state: State) -> Scope {
         let new_state = self.get_new_state();
 
@@ -228,7 +251,8 @@ impl<N: NewState<StateEl>> Parser for RustParser<N> {
 
             i += 1;
         }
-        (0, state, t.len(), state)
+
+        (0, self.ctx.push(state, StateEl::Source), t.len(), state)
     }
 }
 

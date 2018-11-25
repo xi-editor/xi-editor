@@ -12,9 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
-use std::fmt::Debug;
-use std::hash::Hash;
+use std::{collections::HashMap, fmt::Debug, hash::Hash};
 
 /// An entire state stack is represented as a single integer.
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
