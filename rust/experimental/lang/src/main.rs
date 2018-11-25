@@ -26,7 +26,6 @@ use std::{collections::HashMap, env, path::Path};
 use language::{plaintext::PlaintextParser, rust::RustParser};
 use parser::Parser;
 use statestack::{HolderNewState, State};
-use tracker::{LookupResult, ScopeTracker};
 use xi_core_lib::{plugins::rpc::ScopeSpan, ConfigTable, LanguageId, ViewId};
 use xi_plugin_lib::{mainloop, Cache, Plugin, StateCache, View};
 use xi_rope::RopeDelta;
@@ -36,7 +35,6 @@ mod language;
 mod parser;
 mod peg;
 mod statestack;
-mod tracker;
 
 const LINES_PER_RPC: usize = 50;
 
@@ -130,12 +128,10 @@ impl Plugin for LangPlugin {
 struct ViewState {
     current_language: LanguageId,
     parser: Box<dyn Parser>,
-    tracker: ScopeTracker,
     offset: usize,
     initial_state: State,
     spans_start: usize,
     spans: Vec<ScopeSpan>,
-    new_scopes: Vec<Scope>,
 }
 
 impl ViewState {
@@ -143,12 +139,10 @@ impl ViewState {
         ViewState {
             current_language: LanguageId::from("Plain Text"),
             parser: Box::new(PlaintextParser::new(HolderNewState::new())),
-            tracker: ScopeTracker::default(),
             offset: 0,
             initial_state: State::default(),
             spans_start: 0,
             spans: Vec::new(),
-            new_scopes: Vec::new(),
         }
     }
 
@@ -157,7 +151,6 @@ impl ViewState {
         self.spans_start = 0;
         self.initial_state = State::default();
         self.spans = Vec::new();
-        self.new_scopes = Vec::new();
         view.get_cache().clear();
 
         if view.get_language_id() != &self.current_language {
@@ -177,6 +170,9 @@ impl ViewState {
             self.current_language = view.get_language_id().clone();
             self.parser = parser;
         }
+
+        let scopes = self.parser.get_all_scopes();
+        view.add_scopes(&scopes);
 
         view.schedule_idle();
     }
@@ -235,34 +231,24 @@ impl ViewState {
 
             if prevlen > 0 {
                 // TODO: maybe make an iterator to avoid this duplication
-                let scopes = self.parser.get_scope_for_state(self.initial_state);
-
-                if !scopes.is_empty() {
-                    let scope_id =
-                        identifier_for_scope(&mut self.tracker, &mut self.new_scopes, scopes);
+                let scope_id = self.parser.get_scope_for_state(self.initial_state);
 
                     let start = self.offset - self.spans_start + i;
                     let end = start + prevlen;
 
                     let span = ScopeSpan { start, end, scope_id };
                     self.spans.push(span);
-                }
 
                 i += prevlen;
             }
 
-            let scopes = self.parser.get_scope_for_state(s0);
+            let scope_id = self.parser.get_scope_for_state(s0);
 
-            if !scopes.is_empty() {
-                let scope_id =
-                    identifier_for_scope(&mut self.tracker, &mut self.new_scopes, scopes);
+            let start = self.offset - self.spans_start + i;
+            let end = start + len;
 
-                let start = self.offset - self.spans_start + i;
-                let end = start + len;
-
-                let span = ScopeSpan { start, end, scope_id };
-                self.spans.push(span);
-            }
+            let span = ScopeSpan { start, end, scope_id };
+            self.spans.push(span);
 
             i += len;
             state = s1;
@@ -272,16 +258,6 @@ impl ViewState {
     }
 
     fn flush_spans(&mut self, view: &mut View<StateCache<State>>) {
-        if !self.new_scopes.is_empty() {
-            trace_payload(
-                "flushing scopes",
-                &["experimental-lang"],
-                format!("flushing scopes: {:?}", self.new_scopes),
-            );
-            view.add_scopes(&self.new_scopes);
-            self.new_scopes.clear();
-        }
-
         if self.spans_start != self.offset {
             trace_payload(
                 "flushing spans",
@@ -293,20 +269,6 @@ impl ViewState {
         }
 
         self.spans_start = self.offset;
-    }
-}
-
-fn identifier_for_scope(
-    tracker: &mut ScopeTracker,
-    new_scopes: &mut Vec<Scope>,
-    scope: Scope,
-) -> u32 {
-    match tracker.lookup(&scope) {
-        LookupResult::Existing(id) => id,
-        LookupResult::New(id) => {
-            new_scopes.push(scope);
-            id
-        }
     }
 }
 

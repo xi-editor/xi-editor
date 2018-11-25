@@ -21,27 +21,18 @@ use peg::*;
 use statestack::{Context, DebugNewState, NewState, State};
 use Scope;
 
-lazy_static! {
-    static ref RUST_SOURCE_SCOPE: Scope = vec!["source.rust".to_string()];
-    static ref RUST_STRING_SCOPE: Scope =
-        vec!["source.rust".to_string(), "string.quoted.double.rust".to_string()];
-    static ref RUST_CHAR_SCOPE: Scope =
-        vec!["source.rust".to_string(), "string.quoted.single.rust".to_string()];
-    static ref RUST_COMMENT_SCOPE: Scope =
-        vec!["source.rust".to_string(), "punctuation.definition.comment.rust".to_string()];
-    static ref RUST_CONST_CHAR_SCOPE: Scope =
-        vec!["source.rust".to_string(), "constant.character.escape.rust".to_string()];
-    static ref RUST_NUMERIC_SCOPE: Scope =
-        vec!["source.rust".to_string(), "constant.numeric.decimal.rust".to_string()];
-    static ref RUST_INVALID_SCOPE: Scope =
-        vec!["source.rust".to_string(), "invalid.illegal.rust".to_string()];
-    static ref RUST_KEYWORD_SCOPE: Scope =
-        vec!["source.rust".to_string(), "keyword.operator.rust".to_string()];
-    static ref RUST_OPERATOR_SCOPE: Scope =
-        vec!["source.rust".to_string(), "keyword.operator.arithmetic.rust".to_string()];
-    static ref RUST_PRIMITIVE_SCOPE: Scope =
-        vec!["source.rust".to_string(), "entity.name.type.rust".to_string()];
-}
+static ALL_SCOPES: &[&[&str]] = &[
+    &["source.rust"],
+    &["source.rust", "string.quoted.double.rust"],
+    &["source.rust", "string.quoted.single.rust"],
+    &["source.rust", "comment.line.double-slash.rust"],
+    &["source.rust", "constant.character.escape.rust"],
+    &["source.rust", "constant.numeric.decimal.rust"],
+    &["source.rust", "invalid.illegal.rust"],
+    &["source.rust", "keyword.operator.rust"],
+    &["source.rust", "keyword.operator.arithmetic.rust"],
+    &["source.rust", "entity.name.type.rust"],
+];
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum StateEl {
@@ -67,18 +58,18 @@ impl StateEl {
     /// Transform a [StateEl] into a [Vec] of Syntect Scope [String]s.
     /// See [this](https://github.com/sublimehq/Packages/blob/master/Rust/Rust.sublime-syntax)
     /// for reference.
-    pub fn as_scopes(&self) -> Scope {
+    pub fn as_scopes(&self) -> u32 {
         match self {
-            StateEl::Source => RUST_SOURCE_SCOPE.to_vec(),
-            StateEl::StrQuote => RUST_STRING_SCOPE.to_vec(),
-            StateEl::CharQuote => RUST_CHAR_SCOPE.to_vec(),
-            StateEl::Comment => RUST_COMMENT_SCOPE.to_vec(),
-            StateEl::CharConst => RUST_CONST_CHAR_SCOPE.to_vec(),
-            StateEl::NumericLiteral => RUST_NUMERIC_SCOPE.to_vec(),
-            StateEl::Invalid => RUST_INVALID_SCOPE.to_vec(),
-            StateEl::Keyword => RUST_KEYWORD_SCOPE.to_vec(),
-            StateEl::Operator => RUST_OPERATOR_SCOPE.to_vec(),
-            StateEl::PrimType => RUST_PRIMITIVE_SCOPE.to_vec(),
+            StateEl::Source => 0,
+            StateEl::StrQuote => 1,
+            StateEl::CharQuote => 2,
+            StateEl::Comment => 3,
+            StateEl::CharConst => 4,
+            StateEl::NumericLiteral => 5,
+            StateEl::Invalid => 6,
+            StateEl::Keyword => 7,
+            StateEl::Operator => 8,
+            StateEl::PrimType => 9,
         }
     }
 }
@@ -188,13 +179,20 @@ impl<N: NewState<StateEl>> RustParser<N> {
 }
 
 impl<N: NewState<StateEl>> Parser for RustParser<N> {
-    fn get_scope_for_state(&self, state: State) -> Scope {
+    fn get_all_scopes(&self) -> Vec<Scope> {
+        ALL_SCOPES
+            .iter()
+            .map(|stack| stack.iter().map(|s| s.to_string()).collect::<Vec<_>>())
+            .collect()
+    }
+
+    fn get_scope_for_state(&self, state: State) -> u32 {
         let new_state = self.get_new_state();
 
         if let Some(element) = new_state.get_element(state) {
             element.as_scopes()
         } else {
-            vec![]
+            0
         }
     }
 

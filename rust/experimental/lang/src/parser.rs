@@ -17,6 +17,7 @@ use Scope;
 
 /// Trait for abstracting over text parsing and [Scope] extraction
 pub trait Parser {
-    fn get_scope_for_state(&self, state: State) -> Scope;
+    fn get_all_scopes(&self) -> Vec<Scope>;
+    fn get_scope_for_state(&self, state: State) -> u32;
     fn parse(&mut self, text: &str, state: State) -> (usize, State, usize, State);
 }

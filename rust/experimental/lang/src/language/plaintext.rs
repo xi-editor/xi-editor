@@ -17,8 +17,13 @@ impl<N: NewState<()>> PlaintextParser<N> {
 }
 
 impl<N: NewState<()>> Parser for PlaintextParser<N> {
-    fn get_scope_for_state(&self, _state: State) -> Scope {
-        PLAINTEXT_SOURCE_SCOPE.to_vec()
+
+    fn get_all_scopes(&self) -> Vec<Scope> {
+        vec![PLAINTEXT_SOURCE_SCOPE.clone()]
+    }
+
+    fn get_scope_for_state(&self, _state: State) -> u32 {
+        0
     }
 
     fn parse(&mut self, text: &str, state: State) -> (usize, State, usize, State) {
