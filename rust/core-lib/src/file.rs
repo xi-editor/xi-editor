@@ -99,9 +99,10 @@ impl FileManager {
         self.file_info.get(&id)
     }
 
+    #[cfg(feature = "notify")]
     pub fn get_current_position_in_tail(&self, id: &BufferId) -> u64 {
         match self.file_info.get(id) {
-            Some(V) => V.tail_details.current_position_in_tail,
+            Some(v) => v.tail_details.current_position_in_tail,
             None => 0
         }
     }
@@ -128,24 +129,30 @@ impl FileManager {
             let _ = File::create(path).map_err(|e| FileError::Io(e, path.to_owned()))?;
         }
 
-        if cfg!(feature = "notify") {
+        #[cfg(feature = "notify")]
+        let r = self.open_file_to_tail(path, id);
+        #[cfg(not(feature = "notify"))]
+        let r = self.open_file(path, id);
 
-            let current_position = self.get_current_position_in_tail(&id);
-            info!("current_position {:?}", current_position);
-            let (rope, info) = try_tailing_file(path, current_position)?;
+        r
+    }
 
-            self.open_files.insert(path.to_owned(), id);
-            if self.file_info.insert(id, info).is_none() {
-                self.watcher.watch(path, false, OPEN_FILE_EVENT_TOKEN);
-            }
-            Ok(rope)
-        } else {
-            let (rope, info) = try_load_file(path)?;
+    pub fn open_file(&mut self, path: &Path, id: BufferId) -> Result<Rope, FileError> {
+        let (rope, info) = try_load_file(path)?;
+        self.open_files.insert(path.to_owned(), id);
+        self.file_info.insert(id, info);
+        Ok(rope)
+    }
 
-            self.open_files.insert(path.to_owned(), id);
-            self.file_info.insert(id, info);
-            Ok(rope)
+    #[cfg(feature = "notify")]
+    pub fn open_file_to_tail(&mut self, path: &Path, id: BufferId) -> Result<Rope, FileError> {
+        let current_position = self.get_current_position_in_tail(&id);
+        let (rope, info) = try_tailing_file(path, current_position)?;
+        self.open_files.insert(path.to_owned(), id);
+        if self.file_info.insert(id, info).is_none() {
+            self.watcher.watch(path, false, OPEN_FILE_EVENT_TOKEN);
         }
+        Ok(rope)
     }
 
     pub fn close(&mut self, id: BufferId) {
@@ -205,17 +212,20 @@ impl FileManager {
             let encoding = self.file_info[&id].encoding;
             #[cfg(feature = "notify")]
             self.watcher.unwatch(&path, OPEN_FILE_EVENT_TOKEN);
+
             try_save(path, text, encoding).map_err(|e| FileError::Io(e, path.to_owned()))?;
             self.file_info.get_mut(&id).unwrap().mod_time = get_mod_time(path);
+
             #[cfg(feature = "notify")]
             self.watcher.watch(&path,false,OPEN_FILE_EVENT_TOKEN);
 
             #[cfg(feature = "notify")]
-            self.update_current_position_in_tail(path, &id);
+            self.update_current_position_in_tail(path, &id)?;
         }
         Ok(())
     }
 
+    #[cfg(feature = "notify")]
     pub fn update_current_position_in_tail(&mut self, path: &Path, id: &BufferId) -> Result<(), FileError> {
 
         let existing_file_info = self.file_info.get_mut(&id).unwrap();
@@ -224,13 +234,13 @@ impl FileManager {
         let end_position = f.seek(SeekFrom::End(0)).map_err(|e| FileError::Io(e, path.to_owned()))?;
 
         existing_file_info.tail_details.current_position_in_tail = end_position;
-        info!("Saving with end_position {:?}", end_position);
         Ok(())
     }
 }
 
 /// When tailing a file, instead of reading file from beginning, we need to get changes from the end.
 /// This method does that.
+#[cfg(feature = "notify")]
 fn try_tailing_file<P>(path: P, current_position: u64) -> Result<(Rope, FileInfo), FileError>
     where P: AsRef<Path>
 {
@@ -238,7 +248,6 @@ fn try_tailing_file<P>(path: P, current_position: u64) -> Result<(Rope, FileInfo
     let end_position = f.seek(SeekFrom::End(0)).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
 
     let diff = end_position - current_position;
-    info!("end_position {:?} current_position {:?}", end_position, current_position);
     let mut buf = vec![0; diff as usize];
     f.seek(SeekFrom::Current(-(buf.len() as i64))).unwrap();
     f.read_exact(&mut buf).unwrap();
