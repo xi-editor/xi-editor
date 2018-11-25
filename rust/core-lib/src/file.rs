@@ -35,9 +35,6 @@ use watcher::FileWatcher;
 use std::io::Seek;
 use std::io::SeekFrom;
 
-//sj_todo why was this imported to begin with?
-//use file::FileInfo;
-
 const UTF8_BOM: &str = "\u{feff}";
 
 /// Tracks all state related to open files.
