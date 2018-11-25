@@ -34,7 +34,6 @@ use tabs::OPEN_FILE_EVENT_TOKEN;
 use watcher::FileWatcher;
 use std::io::Seek;
 use std::io::SeekFrom;
-use xi_rope::tree::Node;
 
 //sj_todo why was this imported to begin with?
 //use file::FileInfo;
