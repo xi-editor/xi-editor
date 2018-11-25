@@ -427,6 +427,12 @@ impl<'a> EventContext<'a> {
         self.render();
     }
 
+    pub(crate) fn reload_tail(&mut self, text: Rope) {
+        self.with_editor(|ed, _, _, _| ed.tail_append(text));
+        self.after_edit("core");
+        self.render();
+    }
+
     pub(crate) fn plugin_info(&mut self) -> PluginBufferInfo {
         let ed = self.editor.borrow();
         let nb_lines = ed.get_buffer().measure::<LinesMetric>() + 1;

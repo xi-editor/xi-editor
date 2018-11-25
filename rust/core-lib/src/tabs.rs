@@ -660,6 +660,7 @@ impl CoreState {
     #[cfg(feature = "notify")]
     fn handle_open_file_fs_event(&mut self, event: DebouncedEvent) {
         use notify::DebouncedEvent::*;
+        info!("Event type is {:?}", event);
         let path = match event {
             NoticeWrite(ref path) | Create(ref path) | Write(ref path) | Chmod(ref path) => path,
             other => {
@@ -689,7 +690,7 @@ impl CoreState {
                     .find(|v| v.borrow().get_buffer_id() == buffer_id)
                     .map(|v| v.borrow().get_view_id())
                     .unwrap();
-                self.make_context(view_id).unwrap().reload(text);
+                self.make_context(view_id).unwrap().reload_tail(text);
             }
         }
     }

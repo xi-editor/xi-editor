@@ -128,29 +128,22 @@ impl FileManager {
             let _ = File::create(path).map_err(|e| FileError::Io(e, path.to_owned()))?;
         }
 
-        //sj_todo following details need to come from RPC
-        let is_tail_mode_on = true;
-        let is_at_bottom_of_file = true;
-        let current_position = self.get_current_position_in_tail(&id);
+        if cfg!(feature = "notify") {
 
-        if is_tail_mode_on && is_at_bottom_of_file {
+            let current_position = self.get_current_position_in_tail(&id);
+            info!("current_position {:?}", current_position);
             let (rope, info) = try_tailing_file(path, current_position)?;
 
             self.open_files.insert(path.to_owned(), id);
             if self.file_info.insert(id, info).is_none() {
-                #[cfg(feature = "notify")]
-                    self.watcher.watch(path, false, OPEN_FILE_EVENT_TOKEN);
+                self.watcher.watch(path, false, OPEN_FILE_EVENT_TOKEN);
             }
             Ok(rope)
         } else {
             let (rope, info) = try_load_file(path)?;
 
-
             self.open_files.insert(path.to_owned(), id);
-            if self.file_info.insert(id, info).is_none() {
-                #[cfg(feature = "notify")]
-                    self.watcher.watch(path, false, OPEN_FILE_EVENT_TOKEN);
-            }
+            self.file_info.insert(id, info);
             Ok(rope)
         }
     }
@@ -216,25 +209,38 @@ impl FileManager {
             self.file_info.get_mut(&id).unwrap().mod_time = get_mod_time(path);
             #[cfg(feature = "notify")]
             self.watcher.watch(&path,false,OPEN_FILE_EVENT_TOKEN);
+
+            #[cfg(feature = "notify")]
+            self.update_current_position_in_tail(path, &id);
         }
+        Ok(())
+    }
+
+    pub fn update_current_position_in_tail(&mut self, path: &Path, id: &BufferId) -> Result<(), FileError> {
+
+        let existing_file_info = self.file_info.get_mut(&id).unwrap();
+
+        let mut f = File::open(path).map_err(|e| FileError::Io(e, path.to_owned()))?;
+        let end_position = f.seek(SeekFrom::End(0)).map_err(|e| FileError::Io(e, path.to_owned()))?;
+
+        existing_file_info.tail_details.current_position_in_tail = end_position;
+        info!("Saving with end_position {:?}", end_position);
         Ok(())
     }
 }
 
-/// When tailing a file instead of reading file from beginning, we need to get changes from the end.
+/// When tailing a file, instead of reading file from beginning, we need to get changes from the end.
 /// This method does that.
-fn try_tailing_file<P>(path: P, current_postion: u64) -> Result<(Rope, FileInfo), FileError>
+fn try_tailing_file<P>(path: P, current_position: u64) -> Result<(Rope, FileInfo), FileError>
     where P: AsRef<Path>
 {
     let mut f = File::open(path.as_ref()).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
     let end_position = f.seek(SeekFrom::End(0)).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
 
-    let diff = end_position - current_postion;
-
-    //sj_todo do we need to check if end_position > current_position?
-
+    let diff = end_position - current_position;
+    info!("end_position {:?} current_position {:?}", end_position, current_position);
     let mut buf = vec![0; diff as usize];
-    let pos = f.seek(SeekFrom::Current(-(buf.len() as i64))).unwrap();
+    f.seek(SeekFrom::Current(-(buf.len() as i64))).unwrap();
     f.read_exact(&mut buf).unwrap();
 
     let new_current_position = end_position;
