@@ -660,7 +660,6 @@ impl CoreState {
     #[cfg(feature = "notify")]
     fn handle_open_file_fs_event(&mut self, event: DebouncedEvent) {
         use notify::DebouncedEvent::*;
-        info!("Event type is {:?}", event);
         let path = match event {
             NoticeWrite(ref path) | Create(ref path) | Write(ref path) | Chmod(ref path) => path,
             other => {
