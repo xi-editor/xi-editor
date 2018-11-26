@@ -28,12 +28,12 @@ use xi_rpc::RemoteError;
 
 use tabs::BufferId;
 
+use std::io::Seek;
+use std::io::SeekFrom;
 #[cfg(feature = "notify")]
 use tabs::OPEN_FILE_EVENT_TOKEN;
 #[cfg(feature = "notify")]
 use watcher::FileWatcher;
-use std::io::Seek;
-use std::io::SeekFrom;
 
 const UTF8_BOM: &str = "\u{feff}";
 
@@ -99,7 +99,7 @@ impl FileManager {
     pub fn get_current_position_in_tail(&self, id: &BufferId) -> u64 {
         match self.file_info.get(id) {
             Some(v) => v.tail_details.current_position_in_tail,
-            None => 0
+            None => 0,
         }
     }
 
@@ -213,7 +213,7 @@ impl FileManager {
             self.file_info.get_mut(&id).unwrap().mod_time = get_mod_time(path);
 
             #[cfg(feature = "notify")]
-            self.watcher.watch(&path,false,OPEN_FILE_EVENT_TOKEN);
+            self.watcher.watch(&path, false, OPEN_FILE_EVENT_TOKEN);
 
             #[cfg(feature = "notify")]
             self.update_current_position_in_tail(path, &id)?;
@@ -222,12 +222,16 @@ impl FileManager {
     }
 
     #[cfg(feature = "notify")]
-    pub fn update_current_position_in_tail(&mut self, path: &Path, id: &BufferId) -> Result<(), FileError> {
-
+    pub fn update_current_position_in_tail(
+        &mut self,
+        path: &Path,
+        id: &BufferId,
+    ) -> Result<(), FileError> {
         let existing_file_info = self.file_info.get_mut(&id).unwrap();
 
         let mut f = File::open(path).map_err(|e| FileError::Io(e, path.to_owned()))?;
-        let end_position = f.seek(SeekFrom::End(0)).map_err(|e| FileError::Io(e, path.to_owned()))?;
+        let end_position =
+            f.seek(SeekFrom::End(0)).map_err(|e| FileError::Io(e, path.to_owned()))?;
 
         existing_file_info.tail_details.current_position_in_tail = end_position;
         Ok(())
@@ -238,10 +242,13 @@ impl FileManager {
 /// This method does that.
 #[cfg(feature = "notify")]
 fn try_tailing_file<P>(path: P, current_position: u64) -> Result<(Rope, FileInfo), FileError>
-    where P: AsRef<Path>
+where
+    P: AsRef<Path>,
 {
-    let mut f = File::open(path.as_ref()).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
-    let end_position = f.seek(SeekFrom::End(0)).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
+    let mut f =
+        File::open(path.as_ref()).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
+    let end_position =
+        f.seek(SeekFrom::End(0)).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
 
     let diff = end_position - current_position;
     let mut buf = vec![0; diff as usize];
@@ -256,7 +263,8 @@ fn try_tailing_file<P>(path: P, current_position: u64) -> Result<(Rope, FileInfo
         is_at_bottom_of_file: true,
     };
 
-    let mod_time = f.metadata().map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?.modified().ok();
+    let mod_time =
+        f.metadata().map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?.modified().ok();
 
     let encoding = CharacterEncoding::guess(&buf);
     let rope = try_decode(buf, encoding, path.as_ref())?;
@@ -294,11 +302,13 @@ where
     };
 
     let info = FileInfo {
-        encoding, mod_time,
+        encoding,
+        mod_time,
         path: path.as_ref().to_owned(),
         has_changed: false,
         #[cfg(feature = "notify")]
-        tail_details: unchanged_tail_details };
+        tail_details: unchanged_tail_details,
+    };
     Ok((rope, info))
 }
 
