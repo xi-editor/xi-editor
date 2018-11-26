@@ -80,8 +80,7 @@ impl<T: Clone + Hash + Eq, N: NewState<T>> Context<T, N> {
                     new = true;
                     entries.push(Entry { tos: el, prev: s });
                     State(entries.len())
-                })
-                .clone()
+                }).clone()
         };
         if new {
             let contents = self.to_vec(result);

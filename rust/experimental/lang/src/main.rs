@@ -14,8 +14,6 @@
 
 //! A language syntax coloring and indentation plugin for xi-editor.
 
-#[macro_use]
-extern crate lazy_static;
 extern crate xi_core_lib;
 extern crate xi_plugin_lib;
 extern crate xi_rope;
@@ -231,18 +229,18 @@ impl ViewState {
 
             if prevlen > 0 {
                 // TODO: maybe make an iterator to avoid this duplication
-                let scope_id = self.parser.get_scope_for_state(self.initial_state);
+                let scope_id = self.parser.get_scope_id_for_state(self.initial_state);
 
-                    let start = self.offset - self.spans_start + i;
-                    let end = start + prevlen;
+                let start = self.offset - self.spans_start + i;
+                let end = start + prevlen;
 
-                    let span = ScopeSpan { start, end, scope_id };
-                    self.spans.push(span);
+                let span = ScopeSpan { start, end, scope_id };
+                self.spans.push(span);
 
                 i += prevlen;
             }
 
-            let scope_id = self.parser.get_scope_for_state(s0);
+            let scope_id = self.parser.get_scope_id_for_state(s0);
 
             let start = self.offset - self.spans_start + i;
             let end = start + len;

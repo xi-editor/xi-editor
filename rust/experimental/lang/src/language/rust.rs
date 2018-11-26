@@ -60,16 +60,16 @@ impl StateEl {
     /// for reference.
     pub fn as_scopes(&self) -> u32 {
         match self {
-            StateEl::Source => 0,
-            StateEl::StrQuote => 1,
-            StateEl::CharQuote => 2,
-            StateEl::Comment => 3,
-            StateEl::CharConst => 4,
-            StateEl::NumericLiteral => 5,
-            StateEl::Invalid => 6,
-            StateEl::Keyword => 7,
-            StateEl::Operator => 8,
-            StateEl::PrimType => 9,
+            StateEl::Source => 1,
+            StateEl::StrQuote => 2,
+            StateEl::CharQuote => 3,
+            StateEl::Comment => 4,
+            StateEl::CharConst => 5,
+            StateEl::NumericLiteral => 6,
+            StateEl::Invalid => 7,
+            StateEl::Keyword => 8,
+            StateEl::Operator => 9,
+            StateEl::PrimType => 10,
         }
     }
 }
@@ -186,7 +186,7 @@ impl<N: NewState<StateEl>> Parser for RustParser<N> {
             .collect()
     }
 
-    fn get_scope_for_state(&self, state: State) -> u32 {
+    fn get_scope_id_for_state(&self, state: State) -> u32 {
         let new_state = self.get_new_state();
 
         if let Some(element) = new_state.get_element(state) {
