@@ -426,7 +426,7 @@ impl fmt::Debug for Style {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fn fmt_color(f: &mut fmt::Formatter, c: Option<u32>) -> fmt::Result {
             if let Some(c) = c {
-                write!(f, "{:X}", c)
+                write!(f, "#{:X}", c)
             } else {
                 write!(f, "None")
             }
@@ -434,7 +434,7 @@ impl fmt::Debug for Style {
 
         write!(f, "Style( P{}, fg: ", self.priority)?;
         fmt_color(f, self.fg_color)?;
-        write!(f, " bg: ");
+        write!(f, " bg: ")?;
         fmt_color(f, self.bg_color)?;
 
         if let Some(w) = self.weight {
