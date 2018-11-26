@@ -288,6 +288,7 @@ impl View {
     pub(crate) fn unset_find(&mut self) {
         self.find.iter_mut().for_each(Find::unset);
         self.find.clear();
+        self.find_changed = FindStatusChange::All;
     }
 
     fn goto_line(&mut self, text: &Rope, line: u64) {
