@@ -19,22 +19,33 @@ use Scope;
 const PLAINTEXT_SOURCE_SCOPE: &[&str] = &["source.plaintext"];
 
 pub struct PlaintextParser<N> {
+    scope_offset: Option<u32>,
     ctx: Context<(), N>,
 }
 
 impl<N: NewState<()>> PlaintextParser<N> {
     pub fn new(new_state: N) -> PlaintextParser<N> {
-        PlaintextParser { ctx: Context::new(new_state) }
+        PlaintextParser { scope_offset: None, ctx: Context::new(new_state) }
     }
 }
 
 impl<N: NewState<()>> Parser for PlaintextParser<N> {
+    fn has_offset(&mut self) -> bool {
+        self.scope_offset.is_some()
+    }
+
+    fn set_scope_offset(&mut self, offset: u32) {
+        if !self.has_offset() {
+            self.scope_offset = Some(offset)
+        }
+    }
+
     fn get_all_scopes(&self) -> Vec<Scope> {
         vec![PLAINTEXT_SOURCE_SCOPE.iter().map(|it| it.to_string()).collect()]
     }
 
     fn get_scope_id_for_state(&self, _state: State) -> u32 {
-        0
+        self.scope_offset.unwrap_or_default()
     }
 
     fn parse(&mut self, text: &str, state: State) -> (usize, State, usize, State) {

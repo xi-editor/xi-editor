@@ -58,18 +58,18 @@ impl StateEl {
     /// Transform a [StateEl] into a [Vec] of Syntect Scope [String]s.
     /// See [this](https://github.com/sublimehq/Packages/blob/master/Rust/Rust.sublime-syntax)
     /// for reference.
-    pub fn as_scopes(&self) -> u32 {
+    pub fn scope_id(&self) -> u32 {
         match self {
-            StateEl::Source => 1,
-            StateEl::StrQuote => 2,
-            StateEl::CharQuote => 3,
-            StateEl::Comment => 4,
-            StateEl::CharConst => 5,
-            StateEl::NumericLiteral => 6,
-            StateEl::Invalid => 7,
-            StateEl::Keyword => 8,
-            StateEl::Operator => 9,
-            StateEl::PrimType => 10,
+            StateEl::Source => 0,
+            StateEl::StrQuote => 1,
+            StateEl::CharQuote => 2,
+            StateEl::Comment => 3,
+            StateEl::CharConst => 4,
+            StateEl::NumericLiteral => 5,
+            StateEl::Invalid => 6,
+            StateEl::Keyword => 7,
+            StateEl::Operator => 8,
+            StateEl::PrimType => 9,
         }
     }
 }
@@ -145,12 +145,13 @@ const RUST_OPERATORS: &'static [&'static [u8]] = &[
 ];
 
 pub struct RustParser<N> {
+    scope_offset: Option<u32>,
     ctx: Context<StateEl, N>,
 }
 
 impl<N: NewState<StateEl>> RustParser<N> {
     pub fn new(new_state: N) -> RustParser<N> {
-        RustParser { ctx: Context::new(new_state) }
+        RustParser { scope_offset: None, ctx: Context::new(new_state) }
     }
 
     fn get_new_state(&self) -> &N {
@@ -179,6 +180,16 @@ impl<N: NewState<StateEl>> RustParser<N> {
 }
 
 impl<N: NewState<StateEl>> Parser for RustParser<N> {
+    fn has_offset(&mut self) -> bool {
+        self.scope_offset.is_some()
+    }
+
+    fn set_scope_offset(&mut self, offset: u32) {
+        if !self.has_offset() {
+            self.scope_offset = Some(offset)
+        }
+    }
+
     fn get_all_scopes(&self) -> Vec<Scope> {
         ALL_SCOPES
             .iter()
@@ -187,12 +198,13 @@ impl<N: NewState<StateEl>> Parser for RustParser<N> {
     }
 
     fn get_scope_id_for_state(&self, state: State) -> u32 {
+        let offset = self.scope_offset.unwrap_or_default();
         let new_state = self.get_new_state();
 
         if let Some(element) = new_state.get_element(state) {
-            element.as_scopes()
+            element.scope_id() + offset
         } else {
-            0
+            offset
         }
     }
 

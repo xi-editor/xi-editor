@@ -130,6 +130,7 @@ struct ViewState {
     initial_state: State,
     spans_start: usize,
     spans: Vec<ScopeSpan>,
+    scope_offset: u32,
 }
 
 impl ViewState {
@@ -141,6 +142,7 @@ impl ViewState {
             initial_state: State::default(),
             spans_start: 0,
             spans: Vec::new(),
+            scope_offset: 0,
         }
     }
 
@@ -171,6 +173,11 @@ impl ViewState {
 
         let scopes = self.parser.get_all_scopes();
         view.add_scopes(&scopes);
+
+        if !self.parser.has_offset() {
+            self.parser.set_scope_offset(self.scope_offset);
+            self.scope_offset += scopes.len() as u32;
+        }
 
         view.schedule_idle();
     }
