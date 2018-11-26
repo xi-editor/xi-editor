@@ -37,6 +37,7 @@ use selection::{InsertDrift, SelRegion, Selection};
 use styles::ThemeStyleMap;
 use view::{Replace, View};
 use word_boundaries::WordCursor;
+use xi_rope::{Delta, RopeInfo};
 
 #[cfg(not(feature = "ledger"))]
 pub struct SyncStore;

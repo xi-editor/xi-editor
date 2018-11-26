@@ -55,7 +55,7 @@ use whitespace::Indentation;
 use width_cache::WidthCache;
 use WeakXiCore;
 // TODO
-use session::Session;
+use session::{Session, SESSION_SAVE_MASK};
 
 #[cfg(feature = "notify")]
 use notify::DebouncedEvent;
@@ -545,12 +545,10 @@ impl CoreState {
 /// Idle, tracing, and file event handling
 impl CoreState {
     pub(crate) fn handle_idle(&mut self, token: usize) {
-        // TODO not place it here
-        self.session.borrow_mut().handle_idle();
-
         match token {
             NEW_VIEW_IDLE_TOKEN => self.finalize_new_views(),
             WATCH_IDLE_TOKEN => self.handle_fs_events(),
+            SESSION_SAVE_MASK => self.session.borrow_mut().save(),
             other if (other & RENDER_VIEW_IDLE_MASK) != 0 => {
                 self.handle_render_timer(other ^ RENDER_VIEW_IDLE_MASK)
             }

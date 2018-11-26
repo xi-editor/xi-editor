@@ -45,7 +45,7 @@ use tabs::{BufferId, PluginId, ViewId, RENDER_VIEW_IDLE_MASK};
 use view::View;
 use width_cache::WidthCache;
 use WeakXiCore;
-use session::Session;
+use session::{Session, SESSION_SAVE_MASK, SESSION_SAVE_DELAY};
 
 // Maximum returned result from plugin get_data RPC.
 pub const MAX_SIZE_LIMIT: usize = 1024 * 1024;
@@ -278,6 +278,13 @@ impl<'a> EventContext<'a> {
                 self.client.schedule_timer(timeout, token);
                 view.set_has_pending_render(true);
             }
+        }
+
+        let mut session = self.session.borrow_mut();
+        if !session.has_pending_save {
+            let timeout = Instant::now() + SESSION_SAVE_DELAY;
+            self.client.schedule_timer(timeout, SESSION_SAVE_MASK);
+            session.set_has_pending_save(true);
         }
     }
 
