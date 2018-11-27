@@ -733,6 +733,12 @@ mod tests {
         that has three\n\
         [lines.|]" );
 
+        ctx.do_edit(EditNotification::Gesture { line: 1, col: 2, ty: MultiLineSelect });
+        assert_eq!(harness.debug_render(),"\
+        this is a string|\n\
+        [th|at has three\n\
+        lines.]" );
+
         ctx.do_edit(EditNotification::SelectAll);
         assert_eq!(harness.debug_render(),"\
         [this is a string\n\
