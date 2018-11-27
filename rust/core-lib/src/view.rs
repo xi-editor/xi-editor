@@ -133,6 +133,7 @@ enum WrapWidth {
 }
 
 /// The smallest unit of text that a gesture can select
+#[derive(Copy, Clone)]
 pub enum SelectionGranularity {
     /// Selects any point or character range
     Point,
@@ -504,7 +505,6 @@ impl View {
     /// Does a drag gesture, setting the selection from a combination of the drag
     /// state and new offset.
     fn do_drag(&mut self, text: &Rope, line: u64, col: u64, affinity: Affinity) {
-        let mut is_line = false;
         let offset = self.line_col_to_offset(text, line as usize, col as usize);
         let new_sel = self.drag_state.as_ref().map(|drag_state| {
             let mut sel = drag_state.base_sel.clone();
@@ -531,7 +531,8 @@ impl View {
         });
 
         if let Some(sel) = new_sel {
-            if is_line {
+            let granularity = self.drag_state.as_ref().map(|d| d.granularity);
+            if let Some(SelectionGranularity::Line) = granularity {
                 self.set_selection_raw(text, sel);
             } else {
                 self.set_selection(text, sel);

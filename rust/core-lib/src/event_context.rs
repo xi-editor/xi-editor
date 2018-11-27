@@ -639,6 +639,7 @@ mod tests {
     #[test]
     fn test_gestures() {
         use rpc::GestureType::*;
+        use rpc::MouseAction;
         let initial_text = "\
         this is a string\n\
         that has three\n\
@@ -733,11 +734,11 @@ mod tests {
         that has three\n\
         [lines.|]" );
 
-        ctx.do_edit(EditNotification::Gesture { line: 1, col: 2, ty: MultiLineSelect });
+        ctx.do_edit(EditNotification::Drag(MouseAction { line: 1, column: 2, flags: 0, click_count: Some(1) }));
         assert_eq!(harness.debug_render(),"\
         this is a string|\n\
-        [th|at has three\n\
-        lines.]" );
+        [that has three\n\
+        lines.|]" );
 
         ctx.do_edit(EditNotification::SelectAll);
         assert_eq!(harness.debug_render(),"\
