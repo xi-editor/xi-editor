@@ -245,7 +245,7 @@ impl View {
             Drag(MouseAction { line, column, .. }) => {
                 self.do_drag(text, line, column, Affinity::default())
             }
-            Cancel => self.do_cancel(text),
+            CollapseSelections => self.collapse_selections(text),
             HighlightFind { visible } => {
                 self.highlight_find = visible;
                 self.find_changed = FindStatusChange::All;
@@ -274,21 +274,6 @@ impl View {
             GestureType::MultiLineSelect => self.select_line(text, offset, line, true),
             GestureType::MultiWordSelect => self.select_word(text, offset, true),
         }
-    }
-
-    fn do_cancel(&mut self, text: &Rope) {
-        // if we have active find highlights, we don't collapse selections
-        if self.find.is_empty() {
-            self.collapse_selections(text);
-        } else {
-            self.unset_find();
-        }
-    }
-
-    pub(crate) fn unset_find(&mut self) {
-        self.find.iter_mut().for_each(Find::unset);
-        self.find.clear();
-        self.find_changed = FindStatusChange::All;
     }
 
     fn goto_line(&mut self, text: &Rope, line: u64) {

@@ -135,13 +135,6 @@ Copies the active selection, returning their contents or `Null` if the selection
 
 Cut the active selection, returning their contents or `Null` if the selection was empty.
 
-#### cancel_operation
-
-`cancel_operation`
-
-Currently, this collapses selections and multiple cursors, and dehighlights
-searches.
-
 #### scroll
 
 `scroll [0,18]`
@@ -228,6 +221,7 @@ page_down_and_modify_selection
 yank
 transpose
 select_all
+collapse_selections
 add_selection_above
 add_selection_below
 ```
