@@ -720,7 +720,7 @@ mod tests {
         [|that] has three\n\
         [|lines]." );
 
-        ctx.do_edit(EditNotification::CancelOperation);
+        ctx.do_edit(EditNotification::CollapseSelections);
         ctx.do_edit(EditNotification::MoveToRightEndOfLine);
         assert_eq!(harness.debug_render(),"\
         this is a string|\n\
@@ -739,7 +739,7 @@ mod tests {
         that has three\n\
         lines.|]" );
 
-        ctx.do_edit(EditNotification::CancelOperation);
+        ctx.do_edit(EditNotification::CollapseSelections);
         ctx.do_edit(EditNotification::AddSelectionAbove);
         assert_eq!(harness.debug_render(),"\
         this is a string\n\
@@ -1673,7 +1673,7 @@ mod tests {
         ctx.do_edit(EditNotification::MoveToRightEndOfLine);
         ctx.do_edit(EditNotification::MoveWordLeftAndModifySelection);
         ctx.do_edit(EditNotification::Transpose);
-        ctx.do_edit(EditNotification::CancelOperation);
+        ctx.do_edit(EditNotification::CollapseSelections);
         ctx.do_edit(EditNotification::MoveToRightEndOfLine);
         assert_eq!(harness.debug_render(),"\
         this is a about|\n\
@@ -1739,7 +1739,7 @@ mod tests {
         lines.\n\
         And lines with very different length.");
 
-        ctx.do_edit(EditNotification::CancelOperation);
+        ctx.do_edit(EditNotification::CollapseSelections);
         ctx.do_edit(EditNotification::Gesture { line: 1, col: 5, ty: PointSelect });
         ctx.do_edit(EditNotification::AddSelectionBelow);
         assert_eq!(harness.debug_render(),"\
@@ -1749,7 +1749,7 @@ mod tests {
         lines|.\n\
         And lines with very different length.");
 
-        ctx.do_edit(EditNotification::CancelOperation);
+        ctx.do_edit(EditNotification::CollapseSelections);
         ctx.do_edit(EditNotification::Gesture { line: 4, col: 10, ty: PointSelect });
         ctx.do_edit(EditNotification::AddSelectionAbove);
         assert_eq!(harness.debug_render(),"\

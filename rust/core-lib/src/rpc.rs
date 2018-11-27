@@ -470,7 +470,6 @@ pub enum EditNotification {
     DebugWrapWidth,
     /// Prints the style spans present in the active selection.
     DebugPrintSpans,
-    CancelOperation,
     Uppercase,
     Lowercase,
     Capitalize,
@@ -509,6 +508,7 @@ pub enum EditNotification {
     ClearRecording {
         recording_name: String,
     },
+    CollapseSelections,
 }
 
 /// The edit related requests.

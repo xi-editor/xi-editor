@@ -42,12 +42,12 @@ pub(crate) enum ViewEvent {
     FindNext { wrap_around: bool, allow_same: bool, modify_selection: SelectionModifier },
     FindPrevious { wrap_around: bool, allow_same: bool, modify_selection: SelectionModifier },
     FindAll,
-    Cancel,
     HighlightFind { visible: bool },
     SelectionForFind { case_sensitive: bool },
     Replace { chars: String, preserve_case: bool },
     SelectionForReplace,
     SelectionIntoLines,
+    CollapseSelections,
 }
 
 /// Events that modify the buffer
@@ -237,7 +237,6 @@ impl From<EditNotification> for EventDomain {
             DebugRewrap => SpecialEvent::DebugRewrap.into(),
             DebugWrapWidth => SpecialEvent::DebugWrapWidth.into(),
             DebugPrintSpans => SpecialEvent::DebugPrintSpans.into(),
-            CancelOperation => ViewEvent::Cancel.into(),
             Uppercase => BufferEvent::Uppercase.into(),
             Lowercase => BufferEvent::Lowercase.into(),
             Capitalize => BufferEvent::Capitalize.into(),
@@ -260,6 +259,7 @@ impl From<EditNotification> for EventDomain {
             ToggleRecording { recording_name } => SpecialEvent::ToggleRecording(recording_name).into(),
             PlayRecording { recording_name } => SpecialEvent::PlayRecording(recording_name).into(),
             ClearRecording { recording_name } => SpecialEvent::ClearRecording(recording_name).into(),
+            CollapseSelections => ViewEvent::CollapseSelections.into(),
         }
     }
 }
