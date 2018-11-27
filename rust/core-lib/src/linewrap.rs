@@ -64,6 +64,7 @@ impl<'a> LineBreakCursor<'a> {
     }
 }
 
+/// Recalculate all breaks using columnar width. `cols` is utf-8 code units.
 pub fn linewrap(text: &Rope, cols: usize) -> Breaks {
     let start_time = time::now();
     let mut lb_cursor = LineBreakCursor::new(text, 0);
@@ -99,7 +100,9 @@ pub fn linewrap(text: &Rope, cols: usize) -> Breaks {
     result
 }
 
-// `text` is string _after_ editing.
+/// Update 'breaks', calculating new breaks for the region specified by `iv`,
+/// using columnar width. `newsize` refers to the size of the new text inserted
+/// at `iv`; the edit has already been applied.
 pub fn rewrap(breaks: &mut Breaks, text: &Rope, iv: Interval, newsize: usize, cols: usize) {
     let (edit_iv, new_breaks) = {
         let start_time = time::now();
@@ -181,7 +184,7 @@ struct PotentialBreak {
     hard: bool,
 }
 
-// State for a rewrap in progress
+/// State for a rewrap in progress
 struct RewrapCtx<'a> {
     text: &'a Rope,
     lb_cursor: LineBreakCursor<'a>,
@@ -189,8 +192,10 @@ struct RewrapCtx<'a> {
     width_cache: &'a mut WidthCache,
     client: &'a Client,
     pot_breaks: Vec<PotentialBreak>,
-    pot_break_ix: usize, // index within pot_breaks
-    max_offset: usize,   // offset of maximum break (ie hard break following edit)
+    /// Index within `pot_breaks`
+    pot_break_ix: usize,
+    /// Offset of maximum break (ie hard break following edit)
+    max_offset: usize,
     max_width: f64,
 }
 
@@ -291,6 +296,7 @@ pub fn linewrap_width(
     builder.build()
 }
 
+//NOTE: incremental version of linewrap_width
 /// Compute a new chunk of breaks after an edit. Returns new breaks to replace
 /// the old ones. The interval [start..end] represents a frontier.
 fn compute_rewrap_width(
@@ -388,4 +394,33 @@ pub fn rewrap_width(
     );
     let edit_iv = Interval::new(start, start + new_breaks.len());
     breaks.edit(edit_iv, new_breaks);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn column_breaks_basic() {
+        let text: Rope = "every wordthing should getits ownline".into();
+        let breaks = linewrap(&text, 4);
+        let breaks_vec = {
+            let mut cursor = Cursor::new(&breaks, 0);
+            cursor.get_leaf().unwrap().0.get_data_cloned()
+        };
+        assert_eq!(breaks_vec.len(), 4);
+        assert_eq!(breaks_vec, vec![6, 16, 23, 30]);
+    }
+
+    #[test]
+    fn column_breaks_hard_soft() {
+        let text: Rope = "so\nevery wordthing should getits ownline".into();
+        let breaks = linewrap(&text, 4);
+        let breaks_vec = {
+            let mut cursor = Cursor::new(&breaks, 0);
+            cursor.get_leaf().unwrap().0.get_data_cloned()
+        };
+        assert_eq!(breaks_vec.len(), 5);
+        assert_eq!(breaks_vec, vec![3, 9, 19, 26, 33]);
+    }
 }
