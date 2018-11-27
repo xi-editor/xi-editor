@@ -278,7 +278,7 @@ impl ViewState {
 }
 
 fn main() {
-    if let Some(ref s) = env::args().skip(1).next() {
+    if let Some(ref s) = env::args().nth(1) {
         if s == "test" {
             language::rust::test();
             return;

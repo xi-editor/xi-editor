@@ -62,7 +62,7 @@ fn decode_utf8(s: &[u8]) -> Option<(char, usize)> {
         if (b2 as i8) > -0x40 {
             return None;
         }
-        let cp = ((b as u32) << 6) + (b2 as u32) - 0x3080;
+        let cp = (u32::from(b) << 6) + u32::from(b2) - 0x3080;
         return from_u32(cp).map(|ch| (ch, 2));
     } else if b >= 0xe0 && b < 0xf0 && s.len() >= 3 {
         let b2 = s[1];
@@ -70,7 +70,7 @@ fn decode_utf8(s: &[u8]) -> Option<(char, usize)> {
         if (b2 as i8) > -0x40 || (b3 as i8) > -0x40 {
             return None;
         }
-        let cp = ((b as u32) << 12) + ((b2 as u32) << 6) + (b3 as u32) - 0xe2080;
+        let cp = (u32::from(b) << 12) + (u32::from(b2) << 6) + u32::from(b3) - 0xe2080;
         if cp < 0x800 {
             return None;
         } // overlong encoding
@@ -83,7 +83,8 @@ fn decode_utf8(s: &[u8]) -> Option<(char, usize)> {
             return None;
         }
         let cp =
-            ((b as u32) << 18) + ((b2 as u32) << 12) + ((b3 as u32) << 6) + (b4 as u32) - 0x3c82080;
+            (u32::from(b) << 18) + (u32::from(b2) << 12) + (u32::from(b3) << 6) + u32::from(b4)
+                - 0x03c8_2080;
         if cp < 0x10000 {
             return None;
         } // overlong encoding
@@ -228,7 +229,7 @@ pub struct OneOf<'a, P: 'a>(pub &'a [P]);
 impl<'a, P: Peg> Peg for OneOf<'a, P> {
     #[inline]
     fn p(&self, s: &[u8]) -> Option<usize> {
-        for ref p in self.0 {
+        for p in self.0.iter() {
             if let Some(len) = p.p(s) {
                 return Some(len);
             }

@@ -75,7 +75,7 @@ impl StateEl {
 }
 
 // sorted for easy binary searching
-const RUST_KEYWORDS: &'static [&'static [u8]] = &[
+const RUST_KEYWORDS: &[&[u8]] = &[
     b"Self",
     b"abstract",
     b"alignof",
@@ -133,12 +133,12 @@ const RUST_KEYWORDS: &'static [&'static [u8]] = &[
 ];
 
 // sorted for easy binary searching
-const RUST_PRIM_TYPES: &'static [&'static [u8]] = &[
+const RUST_PRIM_TYPES: &[&[u8]] = &[
     b"bool", b"char", b"f32", b"f64", b"i128", b"i16", b"i32", b"i64", b"i8", b"isize", b"str",
     b"u128", b"u16", b"u32", b"u64", b"u8", b"usize",
 ];
 
-const RUST_OPERATORS: &'static [&'static [u8]] = &[
+const RUST_OPERATORS: &[&[u8]] = &[
     b"!", b"%=", b"%", b"&=", b"&&", b"&", b"*=", b"*", b"+=", b"+", b"-=", b"-", b"/=", b"/",
     b"<<=", b"<<", b">>=", b">>", b"^=", b"^", b"|=", b"||", b"|", b"==", b"=", b"..", b"=>",
     b"<=", b"<", b">=", b">",
@@ -231,7 +231,7 @@ impl<N: NewState<StateEl>> Parser for RustParser<N> {
             if let Some(len) = "/*".p(&t[i..]) {
                 state = self.ctx.push(state, StateEl::Comment);
                 return (i, state, len, state);
-            } else if let Some(_) = "//".p(&t[i..]) {
+            } else if "//".p(&t[i..]).is_some() {
                 return (i, self.ctx.push(state, StateEl::Comment), t.len(), state);
             } else if let Some(len) = numeric_literal.p(&t[i..]) {
                 return (i, self.ctx.push(state, StateEl::NumericLiteral), len, state);

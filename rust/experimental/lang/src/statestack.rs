@@ -67,20 +67,18 @@ impl<T: Clone + Hash + Eq, N: NewState<T>> Context<T, N> {
     }
 
     pub fn pop(&self, s: State) -> Option<State> {
-        self.entry(s).map(|entry| entry.prev.clone())
+        self.entry(s).map(|entry| entry.prev)
     }
 
     pub fn push(&mut self, s: State, el: T) -> State {
         let mut new = false;
         let result = {
             let entries = &mut self.entries;
-            self.next
-                .entry((s, el.clone()))
-                .or_insert_with(|| {
-                    new = true;
-                    entries.push(Entry { tos: el, prev: s });
-                    State(entries.len())
-                }).clone()
+            *self.next.entry((s, el.clone())).or_insert_with(|| {
+                new = true;
+                entries.push(Entry { tos: el, prev: s });
+                State(entries.len())
+            })
         };
         if new {
             let contents = self.to_vec(result);
