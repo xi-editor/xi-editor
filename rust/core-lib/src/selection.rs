@@ -18,6 +18,7 @@ use std::cmp::{max, min};
 use std::fmt;
 use std::ops::Deref;
 
+use crate::annotations::{Annotation, AnnotationSlice, ToAnnotation};
 use crate::index_set::remove_n_at;
 use xi_rope::{Interval, RopeDelta, Transformer};
 
@@ -230,6 +231,22 @@ impl Deref for Selection {
 
     fn deref(&self) -> &[SelRegion] {
         &self.regions
+    }
+}
+
+/// Implementing the `ToAnnotation` trait allows to convert selections to annotations.
+impl ToAnnotation for Selection {
+    fn get_annotations(&self, interval: Interval) -> AnnotationSlice {
+        let regions = self.regions_in_range(interval.start(), interval.end());
+        let ranges = regions.iter().map(|region|
+            (region.min(), region.max())
+        ).collect::<Vec<(usize, usize)>>();
+
+        AnnotationSlice {
+            annotation_type: Annotation::Selection.as_type(),
+            ranges: ranges,
+            payloads: None
+        }
     }
 }
 
