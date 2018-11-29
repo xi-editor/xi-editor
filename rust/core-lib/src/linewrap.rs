@@ -321,12 +321,7 @@ fn compute_rewrap_width(
     let mut builder = BreakBuilder::new();
     let mut pos = start;
     let mut break_cursor = Cursor::new(&breaks, end);
-    // TODO: factor this into `at_or_next` method on cursor.
-    let mut next_break = if break_cursor.is_boundary::<BreaksBaseMetric>() {
-        Some(end)
-    } else {
-        break_cursor.next::<BreaksBaseMetric>()
-    };
+    let mut next_break = break_cursor.at_or_next::<BreaksBaseMetric>();
     loop {
         // iterate newly computed breaks and existing breaks until they converge
         if let Some(new_next) = ctx.wrap_one_line(pos) {
@@ -379,9 +374,7 @@ pub fn rewrap_width(
     // Find a point earlier than any possible breaks change. For simplicity, this is the
     // beginning of the paragraph, but going back two breaks would be better.
     let mut cursor = Cursor::new(&text, start);
-    if !cursor.is_boundary::<LinesMetric>() {
-        start = cursor.prev::<LinesMetric>().unwrap_or(0);
-    }
+    start = cursor.at_or_prev::<LinesMetric>().unwrap_or(0);
 
     let new_breaks = compute_rewrap_width(
         text,
