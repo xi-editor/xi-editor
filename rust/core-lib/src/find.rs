@@ -15,7 +15,9 @@
 //! Module for searching text.
 
 use std::cmp::{max, min};
+use std::iter;
 
+use crate::annotations::{Annotation, AnnotationSlice, ToAnnotation};
 use crate::selection::{InsertDrift, SelRegion, Selection};
 use crate::view::View;
 use crate::word_boundaries::WordCursor;
@@ -407,5 +409,24 @@ impl Find {
         }
 
         true
+    }
+}
+
+/// Implementing the `ToAnnotation` trait allows to convert finds to annotations.
+impl ToAnnotation for Find {
+    #![feature(repeat_generic_slice)]
+    fn get_annotations(&self, interval: Interval) -> AnnotationSlice {
+        let regions = self.occurrences.regions_in_range(interval.start(), interval.end());
+        let ranges = regions.iter().map(|region|
+            (region.min(), region.max())
+        ).collect::<Vec<(usize, usize)>>();
+
+        let payload = iter::repeat(json!({"id": self.id})).take(ranges.len()).collect::<Vec<_>>();
+
+        AnnotationSlice {
+            annotation_type: Annotation::Find.as_type(),
+            ranges: ranges,
+            payloads: Some(payload)
+        }
     }
 }

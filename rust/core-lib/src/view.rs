@@ -16,9 +16,11 @@
 use std::cell::RefCell;
 use std::cmp::{max, min};
 use std::ops::Range;
+use std::iter;
 
 use serde_json::Value;
 
+use crate::annotations::{AnnotationStore, ToAnnotation};
 use crate::annotations::Annotation;
 use crate::client::{Client, Update, UpdateOp};
 use crate::edit_types::ViewEvent;
@@ -88,6 +90,9 @@ pub struct View {
 
     /// Tracks whether the replacement string or replace parameters changed.
     replace_changed: bool,
+
+    /// Annotations provided by plugins.
+    annotations: AnnotationStore,
 }
 
 /// Indicates what changed in the find state.
@@ -166,6 +171,7 @@ impl View {
             highlight_find: false,
             replace: None,
             replace_changed: false,
+            annotations: AnnotationStore::new(),
         }
     }
 
@@ -708,44 +714,12 @@ impl View {
         }).collect::<Vec<Value>>()
     }
 
-    fn build_update_annotation(
-        &self,
-        text: &Rope,
-        annotations: Vec<Value>,
-        start: usize,
-        end: usize
-    ) -> Value {
-        let annotations_in_range = annotations.subseq(Interval::new(start, end));
-
-        for (iv, annotation) in annotations_in_range.iter() {
-            let (start_line, start_col) = self.offset_to_line_col(text, iv.start());
-            let (end_line, end_col) = self.offset_to_line_col(text, iv.end());
-            let metadata = annotation.to_json();
-        }
-
-        json!([])
-
-//        json!([
-//            {
-//                "type": "selection",
-//                "n": selection_annotations.len(),
-//                "data": selection_annotations
-//            },
-//            {
-//                "type": "highlight",
-//                "n": highlight_annotations.len(),
-//                "data": highlight_annotations
-//            },
-//        ])
-    }
-
     fn send_update_for_plan(
         &mut self,
         text: &Rope,
         client: &Client,
         styles: &StyleMap,
         style_spans: &Spans<Style>,
-        annotations: &Spans<Annotation>,
         plan: &RenderPlan,
         pristine: bool,
     ) {
@@ -833,12 +807,18 @@ impl View {
             }
         }
 
-        let end = self.first_line + self.height - 1;
+        let start_off = self.offset_of_line(text, self.first_line);
+        let end_off = self.offset_of_line(text, self.first_line + self.height + 1);
+        let visible_range = Interval::new(start_off, end_off);
+        let annotations = iter::once(self.selection.get_annotations(visible_range))
+            .chain(self.find.iter().map(|f| f.get_annotations(visible_range)))
+//            .chain(self.annotations.iter_range(visible_range)))
+            .collect::<Vec<_>>();
 
         let params = json!({
-            "annotations": self.build_update_annotation(text, annotations, self.first_line, end),
             "ops": ops,
             "pristine": pristine,
+            "annotations": annotations,
         });
         let update = Update { ops, pristine };
 
@@ -869,12 +849,11 @@ impl View {
         client: &Client,
         styles: &StyleMap,
         style_spans: &Spans<Style>,
-        annotations: &Spans<Annotation>,
         pristine: bool,
     ) {
         let height = self.line_of_offset(text, text.len()) + 1;
         let plan = RenderPlan::create(height, self.first_line, self.height);
-        self.send_update_for_plan(text, client, styles, style_spans, annotations, &plan, pristine);
+        self.send_update_for_plan(text, client, styles, style_spans, &plan, pristine);
         if let Some(new_scroll_pos) = self.scroll_to.take() {
             let (line, col) = self.offset_to_line_col(text, new_scroll_pos);
             client.scroll_to(self.view_id, line, col);
@@ -888,7 +867,6 @@ impl View {
         client: &Client,
         styles: &StyleMap,
         style_spans: &Spans<Style>,
-        annotations: &Spans<Annotation>,
         first_line: usize,
         last_line: usize,
         pristine: bool,
@@ -896,7 +874,7 @@ impl View {
         let height = self.line_of_offset(text, text.len()) + 1;
         let mut plan = RenderPlan::create(height, self.first_line, self.height);
         plan.request_lines(first_line, last_line);
-        self.send_update_for_plan(text, client, styles, style_spans, annotations, &plan, pristine);
+        self.send_update_for_plan(text, client, styles, style_spans, &plan, pristine);
     }
 
     /// Invalidates front-end's entire line cache, forcing a full render at the next
