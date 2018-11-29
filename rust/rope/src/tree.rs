@@ -670,6 +670,26 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
         }
     }
 
+    /// Returns the current position if it is a boundary in this [`Metric`],
+    /// else behaves like [`next`](#method.next).
+    pub fn at_or_next<M: Metric<N>>(&mut self) -> Option<usize> {
+        if self.is_boundary::<M>() {
+            Some(self.pos())
+        } else {
+            self.next::<M>()
+        }
+    }
+
+    /// Returns the current position if it is a boundary in this [`Metric`],
+    /// else behaves like [`prev`](#method.prev).
+    pub fn at_or_prev<M: Metric<N>>(&mut self) -> Option<usize> {
+        if self.is_boundary::<M>() {
+            Some(self.pos())
+        } else {
+            self.prev::<M>()
+        }
+    }
+
     /// Returns an iterator with this cursor over the given [`Metric`].
     ///
     /// # Examples:
@@ -948,4 +968,19 @@ mod test {
         }
     }
 
+    #[test]
+    fn at_or_next() {
+        let text: Rope = "this\nis\nalil\nstring".into();
+        let mut cursor = Cursor::new(&text, 0);
+        assert_eq!(cursor.at_or_next::<LinesMetric>(), Some(0));
+        assert_eq!(cursor.at_or_next::<LinesMetric>(), Some(0));
+        cursor.set(1);
+        assert_eq!(cursor.at_or_next::<LinesMetric>(), Some(5));
+        assert_eq!(cursor.at_or_prev::<LinesMetric>(), Some(5));
+        cursor.set(6);
+        assert_eq!(cursor.at_or_prev::<LinesMetric>(), Some(5));
+        cursor.set(6);
+        assert_eq!(cursor.at_or_next::<LinesMetric>(), Some(8));
+        assert_eq!(cursor.at_or_next::<LinesMetric>(), Some(8));
+    }
 }
