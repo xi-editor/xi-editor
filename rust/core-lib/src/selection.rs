@@ -27,7 +27,7 @@ use xi_rope::{Interval, RopeDelta, Transformer};
 pub type HorizPos = usize;
 
 /// Indicates if an edit should try to drift inside or outside nearby selections. If the selection
-/// is zero width, that is, it is a caret, this value will be ignored, the equivalent of the
+/// is zero width, that is, it is a caret, this value will be ignored (except for OutsideCaret), the equivalent of the
 /// `Default` value.
 #[derive(Copy, Clone)]
 pub enum InsertDrift {
@@ -35,6 +35,8 @@ pub enum InsertDrift {
     Inside,
     /// Indicates this edit should happen outside any selections if possible.
     Outside,
+    /// Indicates this edit should happen outside any selections (including carets) if possible.
+    OutsideCaret,
     /// Indicates to do whatever the `after` bool says to do
     Default,
 }
@@ -209,6 +211,8 @@ impl Selection {
             let (start_after, end_after) = match (drift, is_caret) {
                 (InsertDrift::Inside, false) => (!is_region_forward, is_region_forward),
                 (InsertDrift::Outside, false) => (is_region_forward, !is_region_forward),
+                (InsertDrift::OutsideCaret, false) => (is_region_forward, !is_region_forward),
+                (InsertDrift::OutsideCaret, true) => (is_region_forward, is_region_forward),
                 _ => (after, after),
             };
 

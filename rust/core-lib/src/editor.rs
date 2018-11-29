@@ -289,19 +289,21 @@ impl Editor {
         let delta = self.engine.delta_rev_head(last_token);
         // TODO (performance): it's probably quicker to stash last_text
         // rather than resynthesize it.
+
         let last_text = self.engine.get_rev(last_token).expect("last_rev not found");
 
         // Transpose can rotate characters inside of a selection; this is why it's an Inside edit.
         // Surround adds characters on either side of a selection, that's why it's an Outside edit.
         let drift = match self.this_edit_type {
             EditType::Transpose => InsertDrift::Inside,
-            EditType::Surround => InsertDrift::Outside,
+            EditType::Surround | EditType::MoveLineDown => InsertDrift::Outside,
+            EditType::MoveLineUp => InsertDrift::OutsideCaret,
             _ => InsertDrift::Default,
         };
         self.layers.update_all(&delta);
-
         self.last_rev_id = self.engine.get_head_rev_id();
         self.sync_state_changed();
+
         Some((delta, last_text, drift))
     }
 
@@ -540,6 +542,115 @@ impl Editor {
         }
         self.this_edit_type = EditType::Delete;
         self.add_delta(builder.build());
+    }
+
+    fn move_line_up(&mut self, view: &mut View, config: &BufferItems) {
+        let mut builder = DeltaBuilder::new(self.text.len());
+        // get affected lines or regions
+        let to_move = self.get_adjacent_selected_line_ranges(view);
+
+        for (start_line, end_line) in to_move {
+            let last_line = view.line_of_offset(&self.text, self.text.len());
+
+            let (end_line_start, end_line_end) = view.get_line_offset(&self.text, end_line);
+
+            // don't move if first line
+            if start_line == 0 {
+                continue;
+            }
+            // also don't move if caret is on a blank last line
+            if start_line == end_line
+                && end_line == last_line
+                && self.text.slice_to_cow(end_line_start..end_line_end).is_empty()
+            {
+                continue;
+            }
+            // line to swap moved lines/regions with
+            let swap_line = start_line - 1;
+            let (swap_start, swap_end) = view.get_line_offset(&self.text, swap_line);
+
+            let swap_iv = Interval::new(swap_start, swap_end);
+            builder.delete(swap_iv);
+
+            let (start, _) = view.get_line_offset(&self.text, end_line + 1);
+            let mut iv = Interval::new(start, start);
+            let mut saved_text = Rope::from(self.text.slice_to_cow(swap_start..swap_end));
+            // adjusts newline character for last line
+            if end_line == last_line {
+                iv = Interval::new(self.text.len(), self.text.len());
+                saved_text =
+                    Rope::from(&config.line_ending) + saved_text.slice(0..saved_text.len() - 1);
+            }
+            builder.replace(iv, saved_text);
+        }
+        self.this_edit_type = EditType::MoveLineUp;
+        self.add_delta(builder.build());
+    }
+
+    fn move_line_down(&mut self, view: &mut View, config: &BufferItems) {
+        let mut builder = DeltaBuilder::new(self.text.len());
+        // get affected lines or regions
+        let to_move = self.get_adjacent_selected_line_ranges(view);
+
+        for (start_line, end_line) in to_move {
+            let last_line = view.line_of_offset(&self.text, self.text.len());
+            // don't move if last line
+            if end_line == last_line {
+                continue;
+            }
+            // line to swap moved lines/regions with
+            let swap_line = end_line + 1;
+            let start = view.line_col_to_offset(&self.text, start_line, 0);
+            let (swap_start, swap_end) = view.get_line_offset(&self.text, swap_line);
+
+            let mut swap_iv = Interval::new(swap_start, swap_end);
+            let iv = Interval::new(start, start);
+            let mut saved_text = Rope::from(self.text.slice_to_cow(swap_start..swap_end));
+
+            // add newline character if swapping last line
+            if swap_line == last_line {
+                saved_text = saved_text + Rope::from(&config.line_ending);
+                swap_iv = Interval::new(swap_start - 1, swap_end);
+            }
+
+            builder.replace(iv, saved_text);
+            builder.delete(swap_iv);
+        }
+        self.this_edit_type = EditType::MoveLineDown;
+        self.add_delta(builder.build());
+    }
+
+    /// Returns an ordered list of line ranges in the current selection,
+    /// combining adjacent ranges; e.g. 1..2 and 3..4 becomes 1..4.
+    fn get_adjacent_selected_line_ranges(&self, view: &View) -> Vec<(usize, usize)> {
+        let mut ranges = Vec::new();
+        let mut prev_sel: Option<(usize, usize)> = None;
+        let line_range_iter =
+            view.sel_regions().iter().map(|sel| view.get_line_range(self.get_buffer(), sel));
+
+        for range in line_range_iter {
+            // the range of a single line is represented as n..n+1; we just want
+            // n..n.
+            let start = range.start;
+            let end = range.end - 1;
+            if let Some((p_start, p_end)) = prev_sel.take() {
+                // Lines selected are continuous, thus we merge them.
+                // e.g 1..2 and 2..3 becomes 1..3
+                if start - p_end <= 1 {
+                    prev_sel = Some((p_start, end));
+                } else {
+                    ranges.push((p_start, p_end));
+                    prev_sel = Some((start, end));
+                }
+            } else {
+                prev_sel = Some((start, end));
+            }
+        }
+
+        if let Some(last) = prev_sel.take() {
+            ranges.push(last);
+        }
+        ranges
     }
 
     fn get_tab_text(&self, config: &BufferItems, tab_size: Option<usize>) -> &'static str {
@@ -839,6 +950,8 @@ impl Editor {
             Capitalize => self.capitalize_text(view),
             Indent => self.modify_indent(view, config, IndentDirection::In),
             Outdent => self.modify_indent(view, config, IndentDirection::Out),
+            MoveLineUp => self.move_line_up(view, config),
+            MoveLineDown => self.move_line_down(view, config),
             InsertNewline => self.insert_newline(view, config),
             InsertTab => self.insert_tab(view, config),
             Insert(chars) => self.do_insert(view, config, &chars),
@@ -942,6 +1055,8 @@ pub enum EditType {
     /// A catchall for edits that don't fit elsewhere, and which should
     /// always have their own undo groups; used for things like cut/copy/paste.
     Other,
+    MoveLineUp,
+    MoveLineDown,
     /// An insert from the keyboard/IME (not a paste or a yank).
     #[serde(rename = "insert")]
     InsertChars,

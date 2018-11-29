@@ -475,6 +475,8 @@ pub enum EditNotification {
     Capitalize,
     Indent,
     Outdent,
+    MoveLineUp,
+    MoveLineDown,
     /// Indicates whether find highlights should be rendered
     HighlightFind {
         visible: bool,

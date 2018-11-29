@@ -63,6 +63,8 @@ pub(crate) enum BufferEvent {
     Capitalize,
     Indent,
     Outdent,
+    MoveLineUp,
+    MoveLineDown,
     Insert(String),
     Paste(String),
     InsertNewline,
@@ -242,6 +244,8 @@ impl From<EditNotification> for EventDomain {
             Capitalize => BufferEvent::Capitalize.into(),
             Indent => BufferEvent::Indent.into(),
             Outdent => BufferEvent::Outdent.into(),
+            MoveLineUp => BufferEvent::MoveLineUp.into(),
+            MoveLineDown => BufferEvent::MoveLineDown.into(),
             HighlightFind { visible } => ViewEvent::HighlightFind { visible }.into(),
             SelectionForFind { case_sensitive } =>
                 ViewEvent::SelectionForFind { case_sensitive }.into(),

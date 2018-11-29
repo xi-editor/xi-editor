@@ -1158,6 +1158,18 @@ impl View {
         self.do_set_replace(replacement.into_owned(), false);
     }
 
+    // Get the offsets for a line. Includes newline characters.
+    pub fn get_line_offset(&self, text: &Rope, line: usize) -> (usize, usize) {
+        let start = self.offset_of_line(text, line);
+        let mut end = text.len();
+        let mut cursor = Cursor::new(text, start);
+
+        if let Some(line_end) = cursor.next::<LinesMetric>() {
+            end = line_end
+        }
+        (start, end)
+    }
+
     /// Get the line range of a selected region.
     pub fn get_line_range(&self, text: &Rope, region: &SelRegion) -> Range<usize> {
         let (first_line, _) = self.offset_to_line_col(text, region.min());
