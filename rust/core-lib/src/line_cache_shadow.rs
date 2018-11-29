@@ -28,10 +28,13 @@ pub struct LineCacheShadow {
     dirty: bool,
 }
 
-pub const TEXT_VALID: u8 = 1;
-pub const STYLES_VALID: u8 = 2;
-pub const CURSOR_VALID: u8 = 4;
-pub const ALL_VALID: u8 = 7;
+type Validity = u8;
+
+pub const INVALID: Validity = 0;
+pub const TEXT_VALID: Validity = 1;
+pub const STYLES_VALID: Validity = 2;
+pub const CURSOR_VALID: Validity = 4;
+pub const ALL_VALID: Validity = 7;
 
 pub struct Span {
     /// Number of lines in this span. Units are visual lines in the
@@ -42,7 +45,7 @@ pub struct Span {
     /// irrelevant if validity is 0.
     pub start_line_num: usize,
     /// Validity of lines in this span, consisting of the above constants or'ed.
-    pub validity: u8,
+    pub validity: Validity,
 }
 
 /// Builder for `LineCacheShadow` object.
@@ -83,7 +86,7 @@ pub struct PlanSegment {
     /// Number of visual lines in this segment.
     pub n: usize,
     /// Validity of this segment in client's cache.
-    pub validity: u8,
+    pub validity: Validity,
     /// Tactic for rendering this segment.
     pub tactic: RenderTactic,
 }
@@ -97,11 +100,11 @@ impl Builder {
         LineCacheShadow { spans: self.spans, dirty: self.dirty }
     }
 
-    pub fn add_span(&mut self, n: usize, start_line_num: usize, validity: u8) {
+    pub fn add_span(&mut self, n: usize, start_line_num: usize, validity: Validity) {
         if n > 0 {
             if let Some(last) = self.spans.last_mut() {
                 if last.validity == validity
-                    && (validity == 0 || last.start_line_num + last.n == start_line_num)
+                    && (validity == INVALID || last.start_line_num + last.n == start_line_num)
                 {
                     last.n += n;
                     return;
@@ -132,7 +135,7 @@ impl LineCacheShadow {
                 break;
             }
         }
-        b.add_span(replace, 0, 0);
+        b.add_span(replace, 0, INVALID);
         for span in &self.spans[i..] {
             if line_num + span.n > end {
                 let offset = end.saturating_sub(line_num);
@@ -144,7 +147,7 @@ impl LineCacheShadow {
         *self = b.build();
     }
 
-    pub fn partial_invalidate(&mut self, start: usize, end: usize, invalid: u8) {
+    pub fn partial_invalidate(&mut self, start: usize, end: usize, invalid: Validity) {
         let mut clean = true;
         let mut line_num = 0;
         for span in &self.spans {
