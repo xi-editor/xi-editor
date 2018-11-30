@@ -22,13 +22,13 @@ use client::Client;
 use edit_types::ViewEvent;
 use find::{Find, FindStatus};
 use line_cache_shadow::{self, LineCacheShadow, RenderPlan, RenderTactic};
-use linewrap;
+use linewrap::{rewrap, rewrap_all};
 use movement::{region_movement, selection_movement, Movement};
 use rpc::{FindQuery, GestureType, MouseAction, SelectionModifier};
 use selection::{Affinity, InsertDrift, SelRegion, Selection};
 use styles::{Style, ThemeStyleMap};
 use tabs::{BufferId, Counter, ViewId};
-use width_cache::WidthCache;
+use width_cache::{CodepointMono, WidthCache};
 use word_boundaries::WordCursor;
 use xi_rope::breaks::{Breaks, BreaksBaseMetric, BreaksInfo, BreaksMetric};
 use xi_rope::spans::Spans;
@@ -59,7 +59,7 @@ pub struct View {
     /// height of visible portion
     height: usize,
     breaks: Option<Breaks>,
-    wrap_col: WrapWidth,
+    wrap: WrapWidth,
 
     /// Front end's line cache state for this view. See the `LineCacheShadow`
     /// description for the invariant.
@@ -173,7 +173,7 @@ impl View {
             first_line: 0,
             height: 10,
             breaks: None,
-            wrap_col: WrapWidth::None,
+            wrap: WrapWidth::None,
             lc_shadow: LineCacheShadow::default(),
             find: Vec::new(),
             find_id_counter: Counter::default(),
@@ -202,6 +202,14 @@ impl View {
 
     pub(crate) fn has_pending_render(&self) -> bool {
         self.pending_render
+    }
+
+    pub(crate) fn update_wrap_state(&mut self, wrap_cols: usize, word_wrap: bool) {
+        self.wrap = match (word_wrap, wrap_cols) {
+            (true, _) => WrapWidth::Width(self.size.width),
+            (false, 0) => WrapWidth::None,
+            (false, cols) => WrapWidth::Bytes(cols),
+        }
     }
 
     pub(crate) fn do_edit(&mut self, text: &Rope, cmd: ViewEvent) {
@@ -905,28 +913,23 @@ impl View {
         }
     }
 
-    pub(crate) fn rewrap(&mut self, text: &Rope, wrap_col: usize) {
-        if wrap_col > 0 {
-            self.breaks = Some(linewrap::linewrap(text, wrap_col));
-            self.wrap_col = WrapWidth::Bytes(wrap_col);
-        } else {
-            self.breaks = None
-        }
-    }
-
     /// Generate line breaks based on width measurement. Currently batch-mode,
     /// and currently in a debugging state.
-    pub(crate) fn wrap_width(
+    pub(crate) fn rewrap(
         &mut self,
         text: &Rope,
         width_cache: &mut WidthCache,
         client: &Client,
-        style_spans: &Spans<Style>,
+        spans: &Spans<Style>,
     ) {
         let _t = trace_block("View::wrap_width", &["core"]);
-        self.breaks =
-            Some(linewrap::linewrap_width(text, width_cache, style_spans, client, self.size.width));
-        self.wrap_col = WrapWidth::Width(self.size.width);
+        self.breaks = match self.wrap {
+            WrapWidth::None => None,
+            WrapWidth::Bytes(cols) => {
+                Some(rewrap_all(text, width_cache, spans, &CodepointMono, cols as f64))
+            }
+            WrapWidth::Width(w) => Some(rewrap_all(text, width_cache, spans, client, w)),
+        };
     }
 
     /// Updates the view after the text has been modified by the given `delta`.
@@ -943,12 +946,12 @@ impl View {
     ) {
         let (iv, new_len) = delta.summary();
         if let Some(breaks) = self.breaks.as_mut() {
-            match self.wrap_col {
+            match self.wrap {
                 WrapWidth::None => (),
-                WrapWidth::Bytes(col) => linewrap::rewrap(breaks, text, iv, new_len, col),
-                WrapWidth::Width(px) => {
-                    linewrap::rewrap_width(breaks, text, width_cache, client, iv, new_len, px)
+                WrapWidth::Bytes(b) => {
+                    rewrap(breaks, text, width_cache, &CodepointMono, iv, new_len, b as f64)
                 }
+                WrapWidth::Width(px) => rewrap(breaks, text, width_cache, client, iv, new_len, px),
             }
         }
         if self.breaks.is_some() {

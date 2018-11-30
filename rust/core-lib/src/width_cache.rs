@@ -19,7 +19,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use xi_rpc;
 
-use client::{Client, WidthReq};
+use client::Client;
 
 /// A token which can be used to retrieve an actual width value when the
 /// batch request is submitted.
@@ -27,15 +27,20 @@ use client::{Client, WidthReq};
 /// Internally, it is implemented as an index into the `widths` array.
 pub type Token = usize;
 
+/// A measured width, in points.
+type Width = f64;
+
+type StyleId = usize;
+
 pub struct WidthCache {
-    // maps cache key to index within widths
+    /// maps cache key to index within widths
     m: HashMap<WidthCacheKey<'static>, Token>,
-    widths: Vec<f64>,
+    widths: Vec<Width>,
 }
 
 #[derive(Eq, PartialEq, Hash)]
 struct WidthCacheKey<'a> {
-    id: usize, // style id
+    id: StyleId,
     s: Cow<'a, str>,
 }
 
@@ -43,11 +48,50 @@ struct WidthCacheKey<'a> {
 /// a single RPC.
 pub struct WidthBatchReq<'a> {
     cache: &'a mut WidthCache,
-    pending_tok: usize,
+    pending_tok: Token,
     req: Vec<WidthReq>,
     req_toks: Vec<Vec<Token>>,
     // maps style id to index into req/req_toks
-    req_ids: BTreeMap<usize, usize>,
+    req_ids: BTreeMap<StyleId, Token>,
+}
+
+/// A request for measuring the widths of strings all of the same style
+/// (a request from core to front-end).
+#[derive(Serialize, Deserialize)]
+pub struct WidthReq {
+    pub id: StyleId,
+    pub strings: Vec<String>,
+}
+
+/// The response for a batch of [`WidthReq`]s.
+pub type WidthResponse = Vec<Vec<Width>>;
+
+/// A trait for types that provide width measurement. In the general case this
+/// will be provided by the frontend, but alternative implementations might
+/// be provided for faster measurement of 'fixed-width' fonts, or for testing.
+pub trait Measure {
+    fn measure_width(&self, request: &[WidthReq]) -> Result<WidthResponse, xi_rpc::Error>;
+}
+
+impl Measure for Client {
+    fn measure_width(&self, request: &[WidthReq]) -> Result<WidthResponse, xi_rpc::Error> {
+        Client::measure_width(self, request)
+    }
+}
+
+/// temporary; a stand-in type for testing fixed-width measurement.
+/// This treats each codepoint as having width 1; at the very least we should
+/// be using unicode width.
+pub struct CodepointMono;
+
+impl Measure for CodepointMono {
+    /// In which each codepoint has width == 1.
+    fn measure_width(&self, request: &[WidthReq]) -> Result<WidthResponse, xi_rpc::Error> {
+        Ok(request
+            .iter()
+            .map(|r| r.strings.iter().map(|s| s.chars().count() as f64).collect())
+            .collect())
+    }
 }
 
 impl WidthCache {
@@ -55,8 +99,13 @@ impl WidthCache {
         WidthCache { m: HashMap::new(), widths: Vec::new() }
     }
 
+    /// Returns the number of items currently in the cache.
+    pub(crate) fn len(&self) -> usize {
+        self.m.len()
+    }
+
     /// Resolve a previously obtained token into a width value.
-    pub fn resolve(&self, tok: Token) -> f64 {
+    pub fn resolve(&self, tok: Token) -> Width {
         self.widths[tok]
     }
 
@@ -75,7 +124,7 @@ impl WidthCache {
 
 impl<'a> WidthBatchReq<'a> {
     /// Request measurement of one string/style pair within the batch.
-    pub fn request(&mut self, id: usize, s: &str) -> Token {
+    pub fn request(&mut self, id: StyleId, s: &str) -> Token {
         let key = WidthCacheKey { id, s: Cow::Borrowed(s) };
         if let Some(tok) = self.cache.m.get(&key) {
             return *tok;
@@ -100,20 +149,14 @@ impl<'a> WidthBatchReq<'a> {
         tok
     }
 
-    /// Issue the RPC (synchronously for now). On success, the tokens given by
-    /// `request` will resolve in the cache.
-    ///
-    /// Note: this currently takes a document context so we can issue an RPC to
-    /// the front-end, but it would probably be better to use a more general width
-    /// measurement trait, so that different width providers could be used (a mock
-    /// for testing, one based on unicode_width if the front-end didn't support
-    /// width measurement, a binary binding, etc).
-    pub fn issue(&mut self, client: &Client) -> Result<(), xi_rpc::Error> {
+    /// Resolves pending measurements to concrete widths using the provided [`Measure`].
+    /// On success, the tokens given by `request` will resolve in the cache.
+    pub fn resolve_pending<T: Measure>(&mut self, handler: &T) -> Result<(), xi_rpc::Error> {
         // The 0.0 values should all get replaced with actual widths, assuming the
         // shape of the response from the front-end matches that of the request.
         if self.pending_tok > self.cache.widths.len() {
             self.cache.widths.resize(self.pending_tok, 0.0);
-            let widths = client.measure_width(&self.req)?;
+            let widths = handler.measure_width(&self.req)?;
             for (w, t) in widths.iter().zip(self.req_toks.iter()) {
                 for (width, tok) in w.iter().zip(t.iter()) {
                     self.cache.widths[*tok] = *width;
