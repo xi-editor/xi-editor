@@ -19,8 +19,10 @@ use std::io::{stdin, Read};
 use parser::Parser;
 use peg::*;
 use statestack::{Context, DebugNewState, NewState, State};
-use Scope;
+use ScopeId;
 
+/// See [this](https://github.com/sublimehq/Packages/blob/master/Rust/Rust.sublime-syntax)
+/// for reference.
 static ALL_SCOPES: &[&[&str]] = &[
     &["source.rust"],
     &["source.rust", "string.quoted.double.rust"],
@@ -55,10 +57,7 @@ pub enum StateEl {
 }
 
 impl StateEl {
-    /// Transform a [StateEl] into a [Vec] of Syntect Scope [String]s.
-    /// See [this](https://github.com/sublimehq/Packages/blob/master/Rust/Rust.sublime-syntax)
-    /// for reference.
-    pub fn scope_id(&self) -> u32 {
+    pub fn scope_id(&self) -> ScopeId {
         match self {
             StateEl::Source => 0,
             StateEl::StrQuote => 1,
@@ -190,14 +189,14 @@ impl<N: NewState<StateEl>> Parser for RustParser<N> {
         }
     }
 
-    fn get_all_scopes(&self) -> Vec<Scope> {
+    fn get_all_scopes(&self) -> Vec<Vec<String>> {
         ALL_SCOPES
             .iter()
             .map(|stack| stack.iter().map(|s| s.to_string()).collect::<Vec<_>>())
             .collect()
     }
 
-    fn get_scope_id_for_state(&self, state: State) -> u32 {
+    fn get_scope_id_for_state(&self, state: State) -> ScopeId {
         let offset = self.scope_offset.unwrap_or_default();
         let new_state = self.get_new_state();
 

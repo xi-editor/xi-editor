@@ -36,7 +36,7 @@ mod statestack;
 
 const LINES_PER_RPC: usize = 50;
 
-type Scope = Vec<String>;
+type ScopeId = u32;
 
 struct LangPlugin {
     view_states: HashMap<ViewId, ViewState>,
@@ -58,13 +58,10 @@ impl Plugin for LangPlugin {
         _edit_type: String,
         _author: String,
     ) {
-        let _guard = trace_block("ExperimentalLang::update", &["experimental-lang"]);
         view.schedule_idle();
     }
 
     fn did_save(&mut self, view: &mut View<Self::Cache>, _old_path: Option<&Path>) {
-        let _guard = trace_block("ExperimentalLang::did_save", &["experimental-lang"]);
-
         let view_id = view.get_id();
         if let Some(view_state) = self.view_states.get_mut(&view_id) {
             view_state.do_highlighting(view);
@@ -77,8 +74,6 @@ impl Plugin for LangPlugin {
     }
 
     fn new_view(&mut self, view: &mut View<Self::Cache>) {
-        let _guard = trace_block("ExperimentalLang::new_view", &["experimental-lang"]);
-
         let view_id = view.get_id();
         let mut view_state = ViewState::new();
 
@@ -93,8 +88,6 @@ impl Plugin for LangPlugin {
         view: &mut View<<Self as Plugin>::Cache>,
         _old_lang: LanguageId,
     ) {
-        let _guard = trace_block("ExperimentalLang::language_changed", &["experimental-lang"]);
-
         let view_id = view.get_id();
         if let Some(view_state) = self.view_states.get_mut(&view_id) {
             view_state.do_highlighting(view);
@@ -229,6 +222,8 @@ impl ViewState {
     }
 
     fn compute_syntax(&mut self, line: &str) -> State {
+        let _guard = trace_block("ExperimentalLang::compute_syntax", &["experimental-lang"]);
+
         let mut i = 0;
         let mut state = self.initial_state;
         while i < line.len() {

@@ -14,7 +14,7 @@
 
 use parser::Parser;
 use statestack::{Context, NewState, State};
-use Scope;
+use ScopeId;
 
 const PLAINTEXT_SOURCE_SCOPE: &[&str] = &["source.plaintext"];
 
@@ -40,11 +40,11 @@ impl<N: NewState<()>> Parser for PlaintextParser<N> {
         }
     }
 
-    fn get_all_scopes(&self) -> Vec<Scope> {
+    fn get_all_scopes(&self) -> Vec<Vec<String>> {
         vec![PLAINTEXT_SOURCE_SCOPE.iter().map(|it| it.to_string()).collect()]
     }
 
-    fn get_scope_id_for_state(&self, _state: State) -> u32 {
+    fn get_scope_id_for_state(&self, _state: State) -> ScopeId {
         self.scope_offset.unwrap_or_default()
     }
 
