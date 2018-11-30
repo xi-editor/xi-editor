@@ -23,7 +23,7 @@ use std::{collections::HashMap, env, path::Path};
 
 use language::{plaintext::PlaintextParser, rust::RustParser};
 use parser::Parser;
-use statestack::{HolderNewState, State};
+use statestack::State;
 use xi_core_lib::{plugins::rpc::ScopeSpan, ConfigTable, LanguageId, ViewId};
 use xi_plugin_lib::{mainloop, Cache, Plugin, StateCache, View};
 use xi_rope::RopeDelta;
@@ -130,7 +130,7 @@ impl ViewState {
     fn new() -> ViewState {
         ViewState {
             current_language: LanguageId::from("Plain Text"),
-            parser: Box::new(PlaintextParser::new(HolderNewState::new())),
+            parser: Box::new(PlaintextParser::new()),
             offset: 0,
             initial_state: State::default(),
             spans_start: 0,
@@ -148,15 +148,15 @@ impl ViewState {
 
         if view.get_language_id() != &self.current_language {
             let parser: Box<dyn Parser> = match view.get_language_id().as_ref() {
-                "Rust" => Box::new(RustParser::new(HolderNewState::new())),
-                "Plain Text" => Box::new(PlaintextParser::new(HolderNewState::new())),
+                "Rust" => Box::new(RustParser::new()),
+                "Plain Text" => Box::new(PlaintextParser::new()),
                 language_id => {
                     trace_payload(
                         "unsupported language",
                         &["experimental-lang"],
                         format!("language id: {}", language_id),
                     );
-                    Box::new(PlaintextParser::new(HolderNewState::new()))
+                    Box::new(PlaintextParser::new())
                 }
             };
 

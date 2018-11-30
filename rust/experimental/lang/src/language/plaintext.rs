@@ -13,23 +13,23 @@
 // limitations under the License.
 
 use parser::Parser;
-use statestack::{Context, NewState, State};
+use statestack::{Context, State};
 use ScopeId;
 
 const PLAINTEXT_SOURCE_SCOPE: &[&str] = &["source.plaintext"];
 
-pub struct PlaintextParser<N> {
+pub struct PlaintextParser {
     scope_offset: Option<u32>,
-    ctx: Context<(), N>,
+    ctx: Context<()>,
 }
 
-impl<N: NewState<()>> PlaintextParser<N> {
-    pub fn new(new_state: N) -> PlaintextParser<N> {
-        PlaintextParser { scope_offset: None, ctx: Context::new(new_state) }
+impl PlaintextParser {
+    pub fn new() -> PlaintextParser {
+        PlaintextParser { scope_offset: None, ctx: Context::new() }
     }
 }
 
-impl<N: NewState<()>> Parser for PlaintextParser<N> {
+impl Parser for PlaintextParser {
     fn has_offset(&mut self) -> bool {
         self.scope_offset.is_some()
     }

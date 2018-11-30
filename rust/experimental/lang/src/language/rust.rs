@@ -18,7 +18,7 @@ use std::io::{stdin, Read};
 
 use parser::Parser;
 use peg::*;
-use statestack::{Context, DebugNewState, NewState, State};
+use statestack::{Context, State};
 use ScopeId;
 
 /// See [this](https://github.com/sublimehq/Packages/blob/master/Rust/Rust.sublime-syntax)
@@ -143,18 +143,14 @@ const RUST_OPERATORS: &[&[u8]] = &[
     b"<=", b"<", b">=", b">",
 ];
 
-pub struct RustParser<N> {
+pub struct RustParser {
     scope_offset: Option<u32>,
-    ctx: Context<StateEl, N>,
+    ctx: Context<StateEl>,
 }
 
-impl<N: NewState<StateEl>> RustParser<N> {
-    pub fn new(new_state: N) -> RustParser<N> {
-        RustParser { scope_offset: None, ctx: Context::new(new_state) }
-    }
-
-    fn get_new_state(&self) -> &N {
-        self.ctx.get_new_state()
+impl RustParser {
+    pub fn new() -> RustParser {
+        RustParser { scope_offset: None, ctx: Context::new() }
     }
 
     fn quoted_str(&mut self, t: &[u8], state: State) -> (usize, State, usize, State) {
@@ -178,7 +174,7 @@ impl<N: NewState<StateEl>> RustParser<N> {
     }
 }
 
-impl<N: NewState<StateEl>> Parser for RustParser<N> {
+impl Parser for RustParser {
     fn has_offset(&mut self) -> bool {
         self.scope_offset.is_some()
     }
@@ -198,9 +194,8 @@ impl<N: NewState<StateEl>> Parser for RustParser<N> {
 
     fn get_scope_id_for_state(&self, state: State) -> ScopeId {
         let offset = self.scope_offset.unwrap_or_default();
-        let new_state = self.get_new_state();
 
-        if let Some(element) = new_state.get_element(state) {
+        if let Some(element) = self.ctx.tos(state) {
             element.scope_id() + offset
         } else {
             offset
@@ -362,7 +357,7 @@ fn whitespace(s: &[u8]) -> Option<usize> {
 pub fn test() {
     let mut buf = String::new();
     let _ = stdin().read_to_string(&mut buf).unwrap();
-    let mut c = RustParser::new(DebugNewState::new());
+    let mut c = RustParser::new();
 
     let mut state = State::default();
     for line in buf.lines() {
