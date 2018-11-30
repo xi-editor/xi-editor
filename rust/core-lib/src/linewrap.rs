@@ -14,17 +14,14 @@
 
 //! Compute line wrapping breaks for text.
 
-use time;
-
 use xi_rope::breaks::{BreakBuilder, Breaks, BreaksBaseMetric};
 use xi_rope::spans::Spans;
 use xi_rope::{Cursor, Interval, LinesMetric, Rope, RopeInfo};
 use xi_trace::trace_block;
 use xi_unicode::LineBreakLeafIter;
 
-use client::Client;
 use styles::{Style, N_RESERVED_STYLES};
-use width_cache::{Token, WidthCache};
+use width_cache::{Measure, Token, WidthCache};
 
 struct LineBreakCursor<'a> {
     inner: Cursor<'a, RopeInfo>,
@@ -64,114 +61,6 @@ impl<'a> LineBreakCursor<'a> {
     }
 }
 
-/// Recalculate all breaks using columnar width. `cols` is utf-8 code units.
-pub fn linewrap(text: &Rope, cols: usize) -> Breaks {
-    let start_time = time::now();
-    let mut lb_cursor = LineBreakCursor::new(text, 0);
-    let mut builder = BreakBuilder::new();
-    let mut last_pos = 0;
-    let mut last_break_pos = 0;
-    let mut width = 0;
-    loop {
-        let (pos, hard) = lb_cursor.next();
-        let word_width = pos - last_pos;
-        if width > 0 && width + word_width > cols {
-            builder.add_break(width);
-            //eprintln!("soft break {}", width);
-            last_break_pos += width;
-            width = 0;
-        }
-        width += word_width;
-        if hard {
-            builder.add_break(width);
-            //eprintln!("hard break {}", width);
-            last_break_pos += width;
-            width = 0;
-        }
-        last_pos = pos;
-        if pos == text.len() {
-            break;
-        }
-    }
-    builder.add_no_break(text.len() - last_break_pos);
-    let result = builder.build();
-    let time_ms = (time::now() - start_time).num_nanoseconds().unwrap() as f64 * 1e-6;
-    debug!("time to wrap {} bytes: {:.2}ms", text.len(), time_ms);
-    result
-}
-
-/// Update 'breaks', calculating new breaks for the region specified by `iv`,
-/// using columnar width. `newsize` refers to the size of the new text inserted
-/// at `iv`; the edit has already been applied.
-pub fn rewrap(breaks: &mut Breaks, text: &Rope, iv: Interval, newsize: usize, cols: usize) {
-    let (edit_iv, new_breaks) = {
-        let start_time = time::now();
-        let (start, end) = iv.start_end();
-        let mut bk_cursor = Cursor::new(breaks, start);
-        // start of range to invalidate
-        let mut inval_start = bk_cursor.prev::<BreaksBaseMetric>().unwrap_or(0);
-        if inval_start > 0 {
-            // edit on this line can invalidate break at end of previous
-            inval_start = bk_cursor.prev::<BreaksBaseMetric>().unwrap_or(0);
-        }
-        bk_cursor.set(end);
-        // compute end position in edited rope
-        let mut inval_end = bk_cursor
-            .next::<BreaksBaseMetric>()
-            .map_or(text.len(), |pos| pos - (end - start) + newsize);
-        let mut lb_cursor = LineBreakCursor::new(text, inval_start);
-        let mut builder = BreakBuilder::new();
-        let mut last_pos = inval_start;
-        let mut last_break_pos = inval_start;
-        let mut width = 0;
-        loop {
-            let (pos, hard) = lb_cursor.next();
-            let word_width = pos - last_pos;
-            if width > 0 && width + word_width > cols {
-                builder.add_break(width);
-                last_break_pos += width;
-                width = 0;
-                while last_break_pos > inval_end {
-                    inval_end = bk_cursor
-                        .next::<BreaksBaseMetric>()
-                        .map_or(text.len(), |pos| pos - (end - start) + newsize);
-                }
-                if last_break_pos == inval_end {
-                    break;
-                }
-            }
-            width += word_width;
-            if hard {
-                // TODO: DRY
-                builder.add_break(width);
-                last_break_pos += width;
-                width = 0;
-                while last_break_pos > inval_end {
-                    inval_end = bk_cursor
-                        .next::<BreaksBaseMetric>()
-                        .map_or(text.len(), |pos| pos - (end - start) + newsize);
-                }
-                if last_break_pos == inval_end {
-                    break;
-                }
-            }
-            last_pos = pos;
-            if pos == text.len() {
-                break;
-            }
-        }
-        builder.add_no_break(inval_end - last_break_pos);
-        let time_ms = (time::now() - start_time).num_nanoseconds().unwrap() as f64 * 1e-6;
-        debug!(
-            "time to wrap {} bytes: {:.2}ms (not counting build+edit)",
-            inval_end - inval_start,
-            time_ms
-        );
-        (Interval::new(inval_start, inval_end + (end - start) - newsize), builder.build())
-    };
-    breaks.edit(edit_iv, new_breaks);
-}
-
 /// A potential opportunity to insert a break. In this representation, the widths
 /// have been requested (in a batch request) but are not necessarily known until
 /// the request is issued.
@@ -185,12 +74,12 @@ struct PotentialBreak {
 }
 
 /// State for a rewrap in progress
-struct RewrapCtx<'a> {
+struct RewrapCtx<'a, T: 'a> {
     text: &'a Rope,
     lb_cursor: LineBreakCursor<'a>,
     lb_cursor_pos: usize,
     width_cache: &'a mut WidthCache,
-    client: &'a Client,
+    client: &'a T,
     pot_breaks: Vec<PotentialBreak>,
     /// Index within `pot_breaks`
     pot_break_ix: usize,
@@ -203,15 +92,15 @@ struct RewrapCtx<'a> {
 // RPC overhead becomes significant. More than that, interactivity suffers.
 const MAX_POT_BREAKS: usize = 10_000;
 
-impl<'a> RewrapCtx<'a> {
+impl<'a, T: Measure> RewrapCtx<'a, T> {
     fn new(
         text: &'a Rope,
-        /* _style_spans: &Spans<Style>, */ client: &'a Client,
+        /* _style_spans: &Spans<Style>, */ client: &'a T,
         max_width: f64,
         width_cache: &'a mut WidthCache,
         start: usize,
         end: usize,
-    ) -> RewrapCtx<'a> {
+    ) -> RewrapCtx<'a, T> {
         let lb_cursor_pos = start;
         let lb_cursor = LineBreakCursor::new(text, start);
         RewrapCtx {
@@ -241,7 +130,7 @@ impl<'a> RewrapCtx<'a> {
             pos = next;
             self.pot_breaks.push(PotentialBreak { pos, tok, hard });
         }
-        req.issue(self.client).unwrap();
+        req.resolve_pending(self.client).unwrap();
         self.lb_cursor_pos = pos;
     }
 
@@ -277,11 +166,11 @@ impl<'a> RewrapCtx<'a> {
 }
 
 /// Wrap the text (in batch mode) using width measurement.
-pub fn linewrap_width(
+pub fn rewrap_all<T: Measure>(
     text: &Rope,
     width_cache: &mut WidthCache,
     _style_spans: &Spans<Style>,
-    client: &Client,
+    client: &T,
     max_width: f64,
 ) -> Breaks {
     let mut ctx =
@@ -296,13 +185,13 @@ pub fn linewrap_width(
     builder.build()
 }
 
-//NOTE: incremental version of linewrap_width
+//NOTE: incremental version of rewrap_all
 /// Compute a new chunk of breaks after an edit. Returns new breaks to replace
 /// the old ones. The interval [start..end] represents a frontier.
-fn compute_rewrap_width(
+fn compute_rewrap<T: Measure>(
     text: &Rope,
     width_cache: &mut WidthCache,
-    /* style_spans: &Spans<Style>, */ client: &Client,
+    /* style_spans: &Spans<Style>, */ client: &T,
     max_width: f64,
     breaks: &Breaks,
     start: usize,
@@ -350,11 +239,11 @@ fn compute_rewrap_width(
     builder.build()
 }
 
-pub fn rewrap_width(
+pub fn rewrap<T: Measure>(
     breaks: &mut Breaks,
     text: &Rope,
     width_cache: &mut WidthCache, // _style_spans: &Spans<Style>,
-    client: &Client,
+    client: &T,
     iv: Interval,
     newsize: usize,
     max_width: f64,
@@ -376,7 +265,7 @@ pub fn rewrap_width(
     let mut cursor = Cursor::new(&text, start);
     start = cursor.at_or_prev::<LinesMetric>().unwrap_or(0);
 
-    let new_breaks = compute_rewrap_width(
+    let new_breaks = compute_rewrap(
         text,
         width_cache, /* style_spans, */
         client,
@@ -392,28 +281,44 @@ pub fn rewrap_width(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use width_cache::CodepointMono;
 
     #[test]
     fn column_breaks_basic() {
-        let text: Rope = "every wordthing should getits ownline".into();
-        let breaks = linewrap(&text, 4);
+        let text: Rope = "every wordthing should getits own".into();
+        let mut width_cache = WidthCache::new();
+        let spans: Spans<Style> = Spans::default();
+        let breaks = rewrap_all(&text, &mut width_cache, &spans, &CodepointMono, 4.0);
         let breaks_vec = {
             let mut cursor = Cursor::new(&breaks, 0);
             cursor.get_leaf().unwrap().0.get_data_cloned()
         };
-        assert_eq!(breaks_vec.len(), 4);
         assert_eq!(breaks_vec, vec![6, 16, 23, 30]);
     }
 
     #[test]
-    fn column_breaks_hard_soft() {
-        let text: Rope = "so\nevery wordthing should getits ownline".into();
-        let breaks = linewrap(&text, 4);
+    fn column_breaks_trailing_newline() {
+        let text: Rope = "every wordthing should getits ow\n".into();
+        let mut width_cache = WidthCache::new();
+        let spans: Spans<Style> = Spans::default();
+        let breaks = rewrap_all(&text, &mut width_cache, &spans, &CodepointMono, 4.0);
         let breaks_vec = {
             let mut cursor = Cursor::new(&breaks, 0);
             cursor.get_leaf().unwrap().0.get_data_cloned()
         };
-        assert_eq!(breaks_vec.len(), 5);
+        assert_eq!(breaks_vec, vec![6, 16, 23, 30, 33]);
+    }
+
+    #[test]
+    fn column_breaks_hard_soft() {
+        let text: Rope = "so\nevery wordthing should getits own".into();
+        let mut width_cache = WidthCache::new();
+        let spans: Spans<Style> = Spans::default();
+        let breaks = rewrap_all(&text, &mut width_cache, &spans, &CodepointMono, 4.0);
+        let breaks_vec = {
+            let mut cursor = Cursor::new(&breaks, 0);
+            cursor.get_leaf().unwrap().0.get_data_cloned()
+        };
         assert_eq!(breaks_vec, vec![3, 9, 19, 26, 33]);
     }
 }

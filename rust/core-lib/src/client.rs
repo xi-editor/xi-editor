@@ -25,17 +25,10 @@ use plugins::Command;
 use styles::ThemeSettings;
 use syntax::LanguageId;
 use tabs::ViewId;
+use width_cache::{WidthReq, WidthResponse};
 
 /// An interface to the frontend.
 pub struct Client(RpcPeer);
-
-#[derive(Serialize, Deserialize)]
-/// A request for measuring the widths of strings all of the same style
-/// (a request from core to front-end).
-pub struct WidthReq {
-    pub id: usize,
-    pub strings: Vec<String>,
-}
 
 impl Client {
     pub fn new(peer: RpcPeer) -> Self {
@@ -173,7 +166,7 @@ impl Client {
     }
 
     /// Ask front-end to measure widths of strings.
-    pub fn measure_width(&self, reqs: &[WidthReq]) -> Result<Vec<Vec<f64>>, xi_rpc::Error> {
+    pub fn measure_width(&self, reqs: &[WidthReq]) -> Result<WidthResponse, xi_rpc::Error> {
         let req_json = serde_json::to_value(reqs).expect("failed to serialize width req");
         let resp = self.0.send_rpc_request("measure_width", &req_json)?;
         Ok(serde_json::from_value(resp).expect("failed to deserialize width response"))

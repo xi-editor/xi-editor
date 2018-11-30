@@ -409,6 +409,16 @@ impl<'a> EventContext<'a> {
 
     pub(crate) fn config_changed(&mut self, changes: &Table) {
         if changes.contains_key("wrap_width") || changes.contains_key("word_wrap") {
+            // FIXME: if switching from measurement-based widths to columnar widths,
+            // we need to reset the cache, since we're using different coordinate spaces
+            // for the same IDs. The long-term solution would be to include font
+            // information in the width cache, and then use real width even in the column
+            // case, getting the unit width for a typeface and multiplying that by
+            // a string's unicode width.
+            if changes.contains_key("word_wrap") {
+                debug!("clearing {} items from width cache", self.width_cache.borrow().len());
+                self.width_cache.replace(WidthCache::new());
+            }
             self.update_wrap_state();
         }
 
@@ -475,25 +485,14 @@ impl<'a> EventContext<'a> {
 
     fn update_wrap_state(&mut self) {
         // word based wrapping trumps column wrapping
-        if self.config.word_wrap {
-            let mut view = self.view.borrow_mut();
-            let mut width_cache = self.width_cache.borrow_mut();
-            let ed = self.editor.borrow();
-            view.wrap_width(
-                ed.get_buffer(),
-                &mut width_cache,
-                self.client,
-                ed.get_layers().get_merged(),
-            );
-            view.set_dirty(ed.get_buffer());
-        } else {
-            let wrap_width = self.config.wrap_width;
-            self.with_view(|view, text| {
-                view.rewrap(text, wrap_width);
-                view.set_dirty(text);
-            });
-        }
-        self.render();
+        let mut view = self.view.borrow_mut();
+        let mut width_cache = self.width_cache.borrow_mut();
+        let ed = self.editor.borrow();
+
+        view.update_wrap_state(self.config.wrap_width, self.config.word_wrap);
+
+        view.rewrap(ed.get_buffer(), &mut width_cache, self.client, ed.get_layers().get_merged());
+        view.set_dirty(ed.get_buffer());
     }
 
     fn do_request_lines(&mut self, first: usize, last: usize) {
