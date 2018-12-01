@@ -59,15 +59,21 @@ fn decode_utf8(s: &[u8]) -> Option<(char, usize)> {
         return Some((b as char, 1));
     } else if b >= 0xc2 && b < 0xe0 && s.len() >= 2 {
         let b2 = s[1];
-        if (b2 as i8) > -0x40 { return None; }
-        let cp = ((b as u32) << 6) + (b2 as u32) - 0x3080;
+        if (b2 as i8) > -0x40 {
+            return None;
+        }
+        let cp = (u32::from(b) << 6) + u32::from(b2) - 0x3080;
         return from_u32(cp).map(|ch| (ch, 2));
     } else if b >= 0xe0 && b < 0xf0 && s.len() >= 3 {
         let b2 = s[1];
         let b3 = s[2];
-        if (b2 as i8) > -0x40 || (b3 as i8) > -0x40 { return None; }
-        let cp = ((b as u32) << 12) + ((b2 as u32) << 6) + (b3 as u32) - 0xe2080;
-        if cp < 0x800 { return None; } // overlong encoding
+        if (b2 as i8) > -0x40 || (b3 as i8) > -0x40 {
+            return None;
+        }
+        let cp = (u32::from(b) << 12) + (u32::from(b2) << 6) + u32::from(b3) - 0xe2080;
+        if cp < 0x800 {
+            return None;
+        } // overlong encoding
         return from_u32(cp).map(|ch| (ch, 3));
     } else if b >= 0xf0 && b < 0xf5 && s.len() >= 4 {
         let b2 = s[1];
@@ -76,9 +82,12 @@ fn decode_utf8(s: &[u8]) -> Option<(char, usize)> {
         if (b2 as i8) > -0x40 || (b3 as i8) > -0x40 || (b4 as i8) > -0x40 {
             return None;
         }
-        let cp = ((b as u32) << 18) + ((b2 as u32) << 12) + ((b3 as u32) << 6)
-            + (b4 as u32) - 0x3c82080;
-        if cp < 0x10000 { return None; } // overlong encoding
+        let cp =
+            (u32::from(b) << 18) + (u32::from(b2) << 12) + (u32::from(b3) << 6) + u32::from(b4)
+                - 0x03c8_2080;
+        if cp < 0x10000 {
+            return None;
+        } // overlong encoding
         return from_u32(cp).map(|ch| (ch, 4));
     }
     None
@@ -89,7 +98,7 @@ impl<F: Fn(char) -> bool> Peg for OneChar<F> {
     fn p(&self, s: &[u8]) -> Option<usize> {
         if let Some((ch, len)) = decode_utf8(s) {
             if self.0(ch) {
-                return Some(len)
+                return Some(len);
             }
         }
         None
@@ -158,19 +167,18 @@ impl<'a> Peg for &'a str {
 impl<P1: Peg, P2: Peg> Peg for (P1, P2) {
     #[inline(always)]
     fn p(&self, s: &[u8]) -> Option<usize> {
-        self.0.p(s).and_then(|len1|
-            self.1.p(&s[len1..]).map(|len2|
-                len1 + len2))
+        self.0.p(s).and_then(|len1| self.1.p(&s[len1..]).map(|len2| len1 + len2))
     }
 }
 
 impl<P1: Peg, P2: Peg, P3: Peg> Peg for (P1, P2, P3) {
     #[inline(always)]
     fn p(&self, s: &[u8]) -> Option<usize> {
-        self.0.p(s).and_then(|len1|
-            self.1.p(&s[len1..]).and_then(|len2|
-                self.2.p(&s[len1 + len2..]).map(|len3|
-                    len1 + len2 + len3)))
+        self.0.p(s).and_then(|len1| {
+            self.1
+                .p(&s[len1..])
+                .and_then(|len2| self.2.p(&s[len1 + len2..]).map(|len3| len1 + len2 + len3))
+        })
     }
 }
 
@@ -194,7 +202,6 @@ macro_rules! impl_tuple {
     }
 }
 impl_tuple!(P1 p1, P2 p2, P3 p3, P4 p4);
-
 
 /// Choice from two heterogeneous alternatives.
 pub struct Alt<P1, P2>(pub P1, pub P2);
@@ -222,7 +229,7 @@ pub struct OneOf<'a, P: 'a>(pub &'a [P]);
 impl<'a, P: Peg> Peg for OneOf<'a, P> {
     #[inline]
     fn p(&self, s: &[u8]) -> Option<usize> {
-        for ref p in self.0 {
+        for p in self.0.iter() {
             if let Some(len) = p.p(s) {
                 return Some(len);
             }
@@ -316,7 +323,7 @@ impl<P: Peg> Peg for Optional<P> {
     }
 }
 
-#[allow(dead_code)]  // not used by rust lang, but used in tests
+#[allow(dead_code)] // not used by rust lang, but used in tests
 pub struct OneOrMore<P>(pub P);
 
 impl<P: Peg> Peg for OneOrMore<P> {
@@ -347,7 +354,7 @@ impl<P: Peg> Peg for FailIf<P> {
     fn p(&self, s: &[u8]) -> Option<usize> {
         match self.0.p(s) {
             Some(_) => None,
-            None => Some(0)
+            None => Some(0),
         }
     }
 }
