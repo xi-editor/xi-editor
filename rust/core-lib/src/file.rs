@@ -299,6 +299,12 @@ where
         mod_time,
         path: path.as_ref().to_owned(),
         has_changed: false,
+        #[cfg(feature = "notify")]
+        tail_details: TailDetails {
+            current_position_in_tail: 0,
+            is_tail_mode_on: false,
+            is_at_bottom_of_file: false,
+        },
     };
     Ok((rope, info))
 }
