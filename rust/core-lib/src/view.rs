@@ -20,7 +20,7 @@ use std::iter;
 
 use serde_json::Value;
 
-use crate::annotations::{AnnotationStore, ToAnnotation};
+use crate::annotations::{AnnotationStore, ToAnnotation, AnnotationSlice};
 use crate::annotations::Annotation;
 use crate::client::{Client, Update, UpdateOp};
 use crate::edit_types::ViewEvent;
@@ -684,34 +684,18 @@ impl View {
         update
     }
 
-    fn build_selection_annotations(&self, text: &Rope, start: usize, end: usize) -> Vec<Value> {
-        let start_offset = self.offset_of_line(text, start);
-        let end_offset = self.offset_of_line(text, end);
-        self.selection.regions_in_range(start_offset, end_offset).iter().map(|region| {
-            let (start_line, start_col) = self.offset_to_line_col(text, region.min());
-            let (end_line, end_col) = self.offset_to_line_col(text, region.max());
-            json!({
-                "pos": [start_line, start_col, end_line, end_col]
-            })
-        }).collect::<Vec<Value>>()
-    }
+    fn build_annotation_set(&self, text: &Rope, annotations: &AnnotationSlice) -> Value {
+        let ranges = annotations.ranges.iter().map(|&(start, end)| {
+            let (start_line, start_col) = self.offset_to_line_col(text, start);
+            let (end_line, end_col) = self.offset_to_line_col(text, end);
+            [start_line, start_col, end_line, end_col]
+        }).collect::<Vec<[usize; 4]>>();
 
-    fn build_highlight_annotations(&self, text: &Rope, start: usize, end: usize) -> Vec<Value> {
-        self.find.iter().flat_map(|find| {
-            let query_id = find.id();
-            let start_offset = self.offset_of_line(text, start);
-            let end_offset = self.offset_of_line(text, end);
-            find.occurrences().regions_in_range(start_offset, end_offset).iter().map(move |region| {
-                let (start_line, start_col) = self.offset_to_line_col(text, region.min());
-                let (end_line, end_col) = self.offset_to_line_col(text, region.max());
-                json!({
-                    "pos": [start_line, start_col, end_line, end_col],
-                    "metadata": {
-                        "query": query_id
-                    }
-                })
-            })
-        }).collect::<Vec<Value>>()
+        json!({
+            "type": annotations.annotation_type,
+            "ranges": ranges,
+            "payloads": annotations.payloads
+        })
     }
 
     fn send_update_for_plan(
@@ -730,7 +714,6 @@ impl View {
         // send updated find status only if there have been changes
         if self.find_changed != FindStatusChange::None {
             let matches_only = self.find_changed == FindStatusChange::Matches;
-            // todo: invalidate and update annotations
             client.find_status(self.view_id, &json!(self.find_status(text, matches_only)));
         }
 
@@ -810,10 +793,15 @@ impl View {
         let start_off = self.offset_of_line(text, self.first_line);
         let end_off = self.offset_of_line(text, self.first_line + self.height + 1);
         let visible_range = Interval::new(start_off, end_off);
-        let annotations = iter::once(self.selection.get_annotations(visible_range))
-            .chain(self.find.iter().map(|f| f.get_annotations(visible_range)))
-//            .chain(self.annotations.iter_range(visible_range)))
+        let selection_annotations = self.build_annotation_set(text, &self.selection.get_annotations(visible_range));
+        let annotations = iter::once(selection_annotations)
+            .chain(self.find.iter().map(|f| self.build_annotation_set(text, &f.get_annotations(visible_range))))
             .collect::<Vec<_>>();
+        //            .chain(self.annotations.iter_range(visible_range)))
+//        let annotations = iter::once(self.selection.get_annotations(visible_range))
+//            .chain(self.find.iter().map(|f| f.get_annotations(visible_range)))
+////            .chain(self.annotations.iter_range(visible_range)))
+//            .collect::<Vec<_>>();
 
         let params = json!({
             "ops": ops,

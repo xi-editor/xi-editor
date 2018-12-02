@@ -18,7 +18,7 @@ use std::cmp::{max, min};
 use std::fmt;
 use std::ops::Deref;
 
-use crate::annotations::{Annotation, AnnotationSlice, ToAnnotation};
+use crate::annotations::{CoreAnnotationType, Annotation, AnnotationSlice, ToAnnotation};
 use crate::index_set::remove_n_at;
 use xi_rope::{Interval, RopeDelta, Transformer};
 
@@ -243,7 +243,7 @@ impl ToAnnotation for Selection {
         ).collect::<Vec<(usize, usize)>>();
 
         AnnotationSlice {
-            annotation_type: Annotation::Selection.as_type(),
+            annotation_type: CoreAnnotationType::Selection.as_type(),
             ranges: ranges,
             payloads: None
         }

@@ -17,6 +17,7 @@
 use std::cmp::{max, min};
 use std::iter;
 
+use crate::annotations::{CoreAnnotationType, AnnotationSlice, ToAnnotation};
 use crate::annotations::{Annotation, AnnotationSlice, ToAnnotation};
 use crate::selection::{InsertDrift, SelRegion, Selection};
 use crate::view::View;
@@ -424,7 +425,7 @@ impl ToAnnotation for Find {
         let payload = iter::repeat(json!({"id": self.id})).take(ranges.len()).collect::<Vec<_>>();
 
         AnnotationSlice {
-            annotation_type: Annotation::Find.as_type(),
+            annotation_type: CoreAnnotationType::Find.as_type(),
             ranges: ranges,
             payloads: Some(payload)
         }
