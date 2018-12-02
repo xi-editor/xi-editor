@@ -415,7 +415,6 @@ impl Find {
 
 /// Implementing the `ToAnnotation` trait allows to convert finds to annotations.
 impl ToAnnotation for Find {
-    #![feature(repeat_generic_slice)]
     fn get_annotations(&self, interval: Interval) -> AnnotationSlice {
         let regions = self.occurrences.regions_in_range(interval.start(), interval.end());
         let ranges = regions.iter().map(|region|
