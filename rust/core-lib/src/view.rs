@@ -694,7 +694,8 @@ impl View {
         json!({
             "type": annotations.annotation_type,
             "ranges": ranges,
-            "payloads": annotations.payloads
+            "payloads": annotations.payloads,
+            "n": ranges.len()
         })
     }
 
