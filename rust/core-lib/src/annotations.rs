@@ -23,16 +23,16 @@ use xi_rope::spans::Spans;
 type AnnotationType = String;
 
 /// Annotation types used in core.
-pub enum Annotation {
+pub enum CoreAnnotationType {
     Selection,
     Find
 }
 
-impl Annotation {
+impl CoreAnnotationType {
     pub fn as_type(&self) -> AnnotationType {
         match self {
-            Annotation::Selection => "selection".to_string(),
-            Annotation::Find => "find".to_string(),
+            CoreAnnotationType::Selection => "selection".to_string(),
+            CoreAnnotationType::Find => "find".to_string(),
         }
     }
 }
