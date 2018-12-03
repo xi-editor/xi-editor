@@ -21,7 +21,7 @@ use plugins::PluginId;
 use xi_rope::Interval;
 use xi_rope::spans::Spans;
 
-type AnnotationType = String;
+pub type AnnotationType = String;
 
 /// Annotation types used in core.
 pub enum CoreAnnotationType {
@@ -81,7 +81,7 @@ impl AnnotationStore {
     }
 
     /// Applies an update from a plugin to a set of annotations
-    fn update(&mut self, source: PluginId, type_id: AnnotationType, iv: Interval, items: Spans<Value>) {
+    pub fn update(&mut self, source: PluginId, type_id: AnnotationType, iv: Interval, items: Spans<Value>) {
         let updated_items = items.clone();
         let updated_type = type_id.clone();
 
@@ -115,7 +115,7 @@ impl AnnotationStore {
 
     /// Returns an iterator which produces, for each type of annotation,
     /// those annotations which intersect the given interval.
-    fn iter_range<'c>(&'c self, interval: Interval) -> impl Iterator<Item=AnnotationSlice> + 'c {
+    pub fn iter_range<'c>(&'c self, interval: Interval) -> impl Iterator<Item=AnnotationSlice> + 'c {
         let iv = interval.clone();
         self.store.iter().flat_map(move |(_plugin, value)| {
             value.iter().map(move |annotation| {
@@ -133,7 +133,7 @@ impl AnnotationStore {
     }
 
     /// Removes any annotations provided by this plugin
-    fn clear(&mut self, plugin: PluginId) {
+    pub fn clear(&mut self, plugin: PluginId) {
         self.store.remove(&plugin);
     }
 }

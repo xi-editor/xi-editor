@@ -20,7 +20,7 @@ use std::iter;
 
 use serde_json::Value;
 
-use crate::annotations::{AnnotationStore, ToAnnotation, AnnotationSlice};
+use crate::annotations::{AnnotationStore, ToAnnotation, AnnotationSlice, AnnotationType};
 use crate::annotations::Annotation;
 use crate::client::{Client, Update, UpdateOp};
 use crate::edit_types::ViewEvent;
@@ -684,6 +684,10 @@ impl View {
         update
     }
 
+    pub fn update_annotations(&mut self, plugin: PluginId, type_id: AnnotationType, iv: Interval, items: Spans<Value>) {
+        self.annotations.update(plugin, type_id, iv, items);
+    }
+
     fn build_annotation_set(&self, text: &Rope, annotations: &AnnotationSlice) -> Value {
         let ranges = annotations.ranges.iter().map(|&(start, end)| {
             let (start_line, start_col) = self.offset_to_line_col(text, start);
@@ -797,12 +801,8 @@ impl View {
         let selection_annotations = self.build_annotation_set(text, &self.selection.get_annotations(visible_range));
         let annotations = iter::once(selection_annotations)
             .chain(self.find.iter().map(|f| self.build_annotation_set(text, &f.get_annotations(visible_range))))
+            .chain(self.annotations.iter_range(visible_range).map(|a| self.build_annotation_set(text, &a)))
             .collect::<Vec<_>>();
-        //            .chain(self.annotations.iter_range(visible_range)))
-//        let annotations = iter::once(self.selection.get_annotations(visible_range))
-//            .chain(self.find.iter().map(|f| f.get_annotations(visible_range)))
-////            .chain(self.annotations.iter_range(visible_range)))
-//            .collect::<Vec<_>>();
 
         let params = json!({
             "ops": ops,
