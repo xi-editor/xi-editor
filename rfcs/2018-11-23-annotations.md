@@ -39,8 +39,9 @@ provided.
 We will add an `annotations` field to the update protocol. This field
 will be a list of sets of annotations, which will represent _transient
 state_ scoped to the current view. Each annotations set will include
-a type identifier and two arrays, one of byte ranges and one of
-corresponding payloads. In sort-of JSON, this might look like:
+a type identifier and two arrays, one of start/end ranges (likely
+represented as a visual line number + utf8 or utf-16 offset) and one
+of corresponding payloads. In sort-of JSON, this might look like:
 
 ```javascript
 // in the update object:
@@ -53,7 +54,7 @@ corresponding payloads. In sort-of JSON, this might look like:
 // An AnnotationSet:
 {
     "type": String,
-    "ranges": [[Number, Number]],
+    "ranges": [[Position, Position]],
     "payloads": [Any]?,
     "metadata": Any? // maybe?
 }
@@ -294,6 +295,8 @@ method:
 {
     "method": "update_annotations",
     "params": {
+        "view_id": "view-id-3",
+        "rev": 4137193,
         "type": "diagnostics",
         "range": [0, 1337],
         "items": [ /* some annotations */],
@@ -347,7 +350,7 @@ worth noting.
 
 #### metadata handling
 
-We probably want (and have assumed having,elsewhere in this proposal)
+We probably want (and have assumed having, elsewhere in this proposal)
 some way to associate metadata with a _set_ of annotations;
 for instance 'find' annotations might include the total
 number of results and their approximate locations. This does add some
