@@ -864,6 +864,29 @@ impl Editor {
         self.text.measure::<LinesMetric>() + 1
     }
 
+    pub fn update_annotations(
+        &mut self,
+        view: &mut View,
+        plugin: PluginId,
+        start: usize,
+        len: usize,
+        type_id: AnnotationType,
+        spans: Vec<AnnotationSpan>,
+    ) {
+        let _t = trace_block("Editor::update_annotations", &["core"]);
+        let start = start;
+        let end_offset = start + len;
+        let mut sb = SpansBuilder::new(len);
+        for span in spans {
+            sb.add_span(Interval::new(span.start, span.end), span.payload);
+        }
+        let spans = sb.build();
+        let iv = Interval::new(start, end_offset);
+
+        view.update_annotations(plugin, type_id, iv, spans);
+    }
+
+
     pub fn update_spans(
         &mut self,
         view: &mut View,
