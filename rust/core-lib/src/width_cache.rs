@@ -27,7 +27,7 @@ use client::Client;
 /// Internally, it is implemented as an index into the `widths` array.
 pub type Token = usize;
 
-/// A measured width, in points.
+/// A measured width, in px units.
 type Width = f64;
 
 type StyleId = usize;
@@ -69,22 +69,20 @@ pub type WidthResponse = Vec<Vec<Width>>;
 /// A trait for types that provide width measurement. In the general case this
 /// will be provided by the frontend, but alternative implementations might
 /// be provided for faster measurement of 'fixed-width' fonts, or for testing.
-pub trait Measure {
+pub trait WidthMeasure {
     fn measure_width(&self, request: &[WidthReq]) -> Result<WidthResponse, xi_rpc::Error>;
 }
 
-impl Measure for Client {
+impl WidthMeasure for Client {
     fn measure_width(&self, request: &[WidthReq]) -> Result<WidthResponse, xi_rpc::Error> {
         Client::measure_width(self, request)
     }
 }
 
-/// temporary; a stand-in type for testing fixed-width measurement.
-/// This treats each codepoint as having width 1; at the very least we should
-/// be using unicode width.
+/// A measure in which each codepoint has width of 1.
 pub struct CodepointMono;
 
-impl Measure for CodepointMono {
+impl WidthMeasure for CodepointMono {
     /// In which each codepoint has width == 1.
     fn measure_width(&self, request: &[WidthReq]) -> Result<WidthResponse, xi_rpc::Error> {
         Ok(request
@@ -149,9 +147,9 @@ impl<'a> WidthBatchReq<'a> {
         tok
     }
 
-    /// Resolves pending measurements to concrete widths using the provided [`Measure`].
+    /// Resolves pending measurements to concrete widths using the provided [`WidthMeasure`].
     /// On success, the tokens given by `request` will resolve in the cache.
-    pub fn resolve_pending<T: Measure>(&mut self, handler: &T) -> Result<(), xi_rpc::Error> {
+    pub fn resolve_pending<T: WidthMeasure>(&mut self, handler: &T) -> Result<(), xi_rpc::Error> {
         // The 0.0 values should all get replaced with actual widths, assuming the
         // shape of the response from the front-end matches that of the request.
         if self.pending_tok > self.cache.widths.len() {
