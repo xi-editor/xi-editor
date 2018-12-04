@@ -21,7 +21,7 @@ use xi_trace::trace_block;
 use xi_unicode::LineBreakLeafIter;
 
 use styles::{Style, N_RESERVED_STYLES};
-use width_cache::{Measure, Token, WidthCache};
+use width_cache::{Token, WidthCache, WidthMeasure};
 
 struct LineBreakCursor<'a> {
     inner: Cursor<'a, RopeInfo>,
@@ -92,7 +92,7 @@ struct RewrapCtx<'a, T: 'a> {
 // RPC overhead becomes significant. More than that, interactivity suffers.
 const MAX_POT_BREAKS: usize = 10_000;
 
-impl<'a, T: Measure> RewrapCtx<'a, T> {
+impl<'a, T: WidthMeasure> RewrapCtx<'a, T> {
     fn new(
         text: &'a Rope,
         /* _style_spans: &Spans<Style>, */ client: &'a T,
@@ -166,7 +166,7 @@ impl<'a, T: Measure> RewrapCtx<'a, T> {
 }
 
 /// Wrap the text (in batch mode) using width measurement.
-pub fn rewrap_all<T: Measure>(
+pub fn rewrap_all<T: WidthMeasure>(
     text: &Rope,
     width_cache: &mut WidthCache,
     _style_spans: &Spans<Style>,
@@ -188,7 +188,7 @@ pub fn rewrap_all<T: Measure>(
 //NOTE: incremental version of rewrap_all
 /// Compute a new chunk of breaks after an edit. Returns new breaks to replace
 /// the old ones. The interval [start..end] represents a frontier.
-fn compute_rewrap<T: Measure>(
+fn compute_rewrap<T: WidthMeasure>(
     text: &Rope,
     width_cache: &mut WidthCache,
     /* style_spans: &Spans<Style>, */ client: &T,
@@ -239,7 +239,7 @@ fn compute_rewrap<T: Measure>(
     builder.build()
 }
 
-pub fn rewrap<T: Measure>(
+pub fn rewrap<T: WidthMeasure>(
     breaks: &mut Breaks,
     text: &Rope,
     width_cache: &mut WidthCache, // _style_spans: &Spans<Style>,
