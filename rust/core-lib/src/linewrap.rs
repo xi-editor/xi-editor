@@ -145,21 +145,26 @@ impl<'a, T: WidthMeasure> RewrapCtx<'a, T> {
                 self.refill_pot_breaks();
             }
             let pot_break = &self.pot_breaks[self.pot_break_ix];
-            if pot_break.hard {
-                self.pot_break_ix += 1;
-                return Some(pot_break.pos);
-            }
             let width = self.width_cache.resolve(pot_break.tok);
-            if line_width == 0.0 && width >= self.max_width {
+            if !pot_break.hard {
+                if line_width == 0.0 && width >= self.max_width {
+                    self.pot_break_ix += 1;
+                    return Some(pot_break.pos);
+                }
+                line_width += width;
+                if line_width > self.max_width {
+                    return Some(pos);
+                }
+                self.pot_break_ix += 1;
+                pos = pot_break.pos;
+            } else if line_width != 0. && width + line_width > self.max_width {
+                // if this is a hard break but we would have broken at the previous
+                // pos otherwise, we still break at the previous pos.
+                return Some(pos);
+            } else {
                 self.pot_break_ix += 1;
                 return Some(pot_break.pos);
             }
-            line_width += width;
-            if line_width > self.max_width {
-                return Some(pos);
-            }
-            self.pot_break_ix += 1;
-            pos = pot_break.pos;
         }
         None
     }
@@ -307,6 +312,19 @@ mod tests {
             cursor.get_leaf().unwrap().0.get_data_cloned()
         };
         assert_eq!(breaks_vec, vec![6, 16, 23, 30, 33]);
+    }
+
+    #[test]
+    fn soft_before_hard() {
+        let text: Rope = "create abreak between THESE TWO\nwords andbreakcorrectlyhere\nplz".into();
+        let mut width_cache = WidthCache::new();
+        let spans: Spans<Style> = Spans::default();
+        let breaks = rewrap_all(&text, &mut width_cache, &spans, &CodepointMono, 7.0);
+        let breaks_vec = {
+            let mut cursor = Cursor::new(&breaks, 0);
+            cursor.get_leaf().unwrap().0.get_data_cloned()
+        };
+        assert_eq!(breaks_vec, vec![7, 14, 22, 28, 32, 38, 60]);
     }
 
     #[test]
