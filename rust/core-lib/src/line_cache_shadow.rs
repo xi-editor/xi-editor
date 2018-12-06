@@ -16,6 +16,7 @@
 //! and preparing render plans to update it.
 
 use std::cmp::{max, min};
+use std::fmt;
 
 const SCROLL_SLOP: usize = 2;
 const PRESERVE_EXTENT: usize = 1000;
@@ -23,6 +24,7 @@ const PRESERVE_EXTENT: usize = 1000;
 /// The line cache shadow tracks the state of the line cache in the front-end.
 /// Any content marked as valid here is up-to-date in the current state of the
 /// view. Also, if `dirty` is false, then the entire line cache is valid.
+#[derive(Debug)]
 pub struct LineCacheShadow {
     spans: Vec<Span>,
     dirty: bool,
@@ -302,5 +304,21 @@ impl RenderPlan {
             line_num += span.0;
         }
         self.spans = spans;
+    }
+}
+
+impl fmt::Debug for Span {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let validity = match self.validity {
+            TEXT_VALID => "text",
+            ALL_VALID => "all",
+            _other => "mixed",
+        };
+        if self.validity == INVALID {
+            write!(f, "({} invalid)", self.n)?;
+        } else {
+            write!(f, "({}: {}, {})", self.start_line_num, self.n, validity)?;
+        }
+        Ok(())
     }
 }
