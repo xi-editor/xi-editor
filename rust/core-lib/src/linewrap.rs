@@ -14,7 +14,9 @@
 
 //! Compute line wrapping breaks for text.
 
-use xi_rope::breaks::{BreakBuilder, Breaks, BreaksBaseMetric, BreaksMetric};
+use std::ops::Range;
+
+use xi_rope::breaks::{BreakBuilder, Breaks, BreaksBaseMetric, BreaksInfo, BreaksMetric};
 use xi_rope::spans::Spans;
 use xi_rope::{Cursor, LinesMetric, Rope, RopeDelta, RopeInfo};
 use xi_trace::trace_block;
@@ -52,6 +54,9 @@ pub(crate) struct Lines {
     wrap: WrapWidth,
 }
 
+/// A range of bytes representing a visual line.
+pub(crate) type VisualLine = Range<usize>;
+
 impl Lines {
     pub(crate) fn set_wrap_width(&mut self, wrap: WrapWidth) {
         if wrap != self.wrap {
@@ -60,12 +65,8 @@ impl Lines {
         }
     }
 
-    // temporary, so we work with existing API:
-    pub(crate) fn non_empty_breaks(&self) -> Option<&Breaks> {
-        match self.wrap {
-            WrapWidth::None => None,
-            _ => Some(&self.breaks),
-        }
+    pub(crate) fn has_soft_breaks(&self) -> bool {
+        self.wrap != WrapWidth::None
     }
 
     pub(crate) fn visual_line_of_offset(&self, text: &Rope, offset: usize) -> usize {
@@ -85,6 +86,18 @@ impl Lines {
             }
             _ => self.breaks.convert_metrics::<BreaksMetric, BreaksBaseMetric>(line),
         }
+    }
+
+    /// Returns an iterator over [`VisualLine`]s, starting at (and including)
+    /// `start_line`.
+    pub(crate) fn iter_lines<'a>(
+        &'a self,
+        text: &'a Rope,
+        start_line: usize,
+    ) -> impl Iterator<Item = VisualLine> + 'a {
+        let offset = self.offset_of_visual_line(text, start_line);
+        let cursor = MergedBreaks::new(text, &self.breaks, offset);
+        VisualLines { offset, cursor, len: text.len(), eof: false }
     }
 
     // TODO: this is where the incremental goes
@@ -365,60 +378,173 @@ impl<'a> LineBreakCursor<'a> {
     }
 }
 
+struct VisualLines<'a> {
+    cursor: MergedBreaks<'a>,
+    offset: usize,
+    len: usize,
+    eof: bool,
+}
+
+impl<'a> Iterator for VisualLines<'a> {
+    type Item = VisualLine;
+
+    fn next(&mut self) -> Option<VisualLine> {
+        let next_end_bound = match self.cursor.next() {
+            Some(b) => b,
+            None if self.eof => return None,
+            _else => {
+                self.eof = true;
+                self.len
+            }
+        };
+        let result = self.offset..next_end_bound;
+        self.offset = next_end_bound;
+        Some(result)
+    }
+}
+
+/// A cursor over both hard and soft breaks. Currently this is either/or,
+/// but eventually soft will be soft only, and this will interleave them.
+struct MergedBreaks<'a> {
+    text: Cursor<'a, RopeInfo>,
+    soft: Cursor<'a, BreaksInfo>,
+    offset: usize,
+}
+
+impl<'a> Iterator for MergedBreaks<'a> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<usize> {
+        // TODO: remove when soft and hard are separate
+        let prev_off = self.offset;
+        self.offset = if self.soft.root().measure::<BreaksMetric>() != 0 {
+            self.soft.next::<BreaksMetric>()
+        } else {
+            self.text.next::<LinesMetric>()
+        }?;
+
+        // if we're at EOF, we only send a break if there's an actual trailing newline.
+        let eof_without_newline =
+            self.offset > 0
+                && self.offset == self.text.total_len()
+                && self.text.get_leaf().map(|(l, _)| l.as_bytes()[l.len() - 1] != b'\n').unwrap();
+        if self.offset == prev_off || eof_without_newline {
+            None
+        } else {
+            Some(self.offset)
+        }
+    }
+}
+
+impl<'a> MergedBreaks<'a> {
+    fn new(text: &'a Rope, breaks: &'a Breaks, offset: usize) -> Self {
+        debug_assert_eq!(text.len(), breaks.len());
+        let text = Cursor::new(text, offset);
+        let soft = Cursor::new(breaks, offset);
+        MergedBreaks { text, soft, offset }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::borrow::Cow;
     use width_cache::CodepointMono;
+
+    fn debug_breaks<'a>(text: &'a Rope, width: f64) -> Vec<Cow<'a, str>> {
+        let mut result = Vec::new();
+        let mut width_cache = WidthCache::new();
+        let spans: Spans<Style> = Spans::default();
+        let breaks = match width {
+            w if w == 0. => Breaks::new_no_break(text.len()),
+            w => rewrap_all(text, &mut width_cache, &spans, &CodepointMono, w),
+        };
+        let lines = Lines { breaks, wrap: WrapWidth::Bytes(width as usize) };
+        for line in lines.iter_lines(text, 0) {
+            result.push(text.slice_to_cow(line));
+        }
+        result
+    }
 
     #[test]
     fn column_breaks_basic() {
         let text: Rope = "every wordthing should getits own".into();
-        let mut width_cache = WidthCache::new();
-        let spans: Spans<Style> = Spans::default();
-        let breaks = rewrap_all(&text, &mut width_cache, &spans, &CodepointMono, 4.0);
-        let breaks_vec = {
-            let mut cursor = Cursor::new(&breaks, 0);
-            cursor.get_leaf().unwrap().0.get_data_cloned()
-        };
-        assert_eq!(breaks_vec, vec![6, 16, 23, 30]);
+        let result = debug_breaks(&text, 8.0);
+        assert_eq!(result, vec!["every ", "wordthing ", "should ", "getits ", "own",]);
     }
 
     #[test]
     fn column_breaks_trailing_newline() {
         let text: Rope = "every wordthing should getits ow\n".into();
-        let mut width_cache = WidthCache::new();
-        let spans: Spans<Style> = Spans::default();
-        let breaks = rewrap_all(&text, &mut width_cache, &spans, &CodepointMono, 4.0);
-        let breaks_vec = {
-            let mut cursor = Cursor::new(&breaks, 0);
-            cursor.get_leaf().unwrap().0.get_data_cloned()
-        };
-        assert_eq!(breaks_vec, vec![6, 16, 23, 30, 33]);
+        let result = debug_breaks(&text, 8.0);
+        assert_eq!(result, vec!["every ", "wordthing ", "should ", "getits ", "ow\n", "",]);
     }
 
     #[test]
     fn soft_before_hard() {
         let text: Rope = "create abreak between THESE TWO\nwords andbreakcorrectlyhere\nplz".into();
-        let mut width_cache = WidthCache::new();
-        let spans: Spans<Style> = Spans::default();
-        let breaks = rewrap_all(&text, &mut width_cache, &spans, &CodepointMono, 7.0);
-        let breaks_vec = {
-            let mut cursor = Cursor::new(&breaks, 0);
-            cursor.get_leaf().unwrap().0.get_data_cloned()
-        };
-        assert_eq!(breaks_vec, vec![7, 14, 22, 28, 32, 38, 60]);
+        let result = debug_breaks(&text, 4.0);
+        assert_eq!(
+            result,
+            vec![
+                "create ",
+                "abreak ",
+                "between ",
+                "THESE ",
+                "TWO\n",
+                "words ",
+                "andbreakcorrectlyhere\n",
+                "plz",
+            ]
+        );
     }
 
     #[test]
     fn column_breaks_hard_soft() {
         let text: Rope = "so\nevery wordthing should getits own".into();
-        let mut width_cache = WidthCache::new();
-        let spans: Spans<Style> = Spans::default();
-        let breaks = rewrap_all(&text, &mut width_cache, &spans, &CodepointMono, 4.0);
-        let breaks_vec = {
-            let mut cursor = Cursor::new(&breaks, 0);
-            cursor.get_leaf().unwrap().0.get_data_cloned()
-        };
-        assert_eq!(breaks_vec, vec![3, 9, 19, 26, 33]);
+        let result = debug_breaks(&text, 4.0);
+        assert_eq!(result, vec!["so\n", "every ", "wordthing ", "should ", "getits ", "own",]);
+    }
+
+    #[test]
+    fn empty_file() {
+        let text: Rope = "".into();
+        let result = debug_breaks(&text, 4.0);
+        assert_eq!(result, vec![""]);
+    }
+
+    #[test]
+    fn dont_break_til_i_tell_you() {
+        let text: Rope = "thisis_longerthan_our_break_width".into();
+        let result = debug_breaks(&text, 12.0);
+        assert_eq!(result, vec!["thisis_longerthan_our_break_width"]);
+    }
+
+    #[test]
+    fn break_now_though() {
+        let text: Rope = "thisis_longerthan_our_break_width hi".into();
+        let result = debug_breaks(&text, 12.0);
+        assert_eq!(result, vec!["thisis_longerthan_our_break_width ", "hi"]);
+    }
+
+    #[test]
+    fn newlines() {
+        let text: Rope = "\n\n".into();
+        let result = debug_breaks(&text, 4.0);
+        assert_eq!(result, vec!["\n", "\n", ""]);
+    }
+
+    #[test]
+    fn newline_eof() {
+        let text: Rope = "hello\n".into();
+        let result = debug_breaks(&text, 4.0);
+        assert_eq!(result, vec!["hello\n", ""]);
+    }
+
+    #[test]
+    fn no_newline_eof() {
+        let text: Rope = "hello".into();
+        let result = debug_breaks(&text, 4.0);
+        assert_eq!(result, vec!["hello"]);
     }
 }

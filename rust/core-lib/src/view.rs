@@ -22,7 +22,7 @@ use client::Client;
 use edit_types::ViewEvent;
 use find::{Find, FindStatus};
 use line_cache_shadow::{self, LineCacheShadow, RenderPlan, RenderTactic};
-use linewrap::{Lines, WrapWidth};
+use linewrap::{Lines, VisualLine, WrapWidth};
 use movement::{region_movement, selection_movement, Movement};
 use rpc::{FindQuery, GestureType, MouseAction, SelectionModifier};
 use selection::{Affinity, InsertDrift, SelRegion, Selection};
@@ -30,9 +30,8 @@ use styles::{Style, ThemeStyleMap};
 use tabs::{BufferId, Counter, ViewId};
 use width_cache::WidthCache;
 use word_boundaries::WordCursor;
-use xi_rope::breaks::{BreaksInfo, BreaksMetric};
 use xi_rope::spans::Spans;
-use xi_rope::{Cursor, Interval, LinesMetric, Rope, RopeDelta, RopeInfo};
+use xi_rope::{Cursor, Interval, LinesMetric, Rope, RopeDelta};
 use xi_trace::trace_block;
 
 type StyleMap = RefCell<ThemeStyleMap>;
@@ -546,22 +545,12 @@ impl View {
         client: &Client,
         styles: &StyleMap,
         text: &Rope,
-        start_of_line: &mut Cursor<RopeInfo>,
-        soft_breaks: Option<&mut Cursor<BreaksInfo>>,
+        line: VisualLine,
         style_spans: &Spans<Style>,
         line_num: usize,
     ) -> Value {
-        let start_pos = start_of_line.pos();
-        let pos = soft_breaks
-            .map_or(start_of_line.next::<LinesMetric>(), |bc| {
-                let pos = bc.next::<BreaksMetric>();
-                // if using breaks update cursor
-                if let Some(pos) = pos {
-                    start_of_line.set(pos)
-                }
-                pos
-            }).unwrap_or(text.len());
-
+        let start_pos = line.start;
+        let pos = line.end;
         let l_str = text.slice_to_cow(start_pos..pos);
         let mut cursors = Vec::new();
         let mut selections = Vec::new();
@@ -743,25 +732,21 @@ impl View {
                         line_num = seg.their_line_num + seg.n;
                     } else {
                         let start_line = seg.our_line_num;
-                        let end_line = start_line + seg.n;
-
-                        let offset = self.offset_of_line(text, start_line);
-                        let mut line_cursor = Cursor::new(text, offset);
-                        let mut soft_breaks =
-                            self.lines.non_empty_breaks().map(|b| Cursor::new(b, offset));
-                        let mut rendered_lines = Vec::new();
-                        for line_num in start_line..end_line {
-                            let line = self.render_line(
-                                client,
-                                styles,
-                                text,
-                                &mut line_cursor,
-                                soft_breaks.as_mut(),
-                                style_spans,
-                                line_num,
-                            );
-                            rendered_lines.push(line);
-                        }
+                        let rendered_lines = self
+                            .lines
+                            .iter_lines(text, start_line)
+                            .take(seg.n)
+                            .enumerate()
+                            .map(|(i, l)| {
+                                self.render_line(
+                                    client,
+                                    styles,
+                                    text,
+                                    l,
+                                    style_spans,
+                                    start_line + i,
+                                )
+                            }).collect::<Vec<_>>();
                         ops.push(self.build_update_op("ins", Some(rendered_lines), seg.n));
                         b.add_span(seg.n, seg.our_line_num, line_cache_shadow::ALL_VALID);
                     }
@@ -914,7 +899,7 @@ impl View {
         drift: InsertDrift,
     ) {
         self.lines.after_edit(text, delta, width_cache, client);
-        if self.lines.non_empty_breaks().is_none() {
+        if !self.lines.has_soft_breaks() {
             let (iv, new_len) = delta.summary();
             let start = self.line_of_offset(last_text, iv.start());
             let end = self.line_of_offset(last_text, iv.end()) + 1;

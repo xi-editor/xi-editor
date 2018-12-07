@@ -529,6 +529,11 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
         self.root.len()
     }
 
+    /// Return the a reference to the root node.
+    pub fn root(&self) -> &'a Node<N> {
+        self.root
+    }
+
     /// return value is leaf (if cursor is valid) and offset within leaf
     ///
     /// invariant: offset is at end of leaf iff end of rope
