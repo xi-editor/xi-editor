@@ -601,10 +601,12 @@ mod tests {
 
     impl ContextHarness {
         fn new<S: AsRef<str>>(s: S) -> Self {
+            // we could make this take a config, which would let us test
+            // behaviour with different config settings?
             let view_id = ViewId(1);
             let buffer_id = BufferId(2);
             let mut config_manager = ConfigManager::new(None, None);
-            config_manager.add_buffer(buffer_id, None);
+            let config = config_manager.add_buffer(buffer_id, None);
             let view = RefCell::new(View::new(view_id, buffer_id));
             let editor = RefCell::new(Editor::with_text(s));
             let client = Client::new(Box::new(DummyPeer));
@@ -613,8 +615,11 @@ mod tests {
             let style_map = RefCell::new(ThemeStyleMap::new(None));
             let width_cache = RefCell::new(WidthCache::new());
             let recorder = RefCell::new(Recorder::new());
-            ContextHarness { view, editor, client, core_ref, kill_ring,
-                             style_map, width_cache, config_manager, recorder }
+            let harness = ContextHarness { view, editor, client, core_ref, kill_ring,
+                             style_map, width_cache, config_manager, recorder };
+            harness.make_context().finish_init(&config);
+            harness
+
         }
 
         /// Renders the text and selections. cursors are represented with
