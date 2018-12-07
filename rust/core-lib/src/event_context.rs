@@ -150,7 +150,7 @@ impl<'a> EventContext<'a> {
             SpecialEvent::Resize(size) => {
                 self.with_view(|view, _| view.set_size(size));
                 if self.config.word_wrap {
-                    self.update_wrap_state();
+                    self.update_wrap_settings();
                 }
             }
             SpecialEvent::DebugRewrap | SpecialEvent::DebugWrapWidth => {
@@ -386,7 +386,8 @@ impl<'a> EventContext<'a> {
 
         self.client.config_changed(self.view_id, config);
         self.client.language_changed(self.view_id, &self.language);
-        self.update_wrap_state();
+        self.update_wrap_settings();
+        self.with_view(|view, text| view.set_dirty(text));
         self.render()
     }
 
@@ -419,7 +420,7 @@ impl<'a> EventContext<'a> {
                 debug!("clearing {} items from width cache", self.width_cache.borrow().len());
                 self.width_cache.replace(WidthCache::new());
             }
-            self.update_wrap_state();
+            self.update_wrap_settings();
         }
 
         self.client.config_changed(self.view_id, &changes);
@@ -483,15 +484,22 @@ impl<'a> EventContext<'a> {
         self.editor.borrow_mut().dec_revs_in_flight();
     }
 
-    fn update_wrap_state(&mut self) {
-        // word based wrapping trumps column wrapping
-        let mut view = self.view.borrow_mut();
-        let mut width_cache = self.width_cache.borrow_mut();
-        let ed = self.editor.borrow();
+    fn update_wrap_settings(&mut self) {
+        let wrap_width = self.config.wrap_width;
+        let word_wrap = self.config.word_wrap;
+        self.with_view(|view, _| view.update_wrap_settings(wrap_width, word_wrap));
+        self.rewrap();
+    }
 
-        view.update_wrap_state(self.config.wrap_width, self.config.word_wrap);
+    // this will become incremental at some point (soon!)
+    /// Recomputes all breaks.
+    fn rewrap(&mut self) {
+        let mut view = self.view.borrow_mut();
+        let ed = self.editor.borrow();
+        let mut width_cache = self.width_cache.borrow_mut();
 
         view.rewrap(ed.get_buffer(), &mut width_cache, self.client, ed.get_layers().get_merged());
+        //TODO: minimal invalidation, and moving this into the view
         view.set_dirty(ed.get_buffer());
     }
 

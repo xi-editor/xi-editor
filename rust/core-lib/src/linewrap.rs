@@ -14,50 +14,133 @@
 
 //! Compute line wrapping breaks for text.
 
-use xi_rope::breaks::{BreakBuilder, Breaks, BreaksBaseMetric};
+use xi_rope::breaks::{BreakBuilder, Breaks, BreaksBaseMetric, BreaksMetric};
 use xi_rope::spans::Spans;
-use xi_rope::{Cursor, Interval, LinesMetric, Rope, RopeInfo};
+use xi_rope::{Cursor, LinesMetric, Rope, RopeDelta, RopeInfo};
 use xi_trace::trace_block;
 use xi_unicode::LineBreakLeafIter;
 
+use client::Client;
 use styles::{Style, N_RESERVED_STYLES};
-use width_cache::{Token, WidthCache, WidthMeasure};
+use width_cache::{CodepointMono, Token, WidthCache, WidthMeasure};
 
-struct LineBreakCursor<'a> {
-    inner: Cursor<'a, RopeInfo>,
-    lb_iter: LineBreakLeafIter,
-    last_byte: u8,
+/// The visual width of the buffer for the purpose of word wrapping.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum WrapWidth {
+    /// No wrapping in effect.
+    None,
+
+    /// Width in bytes (utf-8 code units).
+    ///
+    /// Only works well for ASCII, will probably not be maintained long-term.
+    Bytes(usize),
+
+    /// Width in px units, requiring measurement by the front-end.
+    Width(f64),
 }
 
-impl<'a> LineBreakCursor<'a> {
-    fn new(text: &'a Rope, pos: usize) -> LineBreakCursor<'a> {
-        let inner = Cursor::new(text, pos);
-        let lb_iter = match inner.get_leaf() {
-            Some((s, offset)) => LineBreakLeafIter::new(s.as_str(), offset),
-            _ => LineBreakLeafIter::default(),
-        };
-        LineBreakCursor { inner, lb_iter, last_byte: 0 }
+impl Default for WrapWidth {
+    fn default() -> Self {
+        WrapWidth::None
+    }
+}
+
+/// Tracks state related to visual lines.
+#[derive(Default)]
+pub(crate) struct Lines {
+    breaks: Breaks,
+    wrap: WrapWidth,
+}
+
+impl Lines {
+    pub(crate) fn set_wrap_width(&mut self, wrap: WrapWidth) {
+        if wrap != self.wrap {
+            self.wrap = wrap;
+            //TODO: for incremental, we clear breaks and update frontier.
+        }
     }
 
-    // position and whether break is hard; up to caller to stop calling after EOT
-    fn next(&mut self) -> (usize, bool) {
-        let mut leaf = self.inner.get_leaf();
-        loop {
-            match leaf {
-                Some((s, offset)) => {
-                    let (next, hard) = self.lb_iter.next(s.as_str());
-                    if next < s.len() {
-                        return (self.inner.pos() - offset + next, hard);
-                    }
-                    if !s.is_empty() {
-                        self.last_byte = s.as_bytes()[s.len() - 1];
-                    }
-                    leaf = self.inner.next_leaf();
-                }
-                // A little hacky but only reports last break as hard if final newline
-                None => return (self.inner.pos(), self.last_byte == b'\n'),
-            }
+    // temporary, so we work with existing API:
+    pub(crate) fn non_empty_breaks(&self) -> Option<&Breaks> {
+        match self.wrap {
+            WrapWidth::None => None,
+            _ => Some(&self.breaks),
         }
+    }
+
+    pub(crate) fn visual_line_of_offset(&self, text: &Rope, offset: usize) -> usize {
+        match self.wrap {
+            WrapWidth::None => text.line_of_offset(offset),
+            _ => self.breaks.convert_metrics::<BreaksBaseMetric, BreaksMetric>(offset),
+        }
+    }
+
+    /// Returns the byte offset corresponding to the line `line`.
+    pub(crate) fn offset_of_visual_line(&self, text: &Rope, line: usize) -> usize {
+        match self.wrap {
+            WrapWidth::None => {
+                // sanitize input
+                let line = line.min(text.measure::<LinesMetric>() + 1);
+                text.offset_of_line(line)
+            }
+            _ => self.breaks.convert_metrics::<BreaksMetric, BreaksBaseMetric>(line),
+        }
+    }
+
+    // TODO: this is where the incremental goes
+    /// Calculates new breaks for a chunk of the document.
+    pub(crate) fn rewrap_chunk(
+        &mut self,
+        text: &Rope,
+        width_cache: &mut WidthCache,
+        client: &Client,
+        spans: &Spans<Style>,
+    ) {
+        self.breaks = match self.wrap {
+            WrapWidth::None => Breaks::new_no_break(text.len()),
+            WrapWidth::Bytes(c) => rewrap_all(text, width_cache, spans, &CodepointMono, c as f64),
+            WrapWidth::Width(w) => rewrap_all(text, width_cache, spans, client, w),
+        };
+    }
+
+    /// Updates breaks as necessary after an edit.
+    pub(crate) fn after_edit(
+        &mut self,
+        text: &Rope,
+        delta: &RopeDelta,
+        width_cache: &mut WidthCache,
+        client: &Client,
+    ) {
+        let _t = trace_block("Lines::after_edit", &["core"]);
+
+        let (iv, newsize) = delta.summary();
+        let mut builder = BreakBuilder::new();
+        builder.add_no_break(newsize);
+        self.breaks.edit(iv, builder.build());
+
+        let mut start = iv.start;
+        let end = start + newsize;
+        let mut cursor = Cursor::new(&text, start);
+        start = cursor.at_or_prev::<LinesMetric>().unwrap_or(0);
+
+        let new_breaks = match self.wrap {
+            WrapWidth::None => Breaks::new_no_break(newsize),
+            WrapWidth::Bytes(c) => compute_rewrap(
+                text,
+                width_cache,
+                &CodepointMono,
+                c as f64,
+                &self.breaks,
+                start,
+                end,
+            ),
+            WrapWidth::Width(w) => {
+                compute_rewrap(text, width_cache, client, w, &self.breaks, start, end)
+            }
+        };
+
+        let edit_end = start + new_breaks.len();
+        self.breaks.edit(start..edit_end, new_breaks);
     }
 }
 
@@ -171,7 +254,7 @@ impl<'a, T: WidthMeasure> RewrapCtx<'a, T> {
 }
 
 /// Wrap the text (in batch mode) using width measurement.
-pub fn rewrap_all<T: WidthMeasure>(
+fn rewrap_all<T: WidthMeasure>(
     text: &Rope,
     width_cache: &mut WidthCache,
     _style_spans: &Spans<Style>,
@@ -244,43 +327,42 @@ fn compute_rewrap<T: WidthMeasure>(
     builder.build()
 }
 
-pub fn rewrap<T: WidthMeasure>(
-    breaks: &mut Breaks,
-    text: &Rope,
-    width_cache: &mut WidthCache, // _style_spans: &Spans<Style>,
-    client: &T,
-    iv: Interval,
-    newsize: usize,
-    max_width: f64,
-) {
-    let _t = trace_block("linewrap::rewrap_width", &["core"]);
-    // First, remove any breaks in edited section.
-    let mut builder = BreakBuilder::new();
-    builder.add_no_break(newsize);
-    let edit_iv = Interval::new(iv.start(), iv.end());
-    breaks.edit(edit_iv, builder.build());
-    // At this point, breaks is aligned with text.
+struct LineBreakCursor<'a> {
+    inner: Cursor<'a, RopeInfo>,
+    lb_iter: LineBreakLeafIter,
+    last_byte: u8,
+}
 
-    let mut start = iv.start();
-    let end = start + newsize;
-    // [start..end] is edited range in text
+impl<'a> LineBreakCursor<'a> {
+    fn new(text: &'a Rope, pos: usize) -> LineBreakCursor<'a> {
+        let inner = Cursor::new(text, pos);
+        let lb_iter = match inner.get_leaf() {
+            Some((s, offset)) => LineBreakLeafIter::new(s.as_str(), offset),
+            _ => LineBreakLeafIter::default(),
+        };
+        LineBreakCursor { inner, lb_iter, last_byte: 0 }
+    }
 
-    // Find a point earlier than any possible breaks change. For simplicity, this is the
-    // beginning of the paragraph, but going back two breaks would be better.
-    let mut cursor = Cursor::new(&text, start);
-    start = cursor.at_or_prev::<LinesMetric>().unwrap_or(0);
-
-    let new_breaks = compute_rewrap(
-        text,
-        width_cache, /* style_spans, */
-        client,
-        max_width,
-        breaks,
-        start,
-        end,
-    );
-    let edit_iv = Interval::new(start, start + new_breaks.len());
-    breaks.edit(edit_iv, new_breaks);
+    // position and whether break is hard; up to caller to stop calling after EOT
+    fn next(&mut self) -> (usize, bool) {
+        let mut leaf = self.inner.get_leaf();
+        loop {
+            match leaf {
+                Some((s, offset)) => {
+                    let (next, hard) = self.lb_iter.next(s.as_str());
+                    if next < s.len() {
+                        return (self.inner.pos() - offset + next, hard);
+                    }
+                    if !s.is_empty() {
+                        self.last_byte = s.as_bytes()[s.len() - 1];
+                    }
+                    leaf = self.inner.next_leaf();
+                }
+                // A little hacky but only reports last break as hard if final newline
+                None => return (self.inner.pos(), self.last_byte == b'\n'),
+            }
+        }
+    }
 }
 
 #[cfg(test)]

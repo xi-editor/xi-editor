@@ -22,15 +22,15 @@ use client::Client;
 use edit_types::ViewEvent;
 use find::{Find, FindStatus};
 use line_cache_shadow::{self, LineCacheShadow, RenderPlan, RenderTactic};
-use linewrap::{rewrap, rewrap_all};
+use linewrap::{Lines, WrapWidth};
 use movement::{region_movement, selection_movement, Movement};
 use rpc::{FindQuery, GestureType, MouseAction, SelectionModifier};
 use selection::{Affinity, InsertDrift, SelRegion, Selection};
 use styles::{Style, ThemeStyleMap};
 use tabs::{BufferId, Counter, ViewId};
-use width_cache::{CodepointMono, WidthCache};
+use width_cache::WidthCache;
 use word_boundaries::WordCursor;
-use xi_rope::breaks::{Breaks, BreaksBaseMetric, BreaksInfo, BreaksMetric};
+use xi_rope::breaks::{BreaksInfo, BreaksMetric};
 use xi_rope::spans::Spans;
 use xi_rope::{Cursor, Interval, LinesMetric, Rope, RopeDelta, RopeInfo};
 use xi_trace::trace_block;
@@ -58,8 +58,7 @@ pub struct View {
     first_line: usize,
     /// height of visible portion
     height: usize,
-    breaks: Option<Breaks>,
-    wrap: WrapWidth,
+    lines: Lines,
 
     /// Front end's line cache state for this view. See the `LineCacheShadow`
     /// description for the invariant.
@@ -118,20 +117,6 @@ pub struct Size {
     pub height: f64,
 }
 
-/// The visual width of the buffer for the purpose of word wrapping.
-enum WrapWidth {
-    /// No wrapping in effect.
-    None,
-
-    /// Width in bytes (utf-8 code units).
-    ///
-    /// Only works well for ASCII, will probably not be maintained long-term.
-    Bytes(usize),
-
-    /// Width in px units, requiring measurement by the front-end.
-    Width(f64),
-}
-
 /// The smallest unit of text that a gesture can select
 pub enum SelectionGranularity {
     /// Selects any point or character range
@@ -172,8 +157,7 @@ impl View {
             drag_state: None,
             first_line: 0,
             height: 10,
-            breaks: None,
-            wrap: WrapWidth::None,
+            lines: Lines::default(),
             lc_shadow: LineCacheShadow::default(),
             find: Vec::new(),
             find_id_counter: Counter::default(),
@@ -204,12 +188,13 @@ impl View {
         self.pending_render
     }
 
-    pub(crate) fn update_wrap_state(&mut self, wrap_cols: usize, word_wrap: bool) {
-        self.wrap = match (word_wrap, wrap_cols) {
+    pub(crate) fn update_wrap_settings(&mut self, wrap_cols: usize, word_wrap: bool) {
+        let wrap_width = match (word_wrap, wrap_cols) {
             (true, _) => WrapWidth::Width(self.size.width),
             (false, 0) => WrapWidth::None,
             (false, cols) => WrapWidth::Bytes(cols),
-        }
+        };
+        self.lines.set_wrap_width(wrap_width);
     }
 
     pub(crate) fn do_edit(&mut self, text: &Rope, cmd: ViewEvent) {
@@ -763,7 +748,7 @@ impl View {
                         let offset = self.offset_of_line(text, start_line);
                         let mut line_cursor = Cursor::new(text, offset);
                         let mut soft_breaks =
-                            self.breaks.as_ref().map(|breaks| Cursor::new(breaks, offset));
+                            self.lines.non_empty_breaks().map(|b| Cursor::new(b, offset));
                         let mut rendered_lines = Vec::new();
                         for line_num in start_line..end_line {
                             let line = self.render_line(
@@ -895,25 +880,15 @@ impl View {
 
     /// Returns the visible line number containing the given offset.
     pub fn line_of_offset(&self, text: &Rope, offset: usize) -> usize {
-        match self.breaks {
-            Some(ref breaks) => breaks.convert_metrics::<BreaksBaseMetric, BreaksMetric>(offset),
-            None => text.line_of_offset(offset),
-        }
+        self.lines.visual_line_of_offset(text, offset)
     }
 
-    /// Returns the byte offset corresponding to the line `line`.
+    /// Returns the byte offset corresponding to the given visual line.
     pub fn offset_of_line(&self, text: &Rope, line: usize) -> usize {
-        match self.breaks {
-            Some(ref breaks) => breaks.convert_metrics::<BreaksMetric, BreaksBaseMetric>(line),
-            None => {
-                // sanitize input
-                let line = line.min(text.measure::<LinesMetric>() + 1);
-                text.offset_of_line(line)
-            }
-        }
+        self.lines.offset_of_visual_line(text, line)
     }
 
-    /// Generate line breaks based on width measurement. Currently batch-mode,
+    /// Generate line breaks, based on current settings. Currently batch-mode,
     /// and currently in a debugging state.
     pub(crate) fn rewrap(
         &mut self,
@@ -922,14 +897,8 @@ impl View {
         client: &Client,
         spans: &Spans<Style>,
     ) {
-        let _t = trace_block("View::wrap_width", &["core"]);
-        self.breaks = match self.wrap {
-            WrapWidth::None => None,
-            WrapWidth::Bytes(cols) => {
-                Some(rewrap_all(text, width_cache, spans, &CodepointMono, cols as f64))
-            }
-            WrapWidth::Width(w) => Some(rewrap_all(text, width_cache, spans, client, w)),
-        };
+        let _t = trace_block("View::rewrap", &["core"]);
+        self.lines.rewrap_chunk(text, width_cache, client, spans);
     }
 
     /// Updates the view after the text has been modified by the given `delta`.
@@ -944,26 +913,18 @@ impl View {
         width_cache: &mut WidthCache,
         drift: InsertDrift,
     ) {
-        let (iv, new_len) = delta.summary();
-        if let Some(breaks) = self.breaks.as_mut() {
-            match self.wrap {
-                WrapWidth::None => (),
-                WrapWidth::Bytes(b) => {
-                    rewrap(breaks, text, width_cache, &CodepointMono, iv, new_len, b as f64)
-                }
-                WrapWidth::Width(px) => rewrap(breaks, text, width_cache, client, iv, new_len, px),
-            }
-        }
-        if self.breaks.is_some() {
-            // TODO: finer grain invalidation for the line wrapping, needs info
-            // about what wrapped.
-            self.set_dirty(text);
-        } else {
+        self.lines.after_edit(text, delta, width_cache, client);
+        if self.lines.non_empty_breaks().is_none() {
+            let (iv, new_len) = delta.summary();
             let start = self.line_of_offset(last_text, iv.start());
             let end = self.line_of_offset(last_text, iv.end()) + 1;
             let new_end = self.line_of_offset(text, iv.start() + new_len) + 1;
             self.lc_shadow.edit(start, end, new_end - start);
+        } else {
+            //TODO (really) actual minimal invalidation, based on what wrapped.
+            self.set_dirty(text);
         }
+
         // Any edit cancels a drag. This is good behavior for edits initiated through
         // the front-end, but perhaps not for async edits.
         self.drag_state = None;
@@ -1192,7 +1153,7 @@ impl View {
         let spans: Spans<Style> = Spans::default();
         let mut width_cache = WidthCache::new();
         let client = Client::new(Box::new(DummyPeer));
-        self.update_wrap_state(cols, false);
+        self.update_wrap_settings(cols, false);
         self.rewrap(text, &mut width_cache, &client, &spans);
     }
 }
