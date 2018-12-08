@@ -1183,6 +1183,20 @@ impl View {
     }
 }
 
+impl View {
+    /// Exposed for benchmarking
+    #[doc(hidden)]
+    pub fn debug_force_rewrap_cols(&mut self, text: &Rope, cols: usize) {
+        use xi_rpc::test_utils::DummyPeer;
+
+        let spans: Spans<Style> = Spans::default();
+        let mut width_cache = WidthCache::new();
+        let client = Client::new(Box::new(DummyPeer));
+        self.update_wrap_state(cols, false);
+        self.rewrap(text, &mut width_cache, &client, &spans);
+    }
+}
+
 // utility function to clamp a value within the given range
 fn clamp(x: usize, min: usize, max: usize) -> usize {
     if x < min {
