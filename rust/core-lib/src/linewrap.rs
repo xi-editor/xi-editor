@@ -107,12 +107,12 @@ impl Lines {
         text: &Rope,
         width_cache: &mut WidthCache,
         client: &Client,
-        spans: &Spans<Style>,
+        _spans: &Spans<Style>,
     ) {
         self.breaks = match self.wrap {
             WrapWidth::None => Breaks::new_no_break(text.len()),
-            WrapWidth::Bytes(c) => rewrap_all(text, width_cache, spans, &CodepointMono, c as f64),
-            WrapWidth::Width(w) => rewrap_all(text, width_cache, spans, client, w),
+            WrapWidth::Bytes(c) => rewrap_all(text, width_cache, &CodepointMono, c as f64),
+            WrapWidth::Width(w) => rewrap_all(text, width_cache, client, w),
         };
     }
 
@@ -267,23 +267,12 @@ impl<'a, T: WidthMeasure> RewrapCtx<'a, T> {
 }
 
 /// Wrap the text (in batch mode) using width measurement.
-fn rewrap_all<T: WidthMeasure>(
-    text: &Rope,
-    width_cache: &mut WidthCache,
-    _style_spans: &Spans<Style>,
-    client: &T,
-    max_width: f64,
-) -> Breaks {
-    let mut ctx =
-        RewrapCtx::new(text, /* style_spans, */ client, max_width, width_cache, 0, text.len());
-    let mut builder = BreakBuilder::new();
-    let mut pos = 0;
-    while let Some(next) = ctx.wrap_one_line(pos) {
-        builder.add_break(next - pos);
-        pos = next;
-    }
-    builder.add_no_break(text.len() - pos);
-    builder.build()
+fn rewrap_all<T>(text: &Rope, width_cache: &mut WidthCache, client: &T, width: f64) -> Breaks
+where
+    T: WidthMeasure,
+{
+    let empty_breaks = Breaks::new_no_break(text.len());
+    compute_rewrap(text, width_cache, client, width, &empty_breaks, 0, text.len())
 }
 
 //NOTE: incremental version of rewrap_all
@@ -453,10 +442,9 @@ mod tests {
     fn debug_breaks<'a>(text: &'a Rope, width: f64) -> Vec<Cow<'a, str>> {
         let mut result = Vec::new();
         let mut width_cache = WidthCache::new();
-        let spans: Spans<Style> = Spans::default();
         let breaks = match width {
             w if w == 0. => Breaks::new_no_break(text.len()),
-            w => rewrap_all(text, &mut width_cache, &spans, &CodepointMono, w),
+            w => rewrap_all(text, &mut width_cache, &CodepointMono, w),
         };
         let lines = Lines { breaks, wrap: WrapWidth::Bytes(width as usize) };
         for line in lines.iter_lines(text, 0) {
