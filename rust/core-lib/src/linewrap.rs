@@ -70,10 +70,11 @@ impl Lines {
     }
 
     pub(crate) fn visual_line_of_offset(&self, text: &Rope, offset: usize) -> usize {
-        match self.wrap {
-            WrapWidth::None => text.line_of_offset(offset),
-            _ => self.breaks.convert_metrics::<BreaksBaseMetric, BreaksMetric>(offset),
+        let mut line = text.line_of_offset(offset);
+        if self.wrap != WrapWidth::None {
+            line += self.breaks.convert_metrics::<BreaksBaseMetric, BreaksMetric>(offset)
         }
+        line
     }
 
     /// Returns the byte offset corresponding to the line `line`.
@@ -84,7 +85,10 @@ impl Lines {
                 let line = line.min(text.measure::<LinesMetric>() + 1);
                 text.offset_of_line(line)
             }
-            _ => self.breaks.convert_metrics::<BreaksMetric, BreaksBaseMetric>(line),
+            _ => {
+                let mut cursor = MergedBreaks::new(text, &self.breaks, 0);
+                cursor.offset_of_line(line)
+            }
         }
     }
 
@@ -304,6 +308,8 @@ fn compute_rewrap<T: WidthMeasure>(
     loop {
         // iterate newly computed breaks and existing breaks until they converge
         if let Some(new_next) = ctx.wrap_one_line(pos) {
+            line_cursor.set(new_next);
+            let is_hard = line_cursor.is_boundary::<LinesMetric>();
             while let Some(old_next) = next_break {
                 if old_next >= new_next {
                     break;
@@ -312,7 +318,11 @@ fn compute_rewrap<T: WidthMeasure>(
             }
             // TODO: we might be able to tighten the logic, avoiding this last break,
             // in some cases (resulting in a smaller delta).
-            builder.add_break(new_next - pos);
+            if is_hard {
+                builder.add_no_break(new_next - pos);
+            } else {
+                builder.add_break(new_next - pos);
+            }
             if let Some(old_next) = next_break {
                 if new_next == old_next {
                     // Breaking process has converged.
@@ -404,18 +414,18 @@ impl<'a> Iterator for MergedBreaks<'a> {
     type Item = usize;
 
     fn next(&mut self) -> Option<usize> {
-        // TODO: remove when soft and hard are separate
+        if self.text.pos() == self.offset && self.offset != self.text.total_len() {
+            // don't iterate past EOF, or we can't get the leaf and check for \n
+            self.text.next::<LinesMetric>();
+        }
+        if self.soft.pos() == self.offset {
+            self.soft.next::<BreaksMetric>();
+        }
         let prev_off = self.offset;
-        self.offset = if self.soft.root().measure::<BreaksMetric>() != 0 {
-            self.soft.next::<BreaksMetric>()
-        } else {
-            self.text.next::<LinesMetric>()
-        }?;
+        self.offset = self.text.pos().min(self.soft.pos());
 
-        // if we're at EOF, we only send a break if there's an actual trailing newline.
-        let eof_without_newline = self.offset > 0
-            && self.offset == self.text.total_len()
-            && self.text.get_leaf().map(|(l, _)| l.as_bytes()[l.len() - 1] != b'\n').unwrap();
+        let eof_without_newline =
+            self.offset > 0 && self.offset == self.text.total_len() && self.eof_without_newline();
         if self.offset == prev_off || eof_without_newline {
             None
         } else {
@@ -431,6 +441,27 @@ impl<'a> MergedBreaks<'a> {
         let soft = Cursor::new(breaks, offset);
         MergedBreaks { text, soft, offset }
     }
+
+    fn set_offset(&mut self, offset: usize) {
+        self.offset = offset;
+        self.text.set(offset);
+        self.soft.set(offset);
+    }
+
+    fn offset_of_line(&mut self, line: usize) -> usize {
+        //FIXME: this is just a linear scan right now, should be doing some fancy
+        // binary or interpolation search
+        if line == 0 {
+            return 0;
+        };
+        self.set_offset(0);
+        self.nth(line - 1).unwrap_or(self.text.total_len())
+    }
+
+    fn eof_without_newline(&self) -> bool {
+        debug_assert_eq!(self.offset, self.text.total_len());
+        self.text.get_leaf().map(|(l, _)| l.as_bytes()[l.len() - 1] != b'\n').unwrap()
+    }
 }
 
 #[cfg(test)]
@@ -440,16 +471,13 @@ mod tests {
     use std::borrow::Cow;
 
     fn debug_breaks<'a>(text: &'a Rope, width: f64) -> Vec<Cow<'a, str>> {
-        let mut result = Vec::new();
         let mut width_cache = WidthCache::new();
         let breaks = match width {
             w if w == 0. => Breaks::new_no_break(text.len()),
             w => rewrap_all(text, &mut width_cache, &CodepointMono, w),
         };
         let lines = Lines { breaks, wrap: WrapWidth::Bytes(width as usize) };
-        for line in lines.iter_lines(text, 0) {
-            result.push(text.slice_to_cow(line));
-        }
+        let result = lines.iter_lines(text, 0).map(|l| text.slice_to_cow(l)).collect();
         result
     }
 
