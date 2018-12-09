@@ -633,8 +633,6 @@ impl Handler for PluginManagerRef {
                 .map(|ed| ed.plugin_add_scopes(plugin_id, scopes)),
             UpdateSpans { start, len, spans, rev } => buffers.editor_for_view_mut(view_id)
                 .map(|ed| ed.plugin_update_spans(plugin_id, start, len, spans, rev)),
-            UpdateAnnotations { start, len, type_id, spans } => buffers.editor_for_view_mut(view_id)
-                .map(|ed| ed.plugin_update_annotations(plugin_id, start, len, type_id, spans)),
             Edit { edit } => buffers.editor_for_view_mut(view_id)
                 .map(|ed| ed.plugin_edit_async(edit)),
             Alert { msg } => buffers.editor_for_view(view_id)

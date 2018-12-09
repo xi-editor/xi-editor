@@ -21,7 +21,6 @@ use serde::de::{self, Deserialize, Deserializer};
 use serde::ser::{self, Serialize, Serializer};
 use serde_json::{self, Value};
 
-use annotations::AnnotationType;
 use super::PluginPid;
 use crate::config::Table;
 use crate::syntax::LanguageId;
@@ -144,14 +143,6 @@ pub struct ScopeSpan {
     pub scope_id: u32,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct AnnotationSpan {
-    pub start: usize,
-    pub end: usize,
-    pub payload: Value,
-    pub annotation_type: AnnotationType,
-}
-
 /// The object returned by the `get_data` RPC.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetDataResponse {
@@ -190,7 +181,6 @@ pub enum PluginRequest {
 pub enum PluginNotification {
     AddScopes { scopes: Vec<Vec<String>> },
     UpdateSpans { start: usize, len: usize, spans: Vec<ScopeSpan>, rev: u64 },
-    UpdateAnnotations { start: usize, len: usize, type_id: AnnotationType, spans: Vec<AnnotationSpan> },
     Edit { edit: PluginEdit },
     Alert { msg: String },
     AddStatusItem { key: String, value: String, alignment: String },

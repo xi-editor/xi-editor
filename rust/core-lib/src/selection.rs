@@ -20,6 +20,7 @@ use std::ops::Deref;
 
 use crate::annotations::{CoreAnnotationType, Annotation, AnnotationSlice, ToAnnotation};
 use crate::index_set::remove_n_at;
+use create::view::View;
 use xi_rope::{Interval, RopeDelta, Transformer};
 
 /// A type representing horizontal measurements. This is currently in units
@@ -236,17 +237,15 @@ impl Deref for Selection {
 
 /// Implementing the `ToAnnotation` trait allows to convert selections to annotations.
 impl ToAnnotation for Selection {
-    fn get_annotations(&self, interval: Interval) -> AnnotationSlice {
+    fn get_annotations(&self, interval: Interval, view: &View, text: &Rope) -> AnnotationSlice {
         let regions = self.regions_in_range(interval.start(), interval.end());
-        let ranges = regions.iter().map(|region|
-            (region.min(), region.max())
-        ).collect::<Vec<(usize, usize)>>();
+        let ranges = regions.iter().map(|region| {
+            let (start_line, start_col) = view.offset_to_line_col(text, region.min());
+            let (end_line, end_col) = view.offset_to_line_col(text, region.max());
+            [start_line, start_col, end_line, end_col]
+        }).collect::<Vec<[usize; 4]>>();
 
-        AnnotationSlice {
-            annotation_type: CoreAnnotationType::Selection.as_type(),
-            ranges: ranges,
-            payloads: None
-        }
+        AnnotationSlice::new(CoreAnnotationType::Selection.as_type(), ranges, None)
     }
 }
 

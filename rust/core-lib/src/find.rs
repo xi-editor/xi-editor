@@ -415,18 +415,16 @@ impl Find {
 
 /// Implementing the `ToAnnotation` trait allows to convert finds to annotations.
 impl ToAnnotation for Find {
-    fn get_annotations(&self, interval: Interval) -> AnnotationSlice {
+    fn get_annotations(&self, interval: Interval, view: &View, text: &Rope) -> AnnotationSlice {
         let regions = self.occurrences.regions_in_range(interval.start(), interval.end());
-        let ranges = regions.iter().map(|region|
-            (region.min(), region.max())
-        ).collect::<Vec<(usize, usize)>>();
+        let ranges = regions.iter().map(|region| {
+            let (start_line, start_col) = view.offset_to_line_col(text, region.min());
+            let (end_line, end_col) = view.offset_to_line_col(text, region.max());
+            [start_line, start_col, end_line, end_col]
+        }).collect::<Vec<[usize; 4]>>();
 
         let payload = iter::repeat(json!({"id": self.id})).take(ranges.len()).collect::<Vec<_>>();
 
-        AnnotationSlice {
-            annotation_type: CoreAnnotationType::Find.as_type(),
-            ranges: ranges,
-            payloads: Some(payload)
-        }
+        AnnotationSlice::new(CoreAnnotationType::Find.as_type(), ranges, Some(payload))
     }
 }
