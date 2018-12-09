@@ -14,11 +14,13 @@
 
 //! Management of annotations.
 
-use std::collections::HashMap;
 use serde_json::Value;
+use std::collections::HashMap;
+use std::iter;
 
 use plugins::PluginId;
-use xi_rope::Interval;
+use view::View;
+use xi_rope::{Interval, Rope};
 use xi_rope::spans::Spans;
 
 pub type AnnotationType = String;
@@ -45,95 +47,73 @@ pub struct Annotations {
     pub annotation_type: AnnotationType,
 }
 
-impl Annotations {
-    pub fn update(&mut self, interval: Interval, items: Spans<Value>) {
-        self.items.edit(interval, items);
-    }
-}
-
 /// A region of an `Annotation`.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct AnnotationSlice {
-    pub annotation_type: AnnotationType,
+    annotation_type: AnnotationType,
     /// Annotation occurrences, guaranteed non-descending start order.
-    pub ranges: Vec<(usize, usize)>,
+    ranges: Vec<[usize; 4]>,
     /// If present, one payload per range.
-    pub payloads: Option<Vec<Value>>,
+    payloads: Option<Vec<Value>>,
+}
+
+impl AnnotationSlice {
+    pub fn new(
+        annotation_type: AnnotationType,
+        ranges: Vec<[usize; 4]>,
+        payloads: Option<Vec<Value>>
+    ) -> Self {
+        AnnotationSlice {
+            annotation_type: annotation_type,
+            ranges: ranges,
+            payloads: payloads,
+        }
+    }
+
+    /// Returns json representation.
+    pub fn to_json(&self) -> Value {
+        json!({
+            "type": self.annotation_type,
+            "ranges": self.ranges,
+            "payloads": self.payloads,
+            "n": self.ranges.len()
+        })
+    }
 }
 
 /// A trait for types (like `Selection`) that have a distinct representation
 /// in core but are presented to the frontend as annotations.
 pub trait ToAnnotation {
     /// Returns annotations that overlap the provided interval.
-    fn get_annotations(&self, interval: Interval) -> AnnotationSlice;
+    fn get_annotations(&self, interval: Interval, view: &View, text: &Rope) -> AnnotationSlice;
 }
 
 /// All the annotations for a given view
 pub struct AnnotationStore {
-    store: HashMap<PluginId, Vec<Annotations>>
+    _store: HashMap<PluginId, Vec<Annotations>>
 }
 
 impl AnnotationStore {
     pub fn new() -> Self {
         AnnotationStore {
-            store: HashMap::new(),
+            _store: HashMap::new(),
         }
     }
 
     /// Applies an update from a plugin to a set of annotations
-    pub fn update(&mut self, source: PluginId, type_id: AnnotationType, iv: Interval, items: Spans<Value>) {
-        let updated_items = items.clone();
-        let updated_type = type_id.clone();
-
-        self.store.entry(source).and_modify(|e| {
-            let outdated_annotations = e.iter().filter(|a|
-                a.annotation_type == type_id
-            ).cloned().collect::<Vec<Annotations>>();
-
-            let mut annotations = e.iter().filter(|a|
-                a.annotation_type != type_id
-            ).cloned().collect::<Vec<Annotations>>();
-
-            if !outdated_annotations.is_empty() {
-                let mut updated_annotations = outdated_annotations.first().unwrap().clone();
-                updated_annotations.update(iv, items);
-                annotations.push(updated_annotations.clone());
-            } else {
-                annotations.push(Annotations {
-                    items: items,
-                    annotation_type: type_id
-                });
-            }
-
-            *e = annotations;
-
-        }).or_insert(vec![Annotations {
-            items: updated_items,
-            annotation_type: updated_type
-        }]);
+    pub fn update(&mut self, _source: PluginId, _type_id: AnnotationType, _iv: Interval, _items: Spans<Value>) {
+        // todo
     }
 
     /// Returns an iterator which produces, for each type of annotation,
     /// those annotations which intersect the given interval.
-    pub fn iter_range<'c>(&'c self, interval: Interval) -> impl Iterator<Item=AnnotationSlice> + 'c {
-        let iv = interval.clone();
-        self.store.iter().flat_map(move |(_plugin, value)| {
-            value.iter().map(move |annotation| {
-                let (ranges, payloads): (Vec<(usize, usize)>, Vec<Value>) = annotation.items.subseq(iv).iter().map(|(i, p)|
-                    ((i.start(), i.end()), p.clone())
-                ).unzip();
-
-                AnnotationSlice {
-                    annotation_type: annotation.annotation_type.clone(),
-                    ranges: ranges,
-                    payloads: Some(payloads)
-                }
-            })
-        })
+    pub fn iter_range<'c>(&'c self, _iv: Interval) -> impl Iterator<Item=AnnotationSlice> + 'c {
+        // todo
+        iter::empty()
     }
 
     /// Removes any annotations provided by this plugin
-    pub fn clear(&mut self, plugin: PluginId) {
-        self.store.remove(&plugin);
+    pub fn clear(&mut self, _plugin: PluginId) {
+        // todo
     }
 }

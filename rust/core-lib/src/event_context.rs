@@ -228,9 +228,6 @@ impl<'a> EventContext<'a> {
             UpdateSpans { start, len, spans, rev } => self.with_editor(|ed, view, _, _| {
                 ed.update_spans(view, plugin, start, len, spans, rev)
             }),
-            UpdateAnnotations { start, len, type_id, spans } => self.with_editor(|ed, view, _, _| {
-                ed.update_annotations(view, plugin, start, len, type_id, spans)
-            }),
             Edit { edit } => self.with_editor(|ed, _, _, _| ed.apply_plugin_edit(edit)),
             Alert { msg } => self.client.alert(&msg),
             AddStatusItem { key, value, alignment } => {

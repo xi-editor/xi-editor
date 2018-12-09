@@ -684,25 +684,6 @@ impl View {
         update
     }
 
-    pub fn update_annotations(&mut self, plugin: PluginId, type_id: AnnotationType, iv: Interval, items: Spans<Value>) {
-        self.annotations.update(plugin, type_id, iv, items);
-    }
-
-    fn build_annotation_set(&self, text: &Rope, annotations: &AnnotationSlice) -> Value {
-        let ranges = annotations.ranges.iter().map(|&(start, end)| {
-            let (start_line, start_col) = self.offset_to_line_col(text, start);
-            let (end_line, end_col) = self.offset_to_line_col(text, end);
-            [start_line, start_col, end_line, end_col]
-        }).collect::<Vec<[usize; 4]>>();
-
-        json!({
-            "type": annotations.annotation_type,
-            "ranges": ranges,
-            "payloads": annotations.payloads,
-            "n": ranges.len()
-        })
-    }
-
     fn send_update_for_plan(
         &mut self,
         text: &Rope,
@@ -795,13 +776,23 @@ impl View {
             }
         }
 
+        self.lc_shadow = b.build();
+        for find in &mut self.find {
+            find.set_hls_dirty(false)
+        }
+
         let start_off = self.offset_of_line(text, self.first_line);
         let end_off = self.offset_of_line(text, self.first_line + self.height + 1);
         let visible_range = Interval::new(start_off, end_off);
-        let selection_annotations = self.build_annotation_set(text, &self.selection.get_annotations(visible_range));
+        let selection_annotations = self.selection.get_annotations(visible_range, &self, text).to_json();
+        let find_annotations = self.find.iter().map(|ref f|
+            f.get_annotations(visible_range, &self, text).to_json()
+        );
+        let plugin_annotations = self.annotations.iter_range(visible_range).map(|a| a.to_json());
+
         let annotations = iter::once(selection_annotations)
-            .chain(self.find.iter().map(|f| self.build_annotation_set(text, &f.get_annotations(visible_range))))
-            .chain(self.annotations.iter_range(visible_range).map(|a| self.build_annotation_set(text, &a)))
+            .chain(find_annotations)
+            .chain(plugin_annotations)
             .collect::<Vec<_>>();
 
         let params = json!({
@@ -812,10 +803,6 @@ impl View {
         let update = Update { ops, pristine };
 
         client.update_view(self.view_id, &update);
-        self.lc_shadow = b.build();
-        for find in &mut self.find {
-            find.set_hls_dirty(false)
-        }
     }
 
     /// Determines the current number of find results and search parameters to send them to
