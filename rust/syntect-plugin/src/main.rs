@@ -233,21 +233,10 @@ impl<'a> PluginState {
     /// for this line (during normal editing this is only likely for line 0) if
     /// necessary; in general reuses the syntax state calculated for highlighting.
     fn get_metadata(&mut self, view: &mut MyView, syntax_set: &'a SyntaxSet, line: usize) -> Option<ScopedMetadata<'a>> {
-        // we don't store the state for the first line, so recompute it
-        if line == 0 {
-            let text = view.get_line(0).unwrap_or("");
-            let scope = self.compute_syntax(&text, None, syntax_set, false)
-                .map(|(_, scope)| scope)?;
-            Some(syntax_set.metadata().metadata_for_scope(scope.as_slice()))
-        } else {
-            //HACK: for comment toggling the metadata is generally the same
-            //for all lines in a document? So we use get_prev, which means
-            //we'll still be useful if the line isn't in the cache.
-            let (_, _, scope) = view.get_prev(line);
-            scope
-                .as_ref()
-                .map(|(_, scope)| syntax_set.metadata().metadata_for_scope(scope.as_slice()))
-        }
+        let text = view.get_line(line).unwrap_or("");
+        let scope = self.compute_syntax(&text, None, syntax_set, false)
+            .map(|(_, scope)| scope)?;
+        Some(syntax_set.metadata().metadata_for_scope(scope.as_slice()))
     }
 
     /// Checks for possible auto-indent changes after an appropriate edit.
@@ -283,9 +272,13 @@ impl<'a> PluginState {
             .map(|l| self.indent_level_of_line(view, l))
             .unwrap_or(0);
         let increase_level = self.test_increase(view, syntax_set, line)?;
-        let indent_level = if increase_level { base_indent + tab_size } else { base_indent };
-        if indent_level != current_indent {
-            self.set_indent(view, line, indent_level)
+        let decrease_level = self.test_decrease(view, syntax_set, line)?;
+        let increase = if increase_level { tab_size } else { 0 };
+        let decrease = if decrease_level { tab_size } else { 0 };
+        let final_level = base_indent + increase - decrease;
+
+        if final_level != current_indent {
+            self.set_indent(view, line, final_level)
         } else {
             Ok(())
         }
