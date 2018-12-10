@@ -44,6 +44,8 @@ pub struct FileManager {
     /// A monitor of filesystem events, for things like reloading changed files.
     #[cfg(feature = "notify")]
     watcher: FileWatcher,
+    #[cfg(feature = "notify")]
+    pub tail_toggle: bool,
 }
 
 #[derive(Debug)]
@@ -78,7 +80,7 @@ pub enum CharacterEncoding {
 impl FileManager {
     #[cfg(feature = "notify")]
     pub fn new(watcher: FileWatcher) -> Self {
-        FileManager { open_files: HashMap::new(), file_info: HashMap::new(), watcher }
+        FileManager { open_files: HashMap::new(), file_info: HashMap::new(), watcher, tail_toggle: false }
     }
 
     #[cfg(not(feature = "notify"))]
@@ -255,10 +257,8 @@ where
     f.seek(SeekFrom::Current(-(buf.len() as i64))).unwrap();
     f.read_exact(&mut buf).unwrap();
 
-    let new_current_position = end_position;
-
     let new_tail_details = TailDetails {
-        current_position_in_tail: new_current_position,
+        current_position_in_tail: end_position,
         is_tail_mode_on: true,
         is_at_bottom_of_file: true,
     };

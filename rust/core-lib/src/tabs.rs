@@ -319,6 +319,7 @@ impl CoreState {
             // handled at the top level
             ClientStarted { .. } => (),
             SetLanguage { view_id, language_id } => self.do_set_language(view_id, language_id),
+            ToggleTail { enabled } => self.file_manager.tail_toggle = enabled,
         }
     }
 
@@ -678,8 +679,9 @@ impl CoreState {
         //TODO: currently we only use the file's modification time when
         // determining if a file has been changed by another process.
         // A more robust solution would also hash the file's contents.
+        let tail_toggle = self.file_manager.tail_toggle;
 
-        if has_changes && is_pristine {
+        if has_changes && is_pristine && tail_toggle {
             if let Ok(text) = self.file_manager.open(path, buffer_id) {
                 // this is ugly; we don't map buffer_id -> view_id anywhere
                 // but we know we must have a view.
