@@ -26,8 +26,8 @@ use xi_rope::spans::{Spans, SpansBuilder};
 use xi_rope::{Interval, RopeDelta};
 use xi_trace::trace_block;
 
-use plugins::PluginPid;
-use styles::{Style, ThemeStyleMap};
+use crate::plugins::PluginPid;
+use crate::styles::{Style, ThemeStyleMap};
 
 /// A collection of layers containing scope information.
 #[derive(Default)]

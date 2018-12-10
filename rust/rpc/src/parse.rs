@@ -20,7 +20,7 @@ use serde::de::DeserializeOwned;
 use serde_json::{self, Error as JsonError, Value};
 use xi_trace;
 
-use error::{ReadError, RemoteError};
+use crate::error::{ReadError, RemoteError};
 
 /// A unique identifier attached to request RPCs.
 type RequestId = u64;

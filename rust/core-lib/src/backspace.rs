@@ -14,12 +14,12 @@
 
 //! Calc start of a backspace delete interval
 
-use view::View;
+use crate::view::View;
 
 use xi_rope::{Cursor, Rope};
 
-use config::BufferItems;
-use selection::SelRegion;
+use crate::config::BufferItems;
+use crate::selection::SelRegion;
 use xi_unicode::*;
 
 #[cfg_attr(feature = "cargo-clippy", allow(cyclomatic_complexity))]

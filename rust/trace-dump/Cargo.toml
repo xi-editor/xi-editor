@@ -6,6 +6,7 @@ authors = ["Vitali Lovich <vlovich@google.com>"]
 categories = ["development-tools::profiling"]
 repository = "https://github.com/google/xi-editor"
 description = "Library-based API to dump xi-trace data to disk"
+edition = '2018'
 
 [features]
 default = ["chrome_trace_event"]

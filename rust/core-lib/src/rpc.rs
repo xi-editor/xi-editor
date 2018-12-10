@@ -25,11 +25,11 @@ use serde::de::{self, Deserialize, Deserializer};
 use serde::ser::{self, Serialize, Serializer};
 use serde_json::{self, Value};
 
-use config::{ConfigDomainExternal, Table};
-use plugins::PlaceholderRpc;
-use syntax::LanguageId;
-use tabs::ViewId;
-use view::Size;
+use crate::config::{ConfigDomainExternal, Table};
+use crate::plugins::PlaceholderRpc;
+use crate::syntax::LanguageId;
+use crate::tabs::ViewId;
+use crate::view::Size;
 
 // =============================================================================
 //  Command types
@@ -633,7 +633,7 @@ impl<'de> Deserialize<'de> for LineRange {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tabs::ViewId;
+    use crate::tabs::ViewId;
 
     #[test]
     fn test_serialize_edit_command() {

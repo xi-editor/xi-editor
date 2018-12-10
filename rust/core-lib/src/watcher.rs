@@ -249,7 +249,7 @@ impl Watchee {
 
 impl Notify for RpcPeer {
     fn notify(&self) {
-        self.schedule_idle(::tabs::WATCH_IDLE_TOKEN);
+        self.schedule_idle(crate::tabs::WATCH_IDLE_TOKEN);
     }
 }
 

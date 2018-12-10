@@ -5,6 +5,7 @@ license = "Apache-2.0"
 name = "xi-rope"
 repository = "https://github.com/google/xi-editor"
 version = "0.3.0"
+edition = '2018'
 
 [dependencies]
 bytecount = "0.4.0"

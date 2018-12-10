@@ -23,8 +23,8 @@ use xi_trace::trace_block;
 use xi_unicode::LineBreakLeafIter;
 
 use client::Client;
-use styles::{Style, N_RESERVED_STYLES};
-use width_cache::{CodepointMono, Token, WidthCache, WidthMeasure};
+use crate::styles::{Style, N_RESERVED_STYLES};
+use crate::width_cache::{CodepointMono, Token, WidthCache, WidthMeasure};
 
 /// The visual width of the buffer for the purpose of word wrapping.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -448,8 +448,7 @@ impl<'a> MergedBreaks<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::borrow::Cow;
-    use width_cache::CodepointMono;
+    use crate::width_cache::CodepointMono;
 
     fn debug_breaks<'a>(text: &'a Rope, width: f64) -> Vec<Cow<'a, str>> {
         let mut result = Vec::new();

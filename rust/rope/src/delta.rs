@@ -16,13 +16,13 @@
 //! It's useful to explicitly represent these operations so they can be
 //! shared across multiple subsystems.
 
-use interval::{Interval, IntervalBounds};
-use multiset::{CountMatcher, Subset, SubsetBuilder};
+use crate::interval::{Interval, IntervalBounds};
+use crate::multiset::{CountMatcher, Subset, SubsetBuilder};
 use std::cmp::min;
 use std::fmt;
 use std::ops::Deref;
 use std::slice;
-use tree::{Node, NodeInfo, TreeBuilder};
+use crate::tree::{Node, NodeInfo, TreeBuilder};
 
 #[derive(Clone)]
 pub enum DeltaElement<N: NodeInfo> {
@@ -692,11 +692,11 @@ impl<'a, N: NodeInfo> Iterator for DeletionsIter<'a, N> {
 
 #[cfg(test)]
 mod tests {
-    use delta::{Builder, Delta, DeltaElement, DeltaRegion};
-    use interval::Interval;
-    use rope::{Rope, RopeInfo};
+    use crate::delta::{Builder, Delta, DeltaElement, DeltaRegion};
+    use crate::interval::Interval;
+    use crate::rope::{Rope, RopeInfo};
     use serde_json;
-    use test_helpers::find_deletions;
+    use crate::test_helpers::find_deletions;
 
     const TEST_STR: &'static str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 

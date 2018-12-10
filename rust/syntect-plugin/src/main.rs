@@ -13,7 +13,6 @@
 // limitations under the License.
 
 //! A syntax highlighting plugin based on syntect.
-
 extern crate serde_json;
 extern crate syntect;
 extern crate xi_core_lib as xi_core;
@@ -29,8 +28,8 @@ use std::path::Path;
 use std::str::FromStr;
 use std::sync::MutexGuard;
 
-use xi_core::plugin_rpc::ScopeSpan;
-use xi_core::{ConfigTable, LanguageId, ViewId};
+use crate::xi_core::plugin_rpc::ScopeSpan;
+use crate::xi_core::{ConfigTable, LanguageId, ViewId};
 use xi_plugin_lib::{mainloop, Cache, Error, Plugin, StateCache, View};
 use xi_rope::{DeltaBuilder, Interval, Rope, RopeDelta, RopeInfo};
 use xi_trace::{trace, trace_block};
@@ -39,7 +38,7 @@ use syntect::parsing::{
     ParseState, ScopeRepository, ScopeStack, ScopedMetadata, SyntaxSet, SCOPE_REPO,
 };
 
-use stackmap::{LookupResult, StackMap};
+use crate::stackmap::{LookupResult, StackMap};
 
 const LINES_PER_RPC: usize = 10;
 const INDENTATION_PRIORITY: u64 = 100;

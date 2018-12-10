@@ -18,7 +18,7 @@ use std::cmp::{max, min};
 use std::fmt;
 use std::ops::Deref;
 
-use index_set::remove_n_at;
+use crate::index_set::remove_n_at;
 use xi_rope::{Interval, RopeDelta, Transformer};
 
 /// A type representing horizontal measurements. This is currently in units

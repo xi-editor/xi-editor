@@ -6,6 +6,7 @@ authors = ["Raph Levien <raph@google.com>"]
 description = "Main process for xi-core, based on json-rpc"
 categories = ["text-editors"]
 repository = "https://github.com/google/xi-editor"
+edition = '2018'
 
 [dependencies]
 serde = "1.0"

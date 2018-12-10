@@ -104,12 +104,12 @@ pub mod rpc;
 #[cfg(feature = "ledger")]
 use apps_ledger_services_public::Ledger_Proxy;
 
-pub use config::{BufferItems as BufferConfig, Table as ConfigTable};
-pub use core::{WeakXiCore, XiCore};
-pub use editor::EditType;
-pub use plugins::manifest as plugin_manifest;
-pub use plugins::rpc as plugin_rpc;
-pub use plugins::PluginPid;
-pub use syntax::{LanguageDefinition, LanguageId};
-pub use tabs::test_helpers;
-pub use tabs::{BufferId, BufferIdentifier, ViewId};
+pub use crate::config::{BufferItems as BufferConfig, Table as ConfigTable};
+pub use crate::core::{WeakXiCore, XiCore};
+pub use crate::editor::EditType;
+pub use crate::plugins::manifest as plugin_manifest;
+pub use crate::plugins::rpc as plugin_rpc;
+pub use crate::plugins::PluginPid;
+pub use crate::syntax::{LanguageDefinition, LanguageId};
+pub use crate::tabs::test_helpers;
+pub use crate::tabs::{BufferId, BufferIdentifier, ViewId};

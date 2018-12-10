@@ -211,7 +211,7 @@ impl IntervalBounds for RangeFull {
 
 #[cfg(test)]
 mod tests {
-    use interval::Interval;
+    use crate::interval::Interval;
 
     #[test]
     fn contains() {

@@ -23,8 +23,8 @@ use std::sync::Arc;
 use toml;
 
 use super::{PluginDescription, PluginName};
-use config::table_from_toml_str;
-use syntax::Languages;
+use crate::config::table_from_toml_str;
+use crate::syntax::Languages;
 
 /// A catalog of all available plugins.
 #[derive(Debug, Clone, Default)]

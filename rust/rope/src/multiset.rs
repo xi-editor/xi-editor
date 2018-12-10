@@ -17,10 +17,10 @@
 use std::cmp;
 
 // These two imports are for the `apply` method only.
-use interval::Interval;
+use crate::interval::Interval;
 use std::fmt;
 use std::slice;
-use tree::{Node, NodeInfo, TreeBuilder};
+use crate::tree::{Node, NodeInfo, TreeBuilder};
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 struct Segment {
@@ -356,7 +356,7 @@ impl fmt::Debug for Subset {
                     '+'
                 };
                 for _ in 0..s.len {
-                    try!(write!(f, "{}", chr));
+                    r#try!(write!(f, "{}", chr));
                 }
             }
             Ok(())
@@ -503,8 +503,8 @@ impl<'a> Mapper<'a> {
 
 #[cfg(test)]
 mod tests {
-    use multiset::*;
-    use test_helpers::find_deletions;
+    use crate::multiset::*;
+    use crate::test_helpers::find_deletions;
 
     const TEST_STR: &'static str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 

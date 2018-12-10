@@ -14,7 +14,7 @@
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
-use types::LspResponse;
+use crate::types::LspResponse;
 
 #[derive(Clone, Debug, Default)]
 pub struct ResultQueue(Arc<Mutex<VecDeque<(usize, LspResponse)>>>);

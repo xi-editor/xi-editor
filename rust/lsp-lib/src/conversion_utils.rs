@@ -15,8 +15,8 @@
 //! Utility functions meant for converting types from LSP to Core format
 //! and vice-versa
 
-use lsp_types::*;
-use types::LanguageResponseError;
+use crate::lsp_types::*;
+use crate::types::LanguageResponseError;
 use xi_plugin_lib::{Cache, Error as PluginLibError, Hover as CoreHover, Range as CoreRange, View};
 
 pub(crate) fn marked_string_to_string(marked_string: &MarkedString) -> String {

@@ -26,12 +26,12 @@ use std::time::SystemTime;
 use xi_rope::Rope;
 use xi_rpc::RemoteError;
 
-use tabs::BufferId;
+use crate::tabs::BufferId;
 
 #[cfg(feature = "notify")]
-use tabs::OPEN_FILE_EVENT_TOKEN;
+use crate::tabs::OPEN_FILE_EVENT_TOKEN;
 #[cfg(feature = "notify")]
-use watcher::FileWatcher;
+use crate::watcher::FileWatcher;
 
 const UTF8_BOM: &str = "\u{feff}";
 

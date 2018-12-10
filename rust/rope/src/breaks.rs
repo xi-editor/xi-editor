@@ -15,10 +15,10 @@
 //! A module for representing a set of breaks, typically used for
 //! storing the result of line breaking.
 
-use interval::Interval;
+use crate::interval::Interval;
 use std::cmp::min;
 use std::mem;
-use tree::{Leaf, Metric, Node, NodeInfo, TreeBuilder};
+use crate::tree::{Leaf, Metric, Node, NodeInfo, TreeBuilder};
 
 /// A set of indexes. A motivating use is storing line breaks.
 pub type Breaks = Node<BreaksInfo>;
@@ -240,9 +240,9 @@ impl BreakBuilder {
 
 #[cfg(test)]
 mod tests {
-    use breaks::{BreakBuilder, BreaksInfo, BreaksLeaf, BreaksMetric};
-    use interval::Interval;
-    use tree::{Cursor, Node};
+    use crate::breaks::{BreakBuilder, BreaksInfo, BreaksLeaf, BreaksMetric};
+    use crate::interval::Interval;
+    use crate::tree::{Cursor, Node};
 
     fn gen(n: usize) -> Node<BreaksInfo> {
         let mut node = Node::default();
