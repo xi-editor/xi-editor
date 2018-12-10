@@ -80,7 +80,12 @@ pub enum CharacterEncoding {
 impl FileManager {
     #[cfg(feature = "notify")]
     pub fn new(watcher: FileWatcher) -> Self {
-        FileManager { open_files: HashMap::new(), file_info: HashMap::new(), watcher, tail_toggle: false }
+        FileManager {
+            open_files: HashMap::new(),
+            file_info: HashMap::new(),
+            watcher,
+            tail_toggle: false,
+        }
     }
 
     #[cfg(not(feature = "notify"))]
@@ -98,8 +103,8 @@ impl FileManager {
     }
 
     #[cfg(feature = "notify")]
-    pub fn get_current_position_in_tail(&self, id: &BufferId) -> u64 {
-        match self.file_info.get(id) {
+    pub fn get_current_position_in_tail(&self, id: BufferId) -> u64 {
+        match self.file_info.get(&id) {
             Some(v) => v.tail_details.current_position_in_tail,
             None => 0,
         }
@@ -144,7 +149,7 @@ impl FileManager {
 
     #[cfg(feature = "notify")]
     pub fn open_file_to_tail(&mut self, path: &Path, id: BufferId) -> Result<Rope, FileError> {
-        let current_position = self.get_current_position_in_tail(&id);
+        let current_position = self.get_current_position_in_tail(id);
         let (rope, info) = try_tailing_file(path, current_position)?;
         self.open_files.insert(path.to_owned(), id);
         if self.file_info.insert(id, info).is_none() {
@@ -218,7 +223,7 @@ impl FileManager {
             self.watcher.watch(&path, false, OPEN_FILE_EVENT_TOKEN);
 
             #[cfg(feature = "notify")]
-            self.update_current_position_in_tail(path, &id)?;
+            self.update_current_position_in_tail(path, id)?;
         }
         Ok(())
     }
@@ -227,7 +232,7 @@ impl FileManager {
     pub fn update_current_position_in_tail(
         &mut self,
         path: &Path,
-        id: &BufferId,
+        id: BufferId,
     ) -> Result<(), FileError> {
         let existing_file_info = self.file_info.get_mut(&id).unwrap();
 

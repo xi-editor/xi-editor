@@ -421,12 +421,6 @@ impl<'a> EventContext<'a> {
         self.plugins.iter().for_each(|plug| plug.language_changed(self.view_id, new_language_id));
     }
 
-    pub(crate) fn reload(&mut self, text: Rope) {
-        self.with_editor(|ed, _, _, _| ed.reload(text));
-        self.after_edit("core");
-        self.render();
-    }
-
     pub(crate) fn reload_tail(&mut self, text: Rope) {
         self.with_editor(|ed, _, _, _| ed.tail_append(text));
         self.after_edit("core");
