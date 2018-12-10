@@ -13,8 +13,8 @@
 // limitations under the License.
 
 use jsonrpc_lite::Error as JsonRpcError;
-use language_server_client::LanguageServerClient;
-use lsp_types::*;
+use crate::language_server_client::LanguageServerClient;
+use crate::lsp_types::*;
 use serde_json;
 use serde_json::Value;
 use std;

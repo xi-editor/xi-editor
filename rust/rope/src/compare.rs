@@ -14,8 +14,8 @@
 
 //! Fast comparison of rope regions, principally for diffing.
 
-use rope::{BaseMetric, Rope, RopeInfo};
-use tree::Cursor;
+use crate::rope::{BaseMetric, Rope, RopeInfo};
+use crate::tree::Cursor;
 
 const SSE_STRIDE: usize = 16;
 

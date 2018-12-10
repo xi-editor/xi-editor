@@ -25,22 +25,22 @@ use xi_rope::spans::SpansBuilder;
 use xi_rope::{Cursor, DeltaBuilder, Interval, LinesMetric, Rope, RopeDelta, Transformer};
 use xi_trace::{trace_block, trace_payload};
 
-use config::BufferItems;
-use edit_types::BufferEvent;
-use event_context::MAX_SIZE_LIMIT;
-use layers::Layers;
-use movement::{region_movement, Movement};
-use plugins::rpc::{GetDataResponse, PluginEdit, ScopeSpan, TextUnit};
-use plugins::PluginId;
-use rpc::SelectionModifier;
-use selection::{InsertDrift, SelRegion, Selection};
-use styles::ThemeStyleMap;
-use view::{Replace, View};
-use word_boundaries::WordCursor;
+use crate::config::BufferItems;
+use crate::edit_types::BufferEvent;
+use crate::event_context::MAX_SIZE_LIMIT;
+use crate::layers::Layers;
+use crate::movement::{region_movement, Movement};
+use crate::plugins::rpc::{GetDataResponse, PluginEdit, ScopeSpan, TextUnit};
+use crate::plugins::PluginId;
+use crate::rpc::SelectionModifier;
+use crate::selection::{InsertDrift, SelRegion, Selection};
+use crate::styles::ThemeStyleMap;
+use crate::view::{Replace, View};
+use crate::word_boundaries::WordCursor;
 
 #[cfg(not(feature = "ledger"))]
 pub struct SyncStore;
-use backspace::offset_for_delete_backwards;
+use crate::backspace::offset_for_delete_backwards;
 #[cfg(feature = "ledger")]
 use fuchsia::sync::SyncStore;
 

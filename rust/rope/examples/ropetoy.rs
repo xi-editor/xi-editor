@@ -13,7 +13,6 @@
 // limitations under the License.
 
 //! Toy app for experimenting with ropes
-
 extern crate xi_rope;
 
 use xi_rope::Rope;

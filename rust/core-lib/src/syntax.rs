@@ -19,7 +19,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::sync::Arc;
 
-use config::Table;
+use crate::config::Table;
 
 /// The canonical identifier for a particular `LanguageDefinition`.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]

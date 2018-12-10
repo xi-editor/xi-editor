@@ -13,7 +13,6 @@
 // limitations under the License.
 
 //! The library base for implementing xi-editor plugins.
-
 extern crate xi_core_lib as xi_core;
 extern crate xi_rope;
 extern crate xi_rpc;
@@ -40,19 +39,19 @@ use std::io;
 use std::path::Path;
 
 use serde_json::Value;
-use xi_core::plugin_rpc::{GetDataResponse, TextUnit};
-use xi_core::{ConfigTable, LanguageId};
+use crate::xi_core::plugin_rpc::{GetDataResponse, TextUnit};
+use crate::xi_core::{ConfigTable, LanguageId};
 use xi_rope::interval::IntervalBounds;
 use xi_rope::RopeDelta;
 use xi_rpc::{ReadError, RpcLoop};
 
 use self::dispatch::Dispatcher;
 
-pub use base_cache::ChunkCache;
-pub use core_proxy::CoreProxy;
-pub use state_cache::StateCache;
-pub use view::View;
-pub use xi_core::plugin_rpc::{Hover, Range};
+pub use crate::base_cache::ChunkCache;
+pub use crate::core_proxy::CoreProxy;
+pub use crate::state_cache::StateCache;
+pub use crate::view::View;
+pub use crate::xi_core::plugin_rpc::{Hover, Range};
 
 /// Abstracts getting data from the peer. Mainly exists for mocking in tests.
 pub trait DataSource {

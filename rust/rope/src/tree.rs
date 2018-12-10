@@ -18,7 +18,7 @@ use std::cmp::min;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use interval::{Interval, IntervalBounds};
+use crate::interval::{Interval, IntervalBounds};
 
 const MIN_CHILDREN: usize = 4;
 const MAX_CHILDREN: usize = 8;
@@ -42,7 +42,7 @@ pub trait NodeInfo: Clone {
     /// deriving the info from the concatenation of the two leaves. In
     /// mathematical terms, the compute_info method is a monoid
     /// homomorphism.
-    fn compute_info(&Self::L) -> Self;
+    fn compute_info(_: &Self::L) -> Self;
 
     /// The identity of the monoid. Need not be implemented because it
     /// can be computed from the leaf default.
@@ -857,7 +857,7 @@ impl<'c, 'a, N: NodeInfo, M: Metric<N>> CursorIter<'c, 'a, N, M> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use rope::*;
+    use crate::rope::*;
 
     fn build_triangle(n: u32) -> String {
         let mut s = String::new();

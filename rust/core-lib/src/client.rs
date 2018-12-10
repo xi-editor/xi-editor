@@ -19,13 +19,13 @@ use std::time::Instant;
 use serde_json::{self, Value};
 use xi_rpc::{self, RpcPeer};
 
-use config::Table;
-use plugins::rpc::ClientPluginInfo;
-use plugins::Command;
-use styles::ThemeSettings;
-use syntax::LanguageId;
-use tabs::ViewId;
-use width_cache::{WidthReq, WidthResponse};
+use crate::config::Table;
+use crate::plugins::rpc::ClientPluginInfo;
+use crate::plugins::Command;
+use crate::styles::ThemeSettings;
+use crate::syntax::LanguageId;
+use crate::tabs::ViewId;
+use crate::width_cache::{WidthReq, WidthResponse};
 
 /// An interface to the frontend.
 pub struct Client(RpcPeer);

@@ -13,10 +13,9 @@
 // limitations under the License.
 
 //! Unicode utilities useful for text editing, including a line breaking iterator.
-
 mod tables;
 
-use tables::*;
+use crate::tables::*;
 
 pub fn linebreak_property(cp: char) -> u8 {
     let cp = cp as usize;
@@ -241,9 +240,9 @@ pub fn is_keycap_base(c: char) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use linebreak_property;
-    use linebreak_property_str;
-    use LineBreakIterator;
+    use crate::linebreak_property;
+    use crate::linebreak_property_str;
+    use crate::LineBreakIterator;
 
     #[test]
     fn linebreak_prop() {

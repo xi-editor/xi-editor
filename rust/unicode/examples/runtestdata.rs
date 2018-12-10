@@ -17,7 +17,6 @@
 // Run on:
 // http://www.unicode.org/Public/UCD/latest/ucd/auxiliary/LineBreakTest.txt
 // or use randomized data from tools/gen_rand_icu.cc (same format)
-
 extern crate xi_unicode;
 
 use xi_unicode::{LineBreakIterator, LineBreakLeafIter};

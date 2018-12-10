@@ -26,26 +26,26 @@ use xi_rope::{Interval, LinesMetric, Rope, RopeDelta};
 use xi_rpc::{Error as RpcError, RemoteError};
 use xi_trace::trace_block;
 
-use plugins::rpc::{
+use crate::plugins::rpc::{
     ClientPluginInfo, Hover, PluginBufferInfo, PluginNotification, PluginRequest, PluginUpdate,
 };
-use rpc::{EditNotification, EditRequest, LineRange, Position as ClientPosition};
+use crate::rpc::{EditNotification, EditRequest, LineRange, Position as ClientPosition};
 
-use config::{BufferItems, Table};
-use styles::ThemeStyleMap;
+use crate::config::{BufferItems, Table};
+use crate::styles::ThemeStyleMap;
 
-use client::Client;
-use edit_types::{EventDomain, SpecialEvent};
-use editor::Editor;
-use file::FileInfo;
-use plugins::Plugin;
-use recorder::Recorder;
-use selection::InsertDrift;
-use syntax::LanguageId;
-use tabs::{BufferId, PluginId, ViewId, RENDER_VIEW_IDLE_MASK};
-use view::View;
-use width_cache::WidthCache;
-use WeakXiCore;
+use crate::client::Client;
+use crate::edit_types::{EventDomain, SpecialEvent};
+use crate::editor::Editor;
+use crate::file::FileInfo;
+use crate::plugins::Plugin;
+use crate::recorder::Recorder;
+use crate::selection::InsertDrift;
+use crate::syntax::LanguageId;
+use crate::tabs::{BufferId, PluginId, ViewId, RENDER_VIEW_IDLE_MASK};
+use crate::view::View;
+use crate::width_cache::WidthCache;
+use crate::WeakXiCore;
 
 // Maximum returned result from plugin get_data RPC.
 pub const MAX_SIZE_LIMIT: usize = 1024 * 1024;
@@ -582,9 +582,9 @@ impl<'a> EventContext<'a> {
 #[cfg_attr(rustfmt, rustfmt_skip)]
 mod tests {
     use super::*;
-    use config::ConfigManager;
-    use core::dummy_weak_core;
-    use tabs::BufferId;
+    use crate::config::ConfigManager;
+    use crate::core::dummy_weak_core;
+    use crate::tabs::BufferId;
     use xi_rpc::test_utils::DummyPeer;
 
     struct ContextHarness {
@@ -687,7 +687,7 @@ mod tests {
 
     #[test]
     fn test_gestures() {
-        use rpc::GestureType::*;
+        use crate::rpc::GestureType::*;
         let initial_text = "\
         this is a string\n\
         that has three\n\
@@ -810,7 +810,7 @@ mod tests {
 
     #[test]
     fn delete_combining_enclosing_keycaps_tests() {
-        use rpc::GestureType::*;
+        use crate::rpc::GestureType::*;
 
         let initial_text = "1\u{E0101}\u{20E3}";
         let harness = ContextHarness::new(initial_text);
@@ -847,7 +847,7 @@ mod tests {
 
     #[test]
     fn delete_variation_selector_tests() {
-        use rpc::GestureType::*;
+        use crate::rpc::GestureType::*;
 
         let initial_text = "\u{FE0F}";
         let harness = ContextHarness::new(initial_text);
@@ -926,7 +926,7 @@ mod tests {
 
     #[test]
     fn delete_emoji_zwj_sequence_tests() {
-        use rpc::GestureType::*;
+        use crate::rpc::GestureType::*;
         let initial_text = "\u{1F441}\u{200D}\u{1F5E8}";
         let harness = ContextHarness::new(initial_text);
         let mut ctx = harness.make_context();
@@ -1022,7 +1022,7 @@ mod tests {
 
     #[test]
     fn delete_flags_tests() {
-        use rpc::GestureType::*;
+        use crate::rpc::GestureType::*;
         let initial_text = "\u{1F1FA}";
         let harness = ContextHarness::new(initial_text);
         let mut ctx = harness.make_context();
@@ -1094,7 +1094,7 @@ mod tests {
 
     #[test]
     fn delete_emoji_modifier_tests() {
-        use rpc::GestureType::*;
+        use crate::rpc::GestureType::*;
         let initial_text = "\u{1F466}\u{1F3FB}";
         let harness = ContextHarness::new(initial_text);
         let mut ctx = harness.make_context();
@@ -1129,7 +1129,7 @@ mod tests {
 
     #[test]
     fn delete_mixed_edge_cases_tests() {
-        use rpc::GestureType::*;
+        use crate::rpc::GestureType::*;
         let initial_text = "";
         let harness = ContextHarness::new(initial_text);
         let mut ctx = harness.make_context();
@@ -1334,7 +1334,7 @@ mod tests {
 
     #[test]
     fn delete_tests() {
-        use rpc::GestureType::*;
+        use crate::rpc::GestureType::*;
         let initial_text = "\
         this is a string\n\
         that has three\n\
@@ -1388,7 +1388,7 @@ mod tests {
 
     #[test]
     fn simple_indentation_test() {
-        use rpc::GestureType::*;
+        use crate::rpc::GestureType::*;
         let harness = ContextHarness::new("");
         let mut ctx = harness.make_context();
         // Single indent and outdent test
@@ -1423,7 +1423,7 @@ mod tests {
 
     #[test]
     fn multiline_indentation_test() {
-        use rpc::GestureType::*;
+        use crate::rpc::GestureType::*;
         let initial_text = "\
         this is a string\n\
         that has three\n\
@@ -1516,7 +1516,7 @@ mod tests {
 
     #[test]
     fn number_change_tests() {
-        use rpc::GestureType::*;
+        use crate::rpc::GestureType::*;
         let harness = ContextHarness::new("");
         let mut ctx = harness.make_context();
         // Single indent and outdent test
@@ -1670,7 +1670,7 @@ mod tests {
 
     #[test]
     fn text_recording() {
-        use rpc::GestureType::*;
+        use crate::rpc::GestureType::*;
         let initial_text = "";
         let harness = ContextHarness::new(initial_text);
         let mut ctx = harness.make_context();
@@ -1697,7 +1697,7 @@ mod tests {
 
     #[test]
     fn movement_recording() {
-        use rpc::GestureType::*;
+        use crate::rpc::GestureType::*;
         let initial_text = "\
         this is a string\n\
         that has about\n\
@@ -1770,7 +1770,7 @@ mod tests {
 
     #[test]
     fn test_exact_position() {
-        use rpc::GestureType::*;
+        use crate::rpc::GestureType::*;
         let initial_text = "\
         this is a string\n\
         that has three\n\
@@ -1812,8 +1812,8 @@ mod tests {
     #[test]
     fn test_illegal_plugin_edit() {
         use xi_rope::DeltaBuilder;
-        use plugins::rpc::{PluginNotification, PluginEdit};
-        use plugins::PluginPid;
+        use crate::plugins::rpc::{PluginNotification, PluginEdit};
+        use crate::plugins::PluginPid;
 
         let text = "text";
         let harness = ContextHarness::new(text);

@@ -17,7 +17,6 @@
 //!
 //! For discussion of this approach, see [this
 //! issue](https://github.com/google/xi-editor/issues/284).
-
 use std::collections::HashMap;
 
 use syntect::parsing::Scope;

@@ -18,11 +18,11 @@
 //! This simplifies code elsewhere, and makes it easier to route events to
 //! the editor or view as appropriate.
 
-use movement::Movement;
-use rpc::{
+use crate::movement::Movement;
+use crate::rpc::{
     EditNotification, FindQuery, GestureType, LineRange, MouseAction, Position, SelectionModifier,
 };
-use view::Size;
+use crate::view::Size;
 
 /// Events that only modify view state
 #[derive(Debug, PartialEq, Clone)]

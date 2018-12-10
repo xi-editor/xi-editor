@@ -14,14 +14,13 @@
 
 //! A sample plugin, intended as an illustration and a template for plugin
 //! developers.
-
 extern crate xi_core_lib as xi_core;
 extern crate xi_plugin_lib;
 extern crate xi_rope;
 
 use std::path::Path;
 
-use xi_core::ConfigTable;
+use crate::xi_core::ConfigTable;
 use xi_plugin_lib::{mainloop, ChunkCache, Error, Plugin, View};
 use xi_rope::delta::Builder as EditBuilder;
 use xi_rope::interval::Interval;

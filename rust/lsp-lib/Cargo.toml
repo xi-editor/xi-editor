@@ -5,6 +5,7 @@ license = "Apache-2.0"
 repository = "https://github.com/google/xi-editor"
 description = "The base library for implementing LSP Plugins for Xi"
 authors = ["betterclever <paliwal.pranjal83@gmail.com>"]
+edition = '2018'
 
 [dependencies]
 languageserver-types = "0.41.0"

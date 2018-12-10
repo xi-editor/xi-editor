@@ -20,9 +20,9 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::mem;
 
-use delta::{Delta, DeltaElement, Transformer};
-use interval::{Interval, IntervalBounds};
-use tree::{Cursor, Leaf, Node, NodeInfo, TreeBuilder};
+use crate::delta::{Delta, DeltaElement, Transformer};
+use crate::interval::{Interval, IntervalBounds};
+use crate::tree::{Cursor, Leaf, Node, NodeInfo, TreeBuilder};
 
 const MIN_LEAF: usize = 32;
 const MAX_LEAF: usize = 64;

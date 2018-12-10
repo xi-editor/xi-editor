@@ -21,7 +21,7 @@ use xi_trace::trace_block;
 use std::collections::HashMap;
 use std::mem;
 
-use edit_types::{BufferEvent, EventDomain};
+use crate::edit_types::{BufferEvent, EventDomain};
 
 /// A container that manages and holds all recordings for the current editing session
 pub(crate) struct Recorder {
@@ -209,8 +209,8 @@ impl Recording {
 // R = Redo
 #[cfg(test)]
 mod tests {
-    use edit_types::{BufferEvent, EventDomain};
-    use recorder::Recorder;
+    use crate::edit_types::{BufferEvent, EventDomain};
+    use crate::recorder::Recorder;
 
     #[test]
     fn play_recording() {

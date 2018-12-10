@@ -30,10 +30,10 @@ use serde_json::Value;
 use xi_rpc::{self, RpcLoop, RpcPeer};
 use xi_trace;
 
-use config::Table;
-use syntax::LanguageId;
-use tabs::ViewId;
-use WeakXiCore;
+use crate::config::Table;
+use crate::syntax::LanguageId;
+use crate::tabs::ViewId;
+use crate::WeakXiCore;
 
 use self::rpc::{PluginBufferInfo, PluginUpdate};
 

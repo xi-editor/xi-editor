@@ -6,6 +6,7 @@ authors = ["Vitali Lovich <vlovich@google.com>"]
 categories = ["development-tools::profiling"]
 repository = "https://github.com/google/xi-editor"
 description = "Library-based distributed tracing API to meet the needs of xi-core, frontends and plugins"
+edition = '2018'
 
 [features]
 benchmarks = []

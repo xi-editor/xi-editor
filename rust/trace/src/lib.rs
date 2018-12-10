@@ -11,7 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 #![cfg_attr(feature = "benchmarks", feature(test))]
 #![cfg_attr(feature = "collections_range", feature(collections_range))]
 #![cfg_attr(feature = "cargo-clippy", allow(identity_op, new_without_default_derive))]
@@ -41,7 +40,7 @@ mod fixed_lifo_deque;
 mod sys_pid;
 mod sys_tid;
 
-use fixed_lifo_deque::FixedLifoDeque;
+use crate::fixed_lifo_deque::FixedLifoDeque;
 use std::borrow::Cow;
 use std::cmp;
 use std::collections::HashMap;

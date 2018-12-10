@@ -19,8 +19,8 @@ extern crate xi_core_lib as xi_core;
 extern crate xi_rope;
 
 use test::Bencher;
-use xi_core::tabs::BufferId;
-use xi_core::view::View;
+use crate::xi_core::tabs::BufferId;
+use crate::xi_core::view::View;
 use xi_rope::Rope;
 
 fn build_short_lines(n: usize) -> String {

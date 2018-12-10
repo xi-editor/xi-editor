@@ -33,10 +33,10 @@ use std::borrow::Cow;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeSet;
 
-use delta::{Delta, InsertDelta};
-use interval::Interval;
-use multiset::{CountMatcher, Subset};
-use rope::{Rope, RopeInfo};
+use crate::delta::{Delta, InsertDelta};
+use crate::interval::Interval;
+use crate::multiset::{CountMatcher, Subset};
+use crate::rope::{Rope, RopeInfo};
 
 /// Represents the current state of a document and all of its history
 #[derive(Serialize, Deserialize, Debug)]
@@ -960,13 +960,13 @@ impl std::error::Error for Error {}
 #[cfg(test)]
 #[cfg_attr(rustfmt, rustfmt_skip)]
 mod tests {
-    use engine::*;
-    use rope::{Rope, RopeInfo};
-    use delta::{Builder, Delta, DeltaElement};
-    use multiset::Subset;
-    use interval::Interval;
+    use crate::engine::*;
+    use crate::rope::{Rope, RopeInfo};
+    use crate::delta::{Builder, Delta, DeltaElement};
+    use crate::multiset::Subset;
+    use crate::interval::Interval;
     use std::collections::BTreeSet;
-    use test_helpers::{parse_subset_list, parse_subset, parse_delta, debug_subsets};
+    use crate::test_helpers::{parse_subset_list, parse_subset, parse_delta, debug_subsets};
 
     const TEST_STR: &'static str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 

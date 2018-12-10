@@ -13,7 +13,6 @@
 // limitations under the License.
 
 //! A simple tool that generates the syntect plugin's manifest.
-
 extern crate syntect;
 extern crate toml;
 extern crate xi_core_lib as xi_core;
@@ -24,8 +23,8 @@ use std::path::{Path, PathBuf};
 
 use syntect::parsing::{SyntaxReference, SyntaxSet};
 use toml::Value;
-use xi_core::plugin_manifest::*;
-use xi_core::LanguageDefinition;
+use crate::xi_core::plugin_manifest::*;
+use crate::xi_core::LanguageDefinition;
 
 const OUT_FILE_NAME: &str = "generated_manifest.toml";
 

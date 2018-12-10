@@ -5,6 +5,7 @@ license = "Apache-2.0"
 authors = ["Raph Levien <raph@google.com>"]
 description = "Library module for xi-core"
 repository = "https://github.com/google/xi-editor"
+edition = '2018'
 
 [dependencies]
 log = "0.4.3"

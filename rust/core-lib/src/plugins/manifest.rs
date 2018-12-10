@@ -19,7 +19,7 @@ use std::path::PathBuf;
 use serde::Serialize;
 use serde_json::{self, Value};
 
-use syntax::{LanguageDefinition, LanguageId};
+use crate::syntax::{LanguageDefinition, LanguageId};
 
 /// Describes attributes and capabilities of a plugin.
 ///

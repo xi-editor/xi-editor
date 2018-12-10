@@ -22,9 +22,9 @@ use serde::ser::{self, Serialize, Serializer};
 use serde_json::{self, Value};
 
 use super::PluginPid;
-use config::Table;
-use syntax::LanguageId;
-use tabs::{BufferIdentifier, ViewId};
+use crate::config::Table;
+use crate::syntax::LanguageId;
+use crate::tabs::{BufferIdentifier, ViewId};
 use xi_rope::{LinesMetric, Rope, RopeDelta};
 use xi_rpc::RemoteError;
 

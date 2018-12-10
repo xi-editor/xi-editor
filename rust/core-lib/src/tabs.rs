@@ -35,32 +35,32 @@ use xi_rope::Rope;
 use xi_rpc::{self, ReadError, RemoteError, RpcCtx, RpcPeer};
 use xi_trace::{self, trace_block};
 
-use client::Client;
-use config::{self, ConfigDomain, ConfigDomainExternal, ConfigManager, Table};
-use editor::Editor;
-use event_context::EventContext;
-use file::FileManager;
-use line_ending::LineEnding;
-use plugin_rpc::{PluginNotification, PluginRequest};
-use plugins::{start_plugin_process, Plugin, PluginCatalog, PluginPid};
-use recorder::Recorder;
-use rpc::{
+use crate::client::Client;
+use crate::config::{self, ConfigDomain, ConfigDomainExternal, ConfigManager, Table};
+use crate::editor::Editor;
+use crate::event_context::EventContext;
+use crate::file::FileManager;
+use crate::line_ending::LineEnding;
+use crate::plugin_rpc::{PluginNotification, PluginRequest};
+use crate::plugins::{start_plugin_process, Plugin, PluginCatalog, PluginPid};
+use crate::recorder::Recorder;
+use crate::rpc::{
     CoreNotification, CoreRequest, EditNotification, EditRequest,
     PluginNotification as CorePluginNotification,
 };
-use styles::{ThemeStyleMap, DEFAULT_THEME};
-use syntax::LanguageId;
-use view::View;
-use whitespace::Indentation;
-use width_cache::WidthCache;
-use WeakXiCore;
+use crate::styles::{ThemeStyleMap, DEFAULT_THEME};
+use crate::syntax::LanguageId;
+use crate::view::View;
+use crate::whitespace::Indentation;
+use crate::width_cache::WidthCache;
+use crate::WeakXiCore;
 
 #[cfg(feature = "notify")]
 use notify::DebouncedEvent;
 #[cfg(feature = "notify")]
 use std::ffi::OsStr;
 #[cfg(feature = "notify")]
-use watcher::{FileWatcher, WatchToken};
+use crate::watcher::{FileWatcher, WatchToken};
 
 /// ViewIds are the primary means of routing messages between
 /// xi-core and a client view.
@@ -71,7 +71,7 @@ pub struct ViewId(pub(crate) usize);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Hash)]
 pub struct BufferId(pub(crate) usize);
 
-pub type PluginId = ::plugins::PluginPid;
+pub type PluginId = crate::plugins::PluginPid;
 
 // old-style names; will be deprecated
 pub type BufferIdentifier = BufferId;
@@ -300,7 +300,7 @@ impl CoreState {
         use self::CoreNotification::*;
         use self::CorePluginNotification as PN;
         match cmd {
-            Edit(::rpc::EditCommand { view_id, cmd }) => self.do_edit(view_id, cmd),
+            Edit(crate::rpc::EditCommand { view_id, cmd }) => self.do_edit(view_id, cmd),
             Save { view_id, file_path } => self.do_save(view_id, file_path),
             CloseView { view_id } => self.do_close_view(view_id),
             ModifyUserConfig { domain, changes } => self.do_modify_user_config(domain, changes),
@@ -328,7 +328,7 @@ impl CoreState {
             //TODO: make file_path be an Option<PathBuf>
             //TODO: make this a notification
             NewView { file_path } => self.do_new_view(file_path.map(PathBuf::from)),
-            Edit(::rpc::EditCommand { view_id, cmd }) => self.do_edit_sync(view_id, cmd),
+            Edit(crate::rpc::EditCommand { view_id, cmd }) => self.do_edit_sync(view_id, cmd),
             //TODO: why is this a request?? make a notification?
             GetConfig { view_id } => self.do_get_config(view_id).map(|c| json!(c)),
             DebugGetContents { view_id } => self.do_get_contents(view_id).map(|c| json!(c)),

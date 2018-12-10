@@ -19,11 +19,11 @@ use std::cmp::min;
 use memchr::{memchr, memchr2, memchr3};
 
 use regex::Regex;
-use rope::BaseMetric;
-use rope::LinesRaw;
-use rope::RopeInfo;
+use crate::rope::BaseMetric;
+use crate::rope::LinesRaw;
+use crate::rope::RopeInfo;
 use std::str;
-use tree::Cursor;
+use crate::tree::Cursor;
 
 /// The result of a [`find`][find] operation.
 ///
@@ -338,8 +338,8 @@ mod tests {
     use super::CaseMatching::{CaseInsensitive, Exact};
     use super::*;
     use regex::RegexBuilder;
-    use rope::Rope;
-    use tree::Cursor;
+    use crate::rope::Rope;
+    use crate::tree::Cursor;
 
     const REGEX_SIZE_LIMIT: usize = 1000000;
 

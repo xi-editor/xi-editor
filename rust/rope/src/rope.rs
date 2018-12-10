@@ -23,9 +23,9 @@ use std::str;
 use std::str::FromStr;
 use std::string::ParseError;
 
-use delta::{Delta, DeltaElement};
-use interval::{Interval, IntervalBounds};
-use tree::{Cursor, Leaf, Metric, Node, NodeInfo, TreeBuilder};
+use crate::delta::{Delta, DeltaElement};
+use crate::interval::{Interval, IntervalBounds};
+use crate::tree::{Cursor, Leaf, Metric, Node, NodeInfo, TreeBuilder};
 
 use bytecount;
 use memchr::{memchr, memrchr};
