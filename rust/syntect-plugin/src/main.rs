@@ -26,8 +26,8 @@ mod stackmap;
 use std::collections::HashMap;
 use std::ops::Range;
 use std::path::Path;
-use std::sync::MutexGuard;
 use std::str::FromStr;
+use std::sync::MutexGuard;
 
 use xi_core::plugin_rpc::ScopeSpan;
 use xi_core::{ConfigTable, LanguageId, ViewId};
@@ -219,10 +219,12 @@ impl<'a> PluginState {
     pub fn indent_lines(&mut self, view: &mut MyView, syntax_set: &SyntaxSet) {
         for (line_of_edit, edit_type) in self.indentation_state.to_vec().into_iter() {
             match edit_type {
-                EditType::Newline => self.autoindent_line(view, syntax_set, line_of_edit)
+                EditType::Newline => self
+                    .autoindent_line(view, syntax_set, line_of_edit)
                     .expect("auto-indent error on newline"),
-                EditType::Insert => self.check_indent_active_edit(view, syntax_set, line_of_edit)
-                    .expect("auto-indent error on insert")
+                EditType::Insert => self
+                    .check_indent_active_edit(view, syntax_set, line_of_edit)
+                    .expect("auto-indent error on insert"),
             };
         }
 
@@ -232,10 +234,14 @@ impl<'a> PluginState {
     /// Returns the metadata relevant to the given line. Computes the syntax
     /// for this line (during normal editing this is only likely for line 0) if
     /// necessary; in general reuses the syntax state calculated for highlighting.
-    fn get_metadata(&mut self, view: &mut MyView, syntax_set: &'a SyntaxSet, line: usize) -> Option<ScopedMetadata<'a>> {
+    fn get_metadata(
+        &mut self,
+        view: &mut MyView,
+        syntax_set: &'a SyntaxSet,
+        line: usize,
+    ) -> Option<ScopedMetadata<'a>> {
         let text = view.get_line(line).unwrap_or("");
-        let scope = self.compute_syntax(&text, None, syntax_set, false)
-            .map(|(_, scope)| scope)?;
+        let scope = self.compute_syntax(&text, None, syntax_set, false).map(|(_, scope)| scope)?;
         Some(syntax_set.metadata().metadata_for_scope(scope.as_slice()))
     }
 
@@ -244,7 +250,9 @@ impl<'a> PluginState {
         for region in delta.iter_inserts() {
             let line_of_edit = view.line_of_offset(region.new_offset).unwrap();
             match edit_type {
-                EditType::Newline => self.indentation_state.push((line_of_edit + 1, EditType::Newline)),
+                EditType::Newline => {
+                    self.indentation_state.push((line_of_edit + 1, EditType::Newline))
+                }
                 EditType::Insert => {
                     let range = region.new_offset..region.new_offset + region.len;
                     let is_whitespace = {
@@ -262,7 +270,12 @@ impl<'a> PluginState {
 
     /// Called when freshly computing a line's indent level, such as after
     /// a newline, or when re-indenting a block.
-    fn autoindent_line(&mut self, view: &mut MyView, syntax_set: &SyntaxSet, line: usize) -> Result<(), Error> {
+    fn autoindent_line(
+        &mut self,
+        view: &mut MyView,
+        syntax_set: &SyntaxSet,
+        line: usize,
+    ) -> Result<(), Error> {
         let _t = trace_block("Syntect::autoindent", &["syntect"]);
         debug_assert!(line > 0);
         let tab_size = view.get_config().tab_size;
@@ -286,7 +299,12 @@ impl<'a> PluginState {
 
     /// Called when actively editing a line; chiefly checks for whether or not
     /// the current line should be de-indented, such as after a closing '}'.
-    fn check_indent_active_edit(&mut self, view: &mut MyView, syntax_set: &SyntaxSet, line: usize) -> Result<(), Error> {
+    fn check_indent_active_edit(
+        &mut self,
+        view: &mut MyView,
+        syntax_set: &SyntaxSet,
+        line: usize,
+    ) -> Result<(), Error> {
         let _t = trace_block("Syntect::check_indent_active_line", &["syntect"]);
         if line == 0 {
             return Ok(());
@@ -335,25 +353,37 @@ impl<'a> PluginState {
 
     /// Test whether the indent level should be increased for this line,
     /// by testing the _previous_ line against a regex.
-    fn test_increase(&mut self, view: &mut MyView, syntax_set: &SyntaxSet, line: usize) -> Result<bool, Error> {
+    fn test_increase(
+        &mut self,
+        view: &mut MyView,
+        syntax_set: &SyntaxSet,
+        line: usize,
+    ) -> Result<bool, Error> {
         debug_assert!(line > 0, "increasing indent requires a previous line");
         let prev_line = match self.previous_nonblank_line(view, line) {
             Ok(Some(l)) => l,
             Ok(None) => return Ok(false),
             Err(e) => return Err(e),
         };
-        let metadata = self.get_metadata(view, syntax_set, prev_line).ok_or_else(|| Error::PeerDisconnect)?;
+        let metadata =
+            self.get_metadata(view, syntax_set, prev_line).ok_or_else(|| Error::PeerDisconnect)?;
         let line = view.get_line(prev_line)?;
         Ok(metadata.increase_indent(line))
     }
 
     /// Test whether the indent level for this line should be decreased, by
     /// checking this line against a regex.
-    fn test_decrease(&mut self, view: &mut MyView, syntax_set: &SyntaxSet, line: usize) -> Result<bool, Error> {
+    fn test_decrease(
+        &mut self,
+        view: &mut MyView,
+        syntax_set: &SyntaxSet,
+        line: usize,
+    ) -> Result<bool, Error> {
         if line == 0 {
             return Ok(false);
         }
-        let metadata = self.get_metadata(view, syntax_set, line).ok_or_else(|| Error::PeerDisconnect)?;
+        let metadata =
+            self.get_metadata(view, syntax_set, line).ok_or_else(|| Error::PeerDisconnect)?;
         let line = view.get_line(line)?;
         Ok(metadata.decrease_indent(line))
     }
@@ -385,7 +415,12 @@ impl<'a> PluginState {
             .sum()
     }
 
-    fn toggle_comment(&mut self, view: &mut MyView, syntax_set: &SyntaxSet, lines: &[(usize, usize)]) {
+    fn toggle_comment(
+        &mut self,
+        view: &mut MyView,
+        syntax_set: &SyntaxSet,
+        lines: &[(usize, usize)],
+    ) {
         let _t = trace_block("Syntect::toggle_comment", &["syntect"]);
         if lines.is_empty() {
             return;
@@ -415,19 +450,19 @@ impl<'a> PluginState {
         let comment_str = match self
             .get_metadata(view, syntax_set, line_range.start)
             .and_then(|s| s.line_comment().map(|s| s.to_owned()))
-            {
-                Some(s) => s,
-                None => return,
-            };
+        {
+            Some(s) => s,
+            None => return,
+        };
 
         match view
             .get_line(line_range.start)
             .map(|l| comment_str.trim() == l.trim() || l.trim().starts_with(&comment_str))
-            {
-                Ok(true) => self.remove_comment_marker(view, builder, line_range, &comment_str),
-                Ok(false) => self.insert_comment_marker(view, builder, line_range, &comment_str),
-                Err(e) => eprintln!("toggle comment error: {:?}", e),
-            }
+        {
+            Ok(true) => self.remove_comment_marker(view, builder, line_range, &comment_str),
+            Ok(false) => self.insert_comment_marker(view, builder, line_range, &comment_str),
+            Err(e) => eprintln!("toggle comment error: {:?}", e),
+        }
     }
 
     fn insert_comment_marker(
@@ -446,7 +481,8 @@ impl<'a> PluginState {
                     .ok()
                     .and_then(|line| line.as_bytes().iter().position(|b| *b != b' ' && *b != b'\t'))
                     .unwrap_or(0)
-            }).min()
+            })
+            .min()
             .unwrap_or(0);
 
         let comment_txt = Rope::from(&comment_str);
