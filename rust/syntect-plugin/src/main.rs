@@ -47,7 +47,7 @@ const INDENTATION_PRIORITY: u64 = 100;
 type EditBuilder = DeltaBuilder<RopeInfo>;
 
 /// Edit types that will get processed.
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Copy)]
 pub enum EditType {
     Insert,
     Newline,
@@ -217,7 +217,7 @@ impl<'a> PluginState {
     }
 
     pub fn indent_lines(&mut self, view: &mut MyView, syntax_set: &SyntaxSet) {
-        for (line_of_edit, edit_type) in self.indentation_state.to_vec().into_iter() {
+        for (line_of_edit, edit_type) in self.indentation_state.to_vec() {
             match edit_type {
                 EditType::Newline => self
                     .autoindent_line(view, syntax_set, line_of_edit)
