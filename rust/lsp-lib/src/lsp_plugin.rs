@@ -18,16 +18,16 @@ use crate::conversion_utils::*;
 use crate::language_server_client::LanguageServerClient;
 use crate::lsp_types::*;
 use crate::result_queue::ResultQueue;
+use crate::types::{Config, LanguageResponseError, LspResponse};
+use crate::utils::*;
+use crate::xi_core::ConfigTable;
+use crate::xi_core::ViewId;
 use serde_json;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::Mutex;
-use crate::types::{Config, LanguageResponseError, LspResponse};
 use url::Url;
-use crate::utils::*;
-use crate::xi_core::ConfigTable;
-use crate::xi_core::ViewId;
 use xi_plugin_lib::{ChunkCache, CoreProxy, Plugin, View};
 use xi_rope::rope::RopeDelta;
 
@@ -218,7 +218,8 @@ impl LspPlugin {
                 } else {
                     None
                 }
-            }).and_then(|language_server_identifier| {
+            })
+            .and_then(|language_server_identifier| {
                 let contains =
                     self.language_server_clients.contains_key(&language_server_identifier);
 

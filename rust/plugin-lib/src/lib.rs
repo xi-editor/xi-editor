@@ -38,9 +38,9 @@ mod view;
 use std::io;
 use std::path::Path;
 
-use serde_json::Value;
 use crate::xi_core::plugin_rpc::{GetDataResponse, TextUnit};
 use crate::xi_core::{ConfigTable, LanguageId};
+use serde_json::Value;
 use xi_rope::interval::IntervalBounds;
 use xi_rope::RopeDelta;
 use xi_rpc::{ReadError, RpcLoop};

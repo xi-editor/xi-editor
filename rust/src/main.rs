@@ -107,7 +107,8 @@ fn setup_logging(logging_path: Option<&Path>) -> Result<(), fern::InitError> {
                 record.level(),
                 message,
             ))
-        }).level(level_filter)
+        })
+        .level(level_filter)
         .chain(io::stderr());
 
     if let Some(logging_file_path) = logging_path {

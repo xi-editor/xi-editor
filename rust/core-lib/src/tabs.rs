@@ -56,11 +56,11 @@ use crate::width_cache::WidthCache;
 use crate::WeakXiCore;
 
 #[cfg(feature = "notify")]
+use crate::watcher::{FileWatcher, WatchToken};
+#[cfg(feature = "notify")]
 use notify::DebouncedEvent;
 #[cfg(feature = "notify")]
 use std::ffi::OsStr;
-#[cfg(feature = "notify")]
-use crate::watcher::{FileWatcher, WatchToken};
 
 /// ViewIds are the primary means of routing messages between
 /// xi-core and a client view.

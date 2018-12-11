@@ -189,9 +189,10 @@ impl LineCacheShadow {
     }
 
     pub fn needs_render(&self, plan: &RenderPlan) -> bool {
-        self.dirty || self
-            .iter_with_plan(plan)
-            .any(|seg| seg.tactic == RenderTactic::Render && seg.validity != ALL_VALID)
+        self.dirty
+            || self
+                .iter_with_plan(plan)
+                .any(|seg| seg.tactic == RenderTactic::Render && seg.validity != ALL_VALID)
     }
 
     pub fn spans(&self) -> &[Span] {

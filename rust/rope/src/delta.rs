@@ -18,11 +18,11 @@
 
 use crate::interval::{Interval, IntervalBounds};
 use crate::multiset::{CountMatcher, Subset, SubsetBuilder};
+use crate::tree::{Node, NodeInfo, TreeBuilder};
 use std::cmp::min;
 use std::fmt;
 use std::ops::Deref;
 use std::slice;
-use crate::tree::{Node, NodeInfo, TreeBuilder};
 
 #[derive(Clone)]
 pub enum DeltaElement<N: NodeInfo> {
@@ -453,7 +453,8 @@ impl<N: NodeInfo> InsertDelta<N> {
                     DeltaElement::Copy(m.doc_index_to_subset(b), m.doc_index_to_subset(e))
                 }
                 DeltaElement::Insert(ref n) => DeltaElement::Insert(n.clone()),
-            }).collect();
+            })
+            .collect();
         InsertDelta(Delta { els, base_len: xform.len_after_delete() })
     }
 
@@ -695,8 +696,8 @@ mod tests {
     use crate::delta::{Builder, Delta, DeltaElement, DeltaRegion};
     use crate::interval::Interval;
     use crate::rope::{Rope, RopeInfo};
-    use serde_json;
     use crate::test_helpers::find_deletions;
+    use serde_json;
 
     const TEST_STR: &'static str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 

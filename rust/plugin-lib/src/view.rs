@@ -16,7 +16,9 @@ use serde::Deserialize;
 use serde_json::{self, Value};
 use std::path::{Path, PathBuf};
 
-use crate::xi_core::plugin_rpc::{GetDataResponse, PluginBufferInfo, PluginEdit, ScopeSpan, TextUnit};
+use crate::xi_core::plugin_rpc::{
+    GetDataResponse, PluginBufferInfo, PluginEdit, ScopeSpan, TextUnit,
+};
 use crate::xi_core::{BufferConfig, ConfigTable, LanguageId, PluginPid, ViewId};
 use xi_rope::interval::IntervalBounds;
 use xi_rope::RopeDelta;

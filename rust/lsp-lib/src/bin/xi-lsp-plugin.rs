@@ -41,7 +41,8 @@ fn init_logger() -> Result<(), fern::InitError> {
                 record.level(),
                 message
             ))
-        }).level(level_filter)
+        })
+        .level(level_filter)
         .chain(std::io::stderr())
         .chain(fern::log_file("xi-lsp-plugin.log")?)
         .apply()

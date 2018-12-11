@@ -21,10 +21,10 @@ use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use syntect::parsing::{SyntaxReference, SyntaxSet};
-use toml::Value;
 use crate::xi_core::plugin_manifest::*;
 use crate::xi_core::LanguageDefinition;
+use syntect::parsing::{SyntaxReference, SyntaxSet};
+use toml::Value;
 
 const OUT_FILE_NAME: &str = "generated_manifest.toml";
 

@@ -17,6 +17,7 @@ use crate::language_server_client::LanguageServerClient;
 use crate::lsp_types::*;
 use crate::parse_helper;
 use crate::result_queue::ResultQueue;
+use crate::types::Error;
 use std;
 use std::ffi::OsStr;
 use std::io::{BufReader, BufWriter};
@@ -25,7 +26,6 @@ use std::process::Command;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::Mutex;
-use crate::types::Error;
 use url::Url;
 use xi_plugin_lib::{Cache, ChunkCache, CoreProxy, Error as PluginLibError, View};
 use xi_rope::rope::RopeDelta;
@@ -198,7 +198,8 @@ pub fn start_new_server(
                         Err(err) => error!("Error occurred {:?}", err),
                     };
                 }
-            }).unwrap();
+            })
+            .unwrap();
     }
 
     Ok(language_server_client)

@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::types::LspResponse;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
-use crate::types::LspResponse;
 
 #[derive(Clone, Debug, Default)]
 pub struct ResultQueue(Arc<Mutex<VecDeque<(usize, LspResponse)>>>);
