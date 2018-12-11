@@ -20,15 +20,15 @@ use std::iter;
 
 use plugins::PluginId;
 use view::View;
-use xi_rope::{Interval, Rope};
 use xi_rope::spans::Spans;
+use xi_rope::{Interval, Rope};
 
 pub type AnnotationType = String;
 
 /// Annotation types used in core.
 pub enum CoreAnnotationType {
     Selection,
-    Find
+    Find,
 }
 
 impl CoreAnnotationType {
@@ -61,13 +61,9 @@ impl AnnotationSlice {
     pub fn new(
         annotation_type: AnnotationType,
         ranges: Vec<[usize; 4]>,
-        payloads: Option<Vec<Value>>
+        payloads: Option<Vec<Value>>,
     ) -> Self {
-        AnnotationSlice {
-            annotation_type: annotation_type,
-            ranges: ranges,
-            payloads: payloads,
-        }
+        AnnotationSlice { annotation_type, ranges, payloads }
     }
 
     /// Returns json representation.
@@ -90,24 +86,28 @@ pub trait ToAnnotation {
 
 /// All the annotations for a given view
 pub struct AnnotationStore {
-    _store: HashMap<PluginId, Vec<Annotations>>
+    _store: HashMap<PluginId, Vec<Annotations>>,
 }
 
 impl AnnotationStore {
     pub fn new() -> Self {
-        AnnotationStore {
-            _store: HashMap::new(),
-        }
+        AnnotationStore { _store: HashMap::new() }
     }
 
     /// Applies an update from a plugin to a set of annotations
-    pub fn update(&mut self, _source: PluginId, _type_id: AnnotationType, _iv: Interval, _items: Spans<Value>) {
+    pub fn update(
+        &mut self,
+        _source: PluginId,
+        _type_id: AnnotationType,
+        _iv: Interval,
+        _items: Spans<Value>,
+    ) {
         // todo
     }
 
     /// Returns an iterator which produces, for each type of annotation,
     /// those annotations which intersect the given interval.
-    pub fn iter_range<'c>(&'c self, _iv: Interval) -> impl Iterator<Item=AnnotationSlice> + 'c {
+    pub fn iter_range<'c>(&'c self, _iv: Interval) -> impl Iterator<Item = AnnotationSlice> + 'c {
         // todo
         iter::empty()
     }

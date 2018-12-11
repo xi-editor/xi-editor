@@ -15,8 +15,8 @@
 
 use std::cell::RefCell;
 use std::cmp::{max, min};
-use std::ops::Range;
 use std::iter;
+use std::ops::Range;
 
 use serde_json::Value;
 
@@ -784,10 +784,10 @@ impl View {
         let start_off = self.offset_of_line(text, self.first_line);
         let end_off = self.offset_of_line(text, self.first_line + self.height + 1);
         let visible_range = Interval::new(start_off, end_off);
-        let selection_annotations = self.selection.get_annotations(visible_range, &self, text).to_json();
-        let find_annotations = self.find.iter().map(|ref f|
-            f.get_annotations(visible_range, &self, text).to_json()
-        );
+        let selection_annotations =
+            self.selection.get_annotations(visible_range, &self, text).to_json();
+        let find_annotations =
+            self.find.iter().map(|ref f| f.get_annotations(visible_range, &self, text).to_json());
         let plugin_annotations = self.annotations.iter_range(visible_range).map(|a| a.to_json());
 
         let annotations = iter::once(selection_annotations)
