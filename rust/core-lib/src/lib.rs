@@ -14,25 +14,22 @@
 
 //! The main library for xi-core.
 
-#![cfg_attr(
-    feature = "cargo-clippy",
-    allow(
-        boxed_local,
-        cast_lossless,
-        collapsible_if,
-        let_and_return,
-        map_entry,
-        match_as_ref,
-        match_bool,
-        needless_pass_by_value,
-        new_without_default,
-        new_without_default_derive,
-        or_fun_call,
-        ptr_arg,
-        too_many_arguments,
-        unreadable_literal,
-        get_unwrap,
-    )
+#![allow(
+    clippy::boxed_local,
+    clippy::cast_lossless,
+    clippy::collapsible_if,
+    clippy::let_and_return,
+    clippy::map_entry,
+    clippy::match_as_ref,
+    clippy::match_bool,
+    clippy::needless_pass_by_value,
+    clippy::new_without_default,
+    clippy::new_without_default_derive,
+    clippy::or_fun_call,
+    clippy::ptr_arg,
+    clippy::too_many_arguments,
+    clippy::unreadable_literal,
+    clippy::get_unwrap
 )]
 
 #[macro_use]

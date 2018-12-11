@@ -214,7 +214,8 @@ impl ScopeLayer {
                         false
                     }
                     _ => true,
-                }).map(|s| s.unwrap())
+                })
+                .map(|s| s.unwrap())
                 .collect::<Vec<_>>();
             stacks.push(scopes);
         }
@@ -251,7 +252,7 @@ impl ScopeLayer {
 
             // apply the stack, generating children as needed.
             for i in upper_bound_of_last..stack.len() {
-                let style_mod = highlighter.style_mod_for_stack(&stack[0..i + 1]);
+                let style_mod = highlighter.style_mod_for_stack(&stack[0..=i]);
                 base_style_mod = base_style_mod.apply(style_mod);
             }
 

@@ -21,7 +21,7 @@
 //!
 //! Because these changes make the protocol not fully compliant with the spec,
 //! the `"jsonrpc"` member is omitted from request and response objects.
-#![cfg_attr(feature = "cargo-clippy", allow(boxed_local, or_fun_call))]
+#![allow(clippy::boxed_local, clippy::or_fun_call)]
 
 #[macro_use]
 extern crate serde_json;
@@ -338,7 +338,8 @@ impl<W: Write + Send> RpcLoop<W> {
                     }
                 }
             }
-        }).unwrap();
+        })
+        .unwrap();
 
         if exit.is_disconnect() {
             Ok(())

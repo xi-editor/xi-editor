@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 #![cfg_attr(feature = "benchmarks", feature(test))]
-#![cfg_attr(
-    feature = "cargo-clippy",
-    allow(if_same_then_else, needless_bool, needless_pass_by_value, ptr_arg)
+#![allow(
+    clippy::if_same_then_else,
+    clippy::needless_bool,
+    clippy::needless_pass_by_value,
+    clippy::ptr_arg
 )]
 
 extern crate xi_trace;

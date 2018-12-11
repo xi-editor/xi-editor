@@ -14,17 +14,14 @@
 
 //! Trees for text.
 
-#![cfg_attr(
-    feature = "cargo-clippy",
-    allow(
-        collapsible_if,
-        len_without_is_empty,
-        many_single_char_names,
-        needless_range_loop,
-        new_without_default_derive,
-        should_implement_trait,
-        wrong_self_convention,
-    )
+#![allow(
+    clippy::collapsible_if,
+    clippy::len_without_is_empty,
+    clippy::many_single_char_names,
+    clippy::needless_range_loop,
+    clippy::new_without_default_derive,
+    clippy::should_implement_trait,
+    clippy::wrong_self_convention
 )]
 
 extern crate bytecount;

@@ -390,7 +390,8 @@ impl ChunkCache {
                     x if x > start && x <= end => None,
                     x if x > end => Some(x - del_size),
                     hmm => panic!("invariant violated {} {} {}?", start, end, hmm),
-                }).collect();
+                })
+                .collect();
         } else {
             self.line_offsets.iter_mut().for_each(|off| {
                 if *off >= end {

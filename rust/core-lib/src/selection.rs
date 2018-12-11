@@ -215,7 +215,8 @@ impl Selection {
             let new_region = SelRegion::new(
                 transformer.transform(region.start, start_after),
                 transformer.transform(region.end, end_after),
-            ).with_affinity(region.affinity);
+            )
+            .with_affinity(region.affinity);
             result.add_region(new_region);
         }
         result

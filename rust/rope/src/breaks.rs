@@ -16,9 +16,9 @@
 //! storing the result of line breaking.
 
 use crate::interval::Interval;
+use crate::tree::{Leaf, Metric, Node, NodeInfo, TreeBuilder};
 use std::cmp::min;
 use std::mem;
-use crate::tree::{Leaf, Metric, Node, NodeInfo, TreeBuilder};
 
 /// A set of indexes. A motivating use is storing line breaks.
 pub type Breaks = Node<BreaksInfo>;

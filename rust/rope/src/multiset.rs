@@ -18,9 +18,9 @@ use std::cmp;
 
 // These two imports are for the `apply` method only.
 use crate::interval::Interval;
+use crate::tree::{Node, NodeInfo, TreeBuilder};
 use std::fmt;
 use std::slice;
-use crate::tree::{Node, NodeInfo, TreeBuilder};
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 struct Segment {

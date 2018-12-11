@@ -171,7 +171,8 @@ impl Recorder {
                 }
 
                 true
-            }).collect::<Vec<EventDomain>>()
+            })
+            .collect::<Vec<EventDomain>>()
             .into_iter()
             .rev()
             .collect();
