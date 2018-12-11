@@ -18,7 +18,7 @@ use std::cmp::{max, min};
 use std::fmt;
 use std::ops::Deref;
 
-use crate::annotations::{CoreAnnotationType, Annotation, AnnotationSlice, ToAnnotation};
+use crate::annotations::{CoreAnnotationType, AnnotationSlice, ToAnnotation};
 use crate::index_set::remove_n_at;
 use create::view::View;
 use xi_rope::{Interval, RopeDelta, Transformer};
@@ -239,11 +239,14 @@ impl Deref for Selection {
 impl ToAnnotation for Selection {
     fn get_annotations(&self, interval: Interval, view: &View, text: &Rope) -> AnnotationSlice {
         let regions = self.regions_in_range(interval.start(), interval.end());
-        let ranges = regions.iter().map(|region| {
-            let (start_line, start_col) = view.offset_to_line_col(text, region.min());
-            let (end_line, end_col) = view.offset_to_line_col(text, region.max());
-            [start_line, start_col, end_line, end_col]
-        }).collect::<Vec<[usize; 4]>>();
+        let ranges = regions
+            .iter()
+            .map(|region| {
+                let (start_line, start_col) = view.offset_to_line_col(text, region.min());
+                let (end_line, end_col) = view.offset_to_line_col(text, region.max());
+                [start_line, start_col, end_line, end_col]
+            })
+            .collect::<Vec<[usize; 4]>>();
 
         AnnotationSlice::new(CoreAnnotationType::Selection.as_type(), ranges, None)
     }
