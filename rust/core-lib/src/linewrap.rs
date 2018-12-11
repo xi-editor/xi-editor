@@ -14,9 +14,11 @@
 
 //! Compute line wrapping breaks for text.
 
+use std::cmp::Ordering;
 use std::ops::Range;
 
 use xi_rope::breaks::{BreakBuilder, Breaks, BreaksBaseMetric, BreaksInfo, BreaksMetric};
+use xi_rope::rope::BaseMetric;
 use xi_rope::spans::Spans;
 use xi_rope::{Cursor, LinesMetric, Rope, RopeDelta, RopeInfo};
 use xi_trace::trace_block;
@@ -404,10 +406,20 @@ impl<'a> Iterator for VisualLines<'a> {
 
 /// A cursor over both hard and soft breaks. Currently this is either/or,
 /// but eventually soft will be soft only, and this will interleave them.
+///
+/// # Invariants:
+///
+/// `self.offset` is always a valid break in one of the cursors, unless
+/// at 0 or EOF.
+///
+/// `self.offset == self.text.pos().min(self.soft.pos())`.
 struct MergedBreaks<'a> {
     text: Cursor<'a, RopeInfo>,
     soft: Cursor<'a, BreaksInfo>,
     offset: usize,
+    /// Starting from zero, how many calls to `next` to get to `self.offset`?
+    cur_line: usize,
+    total_lines: usize,
 }
 
 impl<'a> Iterator for MergedBreaks<'a> {
@@ -429,33 +441,82 @@ impl<'a> Iterator for MergedBreaks<'a> {
         if self.offset == prev_off || eof_without_newline {
             None
         } else {
+            self.cur_line += 1;
             Some(self.offset)
         }
     }
 }
 
+// arrived at this by just trying out a bunch of values ¯\_(ツ)_/¯
+/// how far away a line can be before we switch to a binary search
+const MAX_LINEAR_DIST: usize = 20;
+
 impl<'a> MergedBreaks<'a> {
     fn new(text: &'a Rope, breaks: &'a Breaks, offset: usize) -> Self {
         debug_assert_eq!(text.len(), breaks.len());
+        let cur_line = merged_line_of_offset(text, breaks, offset);
         let text = Cursor::new(text, offset);
         let soft = Cursor::new(breaks, offset);
-        MergedBreaks { text, soft, offset }
+        let total_lines =
+            text.root().measure::<LinesMetric>() + soft.root().measure::<BreaksMetric>();
+        MergedBreaks { text, soft, offset, cur_line, total_lines }
     }
 
+    /// Sets the `self.offset` to the first valid break immediately at or preceding `offset`,
+    /// and restores invariants.
     fn set_offset(&mut self, offset: usize) {
-        self.offset = offset;
         self.text.set(offset);
         self.soft.set(offset);
+        self.text.at_or_prev::<LinesMetric>();
+        self.soft.at_or_prev::<BreaksMetric>();
+
+        // self.offset should be at the first valid break immediately preceding `offset`, or 0.
+        // the position of the non-break cursor should be > than that of the break cursor, or EOF.
+        match self.text.pos().cmp(&self.soft.pos()) {
+            Ordering::Less => {
+                self.text.next::<LinesMetric>();
+            }
+            Ordering::Greater => {
+                self.soft.next::<BreaksMetric>();
+            }
+            Ordering::Equal => assert!(self.text.pos() == 0),
+        }
+
+        self.offset = self.text.pos().min(self.soft.pos());
+        self.cur_line = merged_line_of_offset(self.text.root(), self.soft.root(), self.offset);
     }
 
     fn offset_of_line(&mut self, line: usize) -> usize {
-        //FIXME: this is just a linear scan right now, should be doing some fancy
-        // binary or interpolation search
-        if line == 0 {
-            return 0;
-        };
-        self.set_offset(0);
-        self.nth(line - 1).unwrap_or(self.text.total_len())
+        match line {
+            0 => 0,
+            l if l >= self.total_lines => self.text.total_len(),
+            l if l == self.cur_line => self.offset,
+            l if l > self.cur_line && l - self.cur_line < MAX_LINEAR_DIST => {
+                self.offset_of_line_linear(l)
+            }
+            other => self.offset_of_line_bsearch(other),
+        }
+    }
+
+    fn offset_of_line_linear(&mut self, line: usize) -> usize {
+        assert!(line > self.cur_line);
+        let dist = line - self.cur_line;
+        self.nth(dist - 1).unwrap_or(self.text.total_len())
+    }
+
+    fn offset_of_line_bsearch(&mut self, line: usize) -> usize {
+        let mut range = 0..self.text.total_len();
+        loop {
+            let pivot = range.start + (range.end - range.start) / 2;
+            self.set_offset(pivot);
+
+            match self.cur_line {
+                l if l == line => break self.offset,
+                l if l > line => range = range.start..pivot,
+                l if line - l > MAX_LINEAR_DIST => range = pivot..range.end,
+                _else => break self.offset_of_line_linear(line),
+            }
+        }
     }
 
     fn eof_without_newline(&self) -> bool {
@@ -464,19 +525,27 @@ impl<'a> MergedBreaks<'a> {
     }
 }
 
+fn merged_line_of_offset(text: &Rope, soft: &Breaks, offset: usize) -> usize {
+    text.convert_metrics::<BaseMetric, LinesMetric>(offset)
+        + soft.convert_metrics::<BreaksBaseMetric, BreaksMetric>(offset)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::width_cache::CodepointMono;
     use std::borrow::Cow;
+    use std::iter;
+
+    fn make_lines(text: &Rope, width: f64) -> Lines {
+        let mut width_cache = WidthCache::new();
+        let wrap = WrapWidth::Bytes(width as usize);
+        let breaks = rewrap_all(text, &mut width_cache, &CodepointMono, width);
+        Lines { breaks, wrap }
+    }
 
     fn debug_breaks<'a>(text: &'a Rope, width: f64) -> Vec<Cow<'a, str>> {
-        let mut width_cache = WidthCache::new();
-        let breaks = match width {
-            w if w == 0. => Breaks::new_no_break(text.len()),
-            w => rewrap_all(text, &mut width_cache, &CodepointMono, w),
-        };
-        let lines = Lines { breaks, wrap: WrapWidth::Bytes(width as usize) };
+        let lines = make_lines(text, width);
         let result = lines.iter_lines(text, 0).map(|l| text.slice_to_cow(l)).collect();
         result
     }
@@ -561,5 +630,92 @@ mod tests {
         let text: Rope = "hello".into();
         let result = debug_breaks(&text, 4.0);
         assert_eq!(result, vec!["hello"]);
+    }
+
+    #[test]
+    fn merged_offset() {
+        let text: Rope = "a quite\nshort text".into();
+        let mut builder = BreakBuilder::new();
+        builder.add_break(2);
+        builder.add_no_break(text.len() - 2);
+        let breaks = builder.build();
+        assert_eq!(merged_line_of_offset(&text, &breaks, 0), 0);
+        assert_eq!(merged_line_of_offset(&text, &breaks, 1), 0);
+        assert_eq!(merged_line_of_offset(&text, &breaks, 2), 1);
+        assert_eq!(merged_line_of_offset(&text, &breaks, 5), 1);
+        assert_eq!(merged_line_of_offset(&text, &breaks, 5), 1);
+        assert_eq!(merged_line_of_offset(&text, &breaks, 9), 2);
+        assert_eq!(merged_line_of_offset(&text, &breaks, text.len()), 2);
+
+        let text: Rope = "a quite\nshort tex\n".into();
+        // trailing newline increases total count
+        assert_eq!(merged_line_of_offset(&text, &breaks, text.len()), 3);
+    }
+
+    #[test]
+    fn bsearch_equivelance() {
+        let text: Rope =
+            iter::repeat("this is a line with some text in it, which is not unusual\n")
+                .take(1000)
+                .collect::<String>()
+                .into();
+        let mut width_cache = WidthCache::new();
+        let breaks = rewrap_all(&text, &mut width_cache, &CodepointMono, 30.);
+
+        let mut linear = MergedBreaks::new(&text, &breaks, 0);
+        let mut binary = MergedBreaks::new(&text, &breaks, 0);
+
+        // skip zero because these two impls don't handle edge cases
+        for i in 1..1000 {
+            linear.set_offset(0);
+            binary.set_offset(0);
+            assert_eq!(
+                linear.offset_of_line_linear(i),
+                binary.offset_of_line_bsearch(i),
+                "line {}",
+                i
+            );
+        }
+    }
+    #[test]
+    fn set_offset() {
+        let text: Rope = "aaaa\nbb bb cc\ncc dddd eeee ff\nff gggg".into();
+        let lines = make_lines(&text, 2.);
+        let mut merged = MergedBreaks::new(&text, &lines.breaks, 0);
+
+        let check_props = |m: &MergedBreaks, line, off, softpos, hardpos| {
+            assert_eq!(m.cur_line, line);
+            assert_eq!(m.offset, off);
+            assert_eq!(m.soft.pos(), softpos);
+            assert_eq!(m.text.pos(), hardpos);
+        };
+        merged.next();
+        check_props(&merged, 1, 5, 8, 5);
+        merged.set_offset(0);
+        check_props(&merged, 0, 0, 0, 0);
+        merged.set_offset(5);
+        check_props(&merged, 1, 5, 8, 5);
+        merged.set_offset(0);
+        merged.set_offset(6);
+        check_props(&merged, 1, 5, 8, 5);
+        merged.set_offset(9);
+        check_props(&merged, 2, 8, 8, 14);
+        merged.set_offset(text.len());
+        check_props(&merged, 10, 37, 37, 37);
+        merged.set_offset(text.len() - 1);
+        check_props(&merged, 9, 33, 33, 37);
+    }
+
+    #[test]
+    fn test_break_at_linear_transition() {
+        // do we handle the break at MAX_LINEAR_DIST correctly?
+        let text = "a b c d e f g h i j k l m n o p q r s t u v w x ".into();
+        let lines = make_lines(&text, 1.);
+
+        for offset in 0..text.len() {
+            let line = lines.visual_line_of_offset(&text, offset);
+            let line_offset = lines.offset_of_visual_line(&text, line);
+            assert!(line_offset <= offset, "{} <= {} L{} O{}", line_offset, offset, line, offset);
+        }
     }
 }
