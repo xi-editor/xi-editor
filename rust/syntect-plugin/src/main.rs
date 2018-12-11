@@ -481,8 +481,7 @@ impl<'a> PluginState {
                     .ok()
                     .and_then(|line| line.as_bytes().iter().position(|b| *b != b' ' && *b != b'\t'))
                     .unwrap_or(0)
-            })
-            .min()
+            }).min()
             .unwrap_or(0);
 
         let comment_txt = Rope::from(&comment_str);
