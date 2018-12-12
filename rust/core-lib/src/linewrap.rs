@@ -22,7 +22,7 @@ use xi_rope::{Cursor, LinesMetric, Rope, RopeDelta, RopeInfo};
 use xi_trace::trace_block;
 use xi_unicode::LineBreakLeafIter;
 
-use client::Client;
+use crate::client::Client;
 use crate::styles::{Style, N_RESERVED_STYLES};
 use crate::width_cache::{CodepointMono, Token, WidthCache, WidthMeasure};
 
@@ -424,10 +424,9 @@ impl<'a> Iterator for MergedBreaks<'a> {
         }?;
 
         // if we're at EOF, we only send a break if there's an actual trailing newline.
-        let eof_without_newline =
-            self.offset > 0
-                && self.offset == self.text.total_len()
-                && self.text.get_leaf().map(|(l, _)| l.as_bytes()[l.len() - 1] != b'\n').unwrap();
+        let eof_without_newline = self.offset > 0
+            && self.offset == self.text.total_len()
+            && self.text.get_leaf().map(|(l, _)| l.as_bytes()[l.len() - 1] != b'\n').unwrap();
         if self.offset == prev_off || eof_without_newline {
             None
         } else {
@@ -449,6 +448,7 @@ impl<'a> MergedBreaks<'a> {
 mod tests {
     use super::*;
     use crate::width_cache::CodepointMono;
+    use std::borrow::Cow;
 
     fn debug_breaks<'a>(text: &'a Rope, width: f64) -> Vec<Cow<'a, str>> {
         let mut result = Vec::new();
