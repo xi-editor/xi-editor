@@ -49,11 +49,10 @@ pub struct EmptyStruct {}
 /// The `close_view` command:
 ///
 /// ```
-/// # #![feature(extern_crate_item_prelude)]
 /// # extern crate xi_core_lib as xi_core;
 /// extern crate serde_json;
 /// # fn main() {
-/// use xi_core::rpc::CoreNotification;
+/// use crate::xi_core::rpc::CoreNotification;
 ///
 /// let json = r#"{
 ///     "method": "close_view",
@@ -71,11 +70,10 @@ pub struct EmptyStruct {}
 /// The `client_started` command:
 ///
 /// ```
-/// # #![feature(extern_crate_item_prelude)]
 /// # extern crate xi_core_lib as xi_core;
 /// extern crate serde_json;
 /// # fn main() {
-/// use xi_core::rpc::CoreNotification;
+/// use crate::xi_core::rpc::CoreNotification;
 ///
 /// let json = r#"{
 ///     "method": "client_started",
@@ -113,11 +111,10 @@ pub enum CoreNotification {
     /// # Examples
     ///
     /// ```
-    /// # #![feature(extern_crate_item_prelude)]
     /// # extern crate xi_core_lib as xi_core;
     /// #[macro_use]
     /// extern crate serde_json;
-    /// use xi_core::rpc::*;
+    /// use crate::xi_core::rpc::*;
     /// # fn main() {
     /// let edit = EditCommand {
     ///     view_id: 1.into(),
@@ -153,11 +150,10 @@ pub enum CoreNotification {
     /// # Examples
     ///
     /// ```
-    /// # #![feature(extern_crate_item_prelude)]
     /// # extern crate xi_core_lib as xi_core;
     /// #[macro_use]
     /// extern crate serde_json;
-    /// use xi_core::rpc::*;
+    /// use crate::xi_core::rpc::*;
     /// # fn main() {
     /// let rpc = CoreNotification::Plugin(
     ///     PluginNotification::Start {
@@ -222,11 +218,10 @@ pub enum CoreNotification {
 /// The `new_view` command:
 ///
 /// ```
-/// # #![feature(extern_crate_item_prelude)]
 /// # extern crate xi_core_lib as xi_core;
 /// extern crate serde_json;
 /// # fn main() {
-/// use xi_core::rpc::CoreRequest;
+/// use crate::xi_core::rpc::CoreRequest;
 ///
 /// let json = r#"{
 ///     "method": "new_view",
@@ -272,11 +267,10 @@ pub enum CoreRequest {
 /// # Examples
 ///
 /// ```
-/// # #![feature(extern_crate_item_prelude)]
 /// # extern crate xi_core_lib as xi_core;
 /// extern crate serde_json;
 /// # fn main() {
-/// use xi_core::rpc::*;
+/// use crate::xi_core::rpc::*;
 ///
 /// let json = r#"{
 ///     "view_id": "view-id-1",
