@@ -356,7 +356,7 @@ impl fmt::Debug for Subset {
                     '+'
                 };
                 for _ in 0..s.len {
-                    r#try!(write!(f, "{}", chr));
+                    write!(f, "{}", chr)?;
                 }
             }
             Ok(())
