@@ -510,14 +510,15 @@ impl<'a> EventContext<'a> {
     }
 
     fn do_debug_toggle_comment(&mut self) {
-        let view = self.view.borrow();
         let ed = self.editor.borrow();
         let mut prev_range: Option<Range<usize>> = None;
         let mut line_ranges = Vec::new();
         // we send selection state to syntect in the form of a vec of line ranges,
         // so we combine overlapping selections to get the minimum set of ranges.
         for region in self.view.borrow().sel_regions().iter() {
-            let line_range = view.get_line_range(ed.get_buffer(), region);
+            let start = ed.get_buffer().line_of_offset(region.min());
+            let end = ed.get_buffer().line_of_offset(region.max()) + 1;
+            let line_range = start..end;
             let prev = prev_range.take();
             match (prev, line_range) {
                 (None, range) => prev_range = Some(range),
