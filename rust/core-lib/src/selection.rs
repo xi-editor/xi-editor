@@ -217,8 +217,7 @@ impl Selection {
             let new_region = SelRegion::new(
                 transformer.transform(region.start, start_after),
                 transformer.transform(region.end, end_after),
-            )
-            .with_affinity(region.affinity);
+            ).with_affinity(region.affinity);
             result.add_region(new_region);
         }
         result
@@ -245,8 +244,7 @@ impl ToAnnotation for Selection {
                 let (start_line, start_col) = view.offset_to_line_col(text, region.min());
                 let (end_line, end_col) = view.offset_to_line_col(text, region.max());
                 [start_line, start_col, end_line, end_col]
-            })
-            .collect::<Vec<[usize; 4]>>();
+            }).collect::<Vec<[usize; 4]>>();
 
         AnnotationSlice::new(CoreAnnotationType::Selection.as_type(), ranges, None)
     }
