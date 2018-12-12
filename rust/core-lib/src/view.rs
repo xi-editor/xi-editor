@@ -747,7 +747,8 @@ impl View {
                                     style_spans,
                                     start_line + i,
                                 )
-                            }).collect::<Vec<_>>();
+                            })
+                            .collect::<Vec<_>>();
                         ops.push(self.build_update_op("ins", Some(rendered_lines), seg.n));
                         b.add_span(seg.n, seg.our_line_num, line_cache_shadow::ALL_VALID);
                     }
