@@ -88,7 +88,7 @@ impl Lines {
                 text.offset_of_line(line)
             }
             _ => {
-                let mut cursor = MergedBreaks::new(text, &self.breaks, 0);
+                let mut cursor = MergedBreaks::new(text, &self.breaks);
                 cursor.offset_of_line(line)
             }
         }
@@ -101,8 +101,9 @@ impl Lines {
         text: &'a Rope,
         start_line: usize,
     ) -> impl Iterator<Item = VisualLine> + 'a {
-        let offset = self.offset_of_visual_line(text, start_line);
-        let cursor = MergedBreaks::new(text, &self.breaks, offset);
+        let mut cursor = MergedBreaks::new(text, &self.breaks);
+        let offset = cursor.offset_of_line(start_line);
+        cursor.set_offset(offset);
         VisualLines { offset, cursor, len: text.len(), eof: false }
     }
 
@@ -452,14 +453,13 @@ impl<'a> Iterator for MergedBreaks<'a> {
 const MAX_LINEAR_DIST: usize = 20;
 
 impl<'a> MergedBreaks<'a> {
-    fn new(text: &'a Rope, breaks: &'a Breaks, offset: usize) -> Self {
+    fn new(text: &'a Rope, breaks: &'a Breaks) -> Self {
         debug_assert_eq!(text.len(), breaks.len());
-        let cur_line = merged_line_of_offset(text, breaks, offset);
-        let text = Cursor::new(text, offset);
-        let soft = Cursor::new(breaks, offset);
+        let text = Cursor::new(text, 0);
+        let soft = Cursor::new(breaks, 0);
         let total_lines =
             text.root().measure::<LinesMetric>() + soft.root().measure::<BreaksMetric>();
-        MergedBreaks { text, soft, offset, cur_line, total_lines }
+        MergedBreaks { text, soft, offset: 0, cur_line: 0, total_lines }
     }
 
     /// Sets the `self.offset` to the first valid break immediately at or preceding `offset`,
@@ -662,8 +662,8 @@ mod tests {
         let mut width_cache = WidthCache::new();
         let breaks = rewrap_all(&text, &mut width_cache, &CodepointMono, 30.);
 
-        let mut linear = MergedBreaks::new(&text, &breaks, 0);
-        let mut binary = MergedBreaks::new(&text, &breaks, 0);
+        let mut linear = MergedBreaks::new(&text, &breaks);
+        let mut binary = MergedBreaks::new(&text, &breaks);
 
         // skip zero because these two impls don't handle edge cases
         for i in 1..1000 {
@@ -681,7 +681,7 @@ mod tests {
     fn set_offset() {
         let text: Rope = "aaaa\nbb bb cc\ncc dddd eeee ff\nff gggg".into();
         let lines = make_lines(&text, 2.);
-        let mut merged = MergedBreaks::new(&text, &lines.breaks, 0);
+        let mut merged = MergedBreaks::new(&text, &lines.breaks);
 
         let check_props = |m: &MergedBreaks, line, off, softpos, hardpos| {
             assert_eq!(m.cur_line, line);
@@ -717,5 +717,19 @@ mod tests {
             let line_offset = lines.offset_of_visual_line(&text, line);
             assert!(line_offset <= offset, "{} <= {} L{} O{}", line_offset, offset, line, offset);
         }
+    }
+
+    #[test]
+    fn iter_lines() {
+        let text: Rope = "aaaa\nbb bb cc\ncc dddd eeee ff\nff gggg".into();
+        let lines = make_lines(&text, 2.);
+        let r: Vec<_> = lines.iter_lines(&text, 0).take(2).map(|l| text.slice_to_cow(l)).collect();
+        assert_eq!(r, vec!["aaaa\n", "bb "]);
+
+        let r: Vec<_> = lines.iter_lines(&text, 1).take(2).map(|l| text.slice_to_cow(l)).collect();
+        assert_eq!(r, vec!["bb ", "bb "]);
+
+        let r: Vec<_> = lines.iter_lines(&text, 3).take(3).map(|l| text.slice_to_cow(l)).collect();
+        assert_eq!(r, vec!["cc\n", "cc ", "dddd "]);
     }
 }
