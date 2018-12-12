@@ -21,9 +21,9 @@ extern crate xi_trace;
 
 use std::{collections::HashMap, env, path::Path};
 
-use language::{plaintext::PlaintextParser, rust::RustParser};
-use parser::Parser;
-use statestack::State;
+use crate::language::{plaintext::PlaintextParser, rust::RustParser};
+use crate::parser::Parser;
+use crate::statestack::State;
 use xi_core_lib::{plugins::rpc::ScopeSpan, ConfigTable, LanguageId, ViewId};
 use xi_plugin_lib::{mainloop, Cache, Plugin, StateCache, View};
 use xi_rope::RopeDelta;

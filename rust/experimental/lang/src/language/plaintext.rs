@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use parser::Parser;
-use statestack::{Context, State};
-use ScopeId;
+use crate::parser::Parser;
+use crate::statestack::{Context, State};
+use crate::ScopeId;
 
 const PLAINTEXT_SOURCE_SCOPE: &[&str] = &["source.plaintext"];
 
