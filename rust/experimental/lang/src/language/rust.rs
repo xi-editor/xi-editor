@@ -16,10 +16,10 @@
 
 use std::io::{stdin, Read};
 
-use parser::Parser;
-use peg::*;
-use statestack::{Context, State};
-use ScopeId;
+use crate::parser::Parser;
+use crate::peg::*;
+use crate::statestack::{Context, State};
+use crate::ScopeId;
 
 /// See [this](https://github.com/sublimehq/Packages/blob/master/Rust/Rust.sublime-syntax)
 /// for reference.

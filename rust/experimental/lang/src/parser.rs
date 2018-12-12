@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use statestack::State;
-use ScopeId;
+use crate::statestack::State;
+use crate::ScopeId;
 
 /// Trait for abstracting over text parsing and [Scope] extraction
 pub trait Parser {

@@ -18,7 +18,6 @@
 //! the JSON-RPC protocol and the types here.
 //!
 //! [Serde]: https://serde.rs
-
 use std::path::PathBuf;
 
 use serde::de::{self, Deserialize, Deserializer};
@@ -50,6 +49,7 @@ pub struct EmptyStruct {}
 /// The `close_view` command:
 ///
 /// ```
+/// # #![feature(extern_crate_item_prelude)]
 /// # extern crate xi_core_lib as xi_core;
 /// extern crate serde_json;
 /// # fn main() {
@@ -71,6 +71,7 @@ pub struct EmptyStruct {}
 /// The `client_started` command:
 ///
 /// ```
+/// # #![feature(extern_crate_item_prelude)]
 /// # extern crate xi_core_lib as xi_core;
 /// extern crate serde_json;
 /// # fn main() {
@@ -112,6 +113,7 @@ pub enum CoreNotification {
     /// # Examples
     ///
     /// ```
+    /// # #![feature(extern_crate_item_prelude)]
     /// # extern crate xi_core_lib as xi_core;
     /// #[macro_use]
     /// extern crate serde_json;
@@ -151,6 +153,7 @@ pub enum CoreNotification {
     /// # Examples
     ///
     /// ```
+    /// # #![feature(extern_crate_item_prelude)]
     /// # extern crate xi_core_lib as xi_core;
     /// #[macro_use]
     /// extern crate serde_json;
@@ -219,6 +222,7 @@ pub enum CoreNotification {
 /// The `new_view` command:
 ///
 /// ```
+/// # #![feature(extern_crate_item_prelude)]
 /// # extern crate xi_core_lib as xi_core;
 /// extern crate serde_json;
 /// # fn main() {
@@ -268,6 +272,7 @@ pub enum CoreRequest {
 /// # Examples
 ///
 /// ```
+/// # #![feature(extern_crate_item_prelude)]
 /// # extern crate xi_core_lib as xi_core;
 /// extern crate serde_json;
 /// # fn main() {
