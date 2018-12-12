@@ -13,8 +13,6 @@
 // limitations under the License.
 
 //! Fast comparison of rope regions, principally for diffing.
-#![allow(clippy::cast_ptr_alignment, clippy::unreadable_literal)]
-
 use crate::rope::{BaseMetric, Rope, RopeInfo};
 use crate::tree::Cursor;
 
@@ -40,6 +38,7 @@ const SSE_STRIDE: usize = 16;
 /// # }
 /// ```
 ///
+#[allow(clippy::cast_ptr_alignment, clippy::unreadable_literal)]
 #[doc(hidden)]
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "sse4.2")]
@@ -60,6 +59,7 @@ pub unsafe fn sse_compare_mask(one: &[u8], two: &[u8]) -> i32 {
 const AVX_STRIDE: usize = 32;
 
 /// Like above but with 32 byte slices
+#[allow(clippy::cast_ptr_alignment, clippy::unreadable_literal)]
 #[doc(hidden)]
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
