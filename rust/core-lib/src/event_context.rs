@@ -42,7 +42,7 @@ use crate::plugins::Plugin;
 use crate::recorder::Recorder;
 use crate::selection::InsertDrift;
 use crate::syntax::LanguageId;
-use crate::tabs::{BufferId, PluginId, ViewId, RENDER_VIEW_IDLE_MASK};
+use crate::tabs::{BufferId, PluginId, ViewId, RENDER_VIEW_IDLE_MASK, REWRAP_VIEW_IDLE_MASK};
 use crate::view::View;
 use crate::width_cache::WidthCache;
 use crate::WeakXiCore;
@@ -150,7 +150,7 @@ impl<'a> EventContext<'a> {
             SpecialEvent::Resize(size) => {
                 self.with_view(|view, _| view.set_size(size));
                 if self.config.word_wrap {
-                    self.update_wrap_settings();
+                    self.update_wrap_settings(false);
                 }
             }
             SpecialEvent::DebugRewrap | SpecialEvent::DebugWrapWidth => {
@@ -386,7 +386,7 @@ impl<'a> EventContext<'a> {
 
         self.client.config_changed(self.view_id, config);
         self.client.language_changed(self.view_id, &self.language);
-        self.update_wrap_settings();
+        self.update_wrap_settings(true);
         self.with_view(|view, text| view.set_dirty(text));
         self.render()
     }
@@ -420,7 +420,7 @@ impl<'a> EventContext<'a> {
                 debug!("clearing {} items from width cache", self.width_cache.borrow().len());
                 self.width_cache.replace(WidthCache::new());
             }
-            self.update_wrap_settings();
+            self.update_wrap_settings(true);
         }
 
         self.client.config_changed(self.view_id, &changes);
@@ -490,14 +490,19 @@ impl<'a> EventContext<'a> {
         self.editor.borrow_mut().dec_revs_in_flight();
     }
 
-    fn update_wrap_settings(&mut self) {
+    fn update_wrap_settings(&mut self, rewrap_immediately: bool) {
         let wrap_width = self.config.wrap_width;
         let word_wrap = self.config.word_wrap;
-        self.with_view(|view, _| view.update_wrap_settings(wrap_width, word_wrap));
-        self.rewrap();
+        self.with_view(|view, text| view.update_wrap_settings(text, wrap_width, word_wrap));
+        if rewrap_immediately {
+            self.rewrap();
+            self.with_view(|view, text| view.set_dirty(text));
+        }
+        if self.view.borrow().needs_more_wrap() {
+            self.schedule_rewrap();
+        }
     }
 
-    // this will become incremental at some point (soon!)
     /// Recomputes all breaks.
     fn rewrap(&mut self) {
         let mut view = self.view.borrow_mut();
@@ -506,7 +511,21 @@ impl<'a> EventContext<'a> {
 
         view.rewrap(ed.get_buffer(), &mut width_cache, self.client, ed.get_layers().get_merged());
         //TODO: minimal invalidation, and moving this into the view
-        view.set_dirty(ed.get_buffer());
+    }
+
+    pub(crate) fn do_rewrap_batch(&mut self) {
+        self.rewrap();
+        if self.view.borrow().needs_more_wrap() {
+            self.schedule_rewrap();
+        }
+        self.render_if_needed();
+    }
+
+    fn schedule_rewrap(&self) {
+        //TODO: maybe move this into the view as well?
+        let view_id: usize = self.view_id.into();
+        let token = REWRAP_VIEW_IDLE_MASK | view_id;
+        self.client.schedule_idle(token);
     }
 
     fn do_request_lines(&mut self, first: usize, last: usize) {

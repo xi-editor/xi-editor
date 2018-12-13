@@ -20,7 +20,7 @@ use std::ops::Range;
 use xi_rope::breaks::{BreakBuilder, Breaks, BreaksBaseMetric, BreaksInfo, BreaksMetric};
 use xi_rope::rope::BaseMetric;
 use xi_rope::spans::Spans;
-use xi_rope::{Cursor, LinesMetric, Rope, RopeDelta, RopeInfo};
+use xi_rope::{Cursor, Interval, LinesMetric, Rope, RopeDelta, RopeInfo};
 use xi_trace::trace_block;
 use xi_unicode::LineBreakLeafIter;
 
@@ -49,26 +49,81 @@ impl Default for WrapWidth {
     }
 }
 
+/// A range to be rewrapped.
+type Task = Interval;
+
 /// Tracks state related to visual lines.
 #[derive(Default)]
 pub(crate) struct Lines {
     breaks: Breaks,
     wrap: WrapWidth,
+    work: Vec<Task>,
 }
 
 /// A range of bytes representing a visual line.
 pub(crate) type VisualLine = Range<usize>;
 
+struct WrapSummary {
+    start_line: usize,
+    inval_count: usize,
+    inval_after_end: usize,
+    new_count: usize,
+    converged: bool,
+}
+
+/// Describes what has changed after a batch of word wrapping; this is used
+/// for minimal invalidation.
+pub(crate) struct InvalLines {
+    pub(crate) start_line: usize,
+    pub(crate) inval_count: usize,
+    pub(crate) new_count: usize,
+}
+
 impl Lines {
-    pub(crate) fn set_wrap_width(&mut self, wrap: WrapWidth) {
-        if wrap != self.wrap {
-            self.wrap = wrap;
-            //TODO: for incremental, we clear breaks and update frontier.
+    pub(crate) fn set_wrap_width(&mut self, text: &Rope, wrap: WrapWidth) {
+        self.wrap = wrap;
+        self.work.clear();
+        self.add_task(0..text.len());
+        if self.breaks.len() == 0 {
+            self.breaks = Breaks::new_no_break(text.len());
         }
     }
 
-    pub(crate) fn has_soft_breaks(&self) -> bool {
-        self.wrap != WrapWidth::None
+    fn add_task<T: Into<Interval>>(&mut self, iv: T) {
+        let iv = iv.into();
+        if iv.is_empty() {
+            return;
+        }
+
+        // keep everything that doesn't intersect. merge things that do.
+        let split_idx = match self.work.iter().position(|&t| !t.intersect(iv).is_empty()) {
+            Some(idx) => idx,
+            None => {
+                self.work.push(iv);
+                return;
+            }
+        };
+
+        let to_update = self.work.split_off(split_idx);
+        let mut new_task = Some(iv);
+
+        for t in &to_update {
+            match new_task.take() {
+                Some(new) if !t.intersect(new).is_empty() => new_task = Some(t.union(new)),
+                Some(new) => {
+                    self.work.push(new);
+                    self.work.push(*t);
+                }
+                None => self.work.push(*t),
+            }
+        }
+        if let Some(end) = new_task.take() {
+            self.work.push(end);
+        }
+    }
+
+    pub(crate) fn is_converged(&self) -> bool {
+        self.wrap == WrapWidth::None || self.work.is_empty()
     }
 
     pub(crate) fn visual_line_of_offset(&self, text: &Rope, offset: usize) -> usize {
@@ -107,60 +162,215 @@ impl Lines {
         VisualLines { offset, cursor, len: text.len(), eof: false }
     }
 
-    // TODO: this is where the incremental goes
-    /// Calculates new breaks for a chunk of the document.
+    /// Returns the next task, prioritizing the currently visible region.
+    /// Does not modify the task list; this is done after the task runs.
+    fn get_next_task(&self, visible_offset: usize) -> Option<Task> {
+        // the first task t where t.end > visible_offset is the only task
+        // that might contain the visible region.
+        self.work
+            .iter()
+            .find(|t| t.end > visible_offset)
+            .map(|t| Task::new(t.start.max(visible_offset), t.end))
+            .or(self.work.last().cloned())
+    }
+
+    fn update_tasks_after_wrap<T: Into<Interval>>(&mut self, wrapped_iv: T) {
+        if self.work.is_empty() {
+            return;
+        }
+        let wrapped_iv = wrapped_iv.into();
+
+        let mut work = Vec::new();
+        for task in &self.work {
+            if task.is_before(wrapped_iv.start) || task.is_after(wrapped_iv.end) {
+                work.push(*task);
+                continue;
+            }
+            if wrapped_iv.start > task.start {
+                work.push(task.prefix(wrapped_iv));
+            }
+            if wrapped_iv.end < task.end {
+                work.push(task.suffix(wrapped_iv));
+            }
+        }
+        //eprintln!("updated {:?} to {:?} after {}", &self.work, &work, wrapped_iv);
+        self.work = work;
+    }
+
     pub(crate) fn rewrap_chunk(
         &mut self,
         text: &Rope,
         width_cache: &mut WidthCache,
         client: &Client,
         _spans: &Spans<Style>,
-    ) {
-        self.breaks = match self.wrap {
-            WrapWidth::None => Breaks::new_no_break(text.len()),
-            WrapWidth::Bytes(c) => rewrap_all(text, width_cache, &CodepointMono, c as f64),
-            WrapWidth::Width(w) => rewrap_all(text, width_cache, client, w),
-        };
+        visible_lines: Range<usize>,
+    ) -> Option<InvalLines> {
+        if self.is_converged() {
+            debug!("converged.");
+            return None;
+        }
+        let summary = self.do_wrap_task(text, width_cache, client, visible_lines, None);
+        let WrapSummary { start_line, inval_count, new_count, .. } = summary;
+        Some(InvalLines { start_line, inval_count, new_count })
     }
 
-    /// Updates breaks as necessary after an edit.
+    /// If wrapping has converged, returns Ok with exact invalidation information;
+    /// else returns `Err` with the number of the first line wrapped.
     pub(crate) fn after_edit(
         &mut self,
         text: &Rope,
+        old_text: &Rope,
         delta: &RopeDelta,
         width_cache: &mut WidthCache,
         client: &Client,
-    ) {
-        let _t = trace_block("Lines::after_edit", &["core"]);
+        visible_lines: Range<usize>,
+    ) -> Result<InvalLines, usize> {
+        let (iv, newlen) = delta.summary();
+        // For minimal invalidation, we need to know the number of breaks that will
+        // be replaced; we need to get this from the pre-edit state (i.e. here)
+        let start_line = merged_line_of_offset(old_text, &self.breaks, iv.start);
+        let old_end_line = merged_line_of_offset(old_text, &self.breaks, iv.end);
+        let old_breaks_count = old_end_line - start_line;
 
-        let (iv, newsize) = delta.summary();
+        // update soft breaks, adding empty spans in the edited region
         let mut builder = BreakBuilder::new();
-        builder.add_no_break(newsize);
+        builder.add_no_break(newlen);
         self.breaks.edit(iv, builder.build());
 
-        let mut start = iv.start;
-        let end = start + newsize;
-        let mut cursor = Cursor::new(&text, start);
-        start = cursor.at_or_prev::<LinesMetric>().unwrap_or(0);
+        if self.wrap == WrapWidth::None {
+            let new_count = (text.line_of_offset(iv.start + newlen) + 1) - start_line;
+            return Ok(InvalLines { start_line, inval_count: old_breaks_count, new_count });
+        }
 
-        let new_breaks = match self.wrap {
-            WrapWidth::None => Breaks::new_no_break(newsize),
-            WrapWidth::Bytes(c) => compute_rewrap(
-                text,
-                width_cache,
-                &CodepointMono,
-                c as f64,
-                &self.breaks,
-                start,
-                end,
-            ),
-            WrapWidth::Width(w) => {
-                compute_rewrap(text, width_cache, client, w, &self.breaks, start, end)
-            }
+        // find our minimum convergence point.
+        // this is the next break if hard or the second next if soft, or EOF.
+        let mut cursor = MergedBreaks::new(text, &self.breaks);
+        cursor.set_offset(iv.start + newlen);
+        cursor.next();
+        let next_valid_break =
+            if cursor.is_hard() { cursor.offset } else { cursor.next().unwrap_or(text.len()) };
+
+        //FIXME: update existing work items as necessary
+        let new_task = iv.start..next_valid_break;
+        self.add_task(new_task);
+
+        // possible if the whole buffer is deleted, e.g
+        if self.work.is_empty() {
+            return Err(iv.start);
+        }
+        let summary = self.do_wrap_task(text, width_cache, client, visible_lines, None);
+        let WrapSummary { start_line, inval_after_end, new_count, converged, .. } = summary;
+
+        if converged {
+            let inval_count = old_breaks_count + inval_after_end;
+            Ok(InvalLines { start_line, inval_count, new_count })
+        } else {
+            Err(start_line)
+        }
+    }
+
+    fn do_wrap_task(
+        &mut self,
+        text: &Rope,
+        width_cache: &mut WidthCache,
+        client: &Client,
+        visible_lines: Range<usize>,
+        max_lines: Option<usize>,
+    ) -> WrapSummary {
+        use self::WrapWidth::*;
+        // 'line' is a poor unit here; could do some fancy Duration thing?
+        const MAX_LINES_PER_BATCH: usize = 100;
+
+        let mut cursor = MergedBreaks::new(text, &self.breaks);
+        let visible_off = cursor.offset_of_line(visible_lines.start);
+        // task.start is a valid boundary; task.end is a boundary or EOF.
+        let task = self.get_next_task(visible_off).unwrap();
+        debug!("todo: {:?}", &self.work);
+        cursor.set_offset(task.start);
+        debug_assert_eq!(cursor.offset, task.start, "task_start must be valid offset");
+
+        let mut ctx = match self.wrap {
+            Bytes(b) => RewrapCtx::new(text, &CodepointMono, b as f64, width_cache, task.start),
+            Width(w) => RewrapCtx::new(text, client, w, width_cache, task.start),
+            None => unreachable!(),
         };
 
-        let edit_end = start + new_breaks.len();
-        self.breaks.edit(start..edit_end, new_breaks);
+        let start_line = cursor.cur_line;
+        let max_lines = max_lines.unwrap_or(MAX_LINES_PER_BATCH);
+        // always wrap at least a screen worth of lines (unless we converge earlier)
+        let batch_size = max_lines.max(visible_lines.end - visible_lines.start);
+        debug!("task {}, startline {}, batchsize {}", task, start_line, max_lines);
+
+        let mut builder = BreakBuilder::new();
+        let mut converged = false;
+        let mut inval_count = 0; // for minimal inval;  # of breaks in rewrapped region
+        let mut new_count = 0;
+        let mut inval_after_end = 0; // needed for inval in the edit case
+        let mut pos = task.start;
+        let mut old_next_maybe = cursor.next();
+
+        'outer: loop {
+            if let Some(new_next) = ctx.wrap_one_line(pos) {
+                while let Some(old_next) = old_next_maybe {
+                    if old_next >= new_next {
+                        if old_next == new_next && new_next >= task.end {
+                            debug!("converged on {}", old_next);
+                            converged = true;
+                            builder.add_no_break(new_next - pos);
+                            break 'outer;
+                        }
+                        break; // just advance old cursor and continue
+                    }
+                    if new_next >= task.end {
+                        inval_after_end += 1;
+                    }
+                    inval_count += 1;
+                    old_next_maybe = cursor.next();
+                }
+
+                let is_hard = cursor.offset == new_next && cursor.is_hard();
+                if is_hard {
+                    builder.add_no_break(new_next - pos);
+                } else {
+                    builder.add_break(new_next - pos);
+                }
+                new_count += 1;
+                pos = new_next;
+                if new_count > batch_size {
+                    break;
+                }
+            } else {
+                // EOF
+                builder.add_no_break(text.len() - pos);
+                break;
+            }
+        }
+
+        // the current line is invalid unless we've converged.
+        if !converged {
+            inval_count += 1;
+        }
+
+        let breaks = builder.build();
+        let iv = Interval::new(task.start, task.start + breaks.len());
+        self.breaks.edit(iv, breaks);
+        self.update_tasks_after_wrap(iv);
+
+        WrapSummary { start_line, inval_count, new_count, inval_after_end, converged }
+    }
+
+    #[cfg(test)]
+    fn for_testing(text: &Rope, wrap: WrapWidth) -> Lines {
+        let mut lines = Lines::default();
+        lines.set_wrap_width(text, wrap);
+        lines
+    }
+
+    #[cfg(test)]
+    fn rewrap_all(&mut self, text: &Rope, client: &Client, width_cache: &mut WidthCache) {
+        if !self.is_converged() {
+            self.do_wrap_task(text, width_cache, client, 0..10, Some(usize::max_value()));
+        }
     }
 }
 
@@ -177,17 +387,15 @@ struct PotentialBreak {
 }
 
 /// State for a rewrap in progress
-struct RewrapCtx<'a, T: 'a> {
+struct RewrapCtx<'a> {
     text: &'a Rope,
     lb_cursor: LineBreakCursor<'a>,
     lb_cursor_pos: usize,
     width_cache: &'a mut WidthCache,
-    client: &'a T,
+    client: &'a dyn WidthMeasure,
     pot_breaks: Vec<PotentialBreak>,
     /// Index within `pot_breaks`
     pot_break_ix: usize,
-    /// Offset of maximum break (ie hard break following edit)
-    max_offset: usize,
     max_width: f64,
 }
 
@@ -195,15 +403,15 @@ struct RewrapCtx<'a, T: 'a> {
 // RPC overhead becomes significant. More than that, interactivity suffers.
 const MAX_POT_BREAKS: usize = 10_000;
 
-impl<'a, T: WidthMeasure> RewrapCtx<'a, T> {
+impl<'a> RewrapCtx<'a> {
     fn new(
         text: &'a Rope,
-        /* _style_spans: &Spans<Style>, */ client: &'a T,
+        //_style_spans: &Spans<Style>,  client: &'a T,
+        client: &'a dyn WidthMeasure,
         max_width: f64,
         width_cache: &'a mut WidthCache,
         start: usize,
-        end: usize,
-    ) -> RewrapCtx<'a, T> {
+    ) -> RewrapCtx<'a> {
         let lb_cursor_pos = start;
         let lb_cursor = LineBreakCursor::new(text, start);
         RewrapCtx {
@@ -214,7 +422,6 @@ impl<'a, T: WidthMeasure> RewrapCtx<'a, T> {
             client,
             pot_breaks: Vec::new(),
             pot_break_ix: 0,
-            max_offset: end,
             max_width,
         }
     }
@@ -225,7 +432,7 @@ impl<'a, T: WidthMeasure> RewrapCtx<'a, T> {
         self.pot_breaks.clear();
         self.pot_break_ix = 0;
         let mut pos = self.lb_cursor_pos;
-        while pos < self.max_offset && self.pot_breaks.len() < MAX_POT_BREAKS {
+        while pos < self.text.len() && self.pot_breaks.len() < MAX_POT_BREAKS {
             let (next, hard) = self.lb_cursor.next();
             let word = self.text.slice_to_cow(pos..next);
             let tok = req.request(N_RESERVED_STYLES, &word);
@@ -242,7 +449,7 @@ impl<'a, T: WidthMeasure> RewrapCtx<'a, T> {
     fn wrap_one_line(&mut self, start: usize) -> Option<usize> {
         let mut line_width = 0.0;
         let mut pos = start;
-        while pos < self.max_offset {
+        while pos < self.text.len() {
             if self.pot_break_ix >= self.pot_breaks.len() {
                 self.refill_pot_breaks();
             }
@@ -274,75 +481,6 @@ impl<'a, T: WidthMeasure> RewrapCtx<'a, T> {
         }
         None
     }
-}
-
-/// Wrap the text (in batch mode) using width measurement.
-fn rewrap_all<T>(text: &Rope, width_cache: &mut WidthCache, client: &T, width: f64) -> Breaks
-where
-    T: WidthMeasure,
-{
-    let empty_breaks = Breaks::new_no_break(text.len());
-    compute_rewrap(text, width_cache, client, width, &empty_breaks, 0, text.len())
-}
-
-//NOTE: incremental version of rewrap_all
-/// Compute a new chunk of breaks after an edit. Returns new breaks to replace
-/// the old ones. The interval [start..end] represents a frontier.
-fn compute_rewrap<T: WidthMeasure>(
-    text: &Rope,
-    width_cache: &mut WidthCache,
-    /* style_spans: &Spans<Style>, */ client: &T,
-    max_width: f64,
-    breaks: &Breaks,
-    start: usize,
-    end: usize,
-) -> Breaks {
-    let mut line_cursor = Cursor::new(&text, end);
-    let measure_end = line_cursor.next::<LinesMetric>().unwrap_or(text.len());
-    let mut ctx = RewrapCtx::new(
-        text,
-        /* style_spans, */ client,
-        max_width,
-        width_cache,
-        start,
-        measure_end,
-    );
-    let mut builder = BreakBuilder::new();
-    let mut pos = start;
-    let mut break_cursor = Cursor::new(&breaks, end);
-    let mut next_break = break_cursor.at_or_next::<BreaksBaseMetric>();
-    loop {
-        // iterate newly computed breaks and existing breaks until they converge
-        if let Some(new_next) = ctx.wrap_one_line(pos) {
-            line_cursor.set(new_next);
-            let is_hard = line_cursor.is_boundary::<LinesMetric>();
-            while let Some(old_next) = next_break {
-                if old_next >= new_next {
-                    break;
-                }
-                next_break = break_cursor.next::<BreaksBaseMetric>();
-            }
-            // TODO: we might be able to tighten the logic, avoiding this last break,
-            // in some cases (resulting in a smaller delta).
-            if is_hard {
-                builder.add_no_break(new_next - pos);
-            } else {
-                builder.add_break(new_next - pos);
-            }
-            if let Some(old_next) = next_break {
-                if new_next == old_next {
-                    // Breaking process has converged.
-                    break;
-                }
-            }
-            pos = new_next;
-        } else {
-            // EOF
-            builder.add_no_break(text.len() - pos);
-            break;
-        }
-    }
-    builder.build()
 }
 
 struct LineBreakCursor<'a> {
@@ -467,6 +605,10 @@ impl<'a> MergedBreaks<'a> {
         MergedBreaks { text, soft, offset: 0, cur_line: 0, total_lines, len }
     }
 
+    fn is_hard(&self) -> bool {
+        self.offset == self.text.pos()
+    }
+
     /// Sets the `self.offset` to the first valid break immediately at or preceding `offset`,
     /// and restores invariants.
     fn set_offset(&mut self, offset: usize) {
@@ -542,21 +684,27 @@ fn merged_line_of_offset(text: &Rope, soft: &Breaks, offset: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::width_cache::CodepointMono;
     use std::borrow::Cow;
     use std::iter;
+    use xi_rpc::test_utils::DummyPeer;
 
     fn make_lines(text: &Rope, width: f64) -> Lines {
+        let client = Client::new(Box::new(DummyPeer));
         let mut width_cache = WidthCache::new();
         let wrap = WrapWidth::Bytes(width as usize);
-        let breaks = rewrap_all(text, &mut width_cache, &CodepointMono, width);
-        Lines { breaks, wrap }
+        let mut lines = Lines::for_testing(text, wrap);
+        lines.rewrap_all(text, &client, &mut width_cache);
+        lines
+    }
+
+    fn render_breaks<'a>(text: &'a Rope, lines: &Lines) -> Vec<Cow<'a, str>> {
+        let result = lines.iter_lines(text, 0).map(|l| text.slice_to_cow(l)).collect();
+        result
     }
 
     fn debug_breaks<'a>(text: &'a Rope, width: f64) -> Vec<Cow<'a, str>> {
         let lines = make_lines(text, width);
-        let result = lines.iter_lines(text, 0).map(|l| text.slice_to_cow(l)).collect();
-        result
+        render_breaks(text, &lines)
     }
 
     #[test]
@@ -668,11 +816,10 @@ mod tests {
                 .take(1000)
                 .collect::<String>()
                 .into();
-        let mut width_cache = WidthCache::new();
-        let breaks = rewrap_all(&text, &mut width_cache, &CodepointMono, 30.);
+        let lines = make_lines(&text, 30.);
 
-        let mut linear = MergedBreaks::new(&text, &breaks);
-        let mut binary = MergedBreaks::new(&text, &breaks);
+        let mut linear = MergedBreaks::new(&text, &lines.breaks);
+        let mut binary = MergedBreaks::new(&text, &lines.breaks);
 
         // skip zero because these two impls don't handle edge cases
         for i in 1..1000 {
@@ -805,5 +952,80 @@ mod tests {
 
         let r: Vec<_> = lines.iter_lines(&text, 3).take(3).map(|l| text.slice_to_cow(l)).collect();
         assert_eq!(r, vec!["cc\n", "cc ", "dddd "]);
+    }
+
+    #[test]
+    fn incremental_smoke_test() {
+        let client = Client::new(Box::new(DummyPeer));
+        let mut wc = WidthCache::new();
+
+        let text = "a b c d e f g h i j k l m n o p q r s t u v w x ".into();
+        let mut lines = make_lines(&text, 80.);
+        lines.set_wrap_width(&text, WrapWidth::Bytes(1));
+
+        // breaks should be cleared, no actual wrapping has happened yet.
+        assert_eq!(
+            render_breaks(&text, &lines),
+            vec!["a b c d e f g h i j k l m n o p q r s t u v w x "]
+        );
+        assert_eq!(make_ranges(&lines.work), vec![0..text.len()]);
+        assert!(!lines.is_converged());
+
+        let summary = lines.do_wrap_task(&text, &mut wc, &client, 0..3, Some(1));
+        assert_eq!(summary.start_line, 0);
+        assert_eq!(summary.inval_count, 1);
+        assert_eq!(summary.new_count, 4);
+
+        assert_eq!(
+            render_breaks(&text, &lines),
+            vec!["a ", "b ", "c ", "d e f g h i j k l m n o p q r s t u v w x "]
+        );
+        assert_eq!(make_ranges(&lines.work), vec![6..text.len()]);
+
+        let summary = lines.do_wrap_task(&text, &mut wc, &client, 0..3, Some(1));
+
+        assert_eq!(summary.start_line, 3);
+        assert_eq!(summary.inval_count, 1);
+        assert_eq!(summary.new_count, 4);
+
+        assert_eq!(make_ranges(&lines.work), vec![12..text.len()]);
+
+        // wrap it all
+        let _ = lines.do_wrap_task(&text, &mut wc, &client, 0..text.len(), Some(1));
+        assert_eq!(make_ranges(&lines.work), vec![]);
+
+        lines.set_wrap_width(&text, WrapWidth::Bytes(4));
+        let _ = lines.do_wrap_task(&text, &mut wc, &client, 4..12, Some(1));
+
+        assert_eq!(
+            render_breaks(&text, &lines),
+            vec![
+                "a ", "b ", "c ", "d ", "e f ", "g h ", "i j ", "k l ", "m n ", "o p ", "q r ",
+                "s t ", "u ", "v ", "w ", "x "
+            ]
+        );
+
+        assert_eq!(make_ranges(&lines.work), vec![0..8, 40..text.len()]);
+    }
+
+    fn make_ranges(ivs: &[Interval]) -> Vec<Range<usize>> {
+        ivs.iter().map(|iv| iv.start..iv.end).collect()
+    }
+
+    #[test]
+    fn update_frontier() {
+        let mut lines = Lines::default();
+        lines.add_task(0..1000);
+        lines.update_tasks_after_wrap(0..10);
+        lines.update_tasks_after_wrap(50..100);
+        assert_eq!(make_ranges(&lines.work), vec![10..50, 100..1000]);
+        lines.update_tasks_after_wrap(200..1000);
+        assert_eq!(make_ranges(&lines.work), vec![10..50, 100..200]);
+        lines.add_task(300..400);
+        assert_eq!(make_ranges(&lines.work), vec![10..50, 100..200, 300..400]);
+        lines.add_task(250..350);
+        assert_eq!(make_ranges(&lines.work), vec![10..50, 100..200, 250..400]);
+        lines.add_task(60..450);
+        assert_eq!(make_ranges(&lines.work), vec![10..50, 60..450]);
     }
 }

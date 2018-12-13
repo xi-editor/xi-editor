@@ -23,7 +23,7 @@ use crate::client::Client;
 use crate::edit_types::ViewEvent;
 use crate::find::{Find, FindStatus};
 use crate::line_cache_shadow::{self, LineCacheShadow, RenderPlan, RenderTactic};
-use crate::linewrap::{Lines, VisualLine, WrapWidth};
+use crate::linewrap::{InvalLines, Lines, VisualLine, WrapWidth};
 use crate::movement::{region_movement, selection_movement, Movement};
 use crate::rpc::{FindQuery, GestureType, MouseAction, SelectionModifier};
 use crate::selection::{Affinity, InsertDrift, SelRegion, Selection};
@@ -188,13 +188,17 @@ impl View {
         self.pending_render
     }
 
-    pub(crate) fn update_wrap_settings(&mut self, wrap_cols: usize, word_wrap: bool) {
+    pub(crate) fn update_wrap_settings(&mut self, text: &Rope, wrap_cols: usize, word_wrap: bool) {
         let wrap_width = match (word_wrap, wrap_cols) {
             (true, _) => WrapWidth::Width(self.size.width),
             (false, 0) => WrapWidth::None,
             (false, cols) => WrapWidth::Bytes(cols),
         };
-        self.lines.set_wrap_width(wrap_width);
+        self.lines.set_wrap_width(text, wrap_width);
+    }
+
+    pub(crate) fn needs_more_wrap(&self) -> bool {
+        !self.lines.is_converged()
     }
 
     pub(crate) fn do_edit(&mut self, text: &Rope, cmd: ViewEvent) {
@@ -615,6 +619,7 @@ impl View {
         style_spans: &Spans<Style>,
     ) -> Vec<isize> {
         let mut rendered_styles = Vec::new();
+        assert!(start <= end, "{} {}", start, end);
         let style_spans = style_spans.subseq(Interval::new(start, end));
 
         let mut ix = 0;
@@ -885,7 +890,12 @@ impl View {
         spans: &Spans<Style>,
     ) {
         let _t = trace_block("View::rewrap", &["core"]);
-        self.lines.rewrap_chunk(text, width_cache, client, spans);
+        let visible = self.first_line..self.first_line + self.height;
+        let inval = self.lines.rewrap_chunk(text, width_cache, client, spans, visible);
+        if let Some(InvalLines { start_line, inval_count, new_count }) = inval {
+            debug!("replaced {} breaks with {} at {}", inval_count, new_count, start_line);
+            self.lc_shadow.edit(start_line, start_line + inval_count, new_count);
+        }
     }
 
     /// Updates the view after the text has been modified by the given `delta`.
@@ -900,16 +910,12 @@ impl View {
         width_cache: &mut WidthCache,
         drift: InsertDrift,
     ) {
-        self.lines.after_edit(text, delta, width_cache, client);
-        if !self.lines.has_soft_breaks() {
-            let (iv, new_len) = delta.summary();
-            let start = self.line_of_offset(last_text, iv.start());
-            let end = self.line_of_offset(last_text, iv.end()) + 1;
-            let new_end = self.line_of_offset(text, iv.start() + new_len) + 1;
-            self.lc_shadow.edit(start, end, new_end - start);
-        } else {
-            //TODO (really) actual minimal invalidation, based on what wrapped.
-            self.set_dirty(text);
+        let visible = self.first_line..self.first_line + self.height;
+        match self.lines.after_edit(text, last_text, delta, width_cache, client, visible) {
+            Ok(InvalLines { start_line, inval_count, new_count }) => {
+                self.lc_shadow.edit(start_line, start_line + inval_count, new_count);
+            }
+            Err(first_wrapped_line) => self.lc_shadow.truncate(first_wrapped_line),
         }
 
         // Any edit cancels a drag. This is good behavior for edits initiated through
@@ -1140,7 +1146,7 @@ impl View {
         let spans: Spans<Style> = Spans::default();
         let mut width_cache = WidthCache::new();
         let client = Client::new(Box::new(DummyPeer));
-        self.update_wrap_settings(cols, false);
+        self.update_wrap_settings(text, cols, false);
         self.rewrap(text, &mut width_cache, &client, &spans);
     }
 }
