@@ -227,7 +227,6 @@ impl<'a, T: WidthMeasure> RewrapCtx<'a, T> {
         let mut pos = self.lb_cursor_pos;
         while pos < self.max_offset && self.pot_breaks.len() < MAX_POT_BREAKS {
             let (next, hard) = self.lb_cursor.next();
-            // TODO: avoid allocating string
             let word = self.text.slice_to_cow(pos..next);
             let tok = req.request(N_RESERVED_STYLES, &word);
             pos = next;
@@ -251,6 +250,10 @@ impl<'a, T: WidthMeasure> RewrapCtx<'a, T> {
             let width = self.width_cache.resolve(pot_break.tok);
             if !pot_break.hard {
                 if line_width == 0.0 && width >= self.max_width {
+                    // we don't care about soft breaks at EOF
+                    if pot_break.pos == self.text.len() {
+                        return None;
+                    }
                     self.pot_break_ix += 1;
                     return Some(pot_break.pos);
                 }
@@ -459,7 +462,7 @@ impl<'a> MergedBreaks<'a> {
         let text = Cursor::new(text, 0);
         let soft = Cursor::new(breaks, 0);
         let total_lines =
-            text.root().measure::<LinesMetric>() + soft.root().measure::<BreaksMetric>();
+            text.root().measure::<LinesMetric>() + soft.root().measure::<BreaksMetric>() + 1;
         let len = text.total_len();
         MergedBreaks { text, soft, offset: 0, cur_line: 0, total_lines, len }
     }
@@ -688,6 +691,7 @@ mod tests {
         let text: Rope = "aaaa\nbb bb cc\ncc dddd eeee ff\nff gggg".into();
         let lines = make_lines(&text, 2.);
         let mut merged = MergedBreaks::new(&text, &lines.breaks);
+        assert_eq!(merged.total_lines, 10);
 
         let check_props = |m: &MergedBreaks, line, off, softpos, hardpos| {
             assert_eq!(m.cur_line, line);
@@ -707,6 +711,16 @@ mod tests {
         merged.set_offset(9);
         check_props(&merged, 2, 8, 8, 14);
         merged.set_offset(text.len());
+        check_props(&merged, 9, 33, 33, 37);
+        merged.set_offset(text.len() - 1);
+        check_props(&merged, 9, 33, 33, 37);
+
+        // but a trailing newline adds a line at EOF
+        let text: Rope = "aaaa\nbb bb cc\ncc dddd eeee ff\nff ggg\n".into();
+        let lines = make_lines(&text, 2.);
+        let mut merged = MergedBreaks::new(&text, &lines.breaks);
+        assert_eq!(merged.total_lines, 11);
+        merged.set_offset(text.len());
         check_props(&merged, 10, 37, 37, 37);
         merged.set_offset(text.len() - 1);
         check_props(&merged, 9, 33, 33, 37);
@@ -717,6 +731,60 @@ mod tests {
         // do we handle the break at MAX_LINEAR_DIST correctly?
         let text = "a b c d e f g h i j k l m n o p q r s t u v w x ".into();
         let lines = make_lines(&text, 1.);
+
+        for offset in 0..text.len() {
+            let line = lines.visual_line_of_offset(&text, offset);
+            let line_offset = lines.offset_of_visual_line(&text, line);
+            assert!(line_offset <= offset, "{} <= {} L{} O{}", line_offset, offset, line, offset);
+        }
+    }
+
+    #[test]
+    fn expected_soft_breaks() {
+        let text = "a b c d ".into();
+        let mut text_cursor = Cursor::new(&text, text.len());
+        assert!(!text_cursor.is_boundary::<LinesMetric>());
+
+        let Lines { breaks, .. } = make_lines(&text, 1.);
+        let mut cursor = Cursor::new(&breaks, 0);
+
+        cursor.set(2);
+        assert!(cursor.is_boundary::<BreaksMetric>());
+        cursor.set(4);
+        assert!(cursor.is_boundary::<BreaksMetric>());
+        cursor.set(6);
+        assert!(cursor.is_boundary::<BreaksMetric>());
+        cursor.set(8);
+        assert!(!cursor.is_boundary::<BreaksMetric>());
+
+        cursor.set(0);
+        let breaks = cursor.iter::<BreaksMetric>().collect::<Vec<_>>();
+        // soft breaks includes a break at EOF, which we don't expect,
+        // because the end of the node is a boundary in all metrics?
+        assert_eq!(breaks, vec![2, 4, 6, 8]);
+    }
+
+    #[test]
+    fn offset_to_line() {
+        let text = "a b c d ".into();
+        let lines = make_lines(&text, 1.);
+        let cursor = MergedBreaks::new(&text, &lines.breaks);
+        assert_eq!(cursor.total_lines, 4);
+
+        assert_eq!(lines.visual_line_of_offset(&text, 0), 0);
+        assert_eq!(lines.visual_line_of_offset(&text, 1), 0);
+        assert_eq!(lines.visual_line_of_offset(&text, 2), 1);
+        assert_eq!(lines.visual_line_of_offset(&text, 3), 1);
+        assert_eq!(lines.visual_line_of_offset(&text, 4), 2);
+        assert_eq!(lines.visual_line_of_offset(&text, 5), 2);
+        assert_eq!(lines.visual_line_of_offset(&text, 6), 3);
+        assert_eq!(lines.visual_line_of_offset(&text, 7), 3);
+
+        assert_eq!(lines.offset_of_visual_line(&text, 0), 0);
+        assert_eq!(lines.offset_of_visual_line(&text, 1), 2);
+        assert_eq!(lines.offset_of_visual_line(&text, 2), 4);
+        assert_eq!(lines.offset_of_visual_line(&text, 3), 6);
+        assert_eq!(lines.offset_of_visual_line(&text, 10), 8);
 
         for offset in 0..text.len() {
             let line = lines.visual_line_of_offset(&text, offset);
