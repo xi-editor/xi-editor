@@ -92,6 +92,7 @@ pub mod selection;
 pub mod styles;
 pub mod syntax;
 pub mod tabs;
+pub mod undo;
 pub mod view;
 #[cfg(feature = "notify")]
 pub mod watcher;

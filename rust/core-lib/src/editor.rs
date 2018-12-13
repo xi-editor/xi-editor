@@ -46,7 +46,7 @@ use fuchsia::sync::SyncStore;
 
 // TODO This could go much higher without issue but while developing it is
 // better to keep it low to expose bugs in the GC during casual testing.
-const MAX_UNDOS: usize = 20;
+pub(crate) const MAX_UNDOS: usize = 20;
 
 enum IndentDirection {
     In,
@@ -960,6 +960,13 @@ impl EditType {
     /// Checks whether a new undo group should be created between two edits.
     fn breaks_undo_group(self, previous: EditType) -> bool {
         self == EditType::Other || self == EditType::Transpose || self != previous
+    }
+
+    pub(crate) fn is_undo_or_redo(self) -> bool {
+        match self {
+            EditType::Undo | EditType::Redo => true,
+            _ => false,
+        }
     }
 }
 

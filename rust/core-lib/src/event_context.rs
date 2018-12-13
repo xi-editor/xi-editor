@@ -36,7 +36,7 @@ use styles::ThemeStyleMap;
 
 use client::Client;
 use edit_types::{EventDomain, SpecialEvent};
-use editor::Editor;
+use editor::{EditType, Editor};
 use file::FileInfo;
 use plugins::Plugin;
 use recorder::Recorder;
@@ -101,6 +101,10 @@ impl<'a> EventContext<'a> {
         let editor = self.editor.borrow();
         let mut view = self.view.borrow_mut();
         f(&mut view, editor.get_buffer())
+    }
+
+    fn with_each_view<F: FnMut(&mut View)>(&mut self, mut f: F) {
+        iter::once(&self.view).chain(self.siblings.iter()).for_each(|v| f(&mut v.borrow_mut()));
     }
 
     fn with_each_plugin<F: FnMut(&&Plugin)>(&self, f: F) {
@@ -180,6 +184,9 @@ impl<'a> EventContext<'a> {
 
                 // No matter what, our entire block must belong to the same undo group
                 self.editor.borrow_mut().set_force_undo_group(true);
+                let undo_group = self.editor.borrow().get_active_undo_group();
+                self.with_each_view(|v| v.start_manual_undo(undo_group));
+
                 recorder.play(&recording_name, |event| {
                     self.dispatch_event(event.clone());
 
@@ -188,9 +195,12 @@ impl<'a> EventContext<'a> {
                         Some(edit_info) => edit_info,
                         None => return,
                     };
-                    self.update_views(&editor, &delta, &last_text, drift);
+                    self.update_views(&editor, &delta, &last_text, drift, None, EditType::Other);
                 });
+
+                debug_assert_eq!(undo_group, self.editor.borrow().get_active_undo_group());
                 self.editor.borrow_mut().set_force_undo_group(false);
+                self.with_each_view(|v| v.end_manual_undo(undo_group));
 
                 // The action that follows the block must belong to a separate undo group
                 self.editor.borrow_mut().update_edit_type();
@@ -264,9 +274,12 @@ impl<'a> EventContext<'a> {
             Some(edit_info) => edit_info,
             None => return,
         };
+        let undo_group = Some(ed.get_active_undo_group());
+        let edit_type = ed.get_edit_type();
 
-        self.update_views(&ed, &delta, &last_text, drift);
+        self.update_views(&ed, &delta, &last_text, drift, undo_group, edit_type);
         self.update_plugins(&mut ed, delta, author);
+        ed.update_edit_type();
 
         //if we have no plugins we always render immediately.
         if !self.plugins.is_empty() {
@@ -281,7 +294,15 @@ impl<'a> EventContext<'a> {
         }
     }
 
-    fn update_views(&self, ed: &Editor, delta: &RopeDelta, last_text: &Rope, drift: InsertDrift) {
+    fn update_views(
+        &self,
+        ed: &Editor,
+        delta: &RopeDelta,
+        last_text: &Rope,
+        drift: InsertDrift,
+        undo_group: Option<usize>,
+        edit_type: EditType,
+    ) {
         let mut width_cache = self.width_cache.borrow_mut();
         let iter_views = iter::once(&self.view).chain(self.siblings.iter());
         iter_views.for_each(|view| {
@@ -292,6 +313,8 @@ impl<'a> EventContext<'a> {
                 self.client,
                 &mut width_cache,
                 drift,
+                undo_group,
+                edit_type,
             )
         });
     }
@@ -334,7 +357,6 @@ impl<'a> EventContext<'a> {
             });
         });
         ed.dec_revs_in_flight();
-        ed.update_edit_type();
     }
 
     /// Renders the view, if a render has not already been scheduled.
@@ -1745,7 +1767,7 @@ mod tests {
         assert_eq!(harness.debug_render(),"\
         this is a about\n\
         that has string\n\
-        four really nice|\n\
+        four |really nice\n\
         lines to see." );
 
         // Make sure we can redo in a single command as well
@@ -1761,11 +1783,82 @@ mod tests {
         ctx.do_edit(EditNotification::Undo);
         ctx.do_edit(EditNotification::ClearRecording { recording_name: recording_name.clone() });
         ctx.do_edit(EditNotification::PlayRecording { recording_name });
+        // tricky case: this takes us back to our state, during recording, right before
+        // the transpose operation.
         assert_eq!(harness.debug_render(),"\
-        this is a string\n\
-        that has about\n\
-        four really nice|\n\
+        this is a [|string]\n\
+        that has [|about]\n\
+        four really nice\n\
         lines to see." );
+    }
+
+    #[test]
+    fn undo_1() {
+        use rpc::GestureType::*;
+        let initial_text = "It was a day like any other,";
+        let harness = ContextHarness::new(initial_text);
+        let mut ctx = harness.make_context();
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 0, ty: WordSelect });
+        assert_eq!(harness.debug_render(), "[It|] was a day like any other,");
+        ctx.do_edit(EditNotification::Insert { chars: "This".to_owned() });
+        assert_eq!(harness.debug_render(), "This| was a day like any other,");
+        ctx.do_edit(EditNotification::Undo);
+        assert_eq!(harness.debug_render(), "[It|] was a day like any other,");
+        ctx.do_edit(EditNotification::Redo);
+        assert_eq!(harness.debug_render(), "This| was a day like any other,");
+        ctx.do_edit(EditNotification::Insert { chars: " here".to_owned() });
+        assert_eq!(harness.debug_render(), "This here| was a day like any other,");
+        ctx.do_edit(EditNotification::MoveToLeftEndOfLine);
+        assert_eq!(harness.debug_render(), "|This here was a day like any other,");
+        ctx.do_edit(EditNotification::Undo);
+        assert_eq!(harness.debug_render(), "This| was a day like any other,");
+        ctx.do_edit(EditNotification::Undo);
+        assert_eq!(harness.debug_render(), "[It|] was a day like any other,");
+        ctx.do_edit(EditNotification::Redo);
+        assert_eq!(harness.debug_render(), "This| was a day like any other,");
+        ctx.do_edit(EditNotification::Redo);
+        assert_eq!(harness.debug_render(), "This here| was a day like any other,");
+    }
+
+    #[test]
+    fn empty_undo_stack() {
+        use rpc::GestureType::*;
+        let initial_text = "It was a day like any other,";
+        let harness = ContextHarness::new(initial_text);
+        let mut ctx = harness.make_context();
+        assert_eq!(harness.debug_render(), "|It was a day like any other,");
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 0, ty: WordSelect });
+        assert_eq!(harness.debug_render(), "[It|] was a day like any other,");
+        ctx.do_edit(EditNotification::Insert { chars: "This".to_owned() });
+        assert_eq!(harness.debug_render(), "This| was a day like any other,");
+        ctx.do_edit(EditNotification::Undo);
+        ctx.do_edit(EditNotification::Undo);
+        ctx.do_edit(EditNotification::Undo);
+        assert_eq!(harness.debug_render(), "[It|] was a day like any other,");
+        ctx.do_edit(EditNotification::Redo);
+        ctx.do_edit(EditNotification::Redo);
+        ctx.do_edit(EditNotification::Redo);
+        ctx.do_edit(EditNotification::Redo);
+        assert_eq!(harness.debug_render(), "This| was a day like any other,");
+    }
+
+    #[test]
+    fn undo_transpose() {
+        use rpc::GestureType::*;
+        let initial_text = "It was a day like any other,";
+        let harness = ContextHarness::new(initial_text);
+        let mut ctx = harness.make_context();
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 0, ty: MultiWordSelect });
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 9, ty: MultiWordSelect });
+        assert_eq!(harness.debug_render(), "[It|] was a [day|] like any other,");
+        ctx.do_edit(EditNotification::Transpose);
+        assert_eq!(harness.debug_render(), "[day|] was a [It|] like any other,");
+        ctx.do_edit(EditNotification::MoveToRightEndOfLine);
+        assert_eq!(harness.debug_render(), "day was a It like any other,|");
+        ctx.do_edit(EditNotification::Undo);
+        assert_eq!(harness.debug_render(), "[It|] was a [day|] like any other,");
+        ctx.do_edit(EditNotification::Redo);
+        assert_eq!(harness.debug_render(), "[day|] was a [It|] like any other,");
     }
 
     #[test]
