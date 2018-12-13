@@ -149,6 +149,29 @@ impl LineCacheShadow {
         *self = b.build();
     }
 
+    /// Invalidates all lines after (and including) `at_line`.
+    pub fn truncate(&mut self, at_line: usize) {
+        let mut b = Builder::new();
+        let mut line_num = 0;
+        let mut inval_after = 0;
+        for span in &self.spans {
+            if line_num + span.n < at_line {
+                b.add_span(span.n, span.start_line_num, span.validity);
+            } else if line_num < at_line {
+                let n_good = at_line - line_num;
+                debug_assert!(n_good < span.n);
+                b.add_span(at_line - line_num, span.start_line_num, span.validity);
+                inval_after += span.n - n_good;
+            } else {
+                inval_after += span.n;
+            }
+            line_num += span.n;
+        }
+        b.add_span(inval_after, 0, INVALID);
+        b.set_dirty(true);
+        *self = b.build();
+    }
+
     pub fn partial_invalidate(&mut self, start: usize, end: usize, invalid: Validity) {
         let mut clean = true;
         let mut line_num = 0;

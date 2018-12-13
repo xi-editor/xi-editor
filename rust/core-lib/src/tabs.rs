@@ -78,6 +78,7 @@ pub type BufferIdentifier = BufferId;
 
 /// Totally arbitrary; we reserve this space for `ViewId`s
 pub(crate) const RENDER_VIEW_IDLE_MASK: usize = 1 << 25;
+pub(crate) const REWRAP_VIEW_IDLE_MASK: usize = 1 << 26;
 
 const NEW_VIEW_IDLE_TOKEN: usize = 1001;
 
@@ -545,6 +546,9 @@ impl CoreState {
             other if (other & RENDER_VIEW_IDLE_MASK) != 0 => {
                 self.handle_render_timer(other ^ RENDER_VIEW_IDLE_MASK)
             }
+            other if (other & REWRAP_VIEW_IDLE_MASK) != 0 => {
+                self.handle_rewrap_callback(other ^ REWRAP_VIEW_IDLE_MASK)
+            }
             other => panic!("unexpected idle token {}", other),
         };
     }
@@ -635,6 +639,14 @@ impl CoreState {
         let id: ViewId = token.into();
         if let Some(mut ctx) = self.make_context(id) {
             ctx._finish_delayed_render();
+        }
+    }
+
+    /// Callback for doing word wrap on a view
+    fn handle_rewrap_callback(&mut self, token: usize) {
+        let id: ViewId = token.into();
+        if let Some(mut ctx) = self.make_context(id) {
+            ctx.do_rewrap_batch();
         }
     }
 
