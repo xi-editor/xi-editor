@@ -912,10 +912,10 @@ impl View {
     ) {
         let visible = self.first_line..self.first_line + self.height;
         match self.lines.after_edit(text, last_text, delta, width_cache, client, visible) {
-            Ok(InvalLines { start_line, inval_count, new_count }) => {
+            Some(InvalLines { start_line, inval_count, new_count }) => {
                 self.lc_shadow.edit(start_line, start_line + inval_count, new_count);
             }
-            Err(first_wrapped_line) => self.lc_shadow.truncate(first_wrapped_line),
+            None => self.set_dirty(text),
         }
 
         // Any edit cancels a drag. This is good behavior for edits initiated through
