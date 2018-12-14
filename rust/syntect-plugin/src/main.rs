@@ -50,6 +50,7 @@ type EditBuilder = DeltaBuilder<RopeInfo>;
 pub enum EditType {
     Insert,
     Newline,
+    Other,
 }
 
 impl FromStr for EditType {
@@ -59,6 +60,7 @@ impl FromStr for EditType {
         match s {
             "insert" => Ok(EditType::Insert),
             "newline" => Ok(EditType::Newline),
+            "other" => Ok(EditType::Other),
             _ => Err(()),
         }
     }
@@ -73,7 +75,8 @@ struct PluginState {
     // unflushed spans
     spans: Vec<ScopeSpan>,
     new_scopes: Vec<Vec<String>>,
-    indentation_state: Vec<(usize, EditType)>,
+    // keeps track of the lines (start, end) that might need indentation after edit
+    indentation_state: Vec<(usize, usize, EditType)>,
 }
 
 type LockedRepo = MutexGuard<'static, ScopeRepository>;
@@ -216,14 +219,17 @@ impl<'a> PluginState {
     }
 
     pub fn indent_lines(&mut self, view: &mut MyView, syntax_set: &SyntaxSet) {
-        for (line_of_edit, edit_type) in self.indentation_state.to_vec() {
+        for (start_line, end_line, edit_type) in self.indentation_state.to_vec() {
             match edit_type {
                 EditType::Newline => self
-                    .autoindent_line(view, syntax_set, line_of_edit)
+                    .autoindent_line(view, syntax_set, start_line)
                     .expect("auto-indent error on newline"),
                 EditType::Insert => self
-                    .check_indent_active_edit(view, syntax_set, line_of_edit)
+                    .check_indent_active_edit(view, syntax_set, start_line)
                     .expect("auto-indent error on insert"),
+                EditType::Other => self
+                    .bulk_autoindent(view, syntax_set, start_line, end_line)
+                    .expect("auto-indent error on other"),
             };
         }
 
@@ -248,9 +254,10 @@ impl<'a> PluginState {
     fn consider_indentation(&mut self, view: &mut MyView, delta: &RopeDelta, edit_type: EditType) {
         for region in delta.iter_inserts() {
             let line_of_edit = view.line_of_offset(region.new_offset).unwrap();
+            let last_line_of_edit = view.line_of_offset(region.new_offset + region.len).unwrap();
             match edit_type {
                 EditType::Newline => {
-                    self.indentation_state.push((line_of_edit + 1, EditType::Newline))
+                    self.indentation_state.push((line_of_edit + 1, last_line_of_edit + 1, EditType::Newline))
                 }
                 EditType::Insert => {
                     let range = region.new_offset..region.new_offset + region.len;
@@ -260,11 +267,64 @@ impl<'a> PluginState {
                         insert_region.as_bytes().iter().all(u8::is_ascii_whitespace)
                     };
                     if !is_whitespace {
-                        self.indentation_state.push((line_of_edit, EditType::Insert));
+                        self.indentation_state.push((line_of_edit, last_line_of_edit, EditType::Insert));
                     }
+                }
+                EditType::Other => {    // we are mainly interested in auto-indenting after paste
+                    self.indentation_state.push((line_of_edit, last_line_of_edit, EditType::Other));
                 }
             };
         }
+    }
+
+    fn bulk_autoindent(
+        &mut self,
+        view: &mut MyView,
+        syntax_set: &SyntaxSet,
+        start_line: usize,
+        end_line: usize,
+    ) -> Result<(), Error> {
+        let _t = trace_block("Syntect::bulk_autoindent", &["syntect"]);
+        let tab_size = view.get_config().tab_size;
+        let use_spaces = view.get_config().translate_tabs_to_spaces;
+
+        let mut builder = DeltaBuilder::new(view.get_buf_size());
+        let mut base_indent = 0;
+
+        if start_line > 0 {
+            base_indent = self.previous_nonblank_line(view, start_line)?
+                .map(|l| self.indent_level_of_line(view, l))
+                .unwrap_or(0);
+        }
+
+        for line in start_line..=end_line {
+            let current_line_indent = self.indent_level_of_line(view, line);
+
+            if line > 0 {
+                let increase_level = self.test_increase(view, syntax_set, line)?;
+                let decrease_level = self.test_decrease(view, syntax_set, line)?;
+                let increase = if increase_level { tab_size } else { 0 };
+                let decrease = if decrease_level { tab_size } else { 0 };
+                let final_level = base_indent + increase - decrease;
+                base_indent = final_level;
+            }
+
+            if base_indent != current_line_indent {
+                let edit_start = view.offset_of_line(line)?;
+                let edit_len = {
+                    let line = view.get_line(line)?;
+                    line.as_bytes().iter().take_while(|b| **b == b' ' || **b == b'\t').count()
+                };
+
+                let indent_text = if use_spaces { n_spaces(base_indent) } else { n_tabs(base_indent / tab_size) };
+
+                let iv = Interval::new(edit_start, edit_start + edit_len);
+                builder.replace(iv, indent_text.into());
+            }
+        }
+
+        view.edit(builder.build(), INDENTATION_PRIORITY, false, false, String::from("syntect"));
+        Ok(())
     }
 
     /// Called when freshly computing a line's indent level, such as after
@@ -587,7 +647,7 @@ impl<'a> Plugin for Syntect<'a> {
         let edit_type = edit_type.parse::<EditType>().ok();
         if should_auto_indent
             && author == "core"
-            && (edit_type == Some(EditType::Newline) || edit_type == Some(EditType::Insert))
+            && (edit_type == Some(EditType::Newline) || edit_type == Some(EditType::Insert) || edit_type == Some(EditType::Other))
         {
             if let Some(delta) = delta {
                 let state = self.view_state.get_mut(&view.get_id()).unwrap();
