@@ -49,6 +49,16 @@ impl Default for WrapWidth {
     }
 }
 
+impl WrapWidth {
+    fn differs_in_kind(self, other: WrapWidth) -> bool {
+        use self::WrapWidth::*;
+        match (self, other) {
+            (None, None) | (Bytes(_), Bytes(_)) | (Width(_), Width(_)) => false,
+            _else => true,
+        }
+    }
+}
+
 /// A range to be rewrapped.
 type Task = Interval;
 
@@ -81,12 +91,13 @@ pub(crate) struct InvalLines {
 
 impl Lines {
     pub(crate) fn set_wrap_width(&mut self, text: &Rope, wrap: WrapWidth) {
-        self.wrap = wrap;
         self.work.clear();
         self.add_task(0..text.len());
-        if self.breaks.len() == 0 {
+        if self.breaks.len() == 0 || self.wrap.differs_in_kind(wrap) {
+            // we keep breaks while resizing, for more efficient invalidation
             self.breaks = Breaks::new_no_break(text.len());
         }
+        self.wrap = wrap;
     }
 
     fn add_task<T: Into<Interval>>(&mut self, iv: T) {
