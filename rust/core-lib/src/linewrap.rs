@@ -208,6 +208,38 @@ impl Lines {
         self.work = work;
     }
 
+    /// Adjust offsets for any tasks after an edit.
+    fn patchup_tasks<T: Into<Interval>>(&mut self, iv: T, new_len: usize) {
+        let iv = iv.into();
+        let mut new_work = Vec::new();
+
+        for task in &self.work {
+            if task.is_before(iv.start) {
+                new_work.push(*task);
+            } else if task.contains(iv.start) {
+                let head = task.prefix(iv);
+                let tail_end = iv.start.max((task.end + new_len).saturating_sub(iv.size()));
+                let tail = Interval::new(iv.start, tail_end);
+                new_work.push(head);
+                new_work.push(tail);
+            } else {
+                new_work.push(task.translate_neg(iv.size()).translate(new_len));
+            }
+        }
+        new_work.retain(|iv| !iv.is_empty());
+        self.work.clear();
+        for task in new_work {
+            if let Some(prev) = self.work.last_mut() {
+                if prev.end >= task.start {
+                    *prev = prev.union(task);
+                    continue;
+                }
+            }
+            self.work.push(task);
+        }
+    }
+
+
     pub(crate) fn rewrap_chunk(
         &mut self,
         text: &Rope,
@@ -1043,5 +1075,30 @@ mod tests {
         assert_eq!(make_ranges(&lines.work), vec![10..50, 100..200, 250..400]);
         lines.add_task(60..450);
         assert_eq!(make_ranges(&lines.work), vec![10..50, 60..450]);
+    }
+
+    #[test]
+    fn patchup_frontier() {
+        let mut lines = Lines::default();
+        lines.add_task(0..100);
+        assert_eq!(make_ranges(&lines.work), vec![0..100]);
+        lines.patchup_tasks(20..30, 20);
+        assert_eq!(make_ranges(&lines.work), vec![0..110]);
+
+        // delete everything?
+        lines.patchup_tasks(0..200, 0);
+        assert_eq!(make_ranges(&lines.work), vec![]);
+
+        lines.add_task(0..110);
+        lines.patchup_tasks(0..30, 0);
+        assert_eq!(make_ranges(&lines.work), vec![0..80]);
+        lines.update_tasks_after_wrap(20..30);
+        assert_eq!(make_ranges(&lines.work), vec![0..20, 30..80]);
+        lines.patchup_tasks(10..40, 0);
+        assert_eq!(make_ranges(&lines.work), vec![0..50]);
+        lines.update_tasks_after_wrap(20..30);
+        assert_eq!(make_ranges(&lines.work), vec![0..20, 30..50]);
+        lines.patchup_tasks(10..10, 10);
+        assert_eq!(make_ranges(&lines.work), vec![0..30, 40..60]);
     }
 }
