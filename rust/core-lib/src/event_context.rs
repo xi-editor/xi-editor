@@ -579,7 +579,7 @@ impl<'a> EventContext<'a> {
 }
 
 #[cfg(test)]
-#[cfg_attr(rustfmt, rustfmt_skip)]
+#[rustfmt::skip]
 mod tests {
     use super::*;
     use crate::config::ConfigManager;
