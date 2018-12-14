@@ -246,13 +246,17 @@ impl Lines {
         // find our minimum convergence point.
         // this is the next break if hard or the second next if soft, or EOF.
         let mut cursor = MergedBreaks::new(text, &self.breaks);
+
+        cursor.set_offset(iv.start);
+        let prev_break = cursor.offset;
+
         cursor.set_offset(iv.start + newlen);
         cursor.next();
         let next_valid_break =
             if cursor.is_hard() { cursor.offset } else { cursor.next().unwrap_or(text.len()) };
 
         //FIXME: update existing work items as necessary
-        let new_task = iv.start..next_valid_break;
+        let new_task = prev_break..next_valid_break;
         self.add_task(new_task);
 
         // possible if the whole buffer is deleted, e.g
