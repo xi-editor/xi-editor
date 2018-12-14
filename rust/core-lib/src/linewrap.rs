@@ -224,7 +224,7 @@ impl Lines {
         width_cache: &mut WidthCache,
         client: &Client,
         visible_lines: Range<usize>,
-    ) -> Result<InvalLines, usize> {
+    ) -> Option<InvalLines> {
         let (iv, newlen) = delta.summary();
         // For minimal invalidation, we need to know the number of breaks that will
         // be replaced; we need to get this from the pre-edit state (i.e. here)
@@ -238,8 +238,9 @@ impl Lines {
         self.breaks.edit(iv, builder.build());
 
         if self.wrap == WrapWidth::None {
-            let new_count = (text.line_of_offset(iv.start + newlen) + 1) - start_line;
-            return Ok(InvalLines { start_line, inval_count: old_breaks_count, new_count });
+            let new_end = text.line_of_offset(iv.start + newlen) + 1;
+            let new_count = new_end - start_line;
+            return Some(InvalLines { start_line, inval_count: old_breaks_count, new_count });
         }
 
         // find our minimum convergence point.
@@ -256,16 +257,16 @@ impl Lines {
 
         // possible if the whole buffer is deleted, e.g
         if self.work.is_empty() {
-            return Err(iv.start);
+            return None;
         }
         let summary = self.do_wrap_task(text, width_cache, client, visible_lines, None);
         let WrapSummary { start_line, inval_after_end, new_count, converged, .. } = summary;
 
         if converged {
             let inval_count = old_breaks_count + inval_after_end;
-            Ok(InvalLines { start_line, inval_count, new_count })
+            Some(InvalLines { start_line, inval_count, new_count })
         } else {
-            Err(start_line)
+            None
         }
     }
 
