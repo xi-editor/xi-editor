@@ -319,10 +319,10 @@ impl Engine {
         self.find_rev_token(rev).map(|rev_index| self.rev_content_for_index(rev_index))
     }
 
-    /// A delta that, when applied to `base_rev`, results in the current head. Panics
-    /// if there is not at least one edit.
-    pub fn delta_rev_head(&self, base_rev: RevToken) -> Delta<RopeInfo> {
-        let ix = self.find_rev_token(base_rev).expect("base revision not found");
+    /// A delta that, when applied to `base_rev`, results in the current head. Returns
+    /// an error if there is not at least one edit.
+    pub fn try_delta_rev_head(&self, base_rev: RevToken) -> Result<Delta<RopeInfo>, Error> {
+        let ix = self.find_rev_token(base_rev).ok_or_else(|| Error::MissingRevision(base_rev))?;
         let prev_from_union = self.deletes_from_cur_union_for_index(ix);
         // TODO: this does 2 calls to Delta::synthesize and 1 to apply, this probably could be better.
         let old_tombstones = shuffle_tombstones(
@@ -331,7 +331,7 @@ impl Engine {
             &self.deletes_from_union,
             &prev_from_union,
         );
-        Delta::synthesize(&old_tombstones, &prev_from_union, &self.deletes_from_union)
+        Ok(Delta::synthesize(&old_tombstones, &prev_from_union, &self.deletes_from_union))
     }
 
     // TODO: don't construct transform if subsets are empty
@@ -1073,33 +1073,43 @@ mod tests {
     }
 
     #[test]
-    fn delta_rev_head() {
+    fn try_delta_rev_head() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
         let first_rev = engine.get_head_rev_id().token();
         engine.edit_rev(1, 1, first_rev, build_delta_1());
-        let d = engine.delta_rev_head(first_rev);
+        let d = engine.try_delta_rev_head(first_rev).unwrap();
         assert_eq!(String::from(engine.get_head()), d.apply_to_string(TEST_STR));
     }
 
     #[test]
-    fn delta_rev_head_2() {
+    fn try_delta_rev_head_2() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
         let first_rev = engine.get_head_rev_id().token();
         engine.edit_rev(1, 1, first_rev, build_delta_1());
         engine.edit_rev(0, 2, first_rev, build_delta_2());
-        let d = engine.delta_rev_head(first_rev);
+        let d = engine.try_delta_rev_head(first_rev).unwrap();
         assert_eq!(String::from(engine.get_head()), d.apply_to_string(TEST_STR));
     }
 
     #[test]
-    fn delta_rev_head_3() {
+    fn try_delta_rev_head_3() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
         let first_rev = engine.get_head_rev_id().token();
         engine.edit_rev(1, 1, first_rev, build_delta_1());
         let after_first_edit = engine.get_head_rev_id().token();
         engine.edit_rev(0, 2, first_rev, build_delta_2());
-        let d = engine.delta_rev_head(after_first_edit);
+        let d = engine.try_delta_rev_head(after_first_edit).unwrap();
         assert_eq!(String::from(engine.get_head()), d.apply_to_string("0123456789abcDEEFghijklmnopqr999stuvz"));
+    }
+
+    #[test]
+    fn try_delta_rev_head_missing_token() {
+        let mut engine = Engine::new(Rope::from(TEST_STR));
+        let first_rev = engine.get_head_rev_id().token();
+        let bad_rev = RevToken::default();
+        engine.edit_rev(1, 1, first_rev, build_delta_1());
+        let d = engine.try_delta_rev_head(bad_rev);
+        assert!(d.is_err());
     }
 
     #[test]
