@@ -286,7 +286,7 @@ impl Editor {
         }
 
         let last_token = self.last_rev_id.token();
-        let delta = self.engine.delta_rev_head(last_token);
+        let delta = self.engine.try_delta_rev_head(last_token).expect("last_rev not found");
         // TODO (performance): it's probably quicker to stash last_text
         // rather than resynthesize it.
         let last_text = self.engine.get_rev(last_token).expect("last_rev not found");
@@ -306,7 +306,7 @@ impl Editor {
     }
 
     pub(crate) fn delta_rev_head(&self, target_rev_id: RevToken) -> RopeDelta {
-        self.engine.delta_rev_head(target_rev_id)
+        self.engine.try_delta_rev_head(target_rev_id).unwrap()
     }
 
     #[cfg(not(target_os = "fuchsia"))]
@@ -879,14 +879,15 @@ impl Editor {
         }
         let mut spans = sb.build();
         if rev != self.engine.get_head_rev_id().token() {
-            let delta = self.engine.delta_rev_head(rev);
-            let mut transformer = Transformer::new(&delta);
-            let new_start = transformer.transform(start, false);
-            if !transformer.interval_untouched(Interval::new(start, end_offset)) {
-                spans = spans.transform(start, end_offset, &mut transformer);
+            if let Ok(delta) = self.engine.try_delta_rev_head(rev) {
+                let mut transformer = Transformer::new(&delta);
+                let new_start = transformer.transform(start, false);
+                if !transformer.interval_untouched(Interval::new(start, end_offset)) {
+                    spans = spans.transform(start, end_offset, &mut transformer);
+                }
+                start = new_start;
+                end_offset = transformer.transform(end_offset, true);
             }
-            start = new_start;
-            end_offset = transformer.transform(end_offset, true);
         }
         let iv = Interval::new(start, end_offset);
         self.layers.update_layer(plugin, iv, spans);
