@@ -468,11 +468,17 @@ impl<'a> EventContext<'a> {
 
     pub(crate) fn plugin_stopped(&mut self, plugin: &Plugin) {
         self.client.plugin_stopped(self.view_id, &plugin.name, 0);
-        self.with_editor(|ed, view, _, _| {
-            ed.get_layers_mut().remove_layer(plugin.id);
-            view.set_dirty(ed.get_buffer());
+        let needs_render = self.with_editor(|ed, view, _, _| {
+            if ed.get_layers_mut().remove_layer(plugin.id).is_some() {
+                view.set_dirty(ed.get_buffer());
+                true
+            } else {
+                false
+            }
         });
-        self.render();
+        if needs_render {
+            self.render();
+        }
     }
 
     pub(crate) fn do_plugin_update(&mut self, update: Result<Value, RpcError>) {
