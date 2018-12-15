@@ -405,8 +405,8 @@ impl<'a> Iterator for VisualLines<'a> {
     }
 }
 
-/// A cursor over both hard and soft breaks. Currently this is either/or,
-/// but eventually soft will be soft only, and this will interleave them.
+/// A cursor over both hard and soft breaks. Hard breaks are retrieved from
+/// the rope; the soft breaks are stored independently; this interleaves them.
 ///
 /// # Invariants:
 ///
@@ -421,13 +421,15 @@ struct MergedBreaks<'a> {
     /// Starting from zero, how many calls to `next` to get to `self.offset`?
     cur_line: usize,
     total_lines: usize,
+    /// Total length, in base units
+    len: usize,
 }
 
 impl<'a> Iterator for MergedBreaks<'a> {
     type Item = usize;
 
     fn next(&mut self) -> Option<usize> {
-        if self.text.pos() == self.offset && self.offset != self.text.total_len() {
+        if self.text.pos() == self.offset && !self.at_eof() {
             // don't iterate past EOF, or we can't get the leaf and check for \n
             self.text.next::<LinesMetric>();
         }
@@ -437,8 +439,7 @@ impl<'a> Iterator for MergedBreaks<'a> {
         let prev_off = self.offset;
         self.offset = self.text.pos().min(self.soft.pos());
 
-        let eof_without_newline =
-            self.offset > 0 && self.offset == self.text.total_len() && self.eof_without_newline();
+        let eof_without_newline = self.offset > 0 && self.at_eof() && self.eof_without_newline();
         if self.offset == prev_off || eof_without_newline {
             None
         } else {
@@ -459,7 +460,8 @@ impl<'a> MergedBreaks<'a> {
         let soft = Cursor::new(breaks, 0);
         let total_lines =
             text.root().measure::<LinesMetric>() + soft.root().measure::<BreaksMetric>();
-        MergedBreaks { text, soft, offset: 0, cur_line: 0, total_lines }
+        let len = text.total_len();
+        MergedBreaks { text, soft, offset: 0, cur_line: 0, total_lines, len }
     }
 
     /// Sets the `self.offset` to the first valid break immediately at or preceding `offset`,
@@ -501,11 +503,11 @@ impl<'a> MergedBreaks<'a> {
     fn offset_of_line_linear(&mut self, line: usize) -> usize {
         assert!(line > self.cur_line);
         let dist = line - self.cur_line;
-        self.nth(dist - 1).unwrap_or(self.text.total_len())
+        self.nth(dist - 1).unwrap_or(self.len)
     }
 
     fn offset_of_line_bsearch(&mut self, line: usize) -> usize {
-        let mut range = 0..self.text.total_len();
+        let mut range = 0..self.len;
         loop {
             let pivot = range.start + (range.end - range.start) / 2;
             self.set_offset(pivot);
@@ -519,9 +521,13 @@ impl<'a> MergedBreaks<'a> {
         }
     }
 
+    fn at_eof(&self) -> bool {
+        self.offset == self.len
+    }
+
     fn eof_without_newline(&self) -> bool {
-        debug_assert_eq!(self.offset, self.text.total_len());
-        self.text.get_leaf().map(|(l, _)| l.as_bytes()[l.len() - 1] != b'\n').unwrap()
+        debug_assert!(self.at_eof());
+        self.text.get_leaf().map(|(l, _)| l.as_bytes().last() != Some(&b'\n')).unwrap()
     }
 }
 
@@ -653,7 +659,7 @@ mod tests {
     }
 
     #[test]
-    fn bsearch_equivelance() {
+    fn bsearch_equivalence() {
         let text: Rope =
             iter::repeat("this is a line with some text in it, which is not unusual\n")
                 .take(1000)
