@@ -893,7 +893,6 @@ impl View {
         let visible = self.first_line..self.first_line + self.height;
         let inval = self.lines.rewrap_chunk(text, width_cache, client, spans, visible);
         if let Some(InvalLines { start_line, inval_count, new_count }) = inval {
-            debug!("replaced {} breaks with {} at {}", inval_count, new_count, start_line);
             self.lc_shadow.edit(start_line, start_line + inval_count, new_count);
         }
     }
