@@ -305,8 +305,11 @@ impl Editor {
         Some((delta, last_text, drift))
     }
 
-    pub(crate) fn delta_rev_head(&self, target_rev_id: RevToken) -> RopeDelta {
-        self.engine.try_delta_rev_head(target_rev_id).unwrap()
+    /// Attempts to find the delta from head for the given `RevToken`. Returns
+    /// `None` if the revision is not found, so this result should be checked if
+    /// the revision is coming from a plugin.
+    pub(crate) fn delta_rev_head(&self, target_rev_id: RevToken) -> Option<RopeDelta> {
+        self.engine.try_delta_rev_head(target_rev_id).ok()
     }
 
     #[cfg(not(target_os = "fuchsia"))]
@@ -887,6 +890,8 @@ impl Editor {
                 }
                 start = new_start;
                 end_offset = transformer.transform(end_offset, true);
+            } else {
+                error!("Revision {} not found", rev);
             }
         }
         let iv = Interval::new(start, end_offset);
