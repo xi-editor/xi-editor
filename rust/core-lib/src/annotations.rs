@@ -23,22 +23,25 @@ use view::View;
 use xi_rope::spans::Spans;
 use xi_rope::{Interval, Rope};
 
-pub type AnnotationType = String;
-
-/// Annotation types used in core.
-pub enum CoreAnnotationType {
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum AnnotationType {
     Selection,
     Find,
+    Other(String),
 }
 
-impl CoreAnnotationType {
-    pub fn as_type(&self) -> AnnotationType {
+impl AnnotationType {
+    fn as_str(&self) -> &str {
         match self {
-            CoreAnnotationType::Selection => "selection".to_string(),
-            CoreAnnotationType::Find => "find".to_string(),
+            AnnotationType::Find => "find",
+            AnnotationType::Selection => "selection",
+            AnnotationType::Other(ref s) => s,
         }
     }
 }
+
+/// Location and range of an annotation ([start_line, start_col, end_line, end_col]).
+pub type AnnotationRange = Vec<[usize; 4]>;
 
 /// A set of annotations of a given type.
 #[derive(Clone)]
@@ -52,7 +55,7 @@ pub struct Annotations {
 pub struct AnnotationSlice {
     annotation_type: AnnotationType,
     /// Annotation occurrences, guaranteed non-descending start order.
-    ranges: Vec<[usize; 4]>,
+    ranges: AnnotationRange,
     /// If present, one payload per range.
     payloads: Option<Vec<Value>>,
 }
@@ -60,7 +63,7 @@ pub struct AnnotationSlice {
 impl AnnotationSlice {
     pub fn new(
         annotation_type: AnnotationType,
-        ranges: Vec<[usize; 4]>,
+        ranges: AnnotationRange,
         payloads: Option<Vec<Value>>,
     ) -> Self {
         AnnotationSlice { annotation_type, ranges, payloads }
@@ -69,7 +72,7 @@ impl AnnotationSlice {
     /// Returns json representation.
     pub fn to_json(&self) -> Value {
         json!({
-            "type": self.annotation_type,
+            "type": self.annotation_type.as_str(),
             "ranges": self.ranges,
             "payloads": self.payloads,
             "n": self.ranges.len()
