@@ -1504,7 +1504,7 @@ mod tests {
             match *op {
                 MergeTestOp::Merge(ai, bi) => {
                     let (start, end) = self.peers.split_at_mut(ai);
-                    let (mut a, rest) = end.split_first_mut().unwrap();
+                    let (a, rest) = end.split_first_mut().unwrap();
                     let b = if bi < ai {
                         &mut start[bi]
                     } else {
@@ -1526,7 +1526,7 @@ mod tests {
                     }
                 },
                 MergeTestOp::Edit { ei, p, u, d: ref delta } => {
-                    let mut e = &mut self.peers[ei];
+                    let e = &mut self.peers[ei];
                     let head = e.get_head_rev_id().token();
                     e.edit_rev(p, u, head, delta.clone());
                 },
