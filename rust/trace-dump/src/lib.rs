@@ -100,7 +100,7 @@ mod tests {
             assert_eq!(decoded_result[i]["ph"].as_str().unwrap(), "i");
             assert_eq!(decoded_result[i]["ts"], samples[i].timestamp_us);
             let nth_sample = &samples[i];
-            let mut nth_args = nth_sample.args.as_ref().unwrap();
+            let nth_args = nth_sample.args.as_ref().unwrap();
             assert_eq!(decoded_result[i]["args"]["xi_payload"], json!(nth_args.payload.as_ref()));
         }
         assert_eq!(decoded_result[5]["ph"], "B");
