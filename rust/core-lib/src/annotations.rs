@@ -18,10 +18,10 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::iter;
 
-use plugins::PluginId;
-use view::View;
-use xi_rope::spans::Spans;
-use xi_rope::{Interval, Rope};
+use crate::plugins::PluginId;
+use crate::view::View;
+use crate::xi_rope::spans::Spans;
+use crate::xi_rope::{Interval, Rope};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum AnnotationType {
