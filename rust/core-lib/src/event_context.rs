@@ -195,8 +195,15 @@ impl<'a> EventContext<'a> {
                 // The action that follows the block must belong to a separate undo group
                 self.editor.borrow_mut().update_edit_type();
 
-                let delta = self.editor.borrow_mut().delta_rev_head(starting_revision);
-                self.update_plugins(&mut self.editor.borrow_mut(), delta, "core")
+                let res = self.editor.borrow_mut().delta_rev_head(starting_revision);
+                if let Some(delta) = res {
+                    self.update_plugins(&mut self.editor.borrow_mut(), delta, "core");
+                } else {
+                    error!(
+                        "Failed to update plugins. Could not find delta for revision {}",
+                        starting_revision
+                    );
+                }
             }
             SpecialEvent::ClearRecording(recording_name) => {
                 let mut recorder = self.recorder.borrow_mut();
