@@ -15,7 +15,6 @@
 
 use std::cell::RefCell;
 use std::cmp::{max, min};
-use std::iter;
 use std::ops::Range;
 
 use serde_json::Value;
@@ -90,9 +89,6 @@ pub struct View {
 
     /// Tracks whether the replacement string or replace parameters changed.
     replace_changed: bool,
-
-    /// Annotations provided by plugins.
-    annotations: AnnotationStore,
 }
 
 /// Indicates what changed in the find state.
@@ -171,7 +167,6 @@ impl View {
             highlight_find: false,
             replace: None,
             replace_changed: false,
-            annotations: AnnotationStore::new(),
         }
     }
 
@@ -775,34 +770,17 @@ impl View {
                 }
             }
         }
+        let params = json!({
+            "ops": ops,
+            "pristine": pristine,
+        });
+        let update = Update { ops, pristine };
 
+        client.update_view(self.view_id, &params);
         self.lc_shadow = b.build();
         for find in &mut self.find {
             find.set_hls_dirty(false)
         }
-
-        let start_off = self.offset_of_line(text, self.first_line);
-        let end_off = self.offset_of_line(text, self.first_line + self.height + 1);
-        let visible_range = Interval::new(start_off, end_off);
-        let selection_annotations =
-            self.selection.get_annotations(visible_range, &self, text).to_json();
-        let find_annotations =
-            self.find.iter().map(|ref f| f.get_annotations(visible_range, &self, text).to_json());
-        let plugin_annotations = self.annotations.iter_range(visible_range).map(|a| a.to_json());
-
-        let annotations = iter::once(selection_annotations)
-            .chain(find_annotations)
-            .chain(plugin_annotations)
-            .collect::<Vec<_>>();
-
-        let params = json!({
-            "ops": ops,
-            "pristine": pristine,
-            "annotations": annotations,
-        });
-        let update = Update { ops, pristine };
-
-        client.update_view(self.view_id, &update);
     }
 
     /// Determines the current number of find results and search parameters to send them to
