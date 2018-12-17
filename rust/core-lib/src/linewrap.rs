@@ -82,6 +82,21 @@ pub(crate) struct InvalLines {
     pub(crate) new_count: usize,
 }
 
+/// Detailed information about changes to linebreaks, used to generate
+/// invalidation information. The logic behind invalidation is different
+/// depending on whether we're updating breaks after an edit, or continuing
+/// a bulk rewrapping task. This is shared between the two cases, and contains
+/// the information relevant to both of them.
+struct WrapSummary {
+    start_line: usize,
+    /// Total number of invalidated lines; this is meaningless in the after_edit case.
+    inval_count: usize,
+    /// The total number of new (hard + soft) breaks in the wrapped region.
+    new_count: usize,
+    /// The number of new soft breaks.
+    new_soft: usize,
+}
+
 impl Lines {
     pub(crate) fn set_wrap_width(&mut self, text: &Rope, wrap: WrapWidth) {
         self.work.clear();
@@ -243,7 +258,9 @@ impl Lines {
         if self.is_converged() {
             None
         } else {
-            Some(self.do_wrap_task(text, width_cache, client, visible_lines, None))
+            let summary = self.do_wrap_task(text, width_cache, client, visible_lines, None);
+            let WrapSummary { start_line, inval_count, new_count, .. } = summary;
+            Some(InvalLines { start_line, inval_count, new_count })
         }
     }
 
@@ -259,37 +276,57 @@ impl Lines {
         visible_lines: Range<usize>,
     ) -> Option<InvalLines> {
         let (iv, newlen) = delta.summary();
+
+        let logical_start_line = text.line_of_offset(iv.start);
+        let old_logical_end_line = old_text.line_of_offset(iv.end) + 1;
+        let new_logical_end_line = text.line_of_offset(iv.start + newlen) + 1;
+        let old_logical_end_offset = old_text.offset_of_line(old_logical_end_line);
+        let old_hard_count = old_logical_end_line - logical_start_line;
+        let new_hard_count = new_logical_end_line - logical_start_line;
+
+        //TODO: we should be able to avoid wrapping the whole para in most cases,
+        // but the logic is trickier.
+        let prev_break = text.offset_of_line(logical_start_line);
+        let next_hard_break = text.offset_of_line(new_logical_end_line);
+
+        // count the soft breaks in the region we will rewrap, before we update them.
+        let inval_soft =
+            self.breaks.convert_metrics::<BreaksBaseMetric, BreaksMetric>(old_logical_end_offset)
+                - self.breaks.convert_metrics::<BreaksBaseMetric, BreaksMetric>(prev_break);
+
         // update soft breaks, adding empty spans in the edited region
         let mut builder = BreakBuilder::new();
         builder.add_no_break(newlen);
         self.breaks.edit(iv, builder.build());
         self.patchup_tasks(iv, newlen);
 
-        //TODO: we currently only do minimal invalidation if there are no soft breaks.
         if self.wrap == WrapWidth::None {
-            let start_line = self.visual_line_of_offset(old_text, iv.start);
-            let old_end = self.visual_line_of_offset(old_text, iv.end) + 1;
-            let new_end = self.visual_line_of_offset(text, iv.start + newlen) + 1;
-            let inval_count = old_end - start_line;
-            let new_count = new_end - start_line;
-            return Some(InvalLines { start_line, inval_count, new_count });
+            return Some(InvalLines {
+                start_line: logical_start_line,
+                inval_count: old_hard_count,
+                new_count: new_hard_count,
+            });
         }
-
-        let prev_break = text.offset_of_line(text.line_of_offset(iv.start));
-
-        //TODO: we should be able to avoid wrapping the whole para in most cases,
-        // but the logic is trickier.
-        let end_line = text.line_of_offset(iv.start + newlen);
-        let next_hard_break = text.offset_of_line(end_line + 1);
 
         let new_task = prev_break..next_hard_break;
         self.add_task(new_task);
 
         // possible if the whole buffer is deleted, e.g
         if !self.work.is_empty() {
-            self.do_wrap_task(text, width_cache, client, visible_lines, None);
+            let summary = self.do_wrap_task(text, width_cache, client, visible_lines, None);
+            let WrapSummary { start_line, new_soft, .. } = summary;
+            // if we haven't converged after this update we can't do minimal invalidation
+            // because we don't have complete knowledge of the new breaks state.
+            if self.is_converged() {
+                let inval_count = old_hard_count + inval_soft;
+                let new_count = new_hard_count + new_soft;
+                Some(InvalLines { start_line, new_count, inval_count })
+            } else {
+                None
+            }
+        } else {
+            None
         }
-        None
     }
 
     fn do_wrap_task(
@@ -299,7 +336,7 @@ impl Lines {
         client: &Client,
         visible_lines: Range<usize>,
         max_lines: Option<usize>,
-    ) -> InvalLines {
+    ) -> WrapSummary {
         use self::WrapWidth::*;
         let _t = trace_block("Lines::do_wrap_task", &["core"]);
         // 'line' is a poor unit here; could do some fancy Duration thing?
@@ -360,18 +397,21 @@ impl Lines {
         let breaks = builder.build();
         let end = task.start + breaks.len();
 
+        // this is correct *only* when an edit has not occured.
         let inval_soft = self.breaks.convert_metrics::<BreaksBaseMetric, BreaksMetric>(end)
             - self.breaks.convert_metrics::<BreaksBaseMetric, BreaksMetric>(task.start);
-        let hard = text.convert_metrics::<BaseMetric, LinesMetric>(end)
-            - text.convert_metrics::<BaseMetric, LinesMetric>(task.start);
-        let inval_count = inval_soft + hard;
-        let new_count = breaks.measure::<BreaksMetric>() + hard;
+
+        let hard_count = 1 + text.line_of_offset(end) - text.line_of_offset(task.start);
+
+        let inval_count = inval_soft + hard_count;
+        let new_soft = breaks.measure::<BreaksMetric>();
+        let new_count = new_soft + hard_count;
 
         let iv = Interval::new(task.start, end);
         self.breaks.edit(iv, breaks);
         self.update_tasks_after_wrap(iv);
 
-        InvalLines { start_line, inval_count, new_count }
+        WrapSummary { start_line, inval_count, new_count, new_soft }
     }
 
     #[cfg(test)]
