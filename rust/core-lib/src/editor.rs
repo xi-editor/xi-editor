@@ -997,6 +997,7 @@ fn count_lines(s: &str) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::BufferId;
     #[test]
     fn plugin_edit() {
         let base_text = "hello";
@@ -1019,5 +1020,31 @@ mod tests {
         editor.apply_plugin_edit(edit_one);
 
         assert_eq!(editor.get_buffer().to_string(), "sshello");
+    }
+
+    #[test]
+    fn empty_transpose() {
+        let mut editor = Editor::with_text("");
+        let view = View::new(1.into(), BufferId::new(2));
+
+        editor.do_transpose(&view);
+
+        assert_eq!(editor.text.len(), 0);
+    }
+
+    // This is the issue reported by #962
+    #[test]
+    fn eol_multicursor_transpose() {
+        let mut editor = Editor::with_text("word\n");
+        let mut view = View::new(1.into(), BufferId::new(2));
+
+        let mut selection = Selection::new();
+        selection.add_region(SelRegion::caret(4)); // end of the first line
+        selection.add_region(SelRegion::caret(5)); // at eof
+        view.set_selection(&editor.text, selection);
+
+        editor.do_transpose(&view);
+
+        assert_eq!(editor.get_buffer().to_string(), "wor\nd");
     }
 }
