@@ -71,8 +71,18 @@ pub(crate) struct Lines {
     work: Vec<Task>,
 }
 
-/// A range of bytes representing a visual line.
-pub(crate) type VisualLine = Range<usize>;
+pub(crate) struct VisualLine {
+    pub(crate) interval: Interval,
+    /// The logical line number for this line. Only present when this is the
+    /// first visual line in a logical line.
+    pub(crate) line_num: Option<usize>,
+}
+
+impl VisualLine {
+    fn new<I: Into<Interval>, L: Into<Option<usize>>>(iv: I, line: L) -> Self {
+        VisualLine { interval: iv.into(), line_num: line.into() }
+    }
+}
 
 /// Describes what has changed after a batch of word wrapping; this is used
 /// for minimal invalidation.
@@ -177,8 +187,9 @@ impl Lines {
     ) -> impl Iterator<Item = VisualLine> + 'a {
         let mut cursor = MergedBreaks::new(text, &self.breaks);
         let offset = cursor.offset_of_line(start_line);
+        let logical_line = text.line_of_offset(offset) + 1;
         cursor.set_offset(offset);
-        VisualLines { offset, cursor, len: text.len(), eof: false }
+        VisualLines { offset, cursor, len: text.len(), logical_line, eof: false }
     }
 
     /// Returns the next task, prioritizing the currently visible region.
@@ -376,7 +387,7 @@ impl Lines {
                     old_next_maybe = cursor.next();
                 }
 
-                let is_hard = cursor.offset == new_next && cursor.is_hard();
+                let is_hard = cursor.offset == new_next && cursor.is_hard_break();
                 if is_hard {
                     builder.add_no_break(new_next - pos);
                 } else {
@@ -579,6 +590,8 @@ impl<'a> LineBreakCursor<'a> {
 struct VisualLines<'a> {
     cursor: MergedBreaks<'a>,
     offset: usize,
+    /// The current logical line number.
+    logical_line: usize,
     len: usize,
     eof: bool,
 }
@@ -587,6 +600,7 @@ impl<'a> Iterator for VisualLines<'a> {
     type Item = VisualLine;
 
     fn next(&mut self) -> Option<VisualLine> {
+        let line_num = if self.cursor.is_hard_break() { Some(self.logical_line) } else { None };
         let next_end_bound = match self.cursor.next() {
             Some(b) => b,
             None if self.eof => return None,
@@ -595,7 +609,10 @@ impl<'a> Iterator for VisualLines<'a> {
                 self.len
             }
         };
-        let result = self.offset..next_end_bound;
+        let result = VisualLine::new(self.offset..next_end_bound, line_num);
+        if self.cursor.is_hard_break() {
+            self.logical_line += 1;
+        }
         self.offset = next_end_bound;
         Some(result)
     }
@@ -660,10 +677,6 @@ impl<'a> MergedBreaks<'a> {
         MergedBreaks { text, soft, offset: 0, cur_line: 0, total_lines, len }
     }
 
-    fn is_hard(&self) -> bool {
-        self.offset == self.text.pos()
-    }
-
     /// Sets the `self.offset` to the first valid break immediately at or preceding `offset`,
     /// and restores invariants.
     fn set_offset(&mut self, offset: usize) {
@@ -721,6 +734,10 @@ impl<'a> MergedBreaks<'a> {
         }
     }
 
+    fn is_hard_break(&self) -> bool {
+        self.offset == self.text.pos()
+    }
+
     fn at_eof(&self) -> bool {
         self.offset == self.len
     }
@@ -753,7 +770,7 @@ mod tests {
     }
 
     fn render_breaks<'a>(text: &'a Rope, lines: &Lines) -> Vec<Cow<'a, str>> {
-        let result = lines.iter_lines(text, 0).map(|l| text.slice_to_cow(l)).collect();
+        let result = lines.iter_lines(text, 0).map(|l| text.slice_to_cow(l.interval)).collect();
         result
     }
 
@@ -999,14 +1016,28 @@ mod tests {
     fn iter_lines() {
         let text: Rope = "aaaa\nbb bb cc\ncc dddd eeee ff\nff gggg".into();
         let lines = make_lines(&text, 2.);
-        let r: Vec<_> = lines.iter_lines(&text, 0).take(2).map(|l| text.slice_to_cow(l)).collect();
+        let r: Vec<_> =
+            lines.iter_lines(&text, 0).take(2).map(|l| text.slice_to_cow(l.interval)).collect();
         assert_eq!(r, vec!["aaaa\n", "bb "]);
 
-        let r: Vec<_> = lines.iter_lines(&text, 1).take(2).map(|l| text.slice_to_cow(l)).collect();
+        let r: Vec<_> =
+            lines.iter_lines(&text, 1).take(2).map(|l| text.slice_to_cow(l.interval)).collect();
         assert_eq!(r, vec!["bb ", "bb "]);
 
-        let r: Vec<_> = lines.iter_lines(&text, 3).take(3).map(|l| text.slice_to_cow(l)).collect();
+        let r: Vec<_> =
+            lines.iter_lines(&text, 3).take(3).map(|l| text.slice_to_cow(l.interval)).collect();
         assert_eq!(r, vec!["cc\n", "cc ", "dddd "]);
+    }
+
+    #[test]
+    fn line_numbers() {
+        let text: Rope = "aaaa\nbb bb cc\ncc dddd eeee ff\nff gggg".into();
+        let lines = make_lines(&text, 2.);
+        let nums: Vec<_> = lines.iter_lines(&text, 0).map(|l| l.line_num).collect();
+        assert_eq!(
+            nums,
+            vec![Some(1), Some(2), None, None, Some(3), None, None, None, Some(4), None]
+        );
     }
 
     fn make_ranges(ivs: &[Interval]) -> Vec<Range<usize>> {

@@ -554,8 +554,8 @@ impl View {
         style_spans: &Spans<Style>,
         line_num: usize,
     ) -> Value {
-        let start_pos = line.start;
-        let pos = line.end;
+        let start_pos = line.interval.start;
+        let pos = line.interval.end;
         let l_str = text.slice_to_cow(start_pos..pos);
         let mut cursors = Vec::new();
         let mut selections = Vec::new();
@@ -604,6 +604,9 @@ impl View {
 
         if !cursors.is_empty() {
             result["cursor"] = json!(cursors);
+        }
+        if let Some(line_num) = line.line_num {
+            result["ln"] = json!(line_num);
         }
         result
     }
