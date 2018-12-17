@@ -149,7 +149,7 @@ impl<'a> WidthBatchReq<'a> {
 
     /// Resolves pending measurements to concrete widths using the provided [`WidthMeasure`].
     /// On success, the tokens given by `request` will resolve in the cache.
-    pub fn resolve_pending<T: ?Sized + WidthMeasure>(
+    pub fn resolve_pending<T: WidthMeasure + ?Sized>(
         &mut self,
         handler: &T,
     ) -> Result<(), xi_rpc::Error> {
