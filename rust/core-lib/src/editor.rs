@@ -638,7 +638,8 @@ impl Editor {
                 if start >= last {
                     let end_line_offset =
                         view.offset_of_line(&self.text, view.line_of_offset(&self.text, end));
-                    if end == middle || end == end_line_offset {
+                    // include end != self.text.len() because if the editor is entirely empty, we dont' want to pull from empty space
+                    if (end == middle || end == end_line_offset) && end != self.text.len() {
                         middle = start;
                         start = self.text.prev_grapheme_offset(middle).unwrap_or(0);
                         end = middle.wrapping_add(1);
