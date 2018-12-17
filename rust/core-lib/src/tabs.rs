@@ -399,10 +399,13 @@ impl CoreState {
             return;
         }
 
+        let changes = self.config_manager.update_buffer_path(buffer_id, path);
+        let language = self.config_manager.get_buffer_language(buffer_id);
+
         self.make_context(view_id).unwrap().after_save(path);
+        self.make_context(view_id).unwrap().language_changed(&language);
 
         // update the config _after_ sending save related events
-        let changes = self.config_manager.update_buffer_path(buffer_id, path);
         if let Some(changes) = changes {
             self.make_context(view_id).unwrap().config_changed(&changes);
         }
