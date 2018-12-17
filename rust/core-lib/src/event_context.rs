@@ -1853,7 +1853,7 @@ mod tests {
 
         ctx.do_edit(EditNotification::Transpose);
 
-        assert_eq!(harness.debug_render(), ""); // should be noop
+        assert_eq!(harness.debug_render(), "|"); // should be noop
     }
 
     // This is the issue reported by #962
