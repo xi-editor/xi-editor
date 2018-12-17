@@ -490,6 +490,10 @@ impl<'a> EventContext<'a> {
         self.editor.borrow_mut().dec_revs_in_flight();
     }
 
+    /// Called after anything changes that effects word wrap, such as the size of
+    /// the window or the user's wrap settings. `rewrap_immediately` should be `true`
+    /// except in the resize case; during live resize we want to delay recalculation
+    /// to avoid unnecessary work.
     fn update_wrap_settings(&mut self, rewrap_immediately: bool) {
         let wrap_width = self.config.wrap_width;
         let word_wrap = self.config.word_wrap;
@@ -503,16 +507,17 @@ impl<'a> EventContext<'a> {
         }
     }
 
-    /// Recomputes all breaks.
+    /// Tells the view to rewrap a batch of lines. This guarantees that the currently visible region
+    /// will be correctly wrapped; the caller should check if additional wrapping is necessary and
+    /// schedule that if so.
     fn rewrap(&mut self) {
         let mut view = self.view.borrow_mut();
         let ed = self.editor.borrow();
         let mut width_cache = self.width_cache.borrow_mut();
-
         view.rewrap(ed.get_buffer(), &mut width_cache, self.client, ed.get_layers().get_merged());
-        //TODO: minimal invalidation, and moving this into the view
     }
 
+    /// Does a rewrap batch, and schedules follow-up work if needed.
     pub(crate) fn do_rewrap_batch(&mut self) {
         self.rewrap();
         if self.view.borrow().needs_more_wrap() {
@@ -522,7 +527,6 @@ impl<'a> EventContext<'a> {
     }
 
     fn schedule_rewrap(&self) {
-        //TODO: maybe move this into the view as well?
         let view_id: usize = self.view_id.into();
         let token = REWRAP_VIEW_IDLE_MASK | view_id;
         self.client.schedule_idle(token);
