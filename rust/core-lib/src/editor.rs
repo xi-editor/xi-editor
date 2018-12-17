@@ -997,7 +997,7 @@ fn count_lines(s: &str) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::BufferId;
+
     #[test]
     fn plugin_edit() {
         let base_text = "hello";
