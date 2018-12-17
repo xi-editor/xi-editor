@@ -1844,4 +1844,30 @@ mod tests {
         // no change should be made
         assert_eq!(rev_token, new_rev_token);
     }
+
+    
+    #[test]
+    fn empty_transpose() {
+        let harness = ContextHarness::new("");
+        let mut ctx = harness.make_context();
+
+        ctx.do_edit(EditNotification::Transpose);
+
+        assert_eq!(harness.debug_render(), ""); // should be noop
+    }
+
+    // This is the issue reported by #962
+    #[test]
+    fn eol_multicursor_transpose() {
+        use crate::rpc::GestureType::*;
+
+        let harness = ContextHarness::new("word\n");
+        let mut ctx = harness.make_context();
+
+        ctx.do_edit(EditNotification::Gesture{line: 0, col: 4, ty: PointSelect}); // end of first line
+        ctx.do_edit(EditNotification::AddSelectionBelow); // add cursor below that, at eof
+        ctx.do_edit(EditNotification::Transpose);
+
+        assert_eq!(harness.debug_render(), "wor\nd|");
+    }
 }
