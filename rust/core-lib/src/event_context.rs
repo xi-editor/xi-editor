@@ -168,6 +168,7 @@ impl<'a> EventContext<'a> {
                 self.do_request_hover(request_id, position)
             }
             SpecialEvent::DebugToggleComment => self.do_debug_toggle_comment(),
+            SpecialEvent::Reindent => self.do_reindent(),
             SpecialEvent::ToggleRecording(_) => {}
             SpecialEvent::PlayRecording(recording_name) => {
                 let recorder = self.recorder.borrow();
@@ -546,7 +547,7 @@ impl<'a> EventContext<'a> {
         )
     }
 
-    fn do_debug_toggle_comment(&mut self) {
+    fn selected_line_ranges(&mut self) -> Vec<(usize, usize)> {
         let ed = self.editor.borrow();
         let mut prev_range: Option<Range<usize>> = None;
         let mut line_ranges = Vec::new();
@@ -574,6 +575,20 @@ impl<'a> EventContext<'a> {
         if let Some(prev) = prev_range {
             line_ranges.push((prev.start, prev.end));
         }
+
+        line_ranges
+    }
+
+    fn do_reindent(&mut self) {
+        let line_ranges = self.selected_line_ranges();
+        // this is handled by syntect only; this is definitely not the long-term solution.
+        if let Some(plug) = self.plugins.iter().find(|p| p.name == "xi-syntect-plugin") {
+            plug.dispatch_command(self.view_id, "reindent", &json!(line_ranges));
+        }
+    }
+
+    fn do_debug_toggle_comment(&mut self) {
+        let line_ranges = self.selected_line_ranges();
 
         // this is handled by syntect only; this is definitely not the long-term solution.
         if let Some(plug) = self.plugins.iter().find(|p| p.name == "xi-syntect-plugin") {
