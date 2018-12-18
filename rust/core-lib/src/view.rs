@@ -19,7 +19,7 @@ use std::ops::Range;
 
 use serde_json::Value;
 
-use crate::client::Client;
+use crate::client::{Client, Update, UpdateOp};
 use crate::edit_types::ViewEvent;
 use crate::find::{Find, FindStatus};
 use crate::line_cache_shadow::{self, LineCacheShadow, RenderPlan, RenderTactic};
@@ -664,19 +664,6 @@ impl View {
         ix
     }
 
-    fn build_update_op(&self, op: &str, lines: Option<Vec<Value>>, n: usize) -> Value {
-        let mut update = json!({
-            "op": op,
-            "n": n,
-        });
-
-        if let Some(lines) = lines {
-            update["lines"] = json!(lines);
-        }
-
-        update
-    }
-
     fn send_update_for_plan(
         &mut self,
         text: &Rope,
@@ -710,7 +697,7 @@ impl View {
         for seg in self.lc_shadow.iter_with_plan(plan) {
             match seg.tactic {
                 RenderTactic::Discard => {
-                    ops.push(self.build_update_op("invalidate", None, seg.n));
+                    ops.push(UpdateOp::invalidate(seg.n));
                     b.add_span(seg.n, 0, 0);
                 }
                 RenderTactic::Preserve => {
@@ -719,13 +706,15 @@ impl View {
                     if seg.validity == line_cache_shadow::ALL_VALID {
                         let n_skip = seg.their_line_num - line_num;
                         if n_skip > 0 {
-                            ops.push(self.build_update_op("skip", None, n_skip));
+                            ops.push(UpdateOp::skip(n_skip));
                         }
-                        ops.push(self.build_update_op("copy", None, seg.n));
+                        let line_offset = self.offset_of_line(text, seg.our_line_num);
+                        let logical_line = text.line_of_offset(line_offset) + 1;
+                        ops.push(UpdateOp::copy(seg.n, logical_line));
                         b.add_span(seg.n, seg.our_line_num, line_cache_shadow::ALL_VALID);
                         line_num = seg.their_line_num + seg.n;
                     } else {
-                        ops.push(self.build_update_op("invalidate", None, seg.n));
+                        ops.push(UpdateOp::invalidate(seg.n));
                         b.add_span(seg.n, 0, 0);
                     }
                 }
@@ -734,9 +723,11 @@ impl View {
                     if seg.validity == line_cache_shadow::ALL_VALID {
                         let n_skip = seg.their_line_num - line_num;
                         if n_skip > 0 {
-                            ops.push(self.build_update_op("skip", None, n_skip));
+                            ops.push(UpdateOp::skip(n_skip));
                         }
-                        ops.push(self.build_update_op("copy", None, seg.n));
+                        let line_offset = self.offset_of_line(text, seg.our_line_num);
+                        let logical_line = text.line_of_offset(line_offset) + 1;
+                        ops.push(UpdateOp::copy(seg.n, logical_line));
                         b.add_span(seg.n, seg.our_line_num, line_cache_shadow::ALL_VALID);
                         line_num = seg.their_line_num + seg.n;
                     } else {
@@ -757,18 +748,16 @@ impl View {
                                 )
                             })
                             .collect::<Vec<_>>();
-                        ops.push(self.build_update_op("ins", Some(rendered_lines), seg.n));
+                        debug_assert_eq!(rendered_lines.len(), seg.n);
+                        ops.push(UpdateOp::insert(rendered_lines));
                         b.add_span(seg.n, seg.our_line_num, line_cache_shadow::ALL_VALID);
                     }
                 }
             }
         }
-        let params = json!({
-            "ops": ops,
-            "pristine": pristine,
-        });
+        let update = Update { ops, pristine };
 
-        client.update_view(self.view_id, &params);
+        client.update_view(self.view_id, &update);
         self.lc_shadow = b.build();
         for find in &mut self.find {
             find.set_hls_dirty(false)
