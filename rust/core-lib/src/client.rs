@@ -35,7 +35,7 @@ impl Client {
         Client(peer)
     }
 
-    pub fn update_view(&self, view_id: ViewId, update: &Value) {
+    pub fn update_view(&self, view_id: ViewId, update: &Update) {
         self.0.send_rpc_notification(
             "update",
             &json!({
@@ -235,4 +235,49 @@ impl Client {
     pub fn schedule_timer(&self, timeout: Instant, token: usize) {
         self.0.schedule_timer(timeout, token);
     }
+}
+
+#[derive(Debug, Serialize)]
+pub struct Update {
+    pub(crate) ops: Vec<UpdateOp>,
+    pub(crate) pristine: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct UpdateOp {
+    op: OpType,
+    n: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lines: Option<Vec<Value>>,
+    #[serde(rename = "ln")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    first_line_number: Option<usize>,
+}
+
+impl UpdateOp {
+    pub(crate) fn invalidate(n: usize) -> Self {
+        UpdateOp { op: OpType::Invalidate, n, lines: None, first_line_number: None }
+    }
+
+    pub(crate) fn skip(n: usize) -> Self {
+        UpdateOp { op: OpType::Skip, n, lines: None, first_line_number: None }
+    }
+
+    pub(crate) fn copy(n: usize, line: usize) -> Self {
+        UpdateOp { op: OpType::Copy, n, lines: None, first_line_number: Some(line) }
+    }
+
+    pub(crate) fn insert(lines: Vec<Value>) -> Self {
+        UpdateOp { op: OpType::Insert, n: lines.len(), lines: Some(lines), first_line_number: None }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum OpType {
+    #[serde(rename = "ins")]
+    Insert,
+    Skip,
+    Invalidate,
+    Copy,
 }
