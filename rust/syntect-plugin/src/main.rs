@@ -483,6 +483,17 @@ impl<'a> PluginState {
             .sum()
     }
 
+    fn reindent(
+        &mut self,
+        view: &mut MyView,
+        syntax_set: &SyntaxSet,
+        lines: &[(usize, usize)],
+    ) {
+        for (start, end) in lines {
+            self.bulk_autoindent(view, syntax_set, *start, *end);
+        }
+    }
+
     fn toggle_comment(
         &mut self,
         view: &mut MyView,
@@ -678,7 +689,12 @@ impl<'a> Plugin for Syntect<'a> {
                 let lines: Vec<(usize, usize)> = serde_json::from_value(params).unwrap();
                 let state = self.view_state.get_mut(&view.get_id()).unwrap();
                 state.toggle_comment(view, self.syntax_set, &lines);
-            }
+            },
+            "reindent" => {
+                let lines: Vec<(usize, usize)> = serde_json::from_value(params).unwrap();
+                let state = self.view_state.get_mut(&view.get_id()).unwrap();
+                state.reindent(view, self.syntax_set, &lines);
+            },
             other => eprintln!("syntect received unexpected command {}", other),
         }
     }

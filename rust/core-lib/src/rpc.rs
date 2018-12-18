@@ -473,6 +473,7 @@ pub enum EditNotification {
     Uppercase,
     Lowercase,
     Capitalize,
+    Reindent,
     Indent,
     Outdent,
     /// Indicates whether find highlights should be rendered
