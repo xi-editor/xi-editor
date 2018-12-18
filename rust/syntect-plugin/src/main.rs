@@ -226,18 +226,24 @@ impl<'a> PluginState {
     }
 
     pub fn indent_lines(&mut self, view: &mut MyView, syntax_set: &SyntaxSet) {
+        let mut builder = DeltaBuilder::new(view.get_buf_size());
+
         for indentation_task in self.indentation_state.to_vec() {
             match indentation_task {
                 IndentationTask::Newline(line) => self
-                    .autoindent_line(view, syntax_set, line)
+                    .autoindent_line(view, &mut builder, syntax_set, line)
                     .expect("auto-indent error on newline"),
                 IndentationTask::Edit(line) => self
-                    .check_indent_active_edit(view, syntax_set, line)
+                    .check_indent_active_edit(view, &mut builder, syntax_set, line)
                     .expect("auto-indent error on insert"),
                 IndentationTask::Batch(range) => self
-                    .bulk_autoindent(view, syntax_set, range)
+                    .bulk_autoindent(view, &mut builder, syntax_set, range)
                     .expect("auto-indent error on other"),
             };
+        }
+
+        if !builder.is_empty() {
+            view.edit(builder.build(), INDENTATION_PRIORITY, false, false, String::from("syntect"));
         }
 
         self.indentation_state.clear();
@@ -289,14 +295,13 @@ impl<'a> PluginState {
     fn bulk_autoindent(
         &mut self,
         view: &mut MyView,
+        builder: &mut EditBuilder,
         syntax_set: &SyntaxSet,
         range: Range<usize>,
     ) -> Result<(), Error> {
         let _t = trace_block("Syntect::bulk_autoindent", &["syntect"]);
         let tab_size = view.get_config().tab_size;
         let use_spaces = view.get_config().translate_tabs_to_spaces;
-
-        let mut builder = DeltaBuilder::new(view.get_buf_size());
 
         let mut base_indent = if range.start > 0 {
             self.previous_nonblank_line(view, range.start)?
@@ -333,7 +338,6 @@ impl<'a> PluginState {
             }
         }
 
-        view.edit(builder.build(), INDENTATION_PRIORITY, false, false, String::from("syntect"));
         Ok(())
     }
 
@@ -342,6 +346,7 @@ impl<'a> PluginState {
     fn autoindent_line(
         &mut self,
         view: &mut MyView,
+        builder: &mut EditBuilder,
         syntax_set: &SyntaxSet,
         line: usize,
     ) -> Result<(), Error> {
@@ -360,7 +365,7 @@ impl<'a> PluginState {
         let final_level = base_indent + increase - decrease;
 
         if final_level != current_indent {
-            self.set_indent(view, line, final_level)
+            self.set_indent(view, builder, line, final_level)
         } else {
             Ok(())
         }
@@ -371,6 +376,7 @@ impl<'a> PluginState {
     fn check_indent_active_edit(
         &mut self,
         view: &mut MyView,
+        builder: &mut EditBuilder,
         syntax_set: &SyntaxSet,
         line: usize,
     ) -> Result<(), Error> {
@@ -396,13 +402,19 @@ impl<'a> PluginState {
             // match `test_decrease`, because the user could have changed
             // it manually, and we respect that.
             if indent_level != current_indent {
-                return self.set_indent(view, line, indent_level);
+                return self.set_indent(view, builder, line, indent_level);
             }
         }
         Ok(())
     }
 
-    fn set_indent(&self, view: &mut MyView, line: usize, level: usize) -> Result<(), Error> {
+    fn set_indent(
+        &self,
+        view: &mut MyView,
+        builder: &mut EditBuilder,
+        line: usize,
+        level: usize,
+    ) -> Result<(), Error> {
         let edit_start = view.offset_of_line(line)?;
         let edit_len = {
             let line = view.get_line(line)?;
@@ -415,8 +427,7 @@ impl<'a> PluginState {
         let indent_text = if use_spaces { n_spaces(level) } else { n_tabs(level / tab_size) };
 
         let iv = Interval::new(edit_start, edit_start + edit_len);
-        let delta = RopeDelta::simple_edit(iv, indent_text.into(), view.get_buf_size());
-        view.edit(delta, INDENTATION_PRIORITY, false, false, String::from("syntect"));
+        builder.replace(iv, indent_text.into());
         Ok(())
     }
 
@@ -485,10 +496,14 @@ impl<'a> PluginState {
     }
 
     fn reindent(&mut self, view: &mut MyView, syntax_set: &SyntaxSet, lines: &[(usize, usize)]) {
+        let mut builder = DeltaBuilder::new(view.get_buf_size());
+
         for (start, end) in lines {
             let range = Range { start: *start, end: *end - 1 };
-            self.bulk_autoindent(view, syntax_set, range).expect("error on reindent");
+            self.bulk_autoindent(view, &mut builder, syntax_set, range).expect("error on reindent");
         }
+
+        view.edit(builder.build(), INDENTATION_PRIORITY, false, false, String::from("syntect"));
     }
 
     fn toggle_comment(
