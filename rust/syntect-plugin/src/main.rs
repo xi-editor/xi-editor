@@ -66,6 +66,13 @@ impl FromStr for EditType {
     }
 }
 
+#[derive(PartialEq, Clone)]
+enum IndentationTask {
+    Newline(usize),
+    Edit(usize),
+    Batch(Range<usize>),
+}
+
 /// The state for syntax highlighting of one file.
 struct PluginState {
     stack_idents: StackMap,
@@ -76,7 +83,7 @@ struct PluginState {
     spans: Vec<ScopeSpan>,
     new_scopes: Vec<Vec<String>>,
     // keeps track of the lines (start, end) that might need indentation after edit
-    indentation_state: Vec<(usize, usize, EditType)>,
+    indentation_state: Vec<IndentationTask>,
 }
 
 type LockedRepo = MutexGuard<'static, ScopeRepository>;
@@ -219,16 +226,16 @@ impl<'a> PluginState {
     }
 
     pub fn indent_lines(&mut self, view: &mut MyView, syntax_set: &SyntaxSet) {
-        for (start_line, end_line, edit_type) in self.indentation_state.to_vec() {
-            match edit_type {
-                EditType::Newline => self
-                    .autoindent_line(view, syntax_set, start_line)
+        for indentation_task in self.indentation_state.to_vec() {
+            match indentation_task {
+                IndentationTask::Newline(line) => self
+                    .autoindent_line(view, syntax_set, line)
                     .expect("auto-indent error on newline"),
-                EditType::Insert => self
-                    .check_indent_active_edit(view, syntax_set, start_line)
+                IndentationTask::Edit(line) => self
+                    .check_indent_active_edit(view, syntax_set, line)
                     .expect("auto-indent error on insert"),
-                EditType::Other => self
-                    .bulk_autoindent(view, syntax_set, start_line, end_line)
+                IndentationTask::Batch(range) => self
+                    .bulk_autoindent(view, syntax_set, range)
                     .expect("auto-indent error on other"),
             };
         }
@@ -256,11 +263,9 @@ impl<'a> PluginState {
             let line_of_edit = view.line_of_offset(region.new_offset).unwrap();
             let last_line_of_edit = view.line_of_offset(region.new_offset + region.len).unwrap();
             match edit_type {
-                EditType::Newline => self.indentation_state.push((
-                    line_of_edit + 1,
-                    last_line_of_edit + 1,
-                    EditType::Newline,
-                )),
+                EditType::Newline => {
+                    self.indentation_state.push(IndentationTask::Newline(line_of_edit + 1))
+                }
                 EditType::Insert => {
                     let range = region.new_offset..region.new_offset + region.len;
                     let is_whitespace = {
@@ -269,16 +274,13 @@ impl<'a> PluginState {
                         insert_region.as_bytes().iter().all(u8::is_ascii_whitespace)
                     };
                     if !is_whitespace {
-                        self.indentation_state.push((
-                            line_of_edit,
-                            last_line_of_edit,
-                            EditType::Insert,
-                        ));
+                        self.indentation_state.push(IndentationTask::Edit(line_of_edit));
                     }
                 }
                 EditType::Other => {
                     // we are mainly interested in auto-indenting after paste
-                    self.indentation_state.push((line_of_edit, last_line_of_edit, EditType::Other));
+                    let range = Range { start: line_of_edit, end: last_line_of_edit };
+                    self.indentation_state.push(IndentationTask::Batch(range));
                 }
             };
         }
@@ -288,8 +290,7 @@ impl<'a> PluginState {
         &mut self,
         view: &mut MyView,
         syntax_set: &SyntaxSet,
-        start_line: usize,
-        end_line: usize,
+        range: Range<usize>,
     ) -> Result<(), Error> {
         let _t = trace_block("Syntect::bulk_autoindent", &["syntect"]);
         let tab_size = view.get_config().tab_size;
@@ -297,15 +298,15 @@ impl<'a> PluginState {
 
         let mut builder = DeltaBuilder::new(view.get_buf_size());
 
-        let mut base_indent = if start_line > 0 {
-            self.previous_nonblank_line(view, start_line)?
+        let mut base_indent = if range.start > 0 {
+            self.previous_nonblank_line(view, range.start)?
                 .map(|l| self.indent_level_of_line(view, l))
                 .unwrap_or(0)
         } else {
             0
         };
 
-        for line in start_line..=end_line {
+        for line in range.start..=range.end {
             let current_line_indent = self.indent_level_of_line(view, line);
 
             if line > 0 {
@@ -483,14 +484,10 @@ impl<'a> PluginState {
             .sum()
     }
 
-    fn reindent(
-        &mut self,
-        view: &mut MyView,
-        syntax_set: &SyntaxSet,
-        lines: &[(usize, usize)],
-    ) {
+    fn reindent(&mut self, view: &mut MyView, syntax_set: &SyntaxSet, lines: &[(usize, usize)]) {
         for (start, end) in lines {
-            self.bulk_autoindent(view, syntax_set, *start, *end);
+            let range = Range { start: *start, end: *end - 1 };
+            self.bulk_autoindent(view, syntax_set, range).expect("error on reindent");
         }
     }
 
@@ -689,12 +686,12 @@ impl<'a> Plugin for Syntect<'a> {
                 let lines: Vec<(usize, usize)> = serde_json::from_value(params).unwrap();
                 let state = self.view_state.get_mut(&view.get_id()).unwrap();
                 state.toggle_comment(view, self.syntax_set, &lines);
-            },
+            }
             "reindent" => {
                 let lines: Vec<(usize, usize)> = serde_json::from_value(params).unwrap();
                 let state = self.view_state.get_mut(&view.get_id()).unwrap();
                 state.reindent(view, self.syntax_set, &lines);
-            },
+            }
             other => eprintln!("syntect received unexpected command {}", other),
         }
     }
