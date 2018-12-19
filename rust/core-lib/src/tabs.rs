@@ -319,7 +319,7 @@ impl CoreState {
             // handled at the top level
             ClientStarted { .. } => (),
             SetLanguage { view_id, language_id } => self.do_set_language(view_id, language_id),
-            ToggleTail { enabled } => self.file_manager.tail_toggle = enabled,
+            ToggleTail { view_id, enabled } => self.do_toggle_tail(view_id, enabled),
         }
     }
 
@@ -490,6 +490,13 @@ impl CoreState {
             if let Some(changes) = changes {
                 context.config_changed(&changes);
             }
+        }
+    }
+
+    fn do_toggle_tail(&mut self, view_id: ViewId, enabled: bool) {
+        if let Some(view) = self.views.get(&view_id) {
+            let buffer_id = view.borrow().get_buffer_id();
+            self.file_manager.toggle_tail(buffer_id, enabled);
         }
     }
 
@@ -679,9 +686,8 @@ impl CoreState {
         //TODO: currently we only use the file's modification time when
         // determining if a file has been changed by another process.
         // A more robust solution would also hash the file's contents.
-        let tail_toggle = self.file_manager.tail_toggle;
 
-        if has_changes && is_pristine && tail_toggle {
+        if has_changes && is_pristine {
             if let Ok(text) = self.file_manager.open(path, buffer_id) {
                 // this is ugly; we don't map buffer_id -> view_id anywhere
                 // but we know we must have a view.
@@ -691,7 +697,20 @@ impl CoreState {
                     .find(|v| v.borrow().get_buffer_id() == buffer_id)
                     .map(|v| v.borrow().get_view_id())
                     .unwrap();
-                self.make_context(view_id).unwrap().reload_tail(text);
+
+                let file_info = self.file_manager.get_info(buffer_id);
+
+                match file_info {
+                    Some(v) => {
+                        let tail_mode_on = v.tail_details.is_tail_enabled;
+                        if tail_mode_on {
+                            self.make_context(view_id).unwrap().reload_tail(text);
+                        } else {
+                            self.make_context(view_id).unwrap().reload(text);
+                        }
+                    },
+                    None => error!("File info not found for buffer id {}", buffer_id)
+                };
             }
         }
     }

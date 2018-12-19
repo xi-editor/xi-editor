@@ -227,6 +227,7 @@ pub enum CoreNotification {
         language_id: LanguageId,
     },
     ToggleTail {
+        view_id: ViewId,
         enabled: bool,
     },
 }

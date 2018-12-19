@@ -28,8 +28,7 @@ use xi_rpc::RemoteError;
 
 use tabs::BufferId;
 
-use std::io::Seek;
-use std::io::SeekFrom;
+use std::io::{Seek, SeekFrom};
 #[cfg(feature = "notify")]
 use tabs::OPEN_FILE_EVENT_TOKEN;
 #[cfg(feature = "notify")]
@@ -44,8 +43,6 @@ pub struct FileManager {
     /// A monitor of filesystem events, for things like reloading changed files.
     #[cfg(feature = "notify")]
     watcher: FileWatcher,
-    #[cfg(feature = "notify")]
-    pub tail_toggle: bool,
 }
 
 #[derive(Debug)]
@@ -58,10 +55,10 @@ pub struct FileInfo {
     pub tail_details: TailDetails,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct TailDetails {
     pub current_position_in_tail: u64,
-    pub is_tail_mode_on: bool,
+    pub is_tail_enabled: bool,
     pub is_at_bottom_of_file: bool,
 }
 
@@ -84,7 +81,6 @@ impl FileManager {
             open_files: HashMap::new(),
             file_info: HashMap::new(),
             watcher,
-            tail_toggle: false,
         }
     }
 
@@ -106,7 +102,7 @@ impl FileManager {
     pub fn get_current_position_in_tail(&self, id: BufferId) -> u64 {
         match self.file_info.get(&id) {
             Some(v) => v.tail_details.current_position_in_tail,
-            None => 0,
+            None => 0, //first time opening a file?
         }
     }
 
@@ -181,9 +177,8 @@ impl FileManager {
 
         #[cfg(feature = "notify")]
         let new_tail_details = TailDetails {
-            current_position_in_tail: 0,
-            is_tail_mode_on: false,
-            is_at_bottom_of_file: false,
+            current_position_in_tail: text.len() as u64,
+            ..TailDetails::default()
         };
 
         let info = FileInfo {
@@ -213,15 +208,8 @@ impl FileManager {
             return Err(FileError::HasChanged(path.to_owned()));
         } else {
             let encoding = self.file_info[&id].encoding;
-            #[cfg(feature = "notify")]
-            self.watcher.unwatch(&path, OPEN_FILE_EVENT_TOKEN);
-
             try_save(path, text, encoding).map_err(|e| FileError::Io(e, path.to_owned()))?;
             self.file_info.get_mut(&id).unwrap().mod_time = get_mod_time(path);
-
-            #[cfg(feature = "notify")]
-            self.watcher.watch(&path, false, OPEN_FILE_EVENT_TOKEN);
-
             #[cfg(feature = "notify")]
             self.update_current_position_in_tail(path, id)?;
         }
@@ -242,6 +230,20 @@ impl FileManager {
 
         existing_file_info.tail_details.current_position_in_tail = end_position;
         Ok(())
+    }
+
+    #[cfg(feature = "notify")]
+    pub fn toggle_tail (
+        &mut self,
+        id: BufferId,
+        enabled: bool
+    ) {
+        match self.file_info.get_mut(&id) {
+            Some(v) => {
+                v.tail_details.is_tail_enabled = enabled;
+            },
+            None => debug!("WPI This cannot happen. Make sure toggle tail option is disabled in xi-mac when file does not exist.")
+        }
     }
 }
 
@@ -264,7 +266,7 @@ where
 
     let new_tail_details = TailDetails {
         current_position_in_tail: end_position,
-        is_tail_mode_on: true,
+        is_tail_enabled: true,
         is_at_bottom_of_file: true,
     };
 
@@ -305,11 +307,7 @@ where
         path: path.as_ref().to_owned(),
         has_changed: false,
         #[cfg(feature = "notify")]
-        tail_details: TailDetails {
-            current_position_in_tail: 0,
-            is_tail_mode_on: false,
-            is_at_bottom_of_file: false,
-        },
+        tail_details: TailDetails::default(),
     };
     Ok((rope, info))
 }

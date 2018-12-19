@@ -179,7 +179,7 @@ impl Editor {
         self.set_pristine();
     }
 
-    pub fn tail_append(&mut self, tail: Rope) {
+    pub(crate) fn tail_append(&mut self, tail: Rope) {
         let buf_end = self.text.len();
         let mut builder = DeltaBuilder::new(buf_end);
         builder.replace(buf_end..buf_end, tail);
