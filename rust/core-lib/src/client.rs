@@ -241,6 +241,7 @@ impl Client {
 pub struct Update {
     pub(crate) ops: Vec<UpdateOp>,
     pub(crate) pristine: bool,
+    pub(crate) annotations: Vec<Value>,
 }
 
 #[derive(Debug, Serialize)]

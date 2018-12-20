@@ -20,8 +20,7 @@ use std::ops::Range;
 
 use serde_json::Value;
 
-use crate::annotations::{AnnotationStore, ToAnnotation, AnnotationSlice, AnnotationType};
-use crate::annotations::Annotation;
+use crate::annotations::{AnnotationStore, ToAnnotation};
 use crate::client::{Client, Update, UpdateOp};
 use crate::edit_types::ViewEvent;
 use crate::find::{Find, FindStatus};
@@ -670,20 +669,7 @@ impl View {
         client.def_style(&style.to_json(ix));
         ix
     }
-
-    fn build_update_op(&self, op: &str, lines: Option<Vec<Value>>, n: usize) -> Value {
-        let mut update = json!({
-            "op": op,
-            "n": n,
-        });
-
-        if let Some(lines) = lines {
-            update["lines"] = json!(lines);
-        }
-
-        update
-    }
-
+    
     fn send_update_for_plan(
         &mut self,
         text: &Rope,
@@ -795,14 +781,9 @@ impl View {
             .chain(plugin_annotations)
             .collect::<Vec<_>>();
 
-        let params = json!({
-            "ops": ops,
-            "pristine": pristine,
-            "annotations": annotations,
-        });
-        let update = Update { ops, pristine };
+        let update = Update { ops, pristine, annotations };
 
-        client.update_view(self.view_id, &params);
+        client.update_view(self.view_id, &update);
     }
 
     /// Determines the current number of find results and search parameters to send them to
