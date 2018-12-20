@@ -155,6 +155,11 @@ impl Lines {
         self.wrap == WrapWidth::None || self.work.is_empty()
     }
 
+    /// Returns `true` if this interval is part of an incomplete task.
+    pub(crate) fn interval_needs_wrap(&self, iv: Interval) -> bool {
+        self.work.iter().any(|t| !t.intersect(iv).is_empty())
+    }
+
     pub(crate) fn visual_line_of_offset(&self, text: &Rope, offset: usize) -> usize {
         let mut line = text.line_of_offset(offset);
         if self.wrap != WrapWidth::None {

@@ -207,6 +207,15 @@ impl View {
         !self.lines.is_converged()
     }
 
+    pub(crate) fn needs_wrap_in_visible_region(&self, text: &Rope) -> bool {
+        if self.lines.is_converged() {
+            false
+        } else {
+            let visible_region = self.interval_of_visible_region(text);
+            self.lines.interval_needs_wrap(visible_region)
+        }
+    }
+
     pub(crate) fn do_edit(&mut self, text: &Rope, cmd: ViewEvent) {
         use self::ViewEvent::*;
         match cmd {
@@ -880,6 +889,13 @@ impl View {
             }
         }
         offset
+    }
+
+    /// Returns the byte range of the currently visible lines.
+    fn interval_of_visible_region(&self, text: &Rope) -> Interval {
+        let start = self.offset_of_line(text, self.first_line);
+        let end = self.offset_of_line(text, self.first_line + self.height + 1);
+        Interval::new(start, end)
     }
 
     // use own breaks if present, or text if not (no line wrapping)
