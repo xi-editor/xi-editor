@@ -669,7 +669,7 @@ impl View {
         client.def_style(&style.to_json(ix));
         ix
     }
-    
+
     fn send_update_for_plan(
         &mut self,
         text: &Rope,
