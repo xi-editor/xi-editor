@@ -668,6 +668,9 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
             // At this point, we know that (1) the next boundary is not not in
             // the cached subtree, (2) self.position corresponds to the begining
             // of the first leaf after the cached subtree.
+            if self.position == self.root.len() {
+                return Some(self.position);
+            }
             self.descend();
             return self.next::<M>();
         } else {
@@ -987,5 +990,15 @@ mod test {
         cursor.set(6);
         assert_eq!(cursor.at_or_next::<LinesMetric>(), Some(8));
         assert_eq!(cursor.at_or_next::<LinesMetric>(), Some(8));
+    }
+
+    #[test]
+    fn next_zero_measure_large() {
+        let mut text = Rope::from("a");
+        for _ in 0..24 {
+            text = Node::concat(text.clone(), text);
+            let mut cursor = Cursor::new(&text, 0);
+            assert_eq!(cursor.next::<LinesMetric>(), Some(text.len()));
+        }
     }
 }
