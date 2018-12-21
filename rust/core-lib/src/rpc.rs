@@ -226,6 +226,7 @@ pub enum CoreNotification {
         view_id: ViewId,
         language_id: LanguageId,
     },
+    #[cfg(feature = "notify")]
     ToggleTail {
         view_id: ViewId,
         enabled: bool,

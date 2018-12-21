@@ -254,36 +254,44 @@ fn try_load_file<P>(file_manager: &FileManager, buffer_id: BufferId, path: P) ->
     let mut new_tail_details = TailDetails::default();
     let mut bytes = Vec::new();
 
-    let file_info = file_manager.get_info(buffer_id);
-    match file_info {
-        Some(v) => {
-            let is_tail_enabled = v.tail_details.is_tail_enabled;
-            if is_tail_enabled {
-                debug!("Tailing file");
-                let end_position =
-                    f.seek(SeekFrom::End(0)).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
-                let current_position = v.tail_details.current_position_in_tail;
+    #[cfg(feature = "notify")]
+    {
+        let file_info = file_manager.get_info(buffer_id);
+        match file_info {
+            Some(v) => {
+                let is_tail_enabled = v.tail_details.is_tail_enabled;
+                if is_tail_enabled {
+                    debug!("Tailing file");
+                    let end_position =
+                        f.seek(SeekFrom::End(0)).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
+                    let current_position = v.tail_details.current_position_in_tail;
 
-                let diff = end_position - current_position;
-                bytes = vec![0; diff as usize];
-                f.seek(SeekFrom::Current(-(bytes.len() as i64))).unwrap();
-                f.read_exact(&mut bytes).unwrap();
+                    let diff = end_position - current_position;
+                    bytes = vec![0; diff as usize];
+                    f.seek(SeekFrom::Current(-(bytes.len() as i64))).unwrap();
+                    f.read_exact(&mut bytes).unwrap();
 
-                new_tail_details = TailDetails {
-                    current_position_in_tail: end_position,
-                    is_tail_enabled: true,
-                    is_at_bottom_of_file: true,
-                };
-            } else {
-                debug!("Tail is false, So loading entire file.");
+                    new_tail_details = TailDetails {
+                        current_position_in_tail: end_position,
+                        is_tail_enabled: true,
+                        is_at_bottom_of_file: true,
+                    };
+                } else {
+                    debug!("Tail is false, So loading entire file.");
+                    f.read_to_end(&mut bytes).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
+                }
+            },
+            None => {
+                debug!("Loading entire file");
                 f.read_to_end(&mut bytes).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
+                ()
             }
-        },
-        None => {
-            debug!("Loading entire file");
-            f.read_to_end(&mut bytes).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
-            ()
         }
+    }
+
+    #[cfg(not(feature = "notify"))]
+    {
+        f.read_to_end(&mut bytes).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
     }
 
     let encoding = CharacterEncoding::guess(&bytes);
@@ -294,6 +302,7 @@ fn try_load_file<P>(file_manager: &FileManager, buffer_id: BufferId, path: P) ->
         mod_time,
         path: path.as_ref().to_owned(),
         has_changed: false,
+        #[cfg(feature = "notify")]
         tail_details: new_tail_details,
     };
     Ok((rope, info))

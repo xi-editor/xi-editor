@@ -319,6 +319,7 @@ impl CoreState {
             // handled at the top level
             ClientStarted { .. } => (),
             SetLanguage { view_id, language_id } => self.do_set_language(view_id, language_id),
+            #[cfg(feature = "notify")]
             ToggleTail { view_id, enabled } => self.do_toggle_tail(view_id, enabled),
         }
     }
@@ -493,6 +494,7 @@ impl CoreState {
         }
     }
 
+    #[cfg(feature = "notify")]
     fn do_toggle_tail(&mut self, view_id: ViewId, enabled: bool) {
         if let Some(view) = self.views.get(&view_id) {
             let buffer_id = view.borrow().get_buffer_id();
