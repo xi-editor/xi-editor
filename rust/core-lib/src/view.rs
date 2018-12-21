@@ -207,7 +207,7 @@ impl View {
             Move(movement) => self.do_move(text, movement, false),
             ModifySelection(movement) => self.do_move(text, movement, true),
             SelectAll => self.select_all(text),
-            Scroll(range) => self.set_scroll(range.first, range.last),
+            Scroll(range) => self.set_scroll(text, range.first, range.last),
             AddSelectionAbove => self.add_selection_by_movement(text, Movement::UpExactPosition),
             AddSelectionBelow => self.add_selection_by_movement(text, Movement::DownExactPosition),
             Gesture { line, col, ty } => self.do_gesture(text, line, col, ty),
@@ -282,11 +282,12 @@ impl View {
         self.size = size;
     }
 
-    pub fn set_scroll(&mut self, first: i64, last: i64) {
+    pub fn set_scroll(&mut self, text: &Rope, first: i64, last: i64) {
         let first = max(first, 0) as usize;
         let last = max(last, 0) as usize;
         self.first_line = first;
         self.height = last - first;
+        self.update_wrap_anchor(text);
     }
 
     pub fn scroll_height(&self) -> usize {
@@ -305,6 +306,16 @@ impl View {
         // selection state, and for scrolling it into view if needed. This choice can
         // likely be improved.
         self.scroll_to = Some(end);
+        self.update_wrap_anchor(text);
+    }
+
+    /// After the scroll position changes, we set the wrap anchor. This ensures
+    /// that there is a constant anchor for multiple wrap operations.
+    fn update_wrap_anchor(&mut self, text: &Rope) {
+        let visible_off = self.offset_of_line(text, self.first_line);
+        let logical_line = text.line_of_offset(visible_off);
+        let logical_off = text.offset_of_line(logical_line);
+        self.lines.set_anchor(logical_off);
     }
 
     /// Toggles a caret at the given offset.
@@ -860,8 +871,6 @@ impl View {
         }
         offset
     }
-
-    // use own breaks if present, or text if not (no line wrapping)
 
     /// Returns the visible line number containing the given offset.
     pub fn line_of_offset(&self, text: &Rope, offset: usize) -> usize {

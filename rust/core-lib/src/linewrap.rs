@@ -71,7 +71,7 @@ pub(crate) struct Lines {
     work: Vec<Task>,
     /// When rewrapping a view, we pick an anchor point, which is the offset
     /// of a line that is going to remain fixed during the rewrap operation.
-    anchor: Option<usize>,
+    anchor: usize,
 }
 
 pub(crate) struct VisualLine {
@@ -123,8 +123,11 @@ impl Lines {
             // we keep breaks while resizing, for more efficient invalidation
             self.breaks = Breaks::new_no_break(text.len());
         }
-        self.anchor = None;
         self.wrap = wrap;
+    }
+
+    pub(crate) fn set_anchor(&mut self, anchor: usize) {
+        self.anchor = anchor;
     }
 
     fn add_task<T: Into<Interval>>(&mut self, iv: T) {
@@ -372,10 +375,10 @@ impl Lines {
         // task.start is 0 or a hard break; task.end is a hard break or EOF.
         let task = self.get_next_task(logical_off).unwrap();
         if task.start == logical_off {
+            debug_assert_eq!(task.start, self.anchor);
             // this means we're wrapping the visible region, and are probably
             // blocking. We want to do as little work as possible.
             max_lines = visible_lines.end - visible_lines.start;
-            self.anchor = Some(task.start);
         }
 
         cursor.set_offset(task.start);
@@ -438,7 +441,7 @@ impl Lines {
         self.breaks.edit(iv, breaks);
         self.update_tasks_after_wrap(iv);
 
-        let line_shift: Option<isize> = if self.anchor > Some(task.start) {
+        let line_shift: Option<isize> = if self.anchor > task.start {
             Some(new_count as isize - inval_count as isize)
         } else {
             None
