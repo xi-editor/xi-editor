@@ -175,19 +175,12 @@ pub enum CoreNotification {
     /// ```
     Plugin(PluginNotification),
     /// Tells `xi-core` to close the specified view.
-    CloseView {
-        view_id: ViewId,
-    },
+    CloseView { view_id: ViewId },
     /// Tells `xi-core` to save the contents of the specified view's
     /// buffer to the specified path.
-    Save {
-        view_id: ViewId,
-        file_path: String,
-    },
+    Save { view_id: ViewId, file_path: String },
     /// Tells `xi-core` to set the theme.
-    SetTheme {
-        theme_name: String,
-    },
+    SetTheme { theme_name: String },
     /// Notifies `xi-core` that the client has started.
     ClientStarted {
         #[serde(default)]
@@ -205,32 +198,18 @@ pub enum CoreNotification {
     /// domain argument is `ConfigDomain::UserOverride(_)`, which
     /// represents non-persistent view-specific settings, such as when
     /// a user manually changes whitespace settings for a given view.
-    ModifyUserConfig {
-        domain: ConfigDomainExternal,
-        changes: Table,
-    },
+    ModifyUserConfig { domain: ConfigDomainExternal, changes: Table },
     /// Control whether the tracing infrastructure is enabled.
     /// This propagates to all peers that should respond by toggling its own
     /// infrastructure on/off.
-    TracingConfig {
-        enabled: bool,
-    },
+    TracingConfig { enabled: bool },
     /// Save trace data to the given path.  The core will first send
     /// CoreRequest::CollectTrace to all peers to collect the samples.
-    SaveTrace {
-        destination: PathBuf,
-        frontend_samples: Value,
-    },
+    SaveTrace { destination: PathBuf, frontend_samples: Value },
     /// Tells `xi-core` to set the language id for the view.
-    SetLanguage {
-        view_id: ViewId,
-        language_id: LanguageId,
-    },
+    SetLanguage { view_id: ViewId, language_id: LanguageId },
     #[cfg(feature = "notify")]
-    ToggleTail {
-        view_id: ViewId,
-        enabled: bool,
-    },
+    ToggleTail { view_id: ViewId, enabled: bool },
 }
 
 /// The requests which make up the base of the protocol.

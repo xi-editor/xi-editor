@@ -77,11 +77,7 @@ pub enum CharacterEncoding {
 impl FileManager {
     #[cfg(feature = "notify")]
     pub fn new(watcher: FileWatcher) -> Self {
-        FileManager {
-            open_files: HashMap::new(),
-            file_info: HashMap::new(),
-            watcher,
-        }
+        FileManager { open_files: HashMap::new(), file_info: HashMap::new(), watcher }
     }
 
     #[cfg(not(feature = "notify"))]
@@ -120,11 +116,11 @@ impl FileManager {
             let _ = File::create(path).map_err(|e| FileError::Io(e, path.to_owned()))?;
         }
 
-        let (rope, info) = try_load_file(self,id, path)?;
+        let (rope, info) = try_load_file(self, id, path)?;
         self.open_files.insert(path.to_owned(), id);
         if self.file_info.insert(id, info).is_none() {
             #[cfg(feature = "notify")]
-                self.watcher.watch(path, false, OPEN_FILE_EVENT_TOKEN);
+            self.watcher.watch(path, false, OPEN_FILE_EVENT_TOKEN);
         }
         Ok(rope)
     }
@@ -151,10 +147,8 @@ impl FileManager {
             .map_err(|e| FileError::Io(e, path.to_owned()))?;
 
         #[cfg(feature = "notify")]
-        let new_tail_details = TailDetails {
-            current_position_in_tail: text.len() as u64,
-            ..TailDetails::default()
-        };
+        let new_tail_details =
+            TailDetails { current_position_in_tail: text.len() as u64, ..TailDetails::default() };
 
         let info = FileInfo {
             encoding: CharacterEncoding::Utf8,
@@ -193,13 +187,8 @@ impl FileManager {
         Ok(())
     }
 
-
     #[cfg(feature = "notify")]
-    pub fn toggle_tail (
-        &mut self,
-        id: BufferId,
-        enabled: bool
-    ) -> Result<(), FileError> {
+    pub fn toggle_tail(&mut self, id: BufferId, enabled: bool) -> Result<(), FileError> {
         if let Some(v) = self.file_info.get_mut(&id) {
             if enabled {
                 let path = v.path.as_path();
@@ -241,9 +230,13 @@ fn try_save(path: &Path, text: &Rope, encoding: CharacterEncoding) -> io::Result
     Ok(())
 }
 
-fn try_load_file<P>(file_manager: &FileManager, buffer_id: BufferId, path: P) -> Result<(Rope, FileInfo), FileError>
-    where
-        P: AsRef<Path>,
+fn try_load_file<P>(
+    file_manager: &FileManager,
+    buffer_id: BufferId,
+    path: P,
+) -> Result<(Rope, FileInfo), FileError>
+where
+    P: AsRef<Path>,
 {
     // TODO: support for non-utf8
     // it's arguable that the rope crate should have file loading functionality
@@ -262,8 +255,9 @@ fn try_load_file<P>(file_manager: &FileManager, buffer_id: BufferId, path: P) ->
                 let is_tail_enabled = v.tail_details.is_tail_enabled;
                 if is_tail_enabled {
                     debug!("Tailing file");
-                    let end_position =
-                        f.seek(SeekFrom::End(0)).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
+                    let end_position = f
+                        .seek(SeekFrom::End(0))
+                        .map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
                     let current_position = v.tail_details.current_position_in_tail;
 
                     let diff = end_position - current_position;
@@ -278,12 +272,14 @@ fn try_load_file<P>(file_manager: &FileManager, buffer_id: BufferId, path: P) ->
                     };
                 } else {
                     debug!("Tail is false, So loading entire file.");
-                    f.read_to_end(&mut bytes).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
+                    f.read_to_end(&mut bytes)
+                        .map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
                 }
-            },
+            }
             None => {
                 debug!("Loading entire file");
-                f.read_to_end(&mut bytes).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
+                f.read_to_end(&mut bytes)
+                    .map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
                 ()
             }
         }
@@ -309,10 +305,7 @@ fn try_load_file<P>(file_manager: &FileManager, buffer_id: BufferId, path: P) ->
 }
 
 #[cfg(feature = "notify")]
-pub fn update_current_position_in_tail(
-    file_info: &mut FileInfo,
-    text: &Rope
-) {
+pub fn update_current_position_in_tail(file_info: &mut FileInfo, text: &Rope) {
     file_info.tail_details.current_position_in_tail = text.len() as u64;
 }
 

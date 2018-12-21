@@ -498,7 +498,7 @@ impl CoreState {
     fn do_toggle_tail(&mut self, view_id: ViewId, enabled: bool) {
         if let Some(view) = self.views.get(&view_id) {
             let buffer_id = view.borrow().get_buffer_id();
-            self.file_manager.toggle_tail(buffer_id, enabled);
+            self.file_manager.toggle_tail(buffer_id, enabled).expect_err("File read error.");
         }
     }
 
@@ -710,8 +710,8 @@ impl CoreState {
                         } else {
                             self.make_context(view_id).unwrap().reload(text);
                         }
-                    },
-                    None => error!("File info not found for buffer id {}", buffer_id)
+                    }
+                    None => error!("File info not found for buffer id {}", buffer_id),
                 };
             }
         }
