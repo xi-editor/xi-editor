@@ -69,6 +69,9 @@ pub(crate) struct Lines {
     wrap: WrapWidth,
     /// Aka the 'frontier'; ranges of lines that still need to be wrapped.
     work: Vec<Task>,
+    /// When rewrapping a view, we pick an anchor point, which is the offset
+    /// of a line that is going to remain fixed during the rewrap operation.
+    anchor: Option<usize>,
 }
 
 pub(crate) struct VisualLine {
@@ -90,6 +93,7 @@ pub(crate) struct InvalLines {
     pub(crate) start_line: usize,
     pub(crate) inval_count: usize,
     pub(crate) new_count: usize,
+    pub(crate) line_shift: Option<isize>,
 }
 
 /// Detailed information about changes to linebreaks, used to generate
@@ -105,6 +109,10 @@ struct WrapSummary {
     new_count: usize,
     /// The number of new soft breaks.
     new_soft: usize,
+    /// If this operation changed the number of lines above the anchor,
+    /// this contains the difference. This needs to be passed to the frontend,
+    /// in order to keep the view stable during rewrap.
+    line_shift: Option<isize>,
 }
 
 impl Lines {
@@ -115,6 +123,7 @@ impl Lines {
             // we keep breaks while resizing, for more efficient invalidation
             self.breaks = Breaks::new_no_break(text.len());
         }
+        self.anchor = None;
         self.wrap = wrap;
     }
 
@@ -270,8 +279,8 @@ impl Lines {
             None
         } else {
             let summary = self.do_wrap_task(text, width_cache, client, visible_lines, None);
-            let WrapSummary { start_line, inval_count, new_count, .. } = summary;
-            Some(InvalLines { start_line, inval_count, new_count })
+            let WrapSummary { start_line, inval_count, new_count, line_shift, .. } = summary;
+            Some(InvalLines { start_line, inval_count, new_count, line_shift })
         }
     }
 
@@ -316,6 +325,7 @@ impl Lines {
                 start_line: logical_start_line,
                 inval_count: old_hard_count,
                 new_count: new_hard_count,
+                line_shift: None,
             });
         }
 
@@ -331,7 +341,7 @@ impl Lines {
             if self.is_converged() {
                 let inval_count = old_hard_count + inval_soft;
                 let new_count = new_hard_count + new_soft;
-                Some(InvalLines { start_line, new_count, inval_count })
+                Some(InvalLines { start_line, new_count, inval_count, line_shift: None })
             } else {
                 None
             }
@@ -348,30 +358,36 @@ impl Lines {
         visible_lines: Range<usize>,
         max_lines: Option<usize>,
     ) -> WrapSummary {
-        use self::WrapWidth::*;
+        use self::WrapWidth as WW;
         let _t = trace_block("Lines::do_wrap_task", &["core"]);
         // 'line' is a poor unit here; could do some fancy Duration thing?
         const MAX_LINES_PER_BATCH: usize = 500;
+        let mut max_lines = max_lines.unwrap_or(MAX_LINES_PER_BATCH);
 
         let mut cursor = MergedBreaks::new(text, &self.breaks);
         let visible_off = cursor.offset_of_line(visible_lines.start);
-        let logical_off = text.offset_of_line(text.line_of_offset(visible_off));
+        let logical_line = text.line_of_offset(visible_off);
+        let logical_off = text.offset_of_line(logical_line);
 
-        // task.start is a hard break; task.end is a boundary or EOF.
+        // task.start is 0 or a hard break; task.end is a hard break or EOF.
         let task = self.get_next_task(logical_off).unwrap();
+        if task.start == logical_off {
+            // this means we're wrapping the visible region, and are probably
+            // blocking. We want to do as little work as possible.
+            max_lines = visible_lines.end - visible_lines.start;
+            self.anchor = Some(task.start);
+        }
+
         cursor.set_offset(task.start);
         debug_assert_eq!(cursor.offset, task.start, "task_start must be valid offset");
 
         let mut ctx = match self.wrap {
-            Bytes(b) => RewrapCtx::new(text, &CodepointMono, b as f64, width_cache, task.start),
-            Width(w) => RewrapCtx::new(text, client, w, width_cache, task.start),
-            None => unreachable!(),
+            WW::Bytes(b) => RewrapCtx::new(text, &CodepointMono, b as f64, width_cache, task.start),
+            WW::Width(w) => RewrapCtx::new(text, client, w, width_cache, task.start),
+            WW::None => unreachable!(),
         };
 
         let start_line = cursor.cur_line;
-        let max_lines = max_lines.unwrap_or(MAX_LINES_PER_BATCH);
-        // always wrap at least a screen worth of lines (unless we converge earlier)
-        let batch_size = max_lines.max(visible_lines.end - visible_lines.start);
 
         let mut builder = BreakBuilder::new();
         let mut lines_wrapped = 0;
@@ -395,7 +411,7 @@ impl Lines {
                 }
                 lines_wrapped += 1;
                 pos = new_next;
-                if pos == task.end || (lines_wrapped > batch_size && is_hard) {
+                if pos == task.end || (lines_wrapped > max_lines && is_hard) {
                     break;
                 }
             } else {
@@ -422,7 +438,13 @@ impl Lines {
         self.breaks.edit(iv, breaks);
         self.update_tasks_after_wrap(iv);
 
-        WrapSummary { start_line, inval_count, new_count, new_soft }
+        let line_shift: Option<isize> = if self.anchor > Some(task.start) {
+            Some(new_count as isize - inval_count as isize)
+        } else {
+            None
+        };
+
+        WrapSummary { start_line, inval_count, new_count, new_soft, line_shift }
     }
 
     #[cfg(test)]

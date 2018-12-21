@@ -27,6 +27,13 @@ const PRESERVE_EXTENT: usize = 1000;
 #[derive(Debug)]
 pub struct LineCacheShadow {
     spans: Vec<Span>,
+    /// if present, represents a delta between the index of the first visible
+    /// line in the client and in our representation. This can occur during
+    /// incremental wrapping, when lines above the viewport are rewrapped;
+    /// in this case we want to adjust the index of the first line without
+    /// invalidating. This value accumulates during rewrap, and is reset after
+    /// each update.
+    line_shift: Option<isize>,
     dirty: bool,
 }
 
@@ -53,6 +60,7 @@ pub struct Span {
 /// Builder for `LineCacheShadow` object.
 pub struct Builder {
     spans: Vec<Span>,
+    line_shift: Option<isize>,
     dirty: bool,
 }
 
@@ -95,11 +103,11 @@ pub struct PlanSegment {
 
 impl Builder {
     pub fn new() -> Builder {
-        Builder { spans: Vec::new(), dirty: false }
+        Builder { spans: Vec::new(), dirty: false, line_shift: None }
     }
 
     pub fn build(self) -> LineCacheShadow {
-        LineCacheShadow { spans: self.spans, dirty: self.dirty }
+        LineCacheShadow { spans: self.spans, dirty: self.dirty, line_shift: self.line_shift }
     }
 
     pub fn add_span(&mut self, n: usize, start_line_num: usize, validity: Validity) {
@@ -119,10 +127,14 @@ impl Builder {
     pub fn set_dirty(&mut self, dirty: bool) {
         self.dirty = dirty;
     }
+
+    pub(crate) fn set_line_shift(&mut self, shift: Option<isize>) {
+        self.line_shift = shift;
+    }
 }
 
 impl LineCacheShadow {
-    pub fn edit(&mut self, start: usize, end: usize, replace: usize) {
+    pub fn edit(&mut self, start: usize, end: usize, replace: usize, dirty: bool) {
         let mut b = Builder::new();
         let mut line_num = 0;
         let mut i = 0;
@@ -145,7 +157,8 @@ impl LineCacheShadow {
             }
             line_num += span.n;
         }
-        b.set_dirty(true);
+        b.set_dirty(dirty);
+        b.set_line_shift(self.line_shift);
         *self = b.build();
     }
 
@@ -185,7 +198,17 @@ impl LineCacheShadow {
             line_num += span.n;
         }
         b.set_dirty(true);
+        b.set_line_shift(self.line_shift);
         *self = b.build();
+    }
+
+    pub(crate) fn accumulate_line_shift(&mut self, shift: isize) {
+        let cur = self.line_shift.get_or_insert(0);
+        *cur += shift;
+    }
+
+    pub(crate) fn take_line_shift(&mut self) -> Option<isize> {
+        self.line_shift.take()
     }
 
     pub fn needs_render(&self, plan: &RenderPlan) -> bool {

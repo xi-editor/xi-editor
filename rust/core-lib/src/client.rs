@@ -241,6 +241,8 @@ impl Client {
 pub struct Update {
     pub(crate) ops: Vec<UpdateOp>,
     pub(crate) pristine: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) shift: Option<isize>,
 }
 
 #[derive(Debug, Serialize)]

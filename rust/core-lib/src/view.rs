@@ -755,7 +755,8 @@ impl View {
                 }
             }
         }
-        let update = Update { ops, pristine };
+        let shift = self.lc_shadow.take_line_shift();
+        let update = Update { ops, pristine, shift };
 
         client.update_view(self.view_id, &update);
         self.lc_shadow = b.build();
@@ -884,8 +885,13 @@ impl View {
         let _t = trace_block("View::rewrap", &["core"]);
         let visible = self.first_line..self.first_line + self.height;
         let inval = self.lines.rewrap_chunk(text, width_cache, client, spans, visible);
-        if let Some(InvalLines { start_line, inval_count, new_count }) = inval {
-            self.lc_shadow.edit(start_line, start_line + inval_count, new_count);
+        if let Some(InvalLines { start_line, inval_count, new_count, line_shift }) = inval {
+            if let Some(shift) = line_shift {
+                let first = self.first_line as isize + shift;
+                self.first_line = first.max(0) as usize;
+                self.lc_shadow.accumulate_line_shift(shift);
+            }
+            self.lc_shadow.edit(start_line, start_line + inval_count, new_count, false);
         }
     }
 
@@ -903,8 +909,8 @@ impl View {
     ) {
         let visible = self.first_line..self.first_line + self.height;
         match self.lines.after_edit(text, last_text, delta, width_cache, client, visible) {
-            Some(InvalLines { start_line, inval_count, new_count }) => {
-                self.lc_shadow.edit(start_line, start_line + inval_count, new_count);
+            Some(InvalLines { start_line, inval_count, new_count, .. }) => {
+                self.lc_shadow.edit(start_line, start_line + inval_count, new_count, true);
             }
             None => self.set_dirty(text),
         }

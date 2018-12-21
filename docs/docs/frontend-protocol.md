@@ -493,6 +493,7 @@ update
   ops: Op[]
   view-id: string
   pristine: bool
+  shift?: number
 
 interface Op {
   op: "copy" | "skip" | "invalidate" | "update" | "ins"
@@ -507,6 +508,12 @@ has unsaved changes.
 
 The `rev` field is not present in current builds, but will be at some point in
 the future.
+
+The `shift` field is only present when the update is the result of the
+rewrapping the view; the value is a signed integer, which represents the number
+of lines added or removed above the visible region; assuming the frontend is
+keeping track of its first line, it should adjust that number by the value in
+this field, in order to avoid jumping around during (or after) rewrapping.
 
 An update request can be seen as a function from the old client cache state to a
 new one. During evaluation, maintain an index (`old_ix`) into the old `lines`
