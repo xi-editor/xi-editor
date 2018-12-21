@@ -280,7 +280,6 @@ where
                 debug!("Loading entire file");
                 f.read_to_end(&mut bytes)
                     .map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
-                ()
             }
         }
     }
