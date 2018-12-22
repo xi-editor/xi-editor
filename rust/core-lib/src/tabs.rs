@@ -320,7 +320,6 @@ impl CoreState {
             // handled at the top level
             ClientStarted { .. } => (),
             SetLanguage { view_id, language_id } => self.do_set_language(view_id, language_id),
-            #[cfg(feature = "notify")]
             ToggleTail { view_id, enabled } => self.do_toggle_tail(view_id, enabled),
         }
     }
@@ -504,6 +503,11 @@ impl CoreState {
             let buffer_id = view.borrow().get_buffer_id();
             self.file_manager.toggle_tail(buffer_id, enabled).expect_err("File read error.");
         }
+    }
+
+    #[cfg(not(feature = "notify"))]
+    fn do_toggle_tail(&mut self, _view_id: ViewId, _enabled: bool) {
+        warn!("do_toggle_tail called without notify feature enabled.");
     }
 
     fn do_start_plugin(&mut self, _view_id: ViewId, plugin: &str) {
