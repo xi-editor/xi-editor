@@ -17,9 +17,9 @@ use std::path::PathBuf;
 
 use serde_json::{self, Value};
 
-use core_proxy::CoreProxy;
-use xi_core::plugin_rpc::{HostNotification, HostRequest, PluginBufferInfo, PluginUpdate};
-use xi_core::{ConfigTable, LanguageId, PluginPid, ViewId};
+use crate::core_proxy::CoreProxy;
+use crate::xi_core::plugin_rpc::{HostNotification, HostRequest, PluginBufferInfo, PluginUpdate};
+use crate::xi_core::{ConfigTable, LanguageId, PluginPid, ViewId};
 use xi_rpc::{Handler as RpcHandler, RemoteError, RpcCtx};
 use xi_trace::{self, trace, trace_block, trace_block_payload};
 

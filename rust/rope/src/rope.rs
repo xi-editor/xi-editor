@@ -23,9 +23,9 @@ use std::str;
 use std::str::FromStr;
 use std::string::ParseError;
 
-use delta::{Delta, DeltaElement};
-use interval::{Interval, IntervalBounds};
-use tree::{Cursor, Leaf, Metric, Node, NodeInfo, TreeBuilder};
+use crate::delta::{Delta, DeltaElement};
+use crate::interval::{Interval, IntervalBounds};
+use crate::tree::{Cursor, Leaf, Metric, Node, NodeInfo, TreeBuilder};
 
 use bytecount;
 use memchr::{memchr, memrchr};
@@ -846,7 +846,7 @@ impl<'a> Iterator for LinesRaw<'a> {
             }
             match memchr(b'\n', self.fragment.as_bytes()) {
                 Some(i) => {
-                    result = cow_append(result, &self.fragment[..i + 1]);
+                    result = cow_append(result, &self.fragment[..=i]);
                     self.fragment = &self.fragment[i + 1..];
                     return Some(result);
                 }

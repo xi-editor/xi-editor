@@ -1,0 +1,11 @@
+name = "xi-lang-plugin"
+version = "0.0"
+scope = "global"
+activations = ["autorun"]
+exec_path="./bin/xi-lang"
+commands = []
+
+[[languages]]
+name = "Rust"
+extensions = ["rs"]
+scope = "source.rust"

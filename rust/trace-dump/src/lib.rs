@@ -11,11 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 #![cfg_attr(feature = "benchmarks", feature(test))]
-#![cfg_attr(
-    feature = "cargo-clippy",
-    allow(if_same_then_else, needless_bool, needless_pass_by_value, ptr_arg)
+#![allow(
+    clippy::if_same_then_else,
+    clippy::needless_bool,
+    clippy::needless_pass_by_value,
+    clippy::ptr_arg
 )]
 
 extern crate xi_trace;
@@ -99,7 +100,7 @@ mod tests {
             assert_eq!(decoded_result[i]["ph"].as_str().unwrap(), "i");
             assert_eq!(decoded_result[i]["ts"], samples[i].timestamp_us);
             let nth_sample = &samples[i];
-            let mut nth_args = nth_sample.args.as_ref().unwrap();
+            let nth_args = nth_sample.args.as_ref().unwrap();
             assert_eq!(decoded_result[i]["args"]["xi_payload"], json!(nth_args.payload.as_ref()));
         }
         assert_eq!(decoded_result[5]["ph"], "B");

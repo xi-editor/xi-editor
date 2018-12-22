@@ -13,7 +13,6 @@
 // limitations under the License.
 
 //! A simple test program for evaluating the speed of cross-thread communications.
-
 extern crate xi_rpc;
 
 use std::sync::mpsc;

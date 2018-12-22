@@ -33,10 +33,10 @@ use std::borrow::Cow;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeSet;
 
-use delta::{Delta, InsertDelta};
-use interval::Interval;
-use multiset::{CountMatcher, Subset};
-use rope::{Rope, RopeInfo};
+use crate::delta::{Delta, InsertDelta};
+use crate::interval::Interval;
+use crate::multiset::{CountMatcher, Subset};
+use crate::rope::{Rope, RopeInfo};
 
 /// Represents the current state of a document and all of its history
 #[derive(Serialize, Deserialize, Debug)]
@@ -106,6 +106,17 @@ pub type RevToken = u64;
 
 /// the session ID component of a `RevId`
 pub type SessionId = (u64, u32);
+
+/// Type for errors that occur during CRDT operations.
+#[derive(Clone)]
+pub enum Error {
+    /// An edit specified a revision that did not exist. The revision may
+    /// have been GC'd, or it may have specified incorrectly.
+    MissingRevision(RevToken),
+    /// A delta was applied which had a `base_len` that did not match the length
+    /// of the revision it was applied to.
+    MalformedDelta { rev_len: usize, delta_len: usize },
+}
 
 #[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq)]
 struct FullPriority {
@@ -308,10 +319,10 @@ impl Engine {
         self.find_rev_token(rev).map(|rev_index| self.rev_content_for_index(rev_index))
     }
 
-    /// A delta that, when applied to `base_rev`, results in the current head. Panics
-    /// if there is not at least one edit.
-    pub fn delta_rev_head(&self, base_rev: RevToken) -> Delta<RopeInfo> {
-        let ix = self.find_rev_token(base_rev).expect("base revision not found");
+    /// A delta that, when applied to `base_rev`, results in the current head. Returns
+    /// an error if there is not at least one edit.
+    pub fn try_delta_rev_head(&self, base_rev: RevToken) -> Result<Delta<RopeInfo>, Error> {
+        let ix = self.find_rev_token(base_rev).ok_or_else(|| Error::MissingRevision(base_rev))?;
         let prev_from_union = self.deletes_from_cur_union_for_index(ix);
         // TODO: this does 2 calls to Delta::synthesize and 1 to apply, this probably could be better.
         let old_tombstones = shuffle_tombstones(
@@ -320,25 +331,37 @@ impl Engine {
             &self.deletes_from_union,
             &prev_from_union,
         );
-        Delta::synthesize(&old_tombstones, &prev_from_union, &self.deletes_from_union)
+        Ok(Delta::synthesize(&old_tombstones, &prev_from_union, &self.deletes_from_union))
     }
 
     // TODO: don't construct transform if subsets are empty
     // TODO: maybe switch to using a revision index for `base_rev` once we disable GC
     /// Returns a tuple of a new `Revision` representing the edit based on the
     /// current head, a new text `Rope`, a new tombstones `Rope` and a new `deletes_from_union`.
+    /// Returns an [`Error`] if `base_rev` cannot be found, or `delta.base_len`
+    /// does not equal the length of the text at `base_rev`.
     fn mk_new_rev(
         &self,
         new_priority: usize,
         undo_group: usize,
         base_rev: RevToken,
         delta: Delta<RopeInfo>,
-    ) -> (Revision, Rope, Rope, Subset) {
-        let ix = self.find_rev_token(base_rev).expect("base revision not found");
+    ) -> Result<(Revision, Rope, Rope, Subset), Error> {
+        let ix = self.find_rev_token(base_rev).ok_or_else(|| Error::MissingRevision(base_rev))?;
+
         let (ins_delta, deletes) = delta.factor();
 
         // rebase delta to be on the base_rev union instead of the text
         let deletes_at_rev = self.deletes_from_union_for_index(ix);
+
+        // validate delta
+        if ins_delta.base_len != deletes_at_rev.len_after_delete() {
+            return Err(Error::MalformedDelta {
+                delta_len: ins_delta.base_len,
+                rev_len: deletes_at_rev.len_after_delete(),
+            });
+        }
+
         let mut union_ins_delta = ins_delta.transform_expand(&deletes_at_rev, true);
         let mut new_deletes = deletes.transform_expand(&deletes_at_rev);
 
@@ -384,7 +407,7 @@ impl Engine {
         );
 
         let head_rev = &self.revs.last().unwrap();
-        (
+        Ok((
             Revision {
                 rev_id: self.next_rev_id(),
                 max_undo_so_far: std::cmp::max(undo_group, head_rev.max_undo_so_far),
@@ -398,11 +421,15 @@ impl Engine {
             new_text,
             new_tombstones,
             new_deletes_from_union,
-        )
+        ))
     }
-
-    // TODO: have `base_rev` be an index so that it can be used maximally efficiently with the
-    // head revision, a token or a revision ID. Efficiency loss of token is negligible but unfortunate.
+    // NOTE: maybe just deprecate this? we can panic on the other side of
+    // the call if/when that makes sense.
+    /// Create a new edit based on `base_rev`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `base_rev` does not exist, or if `delta` is poorly formed.
     pub fn edit_rev(
         &mut self,
         priority: usize,
@@ -410,13 +437,29 @@ impl Engine {
         base_rev: RevToken,
         delta: Delta<RopeInfo>,
     ) {
+        self.try_edit_rev(priority, undo_group, base_rev, delta).unwrap();
+    }
+
+    // TODO: have `base_rev` be an index so that it can be used maximally
+    // efficiently with the head revision, a token or a revision ID.
+    // Efficiency loss of token is negligible but unfortunate.
+    /// Attempts to apply a new edit based on the [`Revision`] specified by `base_rev`,
+    /// Returning an [`Error`] if the `Revision` cannot be found.
+    pub fn try_edit_rev(
+        &mut self,
+        priority: usize,
+        undo_group: usize,
+        base_rev: RevToken,
+        delta: Delta<RopeInfo>,
+    ) -> Result<(), Error> {
         let (new_rev, new_text, new_tombstones, new_deletes_from_union) =
-            self.mk_new_rev(priority, undo_group, base_rev, delta);
+            self.mk_new_rev(priority, undo_group, base_rev, delta)?;
         self.rev_id_counter += 1;
         self.revs.push(new_rev);
         self.text = new_text;
         self.tombstones = new_tombstones;
         self.deletes_from_union = new_deletes_from_union;
+        Ok(())
     }
 
     // since undo and gc replay history with transforms, we need an empty set
@@ -895,16 +938,35 @@ fn rebase(
     (out, text, tombstones, deletes_from_union)
 }
 
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Error::MissingRevision(_) => write!(f, "Revision not found"),
+            Error::MalformedDelta { delta_len, rev_len } => {
+                write!(f, "Delta base_len {} does not match revision length {}", delta_len, rev_len)
+            }
+        }
+    }
+}
+
+impl std::fmt::Debug for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        std::fmt::Display::fmt(self, f)
+    }
+}
+
+impl std::error::Error for Error {}
+
 #[cfg(test)]
 #[cfg_attr(rustfmt, rustfmt_skip)]
 mod tests {
-    use engine::*;
-    use rope::{Rope, RopeInfo};
-    use delta::{Builder, Delta, DeltaElement};
-    use multiset::Subset;
-    use interval::Interval;
+    use crate::engine::*;
+    use crate::rope::{Rope, RopeInfo};
+    use crate::delta::{Builder, Delta, DeltaElement};
+    use crate::multiset::Subset;
+    use crate::interval::Interval;
     use std::collections::BTreeSet;
-    use test_helpers::{parse_subset_list, parse_subset, parse_delta, debug_subsets};
+    use crate::test_helpers::{parse_subset_list, parse_subset, parse_delta, debug_subsets};
 
     const TEST_STR: &'static str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
@@ -958,6 +1020,29 @@ mod tests {
         assert_eq!("0!3456789abcDEEFGIjklmnopqr888999stuvHIz", String::from(engine.get_head()));
     }
 
+    #[test]
+    #[should_panic(expected = "Delta base_len 5 does not match revision length 6")]
+    fn edit_rev_bad_delta_len() {
+        let test_str = "hello";
+        let mut engine = Engine::new(Rope::from(test_str));
+        let iv = Interval::new(1, 1);
+
+        let mut builder = Builder::new(test_str.len());
+        builder.replace(iv, "1".into());
+        let delta1 = builder.build();
+
+        let mut builder = Builder::new(test_str.len());
+        builder.replace(iv, "2".into());
+        let delta2 = builder.build();
+
+        let rev = engine.get_head_rev_id().token();
+        engine.edit_rev(1, 1, rev, delta1);
+
+        // this second delta now has an incorrect length for the engine
+        let rev = engine.get_head_rev_id().token();
+        engine.edit_rev(1, 2, rev, delta2);
+    }
+
     fn undo_test(before: bool, undos : BTreeSet<usize>, output: &str) {
         let mut engine = Engine::new(Rope::from(TEST_STR));
         let first_rev = engine.get_head_rev_id().token();
@@ -988,33 +1073,43 @@ mod tests {
     }
 
     #[test]
-    fn delta_rev_head() {
+    fn try_delta_rev_head() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
         let first_rev = engine.get_head_rev_id().token();
         engine.edit_rev(1, 1, first_rev, build_delta_1());
-        let d = engine.delta_rev_head(first_rev);
+        let d = engine.try_delta_rev_head(first_rev).unwrap();
         assert_eq!(String::from(engine.get_head()), d.apply_to_string(TEST_STR));
     }
 
     #[test]
-    fn delta_rev_head_2() {
+    fn try_delta_rev_head_2() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
         let first_rev = engine.get_head_rev_id().token();
         engine.edit_rev(1, 1, first_rev, build_delta_1());
         engine.edit_rev(0, 2, first_rev, build_delta_2());
-        let d = engine.delta_rev_head(first_rev);
+        let d = engine.try_delta_rev_head(first_rev).unwrap();
         assert_eq!(String::from(engine.get_head()), d.apply_to_string(TEST_STR));
     }
 
     #[test]
-    fn delta_rev_head_3() {
+    fn try_delta_rev_head_3() {
         let mut engine = Engine::new(Rope::from(TEST_STR));
         let first_rev = engine.get_head_rev_id().token();
         engine.edit_rev(1, 1, first_rev, build_delta_1());
         let after_first_edit = engine.get_head_rev_id().token();
         engine.edit_rev(0, 2, first_rev, build_delta_2());
-        let d = engine.delta_rev_head(after_first_edit);
+        let d = engine.try_delta_rev_head(after_first_edit).unwrap();
         assert_eq!(String::from(engine.get_head()), d.apply_to_string("0123456789abcDEEFghijklmnopqr999stuvz"));
+    }
+
+    #[test]
+    fn try_delta_rev_head_missing_token() {
+        let mut engine = Engine::new(Rope::from(TEST_STR));
+        let first_rev = engine.get_head_rev_id().token();
+        let bad_rev = RevToken::default();
+        engine.edit_rev(1, 1, first_rev, build_delta_1());
+        let d = engine.try_delta_rev_head(bad_rev);
+        assert!(d.is_err());
     }
 
     #[test]
@@ -1419,7 +1514,7 @@ mod tests {
             match *op {
                 MergeTestOp::Merge(ai, bi) => {
                     let (start, end) = self.peers.split_at_mut(ai);
-                    let (mut a, rest) = end.split_first_mut().unwrap();
+                    let (a, rest) = end.split_first_mut().unwrap();
                     let b = if bi < ai {
                         &mut start[bi]
                     } else {
@@ -1441,7 +1536,7 @@ mod tests {
                     }
                 },
                 MergeTestOp::Edit { ei, p, u, d: ref delta } => {
-                    let mut e = &mut self.peers[ei];
+                    let e = &mut self.peers[ei];
                     let head = e.get_head_rev_id().token();
                     e.edit_rev(p, u, head, delta.clone());
                 },

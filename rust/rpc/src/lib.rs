@@ -21,8 +21,7 @@
 //!
 //! Because these changes make the protocol not fully compliant with the spec,
 //! the `"jsonrpc"` member is omitted from request and response objects.
-
-#![cfg_attr(feature = "cargo-clippy", allow(boxed_local, or_fun_call))]
+#![allow(clippy::boxed_local, clippy::or_fun_call)]
 
 #[macro_use]
 extern crate serde_json;
@@ -54,8 +53,8 @@ use serde_json::Value;
 
 use xi_trace::{trace, trace_block, trace_block_payload, trace_payload};
 
-pub use error::{Error, ReadError, RemoteError};
-use parse::{Call, MessageReader, Response, RpcObject};
+pub use crate::error::{Error, ReadError, RemoteError};
+use crate::parse::{Call, MessageReader, Response, RpcObject};
 
 /// The maximum duration we will block on a reader before checking for an task.
 const MAX_IDLE_WAIT: Duration = Duration::from_millis(5);
@@ -339,7 +338,8 @@ impl<W: Write + Send> RpcLoop<W> {
                     }
                 }
             }
-        }).unwrap();
+        })
+        .unwrap();
 
         if exit.is_disconnect() {
             Ok(())

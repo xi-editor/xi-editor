@@ -24,8 +24,8 @@ use serde::de::Deserialize;
 use serde_json::{self, Value};
 use toml;
 
-use syntax::{LanguageId, Languages};
-use tabs::{BufferId, ViewId};
+use crate::syntax::{LanguageId, Languages};
+use crate::tabs::{BufferId, ViewId};
 
 /// Loads the included base config settings.
 fn load_base_config() -> Table {
@@ -750,7 +750,7 @@ fn from_toml_value(value: toml::Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use syntax::LanguageDefinition;
+    use crate::syntax::LanguageDefinition;
 
     #[test]
     fn test_overrides() {

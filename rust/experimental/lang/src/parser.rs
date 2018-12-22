@@ -1,4 +1,4 @@
-// Copyright 2016 The xi-editor Authors.
+// Copyright 2018 The xi-editor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,23 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Toy app for experimenting with ropes
-extern crate xi_rope;
+use crate::statestack::State;
+use crate::ScopeId;
 
-use xi_rope::Rope;
-
-fn main() {
-    let mut a = Rope::from("hello.");
-    a.edit(5..6, "!");
-    for i in 0..1000000 {
-        let l = a.len();
-        a.edit(l..l, &(i.to_string() + "\n"));
-    }
-    let l = a.len();
-    for s in a.clone().iter_chunks(1000..3000) {
-        println!("chunk {:?}", s);
-    }
-    a.edit(1000..l, "");
-    //a = a.subrange(0, 1000);
-    println!("{:?}", String::from(a));
+/// Trait for abstracting over text parsing and [Scope] extraction
+pub trait Parser {
+    fn has_offset(&mut self) -> bool;
+    fn set_scope_offset(&mut self, offset: u32);
+    fn get_all_scopes(&self) -> Vec<Vec<String>>;
+    fn get_scope_id_for_state(&self, state: State) -> ScopeId;
+    fn parse(&mut self, text: &str, state: State) -> (usize, State, usize, State);
 }

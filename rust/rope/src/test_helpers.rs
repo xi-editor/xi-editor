@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use delta::{self, Delta};
-use interval::Interval;
-use multiset::{Subset, SubsetBuilder};
-use rope::{Rope, RopeInfo};
+use crate::delta::{self, Delta};
+use crate::interval::Interval;
+use crate::multiset::{Subset, SubsetBuilder};
+use crate::rope::{Rope, RopeInfo};
 
 /// Creates a `Subset` of `s` by scanning through `substr` and finding which
 /// characters of `s` are missing from it in order. Returns a `Subset` which

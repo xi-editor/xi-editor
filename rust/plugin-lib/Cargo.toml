@@ -5,6 +5,7 @@ license = "Apache-2.0"
 authors = ["Raph Levien <raph@google.com>"]
 repository = "https://github.com/google/xi-editor"
 description = "The library base for implementing xi-editor plugins."
+edition = '2018'
 
 [dependencies]
 serde = "1.0"

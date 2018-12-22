@@ -18,18 +18,17 @@
 //! the JSON-RPC protocol and the types here.
 //!
 //! [Serde]: https://serde.rs
-
 use std::path::PathBuf;
 
 use serde::de::{self, Deserialize, Deserializer};
 use serde::ser::{self, Serialize, Serializer};
 use serde_json::{self, Value};
 
-use config::{ConfigDomainExternal, Table};
-use plugins::PlaceholderRpc;
-use syntax::LanguageId;
-use tabs::ViewId;
-use view::Size;
+use crate::config::{ConfigDomainExternal, Table};
+use crate::plugins::PlaceholderRpc;
+use crate::syntax::LanguageId;
+use crate::tabs::ViewId;
+use crate::view::Size;
 
 // =============================================================================
 //  Command types
@@ -53,7 +52,7 @@ pub struct EmptyStruct {}
 /// # extern crate xi_core_lib as xi_core;
 /// extern crate serde_json;
 /// # fn main() {
-/// use xi_core::rpc::CoreNotification;
+/// use crate::xi_core::rpc::CoreNotification;
 ///
 /// let json = r#"{
 ///     "method": "close_view",
@@ -74,7 +73,7 @@ pub struct EmptyStruct {}
 /// # extern crate xi_core_lib as xi_core;
 /// extern crate serde_json;
 /// # fn main() {
-/// use xi_core::rpc::CoreNotification;
+/// use crate::xi_core::rpc::CoreNotification;
 ///
 /// let json = r#"{
 ///     "method": "client_started",
@@ -115,7 +114,7 @@ pub enum CoreNotification {
     /// # extern crate xi_core_lib as xi_core;
     /// #[macro_use]
     /// extern crate serde_json;
-    /// use xi_core::rpc::*;
+    /// use crate::xi_core::rpc::*;
     /// # fn main() {
     /// let edit = EditCommand {
     ///     view_id: 1.into(),
@@ -154,7 +153,7 @@ pub enum CoreNotification {
     /// # extern crate xi_core_lib as xi_core;
     /// #[macro_use]
     /// extern crate serde_json;
-    /// use xi_core::rpc::*;
+    /// use crate::xi_core::rpc::*;
     /// # fn main() {
     /// let rpc = CoreNotification::Plugin(
     ///     PluginNotification::Start {
@@ -224,7 +223,7 @@ pub enum CoreNotification {
 /// # extern crate xi_core_lib as xi_core;
 /// extern crate serde_json;
 /// # fn main() {
-/// use xi_core::rpc::CoreRequest;
+/// use crate::xi_core::rpc::CoreRequest;
 ///
 /// let json = r#"{
 ///     "method": "new_view",
@@ -273,7 +272,7 @@ pub enum CoreRequest {
 /// # extern crate xi_core_lib as xi_core;
 /// extern crate serde_json;
 /// # fn main() {
-/// use xi_core::rpc::*;
+/// use crate::xi_core::rpc::*;
 ///
 /// let json = r#"{
 ///     "view_id": "view-id-1",
@@ -472,10 +471,11 @@ pub enum EditNotification {
     DebugWrapWidth,
     /// Prints the style spans present in the active selection.
     DebugPrintSpans,
-    CancelOperation,
+    DebugToggleComment,
     Uppercase,
     Lowercase,
     Capitalize,
+    Reindent,
     Indent,
     Outdent,
     /// Indicates whether find highlights should be rendered
@@ -511,6 +511,7 @@ pub enum EditNotification {
     ClearRecording {
         recording_name: String,
     },
+    CollapseSelections,
 }
 
 /// The edit related requests.
@@ -634,7 +635,7 @@ impl<'de> Deserialize<'de> for LineRange {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tabs::ViewId;
+    use crate::tabs::ViewId;
 
     #[test]
     fn test_serialize_edit_command() {

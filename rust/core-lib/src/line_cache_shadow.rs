@@ -16,6 +16,7 @@
 //! and preparing render plans to update it.
 
 use std::cmp::{max, min};
+use std::fmt;
 
 const SCROLL_SLOP: usize = 2;
 const PRESERVE_EXTENT: usize = 1000;
@@ -23,15 +24,19 @@ const PRESERVE_EXTENT: usize = 1000;
 /// The line cache shadow tracks the state of the line cache in the front-end.
 /// Any content marked as valid here is up-to-date in the current state of the
 /// view. Also, if `dirty` is false, then the entire line cache is valid.
+#[derive(Debug)]
 pub struct LineCacheShadow {
     spans: Vec<Span>,
     dirty: bool,
 }
 
-pub const TEXT_VALID: u8 = 1;
-pub const STYLES_VALID: u8 = 2;
-pub const CURSOR_VALID: u8 = 4;
-pub const ALL_VALID: u8 = 7;
+type Validity = u8;
+
+pub const INVALID: Validity = 0;
+pub const TEXT_VALID: Validity = 1;
+pub const STYLES_VALID: Validity = 2;
+pub const CURSOR_VALID: Validity = 4;
+pub const ALL_VALID: Validity = 7;
 
 pub struct Span {
     /// Number of lines in this span. Units are visual lines in the
@@ -42,7 +47,7 @@ pub struct Span {
     /// irrelevant if validity is 0.
     pub start_line_num: usize,
     /// Validity of lines in this span, consisting of the above constants or'ed.
-    pub validity: u8,
+    pub validity: Validity,
 }
 
 /// Builder for `LineCacheShadow` object.
@@ -83,7 +88,7 @@ pub struct PlanSegment {
     /// Number of visual lines in this segment.
     pub n: usize,
     /// Validity of this segment in client's cache.
-    pub validity: u8,
+    pub validity: Validity,
     /// Tactic for rendering this segment.
     pub tactic: RenderTactic,
 }
@@ -97,11 +102,11 @@ impl Builder {
         LineCacheShadow { spans: self.spans, dirty: self.dirty }
     }
 
-    pub fn add_span(&mut self, n: usize, start_line_num: usize, validity: u8) {
+    pub fn add_span(&mut self, n: usize, start_line_num: usize, validity: Validity) {
         if n > 0 {
             if let Some(last) = self.spans.last_mut() {
                 if last.validity == validity
-                    && (validity == 0 || last.start_line_num + last.n == start_line_num)
+                    && (validity == INVALID || last.start_line_num + last.n == start_line_num)
                 {
                     last.n += n;
                     return;
@@ -132,7 +137,7 @@ impl LineCacheShadow {
                 break;
             }
         }
-        b.add_span(replace, 0, 0);
+        b.add_span(replace, 0, INVALID);
         for span in &self.spans[i..] {
             if line_num + span.n > end {
                 let offset = end.saturating_sub(line_num);
@@ -144,7 +149,7 @@ impl LineCacheShadow {
         *self = b.build();
     }
 
-    pub fn partial_invalidate(&mut self, start: usize, end: usize, invalid: u8) {
+    pub fn partial_invalidate(&mut self, start: usize, end: usize, invalid: Validity) {
         let mut clean = true;
         let mut line_num = 0;
         for span in &self.spans {
@@ -184,9 +189,10 @@ impl LineCacheShadow {
     }
 
     pub fn needs_render(&self, plan: &RenderPlan) -> bool {
-        self.dirty || self
-            .iter_with_plan(plan)
-            .any(|seg| seg.tactic == RenderTactic::Render && seg.validity != ALL_VALID)
+        self.dirty
+            || self
+                .iter_with_plan(plan)
+                .any(|seg| seg.tactic == RenderTactic::Render && seg.validity != ALL_VALID)
     }
 
     pub fn spans(&self) -> &[Span] {
@@ -299,5 +305,21 @@ impl RenderPlan {
             line_num += span.0;
         }
         self.spans = spans;
+    }
+}
+
+impl fmt::Debug for Span {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let validity = match self.validity {
+            TEXT_VALID => "text",
+            ALL_VALID => "all",
+            _other => "mixed",
+        };
+        if self.validity == INVALID {
+            write!(f, "({} invalid)", self.n)?;
+        } else {
+            write!(f, "({}: {}, {})", self.start_line_num, self.n, validity)?;
+        }
+        Ok(())
     }
 }

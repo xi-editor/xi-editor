@@ -25,22 +25,22 @@ use xi_rope::spans::SpansBuilder;
 use xi_rope::{Cursor, DeltaBuilder, Interval, LinesMetric, Rope, RopeDelta, Transformer};
 use xi_trace::{trace_block, trace_payload};
 
-use config::BufferItems;
-use edit_types::BufferEvent;
-use event_context::MAX_SIZE_LIMIT;
-use layers::Layers;
-use movement::{region_movement, Movement};
-use plugins::rpc::{GetDataResponse, PluginEdit, ScopeSpan, TextUnit};
-use plugins::PluginId;
-use rpc::SelectionModifier;
-use selection::{InsertDrift, SelRegion, Selection};
-use styles::ThemeStyleMap;
-use view::{Replace, View};
-use word_boundaries::WordCursor;
+use crate::config::BufferItems;
+use crate::edit_types::BufferEvent;
+use crate::event_context::MAX_SIZE_LIMIT;
+use crate::layers::Layers;
+use crate::movement::{region_movement, Movement};
+use crate::plugins::rpc::{GetDataResponse, PluginEdit, ScopeSpan, TextUnit};
+use crate::plugins::PluginId;
+use crate::rpc::SelectionModifier;
+use crate::selection::{InsertDrift, SelRegion, Selection};
+use crate::styles::ThemeStyleMap;
+use crate::view::{Replace, View};
+use crate::word_boundaries::WordCursor;
 
 #[cfg(not(feature = "ledger"))]
 pub struct SyncStore;
-use backspace::offset_for_delete_backwards;
+use crate::backspace::offset_for_delete_backwards;
 #[cfg(feature = "ledger")]
 use fuchsia::sync::SyncStore;
 
@@ -276,13 +276,16 @@ impl Editor {
         let PluginEdit { rev, delta, priority, undo_group, .. } = edit;
         let priority = priority as usize;
         let undo_group = undo_group.unwrap_or_else(|| self.calculate_undo_group());
-        self.engine.edit_rev(priority, undo_group, rev, delta);
-        self.text = self.engine.get_head().clone();
+        match self.engine.try_edit_rev(priority, undo_group, rev, delta) {
+            Err(e) => error!("Error applying plugin edit: {}", e),
+            Ok(_) => self.text = self.engine.get_head().clone(),
+        };
     }
 
     /// Commits the current delta. If the buffer has changed, returns
     /// a 3-tuple containing the delta representing the changes, the previous
-    /// buffer, and a bool indicating whether selections should be preserved.
+    /// buffer, and an `InsertDrift` enum describing the correct selection update
+    /// behaviour.
     pub(crate) fn commit_delta(&mut self) -> Option<(RopeDelta, Rope, InsertDrift)> {
         let _t = trace_block("Editor::commit_delta", &["core"]);
 
@@ -291,7 +294,7 @@ impl Editor {
         }
 
         let last_token = self.last_rev_id.token();
-        let delta = self.engine.delta_rev_head(last_token);
+        let delta = self.engine.try_delta_rev_head(last_token).expect("last_rev not found");
         // TODO (performance): it's probably quicker to stash last_text
         // rather than resynthesize it.
         let last_text = self.engine.get_rev(last_token).expect("last_rev not found");
@@ -310,8 +313,11 @@ impl Editor {
         Some((delta, last_text, drift))
     }
 
-    pub(crate) fn delta_rev_head(&self, target_rev_id: RevToken) -> RopeDelta {
-        self.engine.delta_rev_head(target_rev_id)
+    /// Attempts to find the delta from head for the given `RevToken`. Returns
+    /// `None` if the revision is not found, so this result should be checked if
+    /// the revision is coming from a plugin.
+    pub(crate) fn delta_rev_head(&self, target_rev_id: RevToken) -> Option<RopeDelta> {
+        self.engine.try_delta_rev_head(target_rev_id).ok()
     }
 
     #[cfg(not(target_os = "fuchsia"))]
@@ -640,7 +646,8 @@ impl Editor {
                 if start >= last {
                     let end_line_offset =
                         view.offset_of_line(&self.text, view.line_of_offset(&self.text, end));
-                    if end == middle || end == end_line_offset {
+                    // include end != self.text.len() because if the editor is entirely empty, we dont' want to pull from empty space
+                    if (end == middle || end == end_line_offset) && end != self.text.len() {
                         middle = start;
                         start = self.text.prev_grapheme_offset(middle).unwrap_or(0);
                         end = middle.wrapping_add(1);
@@ -884,14 +891,17 @@ impl Editor {
         }
         let mut spans = sb.build();
         if rev != self.engine.get_head_rev_id().token() {
-            let delta = self.engine.delta_rev_head(rev);
-            let mut transformer = Transformer::new(&delta);
-            let new_start = transformer.transform(start, false);
-            if !transformer.interval_untouched(Interval::new(start, end_offset)) {
-                spans = spans.transform(start, end_offset, &mut transformer);
+            if let Ok(delta) = self.engine.try_delta_rev_head(rev) {
+                let mut transformer = Transformer::new(&delta);
+                let new_start = transformer.transform(start, false);
+                if !transformer.interval_untouched(Interval::new(start, end_offset)) {
+                    spans = spans.transform(start, end_offset, &mut transformer);
+                }
+                start = new_start;
+                end_offset = transformer.transform(end_offset, true);
+            } else {
+                error!("Revision {} not found", rev);
             }
-            start = new_start;
-            end_offset = transformer.transform(end_offset, true);
         }
         let iv = Interval::new(start, end_offset);
         self.layers.update_layer(plugin, iv, spans);
@@ -995,6 +1005,7 @@ fn count_lines(s: &str) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn plugin_edit() {
         let base_text = "hello";
@@ -1018,4 +1029,5 @@ mod tests {
 
         assert_eq!(editor.get_buffer().to_string(), "sshello");
     }
+
 }

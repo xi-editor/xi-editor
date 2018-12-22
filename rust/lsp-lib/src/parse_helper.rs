@@ -14,8 +14,8 @@
 
 //! Utility methods to parse the input from the Language Server
 
+use crate::types::{LspHeader, ParseError};
 use std::io::BufRead;
-use types::{LspHeader, ParseError};
 
 const HEADER_CONTENT_LENGTH: &str = "content-length";
 const HEADER_CONTENT_TYPE: &str = "content-type";

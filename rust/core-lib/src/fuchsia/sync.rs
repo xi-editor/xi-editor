@@ -84,7 +84,8 @@ impl SyncStore {
                             buffer: initial_buffer,
                             new_buf: buf,
                             done: None,
-                        }).unwrap();
+                        })
+                        .unwrap();
                 }
                 Ok(Ok(None)) => (), // No initial state saved yet
                 Err(err) => error!("FIDL failed on initial response: {:?}", err),
@@ -252,7 +253,8 @@ impl ConflictResolverFactory for ConflictResolverFactoryServer {
         let _ = fidl::Server::new(
             ConflictResolverServer { key: self.key.clone() },
             resolver.into_channel(),
-        ).spawn();
+        )
+        .spawn();
     }
 }
 

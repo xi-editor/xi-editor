@@ -16,6 +16,7 @@
 
 use std::cell::RefCell;
 use std::iter;
+use std::ops::Range;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -25,26 +26,26 @@ use xi_rope::{Interval, LinesMetric, Rope, RopeDelta};
 use xi_rpc::{Error as RpcError, RemoteError};
 use xi_trace::trace_block;
 
-use plugins::rpc::{
+use crate::plugins::rpc::{
     ClientPluginInfo, Hover, PluginBufferInfo, PluginNotification, PluginRequest, PluginUpdate,
 };
-use rpc::{EditNotification, EditRequest, LineRange, Position as ClientPosition};
+use crate::rpc::{EditNotification, EditRequest, LineRange, Position as ClientPosition};
 
-use config::{BufferItems, Table};
-use styles::ThemeStyleMap;
+use crate::config::{BufferItems, Table};
+use crate::styles::ThemeStyleMap;
 
-use client::Client;
-use edit_types::{EventDomain, SpecialEvent};
-use editor::Editor;
-use file::FileInfo;
-use plugins::Plugin;
-use recorder::Recorder;
-use selection::InsertDrift;
-use syntax::LanguageId;
-use tabs::{BufferId, PluginId, ViewId, RENDER_VIEW_IDLE_MASK};
-use view::View;
-use width_cache::WidthCache;
-use WeakXiCore;
+use crate::client::Client;
+use crate::edit_types::{EventDomain, SpecialEvent};
+use crate::editor::Editor;
+use crate::file::FileInfo;
+use crate::plugins::Plugin;
+use crate::recorder::Recorder;
+use crate::selection::InsertDrift;
+use crate::syntax::LanguageId;
+use crate::tabs::{BufferId, PluginId, ViewId, RENDER_VIEW_IDLE_MASK, REWRAP_VIEW_IDLE_MASK};
+use crate::view::View;
+use crate::width_cache::WidthCache;
+use crate::WeakXiCore;
 
 // Maximum returned result from plugin get_data RPC.
 pub const MAX_SIZE_LIMIT: usize = 1024 * 1024;
@@ -149,7 +150,7 @@ impl<'a> EventContext<'a> {
             SpecialEvent::Resize(size) => {
                 self.with_view(|view, _| view.set_size(size));
                 if self.config.word_wrap {
-                    self.update_wrap_state();
+                    self.update_wrap_settings(false);
                 }
             }
             SpecialEvent::DebugRewrap | SpecialEvent::DebugWrapWidth => {
@@ -166,6 +167,8 @@ impl<'a> EventContext<'a> {
             SpecialEvent::RequestHover { request_id, position } => {
                 self.do_request_hover(request_id, position)
             }
+            SpecialEvent::DebugToggleComment => self.do_debug_toggle_comment(),
+            SpecialEvent::Reindent => self.do_reindent(),
             SpecialEvent::ToggleRecording(_) => {}
             SpecialEvent::PlayRecording(recording_name) => {
                 let recorder = self.recorder.borrow();
@@ -193,8 +196,8 @@ impl<'a> EventContext<'a> {
                 // The action that follows the block must belong to a separate undo group
                 self.editor.borrow_mut().update_edit_type();
 
-                let delta = self.editor.borrow_mut().delta_rev_head(starting_revision);
-                self.update_plugins(&mut self.editor.borrow_mut(), delta, "core")
+                let delta = self.editor.borrow_mut().delta_rev_head(starting_revision).unwrap();
+                self.update_plugins(&mut self.editor.borrow_mut(), delta, "core");
             }
             SpecialEvent::ClearRecording(recording_name) => {
                 let mut recorder = self.recorder.borrow_mut();
@@ -384,7 +387,8 @@ impl<'a> EventContext<'a> {
 
         self.client.config_changed(self.view_id, config);
         self.client.language_changed(self.view_id, &self.language);
-        self.update_wrap_state();
+        self.update_wrap_settings(true);
+        self.with_view(|view, text| view.set_dirty(text));
         self.render()
     }
 
@@ -407,7 +411,17 @@ impl<'a> EventContext<'a> {
 
     pub(crate) fn config_changed(&mut self, changes: &Table) {
         if changes.contains_key("wrap_width") || changes.contains_key("word_wrap") {
-            self.update_wrap_state();
+            // FIXME: if switching from measurement-based widths to columnar widths,
+            // we need to reset the cache, since we're using different coordinate spaces
+            // for the same IDs. The long-term solution would be to include font
+            // information in the width cache, and then use real width even in the column
+            // case, getting the unit width for a typeface and multiplying that by
+            // a string's unicode width.
+            if changes.contains_key("word_wrap") {
+                debug!("clearing {} items from width cache", self.width_cache.borrow().len());
+                self.width_cache.replace(WidthCache::new());
+            }
+            self.update_wrap_settings(true);
         }
 
         self.client.config_changed(self.view_id, &changes);
@@ -461,11 +475,17 @@ impl<'a> EventContext<'a> {
 
     pub(crate) fn plugin_stopped(&mut self, plugin: &Plugin) {
         self.client.plugin_stopped(self.view_id, &plugin.name, 0);
-        self.with_editor(|ed, view, _, _| {
-            ed.get_layers_mut().remove_layer(plugin.id);
-            view.set_dirty(ed.get_buffer());
+        let needs_render = self.with_editor(|ed, view, _, _| {
+            if ed.get_layers_mut().remove_layer(plugin.id).is_some() {
+                view.set_dirty(ed.get_buffer());
+                true
+            } else {
+                false
+            }
         });
-        self.render();
+        if needs_render {
+            self.render();
+        }
     }
 
     pub(crate) fn do_plugin_update(&mut self, update: Result<Value, RpcError>) {
@@ -477,27 +497,46 @@ impl<'a> EventContext<'a> {
         self.editor.borrow_mut().dec_revs_in_flight();
     }
 
-    fn update_wrap_state(&mut self) {
-        // word based wrapping trumps column wrapping
-        if self.config.word_wrap {
-            let mut view = self.view.borrow_mut();
-            let mut width_cache = self.width_cache.borrow_mut();
-            let ed = self.editor.borrow();
-            view.wrap_width(
-                ed.get_buffer(),
-                &mut width_cache,
-                self.client,
-                ed.get_layers().get_merged(),
-            );
-            view.set_dirty(ed.get_buffer());
-        } else {
-            let wrap_width = self.config.wrap_width;
-            self.with_view(|view, text| {
-                view.rewrap(text, wrap_width);
-                view.set_dirty(text);
-            });
+    /// Called after anything changes that effects word wrap, such as the size of
+    /// the window or the user's wrap settings. `rewrap_immediately` should be `true`
+    /// except in the resize case; during live resize we want to delay recalculation
+    /// to avoid unnecessary work.
+    fn update_wrap_settings(&mut self, rewrap_immediately: bool) {
+        let wrap_width = self.config.wrap_width;
+        let word_wrap = self.config.word_wrap;
+        self.with_view(|view, text| view.update_wrap_settings(text, wrap_width, word_wrap));
+        if rewrap_immediately {
+            self.rewrap();
+            self.with_view(|view, text| view.set_dirty(text));
         }
-        self.render();
+        if self.view.borrow().needs_more_wrap() {
+            self.schedule_rewrap();
+        }
+    }
+
+    /// Tells the view to rewrap a batch of lines. This guarantees that the currently visible region
+    /// will be correctly wrapped; the caller should check if additional wrapping is necessary and
+    /// schedule that if so.
+    fn rewrap(&mut self) {
+        let mut view = self.view.borrow_mut();
+        let ed = self.editor.borrow();
+        let mut width_cache = self.width_cache.borrow_mut();
+        view.rewrap(ed.get_buffer(), &mut width_cache, self.client, ed.get_layers().get_merged());
+    }
+
+    /// Does a rewrap batch, and schedules follow-up work if needed.
+    pub(crate) fn do_rewrap_batch(&mut self) {
+        self.rewrap();
+        if self.view.borrow().needs_more_wrap() {
+            self.schedule_rewrap();
+        }
+        self.render_if_needed();
+    }
+
+    fn schedule_rewrap(&self) {
+        let view_id: usize = self.view_id.into();
+        let token = REWRAP_VIEW_IDLE_MASK | view_id;
+        self.client.schedule_idle(token);
     }
 
     fn do_request_lines(&mut self, first: usize, last: usize) {
@@ -512,6 +551,55 @@ impl<'a> EventContext<'a> {
             last,
             ed.is_pristine(),
         )
+    }
+
+    fn selected_line_ranges(&mut self) -> Vec<(usize, usize)> {
+        let ed = self.editor.borrow();
+        let mut prev_range: Option<Range<usize>> = None;
+        let mut line_ranges = Vec::new();
+        // we send selection state to syntect in the form of a vec of line ranges,
+        // so we combine overlapping selections to get the minimum set of ranges.
+        for region in self.view.borrow().sel_regions().iter() {
+            let start = ed.get_buffer().line_of_offset(region.min());
+            let end = ed.get_buffer().line_of_offset(region.max()) + 1;
+            let line_range = start..end;
+            let prev = prev_range.take();
+            match (prev, line_range) {
+                (None, range) => prev_range = Some(range),
+                (Some(ref prev), ref range) if range.start <= prev.end => {
+                    let combined =
+                        Range { start: prev.start.min(range.start), end: prev.end.max(range.end) };
+                    prev_range = Some(combined);
+                }
+                (Some(prev), range) => {
+                    line_ranges.push((prev.start, prev.end));
+                    prev_range = Some(range);
+                }
+            }
+        }
+
+        if let Some(prev) = prev_range {
+            line_ranges.push((prev.start, prev.end));
+        }
+
+        line_ranges
+    }
+
+    fn do_reindent(&mut self) {
+        let line_ranges = self.selected_line_ranges();
+        // this is handled by syntect only; this is definitely not the long-term solution.
+        if let Some(plug) = self.plugins.iter().find(|p| p.name == "xi-syntect-plugin") {
+            plug.dispatch_command(self.view_id, "reindent", &json!(line_ranges));
+        }
+    }
+
+    fn do_debug_toggle_comment(&mut self) {
+        let line_ranges = self.selected_line_ranges();
+
+        // this is handled by syntect only; this is definitely not the long-term solution.
+        if let Some(plug) = self.plugins.iter().find(|p| p.name == "xi-syntect-plugin") {
+            plug.dispatch_command(self.view_id, "toggle_comment", &json!(line_ranges));
+        }
     }
 
     fn do_request_hover(&mut self, request_id: usize, position: Option<ClientPosition>) {
@@ -544,9 +632,9 @@ impl<'a> EventContext<'a> {
 #[cfg_attr(rustfmt, rustfmt_skip)]
 mod tests {
     use super::*;
-    use config::ConfigManager;
-    use core::dummy_weak_core;
-    use tabs::BufferId;
+    use crate::config::ConfigManager;
+    use crate::core::dummy_weak_core;
+    use crate::tabs::BufferId;
     use xi_rpc::test_utils::DummyPeer;
 
     struct ContextHarness {
@@ -563,10 +651,12 @@ mod tests {
 
     impl ContextHarness {
         fn new<S: AsRef<str>>(s: S) -> Self {
+            // we could make this take a config, which would let us test
+            // behaviour with different config settings?
             let view_id = ViewId(1);
             let buffer_id = BufferId(2);
             let mut config_manager = ConfigManager::new(None, None);
-            config_manager.add_buffer(buffer_id, None);
+            let config = config_manager.add_buffer(buffer_id, None);
             let view = RefCell::new(View::new(view_id, buffer_id));
             let editor = RefCell::new(Editor::with_text(s));
             let client = Client::new(Box::new(DummyPeer));
@@ -575,8 +665,11 @@ mod tests {
             let style_map = RefCell::new(ThemeStyleMap::new(None));
             let width_cache = RefCell::new(WidthCache::new());
             let recorder = RefCell::new(Recorder::new());
-            ContextHarness { view, editor, client, core_ref, kill_ring,
-                             style_map, width_cache, config_manager, recorder }
+            let harness = ContextHarness { view, editor, client, core_ref, kill_ring,
+                             style_map, width_cache, config_manager, recorder };
+            harness.make_context().finish_init(&config);
+            harness
+
         }
 
         /// Renders the text and selections. cursors are represented with
@@ -644,7 +737,7 @@ mod tests {
 
     #[test]
     fn test_gestures() {
-        use rpc::GestureType::*;
+        use crate::rpc::GestureType::*;
         let initial_text = "\
         this is a string\n\
         that has three\n\
@@ -726,7 +819,7 @@ mod tests {
         [|that] has three\n\
         [|lines]." );
 
-        ctx.do_edit(EditNotification::CancelOperation);
+        ctx.do_edit(EditNotification::CollapseSelections);
         ctx.do_edit(EditNotification::MoveToRightEndOfLine);
         assert_eq!(harness.debug_render(),"\
         this is a string|\n\
@@ -745,7 +838,7 @@ mod tests {
         that has three\n\
         lines.|]" );
 
-        ctx.do_edit(EditNotification::CancelOperation);
+        ctx.do_edit(EditNotification::CollapseSelections);
         ctx.do_edit(EditNotification::AddSelectionAbove);
         assert_eq!(harness.debug_render(),"\
         this is a string\n\
@@ -767,7 +860,7 @@ mod tests {
 
     #[test]
     fn delete_combining_enclosing_keycaps_tests() {
-        use rpc::GestureType::*;
+        use crate::rpc::GestureType::*;
 
         let initial_text = "1\u{E0101}\u{20E3}";
         let harness = ContextHarness::new(initial_text);
@@ -804,7 +897,7 @@ mod tests {
 
     #[test]
     fn delete_variation_selector_tests() {
-        use rpc::GestureType::*;
+        use crate::rpc::GestureType::*;
 
         let initial_text = "\u{FE0F}";
         let harness = ContextHarness::new(initial_text);
@@ -883,7 +976,7 @@ mod tests {
 
     #[test]
     fn delete_emoji_zwj_sequence_tests() {
-        use rpc::GestureType::*;
+        use crate::rpc::GestureType::*;
         let initial_text = "\u{1F441}\u{200D}\u{1F5E8}";
         let harness = ContextHarness::new(initial_text);
         let mut ctx = harness.make_context();
@@ -979,7 +1072,7 @@ mod tests {
 
     #[test]
     fn delete_flags_tests() {
-        use rpc::GestureType::*;
+        use crate::rpc::GestureType::*;
         let initial_text = "\u{1F1FA}";
         let harness = ContextHarness::new(initial_text);
         let mut ctx = harness.make_context();
@@ -1051,7 +1144,7 @@ mod tests {
 
     #[test]
     fn delete_emoji_modifier_tests() {
-        use rpc::GestureType::*;
+        use crate::rpc::GestureType::*;
         let initial_text = "\u{1F466}\u{1F3FB}";
         let harness = ContextHarness::new(initial_text);
         let mut ctx = harness.make_context();
@@ -1086,7 +1179,7 @@ mod tests {
 
     #[test]
     fn delete_mixed_edge_cases_tests() {
-        use rpc::GestureType::*;
+        use crate::rpc::GestureType::*;
         let initial_text = "";
         let harness = ContextHarness::new(initial_text);
         let mut ctx = harness.make_context();
@@ -1291,7 +1384,7 @@ mod tests {
 
     #[test]
     fn delete_tests() {
-        use rpc::GestureType::*;
+        use crate::rpc::GestureType::*;
         let initial_text = "\
         this is a string\n\
         that has three\n\
@@ -1345,7 +1438,7 @@ mod tests {
 
     #[test]
     fn simple_indentation_test() {
-        use rpc::GestureType::*;
+        use crate::rpc::GestureType::*;
         let harness = ContextHarness::new("");
         let mut ctx = harness.make_context();
         // Single indent and outdent test
@@ -1380,7 +1473,7 @@ mod tests {
 
     #[test]
     fn multiline_indentation_test() {
-        use rpc::GestureType::*;
+        use crate::rpc::GestureType::*;
         let initial_text = "\
         this is a string\n\
         that has three\n\
@@ -1473,7 +1566,7 @@ mod tests {
 
     #[test]
     fn number_change_tests() {
-        use rpc::GestureType::*;
+        use crate::rpc::GestureType::*;
         let harness = ContextHarness::new("");
         let mut ctx = harness.make_context();
         // Single indent and outdent test
@@ -1627,7 +1720,7 @@ mod tests {
 
     #[test]
     fn text_recording() {
-        use rpc::GestureType::*;
+        use crate::rpc::GestureType::*;
         let initial_text = "";
         let harness = ContextHarness::new(initial_text);
         let mut ctx = harness.make_context();
@@ -1654,7 +1747,7 @@ mod tests {
 
     #[test]
     fn movement_recording() {
-        use rpc::GestureType::*;
+        use crate::rpc::GestureType::*;
         let initial_text = "\
         this is a string\n\
         that has about\n\
@@ -1679,7 +1772,7 @@ mod tests {
         ctx.do_edit(EditNotification::MoveToRightEndOfLine);
         ctx.do_edit(EditNotification::MoveWordLeftAndModifySelection);
         ctx.do_edit(EditNotification::Transpose);
-        ctx.do_edit(EditNotification::CancelOperation);
+        ctx.do_edit(EditNotification::CollapseSelections);
         ctx.do_edit(EditNotification::MoveToRightEndOfLine);
         assert_eq!(harness.debug_render(),"\
         this is a about|\n\
@@ -1727,7 +1820,7 @@ mod tests {
 
     #[test]
     fn test_exact_position() {
-        use rpc::GestureType::*;
+        use crate::rpc::GestureType::*;
         let initial_text = "\
         this is a string\n\
         that has three\n\
@@ -1745,7 +1838,7 @@ mod tests {
         lines.\n\
         And lines with very different length.");
 
-        ctx.do_edit(EditNotification::CancelOperation);
+        ctx.do_edit(EditNotification::CollapseSelections);
         ctx.do_edit(EditNotification::Gesture { line: 1, col: 5, ty: PointSelect });
         ctx.do_edit(EditNotification::AddSelectionBelow);
         assert_eq!(harness.debug_render(),"\
@@ -1755,7 +1848,7 @@ mod tests {
         lines|.\n\
         And lines with very different length.");
 
-        ctx.do_edit(EditNotification::CancelOperation);
+        ctx.do_edit(EditNotification::CollapseSelections);
         ctx.do_edit(EditNotification::Gesture { line: 4, col: 10, ty: PointSelect });
         ctx.do_edit(EditNotification::AddSelectionAbove);
         assert_eq!(harness.debug_render(),"\
@@ -1764,5 +1857,61 @@ mod tests {
         \n\
         lines.\n\
         And lines |with very different length.");
+    }
+
+    #[test]
+    fn test_illegal_plugin_edit() {
+        use xi_rope::DeltaBuilder;
+        use crate::plugins::rpc::{PluginNotification, PluginEdit};
+        use crate::plugins::PluginPid;
+
+        let text = "text";
+        let harness = ContextHarness::new(text);
+        let mut ctx = harness.make_context();
+        let rev_token = ctx.editor.borrow().get_head_rev_token();
+
+        let iv = Interval::new(1, 1);
+        let mut builder = DeltaBuilder::new(0); // wrong length
+        builder.replace(iv, "1".into());
+
+        let edit_one = PluginEdit {
+            rev: rev_token,
+            delta: builder.build(),
+            priority: 55,
+            after_cursor: false,
+            undo_group: None,
+            author: "plugin_one".into(),
+        };
+
+        ctx.do_plugin_cmd(PluginPid(1), PluginNotification::Edit { edit: edit_one });
+        let new_rev_token = ctx.editor.borrow().get_head_rev_token();
+        // no change should be made
+        assert_eq!(rev_token, new_rev_token);
+    }
+
+    
+    #[test]
+    fn empty_transpose() {
+        let harness = ContextHarness::new("");
+        let mut ctx = harness.make_context();
+
+        ctx.do_edit(EditNotification::Transpose);
+
+        assert_eq!(harness.debug_render(), "|"); // should be noop
+    }
+
+    // This is the issue reported by #962
+    #[test]
+    fn eol_multicursor_transpose() {
+        use crate::rpc::GestureType::*;
+
+        let harness = ContextHarness::new("word\n");
+        let mut ctx = harness.make_context();
+
+        ctx.do_edit(EditNotification::Gesture{line: 0, col: 4, ty: PointSelect}); // end of first line
+        ctx.do_edit(EditNotification::AddSelectionBelow); // add cursor below that, at eof
+        ctx.do_edit(EditNotification::Transpose);
+
+        assert_eq!(harness.debug_render(), "wor\nd|");
     }
 }

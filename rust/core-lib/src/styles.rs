@@ -16,6 +16,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::OsStr;
+use std::fmt;
 use std::fs;
 use std::iter::FromIterator;
 use std::path::{Path, PathBuf};
@@ -33,7 +34,7 @@ const SYNTAX_PRIORITY_DEFAULT: u16 = 200;
 const SYNTAX_PRIORITY_LOWEST: u16 = 0;
 pub const DEFAULT_THEME: &str = "InspiredGitHub";
 
-#[derive(Clone, PartialEq, Eq, Default, Hash, Debug, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Default, Hash, Serialize, Deserialize)]
 /// A mergeable style. All values except priority are optional.
 ///
 /// Note: A `None` value represents the absense of preference; in the case of
@@ -419,4 +420,32 @@ impl ThemeStyleMap {
 /// Used to remove files with extension other than `tmTheme`.
 fn validate_theme_file(path: &Path) -> Result<bool, LoadingError> {
     path.extension().map(|e| e != "tmTheme").ok_or(LoadingError::BadPath)
+}
+
+impl fmt::Debug for Style {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fn fmt_color(f: &mut fmt::Formatter, c: Option<u32>) -> fmt::Result {
+            if let Some(c) = c {
+                write!(f, "#{:X}", c)
+            } else {
+                write!(f, "None")
+            }
+        }
+
+        write!(f, "Style( P{}, fg: ", self.priority)?;
+        fmt_color(f, self.fg_color)?;
+        write!(f, " bg: ")?;
+        fmt_color(f, self.bg_color)?;
+
+        if let Some(w) = self.weight {
+            write!(f, " weight {}", w)?;
+        }
+        if let Some(i) = self.italic {
+            write!(f, " ital: {}", i)?;
+        }
+        if let Some(u) = self.underline {
+            write!(f, " uline: {}", u)?;
+        }
+        write!(f, " )")
+    }
 }

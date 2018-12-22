@@ -14,17 +14,17 @@
 
 //! Implementation for Language Server Client
 
+use crate::lsp_types::*;
+use crate::result_queue::ResultQueue;
+use crate::types::Callback;
+use crate::xi_core::ViewId;
 use jsonrpc_lite::{Error, Id, JsonRpc, Params};
-use lsp_types::*;
-use result_queue::ResultQueue;
 use serde_json;
 use serde_json::{to_value, Value};
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::process;
-use types::Callback;
 use url::Url;
-use xi_core::ViewId;
 use xi_plugin_lib::CoreProxy;
 
 /// A type to abstract communication with the language server

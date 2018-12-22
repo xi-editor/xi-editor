@@ -11,7 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 #[macro_use]
 extern crate log;
 extern crate chrono;
@@ -108,7 +107,8 @@ fn setup_logging(logging_path: Option<&Path>) -> Result<(), fern::InitError> {
                 record.level(),
                 message,
             ))
-        }).level(level_filter)
+        })
+        .level(level_filter)
         .chain(io::stderr());
 
     if let Some(logging_file_path) = logging_path {

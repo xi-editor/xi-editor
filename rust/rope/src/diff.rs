@@ -16,11 +16,11 @@
 
 use std::collections::HashMap;
 
-use compare::RopeScanner;
-use delta::{Delta, DeltaElement};
-use interval::Interval;
-use rope::{LinesMetric, Rope, RopeDelta, RopeInfo};
-use tree::{Node, NodeInfo};
+use crate::compare::RopeScanner;
+use crate::delta::{Delta, DeltaElement};
+use crate::interval::Interval;
+use crate::rope::{LinesMetric, Rope, RopeDelta, RopeInfo};
+use crate::tree::{Node, NodeInfo};
 
 use memchr::memchr;
 

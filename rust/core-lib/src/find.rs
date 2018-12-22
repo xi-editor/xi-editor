@@ -16,10 +16,10 @@
 
 use std::cmp::{max, min};
 
+use crate::selection::{InsertDrift, SelRegion, Selection};
+use crate::view::View;
+use crate::word_boundaries::WordCursor;
 use regex::{Regex, RegexBuilder};
-use selection::{InsertDrift, SelRegion, Selection};
-use view::View;
-use word_boundaries::WordCursor;
 use xi_rope::delta::DeltaRegion;
 use xi_rope::find::{find, is_multiline_regex, CaseMatching};
 use xi_rope::{Cursor, Interval, LinesMetric, Metric, Rope, RopeDelta};

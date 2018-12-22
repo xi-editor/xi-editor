@@ -18,7 +18,7 @@ use std::cmp::{max, min};
 use std::fmt;
 use std::ops::Deref;
 
-use index_set::remove_n_at;
+use crate::index_set::remove_n_at;
 use xi_rope::{Interval, RopeDelta, Transformer};
 
 /// A type representing horizontal measurements. This is currently in units
@@ -215,7 +215,8 @@ impl Selection {
             let new_region = SelRegion::new(
                 transformer.transform(region.start, start_after),
                 transformer.transform(region.end, end_after),
-            ).with_affinity(region.affinity);
+            )
+            .with_affinity(region.affinity);
             result.add_region(new_region);
         }
         result

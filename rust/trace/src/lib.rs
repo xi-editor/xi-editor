@@ -11,10 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 #![cfg_attr(feature = "benchmarks", feature(test))]
 #![cfg_attr(feature = "collections_range", feature(collections_range))]
-#![cfg_attr(feature = "cargo-clippy", allow(identity_op, new_without_default_derive))]
+#![allow(
+    clippy::identity_op,
+    clippy::new_without_default_derive,
+    clippy::trivially_copy_pass_by_ref
+)]
 
 #[macro_use]
 extern crate lazy_static;
@@ -41,7 +44,7 @@ mod fixed_lifo_deque;
 mod sys_pid;
 mod sys_tid;
 
-use fixed_lifo_deque::FixedLifoDeque;
+use crate::fixed_lifo_deque::FixedLifoDeque;
 use std::borrow::Cow;
 use std::cmp;
 use std::collections::HashMap;
@@ -364,7 +367,6 @@ fn ns_to_us(ns: u64) -> u64 {
 }
 
 //NOTE: serde requires this to take a reference
-#[cfg_attr(feature = "cargo-clippy", allow(trivially_copy_pass_by_ref))]
 fn serialize_event_type<S>(ph: &SampleEventType, s: S) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,

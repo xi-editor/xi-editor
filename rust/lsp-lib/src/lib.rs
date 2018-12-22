@@ -40,8 +40,8 @@ pub mod parse_helper;
 mod result_queue;
 pub mod types;
 mod utils;
-pub use lsp_plugin::LspPlugin;
-pub use types::Config;
+pub use crate::lsp_plugin::LspPlugin;
+pub use crate::types::Config;
 
 pub fn start_mainloop<P: Plugin>(plugin: &mut P) {
     mainloop(plugin).unwrap();

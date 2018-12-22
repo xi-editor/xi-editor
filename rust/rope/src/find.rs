@@ -18,12 +18,12 @@ use std::cmp::min;
 
 use memchr::{memchr, memchr2, memchr3};
 
+use crate::rope::BaseMetric;
+use crate::rope::LinesRaw;
+use crate::rope::RopeInfo;
+use crate::tree::Cursor;
 use regex::Regex;
-use rope::BaseMetric;
-use rope::LinesRaw;
-use rope::RopeInfo;
 use std::str;
-use tree::Cursor;
 
 /// The result of a [`find`][find] operation.
 ///
@@ -337,9 +337,9 @@ fn scan_lowercase(probe: char, s: &str) -> Option<usize> {
 mod tests {
     use super::CaseMatching::{CaseInsensitive, Exact};
     use super::*;
+    use crate::rope::Rope;
+    use crate::tree::Cursor;
     use regex::RegexBuilder;
-    use rope::Rope;
-    use tree::Cursor;
 
     const REGEX_SIZE_LIMIT: usize = 1000000;
 

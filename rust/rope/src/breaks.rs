@@ -15,25 +15,31 @@
 //! A module for representing a set of breaks, typically used for
 //! storing the result of line breaking.
 
-use interval::Interval;
+use crate::interval::Interval;
+use crate::tree::{Leaf, Metric, Node, NodeInfo, TreeBuilder};
 use std::cmp::min;
 use std::mem;
-use tree::{Leaf, Metric, Node, NodeInfo, TreeBuilder};
 
-// Breaks represents a set of indexes. A motivating use is storing line breaks.
+/// A set of indexes. A motivating use is storing line breaks.
 pub type Breaks = Node<BreaksInfo>;
+
+const MIN_LEAF: usize = 32;
+const MAX_LEAF: usize = 64;
 
 // Here the base units are arbitrary, but most commonly match the base units
 // of the rope storing the underlying string.
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct BreaksLeaf {
-    len: usize,       // measured in base units
-    data: Vec<usize>, // each is a delta relative to start of leaf; sorted
+    /// Length, in base units.
+    len: usize,
+    /// Indexes, represent as offsets from the start of the leaf.
+    data: Vec<usize>,
 }
 
-#[derive(Clone)]
-pub struct BreaksInfo(usize); // number of breaks
+/// The number of breaks.
+#[derive(Clone, Debug)]
+pub struct BreaksInfo(usize);
 
 impl Leaf for BreaksLeaf {
     fn len(&self) -> usize {
@@ -41,7 +47,7 @@ impl Leaf for BreaksLeaf {
     }
 
     fn is_ok_child(&self) -> bool {
-        self.data.len() >= 32
+        self.data.len() >= MIN_LEAF
     }
 
     fn push_maybe_split(&mut self, other: &BreaksLeaf, iv: Interval) -> Option<BreaksLeaf> {
@@ -55,7 +61,7 @@ impl Leaf for BreaksLeaf {
         // the min with other.len() shouldn't be needed
         self.len += min(end, other.len()) - start;
 
-        if self.data.len() <= 64 {
+        if self.data.len() <= MAX_LEAF {
             None
         } else {
             let splitpoint = self.data.len() / 2; // number of breaks
@@ -82,6 +88,14 @@ impl NodeInfo for BreaksInfo {
 
     fn compute_info(l: &BreaksLeaf) -> BreaksInfo {
         BreaksInfo(l.data.len())
+    }
+}
+
+impl BreaksLeaf {
+    /// Exposed for testing.
+    #[doc(hidden)]
+    pub fn get_data_cloned(&self) -> Vec<usize> {
+        self.data.clone()
     }
 }
 
@@ -206,7 +220,7 @@ impl BreakBuilder {
     }
 
     pub fn add_break(&mut self, len: usize) {
-        if self.leaf.data.len() == 64 {
+        if self.leaf.data.len() == MAX_LEAF {
             let leaf = mem::replace(&mut self.leaf, BreaksLeaf::default());
             self.b.push(Node::from_leaf(leaf));
         }
@@ -226,9 +240,9 @@ impl BreakBuilder {
 
 #[cfg(test)]
 mod tests {
-    use breaks::{BreakBuilder, BreaksInfo, BreaksLeaf, BreaksMetric};
-    use interval::Interval;
-    use tree::{Cursor, Node};
+    use crate::breaks::{BreakBuilder, BreaksInfo, BreaksLeaf, BreaksMetric};
+    use crate::interval::Interval;
+    use crate::tree::{Cursor, Node};
 
     fn gen(n: usize) -> Node<BreaksInfo> {
         let mut node = Node::default();

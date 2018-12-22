@@ -19,30 +19,23 @@ use std::time::Instant;
 use serde_json::{self, Value};
 use xi_rpc::{self, RpcPeer};
 
-use config::Table;
-use plugins::rpc::ClientPluginInfo;
-use plugins::Command;
-use styles::ThemeSettings;
-use syntax::LanguageId;
-use tabs::ViewId;
+use crate::config::Table;
+use crate::plugins::rpc::ClientPluginInfo;
+use crate::plugins::Command;
+use crate::styles::ThemeSettings;
+use crate::syntax::LanguageId;
+use crate::tabs::ViewId;
+use crate::width_cache::{WidthReq, WidthResponse};
 
 /// An interface to the frontend.
 pub struct Client(RpcPeer);
-
-#[derive(Serialize, Deserialize)]
-/// A request for measuring the widths of strings all of the same style
-/// (a request from core to front-end).
-pub struct WidthReq {
-    pub id: usize,
-    pub strings: Vec<String>,
-}
 
 impl Client {
     pub fn new(peer: RpcPeer) -> Self {
         Client(peer)
     }
 
-    pub fn update_view(&self, view_id: ViewId, update: &Value) {
+    pub fn update_view(&self, view_id: ViewId, update: &Update) {
         self.0.send_rpc_notification(
             "update",
             &json!({
@@ -173,7 +166,7 @@ impl Client {
     }
 
     /// Ask front-end to measure widths of strings.
-    pub fn measure_width(&self, reqs: &[WidthReq]) -> Result<Vec<Vec<f64>>, xi_rpc::Error> {
+    pub fn measure_width(&self, reqs: &[WidthReq]) -> Result<WidthResponse, xi_rpc::Error> {
         let req_json = serde_json::to_value(reqs).expect("failed to serialize width req");
         let resp = self.0.send_rpc_request("measure_width", &req_json)?;
         Ok(serde_json::from_value(resp).expect("failed to deserialize width response"))
@@ -242,4 +235,49 @@ impl Client {
     pub fn schedule_timer(&self, timeout: Instant, token: usize) {
         self.0.schedule_timer(timeout, token);
     }
+}
+
+#[derive(Debug, Serialize)]
+pub struct Update {
+    pub(crate) ops: Vec<UpdateOp>,
+    pub(crate) pristine: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct UpdateOp {
+    op: OpType,
+    n: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lines: Option<Vec<Value>>,
+    #[serde(rename = "ln")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    first_line_number: Option<usize>,
+}
+
+impl UpdateOp {
+    pub(crate) fn invalidate(n: usize) -> Self {
+        UpdateOp { op: OpType::Invalidate, n, lines: None, first_line_number: None }
+    }
+
+    pub(crate) fn skip(n: usize) -> Self {
+        UpdateOp { op: OpType::Skip, n, lines: None, first_line_number: None }
+    }
+
+    pub(crate) fn copy(n: usize, line: usize) -> Self {
+        UpdateOp { op: OpType::Copy, n, lines: None, first_line_number: Some(line) }
+    }
+
+    pub(crate) fn insert(lines: Vec<Value>) -> Self {
+        UpdateOp { op: OpType::Insert, n: lines.len(), lines: Some(lines), first_line_number: None }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum OpType {
+    #[serde(rename = "ins")]
+    Insert,
+    Skip,
+    Invalidate,
+    Copy,
 }

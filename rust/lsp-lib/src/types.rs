@@ -11,10 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
+use crate::language_server_client::LanguageServerClient;
+use crate::lsp_types::*;
 use jsonrpc_lite::Error as JsonRpcError;
-use language_server_client::LanguageServerClient;
-use lsp_types::*;
 use serde_json;
 use serde_json::Value;
 use std;
@@ -37,9 +36,6 @@ pub trait Callable: Send {
     );
 }
 
-//FIXME: this can be removed when this change makes it to stable:
-// https://github.com/rust-lang-nursery/rust-clippy/pull/3321
-#[cfg_attr(feature = "cargo-clippy", allow(boxed_local))]
 impl<F: Send + FnOnce(&mut LanguageServerClient, Result<Value, JsonRpcError>)> Callable for F {
     fn call(self: Box<F>, client: &mut LanguageServerClient, result: Result<Value, JsonRpcError>) {
         (*self)(client, result)

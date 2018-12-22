@@ -22,7 +22,7 @@ use xi_rope::{LinesMetric, RopeDelta};
 use xi_trace::trace_block;
 
 use super::{Cache, DataSource, Error, View};
-use base_cache::ChunkCache;
+use crate::base_cache::ChunkCache;
 
 const CACHE_SIZE: usize = 1024;
 

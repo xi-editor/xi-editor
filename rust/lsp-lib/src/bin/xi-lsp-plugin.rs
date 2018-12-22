@@ -11,7 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 extern crate xi_lsp_lib;
 #[macro_use]
 extern crate serde_json;
@@ -42,7 +41,8 @@ fn init_logger() -> Result<(), fern::InitError> {
                 record.level(),
                 message
             ))
-        }).level(level_filter)
+        })
+        .level(level_filter)
         .chain(std::io::stderr())
         .chain(fern::log_file("xi-lsp-plugin.log")?)
         .apply()

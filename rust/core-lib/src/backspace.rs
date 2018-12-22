@@ -13,16 +13,14 @@
 // limitations under the License.
 
 //! Calc start of a backspace delete interval
-
-use view::View;
-
 use xi_rope::{Cursor, Rope};
 
-use config::BufferItems;
-use selection::SelRegion;
+use crate::config::BufferItems;
+use crate::selection::SelRegion;
+use crate::view::View;
 use xi_unicode::*;
 
-#[cfg_attr(feature = "cargo-clippy", allow(cyclomatic_complexity))]
+#[allow(clippy::cyclomatic_complexity)]
 pub fn offset_for_delete_backwards(
     view: &View,
     region: &SelRegion,

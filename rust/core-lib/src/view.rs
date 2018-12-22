@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+#![allow(clippy::range_plus_one)]
 
 use std::cell::RefCell;
 use std::cmp::{max, min};
@@ -18,21 +19,20 @@ use std::ops::Range;
 
 use serde_json::Value;
 
-use client::Client;
-use edit_types::ViewEvent;
-use find::{Find, FindStatus};
-use line_cache_shadow::{self, LineCacheShadow, RenderPlan, RenderTactic};
-use linewrap;
-use movement::{region_movement, selection_movement, Movement};
-use rpc::{FindQuery, GestureType, MouseAction, SelectionModifier};
-use selection::{Affinity, InsertDrift, SelRegion, Selection};
-use styles::{Style, ThemeStyleMap};
-use tabs::{BufferId, Counter, ViewId};
-use width_cache::WidthCache;
-use word_boundaries::WordCursor;
-use xi_rope::breaks::{Breaks, BreaksBaseMetric, BreaksInfo, BreaksMetric};
+use crate::client::{Client, Update, UpdateOp};
+use crate::edit_types::ViewEvent;
+use crate::find::{Find, FindStatus};
+use crate::line_cache_shadow::{self, LineCacheShadow, RenderPlan, RenderTactic};
+use crate::linewrap::{InvalLines, Lines, VisualLine, WrapWidth};
+use crate::movement::{region_movement, selection_movement, Movement};
+use crate::rpc::{FindQuery, GestureType, MouseAction, SelectionModifier};
+use crate::selection::{Affinity, InsertDrift, SelRegion, Selection};
+use crate::styles::{Style, ThemeStyleMap};
+use crate::tabs::{BufferId, Counter, ViewId};
+use crate::width_cache::WidthCache;
+use crate::word_boundaries::WordCursor;
 use xi_rope::spans::Spans;
-use xi_rope::{Cursor, Interval, LinesMetric, Rope, RopeDelta, RopeInfo};
+use xi_rope::{Cursor, Interval, LinesMetric, Rope, RopeDelta};
 use xi_trace::trace_block;
 
 type StyleMap = RefCell<ThemeStyleMap>;
@@ -58,8 +58,7 @@ pub struct View {
     first_line: usize,
     /// height of visible portion
     height: usize,
-    breaks: Option<Breaks>,
-    wrap_col: WrapWidth,
+    lines: Lines,
 
     /// Front end's line cache state for this view. See the `LineCacheShadow`
     /// description for the invariant.
@@ -118,20 +117,6 @@ pub struct Size {
     pub height: f64,
 }
 
-/// The visual width of the buffer for the purpose of word wrapping.
-enum WrapWidth {
-    /// No wrapping in effect.
-    None,
-
-    /// Width in bytes (utf-8 code units).
-    ///
-    /// Only works well for ASCII, will probably not be maintained long-term.
-    Bytes(usize),
-
-    /// Width in px units, requiring measurement by the front-end.
-    Width(f64),
-}
-
 /// The smallest unit of text that a gesture can select
 pub enum SelectionGranularity {
     /// Selects any point or character range
@@ -172,8 +157,7 @@ impl View {
             drag_state: None,
             first_line: 0,
             height: 10,
-            breaks: None,
-            wrap_col: WrapWidth::None,
+            lines: Lines::default(),
             lc_shadow: LineCacheShadow::default(),
             find: Vec::new(),
             find_id_counter: Counter::default(),
@@ -202,6 +186,19 @@ impl View {
 
     pub(crate) fn has_pending_render(&self) -> bool {
         self.pending_render
+    }
+
+    pub(crate) fn update_wrap_settings(&mut self, text: &Rope, wrap_cols: usize, word_wrap: bool) {
+        let wrap_width = match (word_wrap, wrap_cols) {
+            (true, _) => WrapWidth::Width(self.size.width),
+            (false, 0) => WrapWidth::None,
+            (false, cols) => WrapWidth::Bytes(cols),
+        };
+        self.lines.set_wrap_width(text, wrap_width);
+    }
+
+    pub(crate) fn needs_more_wrap(&self) -> bool {
+        !self.lines.is_converged()
     }
 
     pub(crate) fn do_edit(&mut self, text: &Rope, cmd: ViewEvent) {
@@ -245,7 +242,7 @@ impl View {
             Drag(MouseAction { line, column, .. }) => {
                 self.do_drag(text, line, column, Affinity::default())
             }
-            Cancel => self.do_cancel(text),
+            CollapseSelections => self.collapse_selections(text),
             HighlightFind { visible } => {
                 self.highlight_find = visible;
                 self.find_changed = FindStatusChange::All;
@@ -274,20 +271,6 @@ impl View {
             GestureType::MultiLineSelect => self.select_line(text, offset, line, true),
             GestureType::MultiWordSelect => self.select_word(text, offset, true),
         }
-    }
-
-    fn do_cancel(&mut self, text: &Rope) {
-        // if we have active find highlights, we don't collapse selections
-        if self.find.is_empty() {
-            self.collapse_selections(text);
-        } else {
-            self.unset_find();
-        }
-    }
-
-    pub(crate) fn unset_find(&mut self) {
-        self.find.iter_mut().for_each(Find::unset);
-        self.find.clear();
     }
 
     fn goto_line(&mut self, text: &Rope, line: u64) {
@@ -567,22 +550,12 @@ impl View {
         client: &Client,
         styles: &StyleMap,
         text: &Rope,
-        start_of_line: &mut Cursor<RopeInfo>,
-        soft_breaks: Option<&mut Cursor<BreaksInfo>>,
+        line: VisualLine,
         style_spans: &Spans<Style>,
         line_num: usize,
     ) -> Value {
-        let start_pos = start_of_line.pos();
-        let pos = soft_breaks
-            .map_or(start_of_line.next::<LinesMetric>(), |bc| {
-                let pos = bc.next::<BreaksMetric>();
-                // if using breaks update cursor
-                if let Some(pos) = pos {
-                    start_of_line.set(pos)
-                }
-                pos
-            }).unwrap_or(text.len());
-
+        let start_pos = line.interval.start;
+        let pos = line.interval.end;
         let l_str = text.slice_to_cow(start_pos..pos);
         let mut cursors = Vec::new();
         let mut selections = Vec::new();
@@ -632,6 +605,9 @@ impl View {
         if !cursors.is_empty() {
             result["cursor"] = json!(cursors);
         }
+        if let Some(line_num) = line.line_num {
+            result["ln"] = json!(line_num);
+        }
         result
     }
 
@@ -646,6 +622,7 @@ impl View {
         style_spans: &Spans<Style>,
     ) -> Vec<isize> {
         let mut rendered_styles = Vec::new();
+        assert!(start <= end, "{} {}", start, end);
         let style_spans = style_spans.subseq(Interval::new(start, end));
 
         let mut ix = 0;
@@ -687,19 +664,6 @@ impl View {
         ix
     }
 
-    fn build_update_op(&self, op: &str, lines: Option<Vec<Value>>, n: usize) -> Value {
-        let mut update = json!({
-            "op": op,
-            "n": n,
-        });
-
-        if let Some(lines) = lines {
-            update["lines"] = json!(lines);
-        }
-
-        update
-    }
-
     fn send_update_for_plan(
         &mut self,
         text: &Rope,
@@ -733,7 +697,7 @@ impl View {
         for seg in self.lc_shadow.iter_with_plan(plan) {
             match seg.tactic {
                 RenderTactic::Discard => {
-                    ops.push(self.build_update_op("invalidate", None, seg.n));
+                    ops.push(UpdateOp::invalidate(seg.n));
                     b.add_span(seg.n, 0, 0);
                 }
                 RenderTactic::Preserve => {
@@ -742,13 +706,15 @@ impl View {
                     if seg.validity == line_cache_shadow::ALL_VALID {
                         let n_skip = seg.their_line_num - line_num;
                         if n_skip > 0 {
-                            ops.push(self.build_update_op("skip", None, n_skip));
+                            ops.push(UpdateOp::skip(n_skip));
                         }
-                        ops.push(self.build_update_op("copy", None, seg.n));
+                        let line_offset = self.offset_of_line(text, seg.our_line_num);
+                        let logical_line = text.line_of_offset(line_offset) + 1;
+                        ops.push(UpdateOp::copy(seg.n, logical_line));
                         b.add_span(seg.n, seg.our_line_num, line_cache_shadow::ALL_VALID);
                         line_num = seg.their_line_num + seg.n;
                     } else {
-                        ops.push(self.build_update_op("invalidate", None, seg.n));
+                        ops.push(UpdateOp::invalidate(seg.n));
                         b.add_span(seg.n, 0, 0);
                     }
                 }
@@ -757,44 +723,41 @@ impl View {
                     if seg.validity == line_cache_shadow::ALL_VALID {
                         let n_skip = seg.their_line_num - line_num;
                         if n_skip > 0 {
-                            ops.push(self.build_update_op("skip", None, n_skip));
+                            ops.push(UpdateOp::skip(n_skip));
                         }
-                        ops.push(self.build_update_op("copy", None, seg.n));
+                        let line_offset = self.offset_of_line(text, seg.our_line_num);
+                        let logical_line = text.line_of_offset(line_offset) + 1;
+                        ops.push(UpdateOp::copy(seg.n, logical_line));
                         b.add_span(seg.n, seg.our_line_num, line_cache_shadow::ALL_VALID);
                         line_num = seg.their_line_num + seg.n;
                     } else {
                         let start_line = seg.our_line_num;
-                        let end_line = start_line + seg.n;
-
-                        let offset = self.offset_of_line(text, start_line);
-                        let mut line_cursor = Cursor::new(text, offset);
-                        let mut soft_breaks =
-                            self.breaks.as_ref().map(|breaks| Cursor::new(breaks, offset));
-                        let mut rendered_lines = Vec::new();
-                        for line_num in start_line..end_line {
-                            let line = self.render_line(
-                                client,
-                                styles,
-                                text,
-                                &mut line_cursor,
-                                soft_breaks.as_mut(),
-                                style_spans,
-                                line_num,
-                            );
-                            rendered_lines.push(line);
-                        }
-                        ops.push(self.build_update_op("ins", Some(rendered_lines), seg.n));
+                        let rendered_lines = self
+                            .lines
+                            .iter_lines(text, start_line)
+                            .take(seg.n)
+                            .enumerate()
+                            .map(|(i, l)| {
+                                self.render_line(
+                                    client,
+                                    styles,
+                                    text,
+                                    l,
+                                    style_spans,
+                                    start_line + i,
+                                )
+                            })
+                            .collect::<Vec<_>>();
+                        debug_assert_eq!(rendered_lines.len(), seg.n);
+                        ops.push(UpdateOp::insert(rendered_lines));
                         b.add_span(seg.n, seg.our_line_num, line_cache_shadow::ALL_VALID);
                     }
                 }
             }
         }
-        let params = json!({
-            "ops": ops,
-            "pristine": pristine,
-        });
+        let update = Update { ops, pristine };
 
-        client.update_view(self.view_id, &params);
+        client.update_view(self.view_id, &update);
         self.lc_shadow = b.build();
         for find in &mut self.find {
             find.set_hls_dirty(false)
@@ -901,46 +864,29 @@ impl View {
 
     /// Returns the visible line number containing the given offset.
     pub fn line_of_offset(&self, text: &Rope, offset: usize) -> usize {
-        match self.breaks {
-            Some(ref breaks) => breaks.convert_metrics::<BreaksBaseMetric, BreaksMetric>(offset),
-            None => text.line_of_offset(offset),
-        }
+        self.lines.visual_line_of_offset(text, offset)
     }
 
-    /// Returns the byte offset corresponding to the line `line`.
+    /// Returns the byte offset corresponding to the given visual line.
     pub fn offset_of_line(&self, text: &Rope, line: usize) -> usize {
-        match self.breaks {
-            Some(ref breaks) => breaks.convert_metrics::<BreaksMetric, BreaksBaseMetric>(line),
-            None => {
-                // sanitize input
-                let line = line.min(text.measure::<LinesMetric>() + 1);
-                text.offset_of_line(line)
-            }
-        }
+        self.lines.offset_of_visual_line(text, line)
     }
 
-    pub(crate) fn rewrap(&mut self, text: &Rope, wrap_col: usize) {
-        if wrap_col > 0 {
-            self.breaks = Some(linewrap::linewrap(text, wrap_col));
-            self.wrap_col = WrapWidth::Bytes(wrap_col);
-        } else {
-            self.breaks = None
-        }
-    }
-
-    /// Generate line breaks based on width measurement. Currently batch-mode,
+    /// Generate line breaks, based on current settings. Currently batch-mode,
     /// and currently in a debugging state.
-    pub(crate) fn wrap_width(
+    pub(crate) fn rewrap(
         &mut self,
         text: &Rope,
         width_cache: &mut WidthCache,
         client: &Client,
-        style_spans: &Spans<Style>,
+        spans: &Spans<Style>,
     ) {
-        let _t = trace_block("View::wrap_width", &["core"]);
-        self.breaks =
-            Some(linewrap::linewrap_width(text, width_cache, style_spans, client, self.size.width));
-        self.wrap_col = WrapWidth::Width(self.size.width);
+        let _t = trace_block("View::rewrap", &["core"]);
+        let visible = self.first_line..self.first_line + self.height;
+        let inval = self.lines.rewrap_chunk(text, width_cache, client, spans, visible);
+        if let Some(InvalLines { start_line, inval_count, new_count }) = inval {
+            self.lc_shadow.edit(start_line, start_line + inval_count, new_count);
+        }
     }
 
     /// Updates the view after the text has been modified by the given `delta`.
@@ -955,26 +901,14 @@ impl View {
         width_cache: &mut WidthCache,
         drift: InsertDrift,
     ) {
-        let (iv, new_len) = delta.summary();
-        if let Some(breaks) = self.breaks.as_mut() {
-            match self.wrap_col {
-                WrapWidth::None => (),
-                WrapWidth::Bytes(col) => linewrap::rewrap(breaks, text, iv, new_len, col),
-                WrapWidth::Width(px) => {
-                    linewrap::rewrap_width(breaks, text, width_cache, client, iv, new_len, px)
-                }
+        let visible = self.first_line..self.first_line + self.height;
+        match self.lines.after_edit(text, last_text, delta, width_cache, client, visible) {
+            Some(InvalLines { start_line, inval_count, new_count }) => {
+                self.lc_shadow.edit(start_line, start_line + inval_count, new_count);
             }
+            None => self.set_dirty(text),
         }
-        if self.breaks.is_some() {
-            // TODO: finer grain invalidation for the line wrapping, needs info
-            // about what wrapped.
-            self.set_dirty(text);
-        } else {
-            let start = self.line_of_offset(last_text, iv.start());
-            let end = self.line_of_offset(last_text, iv.end()) + 1;
-            let new_end = self.line_of_offset(text, iv.start() + new_len) + 1;
-            self.lc_shadow.edit(start, end, new_end - start);
-        }
+
         // Any edit cancels a drag. This is good behavior for edits initiated through
         // the front-end, but perhaps not for async edits.
         self.drag_state = None;
@@ -1191,6 +1125,20 @@ impl View {
             }
             _ => None,
         }
+    }
+}
+
+impl View {
+    /// Exposed for benchmarking
+    #[doc(hidden)]
+    pub fn debug_force_rewrap_cols(&mut self, text: &Rope, cols: usize) {
+        use xi_rpc::test_utils::DummyPeer;
+
+        let spans: Spans<Style> = Spans::default();
+        let mut width_cache = WidthCache::new();
+        let client = Client::new(Box::new(DummyPeer));
+        self.update_wrap_settings(text, cols, false);
+        self.rewrap(text, &mut width_cache, &client, &spans);
     }
 }
 

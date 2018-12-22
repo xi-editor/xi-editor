@@ -18,7 +18,7 @@
 
 use memchr::memchr;
 
-use xi_core::plugin_rpc::{GetDataResponse, TextUnit};
+use crate::xi_core::plugin_rpc::{GetDataResponse, TextUnit};
 use xi_rope::interval::IntervalBounds;
 use xi_rope::{DeltaElement, Interval, LinesMetric, Rope, RopeDelta};
 use xi_trace::trace_block;
@@ -390,7 +390,8 @@ impl ChunkCache {
                     x if x > start && x <= end => None,
                     x if x > end => Some(x - del_size),
                     hmm => panic!("invariant violated {} {} {}?", start, end, hmm),
-                }).collect();
+                })
+                .collect();
         } else {
             self.line_offsets.iter_mut().for_each(|off| {
                 if *off >= end {
@@ -458,7 +459,7 @@ fn newline_offsets(text: &str, storage: &mut Vec<usize>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use xi_core::plugin_rpc::GetDataResponse;
+    use crate::xi_core::plugin_rpc::GetDataResponse;
     use xi_rope::delta::Delta;
     use xi_rope::interval::Interval;
     use xi_rope::rope::{LinesMetric, Rope};
