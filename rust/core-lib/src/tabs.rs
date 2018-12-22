@@ -501,7 +501,10 @@ impl CoreState {
     fn do_toggle_tail(&mut self, view_id: ViewId, enabled: bool) {
         if let Some(view) = self.views.get(&view_id) {
             let buffer_id = view.borrow().get_buffer_id();
-            self.file_manager.toggle_tail(buffer_id, enabled).expect_err("File read error.");
+            match self.file_manager.toggle_tail(buffer_id, enabled) {
+                Ok(()) => return,
+                Err(err) => error!("Error reading file: {}", err),
+            }
         }
     }
 
