@@ -1064,6 +1064,15 @@ mod tests {
     }
 
     #[test]
+    fn expected_soft_with_hard() {
+        let text: Rope = "aa\nbb cc\ncc dd ee ff\ngggg".into();
+        let Lines { breaks, .. } = make_lines(&text, 2.);
+        let mut cursor = Cursor::new(&breaks, 0);
+        let breaks = cursor.iter::<BreaksMetric>().collect::<Vec<_>>();
+        assert_eq!(breaks, vec![6, 12, 15, 18]);
+    }
+
+    #[test]
     fn offset_to_line() {
         let text = "a b c d ".into();
         let lines = make_lines(&text, 1.);
