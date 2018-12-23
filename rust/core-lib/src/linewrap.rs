@@ -682,8 +682,14 @@ impl<'a> MergedBreaks<'a> {
     fn set_offset(&mut self, offset: usize) {
         self.text.set(offset);
         self.soft.set(offset);
-        self.text.at_or_prev::<LinesMetric>();
-        self.soft.at_or_prev::<BreaksMetric>();
+        if offset > 0 {
+            if self.text.at_or_prev::<LinesMetric>().is_none() {
+                self.text.set(0);
+            }
+            if self.soft.at_or_prev::<BreaksMetric>().is_none() {
+                self.soft.set(0);
+            }
+        }
 
         // self.offset should be at the first valid break immediately preceding `offset`, or 0.
         // the position of the non-break cursor should be > than that of the break cursor, or EOF.
@@ -1054,9 +1060,7 @@ mod tests {
 
         cursor.set(0);
         let breaks = cursor.iter::<BreaksMetric>().collect::<Vec<_>>();
-        // soft breaks includes a break at EOF, which we don't expect,
-        // because the end of the node is a boundary in all metrics?
-        assert_eq!(breaks, vec![2, 4, 6, 8]);
+        assert_eq!(breaks, vec![2, 4, 6]);
     }
 
     #[test]
