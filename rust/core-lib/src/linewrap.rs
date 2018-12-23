@@ -905,6 +905,82 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn merge_cursor_no_breaks() {
+        let text: Rope = "aaaa\nbb bb cc\ncc dddd eeee ff\nff gggg".into();
+        // first with no breaks
+        let breaks = Breaks::new_no_break(text.len());
+        let mut cursor = MergedBreaks::new(&text, &breaks);
+        assert_eq!(cursor.offset, 0);
+        assert_eq!(cursor.cur_line, 0);
+        assert_eq!(cursor.len, text.len());
+        assert_eq!(cursor.total_lines, 4);
+        assert!(cursor.is_hard_break());
+
+        assert_eq!(cursor.next(), Some(5));
+        assert_eq!(cursor.cur_line, 1);
+        assert_eq!(cursor.offset, 5);
+        assert_eq!(cursor.text.pos(), 5);
+        assert_eq!(cursor.soft.pos(), text.len());
+        assert!(cursor.is_hard_break());
+
+        assert_eq!(cursor.next(), Some(14));
+        assert_eq!(cursor.cur_line, 2);
+        assert_eq!(cursor.offset, 14);
+        assert_eq!(cursor.text.pos(), 14);
+        assert_eq!(cursor.soft.pos(), text.len());
+        assert!(cursor.is_hard_break());
+
+        assert_eq!(cursor.next(), Some(30));
+        assert_eq!(cursor.next(), None);
+    }
+
+    #[test]
+    fn merge_cursor_breaks() {
+        let text: Rope = "aaaa\nbb bb cc\ncc dddd eeee ff\nff gggg".into();
+
+        let mut builder = BreakBuilder::new();
+        builder.add_break(8);
+        builder.add_break(3);
+        builder.add_no_break(text.len() - (8 + 3));
+        let breaks = builder.build();
+
+        let mut cursor = MergedBreaks::new(&text, &breaks);
+        assert_eq!(cursor.offset, 0);
+        assert_eq!(cursor.cur_line, 0);
+        assert_eq!(cursor.len, text.len());
+        assert_eq!(cursor.total_lines, 6);
+
+        assert_eq!(cursor.next(), Some(5));
+        assert_eq!(cursor.cur_line, 1);
+        assert_eq!(cursor.offset, 5);
+        assert_eq!(cursor.text.pos(), 5);
+        assert_eq!(cursor.soft.pos(), 8);
+        assert!(cursor.is_hard_break());
+
+        assert_eq!(cursor.next(), Some(8));
+        assert_eq!(cursor.cur_line, 2);
+        assert_eq!(cursor.offset, 8);
+        assert_eq!(cursor.text.pos(), 14);
+        assert_eq!(cursor.soft.pos(), 8);
+        assert!(!cursor.is_hard_break());
+
+        assert_eq!(cursor.next(), Some(11));
+        assert_eq!(cursor.cur_line, 3);
+        assert_eq!(cursor.offset, 11);
+        assert_eq!(cursor.text.pos(), 14);
+        assert_eq!(cursor.soft.pos(), 11);
+        assert!(!cursor.is_hard_break());
+
+        assert_eq!(cursor.next(), Some(14));
+        assert_eq!(cursor.cur_line, 4);
+        assert_eq!(cursor.offset, 14);
+        assert_eq!(cursor.text.pos(), 14);
+        assert_eq!(cursor.soft.pos(), text.len());
+        assert!(cursor.is_hard_break());
+    }
+
     #[test]
     fn set_offset() {
         let text: Rope = "aaaa\nbb bb cc\ncc dddd eeee ff\nff gggg".into();
