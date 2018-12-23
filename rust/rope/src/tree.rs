@@ -675,6 +675,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
     /// When there is no next boundary, returns `None` and the cursor becomes invalid.
     ///
     /// Return value: the position of the boundary, if it exists.
+    #[allow(clippy::question_mark)]
     pub fn next<M: Metric<N>>(&mut self) -> Option<(usize)> {
         if self.position >= self.root.len() || self.leaf.is_none() {
             self.leaf = None;
