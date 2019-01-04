@@ -14,6 +14,8 @@ using modern software engineering techniques. It is initially built for
 macOS, using Cocoa for the user interface. There are also frontends for
 other operating systems available from third-party developers.
 
+It is in an early stage and this editor is not ready for daily use as the main one.
+
 Goals include:
 
 * ***Incredibly high performance***. All editing operations should commit and paint
