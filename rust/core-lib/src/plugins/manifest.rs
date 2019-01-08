@@ -16,7 +16,7 @@
 
 use std::path::PathBuf;
 
-use serde::Serialize;
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{self, Value};
 
 use crate::syntax::{LanguageDefinition, LanguageId};
@@ -33,6 +33,7 @@ pub struct PluginDescription {
     pub scope: PluginScope,
     // more metadata ...
     /// path to plugin executable
+    #[serde(deserialize_with = "platform_exec_path")]
     pub exec_path: PathBuf,
     /// Events that cause this plugin to run
     #[serde(default)]
@@ -41,6 +42,15 @@ pub struct PluginDescription {
     pub commands: Vec<Command>,
     #[serde(default)]
     pub languages: Vec<LanguageDefinition>,
+}
+
+fn platform_exec_path<'de, D: Deserializer<'de>>(deserializer: D) -> Result<PathBuf, D::Error> {
+    let exec_path = PathBuf::deserialize(deserializer)?;
+    if cfg!(windows) {
+        Ok(exec_path.with_extension("txt"))
+    } else {
+        Ok(exec_path)
+    }
 }
 
 /// `PluginActivation`s represent events that trigger running a plugin.
