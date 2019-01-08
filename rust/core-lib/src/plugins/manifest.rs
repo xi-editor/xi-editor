@@ -47,7 +47,7 @@ pub struct PluginDescription {
 fn platform_exec_path<'de, D: Deserializer<'de>>(deserializer: D) -> Result<PathBuf, D::Error> {
     let exec_path = PathBuf::deserialize(deserializer)?;
     if cfg!(windows) {
-        Ok(exec_path.with_extension("txt"))
+        Ok(exec_path.with_extension("exe"))
     } else {
         Ok(exec_path)
     }
@@ -236,6 +236,28 @@ impl Default for PluginScope {
 mod tests {
     use super::*;
     use serde_json;
+
+    #[test]
+    fn platform_exec_path() {
+        let json = r#"
+        {
+            "name": "test_plugin",
+            "version": "0.0.0",
+            "scope": "global",
+            "exec_path": "path/to/binary",
+            "activations": [],
+            "commands": [],
+            "languages": []
+        }
+        "#;
+
+        let plugin_desc: PluginDescription = serde_json::from_str(&json).unwrap();
+        if cfg!(windows) {
+            assert!(plugin_desc.exec_path.ends_with("binary.exe"));
+        } else {
+            assert!(plugin_desc.exec_path.ends_with("binary"));
+        }
+    }
 
     #[test]
     fn test_serde_command() {
