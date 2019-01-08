@@ -58,9 +58,11 @@ To build the xi-editor core from the root directory of this repo:
 
 ## Frontends
 
-Here are some front-ends in various stages of development:
+Following frontends are ready for daily use as the editor:
 
 * [xi-mac](https://github.com/xi-editor/xi-mac), the official macOS front-end.
+
+Here are some front-ends in various stages of development, based on current versions of the front-end protocol, but not ready for a daily use:
 
 * [fuchsia/xi](https://fuchsia.googlesource.com/topaz/+/master/bin/xi/), a front-end in Flutter for Fuchsia.
 
