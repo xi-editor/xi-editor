@@ -42,7 +42,7 @@ use crate::plugins::Plugin;
 use crate::recorder::Recorder;
 use crate::selection::InsertDrift;
 use crate::syntax::LanguageId;
-use crate::tabs::{BufferId, PluginId, ViewId, RENDER_VIEW_IDLE_MASK, REWRAP_VIEW_IDLE_MASK};
+use crate::tabs::{BufferId, PluginId, ViewId, RENDER_VIEW_IDLE_MASK, REWRAP_VIEW_IDLE_MASK, FIND_VIEW_IDLE_MASK};
 use crate::view::View;
 use crate::width_cache::WidthCache;
 use crate::WeakXiCore;
@@ -545,6 +545,29 @@ impl<'a> EventContext<'a> {
         let ed = self.editor.borrow();
         let mut width_cache = self.width_cache.borrow_mut();
         view.rewrap(ed.get_buffer(), &mut width_cache, self.client, ed.get_layers().get_merged());
+    }
+
+    /// Does incremental find.
+    pub(crate) fn do_incremental_find(&mut self) {
+        self.find();
+//        if self.view.borrow().find_in_progress() {
+//            self.schedule_find();
+//        }
+        self.render_if_needed();
+    }
+
+    fn schedule_find(&self) {
+        let view_id: usize = self.view_id.into();
+        let token = FIND_VIEW_IDLE_MASK | view_id;
+        self.client.schedule_idle(token);
+    }
+
+    /// Tells the view to rewrap a batch of lines, if needed. This guarantees that
+    /// the currently visible region will be correctly wrapped; the caller should
+    /// check if additional wrapping is necessary and schedule that if so.
+    fn find(&mut self) {
+        let mut view = self.view.borrow_mut();
+//        view.do_find(ed.get_buffer());
     }
 
     /// Does a rewrap batch, and schedules follow-up work if needed.
