@@ -23,6 +23,8 @@ use crate::rope::LinesRaw;
 use crate::rope::RopeInfo;
 use crate::tree::Cursor;
 use regex::Regex;
+use std::borrow::Cow;
+use std::iter::FromIterator;
 use std::str;
 
 /// The result of a [`find`][find] operation.
@@ -283,14 +285,14 @@ fn compare_cursor_regex(
         return Some(orig_position);
     }
 
-    let mut text = String::new();
+    let text: Cow<str>;
 
     if is_multiline_regex(pat) {
         // consume all of the text if regex is multi line matching
-        text.extend(lines);
+        text = Cow::from(String::from_iter(lines));
     } else {
         match lines.next() {
-            Some(line) => text.push_str(&line),
+            Some(line) => text = line,
             _ => return None,
         }
     }
