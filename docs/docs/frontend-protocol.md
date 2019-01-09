@@ -593,6 +593,11 @@ interface Line {
 }
 ```
 
+"annotations" are used to associate some type data with some document regions. For
+example, annotations are used to represent selections and find highlights.
+The [Annotations RFC](https://github.com/xi-editor/xi-editor/blob/master/rfcs/2018-11-23-annotations.md)
+provides a detailed description of the API.
+
 #### measure_width
 
 ```
