@@ -140,6 +140,9 @@ impl<'a> EventContext<'a> {
                 if self.with_view(|v, t| v.needs_wrap_in_visible_region(t)) {
                     self.rewrap();
                 }
+                if self.with_view(|v, _| v.find_in_progress()) {
+                    self.do_incremental_find();
+                }
             }
             E::Buffer(cmd) => {
                 self.with_editor(|ed, view, k_ring, conf| ed.do_edit(view, k_ring, conf, cmd))
@@ -550,9 +553,13 @@ impl<'a> EventContext<'a> {
     /// Does incremental find.
     pub(crate) fn do_incremental_find(&mut self) {
         self.find();
-//        if self.view.borrow().find_in_progress() {
-//            self.schedule_find();
-//        }
+        if self.view.borrow().find_in_progress() {
+//            let matches_only = match self.find_changed == FindStatusChange::Matches;
+            let matches_only = true;    //todo
+            let ed = self.editor.borrow();
+            self.client.find_status(self.view_id, &json!(self.view.borrow().find_status(ed.get_buffer(), matches_only)));
+            self.schedule_find();
+        }
         self.render_if_needed();
     }
 
@@ -562,12 +569,11 @@ impl<'a> EventContext<'a> {
         self.client.schedule_idle(token);
     }
 
-    /// Tells the view to rewrap a batch of lines, if needed. This guarantees that
-    /// the currently visible region will be correctly wrapped; the caller should
-    /// check if additional wrapping is necessary and schedule that if so.
+    /// Tells the view to execute find on a batch of lines, if needed.
     fn find(&mut self) {
         let mut view = self.view.borrow_mut();
-//        view.do_find(ed.get_buffer());
+        let ed = self.editor.borrow();
+        view.do_find(ed.get_buffer());
     }
 
     /// Does a rewrap batch, and schedules follow-up work if needed.
