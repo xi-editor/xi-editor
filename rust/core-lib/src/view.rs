@@ -42,6 +42,9 @@ type StyleMap = RefCell<ThemeStyleMap>;
 /// A flag used to indicate when legacy actions should modify selections
 const FLAG_SELECT: u64 = 2;
 
+/// Size of batches used during incremental find.
+const FIND_BATCH_SIZE: usize = 10000;
+
 pub struct View {
     view_id: ViewId,
     buffer_id: BufferId,
@@ -80,6 +83,9 @@ pub struct View {
     /// This is used to determined whether FindStatus should be sent to the frontend.
     find_changed: FindStatusChange,
 
+    /// Tracks the progress of incremental find.
+    find_progress: FindProgress,
+
     /// Tracks whether find highlights should be rendered.
     /// Highlights are only rendered when search dialog is open.
     highlight_find: bool,
@@ -105,6 +111,19 @@ enum FindStatusChange {
 
     /// Only number of matches changed
     Matches,
+}
+
+/// Indicates what changed in the find state.
+#[derive(PartialEq, Debug, Clone)]
+enum FindProgress {
+    /// Incremental find is done/not running.
+    Done,
+
+    /// Incremental find is in progress. Keeps tracked of already searched range.
+    InProgress(Range<usize>),
+
+    /// Incremental find process just started.
+    Started,
 }
 
 /// Contains replacement string and replace options.
@@ -154,6 +173,7 @@ impl View {
             find: Vec::new(),
             find_id_counter: Counter::default(),
             find_changed: FindStatusChange::None,
+            find_progress: FindProgress::Done,
             highlight_find: false,
             replace: None,
             replace_changed: false,
@@ -203,6 +223,14 @@ impl View {
         }
     }
 
+    pub(crate) fn find_in_progress(&self) -> bool {
+        match self.find_progress {
+            FindProgress::InProgress(_) => true,
+            FindProgress::Started => true,
+            _ => false
+        }
+    }
+
     pub(crate) fn do_edit(&mut self, text: &Rope, cmd: ViewEvent) {
         use self::ViewEvent::*;
         match cmd {
@@ -217,9 +245,9 @@ impl View {
             Find { chars, case_sensitive, regex, whole_words } => {
                 let id = self.find.first().and_then(|q| Some(q.id()));
                 let query_changes = FindQuery { id, chars, case_sensitive, regex, whole_words };
-                self.do_find(text, [query_changes].to_vec())
+                self.set_find(text, [query_changes].to_vec())
             }
-            MultiFind { queries } => self.do_find(text, queries),
+            MultiFind { queries } => self.set_find(text, queries),
             FindNext { wrap_around, allow_same, modify_selection } => {
                 self.do_find_next(text, false, wrap_around, allow_same, &modify_selection)
             }
@@ -701,12 +729,6 @@ impl View {
             return;
         }
 
-        // send updated find status only if there have been changes
-        if self.find_changed != FindStatusChange::None {
-            let matches_only = self.find_changed == FindStatusChange::Matches;
-            client.find_status(self.view_id, &json!(self.find_status(text, matches_only)));
-        }
-
         // send updated replace status if changed
         if self.replace_changed {
             if let Some(replace) = self.get_replace() {
@@ -806,8 +828,8 @@ impl View {
 
     /// Determines the current number of find results and search parameters to send them to
     /// the frontend.
-    pub fn find_status(&mut self, text: &Rope, matches_only: bool) -> Vec<FindStatus> {
-        self.find_changed = FindStatusChange::None;
+    pub fn find_status(&self, text: &Rope, matches_only: bool) -> Vec<FindStatus> {
+//        self.find_changed = FindStatusChange::None;
 
         self.find
             .iter()
@@ -999,7 +1021,8 @@ impl View {
             self.add_find();
         }
 
-        self.find.last_mut().unwrap().do_find(text, &search_query, case_sensitive, false, true);
+        self.find.last_mut().unwrap().set_find(&search_query, case_sensitive, false, true);
+        self.find_progress = FindProgress::Started;
     }
 
     fn add_find(&mut self) {
@@ -1007,7 +1030,7 @@ impl View {
         self.find.push(Find::new(id));
     }
 
-    pub fn do_find(&mut self, text: &Rope, queries: Vec<FindQuery>) {
+    fn set_find(&mut self, text: &Rope, queries: Vec<FindQuery>) {
         self.set_dirty(text);
         self.find_changed = FindStatusChange::Matches;
 
@@ -1030,13 +1053,58 @@ impl View {
                 }
             };
 
-            self.find[pos].do_find(
-                text,
+            self.find[pos].set_find(
                 &query.chars.clone(),
                 query.case_sensitive,
                 query.regex,
                 query.whole_words,
             )
+        }
+
+        self.find_progress = FindProgress::Started;
+    }
+
+    pub fn do_find(&mut self, text: &Rope) {
+        match &self.find_progress {
+            FindProgress::Started => {
+                // start incremental find on visible region
+                let start = self.offset_of_line(text, self.first_line);
+                let end = min(text.len(), start + FIND_BATCH_SIZE);
+                for query in &mut self.find {
+                    query.update_find(text, start, end, false);
+                }
+
+                self.find_progress = FindProgress::InProgress(Range { start, end });
+                self.find_changed = FindStatusChange::All;
+            },
+            FindProgress::InProgress(searched_range) => {
+                if searched_range.start <= 0 && searched_range.end >= text.len() {
+                    // the entire text has been searched; stop incremental find
+                    self.find_progress = FindProgress::Done;
+                } else {
+                    // expand find to unsearched regions
+                    let start_off = self.offset_of_line(text, self.first_line);
+
+                    if (start_off - searched_range.start < searched_range.end.checked_sub(start_off).unwrap_or_else(|| 0) &&
+                       searched_range.start > 0) || searched_range.end >= text.len() {
+                        let start = max(0, searched_range.start.checked_sub(FIND_BATCH_SIZE).unwrap_or_else(|| 0));
+                        for query in &mut self.find {
+                            query.update_find(text, start, searched_range.start, false);
+                        }
+                        self.find_progress = FindProgress::InProgress(Range { start: start, end: searched_range.end });
+                    } else if searched_range.end < text.len() {
+                        let end = min(text.len(), searched_range.end + FIND_BATCH_SIZE);
+                        for query in &mut self.find {
+                            query.update_find(text, searched_range.end, end, false);
+                        }
+                        self.find_progress = FindProgress::InProgress(Range { start: searched_range.start, end: end });
+                    }
+                    self.find_changed = FindStatusChange::Matches;
+                }
+            },
+            _ => {
+                self.find_changed = FindStatusChange::None;
+            }
         }
     }
 

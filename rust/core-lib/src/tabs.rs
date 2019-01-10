@@ -565,6 +565,7 @@ impl CoreState {
                 self.handle_rewrap_callback(other ^ REWRAP_VIEW_IDLE_MASK)
             }
             other if (other & FIND_VIEW_IDLE_MASK) != 0 => {
+                eprintln!("idle find");
                 self.handle_find_callback(other ^ FIND_VIEW_IDLE_MASK)
             }
             other => panic!("unexpected idle token {}", other),

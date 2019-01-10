@@ -194,10 +194,16 @@ impl Find {
         }
     }
 
-    /// Set search parameters and executes the search.
-    pub fn do_find(
+    /// Unsets the search and removes all highlights from the view.
+    pub fn unset(&mut self) {
+        self.search_string = None;
+        self.occurrences = Selection::new();
+        self.hls_dirty = true;
+    }
+
+    /// Sets find parameters and search query.
+    pub fn set_find(
         &mut self,
-        text: &Rope,
         search_string: &str,
         case_sensitive: bool,
         is_regex: bool,
@@ -207,25 +213,6 @@ impl Find {
             self.unset();
         }
 
-        self.set_find(search_string, case_sensitive, is_regex, whole_words);
-        self.update_find(text, 0, text.len(), false);
-    }
-
-    /// Unsets the search and removes all highlights from the view.
-    pub fn unset(&mut self) {
-        self.search_string = None;
-        self.occurrences = Selection::new();
-        self.hls_dirty = true;
-    }
-
-    /// Sets find parameters and search query.
-    fn set_find(
-        &mut self,
-        search_string: &str,
-        case_sensitive: bool,
-        is_regex: bool,
-        whole_words: bool,
-    ) {
         let case_matching =
             if case_sensitive { CaseMatching::Exact } else { CaseMatching::CaseInsensitive };
 
