@@ -15,10 +15,12 @@
 
 use std::cell::RefCell;
 use std::cmp::{max, min};
+use std::iter;
 use std::ops::Range;
 
 use serde_json::Value;
 
+use crate::annotations::{AnnotationStore, ToAnnotation};
 use crate::client::{Client, Update, UpdateOp};
 use crate::edit_types::ViewEvent;
 use crate::find::{Find, FindStatus};
@@ -87,6 +89,9 @@ pub struct View {
 
     /// Tracks whether the replacement string or replace parameters changed.
     replace_changed: bool,
+
+    /// Annotations provided by plugins.
+    annotations: AnnotationStore,
 }
 
 /// Indicates what changed in the find state.
@@ -165,6 +170,7 @@ impl View {
             highlight_find: false,
             replace: None,
             replace_changed: false,
+            annotations: AnnotationStore::new(),
         }
     }
 
@@ -199,6 +205,15 @@ impl View {
 
     pub(crate) fn needs_more_wrap(&self) -> bool {
         !self.lines.is_converged()
+    }
+
+    pub(crate) fn needs_wrap_in_visible_region(&self, text: &Rope) -> bool {
+        if self.lines.is_converged() {
+            false
+        } else {
+            let visible_region = self.interval_of_visible_region(text);
+            self.lines.interval_needs_wrap(visible_region)
+        }
     }
 
     pub(crate) fn do_edit(&mut self, text: &Rope, cmd: ViewEvent) {
@@ -755,13 +770,29 @@ impl View {
                 }
             }
         }
-        let update = Update { ops, pristine };
 
-        client.update_view(self.view_id, &update);
         self.lc_shadow = b.build();
         for find in &mut self.find {
             find.set_hls_dirty(false)
         }
+
+        let start_off = self.offset_of_line(text, self.first_line);
+        let end_off = self.offset_of_line(text, self.first_line + self.height + 1);
+        let visible_range = Interval::new(start_off, end_off);
+        let selection_annotations =
+            self.selection.get_annotations(visible_range, &self, text).to_json();
+        let find_annotations =
+            self.find.iter().map(|ref f| f.get_annotations(visible_range, &self, text).to_json());
+        let plugin_annotations = self.annotations.iter_range(visible_range).map(|a| a.to_json());
+
+        let annotations = iter::once(selection_annotations)
+            .chain(find_annotations)
+            .chain(plugin_annotations)
+            .collect::<Vec<_>>();
+
+        let update = Update { ops, pristine, annotations };
+
+        client.update_view(self.view_id, &update);
     }
 
     /// Determines the current number of find results and search parameters to send them to
@@ -858,6 +889,13 @@ impl View {
             }
         }
         offset
+    }
+
+    /// Returns the byte range of the currently visible lines.
+    fn interval_of_visible_region(&self, text: &Rope) -> Interval {
+        let start = self.offset_of_line(text, self.first_line);
+        let end = self.offset_of_line(text, self.first_line + self.height + 1);
+        Interval::new(start, end)
     }
 
     // use own breaks if present, or text if not (no line wrapping)

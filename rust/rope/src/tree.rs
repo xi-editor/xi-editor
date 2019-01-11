@@ -504,15 +504,43 @@ impl<N: NodeInfo> TreeBuilder<N> {
 
 const CURSOR_CACHE_SIZE: usize = 4;
 
+/// A data structure for traversing boundaries in a tree.
+///
+/// It is designed to be efficient both for random access and for iteration. The
+/// cursor itself is agnostic to which [`Metric`] is used to determine boundaries, but
+/// the methods to find boundaries are parametrized on the [`Metric`].
+///
+/// A cursor can be valid or invalid. It is always valid when created or after
+/// [`set`](#method.set) is called, and becomes invalid after [`prev`](#method.prev)
+/// or [`next`](#method.next) fails to find a boundary.
+///
+/// [`Metric`]: struct.Metric.html
 pub struct Cursor<'a, N: 'a + NodeInfo> {
+    /// The tree being traversed by this cursor.
     root: &'a Node<N>,
+    /// The current position of the cursor.
+    ///
+    /// It is always less than or equal to the tree length.
     position: usize,
+    /// The cache holds the tail of the path from the root to the current leaf.
+    ///
+    /// Each entry is a reference to the parent node and the index of the child. It
+    /// is stored bottom-up; `cache[0]` is the parent of the leaf and the index of
+    /// the leaf within that parent.
+    ///
+    /// The main motivation for this being a fixed-size array is to keep the cursor
+    /// an allocation-free data structure.
     cache: [Option<(&'a Node<N>, usize)>; CURSOR_CACHE_SIZE],
+    /// The leaf containing the current position, when the cursor is valid.
+    ///
+    /// The position is only at the end of the leaf when it is at the end of the tree.
     leaf: Option<&'a N::L>,
+    /// The offset of `leaf` within the tree.
     offset_of_leaf: usize,
 }
 
 impl<'a, N: NodeInfo> Cursor<'a, N> {
+    /// Create a new cursor at the given position.
     pub fn new(n: &'a Node<N>, position: usize) -> Cursor<'a, N> {
         let mut result = Cursor {
             root: n,
@@ -525,22 +553,30 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
         result
     }
 
+    /// The length of the tree.
     pub fn total_len(&self) -> usize {
         self.root.len()
     }
 
-    /// Return the a reference to the root node.
+    /// Return a reference to the root node of the tree.
     pub fn root(&self) -> &'a Node<N> {
         self.root
     }
 
-    /// return value is leaf (if cursor is valid) and offset within leaf
+    /// Get the current leaf of the cursor.
     ///
-    /// invariant: offset is at end of leaf iff end of rope
+    /// If the cursor is valid, returns the leaf containing the current position,
+    /// and the offset of the current position within the leaf. That offset is equal
+    /// to the leaf length only at the end, otherwise it is less than the leaf length.
     pub fn get_leaf(&self) -> Option<(&'a N::L, usize)> {
         self.leaf.map(|l| (l, self.position - self.offset_of_leaf))
     }
 
+    /// Set the position of the cursor.
+    ///
+    /// The cursor is valid after this call.
+    ///
+    /// Precondition: `position` is less than or equal to the length of the tree.
     pub fn set(&mut self, position: usize) {
         self.position = position;
         if let Some(l) = self.leaf {
@@ -553,33 +589,40 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
         self.descend();
     }
 
+    /// Get the position of the cursor.
     pub fn pos(&self) -> usize {
         self.position
     }
 
+    /// Determine whether the current position is a boundary.
+    ///
+    /// Note: the beginning and end of the tree may or may not be boundaries, depending on the
+    /// metric. If the metric is not `can_fragment`, then they always are.
     pub fn is_boundary<M: Metric<N>>(&mut self) -> bool {
         if self.leaf.is_none() {
             // not at a valid position
             return false;
         }
-        if self.position == 0 || (self.position == self.offset_of_leaf && !M::can_fragment()) {
+        if self.position == self.offset_of_leaf && !M::can_fragment() {
             return true;
         }
-        if self.position > self.offset_of_leaf {
+        if self.position == 0 || self.position > self.offset_of_leaf {
             return M::is_boundary(self.leaf.unwrap(), self.position - self.offset_of_leaf);
         }
         // tricky case, at beginning of leaf, need to query end of previous
         // leaf; TODO: would be nice if we could do it another way that didn't
-        // make the method &self mut.
+        // make the method &mut self.
         let l = self.prev_leaf().unwrap().0;
         let result = M::is_boundary(l, l.len());
         let _ = self.next_leaf();
         result
     }
 
-    /// Moves the cursor to the previous boundary, or to the beginning of the
-    /// rope. In the former case, returns the position of the first character
-    /// past this boundary. In the latter case, returns `0`.
+    /// Moves the cursor to the previous boundary.
+    ///
+    /// When there is no previous boundary, returns `None` and the cursor becomes invalid.
+    ///
+    /// Return value: the position of the boundary, if it exists.
     pub fn prev<M: Metric<N>>(&mut self) -> Option<(usize)> {
         if self.position == 0 || self.leaf.is_none() {
             self.leaf = None;
@@ -602,7 +645,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
         loop {
             if self.offset_of_leaf == 0 {
                 self.position = 0;
-                return Some(self.position);
+                return None;
             }
             if let Some((l, _)) = self.prev_leaf() {
                 // TODO: node already has this, no need to recompute. But, we
@@ -627,9 +670,12 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
         }
     }
 
-    /// Moves the cursor to the next boundary, or to the end of the rope. In the
-    /// former case, returns the position of the first character past this
-    /// boundary. In the latter case, returns the length of the rope.
+    /// Moves the cursor to the next boundary.
+    ///
+    /// When there is no next boundary, returns `None` and the cursor becomes invalid.
+    ///
+    /// Return value: the position of the boundary, if it exists.
+    #[allow(clippy::question_mark)]
     pub fn next<M: Metric<N>>(&mut self) -> Option<(usize)> {
         if self.position >= self.root.len() || self.leaf.is_none() {
             self.leaf = None;
@@ -645,18 +691,18 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
             for i in 0..CURSOR_CACHE_SIZE {
                 if self.cache[i].is_none() {
                     // we are at the root of the tree.
-                    return Some(self.root.len());
+                    return None;
                 }
                 let (node, j) = self.cache[i].unwrap();
-                let (next_j, offset) = node.next_positive_measure_child::<M>(j + 1);
-                self.position += offset;
+                let (next_j, skipped) = node.next_positive_measure_child::<M>(j + 1);
+                self.position += skipped;
                 if let Some(next_j) = next_j {
                     self.cache[i] = Some((node, next_j));
                     let mut node_down = &node.get_children()[next_j];
                     for k in (0..i).rev() {
-                        let (pm_child, offset) = node_down.next_positive_measure_child::<M>(0);
+                        let (pm_child, skipped) = node_down.next_positive_measure_child::<M>(0);
                         let pm_child = pm_child.unwrap(); // at least one child must have positive measure
-                        self.position += offset;
+                        self.position += skipped;
                         self.cache[k] = Some((node_down, pm_child));
                         node_down = &node_down.get_children()[pm_child];
                     }
@@ -668,9 +714,6 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
             // At this point, we know that (1) the next boundary is not not in
             // the cached subtree, (2) self.position corresponds to the begining
             // of the first leaf after the cached subtree.
-            if self.position == self.root.len() {
-                return Some(self.position);
-            }
             self.descend();
             return self.next::<M>();
         } else {
@@ -680,6 +723,8 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
 
     /// Returns the current position if it is a boundary in this [`Metric`],
     /// else behaves like [`next`](#method.next).
+    ///
+    /// [`Metric`]: struct.Metric.html
     pub fn at_or_next<M: Metric<N>>(&mut self) -> Option<usize> {
         if self.is_boundary::<M>() {
             Some(self.pos())
@@ -690,6 +735,8 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
 
     /// Returns the current position if it is a boundary in this [`Metric`],
     /// else behaves like [`prev`](#method.prev).
+    ///
+    /// [`Metric`]: struct.Metric.html
     pub fn at_or_prev<M: Metric<N>>(&mut self) -> Option<usize> {
         if self.is_boundary::<M>() {
             Some(self.pos())
@@ -708,15 +755,16 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
     /// let text: Rope = "one line\ntwo line\nred line\nblue".into();
     /// let mut cursor = Cursor::new(&text, 0);
     /// let line_offsets = cursor.iter::<LinesMetric>().collect::<Vec<_>>();
-    /// assert_eq!(line_offsets, vec![9, 18, 27, 31]);
+    /// assert_eq!(line_offsets, vec![9, 18, 27]);
     ///
     /// ```
+    /// [`Metric`]: struct.Metric.html
     pub fn iter<'c, M: Metric<N>>(&'c mut self) -> CursorIter<'c, 'a, N, M> {
         CursorIter { cursor: self, _metric: PhantomData }
     }
 
     /// Tries to find the next boundary in the leaf the cursor is currently in.
-    #[inline(always)]
+    #[inline]
     fn next_inside_leaf<M: Metric<N>>(&mut self) -> Option<usize> {
         if let Some(l) = self.leaf {
             let offset_in_leaf = self.position - self.offset_of_leaf;
@@ -730,24 +778,18 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
                 }
                 return Some(self.position);
             }
-            if self.offset_of_leaf + l.len() == self.root.len() {
-                self.position = self.root.len();
-                return Some(self.position);
-            }
         } else {
             panic!("inconsistent, shouldn't get here");
         }
         None
     }
 
-    /// same return as get_leaf, moves to beginning of next leaf
+    /// Move to beginning of next leaf.
+    ///
+    /// Return value: same as [`get_leaf`](#method.get_leaf).
     pub fn next_leaf(&mut self) -> Option<(&'a N::L, usize)> {
-        if let Some(leaf) = self.leaf {
-            self.position = self.offset_of_leaf + leaf.len();
-        } else {
-            self.leaf = None;
-            return None;
-        }
+        let leaf = self.leaf?;
+        self.position = self.offset_of_leaf + leaf.len();
         for i in 0..CURSOR_CACHE_SIZE {
             if self.cache[i].is_none() {
                 // this probably can't happen
@@ -775,14 +817,17 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
         self.get_leaf()
     }
 
-    /// same return as get_leaf, moves to beginning of prev leaf
+    /// Move to beginning of previous leaf.
+    ///
+    /// Return value: same as [`get_leaf`](#method.get_leaf).
     pub fn prev_leaf(&mut self) -> Option<(&'a N::L, usize)> {
-        if self.offset_of_leaf == 0 || Some(self.leaf).is_none() {
+        if self.offset_of_leaf == 0 {
             self.leaf = None;
             return None;
         }
         for i in 0..CURSOR_CACHE_SIZE {
             if self.cache[i].is_none() {
+                // this probably can't happen
                 self.leaf = None;
                 return None;
             }
@@ -808,6 +853,10 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
         self.get_leaf()
     }
 
+    /// Find the leaf containing the current position.
+    ///
+    /// Sets `leaf` to the leaf containing `position`, and updates `cache` and
+    /// `offset_of_leaf` to be consistent.
     fn descend(&mut self) {
         let mut node = self.root;
         let mut offset = 0;
@@ -837,6 +886,9 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
 }
 
 /// An iterator generated by a [`Cursor`], for some [`Metric`].
+///
+/// [`Cursor`]: struct.Cursor.html
+/// [`Metric`]: struct.Metric.html
 pub struct CursorIter<'c, 'a: 'c, N: 'a + NodeInfo, M: 'a + Metric<N>> {
     cursor: &'c mut Cursor<'a, N>,
     _metric: PhantomData<&'a M>,
@@ -852,6 +904,8 @@ impl<'c, 'a, N: NodeInfo, M: Metric<N>> Iterator for CursorIter<'c, 'a, N, M> {
 
 impl<'c, 'a, N: NodeInfo, M: Metric<N>> CursorIter<'c, 'a, N, M> {
     /// Returns the current position of the underlying [`Cursor`].
+    ///
+    /// [`Cursor`]: struct.Cursor.html
     pub fn pos(&self) -> usize {
         self.cursor.pos()
     }
@@ -980,8 +1034,8 @@ mod test {
     fn at_or_next() {
         let text: Rope = "this\nis\nalil\nstring".into();
         let mut cursor = Cursor::new(&text, 0);
-        assert_eq!(cursor.at_or_next::<LinesMetric>(), Some(0));
-        assert_eq!(cursor.at_or_next::<LinesMetric>(), Some(0));
+        assert_eq!(cursor.at_or_next::<LinesMetric>(), Some(5));
+        assert_eq!(cursor.at_or_next::<LinesMetric>(), Some(5));
         cursor.set(1);
         assert_eq!(cursor.at_or_next::<LinesMetric>(), Some(5));
         assert_eq!(cursor.at_or_prev::<LinesMetric>(), Some(5));
@@ -998,7 +1052,7 @@ mod test {
         for _ in 0..24 {
             text = Node::concat(text.clone(), text);
             let mut cursor = Cursor::new(&text, 0);
-            assert_eq!(cursor.next::<LinesMetric>(), Some(text.len()));
+            assert_eq!(cursor.next::<LinesMetric>(), None);
         }
     }
 }

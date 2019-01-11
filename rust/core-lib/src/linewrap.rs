@@ -155,6 +155,11 @@ impl Lines {
         self.wrap == WrapWidth::None || self.work.is_empty()
     }
 
+    /// Returns `true` if this interval is part of an incomplete task.
+    pub(crate) fn interval_needs_wrap(&self, iv: Interval) -> bool {
+        self.work.iter().any(|t| !t.intersect(iv).is_empty())
+    }
+
     pub(crate) fn visual_line_of_offset(&self, text: &Rope, offset: usize) -> usize {
         let mut line = text.line_of_offset(offset);
         if self.wrap != WrapWidth::None {
@@ -682,8 +687,14 @@ impl<'a> MergedBreaks<'a> {
     fn set_offset(&mut self, offset: usize) {
         self.text.set(offset);
         self.soft.set(offset);
-        self.text.at_or_prev::<LinesMetric>();
-        self.soft.at_or_prev::<BreaksMetric>();
+        if offset > 0 {
+            if self.text.at_or_prev::<LinesMetric>().is_none() {
+                self.text.set(0);
+            }
+            if self.soft.at_or_prev::<BreaksMetric>().is_none() {
+                self.soft.set(0);
+            }
+        }
 
         // self.offset should be at the first valid break immediately preceding `offset`, or 0.
         // the position of the non-break cursor should be > than that of the break cursor, or EOF.
@@ -905,6 +916,82 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn merge_cursor_no_breaks() {
+        let text: Rope = "aaaa\nbb bb cc\ncc dddd eeee ff\nff gggg".into();
+        // first with no breaks
+        let breaks = Breaks::new_no_break(text.len());
+        let mut cursor = MergedBreaks::new(&text, &breaks);
+        assert_eq!(cursor.offset, 0);
+        assert_eq!(cursor.cur_line, 0);
+        assert_eq!(cursor.len, text.len());
+        assert_eq!(cursor.total_lines, 4);
+        assert!(cursor.is_hard_break());
+
+        assert_eq!(cursor.next(), Some(5));
+        assert_eq!(cursor.cur_line, 1);
+        assert_eq!(cursor.offset, 5);
+        assert_eq!(cursor.text.pos(), 5);
+        assert_eq!(cursor.soft.pos(), text.len());
+        assert!(cursor.is_hard_break());
+
+        assert_eq!(cursor.next(), Some(14));
+        assert_eq!(cursor.cur_line, 2);
+        assert_eq!(cursor.offset, 14);
+        assert_eq!(cursor.text.pos(), 14);
+        assert_eq!(cursor.soft.pos(), text.len());
+        assert!(cursor.is_hard_break());
+
+        assert_eq!(cursor.next(), Some(30));
+        assert_eq!(cursor.next(), None);
+    }
+
+    #[test]
+    fn merge_cursor_breaks() {
+        let text: Rope = "aaaa\nbb bb cc\ncc dddd eeee ff\nff gggg".into();
+
+        let mut builder = BreakBuilder::new();
+        builder.add_break(8);
+        builder.add_break(3);
+        builder.add_no_break(text.len() - (8 + 3));
+        let breaks = builder.build();
+
+        let mut cursor = MergedBreaks::new(&text, &breaks);
+        assert_eq!(cursor.offset, 0);
+        assert_eq!(cursor.cur_line, 0);
+        assert_eq!(cursor.len, text.len());
+        assert_eq!(cursor.total_lines, 6);
+
+        assert_eq!(cursor.next(), Some(5));
+        assert_eq!(cursor.cur_line, 1);
+        assert_eq!(cursor.offset, 5);
+        assert_eq!(cursor.text.pos(), 5);
+        assert_eq!(cursor.soft.pos(), 8);
+        assert!(cursor.is_hard_break());
+
+        assert_eq!(cursor.next(), Some(8));
+        assert_eq!(cursor.cur_line, 2);
+        assert_eq!(cursor.offset, 8);
+        assert_eq!(cursor.text.pos(), 14);
+        assert_eq!(cursor.soft.pos(), 8);
+        assert!(!cursor.is_hard_break());
+
+        assert_eq!(cursor.next(), Some(11));
+        assert_eq!(cursor.cur_line, 3);
+        assert_eq!(cursor.offset, 11);
+        assert_eq!(cursor.text.pos(), 14);
+        assert_eq!(cursor.soft.pos(), 11);
+        assert!(!cursor.is_hard_break());
+
+        assert_eq!(cursor.next(), Some(14));
+        assert_eq!(cursor.cur_line, 4);
+        assert_eq!(cursor.offset, 14);
+        assert_eq!(cursor.text.pos(), 14);
+        assert_eq!(cursor.soft.pos(), text.len());
+        assert!(cursor.is_hard_break());
+    }
+
     #[test]
     fn set_offset() {
         let text: Rope = "aaaa\nbb bb cc\ncc dddd eeee ff\nff gggg".into();
@@ -978,9 +1065,16 @@ mod tests {
 
         cursor.set(0);
         let breaks = cursor.iter::<BreaksMetric>().collect::<Vec<_>>();
-        // soft breaks includes a break at EOF, which we don't expect,
-        // because the end of the node is a boundary in all metrics?
-        assert_eq!(breaks, vec![2, 4, 6, 8]);
+        assert_eq!(breaks, vec![2, 4, 6]);
+    }
+
+    #[test]
+    fn expected_soft_with_hard() {
+        let text: Rope = "aa\nbb cc\ncc dd ee ff\ngggg".into();
+        let Lines { breaks, .. } = make_lines(&text, 2.);
+        let mut cursor = Cursor::new(&breaks, 0);
+        let breaks = cursor.iter::<BreaksMetric>().collect::<Vec<_>>();
+        assert_eq!(breaks, vec![6, 12, 15, 18]);
     }
 
     #[test]

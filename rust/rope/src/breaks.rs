@@ -282,12 +282,11 @@ mod tests {
         assert_eq!(10, c.next::<BreaksMetric>().unwrap());
         assert!(c.next::<BreaksMetric>().is_none());
         c.set(0);
-        assert!(c.is_boundary::<BreaksMetric>());
+        assert!(!c.is_boundary::<BreaksMetric>());
         c.set(1);
         assert!(!c.is_boundary::<BreaksMetric>());
         c.set(10);
         assert!(c.is_boundary::<BreaksMetric>());
-        assert_eq!(0, c.prev::<BreaksMetric>().unwrap());
         assert!(c.prev::<BreaksMetric>().is_none());
     }
 

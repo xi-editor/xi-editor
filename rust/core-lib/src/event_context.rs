@@ -137,6 +137,9 @@ impl<'a> EventContext<'a> {
             E::View(cmd) => {
                 self.with_view(|view, text| view.do_edit(text, cmd));
                 self.editor.borrow_mut().update_edit_type();
+                if self.with_view(|v, t| v.needs_wrap_in_visible_region(t)) {
+                    self.rewrap();
+                }
             }
             E::Buffer(cmd) => {
                 self.with_editor(|ed, view, k_ring, conf| ed.do_edit(view, k_ring, conf, cmd))
@@ -260,14 +263,14 @@ impl<'a> EventContext<'a> {
     fn after_edit(&mut self, author: &str) {
         let _t = trace_block("EventContext::after_edit", &["core"]);
 
-        let mut ed = self.editor.borrow_mut();
-        let (delta, last_text, drift) = match ed.commit_delta() {
+        let edit_info = self.editor.borrow_mut().commit_delta();
+        let (delta, last_text, drift) = match edit_info {
             Some(edit_info) => edit_info,
             None => return,
         };
 
-        self.update_views(&ed, &delta, &last_text, drift);
-        self.update_plugins(&mut ed, delta, author);
+        self.update_views(&self.editor.borrow(), &delta, &last_text, drift);
+        self.update_plugins(&mut self.editor.borrow_mut(), delta, author);
 
         //if we have no plugins we always render immediately.
         if !self.plugins.is_empty() {
@@ -514,9 +517,9 @@ impl<'a> EventContext<'a> {
         }
     }
 
-    /// Tells the view to rewrap a batch of lines. This guarantees that the currently visible region
-    /// will be correctly wrapped; the caller should check if additional wrapping is necessary and
-    /// schedule that if so.
+    /// Tells the view to rewrap a batch of lines, if needed. This guarantees that
+    /// the currently visible region will be correctly wrapped; the caller should
+    /// check if additional wrapping is necessary and schedule that if so.
     fn rewrap(&mut self) {
         let mut view = self.view.borrow_mut();
         let ed = self.editor.borrow();
