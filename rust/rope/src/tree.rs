@@ -1009,6 +1009,13 @@ mod test {
             if pos < s.len() {
                 assert!(it.is_some(), "must be Some(_)");
                 assert!(s.as_bytes()[pos - 1] == b'\n', "not a linebreak");
+            } else {
+                if s.as_bytes()[s.len() - 1] == b'\n' {
+                    assert!(it.is_some(), "must be Some(_)");
+                } else {
+                    assert!(it.is_none());
+                    assert!(c.get_leaf().is_none());
+                }
             }
         }
     }

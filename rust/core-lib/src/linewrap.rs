@@ -753,8 +753,9 @@ impl<'a> MergedBreaks<'a> {
         self.offset == self.len
     }
 
-    fn eof_without_newline(&self) -> bool {
+    fn eof_without_newline(&mut self) -> bool {
         debug_assert!(self.at_eof());
+        self.text.set(self.len);
         self.text.get_leaf().map(|(l, _)| l.as_bytes().last() != Some(&b'\n')).unwrap()
     }
 }
