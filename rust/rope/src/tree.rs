@@ -661,7 +661,14 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
         // Leaf is 0-measure (otherwise would have already succeeded).
         let measure = self.measure_leaf::<M>(self.position);
         self.descend_metric::<M>(measure + 1);
-        self.next_inside_leaf::<M>()
+        if let Some(offset) = self.next_inside_leaf::<M>() {
+            return Some(offset);
+        }
+
+        // Not found, properly invalidate cursor.
+        self.position = self.root.len();
+        self.leaf = None;
+        None
     }
 
     /// Returns the current position if it is a boundary in this [`Metric`],
@@ -1072,6 +1079,15 @@ mod test {
             text = Node::concat(text.clone(), text);
             let mut cursor = Cursor::new(&text, 0);
             assert_eq!(cursor.next::<LinesMetric>(), None);
+            // Test that cursor is properly invalidated and at end of text.
+            assert_eq!(cursor.get_leaf(), None);
+            assert_eq!(cursor.pos(), text.len());
+
+            cursor.set(text.len());
+            assert_eq!(cursor.prev::<LinesMetric>(), None);
+            // Test that cursor is properly invalidated and at beginning of text.
+            assert_eq!(cursor.get_leaf(), None);
+            assert_eq!(cursor.pos(), 0);
         }
     }
 }
