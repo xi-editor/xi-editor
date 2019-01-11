@@ -227,7 +227,7 @@ impl View {
         match self.find_progress {
             FindProgress::InProgress(_) => true,
             FindProgress::Started => true,
-            _ => false
+            _ => false,
         }
     }
 
@@ -827,7 +827,7 @@ impl View {
     /// Determines the current number of find results and search parameters to send them to
     /// the frontend.
     pub fn find_status(&self, text: &Rope, matches_only: bool) -> Vec<FindStatus> {
-//        self.find_changed = FindStatusChange::None;
+        //        self.find_changed = FindStatusChange::None;
 
         self.find
             .iter()
@@ -1063,45 +1063,56 @@ impl View {
     }
 
     pub fn do_find(&mut self, text: &Rope) {
-        match &self.find_progress {
+        let search_range = match &self.find_progress.clone() {
             FindProgress::Started => {
                 // start incremental find on visible region
                 let start = self.offset_of_line(text, self.first_line);
                 let end = min(text.len(), start + FIND_BATCH_SIZE);
-                for query in &mut self.find {
-                    query.update_find(text, start, end, false);
-                }
-
-                self.find_progress = FindProgress::InProgress(Range { start, end });
                 self.find_changed = FindStatusChange::All;
-            },
+                self.find_progress = FindProgress::InProgress(Range { start, end });
+                Some((start, end))
+            }
             FindProgress::InProgress(searched_range) => {
-                if searched_range.start <= 0 && searched_range.end >= text.len() {
+                if searched_range.start == 0 && searched_range.end >= text.len() {
                     // the entire text has been searched; stop incremental find
                     self.find_progress = FindProgress::Done;
+                    None
                 } else {
-                    // expand find to unsearched regions
+                    // expand find to un-searched regions
                     let start_off = self.offset_of_line(text, self.first_line);
+                    self.find_changed = FindStatusChange::Matches;
 
-                    if (start_off - searched_range.start < searched_range.end.checked_sub(start_off).unwrap_or_else(|| 0) &&
-                       searched_range.start > 0) || searched_range.end >= text.len() {
-                        let start = max(0, searched_range.start.checked_sub(FIND_BATCH_SIZE).unwrap_or_else(|| 0));
-                        for query in &mut self.find {
-                            query.update_find(text, start, searched_range.start, false);
-                        }
-                        self.find_progress = FindProgress::InProgress(Range { start: start, end: searched_range.end });
+                    // check if preceding range should be searched next
+                    let search_preceding_range = start_off - searched_range.start
+                        < searched_range.end.checked_sub(start_off).unwrap_or_else(|| 0)
+                        && searched_range.start > 0;
+
+                    if search_preceding_range || searched_range.end >= text.len() {
+                        let start =
+                            searched_range.start.checked_sub(FIND_BATCH_SIZE).unwrap_or_else(|| 0);
+                        self.find_progress =
+                            FindProgress::InProgress(Range { start, end: searched_range.end });
+                        Some((start, searched_range.start))
                     } else if searched_range.end < text.len() {
                         let end = min(text.len(), searched_range.end + FIND_BATCH_SIZE);
-                        for query in &mut self.find {
-                            query.update_find(text, searched_range.end, end, false);
-                        }
-                        self.find_progress = FindProgress::InProgress(Range { start: searched_range.start, end: end });
+                        self.find_progress =
+                            FindProgress::InProgress(Range { start: searched_range.start, end });
+                        Some((searched_range.end, end))
+                    } else {
+                        None
                     }
-                    self.find_changed = FindStatusChange::Matches;
                 }
-            },
+            }
             _ => {
                 self.find_changed = FindStatusChange::None;
+                None
+            }
+        };
+
+        if let Some((search_range_start, search_range_end)) = search_range {
+            // todo: check for multi line regex (must be executed on entire text range) -> maybe have separate state
+            for query in &mut self.find {
+                query.update_find(text, search_range_start, search_range_end, false);
             }
         }
     }

@@ -42,7 +42,9 @@ use crate::plugins::Plugin;
 use crate::recorder::Recorder;
 use crate::selection::InsertDrift;
 use crate::syntax::LanguageId;
-use crate::tabs::{BufferId, PluginId, ViewId, RENDER_VIEW_IDLE_MASK, REWRAP_VIEW_IDLE_MASK, FIND_VIEW_IDLE_MASK};
+use crate::tabs::{
+    BufferId, PluginId, ViewId, FIND_VIEW_IDLE_MASK, RENDER_VIEW_IDLE_MASK, REWRAP_VIEW_IDLE_MASK,
+};
 use crate::view::View;
 use crate::width_cache::WidthCache;
 use crate::WeakXiCore;
@@ -554,10 +556,11 @@ impl<'a> EventContext<'a> {
     pub(crate) fn do_incremental_find(&mut self) {
         self.find();
         if self.view.borrow().find_in_progress() {
-//            let matches_only = match self.find_changed == FindStatusChange::Matches;
-            let matches_only = true;    //todo
             let ed = self.editor.borrow();
-            self.client.find_status(self.view_id, &json!(self.view.borrow().find_status(ed.get_buffer(), matches_only)));
+            self.client.find_status(
+                self.view_id,
+                &json!(self.view.borrow().find_status(ed.get_buffer(), true)),
+            );
             self.schedule_find();
         }
         self.render_if_needed();
