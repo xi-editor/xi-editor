@@ -159,7 +159,7 @@ fn get_flags() -> HashMap<String, Option<String>> {
     let mut args_iterator = std::env::args().peekable();
     while let Some(arg) = args_iterator.next() {
         if arg.starts_with(flag_prefix) {
-            let key = arg.trim_left_matches(flag_prefix).to_string();
+            let key = arg.trim_start_matches(flag_prefix).to_string();
 
             // Check the next argument doesn't start with the flag prefix
             // map_or accounts for peek returning an Option

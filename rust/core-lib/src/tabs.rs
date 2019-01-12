@@ -986,7 +986,7 @@ impl<'de> Deserialize<'de> for ViewId {
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        let ord = s.trim_left_matches("view-id-");
+        let ord = s.trim_start_matches("view-id-");
         match usize::from_str_radix(ord, 10) {
             Ok(id) => Ok(ViewId(id)),
             Err(_) => Err(de::Error::invalid_value(Unexpected::Str(&s), &"view id")),
