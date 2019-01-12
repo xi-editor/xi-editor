@@ -291,10 +291,27 @@ pub struct EditCommand<T> {
     pub cmd: T,
 }
 
+/// The smallest unit of text that a gesture can select
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Copy, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum SelectionGranularity {
+    /// Selects any point or character range
+    Point,
+    /// Selects one word at a time
+    Word,
+    /// Selects one line at a time
+    Line,
+}
+
 /// An enum representing touch and mouse gestures applied to the text.
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Copy, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum GestureType {
+    Select { granularity: SelectionGranularity, multi: bool },
+    SelectExtend { granularity: SelectionGranularity },
+    Drag,
+
+    // Deprecated
     PointSelect,
     ToggleSel,
     RangeSelect,
