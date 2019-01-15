@@ -1076,9 +1076,11 @@ impl View {
             }
             FindProgress::InProgress(searched_range) => {
                 if searched_range.start == 0 && searched_range.end >= text.len() {
-                    // the entire text has been searched; stop incremental find
+                    // the entire text has been searched
+                    // end find by executing mult-line regex queries on entire text
+                    // stop incremental find
                     self.find_progress = FindProgress::Done;
-                    None
+                    Some((0, text.len()))
                 } else {
                     // expand find to un-searched regions
                     let start_off = self.offset_of_line(text, self.first_line);
@@ -1112,9 +1114,15 @@ impl View {
         };
 
         if let Some((search_range_start, search_range_end)) = search_range {
-            // todo: check for multi line regex (must be executed on entire text range) -> maybe have separate state
             for query in &mut self.find {
-                query.update_find(text, search_range_start, search_range_end, false);
+                if !query.is_multi_line_regex() {
+                    query.update_find(text, search_range_start, search_range_end, false);
+                } else {
+                    // only execute multi-line regex queries if we are searching the entire text (last step)
+                    if search_range_start == 0 && search_range_end == text.len() {
+                        query.update_find(text, search_range_start, search_range_end, false);
+                    }
+                }
             }
         }
     }

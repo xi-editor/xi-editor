@@ -171,10 +171,8 @@ impl Find {
             // invalidate all search results from the point of the last valid search result until ...
             let is_multi_line =
                 LinesMetric::next(self.search_string.as_ref().unwrap(), 0).is_some();
-            let is_multi_line_regex =
-                self.regex.is_some() && is_multiline_regex(self.search_string.as_ref().unwrap());
 
-            if is_multi_line || is_multi_line_regex {
+            if is_multi_line || self.is_multi_line_regex() {
                 // ... the end of the file
                 self.occurrences.delete_range(iv.start(), text.len(), false);
                 self.update_find(text, start, text.len(), false);
@@ -192,6 +190,11 @@ impl Find {
                 self.update_find(text, start, end_of_line, false);
             }
         }
+    }
+
+    /// Returns `true` if the search query is a multi-line regex.
+    pub fn is_multi_line_regex(&self) -> bool {
+        self.regex.is_some() && is_multiline_regex(self.search_string.as_ref().unwrap())
     }
 
     /// Unsets the search and removes all highlights from the view.
