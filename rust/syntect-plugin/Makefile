@@ -10,7 +10,7 @@ out/syntect: $(lang_configs) xi-syntect-plugin
 	mkdir -p out/syntect/bin
 	cp $(lang_configs) out/syntect
 	cp ../target/release/xi-syntect-plugin out/syntect/bin
-	cp manifest.toml out/syntect/manifest.toml
+	cp *.toml out/syntect/
 
 .PHONY: xi-syntect-plugin
 xi-syntect-plugin:

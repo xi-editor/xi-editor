@@ -19,7 +19,7 @@ toml = "0.4"
 git = "https://github.com/trishume/syntect.git"
 branch = "master"
 default-features = false
-features = ["parsing", "assets","dump-load-rs", "metadata"]
+features = ["parsing", "yaml-load", "assets","dump-load-rs","dump-create", "metadata"]
 
 [dependencies.xi-plugin-lib]
 path = "../plugin-lib"

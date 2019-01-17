@@ -34,6 +34,7 @@ use xi_plugin_lib::{mainloop, Cache, Error, Plugin, StateCache, View};
 use xi_rope::{DeltaBuilder, Interval, Rope, RopeDelta, RopeInfo};
 use xi_trace::{trace, trace_block};
 
+use syntect::dumps::from_dump_file;
 use syntect::parsing::{
     ParseState, ScopeRepository, ScopeStack, ScopedMetadata, SyntaxSet, SCOPE_REPO,
 };
@@ -731,7 +732,14 @@ impl<'a> Plugin for Syntect<'a> {
 }
 
 fn main() {
-    let syntax_set = SyntaxSet::load_defaults_newlines();
+    let syntax_set = match from_dump_file("/home/sentient_devil/work/xi-code/xi-editor/rust/syntect-plugin/syntaxes.packfile") {
+        Ok(data) => data,
+        Err(err) => {
+            // Error Handling
+            println!("{}",err);
+            SyntaxSet::load_defaults_newlines()
+        }
+    };
     let mut state = Syntect::new(&syntax_set);
     mainloop(&mut state).unwrap();
 }

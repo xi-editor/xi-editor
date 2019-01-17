@@ -24,9 +24,10 @@ use std::path::{Path, PathBuf};
 use crate::xi_core::plugin_manifest::*;
 use crate::xi_core::LanguageDefinition;
 use syntect::parsing::{SyntaxReference, SyntaxSet};
+use syntect::dumps::dump_to_file;
 use toml::Value;
 
-const OUT_FILE_NAME: &str = "generated_manifest.toml";
+const OUT_FILE_NAME: &str = "manifest.toml";
 
 /// Extracts the name and version from Cargo.toml
 fn parse_name_and_version() -> Result<(String, String), io::Error> {
@@ -41,7 +42,7 @@ fn parse_name_and_version() -> Result<(String, String), io::Error> {
 }
 
 fn main() -> Result<(), io::Error> {
-    let syntax_set = SyntaxSet::load_defaults_newlines();
+    let syntax_set = SyntaxSet::load_from_folder("zola/sublime_syntaxes").unwrap();
     let lang_defs = syntax_set
         .syntaxes()
         .iter()
@@ -65,6 +66,16 @@ fn main() -> Result<(), io::Error> {
     let toml_str = toml::to_string(&mani).unwrap();
     let file_path = Path::new(OUT_FILE_NAME);
     let mut f = File::create(file_path)?;
+    
+    // Create dump file
+    match dump_to_file(&syntax_set, "syntaxes.packfile") {
+        Ok(_) => (),
+        Err(err) => {
+            // Error Handling
+            println!("{}", err);
+        }
+    };
+
     f.write_all(toml_str.as_ref())
 }
 

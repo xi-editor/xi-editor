@@ -1,0 +1,3 @@
+[submodule "rust/syntect-plugin/zola"]
+	path = rust/syntect-plugin/zola
+	url = https://github.com/getzola/zola

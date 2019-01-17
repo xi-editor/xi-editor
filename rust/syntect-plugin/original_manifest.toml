@@ -6,67 +6,9 @@ activations = ["autorun"]
 commands = []
 
 [[languages]]
-name = "Assembly x86 (NASM)"
-extensions = ["asm", "inc", "nasm"]
-scope = "source.assembly"
-
-[[languages]]
-name = "Crystal"
-extensions = ["cr"]
-first_line_match = "^#!/.*\\bcrystal"
-scope = "source.crystal"
-
-[[languages]]
-name = "Dart"
-extensions = ["dart"]
-scope = "source.dart"
-
-[[languages]]
-name = "Elixir"
-extensions = ["ex", "exs"]
-first_line_match = "^#!/.*\\belixir"
-scope = "source.elixir"
-
-[[languages]]
-name = "fsharp"
-extensions = ["fs"]
-scope = "source.fsharp"
-
-[[languages]]
-name = "Handlebars"
-extensions = ["handlebars", "handlebars.html", "hbr", "hbrs", "hbs", "hdbs", "hjs", "mu", "mustache", "rac", "stache", "template", "tmpl"]
-scope = "text.html.handlebars"
-
-[[languages]]
-name = "Jinja2"
-extensions = ["j2", "jinja2"]
-scope = "text.html.jinja2"
-
-[[languages]]
-name = "Julia"
-extensions = ["jl"]
-first_line_match = "^#!.*\\bjulia\\s*$"
-scope = "source.julia"
-
-[[languages]]
-name = "Kotlin"
-extensions = ["kt", "kts"]
-scope = "source.Kotlin"
-
-[[languages]]
-name = "Less"
-extensions = ["less", "css.less"]
-scope = "source.css.less"
-
-[[languages]]
-name = "MiniZinc (MZN)"
-extensions = ["mzn", "dzn"]
-scope = "source.mzn"
-
-[[languages]]
-name = "Nim"
-extensions = ["nim", "nims"]
-scope = "source.nim"
+name = "Plain Text"
+extensions = ["txt"]
+scope = "text.plain"
 
 [[languages]]
 name = "ASP"
@@ -149,45 +91,6 @@ extensions = ["yaws"]
 scope = "text.html.erlang.yaws"
 
 [[languages]]
-name = "Git Attributes"
-extensions = ["attributes", "gitattributes", ".gitattributes"]
-scope = "text.git.attributes"
-
-[[languages]]
-name = "Git Commit"
-extensions = ["COMMIT_EDITMSG", "MERGE_MSG", "TAG_EDITMSG"]
-scope = "text.git.commit"
-
-[[languages]]
-name = "Git Config"
-extensions = ["gitconfig", ".gitconfig", ".gitmodules"]
-first_line_match = "^\\[core\\]"
-scope = "text.git.config"
-
-[[languages]]
-name = "Git Ignore"
-extensions = ["exclude", "gitignore", ".gitignore"]
-scope = "text.git.ignore"
-
-[[languages]]
-name = "Git Link"
-extensions = [".git"]
-first_line_match = "^\\s*gitdir\\s*:"
-scope = "text.git.link"
-
-[[languages]]
-name = "Git Log"
-extensions = ["gitlog"]
-first_line_match = "commit\\s+\\h{7,}"
-scope = "text.git.log"
-
-[[languages]]
-name = "Git Rebase Todo"
-extensions = ["git-rebase-todo"]
-first_line_match = "^(?:drop|edit|exec|fixup|pick|reword|squash|[defprsx]) \\h{7,} "
-scope = "text.git.rebase"
-
-[[languages]]
 name = "Go"
 extensions = ["go"]
 first_line_match = "-[*]-( Mode:)? Go -[*]-"
@@ -200,12 +103,12 @@ scope = "source.dot"
 
 [[languages]]
 name = "Groovy"
-extensions = ["groovy", "gvy", "gradle", "Jenkinsfile"]
+extensions = ["groovy", "gvy", "gradle"]
 scope = "source.groovy"
 
 [[languages]]
 name = "HTML"
-extensions = ["html", "htm", "shtml", "xhtml"]
+extensions = ["html", "htm", "shtml", "xhtml", "inc", "tmpl", "tpl"]
 first_line_match = "(?i)<(!DOCTYPE\\s*)?html"
 scope = "text.html.basic"
 
@@ -272,7 +175,7 @@ scope = "source.lua"
 
 [[languages]]
 name = "Makefile"
-extensions = ["make", "GNUmakefile", "makefile", "Makefile", "makefile.am", "Makefile.am", "makefile.in", "Makefile.in", "OCamlMakefile", "mak", "mk"]
+extensions = ["make", "GNUmakefile", "makefile", "Makefile", "OCamlMakefile", "mak", "mk"]
 first_line_match = "^#!\\s*/usr/bin/make\\b"
 scope = "source.makefile"
 
@@ -402,7 +305,7 @@ scope = "source.scala"
 
 [[languages]]
 name = "Bourne Again Shell (bash)"
-extensions = ["sh", "bash", "zsh", "fish", ".bash_aliases", ".bash_completions", ".bash_functions", ".bash_login", ".bash_logout", ".bash_profile", ".bash_variables", ".bashrc", ".profile", ".textmate_init", ".zshrc"]
+extensions = ["sh", "bash", "zsh", "fish", ".bash_aliases", ".bash_completions", ".bash_functions", ".bash_login", ".bash_logout", ".bash_profile", ".bash_variables", ".bashrc", ".profile", ".textmate_init"]
 first_line_match = "(?x)                     # ignore whitespace in this regex\n  ^                      # assert start of the line\n  \\#!                    # shebang token\n  .*                     # any characters\n  \\b(bash|zsh|sh|tcsh)\\b # \"bash\" or \"zsh\" or \"sh\" or \"tcsh\"\n  |                      # ... or ...\n  ^                      # assert start of the line\n  \\#                     # literal \"#\" character\n  \\s*                    # any whitespace\n  -\\*-                   # literal \"-*-\" string\n  [^*]*                  # any characters except \"*\"\n  mode:                  # literal \"mode:\" string\n  \\s*                    # any whitespace\n  shell-script           # literal \"shell-script\" string\n  [^*]*                  # any characters except \"*\"\n  -\\*-                   # literal \"-*-\" string\n"
 scope = "source.shell.bash"
 
@@ -433,79 +336,3 @@ name = "YAML"
 extensions = ["yaml", "yml", "sublime-syntax"]
 first_line_match = "^%YAML( ?1.\\d+)?"
 scope = "source.yaml"
-
-[[languages]]
-name = "SWI-Prolog"
-extensions = ["pro"]
-scope = "source.prolog"
-
-[[languages]]
-name = "Reason"
-extensions = ["re", "rei"]
-scope = "source.reason"
-
-[[languages]]
-name = "CMake C Header"
-extensions = ["h.in"]
-scope = "source.cmake.config.c"
-
-[[languages]]
-name = "CMake C++ Header"
-extensions = ["hh.in", "hpp.in", "hxx.in", "h++.in"]
-scope = "source.cmake.config.c++"
-
-[[languages]]
-name = "CMake"
-extensions = ["CMakeLists.txt", "cmake"]
-scope = "source.cmake"
-
-[[languages]]
-name = "CMakeCache"
-extensions = ["CMakeCache.txt"]
-first_line_match = "# This is the CMakeCache file."
-scope = "source.cmakecache"
-
-[[languages]]
-name = "Generic Config"
-extensions = ["cfg", "conf", "config", "ini", "pro", "mak", "mk", "Doxyfile", "inputrc", ".inputrc", "dircolors", ".dircolors", "gitmodules", ".gitmodules", "gitignore", ".gitignore", "gitattributes", ".gitattributes"]
-scope = "source.genconfig"
-
-[[languages]]
-name = "Elm"
-extensions = ["elm"]
-scope = "source.elm"
-
-[[languages]]
-name = "Linker Script"
-extensions = ["ld"]
-scope = "source.linker"
-
-[[languages]]
-name = "Swift"
-extensions = ["swift"]
-scope = "source.swift"
-
-[[languages]]
-name = "TOML"
-extensions = ["toml", "tml"]
-scope = "source.toml"
-
-[[languages]]
-name = "TypeScript"
-extensions = ["ts"]
-scope = "source.ts"
-
-[[languages]]
-name = "TypeScriptReact"
-extensions = ["tsx"]
-scope = "source.tsx"
-
-[[languages]]
-name = "VimL"
-extensions = ["vim"]
-scope = "source.viml"
-
-[[languages]]
-name = "TOML"
-extensions = ["toml", "tml", "Cargo.lock", "Gopkg.lock", "Pipfile"]
-scope = "source.toml"
