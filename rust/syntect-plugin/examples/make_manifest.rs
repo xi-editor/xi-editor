@@ -23,8 +23,8 @@ use std::path::{Path, PathBuf};
 
 use crate::xi_core::plugin_manifest::*;
 use crate::xi_core::LanguageDefinition;
-use syntect::parsing::{SyntaxReference, SyntaxSet};
 use syntect::dumps::dump_to_file;
+use syntect::parsing::{SyntaxReference, SyntaxSet};
 use toml::Value;
 
 const OUT_FILE_NAME: &str = "manifest.toml";
@@ -66,7 +66,7 @@ fn main() -> Result<(), io::Error> {
     let toml_str = toml::to_string(&mani).unwrap();
     let file_path = Path::new(OUT_FILE_NAME);
     let mut f = File::create(file_path)?;
-    
+
     // Create dump file
     match dump_to_file(&syntax_set, "syntaxes.packfile") {
         Ok(_) => (),
