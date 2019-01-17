@@ -72,7 +72,7 @@ fn main() -> Result<(), io::Error> {
         Ok(_) => (),
         Err(err) => {
             // Error Handling
-            println!("{}", err);
+            eprintln!("{}", err);
         }
     };
 

@@ -19,6 +19,7 @@ extern crate xi_core_lib as xi_core;
 extern crate xi_plugin_lib;
 extern crate xi_rope;
 extern crate xi_trace;
+extern crate dirs;
 
 mod stackmap;
 
@@ -732,14 +733,29 @@ impl<'a> Plugin for Syntect<'a> {
 }
 
 fn main() {
-    let syntax_set = match from_dump_file("/home/sentient_devil/work/xi-code/xi-editor/rust/syntect-plugin/syntaxes.packfile") {
-        Ok(data) => data,
-        Err(err) => {
-            // Error Handling
-            println!("{}",err);
-            SyntaxSet::load_defaults_newlines()
-        }
+
+    let syntax_set = 
+    // get the Home dir (works with Windows / Linux / Mac)
+    match dirs::home_dir() {
+        Some(path) => {
+            let mut path = String::from(path.to_str().unwrap());
+            // Set the path to the packfile.
+            path.push_str("/.config/xi/plugins/syntect/syntaxes.packfile");
+            match from_dump_file(path) {
+                Ok(data) => data,
+                Err(err) => {
+                    // Error Handling
+                    eprintln!("{}",err);
+                    SyntaxSet::load_defaults_newlines()
+                }
+            }
+        },
+        None => {
+            eprintln!("Error in fetching the Home dir!");
+            SyntaxSet::load_defaults_newlines()        
+        },
     };
+
     let mut state = Syntect::new(&syntax_set);
     mainloop(&mut state).unwrap();
 }
