@@ -42,7 +42,7 @@ fn parse_name_and_version() -> Result<(String, String), io::Error> {
 }
 
 fn main() -> Result<(), io::Error> {
-    let syntax_set = SyntaxSet::load_from_folder("zola/sublime_syntaxes").unwrap();
+    let syntax_set = SyntaxSet::load_from_folder("syntect-resources/Packages").unwrap();
     let lang_defs = syntax_set
         .syntaxes()
         .iter()
