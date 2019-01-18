@@ -30,10 +30,10 @@ pub fn offset_for_delete_backwards(
     if !region.is_caret() {
         region.min()
     } else {
-        // backspace deletes max(1, tab_size) contiguous spaces
         let (_, c) = view.offset_to_line_col(&text, region.start);
 
-        let tab_off = c % config.tab_size;
+        // backspace deletes max(1, tab_size) contiguous spaces
+        let tab_off = if config.tab_size == 0 { 1 } else { c % config.tab_size };
         let tab_size = config.tab_size;
         let tab_size = if tab_off == 0 { tab_size } else { tab_off };
         let tab_start = region.start.saturating_sub(tab_size);
