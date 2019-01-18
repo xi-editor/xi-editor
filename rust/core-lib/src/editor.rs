@@ -484,7 +484,7 @@ impl Editor {
             } else {
                 let (_, col) = view.offset_to_line_col(&self.text, region.start);
                 let mut tab_size = config.tab_size;
-                tab_size = tab_size - (col % tab_size);
+                tab_size = if tab_size == 0 { 0 } else { tab_size - (col % tab_size) };
                 let tab_text = self.get_tab_text(config, Some(tab_size));
 
                 let iv = Interval::new(region.min(), region.max());
