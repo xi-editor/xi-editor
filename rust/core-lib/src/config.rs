@@ -20,7 +20,7 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use serde::de::Deserialize;
+use serde::de::{self, Deserialize};
 use serde_json::{self, Value};
 use toml;
 
@@ -155,10 +155,26 @@ pub struct Config<T> {
     pub items: T,
 }
 
+fn deserialize_tab_size<'de, D>(deserializer: D) -> Result<usize, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let tab_size = usize::deserialize(deserializer)?;
+    if tab_size == 0 {
+        Err(de::Error::invalid_value(
+            de::Unexpected::Unsigned(tab_size as u64),
+            &"tab_size must be at least 1",
+        ))
+    } else {
+        Ok(tab_size)
+    }
+}
+
 /// The concrete type for buffer-related settings.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct BufferItems {
     pub line_ending: String,
+    #[serde(deserialize_with = "deserialize_tab_size")]
     pub tab_size: usize,
     pub translate_tabs_to_spaces: bool,
     pub use_tab_stops: bool,
