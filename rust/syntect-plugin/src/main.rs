@@ -734,20 +734,7 @@ impl<'a> Plugin for Syntect<'a> {
 
 fn main() {
     // get the Home dir (works with Windows / Linux / Mac)
-    let syntax_set = match dirs::home_dir() {
-        Some(path) => {
-            let mut path = String::from(path.to_str().unwrap());
-            // Set the path to the packfile.
-            path.push_str("/.config/xi/plugins/syntect/syntaxes.packfile");
-            from_binary(include_bytes!(
-                "/home/sentient_devil/.config/xi/plugins/syntect/syntaxes.packfile"
-            ))
-        }
-        None => {
-            eprintln!("Error in fetching the Home dir!");
-            SyntaxSet::load_defaults_newlines()
-        }
-    };
+    let syntax_set = from_binary(include_bytes!("../syntaxes.packfile"));
 
     let mut state = Syntect::new(&syntax_set);
     mainloop(&mut state).unwrap();

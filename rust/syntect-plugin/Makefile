@@ -10,8 +10,7 @@ out/syntect: $(lang_configs) xi-syntect-plugin
 	mkdir -p out/syntect/bin
 	cp $(lang_configs) out/syntect
 	cp ../target/release/xi-syntect-plugin out/syntect/bin
-	cp manifest.toml out/syntect/
-	cp syntaxes.packfile out/syntect/
+	cp manifest.toml out/syntect/manifest.toml
 
 .PHONY: xi-syntect-plugin
 xi-syntect-plugin:
@@ -20,9 +19,6 @@ xi-syntect-plugin:
 install: out/syntect
 	mkdir -p $(XI_PLUGIN_DIR)
 	cp -r out/syntect $(XI_PLUGIN_DIR)
-
-install:
-	mkdir -p $(XI_PLUGIN_DIR)
 
 make-assets:
 	cargo run --example make_manifest
