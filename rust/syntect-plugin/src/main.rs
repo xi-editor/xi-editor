@@ -35,7 +35,7 @@ use xi_plugin_lib::{mainloop, Cache, Error, Plugin, StateCache, View};
 use xi_rope::{DeltaBuilder, Interval, Rope, RopeDelta, RopeInfo};
 use xi_trace::{trace, trace_block};
 
-use syntect::dumps::from_dump_file;
+use syntect::dumps::from_binary;
 use syntect::parsing::{
     ParseState, ScopeRepository, ScopeStack, ScopedMetadata, SyntaxSet, SCOPE_REPO,
 };
@@ -739,14 +739,9 @@ fn main() {
             let mut path = String::from(path.to_str().unwrap());
             // Set the path to the packfile.
             path.push_str("/.config/xi/plugins/syntect/syntaxes.packfile");
-            match from_dump_file(path) {
-                Ok(data) => data,
-                Err(err) => {
-                    // Error Handling
-                    eprintln!("{}", err);
-                    SyntaxSet::load_defaults_newlines()
-                }
-            }
+            from_binary(include_bytes!(
+                "/home/sentient_devil/.config/xi/plugins/syntect/syntaxes.packfile"
+            ))
         }
         None => {
             eprintln!("Error in fetching the Home dir!");

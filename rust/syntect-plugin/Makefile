@@ -21,6 +21,12 @@ install: out/syntect
 	mkdir -p $(XI_PLUGIN_DIR)
 	cp -r out/syntect $(XI_PLUGIN_DIR)
 
+install:
+	mkdir -p $(XI_PLUGIN_DIR)
+
+make-assets:
+	cargo run --example make_manifest
+
 clean:
 	rm -rf out
 	cargo clean
