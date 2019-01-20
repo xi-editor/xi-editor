@@ -14,6 +14,9 @@ out/syntect: syntaxes.packdump $(lang_configs) xi-syntect-plugin
 
 .PHONY: xi-syntect-plugin
 
+$(SUBMODULES):
+	git submodule update --init --recursive
+
 xi-syntect-plugin:
 	cargo build --release
 
@@ -21,7 +24,7 @@ install: out/syntect
 	mkdir -p $(XI_PLUGIN_DIR)
 	cp -r out/syntect $(XI_PLUGIN_DIR)
 
-syntaxes.packdump:
+syntaxes.packdump: $(SUBMODULES)
 	cargo run --example make_manifest
 
 clean:

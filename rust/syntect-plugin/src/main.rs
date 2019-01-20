@@ -732,7 +732,7 @@ impl<'a> Plugin for Syntect<'a> {
 }
 
 fn main() {
-    let syntax_set = from_binary(include_bytes!("../syntaxes.packdump"));
+    let syntax_set = from_binary(include_bytes!("../assets/syntaxes.packdump"));
     let mut state = Syntect::new(&syntax_set);
     mainloop(&mut state).unwrap();
 }

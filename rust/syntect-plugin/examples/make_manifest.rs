@@ -68,7 +68,7 @@ fn main() -> Result<(), io::Error> {
     let mut f = File::create(file_path)?;
 
     // Create dump file
-    match dump_to_file(&syntax_set, "syntaxes.packdump") {
+    match dump_to_file(&syntax_set, "assets/syntaxes.packdump") {
         Ok(_) => (),
         Err(err) => panic!("failed to write pack file: {}", err),
     };
