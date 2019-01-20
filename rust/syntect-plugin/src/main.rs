@@ -13,7 +13,6 @@
 // limitations under the License.
 
 //! A syntax highlighting plugin based on syntect.
-extern crate dirs;
 extern crate serde_json;
 extern crate syntect;
 extern crate xi_core_lib as xi_core;
@@ -733,9 +732,7 @@ impl<'a> Plugin for Syntect<'a> {
 }
 
 fn main() {
-    // get the Home dir (works with Windows / Linux / Mac)
-    let syntax_set = from_binary(include_bytes!("../syntaxes.packfile"));
-
+    let syntax_set = from_binary(include_bytes!("../syntaxes.packdump"));
     let mut state = Syntect::new(&syntax_set);
     mainloop(&mut state).unwrap();
 }

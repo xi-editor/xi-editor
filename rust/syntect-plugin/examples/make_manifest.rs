@@ -68,12 +68,9 @@ fn main() -> Result<(), io::Error> {
     let mut f = File::create(file_path)?;
 
     // Create dump file
-    match dump_to_file(&syntax_set, "syntaxes.packfile") {
+    match dump_to_file(&syntax_set, "syntaxes.packdump") {
         Ok(_) => (),
-        Err(err) => {
-            // Error Handling
-            panic!("{}", err);
-        }
+        Err(err) => panic!("failed to write pack file: {}", err),
     };
 
     f.write_all(toml_str.as_ref())
