@@ -14,9 +14,6 @@ out/syntect: assets $(lang_configs) xi-syntect-plugin
 
 .PHONY: xi-syntect-plugin assets
 
-$(SUBMODULES):
-	git submodule update --init --recursive
-
 xi-syntect-plugin:
 	cargo build --release
 
@@ -24,7 +21,7 @@ install: out/syntect
 	mkdir -p $(XI_PLUGIN_DIR)
 	cp -r out/syntect $(XI_PLUGIN_DIR)
 
-assets: $(SUBMODULES)
+assets:
 	cargo run --example make_manifest
 
 clean:
