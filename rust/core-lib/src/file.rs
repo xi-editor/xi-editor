@@ -259,8 +259,8 @@ where
 
                 new_tail_details = TailDetails {
                     current_position_in_tail: end_position,
-                    is_tail_enabled: true,
-                    is_at_bottom_of_file: true,
+                    is_tail_enabled: v.tail_details.is_tail_enabled,
+                    is_at_bottom_of_file: v.tail_details.is_at_bottom_of_file,
                 };
             } else {
                 debug!("Tail is false, So loading entire file.");
