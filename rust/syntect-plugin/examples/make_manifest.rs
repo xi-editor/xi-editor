@@ -42,7 +42,6 @@ fn parse_name_and_version() -> Result<(String, String), io::Error> {
 }
 
 fn main() -> Result<(), io::Error> {
-    
     let package_dir = "syntect-resources/Packages";
     let packpath = "assets/default.packdump";
     let metasource = "syntect-resources/DefaultPackage";
