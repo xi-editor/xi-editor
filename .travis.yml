@@ -10,6 +10,11 @@ os:
   - osx
   - windows
 
+addons:
+  apt:
+    packages:
+      - libssl-dev
+
 matrix:
   allow_failures:
     - rust: nightly
@@ -20,6 +25,11 @@ before_script:
   - if [ "$TRAVIS_OS_NAME" = 'windows' ]; then choco install windows-sdk-10.0; fi
   - rustup component add rustfmt-preview
   - rustup component add clippy-preview
+
+before_cache: |
+  if [[ "$TRAVIS_OS_NAME" == linux && "$TRAVIS_RUST_VERSION" == nightly ]]; then
+    RUSTFLAGS="--cfg procmacro2_semver_exempt" cargo install cargo-tarpaulin -f
+  fi
 
 # windows builds run in git bash so these (should) Just Work
 cache:
@@ -34,3 +44,10 @@ script:
   - cargo test --all || exit
   - if [ "$TRAVIS_RUST_VERSION" = '1.31.0' ]; then cargo fmt --all -- --check; fi
   - if [ "$TRAVIS_RUST_VERSION" = '1.31.0' ]; then cargo clippy --all -- -D warnings; fi
+
+after_success: |
+  if [[ "$TRAVIS_OS_NAME" == linux && "$TRAVIS_RUST_VERSION" == nightly ]]; then
+    cd ..
+    cargo tarpaulin -r rust -v --all --out Xml
+    bash <(curl -s https://codecov.io/bash)
+  fi

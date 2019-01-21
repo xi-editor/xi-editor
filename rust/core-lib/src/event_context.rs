@@ -760,6 +760,14 @@ mod tests {
         let harness = ContextHarness::new(initial_text);
         let mut ctx = harness.make_context();
 
+        ctx.do_edit(EditNotification::MoveDown);
+        ctx.do_edit(EditNotification::MoveDown);
+        ctx.do_edit(EditNotification::MoveToEndOfParagraph);
+        assert_eq!(harness.debug_render(),"\
+        this is a string\n\
+        that has three\n\
+        lines.|" );
+
         ctx.do_edit(EditNotification::Gesture { line: 0, col: 0, ty: PointSelect });
         ctx.do_edit(EditNotification::MoveToEndOfParagraphAndModifySelection);
         assert_eq!(harness.debug_render(),"\

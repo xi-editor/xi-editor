@@ -248,8 +248,11 @@ pub fn region_movement(
                 } else if cursor.pos() == text.len() {
                     offset = text.len();
                 }
+                (offset, None)
+            } else {
+                //in this case we are already on a last line so just moving to EOL
+                (text.len(), None)
             }
-            (offset, None)
         }
         Movement::EndOfParagraphKill => {
             // Note: TextEdit would start at modify ? r.end : r.max()

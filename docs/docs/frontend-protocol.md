@@ -473,8 +473,11 @@ The guarantee on `id` is that it is not currently in use in any lines in the
 view. However, in practice, it will probably just count up. It can also be
 assumed to be small, so using it as an index into a dense array is reasonable.
 
-There are two reserved style IDs, so new style IDs will begin at 2. Style ID 0
-is reserved for selections and ID 1 is reserved for find results.
+**Deprecated:** There are two reserved style IDs, so new style IDs will begin at 2.
+Style ID 0 is reserved for selections and ID 1 is reserved for find results. Reserved
+style IDs will be supported for backward compatibility for a limited time. Instead,
+selections and find matches are now represented as `annotations`.
+
 
 #### scroll_to
 
@@ -493,12 +496,20 @@ update
   ops: Op[]
   view-id: string
   pristine: bool
+  annotations: AnnotationSlice[]
 
 interface Op {
   op: "copy" | "skip" | "invalidate" | "update" | "ins"
   n: number  // number of lines affected
   lines?: Line[]  // only present when op is "update" or "ins"
   ln?: number // the logical number for this line; null if this line is a soft break
+}
+
+interface AnnotationSlice {
+  type: "find" | "selection" | ...
+  ranges: [[number, number, number, number]]  // start_line, start_col, end_line, end_col
+  payloads: [{}]    // can be any json object or value
+  n: number // number of ranges
 }
 ```
 
@@ -581,6 +592,11 @@ interface Line {
   styles?: number[]  // length is a multiple of 3, see below
 }
 ```
+
+"annotations" are used to associate some type data with some document regions. For
+example, annotations are used to represent selections and find highlights.
+The [Annotations RFC](https://github.com/xi-editor/xi-editor/blob/master/rfcs/2018-11-23-annotations.md)
+provides a detailed description of the API.
 
 #### measure_width
 
