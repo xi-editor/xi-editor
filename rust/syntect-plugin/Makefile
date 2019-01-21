@@ -26,7 +26,7 @@ assets:
 
 clean:
 	rm -rf out
-	rm assets/syntaxes.packdump manifest.toml
+	rm -r assets/*.packdump manifest.toml
 	cargo clean
 
 .PHONY: clean install

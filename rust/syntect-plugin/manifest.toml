@@ -6,6 +6,11 @@ activations = ["autorun"]
 commands = []
 
 [[languages]]
+name = "Plain Text"
+extensions = ["txt"]
+scope = "text.plain"
+
+[[languages]]
 name = "ASP"
 extensions = ["asa"]
 scope = "source.asp"
@@ -127,6 +132,7 @@ scope = "text.git.rebase"
 [[languages]]
 name = "Go"
 extensions = ["go"]
+first_line_match = "-[*]-( Mode:)? Go -[*]-"
 scope = "source.go"
 
 [[languages]]
