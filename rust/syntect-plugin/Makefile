@@ -6,7 +6,7 @@ XI_PLUGIN_DIR ?= $(XI_CONFIG_DIR)/plugins
 
 lang_configs = assets/*.toml
 
-out/syntect: assets $(lang_configs) xi-syntect-plugin
+out/syntect: $(lang_configs) xi-syntect-plugin
 	mkdir -p out/syntect/bin
 	cp $(lang_configs) out/syntect
 	cp ../target/release/xi-syntect-plugin out/syntect/bin
