@@ -1,3 +1,0 @@
-[submodule "rust/syntect-plugin/syntect-resources"]
-	path = rust/syntect-plugin/syntect-resources
-	url = https://github.com/xi-editor/syntect-resources
