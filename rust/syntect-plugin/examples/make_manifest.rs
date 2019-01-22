@@ -23,10 +23,11 @@ use std::path::{Path, PathBuf};
 
 use crate::xi_core::plugin_manifest::*;
 use crate::xi_core::LanguageDefinition;
-use syntect::parsing::{SyntaxReference, SyntaxSet};
+use syntect::dumps::dump_to_file;
+use syntect::parsing::{SyntaxReference, SyntaxSetBuilder};
 use toml::Value;
 
-const OUT_FILE_NAME: &str = "generated_manifest.toml";
+const OUT_FILE_NAME: &str = "manifest.toml";
 
 /// Extracts the name and version from Cargo.toml
 fn parse_name_and_version() -> Result<(String, String), io::Error> {
@@ -41,7 +42,19 @@ fn parse_name_and_version() -> Result<(String, String), io::Error> {
 }
 
 fn main() -> Result<(), io::Error> {
-    let syntax_set = SyntaxSet::load_defaults_newlines();
+    let package_dir = "syntect-resources/Packages";
+    let packpath = "assets/default.packdump";
+    let metasource = "syntect-resources/DefaultPackage";
+    let metapath = "assets/default_meta.packdump";
+
+    let mut builder = SyntaxSetBuilder::new();
+    builder.add_plain_text_syntax();
+    builder.add_from_folder(package_dir, true).unwrap();
+    builder.add_from_folder(metasource, false).unwrap();
+    let syntax_set = builder.build();
+    dump_to_file(&syntax_set, packpath).unwrap();
+    dump_to_file(&syntax_set.metadata(), metapath).unwrap();
+
     let lang_defs = syntax_set
         .syntaxes()
         .iter()
@@ -65,6 +78,7 @@ fn main() -> Result<(), io::Error> {
     let toml_str = toml::to_string(&mani).unwrap();
     let file_path = Path::new(OUT_FILE_NAME);
     let mut f = File::create(file_path)?;
+
     f.write_all(toml_str.as_ref())
 }
 

@@ -65,7 +65,7 @@ scope = "source.css"
 
 [[languages]]
 name = "Clojure"
-extensions = ["clj"]
+extensions = ["clj", "cljc", "cljs", "edn"]
 scope = "source.clojure"
 
 [[languages]]
@@ -91,6 +91,45 @@ extensions = ["yaws"]
 scope = "text.html.erlang.yaws"
 
 [[languages]]
+name = "Git Attributes"
+extensions = ["attributes", "gitattributes", ".gitattributes"]
+scope = "text.git.attributes"
+
+[[languages]]
+name = "Git Commit"
+extensions = ["COMMIT_EDITMSG", "MERGE_MSG", "TAG_EDITMSG"]
+scope = "text.git.commit"
+
+[[languages]]
+name = "Git Config"
+extensions = ["gitconfig", ".gitconfig", ".gitmodules"]
+first_line_match = "^\\[core\\]"
+scope = "text.git.config"
+
+[[languages]]
+name = "Git Ignore"
+extensions = ["exclude", "gitignore", ".gitignore"]
+scope = "text.git.ignore"
+
+[[languages]]
+name = "Git Link"
+extensions = [".git"]
+first_line_match = "^\\s*gitdir\\s*:"
+scope = "text.git.link"
+
+[[languages]]
+name = "Git Log"
+extensions = ["gitlog"]
+first_line_match = "commit\\s+\\h{7,}"
+scope = "text.git.log"
+
+[[languages]]
+name = "Git Rebase Todo"
+extensions = ["git-rebase-todo"]
+first_line_match = "^(?:drop|edit|exec|fixup|pick|reword|squash|[defprsx]) \\h{7,} "
+scope = "text.git.rebase"
+
+[[languages]]
 name = "Go"
 extensions = ["go"]
 first_line_match = "-[*]-( Mode:)? Go -[*]-"
@@ -103,12 +142,12 @@ scope = "source.dot"
 
 [[languages]]
 name = "Groovy"
-extensions = ["groovy", "gvy", "gradle"]
+extensions = ["groovy", "gvy", "gradle", "Jenkinsfile"]
 scope = "source.groovy"
 
 [[languages]]
 name = "HTML"
-extensions = ["html", "htm", "shtml", "xhtml", "inc", "tmpl", "tpl"]
+extensions = ["html", "htm", "shtml", "xhtml"]
 first_line_match = "(?i)<(!DOCTYPE\\s*)?html"
 scope = "text.html.basic"
 
@@ -139,7 +178,7 @@ scope = "source.java-props"
 
 [[languages]]
 name = "JSON"
-extensions = ["json", "sublime-settings", "sublime-menu", "sublime-keymap", "sublime-mousemap", "sublime-theme", "sublime-build", "sublime-project", "sublime-completions", "sublime-commands", "sublime-macro", "sublime-color-scheme"]
+extensions = ["json", "sublime-settings", "sublime-menu", "sublime-keymap", "sublime-mousemap", "sublime-theme", "sublime-build", "sublime-project", "sublime-completions", "sublime-commands", "sublime-macro", "sublime-color-scheme", "ipynb", "Pipfile.lock"]
 scope = "source.json"
 
 [[languages]]
@@ -175,7 +214,7 @@ scope = "source.lua"
 
 [[languages]]
 name = "Makefile"
-extensions = ["make", "GNUmakefile", "makefile", "Makefile", "OCamlMakefile", "mak", "mk"]
+extensions = ["make", "GNUmakefile", "makefile", "Makefile", "makefile.am", "Makefile.am", "makefile.in", "Makefile.in", "OCamlMakefile", "mak", "mk"]
 first_line_match = "^#!\\s*/usr/bin/make\\b"
 scope = "source.makefile"
 
@@ -284,7 +323,7 @@ scope = "text.restructuredtext"
 
 [[languages]]
 name = "Ruby"
-extensions = ["rb", "Appfile", "Appraisals", "Berksfile", "Brewfile", "capfile", "cgi", "Cheffile", "config.ru", "Deliverfile", "Fastfile", "fcgi", "Gemfile", "gemspec", "Guardfile", "irbrc", "jbuilder", "podspec", "prawn", "rabl", "rake", "Rakefile", "Rantfile", "rbx", "rjs", "ruby.rail", "Scanfile", "simplecov", "Snapfile", "thor", "Thorfile", "Vagrantfile"]
+extensions = ["rb", "Appfile", "Appraisals", "Berksfile", "Brewfile", "capfile", "cgi", "Cheffile", "config.ru", "Deliverfile", "Fastfile", "fcgi", "Gemfile", "gemspec", "Guardfile", "irbrc", "jbuilder", "Podfile", "podspec", "prawn", "rabl", "rake", "Rakefile", "Rantfile", "rbx", "rjs", "ruby.rail", "Scanfile", "simplecov", "Snapfile", "thor", "Thorfile", "Vagrantfile"]
 first_line_match = "^#!\\s*/.*\\bj?ruby\\b"
 scope = "source.ruby"
 
@@ -300,12 +339,12 @@ scope = "source.sql"
 
 [[languages]]
 name = "Scala"
-extensions = ["scala", "sbt"]
+extensions = ["scala", "sbt", "sc"]
 scope = "source.scala"
 
 [[languages]]
 name = "Bourne Again Shell (bash)"
-extensions = ["sh", "bash", "zsh", "fish", ".bash_aliases", ".bash_completions", ".bash_functions", ".bash_login", ".bash_logout", ".bash_profile", ".bash_variables", ".bashrc", ".profile", ".textmate_init"]
+extensions = ["sh", "bash", "zsh", ".bash_aliases", ".bash_completions", ".bash_functions", ".bash_login", ".bash_logout", ".bash_profile", ".bash_variables", ".bashrc", ".profile", ".textmate_init", ".zlogin", ".zlogout", ".zprofile", ".zshenv", ".zshrc", "PKGBUILD", ".ebuild", ".eclass"]
 first_line_match = "(?x)                     # ignore whitespace in this regex\n  ^                      # assert start of the line\n  \\#!                    # shebang token\n  .*                     # any characters\n  \\b(bash|zsh|sh|tcsh)\\b # \"bash\" or \"zsh\" or \"sh\" or \"tcsh\"\n  |                      # ... or ...\n  ^                      # assert start of the line\n  \\#                     # literal \"#\" character\n  \\s*                    # any whitespace\n  -\\*-                   # literal \"-*-\" string\n  [^*]*                  # any characters except \"*\"\n  mode:                  # literal \"mode:\" string\n  \\s*                    # any whitespace\n  shell-script           # literal \"shell-script\" string\n  [^*]*                  # any characters except \"*\"\n  -\\*-                   # literal \"-*-\" string\n"
 scope = "source.shell.bash"
 
