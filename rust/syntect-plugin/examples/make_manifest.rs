@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use crate::xi_core::plugin_manifest::*;
 use crate::xi_core::LanguageDefinition;
 use syntect::dumps::dump_to_file;
-use syntect::parsing::{SyntaxReference, SyntaxSet, SyntaxSetBuilder};
+use syntect::parsing::{SyntaxReference, SyntaxSetBuilder};
 use toml::Value;
 
 const OUT_FILE_NAME: &str = "manifest.toml";
