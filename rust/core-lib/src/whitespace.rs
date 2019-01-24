@@ -59,7 +59,7 @@ impl Indentation {
                 } else {
                     Ok(None)
                 }
-            },
+            }
             _ => Ok(None),
         }
     }
@@ -191,5 +191,17 @@ mod tests {
         let expected = Indentation::Spaces(4);
 
         assert_eq!(result.unwrap(), Some(expected));
+    }
+
+    #[test]
+    fn rope_returns_none() {
+        let result = Indentation::parse(&Rope::from(
+            r#"# Readme example
+ 1. One space.
+But the majority is still 0.
+"#,
+        ));
+
+        assert_eq!(result.unwrap(), None);
     }
 }
