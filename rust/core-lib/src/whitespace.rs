@@ -52,7 +52,14 @@ impl Indentation {
         match (tabs, !spaces.is_empty()) {
             (true, true) => Err(MixedIndentError),
             (true, false) => Ok(Some(Indentation::Tabs)),
-            (false, true) => Ok(Some(Indentation::Spaces(extract_count(spaces)))),
+            (false, true) => {
+                let tab_size = extract_count(spaces);
+                if tab_size > 0 {
+                    Ok(Some(Indentation::Spaces(tab_size)))
+                } else {
+                    Ok(None)
+                }
+            },
             _ => Ok(None),
         }
     }
