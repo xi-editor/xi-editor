@@ -61,16 +61,10 @@ impl Languages {
     }
 
     pub fn language_for_path(&self, path: &Path) -> Option<Arc<LanguageDefinition>> {
-        match path.extension() {
-            Some(_) => path
-                .extension()
-                .and_then(|ext| self.extensions.get(ext.to_str().unwrap_or_default()))
-                .map(Arc::clone),
-            None => path
-                .file_name()
-                .and_then(|name| self.extensions.get(name.to_str().unwrap_or_default()))
-                .map(Arc::clone),
-        }
+        path.extension()
+            .or_else(|| path.file_name())
+            .and_then(|ext| self.extensions.get(ext.to_str().unwrap_or_default()))
+            .map(Arc::clone)
     }
 
     pub fn language_for_name<S>(&self, name: S) -> Option<Arc<LanguageDefinition>>
@@ -131,3 +125,40 @@ impl LanguageDefinition {
 // for testing
 #[cfg(test)]
 pub fn language_for_name() {}
+
+#[cfg(test)]
+pub fn language_for_path() {
+    let ld_rust = LanguageDefinition {
+        name: LanguageId::from("Rust"),
+        extensions: vec![String::from("rs")],
+        scope: String::from("source.rust"),
+        first_line_match: None,
+        default_config: None,
+    };
+    let ld_commit_msg = LanguageDefinition {
+        name: LanguageId::from("Git Commit"),
+        extensions: vec![
+            String::from("COMMIT_EDITMSG"),
+            String::from("MERGE_MSG"),
+            String::from("TAG_EDITMSG"),
+        ],
+        scope: String::from("text.git.commit"),
+        first_line_match: None,
+        default_config: None,
+    };
+    let languages = Languages::new(&[ld_rust.clone(), ld_commit_msg.clone()]);
+
+    assert_eq!(ld_rust.name, languages.language_for_path(Path::new("/path/test.rs")).unwrap().name);
+    assert_eq!(
+        ld_commit_msg.name,
+        languages.language_for_path(Path::new("/path/COMMIT_EDITMSG")).unwrap().name
+    );
+    assert_eq!(
+        ld_commit_msg.name,
+        languages.language_for_path(Path::new("/path/MERGE_MSG")).unwrap().name
+    );
+    assert_eq!(
+        ld_commit_msg.name,
+        languages.language_for_path(Path::new("/path/TAG_EDITMSG")).unwrap().name
+    );
+}
