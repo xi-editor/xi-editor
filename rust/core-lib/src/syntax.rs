@@ -61,9 +61,16 @@ impl Languages {
     }
 
     pub fn language_for_path(&self, path: &Path) -> Option<Arc<LanguageDefinition>> {
-        path.extension()
-            .and_then(|ext| self.extensions.get(ext.to_str().unwrap_or_default()))
-            .map(Arc::clone)
+        match path.extension() {
+            Some(_) => path
+                .extension()
+                .and_then(|ext| self.extensions.get(ext.to_str().unwrap_or_default()))
+                .map(Arc::clone),
+            None => path
+                .file_name()
+                .and_then(|name| self.extensions.get(name.to_str().unwrap_or_default()))
+                .map(Arc::clone),
+        }
     }
 
     pub fn language_for_name<S>(&self, name: S) -> Option<Arc<LanguageDefinition>>
@@ -120,3 +127,7 @@ impl LanguageDefinition {
         }
     }
 }
+
+// for testing
+#[cfg(test)]
+pub fn language_for_name() {}
