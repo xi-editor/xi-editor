@@ -42,7 +42,7 @@ type StyleMap = RefCell<ThemeStyleMap>;
 /// A flag used to indicate when legacy actions should modify selections
 const FLAG_SELECT: u64 = 2;
 
-/// Size of batches used during incremental find.
+/// Size of batches as number of bytes used during incremental find.
 const FIND_BATCH_SIZE: usize = 10000;
 
 pub struct View {
@@ -120,10 +120,8 @@ enum FindProgress {
     Done,
 
     /// Incremental find is in progress. Keeps tracked of already searched range.
-    InProgress(Range<usize>),
-
-    /// Incremental find process just started.
-    Started,
+    /// `None` if find process just started.
+    InProgress(Option<Range<usize>>),
 }
 
 /// Contains replacement string and replace options.
@@ -226,7 +224,6 @@ impl View {
     pub(crate) fn find_in_progress(&self) -> bool {
         match self.find_progress {
             FindProgress::InProgress(_) => true,
-            FindProgress::Started => true,
             _ => false,
         }
     }
@@ -1022,7 +1019,7 @@ impl View {
         }
 
         self.find.last_mut().unwrap().set_find(&search_query, case_sensitive, false, true);
-        self.find_progress = FindProgress::Started;
+        self.find_progress = FindProgress::InProgress(None);
     }
 
     fn add_find(&mut self) {
@@ -1061,23 +1058,23 @@ impl View {
             )
         }
 
-        self.find_progress = FindProgress::Started;
+        self.find_progress = FindProgress::InProgress(None);
     }
 
     pub fn do_find(&mut self, text: &Rope) {
         let search_range = match &self.find_progress.clone() {
-            FindProgress::Started => {
+            FindProgress::InProgress(None) => {
                 // start incremental find on visible region
                 let start = self.offset_of_line(text, self.first_line);
                 let end = min(text.len(), start + FIND_BATCH_SIZE);
                 self.find_changed = FindStatusChange::All;
-                self.find_progress = FindProgress::InProgress(Range { start, end });
+                self.find_progress = FindProgress::InProgress(Some(Range { start, end }));
                 Some((start, end))
             }
-            FindProgress::InProgress(searched_range) => {
+            FindProgress::InProgress(Some(searched_range)) => {
                 if searched_range.start == 0 && searched_range.end >= text.len() {
                     // the entire text has been searched
-                    // end find by executing mult-line regex queries on entire text
+                    // end find by executing multi-line regex queries on entire text
                     // stop incremental find
                     self.find_progress = FindProgress::Done;
                     Some((0, text.len()))
@@ -1095,12 +1092,12 @@ impl View {
                         let start =
                             searched_range.start.checked_sub(FIND_BATCH_SIZE).unwrap_or_else(|| 0);
                         self.find_progress =
-                            FindProgress::InProgress(Range { start, end: searched_range.end });
+                            FindProgress::InProgress(Some(Range { start, end: searched_range.end }));
                         Some((start, searched_range.start))
                     } else if searched_range.end < text.len() {
                         let end = min(text.len(), searched_range.end + FIND_BATCH_SIZE);
                         self.find_progress =
-                            FindProgress::InProgress(Range { start: searched_range.start, end });
+                            FindProgress::InProgress(Some(Range { start: searched_range.start, end }));
                         Some((searched_range.end, end))
                     } else {
                         None
