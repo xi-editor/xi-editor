@@ -364,7 +364,7 @@ valid next occurrence. Supported options for `modify_selection` are:
 * `none`: the selection is not modified
 * `set`: the next/previous match will be set as the new selection
 * `add`: the next/previous match will be added to the current selection
-* `add_remove_current`: the previously added selection will be removed and the next/previous
+* `add_removing_current`: the previously added selection will be removed and the next/previous
 match will be added to the current selection
 
 Selects the next/previous occurrence matching the search query.
