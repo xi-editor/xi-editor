@@ -127,9 +127,6 @@ mod tests {
     use super::*;
 
     #[test]
-    pub fn language_for_name() {}
-
-    #[test]
     pub fn language_for_path() {
         let ld_rust = LanguageDefinition {
             name: LanguageId::from("Rust"),
