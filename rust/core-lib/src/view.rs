@@ -726,6 +726,12 @@ impl View {
             return;
         }
 
+        // send updated find status only if there have been changes
+        if self.find_changed != FindStatusChange::None {
+            let matches_only = self.find_changed == FindStatusChange::Matches;
+            client.find_status(self.view_id, &json!(self.find_status(text, matches_only)));
+        }
+
         // send updated replace status if changed
         if self.replace_changed {
             if let Some(replace) = self.get_replace() {
@@ -826,8 +832,6 @@ impl View {
     /// Determines the current number of find results and search parameters to send them to
     /// the frontend.
     pub fn find_status(&self, text: &Rope, matches_only: bool) -> Vec<FindStatus> {
-        //        self.find_changed = FindStatusChange::None;
-
         self.find
             .iter()
             .map(|find| find.find_status(&self, text, matches_only))
@@ -1072,6 +1076,8 @@ impl View {
                 Some((start, end))
             }
             FindProgress::InProgress(Some(searched_range)) => {
+                self.find_changed = FindStatusChange::Matches;
+
                 if searched_range.start == 0 && searched_range.end >= text.len() {
                     // the entire text has been searched
                     // end find by executing multi-line regex queries on entire text
@@ -1081,7 +1087,6 @@ impl View {
                 } else {
                     // expand find to un-searched regions
                     let start_off = self.offset_of_line(text, self.first_line);
-                    self.find_changed = FindStatusChange::Matches;
 
                     // check if preceding range should be searched next
                     let search_preceding_range = start_off - searched_range.start
