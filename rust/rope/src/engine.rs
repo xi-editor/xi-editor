@@ -187,7 +187,7 @@ impl Engine {
     /// ancestor in order to be mergeable.
     pub fn new(initial_contents: Rope) -> Engine {
         let mut engine = Engine::empty();
-        if initial_contents.len() > 0 {
+        if !initial_contents.is_empty() {
             let first_rev = engine.get_head_rev_id().token();
             let delta = Delta::simple_edit(Interval::new(0, 0), initial_contents, 0);
             engine.edit_rev(0, 0, first_rev, delta);
