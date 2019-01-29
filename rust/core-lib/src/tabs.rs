@@ -574,7 +574,7 @@ impl CoreState {
             .get(&buffer_id)
             .expect("existing buffer_id must have corresponding editor");
 
-        if editor.borrow().get_buffer().len() == 0 {
+        if editor.borrow().get_buffer().is_empty() {
             return None;
         }
 

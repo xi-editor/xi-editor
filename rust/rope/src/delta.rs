@@ -53,10 +53,10 @@ pub struct InsertDelta<N: NodeInfo>(Delta<N>);
 impl<N: NodeInfo> Delta<N> {
     pub fn simple_edit<T: IntervalBounds>(interval: T, rope: Node<N>, base_len: usize) -> Delta<N> {
         let mut builder = Builder::new(base_len);
-        if rope.len() > 0 {
-            builder.replace(interval, rope);
-        } else {
+        if rope.is_empty() {
             builder.delete(interval);
+        } else {
+            builder.replace(interval, rope);
         }
         builder.build()
     }
@@ -592,7 +592,7 @@ impl<N: NodeInfo> Builder<N> {
     /// is not properly sorted.
     pub fn replace<T: IntervalBounds>(&mut self, interval: T, rope: Node<N>) {
         self.delete(interval);
-        if rope.len() > 0 {
+        if !rope.is_empty() {
             self.delta.els.push(DeltaElement::Insert(rope));
         }
     }

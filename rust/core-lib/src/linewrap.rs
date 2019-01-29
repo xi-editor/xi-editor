@@ -111,7 +111,7 @@ impl Lines {
     pub(crate) fn set_wrap_width(&mut self, text: &Rope, wrap: WrapWidth) {
         self.work.clear();
         self.add_task(0..text.len());
-        if self.breaks.len() == 0 || self.wrap.differs_in_kind(wrap) {
+        if self.breaks.is_empty() || self.wrap.differs_in_kind(wrap) {
             // we keep breaks while resizing, for more efficient invalidation
             self.breaks = Breaks::new_no_break(text.len());
         }
