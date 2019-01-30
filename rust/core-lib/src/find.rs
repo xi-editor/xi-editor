@@ -430,18 +430,151 @@ mod tests {
     fn find() {
         let base_text = Rope::from("hello world");
         let mut find = Find::new(1);
-        find.do_find(&base_text, "world", false, false, false);
+        find.set_find("world", false, false, false);
+        find.update_find(&base_text, 0, base_text.len(), false);
         assert_eq!(find.occurrences().len(), 1);
         assert_eq!(find.occurrences().first(), Some(&SelRegion::new(6, 11)));
+    }
 
-        // todo: more tests with all options
+    #[test]
+    fn find_whole_words() {
+        let base_text = Rope::from("hello world\n many worlds");
+        let mut find = Find::new(1);
+        find.set_find("world", false, false, true);
+        find.update_find(&base_text, 0, base_text.len(), false);
+        assert_eq!(find.occurrences().len(), 1);
+        assert_eq!(find.occurrences().first(), Some(&SelRegion::new(6, 11)));
+    }
+
+    #[test]
+    fn find_case_sensitive() {
+        let base_text = Rope::from("hello world\n HELLO WORLD");
+        let mut find = Find::new(1);
+        find.set_find("world", true, false, false);
+        find.update_find(&base_text, 0, base_text.len(), false);
+        assert_eq!(find.occurrences().len(), 1);
+        assert_eq!(find.occurrences().first(), Some(&SelRegion::new(6, 11)));
+    }
+
+    #[test]
+    fn find_multi_line() {
+        let base_text = Rope::from("hello world\n HELLO WORLD");
+        let mut find = Find::new(1);
+        find.set_find("hello world\n HELLO", true, false, false);
+        find.update_find(&base_text, 0, base_text.len(), false);
+        assert_eq!(find.occurrences().len(), 1);
+        assert_eq!(find.occurrences().first(), Some(&SelRegion::new(0, 18)));
+    }
+
+    #[test]
+    fn find_regex() {
+        let base_text = Rope::from("hello world\n HELLO WORLD");
+        let mut find = Find::new(1);
+        find.set_find("hello \\w+", false, true, false);
+        find.update_find(&base_text, 0, base_text.len(), false);
+        assert_eq!(find.occurrences().len(), 2);
+        assert_eq!(find.occurrences().first(), Some(&SelRegion::new(0, 11)));
+
+        find.set_find("h.llo", true, true, false);
+        find.update_find(&base_text, 0, base_text.len(), false);
+        assert_eq!(find.occurrences().len(), 1);
+        assert_eq!(find.occurrences().first(), Some(&SelRegion::new(0, 5)));
+
+        find.set_find(".*", false, true, false);
+        find.update_find(&base_text, 0, base_text.len(), false);
+        assert_eq!(find.occurrences().len(), 3);
+        assert_eq!(find.occurrences().first(), Some(&SelRegion::new(0, 11)));
+    }
+
+    #[test]
+    fn find_regex_multi_line() {
+        let base_text = Rope::from("hello world\n HELLO WORLD");
+        let mut find = Find::new(1);
+        find.set_find("(.*\n.*)+", true, true, false);
+        find.update_find(&base_text, 0, base_text.len(), false);
+        assert_eq!(find.occurrences().len(), 1);
+        assert_eq!(find.occurrences().first(), Some(&SelRegion::new(0, 12)));
+    }
+
+    #[test]
+    fn find_multi_line_regex() {
+        let mut find = Find::new(1);
+        find.set_find("a", true, true, false);
+        assert_eq!(find.is_multi_line_regex(), false);
+        find.set_find(".*", true, true, false);
+        assert_eq!(find.is_multi_line_regex(), false);
+        find.set_find("\\n", true, true, false);
+        assert_eq!(find.is_multi_line_regex(), true);
+    }
+
+    #[test]
+    fn find_next_occurrence() {
+        let base_text = Rope::from("aaa bbb aaa bbb aaa x");
+        let mut find = Find::new(1);
+        find.set_find("aaa", true, true, false);
+        find.update_find(&base_text, 0, base_text.len(), false);
+        assert_eq!(find.occurrences().len(), 3);
+        assert_eq!(
+            find.next_occurrence(&base_text, false, false, &Selection::new()),
+            Some(SelRegion::new(0, 3))
+        );
+
+        let mut prev_selection = Selection::new();
+        prev_selection.add_region(SelRegion::new(0, 3));
+        assert_eq!(
+            find.next_occurrence(&base_text, false, false, &prev_selection),
+            Some(SelRegion::new(8, 11))
+        );
+
+        let mut prev_selection = Selection::new();
+        prev_selection.add_region(SelRegion::new(19, 19));
+        assert_eq!(
+            find.next_occurrence(&base_text, false, true, &prev_selection),
+            Some(SelRegion::new(16, 19))
+        );
+
+        let mut prev_selection = Selection::new();
+        prev_selection.add_region(SelRegion::new(20, 20));
+        assert_eq!(
+            find.next_occurrence(&base_text, false, false, &prev_selection),
+            Some(SelRegion::new(0, 3))
+        );
+    }
+
+    #[test]
+    fn find_previous_occurrence() {
+        let base_text = Rope::from("aaa bbb aaa bbb aaa x");
+        let mut find = Find::new(1);
+        find.set_find("aaa", true, true, false);
+        find.update_find(&base_text, 0, base_text.len(), false);
+        assert_eq!(find.occurrences().len(), 3);
+        assert_eq!(
+            find.next_occurrence(&base_text, true, false, &Selection::new()),
+            Some(SelRegion::new(16, 19))
+        );
+
+        let mut prev_selection = Selection::new();
+        prev_selection.add_region(SelRegion::new(20, 20));
+        assert_eq!(find.next_occurrence(&base_text, true, true, &Selection::new()), None);
+    }
+
+    #[test]
+    fn unset_find() {
+        let base_text = Rope::from("aaa bbb aaa bbb aaa x");
+        let mut find = Find::new(1);
+        find.set_find("aaa", true, true, false);
+        find.update_find(&base_text, 0, base_text.len(), false);
+        assert_eq!(find.occurrences().len(), 3);
+        find.unset();
+        assert_eq!(find.occurrences().len(), 0);
     }
 
     #[test]
     fn update_find_edit() {
         let base_text = Rope::from("a b a c");
         let mut find = Find::new(1);
-        find.do_find(&base_text, "a", false, false, false);
+        find.set_find("a", false, false, false);
+        find.update_find(&base_text, 0, base_text.len(), false);
         let mut builder = DeltaBuilder::new(base_text.len());
         builder.replace(0..0, "a ".into());
 
@@ -454,7 +587,8 @@ mod tests {
     fn update_find_multi_line_edit() {
         let base_text = Rope::from("x\n a\n b\n a\n c");
         let mut find = Find::new(1);
-        find.do_find(&base_text, "a", false, false, false);
+        find.set_find("a", false, false, false);
+        find.update_find(&base_text, 0, base_text.len(), false);
         let mut builder = DeltaBuilder::new(base_text.len());
         builder.replace(2..2, " a\n b\n a\n".into());
 

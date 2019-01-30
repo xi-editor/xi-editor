@@ -1094,13 +1094,17 @@ impl View {
                     if search_preceding_range || searched_range.end >= text.len() {
                         let start =
                             searched_range.start.checked_sub(FIND_BATCH_SIZE).unwrap_or_else(|| 0);
-                        self.find_progress =
-                            FindProgress::InProgress(Some(Range { start, end: searched_range.end }));
+                        self.find_progress = FindProgress::InProgress(Some(Range {
+                            start,
+                            end: searched_range.end,
+                        }));
                         Some((start, searched_range.start))
                     } else if searched_range.end < text.len() {
                         let end = min(text.len(), searched_range.end + FIND_BATCH_SIZE);
-                        self.find_progress =
-                            FindProgress::InProgress(Some(Range { start: searched_range.start, end }));
+                        self.find_progress = FindProgress::InProgress(Some(Range {
+                            start: searched_range.start,
+                            end,
+                        }));
                         Some((searched_range.end, end))
                     } else {
                         None
