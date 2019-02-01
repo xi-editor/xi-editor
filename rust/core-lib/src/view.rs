@@ -1120,11 +1120,11 @@ impl View {
         if let Some((search_range_start, search_range_end)) = search_range {
             for query in &mut self.find {
                 if !query.is_multi_line_regex() {
-                    query.update_find(text, search_range_start, search_range_end, false);
+                    query.update_find(text, search_range_start, search_range_end, true);
                 } else {
                     // only execute multi-line regex queries if we are searching the entire text (last step)
                     if search_range_start == 0 && search_range_end == text.len() {
-                        query.update_find(text, search_range_start, search_range_end, false);
+                        query.update_find(text, search_range_start, search_range_end, true);
                     }
                 }
             }
@@ -1288,5 +1288,126 @@ fn clamp(x: usize, min: usize, max: usize) -> usize {
         x
     } else {
         max
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rpc::FindQuery;
+
+    #[test]
+    fn incremental_find_update() {
+        let mut view = View::new(1.into(), BufferId::new(2));
+        let mut s = String::new();
+        for _ in 0..(FIND_BATCH_SIZE - 2) {
+            s += "x";
+        }
+        s += "aaaaaa";
+        for _ in 0..(FIND_BATCH_SIZE) {
+            s += "x";
+        }
+        s += "aaaaaa";
+        assert_eq!(view.find_in_progress(), false);
+
+        let text = Rope::from(&s);
+        view.do_edit(&text, ViewEvent::Find { chars: "aaaaaa".to_string(), case_sensitive: false, regex: false, whole_words: false });
+        view.do_find(&text);
+        assert_eq!(view.find_in_progress(), true);
+        view.do_find_all(&text);
+        assert_eq!(view.sel_regions().len(), 1);
+        assert_eq!(view.sel_regions().first(), Some(&SelRegion::new(FIND_BATCH_SIZE - 2, FIND_BATCH_SIZE + 6 - 2)));
+        view.do_find(&text);
+        assert_eq!(view.find_in_progress(), true);
+        view.do_find_all(&text);
+        assert_eq!(view.sel_regions().len(), 2);
+    }
+
+    #[test]
+    fn selection_for_find() {
+        let mut view = View::new(1.into(), BufferId::new(2));
+        let text = Rope::from("hello hello world\n");
+        view.set_selection(&text, SelRegion::new(6, 11));
+        view.do_edit(&text, ViewEvent::SelectionForFind { case_sensitive: false });
+        view.do_find_all(&text);
+        assert_eq!(view.sel_regions().len(), 2);
+    }
+
+    #[test]
+    fn find_next() {
+        let mut view = View::new(1.into(), BufferId::new(2));
+        let text = Rope::from("hello hello world\n");
+        view.do_edit(&text, ViewEvent::Find { chars: "foo".to_string(), case_sensitive: false, regex: false, whole_words: false });
+        view.do_find(&text);
+        view.do_find_next(&text, false, true, false, &SelectionModifier::Set);
+        assert_eq!(view.sel_regions().len(), 1);
+        assert_eq!(view.sel_regions().first(), Some(&SelRegion::new(0, 0))); // caret
+
+        view.do_edit(&text, ViewEvent::Find { chars: "hello".to_string(), case_sensitive: false, regex: false, whole_words: false });
+        view.do_find(&text);
+        assert_eq!(view.sel_regions().len(), 1);
+        view.do_find_next(&text, false, true, false, &SelectionModifier::Set);
+        assert_eq!(view.sel_regions().first(), Some(&SelRegion::new(0, 5)));
+        view.do_find_next(&text, false, true, false, &SelectionModifier::Set);
+        assert_eq!(view.sel_regions().first(), Some(&SelRegion::new(6, 11)));
+        view.do_find_next(&text, false, true, false, &SelectionModifier::Set);
+        assert_eq!(view.sel_regions().first(), Some(&SelRegion::new(0, 5)));
+        view.do_find_next(&text, true, true, false, &SelectionModifier::Set);
+        assert_eq!(view.sel_regions().first(), Some(&SelRegion::new(6, 11)));
+
+        view.do_find_next(&text, true, true, false, &SelectionModifier::Add);
+        assert_eq!(view.sel_regions().len(), 2);
+        view.do_find_next(&text, true, true, false, &SelectionModifier::AddRemovingCurrent);
+        assert_eq!(view.sel_regions().len(), 1);
+        view.do_find_next(&text, true, true, false, &SelectionModifier::None);
+        assert_eq!(view.sel_regions().len(), 1);
+    }
+
+    #[test]
+    fn find_all() {
+        let mut view = View::new(1.into(), BufferId::new(2));
+        let text = Rope::from("hello hello world\n hello!");
+        view.do_edit(&text, ViewEvent::Find { chars: "foo".to_string(), case_sensitive: false, regex: false, whole_words: false });
+        view.do_find(&text);
+        view.do_find_all(&text);
+        assert_eq!(view.sel_regions().len(), 1); // caret
+
+        view.do_edit(&text, ViewEvent::Find { chars: "hello".to_string(), case_sensitive: false, regex: false, whole_words: false });
+        view.do_find(&text);
+        view.do_find_all(&text);
+        assert_eq!(view.sel_regions().len(), 3);
+
+        view.do_edit(&text, ViewEvent::Find { chars: "foo".to_string(), case_sensitive: false, regex: false, whole_words: false });
+        view.do_find(&text);
+        view.do_find_all(&text);
+        assert_eq!(view.sel_regions().len(), 3);
+    }
+
+    #[test]
+    fn multi_queries_find_next() {
+        let mut view = View::new(1.into(), BufferId::new(2));
+        let text = Rope::from("hello hello world\n hello!");
+        let query1 = FindQuery { id: None, chars: "hello".to_string(), case_sensitive: false, regex: false, whole_words: false};
+        let query2 = FindQuery { id: None, chars: "o world".to_string(), case_sensitive: false, regex: false, whole_words: false};
+        view.do_edit(&text, ViewEvent::MultiFind { queries: vec![query1, query2] });
+        view.do_find(&text);
+        view.do_find_next(&text, false, true, false, &SelectionModifier::Set);
+        assert_eq!(view.sel_regions().first(), Some(&SelRegion::new(0, 5)));
+        view.do_find_next(&text, false, true, false, &SelectionModifier::Set);
+        assert_eq!(view.sel_regions().first(), Some(&SelRegion::new(6, 11)));
+        view.do_find_next(&text, false, true, false, &SelectionModifier::Set);
+        assert_eq!(view.sel_regions().first(), Some(&SelRegion::new(10, 17)));
+    }
+
+    #[test]
+    fn multi_queries_find_all() {
+        let mut view = View::new(1.into(), BufferId::new(2));
+        let text = Rope::from("hello hello world\n hello!");
+        let query1 = FindQuery { id: None, chars: "hello".to_string(), case_sensitive: false, regex: false, whole_words: false};
+        let query2 = FindQuery { id: None, chars: "world".to_string(), case_sensitive: false, regex: false, whole_words: false};
+        view.do_edit(&text, ViewEvent::MultiFind { queries: vec![query1, query2] });
+        view.do_find(&text);
+        view.do_find_all(&text);
+        assert_eq!(view.sel_regions().len(), 4);
     }
 }

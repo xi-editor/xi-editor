@@ -508,6 +508,20 @@ mod tests {
     }
 
     #[test]
+    fn find_slop() {
+        let base_text = Rope::from("aaa bbb aaa bbb aaa x");
+        let mut find = Find::new(1);
+        find.set_find("aaa", true, true, false);
+        find.update_find(&base_text, 2, base_text.len(), false);
+        assert_eq!(find.occurrences().len(), 2);
+        assert_eq!(find.occurrences().first(), Some(&SelRegion::new(8, 11)));
+
+        find.update_find(&base_text, 3, base_text.len(), true);
+        assert_eq!(find.occurrences().len(), 3);
+        assert_eq!(find.occurrences().first(), Some(&SelRegion::new(0, 3)));
+    }
+
+    #[test]
     fn find_next_occurrence() {
         let base_text = Rope::from("aaa bbb aaa bbb aaa x");
         let mut find = Find::new(1);
