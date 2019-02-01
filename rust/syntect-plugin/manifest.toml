@@ -359,6 +359,11 @@ extensions = ["tcl"]
 scope = "source.tcl"
 
 [[languages]]
+name = "TOML"
+extensions = ["toml", "tml", "xiconfig"]
+scope = "source.toml"
+
+[[languages]]
 name = "Textile"
 extensions = ["textile"]
 first_line_match = "textile"

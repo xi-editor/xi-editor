@@ -52,6 +52,7 @@ fn main() -> Result<(), io::Error> {
     builder.add_from_folder(package_dir, true).unwrap();
     builder.add_from_folder(metasource, false).unwrap();
     let syntax_set = builder.build();
+
     dump_to_file(&syntax_set, packpath).unwrap();
     dump_to_file(&syntax_set.metadata(), metapath).unwrap();
 
@@ -83,9 +84,16 @@ fn main() -> Result<(), io::Error> {
 }
 
 fn lang_from_syn<'a>(src: &'a SyntaxReference) -> LanguageDefinition {
+    let mut extensions = src.file_extensions.clone();
+
+    // add support for .xiconfig
+    if extensions.contains(&String::from("toml")) {
+        extensions.push(String::from("xiconfig"));
+    }
+
     LanguageDefinition {
         name: src.name.as_str().into(),
-        extensions: src.file_extensions.clone(),
+        extensions,
         first_line_match: src.first_line_match.clone(),
         scope: src.scope.to_string(),
         default_config: None,
