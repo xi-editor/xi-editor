@@ -1311,12 +1311,23 @@ mod tests {
         assert_eq!(view.find_in_progress(), false);
 
         let text = Rope::from(&s);
-        view.do_edit(&text, ViewEvent::Find { chars: "aaaaaa".to_string(), case_sensitive: false, regex: false, whole_words: false });
+        view.do_edit(
+            &text,
+            ViewEvent::Find {
+                chars: "aaaaaa".to_string(),
+                case_sensitive: false,
+                regex: false,
+                whole_words: false,
+            },
+        );
         view.do_find(&text);
         assert_eq!(view.find_in_progress(), true);
         view.do_find_all(&text);
         assert_eq!(view.sel_regions().len(), 1);
-        assert_eq!(view.sel_regions().first(), Some(&SelRegion::new(FIND_BATCH_SIZE - 2, FIND_BATCH_SIZE + 6 - 2)));
+        assert_eq!(
+            view.sel_regions().first(),
+            Some(&SelRegion::new(FIND_BATCH_SIZE - 2, FIND_BATCH_SIZE + 6 - 2))
+        );
         view.do_find(&text);
         assert_eq!(view.find_in_progress(), true);
         view.do_find_all(&text);
@@ -1337,13 +1348,29 @@ mod tests {
     fn find_next() {
         let mut view = View::new(1.into(), BufferId::new(2));
         let text = Rope::from("hello hello world\n");
-        view.do_edit(&text, ViewEvent::Find { chars: "foo".to_string(), case_sensitive: false, regex: false, whole_words: false });
+        view.do_edit(
+            &text,
+            ViewEvent::Find {
+                chars: "foo".to_string(),
+                case_sensitive: false,
+                regex: false,
+                whole_words: false,
+            },
+        );
         view.do_find(&text);
         view.do_find_next(&text, false, true, false, &SelectionModifier::Set);
         assert_eq!(view.sel_regions().len(), 1);
         assert_eq!(view.sel_regions().first(), Some(&SelRegion::new(0, 0))); // caret
 
-        view.do_edit(&text, ViewEvent::Find { chars: "hello".to_string(), case_sensitive: false, regex: false, whole_words: false });
+        view.do_edit(
+            &text,
+            ViewEvent::Find {
+                chars: "hello".to_string(),
+                case_sensitive: false,
+                regex: false,
+                whole_words: false,
+            },
+        );
         view.do_find(&text);
         assert_eq!(view.sel_regions().len(), 1);
         view.do_find_next(&text, false, true, false, &SelectionModifier::Set);
@@ -1367,17 +1394,41 @@ mod tests {
     fn find_all() {
         let mut view = View::new(1.into(), BufferId::new(2));
         let text = Rope::from("hello hello world\n hello!");
-        view.do_edit(&text, ViewEvent::Find { chars: "foo".to_string(), case_sensitive: false, regex: false, whole_words: false });
+        view.do_edit(
+            &text,
+            ViewEvent::Find {
+                chars: "foo".to_string(),
+                case_sensitive: false,
+                regex: false,
+                whole_words: false,
+            },
+        );
         view.do_find(&text);
         view.do_find_all(&text);
         assert_eq!(view.sel_regions().len(), 1); // caret
 
-        view.do_edit(&text, ViewEvent::Find { chars: "hello".to_string(), case_sensitive: false, regex: false, whole_words: false });
+        view.do_edit(
+            &text,
+            ViewEvent::Find {
+                chars: "hello".to_string(),
+                case_sensitive: false,
+                regex: false,
+                whole_words: false,
+            },
+        );
         view.do_find(&text);
         view.do_find_all(&text);
         assert_eq!(view.sel_regions().len(), 3);
 
-        view.do_edit(&text, ViewEvent::Find { chars: "foo".to_string(), case_sensitive: false, regex: false, whole_words: false });
+        view.do_edit(
+            &text,
+            ViewEvent::Find {
+                chars: "foo".to_string(),
+                case_sensitive: false,
+                regex: false,
+                whole_words: false,
+            },
+        );
         view.do_find(&text);
         view.do_find_all(&text);
         assert_eq!(view.sel_regions().len(), 3);
@@ -1387,8 +1438,20 @@ mod tests {
     fn multi_queries_find_next() {
         let mut view = View::new(1.into(), BufferId::new(2));
         let text = Rope::from("hello hello world\n hello!");
-        let query1 = FindQuery { id: None, chars: "hello".to_string(), case_sensitive: false, regex: false, whole_words: false};
-        let query2 = FindQuery { id: None, chars: "o world".to_string(), case_sensitive: false, regex: false, whole_words: false};
+        let query1 = FindQuery {
+            id: None,
+            chars: "hello".to_string(),
+            case_sensitive: false,
+            regex: false,
+            whole_words: false,
+        };
+        let query2 = FindQuery {
+            id: None,
+            chars: "o world".to_string(),
+            case_sensitive: false,
+            regex: false,
+            whole_words: false,
+        };
         view.do_edit(&text, ViewEvent::MultiFind { queries: vec![query1, query2] });
         view.do_find(&text);
         view.do_find_next(&text, false, true, false, &SelectionModifier::Set);
@@ -1403,8 +1466,20 @@ mod tests {
     fn multi_queries_find_all() {
         let mut view = View::new(1.into(), BufferId::new(2));
         let text = Rope::from("hello hello world\n hello!");
-        let query1 = FindQuery { id: None, chars: "hello".to_string(), case_sensitive: false, regex: false, whole_words: false};
-        let query2 = FindQuery { id: None, chars: "world".to_string(), case_sensitive: false, regex: false, whole_words: false};
+        let query1 = FindQuery {
+            id: None,
+            chars: "hello".to_string(),
+            case_sensitive: false,
+            regex: false,
+            whole_words: false,
+        };
+        let query2 = FindQuery {
+            id: None,
+            chars: "world".to_string(),
+            case_sensitive: false,
+            regex: false,
+            whole_words: false,
+        };
         view.do_edit(&text, ViewEvent::MultiFind { queries: vec![query1, query2] });
         view.do_find(&text);
         view.do_find_all(&text);
