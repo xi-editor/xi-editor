@@ -1340,6 +1340,7 @@ mod tests {
         let text = Rope::from("hello hello world\n");
         view.set_selection(&text, SelRegion::new(6, 11));
         view.do_edit(&text, ViewEvent::SelectionForFind { case_sensitive: false });
+        view.do_find(&text);
         view.do_find_all(&text);
         assert_eq!(view.sel_regions().len(), 2);
     }
