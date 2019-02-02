@@ -370,6 +370,11 @@ first_line_match = "textile"
 scope = "text.html.textile"
 
 [[languages]]
+name = "TOML"
+extensions = ["toml", "tml", "Cargo.lock", "Gopkg.lock", "Pipfile", "xiconfig"]
+scope = "source.toml"
+
+[[languages]]
 name = "XML"
 extensions = ["xml", "xsd", "xslt", "tld", "dtml", "rss", "opml", "svg"]
 first_line_match = "(?x)\n^(?:\n    <\\?xml\\s\n |  \\s*<([\\w-]+):Envelope\\s+xmlns:\\1\\s*=\\s*\"http://schemas.xmlsoap.org/soap/envelope/\"\\s*>\n )"
