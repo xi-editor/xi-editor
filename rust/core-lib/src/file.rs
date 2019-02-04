@@ -181,6 +181,9 @@ impl FileManager {
         Ok(())
     }
 
+    /// Toggles the **is_tail_enabled** flag in TailDetails.
+    /// Also when flag is enabled, it sets the cursor in TailDetails ie **current_position_in_tail** to the end of file
+    /// being tailed.
     #[cfg(feature = "notify")]
     pub fn toggle_tail(&mut self, id: BufferId, enabled: bool) -> Result<(), FileError> {
         if let Some(v) = self.file_info.get_mut(&id) {

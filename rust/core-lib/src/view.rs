@@ -93,8 +93,10 @@ pub struct View {
     /// Annotations provided by plugins.
     annotations: AnnotationStore,
 
+    /// Tails a file if set to true. Default is false.
     is_tail_enabled: bool,
 
+    /// Flag to determine if EOF of a file is visible. Default is false.
     eof_visible: bool,
 }
 
