@@ -503,7 +503,12 @@ impl CoreState {
             let buffer_id = view.borrow().get_buffer_id();
             view.borrow_mut().toggle_tail(enabled);
             match self.file_manager.toggle_tail(buffer_id, enabled) {
-                Ok(()) => return,
+                Ok(()) => {
+                    debug!("Tail is {:?} for {:?}", enabled, view_id);
+                    let mut context = self.make_context(view_id).unwrap();
+                    context.toggle_tail_config_changed(enabled);
+                    return;
+                }
                 Err(err) => error!("Error reading file: {}", err),
             }
         }

@@ -462,6 +462,10 @@ impl<'a> EventContext<'a> {
         self.render_tail();
     }
 
+    pub(crate) fn toggle_tail_config_changed(&mut self, is_tail_enabled: bool) {
+        self.client.toggle_tail_config_changed(self.view_id, is_tail_enabled);
+    }
+
     pub(crate) fn plugin_info(&mut self) -> PluginBufferInfo {
         let ed = self.editor.borrow();
         let nb_lines = ed.get_buffer().measure::<LinesMetric>() + 1;

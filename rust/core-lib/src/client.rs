@@ -94,6 +94,16 @@ impl Client {
         );
     }
 
+    pub fn toggle_tail_config_changed(&self, view_id: ViewId, is_tail_enabled: bool) {
+        self.0.send_rpc_notification(
+            "toggle_tail_config_changed",
+            &json!({
+                "view_id": view_id,
+                "is_tail_enabled": is_tail_enabled,
+            }),
+        );
+    }
+
     /// Notify the client that a plugin has started.
     pub fn plugin_started(&self, view_id: ViewId, plugin: &str) {
         self.0.send_rpc_notification(
