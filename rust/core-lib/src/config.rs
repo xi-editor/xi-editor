@@ -546,6 +546,22 @@ impl ConfigManager {
         }
         None
     }
+
+    /// Path to plugins sub directory inside config directory.
+    /// Creates one if not present.
+    pub(crate) fn get_plugins_dir(&self) -> Option<PathBuf> {
+        let plugins_dir = self.config_dir.as_ref().map(|p| p.join("plugins"));
+
+        if let Some(p) = plugins_dir {
+            if p.exists() {
+                return Some(p);
+            }
+            if fs::DirBuilder::new().create(&p).is_ok() {
+                return Some(p);
+            }
+        }
+        None
+    }
 }
 
 impl TableStack {
