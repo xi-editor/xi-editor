@@ -85,12 +85,11 @@ impl<'a> PluginCatalog {
     }
 
     /// Returns the plugin located at the provided file path.
-    #[allow(clippy::map_clone)]
     pub fn get_from_path(&self, path: &PathBuf) -> Option<Arc<PluginDescription>> {
         self.items
             .values()
             .find(|&v| v.exec_path.to_str().unwrap().contains(path.to_str().unwrap()))
-            .map(|plugin| plugin.clone())
+            .cloned()
     }
 
     /// Returns a reference to the named plugin if it exists in the catalog.
