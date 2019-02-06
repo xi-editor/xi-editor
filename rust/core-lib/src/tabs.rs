@@ -400,9 +400,10 @@ impl CoreState {
             None => return,
         };
 
-        let ed = &self.editors[&buffer_id];
+        let mut save_ctx = self.make_context(view_id).unwrap();
+        let fin_text = save_ctx.text_for_save();
 
-        if let Err(e) = self.file_manager.save(path, ed.borrow().get_buffer(), buffer_id) {
+        if let Err(e) = self.file_manager.save(path, &fin_text, buffer_id) {
             let error_message = e.to_string();
             error!("File error: {:?}", error_message);
             self.peer.alert(error_message);
