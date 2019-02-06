@@ -33,3 +33,5 @@ surrounding_pairs = [
   ["{", "}"],
   ["[", "]"],
 ]
+
+save_with_newline = true
