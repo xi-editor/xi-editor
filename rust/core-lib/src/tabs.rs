@@ -36,13 +36,13 @@ use xi_rpc::{self, ReadError, RemoteError, RpcCtx, RpcPeer};
 use xi_trace::{self, trace_block};
 
 use crate::client::Client;
-use crate::plugins::rpc::ClientPluginInfo;
 use crate::config::{self, ConfigDomain, ConfigDomainExternal, ConfigManager, Table};
 use crate::editor::Editor;
 use crate::event_context::EventContext;
 use crate::file::FileManager;
 use crate::line_ending::LineEnding;
 use crate::plugin_rpc::{PluginNotification, PluginRequest};
+use crate::plugins::rpc::ClientPluginInfo;
 use crate::plugins::{start_plugin_process, Plugin, PluginCatalog, PluginPid};
 use crate::recorder::Recorder;
 use crate::rpc::{
@@ -162,9 +162,7 @@ impl CoreState {
         let plugins_dir = config_manager.get_plugins_dir();
         if let Some(p) = plugins_dir.as_ref() {
             #[cfg(feature = "notify")]
-                watcher.watch_filtered(p, true, PLUGIN_EVENT_TOKEN, |p| {
-                p.is_dir() || !p.exists()
-            });
+            watcher.watch_filtered(p, true, PLUGIN_EVENT_TOKEN, |p| p.is_dir() || !p.exists());
         }
 
         CoreState {
@@ -755,7 +753,7 @@ impl CoreState {
                 if let Some(plugin) = self.plugins.get_from_path(path) {
                     self.do_start_plugin(ViewId(0), &plugin.name);
                 }
-            },
+            }
             // the way FSEvents on macOS work, we want to verify that this path
             // has actually be removed before we do anything.
             NoticeRemove(ref path) | Remove(ref path) if !path.exists() => {
@@ -763,10 +761,10 @@ impl CoreState {
                     self.do_stop_plugin(ViewId(0), &plugin.name);
                     self.plugins.remove_named(&plugin.name);
                 }
-            },
+            }
             Rename(ref old, ref new) => {
                 if let Some(old_plugin) = self.plugins.get_from_path(old) {
-                    self.do_stop_plugin( ViewId(0), &old_plugin.name);
+                    self.do_stop_plugin(ViewId(0), &old_plugin.name);
                     self.plugins.remove_named(&old_plugin.name);
                 }
 
@@ -777,7 +775,7 @@ impl CoreState {
             }
             Chmod(ref path) | Remove(ref path) => {
                 if let Some(plugin) = self.plugins.get_from_path(path) {
-                    self.do_stop_plugin( ViewId(0), &plugin.name);
+                    self.do_stop_plugin(ViewId(0), &plugin.name);
                     self.do_start_plugin(ViewId(0), &plugin.name);
                 }
             }
@@ -785,7 +783,7 @@ impl CoreState {
         }
 
         self.views.keys().for_each(|view_id| {
-            let available_plugins =  self
+            let available_plugins = self
                 .plugins
                 .iter()
                 .map(|plugin| ClientPluginInfo { name: plugin.name.clone(), running: true })
