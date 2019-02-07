@@ -17,7 +17,7 @@
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fmt;
-use std::fs::{self, File};
+use std::fs::{self, File, Permissions};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::str;
@@ -32,6 +32,8 @@ use crate::tabs::BufferId;
 use crate::tabs::OPEN_FILE_EVENT_TOKEN;
 #[cfg(feature = "notify")]
 use crate::watcher::FileWatcher;
+#[cfg(target_family = "unix")]
+use std::os::unix::fs::PermissionsExt;
 
 const UTF8_BOM: &str = "\u{feff}";
 
@@ -50,6 +52,8 @@ pub struct FileInfo {
     pub path: PathBuf,
     pub mod_time: Option<SystemTime>,
     pub has_changed: bool,
+    #[cfg(target_family = "unix")]
+    pub permissions: Option<u32>,
 }
 
 pub enum FileError {
@@ -134,13 +138,15 @@ impl FileManager {
     }
 
     fn save_new(&mut self, path: &Path, text: &Rope, id: BufferId) -> Result<(), FileError> {
-        try_save(path, text, CharacterEncoding::Utf8)
+        try_save(path, text, CharacterEncoding::Utf8, self.get_info(id))
             .map_err(|e| FileError::Io(e, path.to_owned()))?;
         let info = FileInfo {
             encoding: CharacterEncoding::Utf8,
             path: path.to_owned(),
             mod_time: get_mod_time(path),
             has_changed: false,
+            #[cfg(target_family = "unix")]
+            permissions: get_permissions(path),
         };
         self.open_files.insert(path.to_owned(), id);
         self.file_info.insert(id, info);
@@ -160,7 +166,8 @@ impl FileManager {
             return Err(FileError::HasChanged(path.to_owned()));
         } else {
             let encoding = self.file_info[&id].encoding;
-            try_save(path, text, encoding).map_err(|e| FileError::Io(e, path.to_owned()))?;
+            try_save(path, text, encoding, self.get_info(id))
+                .map_err(|e| FileError::Io(e, path.to_owned()))?;
             self.file_info.get_mut(&id).unwrap().mod_time = get_mod_time(path);
         }
         Ok(())
@@ -175,18 +182,28 @@ where
     // it's arguable that the rope crate should have file loading functionality
     let mut f =
         File::open(path.as_ref()).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
-    let mod_time =
-        f.metadata().map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?.modified().ok();
     let mut bytes = Vec::new();
     f.read_to_end(&mut bytes).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
 
     let encoding = CharacterEncoding::guess(&bytes);
     let rope = try_decode(bytes, encoding, path.as_ref())?;
-    let info = FileInfo { encoding, mod_time, path: path.as_ref().to_owned(), has_changed: false };
+    let info = FileInfo {
+        encoding,
+        mod_time: get_mod_time(&path),
+        #[cfg(target_family = "unix")]
+        permissions: get_permissions(&path),
+        path: path.as_ref().to_owned(),
+        has_changed: false,
+    };
     Ok((rope, info))
 }
 
-fn try_save(path: &Path, text: &Rope, encoding: CharacterEncoding) -> io::Result<()> {
+fn try_save(
+    path: &Path,
+    text: &Rope,
+    encoding: CharacterEncoding,
+    file_info: Option<&FileInfo>,
+) -> io::Result<()> {
     let tmp_extension = path.extension().map_or_else(
         || OsString::from("swp"),
         |ext| {
@@ -208,6 +225,14 @@ fn try_save(path: &Path, text: &Rope, encoding: CharacterEncoding) -> io::Result
     }
 
     fs::rename(tmp_path, path)?;
+
+    if let Some(info_unwrapped) = file_info {
+        #[cfg(target_family = "unix")]
+        fs::set_permissions(
+            path,
+            Permissions::from_mode(info_unwrapped.permissions.unwrap_or(0o644)),
+        )?;
+    }
 
     Ok(())
 }
@@ -237,11 +262,15 @@ impl CharacterEncoding {
 
 /// Returns the modification timestamp for the file at a given path,
 /// if present.
-fn get_mod_time<P>(path: P) -> Option<SystemTime>
-where
-    P: AsRef<Path>,
-{
+fn get_mod_time<P: AsRef<Path>>(path: P) -> Option<SystemTime> {
     File::open(path).and_then(|f| f.metadata()).and_then(|meta| meta.modified()).ok()
+}
+
+/// Returns the file permissions for the file at a given path on UNIXy systems,
+/// if present.
+#[cfg(target_family = "unix")]
+fn get_permissions<P: AsRef<Path>>(path: P) -> Option<u32> {
+    File::open(path).and_then(|f| f.metadata()).map(|meta| meta.permissions().mode()).ok()
 }
 
 impl From<FileError> for RemoteError {
