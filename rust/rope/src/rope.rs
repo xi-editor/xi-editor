@@ -1267,7 +1267,8 @@ mod tests {
 
         let rope = Rope::from(test_str.as_str());
         let json = serde_json::to_string(&rope).expect("error serializing");
-        let deserialized_rope = serde_json::from_str::<Rope>(json.as_str()).expect("error deserializing");
+        let deserialized_rope =
+            serde_json::from_str::<Rope>(json.as_str()).expect("error deserializing");
         assert_eq!(rope, deserialized_rope);
     }
 }
