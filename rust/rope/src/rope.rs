@@ -1259,7 +1259,6 @@ mod tests {
 
     #[test]
     fn serialize_and_deserialize() {
-        use serde_json::{from_str, to_string};
         const TEST_LINE: &str = "test line\n";
 
         // repeat test line enough times to exceed maximum leaf size
