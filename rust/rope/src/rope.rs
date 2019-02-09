@@ -29,7 +29,7 @@ use crate::tree::{Cursor, Leaf, Metric, Node, NodeInfo, TreeBuilder};
 
 use bytecount;
 use memchr::{memchr, memrchr};
-use serde::de::{Deserialize, Deserializer};
+use serde::de::{self, Deserialize, Deserializer, Unexpected as DeUnexpected, Visitor};
 use serde::ser::{Serialize, SerializeStruct, SerializeTupleVariant, Serializer};
 
 use unicode_segmentation::GraphemeCursor;
@@ -396,8 +396,24 @@ impl<'de> Deserialize<'de> for Rope {
     where
         D: Deserializer<'de>,
     {
-        let s = String::deserialize(deserializer)?;
-        Ok(Rope::from(s))
+        deserializer.deserialize_str(RopeVisitor {})
+    }
+}
+
+struct RopeVisitor {}
+
+impl<'de> Visitor<'de> for RopeVisitor {
+    type Value = Rope;
+
+    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "a string")
+    }
+
+    fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Rope::from_str(s).map_err(|_| de::Error::invalid_value(DeUnexpected::Str(s), &self))
     }
 }
 
@@ -1239,5 +1255,20 @@ mod tests {
 
         assert!(long_text.len() > 1024);
         assert_eq!(cow, Cow::Borrowed(&long_text[..500]));
+    }
+
+    #[test]
+    fn serialize_and_deserialize() {
+        use serde_json::{from_str, to_string};
+        const TEST_LINE: &str = "test line\n";
+
+        // repeat test line enough times to exceed maximum leaf size
+        let n_seg = MAX_LEAF / TEST_LINE.len() + 1;
+        let test_str = TEST_LINE.repeat(n_seg);
+
+        let rope = Rope::from(test_str.as_str());
+        let json = to_string(&rope).expect("error serializing");
+        let rope2 = from_str::<Rope>(json.as_str()).expect("error deserializing");
+        assert_eq!(rope, rope2);
     }
 }
