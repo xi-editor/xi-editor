@@ -459,7 +459,7 @@ impl<'de> Deserialize<'de> for Delta<RopeInfo> {
         #[serde(rename_all = "snake_case")]
         enum RopeDeltaElement_ {
             Copy(usize, usize),
-            Insert(String),
+            Insert(Node<RopeInfo>),
         }
 
         #[derive(Serialize, Deserialize)]
@@ -472,7 +472,7 @@ impl<'de> Deserialize<'de> for Delta<RopeInfo> {
             fn from(elem: RopeDeltaElement_) -> DeltaElement<RopeInfo> {
                 match elem {
                     RopeDeltaElement_::Copy(start, end) => DeltaElement::Copy(start, end),
-                    RopeDeltaElement_::Insert(s) => DeltaElement::Insert(Rope::from(s)),
+                    RopeDeltaElement_::Insert(r) => DeltaElement::Insert(r),
                 }
             }
         }
