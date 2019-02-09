@@ -472,7 +472,7 @@ impl<'de> Deserialize<'de> for Delta<RopeInfo> {
             fn from(elem: RopeDeltaElement_) -> DeltaElement<RopeInfo> {
                 match elem {
                     RopeDeltaElement_::Copy(start, end) => DeltaElement::Copy(start, end),
-                    RopeDeltaElement_::Insert(r) => DeltaElement::Insert(r),
+                    RopeDeltaElement_::Insert(rope) => DeltaElement::Insert(rope),
                 }
             }
         }
