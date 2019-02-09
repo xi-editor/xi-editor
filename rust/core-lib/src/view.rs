@@ -117,11 +117,13 @@ enum FindStatusChange {
 #[derive(PartialEq, Debug, Clone)]
 enum FindProgress {
     /// Incremental find is done/not running.
-    Done,
+    Ready,
+
+    /// The find process just started.
+    Started,
 
     /// Incremental find is in progress. Keeps tracked of already searched range.
-    /// `None` if find process just started.
-    InProgress(Option<Range<usize>>),
+    InProgress(Range<usize>),
 }
 
 /// Contains replacement string and replace options.
@@ -171,7 +173,7 @@ impl View {
             find: Vec::new(),
             find_id_counter: Counter::default(),
             find_changed: FindStatusChange::None,
-            find_progress: FindProgress::Done,
+            find_progress: FindProgress::Ready,
             highlight_find: false,
             replace: None,
             replace_changed: false,
@@ -224,6 +226,7 @@ impl View {
     pub(crate) fn find_in_progress(&self) -> bool {
         match self.find_progress {
             FindProgress::InProgress(_) => true,
+            FindProgress::Started => true,
             _ => false,
         }
     }
@@ -1023,7 +1026,7 @@ impl View {
         }
 
         self.find.last_mut().unwrap().set_find(&search_query, case_sensitive, false, true);
-        self.find_progress = FindProgress::InProgress(None);
+        self.find_progress = FindProgress::Started;
     }
 
     fn add_find(&mut self) {
@@ -1062,27 +1065,27 @@ impl View {
             )
         }
 
-        self.find_progress = FindProgress::InProgress(None);
+        self.find_progress = FindProgress::Started;
     }
 
     pub fn do_find(&mut self, text: &Rope) {
         let search_range = match &self.find_progress.clone() {
-            FindProgress::InProgress(None) => {
+            FindProgress::Started => {
                 // start incremental find on visible region
                 let start = self.offset_of_line(text, self.first_line);
                 let end = min(text.len(), start + FIND_BATCH_SIZE);
                 self.find_changed = FindStatusChange::All;
-                self.find_progress = FindProgress::InProgress(Some(Range { start, end }));
+                self.find_progress = FindProgress::InProgress(Range { start, end });
                 Some((start, end))
             }
-            FindProgress::InProgress(Some(searched_range)) => {
+            FindProgress::InProgress(searched_range) => {
                 self.find_changed = FindStatusChange::Matches;
 
                 if searched_range.start == 0 && searched_range.end >= text.len() {
                     // the entire text has been searched
                     // end find by executing multi-line regex queries on entire text
                     // stop incremental find
-                    self.find_progress = FindProgress::Done;
+                    self.find_progress = FindProgress::Ready;
                     Some((0, text.len()))
                 } else {
                     // expand find to un-searched regions
@@ -1096,17 +1099,13 @@ impl View {
                     if search_preceding_range || searched_range.end >= text.len() {
                         let start =
                             searched_range.start.checked_sub(FIND_BATCH_SIZE).unwrap_or_else(|| 0);
-                        self.find_progress = FindProgress::InProgress(Some(Range {
-                            start,
-                            end: searched_range.end,
-                        }));
+                        self.find_progress =
+                            FindProgress::InProgress(Range { start, end: searched_range.end });
                         Some((start, searched_range.start))
                     } else if searched_range.end < text.len() {
                         let end = min(text.len(), searched_range.end + FIND_BATCH_SIZE);
-                        self.find_progress = FindProgress::InProgress(Some(Range {
-                            start: searched_range.start,
-                            end,
-                        }));
+                        self.find_progress =
+                            FindProgress::InProgress(Range { start: searched_range.start, end });
                         Some((searched_range.end, end))
                     } else {
                         None
@@ -1334,6 +1333,32 @@ mod tests {
         assert_eq!(view.find_in_progress(), true);
         view.do_find_all(&text);
         assert_eq!(view.sel_regions().len(), 2);
+    }
+
+    #[test]
+    fn incremental_find_codepoint_boundary() {
+        let mut view = View::new(1.into(), BufferId::new(2));
+        let mut s = String::new();
+        for _ in 0..(FIND_BATCH_SIZE + 2) {
+            s += "£€äßß";
+        }
+
+        assert_eq!(view.find_in_progress(), false);
+
+        let text = Rope::from(&s);
+        view.do_edit(
+            &text,
+            ViewEvent::Find {
+                chars: "a".to_string(),
+                case_sensitive: false,
+                regex: false,
+                whole_words: false,
+            },
+        );
+        view.do_find(&text);
+        assert_eq!(view.find_in_progress(), true);
+        view.do_find_all(&text);
+        assert_eq!(view.sel_regions().len(), 1); // cursor
     }
 
     #[test]

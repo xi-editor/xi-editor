@@ -205,7 +205,7 @@ impl Find {
     }
 
     /// Sets find parameters and search query.
-    pub fn set_find(
+    pub(crate) fn set_find(
         &mut self,
         search_string: &str,
         case_sensitive: bool,
@@ -263,9 +263,7 @@ impl Find {
         let from = max(start, slop) - slop;
         let to = min(end + slop, text.len());
 
-        // TODO: this interval might cut a unicode codepoint, make sure it is
-        // aligned to codepoint boundaries.
-        let sub_text = text.subseq(Interval::new(0, to));
+        let sub_text = text.subseq(Interval::new(0, text.next_codepoint_offset(to).unwrap_or(to)));
         let mut find_cursor = Cursor::new(&sub_text, from);
         let mut raw_lines = text.lines_raw(from..to);
 
