@@ -510,6 +510,8 @@ pub enum EditNotification {
         recording_name: String,
     },
     CollapseSelections,
+    PageUp,
+    PageDown,
 }
 
 /// The edit related requests.
