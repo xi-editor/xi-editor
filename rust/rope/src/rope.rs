@@ -413,7 +413,7 @@ impl<'de> Visitor<'de> for RopeVisitor {
     where
         E: de::Error,
     {
-        Rope::from_str(s).map_err(|_| de::Error::invalid_value(DeUnexpected::Str(s), &self))
+        Rope::from_str(s).map_err(|_| de::Error::invalid_value(de::Unexpected::Str(s), &self))
     }
 }
 
