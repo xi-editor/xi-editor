@@ -29,7 +29,7 @@ use crate::tree::{Cursor, Leaf, Metric, Node, NodeInfo, TreeBuilder};
 
 use bytecount;
 use memchr::{memchr, memrchr};
-use serde::de::{self, Deserialize, Deserializer, Unexpected as DeUnexpected, Visitor};
+use serde::de::{self, Deserialize, Deserializer, Visitor};
 use serde::ser::{Serialize, SerializeStruct, SerializeTupleVariant, Serializer};
 
 use unicode_segmentation::GraphemeCursor;
