@@ -498,8 +498,8 @@ impl<'de> Visitor<'de> for DeltaElementVisitor {
     }
 
     fn visit_map<E>(self, s: &str) -> Result<Self::Value, E>
-        where
-            E: de::Error,
+    where
+        E: de::Error,
     {
         Rope::from_str(s).map_err(|_| de::Error::invalid_value(de::Unexpected::Str(s), &self))
     }
@@ -513,8 +513,8 @@ impl<'de> Visitor<'de> for DeltaVisitor {
     }
 
     fn visit_map<E>(self, s: &str) -> Result<Self::Value, E>
-        where
-            E: de::Error,
+    where
+        E: de::Error,
     {
         Rope::from_str(s).map_err(|_| de::Error::invalid_value(de::Unexpected::Str(s), &self))
     }
