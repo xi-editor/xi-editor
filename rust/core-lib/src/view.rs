@@ -1090,9 +1090,10 @@ impl View {
                     let start_off = self.offset_of_line(text, self.first_line);
 
                     // check if preceding range should be searched next
-                    let search_preceding_range = start_off - searched_range.start
-                        < searched_range.end.checked_sub(start_off).unwrap_or_else(|| 0)
-                        && searched_range.start > 0;
+                    let search_preceding_range =
+                        start_off.checked_sub(searched_range.start).unwrap_or_else(|| 0)
+                            < searched_range.end.checked_sub(start_off).unwrap_or_else(|| 0)
+                            && searched_range.start > 0;
 
                     if search_preceding_range || searched_range.end >= text.len() {
                         let start =

@@ -586,7 +586,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for EditCommand<T> {
             Some(_) => {
                 return Err(de::Error::custom(
                     "'params' field, if present, must be object or array.",
-                ))
+                ));
             }
             None => false,
         };
