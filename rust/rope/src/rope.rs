@@ -490,36 +490,6 @@ impl<'de> Deserialize<'de> for Delta<RopeInfo> {
     }
 }
 
-impl<'de> Visitor<'de> for DeltaElementVisitor {
-    type Value = DeltaElement<RopeInfo>;
-
-    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "a string")
-    }
-
-    fn visit_map<E>(self, s: &str) -> Result<Self::Value, E>
-    where
-        E: de::Error,
-    {
-        Rope::from_str(s).map_err(|_| de::Error::invalid_value(de::Unexpected::Str(s), &self))
-    }
-}
-
-impl<'de> Visitor<'de> for DeltaVisitor {
-    type Value = Delta<RopeInfo>;
-
-    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "a string")
-    }
-
-    fn visit_map<E>(self, s: &str) -> Result<Self::Value, E>
-    where
-        E: de::Error,
-    {
-        Rope::from_str(s).map_err(|_| de::Error::invalid_value(de::Unexpected::Str(s), &self))
-    }
-}
-
 impl Rope {
     /// Edit the string, replacing the byte range [`start`..`end`] with `new`.
     ///
