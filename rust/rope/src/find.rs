@@ -306,7 +306,6 @@ fn compare_cursor_regex(
             // update cursor and set to end of match
             let end_position = orig_position + mat.end();
             cursor.set(end_position);
-
             Some(start_position)
         }
         None => {

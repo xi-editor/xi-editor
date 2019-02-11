@@ -260,11 +260,23 @@ impl Find {
         let search_string = self.search_string.as_ref().unwrap();
 
         // expand region to be able to find occurrences around the region's edges
-        let from = max(start, slop) - slop;
-        let to = min(end + slop, text.len());
+        let expanded_start = max(start, slop) - slop;
+        let expanded_end = min(end + slop, text.len());
 
-        let sub_text = text.subseq(Interval::new(0, text.next_codepoint_offset(to).unwrap_or(to)));
+        let from = if text.is_codepoint_boundary(expanded_start) {
+            expanded_start
+        } else {
+            text.prev_codepoint_offset(expanded_start).unwrap_or(0)
+        };
+        let to = if text.is_codepoint_boundary(expanded_end) {
+            expanded_end
+        } else {
+            text.next_codepoint_offset(expanded_end).unwrap_or(text.len())
+        };
+
+        let sub_text = text.subseq(Interval::new(0, to));
         let mut find_cursor = Cursor::new(&sub_text, from);
+
         let mut raw_lines = text.lines_raw(from..to);
 
         while let Some(start) =
