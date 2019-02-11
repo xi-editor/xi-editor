@@ -396,7 +396,7 @@ impl<'de> Deserialize<'de> for Rope {
     where
         D: Deserializer<'de>,
     {
-        deserializer.deserialize_str(RopeVisitor {})
+        deserializer.deserialize_str(RopeVisitor)
     }
 }
 
