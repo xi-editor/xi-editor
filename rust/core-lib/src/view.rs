@@ -323,6 +323,25 @@ impl View {
         self.scroll_to = Some(end);
     }
 
+    pub fn page_up_down(&mut self, movement: Movement, text: &Rope) {
+        let nm = self.first_line as usize;
+        let op = self.scroll_height() as usize;
+
+        let newPos = self.offset_of_line(text, nm + 2 * op);
+
+        let end = newPos;
+        let line = self.line_of_offset(text, end);
+        if line < self.first_line {
+            self.first_line = line;
+        } else if self.first_line + self.height <= line {
+            self.first_line = line - (self.height - 1);
+        }
+
+        let offset = self.sel_regions().last().unwrap().end;
+
+        self.scroll_to = Some(end);
+    }
+
     /// Toggles a caret at the given offset.
     pub fn toggle_sel(&mut self, text: &Rope, offset: usize) {
         // We could probably reduce the cloning of selections by being clever.
@@ -350,13 +369,6 @@ impl View {
         self.drag_state = None;
         let new_sel = selection_movement(movement, &self.selection, self, text, modify);
         self.set_selection(text, new_sel);
-    }
-
-    pub fn page_up_down(&mut self, movement: Movement, text: &Rope) {
-        let nm = self.first_line as i64;
-        let op = self.scroll_height() as i64;
-
-        self.set_scroll(nm, nm+op-1 );
     }
 
     /// Set the selection to a new value.
