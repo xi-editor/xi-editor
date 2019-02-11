@@ -267,7 +267,7 @@ impl View {
             Replace { chars, preserve_case } => self.do_set_replace(chars, preserve_case),
             SelectionForReplace => self.do_selection_for_replace(text),
             SelectionIntoLines => self.do_split_selection_into_lines(text),
-            PageUpDown(movement) => self.page_up_down(movement),
+            PageUpDown(movement) => self.page_up_down(movement, text),
         }
     }
 
@@ -352,18 +352,11 @@ impl View {
         self.set_selection(text, new_sel);
     }
 
-    pub fn page_up_down(&mut self, movement: Movement) {
-        let first_line: i64 = self.first_line as i64;
-        let scroll_height: i64 = self.scroll_height() as i64;
-        match movement {
-            Movement::DownPage => {
-                self.set_scroll(first_line - scroll_height, first_line);
-            }
-            Movement::UpPage => {
-                self.set_scroll(first_line + scroll_height, first_line + 2 * scroll_height);
-            }
-            _ => (),
-        }
+    pub fn page_up_down(&mut self, movement: Movement, text: &Rope) {
+        let nm = self.first_line as i64;
+        let op = self.scroll_height() as i64;
+
+        self.set_scroll(nm, nm+op-1 );
     }
 
     /// Set the selection to a new value.
