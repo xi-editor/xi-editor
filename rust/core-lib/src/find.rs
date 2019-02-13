@@ -160,7 +160,7 @@ impl Find {
             }
 
             // update find for the whole delta and everything after
-            let (iv, _) = delta.summary();
+            let (iv, new_len) = delta.summary();
 
             // get last valid occurrence that was unaffected by the delta
             let start = match self.occurrences.regions_in_range(0, iv.start()).last() {
@@ -180,7 +180,7 @@ impl Find {
                 self.update_find(text, start, text.len(), false);
             } else {
                 // ... the end of the line including line break
-                let mut cursor = Cursor::new(&text, iv.end());
+                let mut cursor = Cursor::new(&text, iv.end() + new_len);
 
                 let end_of_line = match cursor.next::<LinesMetric>() {
                     Some(end) => end,
@@ -428,5 +428,48 @@ impl ToAnnotation for Find {
         let payload = iter::repeat(json!({"id": self.id})).take(ranges.len()).collect::<Vec<_>>();
 
         AnnotationSlice::new(AnnotationType::Find, ranges, Some(payload))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use xi_rope::DeltaBuilder;
+
+    #[test]
+    fn find() {
+        let base_text = Rope::from("hello world");
+        let mut find = Find::new(1);
+        find.do_find(&base_text, "world", false, false, false);
+        assert_eq!(find.occurrences().len(), 1);
+        assert_eq!(find.occurrences().first(), Some(&SelRegion::new(6, 11)));
+
+        // todo: more tests with all options
+    }
+
+    #[test]
+    fn update_find_edit() {
+        let base_text = Rope::from("a b a c");
+        let mut find = Find::new(1);
+        find.do_find(&base_text, "a", false, false, false);
+        let mut builder = DeltaBuilder::new(base_text.len());
+        builder.replace(0..0, "a ".into());
+
+        assert_eq!(find.occurrences().len(), 2);
+        assert_eq!(find.occurrences().first(), Some(&SelRegion::new(0, 1)));
+        assert_eq!(find.occurrences().last(), Some(&SelRegion::new(4, 5)));
+    }
+
+    #[test]
+    fn update_find_multi_line_edit() {
+        let base_text = Rope::from("x\n a\n b\n a\n c");
+        let mut find = Find::new(1);
+        find.do_find(&base_text, "a", false, false, false);
+        let mut builder = DeltaBuilder::new(base_text.len());
+        builder.replace(2..2, " a\n b\n a\n".into());
+
+        assert_eq!(find.occurrences().len(), 2);
+        assert_eq!(find.occurrences().first(), Some(&SelRegion::new(3, 4)));
+        assert_eq!(find.occurrences().last(), Some(&SelRegion::new(9, 10)));
     }
 }

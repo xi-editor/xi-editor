@@ -34,6 +34,7 @@ use xi_plugin_lib::{mainloop, Cache, Error, Plugin, StateCache, View};
 use xi_rope::{DeltaBuilder, Interval, Rope, RopeDelta, RopeInfo};
 use xi_trace::{trace, trace_block};
 
+use syntect::dumps::from_binary;
 use syntect::parsing::{
     ParseState, ScopeRepository, ScopeStack, ScopedMetadata, SyntaxSet, SCOPE_REPO,
 };
@@ -731,7 +732,9 @@ impl<'a> Plugin for Syntect<'a> {
 }
 
 fn main() {
-    let syntax_set = SyntaxSet::load_defaults_newlines();
+    let mut syntax_set: SyntaxSet = from_binary(include_bytes!("../assets/default.packdump"));
+    let metadata = from_binary(include_bytes!("../assets/default_meta.packdump"));
+    syntax_set.set_metadata(metadata);
     let mut state = Syntect::new(&syntax_set);
     mainloop(&mut state).unwrap();
 }

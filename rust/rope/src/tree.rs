@@ -208,6 +208,10 @@ impl<N: NodeInfo> Node<N> {
         self.0.len
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     fn height(&self) -> usize {
         self.0.height
     }
@@ -972,6 +976,12 @@ mod test {
             prev_offset = offset;
         }
         assert_eq!(cursor.next::<LinesMetric>(), None);
+    }
+
+    #[test]
+    fn node_is_empty() {
+        let text = Rope::from(String::new());
+        assert_eq!(text.is_empty(), true);
     }
 
     #[test]

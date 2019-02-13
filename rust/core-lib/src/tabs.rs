@@ -42,6 +42,7 @@ use crate::event_context::EventContext;
 use crate::file::FileManager;
 use crate::line_ending::LineEnding;
 use crate::plugin_rpc::{PluginNotification, PluginRequest};
+use crate::plugins::rpc::ClientPluginInfo;
 use crate::plugins::{start_plugin_process, Plugin, PluginCatalog, PluginPid};
 use crate::recorder::Recorder;
 use crate::rpc::{
@@ -94,6 +95,9 @@ pub const OPEN_FILE_EVENT_TOKEN: WatchToken = WatchToken(2);
 
 #[cfg(feature = "notify")]
 const THEME_FILE_EVENT_TOKEN: WatchToken = WatchToken(3);
+
+#[cfg(feature = "notify")]
+const PLUGIN_EVENT_TOKEN: WatchToken = WatchToken(4);
 
 #[allow(dead_code)]
 pub struct CoreState {
@@ -153,6 +157,12 @@ impl CoreState {
             watcher.watch_filtered(p, true, THEME_FILE_EVENT_TOKEN, |p| {
                 p.extension().and_then(OsStr::to_str).unwrap_or("") == "tmTheme"
             });
+        }
+
+        let plugins_dir = config_manager.get_plugins_dir();
+        if let Some(p) = plugins_dir.as_ref() {
+            #[cfg(feature = "notify")]
+            watcher.watch_filtered(p, true, PLUGIN_EVENT_TOKEN, |p| p.is_dir() || !p.exists());
         }
 
         CoreState {
@@ -592,7 +602,7 @@ impl CoreState {
             .get(&buffer_id)
             .expect("existing buffer_id must have corresponding editor");
 
-        if editor.borrow().get_buffer().len() == 0 {
+        if editor.borrow().get_buffer().is_empty() {
             return None;
         }
 
@@ -681,6 +691,7 @@ impl CoreState {
                 OPEN_FILE_EVENT_TOKEN => self.handle_open_file_fs_event(event),
                 CONFIG_EVENT_TOKEN => self.handle_config_fs_event(event),
                 THEME_FILE_EVENT_TOKEN => self.handle_themes_fs_event(event),
+                PLUGIN_EVENT_TOKEN => self.handle_plugin_fs_event(event),
                 _ => warn!("unexpected fs event token {:?}", token),
             }
         }
@@ -761,6 +772,55 @@ impl CoreState {
         if let Some(domain) = self.config_manager.domain_for_path(path) {
             self.set_config(domain, Table::default());
         }
+    }
+
+    /// Handles changes in plugin files.
+    #[cfg(feature = "notify")]
+    fn handle_plugin_fs_event(&mut self, event: DebouncedEvent) {
+        use self::DebouncedEvent::*;
+        match event {
+            Create(ref path) | Write(ref path) => {
+                self.plugins.load_from_paths(&[path.clone()]);
+                if let Some(plugin) = self.plugins.get_from_path(path) {
+                    self.do_start_plugin(ViewId(0), &plugin.name);
+                }
+            }
+            // the way FSEvents on macOS work, we want to verify that this path
+            // has actually be removed before we do anything.
+            NoticeRemove(ref path) | Remove(ref path) if !path.exists() => {
+                if let Some(plugin) = self.plugins.get_from_path(path) {
+                    self.do_stop_plugin(ViewId(0), &plugin.name);
+                    self.plugins.remove_named(&plugin.name);
+                }
+            }
+            Rename(ref old, ref new) => {
+                if let Some(old_plugin) = self.plugins.get_from_path(old) {
+                    self.do_stop_plugin(ViewId(0), &old_plugin.name);
+                    self.plugins.remove_named(&old_plugin.name);
+                }
+
+                self.plugins.load_from_paths(&[new.clone()]);
+                if let Some(new_plugin) = self.plugins.get_from_path(new) {
+                    self.do_start_plugin(ViewId(0), &new_plugin.name);
+                }
+            }
+            Chmod(ref path) | Remove(ref path) => {
+                if let Some(plugin) = self.plugins.get_from_path(path) {
+                    self.do_stop_plugin(ViewId(0), &plugin.name);
+                    self.do_start_plugin(ViewId(0), &plugin.name);
+                }
+            }
+            _ => (),
+        }
+
+        self.views.keys().for_each(|view_id| {
+            let available_plugins = self
+                .plugins
+                .iter()
+                .map(|plugin| ClientPluginInfo { name: plugin.name.clone(), running: true })
+                .collect::<Vec<_>>();
+            self.peer.available_plugins(view_id.clone(), &available_plugins);
+        });
     }
 
     /// Handles changes in theme files.

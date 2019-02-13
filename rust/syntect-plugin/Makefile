@@ -12,7 +12,8 @@ out/syntect: $(lang_configs) xi-syntect-plugin
 	cp ../target/release/xi-syntect-plugin out/syntect/bin
 	cp manifest.toml out/syntect/manifest.toml
 
-.PHONY: xi-syntect-plugin
+.PHONY: xi-syntect-plugin assets
+
 xi-syntect-plugin:
 	cargo build --release
 
@@ -20,8 +21,12 @@ install: out/syntect
 	mkdir -p $(XI_PLUGIN_DIR)
 	cp -r out/syntect $(XI_PLUGIN_DIR)
 
+assets:
+	cargo run --example make_manifest
+
 clean:
 	rm -rf out
+	rm -r assets/*.packdump manifest.toml
 	cargo clean
 
 .PHONY: clean install
