@@ -267,6 +267,7 @@ impl View {
             Replace { chars, preserve_case } => self.do_set_replace(chars, preserve_case),
             SelectionForReplace => self.do_selection_for_replace(text),
             SelectionIntoLines => self.do_split_selection_into_lines(text),
+            PageUpDown(movement) => self.page_up_down(movement, text),
         }
     }
 
@@ -319,6 +320,25 @@ impl View {
         // We somewhat arbitrarily choose the last region for setting the old-style
         // selection state, and for scrolling it into view if needed. This choice can
         // likely be improved.
+        self.scroll_to = Some(end);
+    }
+
+    pub fn page_up_down(&mut self, movement: Movement, text: &Rope) {
+        let nm = self.first_line as usize;
+        let op = self.scroll_height() as usize;
+
+        let newPos = self.offset_of_line(text, nm + 2 * op);
+
+        let end = newPos;
+        let line = self.line_of_offset(text, end);
+        if line < self.first_line {
+            self.first_line = line;
+        } else if self.first_line + self.height <= line {
+            self.first_line = line - (self.height - 1);
+        }
+
+        let offset = self.sel_regions().last().unwrap().end;
+
         self.scroll_to = Some(end);
     }
 

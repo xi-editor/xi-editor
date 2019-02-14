@@ -48,6 +48,7 @@ pub(crate) enum ViewEvent {
     SelectionForReplace,
     SelectionIntoLines,
     CollapseSelections,
+    PageUpDown(Movement),
 }
 
 /// Events that modify the buffer
@@ -264,6 +265,8 @@ impl From<EditNotification> for EventDomain {
             PlayRecording { recording_name } => SpecialEvent::PlayRecording(recording_name).into(),
             ClearRecording { recording_name } => SpecialEvent::ClearRecording(recording_name).into(),
             CollapseSelections => ViewEvent::CollapseSelections.into(),
+            PageUp => ViewEvent::PageUpDown(Movement::UpPage).into(),
+            PageDown => ViewEvent::PageUpDown(Movement::DownPage).into(),
         }
     }
 }
