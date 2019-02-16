@@ -40,10 +40,12 @@ use std::path::Path;
 
 use crate::xi_core::plugin_rpc::{GetDataResponse, TextUnit};
 use crate::xi_core::{ConfigTable, LanguageId};
+use crate::xi_core::rpc::CoreNotification;
 use serde_json::Value;
 use xi_rope::interval::IntervalBounds;
 use xi_rope::RopeDelta;
 use xi_rpc::{ReadError, RpcLoop};
+
 
 use self::dispatch::Dispatcher;
 
@@ -179,6 +181,10 @@ pub trait Plugin {
     /// Called with a custom command.
     #[allow(unused_variables)]
     fn custom_command(&mut self, view: &mut View<Self::Cache>, method: &str, params: Value) {}
+
+    /// Called with a subscribed core notification.
+    #[allow(unused_variables)]
+    fn subscribed_notification(&mut self, view: &mut View<Self::Cache>, notification: CoreNotification) {}
 
     /// Called when the runloop is idle, if the plugin has previously
     /// asked to be scheduled via `View::schedule_idle()`. Plugins that

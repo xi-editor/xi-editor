@@ -111,6 +111,12 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
         self.plugin.custom_command(v, method, params);
     }
 
+    fn do_subscribed_notification(&mut self, view_id: ViewId, notification: Value) {
+        let v = bail!(self.views.get_mut(&view_id), "subscribed_notification", self.pid, view_id);
+        let parsed_notification = serde_json::from_value(notification).expect("Could not parse subscribed notification");
+        self.plugin.subscribed_notification(v, parsed_notification);
+    }
+
     fn do_new_buffer(&mut self, ctx: &RpcCtx, buffers: Vec<PluginBufferInfo>) {
         let plugin_id = self.pid.unwrap();
         buffers
@@ -209,6 +215,9 @@ impl<'a, P: Plugin> RpcHandler for Dispatcher<'a, P> {
             LanguageChanged { view_id, new_lang } => self.do_language_changed(view_id, new_lang),
             CustomCommand { view_id, method, params } => {
                 self.do_custom_command(view_id, &method, params)
+            },
+            SubscribedNotification { view_id, notification } => {
+                self.do_subscribed_notification(view_id, notification);
             }
             Ping(..) => (),
         }

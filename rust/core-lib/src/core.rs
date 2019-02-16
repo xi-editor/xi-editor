@@ -163,6 +163,20 @@ impl WeakXiCore {
             core.inner().plugin_update(plugin, view, response);
         }
     }
+
+    /// Subscribes plugin to specified RPC event.
+    pub fn plugin_subscribe(&self, plugin: PluginId, rpc_method: &str) {
+        if let Some(core) = self.upgrade() {
+            core.inner().plugin_subscribe(plugin, rpc_method)
+        }
+    }
+
+    /// Removes RPC event subscriptions for plugin.
+    pub fn plugin_unsubscribe(&self, plugin: PluginId, rpc_method: &str) {
+        if let Some(core) = self.upgrade() {
+            core.inner().plugin_unsubscribe(plugin, rpc_method)
+        }
+    }
 }
 
 /// Handler for messages originating from plugins.

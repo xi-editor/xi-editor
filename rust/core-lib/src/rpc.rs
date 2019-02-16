@@ -90,6 +90,7 @@ pub struct EmptyStruct {}
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "method", content = "params")]
+#[derive(ToString)]
 pub enum CoreNotification {
     /// The 'edit' namespace, for view-specific editor actions.
     ///
@@ -370,6 +371,7 @@ pub struct FindQuery {
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "method", content = "params")]
+#[derive(ToString)]
 pub enum EditNotification {
     Insert {
         chars: String,
@@ -569,7 +571,7 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for EditCommand<T> {
             Some(_) => {
                 return Err(de::Error::custom(
                     "'params' field, if present, must be object or array.",
-                ))
+                ));
             }
             None => false,
         };

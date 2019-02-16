@@ -242,6 +242,8 @@ impl<'a> EventContext<'a> {
             }
             RemoveStatusItem { key } => self.client.remove_status_item(self.view_id, &key),
             ShowHover { request_id, result } => self.do_show_hover(request_id, result),
+            Subscribe { rpc_method } => self.weak_core.plugin_subscribe(plugin, &rpc_method),
+            Unsubscribe { rpc_method } => self.weak_core.plugin_unsubscribe(plugin, &rpc_method),
         };
         self.after_edit(&plugin.to_string());
         self.render_if_needed();

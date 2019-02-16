@@ -47,6 +47,10 @@ extern crate syntect;
 extern crate time;
 extern crate toml;
 
+extern crate strum;
+#[macro_use]
+extern crate strum_macros;
+
 extern crate xi_rope;
 extern crate xi_rpc;
 extern crate xi_trace;

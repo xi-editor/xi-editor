@@ -114,6 +114,7 @@ pub enum HostNotification {
     TracingConfig { enabled: bool },
     LanguageChanged { view_id: ViewId, new_lang: LanguageId },
     CustomCommand { view_id: ViewId, method: String, params: Value },
+    SubscribedNotification { view_id: ViewId, notification: Value },
 }
 
 // ====================================================================
@@ -187,6 +188,8 @@ pub enum PluginNotification {
     UpdateStatusItem { key: String, value: String },
     RemoveStatusItem { key: String },
     ShowHover { request_id: usize, result: Result<Hover, RemoteError> },
+    Subscribe { rpc_method: String },
+    Unsubscribe { rpc_method: String },
 }
 
 /// Range expressed in terms of PluginPosition. Meant to be sent from
