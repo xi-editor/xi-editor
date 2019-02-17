@@ -87,10 +87,10 @@ pub struct EmptyStruct {}
 /// }
 /// # }
 /// ```
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, ToString)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "method", content = "params")]
-#[derive(ToString)]
+#[strum(serialize_all = "snake_case")]
 pub enum CoreNotification {
     /// The 'edit' namespace, for view-specific editor actions.
     ///
@@ -368,10 +368,10 @@ pub struct FindQuery {
 ///
 /// Alongside the [`EditRequest`] members, these commands constitute
 /// the API for interacting with a particular window and document.
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, ToString)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "method", content = "params")]
-#[derive(ToString)]
+#[strum(serialize_all = "snake_case")]
 pub enum EditNotification {
     Insert {
         chars: String,

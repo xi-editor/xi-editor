@@ -124,7 +124,7 @@ pub struct CoreState {
     // for the time being we auto-start all plugins we find on launch.
     running_plugins: Vec<Plugin>,
     /// Stores the RPC subscriptions for plugins.
-    plugin_subscriptions: BTreeMap<String, Vec<PluginId>>,
+    plugin_subscriptions: RefCell<BTreeMap<String, Vec<PluginId>>>,
 }
 
 /// Initial setup and bookkeeping
@@ -185,7 +185,7 @@ impl CoreState {
             id_counter: Counter::default(),
             plugins: PluginCatalog::default(),
             running_plugins: Vec::new(),
-            plugin_subscriptions: BTreeMap::new(),
+            plugin_subscriptions: RefCell::new(BTreeMap::new()),
         }
     }
 
@@ -300,6 +300,7 @@ impl CoreState {
                 width_cache: &self.width_cache,
                 kill_ring: &self.kill_ring,
                 weak_core: self.self_ref.as_ref().unwrap(),
+                plugin_subscriptions: &self.plugin_subscriptions,
             }
         })
     }
@@ -316,7 +317,11 @@ impl CoreState {
         let cmd_json = json!(cmd);
         let method = cmd.to_string();
         match cmd {
-            Edit(crate::rpc::EditCommand { view_id, cmd }) => self.do_edit(view_id, cmd),
+            Edit(crate::rpc::EditCommand { view_id, cmd }) => {
+                let method = cmd.to_string();
+                self.do_edit(view_id, cmd);
+                self.handle_plugin_subscriptions(&method, &cmd_json);
+            }
             Save { view_id, file_path } => self.do_save(view_id, file_path),
             CloseView { view_id } => self.do_close_view(view_id),
             ModifyUserConfig { domain, changes } => self.do_modify_user_config(domain, changes),
@@ -354,12 +359,9 @@ impl CoreState {
     }
 
     fn do_edit(&mut self, view_id: ViewId, cmd: EditNotification) {
-        let cmd_json = json!(cmd);
-        let method = cmd.to_string();
         if let Some(mut edit_ctx) = self.make_context(view_id) {
             edit_ctx.do_edit(cmd);
         }
-        self.handle_plugin_subscriptions(&method, &cmd_json);
     }
 
     fn do_edit_sync(&mut self, view_id: ViewId, cmd: EditRequest) -> Result<Value, RemoteError> {
@@ -957,32 +959,11 @@ impl CoreState {
         }
     }
 
-    fn plugin_unsubscribe_all(&mut self, _plugin: PluginId) {
-        // todo: called when plugin exited
-    }
-
-    pub(crate) fn plugin_subscribe(&mut self, plugin: PluginId, rpc_method: &str) {
-        eprintln!("----s");
-//        self.plugin_subscriptions
-//            .entry(rpc_method.to_string())
-//            .or_insert(vec![plugin])
-//            .push(plugin);
-//        eprintln!("{:?}", self.plugin_subscriptions);
-    }
-
-    pub(crate) fn plugin_unsubscribe(&mut self, plugin: PluginId, rpc_method: &str) {
-        let key = rpc_method.to_string();
-        if let Some(entry) = self.plugin_subscriptions.get(rpc_method) {
-            self.plugin_subscriptions
-                .insert(key, entry.iter().cloned().filter(|&p| p != plugin).collect());
-        }
-    }
-
     pub(crate) fn handle_plugin_subscriptions(&self, method: &str, notification: &Value) {
-        if let Some(plugins) = self.plugin_subscriptions.get(method) {
+        if let Some(plugins) = self.plugin_subscriptions.borrow().get(method) {
             self.running_plugins.iter().for_each(|p| {
                 if plugins.contains(&p.id) {
-                    p.dispatch_core_notification(notification);
+                    p.dispatch_subscribed_notification(notification);
                 }
             });
         }

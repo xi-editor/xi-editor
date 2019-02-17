@@ -15,6 +15,7 @@
 //! A container for the state relevant to a single event.
 
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::iter;
 use std::ops::Range;
 use std::path::Path;
@@ -71,6 +72,7 @@ pub struct EventContext<'a> {
     pub(crate) view: &'a RefCell<View>,
     pub(crate) siblings: Vec<&'a RefCell<View>>,
     pub(crate) plugins: Vec<&'a Plugin>,
+    pub(crate) plugin_subscriptions: &'a RefCell<BTreeMap<String, Vec<PluginId>>>,
     pub(crate) client: &'a Client,
     pub(crate) style_map: &'a RefCell<ThemeStyleMap>,
     pub(crate) width_cache: &'a RefCell<WidthCache>,
@@ -242,8 +244,21 @@ impl<'a> EventContext<'a> {
             }
             RemoveStatusItem { key } => self.client.remove_status_item(self.view_id, &key),
             ShowHover { request_id, result } => self.do_show_hover(request_id, result),
-            Subscribe { rpc_method } => self.weak_core.plugin_subscribe(plugin, &rpc_method),
-            Unsubscribe { rpc_method } => self.weak_core.plugin_unsubscribe(plugin, &rpc_method),
+            Subscribe { rpc_method } => {
+                self.plugin_subscriptions
+                    .borrow_mut()
+                    .entry(rpc_method.to_string())
+                    .or_insert(vec![plugin])
+                    .push(plugin);
+            }
+            Unsubscribe { rpc_method } => {
+                let key = rpc_method.to_string();
+                if let Some(entry) = self.plugin_subscriptions.borrow().get(&rpc_method) {
+                    self.plugin_subscriptions
+                        .borrow_mut()
+                        .insert(key, entry.iter().cloned().filter(|&p| p != plugin).collect());
+                }
+            }
         };
         self.after_edit(&plugin.to_string());
         self.render_if_needed();
@@ -738,6 +753,7 @@ mod tests {
                 style_map: &self.style_map,
                 width_cache: &self.width_cache,
                 weak_core: &self.core_ref,
+                plugin_subscriptions: BTreeMap::new(),
             }
         }
     }

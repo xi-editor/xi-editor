@@ -150,9 +150,9 @@ impl Plugin {
         )
     }
 
-    pub fn dispatch_core_notification(&self, core_notification: &Value) {
+    pub fn dispatch_subscribed_notification(&self, core_notification: &Value) {
         self.peer.send_rpc_notification(
-            "core_notification",
+            "subscribed_notification",
             &json!({
                 "notification": core_notification,
             }),

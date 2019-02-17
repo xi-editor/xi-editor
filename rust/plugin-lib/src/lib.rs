@@ -184,7 +184,7 @@ pub trait Plugin {
 
     /// Called with a subscribed core notification.
     #[allow(unused_variables)]
-    fn subscribed_notification(&mut self, view: &mut View<Self::Cache>, notification: CoreNotification) {}
+    fn subscribed_notification(&mut self, notification: CoreNotification) {}
 
     /// Called when the runloop is idle, if the plugin has previously
     /// asked to be scheduled via `View::schedule_idle()`. Plugins that
