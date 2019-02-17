@@ -153,39 +153,26 @@ Notifies the backend that the size of the view has changed. This is
 used for word wrapping, if enabled. Width and height are specified
 in px units / points, not display pixels.
 
-#### click
-
-`click [42,31,0,1]`
-
-Implements a mouse click. The array arguments are: line and column
-(0-based, utf-8 code units), modifiers (again, 2 is shift), and
-click count.
-
-#### drag
-
-`drag [42,32,0]`
-
-Implements dragging (extending a selection). Arguments are line,
-column, and flag as in `click`.
-
 #### gesture
 
-`gesture {"line": 42, "col": 31, "ty": "toggle_sel"}`
+`gesture {"line": 42, "col": 31, "ty": {"select": {"granularity": "point", "multi": false}}`
 
-**Note:** both `click` and `drag` functionality will be migrated to
-additional `ty` options for `gesture`.
-
-Currently, the following gestures are supported:
+Gestures correspond to certain pointer events on the text window. Currently, the following gesture types are supported:
 
 ```
-point_select # moves the cursor to a point
-toggle_sel # adds or removes a selection at a point
-range_select # modifies the selection to include a point (shift+click)
-line_select # sets the selection to a given line
-word_select # sets the selection to a given word
-multi_line_select # adds a line to the selection
-multi_word_select # adds a word to the selection
+{"select": {"granularity": "point", "multi": false}}
 ```
+Adds a new selection region, preserving existing regions if `multi` is `true`. Granularity can be one of `"point"`, `"word"`, or `"line"`.
+
+```
+{"select_extend": {"granularity": "point"}}
+```
+Modifies the selection to include a location. This gesture is usually mapped to shift+click on the frontend. Granularity can be one of `"point"`, `"word"`, or `"line"`.
+
+```
+"drag"
+```
+Extends the selection to the mouse's new location. Granularity is determined by the preceding `select` gesture.
 
 #### goto_line
 
