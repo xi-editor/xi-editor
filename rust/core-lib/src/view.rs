@@ -276,34 +276,8 @@ impl View {
             }
             GestureType::Drag => self.do_drag(text, offset, Affinity::default()),
 
-            // Deprecated gestures, kept for compatibility
-            GestureType::PointSelect => {
-                warn!("The point_select gesture is deprecated; use select instead");
-                self.select(text, offset, SelectionGranularity::Point, false)
-            }
-            GestureType::RangeSelect => {
-                warn!("The range_select gesture is deprecated; use select_extend instead");
-                self.extend_selection(text, offset, SelectionGranularity::Point)
-            }
-            GestureType::ToggleSel => {
-                warn!("The toggle_sel gesture is deprecated; use select instead");
-                self.select(text, offset, SelectionGranularity::Point, true)
-            }
-            GestureType::LineSelect => {
-                warn!("The line_select gesture is deprecated; use select instead");
-                self.select(text, offset, SelectionGranularity::Line, false)
-            }
-            GestureType::WordSelect => {
-                warn!("The word_select gesture is deprecated; use select instead");
-                self.select(text, offset, SelectionGranularity::Word, false)
-            }
-            GestureType::MultiLineSelect => {
-                warn!("The multi_line_select gesture is deprecated; use select instead");
-                self.select(text, offset, SelectionGranularity::Line, true)
-            }
-            GestureType::MultiWordSelect => {
-                warn!("The multi_word_select gesture is deprecated; use select instead");
-                self.select(text, offset, SelectionGranularity::Word, true)
+            _ => {
+                warn!("Deprecated gesture type sent to do_gesture method");
             }
         }
     }

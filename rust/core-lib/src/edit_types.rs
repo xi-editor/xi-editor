@@ -20,7 +20,8 @@
 
 use crate::movement::Movement;
 use crate::rpc::{
-    EditNotification, FindQuery, GestureType, LineRange, MouseAction, Position, SelectionModifier,
+    EditNotification, FindQuery, GestureType, LineRange, MouseAction, Position,
+    SelectionGranularity, SelectionModifier,
 };
 use crate::view::Size;
 
@@ -223,8 +224,41 @@ impl From<EditNotification> for EventDomain {
             Transpose => BufferEvent::Transpose.into(),
             Click(action) => ViewEvent::Click(action).into(),
             Drag(action) => ViewEvent::Drag(action).into(),
-            Gesture { line, col,  ty } =>
-                ViewEvent::Gesture { line, col, ty }.into(),
+            Gesture { line, col,  ty } => {
+                // Translate deprecated gesture types into the new format
+                let new_ty = match ty {
+                    GestureType::PointSelect => {
+                        warn!("The point_select gesture is deprecated; use select instead");
+                        GestureType::Select {granularity: SelectionGranularity::Point, multi: false}
+                    }
+                    GestureType::ToggleSel => {
+                        warn!("The toggle_sel gesture is deprecated; use select instead");
+                        GestureType::Select { granularity: SelectionGranularity::Point, multi: true}
+                    }
+                    GestureType::WordSelect => {
+                        warn!("The word_select gesture is deprecated; use select instead");
+                        GestureType::Select { granularity: SelectionGranularity::Word, multi: false}
+                    }
+                    GestureType::MultiWordSelect => {
+                        warn!("The multi_word_select gesture is deprecated; use select instead");
+                        GestureType::Select { granularity: SelectionGranularity::Word, multi: true}
+                    }
+                    GestureType::LineSelect => {
+                        warn!("The line_select gesture is deprecated; use select instead");
+                        GestureType::Select { granularity: SelectionGranularity::Line, multi: false}
+                    }
+                    GestureType::MultiLineSelect => {
+                        warn!("The multi_line_select gesture is deprecated; use select instead");
+                        GestureType::Select { granularity: SelectionGranularity::Line, multi: true}
+                    }
+                    GestureType::RangeSelect => {
+                        warn!("The range_select gesture is deprecated; use select_extend instead");
+                        GestureType::SelectExtend { granularity: SelectionGranularity::Point }
+                    }
+                    _ => ty
+                };
+                ViewEvent::Gesture { line, col, ty: new_ty }.into()
+            },
             Undo => BufferEvent::Undo.into(),
             Redo => BufferEvent::Redo.into(),
             Find { chars, case_sensitive, regex, whole_words } =>
