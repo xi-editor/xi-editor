@@ -1094,8 +1094,7 @@ impl View {
                         && searched_range.start > 0;
 
                     if search_preceding_range || searched_range.end >= text.len() {
-                        let start =
-                            searched_range.start.saturating_sub(FIND_BATCH_SIZE);
+                        let start = searched_range.start.saturating_sub(FIND_BATCH_SIZE);
                         self.find_progress =
                             FindProgress::InProgress(Range { start, end: searched_range.end });
                         Some((start, searched_range.start))
