@@ -297,11 +297,7 @@ impl TextUnit {
                 if offset > text.len() {
                     None
                 } else {
-                    if text.is_codepoint_boundary(offset) {
-                        offset.into()
-                    } else {
-                        text.prev_codepoint_offset(offset)
-                    }
+                    text.at_or_prev_codepoint_boundary(offset)
                 }
             }
             TextUnit::Line => {

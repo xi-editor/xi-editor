@@ -524,6 +524,26 @@ impl Rope {
         cursor.next::<BaseMetric>()
     }
 
+    /// Returns `offset` if it lies on a codepoint boundary. Otherwise returns
+    /// the codepoint after `offset`.
+    pub fn at_or_next_codepoint_boundary(&self, offset: usize) -> Option<usize> {
+        if self.is_codepoint_boundary(offset) {
+            Some(offset)
+        } else {
+            self.next_codepoint_offset(offset)
+        }
+    }
+
+    /// Returns `offset` if it lies on a codepoint boundary. Otherwise returns
+    /// the codepoint before `offset`.
+    pub fn at_or_prev_codepoint_boundary(&self, offset: usize) -> Option<usize> {
+        if self.is_codepoint_boundary(offset) {
+            Some(offset)
+        } else {
+            self.prev_codepoint_offset(offset)
+        }
+    }
+
     pub fn prev_grapheme_offset(&self, offset: usize) -> Option<usize> {
         let mut cursor = Cursor::new(self, offset);
         cursor.prev_grapheme()

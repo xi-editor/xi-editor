@@ -169,10 +169,9 @@ impl Find {
             };
 
             // invalidate all search results from the point of the last valid search result until ...
-            let is_multi_line =
-                LinesMetric::next(self.search_string.as_ref().unwrap(), 0).is_some();
+            let is_multiline = LinesMetric::next(self.search_string.as_ref().unwrap(), 0).is_some();
 
-            if is_multi_line || self.is_multi_line_regex() {
+            if is_multiline || self.is_multiline_regex() {
                 // ... the end of the file
                 self.occurrences.delete_range(iv.start(), text.len(), false);
                 self.update_find(text, start, text.len(), false);
@@ -193,7 +192,7 @@ impl Find {
     }
 
     /// Returns `true` if the search query is a multi-line regex.
-    pub fn is_multi_line_regex(&self) -> bool {
+    pub(crate) fn is_multiline_regex(&self) -> bool {
         self.regex.is_some() && is_multiline_regex(self.search_string.as_ref().unwrap())
     }
 
@@ -262,17 +261,8 @@ impl Find {
         // expand region to be able to find occurrences around the region's edges
         let expanded_start = max(start, slop) - slop;
         let expanded_end = min(end + slop, text.len());
-
-        let from = if text.is_codepoint_boundary(expanded_start) {
-            expanded_start
-        } else {
-            text.prev_codepoint_offset(expanded_start).unwrap_or(0)
-        };
-        let to = if text.is_codepoint_boundary(expanded_end) {
-            expanded_end
-        } else {
-            text.next_codepoint_offset(expanded_end).unwrap_or(text.len())
-        };
+        let from = text.at_or_prev_codepoint_boundary(expanded_start).unwrap_or(0);
+        let to = text.at_or_next_codepoint_boundary(expanded_end).unwrap_or(text.len());
 
         let sub_text = text.subseq(Interval::new(0, to));
         let mut find_cursor = Cursor::new(&sub_text, from);
@@ -467,7 +457,7 @@ mod tests {
     }
 
     #[test]
-    fn find_multi_line() {
+    fn find_multiline() {
         let base_text = Rope::from("hello world\n HELLO WORLD");
         let mut find = Find::new(1);
         find.set_find("hello world\n HELLO", true, false, false);
@@ -497,7 +487,7 @@ mod tests {
     }
 
     #[test]
-    fn find_regex_multi_line() {
+    fn find_regex_multiline() {
         let base_text = Rope::from("hello world\n HELLO WORLD");
         let mut find = Find::new(1);
         find.set_find("(.*\n.*)+", true, true, false);
@@ -507,14 +497,14 @@ mod tests {
     }
 
     #[test]
-    fn find_multi_line_regex() {
+    fn find_multiline_regex() {
         let mut find = Find::new(1);
         find.set_find("a", true, true, false);
-        assert_eq!(find.is_multi_line_regex(), false);
+        assert_eq!(find.is_multiline_regex(), false);
         find.set_find(".*", true, true, false);
-        assert_eq!(find.is_multi_line_regex(), false);
+        assert_eq!(find.is_multiline_regex(), false);
         find.set_find("\\n", true, true, false);
-        assert_eq!(find.is_multi_line_regex(), true);
+        assert_eq!(find.is_multiline_regex(), true);
     }
 
     #[test]
@@ -608,7 +598,7 @@ mod tests {
     }
 
     #[test]
-    fn update_find_multi_line_edit() {
+    fn update_find_multiline_edit() {
         let base_text = Rope::from("x\n a\n b\n a\n c");
         let mut find = Find::new(1);
         find.set_find("a", false, false, false);
