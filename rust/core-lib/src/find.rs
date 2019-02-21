@@ -263,8 +263,10 @@ impl Find {
         let expanded_end = min(end + slop, text.len());
         let from = text.at_or_prev_codepoint_boundary(expanded_start).unwrap_or(0);
         let to = text.at_or_next_codepoint_boundary(expanded_end).unwrap_or(text.len());
+        let mut to_cursor = Cursor::new(&text, to);
+        let _ = to_cursor.next_leaf();
 
-        let sub_text = text.subseq(Interval::new(0, to));
+        let sub_text = text.subseq(Interval::new(0, to_cursor.pos()));
         let mut find_cursor = Cursor::new(&sub_text, from);
 
         let mut raw_lines = text.lines_raw(from..to);
