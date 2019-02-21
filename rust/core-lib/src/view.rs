@@ -43,7 +43,7 @@ type StyleMap = RefCell<ThemeStyleMap>;
 const FLAG_SELECT: u64 = 2;
 
 /// Size of batches as number of bytes used during incremental find.
-const FIND_BATCH_SIZE: usize = 10000;
+const FIND_BATCH_SIZE: usize = 500000;
 
 pub struct View {
     view_id: ViewId,
@@ -828,7 +828,6 @@ impl View {
             .collect::<Vec<_>>();
 
         let update = Update { ops, pristine, annotations };
-
         client.update_view(self.view_id, &update);
     }
 
@@ -1098,7 +1097,7 @@ impl View {
 
                     if search_preceding_range || searched_range.end >= text.len() {
                         let start =
-                            searched_range.start.checked_sub(FIND_BATCH_SIZE).unwrap_or_else(|| 0);
+                            searched_range.start.saturating_sub(FIND_BATCH_SIZE);
                         self.find_progress =
                             FindProgress::InProgress(Range { start, end: searched_range.end });
                         Some((start, searched_range.start))

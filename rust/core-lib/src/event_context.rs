@@ -554,6 +554,8 @@ impl<'a> EventContext<'a> {
 
     /// Does incremental find.
     pub(crate) fn do_incremental_find(&mut self) {
+        let _t = trace_block("EventContext::do_incremental_find", &["find"]);
+
         self.find();
         if self.view.borrow().find_in_progress() {
             let ed = self.editor.borrow();
