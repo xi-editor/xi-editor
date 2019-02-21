@@ -1091,11 +1091,10 @@ impl View {
                     // expand find to un-searched regions
                     let start_off = self.offset_of_line(text, self.first_line);
 
-                    // check if preceding range should be searched next
-                    let search_preceding_range =
-                        start_off.checked_sub(searched_range.start).unwrap_or_else(|| 0)
-                            < searched_range.end.checked_sub(start_off).unwrap_or_else(|| 0)
-                            && searched_range.start > 0;
+                    // If there is unsearched text before the visible region, we want to include it in this search operation
+                    let search_preceding_range = start_off.saturating_sub(searched_range.start)
+                        < searched_range.end.saturating_sub(start_off)
+                        && searched_range.start > 0;
 
                     if search_preceding_range || searched_range.end >= text.len() {
                         let start =
@@ -1121,7 +1120,7 @@ impl View {
 
         if let Some((search_range_start, search_range_end)) = search_range {
             for query in &mut self.find {
-                if !query.is_multi_line_regex() {
+                if !query.is_multiline_regex() {
                     query.update_find(text, search_range_start, search_range_end, true);
                 } else {
                     // only execute multi-line regex queries if we are searching the entire text (last step)
