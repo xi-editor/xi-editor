@@ -733,6 +733,7 @@ impl View {
         if self.find_changed != FindStatusChange::None {
             let matches_only = self.find_changed == FindStatusChange::Matches;
             client.find_status(self.view_id, &json!(self.find_status(text, matches_only)));
+            self.find_changed = FindStatusChange::None;
         }
 
         // send updated replace status if changed
