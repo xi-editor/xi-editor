@@ -14,7 +14,7 @@
 #![allow(clippy::range_plus_one)]
 
 use std::cell::RefCell;
-use std::cmp::{min, max};
+use std::cmp::{max, min};
 use std::iter;
 use std::ops::Range;
 
