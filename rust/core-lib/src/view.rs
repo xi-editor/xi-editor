@@ -14,7 +14,7 @@
 #![allow(clippy::range_plus_one)]
 
 use std::cell::RefCell;
-use std::cmp::max;
+use std::cmp::{min, max};
 use std::iter;
 use std::ops::Range;
 
@@ -813,7 +813,7 @@ impl View {
         }
 
         let start_off = self.offset_of_line(text, self.first_line);
-        let end_off = self.offset_of_line(text, self.first_line + self.height + 1);
+        let end_off = self.offset_of_line(text, self.first_line + self.height + 2);
         let visible_range = Interval::new(start_off, end_off);
         let selection_annotations =
             self.selection.get_annotations(visible_range, &self, text).to_json();
@@ -987,9 +987,8 @@ impl View {
         // update only find highlights affected by change
         for find in &mut self.find {
             find.update_highlights(text, delta);
+            self.find_changed = FindStatusChange::All;
         }
-
-        self.find_changed = FindStatusChange::Matches;
 
         // Note: for committing plugin edits, we probably want to know the priority
         // of the delta so we can set the cursor before or after the edit, as needed.
@@ -1072,20 +1071,20 @@ impl View {
                 // start incremental find on visible region
                 let start = self.offset_of_line(text, self.first_line);
                 let end = min(text.len(), start + FIND_BATCH_SIZE);
-                self.find_changed = FindStatusChange::All;
+                self.find_changed = FindStatusChange::Matches;
                 self.find_progress = FindProgress::InProgress(Range { start, end });
                 Some((start, end))
             }
             FindProgress::InProgress(searched_range) => {
-                self.find_changed = FindStatusChange::Matches;
-
                 if searched_range.start == 0 && searched_range.end >= text.len() {
                     // the entire text has been searched
                     // end find by executing multi-line regex queries on entire text
                     // stop incremental find
                     self.find_progress = FindProgress::Ready;
+                    self.find_changed = FindStatusChange::All;
                     Some((0, text.len()))
                 } else {
+                    self.find_changed = FindStatusChange::Matches;
                     // expand find to un-searched regions
                     let start_off = self.offset_of_line(text, self.first_line);
 
@@ -1105,6 +1104,7 @@ impl View {
                             FindProgress::InProgress(Range { start: searched_range.start, end });
                         Some((searched_range.end, end))
                     } else {
+                        self.find_changed = FindStatusChange::All;
                         None
                     }
                 }

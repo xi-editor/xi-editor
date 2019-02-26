@@ -111,11 +111,7 @@ impl Find {
                 is_regex: None,
                 whole_words: None,
                 matches: self.occurrences.len(),
-                lines: self
-                    .occurrences
-                    .iter()
-                    .map(|o| view.offset_to_line_col(text, o.min()).0 + 1)
-                    .collect(),
+                lines: Vec::new(),
             }
         } else {
             FindStatus {
