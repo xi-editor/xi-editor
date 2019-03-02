@@ -98,6 +98,10 @@ impl<T: Clone + Default> NodeInfo for SpansInfo<T> {
         }
         SpansInfo { n_spans: l.spans.len(), iv, phantom: PhantomData }
     }
+
+    fn interval(&self, _len: usize) -> Interval {
+        self.iv
+    }
 }
 
 pub struct SpansBuilder<T: Clone + Default> {
@@ -325,8 +329,8 @@ impl<'a, T: Clone + Default> Iterator for SpanIter<'a, T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
 
+    #[test]
     fn test_merge() {
         // merging 1 1 1 1 1 1 1 1 1 16
         // with    2 2 4 4     8 8
@@ -418,5 +422,22 @@ mod tests {
         assert_eq!(*val, 9);
 
         assert!(merged_iter.next().is_none());
+    }
+
+    // Creates an interval tree and fills it with enough spans to guarantee it
+    // will contain more than one leaf node. The first interval overlaps all the
+    // other intervals. Tests that taking a slice from the end of the tree
+    // includes the interval that is stored at the beginning of the tree.
+    #[test]
+    fn test_overlapping_subseq() {
+        let mut builder = SpansBuilder::new(MAX_LEAF + 1);
+        builder.add_span(Interval::new(0, MAX_LEAF + 1), true);
+        for position in 0..MAX_LEAF {
+            builder.add_span(Interval::new(position, position + 1), false);
+        }
+        let spans = builder.build().subseq(MAX_LEAF..);
+        let mut iterator = spans.iter();
+        assert_eq!(iterator.next(), Some((Interval::new(0, 1), &true)));
+        assert_eq!(iterator.next(), None);
     }
 }
