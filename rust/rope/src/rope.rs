@@ -772,6 +772,12 @@ impl<'a> Cursor<'a, RopeInfo> {
         }
     }
 
+    /// Get the next codepoint after the cursor position, without advancing
+    /// the cursor.
+    pub fn peek_next_codepoint(&self) -> Option<char> {
+        self.get_leaf().and_then(|(l, off)| l[off..].chars().next())
+    }
+
     pub fn next_grapheme(&mut self) -> Option<usize> {
         let (mut l, mut offset) = self.get_leaf()?;
         let mut pos = self.pos();
@@ -1031,6 +1037,29 @@ mod tests {
         assert_eq!(Some(5), b.next_codepoint_offset(2));
         assert_eq!(Some(2), b.next_codepoint_offset(0));
         assert_eq!(None, b.next_codepoint_offset(9));
+    }
+
+    #[test]
+    fn peek_next_codepoint() {
+        let inp = Rope::from("$¢€£💶");
+        let mut cursor = Cursor::new(&inp, 0);
+        assert_eq!(cursor.peek_next_codepoint(), Some('$'));
+        assert_eq!(cursor.peek_next_codepoint(), Some('$'));
+        assert_eq!(cursor.next_codepoint(), Some('$'));
+        assert_eq!(cursor.peek_next_codepoint(), Some('¢'));
+        assert_eq!(cursor.prev_codepoint(), Some('$'));
+        assert_eq!(cursor.peek_next_codepoint(), Some('$'));
+        assert_eq!(cursor.next_codepoint(), Some('$'));
+        assert_eq!(cursor.next_codepoint(), Some('¢'));
+        assert_eq!(cursor.peek_next_codepoint(), Some('€'));
+        assert_eq!(cursor.next_codepoint(), Some('€'));
+        assert_eq!(cursor.peek_next_codepoint(), Some('£'));
+        assert_eq!(cursor.next_codepoint(), Some('£'));
+        assert_eq!(cursor.peek_next_codepoint(), Some('💶'));
+        assert_eq!(cursor.next_codepoint(), Some('💶'));
+        assert_eq!(cursor.peek_next_codepoint(), None);
+        assert_eq!(cursor.next_codepoint(), None);
+        assert_eq!(cursor.peek_next_codepoint(), None);
     }
 
     #[test]
