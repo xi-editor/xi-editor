@@ -25,6 +25,7 @@ use xi_rope::spans::SpansBuilder;
 use xi_rope::{Cursor, DeltaBuilder, Interval, LinesMetric, Rope, RopeDelta, Transformer};
 use xi_trace::{trace_block, trace_payload};
 
+use crate::annotations::AnnotationSlice;
 use crate::config::BufferItems;
 use crate::edit_types::BufferEvent;
 use crate::event_context::MAX_SIZE_LIMIT;
@@ -898,6 +899,19 @@ impl Editor {
         let iv = Interval::new(start, end_offset);
         self.layers.update_layer(plugin, iv, spans);
         view.invalidate_styles(&self.text, start, end_offset);
+    }
+
+    pub fn update_annotations(
+        &mut self,
+        view: &mut View,
+        plugin: PluginId,
+        start: usize,
+        len: usize,
+        annotations: Vec<AnnotationSlice>,
+    ) {
+        let _t = trace_block("Editor::update_annotations", &["core"]);
+        let iv = Interval::new(start, start + len);
+        view.update_annotations(&self.text, plugin, iv, annotations);
     }
 
     pub(crate) fn get_rev(&self, rev: RevToken) -> Option<Cow<Rope>> {

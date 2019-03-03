@@ -22,6 +22,7 @@ use serde::ser::{self, Serialize, Serializer};
 use serde_json::{self, Value};
 
 use super::PluginPid;
+use crate::annotations::AnnotationSlice;
 use crate::config::Table;
 use crate::syntax::LanguageId;
 use crate::tabs::{BufferIdentifier, ViewId};
@@ -187,6 +188,7 @@ pub enum PluginNotification {
     UpdateStatusItem { key: String, value: String },
     RemoveStatusItem { key: String },
     ShowHover { request_id: usize, result: Result<Hover, RemoteError> },
+    UpdateAnnotations { start: usize, len: usize, annotations: Vec<AnnotationSlice> },
 }
 
 /// Range expressed in terms of PluginPosition. Meant to be sent from

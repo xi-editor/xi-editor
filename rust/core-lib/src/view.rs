@@ -20,13 +20,14 @@ use std::ops::Range;
 
 use serde_json::Value;
 
-use crate::annotations::{AnnotationStore, ToAnnotation};
+use crate::annotations::{AnnotationSlice, AnnotationStore, ToAnnotation};
 use crate::client::{Client, Update, UpdateOp};
 use crate::edit_types::ViewEvent;
 use crate::find::{Find, FindStatus};
 use crate::line_cache_shadow::{self, LineCacheShadow, RenderPlan, RenderTactic};
 use crate::linewrap::{InvalLines, Lines, VisualLine, WrapWidth};
 use crate::movement::{region_movement, selection_movement, Movement};
+use crate::plugins::PluginId;
 use crate::rpc::{FindQuery, GestureType, MouseAction, SelectionGranularity, SelectionModifier};
 use crate::selection::{Affinity, InsertDrift, SelRegion, Selection};
 use crate::styles::{Style, ThemeStyleMap};
@@ -426,6 +427,19 @@ impl View {
         self.lc_shadow.partial_invalidate(first_line, last_line, line_cache_shadow::STYLES_VALID);
     }
 
+    pub fn update_annotations(
+        &mut self,
+        text: &Rope,
+        plugin: PluginId,
+        interval: Interval,
+        annotations: Vec<AnnotationSlice>,
+    ) {
+        for annotation_slice in annotations {
+            let annotation = annotation_slice.to_annotations(&self, text);
+            self.annotations.update(plugin, interval, annotation)
+        }
+    }
+
     /// Select entire buffer.
     ///
     /// Note: unlike movement based selection, this does not scroll.
@@ -819,7 +833,8 @@ impl View {
             self.selection.get_annotations(visible_range, &self, text).to_json();
         let find_annotations =
             self.find.iter().map(|ref f| f.get_annotations(visible_range, &self, text).to_json());
-        let plugin_annotations = self.annotations.iter_range(visible_range).map(|a| a.to_json());
+        let plugin_annotations =
+            self.annotations.iter_range(&self, text, visible_range).map(|a| a.to_json());
 
         let annotations = iter::once(selection_annotations)
             .chain(find_annotations)

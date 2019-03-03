@@ -16,14 +16,13 @@
 
 use serde_json::Value;
 use std::collections::HashMap;
-use std::iter;
 
 use crate::plugins::PluginId;
 use crate::view::View;
-use crate::xi_rope::spans::Spans;
+use crate::xi_rope::spans::{Spans, SpansBuilder};
 use crate::xi_rope::{Interval, Rope};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum AnnotationType {
     Selection,
     Find,
@@ -50,8 +49,14 @@ pub struct Annotations {
     pub annotation_type: AnnotationType,
 }
 
+impl Annotations {
+    pub fn update(&mut self, interval: Interval, items: Spans<Value>) {
+        self.items.edit(interval, items);
+    }
+}
+
 /// A region of an `Annotation`.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AnnotationSlice {
     annotation_type: AnnotationType,
     /// Annotation occurrences, guaranteed non-descending start order.
@@ -78,6 +83,24 @@ impl AnnotationSlice {
             "n": self.ranges.len()
         })
     }
+
+    pub fn to_annotations(&self, view: &View, text: &Rope) -> Annotations {
+        let mut sb = SpansBuilder::new(self.ranges.len());
+
+        for (i, &range) in self.ranges.iter().enumerate() {
+            let payload = match &self.payloads {
+                Some(p) => p[i].clone(),
+                None => json!(null),
+            };
+
+            let start = view.offset_of_line(text, range[0]) + range[1];
+            let end = view.offset_of_line(text, range[2]) + range[3];
+
+            sb.add_span(Interval::new(start, end), payload);
+        }
+
+        Annotations { items: sb.build(), annotation_type: self.annotation_type.clone() }
+    }
 }
 
 /// A trait for types (like `Selection`) that have a distinct representation
@@ -89,34 +112,87 @@ pub trait ToAnnotation {
 
 /// All the annotations for a given view
 pub struct AnnotationStore {
-    _store: HashMap<PluginId, Vec<Annotations>>,
+    store: HashMap<PluginId, Vec<Annotations>>,
 }
 
 impl AnnotationStore {
     pub fn new() -> Self {
-        AnnotationStore { _store: HashMap::new() }
+        AnnotationStore { store: HashMap::new() }
+    }
+
+    /// Invalidates and removes all annotations in the range of the interval.
+    pub fn invalidate(&mut self, _interval: Interval) {
+        // todo
     }
 
     /// Applies an update from a plugin to a set of annotations
-    pub fn update(
-        &mut self,
-        _source: PluginId,
-        _type_id: AnnotationType,
-        _iv: Interval,
-        _items: Spans<Value>,
-    ) {
-        // todo
+    pub fn update(&mut self, source: PluginId, interval: Interval, item: Annotations) {
+        let updated_items = item.clone();
+
+        self.store
+            .entry(source)
+            .and_modify(|e| {
+                let mut annotations = e
+                    .iter()
+                    .filter(|a| a.annotation_type != updated_items.annotation_type)
+                    .cloned()
+                    .collect::<Vec<Annotations>>();
+
+                match e.into_iter().find(|a| a.annotation_type == updated_items.annotation_type) {
+                    Some(outdated_annotations) => {
+                        let mut updated_annotations = outdated_annotations.clone();
+                        updated_annotations.update(interval, updated_items.items);
+                        annotations.push(updated_annotations);
+                    }
+                    None => {
+                        annotations.push(updated_items);
+                    }
+                }
+
+                *e = annotations;
+            })
+            .or_insert(vec![item]);
     }
 
     /// Returns an iterator which produces, for each type of annotation,
     /// those annotations which intersect the given interval.
-    pub fn iter_range<'c>(&'c self, _iv: Interval) -> impl Iterator<Item = AnnotationSlice> + 'c {
-        // todo
-        iter::empty()
+    pub fn iter_range<'c>(
+        &'c self,
+        view: &'c View,
+        text: &'c Rope,
+        interval: Interval,
+    ) -> impl Iterator<Item = AnnotationSlice> + 'c {
+        self.store.iter().flat_map(move |(_plugin, value)| {
+            value.iter().map(move |annotation| {
+                let payloads = annotation
+                    .items
+                    .subseq(interval)
+                    .iter()
+                    .map(|(_i, p)| p.clone())
+                    .collect::<Vec<Value>>();
+
+                let ranges = annotation
+                    .items
+                    .subseq(interval)
+                    .iter()
+                    .map(|(i, _p)| {
+                        let (start_line, start_col) = view.offset_to_line_col(text, i.start());
+                        let (end_line, end_col) = view.offset_to_line_col(text, i.end());
+                        [start_line, start_col, end_line, end_col]
+                    })
+                    .collect::<AnnotationRange>();
+
+                AnnotationSlice {
+                    annotation_type: annotation.annotation_type.clone(),
+                    ranges,
+                    payloads: Some(payloads),
+                }
+            })
+        })
     }
 
     /// Removes any annotations provided by this plugin
-    pub fn clear(&mut self, _plugin: PluginId) {
-        // todo
+    pub fn clear(&mut self, plugin: PluginId) {
+        self.store.remove(&plugin);
     }
 }
