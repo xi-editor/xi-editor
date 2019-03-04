@@ -43,7 +43,7 @@ impl AnnotationType {
 pub type AnnotationRange = Vec<[usize; 4]>;
 
 /// A set of annotations of a given type.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Annotations {
     pub items: Spans<Value>,
     pub annotation_type: AnnotationType,
@@ -85,7 +85,8 @@ impl AnnotationSlice {
     }
 
     pub fn to_annotations(&self, view: &View, text: &Rope) -> Annotations {
-        let mut sb = SpansBuilder::new(self.ranges.len());
+        let last_entry = self.ranges.last().unwrap_or(&[0, 0, 0, 0]);
+        let mut sb = SpansBuilder::new(last_entry[2] + last_entry[3]);
 
         for (i, &range) in self.ranges.iter().enumerate() {
             let payload = match &self.payloads {
@@ -128,7 +129,6 @@ impl AnnotationStore {
     /// Applies an update from a plugin to a set of annotations
     pub fn update(&mut self, source: PluginId, interval: Interval, item: Annotations) {
         let updated_items = item.clone();
-
         self.store
             .entry(source)
             .and_modify(|e| {
@@ -162,8 +162,10 @@ impl AnnotationStore {
         text: &'c Rope,
         interval: Interval,
     ) -> impl Iterator<Item = AnnotationSlice> + 'c {
+
         self.store.iter().flat_map(move |(_plugin, value)| {
             value.iter().map(move |annotation| {
+
                 let payloads = annotation
                     .items
                     .subseq(interval)

@@ -16,6 +16,7 @@ use serde::Deserialize;
 use serde_json::{self, Value};
 use std::path::{Path, PathBuf};
 
+use crate::xi_core::annotations::AnnotationSlice;
 use crate::xi_core::plugin_rpc::{
     GetDataResponse, PluginBufferInfo, PluginEdit, ScopeSpan, TextUnit,
 };
@@ -185,6 +186,17 @@ impl<C: Cache> View<C> {
             "spans": spans,
         });
         self.peer.send_rpc_notification("update_spans", &params);
+    }
+
+    pub fn update_annotations(&self, start: usize, len: usize, annotations: Vec<AnnotationSlice>) {
+        let params = json!({
+            "plugin_id": self.plugin_id,
+            "view_id": self.view_id,
+            "start": start,
+            "len": len,
+            "annotations": annotations,
+        });
+        self.peer.send_rpc_notification("update_annotations", &params);
     }
 
     pub fn schedule_idle(&self) {
