@@ -141,7 +141,7 @@ impl AnnotationStore {
                 match e.into_iter().find(|a| a.annotation_type == updated_items.annotation_type) {
                     Some(outdated_annotations) => {
                         let mut updated_annotations = outdated_annotations.clone();
-                        updated_annotations.update(interval, updated_items.items);
+                        updated_annotations.update(Interval::new(0, interval.end()), updated_items.items);
                         annotations.push(updated_annotations);
                     }
                     None => {
