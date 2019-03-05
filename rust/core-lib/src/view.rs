@@ -20,7 +20,7 @@ use std::ops::Range;
 
 use serde_json::Value;
 
-use crate::annotations::{AnnotationSlice, AnnotationStore, ToAnnotation};
+use crate::annotations::{AnnotationStore, ToAnnotation, Annotations};
 use crate::client::{Client, Update, UpdateOp};
 use crate::edit_types::ViewEvent;
 use crate::find::{Find, FindStatus};
@@ -429,15 +429,11 @@ impl View {
 
     pub fn update_annotations(
         &mut self,
-        text: &Rope,
         plugin: PluginId,
         interval: Interval,
-        annotations: Vec<AnnotationSlice>,
+        annotations: Annotations,
     ) {
-        for annotation_slice in annotations {
-            let annotation = annotation_slice.to_annotations(&self, text);
-            self.annotations.update(plugin, interval, annotation)
-        }
+        self.annotations.update(plugin, interval, annotations)
     }
 
     /// Select entire buffer.

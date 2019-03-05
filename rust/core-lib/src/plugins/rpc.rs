@@ -188,7 +188,7 @@ pub enum PluginNotification {
     UpdateStatusItem { key: String, value: String },
     RemoveStatusItem { key: String },
     ShowHover { request_id: usize, result: Result<Hover, RemoteError> },
-    UpdateAnnotations { start: usize, len: usize, annotations: Vec<AnnotationSlice> },
+    UpdateAnnotations { start: usize, len: usize, annotations: Vec<AnnotationSlice>, rev: u64 },
 }
 
 /// Range expressed in terms of PluginPosition. Meant to be sent from

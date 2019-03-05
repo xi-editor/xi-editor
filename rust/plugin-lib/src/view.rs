@@ -194,6 +194,7 @@ impl<C: Cache> View<C> {
             "view_id": self.view_id,
             "start": start,
             "len": len,
+            "rev": self.rev,
             "annotations": annotations,
         });
         self.peer.send_rpc_notification("update_annotations", &params);

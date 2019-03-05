@@ -907,11 +907,32 @@ impl Editor {
         plugin: PluginId,
         start: usize,
         len: usize,
-        annotations: Vec<AnnotationSlice>,
+        annotation_slices: Vec<AnnotationSlice>,
+        rev: RevToken,
     ) {
         let _t = trace_block("Editor::update_annotations", &["core"]);
-        let iv = Interval::new(start, start + len);
-        view.update_annotations(&self.text, plugin, iv, annotations);
+
+        for annotation_slice in annotation_slices {
+            let mut start = start;
+            let mut end_offset = start + len;
+            let mut annotations = annotation_slice.to_annotations(view, &self.text);
+
+            if rev != self.engine.get_head_rev_id().token() {
+                if let Ok(delta) = self.engine.try_delta_rev_head(rev) {
+                    let mut transformer = Transformer::new(&delta);
+                    let new_start = transformer.transform(start, false);
+                    if !transformer.interval_untouched(Interval::new(start, end_offset)) {
+                        annotations.items = annotations.items.transform(start, end_offset, &mut transformer);
+                    }
+                    start = new_start;
+                    end_offset = transformer.transform(end_offset, true);
+                } else {
+                    error!("Revision {} not found", rev);
+                }
+            }
+            let iv = Interval::new(start, end_offset);
+            view.update_annotations(plugin, iv, annotations);
+        }
     }
 
     pub(crate) fn get_rev(&self, rev: RevToken) -> Option<Cow<Rope>> {
