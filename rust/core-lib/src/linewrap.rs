@@ -246,7 +246,9 @@ impl Lines {
                 new_work.push(head);
                 new_work.push(tail);
             } else {
-                new_work.push(task.translate_neg(iv.size()).translate(new_len));
+                // take task - our edit interval, then translate it (- old_size, + new_size)
+                let tail = task.suffix(iv).translate(new_len).translate_neg(iv.size());
+                new_work.push(tail);
             }
         }
         new_work.retain(|iv| !iv.is_empty());
@@ -1179,5 +1181,16 @@ mod tests {
         assert_eq!(make_ranges(&lines.work), vec![0..20, 30..50]);
         lines.patchup_tasks(10..10, 10);
         assert_eq!(make_ranges(&lines.work), vec![0..30, 40..60]);
+    }
+
+    /// https://github.com/xi-editor/xi-editor/issues/1112
+    #[test]
+    fn patchup_for_edit_before_task() {
+        let mut lines = Lines::default();
+        lines.add_task(0..100);
+        lines.update_tasks_after_wrap(0..30);
+        assert_eq!(make_ranges(&lines.work), vec![30..100]);
+        lines.patchup_tasks(5..90, 80);
+        assert_eq!(make_ranges(&lines.work), vec![85..95]);
     }
 }
