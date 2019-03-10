@@ -86,7 +86,8 @@ impl AnnotationSlice {
 
     pub fn to_annotations(&self, view: &View, text: &Rope) -> Annotations {
         let last_entry = self.ranges.last().unwrap_or(&[0, 0, 0, 0]);
-        let mut sb = SpansBuilder::new(last_entry[2] + last_entry[3]);
+
+        let mut sb = SpansBuilder::new(view.offset_of_line(text, last_entry[2]) + last_entry[3]);
 
         for (i, &range) in self.ranges.iter().enumerate() {
             let payload = match &self.payloads {
@@ -122,7 +123,7 @@ impl AnnotationStore {
     }
 
     /// Invalidates and removes all annotations in the range of the interval.
-    pub fn invalidate(&mut self, _interval: Interval) {
+    pub fn invalidate(&mut self, interval: Interval) {
         // todo
     }
 
