@@ -1015,7 +1015,6 @@ impl View {
             _ => return,
         };
 
-        self.find_changed = FindStatusChange::All;
         self.set_dirty(text);
 
         // set selection as search query for first find if no additional search queries are used
@@ -1034,8 +1033,8 @@ impl View {
     }
 
     fn set_find(&mut self, text: &Rope, queries: Vec<FindQuery>) {
-        self.set_dirty(text);
-        self.find_changed = FindStatusChange::Matches;
+        // checks if at least query has been changed, otherwise we don't need to rerun find
+        let mut find_changed = queries.len() != self.find.len();
 
         // remove deleted queries
         self.find.retain(|f| queries.iter().any(|q| q.id == Some(f.id())));
@@ -1056,15 +1055,20 @@ impl View {
                 }
             };
 
-            self.find[pos].set_find(
+            if self.find[pos].set_find(
                 &query.chars.clone(),
                 query.case_sensitive,
                 query.regex,
                 query.whole_words,
-            )
+            ) {
+                find_changed = true;
+            }
         }
 
-        self.find_progress = FindProgress::Started;
+        if find_changed {
+            self.set_dirty(text);
+            self.find_progress = FindProgress::Started;
+        }
     }
 
     pub fn do_find(&mut self, text: &Rope) {

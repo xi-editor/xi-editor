@@ -199,14 +199,15 @@ impl Find {
         self.hls_dirty = true;
     }
 
-    /// Sets find parameters and search query.
+    /// Sets find parameters and search query. Returns `true` if parameters have been updated.
+    /// Returns `false` to indicate that parameters haven't change.
     pub(crate) fn set_find(
         &mut self,
         search_string: &str,
         case_sensitive: bool,
         is_regex: bool,
         whole_words: bool,
-    ) {
+    ) -> bool {
         if search_string.is_empty() {
             self.unset();
         }
@@ -221,7 +222,7 @@ impl Find {
                 && self.whole_words == whole_words
             {
                 // search parameters did not change
-                return;
+                return false;
             }
         }
 
@@ -240,6 +241,8 @@ impl Find {
                 .build()
                 .ok(),
         };
+
+        true
     }
 
     /// Execute the search on the provided text in the range provided by `start` and `end`.

@@ -6,7 +6,7 @@ To debug or find performance bottlenecks in xi, the crate `xi_trace` can be used
 
 To write the trace log into a file in [xi-mac](https://github.com/xi-editor/xi-mac): Debug → Write Trace (F5)
 
-The create file can be opened and analyzed in Chrome in `about:tracing`.
+The created file can be opened and analyzed in Chrome in `about:tracing`.
 
 ## Trace Methods
 
