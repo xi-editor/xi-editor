@@ -14,7 +14,10 @@
 
 //! Management of annotations.
 
-use serde_json::Value;
+use serde::de::{Deserialize, Deserializer};
+use serde::ser::{Serialize, SerializeSeq, Serializer};
+use serde_json::{self, Value};
+
 use std::collections::HashMap;
 
 use crate::plugins::PluginId;
@@ -39,8 +42,45 @@ impl AnnotationType {
     }
 }
 
-/// Location and range of an annotation ([start_line, start_col, end_line, end_col]).
-pub type AnnotationRange = Vec<[usize; 4]>;
+/// Location and range of an annotation
+#[derive(Debug, Default, Clone, Copy)]
+pub struct AnnotationRange {
+    pub start_line: usize,
+    pub start_col: usize,
+    pub end_line: usize,
+    pub end_col: usize,
+}
+
+impl Serialize for AnnotationRange {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut seq = serializer.serialize_seq(Some(4))?;
+        seq.serialize_element(&self.start_line)?;
+        seq.serialize_element(&self.start_col)?;
+        seq.serialize_element(&self.end_line)?;
+        seq.serialize_element(&self.end_col)?;
+        seq.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for AnnotationRange {
+    fn deserialize<D>(deserializer: D) -> Result<AnnotationRange, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let mut range = AnnotationRange { ..Default::default() };
+        let seq = <[usize; 4]>::deserialize(deserializer)?;
+
+        range.start_line = seq[0];
+        range.start_col = seq[1];
+        range.end_line = seq[2];
+        range.end_col = seq[3];
+
+        Ok(range)
+    }
+}
 
 /// A set of annotations of a given type.
 #[derive(Clone, Debug)]
@@ -60,7 +100,7 @@ impl Annotations {
 pub struct AnnotationSlice {
     annotation_type: AnnotationType,
     /// Annotation occurrences, guaranteed non-descending start order.
-    ranges: AnnotationRange,
+    ranges: Vec<AnnotationRange>,
     /// If present, one payload per range.
     payloads: Option<Vec<Value>>,
 }
@@ -68,7 +108,7 @@ pub struct AnnotationSlice {
 impl AnnotationSlice {
     pub fn new(
         annotation_type: AnnotationType,
-        ranges: AnnotationRange,
+        ranges: Vec<AnnotationRange>,
         payloads: Option<Vec<Value>>,
     ) -> Self {
         AnnotationSlice { annotation_type, ranges, payloads }
@@ -85,9 +125,14 @@ impl AnnotationSlice {
     }
 
     pub fn to_annotations(&self, view: &View, text: &Rope) -> Annotations {
-        let last_entry = self.ranges.last().unwrap_or(&[0, 0, 0, 0]);
+        //view.offset_of_line(text, last_entry[2])
+        let span_len = self
+            .ranges
+            .last()
+            .map(|anno_range| anno_range.end_line + anno_range.end_col)
+            .unwrap_or(0);
 
-        let mut sb = SpansBuilder::new(view.offset_of_line(text, last_entry[2]) + last_entry[3]);
+        let mut sb = SpansBuilder::new(span_len);
 
         for (i, &range) in self.ranges.iter().enumerate() {
             let payload = match &self.payloads {
@@ -95,8 +140,8 @@ impl AnnotationSlice {
                 None => json!(null),
             };
 
-            let start = view.offset_of_line(text, range[0]) + range[1];
-            let end = view.offset_of_line(text, range[2]) + range[3];
+            let start = view.offset_of_line(text, range.start_line) + range.start_col;
+            let end = view.offset_of_line(text, range.end_line) + range.end_col;
 
             sb.add_span(Interval::new(start, end), payload);
         }
@@ -142,7 +187,8 @@ impl AnnotationStore {
                 match e.into_iter().find(|a| a.annotation_type == updated_items.annotation_type) {
                     Some(outdated_annotations) => {
                         let mut updated_annotations = outdated_annotations.clone();
-                        updated_annotations.update(Interval::new(0, interval.end()), updated_items.items);
+                        updated_annotations
+                            .update(Interval::new(0, interval.end()), updated_items.items);
                         annotations.push(updated_annotations);
                     }
                     None => {
@@ -163,10 +209,8 @@ impl AnnotationStore {
         text: &'c Rope,
         interval: Interval,
     ) -> impl Iterator<Item = AnnotationSlice> + 'c {
-
         self.store.iter().flat_map(move |(_plugin, value)| {
             value.iter().map(move |annotation| {
-
                 let payloads = annotation
                     .items
                     .subseq(interval)
@@ -181,9 +225,10 @@ impl AnnotationStore {
                     .map(|(i, _p)| {
                         let (start_line, start_col) = view.offset_to_line_col(text, i.start());
                         let (end_line, end_col) = view.offset_to_line_col(text, i.end());
-                        [start_line, start_col, end_line, end_col]
+
+                        AnnotationRange { start_line, start_col, end_line, end_col }
                     })
-                    .collect::<AnnotationRange>();
+                    .collect::<Vec<AnnotationRange>>();
 
                 AnnotationSlice {
                     annotation_type: annotation.annotation_type.clone(),

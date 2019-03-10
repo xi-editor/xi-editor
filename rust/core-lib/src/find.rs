@@ -17,7 +17,7 @@
 use std::cmp::{max, min};
 use std::iter;
 
-use crate::annotations::{AnnotationSlice, AnnotationType, ToAnnotation};
+use crate::annotations::{AnnotationRange, AnnotationSlice, AnnotationType, ToAnnotation};
 use crate::selection::{InsertDrift, SelRegion, Selection};
 use crate::view::View;
 use crate::word_boundaries::WordCursor;
@@ -416,9 +416,10 @@ impl ToAnnotation for Find {
             .map(|region| {
                 let (start_line, start_col) = view.offset_to_line_col(text, region.min());
                 let (end_line, end_col) = view.offset_to_line_col(text, region.max());
-                [start_line, start_col, end_line, end_col]
+
+                AnnotationRange { start_line, start_col, end_line, end_col }
             })
-            .collect::<Vec<[usize; 4]>>();
+            .collect::<Vec<AnnotationRange>>();
 
         let payload = iter::repeat(json!({"id": self.id})).take(ranges.len()).collect::<Vec<_>>();
 

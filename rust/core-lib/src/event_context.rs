@@ -244,9 +244,11 @@ impl<'a> EventContext<'a> {
             UpdateStatusItem { key, value } => {
                 self.client.update_status_item(self.view_id, &key, &value)
             }
-            UpdateAnnotations { start, len, annotations, rev } => self.with_editor(|ed, view, _, _| {
-                ed.update_annotations(view, plugin, start, len, annotations, rev)
-            }),
+            UpdateAnnotations { start, len, annotations, rev } => {
+                self.with_editor(|ed, view, _, _| {
+                    ed.update_annotations(view, plugin, start, len, annotations, rev)
+                })
+            }
             RemoveStatusItem { key } => self.client.remove_status_item(self.view_id, &key),
             ShowHover { request_id, result } => self.do_show_hover(request_id, result),
         };

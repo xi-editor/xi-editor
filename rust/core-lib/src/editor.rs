@@ -922,7 +922,8 @@ impl Editor {
                     let mut transformer = Transformer::new(&delta);
                     let new_start = transformer.transform(start, false);
                     if !transformer.interval_untouched(Interval::new(start, end_offset)) {
-                        annotations.items = annotations.items.transform(start, end_offset, &mut transformer);
+                        annotations.items =
+                            annotations.items.transform(start, end_offset, &mut transformer);
                     }
                     start = new_start;
                     end_offset = transformer.transform(end_offset, true);

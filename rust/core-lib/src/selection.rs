@@ -18,7 +18,7 @@ use std::cmp::{max, min};
 use std::fmt;
 use std::ops::Deref;
 
-use crate::annotations::{AnnotationSlice, AnnotationType, ToAnnotation};
+use crate::annotations::{AnnotationRange, AnnotationSlice, AnnotationType, ToAnnotation};
 use crate::index_set::remove_n_at;
 use crate::view::View;
 use xi_rope::{Interval, Rope, RopeDelta, Transformer};
@@ -234,9 +234,10 @@ impl ToAnnotation for Selection {
             .map(|region| {
                 let (start_line, start_col) = view.offset_to_line_col(text, region.min());
                 let (end_line, end_col) = view.offset_to_line_col(text, region.max());
-                [start_line, start_col, end_line, end_col]
+
+                AnnotationRange { start_line, start_col, end_line, end_col }
             })
-            .collect::<Vec<[usize; 4]>>();
+            .collect::<Vec<AnnotationRange>>();
         AnnotationSlice::new(AnnotationType::Selection, ranges, None)
     }
 }

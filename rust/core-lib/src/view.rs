@@ -20,7 +20,7 @@ use std::ops::Range;
 
 use serde_json::Value;
 
-use crate::annotations::{AnnotationStore, ToAnnotation, Annotations};
+use crate::annotations::{AnnotationStore, Annotations, ToAnnotation};
 use crate::client::{Client, Update, UpdateOp};
 use crate::edit_types::ViewEvent;
 use crate::find::{Find, FindStatus};
