@@ -995,6 +995,9 @@ impl View {
         // the front-end, but perhaps not for async edits.
         self.drag_state = None;
 
+        let (iv, _) = delta.summary();
+        self.annotations.invalidate(iv);
+
         // update only find highlights affected by change
         for find in &mut self.find {
             find.update_highlights(text, delta);

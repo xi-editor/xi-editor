@@ -125,11 +125,10 @@ impl AnnotationSlice {
     }
 
     pub fn to_annotations(&self, view: &View, text: &Rope) -> Annotations {
-        //view.offset_of_line(text, last_entry[2])
         let span_len = self
             .ranges
             .last()
-            .map(|anno_range| anno_range.end_line + anno_range.end_col)
+            .map(|anno_range| view.offset_of_line(text, anno_range.end_line) + anno_range.end_col)
             .unwrap_or(0);
 
         let mut sb = SpansBuilder::new(span_len);
@@ -169,7 +168,34 @@ impl AnnotationStore {
 
     /// Invalidates and removes all annotations in the range of the interval.
     pub fn invalidate(&mut self, interval: Interval) {
-        // todo
+        for val in self.store.values_mut() {
+            let mut annotations: Vec<Annotations> = Vec::new();
+
+            val.clone().into_iter().for_each(|mut r| {
+                // find first and last annotations that overlaps with interval to be invalidated
+                let start = r
+                    .items
+                    .iter()
+                    .map(|(iv, _)| iv)
+                    .filter(|&iv| iv.end() <= interval.start())
+                    .last()
+                    .unwrap_or(Interval::new(0, 0))
+                    .end();
+                let end = r
+                    .items
+                    .iter()
+                    .map(|(iv, _)| iv)
+                    .find(|&iv| iv.start() >= interval.end())
+                    .unwrap_or(Interval::new(r.items.len(), r.items.len()))
+                    .start();
+
+                // remove annotations overlapping with invalid interval
+                r.update(Interval::new(start, end), SpansBuilder::new(end - start).build());
+                annotations.push(r);
+            });
+
+            *val = annotations;
+        }
     }
 
     /// Applies an update from a plugin to a set of annotations
