@@ -188,7 +188,7 @@ impl<C: Cache> View<C> {
         self.peer.send_rpc_notification("update_spans", &params);
     }
 
-    pub fn update_annotations(&self, start: usize, len: usize, annotations: Vec<AnnotationSlice>) {
+    pub fn update_annotations(&self, start: usize, len: usize, annotations: &[AnnotationSlice]) {
         let params = json!({
             "plugin_id": self.plugin_id,
             "view_id": self.view_id,

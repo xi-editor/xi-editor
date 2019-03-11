@@ -210,7 +210,7 @@ impl AnnotationStore {
                     .cloned()
                     .collect::<Vec<Annotations>>();
 
-                match e.into_iter().find(|a| a.annotation_type == updated_items.annotation_type) {
+                match e.iter_mut().find(|a| a.annotation_type == updated_items.annotation_type) {
                     Some(outdated_annotations) => {
                         let mut updated_annotations = outdated_annotations.clone();
                         updated_annotations
