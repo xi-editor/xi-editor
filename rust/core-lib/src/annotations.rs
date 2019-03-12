@@ -93,6 +93,10 @@ impl Annotations {
     pub fn update(&mut self, interval: Interval, items: Spans<Value>) {
         self.items.edit(interval, items);
     }
+
+    pub fn invalidate(&mut self, interval: Interval) {
+        self.items.delete_intersecting(interval);
+    }
 }
 
 /// A region of an `Annotation`.
@@ -169,32 +173,9 @@ impl AnnotationStore {
     /// Invalidates and removes all annotations in the range of the interval.
     pub fn invalidate(&mut self, interval: Interval) {
         for val in self.store.values_mut() {
-            let mut annotations: Vec<Annotations> = Vec::new();
-
             val.clone().into_iter().for_each(|mut r| {
-                // find first and last annotations that overlaps with interval to be invalidated
-                let start = r
-                    .items
-                    .iter()
-                    .map(|(iv, _)| iv)
-                    .filter(|&iv| iv.end() <= interval.start())
-                    .last()
-                    .unwrap_or(Interval::new(0, 0))
-                    .end();
-                let end = r
-                    .items
-                    .iter()
-                    .map(|(iv, _)| iv)
-                    .find(|&iv| iv.start() >= interval.end())
-                    .unwrap_or(Interval::new(r.items.len(), r.items.len()))
-                    .start();
-
-                // remove annotations overlapping with invalid interval
-                r.update(Interval::new(start, end), SpansBuilder::new(end - start).build());
-                annotations.push(r);
+                r.invalidate(interval);
             });
-
-            *val = annotations;
         }
     }
 

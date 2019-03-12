@@ -300,6 +300,24 @@ impl<T: Clone> Spans<T> {
         }
         *self = b.build();
     }
+
+    /// Deletes all spans that intersect with `interval`.
+    pub fn delete_intersecting(&mut self, interval: Interval) {
+        let mut cursor = Cursor::new(self, interval.start());
+        let start = match cursor.prev_leaf() {
+            Some((l, pos)) => pos + l.len,
+            None => cursor.pos(),
+        };
+
+        cursor.set(interval.end());
+
+        let end = match cursor.next_leaf() {
+            Some((_, pos)) => pos,
+            None => cursor.pos(),
+        };
+
+        self.edit(Interval::new(start, end), SpansBuilder::new(end - start).build());
+    }
 }
 
 impl<T: Clone + fmt::Debug> fmt::Debug for Spans<T> {
