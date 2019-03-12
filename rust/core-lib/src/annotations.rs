@@ -43,7 +43,7 @@ impl AnnotationType {
 }
 
 /// Location and range of an annotation
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct AnnotationRange {
     pub start_line: usize,
     pub start_col: usize,
@@ -90,10 +90,12 @@ pub struct Annotations {
 }
 
 impl Annotations {
+    /// Update the annotations in `interval` with the provided `items`.
     pub fn update(&mut self, interval: Interval, items: Spans<Value>) {
         self.items.edit(interval, items);
     }
 
+    /// Remove annotations intersecting `interval`.
     pub fn invalidate(&mut self, interval: Interval) {
         self.items.delete_intersecting(interval);
     }
@@ -249,5 +251,106 @@ impl AnnotationStore {
     /// Removes any annotations provided by this plugin
     pub fn clear(&mut self, plugin: PluginId) {
         self.store.remove(&plugin);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::plugins::PluginPid;
+
+    #[test]
+    fn test_annotation_range_serialization() {
+        let range = AnnotationRange { start_line: 1, start_col: 3, end_line: 4, end_col: 1 };
+
+        assert_eq!(json!(range).to_string(), "[1,3,4,1]")
+    }
+
+    #[test]
+    fn test_annotation_range_deserialization() {
+        let range: AnnotationRange = serde_json::from_str("[1,3,4,1]").unwrap();
+        assert_eq!(range, AnnotationRange { start_line: 1, start_col: 3, end_line: 4, end_col: 1 })
+    }
+
+    #[test]
+    fn test_annotation_slice_json() {
+        let range = AnnotationRange { start_line: 1, start_col: 3, end_line: 4, end_col: 1 };
+
+        let slice = AnnotationSlice {
+            annotation_type: AnnotationType::Find,
+            ranges: vec![range],
+            payloads: None,
+        };
+
+        assert_eq!(
+            slice.to_json().to_string(),
+            "{\"n\":1,\"payloads\":null,\"ranges\":[[1,3,4,1]],\"type\":\"find\"}"
+        )
+    }
+
+    #[test]
+    fn test_annotation_store_update() {
+        let mut store = AnnotationStore::new();
+
+        let mut sb = SpansBuilder::new(10);
+        sb.add_span(Interval::new(1, 5), json!(null));
+
+        assert_eq!(store.store.len(), 0);
+
+        store.update(
+            PluginPid(1),
+            Interval::new(1, 5),
+            Annotations { annotation_type: AnnotationType::Find, items: sb.build() },
+        );
+
+        assert_eq!(store.store.len(), 1);
+
+        sb = SpansBuilder::new(10);
+        sb.add_span(Interval::new(6, 8), json!(null));
+
+        store.update(
+            PluginPid(2),
+            Interval::new(6, 8),
+            Annotations { annotation_type: AnnotationType::Find, items: sb.build() },
+        );
+
+        assert_eq!(store.store.len(), 2);
+    }
+
+    #[test]
+    fn test_annotation_store_clear() {
+        let mut store = AnnotationStore::new();
+
+        let mut sb = SpansBuilder::new(10);
+        sb.add_span(Interval::new(1, 5), json!(null));
+
+        assert_eq!(store.store.len(), 0);
+
+        store.update(
+            PluginPid(1),
+            Interval::new(1, 5),
+            Annotations { annotation_type: AnnotationType::Find, items: sb.build() },
+        );
+
+        assert_eq!(store.store.len(), 1);
+
+        sb = SpansBuilder::new(10);
+        sb.add_span(Interval::new(6, 8), json!(null));
+
+        store.update(
+            PluginPid(2),
+            Interval::new(6, 8),
+            Annotations { annotation_type: AnnotationType::Find, items: sb.build() },
+        );
+
+        assert_eq!(store.store.len(), 2);
+
+        store.clear(PluginPid(1));
+
+        assert_eq!(store.store.len(), 1);
+
+        store.clear(PluginPid(1));
+
+        assert_eq!(store.store.len(), 1);
     }
 }

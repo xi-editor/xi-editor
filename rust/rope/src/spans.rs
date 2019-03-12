@@ -304,15 +304,31 @@ impl<T: Clone> Spans<T> {
     /// Deletes all spans that intersect with `interval`.
     pub fn delete_intersecting(&mut self, interval: Interval) {
         let mut cursor = Cursor::new(self, interval.start());
-        let start = match cursor.prev_leaf() {
-            Some((l, pos)) => pos + l.len,
+
+        while cursor.pos() > interval.start() && cursor.prev_leaf().is_some() {}
+
+        let start = match cursor.get_leaf() {
+            Some((l, _)) => l
+                .spans
+                .iter()
+                .map(|s| s.iv.end())
+                .filter(|&e| e < interval.start())
+                .last()
+                .unwrap_or_else(|| cursor.pos()),
             None => cursor.pos(),
         };
 
         cursor.set(interval.end());
 
-        let end = match cursor.next_leaf() {
-            Some((_, pos)) => pos,
+        while cursor.pos() < interval.end() && cursor.next_leaf().is_some() {}
+
+        let end = match cursor.get_leaf() {
+            Some((l, _)) => l
+                .spans
+                .iter()
+                .map(|s| s.iv.start())
+                .find(|&s| s > interval.end())
+                .unwrap_or_else(|| cursor.pos()),
             None => cursor.pos(),
         };
 
@@ -352,8 +368,8 @@ impl<'a, T: Clone> Iterator for SpanIter<'a, T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
 
+    #[test]
     fn test_merge() {
         // merging 1 1 1 1 1 1 1 1 1 16
         // with    2 2 4 4     8 8
@@ -445,5 +461,27 @@ mod tests {
         assert_eq!(*val, 9);
 
         assert!(merged_iter.next().is_none());
+    }
+
+    #[test]
+    fn test_delete_intersecting() {
+        let mut sb = SpansBuilder::new(11);
+        sb.add_span(Interval::new(1, 2), 2);
+        sb.add_span(Interval::new(3, 5), 8);
+        sb.add_span(Interval::new(6, 8), 9);
+        sb.add_span(Interval::new(9, 10), 1);
+        sb.add_span(Interval::new(10, 11), 1);
+        let mut spans = sb.build();
+
+        spans.delete_intersecting(Interval::new(4, 7));
+        let mut deleted_iter = spans.iter();
+
+        let (iv, val) = deleted_iter.next().unwrap();
+        assert_eq!(iv, Interval::new(1, 2));
+        assert_eq!(*val, 2);
+
+        let (iv, val) = deleted_iter.next().unwrap();
+        assert_eq!(iv, Interval::new(9, 10));
+        assert_eq!(*val, 1);
     }
 }
