@@ -35,10 +35,19 @@ pub struct Span<T: Clone> {
     data: T,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct SpansLeaf<T: Clone> {
     len: usize, // measured in base units
     spans: Vec<Span<T>>,
+}
+
+// It would be preferable to derive Default.
+// This would however require T to implement Default due to an issue in Rust.
+// See: https://github.com/rust-lang/rust/issues/26925
+impl<T: Clone> Default for SpansLeaf<T> {
+    fn default() -> Self {
+        SpansLeaf { len: 0, spans: vec![] }
+    }
 }
 
 #[derive(Clone)]
@@ -48,7 +57,7 @@ pub struct SpansInfo<T> {
     phantom: PhantomData<T>,
 }
 
-impl<T: Clone + Default> Leaf for SpansLeaf<T> {
+impl<T: Clone> Leaf for SpansLeaf<T> {
     fn len(&self) -> usize {
         self.len
     }
@@ -83,7 +92,7 @@ impl<T: Clone + Default> Leaf for SpansLeaf<T> {
     }
 }
 
-impl<T: Clone + Default> NodeInfo for SpansInfo<T> {
+impl<T: Clone> NodeInfo for SpansInfo<T> {
     type L = SpansLeaf<T>;
 
     fn accumulate(&mut self, other: &Self) {
@@ -100,14 +109,14 @@ impl<T: Clone + Default> NodeInfo for SpansInfo<T> {
     }
 }
 
-pub struct SpansBuilder<T: Clone + Default> {
+pub struct SpansBuilder<T: Clone> {
     b: TreeBuilder<SpansInfo<T>>,
     leaf: SpansLeaf<T>,
     len: usize,
     total_len: usize,
 }
 
-impl<T: Clone + Default> SpansBuilder<T> {
+impl<T: Clone> SpansBuilder<T> {
     pub fn new(total_len: usize) -> Self {
         SpansBuilder { b: TreeBuilder::new(), leaf: SpansLeaf::default(), len: 0, total_len }
     }
@@ -134,12 +143,12 @@ impl<T: Clone + Default> SpansBuilder<T> {
     }
 }
 
-pub struct SpanIter<'a, T: 'a + Clone + Default> {
+pub struct SpanIter<'a, T: 'a + Clone> {
     cursor: Cursor<'a, SpansInfo<T>>,
     ix: usize,
 }
 
-impl<T: Clone + Default> Spans<T> {
+impl<T: Clone> Spans<T> {
     /// Perform operational transformation on a spans object intended to be edited into
     /// a sequence at the given offset.
 
@@ -183,7 +192,7 @@ impl<T: Clone + Default> Spans<T> {
     pub fn merge<F, O>(&self, other: &Self, mut f: F) -> Spans<O>
     where
         F: FnMut(&T, Option<&T>) -> O,
-        O: Clone + Default,
+        O: Clone,
     {
         //TODO: confirm that this is sensible behaviour
         assert_eq!(self.len(), other.len());
@@ -293,7 +302,7 @@ impl<T: Clone + Default> Spans<T> {
     }
 }
 
-impl<T: Clone + Default + fmt::Debug> fmt::Debug for Spans<T> {
+impl<T: Clone + fmt::Debug> fmt::Debug for Spans<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let strs =
             self.iter().map(|(iv, val)| format!("{}: {:?}", iv, val)).collect::<Vec<String>>();
@@ -301,7 +310,7 @@ impl<T: Clone + Default + fmt::Debug> fmt::Debug for Spans<T> {
     }
 }
 
-impl<'a, T: Clone + Default> Iterator for SpanIter<'a, T> {
+impl<'a, T: Clone> Iterator for SpanIter<'a, T> {
     type Item = (Interval, &'a T);
 
     fn next(&mut self) -> Option<(Interval, &'a T)> {

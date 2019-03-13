@@ -39,3 +39,6 @@ word_wrap = false
 
 # Detect tab and newline settings on file open
 autodetect_whitespace = true
+
+# Ensure file ends in a newline when saving
+save_with_newline = true

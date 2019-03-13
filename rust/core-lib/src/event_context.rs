@@ -22,7 +22,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{self, Value};
 
-use xi_rope::{Interval, LinesMetric, Rope, RopeDelta};
+use xi_rope::{Cursor, Interval, LinesMetric, Rope, RopeDelta};
 use xi_rpc::{Error as RpcError, RemoteError};
 use xi_trace::trace_block;
 
@@ -514,6 +514,32 @@ impl<'a> EventContext<'a> {
             Err(err) => error!("plugin shutdown, do something {:?}", err),
         }
         self.editor.borrow_mut().dec_revs_in_flight();
+    }
+
+    /// Returns the text to be saved, appending a newline if necessary.
+    pub(crate) fn text_for_save(&mut self) -> Rope {
+        let editor = self.editor.borrow();
+        let mut rope = editor.get_buffer().clone();
+        let rope_len = rope.len();
+
+        if rope_len < 1 || !self.config.save_with_newline {
+            return rope;
+        }
+
+        let cursor = Cursor::new(&rope, rope.len());
+        let has_newline_at_eof = match cursor.get_leaf() {
+            Some((last_chunk, _)) => last_chunk.ends_with(&self.config.line_ending),
+            // The rope can't be empty, since we would have returned earlier if it was
+            None => unreachable!(),
+        };
+
+        if !has_newline_at_eof {
+            let line_ending = &self.config.line_ending;
+            rope.edit(rope_len.., line_ending);
+            rope
+        } else {
+            rope
+        }
     }
 
     /// Called after anything changes that effects word wrap, such as the size of

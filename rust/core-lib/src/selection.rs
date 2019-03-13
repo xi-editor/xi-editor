@@ -358,6 +358,12 @@ impl<'a> From<&'a SelRegion> for Interval {
     }
 }
 
+impl From<Interval> for SelRegion {
+    fn from(src: Interval) -> SelRegion {
+        SelRegion::new(src.start, src.end)
+    }
+}
+
 impl From<SelRegion> for Selection {
     fn from(region: SelRegion) -> Self {
         Self::new_simple(region)
