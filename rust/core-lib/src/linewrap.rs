@@ -432,6 +432,15 @@ impl Lines {
         WrapSummary { start_line, inval_count, new_count, new_soft }
     }
 
+    pub fn logical_line_select_range(&self, text: &Rope, line: usize) -> (usize, usize) {
+        let mut cursor = MergedBreaks::new(text, &self.breaks);
+        let offset = cursor.offset_of_line(line);
+        let logical_line = text.line_of_offset(offset);
+        let start_logical_line_offset = text.offset_of_line(logical_line);
+        let end_logical_line_offset = text.offset_of_line(logical_line + 1);
+        (start_logical_line_offset, end_logical_line_offset)
+    }
+
     #[cfg(test)]
     fn for_testing(text: &Rope, wrap: WrapWidth) -> Lines {
         let mut lines = Lines::default();
