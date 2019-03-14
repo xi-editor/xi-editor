@@ -417,7 +417,7 @@ impl View {
             }
             SelectionGranularity::Line => {
                 let (line, _) = self.offset_to_line_col(text, offset);
-                let (start, end) = self.lines.logical_line_select_range(text, line);
+                let (start, end) = self.lines.logical_line_range(text, line);
                 Interval::new(start, end)
             }
         }
