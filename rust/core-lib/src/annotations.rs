@@ -189,7 +189,9 @@ impl AnnotationStore {
         }
 
         let entry = self.store.get_mut(&source).unwrap();
-        if let Some(annotation) = entry.iter_mut().find(|a| a.annotation_type == item.annotation_type) {
+        if let Some(annotation) =
+            entry.iter_mut().find(|a| a.annotation_type == item.annotation_type)
+        {
             annotation.update(Interval::new(0, interval.end()), item.items);
         } else {
             entry.push(item);
