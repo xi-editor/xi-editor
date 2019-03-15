@@ -183,31 +183,17 @@ impl AnnotationStore {
 
     /// Applies an update from a plugin to a set of annotations
     pub fn update(&mut self, source: PluginId, interval: Interval, item: Annotations) {
-        let updated_items = item.clone();
-        self.store
-            .entry(source)
-            .and_modify(|e| {
-                let mut annotations = e
-                    .iter()
-                    .filter(|a| a.annotation_type != updated_items.annotation_type)
-                    .cloned()
-                    .collect::<Vec<Annotations>>();
+        if !self.store.contains_key(&source) {
+            self.store.insert(source, vec![item]);
+            return;
+        }
 
-                match e.iter_mut().find(|a| a.annotation_type == updated_items.annotation_type) {
-                    Some(outdated_annotations) => {
-                        let mut updated_annotations = outdated_annotations.clone();
-                        updated_annotations
-                            .update(Interval::new(0, interval.end()), updated_items.items);
-                        annotations.push(updated_annotations);
-                    }
-                    None => {
-                        annotations.push(updated_items);
-                    }
-                }
-
-                *e = annotations;
-            })
-            .or_insert(vec![item]);
+        let entry = self.store.get_mut(&source).unwrap();
+        if let Some(annotation) = entry.iter_mut().find(|a| a.annotation_type == item.annotation_type) {
+            annotation.update(Interval::new(0, interval.end()), item.items);
+        } else {
+            entry.push(item);
+        }
     }
 
     /// Returns an iterator which produces, for each type of annotation,

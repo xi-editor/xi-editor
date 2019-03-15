@@ -931,6 +931,7 @@ impl Editor {
                     error!("Revision {} not found", rev);
                 }
             }
+
             let iv = Interval::new(start, end_offset);
             view.update_annotations(plugin, iv, annotations);
         }
