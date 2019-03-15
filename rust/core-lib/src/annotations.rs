@@ -131,11 +131,19 @@ impl AnnotationSlice {
     }
 
     pub fn to_annotations(&self, view: &View, text: &Rope) -> Annotations {
+        if self.ranges.is_empty() {
+            // there are no annotations
+            return Annotations {
+                items: SpansBuilder::new(0).build(),
+                annotation_type: self.annotation_type.clone()
+            }
+        }
+
         let span_len = self
             .ranges
             .last()
             .map(|anno_range| view.offset_of_line(text, anno_range.end_line) + anno_range.end_col)
-            .unwrap_or(0);
+            .unwrap();
 
         let mut sb = SpansBuilder::new(span_len);
 
