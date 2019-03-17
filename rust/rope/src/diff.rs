@@ -19,10 +19,8 @@ use std::collections::HashMap;
 use crate::compare::RopeScanner;
 use crate::delta::{Delta, DeltaElement};
 use crate::interval::Interval;
-use crate::rope::{LinesMetric, Rope, RopeDelta, RopeInfo};
-use crate::tree::{Node, NodeInfo};
-
-use memchr::memchr;
+use crate::rope::{LinesMetric, Rope, RopeDelta, RopeInfo, RopeSlice};
+use crate::tree::{Node, NodeInfo, Cursor};
 
 /// A trait implemented by various diffing strategies.
 pub trait Diff<N: NodeInfo> {
@@ -66,11 +64,8 @@ impl Diff<RopeInfo> for LineHashDiff {
             return builder.to_delta(base, target);
         }
 
-        // TODO: because of how `lines_raw` returns Cows, we can't easily build
-        // the lookup table without allocating. The eventual solution would be
-        // to have a custom iter on the rope that returns suitable chunks.
-        let base_string = String::from(base);
-        let line_hashes = make_line_hashes(&base_string, MIN_SIZE);
+        let base_slice = RopeSlice(base, 0..base.len());
+        let line_hashes = make_line_hashes(&base_slice, MIN_SIZE);
 
         let line_count = target.measure::<LinesMetric>() + 1;
         let mut matches = Vec::with_capacity(line_count);
@@ -79,10 +74,22 @@ impl Diff<RopeInfo> for LineHashDiff {
         let mut prev_base = 0;
 
         let mut needs_subseq = false;
-        for line in target.lines_raw(start_offset..target_end) {
+
+        let mut offset = 0;
+        let mut cursor = Cursor::new(&target, offset);
+        
+        while cursor.pos() < target.len() {
+            let next_offset;
+            match cursor.next::<LinesMetric>() {
+                Some(x) => next_offset = x,
+                None    => break,
+            }
+            let line = RopeSlice(target, offset..next_offset);
+            let len_line = line.1.end - line.1.start;
             let non_ws = non_ws_offset(&line);
-            if line.len() - non_ws >= MIN_SIZE {
-                if let Some(base_off) = line_hashes.get(&line[non_ws..]) {
+            if len_line - non_ws >= MIN_SIZE {
+                let non_ws_line = RopeSlice(target, non_ws..next_offset);
+                if let Some(base_off) = line_hashes.get(&non_ws_line) {
                     let targ_off = targ_line_offset + non_ws;
                     matches.push((start_offset + targ_off, *base_off));
                     if *base_off < prev_base {
@@ -91,7 +98,8 @@ impl Diff<RopeInfo> for LineHashDiff {
                     prev_base = *base_off;
                 }
             }
-            targ_line_offset += line.len();
+            targ_line_offset += len_line;
+            offset = next_offset;
         }
 
         // we now have an ordered list of matches and their positions.
@@ -197,8 +205,8 @@ fn longest_increasing_region_set(items: &[(usize, usize)]) -> Vec<(usize, usize)
 }
 
 #[inline]
-fn non_ws_offset(s: &str) -> usize {
-    s.as_bytes().iter().take_while(|b| **b == b' ' || **b == b'\t').count()
+fn non_ws_offset(rs: &RopeSlice) -> usize {
+    rs.0.iter_chunks(rs.1.clone()).take_while(|b| *b == " " || *b == "\t").count()
 }
 
 /// Represents copying `len` bytes from base to target.
@@ -250,45 +258,23 @@ impl DiffBuilder {
     }
 }
 
-/// Fast iterator over lines in a string, not removing newline characters.
-struct LineScanner<'a> {
-    inner: &'a str,
-    idx: usize,
-}
-
-impl<'a> Iterator for LineScanner<'a> {
-    type Item = &'a str;
-    fn next(&mut self) -> Option<&'a str> {
-        if self.idx >= self.inner.len() {
-            return None;
-        }
-
-        match memchr(b'\n', &self.inner.as_bytes()[self.idx..]) {
-            Some(idx) => {
-                let next_idx = self.idx + idx + 1;
-                let result = &self.inner[self.idx..next_idx];
-                self.idx = next_idx;
-                Some(result)
-            }
-            None => {
-                let result = &self.inner[self.idx..];
-                self.idx = self.inner.len();
-                Some(result)
-            }
-        }
-    }
-}
-
-fn make_line_hashes<'a>(base: &'a str, min_size: usize) -> HashMap<&'a str, usize> {
+fn make_line_hashes<'a>(base: &'a RopeSlice, min_size: usize) -> HashMap<RopeSlice<'a>, usize> {
     let mut offset = 0;
-    let mut line_hashes = HashMap::with_capacity(base.len() / 60);
-    let iter = LineScanner { inner: base, idx: 0 };
-    for line in iter {
-        let non_ws = non_ws_offset(&line);
-        if line.len() - non_ws >= min_size {
-            line_hashes.insert(&line[non_ws..], offset + non_ws);
+    let mut line_hashes = HashMap::with_capacity(base.0.len() / 60);
+    let mut cursor = Cursor::new(&base.0, offset);
+    
+    while cursor.pos() < base.0.len() {
+        let next_offset;
+        match cursor.next::<LinesMetric>() {
+            Some(x) => next_offset = x,
+            None    => break,
         }
-        offset += line.len();
+        let line = RopeSlice(base.0, offset..next_offset);
+        let non_ws = non_ws_offset(&line);
+        if (line.1.end - line.1.start) - non_ws >= min_size {
+            line_hashes.insert(line, offset + non_ws);
+        }
+        offset = next_offset;
     }
     line_hashes
 }
