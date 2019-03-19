@@ -70,7 +70,6 @@ impl Diff<RopeInfo> for LineHashDiff {
         let line_count = target.measure::<LinesMetric>() + 1;
         let mut matches = Vec::with_capacity(line_count);
 
-        let mut targ_line_offset = 0;
         let mut prev_base = 0;
 
         let mut needs_subseq = false;
@@ -87,18 +86,16 @@ impl Diff<RopeInfo> for LineHashDiff {
             let line = RopeSlice(target, offset..next_offset);
             let len_line = line.1.end - line.1.start;
             let non_ws = non_ws_offset(&line);
-            if len_line - non_ws >= MIN_SIZE {
-                let non_ws_line = RopeSlice(target, non_ws..next_offset);
+            if len_line - non_ws >= MIN_SIZE && next_offset > start_offset {
+                let non_ws_line = RopeSlice(target, (offset + non_ws)..next_offset);
                 if let Some(base_off) = line_hashes.get(&non_ws_line) {
-                    let targ_off = targ_line_offset + non_ws;
-                    matches.push((start_offset + targ_off, *base_off));
+                    matches.push((offset + non_ws, *base_off));
                     if *base_off < prev_base {
                         needs_subseq = true;
                     }
                     prev_base = *base_off;
                 }
             }
-            targ_line_offset += len_line;
             offset = next_offset;
         }
 
@@ -206,7 +203,13 @@ fn longest_increasing_region_set(items: &[(usize, usize)]) -> Vec<(usize, usize)
 
 #[inline]
 fn non_ws_offset(rs: &RopeSlice) -> usize {
-    rs.0.iter_chunks(rs.1.clone()).take_while(|b| *b == " " || *b == "\t").count()
+    let chunk = rs.0.iter_chunks(rs.1.clone()).next();
+    match chunk {
+        Some(x) =>
+            return x.as_bytes().iter().take_while(|b| **b == b' ' || **b == b'\t').count(),
+        None    =>
+            return 0,
+    }
 }
 
 /// Represents copying `len` bytes from base to target.
