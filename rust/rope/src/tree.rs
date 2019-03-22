@@ -424,7 +424,7 @@ impl<N: NodeInfo> Node<N> {
 }
 
 impl<N: DefaultMetric> Node<N> {
-    /// Measures the length of the text bounded by ``DefaultMetric::measure(m1)`` with another metric.
+    /// Measures the length of the text bounded by ``DefaultMetric::measure(offset)`` with another metric.
     ///
     /// # Examples
     /// ```
