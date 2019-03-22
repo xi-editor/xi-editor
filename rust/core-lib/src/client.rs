@@ -74,6 +74,15 @@ impl Client {
         self.0.send_rpc_notification("available_languages", &json!({ "languages": languages }))
     }
 
+    pub fn file_externally_changed(&self, view_id: ViewId) {
+        self.0.send_rpc_notification(
+            "file_externally_changed",
+            &json!({
+                "view_id": view_id,
+            }),
+        );
+    }
+
     pub fn theme_changed(&self, name: &str, theme: &ThemeSettings) {
         self.0.send_rpc_notification(
             "theme_changed",

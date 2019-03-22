@@ -718,18 +718,21 @@ impl CoreState {
         // determining if a file has been changed by another process.
         // A more robust solution would also hash the file's contents.
 
+        // this is ugly; we don't map buffer_id -> view_id anywhere
+        // but we know we must have a view.
+        let view_id = self
+            .views
+            .values()
+            .find(|v| v.borrow().get_buffer_id() == buffer_id)
+            .map(|v| v.borrow().get_view_id())
+            .unwrap();
+
         if has_changes && is_pristine {
             if let Ok(text) = self.file_manager.open(path, buffer_id) {
-                // this is ugly; we don't map buffer_id -> view_id anywhere
-                // but we know we must have a view.
-                let view_id = self
-                    .views
-                    .values()
-                    .find(|v| v.borrow().get_buffer_id() == buffer_id)
-                    .map(|v| v.borrow().get_view_id())
-                    .unwrap();
                 self.make_context(view_id).unwrap().reload(text);
             }
+        } else if has_changes {
+            self.peer.file_externally_changed(view_id);
         }
     }
 
