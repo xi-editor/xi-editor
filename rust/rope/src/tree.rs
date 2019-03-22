@@ -60,6 +60,15 @@ pub trait NodeInfo: Clone {
     }
 }
 
+/// A trait indicating the default metric of a NodeInfo.
+///
+/// Adds quality of life functions to
+/// Node\<N\>, where N is a DefaultMetric.
+/// For example, [Node\<DefaultMetric\>.count](struct.Node.html#method.count).
+pub trait DefaultMetric: NodeInfo {
+    type DefaultMetric: Metric<Self>;
+}
+
 /// A trait for the leaves of trees of type [Node](struct.Node.html).
 ///
 /// Two leafs can be concatenated using `push_maybe_split`.
@@ -411,6 +420,25 @@ impl<N: NodeInfo> Node<N> {
         let l = node.get_leaf();
         let base = M1::to_base_units(l, m1);
         m2 + M2::from_base_units(l, base)
+    }
+}
+
+impl<N: DefaultMetric> Node<N> {
+    /// Measures the length of the text bounded by ``DefaultMetric::measure(m1)`` with another metric.
+    ///
+    /// # Examples
+    /// ```
+    /// use crate::xi_rope::{Rope, LinesMetric};
+    ///
+    /// // the default metric of Rope is BaseMetric (aka number of bytes)
+    /// let my_rope = Rope::from("first line \n second line \n");
+    ///
+    /// // count the number of lines in my_rope
+    /// let num_lines = my_rope.count::<LinesMetric>(my_rope.len());
+    /// assert_eq!(2, num_lines);
+    /// ```
+    pub fn count<M: Metric<N>>(&self, offset: usize) -> usize {
+        self.convert_metrics::<N::DefaultMetric, M>(offset)
     }
 }
 
