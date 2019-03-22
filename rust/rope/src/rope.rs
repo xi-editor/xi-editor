@@ -25,7 +25,7 @@ use std::string::ParseError;
 
 use crate::delta::{Delta, DeltaElement};
 use crate::interval::{Interval, IntervalBounds};
-use crate::tree::{Cursor, Leaf, Metric, Node, NodeInfo, TreeBuilder};
+use crate::tree::{Cursor, DefaultMetric, Leaf, Metric, Node, NodeInfo, TreeBuilder};
 
 use bytecount;
 use memchr::{memchr, memrchr};
@@ -142,6 +142,10 @@ impl NodeInfo for RopeInfo {
     fn identity() -> Self {
         RopeInfo { lines: 0, utf16_size: 0 }
     }
+}
+
+impl DefaultMetric for RopeInfo {
+    type DefaultMetric = BaseMetric;
 }
 
 //TODO: document metrics, based on https://github.com/google/xi-editor/issues/456
