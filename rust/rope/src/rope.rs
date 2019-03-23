@@ -1217,6 +1217,19 @@ mod tests {
     }
 
     #[test]
+    fn default_metric_test() {
+        let rope = Rope::from("hi\ni'm\nfour\nlines\n");
+        assert_eq!(
+            rope.convert_metrics::<BaseMetric, LinesMetric>(rope.len()),
+            rope.count::<LinesMetric>(rope.len())
+        );
+        assert_eq!(
+            rope.convert_metrics::<LinesMetric, BaseMetric>(2),
+            rope.convert_to_base_units::<LinesMetric>(2)
+        );
+    }
+
+    #[test]
     #[should_panic]
     fn line_of_offset_panic() {
         let rope = Rope::from("hi\ni'm\nfour\nlines");
