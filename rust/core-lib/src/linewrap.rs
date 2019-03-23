@@ -17,8 +17,7 @@
 use std::cmp::Ordering;
 use std::ops::Range;
 
-use xi_rope::breaks::{BreakBuilder, Breaks, BreaksBaseMetric, BreaksInfo, BreaksMetric};
-use xi_rope::rope::BaseMetric;
+use xi_rope::breaks::{BreakBuilder, Breaks, BreaksInfo, BreaksMetric};
 use xi_rope::spans::Spans;
 use xi_rope::{Cursor, Interval, LinesMetric, Rope, RopeDelta, RopeInfo};
 use xi_trace::trace_block;
