@@ -1251,8 +1251,7 @@ mod tests {
 
         // position after 'f' in four
         let utf8_offset = 13;
-        let utf16_units =
-            rope_with_emoji.count::<Utf16CodeUnitsMetric>(utf8_offset);
+        let utf16_units = rope_with_emoji.count::<Utf16CodeUnitsMetric>(utf8_offset);
         assert_eq!(utf16_units, 11);
 
         let utf8_offset =
@@ -1261,8 +1260,7 @@ mod tests {
 
         //for next line
         let utf8_offset = 19;
-        let utf16_units =
-            rope_with_emoji.count::<Utf16CodeUnitsMetric>(utf8_offset);
+        let utf16_units = rope_with_emoji.count::<Utf16CodeUnitsMetric>(utf8_offset);
         assert_eq!(utf16_units, 17);
 
         let utf8_offset =
