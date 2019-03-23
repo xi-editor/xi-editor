@@ -570,7 +570,7 @@ impl Rope {
     /// This function will panic if `offset > self.len()`. Callers are expected to
     /// validate their input.
     pub fn line_of_offset(&self, offset: usize) -> usize {
-        self.convert_metrics::<BaseMetric, LinesMetric>(offset)
+        self.count::<LinesMetric>(offset)
     }
 
     /// Return the byte offset corresponding to the line number `line`.
@@ -1238,7 +1238,7 @@ mod tests {
 
         // position after 'f' in four
         let utf8_offset = 9;
-        let utf16_units = rope.convert_metrics::<BaseMetric, Utf16CodeUnitsMetric>(utf8_offset);
+        let utf16_units = rope.count::<Utf16CodeUnitsMetric>(utf8_offset);
         assert_eq!(utf16_units, 9);
 
         let utf8_offset = rope.convert_metrics::<Utf16CodeUnitsMetric, BaseMetric>(utf16_units);
@@ -1252,7 +1252,7 @@ mod tests {
         // position after 'f' in four
         let utf8_offset = 13;
         let utf16_units =
-            rope_with_emoji.convert_metrics::<BaseMetric, Utf16CodeUnitsMetric>(utf8_offset);
+            rope_with_emoji.count::<Utf16CodeUnitsMetric>(utf8_offset);
         assert_eq!(utf16_units, 11);
 
         let utf8_offset =
@@ -1262,7 +1262,7 @@ mod tests {
         //for next line
         let utf8_offset = 19;
         let utf16_units =
-            rope_with_emoji.convert_metrics::<BaseMetric, Utf16CodeUnitsMetric>(utf8_offset);
+            rope_with_emoji.count::<Utf16CodeUnitsMetric>(utf8_offset);
         assert_eq!(utf16_units, 17);
 
         let utf8_offset =

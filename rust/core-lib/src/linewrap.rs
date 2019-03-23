@@ -163,7 +163,7 @@ impl Lines {
     pub(crate) fn visual_line_of_offset(&self, text: &Rope, offset: usize) -> usize {
         let mut line = text.line_of_offset(offset);
         if self.wrap != WrapWidth::None {
-            line += self.breaks.convert_metrics::<BreaksBaseMetric, BreaksMetric>(offset)
+            line += self.breaks.count::<BreaksMetric>(offset)
         }
         line
     }
@@ -309,8 +309,8 @@ impl Lines {
 
         // count the soft breaks in the region we will rewrap, before we update them.
         let inval_soft =
-            self.breaks.convert_metrics::<BreaksBaseMetric, BreaksMetric>(old_logical_end_offset)
-                - self.breaks.convert_metrics::<BreaksBaseMetric, BreaksMetric>(prev_break);
+            self.breaks.count::<BreaksMetric>(old_logical_end_offset)
+                - self.breaks.count::<BreaksMetric>(prev_break);
 
         // update soft breaks, adding empty spans in the edited region
         let mut builder = BreakBuilder::new();
@@ -416,8 +416,8 @@ impl Lines {
         let end = task.start + breaks.len();
 
         // this is correct *only* when an edit has not occured.
-        let inval_soft = self.breaks.convert_metrics::<BreaksBaseMetric, BreaksMetric>(end)
-            - self.breaks.convert_metrics::<BreaksBaseMetric, BreaksMetric>(task.start);
+        let inval_soft = self.breaks.count::<BreaksMetric>(end)
+            - self.breaks.count::<BreaksMetric>(task.start);
 
         let hard_count = 1 + text.line_of_offset(end) - text.line_of_offset(task.start);
 
@@ -772,8 +772,8 @@ impl<'a> MergedBreaks<'a> {
 }
 
 fn merged_line_of_offset(text: &Rope, soft: &Breaks, offset: usize) -> usize {
-    text.convert_metrics::<BaseMetric, LinesMetric>(offset)
-        + soft.convert_metrics::<BreaksBaseMetric, BreaksMetric>(offset)
+    text.count::<LinesMetric>(offset)
+        + soft.count::<BreaksMetric>(offset)
 }
 
 #[cfg(test)]
