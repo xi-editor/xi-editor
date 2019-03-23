@@ -92,7 +92,7 @@ impl NodeInfo for BreaksInfo {
 }
 
 impl DefaultMetric for BreaksInfo {
-    type DefaultMetric = BreaksMetric;
+    type DefaultMetric = BreaksBaseMetric;
 }
 
 impl BreaksLeaf {
