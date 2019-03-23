@@ -593,7 +593,7 @@ impl Rope {
         } else if line == max_line {
             return self.len();
         }
-        self.convert_to_base_units::<LinesMetric>(line)
+        self.count_base_units::<LinesMetric>(line)
     }
 
     /// Returns an iterator over chunks of the rope.
@@ -1225,7 +1225,7 @@ mod tests {
         );
         assert_eq!(
             rope.convert_metrics::<LinesMetric, BaseMetric>(2),
-            rope.convert_to_base_units::<LinesMetric>(2)
+            rope.count_base_units::<LinesMetric>(2)
         );
     }
 
@@ -1254,7 +1254,7 @@ mod tests {
         let utf16_units = rope.count::<Utf16CodeUnitsMetric>(utf8_offset);
         assert_eq!(utf16_units, 9);
 
-        let utf8_offset = rope.convert_to_base_units::<Utf16CodeUnitsMetric>(utf16_units);
+        let utf8_offset = rope.count_base_units::<Utf16CodeUnitsMetric>(utf16_units);
         assert_eq!(utf8_offset, 9);
 
         let rope_with_emoji = Rope::from("hi\ni'm\n😀 four\nlines");
@@ -1268,7 +1268,7 @@ mod tests {
         assert_eq!(utf16_units, 11);
 
         let utf8_offset =
-            rope_with_emoji.convert_to_base_units::<Utf16CodeUnitsMetric>(utf16_units);
+            rope_with_emoji.count_base_units::<Utf16CodeUnitsMetric>(utf16_units);
         assert_eq!(utf8_offset, 13);
 
         //for next line
@@ -1277,7 +1277,7 @@ mod tests {
         assert_eq!(utf16_units, 17);
 
         let utf8_offset =
-            rope_with_emoji.convert_to_base_units::<Utf16CodeUnitsMetric>(utf16_units);
+            rope_with_emoji.count_base_units::<Utf16CodeUnitsMetric>(utf16_units);
         assert_eq!(utf8_offset, 19);
     }
 

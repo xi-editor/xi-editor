@@ -451,10 +451,10 @@ impl<N: DefaultMetric> Node<N> {
     /// let my_rope = Rope::from("first line \n second line \n");
     ///
     /// // get the byte offset of the line at index 1
-    /// let byte_offset = my_rope.convert_to_base_units::<LinesMetric>(1);
+    /// let byte_offset = my_rope.count_base_units::<LinesMetric>(1);
     /// assert_eq!(12, byte_offset);
     /// ```
-    pub fn convert_to_base_units<M: Metric<N>>(&self, offset: usize) -> usize {
+    pub fn count_base_units<M: Metric<N>>(&self, offset: usize) -> usize {
         self.convert_metrics::<M, N::DefaultMetric>(offset)
     }
 }
