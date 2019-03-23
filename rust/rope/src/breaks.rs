@@ -311,4 +311,19 @@ mod tests {
         let node = gen(100);
         assert_eq!(node.len(), 1000);
     }
+
+    #[test]
+    fn default_metric_test() {
+        use super::BreaksBaseMetric;
+
+        let breaks = gen(10);
+        assert_eq!(
+            breaks.convert_metrics::<BreaksBaseMetric, BreaksMetric>(5),
+            breaks.count::<BreaksMetric>(5)
+        );
+        assert_eq!(
+            breaks.convert_metrics::<BreaksMetric, BreaksBaseMetric>(7),
+            breaks.convert_to_base_units::<BreaksMetric>(7)
+        );
+    }
 }
