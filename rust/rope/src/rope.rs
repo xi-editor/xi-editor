@@ -1267,8 +1267,7 @@ mod tests {
         let utf16_units = rope_with_emoji.count::<Utf16CodeUnitsMetric>(utf8_offset);
         assert_eq!(utf16_units, 11);
 
-        let utf8_offset =
-            rope_with_emoji.count_base_units::<Utf16CodeUnitsMetric>(utf16_units);
+        let utf8_offset = rope_with_emoji.count_base_units::<Utf16CodeUnitsMetric>(utf16_units);
         assert_eq!(utf8_offset, 13);
 
         //for next line
@@ -1276,8 +1275,7 @@ mod tests {
         let utf16_units = rope_with_emoji.count::<Utf16CodeUnitsMetric>(utf8_offset);
         assert_eq!(utf16_units, 17);
 
-        let utf8_offset =
-            rope_with_emoji.count_base_units::<Utf16CodeUnitsMetric>(utf16_units);
+        let utf8_offset = rope_with_emoji.count_base_units::<Utf16CodeUnitsMetric>(utf16_units);
         assert_eq!(utf8_offset, 19);
     }
 
