@@ -270,9 +270,13 @@ impl Find {
 
         let mut raw_lines = text.lines_raw(from..to);
 
-        while let Some(start) =
-            find(&mut find_cursor, &mut raw_lines, self.case_matching, &search_string, &self.regex)
-        {
+        while let Some(start) = find(
+            &mut find_cursor,
+            &mut raw_lines,
+            self.case_matching,
+            &search_string,
+            self.regex.as_ref(),
+        ) {
             let end = find_cursor.pos();
 
             if self.whole_words && !self.is_matching_whole_words(text, start, end) {
