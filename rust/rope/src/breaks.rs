@@ -323,7 +323,7 @@ mod tests {
         );
         assert_eq!(
             breaks.convert_metrics::<BreaksMetric, BreaksBaseMetric>(7),
-            breaks.convert_to_base_units::<BreaksMetric>(7)
+            breaks.count_base_units::<BreaksMetric>(7)
         );
     }
 }
