@@ -440,6 +440,23 @@ impl<N: DefaultMetric> Node<N> {
     pub fn count<M: Metric<N>>(&self, offset: usize) -> usize {
         self.convert_metrics::<N::DefaultMetric, M>(offset)
     }
+
+    /// Measures the length of the text bounded by ``M::measure(offset)`` with the default metric.
+    ///
+    /// # Examples
+    /// ```
+    /// use crate::xi_rope::{Rope, LinesMetric};
+    ///
+    /// // the default metric of Rope is BaseMetric (aka number of bytes)
+    /// let my_rope = Rope::from("first line \n second line \n");
+    ///
+    /// // get the byte offset of the line at index 1
+    /// let byte_offset = my_rope.convert_to_base_units::<LinesMetric>(1);
+    /// assert_eq!(12, byte_offset);
+    /// ```
+    pub fn convert_to_base_units<M: Metric<N>>(&self, offset: usize) -> usize {
+        self.convert_metrics::<M, N::DefaultMetric>(offset)
+    }
 }
 
 impl<N: NodeInfo> Default for Node<N> {
