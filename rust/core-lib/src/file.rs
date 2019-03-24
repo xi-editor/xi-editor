@@ -14,6 +14,8 @@
 
 //! Interactions with the file system.
 
+use generic_array::GenericArray;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fmt;
@@ -51,6 +53,7 @@ pub struct FileInfo {
     pub encoding: CharacterEncoding,
     pub path: PathBuf,
     pub mod_time: Option<SystemTime>,
+    pub sha_sum: Option<GenericArray<u8, generic_array::typenum::U32>>,
     pub has_changed: bool,
     #[cfg(target_family = "unix")]
     pub permissions: Option<u32>,
@@ -98,7 +101,10 @@ impl FileManager {
         if let Some(info) = self.file_info.get_mut(&id) {
             let mod_t = get_mod_time(path);
             if mod_t != info.mod_time {
-                info.has_changed = true
+                let sha = get_sha256(path);
+                if sha != info.sha_sum {
+                    info.has_changed = true
+                }
             }
             return info.has_changed;
         }
@@ -143,6 +149,7 @@ impl FileManager {
         let info = FileInfo {
             encoding: CharacterEncoding::Utf8,
             path: path.to_owned(),
+            sha_sum: get_sha256(path),
             mod_time: get_mod_time(path),
             has_changed: false,
             #[cfg(target_family = "unix")]
@@ -168,7 +175,9 @@ impl FileManager {
             let encoding = self.file_info[&id].encoding;
             try_save(path, text, encoding, self.get_info(id))
                 .map_err(|e| FileError::Io(e, path.to_owned()))?;
-            self.file_info.get_mut(&id).unwrap().mod_time = get_mod_time(path);
+            let file_info = self.file_info.get_mut(&id).unwrap();
+            file_info.sha_sum = get_sha256(path);
+            file_info.mod_time = get_mod_time(path)
         }
         Ok(())
     }
@@ -190,6 +199,7 @@ where
     let info = FileInfo {
         encoding,
         mod_time: get_mod_time(&path),
+        sha_sum: get_sha256(&path),
         #[cfg(target_family = "unix")]
         permissions: get_permissions(&path),
         path: path.as_ref().to_owned(),
@@ -264,6 +274,15 @@ impl CharacterEncoding {
 /// if present.
 fn get_mod_time<P: AsRef<Path>>(path: P) -> Option<SystemTime> {
     File::open(path).and_then(|f| f.metadata()).and_then(|meta| meta.modified()).ok()
+}
+
+/// Returns the SHA256 checksum of a file at a given path, if present.
+fn get_sha256<P: AsRef<Path>>(path: P) -> Option<GenericArray<u8, generic_array::typenum::U32>> {
+    let mut hasher = Sha256::new();
+    File::open(path)
+        .and_then(|mut f| std::io::copy(&mut f, &mut hasher))
+        .map(|_| hasher.result())
+        .ok()
 }
 
 /// Returns the file permissions for the file at a given path on UNIXy systems,
