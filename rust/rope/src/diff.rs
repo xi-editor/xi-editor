@@ -23,8 +23,6 @@ use crate::interval::Interval;
 use crate::rope::{LinesMetric, Rope, RopeDelta, RopeInfo};
 use crate::tree::{Node, NodeInfo};
 
-use memchr::memchr;
-
 /// A trait implemented by various diffing strategies.
 pub trait Diff<N: NodeInfo> {
     fn compute_delta(base: &Node<N>, target: &Node<N>) -> Delta<N>;
