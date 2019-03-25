@@ -32,8 +32,10 @@ pub(crate) enum ViewEvent {
     ModifySelection(Movement),
     SelectAll,
     Scroll(LineRange),
-    AddSelectionAbove,
-    AddSelectionBelow,
+    AddCaretAbove,
+    AddCaretBelow,
+    AddSelectionAbove, // deprecated, use AddCaretAbove
+    AddSelectionBelow, // deprecated, use AddCaretBelow
     Click(MouseAction),
     Drag(MouseAction),
     Gesture { line: u64, col: u64, ty: GestureType },
@@ -214,6 +216,8 @@ impl From<EditNotification> for EventDomain {
             PageDownAndModifySelection =>
                 ViewEvent::ModifySelection(Movement::DownPage).into(),
             SelectAll => ViewEvent::SelectAll.into(),
+            AddCaretAbove => ViewEvent::AddCaretAbove.into(),
+            AddCaretBelow => ViewEvent::AddCaretBelow.into(),
             AddSelectionAbove => ViewEvent::AddSelectionAbove.into(),
             AddSelectionBelow => ViewEvent::AddSelectionBelow.into(),
             Scroll(range) => ViewEvent::Scroll(range).into(),

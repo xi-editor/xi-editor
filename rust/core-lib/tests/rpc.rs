@@ -253,8 +253,8 @@ const MOVEMENT_RPCS: &str = r#"{"method":"edit","params":{"view_id":"view-id-1",
 {"method":"edit","params":{"view_id":"view-id-1","method":"page_up_and_modify_selection","params":[]}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"page_down_and_modify_selection","params":[]}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"select_all","params":[]}}
-{"method":"edit","params":{"view_id":"view-id-1","method":"add_selection_above","params":[]}}
-{"method":"edit","params":{"view_id":"view-id-1","method":"add_selection_below","params":[]}}
+{"method":"edit","params":{"view_id":"view-id-1","method":"add_caret_above","params":[]}}
+{"method":"edit","params":{"view_id":"view-id-1","method":"add_caret_below","params":[]}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"collapse_selections","params":[]}}"#;
 
 const TEXT_EDIT_RPCS: &str =

@@ -904,7 +904,7 @@ mod tests {
         lines.|]" );
 
         ctx.do_edit(EditNotification::CollapseSelections);
-        ctx.do_edit(EditNotification::AddSelectionAbove);
+        ctx.do_edit(EditNotification::AddCaretAbove);
         assert_eq!(harness.debug_render(),"\
         this is a string\n\
         that h|as three\n\
@@ -1775,7 +1775,7 @@ mod tests {
         Done.";
         ctx.do_edit(EditNotification::Insert { chars: multi_text.into() });
         ctx.do_edit(EditNotification::Gesture { line: 1, col: 9, ty: PointSelect });
-        ctx.do_edit(EditNotification::AddSelectionAbove);
+        ctx.do_edit(EditNotification::AddCaretAbove);
         ctx.do_edit(EditNotification::IncreaseNumber);
         assert_eq!(harness.debug_render(), "\
         example 43| number\n\
@@ -1833,7 +1833,7 @@ mod tests {
         ctx.do_edit(EditNotification::ToggleRecording { recording_name: Some(recording_name.clone()) });
 
         // Swap last word of the current line and the line below
-        ctx.do_edit(EditNotification::AddSelectionBelow);
+        ctx.do_edit(EditNotification::AddCaretBelow);
         ctx.do_edit(EditNotification::MoveToRightEndOfLine);
         ctx.do_edit(EditNotification::MoveWordLeftAndModifySelection);
         ctx.do_edit(EditNotification::Transpose);
@@ -1895,7 +1895,7 @@ mod tests {
         let harness = ContextHarness::new(initial_text);
         let mut ctx = harness.make_context();
         ctx.do_edit(EditNotification::Gesture { line: 1, col: 5, ty: PointSelect });
-        ctx.do_edit(EditNotification::AddSelectionAbove);
+        ctx.do_edit(EditNotification::AddCaretAbove);
         assert_eq!(harness.debug_render(),"\
         this |is a string\n\
         that |has three\n\
@@ -1905,7 +1905,7 @@ mod tests {
 
         ctx.do_edit(EditNotification::CollapseSelections);
         ctx.do_edit(EditNotification::Gesture { line: 1, col: 5, ty: PointSelect });
-        ctx.do_edit(EditNotification::AddSelectionBelow);
+        ctx.do_edit(EditNotification::AddCaretBelow);
         assert_eq!(harness.debug_render(),"\
         this is a string\n\
         that |has three\n\
@@ -1915,7 +1915,7 @@ mod tests {
 
         ctx.do_edit(EditNotification::CollapseSelections);
         ctx.do_edit(EditNotification::Gesture { line: 4, col: 10, ty: PointSelect });
-        ctx.do_edit(EditNotification::AddSelectionAbove);
+        ctx.do_edit(EditNotification::AddCaretAbove);
         assert_eq!(harness.debug_render(),"\
         this is a string\n\
         that has t|hree\n\
@@ -1974,7 +1974,7 @@ mod tests {
         let mut ctx = harness.make_context();
 
         ctx.do_edit(EditNotification::Gesture{line: 0, col: 4, ty: PointSelect}); // end of first line
-        ctx.do_edit(EditNotification::AddSelectionBelow); // add cursor below that, at eof
+        ctx.do_edit(EditNotification::AddCaretBelow); // add cursor below that, at eof
         ctx.do_edit(EditNotification::Transpose);
 
         assert_eq!(harness.debug_render(), "wor\nd|");
