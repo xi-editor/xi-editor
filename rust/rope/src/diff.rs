@@ -15,6 +15,7 @@
 //! Computing deltas between two ropes.
 
 use std::collections::HashMap;
+use std::borrow::Cow;
 
 use crate::compare::RopeScanner;
 use crate::delta::{Delta, DeltaElement};
@@ -56,6 +57,7 @@ impl Diff<RopeInfo> for LineHashDiff {
         let mut scanner = RopeScanner::new(base, target);
         let (start_offset, diff_end) = scanner.find_min_diff_range();
         let target_end = target.len() - diff_end;
+        let base_end = base.len() - diff_end;
 
         if start_offset > 0 {
             builder.copy(0, 0, start_offset);
@@ -66,11 +68,7 @@ impl Diff<RopeInfo> for LineHashDiff {
             return builder.to_delta(base, target);
         }
 
-        // TODO: because of how `lines_raw` returns Cows, we can't easily build
-        // the lookup table without allocating. The eventual solution would be
-        // to have a custom iter on the rope that returns suitable chunks.
-        let base_string = String::from(base);
-        let line_hashes = make_line_hashes(&base_string, MIN_SIZE);
+        let line_hashes = make_line_hashes(&base, MIN_SIZE, start_offset, base_end);
 
         let line_count = target.measure::<LinesMetric>() + 1;
         let mut matches = Vec::with_capacity(line_count);
@@ -250,45 +248,16 @@ impl DiffBuilder {
     }
 }
 
-/// Fast iterator over lines in a string, not removing newline characters.
-struct LineScanner<'a> {
-    inner: &'a str,
-    idx: usize,
-}
-
-impl<'a> Iterator for LineScanner<'a> {
-    type Item = &'a str;
-    fn next(&mut self) -> Option<&'a str> {
-        if self.idx >= self.inner.len() {
-            return None;
-        }
-
-        match memchr(b'\n', &self.inner.as_bytes()[self.idx..]) {
-            Some(idx) => {
-                let next_idx = self.idx + idx + 1;
-                let result = &self.inner[self.idx..next_idx];
-                self.idx = next_idx;
-                Some(result)
-            }
-            None => {
-                let result = &self.inner[self.idx..];
-                self.idx = self.inner.len();
-                Some(result)
-            }
-        }
-    }
-}
-
-fn make_line_hashes<'a>(base: &'a str, min_size: usize) -> HashMap<&'a str, usize> {
-    let mut offset = 0;
+fn make_line_hashes(base: &Rope, min_size: usize, start: usize, end: usize) -> HashMap<Cow<str>, usize> {
+    let mut offset = start;
     let mut line_hashes = HashMap::with_capacity(base.len() / 60);
-    let iter = LineScanner { inner: base, idx: 0 };
-    for line in iter {
+    for line in base.lines_raw(start..end) {
+        let line_len = line.len();
         let non_ws = non_ws_offset(&line);
-        if line.len() - non_ws >= min_size {
-            line_hashes.insert(&line[non_ws..], offset + non_ws);
+        if line_len - non_ws >= min_size {
+            line_hashes.insert(Cow::from(line[non_ws..].to_owned()), offset + non_ws);
         }
-        offset += line.len();
+        offset += line_len;
     }
     line_hashes
 }
