@@ -77,7 +77,7 @@ impl Diff<RopeInfo> for LineHashDiff {
         let mut offset = 0;
         let mut cursor = Cursor::new(&target, offset);
         
-        while cursor.pos() < target.len() {
+        while cursor.pos() < target_end {
             let next_offset;
             match cursor.next::<LinesMetric>() {
                 Some(x) => next_offset = x,
@@ -203,13 +203,7 @@ fn longest_increasing_region_set(items: &[(usize, usize)]) -> Vec<(usize, usize)
 
 #[inline]
 fn non_ws_offset(rs: &RopeSlice) -> usize {
-    let chunk = rs.0.iter_chunks(rs.1.clone()).next();
-    match chunk {
-        Some(x) =>
-            return x.as_bytes().iter().take_while(|b| **b == b' ' || **b == b'\t').count(),
-        None    =>
-            return 0,
-    }
+    rs.0.iter_chunks(rs.1.clone()).take_while(|b| *b == " " || *b == "\t").count()
 }
 
 /// Represents copying `len` bytes from base to target.
@@ -262,19 +256,20 @@ impl DiffBuilder {
 }
 
 fn make_line_hashes<'a>(base: &'a RopeSlice, min_size: usize) -> HashMap<RopeSlice<'a>, usize> {
-    let mut offset = 0;
+    let mut offset = base.1.start;
     let mut line_hashes = HashMap::with_capacity(base.0.len() / 60);
     let mut cursor = Cursor::new(&base.0, offset);
     
-    while cursor.pos() < base.0.len() {
+    while cursor.pos() < base.1.end {
         let next_offset;
         match cursor.next::<LinesMetric>() {
             Some(x) => next_offset = x,
             None    => break,
         }
-        let line = RopeSlice(base.0, offset..next_offset);
+        let mut line = RopeSlice(base.0, offset..next_offset);
         let non_ws = non_ws_offset(&line);
         if (line.1.end - line.1.start) - non_ws >= min_size {
+            line.1.start = offset + non_ws;
             line_hashes.insert(line, offset + non_ws);
         }
         offset = next_offset;
