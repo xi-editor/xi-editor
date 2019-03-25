@@ -130,19 +130,19 @@ impl AnnotationSlice {
         })
     }
 
-    pub fn to_annotations(&self, view: &View, text: &Rope) -> Annotations {
+    pub fn to_annotations(&self, text: &Rope) -> Annotations {
         if self.ranges.is_empty() {
             // there are no annotations
             return Annotations {
                 items: SpansBuilder::new(0).build(),
-                annotation_type: self.annotation_type.clone()
-            }
+                annotation_type: self.annotation_type.clone(),
+            };
         }
 
         let span_len = self
             .ranges
             .last()
-            .map(|anno_range| view.offset_of_line(text, anno_range.end_line) + anno_range.end_col)
+            .map(|anno_range| text.offset_of_line(anno_range.end_line) + anno_range.end_col)
             .unwrap();
 
         let mut sb = SpansBuilder::new(span_len);
@@ -153,8 +153,8 @@ impl AnnotationSlice {
                 None => json!(null),
             };
 
-            let start = view.offset_of_line(text, range.start_line) + range.start_col;
-            let end = view.offset_of_line(text, range.end_line) + range.end_col;
+            let start = text.offset_of_line(range.start_line) + range.start_col;
+            let end = text.offset_of_line(range.end_line) + range.end_col;
 
             sb.add_span(Interval::new(start, end), payload);
         }

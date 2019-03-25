@@ -915,7 +915,7 @@ impl Editor {
         for annotation_slice in annotation_slices {
             let mut start = start;
             let mut end_offset = start + len;
-            let mut annotations = annotation_slice.to_annotations(view, &self.text);
+            let mut annotations = annotation_slice.to_annotations(&self.text);
 
             if rev != self.engine.get_head_rev_id().token() {
                 if let Ok(delta) = self.engine.try_delta_rev_head(rev) {
