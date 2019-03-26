@@ -18,8 +18,7 @@
 use std::borrow::Cow;
 use std::cmp::{max, min};
 use std::fmt;
-use std::ops::{Add, Range};
-use std::hash::{Hash, Hasher};
+use std::ops::Add;
 use std::str;
 use std::str::FromStr;
 use std::string::ParseError;
@@ -933,47 +932,6 @@ impl<'a> Iterator for Lines<'a> {
         }
     }
 }
-
-pub struct RopeSlice<'a> (
-    pub &'a Rope,
-    pub Range<usize>
-);
-
-impl<'a> std::fmt::Debug for RopeSlice<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::result::Result<(), std::fmt::Error> {
-        let temp = &String::from(self.0)[self.1.clone()];
-        f.debug_struct("RopeSlice")
-            .field("slice", &temp)
-            .finish()
-    }
-}
-
-impl<'a> Hash for RopeSlice<'a> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        for self_chunk in self.0.iter_chunks(self.1.clone()) {
-            Hasher::write(state, self_chunk.as_bytes());
-        }
-        self.1.hash(state);
-    }
-}
-
-impl<'a> PartialEq for RopeSlice<'a> {
-    fn eq(&self, other: &RopeSlice) -> bool {
-        if (self.1.end - self.1.start) != (other.1.end - other.1.start) {
-            return false;
-        } else {
-            let iter = self.0.iter_chunks(self.1.clone()).zip(other.0.iter_chunks(other.1.clone()));
-            for (self_chunk, other_chunk) in iter {
-                if self_chunk != other_chunk {
-                    return false;
-                }
-            }
-            return true;
-        }
-    }
-}
-
-impl<'a> Eq for RopeSlice<'a> {}
 
 #[cfg(test)]
 mod tests {

@@ -15,12 +15,14 @@
 //! Computing deltas between two ropes.
 
 use std::collections::HashMap;
+use std::borrow::Cow;
+use std::ops::Range;
 
 use crate::compare::RopeScanner;
 use crate::delta::{Delta, DeltaElement};
 use crate::interval::Interval;
-use crate::rope::{LinesMetric, Rope, RopeDelta, RopeInfo, RopeSlice};
-use crate::tree::{Node, NodeInfo, Cursor};
+use crate::rope::{LinesMetric, Rope, RopeDelta, RopeInfo};
+use crate::tree::{Node, NodeInfo};
 
 /// A trait implemented by various diffing strategies.
 pub trait Diff<N: NodeInfo> {
@@ -54,6 +56,7 @@ impl Diff<RopeInfo> for LineHashDiff {
         let mut scanner = RopeScanner::new(base, target);
         let (start_offset, diff_end) = scanner.find_min_diff_range();
         let target_end = target.len() - diff_end;
+        let base_end = base.len() - diff_end;
 
         if start_offset > 0 {
             builder.copy(0, 0, start_offset);
@@ -64,39 +67,28 @@ impl Diff<RopeInfo> for LineHashDiff {
             return builder.to_delta(base, target);
         }
 
-        let base_slice = RopeSlice(base, 0..base.len());
-        let line_hashes = make_line_hashes(&base_slice, MIN_SIZE);
+        let line_hashes = make_line_hashes(&base, MIN_SIZE, start_offset..base_end);
 
         let line_count = target.measure::<LinesMetric>() + 1;
         let mut matches = Vec::with_capacity(line_count);
 
+        let mut targ_line_offset = 0;
         let mut prev_base = 0;
 
         let mut needs_subseq = false;
-
-        let mut offset = 0;
-        let mut cursor = Cursor::new(&target, offset);
-        
-        while cursor.pos() < target_end {
-            let next_offset;
-            match cursor.next::<LinesMetric>() {
-                Some(x) => next_offset = x,
-                None    => break,
-            }
-            let line = RopeSlice(target, offset..next_offset);
-            let len_line = line.1.end - line.1.start;
+        for line in target.lines_raw(start_offset..target_end) {
             let non_ws = non_ws_offset(&line);
-            if len_line - non_ws >= MIN_SIZE && next_offset > start_offset {
-                let non_ws_line = RopeSlice(target, (offset + non_ws)..next_offset);
-                if let Some(base_off) = line_hashes.get(&non_ws_line) {
-                    matches.push((offset + non_ws, *base_off));
+            if line.len() - non_ws >= MIN_SIZE {
+                if let Some(base_off) = line_hashes.get(&line[non_ws..]) {
+                    let targ_off = targ_line_offset + non_ws;
+                    matches.push((start_offset + targ_off, *base_off));
                     if *base_off < prev_base {
                         needs_subseq = true;
                     }
                     prev_base = *base_off;
                 }
             }
-            offset = next_offset;
+            targ_line_offset += line.len();
         }
 
         // we now have an ordered list of matches and their positions.
@@ -202,8 +194,8 @@ fn longest_increasing_region_set(items: &[(usize, usize)]) -> Vec<(usize, usize)
 }
 
 #[inline]
-fn non_ws_offset(rs: &RopeSlice) -> usize {
-    rs.0.iter_chunks(rs.1.clone()).take_while(|b| *b == " " || *b == "\t").count()
+fn non_ws_offset(s: &str) -> usize {
+    s.as_bytes().iter().take_while(|b| **b == b' ' || **b == b'\t').count()
 }
 
 /// Represents copying `len` bytes from base to target.
@@ -255,24 +247,22 @@ impl DiffBuilder {
     }
 }
 
-fn make_line_hashes<'a>(base: &'a RopeSlice, min_size: usize) -> HashMap<RopeSlice<'a>, usize> {
-    let mut offset = base.1.start;
-    let mut line_hashes = HashMap::with_capacity(base.0.len() / 60);
-    let mut cursor = Cursor::new(&base.0, offset);
-    
-    while cursor.pos() < base.1.end {
-        let next_offset;
-        match cursor.next::<LinesMetric>() {
-            Some(x) => next_offset = x,
-            None    => break,
-        }
-        let mut line = RopeSlice(base.0, offset..next_offset);
+/// Create a HashMap based on each line in the rope wich respect parameters
+/// given, a mininum line length and some threshold. This function always 
+/// ignore whitespace at the begining of line.
+fn make_line_hashes<'a>(base: &'a Rope, min_size: usize, range: Range<usize>) -> HashMap<Cow<'a, str>, usize> {
+    let mut offset = range.start;
+    let mut line_hashes = HashMap::with_capacity(base.len() / 60);
+    for line in base.lines_raw(range.start..range.end) {
         let non_ws = non_ws_offset(&line);
-        if (line.1.end - line.1.start) - non_ws >= min_size {
-            line.1.start = offset + non_ws;
-            line_hashes.insert(line, offset + non_ws);
+        if line.len() - non_ws >= min_size {
+            let cow = match line {
+                Cow::Owned(ref s) => Cow::Owned(s[non_ws..].to_string()),
+                Cow::Borrowed(s) => Cow::Borrowed(&s[non_ws..]),
+            };
+            line_hashes.insert(cow, offset + non_ws);
         }
-        offset = next_offset;
+        offset += line.len();
     }
     line_hashes
 }
