@@ -247,6 +247,9 @@ impl DiffBuilder {
     }
 }
 
+/// Create a HashMap based on each line in the rope wich respect parameters
+/// given, a mininum line length and some threshold. This function always 
+/// ignore whitespace at the begining of line.
 fn make_line_hashes<'a>(base: &'a Rope, min_size: usize, range: Range<usize>) -> HashMap<Cow<'a, str>, usize> {
     let mut offset = range.start;
     let mut line_hashes = HashMap::with_capacity(base.len() / 60);
