@@ -250,10 +250,10 @@ impl DiffBuilder {
 /// Create a HashMap based on each line in the rope wich respect parameters
 /// given, a mininum line length and some threshold. This function always 
 /// ignore whitespace at the begining of line.
-fn make_line_hashes<'a>(base: &'a Rope, min_size: usize, range: Range<usize>) -> HashMap<Cow<'a, str>, usize> {
-    let mut offset = range.start;
+fn make_line_hashes<'a>(base: &'a Rope, min_size: usize, threshold: Range<usize>) -> HashMap<Cow<'a, str>, usize> {
+    let mut offset = threshold.start;
     let mut line_hashes = HashMap::with_capacity(base.len() / 60);
-    for line in base.lines_raw(range.start..range.end) {
+    for line in base.lines_raw(threshold) {
         let non_ws = non_ws_offset(&line);
         if line.len() - non_ws >= min_size {
             let cow = match line {
