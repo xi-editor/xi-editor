@@ -14,8 +14,8 @@
 
 //! Computing deltas between two ropes.
 
-use std::collections::HashMap;
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::ops::Range;
 
 use crate::compare::RopeScanner;
@@ -248,9 +248,13 @@ impl DiffBuilder {
 }
 
 /// Create a HashMap based on each line in the rope wich respect parameters
-/// given, a mininum line length and some threshold. This function always 
+/// given, a mininum line length and some threshold. This function always
 /// ignore whitespace at the begining of line.
-fn make_line_hashes<'a>(base: &'a Rope, min_size: usize, threshold: Range<usize>) -> HashMap<Cow<'a, str>, usize> {
+fn make_line_hashes<'a>(
+    base: &'a Rope,
+    min_size: usize,
+    threshold: Range<usize>,
+) -> HashMap<Cow<'a, str>, usize> {
     let mut offset = threshold.start;
     let mut line_hashes = HashMap::with_capacity(base.len() / 60);
     for line in base.lines_raw(threshold) {
