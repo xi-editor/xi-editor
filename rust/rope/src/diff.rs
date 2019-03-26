@@ -16,6 +16,7 @@
 
 use std::collections::HashMap;
 use std::borrow::Cow;
+use std::ops::Range;
 
 use crate::compare::RopeScanner;
 use crate::delta::{Delta, DeltaElement};
@@ -66,7 +67,7 @@ impl Diff<RopeInfo> for LineHashDiff {
             return builder.to_delta(base, target);
         }
 
-        let line_hashes = make_line_hashes(&base, MIN_SIZE, start_offset, base_end);
+        let line_hashes = make_line_hashes(&base, MIN_SIZE, start_offset..base_end);
 
         let line_count = target.measure::<LinesMetric>() + 1;
         let mut matches = Vec::with_capacity(line_count);
@@ -246,16 +247,19 @@ impl DiffBuilder {
     }
 }
 
-fn make_line_hashes(base: &Rope, min_size: usize, start: usize, end: usize) -> HashMap<Cow<str>, usize> {
-    let mut offset = start;
+fn make_line_hashes<'a>(base: &'a Rope, min_size: usize, range: Range<usize>) -> HashMap<Cow<'a, str>, usize> {
+    let mut offset = range.start;
     let mut line_hashes = HashMap::with_capacity(base.len() / 60);
-    for line in base.lines_raw(start..end) {
-        let line_len = line.len();
+    for line in base.lines_raw(range.start..range.end) {
         let non_ws = non_ws_offset(&line);
-        if line_len - non_ws >= min_size {
-            line_hashes.insert(Cow::from(line[non_ws..].to_owned()), offset + non_ws);
+        if line.len() - non_ws >= min_size {
+            let cow = match line {
+                Cow::Owned(ref s) => Cow::Owned(s[non_ws..].to_string()),
+                Cow::Borrowed(s) => Cow::Borrowed(&s[non_ws..]),
+            };
+            line_hashes.insert(cow, offset + non_ws);
         }
-        offset += line_len;
+        offset += line.len();
     }
     line_hashes
 }
