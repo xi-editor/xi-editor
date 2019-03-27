@@ -50,7 +50,6 @@ fn build_few_big_lines(size: usize) -> String {
     s
 }
 
-
 #[bench]
 fn benchmark_file_load_short_lines(b: &mut Bencher) {
     let text = build_short_lines(50_000);
