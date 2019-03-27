@@ -50,6 +50,7 @@ fn build_few_big_lines(size: usize) -> String {
     s
 }
 
+
 #[bench]
 fn benchmark_file_load_short_lines(b: &mut Bencher) {
     let text = build_short_lines(50_000);
@@ -88,6 +89,17 @@ fn benchmark_paste_into_line(b: &mut Bencher) {
 }
 
 #[bench]
+fn benchmark_large_paste_into_line(b: &mut Bencher) {
+    let mut text = Rope::from(build_short_lines(1_000_000));
+    let insertion = build_short_lines(50_000);
+    let mut offset = 25_000;
+    b.iter(|| {
+        text.edit(offset..=offset, &insertion);
+        offset += 150;
+    });
+}
+
+#[bench]
 fn benchmark_insert_newline(b: &mut Bencher) {
     let mut text = Rope::from(build_few_big_lines(1_000_000));
     let mut offset = 1000;
@@ -102,6 +114,19 @@ fn benchmark_overwrite_into_line(b: &mut Bencher) {
     let mut text = Rope::from(build_short_lines(50_000));
     let mut offset = 100;
     let insertion = "a".repeat(50);
+    b.iter(|| {
+        // TODO: if the method runs too quickly, this may generate a fault
+        // since there's an upper limit to how many times this can run.
+        text.edit(offset..=offset + 20, &insertion);
+        offset += 30;
+    });
+}
+
+#[bench]
+fn benchmark_large_overwrite_into_line(b: &mut Bencher) {
+    let mut text = Rope::from(build_short_lines(1_000_000));
+    let insertion = build_short_lines(50_000);
+    let mut offset = 25_000;
     b.iter(|| {
         // TODO: if the method runs too quickly, this may generate a fault
         // since there's an upper limit to how many times this can run.
