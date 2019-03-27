@@ -16,7 +16,6 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::ops::Range;
 
 use crate::compare::RopeScanner;
 use crate::delta::{Delta, DeltaElement};
@@ -56,7 +55,6 @@ impl Diff<RopeInfo> for LineHashDiff {
         let mut scanner = RopeScanner::new(base, target);
         let (start_offset, diff_end) = scanner.find_min_diff_range();
         let target_end = target.len() - diff_end;
-        let base_end = base.len() - diff_end;
 
         if start_offset > 0 {
             builder.copy(0, 0, start_offset);
@@ -67,7 +65,7 @@ impl Diff<RopeInfo> for LineHashDiff {
             return builder.to_delta(base, target);
         }
 
-        let line_hashes = make_line_hashes(&base, MIN_SIZE, start_offset..base_end);
+        let line_hashes = make_line_hashes(&base, MIN_SIZE);
 
         let line_count = target.measure::<LinesMetric>() + 1;
         let mut matches = Vec::with_capacity(line_count);
@@ -247,17 +245,12 @@ impl DiffBuilder {
     }
 }
 
-/// Create a HashMap based on each line in the rope wich respect parameters
-/// given, a mininum line length and some threshold. This function always
-/// ignore whitespace at the begining of line.
-fn make_line_hashes<'a>(
-    base: &'a Rope,
-    min_size: usize,
-    threshold: Range<usize>,
-) -> HashMap<Cow<'a, str>, usize> {
-    let mut offset = threshold.start;
+/// Create a HashMap based on each line in the rope wich respect a mininum line length.
+/// This function always ignore whitespace at the begining of line.
+fn make_line_hashes<'a>(base: &'a Rope, min_size: usize) -> HashMap<Cow<'a, str>, usize> {
+    let mut offset = 0;
     let mut line_hashes = HashMap::with_capacity(base.len() / 60);
-    for line in base.lines_raw(threshold) {
+    for line in base.lines_raw(..) {
         let non_ws = non_ws_offset(&line);
         if line.len() - non_ws >= min_size {
             let cow = match line {
