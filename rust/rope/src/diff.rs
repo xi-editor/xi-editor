@@ -245,8 +245,8 @@ impl DiffBuilder {
     }
 }
 
-/// Create a HashMap based on each line in the rope wich respect a mininum line length.
-/// This function always ignore whitespace at the begining of line.
+/// Creates a map of lines to offsets, ignoring trailing whitespace, and only for those lines
+/// where line.len() >= min_size. Offsets refer to the first non-whitespace byte in the line.
 fn make_line_hashes<'a>(base: &'a Rope, min_size: usize) -> HashMap<Cow<'a, str>, usize> {
     let mut offset = 0;
     let mut line_hashes = HashMap::with_capacity(base.len() / 60);
