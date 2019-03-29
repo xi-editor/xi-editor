@@ -3,7 +3,7 @@
   <a href="https://github.com/xi-editor/xi-editor">Xi Editor</a>
 </h1>
 
-<p align="center"><em>(pronounced "Zigh")</em></p>
+<p align="center"><em>pronounced "zaɪ̯"</em>; rhymes with "sigh", but starts with "z" from "zoo"</p>
 
 <h4 align="center">A modern editor with a backend written in Rust.</h4>
 
