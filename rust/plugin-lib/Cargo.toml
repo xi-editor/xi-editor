@@ -20,9 +20,6 @@ log = "0.4.3"
 [dependencies.xi-trace]
 path = "../trace"
 
-[dependencies.xi-trace-dump]
-path = "../trace-dump"
-
 [dependencies.xi-rpc]
 path = "../rpc"
 

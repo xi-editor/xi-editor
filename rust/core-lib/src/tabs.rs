@@ -864,16 +864,16 @@ impl CoreState {
     where
         P: AsRef<Path>,
     {
-        use xi_trace_dump::*;
+        use xi_trace::chrome_trace_dump;
         let mut all_traces = xi_trace::samples_cloned_unsorted();
-        if let Ok(mut traces) = chrome_trace::decode(frontend_samples) {
+        if let Ok(mut traces) = chrome_trace_dump::decode(frontend_samples) {
             all_traces.append(&mut traces);
         }
 
         for plugin in &self.running_plugins {
             match plugin.collect_trace() {
                 Ok(json) => {
-                    let mut trace = chrome_trace::decode(json).unwrap();
+                    let mut trace = chrome_trace_dump::decode(json).unwrap();
                     all_traces.append(&mut trace);
                 }
                 Err(e) => error!("trace error {:?}", e),
@@ -890,7 +890,7 @@ impl CoreState {
             }
         };
 
-        if let Err(e) = chrome_trace::serialize(&all_traces, &mut trace_file) {
+        if let Err(e) = chrome_trace_dump::serialize(&all_traces, &mut trace_file) {
             error!("error saving trace {:?}", e);
         }
     }

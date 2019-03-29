@@ -11,34 +11,76 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
 #![cfg_attr(feature = "benchmarks", feature(test))]
 #![allow(
-    clippy::if_same_then_else,
-    clippy::needless_bool,
-    clippy::needless_pass_by_value,
-    clippy::ptr_arg
+clippy::if_same_then_else,
+clippy::needless_bool,
+clippy::needless_pass_by_value,
+clippy::ptr_arg
 )]
 
-extern crate xi_trace;
-
-#[cfg(any(feature = "chrome_trace_event"))]
-extern crate serde;
-
-#[macro_use]
-extern crate serde_derive;
-
-#[cfg(all(not(test), feature = "chrome_trace_event"))]
-extern crate serde_json;
-
-#[cfg(test)]
-#[macro_use]
-extern crate serde_json;
 
 #[cfg(all(test, feature = "benchmarks"))]
 extern crate test;
 
-#[cfg(feature = "chrome_trace_event")]
-pub mod chrome_trace;
+use serde_json;
+use std::io::{Error as IOError, Read, Write};
+use super::Sample;
+
+#[derive(Debug)]
+pub enum Error {
+    Io(IOError),
+    Json(serde_json::Error),
+    DecodingFormat(String),
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(untagged)]
+enum ChromeTraceArrayEntries {
+    Array(Vec<Sample>),
+}
+
+/// This serializes the samples into the [Chrome trace event format](https://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=1&ved=0ahUKEwiJlZmDguXYAhUD4GMKHVmEDqIQFggpMAA&url=https%3A%2F%2Fdocs.google.com%2Fdocument%2Fd%2F1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU%2Fpreview&usg=AOvVaw0tBFlVbDVBikdzLqgrWK3g).
+///
+/// # Arguments
+/// `samples` - Something that can be converted into an iterator of sample
+/// references.
+/// `format` - Which trace format to save the data in.  There are four total
+/// formats described in the document.
+/// `output` - Where to write the serialized result.
+///
+/// # Returns
+/// A `Result<(), Error>` that indicates if serialization was successful or the
+/// details of any error that occured.
+///
+/// # Examples
+/// ```norun
+/// let samples = xi_trace::samples_cloned_sorted();
+/// let mut serialized = Vec::<u8>::new();
+/// serialize(samples.iter(), serialized);
+/// ```
+pub fn serialize<W>(samples: &Vec<Sample>, output: W) -> Result<(), Error>
+where
+    W: Write,
+{
+    serde_json::to_writer(output, samples).map_err(Error::Json)
+}
+
+pub fn to_value(samples: &Vec<Sample>) -> Result<serde_json::Value, Error> {
+    serde_json::to_value(samples).map_err(Error::Json)
+}
+
+pub fn decode(samples: serde_json::Value) -> Result<Vec<Sample>, Error> {
+    serde_json::from_value(samples).map_err(Error::Json)
+}
+
+pub fn deserialize<R>(input: R) -> Result<Vec<Sample>, Error>
+where
+    R: Read,
+{
+    serde_json::from_reader(input).map_err(Error::Json)
+}
 
 #[cfg(test)]
 mod tests {
@@ -46,7 +88,7 @@ mod tests {
     #[cfg(feature = "benchmarks")]
     use test::Bencher;
     #[cfg(feature = "dict_payload")]
-    use xi_trace::{StrCow, TracePayloadT};
+    use super::super::{StrCow, TracePayloadT};
 
     #[cfg(all(not(feature = "dict_payload"), not(feature = "json_payload")))]
     fn to_payload(value: &'static str) -> &'static str {
@@ -68,7 +110,7 @@ mod tests {
     #[cfg(feature = "chrome_trace_event")]
     #[test]
     fn test_chrome_trace_serialization() {
-        use xi_trace::*;
+        use super::super::*;
 
         let trace = Trace::enabled(Config::with_limit_count(10));
         trace.instant("sample1", &["test", "chrome"]);
@@ -87,7 +129,7 @@ mod tests {
 
         let mut serialized = Vec::<u8>::new();
 
-        let result = chrome_trace::serialize(&samples, &mut serialized);
+        let result = serialize(&samples, &mut serialized);
         assert!(result.is_ok(), "{:?}", result);
 
         let decoded_result: Vec<serde_json::Value> = serde_json::from_slice(&serialized).unwrap();
@@ -111,7 +153,7 @@ mod tests {
     #[cfg(feature = "chrome_trace_event")]
     #[test]
     fn test_chrome_trace_deserialization() {
-        use xi_trace::*;
+        use super::super::*;
 
         let trace = Trace::enabled(Config::with_limit_count(10));
         trace.instant("sample1", &["test", "chrome"]);
@@ -122,20 +164,20 @@ mod tests {
         let samples = trace.samples_cloned_unsorted();
 
         let mut serialized = Vec::<u8>::new();
-        let result = chrome_trace::serialize(&samples, &mut serialized);
+        let result = serialize(&samples, &mut serialized);
         assert!(result.is_ok(), "{:?}", result);
 
-        let deserialized_samples = chrome_trace::deserialize(serialized.as_slice()).unwrap();
+        let deserialized_samples = deserialize(serialized.as_slice()).unwrap();
         assert_eq!(deserialized_samples, samples);
     }
 
     #[cfg(all(feature = "chrome_trace_event", feature = "benchmarks"))]
     #[bench]
     fn bench_chrome_trace_serialization_one_element(b: &mut Bencher) {
-        use chrome_trace::*;
+        use super::chrome_trace_dump::*;
 
         let mut serialized = Vec::<u8>::new();
-        let samples = [xi_trace::Sample::new_instant("trace1", &["benchmark", "test"], None)];
+        let samples = [super::Sample::new_instant("trace1", &["benchmark", "test"], None)];
         b.iter(|| {
             serialized.clear();
             serialize(samples.iter(), &mut serialized).unwrap();
@@ -145,8 +187,8 @@ mod tests {
     #[cfg(all(feature = "chrome_trace_event", feature = "benchmarks"))]
     #[bench]
     fn bench_chrome_trace_serialization_multiple_elements(b: &mut Bencher) {
-        use chrome_trace::*;
-        use xi_trace::*;
+        use super::chrome_trace_dump::*;
+        use super::super::*;
 
         let mut serialized = Vec::<u8>::new();
         let mut samples = [

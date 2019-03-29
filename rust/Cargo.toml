@@ -33,7 +33,6 @@ members = [
   "sample-plugin",
   "syntect-plugin",
   "trace",
-  "trace-dump",
   "unicode",
 ]
 
