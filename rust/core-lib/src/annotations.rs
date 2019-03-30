@@ -83,7 +83,7 @@ impl<'de> Deserialize<'de> for AnnotationRange {
 }
 
 /// A set of annotations of a given type.
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 pub struct Annotations {
     pub items: Spans<Value>,
     pub annotation_type: AnnotationType,
@@ -200,7 +200,7 @@ impl AnnotationStore {
         if let Some(annotation) =
             entry.iter_mut().find(|a| a.annotation_type == item.annotation_type)
         {
-            annotation.update(Interval::new(0, interval.end()), item.items);
+            annotation.update(interval, item.items);
         } else {
             entry.push(item);
         }

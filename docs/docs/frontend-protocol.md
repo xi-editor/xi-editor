@@ -712,7 +712,7 @@ Updates existing scope spans starting at offset `start` until offset `len`.
 
 ### update_annotations
 
-`update_annotations {"start": 0, "len": 20, "annotations": [{"annotation_type": "find", "ranges": [[1, 0, 3, 4], [5, 0, 6, 0]]}], "rev": 3 }`
+`update_annotations {"start": 0, "len": 20, "spans": [{ "start": 0, "end": 4, "data": null }], "annotation_type": "find", "rev": 3 }`
 
 Updates existing annotations and adds new annotations starting at offset `start` until offset `len`.
 

@@ -244,9 +244,9 @@ impl<'a> EventContext<'a> {
             UpdateStatusItem { key, value } => {
                 self.client.update_status_item(self.view_id, &key, &value)
             }
-            UpdateAnnotations { start, len, annotations, rev } => {
+            UpdateAnnotations { start, len, spans, annotation_type, rev } => {
                 self.with_editor(|ed, view, _, _| {
-                    ed.update_annotations(view, plugin, start, len, annotations, rev)
+                    ed.update_annotations(view, plugin, start, len, spans, annotation_type, rev)
                 })
             }
             RemoveStatusItem { key } => self.client.remove_status_item(self.view_id, &key),
