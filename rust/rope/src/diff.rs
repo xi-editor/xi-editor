@@ -14,6 +14,7 @@
 
 //! Computing deltas between two ropes.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use crate::compare::RopeScanner;
@@ -21,8 +22,6 @@ use crate::delta::{Delta, DeltaElement};
 use crate::interval::Interval;
 use crate::rope::{LinesMetric, Rope, RopeDelta, RopeInfo};
 use crate::tree::{Node, NodeInfo};
-
-use memchr::memchr;
 
 /// A trait implemented by various diffing strategies.
 pub trait Diff<N: NodeInfo> {
@@ -66,11 +65,7 @@ impl Diff<RopeInfo> for LineHashDiff {
             return builder.to_delta(base, target);
         }
 
-        // TODO: because of how `lines_raw` returns Cows, we can't easily build
-        // the lookup table without allocating. The eventual solution would be
-        // to have a custom iter on the rope that returns suitable chunks.
-        let base_string = String::from(base);
-        let line_hashes = make_line_hashes(&base_string, MIN_SIZE);
+        let line_hashes = make_line_hashes(&base, MIN_SIZE);
 
         let line_count = target.measure::<LinesMetric>() + 1;
         let mut matches = Vec::with_capacity(line_count);
@@ -250,43 +245,19 @@ impl DiffBuilder {
     }
 }
 
-/// Fast iterator over lines in a string, not removing newline characters.
-struct LineScanner<'a> {
-    inner: &'a str,
-    idx: usize,
-}
-
-impl<'a> Iterator for LineScanner<'a> {
-    type Item = &'a str;
-    fn next(&mut self) -> Option<&'a str> {
-        if self.idx >= self.inner.len() {
-            return None;
-        }
-
-        match memchr(b'\n', &self.inner.as_bytes()[self.idx..]) {
-            Some(idx) => {
-                let next_idx = self.idx + idx + 1;
-                let result = &self.inner[self.idx..next_idx];
-                self.idx = next_idx;
-                Some(result)
-            }
-            None => {
-                let result = &self.inner[self.idx..];
-                self.idx = self.inner.len();
-                Some(result)
-            }
-        }
-    }
-}
-
-fn make_line_hashes<'a>(base: &'a str, min_size: usize) -> HashMap<&'a str, usize> {
+/// Creates a map of lines to offsets, ignoring trailing whitespace, and only for those lines
+/// where line.len() >= min_size. Offsets refer to the first non-whitespace byte in the line.
+fn make_line_hashes<'a>(base: &'a Rope, min_size: usize) -> HashMap<Cow<'a, str>, usize> {
     let mut offset = 0;
     let mut line_hashes = HashMap::with_capacity(base.len() / 60);
-    let iter = LineScanner { inner: base, idx: 0 };
-    for line in iter {
+    for line in base.lines_raw(..) {
         let non_ws = non_ws_offset(&line);
         if line.len() - non_ws >= min_size {
-            line_hashes.insert(&line[non_ws..], offset + non_ws);
+            let cow = match line {
+                Cow::Owned(ref s) => Cow::Owned(s[non_ws..].to_string()),
+                Cow::Borrowed(s) => Cow::Borrowed(&s[non_ws..]),
+            };
+            line_hashes.insert(cow, offset + non_ws);
         }
         offset += line.len();
     }
