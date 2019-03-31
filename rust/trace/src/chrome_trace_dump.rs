@@ -14,18 +14,18 @@
 
 #![cfg_attr(feature = "benchmarks", feature(test))]
 #![allow(
-clippy::if_same_then_else,
-clippy::needless_bool,
-clippy::needless_pass_by_value,
-clippy::ptr_arg
+    clippy::if_same_then_else,
+    clippy::needless_bool,
+    clippy::needless_pass_by_value,
+    clippy::ptr_arg
 )]
-
 
 #[cfg(all(test, feature = "benchmarks"))]
 extern crate test;
 
 use super::Sample;
 use serde_json;
+use std::fs::File;
 use std::io::{Error as IOError, Read, Write};
 
 #[derive(Debug)]
@@ -80,6 +80,42 @@ where
     R: Read,
 {
     serde_json::from_reader(input).map_err(Error::Json)
+}
+
+/// Save tracing data to path pointed to by the environment variable TRACE_OUTPUT, using the Trace
+/// Viewer format. Save path defaults to `./target/trace_output.trace`. Trace file can be opened
+/// with the Chrome browser by visiting the URL `about:tracing`. If `sorted_chronologically` is true
+/// then sort output traces chronologically by time of creation.
+pub fn save_traces(sorted_chronologically: bool) {
+    use std::env;
+
+    let traces = if sorted_chronologically {
+        super::samples_cloned_sorted()
+    } else {
+        super::samples_cloned_unsorted()
+    };
+
+    let trace_output_path = match env::var("TRACE_OUTPUT") {
+        Ok(output_path) => output_path,
+        Err(_) => {
+            println!("Environment variable TRACE_OUTPUT not set, defaulting to ./target/trace_output.trace");
+            String::from("./target/trace_output.trace")
+        }
+    };
+
+    let mut trace_file = match File::create(&trace_output_path) {
+        Ok(f) => f,
+        Err(_) => {
+            println!("Could not create trace output file at: {}.", &trace_output_path);
+            return;
+        }
+    };
+
+    if serialize(&traces, &mut trace_file).is_err() {
+        println!("Could not save trace file at: {}.", &trace_output_path);
+    } else {
+        println!("Saved trace file at: {}", &trace_output_path);
+    }
 }
 
 #[cfg(test)]
