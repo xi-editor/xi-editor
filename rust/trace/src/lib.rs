@@ -55,8 +55,10 @@ use std::borrow::Cow;
 use std::cmp;
 use std::collections::HashMap;
 use std::fmt;
+use std::fs;
 use std::hash::{Hash, Hasher};
 use std::mem::size_of;
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::Mutex;
 
@@ -819,6 +821,23 @@ impl Trace {
         samples.sort_unstable();
         samples
     }
+
+    pub fn save<P: AsRef<Path>>(
+        &self,
+        path: P,
+        sort: bool,
+    ) -> Result<(), chrome_trace_dump::Error> {
+        let traces = if sort { samples_cloned_sorted() } else { samples_cloned_unsorted() };
+        let path: &Path = path.as_ref();
+
+        if path.exists() {
+            return Err(chrome_trace_dump::Error::already_exists());
+        }
+
+        let mut trace_file = fs::File::create(&path)?;
+
+        chrome_trace_dump::serialize(&traces, &mut trace_file)
+    }
 }
 
 lazy_static! {
@@ -1073,6 +1092,14 @@ pub fn samples_cloned_unsorted() -> Vec<Sample> {
 #[inline]
 pub fn samples_cloned_sorted() -> Vec<Sample> {
     TRACE.samples_cloned_sorted()
+}
+
+/// Save tracing data to to supplied path, using the Trace Viewer format. Trace file can be opened
+/// using the Chrome browser by visiting the URL `about:tracing`. If `sorted_chronologically` is
+/// true then sort output traces chronologically by each trace's time of creation.
+#[inline]
+pub fn save<P: AsRef<Path>>(path: P, sort: bool) -> Result<(), chrome_trace_dump::Error> {
+    TRACE.save(path, sort)
 }
 
 #[cfg(test)]
