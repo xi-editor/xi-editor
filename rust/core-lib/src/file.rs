@@ -17,7 +17,7 @@
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fmt;
-use std::fs::{self, File, Permissions};
+use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::str;
@@ -33,7 +33,7 @@ use crate::tabs::OPEN_FILE_EVENT_TOKEN;
 #[cfg(feature = "notify")]
 use crate::watcher::FileWatcher;
 #[cfg(target_family = "unix")]
-use std::os::unix::fs::PermissionsExt;
+use std::{fs::Permissions, os::unix::fs::PermissionsExt};
 
 const UTF8_BOM: &str = "\u{feff}";
 
@@ -198,6 +198,7 @@ where
     Ok((rope, info))
 }
 
+#[allow(unused)]
 fn try_save(
     path: &Path,
     text: &Rope,
@@ -226,12 +227,11 @@ fn try_save(
 
     fs::rename(tmp_path, path)?;
 
-    if let Some(info_unwrapped) = file_info {
-        #[cfg(target_family = "unix")]
-        fs::set_permissions(
-            path,
-            Permissions::from_mode(info_unwrapped.permissions.unwrap_or(0o644)),
-        )?;
+    #[cfg(target_family = "unix")]
+    {
+        if let Some(info) = file_info {
+            fs::set_permissions(path, Permissions::from_mode(info.permissions.unwrap_or(0o644)))?;
+        }
     }
 
     Ok(())
