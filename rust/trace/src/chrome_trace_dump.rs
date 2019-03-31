@@ -24,9 +24,9 @@ clippy::ptr_arg
 #[cfg(all(test, feature = "benchmarks"))]
 extern crate test;
 
+use super::Sample;
 use serde_json;
 use std::io::{Error as IOError, Read, Write};
-use super::Sample;
 
 #[derive(Debug)]
 pub enum Error {
@@ -84,11 +84,11 @@ where
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "dict_payload")]
+    use super::super::{StrCow, TracePayloadT};
     use super::*;
     #[cfg(feature = "benchmarks")]
     use test::Bencher;
-    #[cfg(feature = "dict_payload")]
-    use super::super::{StrCow, TracePayloadT};
 
     #[cfg(all(not(feature = "dict_payload"), not(feature = "json_payload")))]
     fn to_payload(value: &'static str) -> &'static str {
@@ -187,8 +187,8 @@ mod tests {
     #[cfg(all(feature = "chrome_trace_event", feature = "benchmarks"))]
     #[bench]
     fn bench_chrome_trace_serialization_multiple_elements(b: &mut Bencher) {
-        use super::chrome_trace_dump::*;
         use super::super::*;
+        use super::chrome_trace_dump::*;
 
         let mut serialized = Vec::<u8>::new();
         let mut samples = [
