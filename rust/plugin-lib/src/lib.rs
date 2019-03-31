@@ -17,7 +17,6 @@ extern crate xi_core_lib as xi_core;
 extern crate xi_rope;
 extern crate xi_rpc;
 extern crate xi_trace;
-extern crate xi_trace_dump;
 #[macro_use]
 extern crate serde_json;
 extern crate bytecount;

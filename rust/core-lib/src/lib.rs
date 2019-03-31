@@ -50,7 +50,6 @@ extern crate toml;
 extern crate xi_rope;
 extern crate xi_rpc;
 extern crate xi_trace;
-extern crate xi_trace_dump;
 extern crate xi_unicode;
 
 #[cfg(feature = "ledger")]

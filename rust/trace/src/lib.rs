@@ -36,13 +36,19 @@ extern crate libc;
 #[cfg(feature = "benchmarks")]
 extern crate test;
 
-#[cfg(feature = "json_payload")]
+#[cfg(any(test, feature = "json_payload"))]
 #[macro_use]
+extern crate serde_json;
+
+#[cfg(all(not(test), feature = "chrome_trace_event"))]
 extern crate serde_json;
 
 mod fixed_lifo_deque;
 mod sys_pid;
 mod sys_tid;
+
+#[cfg(feature = "chrome_trace_event")]
+pub mod chrome_trace_dump;
 
 use crate::fixed_lifo_deque::FixedLifoDeque;
 use std::borrow::Cow;

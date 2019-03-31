@@ -11,10 +11,12 @@ edition = '2018'
 [features]
 benchmarks = []
 collections_range = []
-default = []
+default = ["chrome_trace_event"]
 dict_payload = []
 json_payload = ["serde_json"]
 getpid = []
+chrome_trace_event = ["serde_json"]
+ipc = ["bincode"]
 
 [dependencies]
 time = "0.1"
@@ -24,3 +26,4 @@ serde_derive = "1.0"
 serde = "1.0"
 libc = "0.2"
 log = "0.4.3"
+bincode = { version = "1.0", optional = true }
