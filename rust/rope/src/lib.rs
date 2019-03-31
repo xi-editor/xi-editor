@@ -45,6 +45,7 @@ pub mod find;
 pub mod interval;
 pub mod multiset;
 pub mod rope;
+mod serde_impls;
 pub mod spans;
 #[cfg(test)]
 mod test_helpers;

@@ -19,8 +19,7 @@ use std::borrow::Cow;
 use std::cmp::{max, min};
 use std::fmt;
 use std::ops::Add;
-use std::str;
-use std::str::FromStr;
+use std::str::{self, FromStr};
 use std::string::ParseError;
 
 use crate::delta::{Delta, DeltaElement};
@@ -29,8 +28,6 @@ use crate::tree::{Cursor, DefaultMetric, Leaf, Metric, Node, NodeInfo, TreeBuild
 
 use bytecount;
 use memchr::{memchr, memrchr};
-use serde::de::{self, Deserialize, Deserializer, Visitor};
-use serde::ser::{Serialize, SerializeStruct, SerializeTupleVariant, Serializer};
 
 use unicode_segmentation::GraphemeCursor;
 use unicode_segmentation::GraphemeIncomplete;
@@ -383,114 +380,6 @@ impl FromStr for Rope {
         let mut b = TreeBuilder::new();
         b.push_str(s);
         Ok(b.build())
-    }
-}
-
-impl Serialize for Rope {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&String::from(self))
-    }
-}
-
-impl<'de> Deserialize<'de> for Rope {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        deserializer.deserialize_str(RopeVisitor)
-    }
-}
-
-struct RopeVisitor;
-
-impl<'de> Visitor<'de> for RopeVisitor {
-    type Value = Rope;
-
-    fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "a string")
-    }
-
-    fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
-    where
-        E: de::Error,
-    {
-        Rope::from_str(s).map_err(|_| de::Error::invalid_value(de::Unexpected::Str(s), &self))
-    }
-}
-
-impl Serialize for DeltaElement<RopeInfo> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match *self {
-            DeltaElement::Copy(ref start, ref end) => {
-                let mut el = serializer.serialize_tuple_variant("DeltaElement", 0, "copy", 2)?;
-                el.serialize_field(start)?;
-                el.serialize_field(end)?;
-                el.end()
-            }
-            DeltaElement::Insert(ref node) => {
-                serializer.serialize_newtype_variant("DeltaElement", 1, "insert", node)
-            }
-        }
-    }
-}
-
-impl Serialize for Delta<RopeInfo> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut delta = serializer.serialize_struct("Delta", 2)?;
-        delta.serialize_field("els", &self.els)?;
-        delta.serialize_field("base_len", &self.base_len)?;
-        delta.end()
-    }
-}
-
-impl<'de> Deserialize<'de> for Delta<RopeInfo> {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        // NOTE: we derive to an interim representation and then convert
-        // that into our actual target.
-        #[derive(Serialize, Deserialize)]
-        #[serde(rename_all = "snake_case")]
-        enum RopeDeltaElement_ {
-            Copy(usize, usize),
-            Insert(Node<RopeInfo>),
-        }
-
-        #[derive(Serialize, Deserialize)]
-        struct RopeDelta_ {
-            els: Vec<RopeDeltaElement_>,
-            base_len: usize,
-        }
-
-        impl From<RopeDeltaElement_> for DeltaElement<RopeInfo> {
-            fn from(elem: RopeDeltaElement_) -> DeltaElement<RopeInfo> {
-                match elem {
-                    RopeDeltaElement_::Copy(start, end) => DeltaElement::Copy(start, end),
-                    RopeDeltaElement_::Insert(rope) => DeltaElement::Insert(rope),
-                }
-            }
-        }
-
-        impl From<RopeDelta_> for Delta<RopeInfo> {
-            fn from(mut delta: RopeDelta_) -> Delta<RopeInfo> {
-                Delta {
-                    els: delta.els.drain(..).map(DeltaElement::from).collect(),
-                    base_len: delta.base_len,
-                }
-            }
-        }
-        let d = RopeDelta_::deserialize(deserializer)?;
-        Ok(Delta::from(d))
     }
 }
 
