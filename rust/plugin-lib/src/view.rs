@@ -20,6 +20,8 @@ use crate::xi_core::plugin_rpc::{
     GetDataResponse, PluginBufferInfo, PluginEdit, ScopeSpan, TextUnit,
 };
 use crate::xi_core::{BufferConfig, ConfigTable, LanguageId, PluginPid, ViewId};
+use xi_core_lib::annotations::AnnotationType;
+use xi_core_lib::plugin_rpc::DataSpan;
 use xi_rope::interval::IntervalBounds;
 use xi_rope::RopeDelta;
 use xi_trace::trace_block;
@@ -185,6 +187,25 @@ impl<C: Cache> View<C> {
             "spans": spans,
         });
         self.peer.send_rpc_notification("update_spans", &params);
+    }
+
+    pub fn update_annotations(
+        &self,
+        start: usize,
+        len: usize,
+        annotation_spans: &[DataSpan],
+        annotation_type: &AnnotationType,
+    ) {
+        let params = json!({
+            "plugin_id": self.plugin_id,
+            "view_id": self.view_id,
+            "start": start,
+            "len": len,
+            "rev": self.rev,
+            "spans": annotation_spans,
+            "annotation_type": annotation_type,
+        });
+        self.peer.send_rpc_notification("update_annotations", &params);
     }
 
     pub fn schedule_idle(&self) {

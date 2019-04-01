@@ -25,12 +25,13 @@ use xi_rope::spans::SpansBuilder;
 use xi_rope::{Cursor, DeltaBuilder, Interval, LinesMetric, Rope, RopeDelta, Transformer};
 use xi_trace::{trace_block, trace_payload};
 
+use crate::annotations::{AnnotationType, Annotations};
 use crate::config::BufferItems;
 use crate::edit_types::BufferEvent;
 use crate::event_context::MAX_SIZE_LIMIT;
 use crate::layers::Layers;
 use crate::movement::{region_movement, Movement};
-use crate::plugins::rpc::{GetDataResponse, PluginEdit, ScopeSpan, TextUnit};
+use crate::plugins::rpc::{DataSpan, GetDataResponse, PluginEdit, ScopeSpan, TextUnit};
 use crate::plugins::PluginId;
 use crate::rpc::SelectionModifier;
 use crate::selection::{InsertDrift, SelRegion, Selection};
@@ -898,6 +899,42 @@ impl Editor {
         let iv = Interval::new(start, end_offset);
         self.layers.update_layer(plugin, iv, spans);
         view.invalidate_styles(&self.text, start, end_offset);
+    }
+
+    pub fn update_annotations(
+        &mut self,
+        view: &mut View,
+        plugin: PluginId,
+        start: usize,
+        len: usize,
+        annotation_spans: Vec<DataSpan>,
+        annotation_type: AnnotationType,
+        rev: RevToken,
+    ) {
+        let _t = trace_block("Editor::update_annotations", &["core"]);
+
+        let mut start = start;
+        let mut end_offset = start + len;
+        let mut sb = SpansBuilder::new(len);
+        for span in annotation_spans {
+            sb.add_span(Interval::new(span.start, span.end), span.data);
+        }
+        let mut spans = sb.build();
+        if rev != self.engine.get_head_rev_id().token() {
+            if let Ok(delta) = self.engine.try_delta_rev_head(rev) {
+                let mut transformer = Transformer::new(&delta);
+                let new_start = transformer.transform(start, false);
+                if !transformer.interval_untouched(Interval::new(start, end_offset)) {
+                    spans = spans.transform(start, end_offset, &mut transformer);
+                }
+                start = new_start;
+                end_offset = transformer.transform(end_offset, true);
+            } else {
+                error!("Revision {} not found", rev);
+            }
+        }
+        let iv = Interval::new(start, end_offset);
+        view.update_annotations(plugin, iv, Annotations { items: spans, annotation_type });
     }
 
     pub(crate) fn get_rev(&self, rev: RevToken) -> Option<Cow<Rope>> {

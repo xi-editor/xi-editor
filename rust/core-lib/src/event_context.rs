@@ -31,16 +31,15 @@ use crate::plugins::rpc::{
 };
 use crate::rpc::{EditNotification, EditRequest, LineRange, Position as ClientPosition};
 
-use crate::config::{BufferItems, Table};
-use crate::styles::ThemeStyleMap;
-
 use crate::client::Client;
+use crate::config::{BufferItems, Table};
 use crate::edit_types::{EventDomain, SpecialEvent};
 use crate::editor::Editor;
 use crate::file::FileInfo;
 use crate::plugins::Plugin;
 use crate::recorder::Recorder;
 use crate::selection::InsertDrift;
+use crate::styles::ThemeStyleMap;
 use crate::syntax::LanguageId;
 use crate::tabs::{
     BufferId, PluginId, ViewId, FIND_VIEW_IDLE_MASK, RENDER_VIEW_IDLE_MASK, REWRAP_VIEW_IDLE_MASK,
@@ -244,6 +243,11 @@ impl<'a> EventContext<'a> {
             }
             UpdateStatusItem { key, value } => {
                 self.client.update_status_item(self.view_id, &key, &value)
+            }
+            UpdateAnnotations { start, len, spans, annotation_type, rev } => {
+                self.with_editor(|ed, view, _, _| {
+                    ed.update_annotations(view, plugin, start, len, spans, annotation_type, rev)
+                })
             }
             RemoveStatusItem { key } => self.client.remove_status_item(self.view_id, &key),
             ShowHover { request_id, result } => self.do_show_hover(request_id, result),

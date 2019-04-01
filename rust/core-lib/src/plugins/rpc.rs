@@ -22,6 +22,7 @@ use serde::ser::{self, Serialize, Serializer};
 use serde_json::{self, Value};
 
 use super::PluginPid;
+use crate::annotations::AnnotationType;
 use crate::config::Table;
 use crate::syntax::LanguageId;
 use crate::tabs::{BufferIdentifier, ViewId};
@@ -143,6 +144,13 @@ pub struct ScopeSpan {
     pub scope_id: u32,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DataSpan {
+    pub start: usize,
+    pub end: usize,
+    pub data: Value,
+}
+
 /// The object returned by the `get_data` RPC.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetDataResponse {
@@ -157,7 +165,7 @@ pub struct GetDataResponse {
 #[serde(rename_all = "snake_case")]
 pub enum TextUnit {
     /// The requested offset is in bytes. The returned chunk will be valid
-    /// UTF8, and is guaruanteed to include the byte specified the offset.
+    /// UTF8, and is guaranteed to include the byte specified the offset.
     Utf8,
     /// The requested offset is a line number. The returned chunk will begin
     /// at the offset of the requested line.
@@ -179,14 +187,44 @@ pub enum PluginRequest {
 #[serde(tag = "method", content = "params")]
 /// RPC commands sent from plugins.
 pub enum PluginNotification {
-    AddScopes { scopes: Vec<Vec<String>> },
-    UpdateSpans { start: usize, len: usize, spans: Vec<ScopeSpan>, rev: u64 },
-    Edit { edit: PluginEdit },
-    Alert { msg: String },
-    AddStatusItem { key: String, value: String, alignment: String },
-    UpdateStatusItem { key: String, value: String },
-    RemoveStatusItem { key: String },
-    ShowHover { request_id: usize, result: Result<Hover, RemoteError> },
+    AddScopes {
+        scopes: Vec<Vec<String>>,
+    },
+    UpdateSpans {
+        start: usize,
+        len: usize,
+        spans: Vec<ScopeSpan>,
+        rev: u64,
+    },
+    Edit {
+        edit: PluginEdit,
+    },
+    Alert {
+        msg: String,
+    },
+    AddStatusItem {
+        key: String,
+        value: String,
+        alignment: String,
+    },
+    UpdateStatusItem {
+        key: String,
+        value: String,
+    },
+    RemoveStatusItem {
+        key: String,
+    },
+    ShowHover {
+        request_id: usize,
+        result: Result<Hover, RemoteError>,
+    },
+    UpdateAnnotations {
+        start: usize,
+        len: usize,
+        spans: Vec<DataSpan>,
+        annotation_type: AnnotationType,
+        rev: u64,
+    },
 }
 
 /// Range expressed in terms of PluginPosition. Meant to be sent from
