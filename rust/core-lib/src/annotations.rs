@@ -54,8 +54,8 @@ pub struct AnnotationRange {
 
 impl Serialize for AnnotationRange {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
+    where
+        S: Serializer,
     {
         let mut seq = serializer.serialize_seq(Some(4))?;
         seq.serialize_element(&self.start_line)?;
@@ -68,8 +68,8 @@ impl Serialize for AnnotationRange {
 
 impl<'de> Deserialize<'de> for AnnotationRange {
     fn deserialize<D>(deserializer: D) -> Result<AnnotationRange, D::Error>
-        where
-            D: Deserializer<'de>,
+    where
+        D: Deserializer<'de>,
     {
         let mut range = AnnotationRange { ..Default::default() };
         let seq = <[usize; 4]>::deserialize(deserializer)?;
@@ -199,7 +199,7 @@ impl AnnotationStore {
 
         let entry = self.store.get_mut(&source).unwrap();
         if let Some(annotation) =
-        entry.iter_mut().find(|a| a.annotation_type == item.annotation_type)
+            entry.iter_mut().find(|a| a.annotation_type == item.annotation_type)
         {
             annotation.update(interval, item.items);
         } else {

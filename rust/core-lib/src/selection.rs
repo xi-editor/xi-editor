@@ -235,7 +235,8 @@ impl ToAnnotation for Selection {
                 let (start_line, start_col) = view.offset_to_line_col(text, region.min());
                 let (end_line, end_col) = view.offset_to_line_col(text, region.max());
 
-                AnnotationRange { start_line, start_col, end_line, end_col }            })
+                AnnotationRange { start_line, start_col, end_line, end_col }
+            })
             .collect::<Vec<AnnotationRange>>();
         AnnotationSlice::new(AnnotationType::Selection, ranges, None)
     }
