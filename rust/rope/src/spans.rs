@@ -16,6 +16,7 @@
 //! annotations. It is parameterized over a data type, so can be used for
 //! storing different annotations.
 
+use std::cmp::max;
 use std::fmt;
 use std::marker::PhantomData;
 use std::mem;
@@ -300,6 +301,43 @@ impl<T: Clone> Spans<T> {
         }
         *self = b.build();
     }
+
+    /// Deletes all spans that intersect with `interval`.
+    pub fn delete_intersecting(&mut self, interval: Interval) {
+        let mut cursor = Cursor::new(self, interval.start());
+
+        // get start of first span that is intersecting with interval
+        let (start, min_end) = match cursor.get_leaf() {
+            Some((l, _)) => {
+                if let Some(span) = l
+                    .spans
+                    .iter()
+                    .find(|&s| s.iv.end() > interval.start() && s.iv.start() < interval.start())
+                {
+                    (span.iv.start, span.iv.end)
+                } else {
+                    (cursor.pos(), interval.end())
+                }
+            }
+            None => (cursor.pos(), interval.end()),
+        };
+
+        cursor.set(interval.end());
+
+        // get end of last span that is intersecting with the interval
+        let end = match cursor.get_leaf() {
+            Some((l, _)) => {
+                if let Some(span) = l.spans.iter().find(|&s| s.iv.start() > interval.end()) {
+                    span.iv.start()
+                } else {
+                    max(min_end, cursor.pos())
+                }
+            }
+            None => max(min_end, cursor.pos()),
+        };
+
+        self.edit(Interval::new(start, end), SpansBuilder::new(end - start).build());
+    }
 }
 
 impl<T: Clone + fmt::Debug> fmt::Debug for Spans<T> {
@@ -427,5 +465,39 @@ mod tests {
         assert_eq!(*val, 9);
 
         assert!(merged_iter.next().is_none());
+    }
+
+    #[test]
+    fn test_delete_intersecting() {
+        let mut sb = SpansBuilder::new(11);
+        sb.add_span(Interval::new(1, 2), 2);
+        sb.add_span(Interval::new(3, 5), 8);
+        sb.add_span(Interval::new(6, 8), 9);
+        sb.add_span(Interval::new(9, 10), 1);
+        sb.add_span(Interval::new(10, 11), 1);
+        let mut spans = sb.build();
+
+        spans.delete_intersecting(Interval::new(4, 7));
+        let mut deleted_iter = spans.iter();
+
+        let (iv, val) = deleted_iter.next().unwrap();
+        assert_eq!(iv, Interval::new(1, 2));
+        assert_eq!(*val, 2);
+
+        let (iv, val) = deleted_iter.next().unwrap();
+        assert_eq!(iv, Interval::new(9, 10));
+        assert_eq!(*val, 1);
+    }
+
+    #[test]
+    fn delete_intersecting_big_at_start() {
+        let mut sb = SpansBuilder::new(10);
+        sb.add_span(0..10, 0);
+
+        let mut spans = sb.build();
+        assert_eq!(spans.iter().count(), 1);
+
+        spans.delete_intersecting(Interval::new(1, 2));
+        assert_eq!(spans.iter().count(), 0);
     }
 }
