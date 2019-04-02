@@ -301,12 +301,16 @@ impl<T: Clone> Spans<T> {
         *self = b.build();
     }
 
+    /// FIXME: Instead of iterating through all spans every time, another option would be to go
+    /// leaf-by-leaf, and check each leaf for whether or not it has any items in the interval;
+    /// if they don't we keep them unchanged, otherwise we do this operation, but only within the leaf.
+    ///
     /// Deletes all spans that intersect with `interval`.
     pub fn delete_intersecting(&mut self, interval: Interval) {
         let mut builder = SpansBuilder::new(self.len());
         for (iv, data) in self.iter() {
             // check if spans overlaps with interval
-            if iv.end() < interval.start() || iv.start() > interval.end() {
+            if iv.intersect(interval).is_empty() {
                 // keep the ones that are not overlapping
                 builder.add_span(iv, data.clone());
             }
@@ -486,7 +490,20 @@ mod tests {
         assert_eq!(spans.iter().count(), 2);
 
         spans.delete_intersecting(Interval::new(1, 2));
-        eprintln!("{:?}", spans);
         assert_eq!(spans.iter().count(), 1);
+    }
+
+    #[test]
+    fn delete_intersecting_empty() {
+        let mut sb = SpansBuilder::new(10);
+        sb.add_span(0..3, 0);
+        sb.add_span(9..10, 1);
+
+        eprintln!("--");
+        let mut spans = sb.build();
+        assert_eq!(spans.iter().count(), 2);
+
+        spans.delete_intersecting(Interval::new(5, 7));
+        assert_eq!(spans.iter().count(), 2);
     }
 }
