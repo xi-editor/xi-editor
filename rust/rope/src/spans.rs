@@ -16,7 +16,6 @@
 //! annotations. It is parameterized over a data type, so can be used for
 //! storing different annotations.
 
-use std::cmp::max;
 use std::fmt;
 use std::marker::PhantomData;
 use std::mem;
@@ -304,39 +303,15 @@ impl<T: Clone> Spans<T> {
 
     /// Deletes all spans that intersect with `interval`.
     pub fn delete_intersecting(&mut self, interval: Interval) {
-        let mut cursor = Cursor::new(self, interval.start());
-
-        // get start of first span that is intersecting with interval
-        let (start, min_end) = match cursor.get_leaf() {
-            Some((l, _)) => {
-                if let Some(span) = l
-                    .spans
-                    .iter()
-                    .find(|&s| s.iv.end() > interval.start() && s.iv.start() < interval.start())
-                {
-                    (span.iv.start, span.iv.end)
-                } else {
-                    (cursor.pos(), interval.end())
-                }
+        let mut builder = SpansBuilder::new(self.len());
+        for (iv, data) in self.iter() {
+            // check if spans overlaps with interval
+            if iv.end() < interval.start() || iv.start() > interval.end() {
+                // keep the ones that are not overlapping
+                builder.add_span(iv, data.clone());
             }
-            None => (cursor.pos(), interval.end()),
-        };
-
-        cursor.set(interval.end());
-
-        // get end of last span that is intersecting with the interval
-        let end = match cursor.get_leaf() {
-            Some((l, _)) => {
-                if let Some(span) = l.spans.iter().find(|&s| s.iv.start() > interval.end()) {
-                    span.iv.start()
-                } else {
-                    max(min_end, cursor.pos())
-                }
-            }
-            None => max(min_end, cursor.pos()),
-        };
-
-        self.edit(Interval::new(start, end), SpansBuilder::new(end - start).build());
+        }
+        *self = builder.build();
     }
 }
 
@@ -499,5 +474,19 @@ mod tests {
 
         spans.delete_intersecting(Interval::new(1, 2));
         assert_eq!(spans.iter().count(), 0);
+    }
+
+    #[test]
+    fn delete_intersecting_big_and_small() {
+        let mut sb = SpansBuilder::new(10);
+        sb.add_span(0..10, 0);
+        sb.add_span(3..10, 1);
+
+        let mut spans = sb.build();
+        assert_eq!(spans.iter().count(), 2);
+
+        spans.delete_intersecting(Interval::new(1, 2));
+        eprintln!("{:?}", spans);
+        assert_eq!(spans.iter().count(), 1);
     }
 }
