@@ -301,10 +301,10 @@ impl<T: Clone> Spans<T> {
         *self = b.build();
     }
 
-    /// FIXME: Instead of iterating through all spans every time, another option would be to go
-    /// leaf-by-leaf, and check each leaf for whether or not it has any items in the interval;
-    /// if they don't we keep them unchanged, otherwise we do this operation, but only within the leaf.
-    ///
+    // FIXME: Instead of iterating through all spans every time, another option would be to go
+    // leaf-by-leaf, and check each leaf for whether or not it has any items in the interval;
+    // if they don't we keep them unchanged, otherwise we do this operation, but only within the leaf.
+    //
     /// Deletes all spans that intersect with `interval`.
     pub fn delete_intersecting(&mut self, interval: Interval) {
         let mut builder = SpansBuilder::new(self.len());
