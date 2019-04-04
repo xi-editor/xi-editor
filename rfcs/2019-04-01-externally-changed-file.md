@@ -22,24 +22,32 @@ For this to work we have to change multiple thing:
 There are multiple ways to tacle this:
 
 1.
-Let the frontend remember that is has received a 'file_externally_changed' so it
-can display a save dialog with options like "force save|save as|cancel".
-	- This is problematic as we'd have to keep this in sync with Xi
-
-2.
 If the frontend sends 'save' with 'force: false' and the file has been changed
 externally, then Xi should send another notification back, e.g. 'save_failed'
-upon which the frontend can display the previously mentioned save dialog.
+upon which the frontend can display a save dialog like "The file has been changed,
+do you really want to overwrite it?".
 	- Nano does that. First you save via Ctrl+O, after pressing enter the
 	  following dialog comes up:
 	  ![nano reload](./assets/nano_reload.png)
 
-3.
+2.
 Don't allow force saving at all. Other editors such as VSCode and VSStudio do
-exactly that it seems:
+exactly that it seems and instead just notify the user on file changes and offer them
+a way to reload the file. At least VSCode does offer a built-in way to show the user a
+diff between the old and the new file, which helps resolving conflicts.
 
 ![vscode reload](./assets/vscode_reload.png)
 ![vsstudio reload](./assets/vsstudio_reload.png)
 
 I'd personally prefer offering an option to force save though, as 'save_as' and
 then moving the file after a rebase is a bit tedious :)
+
+## Necessary API changes in Xi
+
+I would personally prefer having API to allow both of these possible ways to handle this to be used by frontends.
+For this we need:
+
+1. The previously mentioned 'file_externally_changed' notification, to allow frontends displaying a dialog
+saying that the file has been changed
+2. A way to demand a reload of the file by the frontend to act upon the 'file_externally_changed' notification
+3. A way to force saving the file, even if changes have occured, e.g. via a 'force' paramter for 'save'
