@@ -33,7 +33,7 @@ from core: {"id":0,"result": "view-id-1"}
 
 ### client_started
 
-`client_started {"config_dir" "some/path"?, "client_extras_dir":
+`client_started {"config_dir": "some/path"?, "client_extras_dir":
 "some/other/path"?}`
 
 Sent by the client immediately after establishing the core connection. This is
