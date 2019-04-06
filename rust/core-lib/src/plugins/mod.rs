@@ -150,6 +150,15 @@ impl Plugin {
         )
     }
 
+    pub fn dispatch_subscribed_notification(&self, core_notification: &Value) {
+        self.peer.send_rpc_notification(
+            "subscribed_notification",
+            &json!({
+                "notification": core_notification,
+            }),
+        )
+    }
+
     pub fn dispatch_command(&self, view_id: ViewId, method: &str, params: &Value) {
         self.peer.send_rpc_notification(
             "custom_command",

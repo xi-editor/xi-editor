@@ -124,6 +124,8 @@ pub struct CoreState {
     plugins: PluginCatalog,
     // for the time being we auto-start all plugins we find on launch.
     running_plugins: Vec<Plugin>,
+    /// Stores the RPC subscriptions for plugins.
+    plugin_subscriptions: RefCell<BTreeMap<String, Vec<PluginId>>>,
 }
 
 /// Initial setup and bookkeeping
@@ -184,6 +186,7 @@ impl CoreState {
             id_counter: Counter::default(),
             plugins: PluginCatalog::default(),
             running_plugins: Vec::new(),
+            plugin_subscriptions: RefCell::new(BTreeMap::new()),
         }
     }
 
@@ -298,6 +301,7 @@ impl CoreState {
                 width_cache: &self.width_cache,
                 kill_ring: &self.kill_ring,
                 weak_core: self.self_ref.as_ref().unwrap(),
+                plugin_subscriptions: &self.plugin_subscriptions,
             }
         })
     }
@@ -311,8 +315,14 @@ impl CoreState {
     pub(crate) fn client_notification(&mut self, cmd: CoreNotification) {
         use self::CoreNotification::*;
         use self::CorePluginNotification as PN;
+        let cmd_json = json!(cmd);
+        let method = cmd.to_string();
         match cmd {
-            Edit(crate::rpc::EditCommand { view_id, cmd }) => self.do_edit(view_id, cmd),
+            Edit(crate::rpc::EditCommand { view_id, cmd }) => {
+                let method = cmd.to_string();
+                self.do_edit(view_id, cmd);
+                self.handle_plugin_subscriptions(&method, &cmd_json);
+            }
             Save { view_id, file_path } => self.do_save(view_id, file_path),
             CloseView { view_id } => self.do_close_view(view_id),
             ModifyUserConfig { domain, changes } => self.do_modify_user_config(domain, changes),
@@ -332,6 +342,8 @@ impl CoreState {
             ClientStarted { .. } => (),
             SetLanguage { view_id, language_id } => self.do_set_language(view_id, language_id),
         }
+
+        self.handle_plugin_subscriptions(&method, &cmd_json);
     }
 
     pub(crate) fn client_request(&mut self, cmd: CoreRequest) -> Result<Value, RemoteError> {
@@ -956,6 +968,16 @@ impl CoreState {
             Ok(edit_ctx.do_plugin_cmd_sync(plugin_id, cmd))
         } else {
             Err(RemoteError::custom(404, "missing view", None))
+        }
+    }
+
+    pub(crate) fn handle_plugin_subscriptions(&self, method: &str, notification: &Value) {
+        if let Some(plugins) = self.plugin_subscriptions.borrow().get(method) {
+            self.running_plugins.iter().for_each(|p| {
+                if plugins.contains(&p.id) {
+                    p.dispatch_subscribed_notification(notification);
+                }
+            });
         }
     }
 }

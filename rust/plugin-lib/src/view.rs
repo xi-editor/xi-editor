@@ -227,6 +227,26 @@ impl<C: Cache> View<C> {
         });
         self.peer.send_rpc_notification("remove_status_item", &params);
     }
+
+    pub fn subscribe(&mut self, rpc_method: &str) {
+        let params = json!({
+            "plugin_id": self.plugin_id,
+            "view_id": self.view_id,
+            "rpc_method": rpc_method
+        });
+
+        self.peer.send_rpc_notification("subscribe", &params)
+    }
+
+    pub fn unsubscribe(&mut self, rpc_method: &str) {
+        let params = json!({
+            "plugin_id": self.plugin_id,
+            "view_id": self.view_id,
+            "rpc_method": rpc_method
+        });
+
+        self.peer.send_rpc_notification("unsubscribe", &params)
+    }
 }
 
 /// A simple wrapper type that acts as a `DataSource`.
