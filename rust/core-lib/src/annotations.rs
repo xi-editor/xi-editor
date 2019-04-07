@@ -131,7 +131,7 @@ impl AnnotationSlice {
         })
     }
 
-    pub fn to_annotations(&self, text: &Rope) -> Annotations {
+    fn to_annotations(&self, text: &Rope) -> Annotations {
         if self.ranges.is_empty() {
             // there are no annotations
             return Annotations {
@@ -183,11 +183,7 @@ impl AnnotationStore {
 
     /// Invalidates and removes all annotations in the range of the interval.
     pub fn invalidate(&mut self, interval: Interval) {
-        for val in self.store.values_mut() {
-            val.clone().into_iter().for_each(|mut r| {
-                r.invalidate(interval);
-            });
-        }
+        self.store.values_mut().map(|v| v.iter_mut()).flatten().for_each(|a| a.invalidate(interval))
     }
 
     /// Applies an update from a plugin to a set of annotations
