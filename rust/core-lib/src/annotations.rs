@@ -219,6 +219,7 @@ impl AnnotationStore {
 mod tests {
     use super::*;
     use crate::plugins::PluginPid;
+    use crate::xi_rope::spans::SpansBuilder;
 
     #[test]
     fn test_annotation_range_serialization() {
