@@ -22,7 +22,7 @@ use std::collections::HashMap;
 
 use crate::plugins::PluginId;
 use crate::view::View;
-use crate::xi_rope::spans::{Spans, SpansBuilder};
+use crate::xi_rope::spans::Spans;
 use crate::xi_rope::{Interval, Rope};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -129,38 +129,6 @@ impl AnnotationSlice {
             "payloads": self.payloads,
             "n": self.ranges.len()
         })
-    }
-
-    fn to_annotations(&self, text: &Rope) -> Annotations {
-        if self.ranges.is_empty() {
-            // there are no annotations
-            return Annotations {
-                items: SpansBuilder::new(0).build(),
-                annotation_type: self.annotation_type.clone(),
-            };
-        }
-
-        let span_len = self
-            .ranges
-            .last()
-            .map(|anno_range| text.offset_of_line(anno_range.end_line) + anno_range.end_col)
-            .unwrap();
-
-        let mut sb = SpansBuilder::new(span_len);
-
-        for (i, &range) in self.ranges.iter().enumerate() {
-            let payload = match &self.payloads {
-                Some(p) => p[i].clone(),
-                None => json!(null),
-            };
-
-            let start = text.offset_of_line(range.start_line) + range.start_col;
-            let end = text.offset_of_line(range.end_line) + range.end_col;
-
-            sb.add_span(Interval::new(start, end), payload);
-        }
-
-        Annotations { items: sb.build(), annotation_type: self.annotation_type.clone() }
     }
 }
 
