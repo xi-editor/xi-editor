@@ -301,21 +301,33 @@ impl<T: Clone> Spans<T> {
         *self = b.build();
     }
 
-    // FIXME: Instead of iterating through all spans every time, another option would be to go
-    // leaf-by-leaf, and check each leaf for whether or not it has any items in the interval;
-    // if they don't we keep them unchanged, otherwise we do this operation, but only within the leaf.
-    //
     /// Deletes all spans that intersect with `interval`.
     pub fn delete_intersecting(&mut self, interval: Interval) {
-        let mut builder = SpansBuilder::new(self.len());
-        for (iv, data) in self.iter() {
-            // check if spans overlaps with interval
-            if iv.intersect(interval).is_empty() {
-                // keep the ones that are not overlapping
-                builder.add_span(iv, data.clone());
+        let mut b = TreeBuilder::new();
+        // the end of the last leaf seen
+        let mut end_offset = 0;
+        let mut leaf_iterator = self.iter_leaf_nodes();
+        while let Some((node, leaf)) = leaf_iterator.next() {
+            let SpansLeaf { len, spans } = leaf;
+            if spans.iter().any(|s| !s.iv.translate(end_offset).intersect(interval).is_empty()) {
+                let spans: Vec<_> = spans
+                    .iter()
+                    .filter(|s| s.iv.translate(end_offset).intersect(interval).is_empty())
+                    .cloned()
+                    .collect();
+                b.push_leaf(SpansLeaf { spans, len: *len });
+            } else {
+                b.push(node.clone());
+            }
+
+            // stop looking at leaves if we're past the end of the deletion interval
+            end_offset += leaf.len();
+            if end_offset > interval.end() {
+                break;
             }
         }
-        *self = builder.build();
+        b.push(self.subseq(end_offset..));
+        *self = b.build();
     }
 }
 
@@ -331,9 +343,10 @@ impl<'a, T: Clone> Iterator for SpanIter<'a, T> {
     type Item = (Interval, &'a T);
 
     fn next(&mut self) -> Option<(Interval, &'a T)> {
-        if let Some((leaf, start_pos)) = self.cursor.get_leaf() {
+        while let Some((leaf, start_pos)) = self.cursor.get_leaf() {
             if leaf.spans.is_empty() {
-                return None;
+                self.cursor.next_leaf();
+                continue;
             }
             let leaf_start = self.cursor.pos() - start_pos;
             let span = &leaf.spans[self.ix];
@@ -351,8 +364,45 @@ impl<'a, T: Clone> Iterator for SpanIter<'a, T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
+    use rand::{random, Rng};
+    use rand_pcg::Pcg32;
 
+    // generate num_spans spans with a seeded random composition, values from 0-134456
+    // for a given num_spans + seed combination, it will always generate the same spans
+    fn gen_spans(num_spans: u64, seed: u64) -> Spans<usize> {
+        println!("generating spans with seed {}", seed);
+
+        let mut rng = Pcg32::new(seed, 721347520444481703);
+        let gen_range = |rng: &mut Pcg32| -> (Interval, usize) {
+            let one = rng.gen::<usize>() % 134_456;
+            let two = rng.gen::<usize>() % 134_456;
+            let start = one.min(two);
+            let end = one.max(two);
+            (Interval::new(start, end), rng.gen::<usize>() % 134_456)
+        };
+
+        let mut sb = SpansBuilder::new(134_456);
+        let mut to_add: Vec<_> = (0..num_spans).map(|_| gen_range(&mut rng)).collect();
+        to_add.sort_by(|p0, p1| p0.0.start().cmp(&p1.0.start()));
+        for (iv, data) in to_add {
+            sb.add_span(iv, data);
+        }
+        sb.build()
+    }
+
+    fn delete_intersecting_simple(spans: &mut Spans<usize>, interval: Interval) {
+        let mut builder = SpansBuilder::new(spans.len());
+        for (iv, data) in spans.iter() {
+            // check if spans overlaps with interval
+            if iv.intersect(interval).is_empty() {
+                // keep the ones that are not overlapping
+                builder.add_span(iv, data.clone());
+            }
+        }
+        *spans = builder.build();
+    }
+
+    #[test]
     fn test_merge() {
         // merging 1 1 1 1 1 1 1 1 1 16
         // with    2 2 4 4     8 8
@@ -505,5 +555,41 @@ mod tests {
 
         spans.delete_intersecting(Interval::new(5, 7));
         assert_eq!(spans.iter().count(), 2);
+    }
+
+    #[test]
+    fn test_delete_intersecting_1_000() {
+        let mut spans = gen_spans(1_000, random());
+        let mut spans_clone = spans.clone();
+
+        let iv = Interval::new(75, 5_000);
+        spans.delete_intersecting(iv);
+        delete_intersecting_simple(&mut spans_clone, iv);
+
+        assert_eq!(spans_clone.iter().count(), spans.iter().count());
+    }
+
+    #[test]
+    fn test_delete_intersecting_10_000() {
+        let mut spans = gen_spans(10_000, random());
+        let mut spans_clone = spans.clone();
+
+        let iv = Interval::new(75, 5_000);
+        spans.delete_intersecting(iv);
+        delete_intersecting_simple(&mut spans_clone, iv);
+
+        assert_eq!(spans_clone.iter().count(), spans.iter().count());
+    }
+
+    #[test]
+    fn test_delete_intersecting_1_000_000() {
+        let mut spans = gen_spans(1_000_000, random());
+        let mut spans_clone = spans.clone();
+
+        let iv = Interval::new(75, 5_000);
+        spans.delete_intersecting(iv);
+        delete_intersecting_simple(&mut spans_clone, iv);
+
+        assert_eq!(spans_clone.iter().count(), spans.iter().count());
     }
 }

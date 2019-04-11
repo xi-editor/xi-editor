@@ -421,6 +421,61 @@ impl<N: NodeInfo> Node<N> {
         let base = M1::to_base_units(l, m1);
         m2 + M2::from_base_units(l, base)
     }
+
+    pub(crate) fn iter_leaf_nodes(&self) -> LeafIterator<N> {
+        LeafIterator::new(self)
+    }
+}
+
+/// iterator over all leaves in a Node
+pub(crate) struct LeafIterator<N: NodeInfo> {
+    current_leaf: Node<N>,
+    // stack for keeping track of where we are in the tree
+    // if the node has children, the usize is the index of the next child to push onto stack
+    stack: Vec<(Node<N>, usize)>,
+}
+
+impl<N: NodeInfo> LeafIterator<N> {
+    fn new(n: &Node<N>) -> Self {
+        LeafIterator { current_leaf: n.clone(), stack: vec![(n.clone(), 0)] }
+    }
+
+    /// returns the next leaf, and the corresponding Node object
+    pub fn next(&mut self) -> Option<(Node<N>, &N::L)> {
+        loop {
+            // get the node on the top of the stack
+            let (node, child_index) = match self.stack.last() {
+                Some(v) => v.clone(),
+                None => return None,
+            };
+
+            // if the node is a leaf, pop it from the stack & return it
+            if node.is_leaf() {
+                self.current_leaf = node;
+                self.stack.pop();
+                return Some((self.current_leaf.clone(), self.current_leaf.get_leaf()));
+            }
+
+            let children = node.get_children();
+
+            // if we have already looked at all children, pop & continue
+            if child_index >= children.len() {
+                self.stack.pop();
+                continue;
+            }
+
+            // increment the child index
+            match self.stack.last_mut() {
+                None => unreachable!(),
+                Some((_, i)) => {
+                    *i += 1;
+                }
+            }
+
+            // push the child onto the stack
+            self.stack.push((children[child_index].clone(), 0));
+        }
+    }
 }
 
 impl<N: DefaultMetric> Node<N> {
