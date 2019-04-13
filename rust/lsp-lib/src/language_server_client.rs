@@ -196,6 +196,7 @@ impl LanguageServerClient {
             initialization_options: None,
             capabilities: client_capabilities,
             trace: Some(TraceOption::Verbose),
+            workspace_folders: None,
         };
 
         let params = Params::from(serde_json::to_value(init_params).unwrap());

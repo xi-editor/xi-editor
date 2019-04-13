@@ -13,7 +13,7 @@ serde_derive = "1.0"
 serde_json = "1.0"
 
 [dev-dependencies]
-toml = "0.4"
+toml = "0.5"
 
 [dependencies.syntect]
 git = "https://github.com/trishume/syntect.git"
