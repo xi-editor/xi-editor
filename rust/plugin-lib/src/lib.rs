@@ -20,7 +20,6 @@ extern crate xi_trace;
 #[macro_use]
 extern crate serde_json;
 extern crate bytecount;
-extern crate languageserver_types;
 extern crate memchr;
 extern crate rand;
 extern crate serde;
