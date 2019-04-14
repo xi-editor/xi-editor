@@ -78,6 +78,8 @@ Here are some front-ends in various stages of development:
 
 * [xi-qt](https://github.com/sw5cc/xi-qt), a Qt front-end.
 
+* [vixi](https://github.com/Peltoche/vixi), a Vim like front-end in Rust.
+
 The following are currently inactive, based on earlier versions of the front-end
 protocol, but perhaps could be revitalized:
 
