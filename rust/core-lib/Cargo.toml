@@ -29,7 +29,7 @@ default-features = false
 features = ["assets","dump-load-rs","dump-create"]
 
 [target."cfg(target_os = \"fuchsia\")".dependencies]
-sha2 = "0.7"
+sha2 = "0.8"
 # Note: these can be available if needed, but the idea is that the
 # platform-specific code moves entirely to the binary wrapper that
 # includes xi-core-lib.
