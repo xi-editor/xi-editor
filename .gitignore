@@ -5,4 +5,3 @@ build/
 *.pyc
 __pycache__
 .cache/
-.idea/

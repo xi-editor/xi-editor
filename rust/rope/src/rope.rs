@@ -260,6 +260,7 @@ impl Metric<RopeInfo> for LinesMetric {
     }
 
     fn prev(s: &String, offset: usize) -> Option<usize> {
+        debug_assert!(offset > 0, "caller is responsible for validating input");
         memrchr(b'\n', &s.as_bytes()[..offset - 1]).map(|pos| pos + 1)
     }
 
