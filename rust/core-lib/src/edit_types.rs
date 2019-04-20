@@ -117,7 +117,7 @@ impl From<SpecialEvent> for EventDomain {
     }
 }
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
+#[rustfmt::skip]
 impl From<EditNotification> for EventDomain {
     fn from(src: EditNotification) -> EventDomain {
         use self::EditNotification::*;
