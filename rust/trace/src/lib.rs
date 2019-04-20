@@ -1103,7 +1103,7 @@ pub fn save<P: AsRef<Path>>(path: P, sort: bool) -> Result<(), chrome_trace_dump
 }
 
 #[cfg(test)]
-#[cfg_attr(rustfmt, rustfmt_skip)]
+#[rustfmt::skip]
 mod tests {
     use super::*;
     #[cfg(feature = "benchmarks")]

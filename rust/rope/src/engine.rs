@@ -958,7 +958,7 @@ impl std::fmt::Debug for Error {
 impl std::error::Error for Error {}
 
 #[cfg(test)]
-#[cfg_attr(rustfmt, rustfmt_skip)]
+#[rustfmt::skip]
 mod tests {
     use crate::engine::*;
     use crate::rope::{Rope, RopeInfo};
