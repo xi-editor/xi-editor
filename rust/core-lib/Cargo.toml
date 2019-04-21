@@ -17,6 +17,7 @@ toml = "0.5"
 notify = { optional = true, version = "4.0" }
 regex = "1.0"
 memchr = "2.0.1"
+crossbeam = "0.7"
 
 xi-trace = { path = "../trace", version = "0.1.0" }
 xi-rope = { path = "../rope", version = "0.3" }
