@@ -70,7 +70,7 @@ impl<T: Clone> Leaf for SpansLeaf<T> {
         let iv_start = iv.start();
         for span in &other.spans {
             let span_iv = span.iv.intersect(iv).translate_neg(iv_start).translate(self.len);
-             self.spans.push(Span { iv: span_iv, data: span.data.clone() });
+            self.spans.push(Span { iv: span_iv, data: span.data.clone() });
         }
         self.len += iv.size();
 
