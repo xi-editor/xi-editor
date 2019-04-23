@@ -55,7 +55,7 @@ pub const MAX_SIZE_LIMIT: usize = 1024 * 1024;
 //want to make this tuneable at runtime, or to be configured by the client.
 /// The render delay after an edit occurs; plugin updates received in this
 /// window will be sent to the view along with the edit.
-const RENDER_DELAY: Duration = Duration::from_millis(2);
+const RENDER_DELAY: Duration = Duration::from_millis(5);
 
 /// A collection of all the state relevant for handling a particular event.
 ///

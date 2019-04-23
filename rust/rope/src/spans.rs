@@ -70,9 +70,7 @@ impl<T: Clone> Leaf for SpansLeaf<T> {
         let iv_start = iv.start();
         for span in &other.spans {
             let span_iv = span.iv.intersect(iv).translate_neg(iv_start).translate(self.len);
-            if !span_iv.is_empty() {
-                self.spans.push(Span { iv: span_iv, data: span.data.clone() });
-            }
+             self.spans.push(Span { iv: span_iv, data: span.data.clone() });
         }
         self.len += iv.size();
 
@@ -499,11 +497,22 @@ mod tests {
         sb.add_span(0..3, 0);
         sb.add_span(9..10, 1);
 
-        eprintln!("--");
         let mut spans = sb.build();
         assert_eq!(spans.iter().count(), 2);
 
         spans.delete_intersecting(Interval::new(5, 7));
         assert_eq!(spans.iter().count(), 2);
+    }
+
+    #[test]
+    fn subseq_sub_interval() {
+        let mut sb = SpansBuilder::new(18);
+        sb.add_span(9..9, 0);
+        sb.add_span(11..12, 0);
+        let spans = sb.build();
+
+        assert_eq!(spans.iter().count(), 2);
+        assert_eq!(spans.subseq(0..18).iter().count(), 2);
+        assert_eq!(spans.subseq(0..17).iter().count(), 2);
     }
 }
