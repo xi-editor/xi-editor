@@ -209,8 +209,8 @@ yank
 transpose
 select_all
 collapse_selections
-add_selection_above
-add_selection_below
+add_caret_above
+add_caret_below
 ```
 
 #### Transformations

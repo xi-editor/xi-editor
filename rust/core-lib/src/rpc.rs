@@ -435,8 +435,10 @@ pub enum EditNotification {
     ScrollPageDown,
     PageDownAndModifySelection,
     SelectAll,
-    AddSelectionAbove,
-    AddSelectionBelow,
+    AddCaretAbove,
+    AddCaretBelow,
+    AddSelectionAbove, // deprecated, use AddCaretAbove
+    AddSelectionBelow, // deprecated, use AddCaretBelow
     Scroll(LineRange),
     Resize(Size),
     GotoLine {
