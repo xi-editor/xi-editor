@@ -191,7 +191,12 @@ that takes a "movement" enum as a parameter.
 ```
 delete_backward
 delete_forward
+delete_word_forward
+delete_word_backward
+delete_to_end_of_paragraph
+delete_to_beginning_of_line
 insert_newline
+insert_tab
 duplicate_line
 move_up
 move_up_and_modify_selection
@@ -201,6 +206,22 @@ move_left
 move_left_and_modify_selection
 move_right
 move_right_and_modify_selection
+move_word_left
+move_word_left_and_modify_selection
+move_word_right
+move_word_right_and_modify_selection
+move_to_beginning_of_paragraph
+move_to_beginning_of_paragraph_and_modify_selection
+move_to_end_of_paragraph
+move_to_end_of_paragraph_and_modify_selection
+move_to_left_end_of_line
+move_to_left_end_of_line_and_modify_selection
+move_to_right_end_of_line
+move_to_right_end_of_line_and_modify_selection
+move_to_beginning_of_document
+move_to_beginning_of_document_and_modify_selection
+move_to_end_of_document
+move_to_end_of_document_and_modify_selection
 scroll_page_up
 page_up_and_modify_selection
 scroll_page_down
@@ -211,6 +232,8 @@ select_all
 collapse_selections
 add_selection_above
 add_selection_below
+undo
+redo
 ```
 
 #### Transformations
