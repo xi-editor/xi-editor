@@ -19,7 +19,7 @@
     clippy::len_without_is_empty,
     clippy::many_single_char_names,
     clippy::needless_range_loop,
-    clippy::new_without_default_derive,
+    clippy::new_without_default,
     clippy::should_implement_trait,
     clippy::wrong_self_convention
 )]

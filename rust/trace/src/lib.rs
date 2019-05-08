@@ -12,11 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 #![cfg_attr(feature = "benchmarks", feature(test))]
-#![allow(
-    clippy::identity_op,
-    clippy::new_without_default_derive,
-    clippy::trivially_copy_pass_by_ref
-)]
+#![allow(clippy::identity_op, clippy::new_without_default, clippy::trivially_copy_pass_by_ref)]
 
 #[macro_use]
 extern crate lazy_static;
