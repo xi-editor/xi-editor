@@ -19,13 +19,13 @@ For this to work we have to change multiple thing:
 
 ### Force saving
 
-There are multiple ways to tacle this:
+There are multiple ways to tackle this:
 
 1.
-If the frontend sends 'save' with 'force: false' and the file has been changed
-externally, then Xi should send another notification back, e.g. 'save_failed'
-upon which the frontend can display a save dialog like "The file has been changed,
-do you really want to overwrite it?".
+Make 'save' a request. If the file has been changed externally (or the file can't
+be saved due to other reasons) then Xi should reply, giving the user an option
+to force save afterwards. The frontend can display a save dialog like "The file has been changed,
+do you really want to overwrite it?" then.
 	- Nano does that. First you save via Ctrl+O, after pressing enter the
 	  following dialog comes up:
 	  ![nano reload](./assets/nano_reload.png)
@@ -50,4 +50,4 @@ For this we need:
 1. The previously mentioned 'file_externally_changed' notification, to allow frontends displaying a dialog
 saying that the file has been changed
 2. A way to demand a reload of the file by the frontend to act upon the 'file_externally_changed' notification
-3. A way to force saving the file, even if changes have occured, e.g. via a 'force' paramter for 'save'
+3. A way to force saving the file, even if changes have occurred, e.g. via a 'force' parameter for 'save'
