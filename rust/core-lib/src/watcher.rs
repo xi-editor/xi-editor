@@ -34,9 +34,8 @@
 //! - We are integrated with the xi_rpc runloop; events are queued as
 //! they arrive, and an idle task is scheduled.
 
-use notify::{event, watcher, Event, RecommendedWatcher, RecursiveMode, Watcher};
-use notify::event::EventKind::{Create, Modify, Remove};
 use crossbeam::unbounded;
+use notify::{event, watcher, Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::VecDeque;
 use std::fmt;
 use std::mem;
@@ -98,7 +97,8 @@ impl FileWatcher {
         let state = Arc::new(Mutex::new(WatcherState::default()));
         let state_clone = state.clone();
 
-        let inner = watcher(tx_event, Duration::from_millis(100)).expect("watcher should spawn");
+        let mut inner = watcher(tx_event, Duration::from_millis(100)).expect("watcher should spawn");
+        inner.configure(Config::PreciseEvents(true)).expect("precise events cannot be turned on");
 
         thread::spawn(move || {
             while let Ok(Ok(event)) = rx_event.recv() {
@@ -221,27 +221,35 @@ impl FileWatcher {
     }
 }
 
+/*NoticeWrite(ref p) | NoticeRemove(ref p) | Create(ref p) | Write(ref p)
+| Chmod(ref p) | Remove(ref p) => self.applies_to_path(p),
+Rename(ref p1, ref p2) => self.applies_to_path(p1) || self.applies_to_path(p2),
+Rescan => false,
+sj_todo how to handle Error case?
+Error(_, ref opt_p) => opt_p.as_ref().map(|p| self.applies_to_path(p)).unwrap_or(false),*/
 impl Watchee {
     fn wants_event(&self, event: &Event) -> bool {
         use self::event::*;
         debug!("Event received: {:?}", event);
         match &event.kind {
-            Create(CreateKind::File) | Remove(RemoveKind::File) | Modify(ModifyKind::Data(DataChange::Content))
-                | Modify(ModifyKind::Metadata(MetadataKind::Permissions))=> {
+            EventKind::Create(CreateKind::File)
+            | EventKind::Remove(RemoveKind::File)
+            | EventKind::Modify(ModifyKind::Data(DataChange::Content))
+            | EventKind::Modify(ModifyKind::Metadata(MetadataKind::Permissions)) => {
                 self.applies_to_path(&event.paths[0])
             }
-            Modify(ModifyKind::Any) | Remove(RemoveKind::Any) => {
+            EventKind::Modify(ModifyKind::Any) | EventKind::Remove(RemoveKind::Any) => {
                 if Some(&Flag::Notice) == event.flag() {
                     self.applies_to_path(&event.paths[0])
                 } else {
                     false
                 }
             }
-            Modify(ModifyKind::Name(RenameMode::Both)) => {
-                //There will be two paths.
+            EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => {
+                //There will be two paths. First is "from" and other is "to".
                 self.applies_to_path(&event.paths[0]) || self.applies_to_path(&event.paths[1])
             }
-            _ => false
+            _ => false,
         }
     }
 

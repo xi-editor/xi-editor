@@ -59,7 +59,7 @@ use crate::WeakXiCore;
 #[cfg(feature = "notify")]
 use crate::watcher::{FileWatcher, WatchToken};
 #[cfg(feature = "notify")]
-use notify::DebouncedEvent;
+use notify::Event;
 #[cfg(feature = "notify")]
 use std::ffi::OsStr;
 
@@ -697,10 +697,13 @@ impl CoreState {
 
     /// Handles a file system event related to a currently open file
     #[cfg(feature = "notify")]
-    fn handle_open_file_fs_event(&mut self, event: DebouncedEvent) {
-        use notify::DebouncedEvent::*;
-        let path = match event {
-            NoticeWrite(ref path) | Create(ref path) | Write(ref path) | Chmod(ref path) => path,
+    fn handle_open_file_fs_event(&mut self, event: Event) {
+        use notify::event::*;
+        let path = match event.kind {
+            EventKind::Create(CreateKind::File)
+            | EventKind::Modify(ModifyKind::Data(DataChange::Content))
+            | EventKind::Modify(ModifyKind::Metadata(MetadataKind::Permissions))
+            | EventKind::Modify(ModifyKind::Any) => &event.paths[0],
             other => {
                 debug!("Event in open file {:?}", other);
                 return;
@@ -735,16 +738,20 @@ impl CoreState {
 
     /// Handles a config related file system event.
     #[cfg(feature = "notify")]
-    fn handle_config_fs_event(&mut self, event: DebouncedEvent) {
-        use self::DebouncedEvent::*;
-        match event {
-            Create(ref path) | Write(ref path) | Chmod(ref path) => {
-                self.load_file_based_config(path)
+    fn handle_config_fs_event(&mut self, event: Event) {
+        use notify::event::*;
+        match event.kind {
+            EventKind::Create(CreateKind::File)
+            | EventKind::Modify(ModifyKind::Data(DataChange::Content))
+            | EventKind::Modify(ModifyKind::Metadata(MetadataKind::Permissions)) => {
+                self.load_file_based_config(&event.paths[0])
             }
-            Remove(ref path) if !path.exists() => self.remove_config_at_path(path),
-            Rename(ref old, ref new) => {
-                self.remove_config_at_path(old);
-                self.load_file_based_config(new);
+            EventKind::Remove(RemoveKind::File) if !event.paths[0].exists() => {
+                self.remove_config_at_path(&event.paths[0])
+            }
+            EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => {
+                self.remove_config_at_path(&event.paths[0]);
+                self.load_file_based_config(&event.paths[1]);
             }
             _ => (),
         }
@@ -758,24 +765,31 @@ impl CoreState {
 
     /// Handles changes in plugin files.
     #[cfg(feature = "notify")]
-    fn handle_plugin_fs_event(&mut self, event: DebouncedEvent) {
-        use self::DebouncedEvent::*;
-        match event {
-            Create(ref path) | Write(ref path) => {
-                self.plugins.load_from_paths(&[path.clone()]);
-                if let Some(plugin) = self.plugins.get_from_path(path) {
+    fn handle_plugin_fs_event(&mut self, event: Event) {
+        use notify::event::*;
+        match event.kind {
+            EventKind::Create(CreateKind::File)
+            | EventKind::Modify(ModifyKind::Data(DataChange::Content)) => {
+                self.plugins.load_from_paths(&[event.paths[0].clone()]);
+                if let Some(plugin) = self.plugins.get_from_path(&event.paths[0]) {
                     self.do_start_plugin(ViewId(0), &plugin.name);
                 }
             }
             // the way FSEvents on macOS work, we want to verify that this path
             // has actually be removed before we do anything.
-            NoticeRemove(ref path) | Remove(ref path) if !path.exists() => {
-                if let Some(plugin) = self.plugins.get_from_path(path) {
-                    self.do_stop_plugin(ViewId(0), &plugin.name);
-                    self.plugins.remove_named(&plugin.name);
+            EventKind::Remove(RemoveKind::File) if !event.paths[0].exists() => {
+                self.remove_plugin(&event);
+            }
+            EventKind::Remove(RemoveKind::Any) => {
+                if Some(&Flag::Notice) == event.flag() {
+                    if !event.paths[0].exists() {
+                        self.remove_plugin(&event);
+                    }
                 }
             }
-            Rename(ref old, ref new) => {
+            EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => {
+                let old = &event.paths[0];
+                let new = &event.paths[1];
                 if let Some(old_plugin) = self.plugins.get_from_path(old) {
                     self.do_stop_plugin(ViewId(0), &old_plugin.name);
                     self.plugins.remove_named(&old_plugin.name);
@@ -786,8 +800,9 @@ impl CoreState {
                     self.do_start_plugin(ViewId(0), &new_plugin.name);
                 }
             }
-            Chmod(ref path) | Remove(ref path) => {
-                if let Some(plugin) = self.plugins.get_from_path(path) {
+            EventKind::Modify(ModifyKind::Metadata(MetadataKind::Permissions))
+            | EventKind::Remove(RemoveKind::File) => {
+                if let Some(plugin) = self.plugins.get_from_path(&event.paths[0]) {
                     self.do_stop_plugin(ViewId(0), &plugin.name);
                     self.do_start_plugin(ViewId(0), &plugin.name);
                 }
@@ -805,21 +820,43 @@ impl CoreState {
         });
     }
 
+    fn remove_plugin(&mut self, event: &Event) {
+        if let Some(plugin) = self.plugins.get_from_path(&event.paths[0]) {
+            self.do_stop_plugin(ViewId(0), &plugin.name);
+            self.plugins.remove_named(&plugin.name);
+        }
+    }
+
     /// Handles changes in theme files.
     #[cfg(feature = "notify")]
-    fn handle_themes_fs_event(&mut self, event: DebouncedEvent) {
-        use self::DebouncedEvent::*;
-        match event {
-            Create(ref path) | Write(ref path) => self.load_theme_file(path),
+    fn handle_themes_fs_event(&mut self, event: Event) {
+        use notify::event::*;
+        match event.kind {
+            EventKind::Create(CreateKind::File)
+            | EventKind::Modify(ModifyKind::Data(DataChange::Content)) => {
+                self.load_theme_file(&event.paths[0])
+            }
             // the way FSEvents on macOS work, we want to verify that this path
             // has actually be removed before we do anything.
-            NoticeRemove(ref path) | Remove(ref path) if !path.exists() => self.remove_theme(path),
-            Rename(ref old, ref new) => {
+            EventKind::Remove(RemoveKind::File) if !event.paths[0].exists() => {
+                self.remove_theme(&event.paths[0])
+            }
+            EventKind::Remove(RemoveKind::Any) => {
+                if Some(&Flag::Notice) == event.flag() {
+                    if !event.paths[0].exists() {
+                        self.remove_theme(&event.paths[0]);
+                    }
+                }
+            }
+            EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => {
+                let old = &event.paths[0];
+                let new = &event.paths[1];
                 self.remove_theme(old);
                 self.load_theme_file(new);
             }
-            Chmod(ref path) | Remove(ref path) => {
-                self.style_map.borrow_mut().sync_dir(path.parent())
+            EventKind::Modify(ModifyKind::Metadata(MetadataKind::Permissions))
+            | EventKind::Remove(RemoveKind::File) => {
+                self.style_map.borrow_mut().sync_dir(event.paths[0].parent())
             }
             _ => (),
         }
