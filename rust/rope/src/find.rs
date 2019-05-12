@@ -236,7 +236,7 @@ pub fn compare_cursor_str(
 /// Like `compare_cursor_str` but case invariant (using to_lowercase() to
 /// normalize both strings before comparison). Returns the start position
 /// of the match.
-fn compare_cursor_str_casei(
+pub fn compare_cursor_str_casei(
     cursor: &mut Cursor<RopeInfo>,
     _lines: &mut LinesRaw,
     pat: &str,
@@ -273,7 +273,7 @@ fn compare_cursor_str_casei(
 /// If the regular expression can match multiple lines then the entire text
 /// is consumed and matched against the regular expression. Otherwise only
 /// the current line is matched. Returns the start position of the match.
-fn compare_cursor_regex(
+pub fn compare_cursor_regex(
     cursor: &mut Cursor<RopeInfo>,
     lines: &mut LinesRaw,
     pat: &str,
@@ -670,6 +670,62 @@ mod tests {
     }
 
     #[test]
+    fn compare_cursor_regex_singleline() {
+        let regex = Regex::new(r"^(\*+)(?: +(.*?))?[ \t]*$").unwrap();
+        let rope = Rope::from("** level 2 headline");
+        let mut c = Cursor::new(&rope, 0);
+        let mut l = rope.lines_raw(c.pos()..rope.len());
+        assert!(compare_cursor_regex(&mut c, &mut l, regex.as_str(), &regex).is_some());
+
+        c.set(3);
+        l = rope.lines_raw(c.pos()..rope.len());
+        assert!(compare_cursor_regex(&mut c, &mut l, regex.as_str(), &regex).is_none());
+    }
+
+    #[test]
+    fn compare_cursor_regex_multiline() {
+        let regex = Regex::new(
+            r"^[ \t]*:PROPERTIES:[ \t]*\n(?:[ \t]*:\S+:(?: .*)?[ \t]*\n)*?[ \t]*:END:[ \t]*\n",
+        )
+        .unwrap();
+
+        // taken from http://doc.norang.ca/org-mode.html#DiaryForAppointments
+        let s = "\
+                 #+FILETAGS: PERSONAL\
+                 \n* Appointments\
+                 \n  :PROPERTIES:\
+                 \n  :CATEGORY: Appt\
+                 \n  :ARCHIVE:  %s_archive::* Appointments\
+                 \n  :END:\
+                 \n** Holidays\
+                 \n   :PROPERTIES:\
+                 \n   :Category: Holiday\
+                 \n   :END:\
+                 \n   %%(org-calendar-holiday)\
+                 \n** Some other Appointment\n";
+        let rope = Rope::from(s);
+        let mut c = Cursor::new(&rope, 0);
+        let mut l = rope.lines_raw(c.pos()..rope.len());
+        assert!(compare_cursor_regex(&mut c, &mut l, regex.as_str(), &regex).is_none());
+
+        // move to the next line after "* Appointments"
+        c.set(36);
+        l = rope.lines_raw(c.pos()..rope.len());
+        assert!(compare_cursor_regex(&mut c, &mut l, regex.as_str(), &regex).is_some());
+        assert_eq!(117, c.pos());
+        assert_eq!(Some('*'), c.next_codepoint());
+
+        // move to the next line after "** Holidays"
+        c.set(129);
+        l = rope.lines_raw(c.pos()..rope.len());
+        assert!(compare_cursor_regex(&mut c, &mut l, regex.as_str(), &regex).is_some());
+        c.next_codepoint();
+        c.next_codepoint();
+        c.next_codepoint();
+        assert_eq!(Some('%'), c.next_codepoint());
+    }
+
+    #[test]
     fn compare_cursor_str_small() {
         let a = Rope::from("Löwe 老虎 Léopard");
         let mut c = Cursor::new(&a, 0);
@@ -701,9 +757,7 @@ mod tests {
         let mut c = Cursor::new(&a, 0);
         let mut raw_lines = a.lines_raw(0..a.len());
         assert!(compare_cursor_str(&mut c, &mut raw_lines, &s).is_some());
-        assert_eq!(c.pos(), s.len());
         c.set(2000);
         assert!(compare_cursor_str(&mut c, &mut raw_lines, &s[2000..]).is_some());
-        assert_eq!(c.pos(), s.len());
     }
 }
