@@ -35,7 +35,7 @@
 //! they arrive, and an idle task is scheduled.
 
 use notify::{event, watcher, Event, RecommendedWatcher, RecursiveMode, Watcher};
-use notify::event::EventKind::{Create, Modify, Remove, Other};
+use notify::event::EventKind::{Create, Modify, Remove};
 use crossbeam::unbounded;
 use std::collections::VecDeque;
 use std::fmt;
@@ -101,7 +101,7 @@ impl FileWatcher {
         let inner = watcher(tx_event, Duration::from_millis(100)).expect("watcher should spawn");
 
         thread::spawn(move || {
-            while let Ok(event) = rx_event.recv() {
+            while let Ok(Ok(event)) = rx_event.recv() {
                 let mut state = state_clone.lock().unwrap();
                 let WatcherState { ref mut events, ref mut watchees } = *state;
 
@@ -226,63 +226,22 @@ impl Watchee {
         use self::event::*;
         debug!("Event received: {:?}", event);
         match &event.kind {
-            Create(ck) => {
+            Create(CreateKind::File) | Remove(RemoveKind::File) | Modify(ModifyKind::Data(DataChange::Content))
+                | Modify(ModifyKind::Metadata(MetadataKind::Permissions))=> {
                 self.applies_to_path(&event.paths[0])
             }
-            Modify(mk) => {
-                match &mk {
-                    ModifyKind::Name(mode) => {
-                        self.applies_to_path(&event.paths[0]) || self.applies_to_path(&event.paths[1])
-                    }
-                    ModifyKind::Any => {
-                        if None != event.flag() {
-                            //do we care type of Flag?
-                            self.applies_to_path(&event.paths[0])
-                        } else {
-                            false
-                        }
-                    }
-                    _ => false
-                }
-            }
-            Remove(rk) => {
-                match rk {
-                    RemoveKind::File | RemoveKind::Folder => {
-                        self.applies_to_path(&event.paths[0])
-                    }
-                    RemoveKind::Any => {
-                        if None != event.flag() {
-                            //do we care type of Flag?
-                            self.applies_to_path(&event.paths[0])
-                        } else {
-                            false
-                        }
-                    }
-                    _  => false
-                }
-            }
-            Other => {
-                if let Some(i) = event.info() {
-                    //sj_todo this isnt right. "rescan" word can change to something else.
-                    //we need an enum.
-                    if i == "rescan" {
-                        false
-                    } else if i == "error" {
-                        //opt_p.as_ref().map(|p| self.applies_to_path(p)).unwrap_or(false)
-                        false
-                    } else {
-                        false
-                    }
+            Modify(ModifyKind::Any) | Remove(RemoveKind::Any) => {
+                if Some(&Flag::Notice) == event.flag() {
+                    self.applies_to_path(&event.paths[0])
                 } else {
                     false
                 }
             }
+            Modify(ModifyKind::Name(RenameMode::Both)) => {
+                //There will be two paths.
+                self.applies_to_path(&event.paths[0]) || self.applies_to_path(&event.paths[1])
+            }
             _ => false
-            /*NoticeWrite(ref p) | NoticeRemove(ref p) | Create(ref p) | Write(ref p)
-            | Chmod(ref p) | Remove(ref p) => self.applies_to_path(p),
-            Rename(ref p1, ref p2) => self.applies_to_path(p1) || self.applies_to_path(p2),
-            Rescan => false,
-            Error(_, ref opt_p) => opt_p.as_ref().map(|p| self.applies_to_path(p)).unwrap_or(false),*/
         }
     }
 
