@@ -97,7 +97,8 @@ impl FileWatcher {
         let state = Arc::new(Mutex::new(WatcherState::default()));
         let state_clone = state.clone();
 
-        let mut inner = watcher(tx_event, Duration::from_millis(100)).expect("watcher should spawn");
+        let mut inner =
+            watcher(tx_event, Duration::from_millis(100)).expect("watcher should spawn");
         inner.configure(Config::PreciseEvents(true)).expect("precise events cannot be turned on");
 
         thread::spawn(move || {
@@ -239,11 +240,7 @@ impl Watchee {
                 self.applies_to_path(&event.paths[0])
             }
             EventKind::Modify(ModifyKind::Any) | EventKind::Remove(RemoveKind::Any) => {
-                if Some(&Flag::Notice) == event.flag() {
-                    self.applies_to_path(&event.paths[0])
-                } else {
-                    false
-                }
+                self.applies_to_path(&event.paths[0])
             }
             EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => {
                 //There will be two paths. First is "from" and other is "to".
@@ -301,10 +298,11 @@ extern crate tempdir;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crossbeam::unbounded;
+    use notify::EventKind;
     use std::ffi::OsStr;
     use std::fs;
     use std::io::Write;
-    use std::sync::mpsc;
     use std::thread;
     use std::time::{Duration, Instant};
 
@@ -320,7 +318,7 @@ mod tests {
         }
     }
 
-    impl Notify for mpsc::Sender<bool> {
+    impl Notify for crossbeam::Sender<bool> {
         fn notify(&self) {
             self.send(true).expect("send shouldn't fail")
         }
@@ -338,14 +336,14 @@ mod tests {
         }
     }
 
-    pub fn recv_all<T>(rx: &mpsc::Receiver<T>, duration: Duration) -> Vec<T> {
+    pub fn recv_all<T>(rx: &crossbeam::Receiver<T>, duration: Duration) -> Vec<T> {
         let start = Instant::now();
         let mut events = Vec::new();
 
         while start.elapsed() < duration {
             match rx.recv_timeout(Duration::from_millis(50)) {
                 Ok(event) => events.push(event),
-                Err(mpsc::RecvTimeoutError::Timeout) => (),
+                Err(crossbeam::RecvTimeoutError::Timeout) => (),
                 Err(e) => panic!("unexpected channel err: {:?}", e),
             }
         }
@@ -490,8 +488,19 @@ mod tests {
         assert_eq!(
             events,
             vec![
-                (2.into(), Event::NoticeWrite(tmp.mkpath("adir/dir2/file"))),
-                (2.into(), Event::Write(tmp.mkpath("adir/dir2/file"))),
+                //(2.into(), Event::NoticeWrite(tmp.mkpath("adir/dir2/file"))),
+                (
+                    2.into(),
+                    Event::new(EventKind::Modify(event::ModifyKind::Any))
+                        .add_path(tmp.mkpath("adir/dir2/file"))
+                        .set_flag(event::Flag::Notice)
+                ),
+                //(2.into(), Event::Write(tmp.mkpath("adir/dir2/file"))),
+                (
+                    2.into(),
+                    Event::new(EventKind::Modify(event::ModifyKind::Any))
+                        .add_path(tmp.mkpath("adir/dir2/file"))
+                ),
             ]
         );
     }
@@ -514,10 +523,28 @@ mod tests {
         assert_eq!(
             events,
             vec![
-                (1.into(), Event::NoticeWrite(tmp.mkpath("my_file"))),
-                (2.into(), Event::NoticeWrite(tmp.mkpath("my_file"))),
-                (1.into(), Event::Write(tmp.mkpath("my_file"))),
-                (2.into(), Event::Write(tmp.mkpath("my_file"))),
+                (
+                    1.into(),
+                    Event::new(EventKind::Modify(event::ModifyKind::Any))
+                        .add_path(tmp.mkpath("my_file"))
+                        .set_flag(event::Flag::Notice)
+                ),
+                (
+                    2.into(),
+                    Event::new(EventKind::Modify(event::ModifyKind::Any))
+                        .add_path(tmp.mkpath("my_file"))
+                        .set_flag(event::Flag::Notice)
+                ),
+                (
+                    1.into(),
+                    Event::new(EventKind::Modify(event::ModifyKind::Any))
+                        .add_path(tmp.mkpath("my_file"))
+                ),
+                (
+                    2.into(),
+                    Event::new(EventKind::Modify(event::ModifyKind::Any))
+                        .add_path(tmp.mkpath("my_file"))
+                ),
             ]
         );
 
@@ -530,7 +557,17 @@ mod tests {
         sleep_if_macos(1000);
         let _ = recv_all(&rx, Duration::from_millis(1000));
         let events = w.take_events();
-        assert!(events.contains(&(2.into(), Event::NoticeRemove(path.clone()))));
-        assert!(!events.contains(&(1.into(), Event::NoticeRemove(path))));
+        assert!(events.contains(&(
+            2.into(),
+            Event::new(EventKind::Remove(event::RemoveKind::Any))
+                .add_path(path.clone())
+                .set_flag(event::Flag::Notice)
+        )));
+        assert!(!events.contains(&(
+            1.into(),
+            Event::new(EventKind::Remove(event::RemoveKind::Any))
+                .add_path(path)
+                .set_flag(event::Flag::Notice)
+        )));
     }
 }
