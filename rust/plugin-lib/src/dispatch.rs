@@ -142,8 +142,6 @@ impl<'a, P: 'a + Plugin> Dispatcher<'a, P> {
     }
 
     fn do_tracing_config(&mut self, enabled: bool) {
-        use xi_trace;
-
         if enabled {
             xi_trace::enable_tracing();
             info!("Enabling tracing in global plugin {:?}", self.pid);
