@@ -44,9 +44,8 @@ const MAX_LEAF: usize = 1024;
 /// version of Ropes, and if there are many copies of similar strings, the common parts
 /// are shared.
 ///
-/// Internally, the implementation uses reference counting (not thread safe, though
-/// it would be easy enough to modify to use `Arc` instead of `Rc` if that were
-/// required). Mutations are generally copy-on-write, though in-place edits are
+/// Internally, the implementation uses thread safe reference counting.
+/// Mutations are generally copy-on-write, though in-place edits are
 /// supported as an optimization when only one reference exists, making the
 /// implementation as efficient as a mutable version.
 ///
