@@ -70,7 +70,7 @@ Here are some front-ends in various stages of development:
 
 * [xi-electron](https://github.com/acheronfail/xi-electron), a cross-platform front-end based on web-technologies.
 
-* [gxi](https://github.com/Cogitri/gxi), a GTK+ front-end written in Rust. Forked from https://github.com/bvinc/gxi, which was abandoned.
+* [Tau](https://gitlab.gnome.org/World/Tau), a GTK+ front-end written in Rust. Forked from https://github.com/bvinc/gxi, which was abandoned.
 
 * [xi-win](https://github.com/xi-editor/xi-win), an experimental Windows front-end written in Rust.
 
