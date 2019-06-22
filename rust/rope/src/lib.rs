@@ -27,10 +27,12 @@
 extern crate bytecount;
 extern crate memchr;
 extern crate regex;
-extern crate serde;
 extern crate unicode_segmentation;
+
+#[cfg(feature = "serde")]
 #[macro_use]
-extern crate serde_derive;
+extern crate serde;
+
 #[cfg(test)]
 extern crate serde_json;
 #[cfg(test)]
@@ -45,6 +47,7 @@ pub mod find;
 pub mod interval;
 pub mod multiset;
 pub mod rope;
+#[cfg(feature = "serde")]
 mod serde_impls;
 pub mod spans;
 #[cfg(test)]

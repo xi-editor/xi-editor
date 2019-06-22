@@ -829,7 +829,6 @@ impl<'a> Iterator for Lines<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_test::{assert_tokens, Token};
 
     #[test]
     fn replace_small() {
@@ -1020,14 +1019,6 @@ mod tests {
     }
 
     #[test]
-    fn test_ser_de() {
-        let rope = Rope::from("a\u{00A1}\u{4E00}\u{1F4A9}");
-        assert_tokens(&rope, &[Token::Str("a\u{00A1}\u{4E00}\u{1F4A9}")]);
-        assert_tokens(&rope, &[Token::String("a\u{00A1}\u{4E00}\u{1F4A9}")]);
-        assert_tokens(&rope, &[Token::BorrowedStr("a\u{00A1}\u{4E00}\u{1F4A9}")]);
-    }
-
-    #[test]
     fn line_of_offset_small() {
         let a = Rope::from("a\nb\nc");
         assert_eq!(0, a.line_of_offset(0));
@@ -1207,6 +1198,13 @@ mod tests {
         assert!(long_text.len() > 1024);
         assert_eq!(cow, Cow::Borrowed(&long_text[..500]));
     }
+}
+
+#[cfg(all(test, feature = "serde"))]
+mod serde_tests {
+    use super::*;
+    use crate::Rope;
+    use serde_test::{assert_tokens, Token};
 
     #[test]
     fn serialize_and_deserialize() {
@@ -1221,5 +1219,13 @@ mod tests {
         let deserialized_rope =
             serde_json::from_str::<Rope>(json.as_str()).expect("error deserializing");
         assert_eq!(rope, deserialized_rope);
+    }
+
+    #[test]
+    fn test_ser_de() {
+        let rope = Rope::from("a\u{00A1}\u{4E00}\u{1F4A9}");
+        assert_tokens(&rope, &[Token::Str("a\u{00A1}\u{4E00}\u{1F4A9}")]);
+        assert_tokens(&rope, &[Token::String("a\u{00A1}\u{4E00}\u{1F4A9}")]);
+        assert_tokens(&rope, &[Token::BorrowedStr("a\u{00A1}\u{4E00}\u{1F4A9}")]);
     }
 }
