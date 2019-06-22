@@ -22,7 +22,8 @@ use crate::tree::{Node, NodeInfo, TreeBuilder};
 use std::fmt;
 use std::slice;
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 struct Segment {
     len: usize,
     count: usize,
@@ -34,7 +35,8 @@ struct Segment {
 /// included in the set.
 ///
 /// Internally, this is stored as a list of "segments" with a length and a count.
-#[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Subset {
     /// Invariant, maintained by `SubsetBuilder`: all `Segment`s have non-zero
     /// length, and no `Segment` has the same count as the one before it.
