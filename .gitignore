@@ -1,6 +1,7 @@
 xcuserdata/
 .DS_Store
 build/
+.idea
 
 *.pyc
 __pycache__
