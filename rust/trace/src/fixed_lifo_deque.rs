@@ -12,15 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::cmp;
-use std::cmp::Ordering;
-#[cfg(feature = "collections_range")]
-use std::collections::vec_deque::Drain;
-use std::collections::vec_deque::{IntoIter, Iter, IterMut, VecDeque};
+use std::cmp::{self, Ordering};
+use std::collections::vec_deque::{Drain, IntoIter, Iter, IterMut, VecDeque};
 use std::hash::{Hash, Hasher};
-#[cfg(feature = "collections_range")]
-use std::ops::RangeBounds;
-use std::ops::{Index, IndexMut};
+use std::ops::{Index, IndexMut, RangeBounds};
 
 /// Provides fixed size ring buffer that overwrites elements in FIFO order on
 /// insertion when full.  API provided is similar to VecDeque & uses a VecDeque
@@ -134,7 +129,6 @@ impl<T> FixedLifoDeque<T> {
     }
 
     #[inline]
-    #[cfg(feature = "collections_range")]
     pub fn drain<R>(&mut self, range: R) -> Drain<T>
     where
         R: RangeBounds<usize>,
