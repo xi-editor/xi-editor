@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 #![cfg_attr(feature = "benchmarks", feature(test))]
-#![cfg_attr(feature = "collections_range", feature(collections_range))]
 #![allow(
     clippy::identity_op,
     clippy::new_without_default_derive,

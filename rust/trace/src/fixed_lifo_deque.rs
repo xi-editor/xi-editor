@@ -15,11 +15,11 @@
 use std::cmp;
 use std::cmp::Ordering;
 #[cfg(feature = "collections_range")]
-use std::collections::range::RangeArgument;
-#[cfg(feature = "collections_range")]
 use std::collections::vec_deque::Drain;
 use std::collections::vec_deque::{IntoIter, Iter, IterMut, VecDeque};
 use std::hash::{Hash, Hasher};
+#[cfg(feature = "collections_range")]
+use std::ops::RangeBounds;
 use std::ops::{Index, IndexMut};
 
 /// Provides fixed size ring buffer that overwrites elements in FIFO order on
@@ -137,7 +137,7 @@ impl<T> FixedLifoDeque<T> {
     #[cfg(feature = "collections_range")]
     pub fn drain<R>(&mut self, range: R) -> Drain<T>
     where
-        R: RangeArgument<usize>,
+        R: RangeBounds<usize>,
     {
         self.storage.drain(range)
     }
