@@ -12,7 +12,6 @@ edition = '2018'
 benchmarks = []
 collections_range = []
 default = ["chrome_trace_event"]
-dict_payload = []
 json_payload = ["serde_json"]
 getpid = []
 chrome_trace_event = ["serde_json"]
