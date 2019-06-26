@@ -107,22 +107,13 @@ where
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "dict_payload")]
-    use super::super::{StrCow, TracePayloadT};
     use super::*;
     #[cfg(feature = "benchmarks")]
     use test::Bencher;
 
-    #[cfg(all(not(feature = "dict_payload"), not(feature = "json_payload")))]
+    #[cfg(not(feature = "json_payload"))]
     fn to_payload(value: &'static str) -> &'static str {
         value
-    }
-
-    #[cfg(feature = "dict_payload")]
-    fn to_payload(value: &'static str) -> TracePayloadT {
-        let mut d = TracePayloadT::with_capacity(1);
-        d.insert(StrCow::from("test"), StrCow::from(value));
-        d
     }
 
     #[cfg(feature = "json_payload")]
@@ -197,13 +188,13 @@ mod tests {
     #[cfg(all(feature = "chrome_trace_event", feature = "benchmarks"))]
     #[bench]
     fn bench_chrome_trace_serialization_one_element(b: &mut Bencher) {
-        use super::chrome_trace_dump::*;
+        use super::*;
 
         let mut serialized = Vec::<u8>::new();
         let samples = [super::Sample::new_instant("trace1", &["benchmark", "test"], None)];
         b.iter(|| {
             serialized.clear();
-            serialize(samples.iter(), &mut serialized).unwrap();
+            serialize(samples, &mut serialized).unwrap();
         });
     }
 
@@ -211,7 +202,7 @@ mod tests {
     #[bench]
     fn bench_chrome_trace_serialization_multiple_elements(b: &mut Bencher) {
         use super::super::*;
-        use super::chrome_trace_dump::*;
+        use super::*;
 
         let mut serialized = Vec::<u8>::new();
         let mut samples = [
