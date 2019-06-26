@@ -1346,9 +1346,11 @@ mod tests {
     fn bench_trace_block_payload(b: &mut Bencher) {
         let trace = Trace::enabled(Config::default());
         b.iter(|| {
-            black_box(trace.block_payload(
+            black_box(|| {
+                let _ = trace.block_payload(
                     "something", &["benchmark"],
-                    to_payload(("some payload for the block"))));
+                    to_payload("some payload for the block"));
+            });
         });
     }
 
@@ -1373,7 +1375,7 @@ mod tests {
         let trace = Trace::enabled(Config::default());
         b.iter(|| black_box(trace.closure_payload(
                     "something", &["benchmark"], || {},
-                    to_payload(("some description of the closure")))));
+                    to_payload("some description of the closure"))));
     }
 
     // this is the cost contributed by the timestamp to trace()
