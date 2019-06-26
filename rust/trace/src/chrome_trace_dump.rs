@@ -191,10 +191,10 @@ mod tests {
         use super::*;
 
         let mut serialized = Vec::<u8>::new();
-        let samples = [super::Sample::new_instant("trace1", &["benchmark", "test"], None)];
+        let samples = vec![super::Sample::new_instant("trace1", &["benchmark", "test"], None)];
         b.iter(|| {
             serialized.clear();
-            serialize(samples, &mut serialized).unwrap();
+            serialize(&samples, &mut serialized).unwrap();
         });
     }
 
@@ -205,16 +205,16 @@ mod tests {
         use super::*;
 
         let mut serialized = Vec::<u8>::new();
-        let mut samples = [
+        let mut samples = vec![
             Sample::new_instant("trace1", &["benchmark", "test"], None),
             Sample::new_instant("trace2", &["benchmark"], None),
-            Sample::new_duration("trace3", &["benchmark"], Some(to_payload("some payload"), 0)),
+            Sample::new_duration("trace3", &["benchmark"], Some(to_payload("some payload")), 0, 0),
             Sample::new_instant("trace4", &["benchmark"], None),
         ];
 
         b.iter(|| {
             serialized.clear();
-            serialize(samples.iter(), &mut serialized).unwrap();
+            serialize(&samples, &mut serialized).unwrap();
         });
     }
 }
