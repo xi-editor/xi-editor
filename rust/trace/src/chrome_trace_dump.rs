@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![cfg_attr(feature = "benchmarks", feature(test))]
 #![allow(
     clippy::if_same_then_else,
     clippy::needless_bool,
@@ -205,7 +204,7 @@ mod tests {
         use super::*;
 
         let mut serialized = Vec::<u8>::new();
-        let mut samples = vec![
+        let samples = vec![
             Sample::new_instant("trace1", &["benchmark", "test"], None),
             Sample::new_instant("trace2", &["benchmark"], None),
             Sample::new_duration("trace3", &["benchmark"], Some(to_payload("some payload")), 0, 0),
