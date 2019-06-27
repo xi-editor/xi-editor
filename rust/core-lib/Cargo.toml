@@ -24,7 +24,7 @@ xi-unicode = { path = "../unicode", version = "0.1.0" }
 xi-rpc = { path = "../rpc", version = "0.2.0" }
 
 [dependencies.syntect]
-version = "3.0"
+version = "3.2"
 default-features = false
 features = ["assets","dump-load-rs","dump-create"]
 
