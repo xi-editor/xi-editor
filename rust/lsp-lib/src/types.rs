@@ -42,7 +42,7 @@ impl<F: Send + FnOnce(&mut LanguageServerClient, Result<Value, JsonRpcError>)> C
     }
 }
 
-pub type Callback = Box<Callable>;
+pub type Callback = Box<dyn Callable>;
 
 #[derive(Serialize, Deserialize)]
 /// Language Specific Configuration
