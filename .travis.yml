@@ -2,7 +2,7 @@ language: rust
 osx_image: xcode9.2
 
 rust:
-  - 1.31.0
+  - stable
   - nightly
 
 os:
@@ -42,8 +42,8 @@ script:
   - export RUST_BACKTRACE=1
   - RUSTFLAGS="-D warnings" cargo check --all || exit
   - cargo test --all || exit
-  - if [ "$TRAVIS_RUST_VERSION" = '1.31.0' ]; then cargo fmt --all -- --check; fi
-  - if [ "$TRAVIS_RUST_VERSION" = '1.31.0' ]; then cargo clippy --all -- -D warnings; fi
+  - if [ "$TRAVIS_RUST_VERSION" = 'stable' ]; then cargo fmt --all -- --check; fi
+  - if [ "$TRAVIS_RUST_VERSION" = 'stable' ]; then cargo clippy --all -- -D warnings; fi
 
 after_success: |
   if [[ "$TRAVIS_OS_NAME" == linux && "$TRAVIS_RUST_VERSION" == nightly ]]; then

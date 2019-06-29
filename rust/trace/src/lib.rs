@@ -12,11 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 #![cfg_attr(feature = "benchmarks", feature(test))]
-#![allow(
-    clippy::identity_op,
-    clippy::new_without_default_derive,
-    clippy::trivially_copy_pass_by_ref
-)]
+#![allow(clippy::identity_op, clippy::new_without_default, clippy::trivially_copy_pass_by_ref)]
 
 #[macro_use]
 extern crate lazy_static;
@@ -55,6 +51,7 @@ use std::fs;
 use std::hash::{Hash, Hasher};
 use std::mem::size_of;
 use std::path::Path;
+use std::string::ToString;
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::Mutex;
 
@@ -144,7 +141,7 @@ impl<'de> serde::Deserialize<'de> for CategoriesT {
             where
                 E: serde::de::Error,
             {
-                let categories = v.split(',').map(|s| s.to_string()).collect();
+                let categories = v.split(',').map(ToString::to_string).collect();
                 Ok(CategoriesT::DynamicArray(categories))
             }
         }
@@ -603,7 +600,7 @@ impl<'a> Drop for SampleGuard<'a> {
 fn exe_name() -> Option<String> {
     match std::env::current_exe() {
         Ok(exe_name) => match exe_name.clone().file_name() {
-            Some(filename) => filename.to_str().map(|s| s.to_string()),
+            Some(filename) => filename.to_str().map(ToString::to_string),
             None => {
                 let full_path = exe_name.into_os_string();
                 let full_path_str = full_path.into_string();
