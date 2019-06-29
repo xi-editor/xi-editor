@@ -110,11 +110,11 @@ impl Write for DummyWriter {
 }
 
 impl Peer for DummyPeer {
-    fn box_clone(&self) -> Box<Peer> {
+    fn box_clone(&self) -> Box<dyn Peer> {
         Box::new(self.clone())
     }
     fn send_rpc_notification(&self, _method: &str, _params: &Value) {}
-    fn send_rpc_request_async(&self, _method: &str, _params: &Value, f: Box<Callback>) {
+    fn send_rpc_request_async(&self, _method: &str, _params: &Value, f: Box<dyn Callback>) {
         f.call(Ok("dummy peer".into()))
     }
     fn send_rpc_request(&self, _method: &str, _params: &Value) -> Result<Value, Error> {

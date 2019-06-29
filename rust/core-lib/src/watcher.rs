@@ -88,7 +88,7 @@ pub trait Notify: Send {
 
 pub type EventQueue = VecDeque<(WatchToken, DebouncedEvent)>;
 
-pub type PathFilter = Fn(&Path) -> bool + Send + 'static;
+pub type PathFilter = dyn Fn(&Path) -> bool + Send + 'static;
 
 impl FileWatcher {
     pub fn new<T: Notify + 'static>(peer: T) -> Self {

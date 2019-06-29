@@ -106,8 +106,8 @@ pub fn find_progress(
             cursor,
             lines,
             pat,
-            &|_| Some(0),
-            &|cursor, lines, pat| compare_cursor_regex(cursor, lines, pat, &r),
+            |_| Some(0),
+            |cursor, lines, pat| compare_cursor_regex(cursor, lines, pat, &r),
             num_steps,
         ),
         None => {
@@ -116,7 +116,7 @@ pub fn find_progress(
                     let b = pat.as_bytes()[0];
                     let scanner = |s: &str| memchr(b, s.as_bytes());
                     let matcher = compare_cursor_str;
-                    find_progress_iter(cursor, lines, pat, &scanner, &matcher, num_steps)
+                    find_progress_iter(cursor, lines, pat, scanner, matcher, num_steps)
                 }
                 CaseMatching::CaseInsensitive => {
                     let pat_lower = pat.to_lowercase();
@@ -125,21 +125,21 @@ pub fn find_progress(
                     if b == b'i' {
                         // 0xC4 is first utf-8 byte of 'İ'
                         let scanner = |s: &str| memchr3(b'i', b'I', 0xC4, s.as_bytes());
-                        find_progress_iter(cursor, lines, &pat_lower, &scanner, &matcher, num_steps)
+                        find_progress_iter(cursor, lines, &pat_lower, scanner, matcher, num_steps)
                     } else if b == b'k' {
                         // 0xE2 is first utf-8 byte of u+212A (kelvin sign)
                         let scanner = |s: &str| memchr3(b'k', b'K', 0xE2, s.as_bytes());
-                        find_progress_iter(cursor, lines, &pat_lower, &scanner, &matcher, num_steps)
+                        find_progress_iter(cursor, lines, &pat_lower, scanner, matcher, num_steps)
                     } else if b >= b'a' && b <= b'z' {
                         let scanner = |s: &str| memchr2(b, b - 0x20, s.as_bytes());
-                        find_progress_iter(cursor, lines, &pat_lower, &scanner, &matcher, num_steps)
+                        find_progress_iter(cursor, lines, &pat_lower, scanner, matcher, num_steps)
                     } else if b < 0x80 {
                         let scanner = |s: &str| memchr(b, s.as_bytes());
-                        find_progress_iter(cursor, lines, &pat_lower, &scanner, &matcher, num_steps)
+                        find_progress_iter(cursor, lines, &pat_lower, scanner, matcher, num_steps)
                     } else {
                         let c = pat.chars().next().unwrap();
                         let scanner = |s: &str| scan_lowercase(c, s);
-                        find_progress_iter(cursor, lines, &pat_lower, &scanner, &matcher, num_steps)
+                        find_progress_iter(cursor, lines, &pat_lower, scanner, matcher, num_steps)
                     }
                 }
             }
@@ -152,12 +152,12 @@ fn find_progress_iter(
     cursor: &mut Cursor<RopeInfo>,
     lines: &mut LinesRaw,
     pat: &str,
-    scanner: &Fn(&str) -> Option<usize>,
-    matcher: &Fn(&mut Cursor<RopeInfo>, &mut LinesRaw, &str) -> Option<usize>,
+    scanner: impl Fn(&str) -> Option<usize>,
+    matcher: impl Fn(&mut Cursor<RopeInfo>, &mut LinesRaw, &str) -> Option<usize>,
     num_steps: usize,
 ) -> FindResult {
     for _ in 0..num_steps {
-        match find_core(cursor, lines, pat, scanner, matcher) {
+        match find_core(cursor, lines, pat, &scanner, &matcher) {
             FindResult::TryAgain => (),
             result => return result,
         }
@@ -173,8 +173,8 @@ fn find_core(
     cursor: &mut Cursor<RopeInfo>,
     lines: &mut LinesRaw,
     pat: &str,
-    scanner: &Fn(&str) -> Option<usize>,
-    matcher: &Fn(&mut Cursor<RopeInfo>, &mut LinesRaw, &str) -> Option<usize>,
+    scanner: impl Fn(&str) -> Option<usize>,
+    matcher: impl Fn(&mut Cursor<RopeInfo>, &mut LinesRaw, &str) -> Option<usize>,
 ) -> FindResult {
     let orig_pos = cursor.pos();
 
