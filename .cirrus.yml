@@ -7,7 +7,7 @@ task:
       matrix:
         - name: test (linux)
           container:
-            image: rust:1.31.0
+            image: rust:latest
             cpu: 4
             memory: 8G
           rustfmt_script: rustup component add rustfmt-preview && cd rust && cargo fmt --all -- --check
@@ -26,7 +26,7 @@ task:
       install_cmake_script: brew install cmake
       matrix:
         - name: test (macOS)
-          install_rust_script: curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain 1.31.0
+          install_rust_script: curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain stable
           rustfmt_script: rustup component add rustfmt-preview && cd rust && cargo fmt --all -- --check
           clippy_script: rustup component add clippy-preview && cd rust && cargo clippy --all -- -D warnings
         - name: test (macOS nightly)

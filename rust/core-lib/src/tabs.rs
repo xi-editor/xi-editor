@@ -304,7 +304,7 @@ impl CoreState {
 
     /// Produces an iterator over all event contexts, with each view appearing
     /// exactly once.
-    fn iter_groups<'a>(&'a self) -> Iter<'a, Box<Iterator<Item = &ViewId> + 'a>> {
+    fn iter_groups<'a>(&'a self) -> Iter<'a, Box<dyn Iterator<Item = &ViewId> + 'a>> {
         Iter { views: Box::new(self.views.keys()), seen: HashSet::new(), inner: self }
     }
 

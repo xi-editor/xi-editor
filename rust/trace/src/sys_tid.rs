@@ -17,18 +17,13 @@ use libc;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 #[inline]
 pub fn current_tid() -> Result<u64, libc::c_int> {
-    use std::mem::uninitialized;
-
     #[link(name = "pthread")]
     extern "C" {
-        fn pthread_threadid_np(
-            thread: libc::pthread_t,
-            thread_id: *mut libc::uint64_t,
-        ) -> libc::c_int;
+        fn pthread_threadid_np(thread: libc::pthread_t, thread_id: *mut u64) -> libc::c_int;
     }
 
     unsafe {
-        let mut tid: libc::uint64_t = uninitialized();
+        let mut tid = 0;
         let err = pthread_threadid_np(0, &mut tid);
         match err {
             0 => Ok(tid),

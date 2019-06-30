@@ -44,9 +44,8 @@ const MAX_LEAF: usize = 1024;
 /// version of Ropes, and if there are many copies of similar strings, the common parts
 /// are shared.
 ///
-/// Internally, the implementation uses reference counting (not thread safe, though
-/// it would be easy enough to modify to use `Arc` instead of `Rc` if that were
-/// required). Mutations are generally copy-on-write, though in-place edits are
+/// Internally, the implementation uses thread safe reference counting.
+/// Mutations are generally copy-on-write, though in-place edits are
 /// supported as an optimization when only one reference exists, making the
 /// implementation as efficient as a mutable version.
 ///
@@ -830,7 +829,6 @@ impl<'a> Iterator for Lines<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_test::{assert_tokens, Token};
 
     #[test]
     fn replace_small() {
@@ -1021,14 +1019,6 @@ mod tests {
     }
 
     #[test]
-    fn test_ser_de() {
-        let rope = Rope::from("a\u{00A1}\u{4E00}\u{1F4A9}");
-        assert_tokens(&rope, &[Token::Str("a\u{00A1}\u{4E00}\u{1F4A9}")]);
-        assert_tokens(&rope, &[Token::String("a\u{00A1}\u{4E00}\u{1F4A9}")]);
-        assert_tokens(&rope, &[Token::BorrowedStr("a\u{00A1}\u{4E00}\u{1F4A9}")]);
-    }
-
-    #[test]
     fn line_of_offset_small() {
         let a = Rope::from("a\nb\nc");
         assert_eq!(0, a.line_of_offset(0));
@@ -1208,6 +1198,13 @@ mod tests {
         assert!(long_text.len() > 1024);
         assert_eq!(cow, Cow::Borrowed(&long_text[..500]));
     }
+}
+
+#[cfg(all(test, feature = "serde"))]
+mod serde_tests {
+    use super::*;
+    use crate::Rope;
+    use serde_test::{assert_tokens, Token};
 
     #[test]
     fn serialize_and_deserialize() {
@@ -1222,5 +1219,13 @@ mod tests {
         let deserialized_rope =
             serde_json::from_str::<Rope>(json.as_str()).expect("error deserializing");
         assert_eq!(rope, deserialized_rope);
+    }
+
+    #[test]
+    fn test_ser_de() {
+        let rope = Rope::from("a\u{00A1}\u{4E00}\u{1F4A9}");
+        assert_tokens(&rope, &[Token::Str("a\u{00A1}\u{4E00}\u{1F4A9}")]);
+        assert_tokens(&rope, &[Token::String("a\u{00A1}\u{4E00}\u{1F4A9}")]);
+        assert_tokens(&rope, &[Token::BorrowedStr("a\u{00A1}\u{4E00}\u{1F4A9}")]);
     }
 }

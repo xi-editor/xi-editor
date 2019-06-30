@@ -24,7 +24,6 @@
     clippy::match_bool,
     clippy::needless_pass_by_value,
     clippy::new_without_default,
-    clippy::new_without_default_derive,
     clippy::or_fun_call,
     clippy::ptr_arg,
     clippy::too_many_arguments,

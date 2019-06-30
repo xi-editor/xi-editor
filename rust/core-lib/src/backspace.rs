@@ -20,7 +20,7 @@ use crate::selection::SelRegion;
 use crate::view::View;
 use xi_unicode::*;
 
-#[allow(clippy::cyclomatic_complexity)]
+#[allow(clippy::cognitive_complexity)]
 pub fn offset_for_delete_backwards(
     view: &View,
     region: &SelRegion,

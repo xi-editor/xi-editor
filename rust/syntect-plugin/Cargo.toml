@@ -16,8 +16,7 @@ serde_json = "1.0"
 toml = "0.5"
 
 [dependencies.syntect]
-git = "https://github.com/trishume/syntect.git"
-branch = "master"
+version = "3.2"
 default-features = false
 features = ["parsing", "yaml-load", "assets","dump-load-rs","dump-create", "metadata"]
 

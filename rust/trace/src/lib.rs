@@ -12,12 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 #![cfg_attr(feature = "benchmarks", feature(test))]
-#![cfg_attr(feature = "collections_range", feature(collections_range))]
-#![allow(
-    clippy::identity_op,
-    clippy::new_without_default_derive,
-    clippy::trivially_copy_pass_by_ref
-)]
+#![allow(clippy::identity_op, clippy::new_without_default, clippy::trivially_copy_pass_by_ref)]
 
 #[macro_use]
 extern crate lazy_static;
@@ -36,11 +31,8 @@ extern crate libc;
 #[cfg(feature = "benchmarks")]
 extern crate test;
 
-#[cfg(any(test, feature = "json_payload"))]
-#[macro_use]
-extern crate serde_json;
-
-#[cfg(all(not(test), feature = "chrome_trace_event"))]
+#[cfg(any(test, feature = "json_payload", feature = "chroma_trace_dump"))]
+#[cfg_attr(any(test), macro_use)]
 extern crate serde_json;
 
 mod fixed_lifo_deque;
@@ -59,6 +51,7 @@ use std::fs;
 use std::hash::{Hash, Hasher};
 use std::mem::size_of;
 use std::path::Path;
+use std::string::ToString;
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::Mutex;
 
@@ -148,7 +141,7 @@ impl<'de> serde::Deserialize<'de> for CategoriesT {
             where
                 E: serde::de::Error,
             {
-                let categories = v.split(',').map(|s| s.to_string()).collect();
+                let categories = v.split(',').map(ToString::to_string).collect();
                 Ok(CategoriesT::DynamicArray(categories))
             }
         }
@@ -194,14 +187,11 @@ impl From<Vec<String>> for CategoriesT {
     }
 }
 
-#[cfg(all(not(feature = "dict_payload"), not(feature = "json_payload")))]
+#[cfg(not(feature = "json_payload"))]
 pub type TracePayloadT = StrCow;
 
 #[cfg(feature = "json_payload")]
 pub type TracePayloadT = serde_json::Value;
-
-#[cfg(feature = "dict_payload")]
-pub type TracePayloadT = std::collections::HashMap<StrCow, StrCow>;
 
 /// How tracing should be configured.
 #[derive(Copy, Clone)]
@@ -391,7 +381,7 @@ where
 
 /// Stores the relevant data about a sample for later serialization.
 /// The payload associated with any sample is by default a string but may be
-/// configured via the `dict_payload` or `json_payload` features (there is an
+/// configured via the `json_payload` feature (there is an
 /// associated performance hit across the board for turning it on).
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Sample {
@@ -610,7 +600,7 @@ impl<'a> Drop for SampleGuard<'a> {
 fn exe_name() -> Option<String> {
     match std::env::current_exe() {
         Ok(exe_name) => match exe_name.clone().file_name() {
-            Some(filename) => filename.to_str().map(|s| s.to_string()),
+            Some(filename) => filename.to_str().map(ToString::to_string),
             None => {
                 let full_path = exe_name.into_os_string();
                 let full_path_str = full_path.into_string();
@@ -875,7 +865,7 @@ pub fn is_enabled() -> bool {
 /// overhead tracing routine available.
 ///
 /// # Performance
-/// The `dict_payload` or `json_payload` feature makes this ~1.3-~1.5x slower.
+/// The `json_payload` feature makes this ~1.3-~1.5x slower.
 /// See `trace_payload` for a more complete discussion.
 ///
 /// # Arguments
@@ -905,8 +895,7 @@ where
 /// Create an instantaneous sample with a payload.  The type the payload
 /// conforms to is currently determined by the feature this library is compiled
 /// with.  By default, the type is string-like just like name.  If compiled with
-/// `dict_payload` then a Rust HashMap is expected while the `json_payload`
-/// feature makes the payload a `serde_json::Value` (additionally the library
+/// the `json_payload` then a `serde_json::Value` is expected and  the library
 /// acquires a dependency on the `serde_json` crate.
 ///
 /// # Performance
@@ -914,8 +903,8 @@ where
 /// equivalent performance to a regular trace.  A string that needs to be copied
 /// first can make it ~1.7x slower than a regular trace.
 ///
-/// When compiling with `dict_payload` or `json_payload`, this is ~2.1x slower
-/// than a string that needs to be copied (or ~4.5x slower than a static string)
+/// When compiling with `json_payload`, this is ~2.1x slower than a string that
+/// needs to be copied (or ~4.5x slower than a static string)
 ///
 /// # Arguments
 ///
@@ -1111,16 +1100,9 @@ mod tests {
     #[cfg(feature = "benchmarks")]
     use test::black_box;
 
-    #[cfg(all(not(feature = "dict_payload"), not(feature = "json_payload")))]
+    #[cfg(not(feature = "json_payload"))]
     fn to_payload(value: &'static str) -> &'static str {
         value
-    }
-
-    #[cfg(feature = "dict_payload")]
-    fn to_payload(value: &'static str) -> TracePayloadT {
-        let mut d = TracePayloadT::with_capacity(1);
-        d.insert(StrCow::from("test"), StrCow::from(value));
-        d
     }
 
     #[cfg(feature = "json_payload")]
@@ -1361,9 +1343,11 @@ mod tests {
     fn bench_trace_block_payload(b: &mut Bencher) {
         let trace = Trace::enabled(Config::default());
         b.iter(|| {
-            black_box(trace.block_payload(
+            black_box(|| {
+                let _ = trace.block_payload(
                     "something", &["benchmark"],
-                    to_payload(("some payload for the block"))));
+                    to_payload("some payload for the block"));
+            });
         });
     }
 
@@ -1388,7 +1372,7 @@ mod tests {
         let trace = Trace::enabled(Config::default());
         b.iter(|| black_box(trace.closure_payload(
                     "something", &["benchmark"], || {},
-                    to_payload(("some description of the closure")))));
+                    to_payload("some description of the closure"))));
     }
 
     // this is the cost contributed by the timestamp to trace()

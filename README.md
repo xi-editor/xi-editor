@@ -70,13 +70,15 @@ Here are some front-ends in various stages of development:
 
 * [xi-electron](https://github.com/acheronfail/xi-electron), a cross-platform front-end based on web-technologies.
 
-* [gxi](https://github.com/Cogitri/gxi), a GTK+ front-end written in Rust. Forked from https://github.com/bvinc/gxi, which was abandoned.
+* [Tau](https://gitlab.gnome.org/World/Tau), a GTK+ front-end written in Rust. Forked from https://github.com/bvinc/gxi, which was abandoned.
 
 * [xi-win](https://github.com/xi-editor/xi-win), an experimental Windows front-end written in Rust.
 
 * [kod](https://github.com/linde12/kod), a terminal frontend written in Golang.
 
 * [xi-qt](https://github.com/sw5cc/xi-qt), a Qt front-end.
+
+* [vixi](https://github.com/Peltoche/vixi), a Vim like front-end in Rust.
 
 The following are currently inactive, based on earlier versions of the front-end
 protocol, but perhaps could be revitalized:
