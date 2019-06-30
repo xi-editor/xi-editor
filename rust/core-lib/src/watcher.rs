@@ -35,7 +35,7 @@
 //! they arrive, and an idle task is scheduled.
 
 use crossbeam::unbounded;
-use notify::{event, watcher, Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::{event::*, watcher, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::VecDeque;
 use std::fmt;
 use std::mem;
@@ -99,7 +99,7 @@ impl FileWatcher {
 
         let mut inner =
             watcher(tx_event, Duration::from_millis(100)).expect("watcher should spawn");
-        inner.configure(Config::PreciseEvents(true)).expect("precise events cannot be turned on");
+        //inner.configure(Config::PreciseEvents(true)).expect("precise events cannot be turned on");
 
         thread::spawn(move || {
             while let Ok(Ok(event)) = rx_event.recv() {
@@ -230,7 +230,6 @@ sj_todo how to handle Error case?
 Error(_, ref opt_p) => opt_p.as_ref().map(|p| self.applies_to_path(p)).unwrap_or(false),*/
 impl Watchee {
     fn wants_event(&self, event: &Event) -> bool {
-        use self::event::*;
         debug!("Event received: {:?}", event);
         match &event.kind {
             EventKind::Create(CreateKind::File)
@@ -491,14 +490,14 @@ mod tests {
                 //(2.into(), Event::NoticeWrite(tmp.mkpath("adir/dir2/file"))),
                 (
                     2.into(),
-                    Event::new(EventKind::Modify(event::ModifyKind::Any))
+                    Event::new(EventKind::Modify(ModifyKind::Any))
                         .add_path(tmp.mkpath("adir/dir2/file"))
-                        .set_flag(event::Flag::Notice)
+                        .set_flag(Flag::Notice)
                 ),
                 //(2.into(), Event::Write(tmp.mkpath("adir/dir2/file"))),
                 (
                     2.into(),
-                    Event::new(EventKind::Modify(event::ModifyKind::Any))
+                    Event::new(EventKind::Modify(ModifyKind::Any))
                         .add_path(tmp.mkpath("adir/dir2/file"))
                 ),
             ]
@@ -525,24 +524,24 @@ mod tests {
             vec![
                 (
                     1.into(),
-                    Event::new(EventKind::Modify(event::ModifyKind::Any))
+                    Event::new(EventKind::Modify(ModifyKind::Any))
                         .add_path(tmp.mkpath("my_file"))
-                        .set_flag(event::Flag::Notice)
+                        .set_flag(Flag::Notice)
                 ),
                 (
                     2.into(),
-                    Event::new(EventKind::Modify(event::ModifyKind::Any))
+                    Event::new(EventKind::Modify(ModifyKind::Any))
                         .add_path(tmp.mkpath("my_file"))
-                        .set_flag(event::Flag::Notice)
+                        .set_flag(Flag::Notice)
                 ),
                 (
                     1.into(),
-                    Event::new(EventKind::Modify(event::ModifyKind::Any))
+                    Event::new(EventKind::Modify(ModifyKind::Any))
                         .add_path(tmp.mkpath("my_file"))
                 ),
                 (
                     2.into(),
-                    Event::new(EventKind::Modify(event::ModifyKind::Any))
+                    Event::new(EventKind::Modify(ModifyKind::Any))
                         .add_path(tmp.mkpath("my_file"))
                 ),
             ]
@@ -559,15 +558,15 @@ mod tests {
         let events = w.take_events();
         assert!(events.contains(&(
             2.into(),
-            Event::new(EventKind::Remove(event::RemoveKind::Any))
+            Event::new(EventKind::Remove(RemoveKind::Any))
                 .add_path(path.clone())
-                .set_flag(event::Flag::Notice)
+                .set_flag(Flag::Notice)
         )));
         assert!(!events.contains(&(
             1.into(),
-            Event::new(EventKind::Remove(event::RemoveKind::Any))
+            Event::new(EventKind::Remove(RemoveKind::Any))
                 .add_path(path)
-                .set_flag(event::Flag::Notice)
+                .set_flag(Flag::Notice)
         )));
     }
 }
