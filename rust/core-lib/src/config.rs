@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::fs;
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -253,6 +253,21 @@ impl ConfigManager {
             extras_dir,
         }
     }
+
+    /// Copies the contents of `client_example.toml` to `preferences.xiconfig`. 
+    /// Used when an existing config file is not found.
+    pub fn create_example_preference_config(&self) -> Result<Option<PathBuf>, ConfigError> {
+        let client_example_config = include_str!("../assets/client_example.toml");
+        
+        if let Some(config_dir) = self.config_dir.as_ref() {
+            let config_file = config_dir.join("preferences.xiconfig");
+            let mut file = fs::File::create(config_file.as_path())?;
+            file.write_all(client_example_config.as_bytes())?;
+            Ok(Some(config_file))    
+        } else {
+            Ok(None)
+        }
+    } 
 
     /// The path of the user's config file, if present.
     pub(crate) fn base_config_file_path(&self) -> Option<PathBuf> {

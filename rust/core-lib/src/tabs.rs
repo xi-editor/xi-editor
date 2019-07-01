@@ -202,8 +202,20 @@ impl CoreState {
     pub(crate) fn finish_setup(&mut self, self_ref: WeakXiCore) {
         self.self_ref = Some(self_ref);
 
+        // Loads existing config file if present, else copies the base example config.
         if let Some(path) = self.config_manager.base_config_file_path() {
             self.load_file_based_config(&path);
+        } else {
+            // TODO: loads the client_example.toml here
+            eprintln!("no config present, trying to create an example config");
+            match self.config_manager.create_example_preference_config() {
+                Ok(config_path) => {
+                    if let Some(config_path) = config_path {
+                        self.load_file_based_config(&config_path);
+                    } 
+                },
+                Err(e) => eprintln!("Encountered error {:?} while creating an example config", e)
+            }
         }
 
         // Load the custom theme files.
@@ -235,7 +247,9 @@ impl CoreState {
         let _t = trace_block("CoreState::load_config_file", &["core"]);
         if let Some(domain) = self.config_manager.domain_for_path(path) {
             match config::try_load_from_file(&path) {
-                Ok(table) => self.set_config(domain, table),
+                Ok(table) => {
+                    self.set_config(domain, table);
+                },
                 Err(e) => self.peer.alert(e.to_string()),
             }
         } else {
