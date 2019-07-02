@@ -97,9 +97,7 @@ impl FileWatcher {
         let state = Arc::new(Mutex::new(WatcherState::default()));
         let state_clone = state.clone();
 
-        let mut inner =
-            watcher(tx_event, Duration::from_millis(100)).expect("watcher should spawn");
-        //inner.configure(Config::PreciseEvents(true)).expect("precise events cannot be turned on");
+        let inner = watcher(tx_event, Duration::from_millis(100)).expect("watcher should spawn");
 
         thread::spawn(move || {
             while let Ok(Ok(event)) = rx_event.recv() {
@@ -536,13 +534,11 @@ mod tests {
                 ),
                 (
                     1.into(),
-                    Event::new(EventKind::Modify(ModifyKind::Any))
-                        .add_path(tmp.mkpath("my_file"))
+                    Event::new(EventKind::Modify(ModifyKind::Any)).add_path(tmp.mkpath("my_file"))
                 ),
                 (
                     2.into(),
-                    Event::new(EventKind::Modify(ModifyKind::Any))
-                        .add_path(tmp.mkpath("my_file"))
+                    Event::new(EventKind::Modify(ModifyKind::Any)).add_path(tmp.mkpath("my_file"))
                 ),
             ]
         );
@@ -564,9 +560,7 @@ mod tests {
         )));
         assert!(!events.contains(&(
             1.into(),
-            Event::new(EventKind::Remove(RemoveKind::Any))
-                .add_path(path)
-                .set_flag(Flag::Notice)
+            Event::new(EventKind::Remove(RemoveKind::Any)).add_path(path).set_flag(Flag::Notice)
         )));
     }
 }

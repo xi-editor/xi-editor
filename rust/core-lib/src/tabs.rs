@@ -701,11 +701,10 @@ impl CoreState {
         use notify::event::*;
         let path = match event.kind {
             EventKind::Create(CreateKind::File)
-            | EventKind::Modify(ModifyKind::Data(DataChange::Content))
             | EventKind::Modify(ModifyKind::Metadata(MetadataKind::Permissions))
             | EventKind::Modify(ModifyKind::Any) => &event.paths[0],
             other => {
-                debug!("Event in open file {:?}", other);
+                debug!("Ignoring event in open file {:?}", other);
                 return;
             }
         };
@@ -742,7 +741,7 @@ impl CoreState {
         use notify::event::*;
         match event.kind {
             EventKind::Create(CreateKind::File)
-            | EventKind::Modify(ModifyKind::Data(DataChange::Content))
+            | EventKind::Modify(ModifyKind::Any)
             | EventKind::Modify(ModifyKind::Metadata(MetadataKind::Permissions)) => {
                 self.load_file_based_config(&event.paths[0])
             }
@@ -768,8 +767,7 @@ impl CoreState {
     fn handle_plugin_fs_event(&mut self, event: Event) {
         use notify::event::*;
         match event.kind {
-            EventKind::Create(CreateKind::File)
-            | EventKind::Modify(ModifyKind::Data(DataChange::Content)) => {
+            EventKind::Create(CreateKind::File) | EventKind::Modify(ModifyKind::Any) => {
                 self.plugins.load_from_paths(&[event.paths[0].clone()]);
                 if let Some(plugin) = self.plugins.get_from_path(&event.paths[0]) {
                     self.do_start_plugin(ViewId(0), &plugin.name);
@@ -832,8 +830,7 @@ impl CoreState {
     fn handle_themes_fs_event(&mut self, event: Event) {
         use notify::event::*;
         match event.kind {
-            EventKind::Create(CreateKind::File)
-            | EventKind::Modify(ModifyKind::Data(DataChange::Content)) => {
+            EventKind::Create(CreateKind::File) | EventKind::Modify(ModifyKind::Any) => {
                 self.load_theme_file(&event.paths[0])
             }
             // the way FSEvents on macOS work, we want to verify that this path
