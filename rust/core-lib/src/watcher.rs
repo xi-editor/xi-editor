@@ -228,15 +228,11 @@ sj_todo how to handle Error case?
 Error(_, ref opt_p) => opt_p.as_ref().map(|p| self.applies_to_path(p)).unwrap_or(false),*/
 impl Watchee {
     fn wants_event(&self, event: &Event) -> bool {
-        debug!("Event received: {:?}", event);
         match &event.kind {
-            EventKind::Create(CreateKind::File)
-            | EventKind::Remove(RemoveKind::File)
-            | EventKind::Modify(ModifyKind::Data(DataChange::Content))
+            EventKind::Create(CreateKind::Any)
+            | EventKind::Remove(RemoveKind::Any)
+            | EventKind::Modify(ModifyKind::Any)
             | EventKind::Modify(ModifyKind::Metadata(MetadataKind::Permissions)) => {
-                self.applies_to_path(&event.paths[0])
-            }
-            EventKind::Modify(ModifyKind::Any) | EventKind::Remove(RemoveKind::Any) => {
                 self.applies_to_path(&event.paths[0])
             }
             EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => {

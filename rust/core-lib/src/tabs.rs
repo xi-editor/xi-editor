@@ -745,7 +745,7 @@ impl CoreState {
             | EventKind::Modify(ModifyKind::Metadata(MetadataKind::Permissions)) => {
                 self.load_file_based_config(&event.paths[0])
             }
-            EventKind::Remove(RemoveKind::File) if !event.paths[0].exists() => {
+            EventKind::Remove(RemoveKind::Any) if !event.paths[0].exists() => {
                 self.remove_config_at_path(&event.paths[0])
             }
             EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => {
@@ -775,14 +775,10 @@ impl CoreState {
             }
             // the way FSEvents on macOS work, we want to verify that this path
             // has actually be removed before we do anything.
-            EventKind::Remove(RemoveKind::File) if !event.paths[0].exists() => {
-                self.remove_plugin(&event);
-            }
-            EventKind::Remove(RemoveKind::Any) => {
-                if Some(&Flag::Notice) == event.flag() {
-                    if !event.paths[0].exists() {
-                        self.remove_plugin(&event);
-                    }
+            EventKind::Remove(RemoveKind::Any) if !event.paths[0].exists() => {
+                if let Some(plugin) = self.plugins.get_from_path(path) {
+                    self.do_stop_plugin(ViewId(0), &plugin.name);
+                    self.plugins.remove_named(&plugin.name);
                 }
             }
             EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => {
@@ -798,8 +794,7 @@ impl CoreState {
                     self.do_start_plugin(ViewId(0), &new_plugin.name);
                 }
             }
-            EventKind::Modify(ModifyKind::Metadata(MetadataKind::Permissions))
-            | EventKind::Remove(RemoveKind::File) => {
+            EventKind::Modify(ModifyKind::Metadata(MetadataKind::Permissions)) => {
                 if let Some(plugin) = self.plugins.get_from_path(&event.paths[0]) {
                     self.do_stop_plugin(ViewId(0), &plugin.name);
                     self.do_start_plugin(ViewId(0), &plugin.name);
@@ -835,15 +830,8 @@ impl CoreState {
             }
             // the way FSEvents on macOS work, we want to verify that this path
             // has actually be removed before we do anything.
-            EventKind::Remove(RemoveKind::File) if !event.paths[0].exists() => {
-                self.remove_theme(&event.paths[0])
-            }
-            EventKind::Remove(RemoveKind::Any) => {
-                if Some(&Flag::Notice) == event.flag() {
-                    if !event.paths[0].exists() {
-                        self.remove_theme(&event.paths[0]);
-                    }
-                }
+            EventKind::Remove(RemoveKind::Any) if !event.paths[0].exists() => {
+                self.remove_theme(&event.paths[0]);
             }
             EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => {
                 let old = &event.paths[0];
@@ -851,8 +839,7 @@ impl CoreState {
                 self.remove_theme(old);
                 self.load_theme_file(new);
             }
-            EventKind::Modify(ModifyKind::Metadata(MetadataKind::Permissions))
-            | EventKind::Remove(RemoveKind::File) => {
+            EventKind::Modify(ModifyKind::Metadata(MetadataKind::Permissions)) => {
                 self.style_map.borrow_mut().sync_dir(event.paths[0].parent())
             }
             _ => (),
