@@ -776,7 +776,7 @@ impl CoreState {
             // the way FSEvents on macOS work, we want to verify that this path
             // has actually be removed before we do anything.
             EventKind::Remove(RemoveKind::Any) if !event.paths[0].exists() => {
-                if let Some(plugin) = self.plugins.get_from_path(path) {
+                if let Some(plugin) = self.plugins.get_from_path(&event.paths[0]) {
                     self.do_stop_plugin(ViewId(0), &plugin.name);
                     self.plugins.remove_named(&plugin.name);
                 }
@@ -811,13 +811,6 @@ impl CoreState {
                 .collect::<Vec<_>>();
             self.peer.available_plugins(view_id.clone(), &available_plugins);
         });
-    }
-
-    fn remove_plugin(&mut self, event: &Event) {
-        if let Some(plugin) = self.plugins.get_from_path(&event.paths[0]) {
-            self.do_stop_plugin(ViewId(0), &plugin.name);
-            self.plugins.remove_named(&plugin.name);
-        }
     }
 
     /// Handles changes in theme files.
