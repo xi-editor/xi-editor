@@ -308,14 +308,14 @@ impl<T: Clone> Spans<T> {
         let mut end_offset = 0;
         let mut leaf_iterator = self.iter_leaf_nodes();
         while let Some((node, leaf)) = leaf_iterator.next() {
-            let SpansLeaf { len, spans } = leaf;
+            let SpansLeaf { spans, .. } = leaf;
             if spans.iter().any(|s| !s.iv.translate(end_offset).intersect(interval).is_empty()) {
                 let spans: Vec<_> = spans
                     .iter()
                     .filter(|s| s.iv.translate(end_offset).intersect(interval).is_empty())
                     .cloned()
                     .collect();
-                b.push_leaf(SpansLeaf { spans, len: *len });
+                b.push_leaf(SpansLeaf { spans, len: self.len() - end_offset });
             } else {
                 b.push(node.clone());
             }
@@ -591,5 +591,24 @@ mod tests {
         delete_intersecting_simple(&mut spans_clone, iv);
 
         assert_eq!(spans_clone.iter().count(), spans.iter().count());
+    }
+
+    #[test]
+    fn delete_intersecting_order_unchanged() {
+        let mut sb = SpansBuilder::new(1_000_300);
+        for i in 0..1_000_000 {
+            sb.add_span(i..(i + 10), i);
+        }
+        let mut spans = sb.build();
+
+        spans.delete_intersecting(Interval::new(75, 5_000));
+
+        let mut prev = None;
+        for (_, data) in spans.iter() {
+            if let Some(p) = prev {
+                assert!(*data > p);
+            }
+            prev = Some(*data);
+        }
     }
 }
