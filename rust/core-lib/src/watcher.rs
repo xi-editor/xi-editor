@@ -220,19 +220,13 @@ impl FileWatcher {
     }
 }
 
-/*NoticeWrite(ref p) | NoticeRemove(ref p) | Create(ref p) | Write(ref p)
-| Chmod(ref p) | Remove(ref p) => self.applies_to_path(p),
-Rename(ref p1, ref p2) => self.applies_to_path(p1) || self.applies_to_path(p2),
-Rescan => false,
-sj_todo how to handle Error case?
-Error(_, ref opt_p) => opt_p.as_ref().map(|p| self.applies_to_path(p)).unwrap_or(false),*/
 impl Watchee {
     fn wants_event(&self, event: &Event) -> bool {
         match &event.kind {
             EventKind::Create(CreateKind::Any)
             | EventKind::Remove(RemoveKind::Any)
             | EventKind::Modify(ModifyKind::Any)
-            | EventKind::Modify(ModifyKind::Metadata(MetadataKind::Permissions)) => {
+            | EventKind::Modify(ModifyKind::Metadata(MetadataKind::Any)) => {
                 self.applies_to_path(&event.paths[0])
             }
             EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => {

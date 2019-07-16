@@ -701,7 +701,7 @@ impl CoreState {
         use notify::event::*;
         let path = match event.kind {
             EventKind::Create(CreateKind::Any)
-            | EventKind::Modify(ModifyKind::Metadata(MetadataKind::Permissions))
+            | EventKind::Modify(ModifyKind::Metadata(MetadataKind::Any))
             | EventKind::Modify(ModifyKind::Any) => &event.paths[0],
             other => {
                 debug!("Ignoring event in open file {:?}", other);
@@ -742,7 +742,7 @@ impl CoreState {
         match event.kind {
             EventKind::Create(CreateKind::Any)
             | EventKind::Modify(ModifyKind::Any)
-            | EventKind::Modify(ModifyKind::Metadata(MetadataKind::Permissions)) => {
+            | EventKind::Modify(ModifyKind::Metadata(MetadataKind::Any)) => {
                 self.load_file_based_config(&event.paths[0])
             }
             EventKind::Remove(RemoveKind::Any) if !event.paths[0].exists() => {
@@ -794,7 +794,7 @@ impl CoreState {
                     self.do_start_plugin(ViewId(0), &new_plugin.name);
                 }
             }
-            EventKind::Modify(ModifyKind::Metadata(MetadataKind::Permissions)) => {
+            EventKind::Modify(ModifyKind::Metadata(MetadataKind::Any)) => {
                 if let Some(plugin) = self.plugins.get_from_path(&event.paths[0]) {
                     self.do_stop_plugin(ViewId(0), &plugin.name);
                     self.do_start_plugin(ViewId(0), &plugin.name);
@@ -832,7 +832,7 @@ impl CoreState {
                 self.remove_theme(old);
                 self.load_theme_file(new);
             }
-            EventKind::Modify(ModifyKind::Metadata(MetadataKind::Permissions)) => {
+            EventKind::Modify(ModifyKind::Metadata(MetadataKind::Any)) => {
                 self.style_map.borrow_mut().sync_dir(event.paths[0].parent())
             }
             _ => (),
