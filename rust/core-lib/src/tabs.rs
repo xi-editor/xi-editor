@@ -905,7 +905,6 @@ impl CoreState {
                 let init_info =
                     self.iter_groups().map(|mut ctx| ctx.plugin_info()).collect::<Vec<_>>();
                 plugin.initialize(init_info);
-                self.iter_groups().for_each(|mut cx| cx.plugin_started(&plugin));
                 self.running_plugins.push(plugin);
             }
             Err(e) => error!("failed to start plugin {:?}", e),
