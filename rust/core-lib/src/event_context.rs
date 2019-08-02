@@ -387,7 +387,10 @@ impl<'a> EventContext<'a> {
     pub(crate) fn finish_init(&mut self, config: &Table) {
         if !self.plugins.is_empty() {
             let info = self.plugin_info();
-            self.plugins.iter().for_each(|plugin| plugin.new_buffer(&info));
+            self.plugins.iter().for_each(|plugin| {
+                plugin.new_buffer(&info);
+                self.plugin_started(plugin);
+            });
         }
 
         let available_plugins = self
@@ -475,7 +478,7 @@ impl<'a> EventContext<'a> {
         )
     }
 
-    pub(crate) fn plugin_started(&mut self, plugin: &Plugin) {
+    pub(crate) fn plugin_started(&self, plugin: &Plugin) {
         self.client.plugin_started(self.view_id, &plugin.name)
     }
 
