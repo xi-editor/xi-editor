@@ -227,11 +227,19 @@ impl Watchee {
             | EventKind::Remove(RemoveKind::Any)
             | EventKind::Modify(ModifyKind::Any)
             | EventKind::Modify(ModifyKind::Metadata(MetadataKind::Any)) => {
-                self.applies_to_path(&event.paths[0])
+                if event.paths.len() == 1 {
+                    self.applies_to_path(&event.paths[0])
+                } else {
+                    false
+                }
             }
             EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => {
-                //There will be two paths. First is "from" and other is "to".
-                self.applies_to_path(&event.paths[0]) || self.applies_to_path(&event.paths[1])
+                if event.paths.len() == 2 {
+                    //There will be two paths. First is "from" and other is "to".
+                    self.applies_to_path(&event.paths[0]) || self.applies_to_path(&event.paths[1])
+                } else {
+                    false
+                }
             }
             _ => false,
         }
