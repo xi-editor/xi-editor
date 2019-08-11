@@ -50,7 +50,8 @@ use xi_rpc::RpcPeer;
 pub const DEBOUNCE_WAIT_MILLIS: u64 = 50;
 
 /// Wrapper around a `notify::Watcher`. It runs the inner watcher
-/// in a separate thread, and communicates with it via an `use crossbeam_channel::unbounded;`.
+/// in a separate thread, and communicates with it via a [crossbeam channel].
+/// [crossbeam channel]: https://docs.rs/crossbeam-channel
 pub struct FileWatcher {
     inner: RecommendedWatcher,
     state: Arc<Mutex<WatcherState>>,
