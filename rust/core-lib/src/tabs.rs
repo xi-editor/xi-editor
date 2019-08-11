@@ -794,7 +794,8 @@ impl CoreState {
                     self.do_start_plugin(ViewId(0), &new_plugin.name);
                 }
             }
-            EventKind::Modify(ModifyKind::Metadata(MetadataKind::Any)) => {
+            EventKind::Modify(ModifyKind::Metadata(MetadataKind::Any))
+            | EventKind::Remove(RemoveKind::Any) => {
                 if let Some(plugin) = self.plugins.get_from_path(&event.paths[0]) {
                     self.do_stop_plugin(ViewId(0), &plugin.name);
                     self.do_start_plugin(ViewId(0), &plugin.name);
@@ -832,7 +833,8 @@ impl CoreState {
                 self.remove_theme(old);
                 self.load_theme_file(new);
             }
-            EventKind::Modify(ModifyKind::Metadata(MetadataKind::Any)) => {
+            EventKind::Modify(ModifyKind::Metadata(MetadataKind::Any))
+            | EventKind::Remove(RemoveKind::Any) => {
                 self.style_map.borrow_mut().sync_dir(event.paths[0].parent())
             }
             _ => (),
