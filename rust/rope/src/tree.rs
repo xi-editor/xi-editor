@@ -368,7 +368,6 @@ impl<N: NodeInfo> Node<N> {
                     child.push_subseq(b, rec_iv);
                     offset += child.len();
                 }
-                return;
             }
         }
     }

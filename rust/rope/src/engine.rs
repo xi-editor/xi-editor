@@ -488,10 +488,10 @@ impl Engine {
                     return i + 1; // +1 since we know the one we just found doesn't have it
                 }
             }
-            return 0;
+            0
         } else {
             // no toggled groups, return past end
-            return self.revs.len();
+            self.revs.len()
         }
     }
 
