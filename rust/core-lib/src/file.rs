@@ -107,7 +107,7 @@ impl FileManager {
 
     pub fn open(&mut self, path: &Path, id: BufferId) -> Result<Rope, FileError> {
         if !path.exists() {
-            let _ = File::create(path).map_err(|e| FileError::Io(e, path.to_owned()))?;
+            return Ok(Rope::from(""));
         }
 
         let (rope, info) = try_load_file(path)?;
