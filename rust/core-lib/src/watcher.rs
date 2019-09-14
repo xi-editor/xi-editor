@@ -231,6 +231,11 @@ impl Watchee {
                 if event.paths.len() == 1 {
                     self.applies_to_path(&event.paths[0])
                 } else {
+                    info!(
+                        "Rejecting event {:?} with incorrect paths. Expected 1 found {}.",
+                        event,
+                        event.paths.len()
+                    );
                     false
                 }
             }
@@ -239,6 +244,11 @@ impl Watchee {
                     //There will be two paths. First is "from" and other is "to".
                     self.applies_to_path(&event.paths[0]) || self.applies_to_path(&event.paths[1])
                 } else {
+                    info!(
+                        "Rejecting event {:?} with incorrect paths. Expected 2 found {}.",
+                        event,
+                        event.paths.len()
+                    );
                     false
                 }
             }
