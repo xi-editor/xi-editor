@@ -230,7 +230,10 @@ fn try_save(
     #[cfg(target_family = "unix")]
     {
         if let Some(info) = file_info {
-            fs::set_permissions(path, Permissions::from_mode(info.permissions.unwrap_or(0o644)))?;
+            fs::set_permissions(path, Permissions::from_mode(info.permissions.unwrap_or(0o644)))
+                .unwrap_or_else(|e| {
+                    warn!("Couldn't set permissions on file {} due to error {}", path.display(), e)
+                });
         }
     }
 
