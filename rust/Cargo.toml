@@ -38,3 +38,8 @@ members = [
 
 [profile.bench]
 lto = true
+
+# Avoid libllvm/libclang dep. See https://github.com/rust-onig/rust-onig/pull/108
+[patch.crates-io]
+onig = { git="https://github.com/kornelski/rust-onig", branch="default-bindgen" }
+onig_sys = { git="https://github.com/kornelski/rust-onig", branch="default-bindgen" }
