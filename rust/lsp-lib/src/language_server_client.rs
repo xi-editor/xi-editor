@@ -284,6 +284,10 @@ impl LanguageServerClient {
     pub fn get_sync_kind(&mut self) -> TextDocumentSyncKind {
         match self.server_capabilities.as_ref().and_then(|c| c.text_document_sync.as_ref()) {
             Some(&TextDocumentSyncCapability::Kind(kind)) => kind,
+            Some(TextDocumentSyncCapability::Options(options)) => match options.change {
+                None => TextDocumentSyncKind::None,
+                Some(kind) => kind,
+            },
             _ => TextDocumentSyncKind::Full,
         }
     }
