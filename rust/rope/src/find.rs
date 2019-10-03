@@ -483,10 +483,7 @@ mod tests {
             .case_insensitive(true)
             .build()
             .ok();
-        assert_eq!(
-            find(&mut c, &mut raw_lines, CaseInsensitive, "老虎", regex.as_ref()),
-            Some(6)
-        );
+        assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "老虎", regex.as_ref()), Some(6));
         raw_lines = a.lines_raw(c.pos()..a.len());
         assert_eq!(find(&mut c, &mut raw_lines, CaseInsensitive, "老虎", regex.as_ref()), None);
         c.set(0);
@@ -585,10 +582,7 @@ mod tests {
             .case_insensitive(false)
             .build()
             .ok();
-        assert_eq!(
-            find(&mut c, &mut raw_lines, Exact, "\\sLéopard\n.*", regex.as_ref()),
-            Some(12)
-        );
+        assert_eq!(find(&mut c, &mut raw_lines, Exact, "\\sLéopard\n.*", regex.as_ref()), Some(12));
     }
 
     #[test]
