@@ -207,6 +207,9 @@ impl<N: NodeInfo> Delta<N> {
     ///     assert_eq!(String::from(d2.apply(r)), String::from(d.apply(r)));
     /// }
     /// ```
+    // For if last_old.is_some() && last_old.unwrap().0 <= beg {. Clippy complaints
+    // about not using if-let, but that'd change the meaning of the conditional.
+    #[allow(clippy::unnecessary_unwrap)]
     pub fn synthesize(tombstones: &Node<N>, from_dels: &Subset, to_dels: &Subset) -> Delta<N> {
         let base_len = from_dels.len_after_delete();
         let mut els = Vec::new();
