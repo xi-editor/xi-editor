@@ -379,10 +379,15 @@ impl CoreState {
 
         let config = self.config_manager.add_buffer(buffer_id, path.as_ref().map(|p| p.as_path()));
 
-        //NOTE: because this is a synchronous call, we have to return the
-        //view_id before we can send any events to this view. We mark the
-        // view as pending and schedule the idle handler so that we can finish
-        // setting up this view on the next runloop pass, in finalize_new_views.
+        // NOTE: because this is a synchronous call, we have to initialize the
+        // view and return the view_id before we can send any events to this
+        // view. We call view_init(), mark the view as pending and schedule the
+        // idle handler so that we can finish setting up this view on the next
+        // runloop pass, in finalize_new_views.
+
+        let mut edit_ctx = self.make_context(view_id).unwrap();
+        edit_ctx.view_init();
+
         self.pending_views.push((view_id, config));
         self.peer.schedule_idle(NEW_VIEW_IDLE_TOKEN);
 
@@ -573,6 +578,7 @@ impl CoreState {
 
     fn finalize_new_views(&mut self) {
         let to_start = mem::replace(&mut self.pending_views, Vec::new());
+
         to_start.iter().for_each(|(id, config)| {
             let modified = self.detect_whitespace(*id, config);
             let config = modified.as_ref().unwrap_or(config);
