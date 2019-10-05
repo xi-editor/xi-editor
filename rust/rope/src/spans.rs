@@ -70,6 +70,7 @@ impl<T: Clone> Leaf for SpansLeaf<T> {
         let iv_start = iv.start();
         for span in &other.spans {
             let span_iv = span.iv.intersect(iv).translate_neg(iv_start).translate(self.len);
+
             if !span_iv.is_empty() {
                 self.spans.push(Span { iv: span_iv, data: span.data.clone() });
             }
@@ -301,18 +302,18 @@ impl<T: Clone> Spans<T> {
         *self = b.build();
     }
 
-    // FIXME: Instead of iterating through all spans every time, another option would be to go
-    // leaf-by-leaf, and check each leaf for whether or not it has any items in the interval;
-    // if they don't we keep them unchanged, otherwise we do this operation, but only within the leaf.
-    //
-    /// Deletes all spans that intersect with `interval`.
-    pub fn delete_intersecting(&mut self, interval: Interval) {
+    /// Deletes all spans that intersect with `interval` and that come after.
+    pub fn delete_after(&mut self, interval: Interval) {
         let mut builder = SpansBuilder::new(self.len());
+
         for (iv, data) in self.iter() {
             // check if spans overlaps with interval
             if iv.intersect(interval).is_empty() {
                 // keep the ones that are not overlapping
                 builder.add_span(iv, data.clone());
+            } else {
+                // all remaining spans are invalid
+                break;
             }
         }
         *self = builder.build();
@@ -447,7 +448,7 @@ mod tests {
     }
 
     #[test]
-    fn test_delete_intersecting() {
+    fn test_delete_after() {
         let mut sb = SpansBuilder::new(11);
         sb.add_span(Interval::new(1, 2), 2);
         sb.add_span(Interval::new(3, 5), 8);
@@ -456,32 +457,29 @@ mod tests {
         sb.add_span(Interval::new(10, 11), 1);
         let mut spans = sb.build();
 
-        spans.delete_intersecting(Interval::new(4, 7));
-        let mut deleted_iter = spans.iter();
+        spans.delete_after(Interval::new(4, 7));
 
-        let (iv, val) = deleted_iter.next().unwrap();
+        assert_eq!(spans.iter().count(), 1);
+
+        let (iv, val) = spans.iter().next().unwrap();
         assert_eq!(iv, Interval::new(1, 2));
         assert_eq!(*val, 2);
-
-        let (iv, val) = deleted_iter.next().unwrap();
-        assert_eq!(iv, Interval::new(9, 10));
-        assert_eq!(*val, 1);
     }
 
     #[test]
-    fn delete_intersecting_big_at_start() {
+    fn delete_after_big_at_start() {
         let mut sb = SpansBuilder::new(10);
         sb.add_span(0..10, 0);
 
         let mut spans = sb.build();
         assert_eq!(spans.iter().count(), 1);
 
-        spans.delete_intersecting(Interval::new(1, 2));
+        spans.delete_after(Interval::new(1, 2));
         assert_eq!(spans.iter().count(), 0);
     }
 
     #[test]
-    fn delete_intersecting_big_and_small() {
+    fn delete_after_big_and_small() {
         let mut sb = SpansBuilder::new(10);
         sb.add_span(0..10, 0);
         sb.add_span(3..10, 1);
@@ -489,21 +487,19 @@ mod tests {
         let mut spans = sb.build();
         assert_eq!(spans.iter().count(), 2);
 
-        spans.delete_intersecting(Interval::new(1, 2));
-        assert_eq!(spans.iter().count(), 1);
+        spans.delete_after(Interval::new(1, 2));
+        assert_eq!(spans.iter().count(), 0);
     }
 
     #[test]
-    fn delete_intersecting_empty() {
+    fn delete_after_empty() {
         let mut sb = SpansBuilder::new(10);
         sb.add_span(0..3, 0);
-        sb.add_span(9..10, 1);
 
-        eprintln!("--");
         let mut spans = sb.build();
-        assert_eq!(spans.iter().count(), 2);
+        assert_eq!(spans.iter().count(), 1);
 
-        spans.delete_intersecting(Interval::new(5, 7));
-        assert_eq!(spans.iter().count(), 2);
+        spans.delete_after(Interval::new(5, 7));
+        assert_eq!(spans.iter().count(), 1);
     }
 }
