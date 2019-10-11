@@ -206,9 +206,7 @@ fn test_settings_commands() {
     rpc_looper.mainloop(|| json, &mut state).unwrap();
     // discard config_changed
     rx.expect_rpc("config_changed");
-    rx.expect_rpc("update");
     rx.expect_rpc("config_changed");
-    rx.expect_rpc("update");
 
     let json = make_reader(r#"{"method":"get_config","id":2,"params":{"view_id":"view-id-1"}}"#);
     rpc_looper.mainloop(|| json, &mut state).unwrap();

@@ -733,25 +733,7 @@ impl View {
         plan: &RenderPlan,
         pristine: bool,
     ) {
-        // every time current visible range changes, annotations are sent to frontend
-        let start_off = self.offset_of_line(text, self.first_line);
-        let end_off = self.offset_of_line(text, self.first_line + self.height + 2);
-        let visible_range = Interval::new(start_off, end_off);
-        let selection_annotations =
-            self.selection.get_annotations(visible_range, &self, text).to_json();
-        let find_annotations =
-            self.find.iter().map(|ref f| f.get_annotations(visible_range, &self, text).to_json());
-        let plugin_annotations =
-            self.annotations.iter_range(&self, text, visible_range).map(|a| a.to_json());
-
-        let annotations = iter::once(selection_annotations)
-            .chain(find_annotations)
-            .chain(plugin_annotations)
-            .collect::<Vec<_>>();
-
         if !self.lc_shadow.needs_render(plan) {
-            let update = Update { ops: Vec::new(), pristine, annotations };
-            client.update_view(self.view_id, &update);
             return;
         }
 
@@ -839,6 +821,21 @@ impl View {
         for find in &mut self.find {
             find.set_hls_dirty(false)
         }
+
+        let start_off = self.offset_of_line(text, self.first_line);
+        let end_off = self.offset_of_line(text, self.first_line + self.height + 2);
+        let visible_range = Interval::new(start_off, end_off);
+        let selection_annotations =
+            self.selection.get_annotations(visible_range, &self, text).to_json();
+        let find_annotations =
+            self.find.iter().map(|ref f| f.get_annotations(visible_range, &self, text).to_json());
+        let plugin_annotations =
+            self.annotations.iter_range(&self, text, visible_range).map(|a| a.to_json());
+
+        let annotations = iter::once(selection_annotations)
+            .chain(find_annotations)
+            .chain(plugin_annotations)
+            .collect::<Vec<_>>();
 
         let update = Update { ops, pristine, annotations };
         client.update_view(self.view_id, &update);
@@ -998,7 +995,6 @@ impl View {
         // the front-end, but perhaps not for async edits.
         self.drag_state = None;
 
-        // all annotations that come after the edit need to be invalidated
         let (iv, _) = delta.summary();
         self.annotations.invalidate(iv);
 
