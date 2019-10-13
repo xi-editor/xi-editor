@@ -494,14 +494,12 @@ mod tests {
         assert_eq!(
             events,
             vec![
-                //(2.into(), Event::NoticeWrite(tmp.mkpath("adir/dir2/file"))),
                 (
                     2.into(),
                     Event::new(EventKind::Modify(ModifyKind::Any))
                         .add_path(tmp.mkpath("adir/dir2/file"))
                         .set_flag(Flag::Notice)
                 ),
-                //(2.into(), Event::Write(tmp.mkpath("adir/dir2/file"))),
                 (
                     2.into(),
                     Event::new(EventKind::Modify(ModifyKind::Any))
