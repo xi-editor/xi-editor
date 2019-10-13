@@ -449,7 +449,18 @@ impl<'a> PluginState {
         let metadata =
             self.get_metadata(view, syntax_set, prev_line).ok_or_else(|| Error::PeerDisconnect)?;
         let line = view.get_line(prev_line)?;
-        Ok(metadata.increase_indent(line))
+
+        let comment_str = match metadata.line_comment().map(|s| s.to_owned()) {
+            Some(s) => s,
+            None => return Ok(metadata.increase_indent(line)),
+        };
+
+        // if the previous line is a comment, the indent level should not be increased
+        if line.trim().starts_with(&comment_str.trim()) {
+            Ok(false)
+        } else {
+            Ok(metadata.increase_indent(line))
+        }
     }
 
     /// Test whether the indent level for this line should be decreased, by

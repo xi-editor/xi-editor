@@ -98,7 +98,7 @@ impl Annotations {
 
     /// Remove annotations intersecting `interval`.
     pub fn invalidate(&mut self, interval: Interval) {
-        self.items.delete_intersecting(interval);
+        self.items.delete_after(interval);
     }
 }
 
@@ -151,7 +151,11 @@ impl AnnotationStore {
 
     /// Invalidates and removes all annotations in the range of the interval.
     pub fn invalidate(&mut self, interval: Interval) {
-        self.store.values_mut().map(|v| v.iter_mut()).flatten().for_each(|a| a.invalidate(interval))
+        self.store
+            .values_mut()
+            .map(|v| v.iter_mut())
+            .flatten()
+            .for_each(|a| a.invalidate(interval));
     }
 
     /// Applies an update from a plugin to a set of annotations
@@ -181,17 +185,18 @@ impl AnnotationStore {
     ) -> impl Iterator<Item = AnnotationSlice> + 'c {
         self.store.iter().flat_map(move |(_plugin, value)| {
             value.iter().map(move |annotation| {
+                // .filter() used instead of .subseq() because subseq() filters out spans with length 0
                 let payloads = annotation
                     .items
-                    .subseq(interval)
                     .iter()
+                    .filter(|(i, _p)| i.start() <= interval.end() && i.end() >= interval.start())
                     .map(|(_i, p)| p.clone())
                     .collect::<Vec<Value>>();
 
                 let ranges = annotation
                     .items
-                    .subseq(interval)
                     .iter()
+                    .filter(|(i, _p)| i.start() <= interval.end() && i.end() >= interval.start())
                     .map(|(i, _p)| {
                         let (start_line, start_col) = view.offset_to_line_col(text, i.start());
                         let (end_line, end_col) = view.offset_to_line_col(text, i.end());

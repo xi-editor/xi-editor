@@ -59,8 +59,8 @@ fn test_state() {
     let write = io::sink();
     let json = make_reader(
         r#"{"method":"client_started","params":{}}
-{"method":"set_theme","params":{"theme_name":"InspiredGitHub"}}
-{"id":0,"method":"new_view","params":{}}"#,
+{"id":0,"method":"new_view","params":{"file_path":"../Cargo.toml"}}
+{"method":"set_theme","params":{"theme_name":"InspiredGitHub"}}"#,
     );
     let mut rpc_looper = RpcLoop::new(write);
     rpc_looper.mainloop(|| json, &mut state).unwrap();
@@ -206,7 +206,9 @@ fn test_settings_commands() {
     rpc_looper.mainloop(|| json, &mut state).unwrap();
     // discard config_changed
     rx.expect_rpc("config_changed");
+    rx.expect_rpc("update");
     rx.expect_rpc("config_changed");
+    rx.expect_rpc("update");
 
     let json = make_reader(r#"{"method":"get_config","id":2,"params":{"view_id":"view-id-1"}}"#);
     rpc_looper.mainloop(|| json, &mut state).unwrap();

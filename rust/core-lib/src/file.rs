@@ -107,7 +107,7 @@ impl FileManager {
 
     pub fn open(&mut self, path: &Path, id: BufferId) -> Result<Rope, FileError> {
         if !path.exists() {
-            let _ = File::create(path).map_err(|e| FileError::Io(e, path.to_owned()))?;
+            return Ok(Rope::from(""));
         }
 
         let (rope, info) = try_load_file(path)?;
@@ -230,7 +230,10 @@ fn try_save(
     #[cfg(target_family = "unix")]
     {
         if let Some(info) = file_info {
-            fs::set_permissions(path, Permissions::from_mode(info.permissions.unwrap_or(0o644)))?;
+            fs::set_permissions(path, Permissions::from_mode(info.permissions.unwrap_or(0o644)))
+                .unwrap_or_else(|e| {
+                    warn!("Couldn't set permissions on file {} due to error {}", path.display(), e)
+                });
         }
     }
 

@@ -179,5 +179,4 @@ mod tests {
     fn bench_my_peg(b: &mut Bencher) {
         b.iter(|| my_number(test::black_box(TEST_STR.as_bytes())))
     }
-
 }
