@@ -750,7 +750,9 @@ impl View {
             .collect::<Vec<_>>();
 
         if !self.lc_shadow.needs_render(plan) {
-            let update = Update { ops: Vec::new(), pristine, annotations };
+            let total_lines = self.line_of_offset(text, text.len()) + 1;
+            let update =
+                Update { ops: vec![UpdateOp::copy(total_lines, 1)], pristine, annotations };
             client.update_view(self.view_id, &update);
             return;
         }
