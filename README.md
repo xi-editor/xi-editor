@@ -32,7 +32,7 @@ Goals include:
 **Learn more** with the creator of Xi, Raph Levien, in this [Recurse Center Localhost talk](https://www.recurse.com/events/localhost-raph-levien
 ).
 
-Screenshot (will need to be updated as syntax coloring and UI polish is added):
+Screenshot:
 
 ![xi-mac screenshot](/docs/docs/img/xi-mac-screenshot.png?raw=true)
 
