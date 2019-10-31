@@ -34,12 +34,12 @@
 //! - We are integrated with the xi_rpc runloop; events are queued as
 //! they arrive, and an idle task is scheduled.
 
-use notify::{watcher, DebouncedEvent, RecommendedWatcher, RecursiveMode, Watcher};
+use crossbeam::unbounded;
+use notify::{event::*, watcher, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::VecDeque;
 use std::fmt;
 use std::mem;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -50,7 +50,8 @@ use xi_rpc::RpcPeer;
 pub const DEBOUNCE_WAIT_MILLIS: u64 = 50;
 
 /// Wrapper around a `notify::Watcher`. It runs the inner watcher
-/// in a separate thread, and communicates with it via an `mpsc::channel`.
+/// in a separate thread, and communicates with it via a [crossbeam channel].
+/// [crossbeam channel]: https://docs.rs/crossbeam-channel
 pub struct FileWatcher {
     inner: RecommendedWatcher,
     state: Arc<Mutex<WatcherState>>,
@@ -86,13 +87,13 @@ pub trait Notify: Send {
     fn notify(&self);
 }
 
-pub type EventQueue = VecDeque<(WatchToken, DebouncedEvent)>;
+pub type EventQueue = VecDeque<(WatchToken, Event)>;
 
 pub type PathFilter = dyn Fn(&Path) -> bool + Send + 'static;
 
 impl FileWatcher {
     pub fn new<T: Notify + 'static>(peer: T) -> Self {
-        let (tx_event, rx_event) = channel();
+        let (tx_event, rx_event) = unbounded();
 
         let state = Arc::new(Mutex::new(WatcherState::default()));
         let state_clone = state.clone();
@@ -100,7 +101,7 @@ impl FileWatcher {
         let inner = watcher(tx_event, Duration::from_millis(100)).expect("watcher should spawn");
 
         thread::spawn(move || {
-            while let Ok(event) = rx_event.recv() {
+            while let Ok(Ok(event)) = rx_event.recv() {
                 let mut state = state_clone.lock().unwrap();
                 let WatcherState { ref mut events, ref mut watchees } = *state;
 
@@ -108,7 +109,7 @@ impl FileWatcher {
                     .iter()
                     .filter(|w| w.wants_event(&event))
                     .map(|w| w.token)
-                    .for_each(|t| events.push_back((t, clone_event(&event))));
+                    .for_each(|t| events.push_back((t, event.clone())));
 
                 peer.notify();
             }
@@ -117,7 +118,7 @@ impl FileWatcher {
         FileWatcher { inner, state }
     }
 
-    /// Begin watching `path`. As `DebouncedEvent`s (documented in the
+    /// Begin watching `path`. As `Event`s (documented in the
     /// [notify](https://docs.rs/notify) crate) arrive, they are stored
     /// with the associated `token` and a task is added to the runloop's
     /// idle queue.
@@ -213,7 +214,7 @@ impl FileWatcher {
     }
 
     /// Takes ownership of this `Watcher`'s current event queue.
-    pub fn take_events(&mut self) -> VecDeque<(WatchToken, DebouncedEvent)> {
+    pub fn take_events(&mut self) -> VecDeque<(WatchToken, Event)> {
         let mut state = self.state.lock().unwrap();
         let WatcherState { ref mut events, .. } = *state;
         mem::replace(events, VecDeque::new())
@@ -221,14 +222,37 @@ impl FileWatcher {
 }
 
 impl Watchee {
-    fn wants_event(&self, event: &DebouncedEvent) -> bool {
-        use self::DebouncedEvent::*;
-        match *event {
-            NoticeWrite(ref p) | NoticeRemove(ref p) | Create(ref p) | Write(ref p)
-            | Chmod(ref p) | Remove(ref p) => self.applies_to_path(p),
-            Rename(ref p1, ref p2) => self.applies_to_path(p1) || self.applies_to_path(p2),
-            Rescan => false,
-            Error(_, ref opt_p) => opt_p.as_ref().map(|p| self.applies_to_path(p)).unwrap_or(false),
+    fn wants_event(&self, event: &Event) -> bool {
+        match &event.kind {
+            EventKind::Create(CreateKind::Any)
+            | EventKind::Remove(RemoveKind::Any)
+            | EventKind::Modify(ModifyKind::Any)
+            | EventKind::Modify(ModifyKind::Metadata(MetadataKind::Any)) => {
+                if event.paths.len() == 1 {
+                    self.applies_to_path(&event.paths[0])
+                } else {
+                    info!(
+                        "Rejecting event {:?} with incorrect paths. Expected 1 found {}.",
+                        event,
+                        event.paths.len()
+                    );
+                    false
+                }
+            }
+            EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => {
+                if event.paths.len() == 2 {
+                    //There will be two paths. First is "from" and other is "to".
+                    self.applies_to_path(&event.paths[0]) || self.applies_to_path(&event.paths[1])
+                } else {
+                    info!(
+                        "Rejecting event {:?} with incorrect paths. Expected 2 found {}.",
+                        event,
+                        event.paths.len()
+                    );
+                    false
+                }
+            }
+            _ => false,
         }
     }
 
@@ -274,42 +298,17 @@ fn mode_from_bool(is_recursive: bool) -> RecursiveMode {
     }
 }
 
-// Debounced event does not implement clone
-// TODO: remove if https://github.com/passcod/notify/pull/133 is merged
-fn clone_event(event: &DebouncedEvent) -> DebouncedEvent {
-    use self::DebouncedEvent::*;
-    use notify::Error::*;
-    match *event {
-        NoticeWrite(ref p) => NoticeWrite(p.to_owned()),
-        NoticeRemove(ref p) => NoticeRemove(p.to_owned()),
-        Create(ref p) => Create(p.to_owned()),
-        Write(ref p) => Write(p.to_owned()),
-        Chmod(ref p) => Chmod(p.to_owned()),
-        Remove(ref p) => Remove(p.to_owned()),
-        Rename(ref p1, ref p2) => Rename(p1.to_owned(), p2.to_owned()),
-        Rescan => Rescan,
-        Error(ref e, ref opt_p) => {
-            let error = match *e {
-                PathNotFound => PathNotFound,
-                WatchNotFound => WatchNotFound,
-                Generic(ref s) => Generic(s.to_owned()),
-                Io(ref e) => Generic(format!("{:?}", e)),
-            };
-            Error(error, opt_p.clone())
-        }
-    }
-}
-
 #[cfg(test)]
 extern crate tempdir;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crossbeam::unbounded;
+    use notify::EventKind;
     use std::ffi::OsStr;
     use std::fs;
     use std::io::Write;
-    use std::sync::mpsc;
     use std::thread;
     use std::time::{Duration, Instant};
 
@@ -325,7 +324,7 @@ mod tests {
         }
     }
 
-    impl Notify for mpsc::Sender<bool> {
+    impl Notify for crossbeam::Sender<bool> {
         fn notify(&self) {
             self.send(true).expect("send shouldn't fail")
         }
@@ -343,14 +342,14 @@ mod tests {
         }
     }
 
-    pub fn recv_all<T>(rx: &mpsc::Receiver<T>, duration: Duration) -> Vec<T> {
+    pub fn recv_all<T>(rx: &crossbeam::Receiver<T>, duration: Duration) -> Vec<T> {
         let start = Instant::now();
         let mut events = Vec::new();
 
         while start.elapsed() < duration {
             match rx.recv_timeout(Duration::from_millis(50)) {
                 Ok(event) => events.push(event),
-                Err(mpsc::RecvTimeoutError::Timeout) => (),
+                Err(crossbeam::RecvTimeoutError::Timeout) => (),
                 Err(e) => panic!("unexpected channel err: {:?}", e),
             }
         }
@@ -467,7 +466,7 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn test_crash_repro() {
-        let (tx, _rx) = channel();
+        let (tx, _rx) = unbounded();
         let path = PathBuf::from("/bin/cat");
         let mut w = watcher(tx, Duration::from_secs(1)).unwrap();
         w.watch(&path, RecursiveMode::NonRecursive).unwrap();
@@ -478,7 +477,7 @@ mod tests {
 
     #[test]
     fn recurse_with_contained() {
-        let (tx, rx) = channel();
+        let (tx, rx) = unbounded();
         let tmp = tempdir::TempDir::new("xi-test-recurse-contained").unwrap();
         let mut w = FileWatcher::new(tx);
         tmp.create("adir/dir2/file");
@@ -495,15 +494,24 @@ mod tests {
         assert_eq!(
             events,
             vec![
-                (2.into(), DebouncedEvent::NoticeWrite(tmp.mkpath("adir/dir2/file"))),
-                (2.into(), DebouncedEvent::Write(tmp.mkpath("adir/dir2/file"))),
+                (
+                    2.into(),
+                    Event::new(EventKind::Modify(ModifyKind::Any))
+                        .add_path(tmp.mkpath("adir/dir2/file"))
+                        .set_flag(Flag::Notice)
+                ),
+                (
+                    2.into(),
+                    Event::new(EventKind::Modify(ModifyKind::Any))
+                        .add_path(tmp.mkpath("adir/dir2/file"))
+                ),
             ]
         );
     }
 
     #[test]
     fn two_watchers_one_file() {
-        let (tx, rx) = channel();
+        let (tx, rx) = unbounded();
         let tmp = tempdir::TempDir::new("xi-test-two-watchers").unwrap();
         tmp.create("my_file");
         sleep_if_macos(30_100);
@@ -519,10 +527,26 @@ mod tests {
         assert_eq!(
             events,
             vec![
-                (1.into(), DebouncedEvent::NoticeWrite(tmp.mkpath("my_file"))),
-                (2.into(), DebouncedEvent::NoticeWrite(tmp.mkpath("my_file"))),
-                (1.into(), DebouncedEvent::Write(tmp.mkpath("my_file"))),
-                (2.into(), DebouncedEvent::Write(tmp.mkpath("my_file"))),
+                (
+                    1.into(),
+                    Event::new(EventKind::Modify(ModifyKind::Any))
+                        .add_path(tmp.mkpath("my_file"))
+                        .set_flag(Flag::Notice)
+                ),
+                (
+                    2.into(),
+                    Event::new(EventKind::Modify(ModifyKind::Any))
+                        .add_path(tmp.mkpath("my_file"))
+                        .set_flag(Flag::Notice)
+                ),
+                (
+                    1.into(),
+                    Event::new(EventKind::Modify(ModifyKind::Any)).add_path(tmp.mkpath("my_file"))
+                ),
+                (
+                    2.into(),
+                    Event::new(EventKind::Modify(ModifyKind::Any)).add_path(tmp.mkpath("my_file"))
+                ),
             ]
         );
 
@@ -535,7 +559,15 @@ mod tests {
         sleep_if_macos(1000);
         let _ = recv_all(&rx, Duration::from_millis(1000));
         let events = w.take_events();
-        assert!(events.contains(&(2.into(), DebouncedEvent::NoticeRemove(path.clone()))));
-        assert!(!events.contains(&(1.into(), DebouncedEvent::NoticeRemove(path))));
+        assert!(events.contains(&(
+            2.into(),
+            Event::new(EventKind::Remove(RemoveKind::Any))
+                .add_path(path.clone())
+                .set_flag(Flag::Notice)
+        )));
+        assert!(!events.contains(&(
+            1.into(),
+            Event::new(EventKind::Remove(RemoveKind::Any)).add_path(path).set_flag(Flag::Notice)
+        )));
     }
 }

@@ -14,9 +14,10 @@ serde_json = "1.0"
 serde_derive = "1.0"
 time = "0.1"
 toml = "0.5"
-notify = { optional = true, version = "4.0" }
+notify = { optional = true, version = "=5.0.0-pre.1" }
 regex = "1.0"
 memchr = "2.0.1"
+crossbeam = "0.7"
 
 xi-trace = { path = "../trace", version = "0.2.0" }
 xi-rope = { path = "../rope", version = "0.3", features = ["serde"] }
