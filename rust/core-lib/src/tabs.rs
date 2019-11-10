@@ -561,7 +561,7 @@ impl CoreState {
     }
 
     #[cfg(feature = "notify")]
-    fn do_toggle_tail(&mut self, view_id: ViewId, path: P, enabled: bool)
+    fn do_toggle_tail<P>(&mut self, view_id: ViewId, path: P, enabled: bool)
     where
         P: AsRef<Path>,
     {
@@ -579,7 +579,7 @@ impl CoreState {
     }
 
     #[cfg(not(feature = "notify"))]
-    fn do_toggle_tail(&mut self, view_id: ViewId, path: P, enabled: bool)
+    fn do_toggle_tail<P>(&mut self, view_id: ViewId, path: P, enabled: bool)
     where
         P: AsRef<Path>,
     {
@@ -742,25 +742,30 @@ impl CoreState {
             | EventKind::Modify(ModifyKind::Any) => {
                 let path = &event.paths[0];
 
-                is_tail_event = match event.flag().unwrap_or_else(false) {
-                    Ongoing => {
-                        let buffer_id = match self.file_manager.get_editor(path) {
-                            Some(id) => id,
-                            None => return,
-                        };
-                        let file_info = self.file_manager.get_info(buffer_id);
-                        match file_info {
-                            Some(i) => {
-                                match i.tailing_enabled {
-                                    Some(t) => true,
-                                    // Ignore tail events for paths which are not tailed.
+                is_tail_event = match event.flag() {
+                    Some(flag) => {
+                        match flag {
+                            Ongoing => {
+                                let buffer_id = match self.file_manager.get_editor(path) {
+                                    Some(id) => id,
+                                    None => return,
+                                };
+                                let file_info = self.file_manager.get_info(buffer_id);
+                                match file_info {
+                                    Some(i) => {
+                                        match i.tailing_enabled {
+                                            Some(_t) => true,
+                                            // Ignore tail events for paths which are not tailed.
+                                            None => return,
+                                        }
+                                    }
                                     None => return,
                                 }
                             }
-                            None => return,
+                            _ => false,
                         }
-                    }
-                    _ => false,
+                    },
+                    None => false,
                 };
 
                 path
