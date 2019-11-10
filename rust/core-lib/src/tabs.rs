@@ -58,6 +58,7 @@ use crate::WeakXiCore;
 
 #[cfg(feature = "notify")]
 use crate::watcher::{FileWatcher, WatchToken};
+use notify::event::Flag::Ongoing;
 #[cfg(feature = "notify")]
 use notify::Event;
 #[cfg(feature = "notify")]
@@ -331,6 +332,9 @@ impl CoreState {
             // handled at the top level
             ClientStarted { .. } => (),
             SetLanguage { view_id, language_id } => self.do_set_language(view_id, language_id),
+            ToggleTail { view_id, file_path, enabled } => {
+                self.do_toggle_tail(view_id, file_path, enabled)
+            }
         }
     }
 
@@ -555,6 +559,32 @@ impl CoreState {
     fn after_stop_plugin(&mut self, plugin: &Plugin) {
         self.iter_groups().for_each(|mut cx| cx.plugin_stopped(plugin));
     }
+
+    #[cfg(feature = "notify")]
+    fn do_toggle_tail(&mut self, view_id: ViewId, path: P, enabled: bool)
+    where
+        P: AsRef<Path>,
+    {
+        let buffer_id = self.views.get(&view_id).map(|v| v.borrow().get_buffer_id());
+        let buffer_id = match buffer_id {
+            Some(id) => id,
+            None => return,
+        };
+        if enabled {
+            let path = path.as_ref();
+            self.file_manager.update_current_position_in_tail(path, buffer_id);
+        } else {
+            self.file_manager.disable_tailing(buffer_id);
+        }
+    }
+
+    #[cfg(not(feature = "notify"))]
+    fn do_toggle_tail(&mut self, view_id: ViewId, path: P, enabled: bool)
+    where
+        P: AsRef<Path>,
+    {
+        warn!("do_toggle_tail called without notify feature enabled.");
+    }
 }
 
 /// Idle, tracing, and file event handling
@@ -705,10 +735,36 @@ impl CoreState {
     #[cfg(feature = "notify")]
     fn handle_open_file_fs_event(&mut self, event: Event) {
         use notify::event::*;
+        let mut is_tail_event = false;
         let path = match event.kind {
             EventKind::Create(CreateKind::Any)
             | EventKind::Modify(ModifyKind::Metadata(MetadataKind::Any))
-            | EventKind::Modify(ModifyKind::Any) => &event.paths[0],
+            | EventKind::Modify(ModifyKind::Any) => {
+                let path = &event.paths[0];
+
+                is_tail_event = match event.flag().unwrap_or_else(false) {
+                    Ongoing => {
+                        let buffer_id = match self.file_manager.get_editor(path) {
+                            Some(id) => id,
+                            None => return,
+                        };
+                        let file_info = self.file_manager.get_info(buffer_id);
+                        match file_info {
+                            Some(i) => {
+                                match i.tailing_enabled {
+                                    Some(t) => true,
+                                    // Ignore tail events for paths which are not tailed.
+                                    None => return,
+                                }
+                            }
+                            None => return,
+                        }
+                    }
+                    _ => false,
+                };
+
+                path
+            }
             other => {
                 debug!("Ignoring event in open file {:?}", other);
                 return;
@@ -727,16 +783,21 @@ impl CoreState {
         // A more robust solution would also hash the file's contents.
 
         if has_changes && is_pristine {
-            if let Ok(text) = self.file_manager.open(path, buffer_id) {
-                // this is ugly; we don't map buffer_id -> view_id anywhere
-                // but we know we must have a view.
-                let view_id = self
-                    .views
-                    .values()
-                    .find(|v| v.borrow().get_buffer_id() == buffer_id)
-                    .map(|v| v.borrow().get_view_id())
-                    .unwrap();
-                self.make_context(view_id).unwrap().reload(text);
+            if is_tail_event {
+                // Since this is tail event, we need to get delta of changes since the last time we
+                // read the file.
+            } else {
+                if let Ok(text) = self.file_manager.open(path, buffer_id) {
+                    // this is ugly; we don't map buffer_id -> view_id anywhere
+                    // but we know we must have a view.
+                    let view_id = self
+                        .views
+                        .values()
+                        .find(|v| v.borrow().get_buffer_id() == buffer_id)
+                        .map(|v| v.borrow().get_view_id())
+                        .unwrap();
+                    self.make_context(view_id).unwrap().reload(text);
+                }
             }
         }
     }

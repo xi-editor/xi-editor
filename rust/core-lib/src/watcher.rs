@@ -35,7 +35,7 @@
 //! they arrive, and an idle task is scheduled.
 
 use crossbeam::unbounded;
-use notify::{event::*, watcher, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::{event::*, watcher, Config, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::VecDeque;
 use std::fmt;
 use std::mem;
@@ -44,7 +44,9 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+use notify::event::DataChange::Content;
 use xi_rpc::RpcPeer;
+use xi_trace::SampleEventType::DurationBegin;
 
 /// Delay for aggregating related file system events.
 pub const DEBOUNCE_WAIT_MILLIS: u64 = 50;
@@ -98,7 +100,9 @@ impl FileWatcher {
         let state = Arc::new(Mutex::new(WatcherState::default()));
         let state_clone = state.clone();
 
-        let inner = watcher(tx_event, Duration::from_millis(100)).expect("watcher should spawn");
+        let mut inner =
+            watcher(tx_event, Duration::from_millis(100)).expect("watcher should spawn");
+        inner.configure(Config::OngoingEvents(Some(Duration::from_millis(50))));
 
         thread::spawn(move || {
             while let Ok(Ok(event)) = rx_event.recv() {

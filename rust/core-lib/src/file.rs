@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fmt;
 use std::fs::{self, File};
-use std::io::{self, Read, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::str;
 use std::time::SystemTime;
@@ -54,6 +54,8 @@ pub struct FileInfo {
     pub has_changed: bool,
     #[cfg(target_family = "unix")]
     pub permissions: Option<u32>,
+    #[cfg(feature = "notify")]
+    pub tailing_enabled: Option<u64>,
 }
 
 pub enum FileError {
@@ -147,6 +149,8 @@ impl FileManager {
             has_changed: false,
             #[cfg(target_family = "unix")]
             permissions: get_permissions(path),
+            #[cfg(feature = "notify")]
+            tailing_enabled: None,
         };
         self.open_files.insert(path.to_owned(), id);
         self.file_info.insert(id, info);
@@ -172,6 +176,29 @@ impl FileManager {
         }
         Ok(())
     }
+
+    #[cfg(feature = "notify")]
+    pub fn update_current_position_in_tail(
+        &mut self,
+        path: &Path,
+        id: BufferId,
+    ) -> Result<(), FileError> {
+        let existing_file_info = self.file_info.get_mut(&id).unwrap();
+
+        let mut f = File::open(path).map_err(|e| FileError::Io(e, path.to_owned()))?;
+        let end_position =
+            f.seek(SeekFrom::End(0)).map_err(|e| FileError::Io(e, path.to_owned()))?;
+
+        existing_file_info.tailing_enabled = Some(end_position);
+        Ok(())
+    }
+
+    #[cfg(feature = "notify")]
+    pub fn disable_tailing(&mut self, id: BufferId) -> Result<(), FileError> {
+        let existing_file_info = self.file_info.get_mut(&id).unwrap();
+        existing_file_info.tailing_enabled = None;
+        Ok(())
+    }
 }
 
 fn try_load_file<P>(path: P) -> Result<(Rope, FileInfo), FileError>
@@ -194,6 +221,9 @@ where
         permissions: get_permissions(&path),
         path: path.as_ref().to_owned(),
         has_changed: false,
+        //sj_todo tailing_enabled should be set from existing FileInfo.
+        #[cfg(feature = "notify")]
+        tailing_enabled: None,
     };
     Ok((rope, info))
 }
