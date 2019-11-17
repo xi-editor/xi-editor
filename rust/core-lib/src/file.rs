@@ -55,7 +55,7 @@ pub struct FileInfo {
     #[cfg(target_family = "unix")]
     pub permissions: Option<u32>,
     #[cfg(feature = "notify")]
-    pub tailing_enabled: Option<u64>,
+    pub tail_position: Option<u64>,
 }
 
 pub enum FileError {
@@ -107,6 +107,19 @@ impl FileManager {
         false
     }
 
+    pub fn tail(&mut self, path: &Path, id: BufferId) -> Result<Rope, FileError> {
+        if !path.exists() {
+            return Ok(Rope::from(""));
+        }
+
+        //sj_todo handle unwrap.
+        let existing_file_info = self.file_info.get(&id).unwrap();
+        let (rope, info) = try_tailing_file(path, existing_file_info)?;
+
+        self.file_info.insert(id, info);
+        Ok(rope)
+    }
+
     pub fn open(&mut self, path: &Path, id: BufferId) -> Result<Rope, FileError> {
         if !path.exists() {
             return Ok(Rope::from(""));
@@ -150,7 +163,7 @@ impl FileManager {
             #[cfg(target_family = "unix")]
             permissions: get_permissions(path),
             #[cfg(feature = "notify")]
-            tailing_enabled: None,
+            tail_position: None,
         };
         self.open_files.insert(path.to_owned(), id);
         self.file_info.insert(id, info);
@@ -189,16 +202,52 @@ impl FileManager {
         let end_position =
             f.seek(SeekFrom::End(0)).map_err(|e| FileError::Io(e, path.to_owned()))?;
 
-        existing_file_info.tailing_enabled = Some(end_position);
+        existing_file_info.tail_position = Some(end_position);
         Ok(())
     }
 
     #[cfg(feature = "notify")]
     pub fn disable_tailing(&mut self, id: BufferId) -> Result<(), FileError> {
         let existing_file_info = self.file_info.get_mut(&id).unwrap();
-        existing_file_info.tailing_enabled = None;
+        existing_file_info.tail_position = None;
         Ok(())
     }
+}
+
+/// When tailing a file, instead of reading file from beginning, we need to get changes from the end.
+/// This method does that.
+#[cfg(feature = "notify")]
+fn try_tailing_file<P>(path: P, file_info: &FileInfo) -> Result<(Rope, FileInfo), FileError>
+where
+    P: AsRef<Path>,
+{
+    let mut f =
+        File::open(path.as_ref()).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
+    let end_position =
+        f.seek(SeekFrom::End(0)).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
+
+    //sj_todo unwrap needs to be handled for None.
+    let current_position = file_info.tail_position.unwrap();
+    let diff = end_position - current_position;
+    let mut buf = vec![0; diff as usize];
+    f.seek(SeekFrom::Current(-(buf.len() as i64))).unwrap();
+    f.read_exact(&mut buf).unwrap();
+
+    let mod_time =
+        f.metadata().map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?.modified().ok();
+
+    let encoding = file_info.encoding;
+    let permissions = file_info.permissions;
+    let rope = try_decode(buf, encoding, path.as_ref())?;
+    let info = FileInfo {
+        encoding,
+        mod_time,
+        path: path.as_ref().to_owned(),
+        has_changed: false,
+        permissions,
+        tail_position: Some(end_position),
+    };
+    Ok((rope, info))
 }
 
 fn try_load_file<P>(path: P) -> Result<(Rope, FileInfo), FileError>
@@ -221,9 +270,8 @@ where
         permissions: get_permissions(&path),
         path: path.as_ref().to_owned(),
         has_changed: false,
-        //sj_todo tailing_enabled should be set from existing FileInfo.
         #[cfg(feature = "notify")]
-        tailing_enabled: None,
+        tail_position: None,
     };
     Ok((rope, info))
 }

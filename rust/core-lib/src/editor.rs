@@ -180,6 +180,15 @@ impl Editor {
         self.set_pristine();
     }
 
+    /// Appends delta to existing rope.
+    pub(crate) fn reload_tail(&mut self, delta: Rope) {
+        let buf_end = self.text.len();
+        let mut builder = DeltaBuilder::new(buf_end);
+        builder.replace(buf_end..buf_end, delta);
+        self.add_delta(builder.build());
+        self.set_pristine();
+    }
+
     // each outstanding plugin edit represents a rev_in_flight.
     pub fn increment_revs_in_flight(&mut self) {
         self.revs_in_flight += 1;

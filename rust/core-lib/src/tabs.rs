@@ -332,9 +332,7 @@ impl CoreState {
             // handled at the top level
             ClientStarted { .. } => (),
             SetLanguage { view_id, language_id } => self.do_set_language(view_id, language_id),
-            ToggleTail { view_id, file_path, enabled } => {
-                self.do_toggle_tail(view_id, file_path, enabled)
-            }
+            ToggleTail { view_id, enabled } => self.do_toggle_tail(view_id, enabled),
         }
     }
 
@@ -561,28 +559,32 @@ impl CoreState {
     }
 
     #[cfg(feature = "notify")]
-    fn do_toggle_tail<P>(&mut self, view_id: ViewId, path: P, enabled: bool)
-    where
-        P: AsRef<Path>,
-    {
+    fn do_toggle_tail(&mut self, view_id: ViewId, enabled: bool) {
         let buffer_id = self.views.get(&view_id).map(|v| v.borrow().get_buffer_id());
         let buffer_id = match buffer_id {
             Some(id) => id,
             None => return,
         };
         if enabled {
-            let path = path.as_ref();
-            self.file_manager.update_current_position_in_tail(path, buffer_id);
+            //sj_todo handle unwrap
+            let file_info = self.file_manager.get_info(buffer_id).unwrap();
+            self.file_manager
+                .update_current_position_in_tail(file_info.path.to_owned().as_path(), buffer_id);
+            let existing_file_info = self.file_manager.get_info(buffer_id).unwrap();
+            info!("File info {:?}", existing_file_info);
+            if let Some(mut ctx) = self.make_context(view_id) {
+                ctx.set_toggle_tail(true);
+            }
         } else {
             self.file_manager.disable_tailing(buffer_id);
+            if let Some(mut ctx) = self.make_context(view_id) {
+                ctx.set_toggle_tail(false);
+            }
         }
     }
 
     #[cfg(not(feature = "notify"))]
-    fn do_toggle_tail<P>(&mut self, view_id: ViewId, path: P, enabled: bool)
-    where
-        P: AsRef<Path>,
-    {
+    fn do_toggle_tail(&mut self, view_id: ViewId, enabled: bool) {
         warn!("do_toggle_tail called without notify feature enabled.");
     }
 }
@@ -753,10 +755,30 @@ impl CoreState {
                                 let file_info = self.file_manager.get_info(buffer_id);
                                 match file_info {
                                     Some(i) => {
-                                        match i.tailing_enabled {
+                                        match i.tail_position {
                                             Some(_t) => true,
                                             // Ignore tail events for paths which are not tailed.
-                                            None => return,
+                                            None => {
+                                                debug!("Ignoring Ongoing events for files that are not being tailed.");
+                                                return;
+                                            }
+                                        }
+                                    }
+                                    None => return,
+                                }
+                            }
+                            Notice => {
+                                let buffer_id = match self.file_manager.get_editor(path) {
+                                    Some(id) => id,
+                                    None => return,
+                                };
+                                let file_info = self.file_manager.get_info(buffer_id);
+                                match file_info {
+                                    Some(i) => {
+                                        match i.tail_position {
+                                            Some(_t) => true,
+                                            // Ignore tail events for paths which are not tailed.
+                                            None => false,
                                         }
                                     }
                                     None => return,
@@ -764,7 +786,7 @@ impl CoreState {
                             }
                             _ => false,
                         }
-                    },
+                    }
                     None => false,
                 };
 
@@ -789,8 +811,17 @@ impl CoreState {
 
         if has_changes && is_pristine {
             if is_tail_event {
-                // Since this is tail event, we need to get delta of changes since the last time we
+                // Since this is tail event, we need to get delta since the last time we
                 // read the file.
+                if let Ok(delta) = self.file_manager.tail(path, buffer_id) {
+                    let view_id = self
+                        .views
+                        .values()
+                        .find(|v| v.borrow().get_buffer_id() == buffer_id)
+                        .map(|v| v.borrow().get_view_id())
+                        .unwrap();
+                    self.make_context(view_id).unwrap().reload_tail(delta);
+                }
             } else {
                 if let Ok(text) = self.file_manager.open(path, buffer_id) {
                     // this is ugly; we don't map buffer_id -> view_id anywhere

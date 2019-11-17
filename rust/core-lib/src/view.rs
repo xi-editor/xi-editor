@@ -99,6 +99,9 @@ pub struct View {
 
     /// Annotations provided by plugins.
     annotations: AnnotationStore,
+
+    /// Flag to determine if EOF of a file is visible. Default is false.
+    eof_visible: bool,
 }
 
 /// Indicates what changed in the find state.
@@ -179,6 +182,7 @@ impl View {
             replace: None,
             replace_changed: false,
             annotations: AnnotationStore::new(),
+            eof_visible: false,
         }
     }
 
@@ -238,7 +242,7 @@ impl View {
             Move(movement) => self.do_move(text, movement, false),
             ModifySelection(movement) => self.do_move(text, movement, true),
             SelectAll => self.select_all(text),
-            Scroll(range) => self.set_scroll(range.first, range.last),
+            Scroll(range) => self.set_scroll(text, range.first, range.last),
             AddSelectionAbove => self.add_selection_by_movement(text, Movement::UpExactPosition),
             AddSelectionBelow => self.add_selection_by_movement(text, Movement::DownExactPosition),
             Gesture { line, col, ty } => self.do_gesture(text, line, col, ty),
@@ -320,11 +324,13 @@ impl View {
         self.size = size;
     }
 
-    pub fn set_scroll(&mut self, first: i64, last: i64) {
+    pub fn set_scroll(&mut self, text: &Rope, first: i64, last: i64) {
         let first = max(first, 0) as usize;
         let last = max(last, 0) as usize;
         self.first_line = first;
         self.height = last - first;
+        let eof_line = self.line_of_offset(text, text.len()) + 1;
+        self.eof_visible = eof_line <= last;
     }
 
     pub fn scroll_height(&self) -> usize {
@@ -871,6 +877,26 @@ impl View {
         self.send_update_for_plan(text, client, styles, style_spans, &plan, pristine);
         if let Some(new_scroll_pos) = self.scroll_to.take() {
             let (line, col) = self.offset_to_line_col(text, new_scroll_pos);
+            client.scroll_to(self.view_id, line, col);
+        }
+    }
+
+    /// Just like [`render_if_dirty`](#method.render_if_dirty) but used only when a file is being tailed.
+    /// When a file is being tailed and eof is visible, we keep chasing eof.
+    /// But when eof is not visible (for eg., on scroll), we do nothing.
+    pub fn render_tail(
+        &mut self,
+        text: &Rope,
+        client: &Client,
+        styles: &StyleMap,
+        style_spans: &Spans<Style>,
+        pristine: bool,
+    ) {
+        if self.eof_visible {
+            let height = self.line_of_offset(text, text.len()) + 1;
+            let plan = RenderPlan::create(height, self.first_line, self.height);
+            self.send_update_for_plan(text, client, styles, style_spans, &plan, pristine);
+            let (line, col) = self.offset_to_line_col(text, text.len());
             client.scroll_to(self.view_id, line, col);
         }
     }

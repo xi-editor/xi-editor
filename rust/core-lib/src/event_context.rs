@@ -376,6 +376,18 @@ impl<'a> EventContext<'a> {
             ed.is_pristine(),
         )
     }
+
+    fn render_tail(&mut self) {
+        let _t = trace_block("EventContext::render_tail", &["core"]);
+        let ed = self.editor.borrow();
+        self.view.borrow_mut().render_tail(
+            ed.get_buffer(),
+            self.client,
+            self.style_map,
+            ed.get_layers().get_merged(),
+            ed.is_pristine(),
+        )
+    }
 }
 
 /// Helpers related to specific commands.
@@ -471,6 +483,16 @@ impl<'a> EventContext<'a> {
         self.with_editor(|ed, _, _, _| ed.reload(text));
         self.after_edit("core");
         self.render();
+    }
+
+    pub(crate) fn reload_tail(&mut self, text: Rope) {
+        self.with_editor(|ed, _, _, _| ed.reload_tail(text));
+        self.after_edit("core");
+        self.render_tail();
+    }
+
+    pub(crate) fn set_toggle_tail(&mut self, enabled: bool) {
+        self.client.toggle_tail_config_changed(self.view_id, enabled);
     }
 
     pub(crate) fn plugin_info(&mut self) -> PluginBufferInfo {
