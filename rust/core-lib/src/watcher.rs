@@ -44,9 +44,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use notify::event::DataChange::Content;
 use xi_rpc::RpcPeer;
-use xi_trace::SampleEventType::DurationBegin;
 
 /// Delay for aggregating related file system events.
 pub const DEBOUNCE_WAIT_MILLIS: u64 = 50;

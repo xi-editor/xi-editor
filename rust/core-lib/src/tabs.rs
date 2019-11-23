@@ -566,17 +566,14 @@ impl CoreState {
             None => return,
         };
         if enabled {
-            //sj_todo handle unwrap
-            let file_info = self.file_manager.get_info(buffer_id).unwrap();
-            self.file_manager
-                .update_current_position_in_tail(file_info.path.to_owned().as_path(), buffer_id);
-            let existing_file_info = self.file_manager.get_info(buffer_id).unwrap();
-            info!("File info {:?}", existing_file_info);
+            self.file_manager.update_current_position_in_tail(buffer_id);
+            self.views.get(&view_id).map(|v| v.borrow_mut().set_tail_enabled(true));
             if let Some(mut ctx) = self.make_context(view_id) {
                 ctx.set_toggle_tail(true);
             }
         } else {
             self.file_manager.disable_tailing(buffer_id);
+            self.views.get(&view_id).map(|v| v.borrow_mut().set_tail_enabled(false));
             if let Some(mut ctx) = self.make_context(view_id) {
                 ctx.set_toggle_tail(false);
             }
@@ -744,9 +741,27 @@ impl CoreState {
             | EventKind::Modify(ModifyKind::Any) => {
                 let path = &event.paths[0];
 
+                //sj_todo this is ugly. Needs fixing.
                 is_tail_event = match event.flag() {
                     Some(flag) => {
                         match flag {
+                            Flag::Notice => {
+                                let buffer_id = match self.file_manager.get_editor(path) {
+                                    Some(id) => id,
+                                    None => return,
+                                };
+                                let file_info = self.file_manager.get_info(buffer_id);
+                                match file_info {
+                                    Some(i) => {
+                                        match i.tail_position {
+                                            Some(_t) => true,
+                                            // Ignore tail events for paths which are not tailed.
+                                            None => false,
+                                        }
+                                    }
+                                    None => return,
+                                }
+                            }
                             Ongoing => {
                                 let buffer_id = match self.file_manager.get_editor(path) {
                                     Some(id) => id,
@@ -762,23 +777,6 @@ impl CoreState {
                                                 debug!("Ignoring Ongoing events for files that are not being tailed.");
                                                 return;
                                             }
-                                        }
-                                    }
-                                    None => return,
-                                }
-                            }
-                            Notice => {
-                                let buffer_id = match self.file_manager.get_editor(path) {
-                                    Some(id) => id,
-                                    None => return,
-                                };
-                                let file_info = self.file_manager.get_info(buffer_id);
-                                match file_info {
-                                    Some(i) => {
-                                        match i.tail_position {
-                                            Some(_t) => true,
-                                            // Ignore tail events for paths which are not tailed.
-                                            None => false,
                                         }
                                     }
                                     None => return,

@@ -100,6 +100,8 @@ pub struct View {
     /// Annotations provided by plugins.
     annotations: AnnotationStore,
 
+    pub(crate) is_tail_enabled: bool,
+
     /// Flag to determine if EOF of a file is visible. Default is false.
     eof_visible: bool,
 }
@@ -182,8 +184,13 @@ impl View {
             replace: None,
             replace_changed: false,
             annotations: AnnotationStore::new(),
-            eof_visible: false,
+            is_tail_enabled: false,
+            eof_visible: true,
         }
+    }
+
+    pub(crate) fn set_tail_enabled(&mut self, is_tail_enabled: bool) {
+        self.is_tail_enabled = is_tail_enabled
     }
 
     pub(crate) fn get_buffer_id(&self) -> BufferId {
@@ -875,9 +882,11 @@ impl View {
         let height = self.line_of_offset(text, text.len()) + 1;
         let plan = RenderPlan::create(height, self.first_line, self.height);
         self.send_update_for_plan(text, client, styles, style_spans, &plan, pristine);
-        if let Some(new_scroll_pos) = self.scroll_to.take() {
-            let (line, col) = self.offset_to_line_col(text, new_scroll_pos);
-            client.scroll_to(self.view_id, line, col);
+        if !self.is_tail_enabled {
+            if let Some(new_scroll_pos) = self.scroll_to.take() {
+                let (line, col) = self.offset_to_line_col(text, new_scroll_pos);
+                client.scroll_to(self.view_id, line, col);
+            }
         }
     }
 

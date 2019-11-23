@@ -191,18 +191,16 @@ impl FileManager {
     }
 
     #[cfg(feature = "notify")]
-    pub fn update_current_position_in_tail(
-        &mut self,
-        path: &Path,
-        id: BufferId,
-    ) -> Result<(), FileError> {
-        let existing_file_info = self.file_info.get_mut(&id).unwrap();
+    pub fn update_current_position_in_tail(&mut self, id: BufferId) -> Result<(), FileError> {
+        //sj_todo handle unwrap
+        let file_info = self.file_info.get_mut(&id).unwrap();
+        let path = &file_info.path.to_owned();
 
         let mut f = File::open(path).map_err(|e| FileError::Io(e, path.to_owned()))?;
         let end_position =
             f.seek(SeekFrom::End(0)).map_err(|e| FileError::Io(e, path.to_owned()))?;
 
-        existing_file_info.tail_position = Some(end_position);
+        file_info.tail_position = Some(end_position);
         Ok(())
     }
 
