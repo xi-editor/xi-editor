@@ -149,7 +149,7 @@ impl Find {
                 // also invalidate previous occurrence since it might expand after insertion
                 // eg. for regex .* every insertion after match will be part of match
                 self.occurrences.delete_range(
-                    new_offset.checked_sub(1).unwrap_or(0),
+                    new_offset.saturating_sub(1),
                     new_offset + len,
                     false,
                 );
