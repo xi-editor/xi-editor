@@ -34,7 +34,7 @@
 //! - We are integrated with the xi_rpc runloop; events are queued as
 //! they arrive, and an idle task is scheduled.
 
-use crossbeam::unbounded;
+use crossbeam_channel::unbounded;
 use notify::{event::*, watcher, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::VecDeque;
 use std::fmt;
@@ -304,7 +304,7 @@ extern crate tempdir;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crossbeam::unbounded;
+    use crossbeam_channel::unbounded;
     use notify::EventKind;
     use std::ffi::OsStr;
     use std::fs;
@@ -324,7 +324,7 @@ mod tests {
         }
     }
 
-    impl Notify for crossbeam::Sender<bool> {
+    impl Notify for crossbeam_channel::Sender<bool> {
         fn notify(&self) {
             self.send(true).expect("send shouldn't fail")
         }
@@ -342,14 +342,14 @@ mod tests {
         }
     }
 
-    pub fn recv_all<T>(rx: &crossbeam::Receiver<T>, duration: Duration) -> Vec<T> {
+    pub fn recv_all<T>(rx: &crossbeam_channel::Receiver<T>, duration: Duration) -> Vec<T> {
         let start = Instant::now();
         let mut events = Vec::new();
 
         while start.elapsed() < duration {
             match rx.recv_timeout(Duration::from_millis(50)) {
                 Ok(event) => events.push(event),
-                Err(crossbeam::RecvTimeoutError::Timeout) => (),
+                Err(crossbeam_channel::RecvTimeoutError::Timeout) => (),
                 Err(e) => panic!("unexpected channel err: {:?}", e),
             }
         }

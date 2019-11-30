@@ -27,7 +27,7 @@
 extern crate serde_json;
 #[macro_use]
 extern crate serde_derive;
-extern crate crossbeam;
+extern crate crossbeam_utils;
 extern crate serde;
 extern crate xi_trace;
 
@@ -254,7 +254,7 @@ impl<W: Write + Send> RpcLoop<W> {
         RF: Send + FnOnce() -> R,
         H: Handler,
     {
-        let exit = crossbeam::scope(|scope| {
+        let exit = crossbeam_utils::thread::scope(|scope| {
             let peer = self.get_raw_peer();
             peer.reset_needs_exit();
 
