@@ -208,7 +208,7 @@ impl LspPlugin {
     ) -> Option<(String, Arc<Mutex<LanguageServerClient>>)> {
         workspace_root
             .clone()
-            .and_then(|r| Some(r.clone().into_string()))
+            .map(|r| r.into_string())
             .or_else(|| {
                 let config = &self.config.language_config[language_id];
                 if config.supports_single_file {
