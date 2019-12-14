@@ -50,8 +50,8 @@ use crate::plugins::{Plugin, PluginCatalog, PluginPid, start_plugin_process};
 use crate::plugins::rpc::ClientPluginInfo;
 use crate::recorder::Recorder;
 use crate::rpc::{
-    CoreNotification, CoreRequest, EditNotification, EditRequest,
-    PluginNotification as CorePluginNotification,
+	CoreNotification, CoreRequest, EditNotification, EditRequest,
+	PluginNotification as CorePluginNotification,
 };
 use crate::styles::{DEFAULT_THEME, ThemeStyleMap};
 use crate::syntax::LanguageId;
@@ -1082,9 +1082,9 @@ impl CoreState {
 }
 
 pub mod test_helpers {
-    use super::{BufferId, ViewId};
+	use super::{BufferId, ViewId};
 
-    pub fn new_view_id(id: usize) -> ViewId {
+	pub fn new_view_id(id: usize) -> ViewId {
         ViewId(id)
     }
 
@@ -1191,11 +1191,11 @@ impl BufferId {
 
 #[cfg(test)]
 mod tests {
-    use serde::Deserialize;
+	use serde::Deserialize;
 
-    use super::ViewId;
+	use super::ViewId;
 
-    #[test]
+	#[test]
     fn test_deserialize_view_id() {
         let de = json!("view-id-1");
         assert_eq!(ViewId::deserialize(&de).unwrap(), ViewId(1));

@@ -308,18 +308,18 @@ fn mode_from_bool(is_recursive: bool) -> RecursiveMode {
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::OsStr;
-    use std::fs;
-    use std::io::Write;
-    use std::thread;
-    use std::time::{Duration, Instant};
+	use std::ffi::OsStr;
+	use std::fs;
+	use std::io::Write;
+	use std::thread;
+	use std::time::{Duration, Instant};
 
-    use crossbeam_channel::unbounded;
-    use notify::EventKind;
+	use crossbeam_channel::unbounded;
+	use notify::EventKind;
 
-    use super::*;
+	use super::*;
 
-    impl PartialEq<usize> for WatchToken {
+	impl PartialEq<usize> for WatchToken {
         fn eq(&self, other: &usize) -> bool {
             self.0 == *other
         }
