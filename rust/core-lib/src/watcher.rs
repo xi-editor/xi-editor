@@ -34,8 +34,9 @@
 //! - We are integrated with the xi_rpc runloop; events are queued as
 //! they arrive, and an idle task is scheduled.
 
-use crossbeam_channel::unbounded;
-use notify::{event::*, watcher, RecommendedWatcher, RecursiveMode, Watcher};
+#[cfg(test)]
+extern crate tempdir;
+
 use std::collections::VecDeque;
 use std::fmt;
 use std::mem;
@@ -43,6 +44,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
+
+use crossbeam_channel::unbounded;
+use notify::{Config, event::*, RecommendedWatcher, RecursiveMode, watcher, Watcher};
 
 use xi_rpc::RpcPeer;
 
@@ -98,7 +102,11 @@ impl FileWatcher {
         let state = Arc::new(Mutex::new(WatcherState::default()));
         let state_clone = state.clone();
 
-        let inner = watcher(tx_event, Duration::from_millis(100)).expect("watcher should spawn");
+        let mut inner =
+            watcher(tx_event, Duration::from_millis(100)).expect("watcher should spawn");
+        inner
+            .configure(Config::OngoingEvents(Some(Duration::from_millis(50))))
+            .expect("Failed to configure OngoingEvents");
 
         thread::spawn(move || {
             while let Ok(Ok(event)) = rx_event.recv() {
@@ -299,18 +307,17 @@ fn mode_from_bool(is_recursive: bool) -> RecursiveMode {
 }
 
 #[cfg(test)]
-extern crate tempdir;
-
-#[cfg(test)]
 mod tests {
-    use super::*;
-    use crossbeam_channel::unbounded;
-    use notify::EventKind;
     use std::ffi::OsStr;
     use std::fs;
     use std::io::Write;
     use std::thread;
     use std::time::{Duration, Instant};
+
+    use crossbeam_channel::unbounded;
+    use notify::EventKind;
+
+    use super::*;
 
     impl PartialEq<usize> for WatchToken {
         fn eq(&self, other: &usize) -> bool {

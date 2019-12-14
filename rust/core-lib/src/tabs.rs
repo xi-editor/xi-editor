@@ -21,12 +21,16 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashSet};
+#[cfg(feature = "notify")]
+use std::ffi::OsStr;
 use std::fmt;
 use std::fs::File;
 use std::io;
 use std::mem;
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "notify")]
+use notify::Event;
 use serde::de::{self, Deserialize, Deserializer, Unexpected};
 use serde::ser::{Serialize, Serializer};
 use serde_json::Value;
@@ -42,27 +46,21 @@ use crate::event_context::EventContext;
 use crate::file::FileManager;
 use crate::line_ending::LineEnding;
 use crate::plugin_rpc::{PluginNotification, PluginRequest};
+use crate::plugins::{Plugin, PluginCatalog, PluginPid, start_plugin_process};
 use crate::plugins::rpc::ClientPluginInfo;
-use crate::plugins::{start_plugin_process, Plugin, PluginCatalog, PluginPid};
 use crate::recorder::Recorder;
 use crate::rpc::{
     CoreNotification, CoreRequest, EditNotification, EditRequest,
     PluginNotification as CorePluginNotification,
 };
-use crate::styles::{ThemeStyleMap, DEFAULT_THEME};
+use crate::styles::{DEFAULT_THEME, ThemeStyleMap};
 use crate::syntax::LanguageId;
 use crate::view::View;
-use crate::whitespace::Indentation;
-use crate::width_cache::WidthCache;
-use crate::WeakXiCore;
-
 #[cfg(feature = "notify")]
 use crate::watcher::{FileWatcher, WatchToken};
-use notify::event::Flag::Ongoing;
-#[cfg(feature = "notify")]
-use notify::Event;
-#[cfg(feature = "notify")]
-use std::ffi::OsStr;
+use crate::WeakXiCore;
+use crate::whitespace::Indentation;
+use crate::width_cache::WidthCache;
 
 /// ViewIds are the primary means of routing messages between
 /// xi-core and a client view.
@@ -100,6 +98,9 @@ const THEME_FILE_EVENT_TOKEN: WatchToken = WatchToken(3);
 
 #[cfg(feature = "notify")]
 const PLUGIN_EVENT_TOKEN: WatchToken = WatchToken(4);
+
+#[cfg(feature = "notify")]
+pub const OPEN_FILE_TAIL_EVENT_TOKEN: WatchToken = WatchToken(5);
 
 #[allow(dead_code)]
 pub struct CoreState {
@@ -566,16 +567,25 @@ impl CoreState {
             None => return,
         };
         if enabled {
-            self.file_manager.update_current_position_in_tail(buffer_id);
-            self.views.get(&view_id).map(|v| v.borrow_mut().set_tail_enabled(true));
-            if let Some(mut ctx) = self.make_context(view_id) {
-                ctx.set_toggle_tail(true);
+            if let Ok(updated) = self.file_manager.update_current_position_in_tail(buffer_id) {
+                if updated {
+                    if let Some(f) = self.views.get(&view_id) {
+                        f.borrow_mut().set_tail_enabled(true)
+                    }
+                    if let Some(mut ctx) = self.make_context(view_id) {
+                        ctx.set_toggle_tail(true);
+                    }
+                }
             }
         } else {
-            self.file_manager.disable_tailing(buffer_id);
-            self.views.get(&view_id).map(|v| v.borrow_mut().set_tail_enabled(false));
-            if let Some(mut ctx) = self.make_context(view_id) {
-                ctx.set_toggle_tail(false);
+            let updated = self.file_manager.disable_tailing(buffer_id);
+            if updated {
+                if let Some(f) = self.views.get(&view_id) {
+                    f.borrow_mut().set_tail_enabled(false)
+                }
+                if let Some(mut ctx) = self.make_context(view_id) {
+                    ctx.set_toggle_tail(false);
+                }
             }
         }
     }
@@ -722,6 +732,7 @@ impl CoreState {
                 CONFIG_EVENT_TOKEN => self.handle_config_fs_event(event),
                 THEME_FILE_EVENT_TOKEN => self.handle_themes_fs_event(event),
                 PLUGIN_EVENT_TOKEN => self.handle_plugin_fs_event(event),
+                OPEN_FILE_TAIL_EVENT_TOKEN => self.handle_open_file_tail_fs_event(event),
                 _ => warn!("unexpected fs event token {:?}", token),
             }
         }
@@ -734,61 +745,23 @@ impl CoreState {
     #[cfg(feature = "notify")]
     fn handle_open_file_fs_event(&mut self, event: Event) {
         use notify::event::*;
-        let mut is_tail_event = false;
         let path = match event.kind {
             EventKind::Create(CreateKind::Any)
             | EventKind::Modify(ModifyKind::Metadata(MetadataKind::Any))
-            | EventKind::Modify(ModifyKind::Any) => {
-                let path = &event.paths[0];
+            | EventKind::Modify(ModifyKind::Any)
+                if event.flag().is_none() =>
+            {
+                &event.paths[0]
+            }
+            EventKind::Modify(ModifyKind::Any) if event.flag().is_some() => {
+                let flag_kind = event.flag().unwrap();
 
-                //sj_todo this is ugly. Needs fixing.
-                is_tail_event = match event.flag() {
-                    Some(flag) => {
-                        match flag {
-                            Flag::Notice => {
-                                let buffer_id = match self.file_manager.get_editor(path) {
-                                    Some(id) => id,
-                                    None => return,
-                                };
-                                let file_info = self.file_manager.get_info(buffer_id);
-                                match file_info {
-                                    Some(i) => {
-                                        match i.tail_position {
-                                            Some(_t) => true,
-                                            // Ignore tail events for paths which are not tailed.
-                                            None => false,
-                                        }
-                                    }
-                                    None => return,
-                                }
-                            }
-                            Ongoing => {
-                                let buffer_id = match self.file_manager.get_editor(path) {
-                                    Some(id) => id,
-                                    None => return,
-                                };
-                                let file_info = self.file_manager.get_info(buffer_id);
-                                match file_info {
-                                    Some(i) => {
-                                        match i.tail_position {
-                                            Some(_t) => true,
-                                            // Ignore tail events for paths which are not tailed.
-                                            None => {
-                                                debug!("Ignoring Ongoing events for files that are not being tailed.");
-                                                return;
-                                            }
-                                        }
-                                    }
-                                    None => return,
-                                }
-                            }
-                            _ => false,
-                        }
-                    }
-                    None => false,
-                };
-
-                path
+                if Flag::Ongoing.eq(flag_kind) {
+                    debug!("Tail events will be handled by handle_open_file_tail_fs_event()");
+                    return;
+                } else {
+                    &event.paths[0]
+                }
             }
             other => {
                 debug!("Ignoring event in open file {:?}", other);
@@ -808,30 +781,51 @@ impl CoreState {
         // A more robust solution would also hash the file's contents.
 
         if has_changes && is_pristine {
-            if is_tail_event {
-                // Since this is tail event, we need to get delta since the last time we
-                // read the file.
-                if let Ok(delta) = self.file_manager.tail(path, buffer_id) {
-                    let view_id = self
-                        .views
-                        .values()
-                        .find(|v| v.borrow().get_buffer_id() == buffer_id)
-                        .map(|v| v.borrow().get_view_id())
-                        .unwrap();
-                    self.make_context(view_id).unwrap().reload_tail(delta);
-                }
-            } else {
-                if let Ok(text) = self.file_manager.open(path, buffer_id) {
-                    // this is ugly; we don't map buffer_id -> view_id anywhere
-                    // but we know we must have a view.
-                    let view_id = self
-                        .views
-                        .values()
-                        .find(|v| v.borrow().get_buffer_id() == buffer_id)
-                        .map(|v| v.borrow().get_view_id())
-                        .unwrap();
-                    self.make_context(view_id).unwrap().reload(text);
-                }
+            if let Ok(text) = self.file_manager.open(path, buffer_id) {
+                // this is ugly; we don't map buffer_id -> view_id anywhere
+                // but we know we must have a view.
+                let view_id = self
+                    .views
+                    .values()
+                    .find(|v| v.borrow().get_buffer_id() == buffer_id)
+                    .map(|v| v.borrow().get_view_id())
+                    .unwrap();
+                self.make_context(view_id).unwrap().reload(text);
+            }
+        }
+    }
+
+    #[cfg(feature = "notify")]
+    fn handle_open_file_tail_fs_event(&mut self, event: Event) {
+        use notify::event::*;
+
+        let path = match event.kind {
+            EventKind::Modify(ModifyKind::Any) => &event.paths[0],
+            other => {
+                debug!("Ignoring event in open file {:?}", other);
+                return;
+            }
+        };
+
+        let buffer_id = match self.file_manager.get_editor(path) {
+            Some(id) => id,
+            None => return,
+        };
+
+        let has_changes = self.file_manager.check_file(path, buffer_id);
+        let is_pristine = self.editors.get(&buffer_id).map(|ed| ed.borrow().is_pristine()).unwrap();
+
+        if has_changes && is_pristine {
+            // Since this is tail event, we need to get delta since the last time we
+            // read the file.
+            if let Ok(delta) = self.file_manager.tail(path, buffer_id) {
+                let view_id = self
+                    .views
+                    .values()
+                    .find(|v| v.borrow().get_buffer_id() == buffer_id)
+                    .map(|v| v.borrow().get_view_id())
+                    .unwrap();
+                self.make_context(view_id).unwrap().reload_tail(delta);
             }
         }
     }

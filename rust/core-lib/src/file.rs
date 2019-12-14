@@ -14,6 +14,8 @@
 
 //! Interactions with the file system.
 
+#[cfg(target_family = "unix")]
+use std::{fs::Permissions, os::unix::fs::PermissionsExt};
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fmt;
@@ -26,14 +28,11 @@ use std::time::SystemTime;
 use xi_rope::Rope;
 use xi_rpc::RemoteError;
 
-use crate::tabs::BufferId;
-
 #[cfg(feature = "notify")]
-use crate::tabs::OPEN_FILE_EVENT_TOKEN;
+use crate::tabs::{OPEN_FILE_EVENT_TOKEN, OPEN_FILE_TAIL_EVENT_TOKEN};
+use crate::tabs::BufferId;
 #[cfg(feature = "notify")]
 use crate::watcher::FileWatcher;
-#[cfg(target_family = "unix")]
-use std::{fs::Permissions, os::unix::fs::PermissionsExt};
 
 const UTF8_BOM: &str = "\u{feff}";
 
@@ -112,10 +111,8 @@ impl FileManager {
             return Ok(Rope::from(""));
         }
 
-        //sj_todo handle unwrap.
-        let existing_file_info = self.file_info.get(&id).unwrap();
+        let existing_file_info = self.file_info.get(&id).expect("File info must be present");
         let (rope, info) = try_tailing_file(path, existing_file_info)?;
-
         self.file_info.insert(id, info);
         Ok(rope)
     }
@@ -140,6 +137,8 @@ impl FileManager {
             self.open_files.remove(&info.path);
             #[cfg(feature = "notify")]
             self.watcher.unwatch(&info.path, OPEN_FILE_EVENT_TOKEN);
+            #[cfg(feature = "notify")]
+            self.watcher.unwatch(&info.path, OPEN_FILE_TAIL_EVENT_TOKEN);
         }
     }
 
@@ -179,6 +178,8 @@ impl FileManager {
             self.open_files.remove(&prev_path);
             #[cfg(feature = "notify")]
             self.watcher.unwatch(&prev_path, OPEN_FILE_EVENT_TOKEN);
+            #[cfg(feature = "notify")]
+            self.watcher.unwatch(&prev_path, OPEN_FILE_TAIL_EVENT_TOKEN);
         } else if self.file_info[&id].has_changed {
             return Err(FileError::HasChanged(path.to_owned()));
         } else {
@@ -191,24 +192,39 @@ impl FileManager {
     }
 
     #[cfg(feature = "notify")]
-    pub fn update_current_position_in_tail(&mut self, id: BufferId) -> Result<(), FileError> {
-        //sj_todo handle unwrap
-        let file_info = self.file_info.get_mut(&id).unwrap();
-        let path = &file_info.path.to_owned();
+    pub fn update_current_position_in_tail(
+        &mut self,
+        buffer_id: BufferId,
+    ) -> Result<bool, FileError> {
+        if let Some(file_info) = self.file_info.get_mut(&buffer_id) {
+            let path = &file_info.path.to_owned();
 
-        let mut f = File::open(path).map_err(|e| FileError::Io(e, path.to_owned()))?;
-        let end_position =
-            f.seek(SeekFrom::End(0)).map_err(|e| FileError::Io(e, path.to_owned()))?;
+            let mut f = File::open(path).map_err(|e| FileError::Io(e, path.to_owned()))?;
+            let end_position =
+                f.seek(SeekFrom::End(0)).map_err(|e| FileError::Io(e, path.to_owned()))?;
 
-        file_info.tail_position = Some(end_position);
-        Ok(())
+            file_info.tail_position = Some(end_position);
+            self.watcher.unwatch(path, OPEN_FILE_EVENT_TOKEN);
+            self.watcher.watch(path, false, OPEN_FILE_TAIL_EVENT_TOKEN);
+            Ok(true)
+        } else {
+            info!("Non-existent file cannot be tailed!");
+            Ok(false)
+        }
     }
 
     #[cfg(feature = "notify")]
-    pub fn disable_tailing(&mut self, id: BufferId) -> Result<(), FileError> {
-        let existing_file_info = self.file_info.get_mut(&id).unwrap();
-        existing_file_info.tail_position = None;
-        Ok(())
+    pub fn disable_tailing(&mut self, buffer_id: BufferId) -> bool {
+        if let Some(file_info) = self.file_info.get_mut(&buffer_id) {
+            let path = &file_info.path.to_owned();
+            file_info.tail_position = None;
+            self.watcher.unwatch(path, OPEN_FILE_TAIL_EVENT_TOKEN);
+            self.watcher.watch(path, false, OPEN_FILE_EVENT_TOKEN);
+            true
+        } else {
+            info!("Non-existent file cannot be tailed!");
+            false
+        }
     }
 }
 
@@ -224,8 +240,9 @@ where
     let end_position =
         f.seek(SeekFrom::End(0)).map_err(|e| FileError::Io(e, path.as_ref().to_owned()))?;
 
-    //sj_todo unwrap needs to be handled for None.
-    let current_position = file_info.tail_position.unwrap();
+    let current_position = file_info.tail_position.expect(
+        "tail_position is None. Since we are tailing a file, tail_position cannot be None.",
+    );
     let diff = end_position - current_position;
     let mut buf = vec![0; diff as usize];
     f.seek(SeekFrom::Current(-(buf.len() as i64))).unwrap();
