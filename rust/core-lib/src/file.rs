@@ -14,8 +14,6 @@
 
 //! Interactions with the file system.
 
-#[cfg(target_family = "unix")]
-use std::{fs::Permissions, os::unix::fs::PermissionsExt};
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fmt;
@@ -24,13 +22,15 @@ use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::str;
 use std::time::SystemTime;
+#[cfg(target_family = "unix")]
+use std::{fs::Permissions, os::unix::fs::PermissionsExt};
 
 use xi_rope::Rope;
 use xi_rpc::RemoteError;
 
+use crate::tabs::BufferId;
 #[cfg(feature = "notify")]
 use crate::tabs::{OPEN_FILE_EVENT_TOKEN, OPEN_FILE_TAIL_EVENT_TOKEN};
-use crate::tabs::BufferId;
 #[cfg(feature = "notify")]
 use crate::watcher::FileWatcher;
 

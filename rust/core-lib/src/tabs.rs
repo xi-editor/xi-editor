@@ -46,21 +46,21 @@ use crate::event_context::EventContext;
 use crate::file::FileManager;
 use crate::line_ending::LineEnding;
 use crate::plugin_rpc::{PluginNotification, PluginRequest};
-use crate::plugins::{Plugin, PluginCatalog, PluginPid, start_plugin_process};
 use crate::plugins::rpc::ClientPluginInfo;
+use crate::plugins::{start_plugin_process, Plugin, PluginCatalog, PluginPid};
 use crate::recorder::Recorder;
 use crate::rpc::{
-	CoreNotification, CoreRequest, EditNotification, EditRequest,
-	PluginNotification as CorePluginNotification,
+    CoreNotification, CoreRequest, EditNotification, EditRequest,
+    PluginNotification as CorePluginNotification,
 };
-use crate::styles::{DEFAULT_THEME, ThemeStyleMap};
+use crate::styles::{ThemeStyleMap, DEFAULT_THEME};
 use crate::syntax::LanguageId;
 use crate::view::View;
 #[cfg(feature = "notify")]
 use crate::watcher::{FileWatcher, WatchToken};
-use crate::WeakXiCore;
 use crate::whitespace::Indentation;
 use crate::width_cache::WidthCache;
+use crate::WeakXiCore;
 
 /// ViewIds are the primary means of routing messages between
 /// xi-core and a client view.
@@ -1082,9 +1082,9 @@ impl CoreState {
 }
 
 pub mod test_helpers {
-	use super::{BufferId, ViewId};
+    use super::{BufferId, ViewId};
 
-	pub fn new_view_id(id: usize) -> ViewId {
+    pub fn new_view_id(id: usize) -> ViewId {
         ViewId(id)
     }
 
@@ -1191,11 +1191,11 @@ impl BufferId {
 
 #[cfg(test)]
 mod tests {
-	use serde::Deserialize;
+    use serde::Deserialize;
 
-	use super::ViewId;
+    use super::ViewId;
 
-	#[test]
+    #[test]
     fn test_deserialize_view_id() {
         let de = json!("view-id-1");
         assert_eq!(ViewId::deserialize(&de).unwrap(), ViewId(1));
