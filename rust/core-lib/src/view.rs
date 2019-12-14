@@ -255,7 +255,7 @@ impl View {
             Gesture { line, col, ty } => self.do_gesture(text, line, col, ty),
             GotoLine { line } => self.goto_line(text, line),
             Find { chars, case_sensitive, regex, whole_words } => {
-                let id = self.find.first().and_then(|q| Some(q.id()));
+                let id = self.find.first().map(|q| q.id());
                 let query_changes = FindQuery { id, chars, case_sensitive, regex, whole_words };
                 self.set_find(text, [query_changes].to_vec())
             }
