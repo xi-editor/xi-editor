@@ -62,8 +62,6 @@ Here are some front-ends in various stages of development:
 
 * [xi-mac](https://github.com/xi-editor/xi-mac), the official macOS front-end.
 
-* [fuchsia/xi](https://fuchsia.googlesource.com/topaz/+/master/bin/xi/), a front-end in Flutter for Fuchsia.
-
 * [xi-gtk](https://github.com/eyelash/xi-gtk), a GTK+ front-end.
 
 * [xi-term](https://github.com/xi-frontend/xi-term), a text UI.
