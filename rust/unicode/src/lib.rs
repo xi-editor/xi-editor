@@ -72,26 +72,53 @@ impl<'a> Iterator for LineBreakIterator<'a> {
     // return break pos and whether it's a hard break
     fn next(&mut self) -> Option<(usize, bool)> {
         loop {
-            if self.ix > self.s.len() {
-                return None;
-            } else if self.ix == self.s.len() {
-                // LB3, break at EOT
-                self.ix += 1;
-                return Some((self.s.len(), true));
+            use std::cmp::Ordering;
+
+            match self.ix.cmp(&self.s.len()) {
+                Ordering::Greater => {
+                    return None;
+                }
+                Ordering::Equal => {
+                    // LB3, break at EOT
+                    self.ix += 1;
+                    return Some((self.s.len(), true));
+                }
+                Ordering::Less => {
+                    let (lb, len) = linebreak_property_str(self.s, self.ix);
+                    let i = (self.state as usize) * N_LINEBREAK_CATEGORIES + (lb as usize);
+                    let new = LINEBREAK_STATE_MACHINE[i];
+                    //println!("\"{}\"[{}], state {} + lb {} -> {}", &self.s[self.ix..], self.ix, self.state, lb, new);
+                    let result = self.ix;
+                    self.ix += len;
+                    if (new as i8) < 0 {
+                        // break found
+                        self.state = new & 0x3f;
+                        return Some((result, new >= 0xc0));
+                    } else {
+                        self.state = new;
+                    }
+                }
             }
-            let (lb, len) = linebreak_property_str(self.s, self.ix);
-            let i = (self.state as usize) * N_LINEBREAK_CATEGORIES + (lb as usize);
-            let new = LINEBREAK_STATE_MACHINE[i];
-            //println!("\"{}\"[{}], state {} + lb {} -> {}", &self.s[self.ix..], self.ix, self.state, lb, new);
-            let result = self.ix;
-            self.ix += len;
-            if (new as i8) < 0 {
-                // break found
-                self.state = new & 0x3f;
-                return Some((result, new >= 0xc0));
-            } else {
-                self.state = new;
-            }
+            // if self.ix > self.s.len() {
+            //     return None;
+            // } else if self.ix == self.s.len() {
+            //     // LB3, break at EOT
+            //     self.ix += 1;
+            //     return Some((self.s.len(), true));
+            // }
+            // let (lb, len) = linebreak_property_str(self.s, self.ix);
+            // let i = (self.state as usize) * N_LINEBREAK_CATEGORIES + (lb as usize);
+            // let new = LINEBREAK_STATE_MACHINE[i];
+            // //println!("\"{}\"[{}], state {} + lb {} -> {}", &self.s[self.ix..], self.ix, self.state, lb, new);
+            // let result = self.ix;
+            // self.ix += len;
+            // if (new as i8) < 0 {
+            //     // break found
+            //     self.state = new & 0x3f;
+            //     return Some((result, new >= 0xc0));
+            // } else {
+            //     self.state = new;
+            // }
         }
     }
 }
