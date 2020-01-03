@@ -188,7 +188,7 @@ impl Parser for RustParser {
     fn get_all_scopes(&self) -> Vec<Vec<String>> {
         ALL_SCOPES
             .iter()
-            .map(|stack| stack.iter().map(|s| s.to_string()).collect::<Vec<_>>())
+            .map(|stack| stack.iter().map(|s| (*s).to_string()).collect::<Vec<_>>())
             .collect()
     }
 

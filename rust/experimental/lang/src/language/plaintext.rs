@@ -41,7 +41,7 @@ impl Parser for PlaintextParser {
     }
 
     fn get_all_scopes(&self) -> Vec<Vec<String>> {
-        vec![PLAINTEXT_SOURCE_SCOPE.iter().map(|it| it.to_string()).collect()]
+        vec![PLAINTEXT_SOURCE_SCOPE.iter().map(|it| (*it).to_string()).collect()]
     }
 
     fn get_scope_id_for_state(&self, _state: State) -> ScopeId {
