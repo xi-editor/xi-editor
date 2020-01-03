@@ -18,6 +18,8 @@
 //! the JSON-RPC protocol and the types here.
 //!
 //! [Serde]: https://serde.rs
+#![allow(clippy::needless_doctest_main)]
+
 use std::path::PathBuf;
 
 use serde::de::{self, Deserialize, Deserializer};

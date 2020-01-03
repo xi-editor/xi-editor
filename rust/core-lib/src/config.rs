@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![allow(clippy::redundant_clone)]
+
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;

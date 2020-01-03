@@ -14,6 +14,8 @@
 
 //! Keeping track of available plugins.
 
+#![allow(clippy::redundant_clone)]
+
 use std::collections::HashMap;
 use std::fs;
 use std::io::{self, Read};
