@@ -200,9 +200,11 @@ fn test_settings_commands() {
     let resp = rx.expect_response().unwrap();
     assert_eq!(resp["tab_size"], json!(4));
 
-    let json = make_reader(r#"{"method":"modify_user_config","params":{"domain":{"user_override":"view-id-1"},"changes":{"font_face": "Comic Sans"}}}
+    let json = make_reader(
+        r#"{"method":"modify_user_config","params":{"domain":{"user_override":"view-id-1"},"changes":{"font_face": "Comic Sans"}}}
 {"method":"modify_user_config","params":{"domain":{"syntax":"rust"},"changes":{"font_size":42}}}
-{"method":"modify_user_config","params":{"domain":"general","changes":{"tab_size":13,"font_face":"Papyrus"}}}"#);
+{"method":"modify_user_config","params":{"domain":"general","changes":{"tab_size":13,"font_face":"Papyrus"}}}"#,
+    );
     rpc_looper.mainloop(|| json, &mut state).unwrap();
     // discard config_changed
     rx.expect_rpc("config_changed");
@@ -217,7 +219,9 @@ fn test_settings_commands() {
     assert_eq!(resp["font_face"], json!("Comic Sans"));
 
     // null value should clear entry from this config
-    let json = make_reader(r#"{"method":"modify_user_config","params":{"domain":{"user_override":"view-id-1"},"changes":{"font_face": null}}}"#);
+    let json = make_reader(
+        r#"{"method":"modify_user_config","params":{"domain":{"user_override":"view-id-1"},"changes":{"font_face": null}}}"#,
+    );
     rpc_looper.mainloop(|| json, &mut state).unwrap();
     let resp = rx.expect_rpc("config_changed");
     assert_eq!(resp.0["params"]["changes"]["font_face"], json!("Papyrus"));
@@ -259,8 +263,7 @@ const MOVEMENT_RPCS: &str = r#"{"method":"edit","params":{"view_id":"view-id-1",
 {"method":"edit","params":{"view_id":"view-id-1","method":"add_selection_below","params":[]}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"collapse_selections","params":[]}}"#;
 
-const TEXT_EDIT_RPCS: &str =
-    r#"{"method":"edit","params":{"view_id":"view-id-1","method":"insert","params":{"chars":"a"}}}
+const TEXT_EDIT_RPCS: &str = r#"{"method":"edit","params":{"view_id":"view-id-1","method":"insert","params":{"chars":"a"}}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"delete_backward","params":[]}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"delete_forward","params":[]}}
 {"method":"edit","params":{"view_id":"view-id-1","method":"delete_word_forward","params":[]}}
