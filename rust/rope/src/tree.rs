@@ -654,7 +654,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
     /// When there is no previous boundary, returns `None` and the cursor becomes invalid.
     ///
     /// Return value: the position of the boundary, if it exists.
-    pub fn prev<M: Metric<N>>(&mut self) -> Option<(usize)> {
+    pub fn prev<M: Metric<N>>(&mut self) -> Option<usize> {
         if self.position == 0 || self.leaf.is_none() {
             self.leaf = None;
             return None;
@@ -691,7 +691,7 @@ impl<'a, N: NodeInfo> Cursor<'a, N> {
     /// When there is no next boundary, returns `None` and the cursor becomes invalid.
     ///
     /// Return value: the position of the boundary, if it exists.
-    pub fn next<M: Metric<N>>(&mut self) -> Option<(usize)> {
+    pub fn next<M: Metric<N>>(&mut self) -> Option<usize> {
         if self.position >= self.root.len() || self.leaf.is_none() {
             self.leaf = None;
             return None;
