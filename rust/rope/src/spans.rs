@@ -243,15 +243,30 @@ impl<T: Clone> Spans<T> {
 
             // if these two spans do not share a start point, create a new span from
             // the prefix of the leading span.
-            if red_iv.start() < blue_iv.start() {
-                let iv = red_iv.prefix(blue_iv);
-                sb.add_span(iv, f(red_val, None));
-                red_iv = red_iv.suffix(iv);
-            } else if blue_iv.start() < red_iv.start() {
-                let iv = blue_iv.prefix(red_iv);
-                sb.add_span(iv, f(blue_val, None));
-                blue_iv = blue_iv.suffix(iv);
+            use std::cmp::Ordering;
+
+            match red_iv.start().cmp(&blue_iv.start()) {
+                Ordering::Less => {
+                    let iv = red_iv.prefix(blue_iv);
+                    sb.add_span(iv, f(red_val, None));
+                    red_iv = red_iv.suffix(iv);
+                }
+                Ordering::Greater => {
+                    let iv = blue_iv.prefix(red_iv);
+                    sb.add_span(iv, f(blue_val, None));
+                    blue_iv = blue_iv.suffix(iv);
+                }
+                Ordering::Equal => {}
             }
+            // if red_iv.start() < blue_iv.start() {
+            //     let iv = red_iv.prefix(blue_iv);
+            //     sb.add_span(iv, f(red_val, None));
+            //     red_iv = red_iv.suffix(iv);
+            // } else if blue_iv.start() < red_iv.start() {
+            //     let iv = blue_iv.prefix(red_iv);
+            //     sb.add_span(iv, f(blue_val, None));
+            //     blue_iv = blue_iv.suffix(iv);
+            // }
 
             assert!(red_iv.start() == blue_iv.start());
             // create a new span by merging the overlapping regions.
