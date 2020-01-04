@@ -37,17 +37,8 @@ pub fn remove_n_at<T: Clone>(v: &mut Vec<T>, index: usize, n: usize) {
             }
             v.truncate(new_len);
         }
-        Ordering::Less => {}
+        Ordering::Less => (),
     }
-    // if n == 1 {
-    //     v.remove(index);
-    // } else if n > 1 {
-    //     let new_len = v.len() - n;
-    //     for i in index..new_len {
-    //         v[i] = v[i + n].clone();
-    //     }
-    //     v.truncate(new_len);
-    // }
 }
 
 impl IndexSet {

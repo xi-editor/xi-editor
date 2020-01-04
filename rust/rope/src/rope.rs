@@ -488,12 +488,6 @@ impl Rope {
             }
             Ordering::Less => self.count_base_units::<LinesMetric>(line),
         }
-        // if line > max_line {
-        //     panic!("line number {} beyond last line {}", line, max_line);
-        // } else if line == max_line {
-        //     return self.len();
-        // }
-        // self.count_base_units::<LinesMetric>(line)
     }
 
     /// Returns an iterator over chunks of the rope.

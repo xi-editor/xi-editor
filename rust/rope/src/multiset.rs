@@ -443,21 +443,6 @@ impl<'a> Iterator for ZipIter<'a> {
                         self.b_consumed - self.consumed
                     }
                 };
-                // let len = if a_len + self.a_consumed == b_len + self.b_consumed {
-                //     self.a_consumed += a_len;
-                //     self.a_i += 1;
-                //     self.b_consumed += b_len;
-                //     self.b_i += 1;
-                //     self.a_consumed - self.consumed
-                // } else if a_len + self.a_consumed < b_len + self.b_consumed {
-                //     self.a_consumed += a_len;
-                //     self.a_i += 1;
-                //     self.a_consumed - self.consumed
-                // } else {
-                //     self.b_consumed += b_len;
-                //     self.b_i += 1;
-                //     self.b_consumed - self.consumed
-                // };
                 self.consumed += len;
                 Some(ZipSegment { len, a_count, b_count })
             }
