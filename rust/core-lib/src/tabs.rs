@@ -19,8 +19,6 @@
 //! This file is called 'tabs' for historical reasons, and should probably
 //! be renamed.
 
-#![allow(clippy::redundant_clone)]
-
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashSet};
 use std::fmt;
@@ -525,7 +523,7 @@ impl CoreState {
             //TODO: lots of races possible here, we need to keep track of
             //pending launches.
             start_plugin_process(
-                manifest.clone(),
+                manifest,
                 self.next_plugin_id(),
                 self.self_ref.as_ref().unwrap().clone(),
             );
