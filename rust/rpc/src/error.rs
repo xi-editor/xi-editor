@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![allow(clippy::needless_doctest_main)]
-
 use std::fmt;
 use std::io;
 
@@ -67,7 +65,6 @@ pub enum ReadError {
 /// ```
 /// # extern crate xi_rpc;
 /// # extern crate serde_json;
-/// # fn main() {
 /// use xi_rpc::RemoteError;
 /// use serde_json::Value;
 ///
@@ -81,7 +78,6 @@ pub enum ReadError {
 /// assert_eq!(err,
 ///            RemoteError::InvalidRequest(
 ///                Some(Value::String("Additional details".into()))));
-/// # }
 /// ```
 ///
 /// A custom error:
@@ -89,7 +85,6 @@ pub enum ReadError {
 /// ```
 /// # extern crate xi_rpc;
 /// # extern crate serde_json;
-/// # fn main() {
 /// use xi_rpc::RemoteError;
 /// use serde_json::Value;
 ///
@@ -100,7 +95,6 @@ pub enum ReadError {
 ///
 /// let err = serde_json::from_str::<RemoteError>(&json).unwrap();
 /// assert_eq!(err, RemoteError::custom(404, "Not Found", None));
-/// # }
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub enum RemoteError {
