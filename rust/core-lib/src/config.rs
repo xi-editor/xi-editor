@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#![allow(clippy::redundant_clone)]
-
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
@@ -467,10 +465,7 @@ impl ConfigManager {
         config: Table,
     ) -> Result<Vec<(BufferId, Table)>, ConfigError> {
         self.check_table(&config)?;
-        self.configs
-            .entry(domain.clone())
-            .or_insert_with(|| ConfigPair::with_base(None))
-            .set_table(config);
+        self.configs.entry(domain).or_insert_with(|| ConfigPair::with_base(None)).set_table(config);
         Ok(self.update_all_buffer_configs())
     }
 
@@ -495,7 +490,7 @@ impl ConfigManager {
     /// from disk.
     pub(crate) fn table_for_update(&mut self, domain: ConfigDomain, changes: Table) -> Table {
         self.configs
-            .entry(domain.clone())
+            .entry(domain)
             .or_insert_with(|| ConfigPair::with_base(None))
             .table_for_update(changes)
     }
@@ -759,7 +754,7 @@ pub(crate) fn table_from_toml_str(s: &str) -> Result<Table, toml::de::Error> {
 /// (used to store config values internally).
 fn from_toml_value(value: toml::Value) -> Value {
     match value {
-        toml::Value::String(value) => value.to_owned().into(),
+        toml::Value::String(value) => value.into(),
         toml::Value::Float(value) => value.into(),
         toml::Value::Integer(value) => value.into(),
         toml::Value::Boolean(value) => value.into(),
