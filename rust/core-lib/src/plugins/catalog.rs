@@ -116,6 +116,7 @@ fn find_all_manifests(paths: &[PathBuf]) -> Vec<PathBuf> {
             dir.flat_map(|item| item.map(|p| p.path()).ok())
                 .map(|dir| dir.join("manifest.toml"))
                 .filter(|f| f.exists())
+                .for_each(|f| manifest_paths.push(f))
         });
         if let Err(e) = result {
             error!("error reading plugin path {:?}, {:?}", path, e);
