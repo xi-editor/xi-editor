@@ -523,7 +523,7 @@ impl CoreState {
             //TODO: lots of races possible here, we need to keep track of
             //pending launches.
             start_plugin_process(
-                manifest.clone(),
+                manifest,
                 self.next_plugin_id(),
                 self.self_ref.as_ref().unwrap().clone(),
             );

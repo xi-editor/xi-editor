@@ -18,7 +18,7 @@
 // Note: this data structure has nontrivial overlap with Subset in the rope
 // crate. Maybe we don't need both.
 
-use std::cmp::{max, min};
+use std::cmp::{max, min, Ordering};
 use xi_rope::{RopeDelta, Transformer};
 
 pub struct IndexSet {
@@ -26,14 +26,18 @@ pub struct IndexSet {
 }
 
 pub fn remove_n_at<T: Clone>(v: &mut Vec<T>, index: usize, n: usize) {
-    if n == 1 {
-        v.remove(index);
-    } else if n > 1 {
-        let new_len = v.len() - n;
-        for i in index..new_len {
-            v[i] = v[i + n].clone();
+    match n.cmp(&1) {
+        Ordering::Equal => {
+            v.remove(index);
         }
-        v.truncate(new_len);
+        Ordering::Greater => {
+            let new_len = v.len() - n;
+            for i in index..new_len {
+                v[i] = v[i + n].clone();
+            }
+            v.truncate(new_len);
+        }
+        Ordering::Less => (),
     }
 }
 

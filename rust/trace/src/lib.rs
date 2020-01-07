@@ -423,7 +423,7 @@ where
 impl Sample {
     fn thread_name() -> Option<StrCow> {
         let thread = std::thread::current();
-        thread.name().map(|ref s| to_cow_str(s.to_string()))
+        thread.name().map(|ref s| to_cow_str((*s).to_string()))
     }
 
     /// Constructs a Begin or End sample.  Should not be used directly.  Instead

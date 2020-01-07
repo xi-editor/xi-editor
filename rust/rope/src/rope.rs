@@ -15,8 +15,10 @@
 //! A rope data structure with a line count metric and (soon) other useful
 //! info.
 
+#![allow(clippy::needless_return)]
+
 use std::borrow::Cow;
-use std::cmp::{max, min};
+use std::cmp::{max, min, Ordering};
 use std::fmt;
 use std::ops::Add;
 use std::str::{self, FromStr};
@@ -477,12 +479,15 @@ impl Rope {
     /// Callers are expected to validate their input.
     pub fn offset_of_line(&self, line: usize) -> usize {
         let max_line = self.measure::<LinesMetric>() + 1;
-        if line > max_line {
-            panic!("line number {} beyond last line {}", line, max_line);
-        } else if line == max_line {
-            return self.len();
+        match line.cmp(&max_line) {
+            Ordering::Greater => {
+                panic!("line number {} beyond last line {}", line, max_line);
+            }
+            Ordering::Equal => {
+                return self.len();
+            }
+            Ordering::Less => self.count_base_units::<LinesMetric>(line),
         }
-        self.count_base_units::<LinesMetric>(line)
     }
 
     /// Returns an iterator over chunks of the rope.

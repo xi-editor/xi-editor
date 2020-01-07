@@ -18,6 +18,7 @@
 //! the JSON-RPC protocol and the types here.
 //!
 //! [Serde]: https://serde.rs
+
 use std::path::PathBuf;
 
 use serde::de::{self, Deserialize, Deserializer};
@@ -51,7 +52,6 @@ pub struct EmptyStruct {}
 /// ```
 /// # extern crate xi_core_lib as xi_core;
 /// extern crate serde_json;
-/// # fn main() {
 /// use crate::xi_core::rpc::CoreNotification;
 ///
 /// let json = r#"{
@@ -64,7 +64,6 @@ pub struct EmptyStruct {}
 ///     CoreNotification::CloseView { .. } => (), // expected
 ///     other => panic!("Unexpected variant"),
 /// }
-/// # }
 /// ```
 ///
 /// The `client_started` command:
@@ -72,7 +71,6 @@ pub struct EmptyStruct {}
 /// ```
 /// # extern crate xi_core_lib as xi_core;
 /// extern crate serde_json;
-/// # fn main() {
 /// use crate::xi_core::rpc::CoreNotification;
 ///
 /// let json = r#"{
@@ -85,7 +83,6 @@ pub struct EmptyStruct {}
 ///     CoreNotification::ClientStarted { .. }  => (), // expected
 ///     other => panic!("Unexpected variant"),
 /// }
-/// # }
 /// ```
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -220,7 +217,6 @@ pub enum CoreNotification {
 /// ```
 /// # extern crate xi_core_lib as xi_core;
 /// extern crate serde_json;
-/// # fn main() {
 /// use crate::xi_core::rpc::CoreRequest;
 ///
 /// let json = r#"{
@@ -233,7 +229,6 @@ pub enum CoreNotification {
 ///     CoreRequest::NewView { .. } => (), // expected
 ///     other => panic!("Unexpected variant {:?}", other),
 /// }
-/// # }
 /// ```
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -269,7 +264,6 @@ pub enum CoreRequest {
 /// ```
 /// # extern crate xi_core_lib as xi_core;
 /// extern crate serde_json;
-/// # fn main() {
 /// use crate::xi_core::rpc::*;
 ///
 /// let json = r#"{
@@ -283,7 +277,6 @@ pub enum CoreRequest {
 ///     EditNotification::Scroll( .. ) => (), // expected
 ///     other => panic!("Unexpected variant {:?}", other),
 /// }
-/// # }
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct EditCommand<T> {

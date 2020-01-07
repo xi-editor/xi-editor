@@ -424,20 +424,24 @@ impl<'a> Iterator for ZipIter<'a> {
                 Some(&Segment { len: a_len, count: a_count }),
                 Some(&Segment { len: b_len, count: b_count }),
             ) => {
-                let len = if a_len + self.a_consumed == b_len + self.b_consumed {
-                    self.a_consumed += a_len;
-                    self.a_i += 1;
-                    self.b_consumed += b_len;
-                    self.b_i += 1;
-                    self.a_consumed - self.consumed
-                } else if a_len + self.a_consumed < b_len + self.b_consumed {
-                    self.a_consumed += a_len;
-                    self.a_i += 1;
-                    self.a_consumed - self.consumed
-                } else {
-                    self.b_consumed += b_len;
-                    self.b_i += 1;
-                    self.b_consumed - self.consumed
+                let len = match (a_len + self.a_consumed).cmp(&(b_len + self.b_consumed)) {
+                    cmp::Ordering::Equal => {
+                        self.a_consumed += a_len;
+                        self.a_i += 1;
+                        self.b_consumed += b_len;
+                        self.b_i += 1;
+                        self.a_consumed - self.consumed
+                    }
+                    cmp::Ordering::Less => {
+                        self.a_consumed += a_len;
+                        self.a_i += 1;
+                        self.a_consumed - self.consumed
+                    }
+                    cmp::Ordering::Greater => {
+                        self.b_consumed += b_len;
+                        self.b_i += 1;
+                        self.b_consumed - self.consumed
+                    }
                 };
                 self.consumed += len;
                 Some(ZipSegment { len, a_count, b_count })
