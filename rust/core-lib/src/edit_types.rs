@@ -191,6 +191,8 @@ impl From<EditNotification> for EventDomain {
                 ViewEvent::ModifySelection(Movement::EndOfParagraph).into(),
             MoveToLeftEndOfLine =>
                 ViewEvent::Move(Movement::LeftOfLine).into(),
+            MoveToLeftNonWhitespaceEndOfLine =>
+                ViewEvent::Move(Movement::LeftNonWhitespaceEndOfLine).into(),
             MoveToLeftEndOfLineAndModifySelection =>
                 ViewEvent::ModifySelection(Movement::LeftOfLine).into(),
             MoveToRightEndOfLine =>

@@ -36,6 +36,8 @@ pub enum Movement {
     LeftOfLine,
     /// Move to right end of visible line.
     RightOfLine,
+    /// Move to the left non-whitespace end of visible line.
+    LeftNonWhitespaceEndOfLine,
     /// Move up one visible line.
     Up,
     /// Move down one visible line.
@@ -225,6 +227,19 @@ pub fn region_movement(
                 }
             }
             (offset, None)
+        }
+        Movement::LeftNonWhitespaceEndOfLine => {
+            let line = view.line_of_offset(text, r.end);
+            let mut bol_offset = view.offset_of_line(text, line);
+            let mut word_cursor = WordCursor::new(text, bol_offset);
+            let offset = {
+                word_cursor.next_boundary();
+                word_cursor.prev_boundary().unwrap_or(0)
+            };
+            if offset != r.end {
+                bol_offset = offset;
+            }
+            (bol_offset, None)
         }
         Movement::Up => vertical_motion(r, view, text, -1, modify),
         Movement::Down => vertical_motion(r, view, text, 1, modify),
