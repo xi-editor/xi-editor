@@ -23,7 +23,7 @@ task:
         image: high-sierra-xcode-9.4.1
       env:
         PATH: $PATH:$CARGO_HOME/bin
-      install_cmake_script: brew install cmake
+      install_cmake_script: brew install cmake || brew upgrade cmake
       matrix:
         - name: test (macOS)
           install_rust_script: curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain stable
