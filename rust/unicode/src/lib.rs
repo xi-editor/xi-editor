@@ -13,9 +13,13 @@
 // limitations under the License.
 
 //! Unicode utilities useful for text editing, including a line breaking iterator.
+#![no_std]
+
+extern crate alloc;
+
 mod tables;
 
-use std::cmp::Ordering;
+use core::cmp::Ordering;
 
 use crate::tables::*;
 
@@ -182,7 +186,7 @@ impl LineBreakLeafIter {
     }
 }
 
-fn is_in_asc_list<T: std::cmp::PartialOrd>(c: T, list: &[T], start: usize, end: usize) -> bool {
+fn is_in_asc_list<T: core::cmp::PartialOrd>(c: T, list: &[T], start: usize, end: usize) -> bool {
     if c == list[start] || c == list[end] {
         return true;
     }
@@ -250,6 +254,8 @@ mod tests {
     use crate::linebreak_property;
     use crate::linebreak_property_str;
     use crate::LineBreakIterator;
+    use alloc::vec;
+    use alloc::vec::*;
 
     #[test]
     fn linebreak_prop() {
