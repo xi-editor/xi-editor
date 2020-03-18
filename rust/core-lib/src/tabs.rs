@@ -377,7 +377,7 @@ impl CoreState {
         self.editors.insert(buffer_id, editor);
         self.views.insert(view_id, view);
 
-        let config = self.config_manager.add_buffer(buffer_id, path.as_ref().map(|p| p.as_path()));
+        let config = self.config_manager.add_buffer(buffer_id, path.as_deref());
 
         // NOTE: because this is a synchronous call, we have to initialize the
         // view and return the view_id before we can send any events to this

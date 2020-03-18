@@ -105,7 +105,7 @@ impl<C: Cache> View<C> {
     }
 
     pub fn get_path(&self) -> Option<&Path> {
-        self.path.as_ref().map(PathBuf::as_path)
+        self.path.as_deref()
     }
 
     pub fn get_language_id(&self) -> &LanguageId {

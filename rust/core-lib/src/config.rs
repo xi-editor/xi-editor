@@ -694,25 +694,15 @@ impl fmt::Display for ConfigError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::ConfigError::*;
         match *self {
-            UnknownDomain(ref s) => write!(f, "{}: {}", self.description(), s),
-            Parse(ref p, ref e) => write!(f, "{} ({:?}), {:?}", self.description(), p, e),
-            Io(ref e) => write!(f, "error loading config: {:?}", e),
+            UnknownDomain(ref s) => write!(f, "UnknownDomain: {}", s),
+            Parse(ref p, ref e) => write!(f, "Parse ({:?}), {}", p, e),
+            Io(ref e) => write!(f, "error loading config: {}", e),
             UnexpectedItem(ref e) => write!(f, "{}", e),
         }
     }
 }
 
-impl Error for ConfigError {
-    fn description(&self) -> &str {
-        use self::ConfigError::*;
-        match *self {
-            UnknownDomain(..) => "unknown domain",
-            Parse(_, ref e) => e.description(),
-            Io(ref e) => e.description(),
-            UnexpectedItem(ref e) => e.description(),
-        }
-    }
-}
+impl Error for ConfigError {}
 
 impl From<io::Error> for ConfigError {
     fn from(src: io::Error) -> ConfigError {

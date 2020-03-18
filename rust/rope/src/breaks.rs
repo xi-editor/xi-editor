@@ -225,7 +225,7 @@ impl BreakBuilder {
 
     pub fn add_break(&mut self, len: usize) {
         if self.leaf.data.len() == MAX_LEAF {
-            let leaf = mem::replace(&mut self.leaf, BreaksLeaf::default());
+            let leaf = mem::take(&mut self.leaf);
             self.b.push(Node::from_leaf(leaf));
         }
         self.leaf.len += len;

@@ -127,7 +127,7 @@ impl<T: Clone> SpansBuilder<T> {
     pub fn add_span<IV: IntervalBounds>(&mut self, iv: IV, data: T) {
         let iv = iv.into_interval(self.total_len);
         if self.leaf.spans.len() == MAX_LEAF {
-            let mut leaf = mem::replace(&mut self.leaf, SpansLeaf::default());
+            let mut leaf = mem::take(&mut self.leaf);
             leaf.len = iv.start() - self.len;
             self.len = iv.start();
             self.b.push(Node::from_leaf(leaf));
