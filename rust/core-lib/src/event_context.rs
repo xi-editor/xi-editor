@@ -1909,6 +1909,212 @@ mod tests {
     }
 
     #[test]
+    fn test_single_line_move_to_left_and_right_end_of_line() {
+        use crate::rpc::GestureType::*;
+        let harness = ContextHarness::new("");
+        let mut ctx = harness.make_context();
+
+        // Move to beginning and end of single line
+        ctx.do_edit(EditNotification::Insert { chars: "    let aRegularIndentedCodeLine = some_method()    ".into() });
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 10, ty: PointSelect });
+        ctx.do_edit(EditNotification::MoveToRightEndOfLine);
+        assert_eq!(harness.debug_render(),"    let aRegularIndentedCodeLine = some_method()    |");
+        ctx.do_edit(EditNotification::MoveToLeftNonWhitespaceEndOfLine);
+        assert_eq!(harness.debug_render(),"    |let aRegularIndentedCodeLine = some_method()    ");
+        ctx.do_edit(EditNotification::MoveToLeftNonWhitespaceEndOfLine);
+        assert_eq!(harness.debug_render(),"|    let aRegularIndentedCodeLine = some_method()    ");
+    }
+
+    #[test]
+    fn test_single_line_move_to_left_and_right_end_of_line_with_tabs() {
+        use crate::rpc::GestureType::*;
+        let harness = ContextHarness::new("");
+        let mut ctx = harness.make_context();
+
+        // Move to beginning and end of single line
+        ctx.do_edit(EditNotification::Insert { chars: "\tlet aRegularIndentedCodeLine = some_method()\t".into() });
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 10, ty: PointSelect });
+        ctx.do_edit(EditNotification::MoveToRightEndOfLine);
+        assert_eq!(harness.debug_render(),"\tlet aRegularIndentedCodeLine = some_method()\t|");
+        ctx.do_edit(EditNotification::MoveToLeftNonWhitespaceEndOfLine);
+        assert_eq!(harness.debug_render(),"\t|let aRegularIndentedCodeLine = some_method()\t");
+        ctx.do_edit(EditNotification::MoveToLeftNonWhitespaceEndOfLine);
+        assert_eq!(harness.debug_render(),"|\tlet aRegularIndentedCodeLine = some_method()\t");
+    }
+
+    #[test]
+    fn test_multiline_move_to_left_and_right_end_of_lines() {
+        use crate::rpc::GestureType::*;
+        let initial_text = "    \
+        let string = 'this is a typical string that is indented'    \n    \
+        let string2 = 'like regular code'    \n    \
+        \n    \
+        do_some_functions()\n";
+        let harness = ContextHarness::new(initial_text);
+        let mut ctx = harness.make_context();
+
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 15, ty: PointSelect });
+        ctx.do_edit(EditNotification::AddSelectionBelow);
+        assert_eq!(harness.debug_render(), "    \
+        let string |= 'this is a typical string that is indented'    \n    \
+        let string2| = 'like regular code'    \n    \
+        \n    \
+        do_some_functions()\n");
+
+        // Move to beginning of line 3 times
+        // Should be at "let", then right after previous newline, then at "let" again
+        ctx.do_edit(EditNotification::MoveToLeftNonWhitespaceEndOfLine);
+        assert_eq!(harness.debug_render(), "    \
+        |let string = 'this is a typical string that is indented'    \n    \
+        |let string2 = 'like regular code'    \n    \
+        \n    \
+        do_some_functions()\n");
+
+        ctx.do_edit(EditNotification::MoveToLeftNonWhitespaceEndOfLine);
+        assert_eq!(harness.debug_render(), "|    \
+        let string = 'this is a typical string that is indented'    \n|    \
+        let string2 = 'like regular code'    \n    \
+        \n    \
+        do_some_functions()\n");
+
+        ctx.do_edit(EditNotification::MoveToLeftNonWhitespaceEndOfLine);
+        assert_eq!(harness.debug_render(), "    \
+        |let string = 'this is a typical string that is indented'    \n    \
+        |let string2 = 'like regular code'    \n    \
+        \n    \
+        do_some_functions()\n");
+
+        ctx.do_edit(EditNotification::MoveToRightEndOfLine);
+        assert_eq!(harness.debug_render(), "    \
+        let string = 'this is a typical string that is indented'    |\n    \
+        let string2 = 'like regular code'    |\n    \
+        \n    \
+        do_some_functions()\n");
+    }
+
+    #[test]
+    fn test_multiline_move_to_left_and_right_end_of_lines_with_tabs() {
+        use crate::rpc::GestureType::*;
+        let initial_text = "\t\
+        let string = 'this is a typical string that is indented'\t\n\t\
+        let string2 = 'like regular code'\t\n\t\
+        \n\t\
+        do_some_functions()\n";
+        let harness = ContextHarness::new(initial_text);
+        let mut ctx = harness.make_context();
+
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 12, ty: PointSelect });
+        ctx.do_edit(EditNotification::AddSelectionBelow);
+        assert_eq!(harness.debug_render(), "\t\
+        let string |= 'this is a typical string that is indented'\t\n\t\
+        let string2| = 'like regular code'\t\n\t\
+        \n\t\
+        do_some_functions()\n");
+
+        // Move to beginning of line 3 times
+        // Should be at "let", then right after previous newline, then at "let" again
+        ctx.do_edit(EditNotification::MoveToLeftNonWhitespaceEndOfLine);
+        assert_eq!(harness.debug_render(), "\t\
+        |let string = 'this is a typical string that is indented'\t\n\t\
+        |let string2 = 'like regular code'\t\n\t\
+        \n\t\
+        do_some_functions()\n");
+
+        ctx.do_edit(EditNotification::MoveToLeftNonWhitespaceEndOfLine);
+        assert_eq!(harness.debug_render(), "|\t\
+        let string = 'this is a typical string that is indented'\t\n|\t\
+        let string2 = 'like regular code'\t\n\t\
+        \n\t\
+        do_some_functions()\n");
+
+        ctx.do_edit(EditNotification::MoveToLeftNonWhitespaceEndOfLine);
+        assert_eq!(harness.debug_render(), "\t\
+        |let string = 'this is a typical string that is indented'\t\n\t\
+        |let string2 = 'like regular code'\t\n\t\
+        \n\t\
+        do_some_functions()\n");
+
+        ctx.do_edit(EditNotification::MoveToRightEndOfLine);
+        assert_eq!(harness.debug_render(), "\t\
+        let string = 'this is a typical string that is indented'\t|\n\t\
+        let string2 = 'like regular code'\t|\n\t\
+        \n\t\
+        do_some_functions()\n");
+    }
+
+    #[test]
+    fn test_move_to_left_and_right_end_of_line_for_empty_lines() {
+        use crate::rpc::GestureType::*;
+        let harness = ContextHarness::new("");
+        let mut ctx = harness.make_context();
+
+        // Should not change at all
+        ctx.do_edit(EditNotification::Insert { chars: "\n\n\n".into() });
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 0, ty: PointSelect });
+        ctx.do_edit(EditNotification::AddSelectionBelow);
+        ctx.do_edit(EditNotification::AddSelectionBelow);
+        ctx.do_edit(EditNotification::AddSelectionBelow);
+        assert_eq!(harness.debug_render(),"|\n|\n|\n");
+        ctx.do_edit(EditNotification::MoveToRightEndOfLine);
+        assert_eq!(harness.debug_render(),"|\n|\n|\n");
+        ctx.do_edit(EditNotification::MoveToLeftNonWhitespaceEndOfLine);
+        assert_eq!(harness.debug_render(),"|\n|\n|\n");
+        ctx.do_edit(EditNotification::MoveToLeftNonWhitespaceEndOfLine);
+        assert_eq!(harness.debug_render(),"|\n|\n|\n");
+    }
+
+    #[test]
+    fn test_move_to_left_and_right_end_of_line_with_just_spaces() {
+        use crate::rpc::GestureType::*;
+        let harness = ContextHarness::new("");
+        let mut ctx = harness.make_context();
+
+        // Should behave like move to left/end of line
+        ctx.do_edit(EditNotification::Insert { chars: "                                               ".into() });
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 10, ty: PointSelect });
+        ctx.do_edit(EditNotification::MoveToRightEndOfLine);
+        assert_eq!(harness.debug_render(),"                                               |");
+        ctx.do_edit(EditNotification::MoveToLeftNonWhitespaceEndOfLine);
+        assert_eq!(harness.debug_render(),"|                                               ");
+        ctx.do_edit(EditNotification::MoveToLeftNonWhitespaceEndOfLine);
+        assert_eq!(harness.debug_render(),"|                                               ");
+    }
+
+    #[test]
+    fn test_move_to_left_and_right_end_of_line_with_just_tabs() {
+        use crate::rpc::GestureType::*;
+        let harness = ContextHarness::new("");
+        let mut ctx = harness.make_context();
+
+        // Should behave like move to left/end of line
+        ctx.do_edit(EditNotification::Insert { chars: "\t\t\t".into() });
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 2, ty: PointSelect });
+        ctx.do_edit(EditNotification::MoveToRightEndOfLine);
+        assert_eq!(harness.debug_render(),"\t\t\t|");
+        ctx.do_edit(EditNotification::MoveToLeftNonWhitespaceEndOfLine);
+        assert_eq!(harness.debug_render(),"|\t\t\t");
+        ctx.do_edit(EditNotification::MoveToLeftNonWhitespaceEndOfLine);
+        assert_eq!(harness.debug_render(),"|\t\t\t");
+    }
+
+    #[test]
+    fn test_move_to_left_and_right_end_of_line_with_non_ascii_line() {
+        use crate::rpc::GestureType::*;
+        let harness = ContextHarness::new("");
+        let mut ctx = harness.make_context();
+
+        // Should work like normal ASCII
+        ctx.do_edit(EditNotification::Insert { chars: "    ¥   😂             ¥  ".into() });
+        ctx.do_edit(EditNotification::Gesture { line: 0, col: 5, ty: PointSelect });
+        ctx.do_edit(EditNotification::MoveToRightEndOfLine);
+        assert_eq!(harness.debug_render(),"    ¥   😂             ¥  |");
+        ctx.do_edit(EditNotification::MoveToLeftNonWhitespaceEndOfLine);
+        assert_eq!(harness.debug_render(),"    |¥   😂             ¥  ");
+        ctx.do_edit(EditNotification::MoveToLeftNonWhitespaceEndOfLine);
+        assert_eq!(harness.debug_render(),"|    ¥   😂             ¥  ");
+    }
+
+    #[test]
     fn test_exact_position() {
         use crate::rpc::GestureType::*;
         let initial_text = "\

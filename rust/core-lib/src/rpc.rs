@@ -416,6 +416,7 @@ pub enum EditNotification {
     MoveToEndOfParagraph,
     MoveToEndOfParagraphAndModifySelection,
     MoveToLeftEndOfLine,
+    MoveToLeftNonWhitespaceEndOfLine,
     MoveToLeftEndOfLineAndModifySelection,
     MoveToRightEndOfLine,
     MoveToRightEndOfLineAndModifySelection,
