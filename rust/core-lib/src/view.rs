@@ -25,6 +25,7 @@ use crate::client::{Client, Update, UpdateOp};
 use crate::edit_types::ViewEvent;
 use crate::find::{Find, FindStatus};
 use crate::line_cache_shadow::{self, LineCacheShadow, RenderPlan, RenderTactic};
+use crate::line_offset::LineOffset;
 use crate::linewrap::{InvalLines, Lines, VisualLine, WrapWidth};
 use crate::movement::{region_movement, selection_movement, Movement};
 use crate::plugins::PluginId;
@@ -367,7 +368,7 @@ impl View {
     /// of individual region movements become carets.
     pub fn do_move(&mut self, text: &Rope, movement: Movement, modify: bool) {
         self.drag_state = None;
-        let new_sel = selection_movement(movement, &self.selection, self, text, modify);
+        let new_sel = selection_movement(movement, &self.selection, self, self.scroll_height(), text, modify);
         self.set_selection(text, new_sel);
     }
 
@@ -411,7 +412,7 @@ impl View {
         let mut sel = Selection::new();
         for &region in self.sel_regions() {
             sel.add_region(region);
-            let new_region = region_movement(movement, region, self, &text, false);
+            let new_region = region_movement(movement, region, self, self.scroll_height(), &text, false);
             sel.add_region(new_region);
         }
         self.set_selection(text, sel);
@@ -903,60 +904,11 @@ impl View {
         self.lc_shadow = b.build();
     }
 
-    // How should we count "column"? Valid choices include:
-    // * Unicode codepoints
-    // * grapheme clusters
-    // * Unicode width (so CJK counts as 2)
-    // * Actual measurement in text layout
-    // * Code units in some encoding
-    //
-    // Of course, all these are identical for ASCII. For now we use UTF-8 code units
-    // for simplicity.
-
-    pub(crate) fn offset_to_line_col(&self, text: &Rope, offset: usize) -> (usize, usize) {
-        let line = self.line_of_offset(text, offset);
-        (line, offset - self.offset_of_line(text, line))
-    }
-
-    pub(crate) fn line_col_to_offset(&self, text: &Rope, line: usize, col: usize) -> usize {
-        let mut offset = self.offset_of_line(text, line).saturating_add(col);
-        if offset >= text.len() {
-            offset = text.len();
-            if self.line_of_offset(text, offset) <= line {
-                return offset;
-            }
-        } else {
-            // Snap to grapheme cluster boundary
-            offset = text.prev_grapheme_offset(offset + 1).unwrap();
-        }
-
-        // clamp to end of line
-        let next_line_offset = self.offset_of_line(text, line + 1);
-        if offset >= next_line_offset {
-            if let Some(prev) = text.prev_grapheme_offset(next_line_offset) {
-                offset = prev;
-            }
-        }
-        offset
-    }
-
     /// Returns the byte range of the currently visible lines.
     fn interval_of_visible_region(&self, text: &Rope) -> Interval {
         let start = self.offset_of_line(text, self.first_line);
         let end = self.offset_of_line(text, self.first_line + self.height + 1);
         Interval::new(start, end)
-    }
-
-    // use own breaks if present, or text if not (no line wrapping)
-
-    /// Returns the visible line number containing the given offset.
-    pub fn line_of_offset(&self, text: &Rope, offset: usize) -> usize {
-        self.lines.visual_line_of_offset(text, offset)
-    }
-
-    /// Returns the byte offset corresponding to the given visual line.
-    pub fn offset_of_line(&self, text: &Rope, line: usize) -> usize {
-        self.lines.offset_of_visual_line(text, line)
     }
 
     /// Generate line breaks, based on current settings. Currently batch-mode,
@@ -1299,6 +1251,16 @@ impl View {
         let client = Client::new(Box::new(DummyPeer));
         self.update_wrap_settings(text, cols, false);
         self.rewrap(text, &mut width_cache, &client, &spans);
+    }
+}
+
+impl LineOffset for View {
+    fn offset_of_line(&self, text: &Rope, line: usize) -> usize {
+        self.lines.offset_of_visual_line(text, line)
+    }
+
+    fn line_of_offset(&self, text: &Rope, offset: usize) -> usize {
+        self.lines.visual_line_of_offset(text, offset)
     }
 }
 

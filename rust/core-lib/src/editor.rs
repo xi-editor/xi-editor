@@ -30,6 +30,7 @@ use crate::config::BufferItems;
 use crate::edit_types::BufferEvent;
 use crate::event_context::MAX_SIZE_LIMIT;
 use crate::layers::Layers;
+use crate::line_offset::LineOffset;
 use crate::movement::{region_movement, Movement};
 use crate::plugins::rpc::{DataSpan, GetDataResponse, PluginEdit, ScopeSpan, TextUnit};
 use crate::plugins::PluginId;
@@ -408,7 +409,7 @@ impl Editor {
         let mut deletions = Selection::new();
         for &r in view.sel_regions() {
             if r.is_caret() {
-                let new_region = region_movement(movement, r, view, &self.text, true);
+                let new_region = region_movement(movement, r, view, view.scroll_height(), &self.text, true);
                 deletions.add_region(new_region);
             } else {
                 deletions.add_region(r);

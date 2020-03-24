@@ -20,6 +20,7 @@ use serde_json::{self, Value};
 
 use std::collections::HashMap;
 
+use crate::line_offset::LineOffset;
 use crate::plugins::PluginId;
 use crate::view::View;
 use crate::xi_rope::spans::Spans;

@@ -20,6 +20,7 @@ use std::ops::Deref;
 
 use crate::annotations::{AnnotationRange, AnnotationSlice, AnnotationType, ToAnnotation};
 use crate::index_set::remove_n_at;
+use crate::line_offset::LineOffset;
 use crate::view::View;
 use xi_rope::{Interval, Rope, RopeDelta, Transformer};
 
