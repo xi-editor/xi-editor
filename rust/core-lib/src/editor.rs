@@ -409,7 +409,8 @@ impl Editor {
         let mut deletions = Selection::new();
         for &r in view.sel_regions() {
             if r.is_caret() {
-                let new_region = region_movement(movement, r, view, view.scroll_height(), &self.text, true);
+                let new_region =
+                    region_movement(movement, r, view, view.scroll_height(), &self.text, true);
                 deletions.add_region(new_region);
             } else {
                 deletions.add_region(r);

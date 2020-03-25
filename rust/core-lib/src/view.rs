@@ -368,7 +368,8 @@ impl View {
     /// of individual region movements become carets.
     pub fn do_move(&mut self, text: &Rope, movement: Movement, modify: bool) {
         self.drag_state = None;
-        let new_sel = selection_movement(movement, &self.selection, self, self.scroll_height(), text, modify);
+        let new_sel =
+            selection_movement(movement, &self.selection, self, self.scroll_height(), text, modify);
         self.set_selection(text, new_sel);
     }
 
@@ -412,7 +413,8 @@ impl View {
         let mut sel = Selection::new();
         for &region in self.sel_regions() {
             sel.add_region(region);
-            let new_region = region_movement(movement, region, self, self.scroll_height(), &text, false);
+            let new_region =
+                region_movement(movement, region, self, self.scroll_height(), &text, false);
             sel.add_region(new_region);
         }
         self.set_selection(text, sel);

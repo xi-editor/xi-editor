@@ -15,11 +15,9 @@
 use crate::linewrap::Lines;
 use xi_rope::Rope;
 
-
 /// A trait from which lines and columns in a document can be calculated
 /// into offsets inside a rope an vice versa.
 pub trait LineOffset {
-
     // use own breaks if present, or text if not (no line wrapping)
 
     /// Returns the byte offset corresponding to the given visual line.
@@ -70,11 +68,9 @@ pub trait LineOffset {
     }
 }
 
-
 /// A struct from which the default definitions for `offset_of_line`
 /// and `line_of_offset` can be accessed.
 pub struct DefaultLineOffset;
-
 
 impl LineOffset for DefaultLineOffset {}
 

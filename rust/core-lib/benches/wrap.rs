@@ -18,6 +18,7 @@ extern crate test;
 extern crate xi_core_lib as xi_core;
 extern crate xi_rope;
 
+use crate::xi_core::line_offset::LineOffset;
 use crate::xi_core::tabs::BufferId;
 use crate::xi_core::view::View;
 use test::Bencher;

@@ -16,8 +16,8 @@
 
 use std::cmp::max;
 
-use crate::selection::{HorizPos, SelRegion, Selection};
 use crate::line_offset::LineOffset;
+use crate::selection::{HorizPos, SelRegion, Selection};
 use crate::word_boundaries::WordCursor;
 use xi_rope::{Cursor, LinesMetric, Rope};
 
@@ -103,8 +103,8 @@ fn vertical_motion_exact_pos(
     let (col, init_line) = selection_position(r, lo, text, move_up, modify);
     let n_lines = lo.line_of_offset(text, text.len());
 
-    let mut line_length = lo.offset_of_line(text, init_line.saturating_add(1))
-        - lo.offset_of_line(text, init_line);
+    let mut line_length =
+        lo.offset_of_line(text, init_line.saturating_add(1)) - lo.offset_of_line(text, init_line);
     if move_up && init_line == 0 {
         return (lo.line_col_to_offset(text, init_line, col), Some(col));
     }
@@ -170,7 +170,7 @@ fn scroll_height(height: usize) -> isize {
 /// Compute the result of movement on one selection region.
 ///
 /// # Arguments
-/// 
+///
 /// * `height` - viewport height
 pub fn region_movement(
     m: Movement,
@@ -290,9 +290,9 @@ pub fn region_movement(
 ///
 /// If `modify` is `true`, the selections are modified, otherwise the results
 /// of individual region movements become carets.
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `height` - viewport height
 pub fn selection_movement(
     m: Movement,
