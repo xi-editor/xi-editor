@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Representation and calculation of movement within a lo.
+//! Representation and calculation of movement within a lineoffset.
 
 use std::cmp::max;
 
