@@ -18,6 +18,7 @@ use std::cmp::{max, min};
 use std::iter;
 
 use crate::annotations::{AnnotationRange, AnnotationSlice, AnnotationType, ToAnnotation};
+use crate::line_offset::LineOffset;
 use crate::selection::{InsertDrift, SelRegion, Selection};
 use crate::view::View;
 use crate::word_boundaries::WordCursor;

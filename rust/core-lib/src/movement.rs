@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Representation and calculation of movement within a view.
+//! Representation and calculation of movement within a lineoffset.
 
 use std::cmp::max;
 
+use crate::line_offset::LineOffset;
 use crate::selection::{HorizPos, SelRegion, Selection};
-use crate::view::View;
 use crate::word_boundaries::WordCursor;
 use xi_rope::{Cursor, LinesMetric, Rope};
 
@@ -66,13 +66,13 @@ pub enum Movement {
 /// field of the selection region.
 fn vertical_motion(
     r: SelRegion,
-    view: &View,
+    lo: &dyn LineOffset,
     text: &Rope,
     line_delta: isize,
     modify: bool,
 ) -> (usize, Option<HorizPos>) {
-    let (col, line) = selection_position(r, view, text, line_delta < 0, modify);
-    let n_lines = view.line_of_offset(text, text.len());
+    let (col, line) = selection_position(r, lo, text, line_delta < 0, modify);
+    let n_lines = lo.line_of_offset(text, text.len());
 
     // This code is quite careful to avoid integer overflow.
     // TODO: write tests to verify
@@ -87,7 +87,7 @@ fn vertical_motion(
     if line > n_lines {
         return (text.len(), Some(col));
     }
-    let new_offset = view.line_col_to_offset(text, line, col);
+    let new_offset = lo.line_col_to_offset(text, line, col);
     (new_offset, Some(col))
 }
 
@@ -95,18 +95,18 @@ fn vertical_motion(
 /// any line that is shorter than the current cursor position.
 fn vertical_motion_exact_pos(
     r: SelRegion,
-    view: &View,
+    lo: &dyn LineOffset,
     text: &Rope,
     move_up: bool,
     modify: bool,
 ) -> (usize, Option<HorizPos>) {
-    let (col, init_line) = selection_position(r, view, text, move_up, modify);
-    let n_lines = view.line_of_offset(text, text.len());
+    let (col, init_line) = selection_position(r, lo, text, move_up, modify);
+    let n_lines = lo.line_of_offset(text, text.len());
 
-    let mut line_length = view.offset_of_line(text, init_line.saturating_add(1))
-        - view.offset_of_line(text, init_line);
+    let mut line_length =
+        lo.offset_of_line(text, init_line.saturating_add(1)) - lo.offset_of_line(text, init_line);
     if move_up && init_line == 0 {
-        return (view.line_col_to_offset(text, init_line, col), Some(col));
+        return (lo.line_col_to_offset(text, init_line, col), Some(col));
     }
     let mut line = if move_up { init_line - 1 } else { init_line.saturating_add(1) };
 
@@ -114,7 +114,7 @@ fn vertical_motion_exact_pos(
     let col = if line_length < col { line_length - 1 } else { col };
 
     loop {
-        line_length = view.offset_of_line(text, line + 1) - view.offset_of_line(text, line);
+        line_length = lo.offset_of_line(text, line + 1) - lo.offset_of_line(text, line);
 
         // If the line is longer than the current cursor position, break.
         // We use > instead of >= because line_length includes newline.
@@ -131,14 +131,14 @@ fn vertical_motion_exact_pos(
         line = if move_up { line - 1 } else { line.saturating_add(1) };
     }
 
-    (view.line_col_to_offset(text, line, col), Some(col))
+    (lo.line_col_to_offset(text, line, col), Some(col))
 }
 
 /// Based on the current selection position this will return the cursor position, the current line, and the
 /// total number of lines of the file.
 fn selection_position(
     r: SelRegion,
-    view: &View,
+    lo: &dyn LineOffset,
     text: &Rope,
     move_up: bool,
     modify: bool,
@@ -151,8 +151,8 @@ fn selection_position(
     } else {
         r.max()
     };
-    let col = if let Some(col) = r.horiz { col } else { view.offset_to_line_col(text, active).1 };
-    let line = view.line_of_offset(text, active);
+    let col = if let Some(col) = r.horiz { col } else { lo.offset_to_line_col(text, active).1 };
+    let line = lo.line_of_offset(text, active);
 
     (col, line)
 }
@@ -163,15 +163,20 @@ const SCROLL_OVERLAP: isize = 2;
 
 /// Computes the actual desired amount of scrolling (generally slightly
 /// less than the height of the viewport, to allow overlap).
-fn scroll_height(view: &View) -> isize {
-    max(view.scroll_height() as isize - SCROLL_OVERLAP, 1)
+fn scroll_height(height: usize) -> isize {
+    max(height as isize - SCROLL_OVERLAP, 1)
 }
 
 /// Compute the result of movement on one selection region.
+///
+/// # Arguments
+///
+/// * `height` - viewport height
 pub fn region_movement(
     m: Movement,
     r: SelRegion,
-    view: &View,
+    lo: &dyn LineOffset,
+    height: usize,
     text: &Rope,
     modify: bool,
 ) -> SelRegion {
@@ -209,27 +214,27 @@ pub fn region_movement(
             (offset, None)
         }
         Movement::LeftOfLine => {
-            let line = view.line_of_offset(text, r.end);
-            let offset = view.offset_of_line(text, line);
+            let line = lo.line_of_offset(text, r.end);
+            let offset = lo.offset_of_line(text, line);
             (offset, None)
         }
         Movement::RightOfLine => {
-            let line = view.line_of_offset(text, r.end);
+            let line = lo.line_of_offset(text, r.end);
             let mut offset = text.len();
 
             // calculate end of line
-            let next_line_offset = view.offset_of_line(text, line + 1);
-            if line < view.line_of_offset(text, offset) {
+            let next_line_offset = lo.offset_of_line(text, line + 1);
+            if line < lo.line_of_offset(text, offset) {
                 if let Some(prev) = text.prev_grapheme_offset(next_line_offset) {
                     offset = prev;
                 }
             }
             (offset, None)
         }
-        Movement::Up => vertical_motion(r, view, text, -1, modify),
-        Movement::Down => vertical_motion(r, view, text, 1, modify),
-        Movement::UpExactPosition => vertical_motion_exact_pos(r, view, text, true, modify),
-        Movement::DownExactPosition => vertical_motion_exact_pos(r, view, text, false, modify),
+        Movement::Up => vertical_motion(r, lo, text, -1, modify),
+        Movement::Down => vertical_motion(r, lo, text, 1, modify),
+        Movement::UpExactPosition => vertical_motion_exact_pos(r, lo, text, true, modify),
+        Movement::DownExactPosition => vertical_motion_exact_pos(r, lo, text, false, modify),
         Movement::StartOfParagraph => {
             // Note: TextEdit would start at modify ? r.end : r.min()
             let mut cursor = Cursor::new(&text, r.end);
@@ -270,8 +275,8 @@ pub fn region_movement(
             }
             (offset, None)
         }
-        Movement::UpPage => vertical_motion(r, view, text, -scroll_height(view), modify),
-        Movement::DownPage => vertical_motion(r, view, text, scroll_height(view), modify),
+        Movement::UpPage => vertical_motion(r, lo, text, -scroll_height(height), modify),
+        Movement::DownPage => vertical_motion(r, lo, text, scroll_height(height), modify),
         Movement::StartOfDocument => (0, None),
         Movement::EndOfDocument => (text.len(), None),
     };
@@ -285,16 +290,21 @@ pub fn region_movement(
 ///
 /// If `modify` is `true`, the selections are modified, otherwise the results
 /// of individual region movements become carets.
+///
+/// # Arguments
+///
+/// * `height` - viewport height
 pub fn selection_movement(
     m: Movement,
     s: &Selection,
-    view: &View,
+    lo: &dyn LineOffset,
+    height: usize,
     text: &Rope,
     modify: bool,
 ) -> Selection {
     let mut result = Selection::new();
     for &r in s.iter() {
-        let new_region = region_movement(m, r, view, text, modify);
+        let new_region = region_movement(m, r, lo, height, text, modify);
         result.add_region(new_region);
     }
     result

@@ -80,6 +80,7 @@ pub mod index_set;
 pub mod layers;
 pub mod line_cache_shadow;
 pub mod line_ending;
+pub mod line_offset;
 pub mod linewrap;
 pub mod movement;
 pub mod plugins;

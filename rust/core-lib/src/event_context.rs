@@ -36,6 +36,7 @@ use crate::config::{BufferItems, Table};
 use crate::edit_types::{EventDomain, SpecialEvent};
 use crate::editor::Editor;
 use crate::file::FileInfo;
+use crate::line_offset::LineOffset;
 use crate::plugins::Plugin;
 use crate::recorder::Recorder;
 use crate::selection::InsertDrift;
