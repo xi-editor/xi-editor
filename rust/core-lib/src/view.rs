@@ -47,6 +47,8 @@ const FLAG_SELECT: u64 = 2;
 /// Size of batches as number of bytes used during incremental find.
 const FIND_BATCH_SIZE: usize = 500000;
 
+/// A view to a buffer. It is the buffer plus additional information
+/// like line breaks and selection state.
 pub struct View {
     view_id: ViewId,
     buffer_id: BufferId,
