@@ -69,6 +69,7 @@ pub mod backspace;
 pub mod client;
 pub mod config;
 pub mod core;
+pub mod edit_ops;
 pub mod edit_types;
 pub mod editor;
 pub mod event_context;
