@@ -16,16 +16,12 @@
 use xi_rope::{Cursor, Rope};
 
 use crate::config::BufferItems;
-use crate::line_offset::{LineOffset, DefaultLineOffset};
+use crate::line_offset::{DefaultLineOffset, LineOffset};
 use crate::selection::SelRegion;
 use xi_unicode::*;
 
 #[allow(clippy::cognitive_complexity)]
-pub fn offset_for_delete_backwards(
-    region: &SelRegion,
-    text: &Rope,
-    config: &BufferItems,
-) -> usize {
+pub fn offset_for_delete_backwards(region: &SelRegion, text: &Rope, config: &BufferItems) -> usize {
     if !region.is_caret() {
         region.min()
     } else {

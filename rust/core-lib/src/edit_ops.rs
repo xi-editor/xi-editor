@@ -21,10 +21,10 @@ use xi_rope::{Cursor, DeltaBuilder, Interval, LinesMetric, Rope, RopeDelta};
 
 use crate::backspace::offset_for_delete_backwards;
 use crate::config::BufferItems;
-use crate::line_offset::{LineOffset, DefaultLineOffset};
+use crate::line_offset::{DefaultLineOffset, LineOffset};
 use crate::linewrap::Lines;
 use crate::movement::{region_movement, Movement};
-use crate::selection::{Selection, SelRegion};
+use crate::selection::{SelRegion, Selection};
 use crate::word_boundaries::WordCursor;
 
 pub enum IndentDirection {
@@ -33,7 +33,7 @@ pub enum IndentDirection {
 }
 
 /// Replaces the selection with the text `T`.
-pub fn insert<T: Into<Rope>>(base : &Rope, regions: &[SelRegion], text: T) -> RopeDelta {
+pub fn insert<T: Into<Rope>>(base: &Rope, regions: &[SelRegion], text: T) -> RopeDelta {
     let rope = text.into();
     let mut builder = DeltaBuilder::new(base.len());
     for region in regions {
@@ -44,7 +44,12 @@ pub fn insert<T: Into<Rope>>(base : &Rope, regions: &[SelRegion], text: T) -> Ro
 }
 
 /// Leaves the current selection untouched, but surrounds it with two insertions.
-pub fn surround<BT, AT>(base : &Rope, regions: &[SelRegion], before_text: BT, after_text: AT) -> RopeDelta
+pub fn surround<BT, AT>(
+    base: &Rope,
+    regions: &[SelRegion],
+    before_text: BT,
+    after_text: AT,
+) -> RopeDelta
 where
     BT: Into<Rope>,
     AT: Into<Rope>,
@@ -100,7 +105,11 @@ pub fn duplicate_line(base: &Rope, regions: &[SelRegion], config: &BufferItems) 
 }
 
 /// Used when the user presses the backspace key. If no delta is returned, then nothing changes.
-pub fn delete_backward(base: &Rope, regions: &[SelRegion], config: &BufferItems) -> Option<RopeDelta> {
+pub fn delete_backward(
+    base: &Rope,
+    regions: &[SelRegion],
+    config: &BufferItems,
+) -> Option<RopeDelta> {
     // TODO: this function is workable but probably overall code complexity
     // could be improved by implementing a "backspace" movement instead.
     let mut builder = DeltaBuilder::new(base.len());
@@ -124,7 +133,7 @@ pub fn delete_backward(base: &Rope, regions: &[SelRegion], config: &BufferItems)
 /// the region.
 ///
 /// If `save` is set, the tuple will contain a rope with the deleted text.
-/// 
+///
 /// # Arguments
 ///
 /// * `height` - viewport height
@@ -134,7 +143,7 @@ pub(crate) fn delete_by_movement(
     lines: &Lines,
     movement: Movement,
     height: usize,
-    save: bool
+    save: bool,
 ) -> (Option<RopeDelta>, Option<Rope>) {
     // We compute deletions as a selection because the merge logic
     // is convenient. Another possibility would be to make the delta
@@ -142,8 +151,7 @@ pub(crate) fn delete_by_movement(
     let mut deletions = Selection::new();
     for &r in regions {
         if r.is_caret() {
-            let new_region =
-                region_movement(movement, r, lines, height, base, true);
+            let new_region = region_movement(movement, r, lines, height, base, true);
             deletions.add_region(new_region);
         } else {
             deletions.add_region(r);
@@ -177,7 +185,10 @@ pub(crate) fn delete_sel_regions(base: &Rope, sel_regions: &[SelRegion]) -> Opti
 
 /// Extracts non-caret selection regions into a string,
 /// joining multiple regions with newlines.
-pub(crate) fn extract_sel_regions<'a>(base: &'a Rope, sel_regions: &[SelRegion]) -> Option<Cow<'a, str>> {
+pub(crate) fn extract_sel_regions<'a>(
+    base: &'a Rope,
+    sel_regions: &[SelRegion],
+) -> Option<Cow<'a, str>> {
     let mut saved = None;
     for region in sel_regions {
         if !region.is_caret() {
@@ -229,7 +240,12 @@ pub fn insert_tab(base: &Rope, regions: &[SelRegion], config: &BufferItems) -> R
 /// Preserves cursor position and current selection as much as possible.
 /// Tries to have behavior consistent with other editors like Atom,
 /// Sublime and VSCode, with non-caret selections not being modified.
-pub fn modify_indent(base: &Rope, regions: &[SelRegion], config: &BufferItems, direction: IndentDirection) -> RopeDelta {
+pub fn modify_indent(
+    base: &Rope,
+    regions: &[SelRegion],
+    config: &BufferItems,
+    direction: IndentDirection,
+) -> RopeDelta {
     let mut lines = BTreeSet::new();
     let tab_text = get_tab_text(config, None);
     for region in regions {
@@ -254,7 +270,7 @@ fn indent(base: &Rope, lines: BTreeSet<usize>, tab_text: &str) -> RopeDelta {
     builder.build()
 }
 
-fn outdent(base: &Rope, lines: BTreeSet<usize>, tab_text: &str) -> RopeDelta{
+fn outdent(base: &Rope, lines: BTreeSet<usize>, tab_text: &str) -> RopeDelta {
     let mut builder = DeltaBuilder::new(base.len());
     for line in lines {
         let offset = DefaultLineOffset.line_col_to_offset(base, line, 0);
@@ -264,7 +280,8 @@ fn outdent(base: &Rope, lines: BTreeSet<usize>, tab_text: &str) -> RopeDelta{
         if leading_slice == tab_text {
             builder.delete(interval);
         } else if let Some(first_char_col) = leading_slice.find(|c: char| !c.is_whitespace()) {
-            let first_char_offset = DefaultLineOffset.line_col_to_offset(base, line, first_char_col);
+            let first_char_offset =
+                DefaultLineOffset.line_col_to_offset(base, line, first_char_col);
             let interval = Interval::new(offset, first_char_offset);
             builder.delete(interval);
         }
@@ -310,8 +327,7 @@ pub fn transpose(base: &Rope, regions: &[SelRegion]) -> Option<RopeDelta> {
     let mut builder = DeltaBuilder::new(base.len());
     let mut last = 0;
     let mut optional_previous_selection: Option<(Interval, Rope)> =
-        last_selection_region(regions)
-            .map(|&region| sel_region_to_interval_and_rope(base, region));
+        last_selection_region(regions).map(|&region| sel_region_to_interval_and_rope(base, region));
 
     for &region in regions {
         if region.is_caret() {
@@ -322,8 +338,8 @@ pub fn transpose(base: &Rope, regions: &[SelRegion]) -> Option<RopeDelta> {
             // Note: this matches Emac's behavior. It swaps last
             // two characters of line if at end of line.
             if start >= last {
-                let end_line_offset =
-                    DefaultLineOffset.offset_of_line(base, DefaultLineOffset.line_of_offset(base, end));
+                let end_line_offset = DefaultLineOffset
+                    .offset_of_line(base, DefaultLineOffset.line_of_offset(base, end));
                 // include end != base.len() because if the editor is entirely empty, we dont' want to pull from empty space
                 if (end == middle || end == end_line_offset) && end != base.len() {
                     middle = start;
@@ -351,7 +367,11 @@ pub fn transpose(base: &Rope, regions: &[SelRegion]) -> Option<RopeDelta> {
     }
 }
 
-pub fn transform_text<F: Fn(&str) -> String>(base: &Rope, regions: &[SelRegion], transform_function: F) -> Option<RopeDelta> {
+pub fn transform_text<F: Fn(&str) -> String>(
+    base: &Rope,
+    regions: &[SelRegion],
+    transform_function: F,
+) -> Option<RopeDelta> {
     let mut builder = DeltaBuilder::new(base.len());
 
     for region in regions {
@@ -378,7 +398,11 @@ pub fn transform_text<F: Fn(&str) -> String>(base: &Rope, regions: &[SelRegion],
 /// "another number is 123|]" -> "another number is 124"
 ///
 /// This function also works fine with multiple regions.
-pub fn change_number<F: Fn(i128) -> Option<i128>>(base: &Rope, regions: &[SelRegion], transform_function: F) -> Option<RopeDelta> {
+pub fn change_number<F: Fn(i128) -> Option<i128>>(
+    base: &Rope,
+    regions: &[SelRegion],
+    transform_function: F,
+) -> Option<RopeDelta> {
     let mut builder = DeltaBuilder::new(base.len());
     for region in regions {
         let mut cursor = WordCursor::new(base, region.end);
@@ -422,8 +446,7 @@ pub fn capitalize_text(base: &Rope, regions: &[SelRegion]) -> (Option<RopeDelta>
 
                 // first letter is uppercase, remaining letters are lowercase
                 let (first_char, rest) = word.split_at(1);
-                let capitalized_text =
-                    [first_char.to_uppercase(), rest.to_lowercase()].concat();
+                let capitalized_text = [first_char.to_uppercase(), rest.to_lowercase()].concat();
                 builder.replace(interval, Rope::from(capitalized_text));
             }
 
@@ -433,11 +456,7 @@ pub fn capitalize_text(base: &Rope, regions: &[SelRegion]) -> (Option<RopeDelta>
         }
     }
 
-    let delta = if builder.is_empty() {
-        None
-    } else {
-        Some(builder.build())
-    };
+    let delta = if builder.is_empty() { None } else { Some(builder.build()) };
     (delta, final_selection)
 }
 

@@ -379,7 +379,8 @@ impl Editor {
             view.get_lines(),
             movement,
             view.scroll_height(),
-            save);
+            save,
+        );
         if let Some(rope) = rope {
             *kill_ring = rope;
         }
@@ -414,13 +415,11 @@ impl Editor {
         // if we indent multiple regions or multiple lines (below),
         // we treat this as an indentation adjustment; otherwise it is
         // just inserting text.
-        let condition = regions.first().map(|x| view.get_line_range(&self.text, x).len() > 1).unwrap_or(false);
-        self.this_edit_type = if regions.len() > 1 || condition {
-            EditType::Indent
-        } else {
-            EditType::InsertChars
-        };
-        
+        let condition =
+            regions.first().map(|x| view.get_line_range(&self.text, x).len() > 1).unwrap_or(false);
+        self.this_edit_type =
+            if regions.len() > 1 || condition { EditType::Indent } else { EditType::InsertChars };
+
         self.add_delta(edit_ops::insert_tab(&self.text, regions, config));
     }
 
@@ -536,7 +535,9 @@ impl Editor {
     }
 
     fn transform_text<F: Fn(&str) -> String>(&mut self, view: &View, transform_function: F) {
-        if let Some(delta) = edit_ops::transform_text(&self.text, view.sel_regions(), transform_function) {
+        if let Some(delta) =
+            edit_ops::transform_text(&self.text, view.sel_regions(), transform_function)
+        {
             self.add_delta(delta);
         }
     }
@@ -554,7 +555,9 @@ impl Editor {
     ///
     /// This function also works fine with multiple regions.
     fn change_number<F: Fn(i128) -> Option<i128>>(&mut self, view: &View, transform_function: F) {
-        if let Some(delta) = edit_ops::change_number(&self.text, view.sel_regions(), transform_function) {
+        if let Some(delta) =
+            edit_ops::change_number(&self.text, view.sel_regions(), transform_function)
+        {
             self.add_delta(delta);
         }
     }
