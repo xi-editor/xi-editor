@@ -16,14 +16,13 @@
 use xi_rope::{Cursor, Rope};
 
 use crate::config::BufferItems;
-use crate::line_offset::LineOffset;
+use crate::line_offset::{LineOffset, DefaultLineOffset};
 use crate::selection::SelRegion;
 use crate::view::View;
 use xi_unicode::*;
 
 #[allow(clippy::cognitive_complexity)]
 pub fn offset_for_delete_backwards(
-    view: &View,
     region: &SelRegion,
     text: &Rope,
     config: &BufferItems,
@@ -32,7 +31,7 @@ pub fn offset_for_delete_backwards(
         region.min()
     } else {
         // backspace deletes max(1, tab_size) contiguous spaces
-        let (_, c) = view.offset_to_line_col(&text, region.start);
+        let (_, c) = DefaultLineOffset.offset_to_line_col(&text, region.start);
 
         let tab_off = c % config.tab_size;
         let tab_size = config.tab_size;

@@ -11,9 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+#![allow(clippy::range_plus_one)]
+
+use std::ops::Range;
+
+use xi_rope::Rope;
 
 use crate::linewrap::Lines;
-use xi_rope::Rope;
+use crate::selection::SelRegion;
 
 /// A trait from which lines and columns in a document can be calculated
 /// into offsets inside a rope an vice versa.
@@ -65,6 +70,17 @@ pub trait LineOffset {
             }
         }
         offset
+    }
+
+    /// Get the line range of a selected region.
+    fn get_line_range(&self, text: &Rope, region: &SelRegion) -> Range<usize> {
+        let (first_line, _) = self.offset_to_line_col(text, region.min());
+        let (mut last_line, last_col) = self.offset_to_line_col(text, region.max());
+        if last_col == 0 && last_line > first_line {
+            last_line -= 1;
+        }
+
+        first_line..(last_line + 1)
     }
 }
 

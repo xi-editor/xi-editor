@@ -14,14 +14,25 @@
 
 //! Functions for editing ropes.
 
+use std::borrow::{Borrow, Cow};
 use std::collections::BTreeSet;
 
 use xi_rope::{Cursor, DeltaBuilder, Interval, LinesMetric, Rope, RopeDelta, Transformer};
+use xi_rope::rope::count_newlines;
 
+use crate::backspace::offset_for_delete_backwards;
 use crate::config::BufferItems;
-use crate::line_offset::LineOffset;
+use crate::line_offset::{LineOffset, DefaultLineOffset};
+use crate::linewrap::{InvalLines, Lines, VisualLine, WrapWidth};
+use crate::movement::{region_movement, Movement};
 use crate::selection::{Selection, SelRegion};
 use crate::view::View;
+use crate::word_boundaries::WordCursor;
+
+pub enum IndentDirection {
+    In,
+    Out,
+}
 
 /// Replaces the selection with the text `T`.
 pub fn insert<T: Into<Rope>>(base : &Rope, regions: &[SelRegion], text: T) -> RopeDelta {
@@ -31,7 +42,7 @@ pub fn insert<T: Into<Rope>>(base : &Rope, regions: &[SelRegion], text: T) -> Ro
         let iv = Interval::new(region.min(), region.max());
         builder.replace(iv, rope.clone());
     }
-    return builder.build();
+    builder.build()
 }
 
 /// Leaves the current selection untouched, but surrounds it with two insertions.
@@ -49,24 +60,24 @@ where
         let after_iv = Interval::new(region.max(), region.max());
         builder.replace(after_iv, after_rope.clone());
     }
-    return builder.build();
+    builder.build()
 }
 
-pub fn duplicate_line(base: &Rope, view: &View, config: &BufferItems) -> RopeDelta {
+pub fn duplicate_line(base: &Rope, regions: &[SelRegion], config: &BufferItems) -> RopeDelta {
     let mut builder = DeltaBuilder::new(base.len());
     // get affected lines or regions
     let mut to_duplicate = BTreeSet::new();
 
-    for region in view.sel_regions() {
-        let (first_line, _) = view.offset_to_line_col(base, region.min());
-        let line_start = view.offset_of_line(base, first_line);
+    for region in regions {
+        let (first_line, _) = DefaultLineOffset.offset_to_line_col(base, region.min());
+        let line_start = DefaultLineOffset.offset_of_line(base, first_line);
 
         let mut cursor = match region.is_caret() {
             true => Cursor::new(base, line_start),
             false => {
                 // duplicate all lines together that are part of the same selections
-                let (last_line, _) = view.offset_to_line_col(base, region.max());
-                let line_end = view.offset_of_line(base, last_line);
+                let (last_line, _) = DefaultLineOffset.offset_to_line_col(base, region.max());
+                let line_end = DefaultLineOffset.offset_of_line(base, last_line);
                 Cursor::new(base, line_end)
             }
         };
@@ -87,7 +98,337 @@ pub fn duplicate_line(base: &Rope, view: &View, config: &BufferItems) -> RopeDel
         }
     }
 
-    return builder.build();
-    //self.this_edit_type = EditType::Other;
-    //self.add_delta(builder.build());
+    builder.build()
+}
+
+/// Used when the user presses the backspace key. If no delta is returned, then nothing changes.
+pub fn delete_backward(base: &Rope, regions: &[SelRegion], config: &BufferItems) -> Option<RopeDelta> {
+    // TODO: this function is workable but probably overall code complexity
+    // could be improved by implementing a "backspace" movement instead.
+    let mut builder = DeltaBuilder::new(base.len());
+    for region in regions {
+        let start = offset_for_delete_backwards(&region, base, &config);
+        let iv = Interval::new(start, region.max());
+        if !iv.is_empty() {
+            builder.delete(iv);
+        }
+    }
+
+    if !builder.is_empty() {
+        return None;
+    }
+    Some(builder.build())
+}
+
+/// Common logic for a number of delete methods. For each region in the
+/// selection, if the selection is a caret, delete the region between
+/// the caret and the movement applied to the caret, otherwise delete
+/// the region.
+///
+/// If `save` is set, the tuple will contain a rope with the deleted text.
+/// 
+/// # Arguments
+///
+/// * `height` - viewport height
+pub(crate) fn delete_by_movement(
+    base: &Rope,
+    regions: &[SelRegion],
+    lines: &Lines,
+    movement: Movement,
+    height: usize,
+    save: bool
+) -> (Option<RopeDelta>, Option<Rope>) {
+    // We compute deletions as a selection because the merge logic
+    // is convenient. Another possibility would be to make the delta
+    // builder able to handle overlapping deletions (with union semantics).
+    let mut deletions = Selection::new();
+    for &r in regions {
+        if r.is_caret() {
+            let new_region =
+                region_movement(movement, r, lines, height, base, true);
+            deletions.add_region(new_region);
+        } else {
+            deletions.add_region(r);
+        }
+    }
+
+    let mut kill_ring = None;
+    if save {
+        let saved = extract_sel_regions(base, &deletions).unwrap_or_default();
+        kill_ring = Some(Rope::from(saved));
+    }
+
+    (delete_sel_regions(base, &deletions), kill_ring)
+}
+
+/// Deletes the given regions.
+pub(crate) fn delete_sel_regions(base: &Rope, sel_regions: &[SelRegion]) -> Option<RopeDelta> {
+    let mut builder = DeltaBuilder::new(base.len());
+    for region in sel_regions {
+        let iv = Interval::new(region.min(), region.max());
+        if !iv.is_empty() {
+            builder.delete(iv);
+        }
+    }
+    if !builder.is_empty() {
+        return None;
+    }
+    Some(builder.build())
+}
+
+/// Extracts non-caret selection regions into a string,
+/// joining multiple regions with newlines.
+pub(crate) fn extract_sel_regions<'a>(base: &'a Rope, sel_regions: &[SelRegion]) -> Option<Cow<'a, str>> {
+    let mut saved = None;
+    for region in sel_regions {
+        if !region.is_caret() {
+            let val = base.slice_to_cow(region);
+            match saved {
+                None => saved = Some(val),
+                Some(ref mut s) => {
+                    s.to_mut().push('\n');
+                    s.to_mut().push_str(&val);
+                }
+            }
+        }
+    }
+    saved
+}
+
+pub fn insert_newline(base: &Rope, regions: &[SelRegion], config: &BufferItems) -> RopeDelta {
+    insert(base, regions, &config.line_ending)
+}
+
+pub fn insert_tab(base: &Rope, regions: &[SelRegion], config: &BufferItems) -> RopeDelta {
+    let mut builder = DeltaBuilder::new(base.len());
+    let const_tab_text = get_tab_text(config, None);
+
+    for region in regions {
+        let line_range = DefaultLineOffset.get_line_range(base, region);
+
+        if line_range.len() > 1 {
+            for line in line_range {
+                let offset = DefaultLineOffset.line_col_to_offset(base, line, 0);
+                let iv = Interval::new(offset, offset);
+                builder.replace(iv, Rope::from(const_tab_text));
+            }
+        } else {
+            let (_, col) = DefaultLineOffset.offset_to_line_col(base, region.start);
+            let mut tab_size = config.tab_size;
+            tab_size = tab_size - (col % tab_size);
+            let tab_text = get_tab_text(config, Some(tab_size));
+
+            let iv = Interval::new(region.min(), region.max());
+            builder.replace(iv, Rope::from(tab_text));
+        }
+    }
+    builder.build()
+}
+
+/// Indents or outdents lines based on selection and user's tab settings.
+/// Uses a BTreeSet to holds the collection of lines to modify.
+/// Preserves cursor position and current selection as much as possible.
+/// Tries to have behavior consistent with other editors like Atom,
+/// Sublime and VSCode, with non-caret selections not being modified.
+pub fn modify_indent(base: &Rope, regions: &[SelRegion], config: &BufferItems, direction: IndentDirection) {
+    let mut lines = BTreeSet::new();
+    let tab_text = get_tab_text(config, None);
+    for region in regions {
+        let line_range = DefaultLineOffset.get_line_range(base, region);
+        for line in line_range {
+            lines.insert(line);
+        }
+    }
+    match direction {
+        IndentDirection::In => indent(base, lines, tab_text),
+        IndentDirection::Out => outdent(base, lines, tab_text),
+    };
+}
+
+pub fn indent(base: &Rope, lines: BTreeSet<usize>, tab_text: &str) -> RopeDelta {
+    let mut builder = DeltaBuilder::new(base.len());
+    for line in lines {
+        let offset = DefaultLineOffset.line_col_to_offset(base, line, 0);
+        let interval = Interval::new(offset, offset);
+        builder.replace(interval, Rope::from(tab_text));
+    }
+    builder.build()
+}
+
+pub fn outdent(base: &Rope, lines: BTreeSet<usize>, tab_text: &str) -> RopeDelta{
+    let mut builder = DeltaBuilder::new(base.len());
+    for line in lines {
+        let offset = DefaultLineOffset.line_col_to_offset(base, line, 0);
+        let tab_offset = DefaultLineOffset.line_col_to_offset(base, line, tab_text.len());
+        let interval = Interval::new(offset, tab_offset);
+        let leading_slice = base.slice_to_cow(interval.start()..interval.end());
+        if leading_slice == tab_text {
+            builder.delete(interval);
+        } else if let Some(first_char_col) = leading_slice.find(|c: char| !c.is_whitespace()) {
+            let first_char_offset = DefaultLineOffset.line_col_to_offset(base, line, first_char_col);
+            let interval = Interval::new(offset, first_char_offset);
+            builder.delete(interval);
+        }
+    }
+    builder.build()
+}
+
+/*pub fn do_insert(base: &Rope, regions: &[SelRegion], config: &BufferItems, chars: &str) -> RopeDelta {
+    let pair_search = config.surrounding_pairs.iter().find(|pair| pair.0 == chars);
+    let caret_exists = regions.iter().any(|region| region.is_caret());
+    if let (Some(pair), false) = (pair_search, caret_exists) {
+        //self.this_edit_type = EditType::Surround;
+        surround(base, regions, pair.0.to_string(), pair.1.to_string())
+    } else {
+        //self.this_edit_type = EditType::InsertChars;
+        insert(base, regions, chars)
+    }
+}
+
+pub fn do_paste(base: &Rope, regions: &[SelRegion], chars: &str) -> RopeDelta {
+    if regions.len() == 1 || regions.len() != count_lines(chars) {
+        insert(base, regions, chars)
+    } else {
+        let mut builder = DeltaBuilder::new(base.len());
+        for (sel, line) in regions.iter().zip(chars.lines()) {
+            let iv = Interval::new(sel.min(), sel.max());
+            builder.replace(iv, line.into());
+        }
+        builder.build()
+    }
+}*/
+
+pub fn do_transpose(base: &Rope, regions: &[SelRegion]) -> Option<RopeDelta> {
+    let mut builder = DeltaBuilder::new(base.len());
+    let mut last = 0;
+    let mut optional_previous_selection: Option<(Interval, Rope)> =
+        last_selection_region(regions)
+            .map(|&region| sel_region_to_interval_and_rope(base, region));
+
+    for &region in regions {
+        if region.is_caret() {
+            let mut middle = region.end;
+            let mut start = base.prev_grapheme_offset(middle).unwrap_or(0);
+            let mut end = base.next_grapheme_offset(middle).unwrap_or(middle);
+
+            // Note: this matches Emac's behavior. It swaps last
+            // two characters of line if at end of line.
+            if start >= last {
+                let end_line_offset =
+                    DefaultLineOffset.offset_of_line(base, DefaultLineOffset.line_of_offset(base, end));
+                // include end != self.text.len() because if the editor is entirely empty, we dont' want to pull from empty space
+                if (end == middle || end == end_line_offset) && end != base.len() {
+                    middle = start;
+                    start = base.prev_grapheme_offset(middle).unwrap_or(0);
+                    end = middle.wrapping_add(1);
+                }
+
+                let interval = Interval::new(start, end);
+                let before = base.slice_to_cow(start..middle);
+                let after = base.slice_to_cow(middle..end);
+                let swapped: String = [after, before].concat();
+                builder.replace(interval, Rope::from(swapped));
+                last = end;
+            }
+        } else if let Some(previous_selection) = optional_previous_selection {
+            let current_interval = sel_region_to_interval_and_rope(base, region);
+            builder.replace(current_interval.0, previous_selection.1);
+            optional_previous_selection = Some(current_interval);
+        }
+    }
+    if builder.is_empty() {
+        None
+    } else {
+        Some(builder.build())
+    }
+}
+
+pub fn transform_text<F: Fn(&str) -> String>(base: &Rope, regions: &[SelRegion], transform_function: F) -> Option<RopeDelta> {
+    let mut builder = DeltaBuilder::new(base.len());
+
+    for region in regions {
+        let selected_text = base.slice_to_cow(region);
+        let interval = Interval::new(region.min(), region.max());
+        builder.replace(interval, Rope::from(transform_function(&selected_text)));
+    }
+    if builder.is_empty() {
+        None
+    } else {
+        Some(builder.build())
+    }
+}
+
+// capitalization behaviour is similar to behaviour in XCode
+pub fn capitalize_text(base: &Rope, regions: &[SelRegion]) -> (Option<RopeDelta>, Selection) {
+    let mut builder = DeltaBuilder::new(base.len());
+    let mut final_selection = Selection::new();
+
+    for &region in regions {
+        final_selection.add_region(SelRegion::new(region.max(), region.max()));
+        let mut word_cursor = WordCursor::new(base, region.min());
+
+        loop {
+            // capitalize each word in the current selection
+            let (start, end) = word_cursor.select_word();
+
+            if start < end {
+                let interval = Interval::new(start, end);
+                let word = base.slice_to_cow(start..end);
+
+                // first letter is uppercase, remaining letters are lowercase
+                let (first_char, rest) = word.split_at(1);
+                let capitalized_text =
+                    [first_char.to_uppercase(), rest.to_lowercase()].concat();
+                builder.replace(interval, Rope::from(capitalized_text));
+            }
+
+            if word_cursor.next_boundary().is_none() || end > region.max() {
+                break;
+            }
+        }
+    }
+
+    let delta = if builder.is_empty() {
+        None
+    } else {
+        Some(builder.build())
+    };
+    (delta, final_selection)
+}
+
+fn sel_region_to_interval_and_rope(base: &Rope, region: SelRegion) -> (Interval, Rope) {
+    let as_interval = Interval::new(region.min(), region.max());
+    let interval_rope = base.subseq(as_interval);
+    (as_interval, interval_rope)
+}
+
+fn last_selection_region(regions: &[SelRegion]) -> Option<&SelRegion> {
+    for region in regions.iter().rev() {
+        if !region.is_caret() {
+            return Some(region);
+        }
+    }
+    None
+}
+
+fn get_tab_text(config: &BufferItems, tab_size: Option<usize>) -> &'static str {
+    let tab_size = tab_size.unwrap_or(config.tab_size);
+    let tab_text = if config.translate_tabs_to_spaces { n_spaces(tab_size) } else { "\t" };
+
+    tab_text
+}
+
+fn n_spaces(n: usize) -> &'static str {
+    let spaces = "                                ";
+    assert!(n <= spaces.len());
+    &spaces[..n]
+}
+
+/// Counts the number of lines in the string, not including any trailing newline.
+fn count_lines(s: &str) -> usize {
+    let mut newlines = count_newlines(s);
+    if s.as_bytes().last() == Some(&0xa) {
+        newlines -= 1;
+    }
+    1 + newlines
 }

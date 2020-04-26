@@ -26,7 +26,9 @@ use xi_rope::{Cursor, DeltaBuilder, Interval, LinesMetric, Rope, RopeDelta, Tran
 use xi_trace::{trace_block, trace_payload};
 
 use crate::annotations::{AnnotationType, Annotations};
+use crate::backspace::offset_for_delete_backwards;
 use crate::config::BufferItems;
+use crate::edit_ops::*;
 use crate::edit_types::BufferEvent;
 use crate::event_context::MAX_SIZE_LIMIT;
 use crate::layers::Layers;
@@ -42,18 +44,12 @@ use crate::word_boundaries::WordCursor;
 
 #[cfg(not(feature = "ledger"))]
 pub struct SyncStore;
-use crate::backspace::offset_for_delete_backwards;
 #[cfg(feature = "ledger")]
 use fuchsia::sync::SyncStore;
 
 // TODO This could go much higher without issue but while developing it is
 // better to keep it low to expose bugs in the GC during casual testing.
 const MAX_UNDOS: usize = 20;
-
-enum IndentDirection {
-    In,
-    Out,
-}
 
 pub struct Editor {
     /// The contents of the buffer.
@@ -377,7 +373,7 @@ impl Editor {
         // could be improved by implementing a "backspace" movement instead.
         let mut builder = DeltaBuilder::new(self.text.len());
         for region in view.sel_regions() {
-            let start = offset_for_delete_backwards(&view, &region, &self.text, &config);
+            let start = offset_for_delete_backwards(&region, &self.text, &config);
             let iv = Interval::new(start, region.max());
             if !iv.is_empty() {
                 builder.delete(iv);

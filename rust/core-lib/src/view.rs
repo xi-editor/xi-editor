@@ -11,7 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#![allow(clippy::range_plus_one)]
 
 use std::cell::RefCell;
 use std::cmp::{max, min};
@@ -1220,17 +1219,6 @@ impl View {
 
         self.set_dirty(text);
         self.do_set_replace(replacement.into_owned(), false);
-    }
-
-    /// Get the line range of a selected region.
-    pub fn get_line_range(&self, text: &Rope, region: &SelRegion) -> Range<usize> {
-        let (first_line, _) = self.offset_to_line_col(text, region.min());
-        let (mut last_line, last_col) = self.offset_to_line_col(text, region.max());
-        if last_col == 0 && last_line > first_line {
-            last_line -= 1;
-        }
-
-        first_line..(last_line + 1)
     }
 
     pub fn get_caret_offset(&self) -> Option<usize> {
