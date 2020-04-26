@@ -354,7 +354,8 @@ impl Editor {
     }
 
     fn delete_backward(&mut self, view: &View, config: &BufferItems) {
-        if let Some(delta) = edit_ops::delete_backward(&self.text, view.sel_regions(), config) {
+        let delta = edit_ops::delete_backward(&self.text, view.sel_regions(), config);
+        if !delta.is_identity() {
             self.this_edit_type = EditType::Delete;
             self.add_delta(delta);
         }
@@ -384,7 +385,7 @@ impl Editor {
         if let Some(rope) = rope {
             *kill_ring = rope;
         }
-        if let Some(delta) = delta {
+        if !delta.is_identity() {
             self.this_edit_type = EditType::Delete;
             self.add_delta(delta);
         }
@@ -392,16 +393,11 @@ impl Editor {
 
     /// Deletes the given regions.
     fn delete_sel_regions(&mut self, sel_regions: &[SelRegion]) {
-        if let Some(delta) = edit_ops::delete_sel_regions(&self.text, sel_regions) {
+        let delta = edit_ops::delete_sel_regions(&self.text, sel_regions);
+        if !delta.is_identity() {
             self.this_edit_type = EditType::Delete;
             self.add_delta(delta);
         }
-    }
-
-    /// Extracts non-caret selection regions into a string,
-    /// joining multiple regions with newlines.
-    fn extract_sel_regions(&self, sel_regions: &[SelRegion]) -> Option<Cow<str>> {
-        edit_ops::extract_sel_regions(&self.text, sel_regions)
     }
 
     fn insert_newline(&mut self, view: &View, config: &BufferItems) {
@@ -468,7 +464,7 @@ impl Editor {
     }
 
     pub(crate) fn do_copy(&self, view: &View) -> Value {
-        if let Some(val) = self.extract_sel_regions(view.sel_regions()) {
+        if let Some(val) = edit_ops::extract_sel_regions(&self.text, view.sel_regions()) {
             Value::String(val.into_owned())
         } else {
             Value::Null
@@ -499,7 +495,8 @@ impl Editor {
     }
 
     fn do_transpose(&mut self, view: &View) {
-        if let Some(delta) = edit_ops::transpose(&self.text, view.sel_regions()) {
+        let delta = edit_ops::transpose(&self.text, view.sel_regions());
+        if !delta.is_identity() {
             self.add_delta(delta);
         }
     }
@@ -535,9 +532,8 @@ impl Editor {
     }
 
     fn transform_text<F: Fn(&str) -> String>(&mut self, view: &View, transform_function: F) {
-        if let Some(delta) =
-            edit_ops::transform_text(&self.text, view.sel_regions(), transform_function)
-        {
+        let delta = edit_ops::transform_text(&self.text, view.sel_regions(), transform_function);
+        if !delta.is_identity() {
             self.add_delta(delta);
         }
     }
@@ -555,9 +551,8 @@ impl Editor {
     ///
     /// This function also works fine with multiple regions.
     fn change_number<F: Fn(i128) -> Option<i128>>(&mut self, view: &View, transform_function: F) {
-        if let Some(delta) =
-            edit_ops::change_number(&self.text, view.sel_regions(), transform_function)
-        {
+        let delta = edit_ops::change_number(&self.text, view.sel_regions(), transform_function);
+        if !delta.is_identity() {
             self.add_delta(delta);
         }
     }
@@ -565,7 +560,7 @@ impl Editor {
     // capitalization behaviour is similar to behaviour in XCode
     fn capitalize_text(&mut self, view: &mut View) {
         let (delta, final_selection) = edit_ops::capitalize_text(&self.text, view.sel_regions());
-        if let Some(delta) = delta {
+        if !delta.is_identity() {
             self.this_edit_type = EditType::Other;
             self.add_delta(delta);
         }
@@ -589,6 +584,8 @@ impl Editor {
         cmd: BufferEvent,
     ) {
         use self::BufferEvent::*;
+        //let regions = view.sel_regions();
+        //let mut text = &mut self.text;
         match cmd {
             Delete { movement, kill } => self.delete_by_movement(view, movement, kill, kill_ring),
             Backspace => self.delete_backward(view, config),

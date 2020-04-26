@@ -40,6 +40,7 @@ pub fn insert<T: Into<Rope>>(base: &Rope, regions: &[SelRegion], text: T) -> Rop
         let iv = Interval::new(region.min(), region.max());
         builder.replace(iv, rope.clone());
     }
+
     builder.build()
 }
 
@@ -63,6 +64,7 @@ where
         let after_iv = Interval::new(region.max(), region.max());
         builder.replace(after_iv, after_rope.clone());
     }
+    
     builder.build()
 }
 
@@ -109,7 +111,7 @@ pub fn delete_backward(
     base: &Rope,
     regions: &[SelRegion],
     config: &BufferItems,
-) -> Option<RopeDelta> {
+) -> RopeDelta {
     // TODO: this function is workable but probably overall code complexity
     // could be improved by implementing a "backspace" movement instead.
     let mut builder = DeltaBuilder::new(base.len());
@@ -121,10 +123,7 @@ pub fn delete_backward(
         }
     }
 
-    if builder.is_empty() {
-        return None;
-    }
-    Some(builder.build())
+    builder.build()
 }
 
 /// Common logic for a number of delete methods. For each region in the
@@ -144,7 +143,7 @@ pub(crate) fn delete_by_movement(
     movement: Movement,
     height: usize,
     save: bool,
-) -> (Option<RopeDelta>, Option<Rope>) {
+) -> (RopeDelta, Option<Rope>) {
     // We compute deletions as a selection because the merge logic
     // is convenient. Another possibility would be to make the delta
     // builder able to handle overlapping deletions (with union semantics).
@@ -169,7 +168,7 @@ pub(crate) fn delete_by_movement(
 }
 
 /// Deletes the given regions.
-pub(crate) fn delete_sel_regions(base: &Rope, sel_regions: &[SelRegion]) -> Option<RopeDelta> {
+pub(crate) fn delete_sel_regions(base: &Rope, sel_regions: &[SelRegion]) -> RopeDelta {
     let mut builder = DeltaBuilder::new(base.len());
     for region in sel_regions {
         let iv = Interval::new(region.min(), region.max());
@@ -177,10 +176,8 @@ pub(crate) fn delete_sel_regions(base: &Rope, sel_regions: &[SelRegion]) -> Opti
             builder.delete(iv);
         }
     }
-    if builder.is_empty() {
-        return None;
-    }
-    Some(builder.build())
+    
+    builder.build()
 }
 
 /// Extracts non-caret selection regions into a string,
@@ -232,6 +229,7 @@ pub fn insert_tab(base: &Rope, regions: &[SelRegion], config: &BufferItems) -> R
             builder.replace(iv, Rope::from(tab_text));
         }
     }
+
     builder.build()
 }
 
@@ -323,7 +321,7 @@ fn count_lines(s: &str) -> usize {
     1 + newlines
 }*/
 
-pub fn transpose(base: &Rope, regions: &[SelRegion]) -> Option<RopeDelta> {
+pub fn transpose(base: &Rope, regions: &[SelRegion]) -> RopeDelta {
     let mut builder = DeltaBuilder::new(base.len());
     let mut last = 0;
     let mut optional_previous_selection: Option<(Interval, Rope)> =
@@ -360,18 +358,15 @@ pub fn transpose(base: &Rope, regions: &[SelRegion]) -> Option<RopeDelta> {
             optional_previous_selection = Some(current_interval);
         }
     }
-    if builder.is_empty() {
-        None
-    } else {
-        Some(builder.build())
-    }
+    
+    builder.build()
 }
 
 pub fn transform_text<F: Fn(&str) -> String>(
     base: &Rope,
     regions: &[SelRegion],
     transform_function: F,
-) -> Option<RopeDelta> {
+) -> RopeDelta {
     let mut builder = DeltaBuilder::new(base.len());
 
     for region in regions {
@@ -379,11 +374,8 @@ pub fn transform_text<F: Fn(&str) -> String>(
         let interval = Interval::new(region.min(), region.max());
         builder.replace(interval, Rope::from(transform_function(&selected_text)));
     }
-    if builder.is_empty() {
-        None
-    } else {
-        Some(builder.build())
-    }
+    
+    builder.build()
 }
 
 /// Changes the number(s) under the cursor(s) with the `transform_function`.
@@ -402,7 +394,7 @@ pub fn change_number<F: Fn(i128) -> Option<i128>>(
     base: &Rope,
     regions: &[SelRegion],
     transform_function: F,
-) -> Option<RopeDelta> {
+) -> RopeDelta {
     let mut builder = DeltaBuilder::new(base.len());
     for region in regions {
         let mut cursor = WordCursor::new(base, region.end);
@@ -420,15 +412,11 @@ pub fn change_number<F: Fn(i128) -> Option<i128>>(
         }
     }
 
-    if builder.is_empty() {
-        None
-    } else {
-        Some(builder.build())
-    }
+    builder.build()
 }
 
 // capitalization behaviour is similar to behaviour in XCode
-pub fn capitalize_text(base: &Rope, regions: &[SelRegion]) -> (Option<RopeDelta>, Selection) {
+pub fn capitalize_text(base: &Rope, regions: &[SelRegion]) -> (RopeDelta, Selection) {
     let mut builder = DeltaBuilder::new(base.len());
     let mut final_selection = Selection::new();
 
@@ -456,8 +444,7 @@ pub fn capitalize_text(base: &Rope, regions: &[SelRegion]) -> (Option<RopeDelta>
         }
     }
 
-    let delta = if builder.is_empty() { None } else { Some(builder.build()) };
-    (delta, final_selection)
+    (builder.build(), final_selection)
 }
 
 fn sel_region_to_interval_and_rope(base: &Rope, region: SelRegion) -> (Interval, Rope) {
