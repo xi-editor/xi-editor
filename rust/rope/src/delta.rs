@@ -16,6 +16,8 @@
 //! It's useful to explicitly represent these operations so they can be
 //! shared across multiple subsystems.
 
+#![allow(clippy::many_single_char_names)]
+
 use crate::interval::{Interval, IntervalBounds};
 use crate::multiset::{CountMatcher, Subset, SubsetBuilder};
 use crate::tree::{Node, NodeInfo, TreeBuilder};

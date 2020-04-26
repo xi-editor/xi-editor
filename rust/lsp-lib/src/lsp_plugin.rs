@@ -28,7 +28,15 @@ use crate::lsp_types::*;
 use crate::result_queue::ResultQueue;
 use crate::types::{Config, LanguageResponseError, LspResponse};
 use crate::utils::*;
-use crate::xi_core::{ConfigTable, ViewId};
+use crate::xi_core::ConfigTable;
+use crate::xi_core::ViewId;
+use std::collections::HashMap;
+use std::path::Path;
+use std::sync::Arc;
+use std::sync::Mutex;
+use url::Url;
+use xi_plugin_lib::{ChunkCache, CoreProxy, Plugin, View};
+use xi_rope::rope::RopeDelta;
 
 pub struct ViewInfo {
     version: u64,
@@ -280,6 +288,7 @@ impl LspPlugin {
         F: FnOnce(&mut LanguageServerClient) -> R,
     {
         let view_info = self.view_info.get_mut(&view.get_id())?;
+
         let ls_client_arc = &self.language_server_clients[&view_info.ls_identifier];
         let mut ls_client = ls_client_arc.lock().unwrap();
         Some(f(&mut ls_client))

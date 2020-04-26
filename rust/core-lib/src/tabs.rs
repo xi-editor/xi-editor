@@ -19,6 +19,8 @@
 //! This file is called 'tabs' for historical reasons, and should probably
 //! be renamed.
 
+#![allow(clippy::clone_on_copy)]
+
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashSet};
 use std::fmt;
