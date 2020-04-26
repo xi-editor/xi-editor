@@ -22,25 +22,23 @@ use xi_rope::diff::{Diff, LineHashDiff};
 use xi_rope::engine::{Engine, RevId, RevToken};
 use xi_rope::rope::count_newlines;
 use xi_rope::spans::SpansBuilder;
-use xi_rope::{Cursor, DeltaBuilder, Interval, LinesMetric, Rope, RopeDelta, Transformer};
+use xi_rope::{DeltaBuilder, Interval, LinesMetric, Rope, RopeDelta, Transformer};
 use xi_trace::{trace_block, trace_payload};
 
 use crate::annotations::{AnnotationType, Annotations};
-use crate::backspace::offset_for_delete_backwards;
 use crate::config::BufferItems;
 use crate::edit_ops::{self, IndentDirection};
 use crate::edit_types::BufferEvent;
 use crate::event_context::MAX_SIZE_LIMIT;
 use crate::layers::Layers;
 use crate::line_offset::LineOffset;
-use crate::movement::{region_movement, Movement};
+use crate::movement::Movement;
 use crate::plugins::rpc::{DataSpan, GetDataResponse, PluginEdit, ScopeSpan, TextUnit};
 use crate::plugins::PluginId;
 use crate::rpc::SelectionModifier;
 use crate::selection::{InsertDrift, SelRegion, Selection};
 use crate::styles::ThemeStyleMap;
 use crate::view::{Replace, View};
-use crate::word_boundaries::WordCursor;
 
 #[cfg(not(feature = "ledger"))]
 pub struct SyncStore;

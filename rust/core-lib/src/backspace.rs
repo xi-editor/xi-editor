@@ -18,7 +18,6 @@ use xi_rope::{Cursor, Rope};
 use crate::config::BufferItems;
 use crate::line_offset::{LineOffset, DefaultLineOffset};
 use crate::selection::SelRegion;
-use crate::view::View;
 use xi_unicode::*;
 
 #[allow(clippy::cognitive_complexity)]

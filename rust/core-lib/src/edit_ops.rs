@@ -14,19 +14,17 @@
 
 //! Functions for editing ropes.
 
-use std::borrow::{Borrow, Cow};
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 
-use xi_rope::{Cursor, DeltaBuilder, Interval, LinesMetric, Rope, RopeDelta, Transformer};
-use xi_rope::rope::count_newlines;
+use xi_rope::{Cursor, DeltaBuilder, Interval, LinesMetric, Rope, RopeDelta};
 
 use crate::backspace::offset_for_delete_backwards;
 use crate::config::BufferItems;
 use crate::line_offset::{LineOffset, DefaultLineOffset};
-use crate::linewrap::{InvalLines, Lines, VisualLine, WrapWidth};
+use crate::linewrap::Lines;
 use crate::movement::{region_movement, Movement};
 use crate::selection::{Selection, SelRegion};
-use crate::view::View;
 use crate::word_boundaries::WordCursor;
 
 pub enum IndentDirection {
@@ -152,11 +150,12 @@ pub(crate) fn delete_by_movement(
         }
     }
 
-    let mut kill_ring = None;
-    if save {
+    let kill_ring = if save {
         let saved = extract_sel_regions(base, &deletions).unwrap_or_default();
-        kill_ring = Some(Rope::from(saved));
-    }
+        Some(Rope::from(saved))
+    } else {
+        None
+    };
 
     (delete_sel_regions(base, &deletions), kill_ring)
 }
