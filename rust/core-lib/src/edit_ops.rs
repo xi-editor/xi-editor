@@ -121,7 +121,7 @@ pub fn delete_backward(
         }
     }
 
-    if !builder.is_empty() {
+    if builder.is_empty() {
         return None;
     }
     Some(builder.build())
@@ -177,7 +177,7 @@ pub(crate) fn delete_sel_regions(base: &Rope, sel_regions: &[SelRegion]) -> Opti
             builder.delete(iv);
         }
     }
-    if !builder.is_empty() {
+    if builder.is_empty() {
         return None;
     }
     Some(builder.build())
