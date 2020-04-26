@@ -230,7 +230,7 @@ pub fn insert_tab(base: &Rope, regions: &[SelRegion], config: &BufferItems) -> R
 /// Preserves cursor position and current selection as much as possible.
 /// Tries to have behavior consistent with other editors like Atom,
 /// Sublime and VSCode, with non-caret selections not being modified.
-pub fn modify_indent(base: &Rope, regions: &[SelRegion], config: &BufferItems, direction: IndentDirection) {
+pub fn modify_indent(base: &Rope, regions: &[SelRegion], config: &BufferItems, direction: IndentDirection) -> RopeDelta {
     let mut lines = BTreeSet::new();
     let tab_text = get_tab_text(config, None);
     for region in regions {
@@ -242,10 +242,10 @@ pub fn modify_indent(base: &Rope, regions: &[SelRegion], config: &BufferItems, d
     match direction {
         IndentDirection::In => indent(base, lines, tab_text),
         IndentDirection::Out => outdent(base, lines, tab_text),
-    };
+    }
 }
 
-pub fn indent(base: &Rope, lines: BTreeSet<usize>, tab_text: &str) -> RopeDelta {
+fn indent(base: &Rope, lines: BTreeSet<usize>, tab_text: &str) -> RopeDelta {
     let mut builder = DeltaBuilder::new(base.len());
     for line in lines {
         let offset = DefaultLineOffset.line_col_to_offset(base, line, 0);
@@ -255,7 +255,7 @@ pub fn indent(base: &Rope, lines: BTreeSet<usize>, tab_text: &str) -> RopeDelta 
     builder.build()
 }
 
-pub fn outdent(base: &Rope, lines: BTreeSet<usize>, tab_text: &str) -> RopeDelta{
+fn outdent(base: &Rope, lines: BTreeSet<usize>, tab_text: &str) -> RopeDelta{
     let mut builder = DeltaBuilder::new(base.len());
     for line in lines {
         let offset = DefaultLineOffset.line_col_to_offset(base, line, 0);
@@ -296,9 +296,18 @@ pub fn do_paste(base: &Rope, regions: &[SelRegion], chars: &str) -> RopeDelta {
         }
         builder.build()
     }
+}
+
+/// Counts the number of lines in the string, not including any trailing newline.
+fn count_lines(s: &str) -> usize {
+    let mut newlines = count_newlines(s);
+    if s.as_bytes().last() == Some(&0xa) {
+        newlines -= 1;
+    }
+    1 + newlines
 }*/
 
-pub fn do_transpose(base: &Rope, regions: &[SelRegion]) -> Option<RopeDelta> {
+pub fn transpose(base: &Rope, regions: &[SelRegion]) -> Option<RopeDelta> {
     let mut builder = DeltaBuilder::new(base.len());
     let mut last = 0;
     let mut optional_previous_selection: Option<(Interval, Rope)> =
@@ -316,7 +325,7 @@ pub fn do_transpose(base: &Rope, regions: &[SelRegion]) -> Option<RopeDelta> {
             if start >= last {
                 let end_line_offset =
                     DefaultLineOffset.offset_of_line(base, DefaultLineOffset.line_of_offset(base, end));
-                // include end != self.text.len() because if the editor is entirely empty, we dont' want to pull from empty space
+                // include end != base.len() because if the editor is entirely empty, we dont' want to pull from empty space
                 if (end == middle || end == end_line_offset) && end != base.len() {
                     middle = start;
                     start = base.prev_grapheme_offset(middle).unwrap_or(0);
@@ -351,6 +360,43 @@ pub fn transform_text<F: Fn(&str) -> String>(base: &Rope, regions: &[SelRegion],
         let interval = Interval::new(region.min(), region.max());
         builder.replace(interval, Rope::from(transform_function(&selected_text)));
     }
+    if builder.is_empty() {
+        None
+    } else {
+        Some(builder.build())
+    }
+}
+
+/// Changes the number(s) under the cursor(s) with the `transform_function`.
+/// If there is a number next to or on the beginning of the region, then
+/// this number will be replaced with the result of `transform_function` and
+/// the cursor will be placed at the end of the number.
+/// Some Examples with a increment `transform_function`:
+///
+/// "|1234" -> "1235|"
+/// "12|34" -> "1235|"
+/// "-|12" -> "-11|"
+/// "another number is 123|]" -> "another number is 124"
+///
+/// This function also works fine with multiple regions.
+pub fn change_number<F: Fn(i128) -> Option<i128>>(base: &Rope, regions: &[SelRegion], transform_function: F) -> Option<RopeDelta> {
+    let mut builder = DeltaBuilder::new(base.len());
+    for region in regions {
+        let mut cursor = WordCursor::new(base, region.end);
+        let (mut start, end) = cursor.select_word();
+
+        // if the word begins with '-', then it is a negative number
+        if start > 0 && base.byte_at(start - 1) == (b'-') {
+            start -= 1;
+        }
+
+        let word = base.slice_to_cow(start..end);
+        if let Some(number) = word.parse::<i128>().ok().and_then(&transform_function) {
+            let interval = Interval::new(start, end);
+            builder.replace(interval, Rope::from(number.to_string()));
+        }
+    }
+
     if builder.is_empty() {
         None
     } else {
@@ -422,13 +468,4 @@ fn n_spaces(n: usize) -> &'static str {
     let spaces = "                                ";
     assert!(n <= spaces.len());
     &spaces[..n]
-}
-
-/// Counts the number of lines in the string, not including any trailing newline.
-fn count_lines(s: &str) -> usize {
-    let mut newlines = count_newlines(s);
-    if s.as_bytes().last() == Some(&0xa) {
-        newlines -= 1;
-    }
-    1 + newlines
 }

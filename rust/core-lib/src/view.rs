@@ -192,6 +192,10 @@ impl View {
         self.view_id
     }
 
+    pub(crate) fn get_lines(&self) -> &Lines {
+        &self.lines
+    }
+
     pub(crate) fn get_replace(&self) -> Option<Replace> {
         self.replace.clone()
     }
