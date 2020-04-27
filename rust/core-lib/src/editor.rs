@@ -32,7 +32,6 @@ use crate::edit_types::BufferEvent;
 use crate::event_context::MAX_SIZE_LIMIT;
 use crate::layers::Layers;
 use crate::line_offset::LineOffset;
-use crate::movement::Movement;
 use crate::plugins::rpc::{DataSpan, GetDataResponse, PluginEdit, ScopeSpan, TextUnit};
 use crate::plugins::PluginId;
 use crate::rpc::SelectionModifier;
