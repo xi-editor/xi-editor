@@ -338,36 +338,6 @@ impl Editor {
         }
     }
 
-    /// Common logic for a number of delete methods. For each region in the
-    /// selection, if the selection is a caret, delete the region between
-    /// the caret and the movement applied to the caret, otherwise delete
-    /// the region.
-    ///
-    /// If `save` is set, save the deleted text into the kill ring.
-    fn delete_by_movement(
-        &mut self,
-        view: &View,
-        movement: Movement,
-        save: bool,
-        kill_ring: &mut Rope,
-    ) {
-        let (delta, rope) = edit_ops::delete_by_movement(
-            &self.text,
-            view.sel_regions(),
-            view.get_lines(),
-            movement,
-            view.scroll_height(),
-            save,
-        );
-        if let Some(rope) = rope {
-            *kill_ring = rope;
-        }
-        if !delta.is_identity() {
-            self.this_edit_type = EditType::Delete;
-            self.add_delta(delta);
-        }
-    }
-
     fn do_insert(&mut self, view: &View, config: &BufferItems, chars: &str) {
         let pair_search = config.surrounding_pairs.iter().find(|pair| pair.0 == chars);
         let caret_exists = view.sel_regions().iter().any(|region| region.is_caret());
@@ -462,20 +432,6 @@ impl Editor {
         }
     }
 
-    // capitalization behaviour is similar to behaviour in XCode
-    fn capitalize_text(&mut self, view: &mut View) {
-        let (delta, final_selection) = edit_ops::capitalize_text(&self.text, view.sel_regions());
-        if !delta.is_identity() {
-            self.this_edit_type = EditType::Other;
-            self.add_delta(delta);
-        }
-
-        // at the end of the transformation carets are located at the end of the words that were
-        // transformed last in the selections
-        view.collapse_selections(&self.text);
-        view.set_selection(&self.text, final_selection);
-    }
-
     pub(crate) fn do_edit(
         &mut self,
         view: &mut View,
@@ -489,7 +445,21 @@ impl Editor {
 
         match cmd {
             Delete { movement, kill } => {
-                self.delete_by_movement(view, movement, kill, kill_ring);
+                let (delta, rope) = edit_ops::delete_by_movement(
+                    &self.text,
+                    regions,
+                    view.get_lines(),
+                    movement,
+                    view.scroll_height(),
+                    kill,
+                );
+                if let Some(rope) = rope {
+                    *kill_ring = rope;
+                }
+                if !delta.is_identity() {
+                    self.this_edit_type = EditType::Delete;
+                    self.add_delta(delta);
+                }
             }
             Backspace => {
                 let delta = edit_ops::delete_backward(&self.text, regions, config);
@@ -523,7 +493,16 @@ impl Editor {
                 }
             }
             Capitalize => {
-                self.capitalize_text(view);
+                let (delta, final_selection) = edit_ops::capitalize_text(&self.text, regions);
+                if !delta.is_identity() {
+                    self.this_edit_type = EditType::Other;
+                    self.add_delta(delta);
+                }
+        
+                // at the end of the transformation carets are located at the end of the words that were
+                // transformed last in the selections
+                view.collapse_selections(&self.text);
+                view.set_selection(&self.text, final_selection);
             }
             Indent => {
                 self.this_edit_type = EditType::InsertChars;
