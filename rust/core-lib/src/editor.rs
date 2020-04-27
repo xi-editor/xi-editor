@@ -498,7 +498,7 @@ impl Editor {
                     self.this_edit_type = EditType::Other;
                     self.add_delta(delta);
                 }
-        
+
                 // at the end of the transformation carets are located at the end of the words that were
                 // transformed last in the selections
                 view.collapse_selections(&self.text);
