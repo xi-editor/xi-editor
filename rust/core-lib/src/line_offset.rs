@@ -26,7 +26,7 @@ use crate::selection::SelRegion;
 pub trait LineOffset {
     // use own breaks if present, or text if not (no line wrapping)
 
-    /// Returns the byte offset corresponding to the given visual line.
+    /// Returns the byte offset corresponding to the given line.
     fn offset_of_line(&self, text: &Rope, line: usize) -> usize {
         text.offset_of_line(line)
     }

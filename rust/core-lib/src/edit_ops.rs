@@ -64,7 +64,7 @@ where
         let after_iv = Interval::new(region.max(), region.max());
         builder.replace(after_iv, after_rope.clone());
     }
-    
+
     builder.build()
 }
 
@@ -107,11 +107,7 @@ pub fn duplicate_line(base: &Rope, regions: &[SelRegion], config: &BufferItems) 
 }
 
 /// Used when the user presses the backspace key. If no delta is returned, then nothing changes.
-pub fn delete_backward(
-    base: &Rope,
-    regions: &[SelRegion],
-    config: &BufferItems,
-) -> RopeDelta {
+pub fn delete_backward(base: &Rope, regions: &[SelRegion], config: &BufferItems) -> RopeDelta {
     // TODO: this function is workable but probably overall code complexity
     // could be improved by implementing a "backspace" movement instead.
     let mut builder = DeltaBuilder::new(base.len());
@@ -176,7 +172,7 @@ pub(crate) fn delete_sel_regions(base: &Rope, sel_regions: &[SelRegion]) -> Rope
             builder.delete(iv);
         }
     }
-    
+
     builder.build()
 }
 
@@ -287,40 +283,6 @@ fn outdent(base: &Rope, lines: BTreeSet<usize>, tab_text: &str) -> RopeDelta {
     builder.build()
 }
 
-/*pub fn do_insert(base: &Rope, regions: &[SelRegion], config: &BufferItems, chars: &str) -> RopeDelta {
-    let pair_search = config.surrounding_pairs.iter().find(|pair| pair.0 == chars);
-    let caret_exists = regions.iter().any(|region| region.is_caret());
-    if let (Some(pair), false) = (pair_search, caret_exists) {
-        //self.this_edit_type = EditType::Surround;
-        surround(base, regions, pair.0.to_string(), pair.1.to_string())
-    } else {
-        //self.this_edit_type = EditType::InsertChars;
-        insert(base, regions, chars)
-    }
-}
-
-pub fn do_paste(base: &Rope, regions: &[SelRegion], chars: &str) -> RopeDelta {
-    if regions.len() == 1 || regions.len() != count_lines(chars) {
-        insert(base, regions, chars)
-    } else {
-        let mut builder = DeltaBuilder::new(base.len());
-        for (sel, line) in regions.iter().zip(chars.lines()) {
-            let iv = Interval::new(sel.min(), sel.max());
-            builder.replace(iv, line.into());
-        }
-        builder.build()
-    }
-}
-
-/// Counts the number of lines in the string, not including any trailing newline.
-fn count_lines(s: &str) -> usize {
-    let mut newlines = count_newlines(s);
-    if s.as_bytes().last() == Some(&0xa) {
-        newlines -= 1;
-    }
-    1 + newlines
-}*/
-
 pub fn transpose(base: &Rope, regions: &[SelRegion]) -> RopeDelta {
     let mut builder = DeltaBuilder::new(base.len());
     let mut last = 0;
@@ -358,7 +320,7 @@ pub fn transpose(base: &Rope, regions: &[SelRegion]) -> RopeDelta {
             optional_previous_selection = Some(current_interval);
         }
     }
-    
+
     builder.build()
 }
 
@@ -374,7 +336,7 @@ pub fn transform_text<F: Fn(&str) -> String>(
         let interval = Interval::new(region.min(), region.max());
         builder.replace(interval, Rope::from(transform_function(&selected_text)));
     }
-    
+
     builder.build()
 }
 
