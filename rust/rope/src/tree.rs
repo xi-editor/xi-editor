@@ -221,6 +221,14 @@ impl<N: NodeInfo> Node<N> {
         self.len() == 0
     }
 
+    /// Returns `true` if these two `Node`s share the same underlying data.
+    ///
+    /// This is principally intended to be used by the druid crate, without needing
+    /// to actually add a feature and implement druid's `Data` trait.
+    pub fn ptr_eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+
     fn height(&self) -> usize {
         self.0.height
     }
