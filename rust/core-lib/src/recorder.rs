@@ -16,10 +16,9 @@
 //!
 //! Clients can store multiple, named recordings.
 
-use xi_trace::trace_block;
-
 use std::collections::HashMap;
-use std::mem;
+
+use xi_trace::trace_block;
 
 use crate::edit_types::{BufferEvent, EventDomain};
 
@@ -74,7 +73,7 @@ impl Recorder {
             _ => {}
         }
 
-        mem::replace(&mut self.active_recording, recording_name);
+        self.active_recording = recording_name;
     }
 
     /// Saves an event into the currently active recording.

@@ -28,7 +28,6 @@
 //! `Engine::merge`, which is more powerful but considerably more complex.
 //! It enables support for full asynchronous and even peer-to-peer editing.
 
-use std;
 use std::borrow::Cow;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeSet;

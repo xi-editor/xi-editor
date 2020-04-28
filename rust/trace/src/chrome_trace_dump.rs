@@ -22,9 +22,9 @@
 #[cfg(all(test, feature = "benchmarks"))]
 extern crate test;
 
-use super::Sample;
-use serde_json;
 use std::io::{Error as IOError, ErrorKind as IOErrorKind, Read, Write};
+
+use super::Sample;
 
 #[derive(Debug)]
 pub enum Error {

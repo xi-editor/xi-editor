@@ -17,8 +17,7 @@
 use std::io::BufRead;
 
 use serde::de::DeserializeOwned;
-use serde_json::{self, Error as JsonError, Value};
-use xi_trace;
+use serde_json::{Error as JsonError, Value};
 
 use crate::error::{ReadError, RemoteError};
 

@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use libc;
-
 #[cfg(all(target_family = "unix", not(target_os = "fuchsia")))]
 #[inline]
 pub fn current_pid() -> u64 {
