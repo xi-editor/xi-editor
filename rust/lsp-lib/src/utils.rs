@@ -12,23 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::ffi::OsStr;
+use std::io::{BufReader, BufWriter};
+use std::path::Path;
+use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
+
+use url::Url;
+use xi_plugin_lib::{Cache, ChunkCache, CoreProxy, Error as PluginLibError, View};
+use xi_rope::rope::RopeDelta;
+
 use crate::conversion_utils::*;
 use crate::language_server_client::LanguageServerClient;
 use crate::lsp_types::*;
 use crate::parse_helper;
 use crate::result_queue::ResultQueue;
 use crate::types::Error;
-use std;
-use std::ffi::OsStr;
-use std::io::{BufReader, BufWriter};
-use std::path::Path;
-use std::process::Command;
-use std::process::Stdio;
-use std::sync::Arc;
-use std::sync::Mutex;
-use url::Url;
-use xi_plugin_lib::{Cache, ChunkCache, CoreProxy, Error as PluginLibError, View};
-use xi_rope::rope::RopeDelta;
 
 /// Get contents changes of a document modeled according to Language Server Protocol
 /// given the RopeDelta

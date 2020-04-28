@@ -15,8 +15,6 @@
 
 extern crate test;
 
-extern crate xi_unicode;
-
 #[cfg(test)]
 mod bench {
     use std::cmp::max;

@@ -14,18 +14,19 @@
 
 //! Implementation for Language Server Client
 
+use std::collections::{HashMap, HashSet};
+use std::io::Write;
+use std::process;
+
+use jsonrpc_lite::{Error, Id, JsonRpc, Params};
+use serde_json::{to_value, Value};
+use url::Url;
+use xi_plugin_lib::CoreProxy;
+
 use crate::lsp_types::*;
 use crate::result_queue::ResultQueue;
 use crate::types::Callback;
 use crate::xi_core::ViewId;
-use jsonrpc_lite::{Error, Id, JsonRpc, Params};
-use serde_json;
-use serde_json::{to_value, Value};
-use std::collections::{HashMap, HashSet};
-use std::io::Write;
-use std::process;
-use url::Url;
-use xi_plugin_lib::CoreProxy;
 
 /// A type to abstract communication with the language server
 pub struct LanguageServerClient {

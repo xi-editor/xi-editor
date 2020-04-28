@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use libc;
-
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 #[inline]
 pub fn current_tid() -> Result<u64, libc::c_int> {

@@ -22,7 +22,6 @@ use std::sync::Arc;
 
 use serde::de::{self, Deserialize};
 use serde_json::{self, Value};
-use toml;
 
 use crate::syntax::{LanguageId, Languages};
 use crate::tabs::{BufferId, ViewId};

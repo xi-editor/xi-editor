@@ -28,11 +28,8 @@ use crate::delta::{Delta, DeltaElement};
 use crate::interval::{Interval, IntervalBounds};
 use crate::tree::{Cursor, DefaultMetric, Leaf, Metric, Node, NodeInfo, TreeBuilder};
 
-use bytecount;
 use memchr::{memchr, memrchr};
-
-use unicode_segmentation::GraphemeCursor;
-use unicode_segmentation::GraphemeIncomplete;
+use unicode_segmentation::{GraphemeCursor, GraphemeIncomplete};
 
 const MIN_LEAF: usize = 511;
 const MAX_LEAF: usize = 1024;

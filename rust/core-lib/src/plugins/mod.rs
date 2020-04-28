@@ -28,7 +28,6 @@ use std::thread;
 use serde_json::Value;
 
 use xi_rpc::{self, RpcLoop, RpcPeer};
-use xi_trace;
 
 use crate::config::Table;
 use crate::syntax::LanguageId;

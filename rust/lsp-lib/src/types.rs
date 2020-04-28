@@ -11,17 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-use crate::language_server_client::LanguageServerClient;
-use crate::lsp_types::*;
-use jsonrpc_lite::Error as JsonRpcError;
-use serde_json;
-use serde_json::Value;
-use std;
+
 use std::collections::HashMap;
 use std::io::Error as IOError;
+
+use jsonrpc_lite::Error as JsonRpcError;
+use serde_json::Value;
 use url::ParseError as UrlParseError;
 use xi_plugin_lib::Error as PluginLibError;
 use xi_rpc::RemoteError;
+
+use crate::language_server_client::LanguageServerClient;
+use crate::lsp_types::*;
 
 pub enum LspHeader {
     ContentType,

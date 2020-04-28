@@ -18,7 +18,6 @@ use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use serde_json::Value;
 
 use xi_rpc::{Error as RpcError, Handler, ReadError, RemoteError, RpcCtx};
-use xi_trace;
 
 use crate::plugin_rpc::{PluginCommand, PluginNotification, PluginRequest};
 use crate::plugins::{Plugin, PluginId};

@@ -14,7 +14,6 @@
 
 //! A more sophisticated cache that manages user state.
 
-use bytecount;
 use rand::{thread_rng, Rng};
 
 use xi_rope::interval::IntervalBounds;
