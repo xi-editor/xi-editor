@@ -103,7 +103,7 @@ impl Selection {
         let mut end_ix = ix;
         if self.regions[ix].min() <= region.min() {
             if self.regions[ix].should_merge(region) {
-                region = self.regions[ix].merge_with(region);
+                region = region.merge_with(self.regions[ix]);
             } else {
                 ix += 1;
             }
@@ -343,8 +343,10 @@ impl SelRegion {
             || ((self.is_caret() || other.is_caret()) && other.min() == self.max())
     }
 
+    // Merge self with an overlapping region.
+    // Retains direction of self.
     fn merge_with(self, other: SelRegion) -> SelRegion {
-        let is_forward = self.end > self.start || other.end > other.start;
+        let is_forward = self.end >= self.start;
         let new_min = min(self.min(), other.min());
         let new_max = max(self.max(), other.max());
         let (start, end) = if is_forward { (new_min, new_max) } else { (new_max, new_min) };
@@ -495,6 +497,8 @@ mod tests {
         assert_eq!(s.deref(), &[r(1, 3), r(3, 6), r(7, 9)]);
         s.add_region(r(2, 8));
         assert_eq!(s.deref(), &[r(1, 9)]);
+        s.add_region(r(10, 8));
+        assert_eq!(s.deref(), &[r(10, 1)]);
 
         s.clear();
         assert_eq!(s.deref(), &[]);
