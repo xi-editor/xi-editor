@@ -275,8 +275,7 @@ fn outdent(base: &Rope, lines: BTreeSet<usize>, tab_text: &str) -> RopeDelta {
         if leading_slice == tab_text {
             builder.delete(interval);
         } else if let Some(first_char_col) = leading_slice.find(|c: char| !c.is_whitespace()) {
-            let first_char_offset =
-            LogicalLines.line_col_to_offset(base, line, first_char_col);
+            let first_char_offset = LogicalLines.line_col_to_offset(base, line, first_char_col);
             let interval = Interval::new(offset, first_char_offset);
             builder.delete(interval);
         }
@@ -299,8 +298,8 @@ pub fn transpose(base: &Rope, regions: &[SelRegion]) -> RopeDelta {
             // Note: this matches Emac's behavior. It swaps last
             // two characters of line if at end of line.
             if start >= last {
-                let end_line_offset = LogicalLines
-                    .offset_of_line(base, LogicalLines.line_of_offset(base, end));
+                let end_line_offset =
+                    LogicalLines.offset_of_line(base, LogicalLines.line_of_offset(base, end));
                 // include end != base.len() because if the editor is entirely empty, we dont' want to pull from empty space
                 if (end == middle || end == end_line_offset) && end != base.len() {
                     middle = start;

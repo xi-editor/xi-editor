@@ -494,10 +494,10 @@ impl Editor {
     }
 
     fn do_modify_indent(&mut self, view: &View, config: &BufferItems, direction: IndentDirection) {
-        let delta = edit_ops::modify_indent(&self.text, view.sel_regions(), config, direction.clone());
+        let delta = edit_ops::modify_indent(&self.text, view.sel_regions(), config, direction);
         self.add_delta(delta);
         self.this_edit_type = match direction {
-            IndentDirection::In  => EditType::InsertChars,
+            IndentDirection::In => EditType::InsertChars,
             IndentDirection::Out => EditType::Delete,
         }
     }
@@ -516,15 +516,10 @@ impl Editor {
         // if we indent multiple regions or multiple lines,
         // we treat this as an indentation adjustment; otherwise it is
         // just inserting text.
-        let condition = regions
-            .first()
-            .map(|x| view.get_line_range(&self.text, x).len() > 1)
-            .unwrap_or(false);
-        self.this_edit_type = if regions.len() > 1 || condition {
-            EditType::Indent
-        } else {
-            EditType::InsertChars
-        };
+        let condition =
+            regions.first().map(|x| view.get_line_range(&self.text, x).len() > 1).unwrap_or(false);
+        self.this_edit_type =
+            if regions.len() > 1 || condition { EditType::Indent } else { EditType::InsertChars };
     }
 
     fn do_yank(&mut self, view: &View, kill_ring: &Rope) {
@@ -541,7 +536,11 @@ impl Editor {
         self.this_edit_type = EditType::Other;
     }
 
-    fn do_change_number<F: Fn(i128) -> Option<i128>>(&mut self, view: &View, transform_function: F) {
+    fn do_change_number<F: Fn(i128) -> Option<i128>>(
+        &mut self,
+        view: &View,
+        transform_function: F,
+    ) {
         let delta = edit_ops::change_number(&self.text, view.sel_regions(), transform_function);
         if !delta.is_identity() {
             self.this_edit_type = EditType::Other;
@@ -558,7 +557,9 @@ impl Editor {
     ) {
         use self::BufferEvent::*;
         match cmd {
-            Delete { movement, kill } => self.do_delete_by_movement(view, movement, kill, kill_ring),
+            Delete { movement, kill } => {
+                self.do_delete_by_movement(view, movement, kill, kill_ring)
+            }
             Backspace => self.do_delete_backward(view, config),
             Transpose => self.do_transpose(view),
             Undo => self.do_undo(),
