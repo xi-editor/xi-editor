@@ -28,15 +28,7 @@ use crate::lsp_types::*;
 use crate::result_queue::ResultQueue;
 use crate::types::{Config, LanguageResponseError, LspResponse};
 use crate::utils::*;
-use crate::xi_core::ConfigTable;
-use crate::xi_core::ViewId;
-use std::collections::HashMap;
-use std::path::Path;
-use std::sync::Arc;
-use std::sync::Mutex;
-use url::Url;
-use xi_plugin_lib::{ChunkCache, CoreProxy, Plugin, View};
-use xi_rope::rope::RopeDelta;
+use crate::xi_core::{ConfigTable, ViewId};
 
 pub struct ViewInfo {
     version: u64,

@@ -12,12 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::conversion_utils::*;
-use crate::language_server_client::LanguageServerClient;
-use crate::lsp_types::*;
-use crate::parse_helper;
-use crate::result_queue::ResultQueue;
-use crate::types::Error;
 use std::ffi::OsStr;
 use std::io::{BufReader, BufWriter};
 use std::path::Path;
