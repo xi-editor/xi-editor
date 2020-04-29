@@ -470,6 +470,7 @@ impl Editor {
             Transpose => {
                 let delta = edit_ops::transpose(&self.text, regions);
                 if !delta.is_identity() {
+                    self.this_edit_type = EditType::Transpose;
                     self.add_delta(delta);
                 }
             }

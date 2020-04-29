@@ -16,8 +16,6 @@
 //! It's useful to explicitly represent these operations so they can be
 //! shared across multiple subsystems.
 
-#![allow(clippy::many_single_char_names)]
-
 use crate::interval::{Interval, IntervalBounds};
 use crate::multiset::{CountMatcher, Subset, SubsetBuilder};
 use crate::tree::{Node, NodeInfo, TreeBuilder};
@@ -381,6 +379,7 @@ where
 }
 
 impl<N: NodeInfo> InsertDelta<N> {
+    #![allow(clippy::many_single_char_names)]
     /// Do a coordinate transformation on an insert-only delta. The `after` parameter
     /// controls whether the insertions in `self` come after those specific in the
     /// coordinate transform.

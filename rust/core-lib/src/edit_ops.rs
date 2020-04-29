@@ -21,7 +21,7 @@ use xi_rope::{Cursor, DeltaBuilder, Interval, LinesMetric, Rope, RopeDelta};
 
 use crate::backspace::offset_for_delete_backwards;
 use crate::config::BufferItems;
-use crate::line_offset::{DefaultLineOffset, LineOffset};
+use crate::line_offset::{LineOffset, LogicalLines};
 use crate::linewrap::Lines;
 use crate::movement::{region_movement, Movement};
 use crate::selection::{SelRegion, Selection};
@@ -74,15 +74,15 @@ pub fn duplicate_line(base: &Rope, regions: &[SelRegion], config: &BufferItems) 
     let mut to_duplicate = BTreeSet::new();
 
     for region in regions {
-        let (first_line, _) = DefaultLineOffset.offset_to_line_col(base, region.min());
-        let line_start = DefaultLineOffset.offset_of_line(base, first_line);
+        let (first_line, _) = LogicalLines.offset_to_line_col(base, region.min());
+        let line_start = LogicalLines.offset_of_line(base, first_line);
 
         let mut cursor = match region.is_caret() {
             true => Cursor::new(base, line_start),
             false => {
                 // duplicate all lines together that are part of the same selections
-                let (last_line, _) = DefaultLineOffset.offset_to_line_col(base, region.max());
-                let line_end = DefaultLineOffset.offset_of_line(base, last_line);
+                let (last_line, _) = LogicalLines.offset_to_line_col(base, region.max());
+                let line_end = LogicalLines.offset_of_line(base, last_line);
                 Cursor::new(base, line_end)
             }
         };
@@ -207,16 +207,16 @@ pub fn insert_tab(base: &Rope, regions: &[SelRegion], config: &BufferItems) -> R
     let const_tab_text = get_tab_text(config, None);
 
     for region in regions {
-        let line_range = DefaultLineOffset.get_line_range(base, region);
+        let line_range = LogicalLines.get_line_range(base, region);
 
         if line_range.len() > 1 {
             for line in line_range {
-                let offset = DefaultLineOffset.line_col_to_offset(base, line, 0);
+                let offset = LogicalLines.line_col_to_offset(base, line, 0);
                 let iv = Interval::new(offset, offset);
                 builder.replace(iv, Rope::from(const_tab_text));
             }
         } else {
-            let (_, col) = DefaultLineOffset.offset_to_line_col(base, region.start);
+            let (_, col) = LogicalLines.offset_to_line_col(base, region.start);
             let mut tab_size = config.tab_size;
             tab_size = tab_size - (col % tab_size);
             let tab_text = get_tab_text(config, Some(tab_size));
@@ -243,7 +243,7 @@ pub fn modify_indent(
     let mut lines = BTreeSet::new();
     let tab_text = get_tab_text(config, None);
     for region in regions {
-        let line_range = DefaultLineOffset.get_line_range(base, region);
+        let line_range = LogicalLines.get_line_range(base, region);
         for line in line_range {
             lines.insert(line);
         }
@@ -257,7 +257,7 @@ pub fn modify_indent(
 fn indent(base: &Rope, lines: BTreeSet<usize>, tab_text: &str) -> RopeDelta {
     let mut builder = DeltaBuilder::new(base.len());
     for line in lines {
-        let offset = DefaultLineOffset.line_col_to_offset(base, line, 0);
+        let offset = LogicalLines.line_col_to_offset(base, line, 0);
         let interval = Interval::new(offset, offset);
         builder.replace(interval, Rope::from(tab_text));
     }
@@ -267,15 +267,15 @@ fn indent(base: &Rope, lines: BTreeSet<usize>, tab_text: &str) -> RopeDelta {
 fn outdent(base: &Rope, lines: BTreeSet<usize>, tab_text: &str) -> RopeDelta {
     let mut builder = DeltaBuilder::new(base.len());
     for line in lines {
-        let offset = DefaultLineOffset.line_col_to_offset(base, line, 0);
-        let tab_offset = DefaultLineOffset.line_col_to_offset(base, line, tab_text.len());
+        let offset = LogicalLines.line_col_to_offset(base, line, 0);
+        let tab_offset = LogicalLines.line_col_to_offset(base, line, tab_text.len());
         let interval = Interval::new(offset, tab_offset);
         let leading_slice = base.slice_to_cow(interval.start()..interval.end());
         if leading_slice == tab_text {
             builder.delete(interval);
         } else if let Some(first_char_col) = leading_slice.find(|c: char| !c.is_whitespace()) {
             let first_char_offset =
-                DefaultLineOffset.line_col_to_offset(base, line, first_char_col);
+            LogicalLines.line_col_to_offset(base, line, first_char_col);
             let interval = Interval::new(offset, first_char_offset);
             builder.delete(interval);
         }
@@ -298,8 +298,8 @@ pub fn transpose(base: &Rope, regions: &[SelRegion]) -> RopeDelta {
             // Note: this matches Emac's behavior. It swaps last
             // two characters of line if at end of line.
             if start >= last {
-                let end_line_offset = DefaultLineOffset
-                    .offset_of_line(base, DefaultLineOffset.line_of_offset(base, end));
+                let end_line_offset = LogicalLines
+                    .offset_of_line(base, LogicalLines.line_of_offset(base, end));
                 // include end != base.len() because if the editor is entirely empty, we dont' want to pull from empty space
                 if (end == middle || end == end_line_offset) && end != base.len() {
                     middle = start;

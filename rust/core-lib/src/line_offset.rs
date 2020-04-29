@@ -86,10 +86,10 @@ pub trait LineOffset {
 }
 
 /// A struct from which the default definitions for `offset_of_line`
-/// and `line_of_offset` can be accessed.
-pub struct DefaultLineOffset;
+/// and `line_of_offset` can be accessed, and think in logical lines.
+pub struct LogicalLines;
 
-impl LineOffset for DefaultLineOffset {}
+impl LineOffset for LogicalLines {}
 
 impl LineOffset for xi_rope::breaks::Breaks {
     fn offset_of_line(&self, _text: &Rope, line: usize) -> usize {

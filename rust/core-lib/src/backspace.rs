@@ -16,7 +16,7 @@
 use xi_rope::{Cursor, Rope};
 
 use crate::config::BufferItems;
-use crate::line_offset::{DefaultLineOffset, LineOffset};
+use crate::line_offset::{LineOffset, LogicalLines};
 use crate::selection::SelRegion;
 use xi_unicode::*;
 
@@ -26,7 +26,7 @@ pub fn offset_for_delete_backwards(region: &SelRegion, text: &Rope, config: &Buf
         region.min()
     } else {
         // backspace deletes max(1, tab_size) contiguous spaces
-        let (_, c) = DefaultLineOffset.offset_to_line_col(&text, region.start);
+        let (_, c) = LogicalLines.offset_to_line_col(&text, region.start);
 
         let tab_off = c % config.tab_size;
         let tab_size = config.tab_size;
