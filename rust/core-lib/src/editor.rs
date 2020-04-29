@@ -32,6 +32,7 @@ use crate::edit_types::BufferEvent;
 use crate::event_context::MAX_SIZE_LIMIT;
 use crate::layers::Layers;
 use crate::line_offset::LineOffset;
+use crate::movement::Movement;
 use crate::plugins::rpc::{DataSpan, GetDataResponse, PluginEdit, ScopeSpan, TextUnit};
 use crate::plugins::PluginId;
 use crate::rpc::SelectionModifier;
@@ -408,7 +409,7 @@ impl Editor {
         self.text = self.engine.get_head().clone();
     }
 
-    fn replace(&mut self, view: &mut View, replace_all: bool) {
+    fn do_replace(&mut self, view: &mut View, replace_all: bool) {
         if let Some(Replace { chars, .. }) = view.get_replace() {
             // todo: implement preserve case
             // store old selection because in case nothing is found the selection will be preserved
@@ -431,6 +432,123 @@ impl Editor {
         }
     }
 
+    fn do_delete_by_movement(
+        &mut self,
+        view: &View,
+        movement: Movement,
+        save: bool,
+        kill_ring: &mut Rope,
+    ) {
+        let (delta, rope) = edit_ops::delete_by_movement(
+            &self.text,
+            view.sel_regions(),
+            view.get_lines(),
+            movement,
+            view.scroll_height(),
+            save,
+        );
+        if let Some(rope) = rope {
+            *kill_ring = rope;
+        }
+        if !delta.is_identity() {
+            self.this_edit_type = EditType::Delete;
+            self.add_delta(delta);
+        }
+    }
+
+    fn do_delete_backward(&mut self, view: &View, config: &BufferItems) {
+        let delta = edit_ops::delete_backward(&self.text, view.sel_regions(), config);
+        if !delta.is_identity() {
+            self.this_edit_type = EditType::Delete;
+            self.add_delta(delta);
+        }
+    }
+
+    fn do_transpose(&mut self, view: &View) {
+        let delta = edit_ops::transpose(&self.text, view.sel_regions());
+        if !delta.is_identity() {
+            self.this_edit_type = EditType::Transpose;
+            self.add_delta(delta);
+        }
+    }
+
+    fn do_transform_text<F: Fn(&str) -> String>(&mut self, view: &View, transform_function: F) {
+        let delta = edit_ops::transform_text(&self.text, view.sel_regions(), transform_function);
+        if !delta.is_identity() {
+            self.this_edit_type = EditType::Other;
+            self.add_delta(delta);
+        }
+    }
+
+    fn do_capitalize_text(&mut self, view: &mut View) {
+        let (delta, final_selection) = edit_ops::capitalize_text(&self.text, view.sel_regions());
+        if !delta.is_identity() {
+            self.this_edit_type = EditType::Other;
+            self.add_delta(delta);
+        }
+
+        // at the end of the transformation carets are located at the end of the words that were
+        // transformed last in the selections
+        view.collapse_selections(&self.text);
+        view.set_selection(&self.text, final_selection);
+    }
+
+    fn do_modify_indent(&mut self, view: &View, config: &BufferItems, direction: IndentDirection) {
+        let delta = edit_ops::modify_indent(&self.text, view.sel_regions(), config, direction.clone());
+        self.add_delta(delta);
+        self.this_edit_type = match direction {
+            IndentDirection::In  => EditType::InsertChars,
+            IndentDirection::Out => EditType::Delete,
+        }
+    }
+
+    fn do_insert_newline(&mut self, view: &View, config: &BufferItems) {
+        let delta = edit_ops::insert_newline(&self.text, view.sel_regions(), config);
+        self.add_delta(delta);
+        self.this_edit_type = EditType::InsertNewline;
+    }
+
+    fn do_insert_tab(&mut self, view: &View, config: &BufferItems) {
+        let regions = view.sel_regions();
+        let delta = edit_ops::insert_tab(&self.text, regions, config);
+        self.add_delta(delta);
+
+        // if we indent multiple regions or multiple lines,
+        // we treat this as an indentation adjustment; otherwise it is
+        // just inserting text.
+        let condition = regions
+            .first()
+            .map(|x| view.get_line_range(&self.text, x).len() > 1)
+            .unwrap_or(false);
+        self.this_edit_type = if regions.len() > 1 || condition {
+            EditType::Indent
+        } else {
+            EditType::InsertChars
+        };
+    }
+
+    fn do_yank(&mut self, view: &View, kill_ring: &Rope) {
+        // TODO: if there are multiple cursors and the number of newlines
+        // is one less than the number of cursors, split and distribute one
+        // line per cursor.
+        let delta = edit_ops::insert(&self.text, view.sel_regions(), kill_ring.clone());
+        self.add_delta(delta);
+    }
+
+    fn do_duplicate_line(&mut self, view: &View, config: &BufferItems) {
+        let delta = edit_ops::duplicate_line(&self.text, view.sel_regions(), config);
+        self.add_delta(delta);
+        self.this_edit_type = EditType::Other;
+    }
+
+    fn do_change_number<F: Fn(i128) -> Option<i128>>(&mut self, view: &View, transform_function: F) {
+        let delta = edit_ops::change_number(&self.text, view.sel_regions(), transform_function);
+        if !delta.is_identity() {
+            self.this_edit_type = EditType::Other;
+            self.add_delta(delta);
+        }
+    }
+
     pub(crate) fn do_edit(
         &mut self,
         view: &mut View,
@@ -439,143 +557,27 @@ impl Editor {
         cmd: BufferEvent,
     ) {
         use self::BufferEvent::*;
-
-        let regions = view.sel_regions();
-
         match cmd {
-            Delete { movement, kill } => {
-                let (delta, rope) = edit_ops::delete_by_movement(
-                    &self.text,
-                    regions,
-                    view.get_lines(),
-                    movement,
-                    view.scroll_height(),
-                    kill,
-                );
-                if let Some(rope) = rope {
-                    *kill_ring = rope;
-                }
-                if !delta.is_identity() {
-                    self.this_edit_type = EditType::Delete;
-                    self.add_delta(delta);
-                }
-            }
-            Backspace => {
-                let delta = edit_ops::delete_backward(&self.text, regions, config);
-                if !delta.is_identity() {
-                    self.this_edit_type = EditType::Delete;
-                    self.add_delta(delta);
-                }
-            }
-            Transpose => {
-                let delta = edit_ops::transpose(&self.text, regions);
-                if !delta.is_identity() {
-                    self.this_edit_type = EditType::Transpose;
-                    self.add_delta(delta);
-                }
-            }
-            Undo => {
-                self.do_undo();
-            }
-            Redo => {
-                self.do_redo();
-            }
-            Uppercase => {
-                let delta = edit_ops::transform_text(&self.text, regions, |s| s.to_uppercase());
-                if !delta.is_identity() {
-                    self.add_delta(delta);
-                }
-            }
-            Lowercase => {
-                let delta = edit_ops::transform_text(&self.text, regions, |s| s.to_lowercase());
-                if !delta.is_identity() {
-                    self.add_delta(delta);
-                }
-            }
-            Capitalize => {
-                let (delta, final_selection) = edit_ops::capitalize_text(&self.text, regions);
-                if !delta.is_identity() {
-                    self.this_edit_type = EditType::Other;
-                    self.add_delta(delta);
-                }
-
-                // at the end of the transformation carets are located at the end of the words that were
-                // transformed last in the selections
-                view.collapse_selections(&self.text);
-                view.set_selection(&self.text, final_selection);
-            }
-            Indent => {
-                self.this_edit_type = EditType::InsertChars;
-                self.add_delta(edit_ops::modify_indent(
-                    &self.text,
-                    regions,
-                    config,
-                    IndentDirection::In,
-                ));
-            }
-            Outdent => {
-                self.this_edit_type = EditType::Delete;
-                self.add_delta(edit_ops::modify_indent(
-                    &self.text,
-                    regions,
-                    config,
-                    IndentDirection::Out,
-                ));
-            }
-            InsertNewline => {
-                self.this_edit_type = EditType::InsertNewline;
-                self.add_delta(edit_ops::insert_newline(&self.text, regions, config));
-            }
-            InsertTab => {
-                // if we indent multiple regions or multiple lines (below),
-                // we treat this as an indentation adjustment; otherwise it is
-                // just inserting text.
-                let condition = regions
-                    .first()
-                    .map(|x| view.get_line_range(&self.text, x).len() > 1)
-                    .unwrap_or(false);
-                self.this_edit_type = if regions.len() > 1 || condition {
-                    EditType::Indent
-                } else {
-                    EditType::InsertChars
-                };
-
-                self.add_delta(edit_ops::insert_tab(&self.text, regions, config));
-            }
-            Insert(chars) => {
-                self.do_insert(view, config, &chars);
-            }
-            Paste(chars) => {
-                self.do_paste(view, &chars);
-            }
-            Yank => {
-                // TODO: if there are multiple cursors and the number of newlines
-                // is one less than the number of cursors, split and distribute one
-                // line per cursor.
-                self.add_delta(edit_ops::insert(&self.text, regions, kill_ring.clone()));
-            }
-            ReplaceNext => {
-                self.replace(view, false);
-            }
-            ReplaceAll => {
-                self.replace(view, true);
-            }
-            DuplicateLine => {
-                self.this_edit_type = EditType::Other;
-                self.add_delta(edit_ops::duplicate_line(&self.text, regions, config));
-            }
-            IncreaseNumber => {
-                let delta = edit_ops::change_number(&self.text, regions, |s| s.checked_add(1));
-                if !delta.is_identity() {
-                    self.add_delta(delta);
-                }
-            }
-            DecreaseNumber => {
-                let delta = edit_ops::change_number(&self.text, regions, |s| s.checked_sub(1));
-                if !delta.is_identity() {
-                    self.add_delta(delta);
-                }
-            }
+            Delete { movement, kill } => self.do_delete_by_movement(view, movement, kill, kill_ring),
+            Backspace => self.do_delete_backward(view, config),
+            Transpose => self.do_transpose(view),
+            Undo => self.do_undo(),
+            Redo => self.do_redo(),
+            Uppercase => self.do_transform_text(view, |s| s.to_uppercase()),
+            Lowercase => self.do_transform_text(view, |s| s.to_lowercase()),
+            Capitalize => self.do_capitalize_text(view),
+            Indent => self.do_modify_indent(view, config, IndentDirection::In),
+            Outdent => self.do_modify_indent(view, config, IndentDirection::Out),
+            InsertNewline => self.do_insert_newline(view, config),
+            InsertTab => self.do_insert_tab(view, config),
+            Insert(chars) => self.do_insert(view, config, &chars),
+            Paste(chars) => self.do_paste(view, &chars),
+            Yank => self.do_yank(view, kill_ring),
+            ReplaceNext => self.do_replace(view, false),
+            ReplaceAll => self.do_replace(view, true),
+            DuplicateLine => self.do_duplicate_line(view, config),
+            IncreaseNumber => self.do_change_number(view, |s| s.checked_add(1)),
+            DecreaseNumber => self.do_change_number(view, |s| s.checked_sub(1)),
         }
     }
 

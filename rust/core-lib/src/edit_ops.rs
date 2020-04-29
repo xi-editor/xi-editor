@@ -27,6 +27,7 @@ use crate::movement::{region_movement, Movement};
 use crate::selection::{SelRegion, Selection};
 use crate::word_boundaries::WordCursor;
 
+#[derive(Debug, Copy, Clone)]
 pub enum IndentDirection {
     In,
     Out,
