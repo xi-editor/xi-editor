@@ -280,6 +280,7 @@ impl LspPlugin {
         F: FnOnce(&mut LanguageServerClient) -> R,
     {
         let view_info = self.view_info.get_mut(&view.get_id())?;
+
         let ls_client_arc = &self.language_server_clients[&view_info.ls_identifier];
         let mut ls_client = ls_client_arc.lock().unwrap();
         Some(f(&mut ls_client))

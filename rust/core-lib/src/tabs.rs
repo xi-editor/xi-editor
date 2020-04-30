@@ -816,7 +816,7 @@ impl CoreState {
                 .iter()
                 .map(|plugin| ClientPluginInfo { name: plugin.name.clone(), running: true })
                 .collect::<Vec<_>>();
-            self.peer.available_plugins(view_id.clone(), &available_plugins);
+            self.peer.available_plugins(*view_id, &available_plugins);
         });
     }
 

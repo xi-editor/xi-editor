@@ -12,15 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::linewrap::Lines;
+#![allow(clippy::range_plus_one)]
+
+use std::ops::Range;
+
 use xi_rope::Rope;
+
+use crate::linewrap::Lines;
+use crate::selection::SelRegion;
 
 /// A trait from which lines and columns in a document can be calculated
 /// into offsets inside a rope an vice versa.
 pub trait LineOffset {
     // use own breaks if present, or text if not (no line wrapping)
 
-    /// Returns the byte offset corresponding to the given visual line.
+    /// Returns the byte offset corresponding to the given line.
     fn offset_of_line(&self, text: &Rope, line: usize) -> usize {
         text.offset_of_line(line)
     }
@@ -66,13 +72,24 @@ pub trait LineOffset {
         }
         offset
     }
+
+    /// Get the line range of a selected region.
+    fn get_line_range(&self, text: &Rope, region: &SelRegion) -> Range<usize> {
+        let (first_line, _) = self.offset_to_line_col(text, region.min());
+        let (mut last_line, last_col) = self.offset_to_line_col(text, region.max());
+        if last_col == 0 && last_line > first_line {
+            last_line -= 1;
+        }
+
+        first_line..(last_line + 1)
+    }
 }
 
 /// A struct from which the default definitions for `offset_of_line`
-/// and `line_of_offset` can be accessed.
-pub struct DefaultLineOffset;
+/// and `line_of_offset` can be accessed, and think in logical lines.
+pub struct LogicalLines;
 
-impl LineOffset for DefaultLineOffset {}
+impl LineOffset for LogicalLines {}
 
 impl LineOffset for xi_rope::breaks::Breaks {
     fn offset_of_line(&self, _text: &Rope, line: usize) -> usize {

@@ -379,6 +379,7 @@ where
 }
 
 impl<N: NodeInfo> InsertDelta<N> {
+    #![allow(clippy::many_single_char_names)]
     /// Do a coordinate transformation on an insert-only delta. The `after` parameter
     /// controls whether the insertions in `self` come after those specific in the
     /// coordinate transform.

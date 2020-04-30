@@ -599,7 +599,7 @@ impl<'a> Drop for SampleGuard<'a> {
 /// None if an irrecoverable error occured.
 fn exe_name() -> Option<String> {
     match std::env::current_exe() {
-        Ok(exe_name) => match exe_name.clone().file_name() {
+        Ok(exe_name) => match exe_name.file_name() {
             Some(filename) => filename.to_str().map(ToString::to_string),
             None => {
                 let full_path = exe_name.into_os_string();
