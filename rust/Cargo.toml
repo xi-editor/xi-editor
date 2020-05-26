@@ -12,7 +12,7 @@ edition = '2018'
 serde = "1.0"
 serde_json = "1.0"
 chrono = "0.4.5"
-fern = "0.5.6"
+fern = "0.6"
 log = "0.4.3"
 dirs = "2.0"
 
@@ -38,5 +38,5 @@ members = [
 
 # Avoid libllvm/libclang dep. See https://github.com/rust-onig/rust-onig/pull/108
 [patch.crates-io]
-onig = { git="https://github.com/kornelski/rust-onig", branch="default-bindgen" }
-onig_sys = { git="https://github.com/kornelski/rust-onig", branch="default-bindgen" }
+onig = { git="https://github.com/kornelski/rust-onig", branch="bindgen" }
+onig_sys = { git="https://github.com/kornelski/rust-onig", branch="bindgen" }
