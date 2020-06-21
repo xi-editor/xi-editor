@@ -511,7 +511,6 @@ impl Editor {
     fn do_insert_tab(&mut self, view: &View, config: &BufferItems) {
         let regions = view.sel_regions();
         let delta = edit_ops::insert_tab(&self.text, regions, config);
-        self.add_delta(delta);
 
         // if we indent multiple regions or multiple lines,
         // we treat this as an indentation adjustment; otherwise it is
@@ -520,6 +519,8 @@ impl Editor {
             .first()
             .map(|x| LogicalLines.get_line_range(&self.text, x).len() > 1)
             .unwrap_or(false);
+
+        self.add_delta(delta);
         self.this_edit_type =
             if regions.len() > 1 || condition { EditType::Indent } else { EditType::InsertChars };
     }
