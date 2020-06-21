@@ -116,13 +116,14 @@ impl<N: NodeInfo> Delta<N> {
 
     /// Returns `true` if applying the delta will cause no change.
     pub fn is_identity(&self) -> bool {
-        if self.els.len() == 1 {
+        let len = self.els.len();
+        if len == 1 {
             if let DeltaElement::Copy(beg, end) = self.els[0] {
                 return beg == 0 && end == self.base_len;
             }
         }
 
-        self.base_len == 0
+        len == 0 && self.base_len == 0
     }
 
     /// Apply the delta to the given rope. May not work well if the length of the rope
