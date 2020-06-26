@@ -516,7 +516,8 @@ impl Editor {
         // if we indent multiple regions or multiple lines,
         // we treat this as an indentation adjustment; otherwise it is
         // just inserting text.
-        let condition = regions.first().map(|x| view.get_line_range(&self.text, x).len() > 1).unwrap_or(false);
+        let condition =
+            regions.first().map(|x| view.get_line_range(&self.text, x).len() > 1).unwrap_or(false);
         self.this_edit_type =
             if regions.len() > 1 || condition { EditType::Indent } else { EditType::InsertChars };
     }
