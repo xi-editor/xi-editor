@@ -333,7 +333,7 @@ impl ChunkCache {
         if start < self.offset || start > self.offset + self.contents.len() {
             true
         } else if delta.is_simple_delete() {
-            self.simple_delete(start, end);
+            self.simple_delete(start, std::cmp::min(end, self.offset + self.contents.len()));
             false
         } else if let Some(text) = delta.as_simple_insert() {
             assert_eq!(iv.size(), 0);
@@ -701,6 +701,30 @@ mod tests {
         c.simple_delete(start, end);
 
         assert_eq!(&c.line_offsets, &[7, 11]);
+    }
+
+    #[test]
+    fn large_delete() {
+        // Issue #1136 on github
+        let large_str = "This string literal is larger than CHUNK_SIZE.";
+        assert!(large_str.len() > CHUNK_SIZE);
+
+        let data = GetDataResponse {
+            // Emulate a cache that has only a part of the buffer.
+            chunk: large_str.split_at(CHUNK_SIZE).0.into(),
+            offset: 0,
+            first_line: 0,
+            first_line_offset: 0,
+        };
+        let mut c = ChunkCache::default();
+        c.reset_chunk(data);
+
+        // This delta deletes everything.
+        let delta =
+            Delta::simple_edit(Interval::new(0, large_str.len()), "".into(), large_str.len());
+        assert!(delta.is_simple_delete());
+
+        c.update(Some(&delta), delta.new_document_len(), 1, 1); // Should succeed
     }
 
     #[test]
