@@ -14,14 +14,15 @@
 
 //! Computing deltas between two ropes.
 
-use std::borrow::Cow;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
+use std::ops::Range;
 
 use crate::compare::RopeScanner;
 use crate::delta::{Delta, DeltaElement};
 use crate::interval::Interval;
 use crate::rope::{LinesMetric, Rope, RopeDelta, RopeInfo};
-use crate::tree::{Node, NodeInfo};
+use crate::tree::{Cursor, Node, NodeInfo};
 
 /// A trait implemented by various diffing strategies.
 pub trait Diff<N: NodeInfo> {
@@ -65,6 +66,18 @@ impl Diff<RopeInfo> for LineHashDiff {
             return builder.to_delta(base, target);
         }
 
+        // if a continuous range of text got deleted, we're done
+        if target.len() < base.len() && start_offset + diff_end == target.len() {
+            builder.copy(base.len() - diff_end, target_end, diff_end);
+            return builder.to_delta(base, target);
+        }
+
+        // if a continuous range of text got inserted, we're done
+        if target.len() > base.len() && start_offset + diff_end == base.len() {
+            builder.copy(base.len() - diff_end, target_end, diff_end);
+            return builder.to_delta(base, target);
+        }
+
         let line_hashes = make_line_hashes(&base, MIN_SIZE);
 
         let line_count = target.measure::<LinesMetric>() + 1;
@@ -74,10 +87,13 @@ impl Diff<RopeInfo> for LineHashDiff {
         let mut prev_base = 0;
 
         let mut needs_subseq = false;
-        for line in target.lines_raw(start_offset..target_end) {
+        for line in SliceIter::new(base, start_offset) {
+            let len = line.range.end - line.range.start;
             let non_ws = non_ws_offset(&line);
-            if line.len() - non_ws >= MIN_SIZE {
-                if let Some(base_off) = line_hashes.get(&line[non_ws..]) {
+            if len - non_ws >= MIN_SIZE {
+                if let Some(base_off) = line_hashes
+                    .get(&RopeSlice { rope: base, range: line.range.end + non_ws..line.range.end })
+                {
                     let targ_off = targ_line_offset + non_ws;
                     matches.push((start_offset + targ_off, *base_off));
                     if *base_off < prev_base {
@@ -86,7 +102,7 @@ impl Diff<RopeInfo> for LineHashDiff {
                     prev_base = *base_off;
                 }
             }
-            targ_line_offset += line.len();
+            targ_line_offset += len;
         }
 
         // we now have an ordered list of matches and their positions.
@@ -192,8 +208,23 @@ fn longest_increasing_region_set(items: &[(usize, usize)]) -> Vec<(usize, usize)
 }
 
 #[inline]
-fn non_ws_offset(s: &str) -> usize {
-    s.as_bytes().iter().take_while(|b| **b == b' ' || **b == b'\t').count()
+fn non_ws_offset(s: &RopeSlice) -> usize {
+    let mut cursor = Cursor::new(s.rope, s.range.start);
+
+    let mut result = 0;
+    let mut looping = true;
+    while looping {
+        if let Some(ch) = cursor.next_codepoint() {
+            if ch == ' ' || ch == '\t' {
+                result += 1;
+            } else {
+                looping = false;
+            }
+        } else {
+            looping = false;
+        }
+    }
+    result
 }
 
 /// Represents copying `len` bytes from base to target.
@@ -245,21 +276,85 @@ impl DiffBuilder {
     }
 }
 
+/// An interval for a specific rope.
+#[derive(Debug, Clone)]
+pub struct RopeSlice<'a> {
+    rope: &'a Rope,
+    range: Range<usize>,
+}
+
+impl PartialEq for RopeSlice<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        let mut it1 =
+            self.rope.iter_chunks(Interval::from(self.range.clone())).flat_map(|x| x.chars());
+        let mut it2 =
+            other.rope.iter_chunks(Interval::from(other.range.clone())).flat_map(|x| x.chars());
+
+        let mut looping = true;
+
+        while looping {
+            if let Some(c1) = it1.next() {
+                if let Some(c2) = it2.next() {
+                    looping = c1 == c2;
+                } else {
+                    return false;
+                }
+            } else {
+                return it2.next().is_none();
+            }
+        }
+
+        false
+    }
+}
+
+impl Eq for RopeSlice<'_> {}
+
+impl Hash for RopeSlice<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let iter =
+            self.rope.iter_chunks(Interval::from(self.range.clone())).flat_map(|x| x.chars());
+        for ch in iter {
+            ch.hash(state);
+        }
+    }
+}
+
+struct SliceIter<'a> {
+    cursor: Cursor<'a, RopeInfo>,
+}
+
+impl<'a> Iterator for SliceIter<'a> {
+    type Item = RopeSlice<'a>;
+
+    fn next(&mut self) -> Option<RopeSlice<'a>> {
+        let cursor = &mut self.cursor;
+        let start = cursor.pos();
+        if let Some(end) = cursor.next::<LinesMetric>() {
+            return Some(RopeSlice { rope: cursor.root(), range: start..end });
+        }
+        None
+    }
+}
+
+impl<'a> SliceIter<'a> {
+    fn new(rope: &'a Rope, start: usize) -> SliceIter<'a> {
+        SliceIter { cursor: Cursor::new(rope, start) }
+    }
+}
+
 /// Creates a map of lines to offsets, ignoring trailing whitespace, and only for those lines
 /// where line.len() >= min_size. Offsets refer to the first non-whitespace byte in the line.
-fn make_line_hashes<'a>(base: &'a Rope, min_size: usize) -> HashMap<Cow<'a, str>, usize> {
+fn make_line_hashes<'a>(base: &'a Rope, min_size: usize) -> HashMap<RopeSlice<'a>, usize> {
     let mut offset = 0;
     let mut line_hashes = HashMap::with_capacity(base.len() / 60);
-    for line in base.lines_raw(..) {
+    for line in SliceIter::new(base, 0) {
         let non_ws = non_ws_offset(&line);
-        if line.len() - non_ws >= min_size {
-            let cow = match line {
-                Cow::Owned(ref s) => Cow::Owned(s[non_ws..].to_string()),
-                Cow::Borrowed(s) => Cow::Borrowed(&s[non_ws..]),
-            };
-            line_hashes.insert(cow, offset + non_ws);
+        let len = line.range.end - line.range.start;
+        if len >= min_size {
+            line_hashes.insert(line, offset + non_ws);
         }
-        offset += line.len();
+        offset += len;
     }
     line_hashes
 }
@@ -295,6 +390,24 @@ Currently my sense of smell (and the pain of implementing Write) might be too mu
 
         let result = delta.apply(&one);
         assert_eq!(result, two);
+    }
+
+    #[test]
+    fn simple_diff() {
+        let one = "This is a simple string".into();
+        let two = "This is a string".into();
+
+        let delta = LineHashDiff::compute_delta(&one, &two);
+        println!("delta: {:?}", &delta);
+
+        let result = delta.apply(&one);
+        assert_eq!(result, two);
+
+        let delta = LineHashDiff::compute_delta(&two, &one);
+        println!("delta: {:?}", &delta);
+
+        let result = delta.apply(&two);
+        assert_eq!(result, one);
     }
 
     #[test]
