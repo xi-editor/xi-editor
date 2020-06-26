@@ -116,13 +116,16 @@ impl<N: NodeInfo> Delta<N> {
 
     /// Returns `true` if applying the delta will cause no change.
     pub fn is_identity(&self) -> bool {
-        if self.els.len() == 1 {
+        let len = self.els.len();
+        // Case 1: Everything from beginning to end is getting copied.
+        if len == 1 {
             if let DeltaElement::Copy(beg, end) = self.els[0] {
                 return beg == 0 && end == self.base_len;
             }
         }
 
-        false
+        // Case 2: The rope is empty and the entire rope is getting deleted.
+        len == 0 && self.base_len == 0
     }
 
     /// Apply the delta to the given rope. May not work well if the length of the rope
@@ -860,6 +863,9 @@ mod tests {
         assert_eq!(false, d.is_identity());
 
         let d = Delta::simple_edit(0..0, Rope::from(""), TEST_STR.len());
+        assert_eq!(true, d.is_identity());
+
+        let d = Delta::simple_edit(0..0, Rope::from(""), 0);
         assert_eq!(true, d.is_identity());
     }
 
