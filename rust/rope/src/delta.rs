@@ -90,7 +90,7 @@ impl<N: NodeInfo> Delta<N> {
 
     /// Returns `true` if this delta represents a single deletion without
     /// any insertions.
-    /// 
+    ///
     /// Note that this is `false` for the trivial delta, as well as for a deletion
     /// from an empty `Rope`.
     pub fn is_simple_delete(&self) -> bool {
