@@ -91,8 +91,8 @@ impl<N: NodeInfo> Delta<N> {
     /// Returns `true` if this delta represents a single deletion without
     /// any insertions. Note that this is `false` for the trivial delta.
     pub fn is_simple_delete(&self) -> bool {
-        if self.els.is_empty() && self.base_len > 0 {
-            return true;
+        if self.els.is_empty() {
+            return self.base_len > 0;
         }
         if let DeltaElement::Copy(beg, end) = self.els[0] {
             if beg == 0 {
@@ -827,6 +827,9 @@ mod tests {
     #[test]
     fn is_simple_delete() {
         let d = Delta::simple_edit(10..12, Rope::from("+"), TEST_STR.len());
+        assert_eq!(false, d.is_simple_delete());
+
+        let d = Delta::simple_edit(Interval::new(0, 0), Rope::from(""), 0);
         assert_eq!(false, d.is_simple_delete());
 
         let d = Delta::simple_edit(Interval::new(10, 11), Rope::from(""), TEST_STR.len());
