@@ -91,8 +91,8 @@ impl<N: NodeInfo> Delta<N> {
     /// Returns `true` if this delta represents a single deletion without
     /// any insertions. Note that this is `false` for the trivial delta.
     pub fn is_simple_delete(&self) -> bool {
-        if self.els.is_empty() {
-            return self.base_len > 0;
+        if self.els.is_empty() && self.base_len > 0 {
+            return true;
         }
         if let DeltaElement::Copy(beg, end) = self.els[0] {
             if beg == 0 {
@@ -116,14 +116,13 @@ impl<N: NodeInfo> Delta<N> {
 
     /// Returns `true` if applying the delta will cause no change.
     pub fn is_identity(&self) -> bool {
-        let len = self.els.len();
-        if len == 1 {
+        if self.els.len() == 1 {
             if let DeltaElement::Copy(beg, end) = self.els[0] {
                 return beg == 0 && end == self.base_len;
             }
         }
 
-        len == 0 && self.base_len == 0
+        false
     }
 
     /// Apply the delta to the given rope. May not work well if the length of the rope
@@ -830,9 +829,6 @@ mod tests {
         let d = Delta::simple_edit(10..12, Rope::from("+"), TEST_STR.len());
         assert_eq!(false, d.is_simple_delete());
 
-        let d = Delta::simple_edit(Interval::new(0, 0), Rope::from(""), 0);
-        assert_eq!(false, d.is_simple_delete());
-
         let d = Delta::simple_edit(Interval::new(10, 11), Rope::from(""), TEST_STR.len());
         assert_eq!(true, d.is_simple_delete());
 
@@ -864,9 +860,6 @@ mod tests {
         assert_eq!(false, d.is_identity());
 
         let d = Delta::simple_edit(0..0, Rope::from(""), TEST_STR.len());
-        assert_eq!(true, d.is_identity());
-
-        let d = Delta::simple_edit(0..0, Rope::from(""), 0);
         assert_eq!(true, d.is_identity());
     }
 
