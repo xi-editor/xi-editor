@@ -31,7 +31,7 @@ use crate::edit_ops::{self, IndentDirection};
 use crate::edit_types::BufferEvent;
 use crate::event_context::MAX_SIZE_LIMIT;
 use crate::layers::Layers;
-use crate::line_offset::LineOffset;
+use crate::line_offset::{LineOffset, LogicalLines};
 use crate::movement::Movement;
 use crate::plugins::rpc::{DataSpan, GetDataResponse, PluginEdit, ScopeSpan, TextUnit};
 use crate::plugins::PluginId;
@@ -511,13 +511,16 @@ impl Editor {
     fn do_insert_tab(&mut self, view: &View, config: &BufferItems) {
         let regions = view.sel_regions();
         let delta = edit_ops::insert_tab(&self.text, regions, config);
-        self.add_delta(delta);
 
         // if we indent multiple regions or multiple lines,
         // we treat this as an indentation adjustment; otherwise it is
         // just inserting text.
-        let condition =
-            regions.first().map(|x| view.get_line_range(&self.text, x).len() > 1).unwrap_or(false);
+        let condition = regions
+            .first()
+            .map(|x| LogicalLines.get_line_range(&self.text, x).len() > 1)
+            .unwrap_or(false);
+
+        self.add_delta(delta);
         self.this_edit_type =
             if regions.len() > 1 || condition { EditType::Indent } else { EditType::InsertChars };
     }
