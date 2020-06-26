@@ -1560,13 +1560,6 @@ mod tests {
 
         ctx.do_edit(EditNotification::Outdent);
         assert_eq!(harness.debug_render(),"[|    hello\n]world");
-
-        ctx.do_edit(EditNotification::SelectAll);
-        ctx.do_edit(EditNotification::DeleteBackward);
-        ctx.do_edit(EditNotification::Insert { chars: "hello".into() });
-        ctx.do_edit(EditNotification::SelectAll);
-        ctx.do_edit(EditNotification::InsertTab);
-        assert_eq!(harness.debug_render(),"    |");
     }
 
     #[test]
