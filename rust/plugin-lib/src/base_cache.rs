@@ -333,7 +333,10 @@ impl ChunkCache {
         if start < self.offset || start > self.offset + self.contents.len() {
             true
         } else if delta.is_simple_delete() {
-            self.simple_delete(start, std::cmp::min(end, self.offset + self.contents.len()));
+            // Don't go over cache boundary.
+            let end = end.min(self.offset + self.contents.len());
+            
+            self.simple_delete(start, end);
             false
         } else if let Some(text) = delta.as_simple_insert() {
             assert_eq!(iv.size(), 0);
