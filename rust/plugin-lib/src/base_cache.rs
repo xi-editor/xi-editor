@@ -335,7 +335,7 @@ impl ChunkCache {
         } else if delta.is_simple_delete() {
             // Don't go over cache boundary.
             let end = end.min(self.offset + self.contents.len());
-            
+
             self.simple_delete(start, end);
             false
         } else if let Some(text) = delta.as_simple_insert() {
