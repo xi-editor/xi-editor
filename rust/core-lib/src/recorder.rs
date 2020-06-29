@@ -109,7 +109,7 @@ impl Recorder {
     /// on each event.
     pub(crate) fn play<F>(&self, recording_name: &str, action: F)
     where
-        F: FnMut(&EventDomain) -> (),
+        F: FnMut(&EventDomain),
     {
         let is_current_recording: bool = self
             .active_recording
@@ -121,10 +121,9 @@ impl Recorder {
             return;
         }
 
-        self.recordings.get(recording_name).and_then(|recording| {
+        if let Some(recording) = self.recordings.get(recording_name) {
             recording.play(action);
-            Some(())
-        });
+        }
     }
 
     /// Completely removes the specified recording from the Recorder
@@ -195,7 +194,7 @@ impl Recording {
     /// on each event.
     fn play<F>(&self, action: F)
     where
-        F: FnMut(&EventDomain) -> (),
+        F: FnMut(&EventDomain),
     {
         let _guard = trace_block("Recording::play", &["core", "recording"]);
         self.events.iter().for_each(action)
