@@ -212,16 +212,15 @@ fn non_ws_offset(s: &RopeSlice) -> usize {
     let mut cursor = Cursor::new(s.rope, s.range.start);
 
     let mut result = 0;
-    let mut looping = true;
-    while looping {
+    loop {
         if let Some(ch) = cursor.next_codepoint() {
             if ch == ' ' || ch == '\t' {
                 result += 1;
             } else {
-                looping = false;
+                break;
             }
         } else {
-            looping = false;
+            break;
         }
     }
     result
@@ -290,21 +289,18 @@ impl PartialEq for RopeSlice<'_> {
         let mut it2 =
             other.rope.iter_chunks(Interval::from(other.range.clone())).flat_map(|x| x.chars());
 
-        let mut looping = true;
-
-        while looping {
-            if let Some(c1) = it1.next() {
-                if let Some(c2) = it2.next() {
-                    looping = c1 == c2;
-                } else {
-                    return false;
-                }
-            } else {
-                return it2.next().is_none();
+        loop {
+            let c1 = it1.next();
+            let c2 = it2.next();
+        
+            if c1 != c2 {
+                return false;
+            }
+        
+            if c1.is_none() {
+                return true;
             }
         }
-
-        false
     }
 }
 
