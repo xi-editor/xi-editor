@@ -212,13 +212,9 @@ fn non_ws_offset(s: &RopeSlice) -> usize {
     let mut cursor = Cursor::new(s.rope, s.range.start);
 
     let mut result = 0;
-    loop {
-        if let Some(ch) = cursor.next_codepoint() {
-            if ch == ' ' || ch == '\t' {
-                result += 1;
-            } else {
-                break;
-            }
+    while let Some(ch) = cursor.next_codepoint() {
+        if ch == ' ' || ch == '\t' {
+            result += 1;
         } else {
             break;
         }
@@ -292,11 +288,11 @@ impl PartialEq for RopeSlice<'_> {
         loop {
             let c1 = it1.next();
             let c2 = it2.next();
-        
+
             if c1 != c2 {
                 return false;
             }
-        
+
             if c1.is_none() {
                 return true;
             }
