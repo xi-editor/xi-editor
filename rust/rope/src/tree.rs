@@ -219,28 +219,6 @@ impl<N: NodeInfo> Node<N> {
         Node(Arc::new(NodeBody { height, len, info, val: NodeVal::Internal(nodes) }))
     }
 
-    /// Creates a node from a vec of nodes, balancing as needed.
-    ///
-    /// The input must satisfy the following requirements:
-    /// * The length of `nodes` must be <= MAX_CHILDREN and > 0.
-    /// * All the nodes are the same height.
-    fn from_nodes_balanced(mut nodes: Vec<Node<N>>) -> Node<N> {
-        if nodes.len() == 1 {
-            return nodes.remove(0);
-        }
-        if nodes.iter().all(|n| n.is_ok_child()) {
-            return Node::from_nodes(nodes);
-        }
-        let mut iter = nodes.into_iter();
-        let mut result = iter.next().unwrap();
-        for child in iter {
-            // We could be fancier about not creating as many intermediate
-            // results, but it's probably not terrible.
-            result = Node::concat(result, child);
-        }
-        result
-    }
- 
     pub fn len(&self) -> usize {
         self.0.len
     }
@@ -519,6 +497,9 @@ pub struct TreeBuilder<N: NodeInfo> {
     // A stack of partially built trees. These are kept in order of
     // strictly descending height, and all vectors have a length less
     // than MAX_CHILDREN and greater than zero.
+    //
+    // In addition, there is a balancing invariant: for each vector
+    // of length greater than one, all elements satisfy `is_ok_child`.
     stack: Vec<Vec<Node<N>>>,
 }
 
@@ -542,7 +523,9 @@ impl<N: NodeInfo> TreeBuilder<N> {
                 }
                 Ordering::Equal => {
                     let tos = self.stack.last_mut().unwrap();
-                    if n.height() == 0 && !(tos.last().unwrap().is_ok_child() && n.is_ok_child()) {
+                    if tos.last().unwrap().is_ok_child() && n.is_ok_child() {
+                        tos.push(n);
+                    } else if n.height() == 0 {
                         let iv = Interval::new(0, n.len());
                         let new_leaf = tos
                             .last_mut()
@@ -552,9 +535,21 @@ impl<N: NodeInfo> TreeBuilder<N> {
                             tos.push(Node::from_leaf(new_leaf));
                         }
                     } else {
-                        // We could be more aggressive in enforcing the balancing rules here
-                        // for internal nodes, as we do for leaves.
-                        tos.push(n);
+                        let last = tos.pop().unwrap();
+                        let children1 = last.get_children();
+                        let children2 = n.get_children();
+                        let n_children = children1.len() + children2.len();
+                        if n_children <= MAX_CHILDREN {
+                            tos.push(Node::from_nodes([children1, children2].concat()));
+                        } else {
+                            // Note: this leans left. Splitting at midpoint is also an option
+                            let splitpoint = min(MAX_CHILDREN, n_children - MIN_CHILDREN);
+                            let mut iter = children1.iter().chain(children2.iter()).cloned();
+                            let left = iter.by_ref().take(splitpoint).collect();
+                            let right = iter.collect();
+                            tos.push(Node::from_nodes(left));
+                            tos.push(Node::from_nodes(right));
+                        }
                     }
                     if tos.len() < MAX_CHILDREN {
                         break;
@@ -604,7 +599,12 @@ impl<N: NodeInfo> TreeBuilder<N> {
 
     /// Pop the last vec-of-nodes off the stack, resulting in a node.
     fn pop(&mut self) -> Node<N> {
-        Node::from_nodes_balanced(self.stack.pop().unwrap())
+        let nodes = self.stack.pop().unwrap();
+        if nodes.len() == 1 {
+            nodes.into_iter().next().unwrap()
+        } else {
+            Node::from_nodes(nodes)
+        }
     }
 }
 
