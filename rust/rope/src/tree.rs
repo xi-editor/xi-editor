@@ -14,7 +14,7 @@
 
 //! A general b-tree structure suitable for ropes and the like.
 
-use std::cmp::min;
+use std::cmp::{min, Ordering};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
@@ -202,6 +202,12 @@ impl<N: NodeInfo> Node<N> {
         Node(Arc::new(NodeBody { height: 0, len, info, val: NodeVal::Leaf(l) }))
     }
 
+    /// Create a node from a vec of nodes.
+    ///
+    /// The input must satisfy the following balancing requirements:
+    /// * The length of `nodes` must be <= MAX_CHILDREN and > 1.
+    /// * All the nodes are the same height.
+    /// * All the nodes must satisfy is_ok_child.
     fn from_nodes(nodes: Vec<Node<N>>) -> Node<N> {
         let height = nodes[0].0.height + 1;
         let mut len = nodes[0].0.len;
@@ -213,6 +219,28 @@ impl<N: NodeInfo> Node<N> {
         Node(Arc::new(NodeBody { height, len, info, val: NodeVal::Internal(nodes) }))
     }
 
+    /// Creates a node from a vec of nodes, balancing as needed.
+    ///
+    /// The input must satisfy the following requirements:
+    /// * The length of `nodes` must be <= MAX_CHILDREN and > 0.
+    /// * All the nodes are the same height.
+    fn from_nodes_balanced(mut nodes: Vec<Node<N>>) -> Node<N> {
+        if nodes.len() == 1 {
+            return nodes.remove(0);
+        }
+        if nodes.iter().all(|n| n.is_ok_child()) {
+            return Node::from_nodes(nodes);
+        }
+        let mut iter = nodes.into_iter();
+        let mut result = iter.next().unwrap();
+        for child in iter {
+            // We could be fancier about not creating as many intermediate
+            // results, but it's probably not terrible.
+            result = Node::concat(result, child);
+        }
+        result
+    }
+ 
     pub fn len(&self) -> usize {
         self.0.len
     }
@@ -254,6 +282,22 @@ impl<N: NodeInfo> Node<N> {
             l
         } else {
             panic!("get_leaf called on internal node");
+        }
+    }
+
+    /// Call a callback with a mutable reference to a leaf.
+    ///
+    /// This clones the leaf if the reference is shared. It also recomputes
+    /// length and info after the leaf is mutated.
+    fn with_leaf_mut<T>(&mut self, f: impl FnOnce(&mut N::L) -> T) -> T {
+        let inner = Arc::make_mut(&mut self.0);
+        if let NodeVal::Leaf(ref mut l) = inner.val {
+            let result = f(l);
+            inner.len = l.len();
+            inner.info = N::compute_info(l);
+            result
+        } else {
+            panic!("with_leaf_mut called on internal node");
         }
     }
 
@@ -305,8 +349,6 @@ impl<N: NodeInfo> Node<N> {
     }
 
     pub fn concat(rope1: Node<N>, rope2: Node<N>) -> Node<N> {
-        use std::cmp::Ordering;
-
         let h1 = rope1.height();
         let h2 = rope2.height();
 
@@ -472,72 +514,97 @@ impl<N: NodeInfo> Default for Node<N> {
     }
 }
 
-pub struct TreeBuilder<N: NodeInfo>(Option<Node<N>>);
+/// A builder for creating new trees.
+pub struct TreeBuilder<N: NodeInfo> {
+    // A stack of partially built trees. These are kept in order of
+    // strictly descending height, and all vectors have a length less
+    // than MAX_CHILDREN and greater than zero.
+    stack: Vec<Vec<Node<N>>>,
+}
 
 impl<N: NodeInfo> TreeBuilder<N> {
+    /// A new, empty builder.
     pub fn new() -> TreeBuilder<N> {
-        TreeBuilder(None)
+        TreeBuilder { stack: Vec::new() }
     }
 
-    /// Push a node on the accumulating tree by concatenating it.
-    ///
-    /// This method is O(log n), where `n` is the amount of nodes already in the accumulating tree.
-    /// The worst case happens when all nodes having exactly MAX_CHILDREN children
-    /// and the node being pushed is a leaf or equivalently has height 1.
-    /// Then `log n` nodes have to be created before the leaf can be added, to keep all leaves on the same height.
-    pub fn push(&mut self, n: Node<N>) {
-        match self.0.take() {
-            None => self.0 = Some(n),
-            Some(buf) => self.0 = Some(Node::concat(buf, n)),
-        }
-    }
-
-    /// Add leaves to accumulating tree.
-    ///
-    /// Creates a stack of node lists, where all the nodes in a list have uniform node height.
-    /// The stack is height sorted in ascending order.
-    /// The length of any list in the stack is at most MAX_CHILDREN -1.
-    ///
-    /// Example of this kind of stack if MAX_CHILDREN = 3:
-    /// let n_i be some node of height i. Let the front of the array represent the top of the stack.
-    /// `[[n_1, n_1], [n_2], [n_3, n_3]]`
-    ///
-    /// The nodes in the stack are pushed on the accumulating tree one by one in the end.
-    pub fn push_leaves(&mut self, leaves: Vec<N::L>) {
-        let mut stack: Vec<Vec<Node<N>>> = Vec::new();
-        for leaf in leaves {
-            let mut new = Node::from_leaf(leaf);
-            loop {
-                if stack.last().map_or(true, |r| r[0].height() != new.height()) {
-                    stack.push(Vec::new());
+    /// Append a node to the tree being built.
+    pub fn push(&mut self, mut n: Node<N>) {
+        loop {
+            let ord = if let Some(last) = self.stack.last() {
+                last[0].height().cmp(&n.height())
+            } else {
+                Ordering::Greater
+            };
+            match ord {
+                Ordering::Less => {
+                    n = Node::concat(self.pop(), n);
                 }
-                stack.last_mut().unwrap().push(new);
-                if stack.last().unwrap().len() < MAX_CHILDREN {
+                Ordering::Equal => {
+                    let tos = self.stack.last_mut().unwrap();
+                    if n.height() == 0 && !(tos.last().unwrap().is_ok_child() && n.is_ok_child()) {
+                        let iv = Interval::new(0, n.len());
+                        let new_leaf = tos
+                            .last_mut()
+                            .unwrap()
+                            .with_leaf_mut(|l| l.push_maybe_split(n.get_leaf(), iv));
+                        if let Some(new_leaf) = new_leaf {
+                            tos.push(Node::from_leaf(new_leaf));
+                        }
+                    } else {
+                        // We could be more aggressive in enforcing the balancing rules here
+                        // for internal nodes, as we do for leaves.
+                        tos.push(n);
+                    }
+                    if tos.len() < MAX_CHILDREN {
+                        break;
+                    }
+                    n = self.pop()
+                }
+                Ordering::Greater => {
+                    self.stack.push(vec![n]);
                     break;
                 }
-                new = Node::from_nodes(stack.pop().unwrap())
-            }
-        }
-        for v in stack {
-            for r in v {
-                self.push(r)
             }
         }
     }
 
+    /// Append a sequence of leaves.
+    pub fn push_leaves(&mut self, leaves: impl IntoIterator<Item = N::L>) {
+        for leaf in leaves.into_iter() {
+            self.push(Node::from_leaf(leaf));
+        }
+    }
+
+    /// Append a single leaf.
     pub fn push_leaf(&mut self, l: N::L) {
         self.push(Node::from_leaf(l))
     }
 
+    /// Append a slice of a single leaf.
     pub fn push_leaf_slice(&mut self, l: &N::L, iv: Interval) {
         self.push(Node::from_leaf(l.subseq(iv)))
     }
 
-    pub fn build(self) -> Node<N> {
-        match self.0 {
-            Some(r) => r,
-            None => Node::from_leaf(N::L::default()),
+    /// Build the final tree.
+    ///
+    /// The tree is the concatenation of all the nodes and leaves that have been pushed
+    /// on the builder, in order.
+    pub fn build(mut self) -> Node<N> {
+        if self.stack.is_empty() {
+            Node::from_leaf(N::L::default())
+        } else {
+            let mut n = self.pop();
+            while !self.stack.is_empty() {
+                n = Node::concat(self.pop(), n);
+            }
+            n
         }
+    }
+
+    /// Pop the last vec-of-nodes off the stack, resulting in a node.
+    fn pop(&mut self) -> Node<N> {
+        Node::from_nodes_balanced(self.stack.pop().unwrap())
     }
 }
 
@@ -1000,19 +1067,6 @@ mod test {
             line += "a";
         }
         s
-    }
-
-    #[test]
-    fn eq_rope_with_stack() {
-        let n = 2_000;
-        let s = build_triangle(n);
-        let mut builder_default = TreeBuilder::new();
-        let mut builder_stacked = TreeBuilder::new();
-        builder_default.push_str(&s);
-        builder_stacked.push_str_stacked(&s);
-        let tree_default = builder_default.build();
-        let tree_stacked = builder_stacked.build();
-        assert_eq!(tree_default, tree_stacked);
     }
 
     #[test]
