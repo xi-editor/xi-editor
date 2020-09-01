@@ -1070,6 +1070,23 @@ mod test {
     }
 
     #[test]
+    fn eq_rope_with_pieces() {
+        let n = 2_000;
+        let s = build_triangle(n);
+        let mut builder_default = TreeBuilder::new();
+        let mut concat_rope = Rope::default();
+        builder_default.push_str(&s);
+        let mut i = 0;
+        while i < s.len() {
+            let j = (i + 1000).min(s.len());
+            concat_rope = concat_rope + s[i..j].into();
+            i = j;
+        }
+        let built_rope = builder_default.build();
+        assert_eq!(built_rope, concat_rope);
+    }
+
+    #[test]
     fn cursor_next_triangle() {
         let n = 2_000;
         let text = Rope::from(build_triangle(n));

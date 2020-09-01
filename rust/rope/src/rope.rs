@@ -633,7 +633,7 @@ impl fmt::Debug for Rope {
     }
 }
 
-impl Add<Rope> for Rope {
+impl Add for Rope {
     type Output = Rope;
     fn add(self, rhs: Rope) -> Rope {
         let mut b = TreeBuilder::new();
