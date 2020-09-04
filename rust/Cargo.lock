@@ -1208,7 +1208,7 @@ dependencies = [
  "xi-rope 0.3.0",
  "xi-rpc 0.3.0",
  "xi-trace 0.2.0",
- "xi-unicode 0.2.0",
+ "xi-unicode 0.3.0",
 ]
 
 [[package]]
@@ -1330,7 +1330,7 @@ dependencies = [
 
 [[package]]
 name = "xi-unicode"
-version = "0.2.0"
+version = "0.3.0"
 
 [[package]]
 name = "xml-rs"
