@@ -544,7 +544,10 @@ mod tests {
         );
 
         // LB7, LB18
-        assert_eq!(vec![(3, false), (4, false)], LineBreakIterator::new("a  b").collect::<Vec<_>>());
+        assert_eq!(
+            vec![(3, false), (4, false)],
+            LineBreakIterator::new("a  b").collect::<Vec<_>>()
+        );
 
         // LB5
         assert_eq!(vec![(2, true), (3, false)], LineBreakIterator::new("a\nb").collect::<Vec<_>>());
@@ -608,19 +611,10 @@ mod tests {
     #[test]
     // The final break is hard only when there is an explicit separator.
     fn lb_iter_eot() {
-        assert_eq!(
-            vec![(4, false)],
-            LineBreakIterator::new("abc ").collect::<Vec<_>>()
-        );
+        assert_eq!(vec![(4, false)], LineBreakIterator::new("abc ").collect::<Vec<_>>());
 
-        assert_eq!(
-            vec![(4, true)],
-            LineBreakIterator::new("abc\r").collect::<Vec<_>>()
-        );
+        assert_eq!(vec![(4, true)], LineBreakIterator::new("abc\r").collect::<Vec<_>>());
 
-        assert_eq!(
-            vec![(5, true)],
-            LineBreakIterator::new("abc\u{0085}").collect::<Vec<_>>()
-        );
+        assert_eq!(vec![(5, true)], LineBreakIterator::new("abc\u{0085}").collect::<Vec<_>>());
     }
 }
