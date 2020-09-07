@@ -209,10 +209,15 @@ impl<N: NodeInfo> Node<N> {
     /// * All the nodes are the same height.
     /// * All the nodes must satisfy is_ok_child.
     fn from_nodes(nodes: Vec<Node<N>>) -> Node<N> {
+        debug_assert!(nodes.len() > 1);
+        debug_assert!(nodes.len() <= MAX_CHILDREN);
         let height = nodes[0].0.height + 1;
         let mut len = nodes[0].0.len;
         let mut info = nodes[0].0.info.clone();
+        debug_assert!(nodes[0].is_ok_child());
         for child in &nodes[1..] {
+            debug_assert_eq!(child.height() + 1, height);
+            debug_assert!(child.is_ok_child());
             len += child.0.len;
             info.accumulate(&child.0.info);
         }
@@ -1260,5 +1265,14 @@ mod test {
         }
 
         assert_eq!(None, cursor.prev::<LinesMetric>());
+    }
+
+    #[test]
+    fn balance_invariant() {
+        let mut tb = TreeBuilder::<RopeInfo>::new();
+        let leaves: Vec<String> = (0..1000).map(|i| i.to_string().into()).collect();
+        tb.push_leaves(leaves);
+        let tree = tb.build();
+        println!("height {}", tree.height());
     }
 }
