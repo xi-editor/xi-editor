@@ -138,7 +138,7 @@ impl<N: NodeInfo> Delta<N> {
         let mut b = TreeBuilder::new();
         for elem in &self.els {
             match *elem {
-                DeltaElement::Copy(beg, end) => base.push_subseq(&mut b, Interval::new(beg, end)),
+                DeltaElement::Copy(beg, end) => b.push_subseq(base, Interval::new(beg, end)),
                 DeltaElement::Insert(ref n) => b.push(n.clone()),
             }
         }

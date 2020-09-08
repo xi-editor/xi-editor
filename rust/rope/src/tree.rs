@@ -377,38 +377,10 @@ impl<N: NodeInfo> Node<N> {
         M::measure(&self.0.info, self.0.len)
     }
 
-    pub(crate) fn push_subseq(&self, b: &mut TreeBuilder<N>, iv: Interval) {
-        if iv.is_empty() {
-            return;
-        }
-        if iv == self.interval() {
-            b.push(self.clone());
-            return;
-        }
-        match self.0.val {
-            NodeVal::Leaf(ref l) => {
-                b.push_leaf_slice(l, iv);
-            }
-            NodeVal::Internal(ref v) => {
-                let mut offset = 0;
-                for child in v {
-                    if iv.is_before(offset) {
-                        break;
-                    }
-                    let child_iv = child.interval();
-                    // easier just to use signed ints?
-                    let rec_iv = iv.intersect(child_iv.translate(offset)).translate_neg(offset);
-                    child.push_subseq(b, rec_iv);
-                    offset += child.len();
-                }
-            }
-        }
-    }
-
     pub fn subseq<T: IntervalBounds>(&self, iv: T) -> Node<N> {
         let iv = iv.into_interval(self.len());
         let mut b = TreeBuilder::new();
-        self.push_subseq(&mut b, iv);
+        b.push_subseq(self, iv);
         b.build()
     }
 
@@ -420,9 +392,9 @@ impl<N: NodeInfo> Node<N> {
         let mut b = TreeBuilder::new();
         let iv = iv.into_interval(self.len());
         let self_iv = self.interval();
-        self.push_subseq(&mut b, self_iv.prefix(iv));
+        b.push_subseq(self, self_iv.prefix(iv));
         b.push(new.into());
-        self.push_subseq(&mut b, self_iv.suffix(iv));
+        b.push_subseq(self, self_iv.suffix(iv));
         *self = b.build();
     }
 
@@ -564,6 +536,35 @@ impl<N: NodeInfo> TreeBuilder<N> {
                 Ordering::Greater => {
                     self.stack.push(vec![n]);
                     break;
+                }
+            }
+        }
+    }
+
+    /// Push a subsequence of a rope.
+    pub fn push_subseq(&mut self, n: &Node<N>, iv: Interval) {
+        if iv.is_empty() {
+            return;
+        }
+        if iv == n.interval() {
+            self.push(n.clone());
+            return;
+        }
+        match n.0.val {
+            NodeVal::Leaf(ref l) => {
+                self.push_leaf_slice(l, iv);
+            }
+            NodeVal::Internal(ref v) => {
+                let mut offset = 0;
+                for child in v {
+                    if iv.is_before(offset) {
+                        break;
+                    }
+                    let child_iv = child.interval();
+                    // easier just to use signed ints?
+                    let rec_iv = iv.intersect(child_iv.translate(offset)).translate_neg(offset);
+                    self.push_subseq(child, rec_iv);
+                    offset += child.len();
                 }
             }
         }
