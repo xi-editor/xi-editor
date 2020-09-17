@@ -65,6 +65,18 @@ impl Diff<RopeInfo> for LineHashDiff {
             return builder.to_delta(base, target);
         }
 
+        // if a continuous range of text got deleted, we're done
+        if target.len() < base.len() && start_offset + diff_end == target.len() {
+            builder.copy(base.len() - diff_end, target_end, diff_end);
+            return builder.to_delta(base, target);
+        }
+
+        // if a continuous range of text got inserted, we're done
+        if target.len() > base.len() && start_offset + diff_end == base.len() {
+            builder.copy(base.len() - diff_end, target_end, diff_end);
+            return builder.to_delta(base, target);
+        }
+
         let line_hashes = make_line_hashes(&base, MIN_SIZE);
 
         let line_count = target.measure::<LinesMetric>() + 1;
@@ -295,6 +307,24 @@ Currently my sense of smell (and the pain of implementing Write) might be too mu
 
         let result = delta.apply(&one);
         assert_eq!(result, two);
+    }
+
+    #[test]
+    fn simple_diff() {
+        let one = "This is a simple string".into();
+        let two = "This is a string".into();
+
+        let delta = LineHashDiff::compute_delta(&one, &two);
+        println!("delta: {:?}", &delta);
+
+        let result = delta.apply(&one);
+        assert_eq!(result, two);
+
+        let delta = LineHashDiff::compute_delta(&two, &one);
+        println!("delta: {:?}", &delta);
+
+        let result = delta.apply(&two);
+        assert_eq!(result, one);
     }
 
     #[test]
