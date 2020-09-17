@@ -380,7 +380,7 @@ impl<N: NodeInfo> Node<N> {
     pub fn subseq<T: IntervalBounds>(&self, iv: T) -> Node<N> {
         let iv = iv.into_interval(self.len());
         let mut b = TreeBuilder::new();
-        b.push_subseq(self, iv);
+        b.push_slice(self, iv);
         b.build()
     }
 
@@ -392,9 +392,9 @@ impl<N: NodeInfo> Node<N> {
         let mut b = TreeBuilder::new();
         let iv = iv.into_interval(self.len());
         let self_iv = self.interval();
-        b.push_subseq(self, self_iv.prefix(iv));
+        b.push_slice(self, self_iv.prefix(iv));
         b.push(new.into());
-        b.push_subseq(self, self_iv.suffix(iv));
+        b.push_slice(self, self_iv.suffix(iv));
         *self = b.build();
     }
 
@@ -542,7 +542,14 @@ impl<N: NodeInfo> TreeBuilder<N> {
     }
 
     /// Push a subsequence of a rope.
-    pub fn push_subseq(&mut self, n: &Node<N>, iv: Interval) {
+    ///
+    /// Pushes the subsequence of another tree `n` defined by the interval `iv`
+    /// onto the builder.
+    ///
+    /// This is intended as an efficient operation. It is equivalent to taking
+    /// the subsequence of `n` and pushing that, but attempts to minimize the
+    /// allocation of intermediate results.
+    pub fn push_slice(&mut self, n: &Node<N>, iv: Interval) {
         if iv.is_empty() {
             return;
         }
@@ -563,7 +570,7 @@ impl<N: NodeInfo> TreeBuilder<N> {
                     let child_iv = child.interval();
                     // easier just to use signed ints?
                     let rec_iv = iv.intersect(child_iv.translate(offset)).translate_neg(offset);
-                    self.push_subseq(child, rec_iv);
+                    self.push_slice(child, rec_iv);
                     offset += child.len();
                 }
             }

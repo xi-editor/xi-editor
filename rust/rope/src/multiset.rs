@@ -147,7 +147,7 @@ impl Subset {
     pub fn delete_from<N: NodeInfo>(&self, s: &Node<N>) -> Node<N> {
         let mut b = TreeBuilder::new();
         for (beg, end) in self.range_iter(CountMatcher::Zero) {
-            b.push_subseq(s, Interval::new(beg, end));
+            b.push_slice(s, Interval::new(beg, end));
         }
         b.build()
     }
