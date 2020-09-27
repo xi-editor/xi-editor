@@ -150,7 +150,6 @@ impl<T: Clone> SpansBuilder<T> {
     }
 
     // Precondition: spans must be added in nondecreasing start order.
-    // Maybe take Span struct instead of separate iv, data args?
     fn add_span<IV: IntervalBounds>(&mut self, iv: IV, data: T) {
         let iv = iv.into_interval(self.total_len);
         if self.leaf.spans.len() == MAX_LEAF {
@@ -226,9 +225,6 @@ impl<T: Clone> Spans<T> {
     /// # Panics
     ///
     /// Panics if `self` and `other` have different lengths.
-    // merging 1 1 1 1 1 1 1 1 1 16
-    // with    2 2 4 4     8 8
-    // ==      3 3 5 5 1 1 9 9 1 16
     pub fn merge<F, O>(&self, other: &Self, mut f: F) -> Spans<O>
     where
         F: FnMut(T, Option<T>) -> O,
@@ -446,29 +442,15 @@ mod tests {
         sb.add(Span::new(0..9, 1u32));
         sb.add(Span::new(9..10, 16));
         let red = sb.build();
-        // len: 10
-        // spans:
-        //         [0, 9): 1
-        //         [9, 10): 16
+
         let mut sb = SpansBuilder::new(10);
         sb.add(Span::new(0..2, 2));
         sb.add(Span::new(2..4, 4));
         sb.add(Span::new(6..8, 8));
         let blue = sb.build();
-        // len: 10
-        // spans:
-        //         [0, 2): 2
-        //         [2, 4): 4
-        //         [6, 8): 8
+
         let merged = red.merge(&blue, |r, b| b.map(|b| b + r).unwrap_or(r));
-        // len: 10
-        // spans:
-        //         [0, 2): 3
-        //         [2, 4): 5
-        //         [4, 6): 1
-        //         [6, 8): 9
-        //         [8, 9): 1
-        //         [9, 10): 16
+
         let mut merged_iter = merged.iter();
         let span = merged_iter.next().unwrap();
         assert_eq!(span.iv, (0..2));
