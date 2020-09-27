@@ -29,8 +29,6 @@ pub trait Interval {
     fn translate(&self, amount: usize) -> Self;
     fn translate_neg(&self, amount: usize) -> Self;
     fn size(&self) -> usize;
-    // TODO: remove this at rust 1.47
-    fn is_empty(&self) -> bool;
 }
 impl Interval for Range<usize> {
     // The following 2 methods define a trisection, exactly one is true.
@@ -90,10 +88,6 @@ impl Interval for Range<usize> {
     // insensitive to open or closed ends, just the size of the interior
     fn size(&self) -> usize {
         self.end - self.start
-    }
-    // TODO: remove this at rust 1.47
-    fn is_empty(&self) -> bool {
-        self.end <= self.start
     }
 }
 
