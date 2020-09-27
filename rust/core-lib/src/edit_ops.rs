@@ -426,11 +426,7 @@ fn last_selection_region(regions: &[SelRegion]) -> Option<&SelRegion> {
 
 fn get_tab_text(config: &BufferItems, tab_size: Option<usize>) -> &'static str {
     let tab_size = tab_size.unwrap_or(config.tab_size);
-    let tab_text = if config.translate_tabs_to_spaces {
-        n_spaces(tab_size)
-    } else {
-        "\t"
-    };
+    let tab_text = if config.translate_tabs_to_spaces { n_spaces(tab_size) } else { "\t" };
 
     tab_text
 }

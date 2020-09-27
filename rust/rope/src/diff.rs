@@ -107,11 +107,8 @@ impl Diff<RopeInfo> for LineHashDiff {
         // TODO: a possible optimization here would be to expand matches
         // to adjacent lines first? this would be at best a small win though..
 
-        let longest_subseq = if needs_subseq {
-            longest_increasing_region_set(&matches)
-        } else {
-            matches
-        };
+        let longest_subseq =
+            if needs_subseq { longest_increasing_region_set(&matches) } else { matches };
 
         // for each matching region, we extend it forwards and backwards.
         // we keep track of how far forward we extend it each time, to avoid
@@ -208,10 +205,7 @@ fn longest_increasing_region_set(items: &[(usize, usize)]) -> Vec<(usize, usize)
 
 #[inline]
 fn non_ws_offset(s: &str) -> usize {
-    s.as_bytes()
-        .iter()
-        .take_while(|b| **b == b' ' || **b == b'\t')
-        .count()
+    s.as_bytes().iter().take_while(|b| **b == b' ' || **b == b'\t').count()
 }
 
 /// Represents copying `len` bytes from base to target.
@@ -233,34 +227,19 @@ impl DiffBuilder {
         if let Some(prev) = self.ops.last_mut() {
             let prev_end = prev.target_idx + prev.len;
             let base_end = prev.base_idx + prev.len;
-            assert!(
-                prev_end <= target,
-                "{} <= {} prev {:?}",
-                prev_end,
-                target,
-                prev
-            );
+            assert!(prev_end <= target, "{} <= {} prev {:?}", prev_end, target, prev);
             if prev_end == target && base_end == base {
                 prev.len += len;
                 return;
             }
         }
-        self.ops.push(DiffOp {
-            target_idx: target,
-            base_idx: base,
-            len,
-        })
+        self.ops.push(DiffOp { target_idx: target, base_idx: base, len })
     }
 
     fn to_delta(self, base: &Rope, target: &Rope) -> RopeDelta {
         let mut els = Vec::with_capacity(self.ops.len() * 2);
         let mut targ_pos = 0;
-        for DiffOp {
-            base_idx,
-            target_idx,
-            len,
-        } in self.ops
-        {
+        for DiffOp { base_idx, target_idx, len } in self.ops {
             if target_idx > targ_pos {
                 els.push(DeltaElement::Insert(target.subseq(targ_pos..target_idx)));
             }
@@ -272,10 +251,7 @@ impl DiffBuilder {
             els.push(DeltaElement::Insert(target.subseq(targ_pos..target.len())));
         }
 
-        Delta {
-            els,
-            base_len: base.len(),
-        }
+        Delta { els, base_len: base.len() }
     }
 }
 

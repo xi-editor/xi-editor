@@ -64,11 +64,7 @@ pub fn parse_subset(s: &str) -> Subset {
 }
 
 pub fn parse_subset_list(s: &str) -> Vec<Subset> {
-    s.lines()
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .map(parse_subset)
-        .collect()
+    s.lines().map(|s| s.trim()).filter(|s| !s.is_empty()).map(parse_subset).collect()
 }
 
 pub fn debug_subsets(subsets: &[Subset]) {

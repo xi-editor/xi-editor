@@ -184,10 +184,7 @@ pub fn ne_idx_fallback(one: &[u8], two: &[u8]) -> Option<usize> {
 #[allow(dead_code)]
 #[doc(hidden)]
 pub fn ne_idx_rev_fallback(one: &[u8], two: &[u8]) -> Option<usize> {
-    one.iter()
-        .rev()
-        .zip(two.iter().rev())
-        .position(|(a, b)| a != b)
+    one.iter().rev().zip(two.iter().rev()).position(|(a, b)| a != b)
 }
 
 /// Utility for efficiently comparing two ropes.
@@ -253,11 +250,7 @@ impl<'a> RopeScanner<'a> {
                 ne_idx_rev(self.base_chunk.as_bytes(), self.target_chunk.as_bytes())
             {
                 // find nearest codepoint boundary
-                while idx > 1
-                    && !self
-                        .base_chunk
-                        .is_char_boundary(self.base_chunk.len() - idx)
-                {
+                while idx > 1 && !self.base_chunk.is_char_boundary(self.base_chunk.len() - idx) {
                     idx -= 1;
                 }
                 return stop.min(self.scanned + idx);
@@ -544,10 +537,7 @@ mod tests {
         let chunk4 = Rope::from("aaaaaabaaaaaaaaa");
         {
             let mut scanner = RopeScanner::new(&rope, &chunk1);
-            assert_eq!(
-                scanner.find_ne_char_back(rope.len(), chunk1.len(), None),
-                16
-            );
+            assert_eq!(scanner.find_ne_char_back(rope.len(), chunk1.len(), None), 16);
         }
 
         {
@@ -574,10 +564,7 @@ mod tests {
 
         {
             let mut scanner = RopeScanner::new(&rope, &chunk1);
-            assert_eq!(
-                scanner.find_ne_char_back(rope.len(), chunk1.len(), None),
-                13
-            );
+            assert_eq!(scanner.find_ne_char_back(rope.len(), chunk1.len(), None), 13);
         }
 
         {

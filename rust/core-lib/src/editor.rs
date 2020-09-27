@@ -157,8 +157,7 @@ impl Editor {
     }
 
     pub(crate) fn is_pristine(&self) -> bool {
-        self.engine
-            .is_equivalent_revision(self.pristine_rev_id, self.engine.get_head_rev_id())
+        self.engine.is_equivalent_revision(self.pristine_rev_id, self.engine.get_head_rev_id())
     }
 
     /// Set whether or not edits are forced into the same undo group rather than being split by
@@ -167,11 +166,7 @@ impl Editor {
     /// This is used for things such as recording playback, where you don't want the
     /// individual events to be undoable, but instead the entire playback should be.
     pub(crate) fn set_force_undo_group(&mut self, force_undo_group: bool) {
-        trace_payload(
-            "Editor::set_force_undo_group",
-            &["core"],
-            force_undo_group.to_string(),
-        );
+        trace_payload("Editor::set_force_undo_group", &["core"], force_undo_group.to_string());
         self.force_undo_group = force_undo_group;
     }
 
@@ -211,8 +206,7 @@ impl Editor {
         let undo_group = self.calculate_undo_group();
         self.last_edit_type = self.this_edit_type;
         let priority = 0x10000;
-        self.engine
-            .edit_rev(priority, undo_group, head_rev_id.token(), delta);
+        self.engine.edit_rev(priority, undo_group, head_rev_id.token(), delta);
         self.text = self.engine.get_head().clone();
     }
 
@@ -242,13 +236,7 @@ impl Editor {
     pub fn apply_plugin_edit(&mut self, edit: PluginEdit) {
         let _t = trace_block("Editor::apply_plugin_edit", &["core"]);
         //TODO: get priority working, so that plugin edits don't necessarily move cursor
-        let PluginEdit {
-            rev,
-            delta,
-            priority,
-            undo_group,
-            ..
-        } = edit;
+        let PluginEdit { rev, delta, priority, undo_group, .. } = edit;
         let priority = priority as usize;
         let undo_group = undo_group.unwrap_or_else(|| self.calculate_undo_group());
         match self.engine.try_edit_rev(priority, undo_group, rev, delta) {
@@ -269,10 +257,7 @@ impl Editor {
         }
 
         let last_token = self.last_rev_id.token();
-        let delta = self
-            .engine
-            .try_delta_rev_head(last_token)
-            .expect("last_rev not found");
+        let delta = self.engine.try_delta_rev_head(last_token).expect("last_rev not found");
         // TODO (performance): it's probably quicker to stash last_text
         // rather than resynthesize it.
         let last_text = self.engine.get_rev(last_token).expect("last_rev not found");
@@ -539,11 +524,8 @@ impl Editor {
             .unwrap_or(false);
 
         self.add_delta(delta);
-        self.this_edit_type = if regions.len() > 1 || condition {
-            EditType::Indent
-        } else {
-            EditType::InsertChars
-        };
+        self.this_edit_type =
+            if regions.len() > 1 || condition { EditType::Indent } else { EditType::InsertChars };
     }
 
     fn do_yank(&mut self, view: &View, kill_ring: &Rope) {
@@ -683,14 +665,7 @@ impl Editor {
             }
         }
         let iv = start..end_offset;
-        view.update_annotations(
-            plugin,
-            iv,
-            Annotations {
-                items: spans,
-                annotation_type,
-            },
-        );
+        view.update_annotations(plugin, iv, Annotations { items: spans, annotation_type });
     }
 
     pub(crate) fn get_rev(&self, rev: RevToken) -> Option<Cow<Rope>> {
@@ -732,12 +707,7 @@ impl Editor {
         let first_line = text.line_of_offset(offset);
         let first_line_offset = offset - text.offset_of_line(first_line);
 
-        Some(GetDataResponse {
-            chunk,
-            offset,
-            first_line,
-            first_line_offset,
-        })
+        Some(GetDataResponse { chunk, offset, first_line, first_line_offset })
     }
 }
 

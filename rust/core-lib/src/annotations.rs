@@ -72,9 +72,7 @@ impl<'de> Deserialize<'de> for AnnotationRange {
     where
         D: Deserializer<'de>,
     {
-        let mut range = AnnotationRange {
-            ..Default::default()
-        };
+        let mut range = AnnotationRange { ..Default::default() };
         let seq = <[usize; 4]>::deserialize(deserializer)?;
 
         range.start_line = seq[0];
@@ -121,11 +119,7 @@ impl AnnotationSlice {
         ranges: Vec<AnnotationRange>,
         payloads: Option<Vec<Value>>,
     ) -> Self {
-        AnnotationSlice {
-            annotation_type,
-            ranges,
-            payloads,
-        }
+        AnnotationSlice { annotation_type, ranges, payloads }
     }
 
     /// Returns json representation.
@@ -153,9 +147,7 @@ pub struct AnnotationStore {
 
 impl AnnotationStore {
     pub fn new() -> Self {
-        AnnotationStore {
-            store: HashMap::new(),
-        }
+        AnnotationStore { store: HashMap::new() }
     }
 
     /// Invalidates and removes all annotations in the range of the interval.
@@ -175,9 +167,8 @@ impl AnnotationStore {
         }
 
         let entry = self.store.get_mut(&source).unwrap();
-        if let Some(annotation) = entry
-            .iter_mut()
-            .find(|a| a.annotation_type == item.annotation_type)
+        if let Some(annotation) =
+            entry.iter_mut().find(|a| a.annotation_type == item.annotation_type)
         {
             annotation.update(interval, item.items);
         } else {
@@ -211,12 +202,7 @@ impl AnnotationStore {
                         let (start_line, start_col) = view.offset_to_line_col(text, span.iv.start);
                         let (end_line, end_col) = view.offset_to_line_col(text, span.iv.end);
 
-                        AnnotationRange {
-                            start_line,
-                            start_col,
-                            end_line,
-                            end_col,
-                        }
+                        AnnotationRange { start_line, start_col, end_line, end_col }
                     })
                     .collect::<Vec<AnnotationRange>>();
 
@@ -245,12 +231,7 @@ mod tests {
 
     #[test]
     fn test_annotation_range_serialization() {
-        let range = AnnotationRange {
-            start_line: 1,
-            start_col: 3,
-            end_line: 4,
-            end_col: 1,
-        };
+        let range = AnnotationRange { start_line: 1, start_col: 3, end_line: 4, end_col: 1 };
 
         assert_eq!(json!(range).to_string(), "[1,3,4,1]")
     }
@@ -258,25 +239,12 @@ mod tests {
     #[test]
     fn test_annotation_range_deserialization() {
         let range: AnnotationRange = serde_json::from_str("[1,3,4,1]").unwrap();
-        assert_eq!(
-            range,
-            AnnotationRange {
-                start_line: 1,
-                start_col: 3,
-                end_line: 4,
-                end_col: 1
-            }
-        )
+        assert_eq!(range, AnnotationRange { start_line: 1, start_col: 3, end_line: 4, end_col: 1 })
     }
 
     #[test]
     fn test_annotation_slice_json() {
-        let range = AnnotationRange {
-            start_line: 1,
-            start_col: 3,
-            end_line: 4,
-            end_col: 1,
-        };
+        let range = AnnotationRange { start_line: 1, start_col: 3, end_line: 4, end_col: 1 };
 
         let slice = AnnotationSlice {
             annotation_type: AnnotationType::Find,
@@ -302,10 +270,7 @@ mod tests {
         store.update(
             PluginPid(1),
             1..5,
-            Annotations {
-                annotation_type: AnnotationType::Find,
-                items: sb.build(),
-            },
+            Annotations { annotation_type: AnnotationType::Find, items: sb.build() },
         );
 
         assert_eq!(store.store.len(), 1);
@@ -316,10 +281,7 @@ mod tests {
         store.update(
             PluginPid(2),
             6..8,
-            Annotations {
-                annotation_type: AnnotationType::Find,
-                items: sb.build(),
-            },
+            Annotations { annotation_type: AnnotationType::Find, items: sb.build() },
         );
 
         assert_eq!(store.store.len(), 2);
@@ -337,10 +299,7 @@ mod tests {
         store.update(
             PluginPid(1),
             1..5,
-            Annotations {
-                annotation_type: AnnotationType::Find,
-                items: sb.build(),
-            },
+            Annotations { annotation_type: AnnotationType::Find, items: sb.build() },
         );
 
         assert_eq!(store.store.len(), 1);
@@ -351,10 +310,7 @@ mod tests {
         store.update(
             PluginPid(2),
             6..8,
-            Annotations {
-                annotation_type: AnnotationType::Find,
-                items: sb.build(),
-            },
+            Annotations { annotation_type: AnnotationType::Find, items: sb.build() },
         );
 
         assert_eq!(store.store.len(), 2);

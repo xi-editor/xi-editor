@@ -79,10 +79,7 @@ pub(crate) struct VisualLine {
 
 impl VisualLine {
     fn new<I: Into<Range<usize>>, L: Into<Option<usize>>>(iv: I, line: L) -> Self {
-        VisualLine {
-            interval: iv.into(),
-            line_num: line.into(),
-        }
+        VisualLine { interval: iv.into(), line_num: line.into() }
     }
 }
 
@@ -196,13 +193,7 @@ impl Lines {
         let offset = cursor.offset_of_line(start_line);
         let logical_line = text.line_of_offset(offset) + 1;
         cursor.set_offset(offset);
-        VisualLines {
-            offset,
-            cursor,
-            len: text.len(),
-            logical_line,
-            eof: false,
-        }
+        VisualLines { offset, cursor, len: text.len(), logical_line, eof: false }
     }
 
     /// Returns the next task, prioritizing the currently visible region.
@@ -285,17 +276,8 @@ impl Lines {
             None
         } else {
             let summary = self.do_wrap_task(text, width_cache, client, visible_lines, None);
-            let WrapSummary {
-                start_line,
-                inval_count,
-                new_count,
-                ..
-            } = summary;
-            Some(InvalLines {
-                start_line,
-                inval_count,
-                new_count,
-            })
+            let WrapSummary { start_line, inval_count, new_count, .. } = summary;
+            Some(InvalLines { start_line, inval_count, new_count })
         }
     }
 
@@ -348,21 +330,13 @@ impl Lines {
         // possible if the whole buffer is deleted, e.g
         if !self.work.is_empty() {
             let summary = self.do_wrap_task(text, width_cache, client, visible_lines, None);
-            let WrapSummary {
-                start_line,
-                new_soft,
-                ..
-            } = summary;
+            let WrapSummary { start_line, new_soft, .. } = summary;
             // if we haven't converged after this update we can't do minimal invalidation
             // because we don't have complete knowledge of the new breaks state.
             if self.is_converged() {
                 let inval_count = old_hard_count + inval_soft;
                 let new_count = new_hard_count + new_soft;
-                Some(InvalLines {
-                    start_line,
-                    new_count,
-                    inval_count,
-                })
+                Some(InvalLines { start_line, new_count, inval_count })
             } else {
                 None
             }
@@ -453,12 +427,7 @@ impl Lines {
         self.breaks.edit(iv.clone(), breaks);
         self.update_tasks_after_wrap(iv.clone());
 
-        WrapSummary {
-            start_line,
-            inval_count,
-            new_count,
-            new_soft,
-        }
+        WrapSummary { start_line, inval_count, new_count, new_soft }
     }
 
     pub fn logical_line_range(&self, text: &Rope, line: usize) -> (usize, usize) {
@@ -607,11 +576,7 @@ impl<'a> LineBreakCursor<'a> {
             Some((s, offset)) => LineBreakLeafIter::new(s.as_str(), offset),
             _ => LineBreakLeafIter::default(),
         };
-        LineBreakCursor {
-            inner,
-            lb_iter,
-            last_byte: 0,
-        }
+        LineBreakCursor { inner, lb_iter, last_byte: 0 }
     }
 
     // position and whether break is hard; up to caller to stop calling after EOT
@@ -649,11 +614,7 @@ impl<'a> Iterator for VisualLines<'a> {
     type Item = VisualLine;
 
     fn next(&mut self) -> Option<VisualLine> {
-        let line_num = if self.cursor.is_hard_break() {
-            Some(self.logical_line)
-        } else {
-            None
-        };
+        let line_num = if self.cursor.is_hard_break() { Some(self.logical_line) } else { None };
         let next_end_bound = match self.cursor.next() {
             Some(b) => b,
             None if self.eof => return None,
@@ -727,14 +688,7 @@ impl<'a> MergedBreaks<'a> {
         let total_lines =
             text.root().measure::<LinesMetric>() + soft.root().measure::<BreaksMetric>() + 1;
         let len = text.total_len();
-        MergedBreaks {
-            text,
-            soft,
-            offset: 0,
-            cur_line: 0,
-            total_lines,
-            len,
-        }
+        MergedBreaks { text, soft, offset: 0, cur_line: 0, total_lines, len }
     }
 
     /// Sets the `self.offset` to the first valid break immediately at or preceding `offset`,
@@ -811,10 +765,7 @@ impl<'a> MergedBreaks<'a> {
     fn eof_without_newline(&mut self) -> bool {
         debug_assert!(self.at_eof());
         self.text.set(self.len);
-        self.text
-            .get_leaf()
-            .map(|(l, _)| l.as_bytes().last() != Some(&b'\n'))
-            .unwrap()
+        self.text.get_leaf().map(|(l, _)| l.as_bytes().last() != Some(&b'\n')).unwrap()
     }
 }
 
@@ -839,10 +790,7 @@ mod tests {
     }
 
     fn render_breaks<'a>(text: &'a Rope, lines: &Lines) -> Vec<Cow<'a, str>> {
-        let result = lines
-            .iter_lines(text, 0)
-            .map(|l| text.slice_to_cow(l.interval))
-            .collect();
+        let result = lines.iter_lines(text, 0).map(|l| text.slice_to_cow(l.interval)).collect();
         result
     }
 
@@ -855,20 +803,14 @@ mod tests {
     fn column_breaks_basic() {
         let text: Rope = "every wordthing should getits own".into();
         let result = debug_breaks(&text, 8.0);
-        assert_eq!(
-            result,
-            vec!["every ", "wordthing ", "should ", "getits ", "own",]
-        );
+        assert_eq!(result, vec!["every ", "wordthing ", "should ", "getits ", "own",]);
     }
 
     #[test]
     fn column_breaks_trailing_newline() {
         let text: Rope = "every wordthing should getits ow\n".into();
         let result = debug_breaks(&text, 8.0);
-        assert_eq!(
-            result,
-            vec!["every ", "wordthing ", "should ", "getits ", "ow\n", "",]
-        );
+        assert_eq!(result, vec!["every ", "wordthing ", "should ", "getits ", "ow\n", "",]);
     }
 
     #[test]
@@ -894,10 +836,7 @@ mod tests {
     fn column_breaks_hard_soft() {
         let text: Rope = "so\nevery wordthing should getits own".into();
         let result = debug_breaks(&text, 4.0);
-        assert_eq!(
-            result,
-            vec!["so\n", "every ", "wordthing ", "should ", "getits ", "own",]
-        );
+        assert_eq!(result, vec!["so\n", "every ", "wordthing ", "should ", "getits ", "own",]);
     }
 
     #[test]
@@ -1111,14 +1050,7 @@ mod tests {
         for offset in 0..text.len() {
             let line = lines.visual_line_of_offset(&text, offset);
             let line_offset = lines.offset_of_visual_line(&text, line);
-            assert!(
-                line_offset <= offset,
-                "{} <= {} L{} O{}",
-                line_offset,
-                offset,
-                line,
-                offset
-            );
+            assert!(line_offset <= offset, "{} <= {} L{} O{}", line_offset, offset, line, offset);
         }
     }
 
@@ -1179,14 +1111,7 @@ mod tests {
         for offset in 0..text.len() {
             let line = lines.visual_line_of_offset(&text, offset);
             let line_offset = lines.offset_of_visual_line(&text, line);
-            assert!(
-                line_offset <= offset,
-                "{} <= {} L{} O{}",
-                line_offset,
-                offset,
-                line,
-                offset
-            );
+            assert!(line_offset <= offset, "{} <= {} L{} O{}", line_offset, offset, line, offset);
         }
     }
 
@@ -1194,25 +1119,16 @@ mod tests {
     fn iter_lines() {
         let text: Rope = "aaaa\nbb bb cc\ncc dddd eeee ff\nff gggg".into();
         let lines = make_lines(&text, 2.);
-        let r: Vec<_> = lines
-            .iter_lines(&text, 0)
-            .take(2)
-            .map(|l| text.slice_to_cow(l.interval))
-            .collect();
+        let r: Vec<_> =
+            lines.iter_lines(&text, 0).take(2).map(|l| text.slice_to_cow(l.interval)).collect();
         assert_eq!(r, vec!["aaaa\n", "bb "]);
 
-        let r: Vec<_> = lines
-            .iter_lines(&text, 1)
-            .take(2)
-            .map(|l| text.slice_to_cow(l.interval))
-            .collect();
+        let r: Vec<_> =
+            lines.iter_lines(&text, 1).take(2).map(|l| text.slice_to_cow(l.interval)).collect();
         assert_eq!(r, vec!["bb ", "bb "]);
 
-        let r: Vec<_> = lines
-            .iter_lines(&text, 3)
-            .take(3)
-            .map(|l| text.slice_to_cow(l.interval))
-            .collect();
+        let r: Vec<_> =
+            lines.iter_lines(&text, 3).take(3).map(|l| text.slice_to_cow(l.interval)).collect();
         assert_eq!(r, vec!["cc\n", "cc ", "dddd "]);
     }
 
@@ -1223,18 +1139,7 @@ mod tests {
         let nums: Vec<_> = lines.iter_lines(&text, 0).map(|l| l.line_num).collect();
         assert_eq!(
             nums,
-            vec![
-                Some(1),
-                Some(2),
-                None,
-                None,
-                Some(3),
-                None,
-                None,
-                None,
-                Some(4),
-                None
-            ]
+            vec![Some(1), Some(2), None, None, Some(3), None, None, None, Some(4), None]
         );
     }
 

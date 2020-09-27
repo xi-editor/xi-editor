@@ -70,10 +70,7 @@ impl Layers {
         if self.create_if_missing(layer).is_err() {
             return;
         }
-        self.layers
-            .get_mut(&layer)
-            .unwrap()
-            .add_scopes(scopes, style_map);
+        self.layers.get_mut(&layer).unwrap().add_scopes(scopes, style_map);
     }
 
     /// Applies the delta to all layers, inserting empty intervals
@@ -96,10 +93,7 @@ impl Layers {
         if self.create_if_missing(layer).is_err() {
             return;
         }
-        self.layers
-            .get_mut(&layer)
-            .unwrap()
-            .update_scopes(iv.clone(), &spans);
+        self.layers.get_mut(&layer).unwrap().update_scopes(iv.clone(), &spans);
         self.resolve_styles(iv);
     }
 
@@ -154,10 +148,7 @@ impl Layers {
             if spans.iter().next().is_some() {
                 info!("scopes for layer {:?}:", id);
                 for span in spans.iter() {
-                    info!(
-                        "{:?}: {:?}",
-                        span.iv, layer.stack_lookup[span.data as usize]
-                    );
+                    info!("{:?}: {:?}", span.iv, layer.stack_lookup[span.data as usize]);
                 }
                 info!("styles:");
                 for span in styles.iter() {
@@ -173,8 +164,7 @@ impl Layers {
             return Err(());
         }
         if !self.layers.contains_key(&layer_id) {
-            self.layers
-                .insert(layer_id, ScopeLayer::new(self.merged.len()));
+            self.layers.insert(layer_id, ScopeLayer::new(self.merged.len()));
         }
         Ok(())
     }
@@ -223,11 +213,7 @@ impl ScopeLayer {
                 .map(|s| Scope::new(&s))
                 .filter(|result| match *result {
                     Err(ref err) => {
-                        warn!(
-                            "failed to resolve scope {}\nErr: {:?}",
-                            &stack.join(" "),
-                            err
-                        );
+                        warn!("failed to resolve scope {}\nErr: {:?}", &stack.join(" "), err);
                         false
                     }
                     _ => true,
@@ -317,10 +303,7 @@ impl ScopeLayer {
                         prev = Some(Span::new(p.iv.union(&n.iv), p.data));
                     }
                     other => {
-                        sb.add(Span::new(
-                            p.iv,
-                            self.style_lookup[p.data as usize].to_owned(),
-                        ));
+                        sb.add(Span::new(p.iv, self.style_lookup[p.data as usize].to_owned()));
                         prev = other;
                     }
                 }

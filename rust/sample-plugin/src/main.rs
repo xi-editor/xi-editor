@@ -63,10 +63,7 @@ impl Plugin for SamplePlugin {
         //an insert of a single '!', we capitalize the preceding word.
         if let Some(delta) = delta {
             let (iv, _) = delta.summary();
-            let text: String = delta
-                .as_simple_insert()
-                .map(String::from)
-                .unwrap_or_default();
+            let text: String = delta.as_simple_insert().map(String::from).unwrap_or_default();
             if text == "!" {
                 let _ = self.capitalize_word(view, iv.end);
             }

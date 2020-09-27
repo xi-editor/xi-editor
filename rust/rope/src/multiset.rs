@@ -61,10 +61,7 @@ impl SubsetBuilder {
     /// non-empty range with `begin` not before the largest range or segment added
     /// so far. Gaps will be filled with a 0-count segment.
     pub fn add_range(&mut self, begin: usize, end: usize, count: usize) {
-        assert!(
-            begin >= self.total_len,
-            "ranges must be added in non-decreasing order"
-        );
+        assert!(begin >= self.total_len, "ranges must be added in non-decreasing order");
         // assert!(begin < end, "ranges added must be non-empty: [{},{})", begin, end);
         if begin >= end {
             return;
@@ -98,9 +95,7 @@ impl SubsetBuilder {
     }
 
     pub fn build(self) -> Subset {
-        Subset {
-            segments: self.segments,
-        }
+        Subset { segments: self.segments }
     }
 }
 
@@ -143,11 +138,7 @@ impl Subset {
 
     /// Count the total length of all the segments matching `matcher`.
     pub fn count(&self, matcher: CountMatcher) -> usize {
-        self.segments
-            .iter()
-            .filter(|&seg| matcher.matches(seg))
-            .map(|seg| seg.len)
-            .sum()
+        self.segments.iter().filter(|&seg| matcher.matches(seg)).map(|seg| seg.len).sum()
     }
 
     /// The length of the resulting sequence after deleting this subset. A
@@ -238,15 +229,8 @@ impl Subset {
                 }
             }
         }
-        assert_eq!(
-            cur_seg.len, 0,
-            "the 0-regions of other must be the size of self"
-        );
-        assert_eq!(
-            seg_iter.next(),
-            None,
-            "the 0-regions of other must be the size of self"
-        );
+        assert_eq!(cur_seg.len, 0, "the 0-regions of other must be the size of self");
+        assert_eq!(seg_iter.next(), None, "the 0-regions of other must be the size of self");
         sb.build()
     }
 
@@ -289,11 +273,7 @@ impl Subset {
     /// Return an iterator over the ranges with a count matching the `matcher`.
     /// These will often be easier to work with than raw segments.
     pub fn range_iter(&self, matcher: CountMatcher) -> RangeIter<'_> {
-        RangeIter {
-            seg_iter: self.segments.iter(),
-            consumed: 0,
-            matcher,
-        }
+        RangeIter { seg_iter: self.segments.iter(), consumed: 0, matcher }
     }
 
     /// Convenience alias for `self.range_iter(CountMatcher::Zero)`.
@@ -425,14 +405,8 @@ impl<'a> Iterator for ZipIter<'a> {
                 panic!("can't zip Subsets of different base lengths.")
             }
             (
-                Some(&Segment {
-                    len: a_len,
-                    count: a_count,
-                }),
-                Some(&Segment {
-                    len: b_len,
-                    count: b_count,
-                }),
+                Some(&Segment { len: a_len, count: a_count }),
+                Some(&Segment { len: b_len, count: b_count }),
             ) => {
                 let len = match (a_len + self.a_consumed).cmp(&(b_len + self.b_consumed)) {
                     cmp::Ordering::Equal => {
@@ -454,11 +428,7 @@ impl<'a> Iterator for ZipIter<'a> {
                     }
                 };
                 self.consumed += len;
-                Some(ZipSegment {
-                    len,
-                    a_count,
-                    b_count,
-                })
+                Some(ZipSegment { len, a_count, b_count })
             }
         }
     }

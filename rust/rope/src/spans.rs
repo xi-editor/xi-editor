@@ -59,10 +59,7 @@ pub struct SpansLeaf<T: Clone> {
 // See: https://github.com/rust-lang/rust/issues/26925
 impl<T: Clone> Default for SpansLeaf<T> {
     fn default() -> Self {
-        SpansLeaf {
-            len: 0,
-            spans: vec![],
-        }
+        SpansLeaf { len: 0, spans: vec![] }
     }
 }
 
@@ -77,17 +74,10 @@ impl<T: Clone> Leaf for SpansLeaf<T> {
 
     fn push_maybe_split(&mut self, other: &Self, iv: Range<usize>) -> Option<Self> {
         for span in &other.spans {
-            let span_iv = span
-                .iv
-                .intersect(&iv)
-                .translate_neg(iv.start)
-                .translate(self.len);
+            let span_iv = span.iv.intersect(&iv).translate_neg(iv.start).translate(self.len);
 
             if !span_iv.is_empty() {
-                self.spans.push(Span {
-                    iv: span_iv,
-                    data: span.data.clone(),
-                });
+                self.spans.push(Span { iv: span_iv, data: span.data.clone() });
             }
         }
         self.len += iv.size();
@@ -103,10 +93,7 @@ impl<T: Clone> Leaf for SpansLeaf<T> {
             }
             let new_len = self.len - splitpoint_units;
             self.len = splitpoint_units;
-            Some(SpansLeaf {
-                len: new_len,
-                spans: new,
-            })
+            Some(SpansLeaf { len: new_len, spans: new })
         }
     }
 }
@@ -124,11 +111,7 @@ impl<T: Clone> NodeInfo for SpansInfo<T> {
         for span in &l.spans {
             iv = iv.union(&span.iv)
         }
-        SpansInfo {
-            n_spans: l.spans.len(),
-            iv,
-            phantom: PhantomData,
-        }
+        SpansInfo { n_spans: l.spans.len(), iv, phantom: PhantomData }
     }
 }
 
@@ -141,12 +124,7 @@ pub struct SpansBuilder<T: Clone> {
 
 impl<T: Clone> SpansBuilder<T> {
     pub fn new(total_len: usize) -> Self {
-        SpansBuilder {
-            b: TreeBuilder::new(),
-            leaf: SpansLeaf::default(),
-            len: 0,
-            total_len,
-        }
+        SpansBuilder { b: TreeBuilder::new(), leaf: SpansLeaf::default(), len: 0, total_len }
     }
 
     // Precondition: spans must be added in nondecreasing start order.
@@ -158,10 +136,7 @@ impl<T: Clone> SpansBuilder<T> {
             self.len = iv.start;
             self.b.push(Node::from_leaf(leaf));
         }
-        self.leaf.spans.push(Span {
-            iv: iv.translate_neg(self.len),
-            data,
-        })
+        self.leaf.spans.push(Span { iv: iv.translate_neg(self.len), data })
     }
 
     pub fn add(&mut self, span: Span<T>) {
@@ -203,10 +178,7 @@ impl<T: Clone> Spans<T> {
             let start = xform.transform(span.iv.start + base_start, false) - new_start;
             let end = xform.transform(span.iv.end + base_start, false) - new_start;
             if start < end {
-                let span = Span {
-                    iv: start..end,
-                    data: span.data,
-                };
+                let span = Span { iv: start..end, data: span.data };
                 // TODO: could imagine using a move iterator and avoiding clone, but it's not easy.
                 builder.add(span);
             }
@@ -248,38 +220,22 @@ impl<T: Clone> Spans<T> {
                 break;
             } else if next_red.is_none() != next_blue.is_none() {
                 // one side is exhausted; append remaining items from other side.
-                let iter = if next_red.is_some() {
-                    iter_red
-                } else {
-                    iter_blue
-                };
+                let iter = if next_red.is_some() { iter_red } else { iter_blue };
                 // add this item
                 let span = next_red.or(next_blue).unwrap();
-                let span = Span {
-                    iv: span.iv,
-                    data: f(span.data, None),
-                };
+                let span = Span { iv: span.iv, data: f(span.data, None) };
                 sb.add(span);
 
                 for span in iter {
-                    let span = Span {
-                        iv: span.iv,
-                        data: f(span.data, None),
-                    };
+                    let span = Span { iv: span.iv, data: f(span.data, None) };
                     sb.add(span);
                 }
                 break;
             }
 
             // body:
-            let Span {
-                iv: mut red_iv,
-                data: red_val,
-            } = next_red.clone().unwrap();
-            let Span {
-                iv: mut blue_iv,
-                data: blue_val,
-            } = next_blue.clone().unwrap();
+            let Span { iv: mut red_iv, data: red_val } = next_red.clone().unwrap();
+            let Span { iv: mut blue_iv, data: blue_val } = next_blue.clone().unwrap();
 
             if red_iv.intersect(&blue_iv).is_empty() {
                 // spans do not overlap. Add the leading span & advance that iter.
@@ -332,20 +288,14 @@ impl<T: Clone> Spans<T> {
             if red_iv.is_empty() {
                 next_red = iter_red.next();
             } else {
-                let red_span = Span {
-                    iv: red_iv,
-                    data: red_val,
-                };
+                let red_span = Span { iv: red_iv, data: red_val };
                 next_red = Some(red_span);
             }
 
             if blue_iv.is_empty() {
                 next_blue = iter_blue.next();
             } else {
-                let blue_span = Span {
-                    iv: blue_iv,
-                    data: blue_val,
-                };
+                let blue_span = Span { iv: blue_iv, data: blue_val };
                 next_blue = Some(blue_span);
             }
         }
@@ -355,10 +305,7 @@ impl<T: Clone> Spans<T> {
     // possible future: an iterator that takes an interval, so results are the same as
     // taking a subseq on the spans object. Would require specialized Cursor.
     pub fn iter(&self) -> SpanIter<'_, T> {
-        SpanIter {
-            cursor: Cursor::new(self, 0),
-            ix: 0,
-        }
+        SpanIter { cursor: Cursor::new(self, 0), ix: 0 }
     }
 
     /// Applies a generic delta to `self`, inserting empty spans for any
@@ -420,10 +367,7 @@ impl<'a, T: Clone> Iterator for SpanIter<'a, T> {
                 let _ = self.cursor.next_leaf();
                 self.ix = 0;
             }
-            let span = Span {
-                iv: span.iv.translate(leaf_start),
-                data: span.data.clone(),
-            };
+            let span = Span { iv: span.iv.translate(leaf_start), data: span.data.clone() };
             return Some(span);
         }
         None

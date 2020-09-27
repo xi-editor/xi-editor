@@ -47,10 +47,7 @@ impl Interval for Range<usize> {
     fn intersect(&self, other: &Self) -> Self {
         let start = max(self.start, other.start);
         let end = min(self.end, other.end);
-        Range {
-            start,
-            end: max(start, end),
-        }
+        Range { start, end: max(start, end) }
     }
 
     // smallest interval that encloses both inputs; if the inputs are
@@ -69,35 +66,23 @@ impl Interval for Range<usize> {
 
     // the first half of self - other
     fn prefix(&self, other: &Self) -> Self {
-        Range {
-            start: min(self.start, other.start),
-            end: min(self.end, other.start),
-        }
+        Range { start: min(self.start, other.start), end: min(self.end, other.start) }
     }
 
     // the second half of self - other
     fn suffix(&self, other: &Self) -> Self {
-        Range {
-            start: max(self.start, other.end),
-            end: max(self.end, other.end),
-        }
+        Range { start: max(self.start, other.end), end: max(self.end, other.end) }
     }
 
     // could impl Add trait, but that's probably too cute
     fn translate(&self, amount: usize) -> Self {
-        Range {
-            start: self.start + amount,
-            end: self.end + amount,
-        }
+        Range { start: self.start + amount, end: self.end + amount }
     }
 
     // as above for Sub trait
     fn translate_neg(&self, amount: usize) -> Self {
         debug_assert!(self.start >= amount);
-        Range {
-            start: self.start - amount,
-            end: self.end - amount,
-        }
+        Range { start: self.start - amount, end: self.end - amount }
     }
 
     // insensitive to open or closed ends, just the size of the interior
@@ -126,45 +111,30 @@ impl IntervalBounds for Range<usize> {
 
 impl IntervalBounds for RangeFrom<usize> {
     fn into_interval(self, upper_bound: usize) -> Range<usize> {
-        Range {
-            start: self.start,
-            end: upper_bound,
-        }
+        Range { start: self.start, end: upper_bound }
     }
 }
 
 impl IntervalBounds for RangeFull {
     fn into_interval(self, upper_bound: usize) -> Range<usize> {
-        Range {
-            start: 0,
-            end: upper_bound,
-        }
+        Range { start: 0, end: upper_bound }
     }
 }
 impl IntervalBounds for RangeTo<usize> {
     fn into_interval(self, _upper_bound: usize) -> Range<usize> {
-        Range {
-            start: 0,
-            end: self.end,
-        }
+        Range { start: 0, end: self.end }
     }
 }
 
 impl IntervalBounds for RangeInclusive<usize> {
     fn into_interval(self, _upper_bound: usize) -> Range<usize> {
-        Range {
-            start: *self.start(),
-            end: self.end().saturating_add(1),
-        }
+        Range { start: *self.start(), end: self.end().saturating_add(1) }
     }
 }
 
 impl IntervalBounds for RangeToInclusive<usize> {
     fn into_interval(self, _upper_bound: usize) -> Range<usize> {
-        Range {
-            start: 0,
-            end: self.end.saturating_add(1),
-        }
+        Range { start: 0, end: self.end.saturating_add(1) }
     }
 }
 

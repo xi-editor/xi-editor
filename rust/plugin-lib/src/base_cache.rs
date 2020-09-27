@@ -273,11 +273,7 @@ impl ChunkCache {
     /// the length of `self.content`.
     fn clear_up_to(&mut self, offset: usize) {
         if offset > self.contents.len() {
-            panic!(
-                "offset greater than content length: {} > {}",
-                offset,
-                self.contents.len()
-            )
+            panic!("offset greater than content length: {} > {}", offset, self.contents.len())
         }
 
         let new_contents = self.contents.split_off(offset);
@@ -291,12 +287,8 @@ impl ChunkCache {
         };
 
         // then clear line_offsets up to and including offset
-        self.line_offsets = self
-            .line_offsets
-            .iter()
-            .filter(|i| **i > offset)
-            .map(|i| i - offset)
-            .collect();
+        self.line_offsets =
+            self.line_offsets.iter().filter(|i| **i > offset).map(|i| i - offset).collect();
 
         self.first_line = new_line;
         self.first_line_offset = new_line_off;
@@ -373,9 +365,7 @@ impl ChunkCache {
         if has_newline {
             let mut new_offsets = Vec::new();
             newline_offsets(&String::from(text), &mut new_offsets);
-            new_offsets
-                .iter_mut()
-                .for_each(|off| *off += ins_offset - self_off);
+            new_offsets.iter_mut().for_each(|off| *off += ins_offset - self_off);
 
             let split_idx = self
                 .line_offsets
@@ -383,12 +373,9 @@ impl ChunkCache {
                 .err()
                 .expect("new index cannot be occupied");
 
-            self.line_offsets = [
-                &self.line_offsets[..split_idx],
-                &new_offsets,
-                &self.line_offsets[split_idx..],
-            ]
-            .concat();
+            self.line_offsets =
+                [&self.line_offsets[..split_idx], &new_offsets, &self.line_offsets[split_idx..]]
+                    .concat();
         }
     }
 
@@ -503,12 +490,7 @@ mod tests {
                 Err(Error::Other("offset too big".into()))
             } else {
                 let chunk = self.0.slice_to_cow(offset..end_off).into_owned();
-                Ok(GetDataResponse {
-                    chunk,
-                    offset,
-                    first_line,
-                    first_line_offset,
-                })
+                Ok(GetDataResponse { chunk, offset, first_line, first_line_offset })
             }
         }
     }
@@ -779,10 +761,7 @@ mod tests {
         // reset and fetch the middle, so we have an offset:
         let _ = c.offset_of_line(&source, 0);
         c.clear_up_to(5);
-        assert_eq!(
-            &c.contents,
-            &"this\nhas\nfive nice\nsour\nlines!"[5..CHUNK_SIZE]
-        );
+        assert_eq!(&c.contents, &"this\nhas\nfive nice\nsour\nlines!"[5..CHUNK_SIZE]);
         assert_eq!(c.offset, 5);
         assert_eq!(c.first_line, 1);
         //assert_eq!(c.offset_of_line(&source, 2).unwrap(), 9);
@@ -824,10 +803,7 @@ mod tests {
         assert_eq!(c.num_lines, 4);
         assert_eq!(c.get_line(&source, 0).unwrap(), "this\n");
         assert_eq!(c.contents, test_str[..CHUNK_SIZE]);
-        assert_eq!(
-            c.get_line(&source, 1).unwrap(),
-            "has one big line in the middle\n"
-        );
+        assert_eq!(c.get_line(&source, 1).unwrap(), "has one big line in the middle\n");
         // fetches are always in an interval of CHUNK_SIZE. because getting this line
         // requres multiple fetches, contents is truncated at the start of the line.
         assert_eq!(c.contents, test_str[5..CHUNK_SIZE * 3]);

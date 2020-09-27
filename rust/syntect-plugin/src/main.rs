@@ -139,11 +139,7 @@ impl<'a> PluginState {
                 let start = self.offset - self.spans_start + prev_cursor;
                 let end = start + (cursor - prev_cursor);
                 if accumulate_spans && start != end {
-                    let span = ScopeSpan {
-                        start,
-                        end,
-                        scope_id,
-                    };
+                    let span = ScopeSpan { start, end, scope_id };
                     self.spans.push(span);
                 }
             }
@@ -156,11 +152,7 @@ impl<'a> PluginState {
             let start = self.offset - self.spans_start + prev_cursor;
             let end = start + (line.len() - prev_cursor);
             let scope_id = self.identifier_for_stack(&scope_state, &repo);
-            let span = ScopeSpan {
-                start,
-                end,
-                scope_id,
-            };
+            let span = ScopeSpan { start, end, scope_id };
             self.spans.push(span);
         }
         Some((parse_state, scope_state))
@@ -173,11 +165,8 @@ impl<'a> PluginState {
         match identifier {
             LookupResult::Existing(id) => id,
             LookupResult::New(id) => {
-                let stack_strings = stack
-                    .as_slice()
-                    .iter()
-                    .map(|slice| repo.to_string(*slice))
-                    .collect::<Vec<_>>();
+                let stack_strings =
+                    stack.as_slice().iter().map(|slice| repo.to_string(*slice)).collect::<Vec<_>>();
                 self.new_scopes.push(stack_strings);
                 id
             }
@@ -231,11 +220,7 @@ impl<'a> PluginState {
             self.new_scopes.clear();
         }
         if self.spans_start != self.offset {
-            ctx.update_spans(
-                self.spans_start,
-                self.offset - self.spans_start,
-                &self.spans,
-            );
+            ctx.update_spans(self.spans_start, self.offset - self.spans_start, &self.spans);
             self.spans.clear();
         }
         self.spans_start = self.offset;
@@ -259,13 +244,7 @@ impl<'a> PluginState {
         }
 
         if !builder.is_empty() {
-            view.edit(
-                builder.build(),
-                INDENTATION_PRIORITY,
-                false,
-                false,
-                String::from("syntect"),
-            );
+            view.edit(builder.build(), INDENTATION_PRIORITY, false, false, String::from("syntect"));
         }
 
         self.indentation_state.clear();
@@ -281,9 +260,7 @@ impl<'a> PluginState {
         line: usize,
     ) -> Option<ScopedMetadata<'a>> {
         let text = view.get_line(line).unwrap_or("");
-        let scope = self
-            .compute_syntax(&text, None, syntax_set, false)
-            .map(|(_, scope)| scope)?;
+        let scope = self.compute_syntax(&text, None, syntax_set, false).map(|(_, scope)| scope)?;
         Some(syntax_set.metadata().metadata_for_scope(scope.as_slice()))
     }
 
@@ -293,9 +270,9 @@ impl<'a> PluginState {
             let line_of_edit = view.line_of_offset(region.new_offset).unwrap();
             let last_line_of_edit = view.line_of_offset(region.new_offset + region.len).unwrap();
             match edit_type {
-                EditType::Newline => self
-                    .indentation_state
-                    .push(IndentationTask::Newline(line_of_edit + 1)),
+                EditType::Newline => {
+                    self.indentation_state.push(IndentationTask::Newline(line_of_edit + 1))
+                }
                 EditType::Insert => {
                     let range = region.new_offset..region.new_offset + region.len;
                     let is_whitespace = {
@@ -304,16 +281,12 @@ impl<'a> PluginState {
                         insert_region.as_bytes().iter().all(u8::is_ascii_whitespace)
                     };
                     if !is_whitespace {
-                        self.indentation_state
-                            .push(IndentationTask::Edit(line_of_edit));
+                        self.indentation_state.push(IndentationTask::Edit(line_of_edit));
                     }
                 }
                 EditType::Other => {
                     // we are mainly interested in auto-indenting after paste
-                    let range = Range {
-                        start: line_of_edit,
-                        end: last_line_of_edit,
-                    };
+                    let range = Range { start: line_of_edit, end: last_line_of_edit };
                     self.indentation_state.push(IndentationTask::Batch(range));
                 }
             };
@@ -355,17 +328,11 @@ impl<'a> PluginState {
                 let edit_start = view.offset_of_line(line)?;
                 let edit_len = {
                     let line = view.get_line(line)?;
-                    line.as_bytes()
-                        .iter()
-                        .take_while(|b| **b == b' ' || **b == b'\t')
-                        .count()
+                    line.as_bytes().iter().take_while(|b| **b == b' ' || **b == b'\t').count()
                 };
 
-                let indent_text = if use_spaces {
-                    n_spaces(base_indent)
-                } else {
-                    n_tabs(base_indent / tab_size)
-                };
+                let indent_text =
+                    if use_spaces { n_spaces(base_indent) } else { n_tabs(base_indent / tab_size) };
 
                 let iv = edit_start..edit_start + edit_len;
                 builder.replace(iv, indent_text.into());
@@ -426,9 +393,7 @@ impl<'a> PluginState {
         let just_increased = self.test_increase(view, syntax_set, line)?;
         let decrease = self.test_decrease(view, syntax_set, line)?;
         let prev_line = self.previous_nonblank_line(view, line)?;
-        let mut indent_level = prev_line
-            .map(|l| self.indent_level_of_line(view, l))
-            .unwrap_or(0);
+        let mut indent_level = prev_line.map(|l| self.indent_level_of_line(view, l)).unwrap_or(0);
         if decrease {
             // the first line after an increase should just match the previous line
             if !just_increased {
@@ -454,20 +419,13 @@ impl<'a> PluginState {
         let edit_start = view.offset_of_line(line)?;
         let edit_len = {
             let line = view.get_line(line)?;
-            line.as_bytes()
-                .iter()
-                .take_while(|b| **b == b' ' || **b == b'\t')
-                .count()
+            line.as_bytes().iter().take_while(|b| **b == b' ' || **b == b'\t').count()
         };
 
         let use_spaces = view.get_config().translate_tabs_to_spaces;
         let tab_size = view.get_config().tab_size;
 
-        let indent_text = if use_spaces {
-            n_spaces(level)
-        } else {
-            n_tabs(level / tab_size)
-        };
+        let indent_text = if use_spaces { n_spaces(level) } else { n_tabs(level / tab_size) };
 
         let iv = edit_start..edit_start + edit_len;
         builder.replace(iv, indent_text.into());
@@ -488,9 +446,8 @@ impl<'a> PluginState {
             Ok(None) => return Ok(false),
             Err(e) => return Err(e),
         };
-        let metadata = self
-            .get_metadata(view, syntax_set, prev_line)
-            .ok_or_else(|| Error::PeerDisconnect)?;
+        let metadata =
+            self.get_metadata(view, syntax_set, prev_line).ok_or_else(|| Error::PeerDisconnect)?;
         let line = view.get_line(prev_line)?;
 
         let comment_str = match metadata.line_comment().map(|s| s.to_owned()) {
@@ -517,9 +474,8 @@ impl<'a> PluginState {
         if line == 0 {
             return Ok(false);
         }
-        let metadata = self
-            .get_metadata(view, syntax_set, line)
-            .ok_or_else(|| Error::PeerDisconnect)?;
+        let metadata =
+            self.get_metadata(view, syntax_set, line).ok_or_else(|| Error::PeerDisconnect)?;
         let line = view.get_line(line)?;
         Ok(metadata.decrease_indent(line))
     }
@@ -555,21 +511,11 @@ impl<'a> PluginState {
         let mut builder = DeltaBuilder::new(view.get_buf_size());
 
         for (start, end) in lines {
-            let range = Range {
-                start: *start,
-                end: *end - 1,
-            };
-            self.bulk_autoindent(view, &mut builder, syntax_set, range)
-                .expect("error on reindent");
+            let range = Range { start: *start, end: *end - 1 };
+            self.bulk_autoindent(view, &mut builder, syntax_set, range).expect("error on reindent");
         }
 
-        view.edit(
-            builder.build(),
-            INDENTATION_PRIORITY,
-            false,
-            false,
-            String::from("syntect"),
-        );
+        view.edit(builder.build(), INDENTATION_PRIORITY, false, false, String::from("syntect"));
     }
 
     fn toggle_comment(
@@ -586,23 +532,14 @@ impl<'a> PluginState {
         let mut builder = DeltaBuilder::new(view.get_buf_size());
 
         for (start, end) in lines {
-            let range = Range {
-                start: *start,
-                end: *end,
-            };
+            let range = Range { start: *start, end: *end };
             self.toggle_comment_line_range(view, syntax_set, &mut builder, range);
         }
 
         if builder.is_empty() {
             eprintln!("no delta for lines {:?}", &lines);
         } else {
-            view.edit(
-                builder.build(),
-                INDENTATION_PRIORITY,
-                false,
-                true,
-                String::from("syntect"),
-            );
+            view.edit(builder.build(), INDENTATION_PRIORITY, false, true, String::from("syntect"));
         }
     }
 
@@ -645,11 +582,7 @@ impl<'a> PluginState {
             .map(|num| {
                 view.get_line(num)
                     .ok()
-                    .and_then(|line| {
-                        line.as_bytes()
-                            .iter()
-                            .position(|b| *b != b' ' && *b != b'\t')
-                    })
+                    .and_then(|line| line.as_bytes().iter().position(|b| *b != b' ' && *b != b'\t'))
                     .unwrap_or(0)
             })
             .min()
@@ -694,10 +627,7 @@ type MyView = View<StateCache<LineState>>;
 
 impl<'a> Syntect<'a> {
     fn new(syntax_set: &'a SyntaxSet) -> Self {
-        Syntect {
-            view_state: HashMap::new(),
-            syntax_set,
-        }
+        Syntect { view_state: HashMap::new(), syntax_set }
     }
 
     /// Wipes any existing state and starts highlighting with `syntax`.

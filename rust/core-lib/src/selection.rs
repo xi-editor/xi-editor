@@ -61,9 +61,7 @@ impl Selection {
 
     /// Creates a selection with a single region.
     pub fn new_simple(region: SelRegion) -> Selection {
-        Selection {
-            regions: vec![region],
-        }
+        Selection { regions: vec![region] }
     }
 
     /// Clear the selection.
@@ -241,12 +239,7 @@ impl ToAnnotation for Selection {
                 let (start_line, start_col) = view.offset_to_line_col(text, region.min());
                 let (end_line, end_col) = view.offset_to_line_col(text, region.max());
 
-                AnnotationRange {
-                    start_line,
-                    start_col,
-                    end_line,
-                    end_col,
-                }
+                AnnotationRange { start_line, start_col, end_line, end_col }
             })
             .collect::<Vec<AnnotationRange>>();
         AnnotationSlice::new(AnnotationType::Selection, ranges, None)
@@ -308,22 +301,12 @@ pub struct SelRegion {
 impl SelRegion {
     /// Returns a new region.
     pub fn new(start: usize, end: usize) -> Self {
-        Self {
-            start,
-            end,
-            horiz: None,
-            affinity: Affinity::default(),
-        }
+        Self { start, end, horiz: None, affinity: Affinity::default() }
     }
 
     /// Returns a new caret region (`start == end`).
     pub fn caret(pos: usize) -> Self {
-        Self {
-            start: pos,
-            end: pos,
-            horiz: None,
-            affinity: Affinity::default(),
-        }
+        Self { start: pos, end: pos, horiz: None, affinity: Affinity::default() }
     }
 
     /// Returns a region with the given horizontal position.
@@ -369,11 +352,7 @@ impl SelRegion {
         let is_forward = self.end >= self.start;
         let new_min = min(self.min(), other.min());
         let new_max = max(self.max(), other.max());
-        let (start, end) = if is_forward {
-            (new_min, new_max)
-        } else {
-            (new_max, new_min)
-        };
+        let (start, end) = if is_forward { (new_min, new_max) } else { (new_max, new_min) };
         // Could try to preserve horiz/affinity from one of the
         // sources, but very likely not worth it.
         SelRegion::new(start, end)

@@ -249,40 +249,20 @@ impl View {
             AddSelectionBelow => self.add_selection_by_movement(text, Movement::DownExactPosition),
             Gesture { line, col, ty } => self.do_gesture(text, line, col, ty),
             GotoLine { line } => self.goto_line(text, line),
-            ViewEvent::Find {
-                chars,
-                case_sensitive,
-                regex,
-                whole_words,
-            } => {
+            ViewEvent::Find { chars, case_sensitive, regex, whole_words } => {
                 let id = self.find.first().map(|q| q.id());
-                let query_changes = FindQuery {
-                    id,
-                    chars,
-                    case_sensitive,
-                    regex,
-                    whole_words,
-                };
+                let query_changes = FindQuery { id, chars, case_sensitive, regex, whole_words };
                 self.set_find(text, [query_changes].to_vec())
             }
             MultiFind { queries } => self.set_find(text, queries),
-            FindNext {
-                wrap_around,
-                allow_same,
-                modify_selection,
-            } => self.do_find_next(text, false, wrap_around, allow_same, &modify_selection),
-            FindPrevious {
-                wrap_around,
-                allow_same,
-                modify_selection,
-            } => self.do_find_next(text, true, wrap_around, allow_same, &modify_selection),
+            FindNext { wrap_around, allow_same, modify_selection } => {
+                self.do_find_next(text, false, wrap_around, allow_same, &modify_selection)
+            }
+            FindPrevious { wrap_around, allow_same, modify_selection } => {
+                self.do_find_next(text, true, wrap_around, allow_same, &modify_selection)
+            }
             FindAll => self.do_find_all(text),
-            Click(MouseAction {
-                line,
-                column,
-                flags,
-                click_count,
-            }) => {
+            Click(MouseAction { line, column, flags, click_count }) => {
                 // Deprecated (kept for client compatibility):
                 // should be removed in favor of do_gesture
                 warn!("Usage of click is deprecated; use do_gesture");
@@ -291,9 +271,7 @@ impl View {
                         text,
                         line,
                         column,
-                        GestureType::SelectExtend {
-                            granularity: SelectionGranularity::Point,
-                        },
+                        GestureType::SelectExtend { granularity: SelectionGranularity::Point },
                     )
                 } else if click_count == Some(2) {
                     self.do_gesture(text, line, column, GestureType::WordSelect)
@@ -314,10 +292,7 @@ impl View {
                 self.set_dirty(text);
             }
             SelectionForFind { case_sensitive } => self.do_selection_for_find(text, case_sensitive),
-            Replace {
-                chars,
-                preserve_case,
-            } => self.do_set_replace(chars, preserve_case),
+            Replace { chars, preserve_case } => self.do_set_replace(chars, preserve_case),
             SelectionForReplace => self.do_selection_for_replace(text),
             SelectionIntoLines => self.do_split_selection_into_lines(text),
         }
@@ -398,14 +373,8 @@ impl View {
     /// of individual region movements become carets.
     pub fn do_move(&mut self, text: &Rope, movement: Movement, modify: bool) {
         self.drag_state = None;
-        let new_sel = selection_movement(
-            movement,
-            &self.selection,
-            self,
-            self.scroll_height(),
-            text,
-            modify,
-        );
+        let new_sel =
+            selection_movement(movement, &self.selection, self, self.scroll_height(), text, modify);
         self.set_selection(text, new_sel);
     }
 
@@ -442,8 +411,7 @@ impl View {
         } else {
             line_cache_shadow::CURSOR_VALID | line_cache_shadow::STYLES_VALID
         };
-        self.lc_shadow
-            .partial_invalidate(first_line, last_line, invalid);
+        self.lc_shadow.partial_invalidate(first_line, last_line, invalid);
     }
 
     fn add_selection_by_movement(&mut self, text: &Rope, movement: Movement) {
@@ -464,8 +432,7 @@ impl View {
         let first_line = self.line_of_offset(text, start);
         let (mut last_line, last_col) = self.offset_to_line_col(text, end);
         last_line += if last_col > 0 { 1 } else { 0 };
-        self.lc_shadow
-            .partial_invalidate(first_line, last_line, line_cache_shadow::STYLES_VALID);
+        self.lc_shadow.partial_invalidate(first_line, last_line, line_cache_shadow::STYLES_VALID);
     }
 
     pub fn update_annotations(
@@ -528,12 +495,8 @@ impl View {
         selection.add_region(region);
         self.set_selection(text, selection);
 
-        self.drag_state = Some(DragState {
-            base_sel,
-            min: region.start,
-            max: region.end,
-            granularity,
-        });
+        self.drag_state =
+            Some(DragState { base_sel, min: region.start, max: region.end, granularity });
     }
 
     /// Extends an existing selection (eg. when the user performs SHIFT + click).
@@ -557,12 +520,8 @@ impl View {
         };
 
         let mut sel = base_sel.clone();
-        self.drag_state = Some(DragState {
-            base_sel,
-            min: last.start,
-            max: last.start,
-            granularity,
-        });
+        self.drag_state =
+            Some(DragState { base_sel, min: last.start, max: last.start, granularity });
 
         let start = (last.start, last.start);
         let new_region = self.range_region(text, start, offset, granularity);
@@ -703,15 +662,8 @@ impl View {
             }
         }
 
-        let styles = self.render_styles(
-            client,
-            styles,
-            start_pos,
-            pos,
-            &selections,
-            &hls,
-            style_spans,
-        );
+        let styles =
+            self.render_styles(client, styles, start_pos, pos, &selections, &hls, style_spans);
 
         let mut result = json!({
             "text": &l_str,
@@ -793,18 +745,14 @@ impl View {
         let start_off = self.offset_of_line(text, self.first_line);
         let end_off = self.offset_of_line(text, self.first_line + self.height + 2);
         let visible_range = start_off..end_off;
-        let selection_annotations = self
-            .selection
-            .get_annotations(visible_range.clone(), &self, text)
-            .to_json();
-        let find_annotations = self.find.iter().map(|f| {
-            f.get_annotations(visible_range.clone(), &self, text)
-                .to_json()
-        });
-        let plugin_annotations = self
-            .annotations
-            .iter_range(&self, text, &visible_range)
-            .map(|a| a.to_json());
+        let selection_annotations =
+            self.selection.get_annotations(visible_range.clone(), &self, text).to_json();
+        let find_annotations = self
+            .find
+            .iter()
+            .map(|f| f.get_annotations(visible_range.clone(), &self, text).to_json());
+        let plugin_annotations =
+            self.annotations.iter_range(&self, text, &visible_range).map(|a| a.to_json());
 
         let annotations = iter::once(selection_annotations)
             .chain(find_annotations)
@@ -813,11 +761,8 @@ impl View {
 
         if !self.lc_shadow.needs_render(plan) {
             let total_lines = self.line_of_offset(text, text.len()) + 1;
-            let update = Update {
-                ops: vec![UpdateOp::copy(total_lines, 1)],
-                pristine,
-                annotations,
-            };
+            let update =
+                Update { ops: vec![UpdateOp::copy(total_lines, 1)], pristine, annotations };
             client.update_view(self.view_id, &update);
             return;
         }
@@ -907,11 +852,7 @@ impl View {
             find.set_hls_dirty(false)
         }
 
-        let update = Update {
-            ops,
-            pristine,
-            annotations,
-        };
+        let update = Update { ops, pristine, annotations };
         client.update_view(self.view_id, &update);
     }
 
@@ -990,17 +931,9 @@ impl View {
     ) {
         let _t = trace_block("View::rewrap", &["core"]);
         let visible = self.first_line..self.first_line + self.height;
-        let inval = self
-            .lines
-            .rewrap_chunk(text, width_cache, client, spans, visible);
-        if let Some(InvalLines {
-            start_line,
-            inval_count,
-            new_count,
-        }) = inval
-        {
-            self.lc_shadow
-                .edit(start_line, start_line + inval_count, new_count);
+        let inval = self.lines.rewrap_chunk(text, width_cache, client, spans, visible);
+        if let Some(InvalLines { start_line, inval_count, new_count }) = inval {
+            self.lc_shadow.edit(start_line, start_line + inval_count, new_count);
         }
     }
 
@@ -1017,17 +950,9 @@ impl View {
         drift: InsertDrift,
     ) {
         let visible = self.first_line..self.first_line + self.height;
-        match self
-            .lines
-            .after_edit(text, last_text, delta, width_cache, client, visible)
-        {
-            Some(InvalLines {
-                start_line,
-                inval_count,
-                new_count,
-            }) => {
-                self.lc_shadow
-                    .edit(start_line, start_line + inval_count, new_count);
+        match self.lines.after_edit(text, last_text, delta, width_cache, client, visible) {
+            Some(InvalLines { start_line, inval_count, new_count }) => {
+                self.lc_shadow.edit(start_line, start_line + inval_count, new_count);
             }
             None => self.set_dirty(text),
         }
@@ -1077,10 +1002,7 @@ impl View {
             self.add_find();
         }
 
-        self.find
-            .last_mut()
-            .unwrap()
-            .set_find(&search_query, case_sensitive, false, true);
+        self.find.last_mut().unwrap().set_find(&search_query, case_sensitive, false, true);
         self.find_progress = FindProgress::Started;
     }
 
@@ -1094,8 +1016,7 @@ impl View {
         let mut find_changed = queries.len() != self.find.len();
 
         // remove deleted queries
-        self.find
-            .retain(|f| queries.iter().any(|q| q.id == Some(f.id())));
+        self.find.retain(|f| queries.iter().any(|q| q.id == Some(f.id())));
 
         for query in &queries {
             let pos = match query.id {
@@ -1159,17 +1080,13 @@ impl View {
 
                     if search_preceding_range || searched_range.end >= text.len() {
                         let start = searched_range.start.saturating_sub(FIND_BATCH_SIZE);
-                        self.find_progress = FindProgress::InProgress(Range {
-                            start,
-                            end: searched_range.end,
-                        });
+                        self.find_progress =
+                            FindProgress::InProgress(Range { start, end: searched_range.end });
                         Some((start, searched_range.start))
                     } else if searched_range.end < text.len() {
                         let end = min(text.len(), searched_range.end + FIND_BATCH_SIZE);
-                        self.find_progress = FindProgress::InProgress(Range {
-                            start: searched_range.start,
-                            end,
-                        });
+                        self.find_progress =
+                            FindProgress::InProgress(Range { start: searched_range.start, end });
                         Some((searched_range.end, end))
                     } else {
                         self.find_changed = FindStatusChange::All;
@@ -1285,10 +1202,7 @@ impl View {
     }
 
     fn do_set_replace(&mut self, chars: String, preserve_case: bool) {
-        self.replace = Some(Replace {
-            chars,
-            preserve_case,
-        });
+        self.replace = Some(Replace { chars, preserve_case });
         self.replace_changed = true;
     }
 
@@ -1394,10 +1308,7 @@ mod tests {
         assert_eq!(view.sel_regions().len(), 1);
         assert_eq!(
             view.sel_regions().first(),
-            Some(&SelRegion::new(
-                FIND_BATCH_SIZE - 2,
-                FIND_BATCH_SIZE + 6 - 2
-            ))
+            Some(&SelRegion::new(FIND_BATCH_SIZE - 2, FIND_BATCH_SIZE + 6 - 2))
         );
         view.do_find(&text);
         assert_eq!(view.find_in_progress(), true);
@@ -1436,12 +1347,7 @@ mod tests {
         let mut view = View::new(1.into(), BufferId::new(2));
         let text = Rope::from("hello hello world\n");
         view.set_selection(&text, SelRegion::new(6, 11));
-        view.do_edit(
-            &text,
-            ViewEvent::SelectionForFind {
-                case_sensitive: false,
-            },
-        );
+        view.do_edit(&text, ViewEvent::SelectionForFind { case_sensitive: false });
         view.do_find(&text);
         view.do_find_all(&text);
         assert_eq!(view.sel_regions().len(), 2);
@@ -1487,13 +1393,7 @@ mod tests {
 
         view.do_find_next(&text, true, true, false, &SelectionModifier::Add);
         assert_eq!(view.sel_regions().len(), 2);
-        view.do_find_next(
-            &text,
-            true,
-            true,
-            false,
-            &SelectionModifier::AddRemovingCurrent,
-        );
+        view.do_find_next(&text, true, true, false, &SelectionModifier::AddRemovingCurrent);
         assert_eq!(view.sel_regions().len(), 1);
         view.do_find_next(&text, true, true, false, &SelectionModifier::None);
         assert_eq!(view.sel_regions().len(), 1);
@@ -1561,12 +1461,7 @@ mod tests {
             regex: false,
             whole_words: false,
         };
-        view.do_edit(
-            &text,
-            ViewEvent::MultiFind {
-                queries: vec![query1, query2],
-            },
-        );
+        view.do_edit(&text, ViewEvent::MultiFind { queries: vec![query1, query2] });
         view.do_find(&text);
         view.do_find_next(&text, false, true, false, &SelectionModifier::Set);
         assert_eq!(view.sel_regions().first(), Some(&SelRegion::new(0, 5)));
@@ -1594,12 +1489,7 @@ mod tests {
             regex: false,
             whole_words: false,
         };
-        view.do_edit(
-            &text,
-            ViewEvent::MultiFind {
-                queries: vec![query1, query2],
-            },
-        );
+        view.do_edit(&text, ViewEvent::MultiFind { queries: vec![query1, query2] });
         view.do_find(&text);
         view.do_find_all(&text);
         assert_eq!(view.sel_regions().len(), 4);

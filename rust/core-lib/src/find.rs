@@ -142,23 +142,14 @@ impl Find {
         // update search highlights for changed regions
         if self.search_string.is_some() {
             // invalidate occurrences around deletion positions
-            for DeltaRegion {
-                old_offset, len, ..
-            } in delta.iter_deletions()
-            {
-                self.occurrences
-                    .delete_range(old_offset, old_offset + len, false);
+            for DeltaRegion { old_offset, len, .. } in delta.iter_deletions() {
+                self.occurrences.delete_range(old_offset, old_offset + len, false);
             }
 
-            self.occurrences = self
-                .occurrences
-                .apply_delta(delta, false, InsertDrift::Default);
+            self.occurrences = self.occurrences.apply_delta(delta, false, InsertDrift::Default);
 
             // invalidate occurrences around insert positions
-            for DeltaRegion {
-                new_offset, len, ..
-            } in delta.iter_inserts()
-            {
+            for DeltaRegion { new_offset, len, .. } in delta.iter_inserts() {
                 // also invalidate previous occurrence since it might expand after insertion
                 // eg. for regex .* every insertion after match will be part of match
                 self.occurrences.delete_range(
@@ -225,11 +216,8 @@ impl Find {
             self.unset();
         }
 
-        let case_matching = if case_sensitive {
-            CaseMatching::Exact
-        } else {
-            CaseMatching::CaseInsensitive
-        };
+        let case_matching =
+            if case_sensitive { CaseMatching::Exact } else { CaseMatching::CaseInsensitive };
 
         if let Some(ref s) = self.search_string {
             if s == search_string
@@ -269,23 +257,15 @@ impl Find {
 
         // extend the search by twice the string length (twice, because case matching may increase
         // the length of an occurrence)
-        let slop = if include_slop {
-            self.search_string.as_ref().unwrap().len() * 2
-        } else {
-            0
-        };
+        let slop = if include_slop { self.search_string.as_ref().unwrap().len() * 2 } else { 0 };
 
         let search_string = self.search_string.as_ref().unwrap();
 
         // expand region to be able to find occurrences around the region's edges
         let expanded_start = max(start, slop) - slop;
         let expanded_end = min(end + slop, text.len());
-        let from = text
-            .at_or_prev_codepoint_boundary(expanded_start)
-            .unwrap_or(0);
-        let to = text
-            .at_or_next_codepoint_boundary(expanded_end)
-            .unwrap_or(text.len());
+        let from = text.at_or_prev_codepoint_boundary(expanded_start).unwrap_or(0);
+        let to = text.at_or_next_codepoint_boundary(expanded_end).unwrap_or(text.len());
         let mut to_cursor = Cursor::new(&text, to);
         let _ = to_cursor.next_leaf();
 
@@ -391,10 +371,7 @@ impl Find {
 
             next_occurrence.cloned()
         } else {
-            let next_occurrence = self
-                .occurrences
-                .regions_in_range(sel_end, text.len())
-                .first();
+            let next_occurrence = self.occurrences.regions_in_range(sel_end, text.len()).first();
 
             if next_occurrence.is_none() && !wrapped {
                 // get next unselected occurrence
@@ -437,27 +414,18 @@ impl Find {
 /// Implementing the `ToAnnotation` trait allows to convert finds to annotations.
 impl ToAnnotation for Find {
     fn get_annotations(&self, interval: Range<usize>, view: &View, text: &Rope) -> AnnotationSlice {
-        let regions = self
-            .occurrences
-            .regions_in_range(interval.start, interval.end);
+        let regions = self.occurrences.regions_in_range(interval.start, interval.end);
         let ranges = regions
             .iter()
             .map(|region| {
                 let (start_line, start_col) = view.offset_to_line_col(text, region.min());
                 let (end_line, end_col) = view.offset_to_line_col(text, region.max());
 
-                AnnotationRange {
-                    start_line,
-                    start_col,
-                    end_line,
-                    end_col,
-                }
+                AnnotationRange { start_line, start_col, end_line, end_col }
             })
             .collect::<Vec<AnnotationRange>>();
 
-        let payload = iter::repeat(json!({"id": self.id}))
-            .take(ranges.len())
-            .collect::<Vec<_>>();
+        let payload = iter::repeat(json!({"id": self.id})).take(ranges.len()).collect::<Vec<_>>();
 
         AnnotationSlice::new(AnnotationType::Find, ranges, Some(payload))
     }
@@ -611,10 +579,7 @@ mod tests {
 
         let mut prev_selection = Selection::new();
         prev_selection.add_region(SelRegion::new(20, 20));
-        assert_eq!(
-            find.next_occurrence(&base_text, true, true, &Selection::new()),
-            None
-        );
+        assert_eq!(find.next_occurrence(&base_text, true, true, &Selection::new()), None);
     }
 
     #[test]
