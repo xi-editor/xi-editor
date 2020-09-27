@@ -12,6 +12,7 @@ jobs:
     runs-on: windows-latest
     # needs: [compile]
     steps:
+      - run: cd rust
       - name: Setup | Checkout
         uses: actions/checkout@v2
       - name: Setup | Rust
@@ -57,6 +58,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 #     needs: [compile]
     steps:
+      - run: cd rust
       - name: Setup | Checkout
         uses: actions/checkout@v2
       - name: Setup | Rust
